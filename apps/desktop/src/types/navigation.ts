@@ -20,10 +20,14 @@ export interface SessionUser {
   name: string;
   email: string;
   avatar?: string;
+  /** Absolute local file path for cached avatar image. */
+  avatarLocalPath?: string;
   /** Account identity ID (e.g. "password:abc" or "github:123"). Present for restorable accounts. */
   accountId?: string;
   /** Whether this account has a PIN set. */
   hasPin?: boolean;
+  /** Whether this account has a restorable session (encrypted or plaintext). */
+  hasSession?: boolean;
   /** Login provider (e.g. "password", "github"). */
   provider?: string;
 }

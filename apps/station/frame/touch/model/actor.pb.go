@@ -669,6 +669,88 @@ func (x *ActorList) GetTotal() int64 {
 	return 0
 }
 
+// SearchUsersRequest carries query parameters for the user search endpoint.
+type SearchUsersRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Q             string                 `protobuf:"bytes,1,opt,name=q,proto3" json:"q,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchUsersRequest) Reset() {
+	*x = SearchUsersRequest{}
+	mi := &file_domain_actor_actor_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchUsersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchUsersRequest) ProtoMessage() {}
+
+func (x *SearchUsersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchUsersRequest.ProtoReflect.Descriptor instead.
+func (*SearchUsersRequest) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *SearchUsersRequest) GetQ() string {
+	if x != nil {
+		return x.Q
+	}
+	return ""
+}
+
+// GetMeRequest is intentionally empty; the current user is identified via JWT auth context.
+type GetMeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetMeRequest) Reset() {
+	*x = GetMeRequest{}
+	mi := &file_domain_actor_actor_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMeRequest) ProtoMessage() {}
+
+func (x *GetMeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMeRequest.ProtoReflect.Descriptor instead.
+func (*GetMeRequest) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{7}
+}
+
 var File_domain_actor_actor_proto protoreflect.FileDescriptor
 
 const file_domain_actor_actor_proto_rawDesc = "" +
@@ -753,7 +835,10 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x11_auto_expire_days\"Z\n" +
 	"\tActorList\x127\n" +
 	"\x05items\x18\x01 \x03(\v2!.peers_touch.model.actor.v1.ActorR\x05items\x12\x14\n" +
-	"\x05total\x18\x02 \x01(\x03R\x05totalBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
+	"\x05total\x18\x02 \x01(\x03R\x05total\"\"\n" +
+	"\x12SearchUsersRequest\x12\f\n" +
+	"\x01q\x18\x01 \x01(\tR\x01q\"\x0e\n" +
+	"\fGetMeRequestBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
 
 var (
 	file_domain_actor_actor_proto_rawDescOnce sync.Once
@@ -767,7 +852,7 @@ func file_domain_actor_actor_proto_rawDescGZIP() []byte {
 	return file_domain_actor_actor_proto_rawDescData
 }
 
-var file_domain_actor_actor_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_domain_actor_actor_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_domain_actor_actor_proto_goTypes = []any{
 	(*Actor)(nil),                // 0: peers_touch.model.actor.v1.Actor
 	(*UserLink)(nil),             // 1: peers_touch.model.actor.v1.UserLink
@@ -775,10 +860,12 @@ var file_domain_actor_actor_proto_goTypes = []any{
 	(*ActorProfile)(nil),         // 3: peers_touch.model.actor.v1.ActorProfile
 	(*UpdateProfileRequest)(nil), // 4: peers_touch.model.actor.v1.UpdateProfileRequest
 	(*ActorList)(nil),            // 5: peers_touch.model.actor.v1.ActorList
-	nil,                          // 6: peers_touch.model.actor.v1.Actor.EndpointsEntry
+	(*SearchUsersRequest)(nil),   // 6: peers_touch.model.actor.v1.SearchUsersRequest
+	(*GetMeRequest)(nil),         // 7: peers_touch.model.actor.v1.GetMeRequest
+	nil,                          // 8: peers_touch.model.actor.v1.Actor.EndpointsEntry
 }
 var file_domain_actor_actor_proto_depIdxs = []int32{
-	6, // 0: peers_touch.model.actor.v1.Actor.endpoints:type_name -> peers_touch.model.actor.v1.Actor.EndpointsEntry
+	8, // 0: peers_touch.model.actor.v1.Actor.endpoints:type_name -> peers_touch.model.actor.v1.Actor.EndpointsEntry
 	1, // 1: peers_touch.model.actor.v1.ActorProfile.links:type_name -> peers_touch.model.actor.v1.UserLink
 	2, // 2: peers_touch.model.actor.v1.ActorProfile.peers_touch:type_name -> peers_touch.model.actor.v1.PeersTouchInfo
 	1, // 3: peers_touch.model.actor.v1.UpdateProfileRequest.links:type_name -> peers_touch.model.actor.v1.UserLink
@@ -802,7 +889,7 @@ func file_domain_actor_actor_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_actor_actor_proto_rawDesc), len(file_domain_actor_actor_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

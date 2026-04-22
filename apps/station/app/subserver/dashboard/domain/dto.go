@@ -270,3 +270,107 @@ type StorageTableCount struct {
 	Rows  int64  `json:"rows"`
 	Error string `json:"error,omitempty"`
 }
+
+// ---------------------------------------------------------------------------
+// Typed Handler Request DTOs
+// ---------------------------------------------------------------------------
+
+// EmptyRequest is used for endpoints with no request body (GET endpoints,
+// POST endpoints driven solely by path/query params).
+type EmptyRequest struct{}
+
+// LoginRequest is the request body for POST /auth/login.
+type LoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// ChangePasswordRequest is the request body for POST /auth/change-password.
+type ChangePasswordRequest struct {
+	OldPassword string `json:"old_password"`
+	NewPassword string `json:"new_password"`
+}
+
+// ResetPasswordRequest is the request body for POST /actors/:id/reset-password.
+type ResetPasswordRequest struct {
+	NewPassword string `json:"new_password"`
+}
+
+// ---------------------------------------------------------------------------
+// Typed Handler Response DTOs
+// ---------------------------------------------------------------------------
+
+// MessageResponse is returned by mutating endpoints that produce no
+// domain-specific result (e.g. logout, revoke session, password change).
+type MessageResponse struct {
+	Message string `json:"message"`
+}
+
+// RecentActorsResponse wraps the recent actors list for the overview page.
+type RecentActorsResponse struct {
+	Items []ActorSummary `json:"items"`
+}
+
+// RecentAuditLogsResponse wraps recent audit logs for the overview page.
+type RecentAuditLogsResponse struct {
+	Items []DashboardAuditLog `json:"items"`
+}
+
+// ActorSessionsResponse wraps sessions for a specific actor.
+type ActorSessionsResponse struct {
+	Items []ActorSessionInfo `json:"items"`
+}
+
+// AdminListResponse wraps the full admin list.
+type AdminListResponse struct {
+	Items []DashboardAdmin `json:"items"`
+}
+
+// AuditLogsResponse is the paginated audit logs response.
+type AuditLogsResponse struct {
+	Items []DashboardAuditLog `json:"items"`
+	Total int64               `json:"total"`
+	Page  int                 `json:"page"`
+}
+
+// RouteInfo describes a single registered HTTP route.
+type RouteInfo struct {
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+	Method string `json:"method"`
+}
+
+// RoutesResponse wraps the system routes list.
+type RoutesResponse struct {
+	Count  int         `json:"count"`
+	Routes []RouteInfo `json:"routes"`
+}
+
+// SubserversResponse wraps the subserver list.
+type SubserversResponse struct {
+	Count int             `json:"count"`
+	Items []SubServerInfo `json:"items"`
+}
+
+// PeersSessionsResponse wraps active Peers actor sessions.
+type PeersSessionsResponse struct {
+	Count int                `json:"count"`
+	Items []PeersSessionInfo `json:"items"`
+}
+
+// DashboardSessionsResponse wraps active dashboard admin sessions.
+type DashboardSessionsResponse struct {
+	Count int                    `json:"count"`
+	Items []DashboardSessionInfo `json:"items"`
+}
+
+// FriendChatStatsResponse is returned by GET /chat/friend/stats.
+// Moved from application layer to domain layer for proper DDD layering.
+type FriendChatStatsResponse struct {
+	Sessions       int64     `json:"sessions"`
+	Messages       int64     `json:"messages"`
+	FriendRequests int64     `json:"friend_requests"`
+	Outbox         int64     `json:"outbox"`
+	Attachments    int64     `json:"attachments"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}

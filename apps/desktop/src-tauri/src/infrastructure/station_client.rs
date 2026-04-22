@@ -24,7 +24,7 @@ pub struct StationClientError {
 }
 
 impl StationClientError {
-    fn new(kind: StationClientErrorKind, message: impl Into<String>, details: Option<Value>) -> Self {
+    pub(crate) fn new(kind: StationClientErrorKind, message: impl Into<String>, details: Option<Value>) -> Self {
         Self {
             kind,
             message: message.into(),
@@ -71,12 +71,6 @@ impl fmt::Display for StationClientError {
 }
 
 impl std::error::Error for StationClientError {}
-
-impl From<StationClientError> for String {
-    fn from(value: StationClientError) -> Self {
-        value.message
-    }
-}
 
 /// Best-effort extractor for Station session-revoked responses.
 ///

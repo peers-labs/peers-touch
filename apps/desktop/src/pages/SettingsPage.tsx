@@ -854,6 +854,375 @@ function StatisticsTab() {
   );
 }
 
+// --- Security Section: PIN management for GeneralTab ---
+
+const PIN_LENGTH = 6;
+
+function SecuritySection() {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('settings');
+  const [hasPin, setHasPin] = useState(false);
+  const [accountId, setAccountId] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  // Modal workflow states
+  const [modalMode, setModalMode] = useState<'set' | 'change' | 'remove' | null>(null);
+  const [step, setStep] = useState<'verify' | 'create' | 'confirm'>('verify');
+  const [digits, setDigits] = useState<string[]>(Array(PIN_LENGTH).fill(''));
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [verifiedPin, setVerifiedPin] = useState('');
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const loadPinStatus = useCallback(async () => {
+    try {
+      const active = await api.accountGetActive();
+      if (active) {
+        setHasPin(!!active.has_pin);
+        setAccountId(active.id);
+      }
+    } catch {
+      // Security section degrades gracefully when account status unavailable
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPinStatus();
+  }, [loadPinStatus]);
+
+  const resetModal = useCallback(() => {
+    setModalMode(null);
+    setStep('verify');
+    setDigits(Array(PIN_LENGTH).fill(''));
+    setError('');
+    setSaving(false);
+    setVerifiedPin('');
+  }, []);
+
+  const handleDigitChange = useCallback((index: number, value: string) => {
+    if (!/^\d*$/.test(value)) return;
+    const digit = value.slice(-1);
+    setDigits(prev => {
+      const next = [...prev];
+      next[index] = digit;
+      return next;
+    });
+    // Auto-advance to next input
+    if (digit && index < PIN_LENGTH - 1) {
+      inputRefs.current[index + 1]?.focus();
+    }
+  }, []);
+
+  const handleKeyDown = useCallback((index: number, e: React.KeyboardEvent) => {
+    if (e.key === 'Backspace') {
+      setDigits(prev => {
+        // If current cell empty, move focus back and clear previous
+        if (!prev[index] && index > 0) {
+          inputRefs.current[index - 1]?.focus();
+          const next = [...prev];
+          next[index - 1] = '';
+          return next;
+        }
+        return prev;
+      });
+    }
+  }, []);
+
+  // Centralized PIN submission handler — routes by mode + step
+  const handleSubmit = useCallback(async () => {
+    if (saving) return;
+    setSaving(true);
+    setError('');
+
+    try {
+      if (modalMode === 'set') {
+        if (step === 'create') {
+          // Store the new PIN, advance to confirmation step
+          const pin = digits.join('');
+          setVerifiedPin(pin);
+          setStep('confirm');
+          setDigits(Array(PIN_LENGTH).fill(''));
+          setTimeout(() => inputRefs.current[0]?.focus(), 50);
+          setSaving(false);
+          return;
+        }
+        if (step === 'confirm') {
+          const confirm = digits.join('');
+          if (confirm !== verifiedPin) {
+            setError(t('settings.security.pinMismatch', { defaultValue: 'PINs do not match. Try again.' }));
+            setStep('create');
+            setDigits(Array(PIN_LENGTH).fill(''));
+            setTimeout(() => inputRefs.current[0]?.focus(), 50);
+            setSaving(false);
+            return;
+          }
+          await api.accountSetPin(accountId, verifiedPin);
+          setHasPin(true);
+          message.success(t('settings.security.pinSetSuccess', { defaultValue: 'PIN has been set successfully.' }));
+          resetModal();
+          return;
+        }
+      }
+
+      if (modalMode === 'change') {
+        if (step === 'verify') {
+          // Verify current PIN before allowing change
+          const pin = digits.join('');
+          await api.accountUnlock(accountId, pin);
+          setStep('create');
+          setDigits(Array(PIN_LENGTH).fill(''));
+          setTimeout(() => inputRefs.current[0]?.focus(), 50);
+          setSaving(false);
+          return;
+        }
+        if (step === 'create') {
+          const newPin = digits.join('');
+          setVerifiedPin(newPin);
+          setStep('confirm');
+          setDigits(Array(PIN_LENGTH).fill(''));
+          setTimeout(() => inputRefs.current[0]?.focus(), 50);
+          setSaving(false);
+          return;
+        }
+        if (step === 'confirm') {
+          const confirm = digits.join('');
+          if (confirm !== verifiedPin) {
+            setError(t('settings.security.pinMismatch', { defaultValue: 'PINs do not match. Try again.' }));
+            setStep('create');
+            setDigits(Array(PIN_LENGTH).fill(''));
+            setTimeout(() => inputRefs.current[0]?.focus(), 50);
+            setSaving(false);
+            return;
+          }
+          await api.accountSetPin(accountId, verifiedPin);
+          message.success(t('settings.security.pinChangedSuccess', { defaultValue: 'PIN has been changed successfully.' }));
+          resetModal();
+          return;
+        }
+      }
+
+      if (modalMode === 'remove') {
+        // Verify current PIN then remove it
+        const pin = digits.join('');
+        await api.accountRemovePin(accountId, pin);
+        setHasPin(false);
+        message.success(t('settings.security.pinRemovedSuccess', { defaultValue: 'PIN has been removed.' }));
+        resetModal();
+        return;
+      }
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Operation failed';
+      setError(errorMessage);
+      setDigits(Array(PIN_LENGTH).fill(''));
+      setTimeout(() => inputRefs.current[0]?.focus(), 50);
+    } finally {
+      setSaving(false);
+    }
+  }, [modalMode, step, digits, verifiedPin, accountId, saving, resetModal, t]);
+
+  // Auto-submit when all 6 digits are filled
+  useEffect(() => {
+    if (modalMode && digits.every(d => d !== '') && !saving) {
+      handleSubmit();
+    }
+  }, [digits, modalMode, saving, handleSubmit]);
+
+  const openSetPin = useCallback(() => {
+    setModalMode('set');
+    setStep('create');
+    setDigits(Array(PIN_LENGTH).fill(''));
+    setError('');
+    setTimeout(() => inputRefs.current[0]?.focus(), 100);
+  }, []);
+
+  const openChangePin = useCallback(() => {
+    setModalMode('change');
+    setStep('verify');
+    setDigits(Array(PIN_LENGTH).fill(''));
+    setError('');
+    setTimeout(() => inputRefs.current[0]?.focus(), 100);
+  }, []);
+
+  const openRemovePin = useCallback(() => {
+    setModalMode('remove');
+    setStep('verify');
+    setDigits(Array(PIN_LENGTH).fill(''));
+    setError('');
+    setTimeout(() => inputRefs.current[0]?.focus(), 100);
+  }, []);
+
+  const modalTitle = useMemo(() => {
+    if (modalMode === 'set') {
+      return step === 'confirm'
+        ? t('settings.security.confirmPin', { defaultValue: 'Confirm PIN' })
+        : t('settings.security.setPin', { defaultValue: 'Set PIN' });
+    }
+    if (modalMode === 'change') {
+      if (step === 'verify') return t('settings.security.enterCurrentPin', { defaultValue: 'Enter Current PIN' });
+      if (step === 'create') return t('settings.security.enterNewPin', { defaultValue: 'Enter New PIN' });
+      return t('settings.security.confirmNewPin', { defaultValue: 'Confirm New PIN' });
+    }
+    if (modalMode === 'remove') {
+      return t('settings.security.enterPinToRemove', { defaultValue: 'Enter PIN to Remove' });
+    }
+    return '';
+  }, [modalMode, step, t]);
+
+  const pinInputStyle: React.CSSProperties = {
+    width: 44,
+    height: 48,
+    textAlign: 'center',
+    fontSize: 20,
+    fontWeight: 600,
+    borderRadius: 10,
+    border: `1.5px solid ${token.colorBorder}`,
+    background: token.colorBgContainer,
+    outline: 'none',
+    caretColor: token.colorPrimary,
+    transition: 'border-color 0.2s',
+  };
+
+  if (loading) {
+    return (
+      <SettingsSection
+        icon={<ShieldCheck size={18} />}
+        title={t('settings.security.title', { defaultValue: 'Security' })}
+        subtitle={t('settings.security.subtitle', { defaultValue: 'Manage your account security settings.' })}
+      >
+        <Spin size="small" />
+      </SettingsSection>
+    );
+  }
+
+  return (
+    <>
+      <SettingsSection
+        icon={<ShieldCheck size={18} />}
+        title={t('settings.security.title', { defaultValue: 'Security' })}
+        subtitle={t('settings.security.subtitle', { defaultValue: 'Manage your account security settings.' })}
+      >
+        <SettingsItemCard>
+          <Flexbox horizontal align="center" justify="space-between">
+            <Flexbox horizontal align="center" gap={12}>
+              <Flexbox
+                align="center"
+                justify="center"
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 8,
+                  background: hasPin ? token.colorSuccessBg : token.colorFillSecondary,
+                }}
+              >
+                {hasPin ? (
+                  <ShieldCheck size={18} style={{ color: token.colorSuccess }} />
+                ) : (
+                  <Shield size={18} style={{ color: token.colorTextTertiary }} />
+                )}
+              </Flexbox>
+              <Flexbox gap={2}>
+                <Text strong style={{ fontSize: 14 }}>
+                  {t('settings.security.pinLabel', { defaultValue: 'PIN Lock' })}
+                </Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {hasPin
+                    ? t('settings.security.pinActive', { defaultValue: 'PIN is active. Your session is encrypted at rest.' })
+                    : t('settings.security.pinInactive', { defaultValue: 'No PIN configured. Set a PIN to protect your session.' })
+                  }
+                </Text>
+              </Flexbox>
+            </Flexbox>
+            <Flexbox horizontal gap={8}>
+              {hasPin ? (
+                <>
+                  <Button size="small" onClick={openChangePin}>
+                    {t('settings.security.changePin', { defaultValue: 'Change' })}
+                  </Button>
+                  <Button size="small" danger onClick={openRemovePin}>
+                    {t('settings.security.removePin', { defaultValue: 'Remove' })}
+                  </Button>
+                </>
+              ) : (
+                <Button type="primary" size="small" onClick={openSetPin}>
+                  {t('settings.security.setPin', { defaultValue: 'Set PIN' })}
+                </Button>
+              )}
+            </Flexbox>
+          </Flexbox>
+        </SettingsItemCard>
+      </SettingsSection>
+
+      {/* PIN entry modal — shared by set / change / remove flows */}
+      <Modal
+        open={!!modalMode}
+        onCancel={resetModal}
+        footer={null}
+        centered
+        width={360}
+        destroyOnClose
+        styles={{ body: { padding: '32px 24px 24px' } }}
+      >
+        <Flexbox align="center" gap={20}>
+          <Flexbox
+            align="center"
+            justify="center"
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 12,
+              background: token.colorFillSecondary,
+            }}
+          >
+            <ShieldCheck size={24} style={{ color: token.colorPrimary }} />
+          </Flexbox>
+
+          <Flexbox align="center" gap={4}>
+            <Text strong style={{ fontSize: 18 }}>{modalTitle}</Text>
+            <Text type="secondary" style={{ fontSize: 13, textAlign: 'center' }}>
+              {step === 'confirm'
+                ? t('settings.security.confirmHint', { defaultValue: 'Enter the same PIN again to confirm.' })
+                : step === 'verify'
+                  ? t('settings.security.verifyHint', { defaultValue: 'Enter your current PIN to continue.' })
+                  : t('settings.security.createHint', { defaultValue: 'Choose a 6-digit PIN.' })
+              }
+            </Text>
+          </Flexbox>
+
+          <Flexbox horizontal gap={8} justify="center" style={{ margin: '8px 0' }}>
+            {Array.from({ length: PIN_LENGTH }).map((_, i) => (
+              <input
+                key={i}
+                ref={(el) => { inputRefs.current[i] = el; }}
+                type="password"
+                inputMode="numeric"
+                maxLength={1}
+                value={digits[i]}
+                onChange={(e) => handleDigitChange(i, e.target.value)}
+                onKeyDown={(e) => handleKeyDown(i, e)}
+                onFocus={(e) => e.target.select()}
+                style={{
+                  ...pinInputStyle,
+                  borderColor: digits[i] ? token.colorPrimary : token.colorBorder,
+                }}
+              />
+            ))}
+          </Flexbox>
+
+          {error && (
+            <Text type="danger" style={{ fontSize: 13 }}>{error}</Text>
+          )}
+
+          {saving && <Spin size="small" />}
+        </Flexbox>
+      </Modal>
+    </>
+  );
+}
+
+// --- General Tab ---
+
 function GeneralTab() {
   const { agents, loadAgents } = useSettingsStore();
   const { t } = useTranslation('settings');
@@ -873,6 +1242,8 @@ function GeneralTab() {
         {/* Language section content managed by LanguageSwitcher in extra slot */}
         <></>
       </SettingsSection>
+
+      <SecuritySection />
 
       <SettingsSection
         icon={<Bot size={18} />}
