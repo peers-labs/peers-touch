@@ -578,6 +578,13 @@ pub struct AccountUnlockInput {
     pub pin: String,
 }
 
+/// Input for removing PIN protection from an account (Settings > Security).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountRemovePinInput {
+    pub account_id: String,
+    pub pin: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthResourceInput {
     pub id: String,
