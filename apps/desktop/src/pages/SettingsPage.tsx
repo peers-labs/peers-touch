@@ -1197,6 +1197,9 @@ function DangerZoneResetOnboarding() {
         setLoading(true);
         try {
           await api.resetOnboarding();
+          // Clear warm-resume marker so reload lands on onboarding, not ready view
+          const { clearWarmResume } = await import('../hooks/useAppLifecycle');
+          clearWarmResume();
           message.success(t('settings.danger.resetSuccess'));
           window.location.hash = '';
           window.location.reload();

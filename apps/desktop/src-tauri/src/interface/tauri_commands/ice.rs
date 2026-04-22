@@ -25,14 +25,9 @@ fn token_from_state(state: &State<'_, Arc<AppState>>) -> Result<String, AppResul
     Ok(token)
 }
 
-fn fail_station_request(reason: String) -> AppResult<StubPayload> {
-    let code = if reason.starts_with(station_client::SESSION_REVOKED_PREFIX) {
-        ErrorCode::Unauthorized
-    } else {
-        ErrorCode::InternalError
-    };
+fn fail_station_request(reason: station_client::StationClientError) -> AppResult<StubPayload> {
     tracing::error!(reason = %reason, "Station request failed");
-    AppResult::fail(code, format!("Station request failed: {}", reason), None)
+    reason.into_app_result("Station request failed")
 }
 
 fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {

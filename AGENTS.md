@@ -132,6 +132,30 @@ Never log tokens, passwords, secret keys, or PII. Error logs must include contex
 
 ## 7. Code Generation Rules
 
+### Code Aesthetics & Architectural Elegance
+
+Three dimensions for every piece of generated code:
+
+1. **Human-Readable**
+   - Names are self-documenting: a reader should understand purpose without jumping to the definition.
+   - Explicit over implicit: no magic numbers, no hidden side-effects, no unnamed boolean parameters.
+   - Comments explain *why*, never *what*. If the *what* needs a comment, rename or restructure.
+   - Logical grouping: related declarations stay together, separated by blank lines from unrelated ones.
+
+2. **Architecturally Elegant**
+   - Single Responsibility at every level: file, function, class, module.
+   - Respect layer boundaries: never reach across two layers in one call.
+   - Composition over inheritance; pure functions over stateful methods when possible.
+   - No circular dependencies — if A imports B, B must never import A (directly or transitively).
+
+3. **Design-Conscious**
+   - Code structure reveals intent: a new reader can grasp the module's purpose from its file tree and public API alone.
+   - APIs are intuitive: parameter order follows natural language, defaults are sensible, edge cases are impossible to misuse.
+   - UI code respects pixel-level alignment, spacing rhythm, and visual hierarchy.
+   - Error paths receive the same craftsmanship as happy paths — never an afterthought.
+
+### General Rules
+
 - **Comments**: English first, always.
 - **Readability**: Well-structured code with appropriate comments, blank lines, logical grouping.
 - **Change tracking**: Record reason, content, impact in comments for every modification.

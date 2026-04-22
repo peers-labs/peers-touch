@@ -80,7 +80,8 @@ func SearchContent(ctx context.Context, query string, limit int) (*model.SearchR
 		},
 	}
 
-	var results []*model.SearchResult
+	// Keep response shape stable for clients/tests: empty slice instead of nil.
+	results := make([]*model.SearchResult, 0)
 	queryLower := strings.ToLower(query)
 
 	for _, result := range mockResults {

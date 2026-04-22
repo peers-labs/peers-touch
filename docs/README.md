@@ -154,6 +154,7 @@
 - 统一存储架构：`architecture/storage/unified-runtime-storage-architecture.md`
 - i18n 架构：`architecture/i18n/i18n-architecture.md`
 - 通知系统架构：`architecture/notification/notification-architecture.md`
+- A2A 协议集成：`architecture/agent/a2a/`（文档集，入口 `README.md`）
 
 ### 4.2 平台层真源
 
@@ -167,6 +168,7 @@
 - Desktop 规范：`global/coding-guide/desktop/`
 - Mobile 规范：`global/coding-guide/mobile/`
 - Station 规范：`global/coding-guide/station/`
+- **架构文档标准**：`global/architecture-document-standard.md`
 
 ### 4.4 同主题多文档时怎么判断
 

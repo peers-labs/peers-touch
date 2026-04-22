@@ -143,6 +143,29 @@ pub struct FriendChatSendInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatSendFriendRequestInput {
+    pub receiver_did: String,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatAcceptFriendRequestInput {
+    pub request_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatRejectFriendRequestInput {
+    pub request_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatListFriendRequestsInput {
+    pub status: Option<i32>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyExchangeUploadInput {
     pub ik_pub: String,
     pub spk_id: i32,
@@ -880,7 +903,8 @@ pub struct ProviderModelToggleAllInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendChatSyncMessagesInput {
-    pub messages: Vec<serde_json::Value>,
+    /// JSON stringified array of SyncMessageItem-like objects from the frontend.
+    pub messages_json: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

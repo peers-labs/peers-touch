@@ -2,15 +2,14 @@
 // application service calls and serialises responses as JSON.
 //
 // Change History:
-// - 2026-04-10: Initial implementation — 22+ endpoints covering auth,
-//   overview, actors, admins, audit, system, sessions.
-// - 2026-04-10: Refactored to depend on DDD application/domain layers
-//   instead of flat package types.
+//   - 2026-04-10: Initial implementation — 22+ endpoints covering auth,
+//     overview, actors, admins, audit, system, sessions.
+//   - 2026-04-10: Refactored to depend on DDD application/domain layers
+//     instead of flat package types.
 package dashboard
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -69,6 +68,10 @@ const (
 
 	// Chat debug (admin-only)
 	routeFriendChatStats = "/dashboard/api/chat/friend/stats"
+
+	// Storage / Nodes
+	routeStorageInfo = "/dashboard/api/storage/info"
+	routeNodes       = "/dashboard/api/nodes"
 )
 
 // ---------------------------------------------------------------------------
@@ -151,8 +154,53 @@ func (h *dashboardHandler) handlers() []server.Handler {
 		// -- Chat debug --
 		server.NewHTTPHandler("dashboard-friend-chat-stats", routeFriendChatStats, server.GET,
 			server.HertzHandlerFunc(h.handleFriendChatStats)),
+
+		// -- Storage --
+		server.NewHTTPHandler("dashboard-storage-info", routeStorageInfo, server.GET,
+			server.HertzHandlerFunc(h.handleStorageInfo)),
+
+		// -- Nodes --
+		server.NewHTTPHandler("dashboard-nodes", routeNodes, server.GET,
+			server.HertzHandlerFunc(h.handleNodes)),
 	}
 }
+
+// handleStorageInfo — GET /dashboard/api/storage/info
+func (h *dashboardHandler) handleStorageInfo(c context.Context, ctx *app.RequestContext) {
+	if h.requireAuth(c, ctx) == nil {
+		return
+	}
+	if h.sub.storageSvc == nil {
+		jsonError(ctx, http.StatusServiceUnavailable, "storage service unavailable")
+		return
+	}
+	info, err := h.sub.storageSvc.GetStorageInfo(c)
+	if err != nil {
+		log.Errorf(c, "[dashboard] storage info error: %v", err)
+		jsonError(ctx, http.StatusInternalServerError, "failed to load storage info")
+		return
+	}
+	jsonOK(ctx, info)
+}
+
+// handleNodes — GET /dashboard/api/nodes
+func (h *dashboardHandler) handleNodes(c context.Context, ctx *app.RequestContext) {
+	if h.requireAuth(c, ctx) == nil {
+		return
+	}
+	if h.sub.nodesSvc == nil {
+		jsonError(ctx, http.StatusServiceUnavailable, "nodes service unavailable")
+		return
+	}
+	overview, err := h.sub.nodesSvc.GetNodesOverview(c)
+	if err != nil {
+		log.Errorf(c, "[dashboard] nodes overview error: %v", err)
+		jsonError(ctx, http.StatusInternalServerError, "failed to load nodes")
+		return
+	}
+	jsonOK(ctx, overview)
+}
+
 
 // handleFriendChatStats — GET /dashboard/api/chat/friend/stats
 func (h *dashboardHandler) handleFriendChatStats(c context.Context, ctx *app.RequestContext) {
@@ -779,29 +827,35 @@ func (h *dashboardHandler) handleSystemSubservers(c context.Context, ctx *app.Re
 // ===========================================================================
 
 // handleGetActivePeersSessions — GET /dashboard/api/sessions/active
+//
+// Returns ALL currently-active actor sessions across the station, joined
+// with the owning actor's preferred_username/email for display.
+//
+// Bug history: previously called actorsSvc.GetActorSessions(c, 0) which
+// translated to "WHERE user_id = 0" and silently returned an empty list,
+// making the Sessions page appear permanently empty.
 func (h *dashboardHandler) handleGetActivePeersSessions(c context.Context, ctx *app.RequestContext) {
 	claims := h.requireAuth(c, ctx)
 	if claims == nil {
 		return
 	}
 
-	sessions, err := h.sub.actorsSvc.GetActorSessions(c, 0)
+	limit := queryInt(ctx, "limit", 100)
+	if limit > 500 {
+		limit = 500
+	}
+
+	sessions, err := h.sub.actorsSvc.ListActivePeersSessions(c, limit)
 	if err != nil {
 		log.Errorf(c, "[dashboard] get active peers sessions error: %v", err)
 		jsonError(ctx, http.StatusInternalServerError, "failed to get active sessions")
 		return
 	}
 
-	jsonData, err := json.Marshal(map[string]interface{}{
+	jsonOK(ctx, map[string]interface{}{
 		"count": len(sessions),
 		"items": sessions,
 	})
-	if err != nil {
-		jsonError(ctx, http.StatusInternalServerError, "failed to serialize response")
-		return
-	}
-
-	ctx.Data(http.StatusOK, "application/json; charset=utf-8", jsonData)
 }
 
 // handleRevokePeersSession — POST /dashboard/api/sessions/:sid/revoke

@@ -80,11 +80,7 @@ pub fn agent_scheduler_start(input: SchedulerStartInput, state: &AppState) -> Ap
         }
         Err(err) => {
             tracing::error!(command = "agent_scheduler_start", error = %err);
-            AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to start agent scheduler: {}", err),
-                None,
-            )
+            err.into_app_result("Failed to start agent scheduler")
         }
     }
 }
@@ -113,11 +109,7 @@ pub fn agent_scheduler_stop(state: &AppState) -> AppResult<StubPayload> {
         }
         Err(err) => {
             tracing::error!(command = "agent_scheduler_stop", error = %err);
-            AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to stop agent scheduler: {}", err),
-                None,
-            )
+            err.into_app_result("Failed to stop agent scheduler")
         }
     }
 }
@@ -145,11 +137,7 @@ pub fn agent_scheduler_status(state: &AppState) -> AppResult<StubPayload> {
         }
         Err(err) => {
             tracing::error!(command = "agent_scheduler_status", error = %err);
-            AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to get agent scheduler status: {}", err),
-                None,
-            )
+            err.into_app_result("Failed to get agent scheduler status")
         }
     }
 }
@@ -183,11 +171,7 @@ pub fn agent_scheduler_add_job(input: SchedulerAddJobInput, state: &AppState) ->
         }
         Err(err) => {
             tracing::error!(command = "agent_scheduler_add_job", error = %err);
-            AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to add agent scheduler job: {}", err),
-                None,
-            )
+            err.into_app_result("Failed to add agent scheduler job")
         }
     }
 }
