@@ -223,6 +223,7 @@ fn main() {
             account::account_set_pin,
             account::account_unlock,
             account::account_list_restorable,
+            account::account_remove_pin,
             memory::memory_list,
             memory::memory_get,
             memory::memory_delete,

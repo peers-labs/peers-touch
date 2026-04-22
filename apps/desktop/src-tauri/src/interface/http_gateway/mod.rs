@@ -1212,6 +1212,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             serde_json::to_value(&result).unwrap_or(json!({"ok": false}))
         }
         "account_list_restorable" => to_json(app_account::account_list_restorable()),
+        "account_remove_pin" => {
+            let input = match parse_args::<AccountRemovePinInput>(args) { Ok(v) => v, Err(e) => return e };
+            to_json(app_account::account_remove_pin(input))
+        }
 
         // =================================================================
         // Memory (no state)
