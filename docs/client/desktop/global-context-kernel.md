@@ -114,7 +114,7 @@
 - `identity_switch`
 - `session_login`（含密码登录和 OAuth2 登录两种入口，统一产出 JWT，见 `../../architecture/boundaries/station-desktop-scope-boundary.md` §10）
 - `session_logout`
-- `session_restore`（应用启动时自动恢复持久化 session，验证 JWT 有效性）
+- `session_restore`（应用启动时自动恢复持久化 session，先恢复本地持久化，再校验 Station session 是否仍有效）
 - `session_refresh`（JWT 临近过期时自动续签）
 - `network_degraded_recovery`
 - `capability_refresh`
@@ -295,16 +295,27 @@ const off = eventBus.subscribe(EVENT.AUTH_IDENTITY_CHANGED, () => {
 
 ### Session 恢复（App Bootstrap）
 1. 应用启动时调 `api.authRestoreSession()`
-2. BFF 从安全存储读取持久化 session
-3. BFF 调 Station 验证 JWT 有效性（或本地校验 JWT exp 字段）
-4. 有效 → 写入 `AppState.session` → 前端 `set({ authenticated: true })`
-5. 无效 → 清除持久化 → 前端保持未登录态，引导用户重新登录
+2. BFF 从安全存储读取持久化 session，并恢复本地 `AppState.session`
+3. 恢复阶段至少校验 JWT 基本有效性；一旦发生真实 Station 交互，再以 Station 的 `session_id` 校验结果作为最终真源
+4. Station 若返回 `401 {"code":"session_revoked","reason":"expired|kicked|not_found"}`，BFF 必须将其提升为结构化 `Unauthorized + details`
+5. 前端只消费结构化错误，发布 `AUTH_SESSION_REVOKED(reason)`，由 Lifecycle Orchestrator 执行 `session_logout`
+6. `session_logout` 负责清理持久化、清理全局态、退回 onboarding/login；页面层不得自行拼接“被踢下线/过期”逻辑
 
-### 401 自动处理
-1. 任何 API 调用返回 401
-2. BFF 或前端拦截器清除 `AppState.session` + 持久化
-3. 发布 `auth.logged_out` 事件
-4. 前端响应事件，跳转到登录页
+### Session Revoked 自动处理
+1. 任何 Station API 调用返回 `401 + code=session_revoked`
+2. Rust `station_client` 将其映射为结构化错误：
+   - `code = UNAUTHORIZED`
+   - `details.code = session_revoked`
+   - `details.reason = expired | kicked | not_found | unknown`
+3. TS `invokeRustCommand` 检测上述结构化错误并发布 `AUTH_SESSION_REVOKED`
+4. Lifecycle Orchestrator 统一执行 `session_logout`
+5. 页面只订阅全局状态变化，不允许通过字符串前缀、toast 文案或页面局部 reload 兜底
+
+### 认证错误边界约束
+- `session_revoked` 是全局认证状态机事件，不是普通业务错误。
+- Desktop Web 不得解析 `SESSION_REVOKED:...` 一类字符串协议；只允许消费 `RustCommandError.code/details`。
+- Desktop Rust 不得把 `session_revoked` 再包装回 `String` 供上层猜测。
+- 任何需要退出登录的路径都必须收敛到 `AUTH_SESSION_REVOKED -> session_logout` 这一条链路。
 
 详细架构设计见 `../../architecture/boundaries/station-desktop-scope-boundary.md` §10。
 
