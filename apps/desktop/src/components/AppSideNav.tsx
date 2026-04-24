@@ -14,7 +14,6 @@ import { AgentSettingsDrawer } from './AgentSettingsDrawer';
 import { NotificationBell } from './NotificationBell';
 import { UserProfilePopover, useUserAvatar } from './UserProfilePopover';
 import { UserSquareAvatar } from './common/UserSquareAvatar';
-import { PlatformLogo } from './common/PlatformLogo';
 import AppletManager from '../applet/AppletManager';
 import { getModulesWithSidebar } from '../modules/registry';
 import type { Agent } from '../services/desktop_api';
@@ -56,27 +55,8 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
       <SideNav
         avatar={
           <UserProfilePopover>
-            <div style={{ cursor: 'pointer', position: 'relative', width: 36, height: 36 }}>
-              <UserSquareAvatar url={userAvatar.url} name={userAvatar.name} size={36} radius={8} />
-              {userAvatar.provider && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    right: -4,
-                    bottom: -4,
-                    width: 14,
-                    height: 14,
-                    borderRadius: 7,
-                    background: '#fff',
-                    border: '1px solid #f0f0f0',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <PlatformLogo providerId={userAvatar.provider} size={10} />
-                </div>
-              )}
+            <div style={{ cursor: 'pointer', width: 36, height: 36 }}>
+              <UserSquareAvatar url={userAvatar.url} localPath={userAvatar.localPath} name={userAvatar.name} size={36} radius={8} />
             </div>
           </UserProfilePopover>
         }
