@@ -103,6 +103,7 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
         name: Some(name),
         email: Some(email_str),
         avatar_url: Some(avatar),
+        avatar_local_path: None,
         login_method: Some("password".to_string()),
     })
 }
@@ -129,6 +130,7 @@ pub fn auth_logout(state: &AppState) -> AppResult<AuthSessionPayload> {
         name: None,
         email: None,
         avatar_url: None,
+        avatar_local_path: None,
         login_method: None,
     })
 }
@@ -166,14 +168,15 @@ pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
         return error;
     }
     let profile = crate::infrastructure::auth_identity::find_profile_by_actor_id(&session.actor_id);
-    let (p_name, p_email, p_avatar, p_method) = match &profile {
+    let (p_name, p_email, p_avatar, p_local_avatar, p_method) = match &profile {
         Some(p) => (
             Some(p.name.clone()).filter(|v| !v.is_empty()),
             Some(p.email.clone()).filter(|v| !v.is_empty()),
             Some(p.avatar_url.clone()).filter(|v| !v.is_empty()),
+            Some(p.avatar_local_path.clone()).filter(|v| !v.is_empty()),
             Some(p.provider.clone()),
         ),
-        None => (None, None, None, None),
+        None => (None, None, None, None, None),
     };
     AppResult::success(AuthSessionPayload {
         command: "auth_restore_session".to_string(),
@@ -182,6 +185,7 @@ pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
         name: p_name,
         email: p_email,
         avatar_url: p_avatar,
+        avatar_local_path: p_local_avatar,
         login_method: p_method,
     })
 }
@@ -228,6 +232,7 @@ pub fn auth_validate_token(
         name: None,
         email: None,
         avatar_url: None,
+        avatar_local_path: None,
         login_method: None,
     })
 }
@@ -437,6 +442,7 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
         name: p_name,
         email: p_email,
         avatar_url: p_avatar,
+        avatar_local_path: None,
         login_method: Some("oauth".to_string()),
     })
 }
