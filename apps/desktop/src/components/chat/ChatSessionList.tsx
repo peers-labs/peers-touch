@@ -4,6 +4,7 @@ import { Flexbox } from 'react-layout-kit';
 import { Button, Dropdown, Input } from '@lobehub/ui';
 import { Badge, Empty, Spin, theme, Typography } from 'antd';
 import { Users, Search, Plus, UserPlus, UsersRound } from 'lucide-react';
+import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { useSocialChatStore } from '../../store/socialChat';
 import type { UnifiedConversation } from '../../store/socialChat';
 import { CreateGroupModal } from './CreateGroupModal';
@@ -27,11 +28,6 @@ function relativeTime(d: Date, t: (key: string, opts?: Record<string, unknown>) 
   if (days === 1) return t('chat.social.time.yesterday');
   if (days < 7) return d.toLocaleDateString([], { weekday: 'short' });
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-}
-
-function getInitial(name: string): string {
-  if (!name) return '?';
-  return name.charAt(0).toUpperCase();
 }
 
 export function ChatSessionList() {
@@ -200,9 +196,6 @@ export function ChatSessionList() {
                 }
               }
 
-              const avatarBg = isActive ? token.colorPrimary : token.colorFillSecondary;
-              const avatarColor = isActive ? '#fff' : token.colorTextSecondary;
-
               return (
                 <Flexbox
                   key={`${c.type}-${c.ulid}`}
@@ -218,36 +211,7 @@ export function ChatSessionList() {
                     transition: 'background 0.15s',
                   }}
                 >
-                  <div style={{ position: 'relative', flexShrink: 0 }}>
-                    {c.avatar ? (
-                      <img
-                        src={c.avatar}
-                        alt={name}
-                        style={{
-                          width: 36,
-                          height: 36,
-                          borderRadius: 18,
-                          objectFit: 'cover',
-                        }}
-                      />
-                    ) : (
-                      <Flexbox
-                        align="center"
-                        justify="center"
-                        style={{
-                          width: 36,
-                          height: 36,
-                          borderRadius: 18,
-                          background: avatarBg,
-                          color: avatarColor,
-                          fontSize: 14,
-                          fontWeight: 600,
-                        }}
-                      >
-                        {getInitial(name)}
-                      </Flexbox>
-                    )}
-                  </div>
+                  <UserSquareAvatar url={c.avatar} name={name} size={36} />
 
                   <Flexbox flex={1} style={{ minWidth: 0 }}>
                     <Flexbox horizontal align="center" justify="space-between" gap={6}>
