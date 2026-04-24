@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { theme, Tooltip } from 'antd';
@@ -29,6 +29,15 @@ export function SocialChatPage() {
     activeTab,
     currentUserDid,
   } = useSocialChatStore();
+  const loadConversationPreviews = useSocialChatStore((s) => s.loadConversationPreviews);
+
+  const activePeerDid = useMemo(() => {
+    if (activeTab !== 'friend' || !activeSessionUlid || !currentUserDid) return null;
+    const session = sessions.find((s) => s.ulid === activeSessionUlid);
+    if (!session) return null;
+    return session.participantADid === currentUserDid ? session.participantBDid : session.participantADid;
+  }, [activeTab, activeSessionUlid, currentUserDid, sessions]);
+
   const [subPage, setSubPage] = useState<ChatSubPage>('chats');
 
   useEffect(() => {
@@ -51,6 +60,7 @@ export function SocialChatPage() {
         const changed = results.some((item) => (item?.synced_count ?? 0) > 0);
         if (!changed) return;
         await loadSessions();
+        await loadConversationPreviews().catch(() => {});
         if (!disposed && activeTab === 'friend' && activeSessionUlid) {
           await loadMessages(activeSessionUlid, 'friend');
         }
@@ -68,22 +78,18 @@ export function SocialChatPage() {
       disposed = true;
       window.clearInterval(timer);
     };
-  }, [sessions, activeSessionUlid, activeTab, loadMessages, loadSessions]);
+  }, [sessions, activeSessionUlid, activeTab, loadMessages, loadSessions, loadConversationPreviews]);
 
   useEffect(() => {
     if (!currentUserDid) return;
 
     friendChatP2p.setOnStatus((_myDid, peerDid, status) => {
       if (!activeSessionUlid || activeTab !== 'friend') return;
-      const session = sessions.find((s) => s.ulid === activeSessionUlid);
-      if (!session) return;
-      const expectedPeer = session.participantADid === currentUserDid ? session.participantBDid : session.participantADid;
-      if (expectedPeer !== peerDid) return;
+      if (activePeerDid !== peerDid) return;
       setFriendP2pStatus(activeSessionUlid, status.state, status.detail);
     });
 
     friendChatP2p.setOnEnvelope((env) => {
-      // P2P only provides a real-time hint. Station remains source-of-truth for persistence.
       const sid = env.sessionUlid;
       if (!sid) return;
       api.friendChatSync(sid, 50, 1)
@@ -101,24 +107,19 @@ export function SocialChatPage() {
       friendChatP2p.setOnEnvelope(null);
       friendChatP2p.setOnStatus(null);
     };
-  }, [currentUserDid, sessions, activeSessionUlid, activeTab, loadMessages, setFriendP2pStatus]);
+  }, [currentUserDid, activePeerDid, activeSessionUlid, activeTab, loadMessages, setFriendP2pStatus]);
 
   useEffect(() => {
-    if (!currentUserDid) return;
-    if (activeTab !== 'friend' || !activeSessionUlid) return;
-    const session = sessions.find((s) => s.ulid === activeSessionUlid);
-    if (!session) return;
-    const peerDid = session.participantADid === currentUserDid ? session.participantBDid : session.participantADid;
-    if (!peerDid) return;
+    if (!currentUserDid || !activePeerDid || !activeSessionUlid) return;
     setFriendP2pStatus(activeSessionUlid, 'connecting');
-    friendChatP2p.ensureConnected(currentUserDid, peerDid).catch((error) => {
+    friendChatP2p.ensureConnected(currentUserDid, activePeerDid).catch((error) => {
       setFriendP2pStatus(activeSessionUlid, 'failed', error instanceof Error ? error.message : String(error));
     });
 
     return () => {
       friendChatP2p.closeAll();
     };
-  }, [currentUserDid, activeTab, activeSessionUlid, sessions, setFriendP2pStatus]);
+  }, [currentUserDid, activePeerDid, activeSessionUlid, setFriendP2pStatus]);
 
   const subNavItems: { key: ChatSubPage; icon: typeof MessageCircle; label: string }[] = [
     { key: 'chats', icon: MessageCircle, label: t('chat.social.subNav.chats') },

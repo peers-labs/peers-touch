@@ -51,7 +51,8 @@ interface OnboardingViewProps {
 
 export function OnboardingView({ lifecycle }: OnboardingViewProps) {
   const { token } = theme.useToken();
-  const [phase, setPhase] = useState<Phase>('splash');
+  // Skip splash if data is already loaded (e.g., fallback from warm resume failure).
+  const [phase, setPhase] = useState<Phase>(() => lifecycle.dataReady ? 'login' : 'splash');
   const [splashStep, setSplashStep] = useState<'scatter' | 'converge' | 'reveal'>('scatter');
 
   const splashTimerDone = useRef(false);
