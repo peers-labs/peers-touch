@@ -383,7 +383,13 @@ export function AccountTab() {
       setProfile(next);
 
       if (next.avatar) {
-        api.accountSyncAvatar(next.avatar).catch(() => {});
+        api.accountSyncAvatar(next.avatar).then(() => {
+          return api.syncUserProfile();
+        }).then((result) => {
+          if (result?.avatar_url) {
+            useSessionStore.getState().updateAvatar(result.avatar_url, result.avatar_local_path);
+          }
+        }).catch(() => {});
         useAccountIdentityStore.getState().load();
         useSessionStore.getState().updateAvatar(next.avatar);
       }
@@ -474,7 +480,14 @@ export function AccountTab() {
       setProfile(next);
 
       if (next.avatar) {
-        api.accountSyncAvatar(next.avatar).catch(() => {});
+        // Sync avatar to local cache and update session store so sidebar reflects immediately.
+        api.accountSyncAvatar(next.avatar).then(() => {
+          return api.syncUserProfile();
+        }).then((result) => {
+          if (result?.avatar_url) {
+            useSessionStore.getState().updateAvatar(result.avatar_url, result.avatar_local_path);
+          }
+        }).catch(() => {});
         useAccountIdentityStore.getState().load();
         useSessionStore.getState().updateAvatar(next.avatar);
       }
