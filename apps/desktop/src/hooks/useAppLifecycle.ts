@@ -77,12 +77,20 @@ export function useAppLifecycle(): AppLifecycle {
       api.accountListRestorable().catch(() => [] as AccountIdentity[]),
     ]).then(([, , restorableAccounts]) => {
       const { currentUser, authenticated } = useSessionStore.getState();
-      if (authenticated && currentUser) {
-        setRestoredUser({
-          name: currentUser.name || 'User',
-          email: currentUser.email || '',
-          avatar: currentUser.avatarUrl,
-        });
+      // Only set restoredUser when the session has real identity data.
+      // A session restored from a stale local token may have an empty name/actorId —
+      // in that case we must NOT show "Welcome back" and should fall through to login.
+      const hasRealIdentity = authenticated && currentUser && currentUser.actorId;
+      if (hasRealIdentity) {
+        const displayName = currentUser.name?.trim() || currentUser.email?.trim() || '';
+        if (displayName) {
+          setRestoredUser({
+            name: displayName,
+            email: currentUser.email || '',
+            avatar: currentUser.avatarUrl,
+            avatarLocalPath: currentUser.avatarLocalPath,
+          });
+        }
       }
 
       // Load all accounts that have restorable sessions

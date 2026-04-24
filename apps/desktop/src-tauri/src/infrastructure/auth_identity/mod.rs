@@ -312,9 +312,8 @@ pub fn clear_account_session(account_id: &str) -> Result<(), String> {
 /// List all accounts that have a saved session (for the account picker).
 pub fn list_restorable_accounts() -> Result<Vec<AccountIdentity>, String> {
     let state = read_state()?;
-    Ok(state
-        .accounts
-        .into_iter()
-        .filter(|a| a.has_session)
-        .collect())
+    // Return all known accounts so the account picker shows every user
+    // that has ever logged in. The frontend handles expired sessions by
+    // redirecting to the login form instead of PIN entry.
+    Ok(state.accounts)
 }

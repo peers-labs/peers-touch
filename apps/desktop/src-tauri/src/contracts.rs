@@ -19,6 +19,7 @@ pub struct AuthSessionPayload {
     pub name: Option<String>,
     pub email: Option<String>,
     pub avatar_url: Option<String>,
+    pub avatar_local_path: Option<String>,
     pub login_method: Option<String>,
 }
 
