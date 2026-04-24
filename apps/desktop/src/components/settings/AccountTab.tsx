@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Tooltip, toast } from '@lobehub/ui';
 import { useSessionStore } from '../../store/session';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import {
   Avatar,
   Empty,
@@ -138,18 +139,24 @@ async function pickImageFile(): Promise<string | null> {
 
 function EditableAvatar({
   src,
+  localPath,
   fallbackText,
   size,
   uploading,
   onUpload,
 }: {
   src?: string;
+  localPath?: string;
   fallbackText: string;
   size: number;
   uploading: boolean;
   onUpload: () => void;
 }) {
   const { token } = theme.useToken();
+
+  // Prefer local cached file (via convertFileSrc) over remote HTTP URL,
+  // because Tauri WKWebView blocks cross-origin http:// loads from tauri://
+  const imgSrc = localPath ? convertFileSrc(localPath) : src;
 
   return (
     <div
@@ -163,7 +170,7 @@ function EditableAvatar({
       }}
     >
       <Avatar
-        src={src || undefined}
+        src={imgSrc || undefined}
         size={size}
         shape="square"
         style={{
@@ -367,6 +374,7 @@ const AUTO_SAVE_DELAY = 800;
 export function AccountTab() {
   const { t } = useTranslation('provider');
   const { token } = theme.useToken();
+  const avatarLocalPath = useSessionStore(s => s.currentUser?.avatarLocalPath);
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -383,7 +391,13 @@ export function AccountTab() {
       setProfile(next);
 
       if (next.avatar) {
-        api.accountSyncAvatar(next.avatar).catch(() => {});
+        api.accountSyncAvatar(next.avatar).then(() => {
+          return api.syncUserProfile();
+        }).then((result) => {
+          if (result?.avatar_url) {
+            useSessionStore.getState().updateAvatar(result.avatar_url, result.avatar_local_path);
+          }
+        }).catch(() => {});
         useAccountIdentityStore.getState().load();
         useSessionStore.getState().updateAvatar(next.avatar);
       }
@@ -474,7 +488,14 @@ export function AccountTab() {
       setProfile(next);
 
       if (next.avatar) {
-        api.accountSyncAvatar(next.avatar).catch(() => {});
+        // Sync avatar to local cache and update session store so sidebar reflects immediately.
+        api.accountSyncAvatar(next.avatar).then(() => {
+          return api.syncUserProfile();
+        }).then((result) => {
+          if (result?.avatar_url) {
+            useSessionStore.getState().updateAvatar(result.avatar_url, result.avatar_local_path);
+          }
+        }).catch(() => {});
         useAccountIdentityStore.getState().load();
         useSessionStore.getState().updateAvatar(next.avatar);
       }
@@ -544,6 +565,7 @@ export function AccountTab() {
           <div style={{ marginLeft: 16 }}>
             <EditableAvatar
               src={profile.avatar || undefined}
+              localPath={avatarLocalPath}
               fallbackText={profile.display_name || profile.username}
               size={80}
               uploading={uploadingAvatar}
