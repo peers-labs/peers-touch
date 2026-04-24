@@ -48,4 +48,3 @@ func (s *ChatDebugService) FriendChatStats(ctx context.Context) (*domain.FriendC
 
 	return out, nil
 }
-
