@@ -112,7 +112,7 @@ pub fn account_unlock(
             Some(p.name.clone()).filter(|v| !v.is_empty()),
             Some(p.email.clone()).filter(|v| !v.is_empty()),
             Some(p.avatar_url.clone()).filter(|v| !v.is_empty()),
-            Some(p.avatar_local_path.clone()).filter(|v| !v.is_empty()),
+            p.avatar_local_path.clone().filter(|v| !v.is_empty()),
             Some(p.provider.clone()),
         ),
         None => (None, None, None, None, None),
