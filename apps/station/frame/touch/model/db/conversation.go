@@ -10,15 +10,15 @@ import (
 type ConversationType string
 
 type Conversation struct {
-	ID        uint64           `gorm:"primary_key;autoIncrement:false"`
-	ConvID    string           `gorm:"uniqueIndex;size:64;not null"`
-	Type      ConversationType `gorm:"size:16;index"`
-	Title     string           `gorm:"size:255"`
-	AvatarCID string           `gorm:"size:128"`
-	Policy    string           `gorm:"size:255"`
-	Epoch     int              `gorm:"index"`
-	CreatedAt time.Time        `gorm:"created_at"`
-	UpdatedAt time.Time        `gorm:"updated_at"`
+	ID        uint64           `gorm:"column:id;primary_key;autoIncrement:false"`
+	ConvID    string           `gorm:"column:conv_id;uniqueIndex;size:64;not null"`
+	Type      ConversationType `gorm:"column:type;size:16;index"`
+	Title     string           `gorm:"column:title;size:255"`
+	AvatarCID string           `gorm:"column:avatar_cid;size:128"`
+	Policy    string           `gorm:"column:policy;size:255"`
+	Epoch     int              `gorm:"column:epoch;index"`
+	CreatedAt time.Time        `gorm:"column:created_at"`
+	UpdatedAt time.Time        `gorm:"column:updated_at"`
 }
 
 func (*Conversation) TableName() string { return "touch_conversation" }
