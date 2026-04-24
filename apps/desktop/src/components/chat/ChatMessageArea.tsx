@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, TextArea, Tooltip } from '@lobehub/ui';
+import { Button, TextArea, Tooltip, EmojiPicker } from '@lobehub/ui';
 import { Spin, theme, Typography, Empty } from 'antd';
 import {
   Send, Inbox, Phone, Video, Search, Info,
-  Paperclip, Smile, Check, CheckCheck,
+  Paperclip, Check, CheckCheck,
   Reply, Trash2, Lock,
 } from 'lucide-react';
 import { useSocialChatStore } from '../../store/socialChat';
@@ -158,10 +158,12 @@ export function ChatMessageArea() {
       const s = sessions.find((sess) => sess.ulid === activeUlid);
       if (!s) return '';
       if (currentUserDid) {
-        if (s.participantADid === currentUserDid) return s.participantBDid || s.participantADid || '';
-        if (s.participantBDid === currentUserDid) return s.participantADid || s.participantBDid || '';
+        if (s.participantADid === currentUserDid)
+          return (s as any).participantBDisplayName || s.participantBDid || '';
+        if (s.participantBDid === currentUserDid)
+          return (s as any).participantADisplayName || s.participantADid || '';
       }
-      return s.participantBDid || s.participantADid || '';
+      return (s as any).participantBDisplayName || s.participantBDid || '';
     }
     const g = groups.find((grp) => grp.ulid === activeUlid);
     return g?.name || '';
@@ -634,10 +636,9 @@ export function ChatMessageArea() {
             onClick={() => fileInputRef.current?.click()}
             disabled={sending}
           />
-          <Button
-            type="text"
-            icon={<Smile size={18} />}
-            style={{ width: 36, height: 36, flexShrink: 0 }}
+          <EmojiPicker
+            size={36}
+            onChange={(emoji) => setInputValue((prev) => prev + emoji)}
           />
           <TextArea
             value={inputValue}
