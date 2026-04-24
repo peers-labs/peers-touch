@@ -608,7 +608,12 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
             {t('auth.accountPicker.subtitle', { defaultValue: 'Select an account to continue' })}
           </Text>
 
-          <div style={{ width: '100%', maxHeight: 260, overflowY: 'auto' }}>
+          <div style={{
+            width: '100%',
+            maxHeight: 136,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+          }}>
             <Flexbox gap={6}>
               {knownAccounts.map(account => (
                 <button
@@ -641,7 +646,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                     localPath={account.avatarLocalPath}
                     name={account.name}
                     size={40}
-                    radius={20}
+                    radius={8}
                   />
                   <Flexbox gap={2} style={{ flex: 1, minWidth: 0 }}>
                     <Text strong style={{ fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -703,7 +708,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
               localPath={selectedAccount.avatarLocalPath}
               name={selectedAccount.name}
               size={72}
-              radius={36}
+              radius={12}
               border={`3px solid ${token.colorBgContainer}`}
             />
           </div>
@@ -789,7 +794,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                 position: 'absolute',
                 inset: -4,
                 background: BRANDING.colors.gradient,
-                borderRadius: '50%',
+                borderRadius: 14,
                 filter: 'blur(20px)',
                 opacity: 0.2,
               }}
@@ -799,7 +804,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
               localPath={welcomeUser.avatarLocalPath}
               name={welcomeUser.name}
               size={88}
-              radius={44}
+              radius={14}
               border={`3px solid ${token.colorBgContainer}`}
             />
             <div
@@ -811,7 +816,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                 height: 18,
                 background: '#52c41a',
                 border: `2px solid ${token.colorBgContainer}`,
-                borderRadius: '50%',
+                borderRadius: 6,
               }}
             />
           </div>
@@ -908,7 +913,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                   localPath={welcomeUser.avatarLocalPath}
                   name={welcomeUser.name}
                   size={24}
-                  radius={12}
+                  radius={6}
                 />
                 <ChevronRight size={12} style={{ color: token.colorTextTertiary }} />
               </>
