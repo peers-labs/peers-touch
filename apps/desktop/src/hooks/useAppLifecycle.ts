@@ -114,6 +114,7 @@ export function useAppLifecycle(): AppLifecycle {
             name: displayName,
             email: currentUser.email || '',
             avatar: currentUser.avatarUrl,
+            avatarLocalPath: currentUser.avatarLocalPath,
           });
         }
       }

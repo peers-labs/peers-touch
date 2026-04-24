@@ -34,6 +34,7 @@ function userFromAuthResponse(resp: AuthSessionResponse, fallbackMethod: 'passwo
     name: resp.name || '',
     email: resp.email || '',
     avatarUrl: resp.avatar_url || undefined,
+    avatarLocalPath: resp.avatar_local_path || undefined,
     loginMethod: (resp.login_method as 'password' | 'oauth') || fallbackMethod,
     loginProvider: provider,
   };
