@@ -243,6 +243,7 @@ fn main() {
             friend_chat::friend_chat_get_pending,
             friend_chat::friend_chat_get_stats,
             friend_chat::friend_chat_local_search,
+            crypto::chat_search_local,
             friend_chat::friend_chat_local_search_scoped,
             friend_chat::friend_chat_set_cursor_scoped,
             friend_chat::friend_chat_get_cursor_scoped,

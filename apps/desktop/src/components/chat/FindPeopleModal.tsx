@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Input } from '@lobehub/ui';
-import { theme, Modal, Typography, message } from 'antd';
+import { Button, Input, toast } from '@lobehub/ui';
+import { theme, Modal, Typography } from 'antd';
 import { Search } from 'lucide-react';
 import { api } from '../../services/desktop_api';
 import { useSocialChatStore } from '../../store/socialChat';
@@ -41,7 +41,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
         avatar: a.avatar || '',
       })));
     } catch (e: any) {
-      message.error(e?.message || t('chat.social.findPeople.searchFailed'));
+      toast.error(e?.message || t('chat.social.findPeople.searchFailed'));
       setResults([]);
     } finally {
       setSearching(false);
@@ -49,12 +49,13 @@ export function FindPeopleModal({ open, onClose }: Props) {
   };
 
   const handleSendRequest = async (did: string) => {
+    if (addingId) return;
     setAddingId(did);
     try {
       await sendFriendRequest(did, '');
-      message.success(t('chat.social.findPeople.requestSent'));
+      toast.success(t('chat.social.findPeople.requestSent'));
     } catch (e: any) {
-      message.error(e?.message || t('chat.social.findPeople.addFailed'));
+      toast.error(e?.message || t('chat.social.findPeople.addFailed'));
     } finally {
       setAddingId(null);
     }

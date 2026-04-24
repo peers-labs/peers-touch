@@ -106,14 +106,15 @@ pub fn account_unlock(
     });
 
     let profile = crate::infrastructure::auth_identity::find_profile_by_actor_id(&session.actor_id);
-    let (p_name, p_email, p_avatar, p_method) = match &profile {
+    let (p_name, p_email, p_avatar, p_local_avatar, p_method) = match &profile {
         Some(p) => (
             Some(p.name.clone()).filter(|v| !v.is_empty()),
             Some(p.email.clone()).filter(|v| !v.is_empty()),
             Some(p.avatar_url.clone()).filter(|v| !v.is_empty()),
+            Some(p.avatar_local_path.clone()).filter(|v| !v.is_empty()),
             Some(p.provider.clone()),
         ),
-        None => (None, None, None, None),
+        None => (None, None, None, None, None),
     };
 
     AppResult::success(AuthSessionPayload {
@@ -123,6 +124,7 @@ pub fn account_unlock(
         name: p_name,
         email: p_email,
         avatar_url: p_avatar,
+        avatar_local_path: p_local_avatar,
         login_method: p_method,
     })
 }

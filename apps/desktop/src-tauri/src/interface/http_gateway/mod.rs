@@ -1156,6 +1156,59 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             let input = match parse_args::<AccountUpsertOAuthInput>(args) { Ok(v) => v, Err(e) => return e };
             to_json(app_account::account_upsert_oauth(input))
         }
+        "account_set_pin" => {
+            let input = match parse_args::<AccountSetPinInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = state.session.lock().ok().and_then(|g| g.token.clone());
+            to_json(app_account::account_set_pin(input, token.as_deref()))
+        }
+        "account_unlock" => {
+            let input = match parse_args::<AccountUnlockInput>(args) { Ok(v) => v, Err(e) => return e };
+            let result = app_account::account_unlock(input.clone());
+            if !result.ok {
+                return serde_json::to_value(&result).unwrap_or(json!({"ok": false}));
+            }
+            // Parse token from the stub payload and write to AppState
+            let token = result.data.as_ref()
+                .and_then(|d| serde_json::from_str::<serde_json::Value>(&d.status).ok())
+                .and_then(|v| v.get("token").and_then(|t| t.as_str()).map(|s| s.to_string()));
+            if let Some(ref t) = token {
+                let actor_id = input.account_id.split_once(':').map(|(_, id)| id.to_string()).unwrap_or_else(|| input.account_id.clone());
+                let session = crate::domain::auth::session::from_station_response(actor_id, t.clone());
+                if let Ok(mut guard) = state.session.lock() {
+                    guard.actor_id = Some(session.actor_id.clone());
+                    guard.token = Some(session.token.clone());
+                }
+                let _ = crate::infrastructure::auth_identity::save_encrypted_session(&input.account_id, &input.pin, t);
+                let _ = app_account::account_switch(AccountIdInput { id: input.account_id.clone() });
+                let profile = crate::infrastructure::auth_identity::find_profile_by_actor_id(&session.actor_id);
+                let (p_name, p_email, p_avatar, p_local_avatar, p_method) = match &profile {
+                    Some(p) => (
+                        Some(p.name.clone()).filter(|v| !v.is_empty()),
+                        Some(p.email.clone()).filter(|v| !v.is_empty()),
+                        Some(p.avatar_url.clone()).filter(|v| !v.is_empty()),
+                        Some(p.avatar_local_path.clone()).filter(|v| !v.is_empty()),
+                        Some(p.provider.clone()),
+                    ),
+                    None => (None, None, None, None, None),
+                };
+                return to_json(AppResult::success(crate::contracts::AuthSessionPayload {
+                    command: "account_unlock".to_string(),
+                    status: "authenticated".to_string(),
+                    actor_id: Some(session.actor_id),
+                    name: p_name,
+                    email: p_email,
+                    avatar_url: p_avatar,
+                    avatar_local_path: p_local_avatar,
+                    login_method: p_method,
+                }));
+            }
+            serde_json::to_value(&result).unwrap_or(json!({"ok": false}))
+        }
+        "account_list_restorable" => to_json(app_account::account_list_restorable()),
+        "account_remove_pin" => {
+            let input = match parse_args::<AccountRemovePinInput>(args) { Ok(v) => v, Err(e) => return e };
+            to_json(app_account::account_remove_pin(input))
+        }
 
         // =================================================================
         // Memory (no state)

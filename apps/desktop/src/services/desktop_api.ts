@@ -1103,6 +1103,7 @@ export interface AuthSessionResponse extends TauriStubPayload {
   name?: string;
   email?: string;
   avatar_url?: string;
+  avatar_local_path?: string;
   login_method?: string;
 }
 
