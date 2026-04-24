@@ -2,12 +2,14 @@ package native
 
 import (
 	"context"
+	"strings"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
+	"gorm.io/gorm/schema"
 )
 
 var (
@@ -48,6 +50,21 @@ func (n *nativeStore) Init(ctx context.Context, opts ...option.Option) (err erro
 					// todo: let gorm logger level follow the one of frame's
 					Logger: NewGormLogger().LogMode(gormlogger.Info),
 					DisableForeignKeyConstraintWhenMigrating: true,
+					NamingStrategy: schema.NamingStrategy{
+						NameReplacer: strings.NewReplacer(
+							// Project-specific abbreviations that GORM's default strategy splits incorrectly.
+							// Defense-in-depth: explicit column tags are the primary contract (see store.md §10),
+							// this NameReplacer catches any field that accidentally omits a tag.
+							"SPKID", "SpkId",
+							"OPKID", "OpkId",
+							"ULID", "Ulid",
+							"PTID", "Ptid",
+							"MIME", "Mime",
+							"DID", "Did",
+							"CID", "Cid",
+							"URL", "Url",
+						),
+					},
 				}
 
 				n.db[rds.Name], err = gorm.Open(dialector(rds.DSN), gormConfig)

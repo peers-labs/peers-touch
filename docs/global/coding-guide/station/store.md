@@ -421,30 +421,54 @@ func (s *service) TransferFunds(ctx context.Context, from, to string, amount int
 
 ## 10. Model 定义规范
 
-Station 中 GORM Model 的典型写法:
+### 10.1 Iron Rules
+
+1. **Every field must have an explicit `gorm:"column:xxx"` tag.** Relying on GORM's default NamingStrategy is forbidden — it silently corrupts abbreviation-heavy field names (DID, ULID, CID, SPKID, OPKID, PTID, MIME, URL, etc.).
+2. **Every model must have a `TableName()` method.** GORM's default table-name generation splits abbreviations and may collide across subservers.
+3. The framework provides a custom `NamingStrategy` with `NameReplacer` as defense-in-depth, but explicit tags are the primary contract. NamingStrategy alone is not sufficient — explicit tags are mandatory.
+
+### 10.2 Column Tag Convention
+
+- Column names use `snake_case`.
+- Project abbreviations are kept as indivisible units: `did`, `ulid`, `cid`, `spk_id`, `opk_id`, `ptid`, `mime`, `url`.
+- Standard GORM tags (`primaryKey`, `index`, `uniqueIndex`, `size`, `default`, `type`, `not null`, `autoCreateTime`, `autoUpdateTime`) are appended after `column:xxx` with `;` separator.
+
+### 10.3 TableName Convention
+
+- Frame-level models (under `frame/`): prefix `touch_`, e.g., `touch_message`, `touch_peer`.
+- Subserver models (under `app/subserver/<name>/`): prefix `<subserver>_`, e.g., `friend_chat_sessions`, `group_chat_messages`.
+- This eliminates cross-subserver table-name collisions (e.g., both `friend_chat` and `group_chat` having `outbox` or `message` models).
+
+### 10.4 Standard Model Example
 
 ```go
+// GroupMember represents a member within a group chat.
 type GroupMember struct {
-    GroupULID string `gorm:"primaryKey"`
-    ActorDID  string `gorm:"primaryKey"`
-    Role      int
-    InvitedBy string
-    CreatedAt time.Time
-    UpdatedAt time.Time
+    GroupULID string    `gorm:"column:group_ulid;primaryKey"`
+    ActorDID  string    `gorm:"column:actor_did;primaryKey"`
+    Role      int       `gorm:"column:role"`
+    InvitedBy string    `gorm:"column:invited_by"`
+    CreatedAt time.Time `gorm:"column:created_at"`
+    UpdatedAt time.Time `gorm:"column:updated_at"`
 }
 
+func (*GroupMember) TableName() string { return "group_chat_members" }
+
+// SessionRecord represents a user login session.
 type SessionRecord struct {
-    SessionID    string     `gorm:"primaryKey;size:64"`
-    UserID       string     `gorm:"index;size:64"`
-    Email        string     `gorm:"size:256"`
-    DeviceType   DeviceType `gorm:"size:32;default:'desktop'"`
-    IPAddress    string     `gorm:"size:45"`
-    UserAgent    string     `gorm:"size:512"`
-    CreatedAt    time.Time
-    ExpiresAt    time.Time  `gorm:"index"`
-    LastActiveAt time.Time
-    Revoked      bool       `gorm:"default:false"`
+    SessionID    string     `gorm:"column:session_id;primaryKey;size:64"`
+    UserID       string     `gorm:"column:user_id;index;size:64"`
+    Email        string     `gorm:"column:email;size:256"`
+    DeviceType   DeviceType `gorm:"column:device_type;size:32;default:'desktop'"`
+    IPAddress    string     `gorm:"column:ip_address;size:45"`
+    UserAgent    string     `gorm:"column:user_agent;size:512"`
+    CreatedAt    time.Time  `gorm:"column:created_at"`
+    ExpiresAt    time.Time  `gorm:"column:expires_at;index"`
+    LastActiveAt time.Time  `gorm:"column:last_active_at"`
+    Revoked      bool       `gorm:"column:revoked;default:false"`
 }
+
+func (*SessionRecord) TableName() string { return "touch_session_records" }
 ```
 
 ---
