@@ -119,14 +119,17 @@ class FriendChatP2pManager {
     pc.onconnectionstatechange = () => {
       const s = pc.connectionState;
       if (s === 'connected') {
+        conn.candidateLoopStopped = true;
         conn.status = { state: 'connected', signalingSessionId };
         this.emitStatus(myDid, peerDid, conn.status);
         this.updatePeerRole(myDid, 'client+p2p:connected').catch(() => {});
       } else if (s === 'failed') {
+        conn.candidateLoopStopped = true;
         conn.status = { state: 'failed', detail: 'webrtc connection failed', signalingSessionId };
         this.emitStatus(myDid, peerDid, conn.status);
         this.updatePeerRole(myDid, 'client+p2p:failed').catch(() => {});
       } else if (s === 'closed') {
+        conn.candidateLoopStopped = true;
         conn.status = { state: 'closed', signalingSessionId };
         this.emitStatus(myDid, peerDid, conn.status);
         this.updatePeerRole(myDid, 'client+p2p:closed').catch(() => {});
@@ -178,7 +181,13 @@ class FriendChatP2pManager {
     };
 
     const pollCandidates = async () => {
+      const INITIAL_DELAY = 600;
+      const DELAY_INCREMENT = 200;
+      const MAX_DELAY = 5000;
+      let delay = INITIAL_DELAY;
+
       while (!conn.candidateLoopStopped) {
+        let receivedNew = false;
         try {
           const data = await api.iceSessionCandidatesGet(signalingSessionId);
           const list = ((data as any)?.candidates || []) as Array<any>;
@@ -191,6 +200,7 @@ class FriendChatP2pManager {
             const key2 = `${from}|${mid}|${mline}|${candidate}`;
             if (conn.seenCandidates.has(key2)) continue;
             conn.seenCandidates.add(key2);
+            receivedNew = true;
             if (candidate) {
               await pc.addIceCandidate({ candidate, sdpMid: mid || undefined, sdpMLineIndex: Number.isFinite(mline) ? mline : undefined })
                 .catch(() => {});
@@ -199,7 +209,14 @@ class FriendChatP2pManager {
         } catch {
           // ignore; server may return 404 until first candidate exists
         }
-        await sleep(600);
+
+        // Reset delay when new candidates arrive; otherwise back off progressively.
+        if (receivedNew) {
+          delay = INITIAL_DELAY;
+        } else {
+          delay = Math.min(delay + DELAY_INCREMENT, MAX_DELAY);
+        }
+        await sleep(delay);
       }
     };
     pollCandidates().catch(() => {});
@@ -249,6 +266,16 @@ class FriendChatP2pManager {
       this.emitStatus(myDid, peerDid, conn.status);
       return conn.status;
     }
+  }
+
+  // Tear down every active connection; intended for component unmount cleanup.
+  closeAll() {
+    for (const conn of this.conns.values()) {
+      conn.candidateLoopStopped = true;
+      try { conn.dc?.close(); } catch { /* best-effort */ }
+      try { conn.pc.close(); } catch { /* best-effort */ }
+    }
+    this.conns.clear();
   }
 
   sendMessageHint(myDid: string, peerDid: string, sessionUlid: string, messageUlid: string): boolean {
