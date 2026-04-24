@@ -371,6 +371,16 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         },
         loading: false,
       }));
+      // Ack unread friend messages as READ so sender sees correct read receipts
+      if (activeTab === 'friend') {
+        const viewerDid = get().currentUserDid;
+        const unreadUlids = (msgs as FriendChatMessage[])
+          .filter((m) => m.senderDid !== viewerDid && m.status !== FriendMessageStatus.READ)
+          .map((m) => m.ulid);
+        if (unreadUlids.length > 0) {
+          get().ackFriendMessages(unreadUlids, FriendMessageStatus.READ).catch(() => {});
+        }
+      }
     } catch (error) {
       log.error('socialChat', 'loadMessages failed', error);
       set({ loading: false });
@@ -683,6 +693,10 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       const peerAv = did
         ? (s.participantADid === did ? sa.participantBAvatar : sa.participantAAvatar)
         : (sa.participantBAvatar || sa.participantAAvatar || '');
+      const loadedMsgs = state.messages[s.ulid];
+      const friendPreview = loadedMsgs && loadedMsgs.length > 0
+        ? { content: loadedMsgs[loadedMsgs.length - 1].content ?? '', type: Number((loadedMsgs[loadedMsgs.length - 1] as any).type ?? 1), senderDid: loadedMsgs[loadedMsgs.length - 1].senderDid ?? '' }
+        : state.lastPreviews[s.ulid];
       out.push({
         type: 'friend',
         ulid: s.ulid,
@@ -690,12 +704,16 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         avatar: peerAv || '',
         lastActivity: activityFromSession(s),
         unread: friendUnreadForViewer(s, did),
-        preview: state.lastPreviews[s.ulid],
+        preview: friendPreview,
         friendSession: s,
       });
     }
 
     for (const g of state.groups) {
+      const loadedGroupMsgs = state.messages[g.ulid];
+      const groupPreview = loadedGroupMsgs && loadedGroupMsgs.length > 0
+        ? { content: loadedGroupMsgs[loadedGroupMsgs.length - 1].content ?? '', type: Number((loadedGroupMsgs[loadedGroupMsgs.length - 1] as any).type ?? 1), senderDid: loadedGroupMsgs[loadedGroupMsgs.length - 1].senderDid ?? '' }
+        : state.lastPreviews[g.ulid];
       out.push({
         type: 'group',
         ulid: g.ulid,
@@ -703,7 +721,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         avatar: '',
         lastActivity: activityFromGroup(g),
         unread: state.groupUnreadCounts[g.ulid] ?? 0,
-        preview: state.lastPreviews[g.ulid],
+        preview: groupPreview,
         group: g,
       });
     }
