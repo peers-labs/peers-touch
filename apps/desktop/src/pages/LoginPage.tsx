@@ -608,7 +608,12 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
             {t('auth.accountPicker.subtitle', { defaultValue: 'Select an account to continue' })}
           </Text>
 
-          <div style={{ width: '100%', maxHeight: 260, overflowY: 'auto' }}>
+          <div style={{
+            width: '100%',
+            maxHeight: 136,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+          }}>
             <Flexbox gap={6}>
               {knownAccounts.map(account => (
                 <button
