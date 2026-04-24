@@ -10,13 +10,13 @@ import (
 type Role string
 
 type ConvMember struct {
-	ID        uint64    `gorm:"primary_key;autoIncrement:false"`
-	ConvID    uint64    `gorm:"index;not null"`
-	DID       string    `gorm:"size:128;not null"`
-	Role      Role      `gorm:"size:16"`
-	JoinedAt  time.Time `gorm:"index"`
-	CreatedAt time.Time `gorm:"created_at"`
-	UpdatedAt time.Time `gorm:"updated_at"`
+	ID        uint64    `gorm:"column:id;primary_key;autoIncrement:false"`
+	ConvID    uint64    `gorm:"column:conv_id;index;not null"`
+	DID       string    `gorm:"column:did;size:128;not null"`
+	Role      Role      `gorm:"column:role;size:16"`
+	JoinedAt  time.Time `gorm:"column:joined_at;index"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at"`
 }
 
 func (*ConvMember) TableName() string { return "touch_conv_member" }
