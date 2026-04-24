@@ -114,6 +114,10 @@ export function SocialChatPage() {
     friendChatP2p.ensureConnected(currentUserDid, peerDid).catch((error) => {
       setFriendP2pStatus(activeSessionUlid, 'failed', error instanceof Error ? error.message : String(error));
     });
+
+    return () => {
+      friendChatP2p.closeAll();
+    };
   }, [currentUserDid, activeTab, activeSessionUlid, sessions, setFriendP2pStatus]);
 
   const subNavItems: { key: ChatSubPage; icon: typeof MessageCircle; label: string }[] = [
