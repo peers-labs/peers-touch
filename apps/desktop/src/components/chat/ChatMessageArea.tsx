@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, TextArea, Tooltip } from '@lobehub/ui';
+import { Button, TextArea, Tooltip, EmojiPicker } from '@lobehub/ui';
 import { Spin, theme, Typography, Empty } from 'antd';
 import {
   Send, Inbox, Phone, Video, Search, Info,
-  Paperclip, Smile, Check, CheckCheck,
+  Paperclip, Check, CheckCheck,
   Reply, Trash2, Lock,
 } from 'lucide-react';
 import { useSocialChatStore } from '../../store/socialChat';
+import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { SearchMessagesModal } from './SearchMessagesModal';
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
@@ -29,11 +30,6 @@ function formatMsgTime(ts: Timestamp | undefined): string {
   if (!ts) return '';
   const d = timestampDate(ts);
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function getInitial(name: string): string {
-  if (!name) return '?';
-  return name.charAt(0).toUpperCase();
 }
 
 function ReadReceipt({ status }: { status: FriendMessageStatus }) {
@@ -158,13 +154,30 @@ export function ChatMessageArea() {
       const s = sessions.find((sess) => sess.ulid === activeUlid);
       if (!s) return '';
       if (currentUserDid) {
-        if (s.participantADid === currentUserDid) return s.participantBDid || s.participantADid || '';
-        if (s.participantBDid === currentUserDid) return s.participantADid || s.participantBDid || '';
+        if (s.participantADid === currentUserDid)
+          return (s as any).participantBDisplayName || s.participantBDid || '';
+        if (s.participantBDid === currentUserDid)
+          return (s as any).participantADisplayName || s.participantADid || '';
       }
-      return s.participantBDid || s.participantADid || '';
+      return (s as any).participantBDisplayName || s.participantBDid || '';
     }
     const g = groups.find((grp) => grp.ulid === activeUlid);
     return g?.name || '';
+  })();
+
+  const currentAvatar = (() => {
+    if (activeTab === 'friend') {
+      const s = sessions.find((sess) => sess.ulid === activeUlid);
+      if (!s) return '';
+      if (currentUserDid) {
+        if (s.participantADid === currentUserDid)
+          return (s as any).participantBAvatar || '';
+        if (s.participantBDid === currentUserDid)
+          return (s as any).participantAAvatar || '';
+      }
+      return (s as any).participantBAvatar || '';
+    }
+    return '';
   })();
 
   const subtitle = (() => {
@@ -341,22 +354,7 @@ export function ChatMessageArea() {
         }}
       >
         <Flexbox horizontal align="center" gap={10}>
-          <Flexbox
-            align="center"
-            justify="center"
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 18,
-              background: token.colorPrimary,
-              color: '#fff',
-              fontSize: 14,
-              fontWeight: 600,
-              flexShrink: 0,
-            }}
-          >
-            {getInitial(currentName)}
-          </Flexbox>
+          <UserSquareAvatar url={currentAvatar} name={currentName} size={36} />
           <Flexbox horizontal align="center" gap={6}>
             <Flexbox>
               <Text strong style={{ fontSize: 14 }}>{currentName}</Text>
@@ -436,23 +434,7 @@ export function ChatMessageArea() {
                 gap={6}
               >
                 {!isOwn && isGroup && (
-                  <Flexbox
-                    align="center"
-                    justify="center"
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 14,
-                      background: token.colorFillSecondary,
-                      color: token.colorTextSecondary,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      flexShrink: 0,
-                      alignSelf: 'flex-end',
-                    }}
-                  >
-                    {getInitial(msg.senderDid)}
-                  </Flexbox>
+                  <UserSquareAvatar name={msg.senderDid} size={28} style={{ alignSelf: 'flex-end' }} />
                 )}
 
                 <Flexbox style={{ position: 'relative', minWidth: 0 }}>
@@ -621,10 +603,12 @@ export function ChatMessageArea() {
         )}
 
         <Flexbox horizontal align="flex-end" gap={8}>
+          {/* Visually hidden file input — avoid display:none which prevents
+             file dialog from opening in Tauri WKWebView */}
           <input
             ref={fileInputRef}
             type="file"
-            style={{ display: 'none' }}
+            style={{ position: 'absolute', width: 0, height: 0, opacity: 0, overflow: 'hidden', pointerEvents: 'none' }}
             onChange={handleFileSelect}
           />
           <Button
@@ -634,10 +618,9 @@ export function ChatMessageArea() {
             onClick={() => fileInputRef.current?.click()}
             disabled={sending}
           />
-          <Button
-            type="text"
-            icon={<Smile size={18} />}
-            style={{ width: 36, height: 36, flexShrink: 0 }}
+          <EmojiPicker
+            size={36}
+            onChange={(emoji) => setInputValue((prev) => prev + emoji)}
           />
           <TextArea
             value={inputValue}

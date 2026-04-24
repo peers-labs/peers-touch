@@ -1145,14 +1145,15 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 let _ = crate::infrastructure::auth_identity::save_encrypted_session(&input.account_id, &input.pin, t);
                 let _ = app_account::account_switch(AccountIdInput { id: input.account_id.clone() });
                 let profile = crate::infrastructure::auth_identity::find_profile_by_actor_id(&session.actor_id);
-                let (p_name, p_email, p_avatar, p_method) = match &profile {
+                let (p_name, p_email, p_avatar, p_local_avatar, p_method) = match &profile {
                     Some(p) => (
                         Some(p.name.clone()).filter(|v| !v.is_empty()),
                         Some(p.email.clone()).filter(|v| !v.is_empty()),
                         Some(p.avatar_url.clone()).filter(|v| !v.is_empty()),
+                        p.avatar_local_path.clone().filter(|v| !v.is_empty()),
                         Some(p.provider.clone()),
                     ),
-                    None => (None, None, None, None),
+                    None => (None, None, None, None, None),
                 };
                 return to_json(AppResult::success(crate::contracts::AuthSessionPayload {
                     command: "account_unlock".to_string(),
@@ -1161,6 +1162,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                     name: p_name,
                     email: p_email,
                     avatar_url: p_avatar,
+                    avatar_local_path: p_local_avatar,
                     login_method: p_method,
                 }));
             }

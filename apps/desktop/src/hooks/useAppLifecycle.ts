@@ -114,13 +114,21 @@ export function useAppLifecycle(): AppLifecycle {
             name: displayName,
             email: currentUser.email || '',
             avatar: currentUser.avatarUrl,
+            avatarLocalPath: currentUser.avatarLocalPath,
           });
         }
       }
 
       // Load all accounts that have restorable sessions
       if (Array.isArray(restorableAccounts) && restorableAccounts.length > 0) {
-        setKnownAccounts(restorableAccounts.map(accountToSessionUser));
+        const accounts = restorableAccounts.map(accountToSessionUser);
+        // When the active session is expired/invalid, encrypted sessions contain the same
+        // expired token. Mark all accounts as having no active session so the account picker
+        // redirects to password login instead of PIN entry.
+        if (!authenticated) {
+          accounts.forEach(a => { a.hasSession = false; });
+        }
+        setKnownAccounts(accounts);
       }
 
       setDataReady(true);
@@ -130,7 +138,7 @@ export function useAppLifecycle(): AppLifecycle {
         // Background: sync user profile from Station (downloads avatar to local cache).
         api.syncUserProfile().then((result) => {
           if (result?.avatar_url) {
-            useSessionStore.getState().updateAvatar(result.avatar_url);
+            useSessionStore.getState().updateAvatar(result.avatar_url, result.avatar_local_path);
           }
         }).catch(() => {});
         setState('ready');
@@ -154,7 +162,7 @@ export function useAppLifecycle(): AppLifecycle {
     // Update session store avatar so sidebar reflects the latest.
     api.syncUserProfile().then((result) => {
       if (result?.avatar_url) {
-        useSessionStore.getState().updateAvatar(result.avatar_url);
+        useSessionStore.getState().updateAvatar(result.avatar_url, result.avatar_local_path);
       }
     }).catch(() => {});
     setState('ready');
