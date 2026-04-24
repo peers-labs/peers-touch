@@ -314,8 +314,31 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   },
 
   setActiveTab: (tab) => set({ activeTab: tab }),
-  selectSession: (ulid) => set({ activeSessionUlid: ulid }),
-  selectGroup: (ulid) => set({ activeGroupUlid: ulid }),
+  selectSession: (ulid) => {
+      set((prev) => {
+        const did = prev.currentUserDid;
+        return {
+          activeSessionUlid: ulid,
+          // Optimistic: clear unread badge for the selected session
+          sessions: did
+            ? prev.sessions.map((s) => {
+                if (s.ulid !== ulid) return s;
+                if (s.participantADid === did) return { ...s, unreadCountA: 0 } as typeof s;
+                if (s.participantBDid === did) return { ...s, unreadCountB: 0 } as typeof s;
+                return s;
+              })
+            : prev.sessions,
+        };
+      });
+    },
+  selectGroup: (ulid) => {
+      set((prev) => ({
+        activeGroupUlid: ulid,
+        // Optimistic: clear unread badge for the selected group
+        groupUnreadCounts: { ...prev.groupUnreadCounts, [ulid]: 0 },
+      }));
+      get().markGroupRead(ulid).catch(() => {});
+    },
 
   loadMessages: async (ulid, kind) => {
     const activeTab = kind ?? get().activeTab;
