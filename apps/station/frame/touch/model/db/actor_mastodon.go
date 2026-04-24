@@ -10,34 +10,34 @@ import (
 // ActorTouchMeta stores Peers-Touch extension fields and statistics
 // Corresponds to "touch_actor_meta" table
 type ActorTouchMeta struct {
-	ActorID uint64 `gorm:"primary_key;autoIncrement:false"` // Foreign key to Actor (1:1)
+	ActorID uint64 `gorm:"column:actor_id;primary_key;autoIncrement:false"` // Foreign key to Actor (1:1)
 
 	// Extension Fields (TODO: Mastodon compatibility fields moved to todo)
-	Discoverable              bool   `gorm:"default:true"`
-	ManuallyApprovesFollowers bool   `gorm:"default:false"`
-	Url                       string `gorm:"size:512"` // Profile URL (e.g. https://domain/@user)
-	MovedToActorURI           string `gorm:"size:512"`
-	AlsoKnownAs               string `gorm:"type:text"` // JSON list of URIs
+	Discoverable              bool   `gorm:"column:discoverable;default:true"`
+	ManuallyApprovesFollowers bool   `gorm:"column:manually_approves_followers;default:false"`
+	Url                       string `gorm:"column:url;size:512"` // Profile URL (e.g. https://domain/@user)
+	MovedToActorURI           string `gorm:"column:moved_to_actor_uri;size:512"`
+	AlsoKnownAs               string `gorm:"column:also_known_as;type:text"` // JSON list of URIs
 
 	// Statistics (Denormalized/Cached)
-	FollowersCount int `gorm:"default:0"`
-	FollowingCount int `gorm:"default:0"`
-	StatusesCount  int `gorm:"default:0"`
+	FollowersCount int `gorm:"column:followers_count;default:0"`
+	FollowingCount int `gorm:"column:following_count;default:0"`
+	StatusesCount  int `gorm:"column:statuses_count;default:0"`
 
 	// Extended Profile Fields (Peers-Touch specific)
-	Region            string `gorm:"size:100"`
-	Timezone          string `gorm:"size:50"`
-	Tags              string `gorm:"type:text"`                // JSON list of strings (Feature tags)
-	Links             string `gorm:"type:text"`                // JSON list of UserLink objects
-	DefaultVisibility string `gorm:"size:20;default:'public'"` // public, unlisted, followers, private
-	MessagePermission string `gorm:"size:20;default:'everyone'"`
-	AutoExpireDays    int    `gorm:"default:0"`
+	Region            string `gorm:"column:region;size:100"`
+	Timezone          string `gorm:"column:timezone;size:50"`
+	Tags              string `gorm:"column:tags;type:text"`                          // JSON list of strings (Feature tags)
+	Links             string `gorm:"column:links;type:text"`                         // JSON list of UserLink objects
+	DefaultVisibility string `gorm:"column:default_visibility;size:20;default:'public'"` // public, unlisted, followers, private
+	MessagePermission string `gorm:"column:message_permission;size:20;default:'everyone'"`
+	AutoExpireDays    int    `gorm:"column:auto_expire_days;default:0"`
 
-	LastWebfingeredAt time.Time
-	LastActivityAt    time.Time
+	LastWebfingeredAt time.Time `gorm:"column:last_webfingered_at"`
+	LastActivityAt    time.Time `gorm:"column:last_activity_at"`
 
-	CreatedAt time.Time `gorm:"created_at"`
-	UpdatedAt time.Time `gorm:"updated_at"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at"`
 }
 
 func (*ActorTouchMeta) TableName() string {

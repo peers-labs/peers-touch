@@ -9,34 +9,34 @@ import (
 )
 
 type IdentityKeyModel struct {
-	ID             uint   `gorm:"primaryKey"`
-	ActorDID       string `gorm:"size:255;uniqueIndex"`
-	IdentityKeyPub []byte `gorm:"type:bytea"`
-	KeyFingerprint string `gorm:"size:128"`
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID             uint      `gorm:"column:id;primaryKey"`
+	ActorDID       string    `gorm:"column:actor_did;size:255;uniqueIndex"`
+	IdentityKeyPub []byte    `gorm:"column:identity_key_pub;type:bytea"`
+	KeyFingerprint string    `gorm:"column:key_fingerprint;size:128"`
+	CreatedAt      time.Time `gorm:"column:created_at"`
+	UpdatedAt      time.Time `gorm:"column:updated_at"`
 }
 
 func (IdentityKeyModel) TableName() string { return "key_exchange_identity_keys" }
 
 type SignedPreKeyModel struct {
-	ID        uint   `gorm:"primaryKey"`
-	ActorDID  string `gorm:"size:255;uniqueIndex"`
-	SPKID     int32
-	PublicKey []byte `gorm:"type:bytea"`
-	Signature []byte `gorm:"type:bytea"`
-	CreatedAt time.Time
+	ID        uint      `gorm:"column:id;primaryKey"`
+	ActorDID  string    `gorm:"column:actor_did;size:255;uniqueIndex"`
+	SPKID     int32     `gorm:"column:spk_id"`
+	PublicKey []byte    `gorm:"column:public_key;type:bytea"`
+	Signature []byte    `gorm:"column:signature;type:bytea"`
+	CreatedAt time.Time `gorm:"column:created_at"`
 }
 
 func (SignedPreKeyModel) TableName() string { return "key_exchange_signed_pre_keys" }
 
 type OneTimePreKeyModel struct {
-	ID        uint   `gorm:"primaryKey"`
-	ActorDID  string `gorm:"size:255;uniqueIndex:idx_ke_opk_actor_opkid;index:idx_ke_opk_actor_consumed"`
-	OPKID     int32  `gorm:"uniqueIndex:idx_ke_opk_actor_opkid"`
-	PublicKey []byte `gorm:"type:bytea"`
-	Consumed  bool   `gorm:"default:false;index:idx_ke_opk_actor_consumed"`
-	CreatedAt time.Time
+	ID        uint      `gorm:"column:id;primaryKey"`
+	ActorDID  string    `gorm:"column:actor_did;size:255;uniqueIndex:idx_ke_opk_actor_opkid;index:idx_ke_opk_actor_consumed"`
+	OPKID     int32     `gorm:"column:opk_id;uniqueIndex:idx_ke_opk_actor_opkid"`
+	PublicKey []byte    `gorm:"column:public_key;type:bytea"`
+	Consumed  bool      `gorm:"column:consumed;default:false;index:idx_ke_opk_actor_consumed"`
+	CreatedAt time.Time `gorm:"column:created_at"`
 }
 
 func (OneTimePreKeyModel) TableName() string { return "key_exchange_one_time_pre_keys" }
