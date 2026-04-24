@@ -8,6 +8,8 @@ export interface CurrentUser {
   name: string;
   email: string;
   avatarUrl?: string;
+  /** Absolute local file path for cached avatar image. Preferred for display. */
+  avatarLocalPath?: string;
   loginMethod: 'password' | 'oauth';
   loginProvider?: string;
 }
@@ -22,7 +24,7 @@ interface SessionStore {
   restoreSession: () => Promise<void>;
   logout: () => Promise<void>;
   /** Update avatar URL on the current user (called after upload or profile sync). */
-  updateAvatar: (avatarUrl: string) => void;
+  updateAvatar: (avatarUrl: string, localPath?: string) => void;
 }
 
 // ── Helpers ──
@@ -34,6 +36,7 @@ function userFromAuthResponse(resp: AuthSessionResponse, fallbackMethod: 'passwo
     name: resp.name || '',
     email: resp.email || '',
     avatarUrl: resp.avatar_url || undefined,
+    avatarLocalPath: resp.avatar_local_path || undefined,
     loginMethod: (resp.login_method as 'password' | 'oauth') || fallbackMethod,
     loginProvider: provider,
   };
@@ -85,11 +88,15 @@ export const useSessionStore = create<SessionStore>((set) => ({
     set({ currentUser: null, authenticated: false });
   },
 
-  updateAvatar: (avatarUrl: string) => {
+  updateAvatar: (avatarUrl: string, localPath?: string) => {
     set((state) => {
       if (!state.currentUser) return state;
       return {
-        currentUser: { ...state.currentUser, avatarUrl },
+        currentUser: {
+          ...state.currentUser,
+          avatarUrl,
+          avatarLocalPath: localPath ?? state.currentUser.avatarLocalPath,
+        },
       };
     });
   },

@@ -183,13 +183,14 @@ export function UserProfilePopover({ children }: Props) {
   );
 }
 
-export function useUserAvatar(): { url?: string; name: string; provider?: string } {
+export function useUserAvatar(): { url?: string; localPath?: string; name: string; provider?: string } {
   const currentUser = useSessionStore((s) => s.currentUser);
   const { t } = useTranslation('layout');
 
   return useMemo(
     () => ({
       url: currentUser?.avatarUrl || undefined,
+      localPath: currentUser?.avatarLocalPath || undefined,
       name: currentUser?.name || t('layout.user.defaultName'),
       provider: currentUser?.loginProvider || currentUser?.loginMethod || undefined,
     }),
