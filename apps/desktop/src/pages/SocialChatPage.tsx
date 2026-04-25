@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { theme, Tooltip } from 'antd';
@@ -31,27 +31,51 @@ export function SocialChatPage() {
   } = useSocialChatStore();
   const loadConversationPreviews = useSocialChatStore((s) => s.loadConversationPreviews);
 
-  const activePeerDid = useMemo(() => {
+  // --- Refs for values used inside effects without re-triggering subscriptions ---
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+  const activeSessionRef = useRef(activeSessionUlid);
+  activeSessionRef.current = activeSessionUlid;
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+
+  // --- Stabilize activePeerDid: only propagate when the actual string value changes ---
+  const rawActivePeerDid = useMemo(() => {
     if (activeTab !== 'friend' || !activeSessionUlid || !currentUserDid) return null;
     const session = sessions.find((s) => s.ulid === activeSessionUlid);
     if (!session) return null;
     return session.participantADid === currentUserDid ? session.participantBDid : session.participantADid;
   }, [activeTab, activeSessionUlid, currentUserDid, sessions]);
 
+  const [stableActivePeerDid, setStableActivePeerDid] = useState(rawActivePeerDid);
+  useEffect(() => {
+    setStableActivePeerDid((prev) => (prev === rawActivePeerDid ? prev : rawActivePeerDid));
+  }, [rawActivePeerDid]);
+
+  const activePeerDidRef = useRef(stableActivePeerDid);
+  activePeerDidRef.current = stableActivePeerDid;
+
   const [subPage, setSubPage] = useState<ChatSubPage>('chats');
+  // Lazy-mount contacts panel: only create on first visit, then keep alive
+  const [contactsMounted, setContactsMounted] = useState(false);
+  useEffect(() => {
+    if (subPage === 'contacts' && !contactsMounted) setContactsMounted(true);
+  }, [subPage, contactsMounted]);
 
   useEffect(() => {
     loadCurrentUserProfile().catch(() => {});
     initEncryption().catch(() => {});
   }, [loadCurrentUserProfile, initEncryption]);
 
+  // --- Sync timer: runs for component lifetime, reads mutable values via refs ---
   useEffect(() => {
     let disposed = false;
     const syncFriendChat = async () => {
-      if (sessions.length === 0) return;
+      const currentSessions = sessionsRef.current;
+      if (currentSessions.length === 0) return;
       try {
         const results = await Promise.all(
-          sessions.map((session) => api.friendChatSync(session.ulid, 50, 2).catch((error) => {
+          currentSessions.map((session) => api.friendChatSync(session.ulid, 50, 2).catch((error) => {
             log.error('socialChat', 'background sync failed', { sessionUlid: session.ulid, error });
             return { synced_count: 0, pages_fetched: 0 };
           })),
@@ -61,8 +85,8 @@ export function SocialChatPage() {
         if (!changed) return;
         await loadSessions();
         await loadConversationPreviews().catch(() => {});
-        if (!disposed && activeTab === 'friend' && activeSessionUlid) {
-          await loadMessages(activeSessionUlid, 'friend');
+        if (!disposed && activeTabRef.current === 'friend' && activeSessionRef.current) {
+          await loadMessages(activeSessionRef.current, 'friend');
         }
       } catch (error) {
         log.error('socialChat', 'background sync loop failed', error);
@@ -78,15 +102,17 @@ export function SocialChatPage() {
       disposed = true;
       window.clearInterval(timer);
     };
-  }, [sessions, activeSessionUlid, activeTab, loadMessages, loadSessions, loadConversationPreviews]);
+  }, [loadMessages, loadSessions, loadConversationPreviews]);
 
+  // --- P2P event registration: only re-subscribe when currentUserDid changes ---
   useEffect(() => {
     if (!currentUserDid) return;
 
     friendChatP2p.setOnStatus((_myDid, peerDid, status) => {
-      if (!activeSessionUlid || activeTab !== 'friend') return;
-      if (activePeerDid !== peerDid) return;
-      setFriendP2pStatus(activeSessionUlid, status.state, status.detail);
+      const sid = activeSessionRef.current;
+      if (!sid || activeTabRef.current !== 'friend') return;
+      if (activePeerDidRef.current !== peerDid) return;
+      setFriendP2pStatus(sid, status.state, status.detail);
     });
 
     friendChatP2p.setOnEnvelope((env) => {
@@ -94,7 +120,7 @@ export function SocialChatPage() {
       if (!sid) return;
       api.friendChatSync(sid, 50, 1)
         .then(() => {
-          if (activeTab === 'friend' && activeSessionUlid === sid) {
+          if (activeTabRef.current === 'friend' && activeSessionRef.current === sid) {
             return loadMessages(sid, 'friend');
           }
           return undefined;
@@ -107,19 +133,24 @@ export function SocialChatPage() {
       friendChatP2p.setOnEnvelope(null);
       friendChatP2p.setOnStatus(null);
     };
-  }, [currentUserDid, activePeerDid, activeSessionUlid, activeTab, loadMessages, setFriendP2pStatus]);
+  }, [currentUserDid, loadMessages, setFriendP2pStatus]);
 
+  // --- P2P connection: stabilized deps prevent close/reconnect cycles ---
   useEffect(() => {
-    if (!currentUserDid || !activePeerDid || !activeSessionUlid) return;
-    setFriendP2pStatus(activeSessionUlid, 'connecting');
-    friendChatP2p.ensureConnected(currentUserDid, activePeerDid).catch((error) => {
-      setFriendP2pStatus(activeSessionUlid, 'failed', error instanceof Error ? error.message : String(error));
+    const sid = activeSessionRef.current;
+    if (!currentUserDid || !stableActivePeerDid || !sid) return;
+    setFriendP2pStatus(sid, 'connecting');
+    friendChatP2p.ensureConnected(currentUserDid, stableActivePeerDid).catch((error) => {
+      const currentSid = activeSessionRef.current;
+      if (currentSid) {
+        setFriendP2pStatus(currentSid, 'failed', error instanceof Error ? error.message : String(error));
+      }
     });
 
     return () => {
       friendChatP2p.closeAll();
     };
-  }, [currentUserDid, activePeerDid, activeSessionUlid, setFriendP2pStatus]);
+  }, [currentUserDid, stableActivePeerDid, setFriendP2pStatus]);
 
   const subNavItems: { key: ChatSubPage; icon: typeof MessageCircle; label: string }[] = [
     { key: 'chats', icon: MessageCircle, label: t('chat.social.subNav.chats') },
@@ -166,8 +197,15 @@ export function SocialChatPage() {
         })}
       </Flexbox>
 
-      {/* Left panel: Chat list or Contacts */}
-      {subPage === 'chats' ? <ChatSessionList /> : <ChatContactsPanel />}
+      {/* Left panel: keep both mounted once visited, toggle visibility */}
+      <div style={{ display: subPage === 'chats' ? 'contents' : 'none' }}>
+        <ChatSessionList />
+      </div>
+      {contactsMounted && (
+        <div style={{ display: subPage === 'contacts' ? 'contents' : 'none' }}>
+          <ChatContactsPanel />
+        </div>
+      )}
 
       {/* Right area: message content */}
       <ChatMessageArea />
