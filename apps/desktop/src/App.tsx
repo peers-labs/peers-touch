@@ -1,10 +1,10 @@
-import { type ComponentType, useEffect, useRef, useCallback } from 'react';
+import { type ComponentType, useEffect, useRef } from 'react';
 import { Modal } from 'antd';
-import { useAppLifecycle, clearWarmResume } from './hooks/useAppLifecycle';
+import { useAppLifecycle } from './hooks/useAppLifecycle';
 import { OnboardingView } from './views/OnboardingView';
+import { ResumingView } from './views/ResumingView';
 import { ReadyView } from './views/ReadyView';
 import { onSessionRevoked } from './services/desktop_api';
-import type { SessionRevokedPayload } from './kernel/events/types';
 import { useSessionStore } from './store/session';
 import type { AppState, AppLifecycle } from './types/navigation';
 
@@ -14,40 +14,48 @@ interface ViewProps {
 
 const APP_VIEWS: Record<AppState, ComponentType<ViewProps>> = {
   onboarding: OnboardingView,
-  resuming: ReadyView,
+  resuming: ResumingView,
   ready: ReadyView,
 };
 
 function App() {
   const lifecycle = useAppLifecycle();
   const View = APP_VIEWS[lifecycle.state];
-  const handledRef = useRef(false);
 
-  const handleSessionRevoked = useCallback((payload: SessionRevokedPayload) => {
-    if (handledRef.current) return;
-    handledRef.current = true;
+  // Reset guard when user successfully returns to ready state,
+  // so a future revocation can show the notification again.
+  const sessionEndedRef = useRef(false);
+  useEffect(() => {
+    if (lifecycle.state === 'ready') {
+      sessionEndedRef.current = false;
+    }
+  }, [lifecycle.state]);
 
-    useSessionStore.getState().logout().catch(() => {});
-    clearWarmResume();
+  // Single session-revoked handler: trigger logout + show user notification.
+  // State transition is automatic — logout() sets authenticated=false,
+  // which the derived AppState in useAppLifecycle picks up.
+  useEffect(() => {
+    return onSessionRevoked((payload) => {
+      const { authenticated } = useSessionStore.getState();
+      // Only handle revocation when there is an active session.
+      if (!authenticated) return;
 
-    const reason = payload?.reason || 'unknown';
-    const title = reason === 'expired'
-      ? 'Session Expired'
-      : 'Session Ended';
-    const content = reason === 'expired'
-      ? 'Your session has expired. Please log in again.'
-      : 'Your session has been terminated. Please log in again.';
+      useSessionStore.getState().logout().catch(() => {});
 
-    Modal.warning({
-      title,
-      content,
-      okText: 'OK',
+      // Show notification only once per revocation cycle.
+      if (sessionEndedRef.current) return;
+      sessionEndedRef.current = true;
+
+      const reason = payload?.reason || 'unknown';
+      Modal.warning({
+        title: reason === 'expired' ? 'Session Expired' : 'Session Ended',
+        content: reason === 'expired'
+          ? 'Your session has expired. Please log in again.'
+          : 'Your session has been terminated. Please log in again.',
+        okText: 'OK',
+      });
     });
   }, []);
-
-  useEffect(() => {
-    return onSessionRevoked(handleSessionRevoked);
-  }, [handleSessionRevoked]);
 
   return <View lifecycle={lifecycle} />;
 }
