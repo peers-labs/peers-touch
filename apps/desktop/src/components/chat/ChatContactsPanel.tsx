@@ -317,11 +317,7 @@ export function ChatContactsPanel() {
                     e.currentTarget.style.background = 'transparent';
                   }}
                 >
-                  {peer.avatar ? (
-                    <img src={peer.avatar} alt={label} style={{ width: avatarSize, height: avatarSize, borderRadius: Math.max(8, Math.floor(avatarSize * 0.25)), objectFit: 'cover', flexShrink: 0 }} />
-                  ) : (
-                    <UserSquareAvatar name={label} size={avatarSize} />
-                  )}
+                  <UserSquareAvatar url={peer.avatar} name={label} size={avatarSize} />
                   <Flexbox flex={1} style={{ minWidth: 0 }}>
                     <Text strong ellipsis style={{ fontSize: 13 }}>
                       {label}
