@@ -13,11 +13,11 @@ import (
 
 type SessionModel struct {
 	ID              uint   `gorm:"primaryKey"`
-	ULID            string `gorm:"size:64;uniqueIndex"`
+	ULID            string `gorm:"column:ulid;size:64;uniqueIndex"`
 	PairKey         string `gorm:"size:255;uniqueIndex"`
-	ParticipantADID string `gorm:"size:255;index"`
-	ParticipantBDID string `gorm:"size:255;index"`
-	LastMessageULID string `gorm:"size:64"`
+	ParticipantADID string `gorm:"column:participant_a_did;size:255;index"`
+	ParticipantBDID string `gorm:"column:participant_b_did;size:255;index"`
+	LastMessageULID string `gorm:"column:last_message_ulid;size:64"`
 	LastMessageAt   time.Time
 	UnreadCountA    int32
 	UnreadCountB    int32
@@ -27,30 +27,32 @@ type SessionModel struct {
 
 type MessageModel struct {
 	ID          uint   `gorm:"primaryKey"`
-	ULID        string `gorm:"size:64;uniqueIndex"`
-	SessionULID string `gorm:"size:64;index"`
-	SenderDID   string `gorm:"size:255;index"`
-	ReceiverDID string `gorm:"size:255;index"`
+	ULID        string `gorm:"column:ulid;size:64;uniqueIndex"`
+	SessionULID string `gorm:"column:session_ulid;size:64;index"`
+	SenderDID   string `gorm:"column:sender_did;size:255;index"`
+	ReceiverDID string `gorm:"column:receiver_did;size:255;index"`
 	Type        int32
 	Content     string `gorm:"type:text"`
 	// EncryptedPayload is optional E2E ciphertext (PostgreSQL bytea).
 	EncryptedPayload []byte `gorm:"type:bytea"`
-	ReplyToULID      string `gorm:"size:64"`
+	ReplyToULID      string `gorm:"column:reply_to_ulid;size:64"`
 	Status           int32
 	SentAt           time.Time `gorm:"index"`
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
 
+func (MessageModel) TableName() string { return "friend_message_models" }
+
 // MessageAttachmentModel stores per-message attachment metadata (blobs addressed by CID).
 type MessageAttachmentModel struct {
 	ID           uint   `gorm:"primaryKey"`
-	MessageULID  string `gorm:"size:64;index"`
-	CID          string `gorm:"size:255"`
+	MessageULID  string `gorm:"column:message_ulid;size:64;index"`
+	CID          string `gorm:"column:cid;size:255"`
 	Filename     string `gorm:"size:255"`
 	MimeType     string `gorm:"size:128"`
 	Size         int64
-	ThumbnailCID string `gorm:"size:255"`
+	ThumbnailCID string `gorm:"column:thumbnail_cid;size:255"`
 }
 
 func (MessageAttachmentModel) TableName() string {
@@ -61,8 +63,8 @@ type FriendRequestModel struct {
 	ID          uint   `gorm:"primaryKey"`
 	RequestID   string `gorm:"column:request_id;size:64;uniqueIndex"`
 	PairKey     string `gorm:"size:255;uniqueIndex:idx_fr_pair_status"`
-	SenderDID   string `gorm:"size:255;index"`
-	ReceiverDID string `gorm:"size:255;index"`
+	SenderDID   string `gorm:"column:sender_did;size:255;index"`
+	ReceiverDID string `gorm:"column:receiver_did;size:255;index"`
 	Status      int32  `gorm:"uniqueIndex:idx_fr_pair_status"`
 	Message     string `gorm:"type:text"`
 	CreatedAt   time.Time
@@ -71,9 +73,9 @@ type FriendRequestModel struct {
 
 type OutboxModel struct {
 	ID        uint   `gorm:"primaryKey"`
-	EventID   string `gorm:"size:64;uniqueIndex"`
+	EventID   string `gorm:"column:event_id;size:64;uniqueIndex"`
 	EventType string `gorm:"size:128;index"`
-	TargetID  string `gorm:"size:64;index"`
+	TargetID  string `gorm:"column:target_id;size:64;index"`
 	Payload   string `gorm:"type:text"`
 	Status    string `gorm:"size:32;index"`
 	CreatedAt time.Time
