@@ -173,7 +173,7 @@ pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
             Some(p.name.clone()).filter(|v| !v.is_empty()),
             Some(p.email.clone()).filter(|v| !v.is_empty()),
             Some(p.avatar_url.clone()).filter(|v| !v.is_empty()),
-            Some(p.avatar_local_path.clone()).filter(|v| !v.is_empty()),
+            p.avatar_local_path.clone().filter(|v| !v.is_empty()),
             Some(p.provider.clone()),
         ),
         None => (None, None, None, None, None),
@@ -372,7 +372,7 @@ fn unauthorized(message: impl Into<String>, details: serde_json::Value) -> AppRe
 }
 
 /// Mark account as having a restorable session; if PIN is set, encrypt the token.
-fn mark_account_has_session(account_id: &str, token: &str) {
+fn mark_account_has_session(account_id: &str, _token: &str) {
     if let Ok(state) = crate::infrastructure::auth_identity::read_state() {
         if let Some(account) = state.accounts.iter().find(|a| a.id == account_id) {
             if account.pin_protection.is_some() {
