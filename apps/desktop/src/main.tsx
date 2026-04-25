@@ -4,6 +4,8 @@ import { ThemeProvider } from '@lobehub/ui';
 import { I18nextProvider } from 'react-i18next';
 import { log } from './utils/logger';
 import { initI18n } from './i18n';
+// Side-effect: register global error / unhandledrejection handlers once.
+import './kernel/events/global-error';
 import App from './App';
 import SharePage from './pages/SharePage';
 import './modules';
@@ -66,13 +68,6 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
     return this.props.children;
   }
 }
-
-window.addEventListener('error', (e) => {
-  log.error('app', 'Uncaught error', { message: e.message, filename: e.filename, lineno: e.lineno });
-});
-window.addEventListener('unhandledrejection', (e) => {
-  log.error('app', 'Unhandled rejection', { reason: String(e.reason) });
-});
 
 async function bootstrap() {
   window.__PT_BOOT_STATUS__?.('Loading language packs…');

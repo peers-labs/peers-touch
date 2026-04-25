@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { log } from '@/utils/logger';
 import { Flexbox } from 'react-layout-kit';
 import {
   Card, Descriptions, Divider, Empty, Modal,
@@ -1209,7 +1210,7 @@ function SkillDetailBoard({
       setSkill(data);
       setContent(data.content || '');
     };
-    load().catch(console.error);
+    load().catch((err) => log.error('skills', 'Failed to load skills', { error: String(err) }));
   }, [detail]);
 
   const handleSave = async () => {

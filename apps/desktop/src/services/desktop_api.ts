@@ -115,7 +115,23 @@ export interface RustCommandResult<T = Record<string, any>> {
   error?: RustCommandError;
 }
 
-const QUIET_COMMANDS = new Set(['logs_tail', 'frontend_log', 'visitor_heartbeat']);
+const QUIET_COMMANDS = new Set([
+  'logs_tail',
+  'frontend_log',
+  'visitor_heartbeat',
+  // High-frequency polling commands — suppress verbose invoke logging
+  'friend_chat_sync_from_station_scoped',
+  'friend_chat_list_sessions',
+  'friend_chat_list_messages',
+  'ice_session_candidates_get',
+  'ice_session_candidate_post',
+  'ice_session_offer_get',
+  'ice_session_offer_post',
+  'ice_session_answer_get',
+  'ice_session_answer_post',
+  'ice_peer_register',
+  'notification_list',
+]);
 
 function publishSessionRevoked(payload: SessionRevokedPayload) {
   eventBus.publish(EVENT.AUTH_SESSION_REVOKED, payload);

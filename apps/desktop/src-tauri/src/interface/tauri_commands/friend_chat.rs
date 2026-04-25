@@ -755,3 +755,5 @@ pub fn friend_chat_list_friend_requests(input: FriendChatListFriendRequestsInput
     };
     AppResult::success(resp.encode_to_vec())
 }
+
+
