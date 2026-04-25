@@ -98,10 +98,13 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     [providers],
   );
 
+  // When the user picks an account from the picker, show that account's info
+  // instead of the auto-restored session user (which may be a different account).
   const welcomeUser: SessionUser = useMemo(() => {
+    if (selectedAccount && selectedAccount.name) return selectedAccount;
     if (restoredUser && restoredUser.name) return restoredUser;
     return { name: '', email: '' };
-  }, [restoredUser]);
+  }, [selectedAccount, restoredUser]);
 
   const handleEmailLogin = useCallback(async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -211,7 +214,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
 
   // ── Account Picker ──
 
-  const handleSelectAccount = useCallback((account: SessionUser) => {
+  const handleSelectAccount = useCallback(async (account: SessionUser) => {
     setSelectedAccount(account);
     setPinDigits(Array(PIN_LENGTH).fill(''));
     setPinError('');
@@ -219,15 +222,20 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
       // PIN set + encrypted session available — unlock via PIN
       setLoginState('pin_entry');
       setTimeout(() => pinInputRefs.current[0]?.focus(), 50);
-    } else {
-      // Either no PIN, or PIN set but no saved session — need fresh login
-      const { authenticated } = useSessionStore.getState();
-      if (authenticated) {
-        setLoginState('welcome_back');
-      } else {
-        // Session expired or invalid — go to login form directly
+    } else if (account.hasSession && account.accountId) {
+      // Has a valid session but no PIN — switch backend to this account
+      try {
+        await api.accountSwitch(account.accountId);
+        await useSessionStore.getState().restoreSession();
+      } catch {
+        // If switch fails, fall through to login form
         setLoginState('logged_out');
+        return;
       }
+      setLoginState('welcome_back');
+    } else {
+      // No saved session — need fresh login
+      setLoginState('logged_out');
     }
   }, []);
 

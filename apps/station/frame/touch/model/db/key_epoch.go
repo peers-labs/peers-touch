@@ -8,12 +8,12 @@ import (
 )
 
 type KeyEpoch struct {
-	ID         uint64    `gorm:"primary_key;autoIncrement:false"`
-	ConvID     uint64    `gorm:"index;not null"`
-	Epoch      int       `gorm:"index"`
-	KeyMetaCID string    `gorm:"size:128"`
-	CreatedAt  time.Time `gorm:"created_at"`
-	UpdatedAt  time.Time `gorm:"updated_at"`
+	ID         uint64    `gorm:"column:id;primary_key;autoIncrement:false"`
+	ConvID     uint64    `gorm:"column:conv_id;index;not null"`
+	Epoch      int       `gorm:"column:epoch;index"`
+	KeyMetaCID string    `gorm:"column:key_meta_cid;size:128"`
+	CreatedAt  time.Time `gorm:"column:created_at"`
+	UpdatedAt  time.Time `gorm:"column:updated_at"`
 }
 
 func (*KeyEpoch) TableName() string { return "touch_key_epoch" }
