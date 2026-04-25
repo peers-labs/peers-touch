@@ -223,16 +223,24 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
       setLoginState('pin_entry');
       setTimeout(() => pinInputRefs.current[0]?.focus(), 50);
     } else if (account.hasSession && account.accountId) {
-      // Has a valid session but no PIN — switch backend to this account
+      // Has a valid session but no PIN — switch backend identity marker
+      // and verify the restored session actually belongs to this account.
+      // Non-PIN accounts share a single session.json, so the active token
+      // might belong to a different account.
       try {
         await api.accountSwitch(account.accountId);
         await useSessionStore.getState().restoreSession();
+        const { currentUser } = useSessionStore.getState();
+        if (currentUser?.email && account.email && currentUser.email !== account.email) {
+          // Restored session belongs to a different user — require fresh login
+          setLoginState('logged_out');
+          return;
+        }
+        setLoginState('welcome_back');
       } catch {
-        // If switch fails, fall through to login form
+        // If switch/restore fails, fall through to login form
         setLoginState('logged_out');
-        return;
       }
-      setLoginState('welcome_back');
     } else {
       // No saved session — need fresh login
       setLoginState('logged_out');
