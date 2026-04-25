@@ -315,21 +315,35 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
 
   setActiveTab: (tab) => set({ activeTab: tab }),
   selectSession: (ulid) => {
-      set((prev) => {
-        const did = prev.currentUserDid;
-        return {
-          activeSessionUlid: ulid,
-          // Optimistic: clear unread badge for the selected session
-          sessions: did
-            ? prev.sessions.map((s) => {
-                if (s.ulid !== ulid) return s;
-                if (s.participantADid === did) return { ...s, unreadCountA: 0 } as typeof s;
-                if (s.participantBDid === did) return { ...s, unreadCountB: 0 } as typeof s;
-                return s;
-              })
-            : prev.sessions,
-        };
-      });
+      const state = get();
+      const did = state.currentUserDid;
+
+      // Optimistic: clear unread badge for the selected session
+      set((prev) => ({
+        activeSessionUlid: ulid,
+        sessions: did
+          ? prev.sessions.map((s) => {
+              if (s.ulid !== ulid) return s;
+              if (s.participantADid === did) return { ...s, unreadCountA: 0 } as typeof s;
+              if (s.participantBDid === did) return { ...s, unreadCountB: 0 } as typeof s;
+              return s;
+            })
+          : prev.sessions,
+      }));
+
+      // Server-side ack: notify Station so next loadSessions reflects 0 unread.
+      // Mirrors selectGroup → markGroupRead pattern.
+      if (did) {
+        const loadedMsgs = state.messages[ulid] as FriendChatMessage[] | undefined;
+        if (loadedMsgs && loadedMsgs.length > 0) {
+          const unreadUlids = loadedMsgs
+            .filter((m) => m.senderDid !== did && m.status !== FriendMessageStatus.READ)
+            .map((m) => m.ulid);
+          if (unreadUlids.length > 0) {
+            get().ackFriendMessages(unreadUlids, FriendMessageStatus.READ).catch(() => {});
+          }
+        }
+      }
     },
   selectGroup: (ulid) => {
       set((prev) => ({
@@ -639,7 +653,8 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         api.friendChatListMessages(s.ulid, undefined, 1).then((data) => {
           const msgs = data?.messages;
           if (msgs && msgs.length > 0) {
-            const m = msgs[0] as FriendChatMessage;
+            // Take last element — API may return ascending order
+            const m = msgs[msgs.length - 1] as FriendChatMessage;
             previews[s.ulid] = { content: m.content ?? '', type: Number(m.type ?? 1), senderDid: m.senderDid ?? '' };
           }
         }).catch(() => {}),
@@ -650,7 +665,8 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         api.groupChatListMessages(g.ulid, undefined, 1).then((data) => {
           const msgs = data?.messages;
           if (msgs && msgs.length > 0) {
-            const m = msgs[0] as GroupMessage;
+            // Take last element — API may return ascending order
+            const m = msgs[msgs.length - 1] as GroupMessage;
             previews[g.ulid] = { content: m.content ?? '', type: Number(m.type ?? 1), senderDid: m.senderDid ?? '' };
           }
         }).catch(() => {}),
