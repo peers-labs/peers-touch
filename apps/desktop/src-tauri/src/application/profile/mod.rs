@@ -375,11 +375,11 @@ pub fn sync_user_profile(state: &AppState) -> AppResult<StubPayload> {
         profile.avatar.clone()
     };
 
-    // Determine account_id from session state.
-    let account_id = state.session.lock()
+    // Use the persisted active_account_id from identities.json — it matches regardless
+    // of login method (OAuth: "github:123", password: "password:abc").
+    let account_id = crate::infrastructure::auth_identity::read_state()
         .ok()
-        .and_then(|g| g.actor_id.clone())
-        .map(|aid| format!("password:{}", aid))
+        .and_then(|s| s.active_account_id)
         .unwrap_or_default();
 
     if account_id.is_empty() {
