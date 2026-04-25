@@ -12,75 +12,81 @@ import (
 )
 
 type SessionModel struct {
-	ID              uint   `gorm:"primaryKey"`
-	ULID            string `gorm:"column:ulid;size:64;uniqueIndex"`
-	PairKey         string `gorm:"size:255;uniqueIndex"`
-	ParticipantADID string `gorm:"column:participant_a_did;size:255;index"`
-	ParticipantBDID string `gorm:"column:participant_b_did;size:255;index"`
-	LastMessageULID string `gorm:"column:last_message_ulid;size:64"`
-	LastMessageAt   time.Time
-	UnreadCountA    int32
-	UnreadCountB    int32
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID              uint      `gorm:"column:id;primaryKey"`
+	ULID            string    `gorm:"column:ulid;size:64;uniqueIndex"`
+	PairKey         string    `gorm:"column:pair_key;size:255;uniqueIndex"`
+	ParticipantADID string    `gorm:"column:participant_a_did;size:255;index"`
+	ParticipantBDID string    `gorm:"column:participant_b_did;size:255;index"`
+	LastMessageULID string    `gorm:"column:last_message_ulid;size:64"`
+	LastMessageAt   time.Time `gorm:"column:last_message_at"`
+	UnreadCountA    int32     `gorm:"column:unread_count_a"`
+	UnreadCountB    int32     `gorm:"column:unread_count_b"`
+	CreatedAt       time.Time `gorm:"column:created_at"`
+	UpdatedAt       time.Time `gorm:"column:updated_at"`
 }
+
+func (*SessionModel) TableName() string { return "friend_chat_sessions" }
 
 type MessageModel struct {
-	ID          uint   `gorm:"primaryKey"`
-	ULID        string `gorm:"column:ulid;size:64;uniqueIndex"`
-	SessionULID string `gorm:"column:session_ulid;size:64;index"`
-	SenderDID   string `gorm:"column:sender_did;size:255;index"`
-	ReceiverDID string `gorm:"column:receiver_did;size:255;index"`
-	Type        int32
-	Content     string `gorm:"type:text"`
+	ID          uint      `gorm:"column:id;primaryKey"`
+	ULID        string    `gorm:"column:ulid;size:64;uniqueIndex"`
+	SessionULID string    `gorm:"column:session_ulid;size:64;index"`
+	SenderDID   string    `gorm:"column:sender_did;size:255;index"`
+	ReceiverDID string    `gorm:"column:receiver_did;size:255;index"`
+	Type        int32     `gorm:"column:type"`
+	Content     string    `gorm:"column:content;type:text"`
 	// EncryptedPayload is optional E2E ciphertext (PostgreSQL bytea).
-	EncryptedPayload []byte `gorm:"type:bytea"`
-	ReplyToULID      string `gorm:"column:reply_to_ulid;size:64"`
-	Status           int32
-	SentAt           time.Time `gorm:"index"`
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	EncryptedPayload []byte    `gorm:"column:encrypted_payload;type:bytea"`
+	ReplyToULID      string    `gorm:"column:reply_to_ulid;size:64"`
+	Status           int32     `gorm:"column:status"`
+	SentAt           time.Time `gorm:"column:sent_at;index"`
+	CreatedAt        time.Time `gorm:"column:created_at"`
+	UpdatedAt        time.Time `gorm:"column:updated_at"`
 }
 
-func (MessageModel) TableName() string { return "friend_message_models" }
+func (*MessageModel) TableName() string { return "friend_chat_messages" }
 
 // MessageAttachmentModel stores per-message attachment metadata (blobs addressed by CID).
 type MessageAttachmentModel struct {
-	ID           uint   `gorm:"primaryKey"`
+	ID           uint   `gorm:"column:id;primaryKey"`
 	MessageULID  string `gorm:"column:message_ulid;size:64;index"`
 	CID          string `gorm:"column:cid;size:255"`
-	Filename     string `gorm:"size:255"`
-	MimeType     string `gorm:"size:128"`
-	Size         int64
+	Filename     string `gorm:"column:filename;size:255"`
+	MimeType     string `gorm:"column:mime_type;size:128"`
+	Size         int64  `gorm:"column:size"`
 	ThumbnailCID string `gorm:"column:thumbnail_cid;size:255"`
 }
 
 func (MessageAttachmentModel) TableName() string {
-	return "friend_message_attachments"
+	return "friend_chat_message_attachments"
 }
 
 type FriendRequestModel struct {
-	ID          uint   `gorm:"primaryKey"`
-	RequestID   string `gorm:"column:request_id;size:64;uniqueIndex"`
-	PairKey     string `gorm:"size:255;uniqueIndex:idx_fr_pair_status"`
-	SenderDID   string `gorm:"column:sender_did;size:255;index"`
-	ReceiverDID string `gorm:"column:receiver_did;size:255;index"`
-	Status      int32  `gorm:"uniqueIndex:idx_fr_pair_status"`
-	Message     string `gorm:"type:text"`
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID          uint      `gorm:"column:id;primaryKey"`
+	RequestID   string    `gorm:"column:request_id;size:64;uniqueIndex"`
+	PairKey     string    `gorm:"column:pair_key;size:255;uniqueIndex:idx_fr_pair_status"`
+	SenderDID   string    `gorm:"column:sender_did;size:255;index"`
+	ReceiverDID string    `gorm:"column:receiver_did;size:255;index"`
+	Status      int32     `gorm:"column:status;uniqueIndex:idx_fr_pair_status"`
+	Message     string    `gorm:"column:message;type:text"`
+	CreatedAt   time.Time `gorm:"column:created_at"`
+	UpdatedAt   time.Time `gorm:"column:updated_at"`
 }
 
+func (*FriendRequestModel) TableName() string { return "friend_chat_friend_requests" }
+
 type OutboxModel struct {
-	ID        uint   `gorm:"primaryKey"`
-	EventID   string `gorm:"column:event_id;size:64;uniqueIndex"`
-	EventType string `gorm:"size:128;index"`
-	TargetID  string `gorm:"column:target_id;size:64;index"`
-	Payload   string `gorm:"type:text"`
-	Status    string `gorm:"size:32;index"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID        uint      `gorm:"column:id;primaryKey"`
+	EventID   string    `gorm:"column:event_id;size:64;uniqueIndex"`
+	EventType string    `gorm:"column:event_type;size:128;index"`
+	TargetID  string    `gorm:"column:target_id;size:64;index"`
+	Payload   string    `gorm:"column:payload;type:text"`
+	Status    string    `gorm:"column:status;size:32;index"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at"`
 }
+
+func (*OutboxModel) TableName() string { return "friend_chat_outbox" }
 
 type GormRepo struct {
 	db *gorm.DB
@@ -610,7 +616,7 @@ func (r *GormRepo) BatchLoadActorSummaries(ids []string) map[string]ActorSummary
 		Icon string `gorm:"column:icon"`
 	}
 	var rows []row
-	r.db.Table("touch_actors").Select("id, name, icon").Where("id IN ?", ids).Find(&rows)
+	r.db.Table("touch_actor").Select("id, name, icon").Where("id IN ?", ids).Find(&rows)
 	for _, r := range rows {
 		result[fmt.Sprintf("%d", r.ID)] = ActorSummary{
 			ID:          r.ID,

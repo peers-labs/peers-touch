@@ -11,7 +11,7 @@ use crate::contracts::{
 };
 use crate::application::profile as application_profile;
 use crate::state::AppState;
-use tauri::State;
+use tauri::{Manager, State};
 
 #[tauri::command]
 pub fn profile_get(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
@@ -33,14 +33,44 @@ pub fn profile_upload_header(input: FileUploadInput) -> AppResult<StubPayload> {
     application_profile::profile_upload_header(input)
 }
 
+// 2026-04-25: Changed from sync to async with spawn_blocking.
+// The sync variant blocks the Tauri main thread on macOS while making
+// multiple sequential HTTP requests (OSS upload + profile update + profile get
+// + avatar download), which can deadlock or timeout — same class of issue
+// that was fixed for pick_image_file (see below).
+// Uses AppHandle instead of State to avoid lifetime issues in async commands.
 #[tauri::command]
-pub fn profile_upload_avatar_oss(state: State<'_, Arc<AppState>>, input: FileUploadInput) -> AppResult<StubPayload> {
-    application_profile::profile_upload_avatar_oss(state.inner(), input)
+pub async fn profile_upload_avatar_oss(app: tauri::AppHandle, input: FileUploadInput) -> AppResult<StubPayload> {
+    let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
+    tokio::task::spawn_blocking(move || {
+        application_profile::profile_upload_avatar_oss(&state, input)
+    })
+    .await
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "profile_upload_avatar_oss task panicked");
+        AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Avatar upload task failed: {}", e),
+            None,
+        )
+    })
 }
 
 #[tauri::command]
-pub fn profile_upload_header_oss(state: State<'_, Arc<AppState>>, input: FileUploadInput) -> AppResult<StubPayload> {
-    application_profile::profile_upload_header_oss(state.inner(), input)
+pub async fn profile_upload_header_oss(app: tauri::AppHandle, input: FileUploadInput) -> AppResult<StubPayload> {
+    let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
+    tokio::task::spawn_blocking(move || {
+        application_profile::profile_upload_header_oss(&state, input)
+    })
+    .await
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "profile_upload_header_oss task panicked");
+        AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Header upload task failed: {}", e),
+            None,
+        )
+    })
 }
 
 #[tauri::command]

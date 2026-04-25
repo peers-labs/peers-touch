@@ -2,9 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Tooltip, toast } from '@lobehub/ui';
 import { useSessionStore } from '../../store/session';
-import { convertFileSrc } from '@tauri-apps/api/core';
 import {
-  Avatar,
   Empty,
   Input,
   AutoComplete,
@@ -27,6 +25,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@lobehub/ui';
 import { api, type AccountProfile, type AccountProfileLink } from '../../services/desktop_api';
+import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { useAccountIdentityStore } from '../../store/accountIdentity';
 import { useTranslation } from 'react-i18next';
 import { SettingsContainer, SettingsSection } from './SettingsLayout';
@@ -154,10 +153,6 @@ function EditableAvatar({
 }) {
   const { token } = theme.useToken();
 
-  // Prefer local cached file (via convertFileSrc) over remote HTTP URL,
-  // because Tauri WKWebView blocks cross-origin http:// loads from tauri://
-  const imgSrc = localPath ? convertFileSrc(localPath) : src;
-
   return (
     <div
       onClick={() => !uploading && onUpload()}
@@ -169,21 +164,14 @@ function EditableAvatar({
         height: size,
       }}
     >
-      <Avatar
-        src={imgSrc || undefined}
+      <UserSquareAvatar
+        url={src}
+        localPath={localPath}
+        name={fallbackText}
         size={size}
-        shape="square"
-        style={{
-          background: token.colorPrimaryBg,
-          color: token.colorPrimary,
-          border: `2px solid ${token.colorBorderSecondary}`,
-          borderRadius: 12,
-          fontSize: size * 0.38,
-          fontWeight: 700,
-        }}
-      >
-        {(fallbackText || 'P').slice(0, 1).toUpperCase()}
-      </Avatar>
+        radius={12}
+        border={`2px solid ${token.colorBorderSecondary}`}
+      />
 
       <div
         style={{
@@ -489,13 +477,16 @@ export function AccountTab() {
 
       if (next.avatar) {
         // Sync avatar to local cache and update session store so sidebar reflects immediately.
+        // 2026-04-25: Replaced silent .catch(() => {}) with user-facing error feedback.
         api.accountSyncAvatar(next.avatar).then(() => {
           return api.syncUserProfile();
         }).then((result) => {
           if (result?.avatar_url) {
             useSessionStore.getState().updateAvatar(result.avatar_url, result.avatar_local_path);
           }
-        }).catch(() => {});
+        }).catch((error: any) => {
+          toast.error(error?.message || t('provider.account.avatarHeader.failedToUploadAvatar'));
+        });
         useAccountIdentityStore.getState().load();
         useSessionStore.getState().updateAvatar(next.avatar);
       }
