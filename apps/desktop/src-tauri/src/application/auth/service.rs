@@ -372,26 +372,28 @@ fn unauthorized(message: impl Into<String>, details: serde_json::Value) -> AppRe
 }
 
 /// Mark account as having a restorable session; if PIN is set, encrypt the token.
-fn mark_account_has_session(account_id: &str, token: &str) {
-    if let Ok(state) = crate::infrastructure::auth_identity::read_state() {
-        if let Some(account) = state.accounts.iter().find(|a| a.id == account_id) {
-            if account.pin_protection.is_some() {
-                // Account has PIN: we can't encrypt without the PIN, but mark as having session.
-                // The token will be encrypted next time the user provides their PIN.
-                let mut s = state.clone();
-                if let Some(a) = s.accounts.iter_mut().find(|a| a.id == account_id) {
-                    a.has_session = true;
-                }
-                let _ = crate::infrastructure::auth_identity::write_state(&s);
-            } else {
-                // No PIN: mark as having session (plaintext fallback via legacy session.json)
-                let mut s = state.clone();
-                if let Some(a) = s.accounts.iter_mut().find(|a| a.id == account_id) {
-                    a.has_session = true;
-                }
-                let _ = crate::infrastructure::auth_identity::write_state(&s);
+///
+/// For non-PIN accounts, only ONE session is active at a time (stored in the
+/// shared `session.json`). When a new account logs in, the previous account's
+/// session is effectively gone. This function clears `has_session` for all
+/// other non-PIN accounts so the account picker accurately reflects which
+/// account can be restored without re-authentication.
+fn mark_account_has_session(account_id: &str, _token: &str) {
+    if let Ok(mut state) = crate::infrastructure::auth_identity::read_state() {
+        // Clear has_session for other non-PIN accounts since the shared
+        // session.json now belongs to the new account.
+        for account in &mut state.accounts {
+            if account.id != account_id && account.pin_protection.is_none() {
+                account.has_session = false;
             }
         }
+
+        // Mark the target account as having an active session.
+        if let Some(account) = state.accounts.iter_mut().find(|a| a.id == account_id) {
+            account.has_session = true;
+        }
+
+        let _ = crate::infrastructure::auth_identity::write_state(&state);
     }
 }
 
