@@ -5,8 +5,6 @@ import { api, type ChatAttachmentInput } from '../services/desktop_api';
 import { FriendMessageStatus, type FriendChatSession, type FriendChatMessage } from '../gen/proto/domain/chat/friend_chat_pb';
 import type { Group, GroupMessage, GroupMember } from '../gen/proto/domain/chat/group_chat_pb';
 import { log } from '../utils/logger';
-import { friendChatP2p } from '../modules/p2p/friendChatP2p';
-
 interface FriendRequestData {
   id: string;
   senderId: string;
@@ -550,7 +548,6 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       let encryptedPayload: string | undefined;
       let sendContent = content;
       const clientUlid = createClientMessageUlid();
-      const myDid = get().currentUserDid ?? '';
 
       if (encryptionEnabled && sessionEncrypted[sessionUlid]) {
         try {
@@ -567,7 +564,13 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         }
       }
 
-      const resp = await api.friendChatSendMessage(
+      // Real-time fan-out is handled entirely by the SSE EventBus
+      // (Station publishes onto it inside `friend_chat.handleSendMessage`
+      // for both recipient and sender-echo). No client-side WebRTC
+      // hint is sent; SSE delivery beats DC settle time on cold
+      // conversations and reaches multi-device peers. See
+      // docs/architecture/realtime/event-stream.md.
+      await api.friendChatSendMessage(
         sessionUlid,
         receiverDid,
         sendContent,
@@ -577,11 +580,6 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         encryptedPayload,
         clientUlid,
       );
-      const messageUlid = (resp as any)?.message?.ulid || clientUlid;
-      if (myDid && receiverDid && messageUlid) {
-        // Best-effort: direct channel only sends a hint; persistence stays on Station.
-        friendChatP2p.sendMessageHint(myDid, receiverDid, sessionUlid, messageUlid);
-      }
       await get().loadMessages(sessionUlid, 'friend');
       const did = get().currentUserDid ?? '';
       set((state) => ({

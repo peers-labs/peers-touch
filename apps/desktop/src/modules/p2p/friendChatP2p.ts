@@ -1,8 +1,30 @@
-import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
-import type { MessageEnvelope } from '../../gen/proto/domain/chat/friend_chat_pb';
-import { MessageEnvelopeSchema } from '../../gen/proto/domain/chat/friend_chat_pb';
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
+
+// Historical context (kept verbose deliberately — this module used to
+// be the data-plane and the deletion is non-obvious from `git blame`):
+//
+// Until the realtime SSE EventBus landed (see
+// docs/architecture/realtime/event-stream.md), the WebRTC DataChannel
+// here doubled as a "fast path" for friend-chat text: the sender
+// pushed a `MessageEnvelope` protobuf hint over the DC so the peer
+// could trigger an immediate `friendChatSync` without waiting for the
+// 60s safety-net poll. That path was inherently unreliable because:
+//
+//   1. WebRTC trickle-ICE on relay-only paths can take seconds to
+//      settle, and the *first* message of a freshly-opened
+//      conversation always lost the race.
+//   2. Multi-device fan-out (one user with N devices) has no DC to
+//      send over for the (N-1) devices that didn't initiate the
+//      WebRTC pair.
+//   3. The DC can silently die on NAT rebinding without firing
+//      `connectionstatechange`, which left the UI thinking it had
+//      real-time delivery when it didn't.
+//
+// SSE solves all three: the canonical event stream is server-fanned,
+// reaches every active session of every participant, and is observed
+// to be alive via heartbeat. The DC remains here purely for future
+// voice/video media; it no longer carries text.
 
 export type FriendChatP2pState = 'idle' | 'connecting' | 'connected' | 'failed' | 'closed';
 
@@ -28,25 +50,12 @@ export interface FriendChatP2pStatus {
   transport?: FriendChatP2pTransport;
 }
 
-export type FriendChatP2pOnEnvelope = (envelope: MessageEnvelope) => void;
-
 function normalizePair(a: string, b: string): [string, string] {
   return a.localeCompare(b) <= 0 ? [a, b] : [b, a];
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function asBytes(data: unknown): Uint8Array | null {
-  if (data instanceof ArrayBuffer) return new Uint8Array(data);
-  if (typeof SharedArrayBuffer !== 'undefined' && data instanceof SharedArrayBuffer) {
-    return new Uint8Array(data);
-  }
-  if (data instanceof Blob) return null; // not expected
-  // Some runtimes deliver Uint8Array-like.
-  if (data instanceof Uint8Array) return data;
-  return null;
 }
 
 /**
@@ -96,12 +105,7 @@ interface Conn {
 
 class FriendChatP2pManager {
   private conns = new Map<ConnKey, Conn>();
-  private onEnvelope: FriendChatP2pOnEnvelope | null = null;
   private onStatus: ((myDid: string, peerDid: string, status: FriendChatP2pStatus) => void) | null = null;
-
-  setOnEnvelope(handler: FriendChatP2pOnEnvelope | null) {
-    this.onEnvelope = handler;
-  }
 
   setOnStatus(handler: ((myDid: string, peerDid: string, status: FriendChatP2pStatus) => void) | null) {
     this.onStatus = handler;
@@ -225,16 +229,10 @@ class FriendChatP2pManager {
         this.emitStatus(myDid, peerDid, conn.status);
         this.updatePeerRole(myDid, 'client+p2p:failed').catch(() => {});
       };
-      dc.onmessage = (ev) => {
-        const bytes = asBytes(ev.data);
-        if (!bytes) return;
-        try {
-          const env = fromBinary(MessageEnvelopeSchema, bytes);
-          this.onEnvelope?.(env);
-        } catch (error) {
-          log.warn('p2p', 'failed to decode p2p envelope', error);
-        }
-      };
+      // Drain inbound bytes silently. Text data plane is now SSE; a
+      // peer running an older build might still push hint frames, and
+      // we drop them rather than letting the `bufferedAmount` grow.
+      dc.onmessage = () => {};
     };
 
     if (isOfferer) {
@@ -402,28 +400,6 @@ class FriendChatP2pManager {
     tick().catch(() => {});
   }
 
-  sendMessageHint(myDid: string, peerDid: string, sessionUlid: string, messageUlid: string): boolean {
-    const key: ConnKey = `${myDid}::${peerDid}`;
-    const conn = this.conns.get(key);
-    if (!conn?.dc || conn.dc.readyState !== 'open') return false;
-    const env = create(MessageEnvelopeSchema, {
-      messageUlid,
-      senderDid: myDid,
-      receiverDid: peerDid,
-      sessionUlid,
-      encryptedPayload: new Uint8Array(),
-      timestamp: BigInt(Date.now()),
-      signature: '',
-    });
-    try {
-      const bytes = toBinary(MessageEnvelopeSchema, env);
-      conn.dc.send(bytes);
-      return true;
-    } catch (error) {
-      log.warn('p2p', 'sendMessageHint failed', error);
-      return false;
-    }
-  }
 }
 
 export const friendChatP2p = new FriendChatP2pManager();
