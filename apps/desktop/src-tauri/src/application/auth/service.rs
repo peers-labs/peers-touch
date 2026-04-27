@@ -1,15 +1,11 @@
-use crate::domain::auth::session::{validate_login_input, from_station_response, validate_token, AuthDomainError, AuthSession};
+use crate::domain::auth::session::{from_station_response, validate_login_input, validate_token, AuthDomainError, AuthSession};
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::storage::{self, StorageKind};
+use crate::infrastructure::session_store::{self, SessionSource};
 use crate::infrastructure::station_client;
 use crate::model::actor::ActorProfile;
-use crate::application::oauth2 as application_oauth2;
 use crate::contracts::{AuthLoginInput, AuthSessionPayload, AuthValidateTokenInput};
 use crate::state::{AppState, SessionState};
-use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::fs;
-use std::path::PathBuf;
 
 pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSessionPayload> {
     if let Err(error) = validate_login_input(&input.account, &input.password) {
@@ -78,11 +74,22 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
         avatar
     };
 
+    // Resolve relative Station avatar path to absolute URL so identities.json
+    // stores a renderable URL from the start (no need to wait for sync_user_profile).
+    let avatar = if !avatar.is_empty() && avatar.starts_with('/') {
+        format!("{}{}", station_client::station_base_url(), avatar)
+    } else {
+        avatar
+    };
+
+    let access_token = token.clone();
     let session = from_station_response(actor_id.clone(), token);
     if let Err(error) = write_session(state, &session) {
         return error;
     }
-    if let Err(error) = persist_session(&session) {
+    if let Err(error) = session_store::save(&session.actor_id, &session.token, SessionSource::Password)
+        .map_err(session_store_to_app)
+    {
         return error;
     }
 
@@ -92,6 +99,16 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
         &email_str,
         if avatar.is_empty() { None } else { Some(avatar.as_str()) },
     );
+
+    // Download avatar to local cache immediately so the account picker shows
+    // the correct image on next app start without waiting for sync_user_profile.
+    let avatar_local_path = if !avatar.is_empty() {
+        crate::application::profile::sync_avatar_with_download(&access_token, &avatar)
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
 
     // Mark session as restorable (will be encrypted once PIN is set)
     mark_account_has_session(&format!("password:{}", actor_id), &session.token);
@@ -103,7 +120,7 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
         name: Some(name),
         email: Some(email_str),
         avatar_url: Some(avatar),
-        avatar_local_path: None,
+        avatar_local_path,
         login_method: Some("password".to_string()),
     })
 }
@@ -117,10 +134,21 @@ pub fn auth_logout(state: &AppState) -> AppResult<AuthSessionPayload> {
         let _ = crate::infrastructure::auth_identity::clear_account_session(account_id);
     }
 
-    if let Err(error) = clear_session(state) {
-        return error;
+    let bound_actor = state
+        .session
+        .lock()
+        .ok()
+        .and_then(|g| g.actor_id.clone());
+    if let Some(ref aid) = bound_actor {
+        let _ = session_store::delete(aid);
+    } else if let Some(ref acc) = active_account_id {
+        let id = actor_id_from_account_id(acc);
+        if !id.is_empty() {
+            let _ = session_store::delete(&id);
+        }
     }
-    if let Err(error) = clear_persisted_session() {
+
+    if let Err(error) = clear_session(state) {
         return error;
     }
     AppResult::success(AuthSessionPayload {
@@ -141,7 +169,33 @@ pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
         Err(error) => return error,
     };
     if snapshot.token.is_none() {
-        snapshot = read_persisted_session().unwrap_or(snapshot);
+        let active_actor = crate::infrastructure::auth_identity::read_state()
+            .ok()
+            .and_then(|s| s.active_account_id)
+            .map(|acc| actor_id_from_account_id(&acc))
+            .filter(|id| !id.is_empty());
+
+        if let Some(ref active) = active_actor {
+            if let Some(ref mem) = snapshot.actor_id {
+                if mem != active {
+                    tracing::warn!(
+                        in_memory = %mem,
+                        active_actor = %active,
+                        "auth_restore_session: ignoring per-account disk session; active account does not match in-memory binding"
+                    );
+                } else if let Some(blob) = session_store::load(active) {
+                    snapshot = SessionState {
+                        actor_id: Some(blob.actor_id),
+                        token: Some(blob.token),
+                    };
+                }
+            } else if let Some(blob) = session_store::load(active) {
+                snapshot = SessionState {
+                    actor_id: Some(blob.actor_id),
+                    token: Some(blob.token),
+                };
+            }
+        }
     }
 
     // Restore only from memory or disk. No OAuth bridge fallback.
@@ -164,7 +218,9 @@ pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
     if let Err(error) = write_session(state, &session) {
         return error;
     }
-    if let Err(error) = persist_session(&session) {
+    if let Err(error) = session_store::save(&session.actor_id, &session.token, SessionSource::Password)
+        .map_err(session_store_to_app)
+    {
         return error;
     }
     let profile = crate::infrastructure::auth_identity::find_profile_by_actor_id(&session.actor_id);
@@ -222,7 +278,9 @@ pub fn auth_validate_token(
     if let Err(error) = write_session(state, &session) {
         return error;
     }
-    if let Err(error) = persist_session(&session) {
+    if let Err(error) = session_store::save(&session.actor_id, &session.token, SessionSource::Password)
+        .map_err(session_store_to_app)
+    {
         return error;
     }
     AppResult::success(AuthSessionPayload {
@@ -280,77 +338,20 @@ fn clear_session(state: &AppState) -> Result<(), AppResult<AuthSessionPayload>> 
     Ok(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct PersistedSession {
-    actor_id: String,
-    token: String,
-}
-
-fn persist_session(session: &AuthSession) -> Result<(), AppResult<AuthSessionPayload>> {
-    let file_path = persisted_session_file();
-    if let Some(parent) = file_path.parent() {
-        fs::create_dir_all(parent).map_err(|_| {
-            AppResult::fail(
-                ErrorCode::InternalError,
-                "Failed to persist session: could not create directory",
-                None,
-            )
-        })?;
-    }
-    let payload = serde_json::to_string(&PersistedSession {
-        actor_id: session.actor_id.clone(),
-        token: session.token.clone(),
-    })
-    .map_err(|_| {
-        AppResult::fail(
-            ErrorCode::InternalError,
-            "Failed to persist session: serialization error",
-            None,
-        )
-    })?;
-    storage::write_string_atomic(&file_path, &payload).map_err(|_| {
-        AppResult::fail(
-            ErrorCode::InternalError,
-            "Failed to persist session: write error",
-            None,
-        )
-    })
-}
-
-fn read_persisted_session() -> Option<SessionState> {
-    let file_path = persisted_session_file();
-    let raw = fs::read_to_string(file_path).ok()?;
-    let persisted = serde_json::from_str::<PersistedSession>(&raw).ok()?;
-    Some(SessionState {
-        actor_id: Some(persisted.actor_id),
-        token: Some(persisted.token),
-    })
-}
-
-fn clear_persisted_session() -> Result<(), AppResult<AuthSessionPayload>> {
-    let file_path = persisted_session_file();
-    if !file_path.exists() {
-        return Ok(());
-    }
-    fs::remove_file(file_path).map_err(|_| {
-        AppResult::fail(
-            ErrorCode::InternalError,
-            "Failed to clear session",
-            None,
-        )
-    })
-}
-
-fn persisted_session_file() -> PathBuf {
-    // Use Data storage for persistence across reboots; Temp is cleared by the OS.
-    storage::app_file_path("desktop", StorageKind::Data, &["auth", "session.json"]).unwrap_or_else(
-        |_| {
-            std::env::temp_dir()
-                .join("peers-touch")
-                .join("desktop")
-                .join("auth-session.json")
-        },
+fn session_store_to_app(e: session_store::SessionStoreError) -> AppResult<AuthSessionPayload> {
+    AppResult::fail(
+        ErrorCode::InternalError,
+        format!("Session persistence error: {e}"),
+        None,
     )
+}
+
+/// Local station `actor_id` part from an `account_id` like `password:123` or bare `123`.
+fn actor_id_from_account_id(account_id: &str) -> String {
+    account_id
+        .split_once(':')
+        .map(|(_, id)| id.to_string())
+        .unwrap_or_else(|| account_id.to_string())
 }
 
 fn map_domain_error(error: AuthDomainError) -> AppResult<AuthSessionPayload> {
@@ -373,22 +374,18 @@ fn unauthorized(message: impl Into<String>, details: serde_json::Value) -> AppRe
 
 /// Mark account as having a restorable session; if PIN is set, encrypt the token.
 ///
-/// For non-PIN accounts, only ONE session is active at a time (stored in the
-/// shared `session.json`). When a new account logs in, the previous account's
-/// session is effectively gone. This function clears `has_session` for all
-/// other non-PIN accounts so the account picker accurately reflects which
-/// account can be restored without re-authentication.
+/// For non-PIN accounts, only ONE session is active at a time. When a new account
+/// logs in, the previous non-PIN account's `has_session` is cleared so the
+/// account picker matches reality. Raw tokens are also stored per-actor in
+/// `infrastructure::session_store`.
 fn mark_account_has_session(account_id: &str, _token: &str) {
     if let Ok(mut state) = crate::infrastructure::auth_identity::read_state() {
-        // Clear has_session for other non-PIN accounts since the shared
-        // session.json now belongs to the new account.
         for account in &mut state.accounts {
             if account.id != account_id && account.pin_protection.is_none() {
                 account.has_session = false;
             }
         }
 
-        // Mark the target account as having an active session.
         if let Some(account) = state.accounts.iter_mut().find(|a| a.id == account_id) {
             account.has_session = true;
         }
@@ -397,13 +394,26 @@ fn mark_account_has_session(account_id: &str, _token: &str) {
     }
 }
 
-/// Load the Station JWT that was persisted by `save_oauth_callback`
-/// (via the oauth-bridge call) and write it into AppState so the BFF
-/// session is immediately active without requiring an app restart.
+/// Load a Station JWT persisted for the **active** account (OAuth bridge) and
+/// mirror it into `AppState` for the BFF.
 pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload> {
-    let (actor_id, token) = match application_oauth2::read_station_session() {
-        Some(pair) => pair,
-        None => {
+    let active_actor = crate::infrastructure::auth_identity::read_state()
+        .ok()
+        .and_then(|s| s.active_account_id)
+        .map(|acc| actor_id_from_account_id(&acc))
+        .filter(|id| !id.is_empty());
+
+    let Some(active) = active_actor else {
+        return AppResult::fail(
+            ErrorCode::NotFound,
+            "No station session found to restore",
+            None,
+        )
+    };
+
+    let blob = match session_store::load(&active) {
+        Some(b) if b.source == SessionSource::OauthBridge => b,
+        Some(_) | None => {
             return AppResult::fail(
                 ErrorCode::NotFound,
                 "No station session found to restore",
@@ -412,25 +422,37 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
         }
     };
 
+    if blob.actor_id != active {
+        tracing::warn!(
+            blob_actor = %blob.actor_id,
+            active = %active,
+            "ensure_station_session: session blob actor does not match active account; using blob"
+        );
+    }
+
+    let actor_id = blob.actor_id;
+    let token = blob.token;
     let session = from_station_response(actor_id.clone(), token);
     if let Err(error) = write_session(state, &session) {
         return error;
     }
-    if let Err(error) = persist_session(&session) {
+    if let Err(error) = session_store::save(&session.actor_id, &session.token, SessionSource::OauthBridge)
+        .map_err(session_store_to_app)
+    {
         return error;
     }
 
     let profile = crate::infrastructure::auth_identity::find_profile_by_actor_id(&actor_id);
-    let (p_name, p_email, p_avatar) = match &profile {
+    let (p_name, p_email, p_avatar, p_local_avatar) = match &profile {
         Some(p) => (
             Some(p.name.clone()).filter(|v| !v.is_empty()),
             Some(p.email.clone()).filter(|v| !v.is_empty()),
             Some(p.avatar_url.clone()).filter(|v| !v.is_empty()),
+            p.avatar_local_path.clone().filter(|v| !v.is_empty()),
         ),
-        None => (None, None, None),
+        None => (None, None, None, None),
     };
 
-    // Find the OAuth account ID from identities for session marking
     if let Ok(id_state) = crate::infrastructure::auth_identity::read_state() {
         if let Some(active_id) = &id_state.active_account_id {
             mark_account_has_session(active_id, &session.token);
@@ -444,7 +466,7 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
         name: p_name,
         email: p_email,
         avatar_url: p_avatar,
-        avatar_local_path: None,
+        avatar_local_path: p_local_avatar,
         login_method: Some("oauth".to_string()),
     })
 }

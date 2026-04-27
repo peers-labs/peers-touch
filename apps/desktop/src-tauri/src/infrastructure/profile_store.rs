@@ -1,10 +1,13 @@
+use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Mutex, OnceLock};
 
 use crate::domain::profile::{
     validate_bio, validate_display_name, validate_file_path, validate_location,
     validate_visibility, ProfileError, ProfileSnapshot, UploadKind, UploadOutcome,
 };
+
+use crate::infrastructure::actor_bucket::actor_bucket_id;
 
 #[derive(Clone)]
 struct ProfileStore {
@@ -31,24 +34,41 @@ impl Default for ProfileStore {
     }
 }
 
-static PROFILE_STORE: LazyLock<Mutex<ProfileStore>> =
-    LazyLock::new(|| Mutex::new(ProfileStore::default()));
+struct ProfileStores {
+    buckets: HashMap<String, ProfileStore>,
+}
 
-pub fn get() -> Result<ProfileSnapshot, ProfileError> {
-    let store = PROFILE_STORE
+static PROFILE_STORES: OnceLock<Mutex<ProfileStores>> = OnceLock::new();
+
+fn profile_stores() -> &'static Mutex<ProfileStores> {
+    PROFILE_STORES.get_or_init(|| Mutex::new(ProfileStores {
+        buckets: HashMap::new(),
+    }))
+}
+
+fn with_profile_store_mut<T, F>(actor_id: &str, f: F) -> Result<T, ProfileError>
+where
+    F: FnOnce(&mut ProfileStore) -> Result<T, ProfileError>,
+{
+    let key = actor_bucket_id(actor_id);
+    let mut stores = profile_stores()
         .lock()
         .map_err(|_| ProfileError::Internal("failed to lock profile store".to_string()))?;
-    Ok(snapshot_from(&store))
+    let store = stores.buckets.entry(key).or_default();
+    f(store)
+}
+
+pub fn get(actor_id: &str) -> Result<ProfileSnapshot, ProfileError> {
+    with_profile_store_mut(actor_id, |store| Ok(snapshot_from(store)))
 }
 
 pub fn update(
+    actor_id: &str,
     display_name: Option<String>,
     bio: Option<String>,
     location: Option<String>,
 ) -> Result<ProfileSnapshot, ProfileError> {
-    let mut store = PROFILE_STORE
-        .lock()
-        .map_err(|_| ProfileError::Internal("failed to lock profile store".to_string()))?;
+    with_profile_store_mut(actor_id, |store| {
     if let Some(value) = display_name {
         store.display_name = validate_display_name(&value)?;
     }
@@ -60,27 +80,30 @@ pub fn update(
         validate_location(&value)?;
         store.location = value;
     }
-    Ok(snapshot_from(&store))
+    Ok(snapshot_from(store))
+    })
 }
 
 pub fn update_privacy(
+    actor_id: &str,
     visibility: String,
     allow_direct_message: bool,
 ) -> Result<ProfileSnapshot, ProfileError> {
     let normalized = validate_visibility(&visibility)?;
-    let mut store = PROFILE_STORE
-        .lock()
-        .map_err(|_| ProfileError::Internal("failed to lock profile store".to_string()))?;
-    store.visibility = normalized;
-    store.allow_direct_message = allow_direct_message;
-    Ok(snapshot_from(&store))
+    with_profile_store_mut(actor_id, |store| {
+        store.visibility = normalized;
+        store.allow_direct_message = allow_direct_message;
+        Ok(snapshot_from(store))
+    })
 }
 
-pub fn upload(kind: UploadKind, file_path: &str) -> Result<UploadOutcome, ProfileError> {
+pub fn upload(
+    actor_id: &str,
+    kind: UploadKind,
+    file_path: &str,
+) -> Result<UploadOutcome, ProfileError> {
     let path = validate_file_path(file_path)?;
-    let mut store = PROFILE_STORE
-        .lock()
-        .map_err(|_| ProfileError::Internal("failed to lock profile store".to_string()))?;
+    with_profile_store_mut(actor_id, |store| {
     let (field, old_value) = match kind {
         UploadKind::Avatar => ("avatar", store.avatar_url.clone()),
         UploadKind::Header => ("header", store.header_url.clone()),
@@ -114,6 +137,7 @@ pub fn upload(kind: UploadKind, file_path: &str) -> Result<UploadOutcome, Profil
         value: optimistic_value,
         rolled_back: false,
     })
+    })
 }
 
 fn should_fail(path: &str) -> bool {
@@ -136,5 +160,27 @@ fn snapshot_from(store: &ProfileStore) -> ProfileSnapshot {
         header_url: store.header_url.clone(),
         visibility: store.visibility.clone(),
         allow_direct_message: store.allow_direct_message,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn profile_stores_isolate_actors() {
+        let a = "actor-profile-a";
+        let b = "actor-profile-b";
+        update(
+            a,
+            Some("Name A".to_string()),
+            None,
+            None,
+        )
+        .expect("update a");
+        let snap_b_before = get(b).expect("b default");
+        assert_ne!(snap_b_before.display_name, "Name A");
+        let snap_a = get(a).expect("a");
+        assert_eq!(snap_a.display_name, "Name A");
     }
 }

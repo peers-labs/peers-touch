@@ -1,33 +1,46 @@
 import { create } from 'zustand';
 import { api, AuthCommandException, type AuthSessionResponse } from '../services/desktop_api';
+import { markLocalIdentityAction } from '../services/identity_event';
+import { runIdentityPipeline } from '../services/identityPipeline';
 
 // ── Types ──
 
+// TODO(unified-actor): align with AccountIdentity (desktop_api) for cross-layer consistency.
 export interface CurrentUser {
   actorId: string;
   name: string;
   email: string;
+  /** Remote avatar URL. The single piece of avatar state the frontend tracks;
+   *  local file caching is owned by the UserSquareAvatar component / Rust
+   *  avatar_cache infrastructure. */
   avatarUrl?: string;
-  /** Absolute local file path for cached avatar image. Preferred for display. */
-  avatarLocalPath?: string;
   loginMethod: 'password' | 'oauth';
   loginProvider?: string;
 }
+
+const initialState = {
+  currentUser: null as CurrentUser | null,
+  authenticated: false,
+  restoring: false,
+};
 
 interface SessionStore {
   currentUser: CurrentUser | null;
   authenticated: boolean;
   restoring: boolean;
 
+  reset: () => void;
+  hydrate: (actorId: string) => Promise<void>;
+
   loginWithPassword: (account: string, password: string) => Promise<void>;
   loginWithOAuth: (providerId: string) => Promise<void>;
   restoreSession: () => Promise<void>;
   logout: () => Promise<void>;
-  /** Update avatar URL on the current user (called after upload or profile sync). */
-  updateAvatar: (avatarUrl: string, localPath?: string) => void;
+  /** Update the remote avatar URL after upload or profile sync. */
+  updateAvatar: (avatarUrl: string) => void;
 }
 
-// ── Helpers ──
+// ── Helpers (exported for tests; mapping mirrors `restoreSession`) ──
 
 function userFromAuthResponse(resp: AuthSessionResponse, fallbackMethod: 'password' | 'oauth', provider?: string): CurrentUser | null {
   if (!resp.actor_id) return null;
@@ -36,7 +49,6 @@ function userFromAuthResponse(resp: AuthSessionResponse, fallbackMethod: 'passwo
     name: resp.name || '',
     email: resp.email || '',
     avatarUrl: resp.avatar_url || undefined,
-    avatarLocalPath: resp.avatar_local_path || undefined,
     loginMethod: (resp.login_method as 'password' | 'oauth') || fallbackMethod,
     loginProvider: provider,
   };
@@ -44,21 +56,34 @@ function userFromAuthResponse(resp: AuthSessionResponse, fallbackMethod: 'passwo
 
 // ── Store ──
 
-export const useSessionStore = create<SessionStore>((set) => ({
-  currentUser: null,
-  authenticated: false,
-  restoring: false,
+export const useSessionStore = create<SessionStore>((set, get) => ({
+  ...initialState,
+
+  reset: () => set({ ...initialState }),
+
+  hydrate: async () => {
+    await get().restoreSession();
+  },
 
   loginWithPassword: async (account, password) => {
+    markLocalIdentityAction();
     const resp = await api.authLogin({ account, password });
-    const user = userFromAuthResponse(resp, 'password');
-    set({ currentUser: user, authenticated: true });
+    await runIdentityPipeline({
+      reason: 'login',
+      actorId: resp.actor_id ?? null,
+      loginMethod: 'password',
+    });
   },
 
   loginWithOAuth: async (_providerId: string) => {
+    markLocalIdentityAction();
     const resp = await api.ensureStationSession();
-    const user = userFromAuthResponse(resp, 'oauth', _providerId);
-    set({ currentUser: user, authenticated: !!user });
+    const method = (resp.login_method as string) || 'oauth';
+    await runIdentityPipeline({
+      reason: 'oauth_bridge',
+      actorId: resp.actor_id ?? null,
+      loginMethod: method,
+    });
   },
 
   restoreSession: async () => {
@@ -80,23 +105,34 @@ export const useSessionStore = create<SessionStore>((set) => ({
   },
 
   logout: async () => {
+    markLocalIdentityAction();
+    // Stop the peer-presence SSE supervisor before tearing down auth state,
+    // otherwise the Rust thread would keep retrying with a stale token in
+    // an exponential-backoff loop until process exit. Best-effort: a
+    // failure here just leaves the supervisor running, which is annoying
+    // but not user-facing.
+    try {
+      await api.friendChatPresenceStop();
+    } catch {
+      // noop
+    }
     try {
       await api.authLogout();
     } catch {
       // Best-effort: if the session is already expired/revoked, still clear local state.
     }
-    set({ currentUser: null, authenticated: false });
+    await runIdentityPipeline({
+      reason: 'logout',
+      actorId: null,
+      loginMethod: null,
+    });
   },
 
-  updateAvatar: (avatarUrl: string, localPath?: string) => {
+  updateAvatar: (avatarUrl: string) => {
     set((state) => {
       if (!state.currentUser) return state;
       return {
-        currentUser: {
-          ...state.currentUser,
-          avatarUrl,
-          avatarLocalPath: localPath ?? state.currentUser.avatarLocalPath,
-        },
+        currentUser: { ...state.currentUser, avatarUrl },
       };
     });
   },

@@ -7,6 +7,7 @@
 package actor
 
 import (
+	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -64,6 +65,7 @@ type VerifySessionResponse struct {
 	SubjectId     string                 `protobuf:"bytes,2,opt,name=subject_id,json=subjectId,proto3" json:"subject_id,omitempty"`
 	Attributes    map[string]string      `protobuf:"bytes,3,rep,name=attributes,proto3" json:"attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	ActorRef      *model.ActorRef        `protobuf:"bytes,5,opt,name=actor_ref,proto3" json:"actor_ref,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -126,12 +128,19 @@ func (x *VerifySessionResponse) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *VerifySessionResponse) GetActorRef() *model.ActorRef {
+	if x != nil {
+		return x.ActorRef
+	}
+	return nil
+}
+
 var File_domain_actor_session_api_proto protoreflect.FileDescriptor
 
 const file_domain_actor_session_api_proto_rawDesc = "" +
 	"\n" +
-	"\x1edomain/actor/session_api.proto\x12\vpeers.actor\x1a\x1fgoogle/protobuf/timestamp.proto\"\x16\n" +
-	"\x14VerifySessionRequest\"\x9a\x02\n" +
+	"\x1edomain/actor/session_api.proto\x12\vpeers.actor\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/actor/actor.proto\"\x16\n" +
+	"\x14VerifySessionRequest\"\xde\x02\n" +
 	"\x15VerifySessionResponse\x12\x14\n" +
 	"\x05valid\x18\x01 \x01(\bR\x05valid\x12\x1d\n" +
 	"\n" +
@@ -140,7 +149,8 @@ const file_domain_actor_session_api_proto_rawDesc = "" +
 	"attributes\x18\x03 \x03(\v22.peers.actor.VerifySessionResponse.AttributesEntryR\n" +
 	"attributes\x129\n" +
 	"\n" +
-	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x1a=\n" +
+	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12B\n" +
+	"\tactor_ref\x18\x05 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\tactor_ref\x1a=\n" +
 	"\x0fAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01BIZGgithub.com/peers-labs/peers-touch/station/frame/touch/model/actor;actorb\x06proto3"
@@ -163,15 +173,17 @@ var file_domain_actor_session_api_proto_goTypes = []any{
 	(*VerifySessionResponse)(nil), // 1: peers.actor.VerifySessionResponse
 	nil,                           // 2: peers.actor.VerifySessionResponse.AttributesEntry
 	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
+	(*model.ActorRef)(nil),        // 4: peers_touch.model.actor.v1.ActorRef
 }
 var file_domain_actor_session_api_proto_depIdxs = []int32{
 	2, // 0: peers.actor.VerifySessionResponse.attributes:type_name -> peers.actor.VerifySessionResponse.AttributesEntry
 	3, // 1: peers.actor.VerifySessionResponse.expires_at:type_name -> google.protobuf.Timestamp
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	4, // 2: peers.actor.VerifySessionResponse.actor_ref:type_name -> peers_touch.model.actor.v1.ActorRef
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_domain_actor_session_api_proto_init() }

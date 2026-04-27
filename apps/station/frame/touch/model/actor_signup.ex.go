@@ -34,8 +34,11 @@ func (m *ActorSignRequest) Check() error {
 	if strings.TrimSpace(m.Namespace) == "" {
 		m.Namespace = "peers"
 	}
-	if strings.TrimSpace(m.AccountType) == "" {
-		m.AccountType = "Person"
+	// If proto kind is explicit, SignUp uses it; else legacy account_type (default Person)
+	if m.GetKind() == ActorKind_ACTOR_KIND_UNSPECIFIED {
+		if strings.TrimSpace(m.AccountType) == "" {
+			m.AccountType = "Person"
+		}
 	}
 
 	return nil

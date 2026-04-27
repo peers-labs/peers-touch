@@ -3,6 +3,7 @@ package oss
 import (
 	"context"
 	"path/filepath"
+	"strings"
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oss/db/repo"
@@ -15,6 +16,16 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
 
+// defaultMaxFileSize is the per-file upload cap when the operator does not
+// override `Options.MaxFileSize`. 32 MiB matches the multipart parser's
+// in-memory threshold and is a reasonable default for home deployments.
+const defaultMaxFileSize int64 = 32 << 20
+
+// defaultMaxFilesPerMessage is an advisory client-side limit surfaced via
+// capabilities. We do not enforce it server-side because each upload is a
+// separate request.
+const defaultMaxFilesPerMessage int32 = 9
+
 type ossSubServer struct {
 	status       server.Status
 	addrs        []string
@@ -25,6 +36,14 @@ type ossSubServer struct {
 	backend      storage.Backend
 	authProvider auth.Provider
 	fileService  service.FileService
+
+	// hostOverride / limits / backendType drive the `/capabilities`
+	// response and the `cid` URIs returned from `/upload`. See
+	// `Options` for the full rationale on each.
+	hostOverride       string
+	maxFileSize        int64
+	maxFilesPerMessage int32
+	backendType        string
 }
 
 func NewOSSSubServer(opts ...option.Option) server.Subserver {
@@ -35,6 +54,19 @@ func NewOSSSubServer(opts ...option.Option) server.Subserver {
 	s.storePath = o.StorePath
 	s.signSecret = o.SignSecret
 	s.authProvider = o.AuthProvider
+	s.hostOverride = strings.TrimRight(o.HostOverride, "/")
+	s.maxFileSize = o.MaxFileSize
+	if s.maxFileSize <= 0 {
+		s.maxFileSize = defaultMaxFileSize
+	}
+	s.maxFilesPerMessage = o.MaxFilesPerMessage
+	if s.maxFilesPerMessage <= 0 {
+		s.maxFilesPerMessage = defaultMaxFilesPerMessage
+	}
+	s.backendType = o.BackendType
+	if s.backendType == "" {
+		s.backendType = "local"
+	}
 	if s.pathBase == "" {
 		s.pathBase = "/sub-oss"
 	}

@@ -4,6 +4,23 @@ package peers_touch.model.actor.v1;
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
 
+enum ActorKind {
+  ACTOR_KIND_UNSPECIFIED = 0;
+  ACTOR_KIND_PERSON = 1;
+  ACTOR_KIND_GROUP = 2;
+  ACTOR_KIND_ORGANIZATION = 3;
+  ACTOR_KIND_SERVICE = 4;
+  ACTOR_KIND_APPLICATION = 5;
+  ACTOR_KIND_NODE = 6;
+}
+
+message ActorRef {
+  uint64 actor_id = 1 [json_name = "actor_id"];
+  string ptid = 2;
+  string acct = 3;
+  ActorKind kind = 4;
+}
+
 message Actor {
   string id = 1;
   string username = 2;
@@ -15,6 +32,7 @@ message Actor {
   bool is_following = 8 [json_name = "is_following"];
   uint64 actor_id = 9 [json_name = "actor_id"];
   string avatar = 10;
+  ActorKind kind = 11;
 }
 
 message UserLink {
@@ -54,6 +72,7 @@ message ActorProfile {
   bool manually_approves_followers = 25 [json_name = "manually_approves_followers"];
   string message_permission = 26 [json_name = "message_permission"];
   int32 auto_expire_days = 27 [json_name = "auto_expire_days"];
+  ActorRef ref = 28 [json_name = "ref"];
 }
 
 message UpdateProfileRequest {

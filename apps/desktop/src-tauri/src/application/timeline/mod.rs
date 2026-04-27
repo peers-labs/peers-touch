@@ -3,8 +3,8 @@ use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::timeline_store;
 use crate::contracts::{StubPayload, TimelineActionInput, TimelineListInput};
 
-pub fn timeline_list(input: TimelineListInput) -> AppResult<StubPayload> {
-    match timeline_store::list(input.cursor.as_deref(), input.limit) {
+pub fn timeline_list(actor_id: &str, input: TimelineListInput) -> AppResult<StubPayload> {
+    match timeline_store::list(actor_id, input.cursor.as_deref(), input.limit) {
         Ok(outcome) => AppResult::success(StubPayload {
             command: "timeline_list".to_string(),
             status: format!(
@@ -18,8 +18,8 @@ pub fn timeline_list(input: TimelineListInput) -> AppResult<StubPayload> {
     }
 }
 
-pub fn timeline_like(input: TimelineActionInput) -> AppResult<StubPayload> {
-    match timeline_store::like(&input.post_id) {
+pub fn timeline_like(actor_id: &str, input: TimelineActionInput) -> AppResult<StubPayload> {
+    match timeline_store::like(actor_id, &input.post_id) {
         Ok(outcome) if outcome.rolled_back => AppResult::fail(
             ErrorCode::Conflict,
             format!(
@@ -36,9 +36,9 @@ pub fn timeline_like(input: TimelineActionInput) -> AppResult<StubPayload> {
     }
 }
 
-pub fn timeline_comment(input: TimelineActionInput) -> AppResult<StubPayload> {
+pub fn timeline_comment(actor_id: &str, input: TimelineActionInput) -> AppResult<StubPayload> {
     let content = input.content.unwrap_or_default();
-    match timeline_store::comment(&input.post_id, &content) {
+    match timeline_store::comment(actor_id, &input.post_id, &content) {
         Ok(outcome) if outcome.rolled_back => AppResult::fail(
             ErrorCode::Conflict,
             format!(
@@ -55,8 +55,8 @@ pub fn timeline_comment(input: TimelineActionInput) -> AppResult<StubPayload> {
     }
 }
 
-pub fn timeline_repost(input: TimelineActionInput) -> AppResult<StubPayload> {
-    match timeline_store::repost(&input.post_id, input.content.as_deref()) {
+pub fn timeline_repost(actor_id: &str, input: TimelineActionInput) -> AppResult<StubPayload> {
+    match timeline_store::repost(actor_id, &input.post_id, input.content.as_deref()) {
         Ok(outcome) if outcome.rolled_back => AppResult::fail(
             ErrorCode::Conflict,
             format!(

@@ -23,6 +23,8 @@ pub mod models;
 pub mod notebook;
 pub mod notification;
 pub mod oauth2;
+pub mod oss;
+pub mod presence;
 pub mod profile;
 pub mod provider;
 pub mod search;
