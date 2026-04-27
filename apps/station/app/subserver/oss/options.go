@@ -94,6 +94,16 @@ type Options struct {
 	// resolver against `friend_chat_sessions`; tests and federated
 	// deployments can install a stub here.
 	ChatResolver ChatSessionResolver
+
+	// LocalStationID is the value this station stamps as the `iss`
+	// of outbound federation tokens and expects as the `aud` on
+	// inbound ones. Operators set this to the same string the node
+	// registry advertises as the station's PeerID; leaving it
+	// empty disables outbound minting (federation is opt-in) but
+	// still allows verifying inbound tokens that target this
+	// station — a *different* station ID would fail the audience
+	// check anyway.
+	LocalStationID string
 }
 
 // S3BackendOptions mirrors `storage.S3Config` at the YAML/options
@@ -189,6 +199,12 @@ func WithS3Config(s S3BackendOptions) option.Option {
 // pass an HTTP-backed resolver that queries the peer station.
 func WithChatSessionResolver(r ChatSessionResolver) option.Option {
 	return wrapper.Wrap(func(o *Options) { o.ChatResolver = r })
+}
+
+// WithLocalStationID stamps this station's federation identity. See
+// Options.LocalStationID for the rationale.
+func WithLocalStationID(id string) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.LocalStationID = id })
 }
 
 func getOptions(opts ...option.Option) *Options {

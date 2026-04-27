@@ -57,7 +57,22 @@ type ossSubServer struct {
 	fileRepo     repo.FileRepository
 	bucketRepo   repo.BucketRepository
 	auditRepo    repo.AuditRepository
+	peerKeyRepo  repo.PeerKeyRepository
 	chatResolver ChatSessionResolver
+
+	// fedKeys holds the Ed25519 keypair this station signs
+	// federation tokens with. Lazily loaded from oss_meta on the
+	// first Mint call — keeping this off the boot path means a
+	// station that never federates never generates a key it does
+	// not need.
+	fedKeys *federationKeyCache
+
+	// localStationID is what we stamp into outbound federation
+	// tokens as `iss`, and what we expect inbound tokens to claim
+	// as `aud`. Today this is the node ID supplied via options;
+	// when empty, MintPeerToken refuses to mint and VerifyPeerToken
+	// skips audience checking (test harness convenience).
+	localStationID string
 
 	// hostOverride / limits / backendType drive the `/capabilities`
 	// response and the `cid` URIs returned from `/upload`. See
@@ -144,6 +159,9 @@ func NewOSSSubServer(opts ...option.Option) server.Subserver {
 	s.fileRepo = repo.NewFileRepository(s.dbName)
 	s.bucketRepo = repo.NewBucketRepository(s.dbName)
 	s.auditRepo = repo.NewAuditRepository(s.dbName)
+	s.peerKeyRepo = repo.NewPeerKeyRepository(s.dbName)
+	s.fedKeys = newFederationKeyCache(s.peerKeyRepo)
+	s.localStationID = strings.TrimSpace(o.LocalStationID)
 	s.fileService = service.NewFileServiceWith(s.fileRepo, s.bucketRepo, s.backend, service.KeyStrategy(s.keyStrategy), s.backendType)
 
 	// Default the chat-audience resolver to the SQL-backed view of
