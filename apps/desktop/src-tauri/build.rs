@@ -61,6 +61,7 @@ fn compile_protos() {
         "domain/agent/skill.proto",
         "domain/agent/memory.proto",
         "domain/key_exchange/key_exchange.proto",
+        "domain/realtime/event.proto",
     ]
     .iter()
     .map(|p| proto_root.join(p))
