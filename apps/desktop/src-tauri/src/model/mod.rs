@@ -60,9 +60,9 @@ pub mod error {
     pub use v1::*;
 }
 
-pub mod events {
+pub mod realtime {
     pub mod v1 {
-        include!(concat!(env!("OUT_DIR"), "/peers_touch.model.events.v1.rs"));
+        include!(concat!(env!("OUT_DIR"), "/peers_touch.model.realtime.v1.rs"));
     }
     pub use v1::*;
 }
