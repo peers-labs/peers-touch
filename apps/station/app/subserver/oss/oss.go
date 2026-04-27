@@ -54,6 +54,7 @@ type ossSubServer struct {
 	backend      storage.Backend
 	authProvider auth.Provider
 	fileService  service.FileService
+	bucketRepo   repo.BucketRepository
 
 	// hostOverride / limits / backendType drive the `/capabilities`
 	// response and the `cid` URIs returned from `/upload`. See
@@ -133,9 +134,12 @@ func NewOSSSubServer(opts ...option.Option) server.Subserver {
 	}
 	s.backend = backend
 
-	// Initialize Service Layer
+	// Initialize Service Layer. The bucket repo is mandatory: every
+	// upload debits a bucket and there is no service mode that
+	// bypasses quota accounting.
 	fileRepo := repo.NewFileRepository(s.dbName)
-	s.fileService = service.NewFileServiceWith(fileRepo, s.backend, service.KeyStrategy(s.keyStrategy), s.backendType)
+	s.bucketRepo = repo.NewBucketRepository(s.dbName)
+	s.fileService = service.NewFileServiceWith(fileRepo, s.bucketRepo, s.backend, service.KeyStrategy(s.keyStrategy), s.backendType)
 
 	return s
 }
