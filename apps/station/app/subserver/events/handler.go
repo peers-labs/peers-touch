@@ -3,6 +3,7 @@ package events
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -18,6 +19,25 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// signalIngressMaxPayloadBytes is the cap on the decoded ciphertext
+// of a single signaling event. SDP offers/answers in our codec set
+// run ~3-5 KiB; ICE candidates ~200 B; the encryption envelope adds
+// ~50 B overhead. 64 KiB is a generous ceiling that still bounds
+// memory pressure if a misbehaving peer floods us with garbage.
+const signalIngressMaxPayloadBytes = 64 * 1024
+
+// signalKindMap converts the wire string form of a signaling kind
+// (the JSON sent by the client) into the protobuf enum that rides
+// on the EventBus. Mirroring the proto enum here, rather than
+// reflecting it, keeps the JSON contract stable across proto-gen
+// tweaks.
+var signalKindMap = map[string]realtime.CallSignal_Kind{
+	"OFFER":     realtime.CallSignal_OFFER,
+	"ANSWER":    realtime.CallSignal_ANSWER,
+	"CANDIDATE": realtime.CallSignal_CANDIDATE,
+	"HANGUP":    realtime.CallSignal_HANGUP,
+}
+
 // Heartbeat cadence; see contract §2.4.
 const heartbeatInterval = 15 * time.Second
 
@@ -30,10 +50,18 @@ func (s *eventsSubServer) Handlers() []server.Handler {
 	hertzJWTWrapper := hertzadapter.RequireJWT(provider)
 
 	return []server.Handler{
-		// Single canonical realtime endpoint. Per contract §1.2 there
-		// are no per-feature SSE endpoints; every kind of realtime
-		// event multiplexes through this one stream.
+		// Single canonical realtime egress endpoint. Per contract §1.2
+		// there are no per-feature SSE endpoints; every kind of
+		// realtime event multiplexes through this one stream.
 		server.NewHertzHandler("events-stream", "/events/stream", server.GET, s.handleStream, hertzJWTWrapper),
+
+		// Signaling ingress (contract §2.7.1). WebRTC offer / answer /
+		// ICE candidate / hangup arrive here as opaque ciphertext
+		// (contract §2.7.2 — encrypted with the chat session ratchet)
+		// and Station fan-outs them onto the recipient's SSE stream
+		// plus the sender's stream for multi-device echo. Station
+		// never inspects the payload.
+		server.NewHertzHandler("realtime-signal", "/realtime/signal", server.POST, s.handlePostSignal, hertzJWTWrapper),
 	}
 }
 
@@ -163,4 +191,106 @@ func writeFrame(c *app.RequestContext, ev *realtime.StreamEvent) error {
 		return err
 	}
 	return c.Flush()
+}
+
+// signalIngressRequest is the JSON body of POST /realtime/signal.
+//
+// `payload_b64` is the base64-encoded ciphertext produced by the
+// client per contract §2.7.2. Station treats it as opaque bytes —
+// it never decodes / decrypts / parses the JSON inside.
+type signalIngressRequest struct {
+	RecipientActorID string `json:"recipient_actor_id"`
+	SessionULID      string `json:"session_ulid"`
+	Kind             string `json:"kind"`
+	PayloadB64       string `json:"payload_b64"`
+}
+
+// handlePostSignal ingests a single WebRTC signaling event from the
+// caller, validates the routing metadata, and fan-outs a CallSignal
+// frame onto the recipient's (and, when distinct, the sender's) SSE
+// stream. See contract §2.7.1 for the wire shape.
+func (s *eventsSubServer) handlePostSignal(ctx context.Context, c *app.RequestContext) {
+	subject := hertzadapter.GetSubject(c)
+	if subject == nil {
+		c.JSON(401, map[string]string{"error": "unauthorized"})
+		return
+	}
+	senderActorID := subject.ID
+
+	var req signalIngressRequest
+	if err := json.Unmarshal(c.Request.Body(), &req); err != nil {
+		c.JSON(400, map[string]string{"error": "invalid json: " + err.Error()})
+		return
+	}
+
+	if req.RecipientActorID == "" || req.SessionULID == "" || req.Kind == "" {
+		c.JSON(400, map[string]string{"error": "recipient_actor_id, session_ulid, kind are required"})
+		return
+	}
+
+	kind, ok := signalKindMap[req.Kind]
+	if !ok {
+		c.JSON(400, map[string]string{"error": "unknown kind: " + req.Kind})
+		return
+	}
+
+	// Decode payload purely to length-check it. We never inspect the
+	// plaintext — that is the chat session's per-message ciphertext.
+	payload, err := base64.StdEncoding.DecodeString(req.PayloadB64)
+	if err != nil {
+		c.JSON(400, map[string]string{"error": "payload_b64 is not valid base64"})
+		return
+	}
+	if len(payload) > signalIngressMaxPayloadBytes {
+		c.JSON(413, map[string]string{
+			"error": fmt.Sprintf("payload too large: %d > %d", len(payload), signalIngressMaxPayloadBytes),
+		})
+		return
+	}
+
+	bus := GetBus()
+	if bus == nil {
+		// EventBus down means the realtime plane is unreachable;
+		// reject the publish so the client can surface the error
+		// rather than silently dropping the signal. (Unlike the
+		// chat path, signaling has no durable persistence layer
+		// behind it — the EventBus IS the delivery contract.)
+		c.JSON(503, map[string]string{"error": "event bus not initialized"})
+		return
+	}
+
+	ev := &realtime.StreamEvent{
+		Kind: &realtime.StreamEvent_Signaling{
+			Signaling: &realtime.CallSignal{
+				SessionUlid: req.SessionULID,
+				FromActorId: senderActorID,
+				Kind:        kind,
+				Payload:     payload,
+			},
+		},
+	}
+
+	if _, err := bus.Publish(req.RecipientActorID, ev); err != nil {
+		// Publish errors are operational, not policy. Log and bail
+		// with 502 so the caller knows the routing failed.
+		logger.DefaultHelper.Warnf("events: signal publish to recipient failed actor=%s: %v", req.RecipientActorID, err)
+		c.JSON(502, map[string]string{"error": "publish failed: " + err.Error()})
+		return
+	}
+
+	// Multi-device sender echo: a caller running two clients of the
+	// same actor needs the second client to learn the call was
+	// initiated. When sender == recipient (self-call, which is
+	// nonsense for voice/video but legal for protocol completeness),
+	// we skip the echo to avoid a duplicate frame.
+	if senderActorID != req.RecipientActorID {
+		if _, err := bus.Publish(senderActorID, ev); err != nil {
+			// Sender echo is best-effort — the caller's primary
+			// device already knows it sent the signal because it
+			// got a 204 from us. Don't fail the request.
+			logger.DefaultHelper.Warnf("events: signal echo to sender failed actor=%s: %v", senderActorID, err)
+		}
+	}
+
+	c.SetStatusCode(204)
 }
