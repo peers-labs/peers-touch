@@ -237,24 +237,21 @@ class FriendChatP2pManager {
     );
   }
 
+  /**
+   * Mount-time priming hook called once per session from
+   * SocialChatPage.tsx. Historically this also published a
+   * presence/role hint to Station's `/api/v1/ice/peer/register`
+   * endpoint so the dashboard could observe transport state. That
+   * endpoint and the entire signaling subserver were removed in 8.3c
+   * — presence is now carried by the realtime SSE PresenceFlip event,
+   * and transport observability moved to the Realtime page. The
+   * function survives only to make sure the `ensureSignalSubscription`
+   * side effect runs *before* the first conversation is opened, so
+   * the SSE inbound path is wired by the time an OFFER lands.
+   */
   async ensurePeerRegistered(myDid: string): Promise<void> {
     if (!myDid.trim()) return;
     this.ensureSignalSubscription();
-    try {
-      await api.icePeerRegister(myDid, 'client', []);
-    } catch (error) {
-      // Non-fatal: direct channel will fail but station-sync path remains.
-      log.warn('p2p', 'icePeerRegister failed', error);
-    }
-  }
-
-  private async updatePeerRole(myDid: string, role: string): Promise<void> {
-    if (!myDid.trim()) return;
-    try {
-      await api.icePeerRegister(myDid, role, []);
-    } catch {
-      // Best-effort only.
-    }
   }
 
   async ensureConnected(myDid: string, peerDid: string): Promise<FriendChatP2pStatus> {
@@ -321,18 +318,15 @@ class FriendChatP2pManager {
         // (`transport: null` means "connected but path not yet known").
         conn.status = { state: 'connected', signalingSessionId, transport: null };
         this.emitStatus(myDid, peerDid, conn.status);
-        this.updatePeerRole(myDid, 'client+p2p:connected').catch(() => {});
         this.startTransportProbe(myDid, peerDid, conn);
       } else if (s === 'failed') {
         conn.transportProbeStopped = true;
         conn.status = { state: 'failed', detail: 'webrtc connection failed', signalingSessionId };
         this.emitStatus(myDid, peerDid, conn.status);
-        this.updatePeerRole(myDid, 'client+p2p:failed').catch(() => {});
       } else if (s === 'closed') {
         conn.transportProbeStopped = true;
         conn.status = { state: 'closed', signalingSessionId };
         this.emitStatus(myDid, peerDid, conn.status);
-        this.updatePeerRole(myDid, 'client+p2p:closed').catch(() => {});
       }
     };
 
@@ -351,7 +345,6 @@ class FriendChatP2pManager {
           transport: conn.status.transport ?? null,
         };
         this.emitStatus(myDid, peerDid, conn.status);
-        this.updatePeerRole(myDid, 'client+p2p:connected').catch(() => {});
         // Probe again in case the data channel opened *before* the
         // connectionstatechange handler had a chance to start one.
         if (!conn.transportProbeStopped && conn.status.transport == null) {
@@ -360,12 +353,10 @@ class FriendChatP2pManager {
       };
       dc.onclose = () => {
         log.warn('p2p', 'datachannel closed', { peerDid, signalingSessionId });
-        this.updatePeerRole(myDid, 'client+p2p:closed').catch(() => {});
       };
       dc.onerror = () => {
         conn.status = { state: 'failed', detail: 'datachannel error', signalingSessionId };
         this.emitStatus(myDid, peerDid, conn.status);
-        this.updatePeerRole(myDid, 'client+p2p:failed').catch(() => {});
       };
       // Drain inbound bytes silently. Text data plane is now SSE; a
       // peer running an older build might still push hint frames, and
