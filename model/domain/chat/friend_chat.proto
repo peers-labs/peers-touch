@@ -51,6 +51,16 @@ message FriendChatMessage {
 
   // E2E ciphertext; when set, content may be empty or a non-secret placeholder.
   bytes encrypted_payload = 15;
+
+  // Mutation flags. A mutated message keeps its row (so threading,
+  // replies, and search snippets stay coherent) but its content is
+  // either cleared (`recalled = true`) or replaced (`edited_at`
+  // non-null). `recalled` and `edited_at` are mutually exclusive: a
+  // recalled message cannot subsequently be edited; an edited message
+  // can still be recalled. The wire-level deletion path removes the
+  // row entirely and does not surface here.
+  bool recalled = 16;
+  google.protobuf.Timestamp edited_at = 17;
 }
 
 enum FriendMessageType {
@@ -298,4 +308,53 @@ message ListFriendRequestsRequest {
 message ListFriendRequestsResponse {
   repeated FriendRequest requests = 1;
   int32 total = 2;
+}
+
+// ============================================================================
+// Friend Message Mutations: recall / edit / delete
+// ============================================================================
+//
+// These three operations all share the same authorization rule: only
+// the message's original sender may invoke them, and only within
+// FRIEND_CHAT_MUTATION_WINDOW (operator-tunable; see the friend_chat
+// subserver's options). Each mutation publishes a realtime
+// MessageMutation StreamEvent onto the recipient's (and the sender's
+// other devices') unified event stream so peers learn about the
+// change without polling. See docs/architecture/realtime/event-stream.md
+// §2.7 (MessageMutation).
+
+message RecallFriendMessageRequest {
+  string session_ulid = 1;
+  string message_ulid = 2;
+}
+
+message RecallFriendMessageResponse {
+  // Empty success response. The mutation lands on the realtime
+  // stream with kind=RECALL; clients reconcile the local store from
+  // there. The HTTP success only confirms the row was found,
+  // owned, and within the recall window.
+}
+
+message EditFriendMessageRequest {
+  string session_ulid = 1;
+  string message_ulid = 2;
+  // Plaintext replacement body. For E2EE chats, callers MUST also
+  // provide `new_encrypted_payload`; Station never inspects either
+  // field beyond a length sanity-check, but it persists both so
+  // catch-up clients (cold sync) see the post-edit state. When E2EE
+  // is in use, `new_content` SHOULD be either empty or a non-secret
+  // placeholder, mirroring the SendMessage convention.
+  string new_content = 3;
+  bytes new_encrypted_payload = 4;
+}
+
+message EditFriendMessageResponse {
+}
+
+message DeleteFriendMessageRequest {
+  string session_ulid = 1;
+  string message_ulid = 2;
+}
+
+message DeleteFriendMessageResponse {
 }

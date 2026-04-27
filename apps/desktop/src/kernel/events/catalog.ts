@@ -15,6 +15,7 @@ export const EVENT = {
   REALTIME_CALL_SIGNAL: 'realtime.call_signal',
   REALTIME_MESSAGE_RECEIPT: 'realtime.message_receipt',
   REALTIME_TYPING_STATE: 'realtime.typing_state',
+  REALTIME_MESSAGE_MUTATION: 'realtime.message_mutation',
 } as const;
 
 export type EventType = (typeof EVENT)[keyof typeof EVENT];

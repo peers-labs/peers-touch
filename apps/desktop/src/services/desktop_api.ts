@@ -12,6 +12,9 @@ import {
   GetMessagesResponseSchema,
   SendMessageResponseSchema,
   MessageAckResponseSchema,
+  RecallFriendMessageResponseSchema,
+  EditFriendMessageResponseSchema,
+  DeleteFriendMessageResponseSchema,
   SyncMessagesResponseSchema,
   OnlineResponseSchema,
   GetPendingResponseSchema,
@@ -2932,6 +2935,64 @@ export const api = {
 
   friendChatAckMessages: (ulids: string[], status: number) =>
     invokeRustProto('friend_chat_ack_messages', MessageAckResponseSchema, { ulids, status }),
+
+  /**
+   * Recall a previously-sent friend chat message. Server enforces
+   * sender ownership and the recall window (currently 5 minutes —
+   * see `application.DefaultMutationWindow`). On success Station
+   * pushes a `MessageMutation` event over SSE so peers update in
+   * realtime; this call's response is empty.
+   */
+  friendChatRecallMessage: (sessionUlid: string, messageUlid: string) =>
+    invokeRustProto(
+      'friend_chat_recall_message',
+      RecallFriendMessageResponseSchema,
+      {
+        session_ulid: sessionUlid,
+        message_ulid: messageUlid,
+      },
+    ),
+
+  /**
+   * Edit a previously-sent friend chat message. At least one of
+   * `newContent` or `newEncryptedPayload` must be non-empty; both
+   * may be provided when an E2EE chat still keeps a plaintext
+   * search index. Subject to the same window as recall.
+   */
+  friendChatEditMessage: (
+    sessionUlid: string,
+    messageUlid: string,
+    newContent?: string,
+    newEncryptedPayload?: Uint8Array,
+  ) =>
+    invokeRustProto(
+      'friend_chat_edit_message',
+      EditFriendMessageResponseSchema,
+      {
+        session_ulid: sessionUlid,
+        message_ulid: messageUlid,
+        ...(newContent != null && newContent !== '' ? { new_content: newContent } : {}),
+        ...(newEncryptedPayload != null && newEncryptedPayload.byteLength > 0
+          ? { new_encrypted_payload: Array.from(newEncryptedPayload) }
+          : {}),
+      },
+    ),
+
+  /**
+   * Hard-delete a friend chat message. Unlike recall this removes
+   * the row entirely (and its attachment metadata). Server-side
+   * the parent session's last_message_* pointer is repaired when
+   * the deleted ulid was the head.
+   */
+  friendChatDeleteMessage: (sessionUlid: string, messageUlid: string) =>
+    invokeRustProto(
+      'friend_chat_delete_message',
+      DeleteFriendMessageResponseSchema,
+      {
+        session_ulid: sessionUlid,
+        message_ulid: messageUlid,
+      },
+    ),
 
   /**
    * Fire a presence trigger to the Rust supervisor. Always resolves; the

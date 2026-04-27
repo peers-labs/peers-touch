@@ -36,6 +36,9 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("fc-messages", "/friend-chat/messages", server.GET, s.handleGetMessages, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-message-search", "/friend-chat/messages/search", server.GET, s.handleSearchMessages, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-message-ack", "/friend-chat/message/ack", server.POST, s.handleAckMessage, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-message-recall", "/friend-chat/message/recall", server.POST, s.handleRecallMessage, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-message-edit", "/friend-chat/message/edit", server.POST, s.handleEditMessage, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-message-delete", "/friend-chat/message/delete", server.POST, s.handleDeleteMessage, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-online", "/friend-chat/online", server.POST, s.handleOnline, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-offline", "/friend-chat/offline", server.POST, s.handleOffline, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-pending", "/friend-chat/pending", server.GET, s.handleGetPending, logIDWrapper, s.jwtWrapper),
@@ -435,6 +438,158 @@ func publishReceiptsToSenders(bus events.EventBus, acked []domain.AckedMessage, 
 	}
 }
 
+// handleRecallMessage clears a message's content + encrypted payload
+// in place, flips `recalled = true`, and publishes a realtime
+// MessageMutation event on the recipient's (and the sender's other
+// devices') stream. Only the original sender may recall, and only
+// within the recall window (see application.DefaultMutationWindow).
+func (s *subServer) handleRecallMessage(ctx context.Context, req *chat.RecallFriendMessageRequest) (*chat.RecallFriendMessageResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.GetSessionUlid() == "" || req.GetMessageUlid() == "" {
+		return nil, server.BadRequest("session_ulid and message_ulid are required")
+	}
+	out, err := s.service.RecallMessageByActor(subject.ID, req.GetSessionUlid(), req.GetMessageUlid())
+	if err != nil {
+		return nil, mutationErrorToHTTP(err)
+	}
+	publishMutationToParticipants(out, subject.ID)
+	return &chat.RecallFriendMessageResponse{}, nil
+}
+
+// handleEditMessage replaces a message's body. Both `new_content`
+// and `new_encrypted_payload` may be set; we persist whichever is
+// provided. Edits are restricted to the original sender within the
+// edit window, and an edit on a recalled message is rejected.
+func (s *subServer) handleEditMessage(ctx context.Context, req *chat.EditFriendMessageRequest) (*chat.EditFriendMessageResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.GetSessionUlid() == "" || req.GetMessageUlid() == "" {
+		return nil, server.BadRequest("session_ulid and message_ulid are required")
+	}
+	out, err := s.service.EditMessageByActor(
+		subject.ID,
+		req.GetSessionUlid(),
+		req.GetMessageUlid(),
+		req.GetNewContent(),
+		req.GetNewEncryptedPayload(),
+	)
+	if err != nil {
+		return nil, mutationErrorToHTTP(err)
+	}
+	publishMutationToParticipants(out, subject.ID)
+	return &chat.EditFriendMessageResponse{}, nil
+}
+
+// handleDeleteMessage hard-deletes the message + its attachment rows
+// and publishes a realtime MessageMutation event so peers remove the
+// bubble from their UI without polling.
+func (s *subServer) handleDeleteMessage(ctx context.Context, req *chat.DeleteFriendMessageRequest) (*chat.DeleteFriendMessageResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.GetSessionUlid() == "" || req.GetMessageUlid() == "" {
+		return nil, server.BadRequest("session_ulid and message_ulid are required")
+	}
+	out, err := s.service.DeleteMessageByActor(subject.ID, req.GetSessionUlid(), req.GetMessageUlid())
+	if err != nil {
+		return nil, mutationErrorToHTTP(err)
+	}
+	publishMutationToParticipants(out, subject.ID)
+	return &chat.DeleteFriendMessageResponse{}, nil
+}
+
+// mutationErrorToHTTP maps the application sentinels onto HTTP
+// status codes. We deliberately collapse "permission denied" + "row
+// missing" onto 404 so a non-owner cannot enumerate other actors'
+// message ulids by probing.
+func mutationErrorToHTTP(err error) error {
+	switch err {
+	case application.ErrSessionNotFound, application.ErrNotParticipant, application.ErrMessageNotFound:
+		return server.NotFound(err.Error())
+	case application.ErrMutationWindowClosed:
+		return server.BadRequest("mutation window has closed for this message")
+	case application.ErrAlreadyRecalled:
+		return server.BadRequest("message already recalled")
+	case application.ErrEmptyEdit:
+		return server.BadRequest(err.Error())
+	default:
+		return server.InternalErrorWithCause("mutation failed", err)
+	}
+}
+
+// publishMutationToParticipants emits one MessageMutation StreamEvent
+// onto the *receiver's* event stream and (when the sender has more
+// than one logged-in client) the sender's stream too. We follow the
+// same multi-device echo pattern as message send so that all of the
+// sender's other devices see "this row was just recalled" without
+// any local state divergence.
+//
+// Best-effort: persistence has already succeeded, so dropping a
+// realtime mutation event only delays UI convergence — peers' next
+// cold sync surfaces the same change from the DB. We log at warn
+// level rather than failing the HTTP response.
+//
+// `senderActorID` is the authenticated subject for this request and
+// equals `outcome.SenderDID`. We pass it explicitly so the helper
+// does not have to re-resolve it from the outcome and so a future
+// "moderator override" path (where the actor is not the sender) can
+// pass its own id without touching the DB row.
+func publishMutationToParticipants(outcome domain.MutationOutcome, senderActorID string) {
+	bus := events.GetBus()
+	if bus == nil {
+		return
+	}
+	// Translate the repo-level kind int back into the proto enum.
+	// We cannot import the proto package from the repo, hence the
+	// numeric round-trip; the constants on both sides agree per
+	// the contract.
+	var kind realtime.MessageMutation_Kind
+	switch outcome.Kind {
+	case 1:
+		kind = realtime.MessageMutation_RECALL
+	case 2:
+		kind = realtime.MessageMutation_EDIT
+	case 3:
+		kind = realtime.MessageMutation_DELETE
+	default:
+		kind = realtime.MessageMutation_KIND_UNSPECIFIED
+	}
+	build := func() *realtime.StreamEvent {
+		return &realtime.StreamEvent{
+			Kind: &realtime.StreamEvent_Mutation{
+				Mutation: &realtime.MessageMutation{
+					SessionUlid:     outcome.SessionULID,
+					Ulid:            outcome.Ulid,
+					FromActorId:     senderActorID,
+					Kind:            kind,
+					NewCiphertext:   append([]byte(nil), outcome.NewCiphertext...),
+					NewContent:      outcome.NewContent,
+					MutatedTsUnixMs: outcome.MutatedAt.UnixMilli(),
+				},
+			},
+		}
+	}
+	if _, err := bus.Publish(outcome.ReceiverDID, build()); err != nil {
+		logger.DefaultHelper.Warnf("friend_chat: realtime mutation publish failed receiver=%s ulid=%s kind=%v: %v",
+			outcome.ReceiverDID, outcome.Ulid, kind, err)
+	}
+	if outcome.SenderDID != outcome.ReceiverDID {
+		// Multi-device echo for the sender. Without this the
+		// sender's other clients would still display the pre-mutation
+		// content until the next list refresh.
+		if _, err := bus.Publish(outcome.SenderDID, build()); err != nil {
+			logger.DefaultHelper.Warnf("friend_chat: realtime mutation self-echo failed actor=%s ulid=%s: %v",
+				outcome.SenderDID, outcome.Ulid, err)
+		}
+	}
+}
+
 func (s *subServer) handleSyncMessages(ctx context.Context, req *chat.SyncMessagesRequest) (*chat.SyncMessagesResponse, error) {
 	subject := auth.GetSubject(ctx)
 	if subject == nil {
@@ -709,7 +864,7 @@ func collectUniqueActorIDs(items []domain.FriendRequest) []string {
 }
 
 func friendChatMessageFromDomain(m domain.Message) *chat.FriendChatMessage {
-	return &chat.FriendChatMessage{
+	out := &chat.FriendChatMessage{
 		Ulid:             m.ID,
 		SessionUlid:      m.SessionID,
 		SenderDid:        m.SenderDID,
@@ -720,10 +875,15 @@ func friendChatMessageFromDomain(m domain.Message) *chat.FriendChatMessage {
 		Attachments:      friendAttachmentsToProto(m.Attachments),
 		ReplyToUlid:      m.ReplyToID,
 		Status:           chat.FriendMessageStatus(m.Status),
+		Recalled:         m.Recalled,
 		SentAt:           timestamppb.New(m.SentAt),
 		CreatedAt:        timestamppb.New(m.CreatedAt),
 		UpdatedAt:        timestamppb.New(m.UpdatedAt),
 	}
+	if !m.EditedAt.IsZero() {
+		out.EditedAt = timestamppb.New(m.EditedAt)
+	}
+	return out
 }
 
 func friendAttachmentsFromProto(in []*chat.FriendMessageAttachment) []domain.Attachment {

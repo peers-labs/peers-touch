@@ -6,8 +6,10 @@ use crate::application::session_resolver;
 use crate::infrastructure::station_client;
 use crate::model;
 use crate::contracts::{
-    AttachmentInput, ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput, ChatScopeCursorSetInput, FriendChatAckInput, FriendChatCreateSessionInput, FriendChatListInput,
-    FriendChatListFriendRequestsInput, FriendChatListMessagesInput, FriendChatOnlineInput, FriendChatPendingInput, FriendChatSendFriendRequestInput, FriendChatSendInput,
+    AttachmentInput, ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput, ChatScopeCursorSetInput, FriendChatAckInput, FriendChatCreateSessionInput,
+    FriendChatDeleteInput, FriendChatEditInput, FriendChatListInput,
+    FriendChatListFriendRequestsInput, FriendChatListMessagesInput, FriendChatOnlineInput, FriendChatPendingInput,
+    FriendChatRecallInput, FriendChatSendFriendRequestInput, FriendChatSendInput,
     FriendChatAcceptFriendRequestInput, FriendChatRejectFriendRequestInput,
     FriendChatSyncInput, FriendChatSyncMessagesInput, StubPayload,
 };
@@ -779,4 +781,119 @@ pub fn friend_chat_list_friend_requests(input: FriendChatListFriendRequestsInput
     AppResult::success(resp.encode_to_vec())
 }
 
+// ---------------------------------------------------------------
+// Friend chat message mutations (recall / edit / delete)
+//
+// These three commands hit the new Station endpoints:
+//
+//   POST /friend-chat/message/recall
+//   POST /friend-chat/message/edit
+//   POST /friend-chat/message/delete
+//
+// Each is a thin proto pass-through. The server enforces sender
+// ownership and the recall / edit window; we surface its errors
+// verbatim. On success the server fans out a `MessageMutation`
+// event over the SSE stream, so the local UI converges via the
+// usual realtime pipeline rather than from this response.
+// ---------------------------------------------------------------
 
+#[tauri::command]
+pub fn friend_chat_recall_message(input: FriendChatRecallInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    if input.session_ulid.trim().is_empty() || input.message_ulid.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "session_ulid and message_ulid are required",
+            None,
+        );
+    }
+    let req = model::chat::RecallFriendMessageRequest {
+        session_ulid: input.session_ulid,
+        message_ulid: input.message_ulid,
+    };
+    let resp = match station_client::request_proto::<model::chat::RecallFriendMessageRequest, model::chat::RecallFriendMessageResponse>(
+        Method::POST,
+        "/friend-chat/message/recall",
+        &token,
+        None,
+        Some(&req),
+    ) {
+        Ok(resp) => resp,
+        Err(error) => return station_error_proto(error, "station request failed"),
+    };
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn friend_chat_edit_message(input: FriendChatEditInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    if input.session_ulid.trim().is_empty() || input.message_ulid.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "session_ulid and message_ulid are required",
+            None,
+        );
+    }
+    let new_content = input.new_content.unwrap_or_default();
+    let new_payload = input.new_encrypted_payload.unwrap_or_default();
+    if new_content.trim().is_empty() && new_payload.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "new_content or new_encrypted_payload is required",
+            None,
+        );
+    }
+    let req = model::chat::EditFriendMessageRequest {
+        session_ulid: input.session_ulid,
+        message_ulid: input.message_ulid,
+        new_content,
+        new_encrypted_payload: new_payload,
+    };
+    let resp = match station_client::request_proto::<model::chat::EditFriendMessageRequest, model::chat::EditFriendMessageResponse>(
+        Method::POST,
+        "/friend-chat/message/edit",
+        &token,
+        None,
+        Some(&req),
+    ) {
+        Ok(resp) => resp,
+        Err(error) => return station_error_proto(error, "station request failed"),
+    };
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn friend_chat_delete_message(input: FriendChatDeleteInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    if input.session_ulid.trim().is_empty() || input.message_ulid.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "session_ulid and message_ulid are required",
+            None,
+        );
+    }
+    let req = model::chat::DeleteFriendMessageRequest {
+        session_ulid: input.session_ulid,
+        message_ulid: input.message_ulid,
+    };
+    let resp = match station_client::request_proto::<model::chat::DeleteFriendMessageRequest, model::chat::DeleteFriendMessageResponse>(
+        Method::POST,
+        "/friend-chat/message/delete",
+        &token,
+        None,
+        Some(&req),
+    ) {
+        Ok(resp) => resp,
+        Err(error) => return station_error_proto(error, "station request failed"),
+    };
+    AppResult::success(resp.encode_to_vec())
+}
