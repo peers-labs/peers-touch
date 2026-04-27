@@ -32,6 +32,9 @@ use crate::state::AppState;
 #[derive(Debug, Deserialize)]
 pub struct ChatUploadAttachmentInput {
     pub file_path: String,
+    pub bucket: String,
+    pub visibility: String,
+    pub chat_session_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -41,10 +44,7 @@ pub struct OssResolveUrlInput {
     pub uri: String,
 }
 
-fn require_token(
-    state: &Arc<AppState>,
-    window: &Window,
-) -> Result<String, AppResult<StubPayload>> {
+fn require_token(state: &Arc<AppState>, window: &Window) -> Result<String, AppResult<StubPayload>> {
     let token = session_resolver::token_for_window(state, window).unwrap_or_default();
     if token.trim().is_empty() {
         return Err(AppResult::fail(
@@ -87,7 +87,50 @@ pub fn chat_upload_attachment(
         Ok(t) => t,
         Err(e) => return e,
     };
-    application_oss::chat_upload_attachment(&input.file_path, &token)
+    if input.file_path.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "file_path is required", None);
+    }
+    if input.bucket.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "bucket is required", None);
+    }
+    let vis = input.visibility.trim().to_ascii_lowercase();
+    if vis != "public" && vis != "chat" && vis != "private" {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "visibility must be one of: public, chat, private",
+            None,
+        );
+    }
+    if vis == "chat" {
+        let sid = input
+            .chat_session_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        if sid.is_none() {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "chat_session_id is required when visibility is chat",
+                None,
+            );
+        }
+    }
+    let chat_sid = if vis == "chat" {
+        input
+            .chat_session_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    } else {
+        None
+    };
+    application_oss::chat_upload_attachment(
+        &input.file_path,
+        &token,
+        input.bucket.trim(),
+        vis.as_str(),
+        chat_sid,
+    )
 }
 
 #[tauri::command]

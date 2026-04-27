@@ -387,7 +387,12 @@ export function ChatMessageArea() {
 
     setSending(true);
     try {
-      const uploaded = await api.chatUploadAttachment(filePath);
+      const uploaded = await api.chatUploadAttachment({
+        file_path: filePath,
+        bucket: 'chat',
+        visibility: 'chat',
+        chat_session_id: activeUlid,
+      });
       if (!uploaded) {
         toast.error(t('chat.social.messageArea.uploadFailed'));
         return;
@@ -601,7 +606,12 @@ export function ChatMessageArea() {
                     {msg.attachments && msg.attachments.length > 0 && (
                       <Flexbox gap={4} style={{ marginTop: msg.content ? 4 : 0 }}>
                         {msg.attachments.map((att, idx) => (
-                          <AttachmentItem key={idx} attachment={att} isOwn={isOwn} />
+                          <AttachmentItem
+                            key={idx}
+                            attachment={att}
+                            isOwn={isOwn}
+                            visibilityHint={isOwn ? 'chat' : undefined}
+                          />
                         ))}
                       </Flexbox>
                     )}
