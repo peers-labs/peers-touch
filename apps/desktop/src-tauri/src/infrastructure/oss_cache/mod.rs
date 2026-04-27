@@ -46,6 +46,12 @@ use crate::infrastructure::storage::{self, StorageKind};
 /// Mirrors the JSON shape returned by `/sub-oss/capabilities`. Field
 /// names are in lock-step with `apps/station/app/subserver/oss/handler.go`
 /// — bump `version` on any breaking change.
+///
+/// Versions:
+///   - `1`: initial public shape (host, backend, key_strategy, …).
+///   - `2`: presigned upload — adds `presigned_upload`,
+///     `presigned_threshold`, `presigned_endpoints`. Older clients keep
+///     working because they ignore unknown fields.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OssCapabilities {
     pub version: i32,
@@ -73,6 +79,62 @@ pub struct OssCapabilities {
     pub file_endpoint: String,
     #[serde(default)]
     pub meta_endpoint: String,
+
+    // ── v2 fields ────────────────────────────────────────────────
+    /// True when the active backend implements the `PresignedBackend`
+    /// capability AND the operator enabled a non-zero threshold.
+    /// The desktop client routes files at or above
+    /// `presigned_threshold` through the direct-PUT path when this is
+    /// set. False (or missing) on Stations that pre-date v2 — the
+    /// client transparently falls back to multipart.
+    #[serde(default)]
+    pub presigned_upload: bool,
+    /// Byte threshold at or above which the client switches from the
+    /// multipart `/upload` endpoint to the direct presigned PUT. Zero
+    /// disables the fast lane regardless of `presigned_upload`.
+    #[serde(default)]
+    pub presigned_threshold: i64,
+    /// Endpoint paths for the presigned upload session. Sent only
+    /// when `presigned_upload` is true; otherwise `None` and the
+    /// client must not attempt the path.
+    #[serde(default)]
+    pub presigned_endpoints: Option<PresignedEndpoints>,
+}
+
+/// Path pair for the presigned upload data flow. Both paths are
+/// relative to `host` — the client joins them itself.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PresignedEndpoints {
+    #[serde(default)]
+    pub presign: String,
+    #[serde(default)]
+    pub complete: String,
+}
+
+impl OssCapabilities {
+    /// Backend identifiers that are non-mirrorable from the desktop
+    /// client's point of view. For these the renderer fetches bytes
+    /// directly from the backend (transparently via Station's 302),
+    /// so caching them under `cache/files/oss` is wasted disk: S3
+    /// itself is the distributed cache.
+    pub fn skip_local_mirror(&self) -> bool {
+        if self.signed_url {
+            return true;
+        }
+        matches!(self.backend.as_str(), "s3")
+    }
+
+    /// Predicate the upload path uses to decide whether a given
+    /// file size should route through the presigned PUT. Encodes
+    /// the version gate so older Stations never accidentally
+    /// trigger the fast lane.
+    pub fn supports_presigned_upload(&self, size: i64) -> bool {
+        self.version >= 2
+            && self.presigned_upload
+            && self.presigned_threshold > 0
+            && size >= self.presigned_threshold
+            && self.presigned_endpoints.is_some()
+    }
 }
 
 #[derive(Debug)]
@@ -211,8 +273,7 @@ pub fn capabilities_ensure(origin: &str) -> Result<OssCapabilities, OssCacheErro
     }
 
     let url = format!("{}/sub-oss/capabilities", normalized);
-    let resp = reqwest::blocking::get(&url)
-        .map_err(|e| OssCacheError::Network(e.to_string()))?;
+    let resp = reqwest::blocking::get(&url).map_err(|e| OssCacheError::Network(e.to_string()))?;
     if !resp.status().is_success() {
         return Err(OssCacheError::Network(format!("status {}", resp.status())));
     }
@@ -293,7 +354,12 @@ pub fn attachment_ensure(
         ));
     }
 
-    let mut url = format!("{}{}?key={}", caps.host, caps.file_endpoint, urlencode(&uri.key));
+    let mut url = format!(
+        "{}{}?key={}",
+        caps.host,
+        caps.file_endpoint,
+        urlencode(&uri.key)
+    );
     if let Some(q) = signed_query {
         if !q.is_empty() {
             url.push('&');
@@ -306,8 +372,7 @@ pub fn attachment_ensure(
         fs::create_dir_all(parent).map_err(|e| OssCacheError::Io(e.to_string()))?;
     }
 
-    let resp = reqwest::blocking::get(&url)
-        .map_err(|e| OssCacheError::Network(e.to_string()))?;
+    let resp = reqwest::blocking::get(&url).map_err(|e| OssCacheError::Network(e.to_string()))?;
     if !resp.status().is_success() {
         return Err(OssCacheError::Network(format!("status {}", resp.status())));
     }
@@ -594,10 +659,7 @@ mod tests {
 
     #[test]
     fn gc_noop_when_under_budget() {
-        let dir = std::env::temp_dir().join(format!(
-            "oss_cache_gc_under_{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("oss_cache_gc_under_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("a.bin"), vec![0u8; 1024]).unwrap();
@@ -629,10 +691,7 @@ mod tests {
 
     #[test]
     fn gc_evicts_oldest_first_until_under_budget() {
-        let dir = std::env::temp_dir().join(format!(
-            "oss_cache_gc_evict_{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("oss_cache_gc_evict_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
