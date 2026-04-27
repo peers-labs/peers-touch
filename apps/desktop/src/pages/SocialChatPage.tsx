@@ -301,6 +301,28 @@ export function SocialChatPage() {
     return off;
   }, []);
 
+  // Realtime MessageMutation → fold recall / edit / delete into the
+  // local message store so peers (including the sender's other
+  // devices) see the change without a poll. The store action is
+  // idempotent so the multi-device sender echo arriving right after
+  // the optimistic local apply just no-ops.
+  useEffect(() => {
+    const apply = useSocialChatStore.getState().applyMessageMutation;
+    const off = eventBus.subscribe(EVENT.REALTIME_MESSAGE_MUTATION, (payload) => {
+      apply(
+        payload.sessionUlid,
+        payload.messageUlid,
+        payload.kind,
+        {
+          newContent: payload.newContent,
+          newCiphertext: payload.newCiphertext,
+          mutatedTsUnixMs: payload.mutatedTsUnixMs,
+        },
+      );
+    });
+    return off;
+  }, []);
+
   // Phantom-typing GC. The sender is supposed to fire `typing=false`
   // on idle / send / blur, but networks die, apps background, and
   // tabs close, leaving `typing=true` hanging on the receiver

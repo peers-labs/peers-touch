@@ -3,6 +3,7 @@ package application
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/domain"
 )
@@ -16,6 +17,9 @@ type Repository interface {
 	SearchMessages(actorDID, query, sessionUlid string, limit, offset int) ([]domain.Message, int, error)
 	LoadAttachments(messageULID string) ([]domain.Attachment, error)
 	MarkRead(actorDID string, messageIDs []string, status int32) ([]domain.AckedMessage, error)
+	RecallMessage(actorDID, sessionULID, messageULID string, recallWindow time.Duration) (domain.MutationOutcome, error)
+	EditMessage(actorDID, sessionULID, messageULID, newContent string, newCiphertext []byte, editWindow time.Duration) (domain.MutationOutcome, error)
+	DeleteMessage(actorDID, sessionULID, messageULID string) (domain.MutationOutcome, error)
 	CreateFriendRequest(senderDID, receiverDID, message string) (domain.FriendRequest, error)
 	GetFriendRequest(requestID string) (*domain.FriendRequest, error)
 	AcceptFriendRequest(requestID string) (*domain.FriendRequest, *domain.Session, error)
@@ -24,19 +28,35 @@ type Repository interface {
 }
 
 type Service struct {
-	repo     Repository
-	notifier NotificationProducer
+	repo           Repository
+	notifier       NotificationProducer
+	mutationWindow time.Duration
 }
 
 var (
-	ErrSessionNotFound  = errors.New("session not found")
-	ErrNotParticipant   = errors.New("actor not in session")
-	ErrInvalidReceiver  = errors.New("invalid receiver")
-	ErrPermissionDenied = errors.New("permission denied")
-	ErrAlreadyFriends   = errors.New("already friends")
-	ErrRequestNotFound  = errors.New("friend request not found")
-	ErrNotRequestTarget = errors.New("only the receiver can accept or reject a friend request")
+	ErrSessionNotFound       = errors.New("session not found")
+	ErrNotParticipant        = errors.New("actor not in session")
+	ErrInvalidReceiver       = errors.New("invalid receiver")
+	ErrPermissionDenied      = errors.New("permission denied")
+	ErrMessageNotFound       = errors.New("message not found")
+	ErrMutationWindowClosed  = errors.New("mutation window closed")
+	ErrAlreadyRecalled       = errors.New("message already recalled")
+	ErrEmptyEdit             = errors.New("edit must include new_content or new_encrypted_payload")
+	ErrAlreadyFriends        = errors.New("already friends")
+	ErrRequestNotFound       = errors.New("friend request not found")
+	ErrNotRequestTarget      = errors.New("only the receiver can accept or reject a friend request")
 )
+
+// MutationWindow is the operator-tunable maximum age (since
+// `sent_at`) at which a friend message is still recall- / edit-able.
+// We keep it in the application layer rather than the infrastructure
+// layer because this is a product-policy knob, not a storage knob,
+// and the handler / service decide whether to enforce it (e.g.
+// future "moderation override" paths might bypass it). 5 minutes
+// matches WeChat / Telegram-style "recall within a few minutes"
+// semantics; if your product wants longer or shorter, set it via
+// `(*Service).SetMutationWindow` at boot.
+const DefaultMutationWindow = 5 * time.Minute
 
 // NotificationProducer decouples notification creation from the notification SubServer.
 // Avoids import cycle: friend_chat → notification.
@@ -45,11 +65,18 @@ type NotificationProducer interface {
 }
 
 func NewService(repo Repository) *Service {
-	return &Service{repo: repo, notifier: nil}
+	return &Service{repo: repo, notifier: nil, mutationWindow: DefaultMutationWindow}
 }
 
 func (s *Service) SetNotifier(n NotificationProducer) {
 	s.notifier = n
+}
+
+// SetMutationWindow lets the bootstrap layer override the default
+// recall / edit window. A zero or negative value disables the
+// window check entirely (only sender-ownership applies).
+func (s *Service) SetMutationWindow(window time.Duration) {
+	s.mutationWindow = window
 }
 
 func (s *Service) GetOrCreateSession(actorDID, participantDID string) (*domain.Session, bool, error) {
@@ -88,6 +115,90 @@ func (s *Service) ListMessages(sessionID, beforeUlid string, limit int) ([]domai
 // the handler can publish without re-validating ownership.
 func (s *Service) AckMessages(actorDID string, messageIDs []string, status int32) ([]domain.AckedMessage, error) {
 	return s.repo.MarkRead(actorDID, messageIDs, status)
+}
+
+// RecallMessageByActor enforces the session-membership gate (the
+// repo enforces the per-message sender-ownership gate) and then
+// delegates to the repository. Errors are translated from the repo's
+// sentinel set into the service-level sentinels so the HTTP handler
+// has a stable error contract.
+func (s *Service) RecallMessageByActor(actorDID, sessionID, messageULID string) (domain.MutationOutcome, error) {
+	session, err := s.repo.GetSession(sessionID)
+	if err != nil || session == nil {
+		return domain.MutationOutcome{}, ErrSessionNotFound
+	}
+	if actorDID != session.ParticipantADID && actorDID != session.ParticipantBDID {
+		return domain.MutationOutcome{}, ErrNotParticipant
+	}
+	out, err := s.repo.RecallMessage(actorDID, sessionID, messageULID, s.mutationWindow)
+	if err != nil {
+		return domain.MutationOutcome{}, mapMutationError(err)
+	}
+	return out, nil
+}
+
+// EditMessageByActor accepts both the plaintext replacement and the
+// encrypted payload — the repo persists whichever is provided, and
+// the realtime fan-out forwards both, since Station can't know which
+// one the receiver will need (the chat may not yet be E2EE-keyed).
+//
+// At least one of `newContent` or `newCiphertext` MUST be non-empty;
+// an "edit to nothing" path must use Recall instead.
+func (s *Service) EditMessageByActor(actorDID, sessionID, messageULID, newContent string, newCiphertext []byte) (domain.MutationOutcome, error) {
+	session, err := s.repo.GetSession(sessionID)
+	if err != nil || session == nil {
+		return domain.MutationOutcome{}, ErrSessionNotFound
+	}
+	if actorDID != session.ParticipantADID && actorDID != session.ParticipantBDID {
+		return domain.MutationOutcome{}, ErrNotParticipant
+	}
+	if strings.TrimSpace(newContent) == "" && len(newCiphertext) == 0 {
+		return domain.MutationOutcome{}, ErrEmptyEdit
+	}
+	out, err := s.repo.EditMessage(actorDID, sessionID, messageULID, newContent, newCiphertext, s.mutationWindow)
+	if err != nil {
+		return domain.MutationOutcome{}, mapMutationError(err)
+	}
+	return out, nil
+}
+
+// DeleteMessageByActor enforces the same membership + ownership gate
+// as recall; the repo also clears the parent session's
+// last_message_* pointer when the deleted ulid was the head.
+func (s *Service) DeleteMessageByActor(actorDID, sessionID, messageULID string) (domain.MutationOutcome, error) {
+	session, err := s.repo.GetSession(sessionID)
+	if err != nil || session == nil {
+		return domain.MutationOutcome{}, ErrSessionNotFound
+	}
+	if actorDID != session.ParticipantADID && actorDID != session.ParticipantBDID {
+		return domain.MutationOutcome{}, ErrNotParticipant
+	}
+	out, err := s.repo.DeleteMessage(actorDID, sessionID, messageULID)
+	if err != nil {
+		return domain.MutationOutcome{}, mapMutationError(err)
+	}
+	return out, nil
+}
+
+// mapMutationError translates the repo's exported error sentinels
+// onto the service-level sentinels. We keep the indirection so the
+// repo can grow new internal errors (e.g. transient DB failures)
+// without leaking them through the service contract.
+func mapMutationError(err error) error {
+	switch err.Error() {
+	case "friend message not found":
+		return ErrMessageNotFound
+	case "not message owner":
+		// Map to NotFound at the boundary — see the repo's
+		// ErrPermissionDenied doc-comment for the rationale.
+		return ErrMessageNotFound
+	case "mutation window closed":
+		return ErrMutationWindowClosed
+	case "message already recalled":
+		return ErrAlreadyRecalled
+	default:
+		return err
+	}
 }
 
 func (s *Service) SendMessageByActor(actorDID, sessionID, receiverDID string, messageType int32, content, replyToID string, attachments []domain.Attachment, encryptedPayload []byte, clientULID string) (domain.Message, error) {

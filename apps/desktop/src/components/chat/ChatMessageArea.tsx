@@ -6,7 +6,7 @@ import { Spin, theme, Typography, Empty } from 'antd';
 import {
   Send, Inbox, Phone, Video, Search, Info,
   Paperclip, Check, CheckCheck,
-  Reply, Trash2, Lock,
+  Reply, Trash2, Lock, RotateCcw, Pencil, X as XIcon,
 } from 'lucide-react';
 import { useSocialChatStore } from '../../store/socialChat';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
@@ -49,12 +49,24 @@ function ReadReceipt({ status }: { status: FriendMessageStatus }) {
 
 interface HoverActionsProps {
   isOwn: boolean;
+  /** Whether the [Recall] button should be shown. Recall is gated
+   *  client-side by ownership + friend chat + within the recall
+   *  window — the server still enforces both. We hide the button
+   *  proactively so the user doesn't get a "too late" error after
+   *  clicking. */
+  canRecall: boolean;
+  /** Whether the [Edit] button should be shown. Same gating as
+   *  recall (ownership + friend chat + window) plus "not recalled". */
+  canEdit: boolean;
   onReply: () => void;
   onDelete: () => void;
+  onRecall: () => void;
+  onEdit: () => void;
 }
 
-function HoverActions({ isOwn, onReply, onDelete }: HoverActionsProps) {
+function HoverActions({ isOwn, canRecall, canEdit, onReply, onDelete, onRecall, onEdit }: HoverActionsProps) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
   return (
     <Flexbox
       horizontal
@@ -74,23 +86,60 @@ function HoverActions({ isOwn, onReply, onDelete }: HoverActionsProps) {
       }}
       className="msg-hover-actions"
     >
-      <Button
-        type="text"
-        size="small"
-        icon={<Reply size={14} />}
-        onClick={onReply}
-        style={{ width: 26, height: 26 }}
-      />
-      <Button
-        type="text"
-        size="small"
-        icon={<Trash2 size={14} />}
-        onClick={onDelete}
-        style={{ width: 26, height: 26, color: token.colorError }}
-      />
+      <Tooltip title={t('chat.social.messageArea.actionReply', 'Reply')}>
+        <Button
+          type="text"
+          size="small"
+          icon={<Reply size={14} />}
+          onClick={onReply}
+          style={{ width: 26, height: 26 }}
+        />
+      </Tooltip>
+      {canEdit && (
+        <Tooltip title={t('chat.social.messageArea.actionEdit', 'Edit')}>
+          <Button
+            type="text"
+            size="small"
+            icon={<Pencil size={14} />}
+            onClick={onEdit}
+            style={{ width: 26, height: 26 }}
+          />
+        </Tooltip>
+      )}
+      {canRecall && (
+        <Tooltip title={t('chat.social.messageArea.actionRecall', 'Recall')}>
+          <Button
+            type="text"
+            size="small"
+            icon={<RotateCcw size={14} />}
+            onClick={onRecall}
+            style={{ width: 26, height: 26 }}
+          />
+        </Tooltip>
+      )}
+      <Tooltip title={t('chat.social.messageArea.actionDelete', 'Delete')}>
+        <Button
+          type="text"
+          size="small"
+          icon={<Trash2 size={14} />}
+          onClick={onDelete}
+          style={{ width: 26, height: 26, color: token.colorError }}
+        />
+      </Tooltip>
     </Flexbox>
   );
 }
+
+/**
+ * Mirrors `application.DefaultMutationWindow` on the Station side.
+ * The server is the source of truth — clients only use this to
+ * decide whether to *show* the Recall / Edit buttons. The UI's
+ * "looks editable" state must always be a strict subset of the
+ * server's "actually editable" state, which is why we err on the
+ * tighter side here (4 minutes 30s vs server's 5 minutes) so a
+ * borderline click cannot 422 the user.
+ */
+const FRIEND_RECALL_WINDOW_MS = 4 * 60 * 1000 + 30 * 1000;
 
 function ReplyBlock({ replyToUlid, messages, isOwn }: { replyToUlid: string; messages: (FriendChatMessage | GroupMessage)[]; isOwn: boolean }) {
   const { token } = theme.useToken();
@@ -129,7 +178,7 @@ export function ChatMessageArea() {
   const {
     activeTab, activeSessionUlid, activeGroupUlid, messages, loading,
     sessions, groups, loadMessages, loadOlderMessages, sendFriendMessage, sendGroupMessage, toggleDetail,
-    deleteMessage,
+    deleteMessage, recallFriendMessage, editFriendMessage,
   } = useSocialChatStore();
   const messageHasMore = useSocialChatStore((s) => s.messageHasMore);
   const messageLoadingMore = useSocialChatStore((s) => s.messageLoadingMore);
@@ -144,6 +193,11 @@ export function ChatMessageArea() {
   const [showSearch, setShowSearch] = useState(false);
   const [sending, setSending] = useState(false);
   const [replyToUlid, setReplyToUlid] = useState<string | null>(null);
+  // When set, the input field operates in "edit" mode: pressing
+  // Send dispatches `editFriendMessage(activeUlid, editingUlid, …)`
+  // instead of creating a new message. The banner above the input
+  // shows the original content + a cancel handle.
+  const [editingUlid, setEditingUlid] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prependRestoreRef = useRef<{ previousHeight: number } | null>(null);
@@ -466,8 +520,10 @@ export function ChatMessageArea() {
     if (!inputValue.trim() || !activeUlid) return;
     const content = inputValue.trim();
     const replyRef = replyToUlid || undefined;
+    const editTarget = editingUlid;
     setInputValue('');
     setReplyToUlid(null);
+    setEditingUlid(null);
     setSending(true);
     // Sending implies "stopped composing" — flip the bubble for the
     // peer immediately rather than waiting on the 4s idle timer.
@@ -483,6 +539,19 @@ export function ChatMessageArea() {
       }
     }
     try {
+      if (editTarget && activeTab === 'friend') {
+        // Edit path. Friend chat only — group chat editing is not
+        // wired here yet (group's existing recall RPC could be
+        // extended later). The store action handles the
+        // optimistic local apply; the realtime echo confirms it.
+        try {
+          await editFriendMessage(activeUlid, editTarget, content);
+        } catch (err) {
+          log.error('chat', 'editFriendMessage failed', err);
+          toast.error(t('chat.social.messageArea.editFailed', 'Edit failed'));
+        }
+        return;
+      }
       if (activeTab === 'friend') {
         const session = sessions.find((s) => s.ulid === activeUlid);
         const receiverDid = session
@@ -497,6 +566,43 @@ export function ChatMessageArea() {
     } finally {
       setSending(false);
     }
+  };
+
+  /**
+   * Resolve the friend message corresponding to a ulid in the
+   * currently-active session. Returns null when the active tab is
+   * group chat (the recall / edit UI is friend-only here).
+   */
+  const findFriendMsg = (ulid: string): FriendChatMessage | null => {
+    if (activeTab !== 'friend') return null;
+    const m = currentMessages.find((x) => x.ulid === ulid);
+    if (!m || !isFriendMsg(m)) return null;
+    return m;
+  };
+
+  const handleRecall = async (msg: FriendChatMessage) => {
+    if (!activeUlid) return;
+    try {
+      await recallFriendMessage(activeUlid, msg.ulid);
+    } catch (err) {
+      log.error('chat', 'recallFriendMessage failed', err);
+      toast.error(t('chat.social.messageArea.recallFailed', 'Recall failed'));
+    }
+  };
+
+  const handleStartEdit = (msg: FriendChatMessage) => {
+    // Only plaintext messages are editable today. An E2EE chat
+    // would need a separate flow that re-encrypts under the active
+    // ratchet key before issuing the RPC; we deliberately disable
+    // the Edit button in `canEdit` rather than half-supporting it.
+    setEditingUlid(msg.ulid);
+    setInputValue(msg.content);
+    setReplyToUlid(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingUlid(null);
+    setInputValue('');
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -682,6 +788,16 @@ export function ChatMessageArea() {
             const isGroup = !isFriendMsg(msg);
             const hasReply = (isFriendMsg(msg) ? msg.replyToUlid : (msg as GroupMessage).replyToUlid) || '';
             const isEncryptedPlaceholder = msg.content === '[Encrypted Message]';
+            const isFriend = isFriendMsg(msg);
+            const isRecalled = isFriend && (msg as FriendChatMessage).recalled === true;
+            const editedAt = isFriend ? (msg as FriendChatMessage).editedAt : undefined;
+            // Friend chat mutation gating. Server enforces the same
+            // rules; the UI only hides buttons that are guaranteed
+            // to fail so we don't rage-click 422s onto the user.
+            const sentMs = msg.sentAt ? timestampDate(msg.sentAt).getTime() : (msg.createdAt ? timestampDate(msg.createdAt).getTime() : 0);
+            const withinWindow = sentMs > 0 && (Date.now() - sentMs) < FRIEND_RECALL_WINDOW_MS;
+            const canRecall = isOwn && isFriend && !isRecalled && withinWindow;
+            const canEdit = isOwn && isFriend && !isRecalled && withinWindow && !isEncryptedPlaceholder;
 
             const bubbleBg = isOwn ? token.colorPrimary : token.colorFillSecondary;
             const bubbleColor = isOwn ? '#fff' : token.colorText;
@@ -709,6 +825,8 @@ export function ChatMessageArea() {
                 <Flexbox style={{ position: 'relative', minWidth: 0 }}>
                   <HoverActions
                     isOwn={isOwn}
+                    canRecall={canRecall}
+                    canEdit={canEdit}
                     onReply={() => setReplyToUlid(msg.ulid)}
                     onDelete={async () => {
                       if (!activeUlid) return;
@@ -719,6 +837,14 @@ export function ChatMessageArea() {
                         log.error('chat', 'deleteMessage failed', e);
                         toast.error(t('chat.social.messageArea.deleteFailed'));
                       }
+                    }}
+                    onRecall={() => {
+                      const fcm = findFriendMsg(msg.ulid);
+                      if (fcm) handleRecall(fcm);
+                    }}
+                    onEdit={() => {
+                      const fcm = findFriendMsg(msg.ulid);
+                      if (fcm) handleStartEdit(fcm);
                     }}
                   />
 
@@ -735,21 +861,34 @@ export function ChatMessageArea() {
                     style={{
                       padding: '8px 12px',
                       borderRadius: bubbleRadius,
-                      background: bubbleBg,
-                      color: bubbleColor,
+                      // Recalled bubbles use the muted "fill quaternary" surface
+                      // regardless of ownership so the tombstone reads as a
+                      // neutral system-style note rather than an actor message.
+                      background: isRecalled ? token.colorFillQuaternary : bubbleBg,
+                      color: isRecalled ? token.colorTextSecondary : bubbleColor,
                       fontSize: 13,
                       lineHeight: 1.5,
                       wordBreak: 'break-word',
+                      fontStyle: isRecalled ? 'italic' : 'normal',
                     }}
                   >
-                    {hasReply && (
+                    {hasReply && !isRecalled && (
                       <ReplyBlock
                         replyToUlid={hasReply}
                         messages={currentMessages}
                         isOwn={isOwn}
                       />
                     )}
-                    {isEncryptedPlaceholder ? (
+                    {isRecalled ? (
+                      <Flexbox horizontal align="center" gap={4}>
+                        <RotateCcw size={12} style={{ color: token.colorTextQuaternary }} />
+                        <Text type="secondary" style={{ fontStyle: 'italic', fontSize: 13 }}>
+                          {isOwn
+                            ? t('chat.social.messageArea.recalledByYou', 'You recalled a message')
+                            : t('chat.social.messageArea.recalledByPeer', 'A message was recalled')}
+                        </Text>
+                      </Flexbox>
+                    ) : isEncryptedPlaceholder ? (
                       <Flexbox horizontal align="center" gap={4}>
                         <Lock size={12} style={{ color: token.colorTextQuaternary }} />
                         <Text type="secondary" style={{ fontStyle: 'italic', fontSize: 13 }}>
@@ -759,7 +898,7 @@ export function ChatMessageArea() {
                     ) : (
                       msg.content
                     )}
-                    {msg.attachments && msg.attachments.length > 0 && (
+                    {!isRecalled && msg.attachments && msg.attachments.length > 0 && (
                       <Flexbox gap={4} style={{ marginTop: msg.content ? 4 : 0 }}>
                         {msg.attachments.map((att, idx) => (
                           <AttachmentItem
@@ -788,7 +927,25 @@ export function ChatMessageArea() {
                     >
                       {formatMsgTime(msg.createdAt)}
                     </Text>
-                    {isOwn && isFriendMsg(msg) && (
+                    {editedAt && !isRecalled && (
+                      <Tooltip title={
+                        t('chat.social.messageArea.editedAtTooltip', {
+                          defaultValue: 'Edited at {{time}}',
+                          time: timestampDate(editedAt).toLocaleString(),
+                        })
+                      }>
+                        <Text
+                          style={{
+                            fontSize: 10,
+                            color: token.colorTextQuaternary,
+                            fontStyle: 'italic',
+                          }}
+                        >
+                          {t('chat.social.messageArea.editedTag', '(edited)')}
+                        </Text>
+                      </Tooltip>
+                    )}
+                    {isOwn && isFriendMsg(msg) && !isRecalled && (
                       <ReadReceipt status={msg.status} />
                     )}
                   </Flexbox>
@@ -847,7 +1004,42 @@ export function ChatMessageArea() {
         }}
         gap={8}
       >
-        {replyingMsg && (
+        {editingUlid && (
+          // Edit-mode banner. Mutually exclusive with the reply
+          // banner — `handleStartEdit` clears any pending reply,
+          // and `handleSend` clears `editingUlid` on submit.
+          <Flexbox
+            horizontal
+            align="center"
+            justify="space-between"
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              background: token.colorWarningBg,
+              borderLeft: `3px solid ${token.colorWarning}`,
+            }}
+          >
+            <Flexbox style={{ minWidth: 0, flex: 1 }}>
+              <Text style={{ fontSize: 11, color: token.colorWarning, fontWeight: 500 }}>
+                {t('chat.social.messageArea.editingMessage', 'Editing message')}
+              </Text>
+              <Text ellipsis type="secondary" style={{ fontSize: 12 }}>
+                {currentMessages.find((m) => m.ulid === editingUlid)?.content || ''}
+              </Text>
+            </Flexbox>
+            <Button
+              type="text"
+              size="small"
+              icon={<XIcon size={14} />}
+              onClick={cancelEdit}
+              style={{ fontSize: 12, color: token.colorTextSecondary }}
+            >
+              {t('chat.social.messageArea.cancel')}
+            </Button>
+          </Flexbox>
+        )}
+
+        {replyingMsg && !editingUlid && (
           <Flexbox
             horizontal
             align="center"
