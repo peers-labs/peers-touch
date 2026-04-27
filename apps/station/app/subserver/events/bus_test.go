@@ -229,6 +229,42 @@ func TestClose_UnsubscribesAll(t *testing.T) {
 	}
 }
 
+func TestPublish_DoesNotMutateCallersEvent(t *testing.T) {
+	// The bus contract is: callers may reuse the same *StreamEvent
+	// across two Publish calls (e.g. multi-device sender echo).
+	// Both fan-outs must see distinct stamped event_ids and the
+	// caller's pointer must be untouched.
+	bus := newTestBus(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	subA, _, _ := bus.Subscribe(ctx, "alice", "dev-a", "")
+	subB, _, _ := bus.Subscribe(ctx, "bob", "dev-b", "")
+
+	shared := msg("hello")
+	if _, err := bus.Publish("alice", shared); err != nil {
+		t.Fatal(err)
+	}
+	if shared.EventId != "" || shared.TsUnixMs != 0 {
+		t.Fatalf("Publish mutated caller event_id=%q ts=%d", shared.EventId, shared.TsUnixMs)
+	}
+	if _, err := bus.Publish("bob", shared); err != nil {
+		t.Fatal(err)
+	}
+
+	a := drainN(t, subA, 1, 50*time.Millisecond)
+	b := drainN(t, subB, 1, 50*time.Millisecond)
+	if len(a) != 1 || len(b) != 1 {
+		t.Fatalf("expected 1 event each, got a=%d b=%d", len(a), len(b))
+	}
+	if a[0].EventId == b[0].EventId {
+		t.Fatalf("expected distinct event_ids, both = %q", a[0].EventId)
+	}
+	if a[0] == b[0] {
+		t.Fatal("subscribers received the SAME pointer; bus must clone")
+	}
+}
+
 func TestEventID_MonotonicAcrossPublishes(t *testing.T) {
 	bus := newTestBus(t)
 	prev := ""

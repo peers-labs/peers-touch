@@ -11,6 +11,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
+	"google.golang.org/protobuf/proto"
 )
 
 // Defaults from docs/architecture/realtime/event-stream.md.
@@ -40,13 +41,16 @@ var ErrBusClosed = errors.New("events: bus closed")
 // per Station; it is exposed to other subservers via package-level
 // GetBus().
 type EventBus interface {
-	// Publish stamps ev with a fresh event_id and current ts, appends
-	// it to the actor's ring buffer, and fans out to every live
-	// subscriber for actor_id. Returns the assigned event_id.
+	// Publish clones ev, stamps the clone with a fresh event_id and
+	// current ts_unix_ms, appends it to the actor's ring buffer, and
+	// fans out to every live subscriber for actor_id. Returns the
+	// stamped event_id.
 	//
 	// Caller fills in ev.Kind (and any payload fields). ev.EventId and
-	// ev.TsUnixMs are overwritten unconditionally — clients trust
-	// server-assigned values per §2.1.
+	// ev.TsUnixMs on the caller's struct are NOT mutated — a defensive
+	// clone is taken so the caller can re-publish the same logical
+	// event to multiple actor streams (e.g. sender + recipient
+	// multi-device echo) safely.
 	Publish(actorID string, ev *realtime.StreamEvent) (string, error)
 
 	// Subscribe registers a new realtime stream subscriber. cursor is
@@ -241,8 +245,16 @@ func (b *eventBus) Publish(actorID string, ev *realtime.StreamEvent) (string, er
 	}
 	b.mu.RUnlock()
 
-	ev.EventId = b.cfg.idGen()
-	ev.TsUnixMs = b.cfg.now().UnixMilli()
+	// Defensive clone: the caller may publish the same logical event
+	// to multiple actor buses (e.g. sender + recipient for multi-device
+	// echo). Mutating the caller's pointer would corrupt the copy
+	// already sitting in another actor's ring buffer / subscriber
+	// channels. The clone is cheap (single-message protobuf) compared
+	// to the cost of a hard-to-reproduce data race.
+	cloned := proto.Clone(ev).(*realtime.StreamEvent)
+	cloned.EventId = b.cfg.idGen()
+	cloned.TsUnixMs = b.cfg.now().UnixMilli()
+	ev = cloned
 
 	a := b.getOrCreateActor(actorID)
 	a.mu.Lock()
