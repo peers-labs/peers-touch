@@ -1,0 +1,54 @@
+{
+  "moments.title": "动态",
+  "moments.subtitle": "在家庭、小团队和可信圈子之间分享。端到端、联邦化、去中心。",
+
+  "moments.tab.feed": "信息流",
+  "moments.tab.explore": "发现",
+  "moments.tab.circle": "圈子",
+  "moments.tab.profile": "个人主页",
+
+  "moments.action.compose": "发动态",
+  "moments.action.refresh": "刷新",
+  "moments.action.openPost": "查看",
+  "moments.action.manageCircles": "管理圈子",
+  "moments.action.comingSoon": "即将上线",
+
+  "moments.placeholder.empty": "暂无内容",
+  "moments.placeholder.feedEmpty": "关注他人或加入圈子后，新动态会显示在这里。",
+  "moments.placeholder.exploreEmpty": "本站点的公开动态会显示在这里。",
+  "moments.placeholder.circleEmpty": "还没有圈子。圈子可让你把动态发布给指定的小范围受众。",
+  "moments.placeholder.detailEmpty": "选择一条动态查看评论与互动。",
+  "moments.placeholder.userEmpty": "该用户暂无对你可见的动态。",
+  "moments.placeholder.scaffold": "本页是 Moments 脚手架（P0）的一部分，功能将在 P2 阶段接入。",
+
+  "moments.audience.public": "公开",
+  "moments.audience.followers": "仅关注者",
+  "moments.audience.circle": "圈子",
+  "moments.audience.group": "群组",
+  "moments.audience.self": "仅自己",
+  "moments.audience.customAllow": "允许名单",
+  "moments.audience.customDeny": "屏蔽名单",
+
+  "moments.reaction.like": "赞",
+  "moments.reaction.love": "爱心",
+  "moments.reaction.laugh": "笑",
+  "moments.reaction.wow": "惊叹",
+  "moments.reaction.celebrate": "庆祝",
+
+  "moments.compose.placeholder": "此刻的想法…",
+  "moments.compose.audienceLabel": "可见范围",
+  "moments.compose.attachImage": "图片",
+  "moments.compose.attachVideo": "视频",
+  "moments.compose.attachLink": "链接",
+  "moments.compose.attachLocation": "位置",
+  "moments.compose.attachPoll": "投票",
+  "moments.compose.publish": "发布",
+  "moments.compose.cancel": "取消",
+
+  "moments.circle.create": "新建圈子",
+  "moments.circle.namePlaceholder": "圈子名称",
+  "moments.circle.descriptionPlaceholder": "圈子简介（可选）",
+  "moments.circle.memberCount": "{{count}} 位成员",
+  "moments.circle.delete": "删除圈子",
+  "moments.circle.rename": "重命名"
+}
