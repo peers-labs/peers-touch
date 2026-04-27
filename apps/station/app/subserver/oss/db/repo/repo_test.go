@@ -58,6 +58,7 @@ func initStore(t *testing.T) *gorm.DB {
 			&ossmodel.Bucket{},
 			&ossmodel.Audit{},
 			&ossmodel.Meta{},
+			&ossmodel.PeerKey{},
 		)
 		if storeErr != nil {
 			return
@@ -308,5 +309,90 @@ func TestBootstrap_StampsSchemaVersionAndIsIdempotent(t *testing.T) {
 	}
 	if res2 == nil || !res2.Skipped {
 		t.Fatalf("expected Skipped result on idempotent run")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// PeerKeyRepository tests — local key persistence + TOFU pin.
+// ---------------------------------------------------------------------------
+
+func TestPeerKeyRepo_LocalKeyRoundtrip(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewPeerKeyRepository("default")
+	ctx := context.Background()
+
+	// Empty store reports the sentinel so the federation cache
+	// knows to generate.
+	if _, _, _, err := r.LoadLocalKey(ctx); !errors.Is(err, ErrNoLocalKey) {
+		t.Fatalf("expected ErrNoLocalKey on empty store, got %v", err)
+	}
+
+	if err := r.SaveLocalKey(ctx, "PRIV-PEM", "PUB-PEM", "kid-x"); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	priv, pub, kid, err := r.LoadLocalKey(ctx)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if priv != "PRIV-PEM" || pub != "PUB-PEM" || kid != "kid-x" {
+		t.Fatalf("roundtrip mismatch: %q / %q / %q", priv, pub, kid)
+	}
+
+	// Save again under the same keys to confirm idempotency.
+	if err := r.SaveLocalKey(ctx, "PRIV-PEM-2", "PUB-PEM-2", "kid-y"); err != nil {
+		t.Fatalf("save 2: %v", err)
+	}
+	_, _, kid2, _ := r.LoadLocalKey(ctx)
+	if kid2 != "kid-y" {
+		t.Fatalf("overwrite kid lost: %q", kid2)
+	}
+}
+
+func TestPeerKeyRepo_TOFUInsertThenMismatch(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewPeerKeyRepository("default")
+	ctx := context.Background()
+
+	// First sighting — TOFU insert.
+	row := ossmodel.PeerKey{
+		PeerStationID: "station-A",
+		KID:           "kid-honest",
+		PublicKeyPEM:  "PUB",
+	}
+	if err := r.UpsertTOFU(ctx, row); err != nil {
+		t.Fatalf("first upsert: %v", err)
+	}
+	got, err := r.GetPeer(ctx, "station-A")
+	if err != nil || got == nil || got.KID != "kid-honest" {
+		t.Fatalf("after TOFU: row=%v err=%v", got, err)
+	}
+
+	// Same kid → success (touch only).
+	if err := r.UpsertTOFU(ctx, row); err != nil {
+		t.Fatalf("repeat upsert: %v", err)
+	}
+
+	// Different kid for the same peer → hard reject.
+	bad := row
+	bad.KID = "kid-mallory"
+	bad.PublicKeyPEM = "PUB2"
+	if err := r.UpsertTOFU(ctx, bad); !errors.Is(err, ErrPeerKeyMismatch) {
+		t.Fatalf("expected ErrPeerKeyMismatch, got %v", err)
+	}
+
+	// After pinning, the same forged input must still fail with
+	// the *pinned* sentinel — operators care about the distinction.
+	if err := db.Model(&ossmodel.PeerKey{}).
+		Where("peer_station_id = ?", "station-A").
+		Update("pinned", true).Error; err != nil {
+		t.Fatalf("pin: %v", err)
+	}
+	if err := r.UpsertTOFU(ctx, bad); !errors.Is(err, ErrPinnedKeyMismatch) {
+		t.Fatalf("expected ErrPinnedKeyMismatch, got %v", err)
 	}
 }
