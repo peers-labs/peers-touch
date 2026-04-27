@@ -7,6 +7,8 @@ use crate::domain::storage::database::DatabaseOpenSpec;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalChatRecord {
@@ -18,7 +20,67 @@ pub struct LocalChatRecord {
     pub sent_at: i64,
 }
 
-fn open_connection(user_scope: &str) -> Result<Connection, String> {
+// Per-user-scope connection pool.
+//
+// Why a pool exists:
+//   Each call to `open_database` triggers SQLCipher's PBKDF2 key
+//   derivation plus WAL setup plus our schema-migration scan. On the
+//   chat surface's cold path we hit `open_connection` 14+ times per
+//   first paint (one per session for `friendChatSync`, one per
+//   ingest, one per cursor read). Re-paying the open cost on every
+//   call is the dominant contributor to the "first click on chat is
+//   laggy" UX bug. Pooling collapses those repeats to a single open
+//   per user_scope per process lifetime.
+//
+// Concurrency:
+//   We hold each cached Connection inside a `Mutex` because
+//   rusqlite's `Connection` is `!Sync`. Multiple readers will
+//   serialize on the mutex; SQLite WAL handles concurrent reads at
+//   the engine layer when separate connections exist, but for our
+//   workload (a few foreground UI calls and one background sync at
+//   a time) the mutex contention is negligible compared to the
+//   open-cost it replaces.
+//
+// Invalidation:
+//   `rotate_chat_key` evicts the cached connection for the affected
+//   scope so the next call re-opens with the rotated key. Without
+//   eviction the pool would serve a Connection holding the old
+//   passphrase and every subsequent statement would fail.
+fn pool() -> &'static Mutex<HashMap<String, Arc<Mutex<Connection>>>> {
+    static POOL: OnceLock<Mutex<HashMap<String, Arc<Mutex<Connection>>>>> = OnceLock::new();
+    POOL.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Lazy, refcounted handle to the pooled SQLCipher connection for a
+/// given `user_scope`. Call sites use it like a regular Connection
+/// once they `lock()` — the guard derefs to `Connection`.
+pub struct ChatConn {
+    arc: Arc<Mutex<Connection>>,
+}
+
+impl ChatConn {
+    /// Acquire exclusive access to the underlying Connection. The
+    /// guard releases the lock on drop; hold it only for the
+    /// duration of a single logical query/transaction.
+    pub fn lock(&self) -> MutexGuard<'_, Connection> {
+        self.arc.lock().expect("local_chat_store conn pool poisoned")
+    }
+}
+
+fn open_connection(user_scope: &str) -> Result<ChatConn, String> {
+    {
+        let map = pool().lock().expect("local_chat_store pool poisoned");
+        if let Some(arc) = map.get(user_scope) {
+            return Ok(ChatConn { arc: arc.clone() });
+        }
+    }
+    // Cold path: actually open + migrate, then publish to the pool.
+    // We deliberately drop the pool lock during open_database so a
+    // slow keychain RPC on one scope does not stall callers for
+    // *other* scopes. The cost is that two threads racing on the
+    // same scope might both reach this branch; whoever wins the
+    // second pool lock wins and the loser's open cost is wasted but
+    // benign (no migration is destructive).
     let spec = DatabaseOpenSpec::new_chat_main(user_scope.to_string());
     let provider = PlatformKeyProvider::shared();
     let conn = open_database(&spec, provider).map_err(|e| {
@@ -36,7 +98,20 @@ fn open_connection(user_scope: &str) -> Result<Connection, String> {
         tracing::error!(user_scope = user_scope, error = %e, "local_chat_store: migrate failed");
         format!("migrate failed for chat/main user_scope={user_scope}: {e}")
     })?;
-    Ok(conn)
+    let arc = Arc::new(Mutex::new(conn));
+    let mut map = pool().lock().expect("local_chat_store pool poisoned");
+    let entry = map.entry(user_scope.to_string()).or_insert_with(|| arc.clone());
+    Ok(ChatConn { arc: entry.clone() })
+}
+
+/// Drop the cached SQLCipher connection for `user_scope`. The next
+/// `open_connection(user_scope)` will reopen + remigrate. Used after
+/// a key rotation so the pool does not serve a Connection still
+/// bound to the old passphrase.
+fn invalidate_pool(user_scope: &str) {
+    if let Ok(mut map) = pool().lock() {
+        map.remove(user_scope);
+    }
 }
 
 fn migrate(conn: &Connection) -> Result<(), String> {
@@ -131,6 +206,7 @@ fn upsert_record(conn: &Connection, item: &LocalChatRecord) -> Result<(), String
 
 pub fn ingest_friend_payload(user_scope: &str, payload: &Value) -> Result<(), String> {
     let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
     if let Some(messages) = payload.get("messages").and_then(|v| v.as_array()) {
         for m in messages {
             let record = LocalChatRecord {
@@ -164,6 +240,7 @@ pub fn ingest_friend_payload(user_scope: &str, payload: &Value) -> Result<(), St
 
 pub fn ingest_group_payload(user_scope: &str, payload: &Value) -> Result<(), String> {
     let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
     if let Some(messages) = payload.get("messages").and_then(|v| v.as_array()) {
         for m in messages {
             let record = LocalChatRecord {
@@ -293,10 +370,12 @@ pub fn search_local(
     match scope_trim {
         Some("friend") | Some("group") => {
             let conn = open_connection(user_scope)?;
+            let conn = conn.lock();
             search_local_single(&conn, scope_trim.unwrap(), conversation_id, query, limit)
         }
         None => {
             let conn = open_connection(user_scope)?;
+            let conn = conn.lock();
             let friend = search_local_single(&conn, "friend", conversation_id, query, limit)?;
             let group = search_local_single(&conn, "group", conversation_id, query, limit)?;
             Ok(merge_desc_by_sent_at(friend, group, limit))
@@ -307,6 +386,7 @@ pub fn search_local(
 
 pub fn save_crypto_session(user_scope: &str, session: &CryptoSessionState) -> Result<(), String> {
     let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
     let now = chrono_now();
     let pending = session.pending_ephemeral.as_ref().map(|b| b.as_slice());
     let created_at: i64 = conn
@@ -353,6 +433,7 @@ pub fn save_crypto_session(user_scope: &str, session: &CryptoSessionState) -> Re
 
 pub fn load_crypto_session(user_scope: &str, session_id: &str) -> Result<Option<CryptoSessionState>, String> {
     let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
     let mut stmt = conn
         .prepare(
             "SELECT peer_did, send_chain_key, send_counter, recv_chain_key, recv_counter,
@@ -415,6 +496,7 @@ pub fn load_crypto_session(user_scope: &str, session_id: &str) -> Result<Option<
 /// Store signed pre-key material for later X3DH receive paths.
 pub fn crypto_store_signed_prekey(user_scope: &str, id: i64, private_key: &[u8]) -> Result<(), String> {
     let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
     let now = chrono_now();
     conn.execute(
         "INSERT INTO crypto_signed_prekey(id, private_key, created_at) VALUES (?1, ?2, ?3)
@@ -428,6 +510,7 @@ pub fn crypto_store_signed_prekey(user_scope: &str, id: i64, private_key: &[u8])
 /// Insert one-time pre-keys; returns generated row ids.
 pub fn crypto_insert_opks(user_scope: &str, private_keys: &[Vec<u8>]) -> Result<Vec<i64>, String> {
     let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
     let mut ids = Vec::with_capacity(private_keys.len());
     for pk in private_keys {
         conn.execute(
@@ -450,6 +533,7 @@ pub fn search_local_unified(
     limit: usize,
 ) -> Result<Vec<LocalChatRecord>, String> {
     let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
     let mut stmt = conn
         .prepare(
             "SELECT m.scope, m.conversation_id, m.message_id, m.sender_did, m.content, m.sent_at
@@ -486,6 +570,7 @@ pub fn search_local_unified(
 
 pub fn set_sync_cursor(user_scope: &str, scope: &str, cursor: &str) -> Result<(), String> {
     let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
     let now = chrono_now();
     conn.execute(
         "INSERT INTO chat_sync_cursor(scope, cursor, updated_at) VALUES(?1, ?2, ?3)
@@ -498,6 +583,7 @@ pub fn set_sync_cursor(user_scope: &str, scope: &str, cursor: &str) -> Result<()
 
 pub fn get_sync_cursor(user_scope: &str, scope: &str) -> Result<Option<String>, String> {
     let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
     let mut stmt = conn
         .prepare("SELECT cursor FROM chat_sync_cursor WHERE scope = ?1")
         .map_err(|e| e.to_string())?;
@@ -526,7 +612,14 @@ pub fn get_chat_key_version(user_scope: &str) -> Result<Option<i32>, String> {
 pub fn rotate_chat_key(user_scope: &str, next_version: i32) -> Result<i32, String> {
     let spec = DatabaseOpenSpec::new_chat_main(user_scope.to_string());
     let provider = PlatformKeyProvider::shared();
-    rotate_database_key(&spec, provider, next_version).map_err(|e| format!("{e:?}"))
+    let result = rotate_database_key(&spec, provider, next_version).map_err(|e| format!("{e:?}"));
+    // Whether or not the rotation succeeded, drop the cached
+    // connection so the next caller re-opens with the (possibly
+    // changed) passphrase. Skipping this on success would leave a
+    // pooled Connection bound to the old key and every subsequent
+    // statement would fail with `file is not a database`.
+    invalidate_pool(user_scope);
+    result
 }
 
 /// Persist the local group symmetric key (32-byte blob) and ratchet counters for AES-GCM.
@@ -538,6 +631,7 @@ pub fn save_group_key(
     counter: u32,
 ) -> Result<(), String> {
     let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
     let now = chrono_now();
     let created_at: i64 = conn
         .query_row(
@@ -575,6 +669,7 @@ pub fn load_group_key(
     group_id: &str,
 ) -> Result<Option<(Vec<u8>, u32, u32)>, String> {
     let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
     let row = conn
         .query_row(
             "SELECT key_data, epoch, counter FROM crypto_group_keys WHERE group_id = ?1",
