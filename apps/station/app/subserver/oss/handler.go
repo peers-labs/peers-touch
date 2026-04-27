@@ -2,6 +2,7 @@ package oss
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -477,6 +478,16 @@ func (s *ossSubServer) handleFileGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Authentication splits two ways:
+	//   - peer JWT (typ=peer+jwt, EdDSA): produces peerSubjectID,
+	//     which checkRead trusts over any local cookie. This is
+	//     the federation hot path — a friend on station B fetching
+	//     a chat attachment hosted on station A.
+	//   - local user JWT (HS256): the station's normal session
+	//     cookie. Drives the owner / chat-membership checks.
+	// Both are optional; absent both, the request is anonymous and
+	// only `public` files succeed.
+	peerSubjectID, peerStationID := s.tryPeerToken(r, key)
 	subjectID := s.optionalSubjectID(r)
 	requestedOwner := strings.TrimSpace(q.Get("owner"))
 	meta, err := s.lookupFileMeta(r.Context(), key, subjectID, requestedOwner)
@@ -485,9 +496,9 @@ func (s *ossSubServer) handleFileGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	decision := checkRead(r.Context(), s.chatResolver, meta, subjectID, "")
+	decision := checkRead(r.Context(), s.chatResolver, meta, subjectID, peerSubjectID)
 	if !decision.Allow {
-		s.recordAudit(r.Context(), meta, subjectID, "", decision.Reason)
+		s.recordAudit(r.Context(), meta, subjectID, peerStationID, decision.Reason)
 		w.WriteHeader(http.StatusForbidden)
 		_ = json.NewEncoder(w).Encode(map[string]string{"code": "forbidden"})
 		return
@@ -528,21 +539,89 @@ func (s *ossSubServer) handleFileGet(w http.ResponseWriter, r *http.Request) {
 
 // optionalSubjectID validates the optional Bearer JWT and returns
 // the subject DID, or an empty string when no token is present /
-// the token is malformed. It deliberately does NOT 401 — public
-// files must be served without authentication.
+// the token is malformed / the token is a federation peer JWT
+// rather than a local user JWT. It deliberately does NOT 401 —
+// public files must be served without authentication.
+//
+// Federation tokens are filtered out *before* we hand the bearer
+// to the local HS256 verifier because the verifiers are tuned to
+// different algorithms; running an EdDSA token through the HS256
+// path would log a misleading "key is invalid type" error.
 func (s *ossSubServer) optionalSubjectID(r *http.Request) string {
 	if s.authProvider == nil {
 		return ""
 	}
-	authHeader := r.Header.Get("Authorization")
-	if len(authHeader) < 7 || !strings.EqualFold(authHeader[:7], "bearer ") {
+	bearer := bearerFromRequest(r)
+	if bearer == "" {
 		return ""
 	}
-	subject, err := s.authProvider.Validate(r.Context(), authHeader[7:])
+	if isFederationToken(bearer) {
+		return ""
+	}
+	subject, err := s.authProvider.Validate(r.Context(), bearer)
 	if err != nil || subject == nil {
 		return ""
 	}
 	return subject.ID
+}
+
+// tryPeerToken extracts and verifies an inbound federation JWT, if
+// present. Returns (actorDID, peerStationID) on success and ("", "")
+// otherwise — verify failures are intentionally silent because
+// a malformed peer token must not deny a public file fetch.
+//
+// expectedKey binds the verification to the file the caller is
+// asking for: a token minted for object X cannot authorise a GET
+// of object Y.
+func (s *ossSubServer) tryPeerToken(r *http.Request, expectedKey string) (string, string) {
+	if s.peerKeyRepo == nil {
+		return "", ""
+	}
+	bearer := bearerFromRequest(r)
+	if bearer == "" || !isFederationToken(bearer) {
+		return "", ""
+	}
+	res, err := s.VerifyPeerToken(r.Context(), bearer, expectedKey, s.localStationID)
+	if err != nil {
+		// Log at debug only — a federated client frequently retries
+		// with a stale token and we do not want to flood the logs.
+		logger.Debugf(r.Context(), "[handleFileGet] peer token verify failed: %v", err)
+		return "", ""
+	}
+	return res.ActorDID, res.PeerStationID
+}
+
+// bearerFromRequest extracts the value of `Authorization: Bearer …`,
+// returning "" when the header is missing or malformed.
+func bearerFromRequest(r *http.Request) string {
+	h := r.Header.Get("Authorization")
+	if len(h) < 7 || !strings.EqualFold(h[:7], "bearer ") {
+		return ""
+	}
+	return h[7:]
+}
+
+// isFederationToken peeks at the JOSE header without verifying the
+// signature, returning true iff `typ` matches the federation
+// marker. Inexpensive — we only base64-decode the header segment.
+func isFederationToken(bearer string) bool {
+	parts := strings.SplitN(bearer, ".", 3)
+	if len(parts) != 3 {
+		return false
+	}
+	hdr, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		// JWS spec mandates RawURL but some libraries pad — fall
+		// back to padded URL once before giving up.
+		if hdr2, err2 := base64.URLEncoding.DecodeString(parts[0]); err2 == nil {
+			hdr = hdr2
+		} else {
+			return false
+		}
+	}
+	// We only look for the typ string verbatim — proper JSON
+	// decode is unnecessary at this point and slower.
+	return strings.Contains(string(hdr), `"typ":"`+federationTokenType+`"`)
 }
 
 // lookupFileMeta resolves the FileMeta row that should govern this
