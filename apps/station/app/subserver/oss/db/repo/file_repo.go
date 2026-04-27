@@ -58,9 +58,82 @@ type FileRepository interface {
 	//
 	// Used by:
 	//   - the upload writer when CAS hits a soft-deleted row;
-	//   - the explicit `POST /sub-oss/file/:key/restore` handler
+	//   - the explicit `POST /sub-oss/file/restore` handler
 	//     (within the soft-delete grace window).
 	Restore(ctx context.Context, id string, now time.Time, newExpires *time.Time) error
+
+	// MarkDeleted sets `DeletedAt = now` and bumps `UpdatedAt` for
+	// the row, but only when it is currently live (i.e.
+	// `deleted_at IS NULL`). A second concurrent or repeated DELETE
+	// returns ErrFileAlreadyDeleted so the caller can short-circuit
+	// without double-debiting bucket usage or double-releasing the
+	// blob refcount. ErrFileNotFound when the id matches no row.
+	//
+	// Used by:
+	//   - the explicit `DELETE /sub-oss/file?key=…` handler;
+	//   - dashboard admin force-delete (S10) — same primitive,
+	//     different audit reason.
+	MarkDeleted(ctx context.Context, id string, now time.Time) error
+
+	// Patch applies a partial mutate to the row. Each non-nil
+	// pointer in `patch` is set; nil pointers are left alone.
+	// `Patch.ExpiresAtSet` is the explicit "clear vs leave alone"
+	// signal because `*time.Time` cannot distinguish "set to NULL"
+	// from "leave unchanged". `UpdatedAt` is always refreshed.
+	//
+	// Returns ErrFileNotFound if the row is missing or already
+	// soft-deleted; the caller is expected to disallow PATCH on
+	// tombstones at the service layer with a clearer error.
+	Patch(ctx context.Context, id string, patch FilePatch, now time.Time) error
+
+	// ListByOwner returns the rows owned by `owner` matching the
+	// `filter`, ordered by `created_at DESC, id DESC` for stable
+	// pagination, sliced by `[offset, offset+limit)`. The second
+	// return value is the total count after `filter` is applied
+	// (i.e. NOT bounded by limit/offset) so the caller can render
+	// page indicators without a second round-trip.
+	//
+	// Limit ≤ 0 falls back to 50; values > 200 are clamped at the
+	// service layer rather than here so the repo stays
+	// policy-free. Offset ≤ 0 means "start at row 0".
+	//
+	// Soft-deleted rows are excluded by default; set
+	// `Filter.IncludeDeleted = true` to surface them (used by the
+	// dashboard "trash" view).
+	ListByOwner(ctx context.Context, owner string, filter ListByOwnerFilter, limit, offset int) ([]ossmodel.FileMeta, int64, error)
+}
+
+// ListByOwnerFilter captures the user-facing search predicates the
+// `GET /sub-oss/my-files` endpoint exposes. All fields are
+// optional; the empty value disables the corresponding predicate.
+//
+// `MimePrefix` is matched with SQL `LIKE '<prefix>%'` after escaping
+// the LIKE meta-characters at the repo layer, so callers can pass
+// "image/" without worrying about `%` / `_` injection.
+type ListByOwnerFilter struct {
+	BucketID       string
+	Visibility     string
+	MimePrefix     string
+	IncludeDeleted bool
+}
+
+// FilePatch is the patch envelope consumed by FileRepository.Patch.
+// Pointer fields use the standard Go convention: nil = leave
+// unchanged, non-nil = set to value (zero values welcome). For
+// `expires_at` we cannot collapse "set to NULL" into the zero time
+// (`time.Time{}` is itself a legal stamp), so the dedicated
+// `ExpiresAtSet` flag carries the intent.
+type FilePatch struct {
+	Visibility    *string
+	ChatSessionID *string
+	BucketID      *string
+	Filename      *string
+
+	// ExpiresAtSet must be true for either a "set" or a "clear";
+	// when true and ExpiresAt is nil, the column is set to NULL.
+	// when false, the column is left alone.
+	ExpiresAtSet bool
+	ExpiresAt    *time.Time
 }
 
 // ErrFileNotFound is returned by repository methods that need to
@@ -69,6 +142,12 @@ type FileRepository interface {
 // `errors.Is(err, gorm.ErrRecordNotFound)` so the abstraction
 // stays portable across drivers.
 var ErrFileNotFound = errors.New("oss: file not found")
+
+// ErrFileAlreadyDeleted is returned by `MarkDeleted` when the row
+// exists but is already in the soft-delete state. Distinct from
+// ErrFileNotFound so the handler can map it to 410 Gone (idempotent
+// re-DELETE) versus 404 (caller passed a key that never existed).
+var ErrFileAlreadyDeleted = errors.New("oss: file already deleted")
 
 type fileRepo struct {
 	dbName string
@@ -127,6 +206,48 @@ func (r *fileRepo) FindByOwnerKeyIncludeDeleted(ctx context.Context, owner, key 
 	return &meta, err
 }
 
+func (r *fileRepo) MarkDeleted(ctx context.Context, id string, now time.Time) error {
+	if id == "" {
+		return errors.New("oss: file mark-deleted: id required")
+	}
+	db, err := r.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	// Single-row UPDATE with the `deleted_at IS NULL` predicate
+	// inline so concurrent DELETEs serialise without a SELECT
+	// round-trip. RowsAffected==0 means either the row is gone
+	// or it is already deleted; we disambiguate with a follow-up
+	// existence check that bypasses the soft-delete filter.
+	res := db.Model(&ossmodel.FileMeta{}).
+		Where("id = ? AND deleted_at IS NULL", id).
+		Updates(map[string]any{
+			"deleted_at": now,
+			"updated_at": now,
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 1 {
+		return nil
+	}
+	// 0 rows: either missing or already-deleted. Branch via a
+	// raw-find that ignores the soft-delete filter.
+	var meta ossmodel.FileMeta
+	if err := db.Where("id = ?", id).First(&meta).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrFileNotFound
+		}
+		return err
+	}
+	if meta.DeletedAt != nil {
+		return ErrFileAlreadyDeleted
+	}
+	// Should not happen — row is live but UPDATE matched 0 rows.
+	// Treat as a transient repo error.
+	return errors.New("oss: file mark-deleted: zero rows affected on live row")
+}
+
 func (r *fileRepo) Restore(ctx context.Context, id string, now time.Time, newExpires *time.Time) error {
 	if id == "" {
 		return errors.New("oss: file restore: id required")
@@ -159,4 +280,130 @@ func (r *fileRepo) Restore(ctx context.Context, id string, now time.Time, newExp
 		return ErrFileNotFound
 	}
 	return nil
+}
+
+func (r *fileRepo) Patch(ctx context.Context, id string, patch FilePatch, now time.Time) error {
+	if id == "" {
+		return errors.New("oss: file patch: id required")
+	}
+	db, err := r.getDB(ctx)
+	if err != nil {
+		return err
+	}
+
+	updates := map[string]any{"updated_at": now}
+	if patch.Visibility != nil {
+		updates["visibility"] = *patch.Visibility
+	}
+	if patch.ChatSessionID != nil {
+		updates["chat_session_id"] = *patch.ChatSessionID
+	}
+	if patch.BucketID != nil {
+		updates["bucket_id"] = *patch.BucketID
+	}
+	if patch.Filename != nil {
+		updates["name"] = *patch.Filename
+	}
+	if patch.ExpiresAtSet {
+		if patch.ExpiresAt == nil {
+			updates["expires_at"] = nil
+		} else {
+			updates["expires_at"] = *patch.ExpiresAt
+		}
+	}
+	// If the only key is `updated_at` the caller passed an empty
+	// patch — that is a programming error in the service layer,
+	// but we still reject it here rather than silently bumping
+	// the row's mtime.
+	if len(updates) == 1 {
+		return errors.New("oss: file patch: empty patch")
+	}
+
+	// Match only live rows so a PATCH on a tombstone is rejected
+	// with ErrFileNotFound — the service layer translates this to
+	// a clearer "patch on deleted file" error before bubbling up.
+	res := db.Model(&ossmodel.FileMeta{}).
+		Where("id = ? AND deleted_at IS NULL", id).
+		Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrFileNotFound
+	}
+	return nil
+}
+
+func (r *fileRepo) ListByOwner(ctx context.Context, owner string, filter ListByOwnerFilter, limit, offset int) ([]ossmodel.FileMeta, int64, error) {
+	if owner == "" {
+		return nil, 0, errors.New("oss: list-by-owner: owner required")
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	db, err := r.getDB(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	q := db.Model(&ossmodel.FileMeta{}).Where("owner_actor_id = ?", owner)
+	if !filter.IncludeDeleted {
+		q = q.Where("deleted_at IS NULL")
+	}
+	if filter.BucketID != "" {
+		q = q.Where("bucket_id = ?", filter.BucketID)
+	}
+	if filter.Visibility != "" {
+		q = q.Where("visibility = ?", filter.Visibility)
+	}
+	if filter.MimePrefix != "" {
+		// Escape LIKE meta-characters so a caller-supplied prefix
+		// like "application/x_z" does not unintentionally match
+		// any single character. Backslash is the standard SQL
+		// escape; we declare it explicitly because some drivers
+		// default it differently.
+		esc := likeEscape(filter.MimePrefix)
+		q = q.Where("mime LIKE ? ESCAPE '\\'", esc+"%")
+	}
+
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var rows []ossmodel.FileMeta
+	if err := q.
+		Order("created_at DESC").
+		Order("id DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
+// likeEscape escapes the SQL LIKE meta-characters `%`, `_`, and the
+// backslash itself so a caller-supplied prefix can be embedded in a
+// LIKE pattern without introducing unintended wildcards. We use a
+// backslash escape rather than a raw replacement so the escaped
+// pattern survives parameterised binding unchanged.
+func likeEscape(s string) string {
+	if s == "" {
+		return s
+	}
+	out := make([]byte, 0, len(s))
+	for _, c := range []byte(s) {
+		switch c {
+		case '\\', '%', '_':
+			out = append(out, '\\', c)
+		default:
+			out = append(out, c)
+		}
+	}
+	return string(out)
 }

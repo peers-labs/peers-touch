@@ -135,16 +135,150 @@ func (r *fakeFileRepo) Restore(ctx context.Context, id string, now time.Time, ne
 	return ossrepo.ErrFileNotFound
 }
 
+// MarkDeleted mirrors the production behaviour: flips DeletedAt on
+// a live row, returning ErrFileAlreadyDeleted on a second call and
+// ErrFileNotFound when the id is missing.
+func (r *fakeFileRepo) MarkDeleted(ctx context.Context, id string, now time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, m := range r.byPK {
+		if m.ID != id {
+			continue
+		}
+		if m.DeletedAt != nil {
+			return ossrepo.ErrFileAlreadyDeleted
+		}
+		t := now
+		m.DeletedAt = &t
+		m.UpdatedAt = now
+		return nil
+	}
+	return ossrepo.ErrFileNotFound
+}
+
+// Patch mirrors the production behaviour: targets only live rows
+// (deleted_at IS NULL), applies each non-nil patch field, refreshes
+// UpdatedAt, and returns ErrFileNotFound when the row is missing
+// or already soft-deleted.
+func (r *fakeFileRepo) Patch(ctx context.Context, id string, p ossrepo.FilePatch, now time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, m := range r.byPK {
+		if m.ID != id {
+			continue
+		}
+		if m.DeletedAt != nil {
+			return ossrepo.ErrFileNotFound
+		}
+		if p.Visibility != nil {
+			m.Visibility = *p.Visibility
+		}
+		if p.ChatSessionID != nil {
+			m.ChatSessionID = *p.ChatSessionID
+		}
+		if p.BucketID != nil {
+			m.BucketID = *p.BucketID
+		}
+		if p.Filename != nil {
+			m.Name = *p.Filename
+		}
+		if p.ExpiresAtSet {
+			if p.ExpiresAt == nil {
+				m.ExpiresAt = nil
+			} else {
+				t := *p.ExpiresAt
+				m.ExpiresAt = &t
+			}
+		}
+		m.UpdatedAt = now
+		return nil
+	}
+	return ossrepo.ErrFileNotFound
+}
+
 // markDeletedForTest is a test-only helper that simulates the
 // DELETE handler's effect on the soft-delete column. Used by the
 // CAS-revival tests to seed a deleted row without going through the
-// (not-yet-implemented) DELETE service path.
+// service-layer delete path (so we can test revival in isolation).
 func (r *fakeFileRepo) markDeletedForTest(owner, key string, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if m, ok := r.byPK[ownerKeyPK(owner, key)]; ok {
 		t := now
 		m.DeletedAt = &t
+	}
+}
+
+// ListByOwner mirrors the production list semantics: filters rows
+// owned by `owner`, applies optional visibility / mime / bucket /
+// include-deleted predicates, sorts by created_at DESC then id
+// DESC, and slices by [offset, offset+limit).
+func (r *fakeFileRepo) ListByOwner(ctx context.Context, owner string, filter ossrepo.ListByOwnerFilter, limit, offset int) ([]ossmodel.FileMeta, int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if owner == "" {
+		return nil, 0, errors.New("oss: list-by-owner: owner required")
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	matched := make([]*ossmodel.FileMeta, 0, len(r.byPK))
+	for _, m := range r.byPK {
+		if m.OwnerActorID != owner {
+			continue
+		}
+		if !filter.IncludeDeleted && m.DeletedAt != nil {
+			continue
+		}
+		if filter.BucketID != "" && m.BucketID != filter.BucketID {
+			continue
+		}
+		if filter.Visibility != "" && m.Visibility != filter.Visibility {
+			continue
+		}
+		if filter.MimePrefix != "" && !strings.HasPrefix(m.Mime, filter.MimePrefix) {
+			continue
+		}
+		matched = append(matched, m)
+	}
+
+	// Stable order: created_at DESC, id DESC.
+	sortFiles(matched)
+
+	total := int64(len(matched))
+	if offset >= len(matched) {
+		return []ossmodel.FileMeta{}, total, nil
+	}
+	end := offset + limit
+	if end > len(matched) {
+		end = len(matched)
+	}
+	out := make([]ossmodel.FileMeta, 0, end-offset)
+	for _, m := range matched[offset:end] {
+		out = append(out, *m)
+	}
+	return out, total, nil
+}
+
+// sortFiles applies the canonical "newest first, deterministic
+// tiebreak" ordering used by ListByOwner. Implemented as an
+// insertion sort because the test datasets stay small (≤100s);
+// keeps the test code dependency-free.
+func sortFiles(in []*ossmodel.FileMeta) {
+	for i := 1; i < len(in); i++ {
+		for j := i; j > 0; j-- {
+			a, b := in[j-1], in[j]
+			if a.CreatedAt.Before(b.CreatedAt) || (a.CreatedAt.Equal(b.CreatedAt) && a.ID < b.ID) {
+				in[j-1], in[j] = b, a
+				continue
+			}
+			break
+		}
 	}
 }
 
@@ -358,15 +492,45 @@ func (r *fakeBlobRepo) Delete(_ context.Context, backend, key string) error {
 	return nil
 }
 
-// svcDeps bundles the four collaborators tests poke at after a
-// `newSvc` call. We return all four because most assertions touch
-// at least the file repo and the bucket repo, and many also peek
-// at blob ref counts.
+// svcDeps bundles the collaborators tests poke at after a
+// `newSvc` / `newSvcFull` call. We return them all because most
+// assertions touch at least the file + bucket repo, and many also
+// peek at blob ref counts and the meta repo (capability_version).
 type svcDeps struct {
 	files   *fakeFileRepo
 	buckets *fakeBucketRepo
 	blobs   *fakeBlobRepo
+	meta    *fakeMetaRepo
 	backend *fakeBackend
+}
+
+// fakeMetaRepo is a minimal in-memory MetaRepository. The PATCH
+// path bumps capability_version on visibility tightening; tests
+// inspect the recorded value to make sure the bump happened
+// exactly once per tightening event.
+type fakeMetaRepo struct {
+	mu                sync.Mutex
+	capabilityVersion string
+	bumpCount         int
+}
+
+func newFakeMetaRepo() *fakeMetaRepo { return &fakeMetaRepo{} }
+
+func (m *fakeMetaRepo) Get(_ context.Context, key string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if key == ossmodel.MetaKeyCapabilityVersion {
+		return m.capabilityVersion, nil
+	}
+	return "", nil
+}
+
+func (m *fakeMetaRepo) SetCapabilityVersion(_ context.Context, now time.Time) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.bumpCount++
+	m.capabilityVersion = "cap-" + now.UTC().Format("20060102T150405.000000000")
+	return m.capabilityVersion, nil
 }
 
 // newSvc is the canonical wiring for service tests. Strategy and
@@ -391,18 +555,20 @@ func newSvc(t *testing.T, strategy KeyStrategy, backendName string) (*fakeFileRe
 
 // newSvcFull is the same wiring but also returns the blob repo
 // handle and accepts an optional Config override (mime blocklist,
-// clock). Used by v3 tests that need to assert on blob refcounts
-// or pin the clock.
+// clock). Used by v3 tests that need to assert on blob refcounts,
+// capability_version, or pin the clock.
 func newSvcFull(t *testing.T, strategy KeyStrategy, backendName string, customise func(*Config)) (svcDeps, FileService) {
 	t.Helper()
 	files := newFakeFileRepo()
 	buckets := newFakeBucketRepo()
 	blobs := newFakeBlobRepo()
+	meta := newFakeMetaRepo()
 	backend := newFakeBackend()
 	cfg := Config{
 		Files:       files,
 		Buckets:     buckets,
 		Blobs:       blobs,
+		Meta:        meta,
 		Backend:     backend,
 		BackendName: backendName,
 		Strategy:    strategy,
@@ -410,7 +576,7 @@ func newSvcFull(t *testing.T, strategy KeyStrategy, backendName string, customis
 	if customise != nil {
 		customise(&cfg)
 	}
-	return svcDeps{files: files, buckets: buckets, blobs: blobs, backend: backend}, NewFileService(cfg)
+	return svcDeps{files: files, buckets: buckets, blobs: blobs, meta: meta, backend: backend}, NewFileService(cfg)
 }
 
 // fakeBackend records every Save call so the test can assert that
@@ -1168,5 +1334,804 @@ func TestSaveFile_CompensatesUsageOnCreateFailure(t *testing.T) {
 	}
 	if got.Name != "winner.txt" {
 		t.Errorf("expected winner row, got name=%q", got.Name)
+	}
+}
+
+// ---------------------------------------------------------------------
+// S4 — DELETE + RESTORE.
+//
+// The service-layer contract these tests pin:
+//
+//   - DeleteFile flips DeletedAt, debits the bucket, releases the
+//     blob refcount; idempotent on a second call.
+//   - RestoreFile is the symmetric inverse, gated by graceWindow,
+//     and quota-checked on bucket re-debit.
+//
+// The HTTP handler layer (handler_lifecycle.go) translates these
+// into status codes / audit rows; that path has its own tests in
+// handler_test.go.
+// ---------------------------------------------------------------------
+
+// TestDeleteFile_HappyPath — a successful DELETE soft-deletes the
+// row, debits the bucket, and releases the blob refcount.
+func TestDeleteFile_HappyPath(t *testing.T) {
+	deps, svc := newSvcFull(t, KeyStrategyCAS, "local", nil)
+
+	body := []byte("delete me")
+	f, h := makePart(t, "del.txt", body)
+	created, err := svc.SaveFile(context.Background(), defaultAttr(testActorA), f, h)
+	if err != nil {
+		t.Fatalf("seed save: %v", err)
+	}
+
+	bucketBefore, _ := deps.buckets.FindByOwnerName(context.Background(), testActorA, ossmodel.SystemBucketChat)
+	blobBefore, _ := deps.blobs.Get(context.Background(), "local", created.Key)
+	if bucketBefore.UsedBytes != int64(len(body)) {
+		t.Fatalf("pre-delete bucket usage = %d, want %d", bucketBefore.UsedBytes, len(body))
+	}
+	if blobBefore == nil || blobBefore.RefCount != 1 {
+		t.Fatalf("pre-delete blob refcount = %+v, want 1", blobBefore)
+	}
+
+	res, err := svc.DeleteFile(context.Background(), testActorA, created.Key)
+	if err != nil {
+		t.Fatalf("DeleteFile: %v", err)
+	}
+	if res.AlreadyDeleted {
+		t.Fatal("first delete must not report already_deleted")
+	}
+	if res.Meta.DeletedAt == nil {
+		t.Fatal("Meta.DeletedAt should be set after delete")
+	}
+
+	// Bucket usage debited.
+	bucketAfter, _ := deps.buckets.FindByOwnerName(context.Background(), testActorA, ossmodel.SystemBucketChat)
+	if bucketAfter.UsedBytes != 0 {
+		t.Fatalf("post-delete bucket usage = %d, want 0", bucketAfter.UsedBytes)
+	}
+	if bucketAfter.ObjectCount != 0 {
+		t.Fatalf("post-delete object count = %d, want 0", bucketAfter.ObjectCount)
+	}
+
+	// Blob refcount released.
+	blobAfter, _ := deps.blobs.Get(context.Background(), "local", created.Key)
+	if blobAfter == nil || blobAfter.RefCount != 0 {
+		t.Fatalf("post-delete blob refcount = %+v, want 0", blobAfter)
+	}
+
+	// Live FindByOwnerKey should now miss; IncludeDeleted should hit.
+	if _, err := deps.files.FindByOwnerKey(context.Background(), testActorA, created.Key); err == nil {
+		t.Fatal("live find should miss deleted row")
+	}
+	if got, err := deps.files.FindByOwnerKeyIncludeDeleted(context.Background(), testActorA, created.Key); err != nil || got.DeletedAt == nil {
+		t.Fatalf("include-deleted find should return tombstone, got %+v err=%v", got, err)
+	}
+}
+
+// TestDeleteFile_IdempotentOnSecondCall — calling DeleteFile twice
+// returns AlreadyDeleted=true on the second call without re-debiting
+// the bucket or further decrementing the blob refcount.
+func TestDeleteFile_IdempotentOnSecondCall(t *testing.T) {
+	deps, svc := newSvcFull(t, KeyStrategyCAS, "local", nil)
+
+	body := []byte("idempotent delete")
+	f, h := makePart(t, "id.txt", body)
+	created, err := svc.SaveFile(context.Background(), defaultAttr(testActorA), f, h)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := svc.DeleteFile(context.Background(), testActorA, created.Key); err != nil {
+		t.Fatalf("first delete: %v", err)
+	}
+
+	bucketAfterFirst, _ := deps.buckets.FindByOwnerName(context.Background(), testActorA, ossmodel.SystemBucketChat)
+	blobAfterFirst, _ := deps.blobs.Get(context.Background(), "local", created.Key)
+
+	// Second delete — must be idempotent: no further state change.
+	res, err := svc.DeleteFile(context.Background(), testActorA, created.Key)
+	if err != nil {
+		t.Fatalf("second delete: %v", err)
+	}
+	if !res.AlreadyDeleted {
+		t.Fatal("second delete must report already_deleted=true")
+	}
+
+	bucketAfterSecond, _ := deps.buckets.FindByOwnerName(context.Background(), testActorA, ossmodel.SystemBucketChat)
+	blobAfterSecond, _ := deps.blobs.Get(context.Background(), "local", created.Key)
+	if bucketAfterSecond.UsedBytes != bucketAfterFirst.UsedBytes {
+		t.Fatalf("second delete must not re-debit bucket: usage went %d → %d", bucketAfterFirst.UsedBytes, bucketAfterSecond.UsedBytes)
+	}
+	if bucketAfterSecond.ObjectCount != bucketAfterFirst.ObjectCount {
+		t.Fatalf("second delete must not re-debit object count: %d → %d", bucketAfterFirst.ObjectCount, bucketAfterSecond.ObjectCount)
+	}
+	if blobAfterSecond.RefCount != blobAfterFirst.RefCount {
+		t.Fatalf("second delete must not release blob again: refcount %d → %d", blobAfterFirst.RefCount, blobAfterSecond.RefCount)
+	}
+}
+
+// TestDeleteFile_NotFound — deleting a key that was never uploaded
+// returns ErrFileNotFound and leaves all state untouched.
+func TestDeleteFile_NotFound(t *testing.T) {
+	_, svc := newSvcFull(t, KeyStrategyCAS, "local", nil)
+	_, err := svc.DeleteFile(context.Background(), testActorA, "cas/zz/missing.bin")
+	if !errors.Is(err, ErrFileNotFound) {
+		t.Fatalf("expected ErrFileNotFound, got %v", err)
+	}
+}
+
+// TestRestoreFile_HappyPath — a soft-deleted row inside the grace
+// window is restored: DeletedAt cleared, ExpiresAt refreshed,
+// bucket usage re-debited, blob refcount bumped.
+func TestRestoreFile_HappyPath(t *testing.T) {
+	pinned := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
+	deps, svc := newSvcFull(t, KeyStrategyCAS, "local", func(c *Config) {
+		c.Clock = func() time.Time { return pinned }
+	})
+
+	body := []byte("restore me")
+	f, h := makePart(t, "rs.txt", body)
+	created, err := svc.SaveFile(context.Background(), defaultAttr(testActorA), f, h)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := svc.DeleteFile(context.Background(), testActorA, created.Key); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	bucketAfterDelete, _ := deps.buckets.FindByOwnerName(context.Background(), testActorA, ossmodel.SystemBucketChat)
+	if bucketAfterDelete.UsedBytes != 0 {
+		t.Fatalf("post-delete usage = %d, want 0", bucketAfterDelete.UsedBytes)
+	}
+
+	res, err := svc.RestoreFile(context.Background(), testActorA, created.Key, 7*24*time.Hour)
+	if err != nil {
+		t.Fatalf("RestoreFile: %v", err)
+	}
+	if res.Meta.DeletedAt != nil {
+		t.Fatalf("post-restore DeletedAt = %v, want nil", res.Meta.DeletedAt)
+	}
+
+	// Bucket re-debited.
+	bucketAfterRestore, _ := deps.buckets.FindByOwnerName(context.Background(), testActorA, ossmodel.SystemBucketChat)
+	if bucketAfterRestore.UsedBytes != int64(len(body)) {
+		t.Fatalf("post-restore usage = %d, want %d", bucketAfterRestore.UsedBytes, len(body))
+	}
+
+	// Blob refcount restored.
+	blobAfterRestore, _ := deps.blobs.Get(context.Background(), "local", created.Key)
+	if blobAfterRestore == nil || blobAfterRestore.RefCount != 1 {
+		t.Fatalf("post-restore blob refcount = %+v, want 1", blobAfterRestore)
+	}
+}
+
+// TestRestoreFile_OutsideGraceWindow — DeletedAt older than the
+// configured grace window must refuse the restore with
+// ErrRestoreWindowExpired and leave state untouched.
+func TestRestoreFile_OutsideGraceWindow(t *testing.T) {
+	deletedAt := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	now := deletedAt.Add(30 * 24 * time.Hour) // 30 days later
+	deps, svc := newSvcFull(t, KeyStrategyCAS, "local", func(c *Config) {
+		c.Clock = func() time.Time { return now }
+	})
+
+	// Seed a row with the row already soft-deleted at deletedAt.
+	body := []byte("too old to restore")
+	digest := sha256Hex(body)
+	key := casKey(digest, ".txt")
+	if _, err := deps.buckets.EnsureSystem(context.Background(), testActorA, ossmodel.SystemBucketSpec{
+		Name:              ossmodel.SystemBucketChat,
+		Kind:              ossmodel.BucketKindSystem,
+		SystemKey:         ossmodel.SystemBucketChat,
+		DefaultVisibility: ossmodel.VisibilityChat,
+	}); err != nil {
+		t.Fatalf("seed bucket: %v", err)
+	}
+	bucket, _ := deps.buckets.FindByOwnerName(context.Background(), testActorA, ossmodel.SystemBucketChat)
+	row := &ossmodel.FileMeta{
+		ID: "id-old", Key: key, Name: "old.txt", Size: int64(len(body)),
+		Backend: "local", Sha256: digest,
+		OwnerActorID: testActorA, BucketID: bucket.ID,
+		Visibility: ossmodel.VisibilityChat, ChatSessionID: "session-old",
+	}
+	if err := deps.files.Create(context.Background(), row); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+	deps.files.markDeletedForTest(testActorA, key, deletedAt)
+
+	_, err := svc.RestoreFile(context.Background(), testActorA, key, 7*24*time.Hour)
+	if !errors.Is(err, ErrRestoreWindowExpired) {
+		t.Fatalf("expected ErrRestoreWindowExpired, got %v", err)
+	}
+
+	// Row still soft-deleted.
+	got, _ := deps.files.FindByOwnerKeyIncludeDeleted(context.Background(), testActorA, key)
+	if got.DeletedAt == nil {
+		t.Fatal("row must remain soft-deleted after expired restore")
+	}
+}
+
+// TestRestoreFile_AlreadyLive — restoring a non-deleted row returns
+// ErrFileAlreadyLive.
+func TestRestoreFile_AlreadyLive(t *testing.T) {
+	_, svc := newSvcFull(t, KeyStrategyCAS, "local", nil)
+	body := []byte("still live")
+	f, h := makePart(t, "live.txt", body)
+	created, err := svc.SaveFile(context.Background(), defaultAttr(testActorA), f, h)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	_, err = svc.RestoreFile(context.Background(), testActorA, created.Key, 7*24*time.Hour)
+	if !errors.Is(err, ErrFileAlreadyLive) {
+		t.Fatalf("expected ErrFileAlreadyLive, got %v", err)
+	}
+}
+
+// TestRestoreFile_QuotaExceeded — re-debiting the bucket with the
+// row's bytes must be quota-checked. Restoring beyond the quota
+// must be refused and leave state untouched.
+func TestRestoreFile_QuotaExceeded(t *testing.T) {
+	deps, svc := newSvcFull(t, KeyStrategyCAS, "local", nil)
+
+	// Tight quota: only one upload's worth of bytes.
+	if _, err := deps.buckets.EnsureSystem(context.Background(), testActorA, ossmodel.SystemBucketSpec{
+		Name:              ossmodel.SystemBucketChat,
+		Kind:              ossmodel.BucketKindSystem,
+		SystemKey:         ossmodel.SystemBucketChat,
+		DefaultVisibility: ossmodel.VisibilityChat,
+		QuotaBytes:        20,
+	}); err != nil {
+		t.Fatalf("seed bucket: %v", err)
+	}
+
+	body := []byte("twelve chars")
+	f, h := makePart(t, "q.txt", body)
+	created, err := svc.SaveFile(context.Background(), defaultAttr(testActorA), f, h)
+	if err != nil {
+		t.Fatalf("seed save: %v", err)
+	}
+	if _, err := svc.DeleteFile(context.Background(), testActorA, created.Key); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	// Fill the quota with another upload before attempting restore.
+	body2 := []byte("ten bytes!")
+	f2, h2 := makePart(t, "q2.txt", body2)
+	if _, err := svc.SaveFile(context.Background(), defaultAttr(testActorA), f2, h2); err != nil {
+		t.Fatalf("seed save 2: %v", err)
+	}
+
+	_, err = svc.RestoreFile(context.Background(), testActorA, created.Key, 7*24*time.Hour)
+	if !errors.Is(err, ossrepo.ErrQuotaExceeded) {
+		t.Fatalf("expected ErrQuotaExceeded, got %v", err)
+	}
+
+	// Row still soft-deleted; blob refcount unchanged.
+	got, _ := deps.files.FindByOwnerKeyIncludeDeleted(context.Background(), testActorA, created.Key)
+	if got.DeletedAt == nil {
+		t.Fatal("row must remain soft-deleted after quota-failed restore")
+	}
+	blob, _ := deps.blobs.Get(context.Background(), "local", created.Key)
+	if blob == nil || blob.RefCount != 0 {
+		t.Fatalf("blob refcount should stay 0 after failed restore, got %+v", blob)
+	}
+}
+
+// TestDeleteFile_RejectsMissingActor — an empty actor id returns
+// ErrActorRequired without touching state.
+func TestDeleteFile_RejectsMissingActor(t *testing.T) {
+	_, svc := newSvcFull(t, KeyStrategyCAS, "local", nil)
+	_, err := svc.DeleteFile(context.Background(), "", "cas/aa/whatever")
+	if !errors.Is(err, ErrActorRequired) {
+		t.Fatalf("expected ErrActorRequired, got %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------
+// S5 — PATCH.
+//
+// The contract these tests pin:
+//
+//   - PatchFile validates `visibility` enum, the `chat ↔ session id`
+//     coupling, the same-actor bucket-move rule.
+//   - Visibility tightening bumps capability_version exactly once;
+//     loosening or no-op visibility changes do not.
+//   - Bucket moves debit source and credit destination atomically;
+//     a quota failure on the destination rolls back fully.
+//   - Empty patches are rejected before any DB hit; soft-deleted
+//     rows are rejected with ErrPatchOnDeleted.
+// ---------------------------------------------------------------------
+
+func ptrStr(s string) *string { return &s }
+
+// TestPatchFile_VisibilityTightening_BumpsCapabilityVersion — moving
+// from `chat` to `private` is tightening; capability_version bumps
+// once and the visibility flip clears the chat session id.
+func TestPatchFile_VisibilityTightening_BumpsCapabilityVersion(t *testing.T) {
+	deps, svc := newSvcFull(t, KeyStrategyCAS, "local", nil)
+	body := []byte("tighten me")
+	f, h := makePart(t, "t.txt", body)
+	created, err := svc.SaveFile(context.Background(), defaultAttr(testActorA), f, h)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if created.Visibility != ossmodel.VisibilityChat {
+		t.Fatalf("seed should be chat, got %q", created.Visibility)
+	}
+
+	res, err := svc.PatchFile(context.Background(), testActorA, created.Key, PatchRequest{
+		Visibility: ptrStr(ossmodel.VisibilityPrivate),
+	})
+	if err != nil {
+		t.Fatalf("PatchFile: %v", err)
+	}
+	if !res.VisibilityTightened {
+		t.Fatal("expected VisibilityTightened=true")
+	}
+	if res.CapabilityVersion == "" {
+		t.Fatal("expected CapabilityVersion to be set on tightening")
+	}
+	if deps.meta.bumpCount != 1 {
+		t.Fatalf("expected exactly 1 cap-version bump, got %d", deps.meta.bumpCount)
+	}
+	if res.Meta.Visibility != ossmodel.VisibilityPrivate {
+		t.Errorf("post-patch visibility = %q, want %q", res.Meta.Visibility, ossmodel.VisibilityPrivate)
+	}
+	if res.Meta.ChatSessionID != "" {
+		t.Errorf("non-chat visibility must clear chat_session_id, got %q", res.Meta.ChatSessionID)
+	}
+	if !contains(res.FieldsChanged, "visibility") {
+		t.Errorf("FieldsChanged should include 'visibility', got %v", res.FieldsChanged)
+	}
+}
+
+// TestPatchFile_VisibilityLoosening_DoesNotBumpCapabilityVersion —
+// `private` → `chat` is a relaxation, not a tightening.
+func TestPatchFile_VisibilityLoosening_DoesNotBumpCapabilityVersion(t *testing.T) {
+	deps, svc := newSvcFull(t, KeyStrategyCAS, "local", nil)
+	body := []byte("loosen me")
+	f, h := makePart(t, "l.txt", body)
+	attr := defaultAttr(testActorA)
+	attr.Visibility = ossmodel.VisibilityPrivate
+	attr.ChatSessionID = ""
+	created, err := svc.SaveFile(context.Background(), attr, f, h)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	res, err := svc.PatchFile(context.Background(), testActorA, created.Key, PatchRequest{
+		Visibility:    ptrStr(ossmodel.VisibilityChat),
+		ChatSessionID: ptrStr("session-after-loosening"),
+	})
+	if err != nil {
+		t.Fatalf("PatchFile: %v", err)
+	}
+	if res.VisibilityTightened {
+		t.Fatal("loosening must not be reported as tightening")
+	}
+	if deps.meta.bumpCount != 0 {
+		t.Fatalf("expected zero cap-version bumps, got %d", deps.meta.bumpCount)
+	}
+	if res.Meta.Visibility != ossmodel.VisibilityChat {
+		t.Errorf("visibility = %q, want chat", res.Meta.Visibility)
+	}
+	if res.Meta.ChatSessionID != "session-after-loosening" {
+		t.Errorf("chat_session_id = %q, want session-after-loosening", res.Meta.ChatSessionID)
+	}
+}
+
+// TestPatchFile_VisibilityChatRequiresSessionID — flipping to `chat`
+// without supplying a session id (and the row not already having one)
+// returns ErrChatSessionRequired and leaves the row untouched.
+func TestPatchFile_VisibilityChatRequiresSessionID(t *testing.T) {
+	deps, svc := newSvcFull(t, KeyStrategyCAS, "local", nil)
+	body := []byte("private origin")
+	f, h := makePart(t, "p.txt", body)
+	attr := defaultAttr(testActorA)
+	attr.Visibility = ossmodel.VisibilityPrivate
+	attr.ChatSessionID = ""
+	created, err := svc.SaveFile(context.Background(), attr, f, h)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	_, err = svc.PatchFile(context.Background(), testActorA, created.Key, PatchRequest{
+		Visibility: ptrStr(ossmodel.VisibilityChat),
+	})
+	if !errors.Is(err, ErrChatSessionRequired) {
+		t.Fatalf("expected ErrChatSessionRequired, got %v", err)
+	}
+	got, _ := deps.files.FindByOwnerKey(context.Background(), testActorA, created.Key)
+	if got.Visibility != ossmodel.VisibilityPrivate {
+		t.Errorf("visibility leaked: %q", got.Visibility)
+	}
+}
+
+// TestPatchFile_RejectsInvalidVisibility — an unknown visibility
+// string is refused at validation; nothing is mutated.
+func TestPatchFile_RejectsInvalidVisibility(t *testing.T) {
+	_, svc := newSvcFull(t, KeyStrategyCAS, "local", nil)
+	body := []byte("hi")
+	f, h := makePart(t, "x.txt", body)
+	created, err := svc.SaveFile(context.Background(), defaultAttr(testActorA), f, h)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	_, err = svc.PatchFile(context.Background(), testActorA, created.Key, PatchRequest{
+		Visibility: ptrStr("supersecret"),
+	})
+	if !errors.Is(err, ErrInvalidVisibility) {
+		t.Fatalf("expected ErrInvalidVisibility, got %v", err)
+	}
+}
+
+// TestPatchFile_EmptyPatchIsRejected — at least one mutating field
+// must be present.
+func TestPatchFile_EmptyPatchIsRejected(t *testing.T) {
+	_, svc := newSvcFull(t, KeyStrategyCAS, "local", nil)
+	body := []byte("e")
+	f, h := makePart(t, "e.txt", body)
+	created, err := svc.SaveFile(context.Background(), defaultAttr(testActorA), f, h)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	_, err = svc.PatchFile(context.Background(), testActorA, created.Key, PatchRequest{})
+	if !errors.Is(err, ErrEmptyPatch) {
+		t.Fatalf("expected ErrEmptyPatch, got %v", err)
+	}
+}
+
+// TestPatchFile_OnDeletedRowIsRefused — soft-deleted rows must be
+// restored before they can be patched.
+func TestPatchFile_OnDeletedRowIsRefused(t *testing.T) {
+	_, svc := newSvcFull(t, KeyStrategyCAS, "local", nil)
+	body := []byte("d")
+	f, h := makePart(t, "d.txt", body)
+	created, err := svc.SaveFile(context.Background(), defaultAttr(testActorA), f, h)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := svc.DeleteFile(context.Background(), testActorA, created.Key); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	_, err = svc.PatchFile(context.Background(), testActorA, created.Key, PatchRequest{
+		Filename: ptrStr("rename-after-delete"),
+	})
+	if !errors.Is(err, ErrPatchOnDeleted) {
+		t.Fatalf("expected ErrPatchOnDeleted, got %v", err)
+	}
+}
+
+// TestPatchFile_FilenameAndExpiry — cosmetic patches do not touch
+// quota and do not bump capability_version.
+func TestPatchFile_FilenameAndExpiry(t *testing.T) {
+	pinned := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
+	deps, svc := newSvcFull(t, KeyStrategyCAS, "local", func(c *Config) {
+		c.Clock = func() time.Time { return pinned }
+	})
+	body := []byte("c")
+	f, h := makePart(t, "c.txt", body)
+	created, err := svc.SaveFile(context.Background(), defaultAttr(testActorA), f, h)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	newExp := pinned.Add(48 * time.Hour)
+	res, err := svc.PatchFile(context.Background(), testActorA, created.Key, PatchRequest{
+		Filename:     ptrStr("renamed.txt"),
+		ExpiresAtSet: true,
+		ExpiresAt:    &newExp,
+	})
+	if err != nil {
+		t.Fatalf("PatchFile: %v", err)
+	}
+	if res.Meta.Name != "renamed.txt" {
+		t.Errorf("name = %q, want renamed.txt", res.Meta.Name)
+	}
+	if res.Meta.ExpiresAt == nil || !res.Meta.ExpiresAt.Equal(newExp) {
+		t.Errorf("expires_at = %v, want %v", res.Meta.ExpiresAt, newExp)
+	}
+	if deps.meta.bumpCount != 0 {
+		t.Errorf("non-tightening patch must not bump cap-version, got %d", deps.meta.bumpCount)
+	}
+}
+
+// TestPatchFile_BucketMove_DebitsAndCredits — moving from `chat`
+// (system) to `personal` (system) atomically swings bytes.
+func TestPatchFile_BucketMove_DebitsAndCredits(t *testing.T) {
+	deps, svc := newSvcFull(t, KeyStrategyCAS, "local", nil)
+	body := []byte("move me")
+	f, h := makePart(t, "m.txt", body)
+	created, err := svc.SaveFile(context.Background(), defaultAttr(testActorA), f, h)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	srcBefore, _ := deps.buckets.FindByOwnerName(context.Background(), testActorA, ossmodel.SystemBucketChat)
+	if srcBefore.UsedBytes != int64(len(body)) {
+		t.Fatalf("src usage = %d, want %d", srcBefore.UsedBytes, len(body))
+	}
+
+	res, err := svc.PatchFile(context.Background(), testActorA, created.Key, PatchRequest{
+		BucketName: ptrStr(ossmodel.SystemBucketPersonal),
+	})
+	if err != nil {
+		t.Fatalf("PatchFile: %v", err)
+	}
+	if !contains(res.FieldsChanged, "bucket") {
+		t.Errorf("FieldsChanged missing 'bucket': %v", res.FieldsChanged)
+	}
+
+	srcAfter, _ := deps.buckets.FindByOwnerName(context.Background(), testActorA, ossmodel.SystemBucketChat)
+	dstAfter, _ := deps.buckets.FindByOwnerName(context.Background(), testActorA, ossmodel.SystemBucketPersonal)
+	if srcAfter.UsedBytes != 0 {
+		t.Errorf("src usage post-move = %d, want 0", srcAfter.UsedBytes)
+	}
+	if dstAfter.UsedBytes != int64(len(body)) {
+		t.Errorf("dst usage post-move = %d, want %d", dstAfter.UsedBytes, len(body))
+	}
+}
+
+// TestPatchFile_BucketMove_QuotaFailureRollsBack — destination
+// bucket has a tight quota; the move is refused and source bucket
+// is unchanged.
+func TestPatchFile_BucketMove_QuotaFailureRollsBack(t *testing.T) {
+	deps, svc := newSvcFull(t, KeyStrategyCAS, "local", nil)
+
+	// Pre-create a tight-quota destination user bucket so the move
+	// fails the AddUsage quota check.
+	dst := &ossmodel.Bucket{
+		ID:                "bk-tight",
+		OwnerActorID:      testActorA,
+		Name:              "tight-archive",
+		Kind:              ossmodel.BucketKindUser,
+		DefaultVisibility: ossmodel.VisibilityPrivate,
+		QuotaBytes:        3, // smaller than upload body below
+	}
+	if err := deps.buckets.Create(context.Background(), dst); err != nil {
+		t.Fatalf("seed dst bucket: %v", err)
+	}
+
+	body := []byte("twelve bytes!")
+	f, h := makePart(t, "m.txt", body)
+	created, err := svc.SaveFile(context.Background(), defaultAttr(testActorA), f, h)
+	if err != nil {
+		t.Fatalf("seed save: %v", err)
+	}
+
+	_, err = svc.PatchFile(context.Background(), testActorA, created.Key, PatchRequest{
+		BucketName: ptrStr("tight-archive"),
+	})
+	if !errors.Is(err, ossrepo.ErrQuotaExceeded) {
+		t.Fatalf("expected ErrQuotaExceeded, got %v", err)
+	}
+
+	srcAfter, _ := deps.buckets.FindByOwnerName(context.Background(), testActorA, ossmodel.SystemBucketChat)
+	dstAfter, _ := deps.buckets.FindByOwnerName(context.Background(), testActorA, "tight-archive")
+	if srcAfter.UsedBytes != int64(len(body)) {
+		t.Errorf("src usage must be untouched, got %d", srcAfter.UsedBytes)
+	}
+	if dstAfter.UsedBytes != 0 {
+		t.Errorf("dst usage must remain 0, got %d", dstAfter.UsedBytes)
+	}
+
+	// Row's bucket id unchanged.
+	got, _ := deps.files.FindByOwnerKey(context.Background(), testActorA, created.Key)
+	if got.BucketID == dstAfter.ID {
+		t.Errorf("row must remain in source bucket after rollback")
+	}
+}
+
+// contains is a small slice helper for set-membership assertions.
+func contains(haystack []string, needle string) bool {
+	for _, v := range haystack {
+		if v == needle {
+			return true
+		}
+	}
+	return false
+}
+
+// ---------------------------------------------------------------------------
+// S6 — ListMyFiles
+// ---------------------------------------------------------------------------
+
+// seedListRow inserts a fully-formed row into the fake repos with a
+// pinned CreatedAt so ListByOwner ordering tests are deterministic.
+// The bucket usage is also incremented so the row reflects what an
+// actual upload would look like.
+func seedListRow(t *testing.T, deps svcDeps, owner, key, bucketName, vis, mime string, size int64, created time.Time) *ossmodel.FileMeta {
+	t.Helper()
+	bucket, _ := deps.buckets.EnsureSystem(context.Background(), owner, ossmodel.SystemBucketSpec{
+		Name:              bucketName,
+		Kind:              "system",
+		DefaultVisibility: vis,
+		QuotaBytes:        1 << 30,
+	})
+	if bucket == nil {
+		// non-system bucket — caller already arranged it
+		b, err := deps.buckets.FindByOwnerName(context.Background(), owner, bucketName)
+		if err != nil {
+			t.Fatalf("seedListRow: bucket lookup %q: %v", bucketName, err)
+		}
+		bucket = b
+	}
+	row := &ossmodel.FileMeta{
+		ID:           "id-" + key,
+		Key:          key,
+		Name:         "name-" + key,
+		Size:         size,
+		Mime:         mime,
+		Backend:      "local",
+		Path:         "/tmp/" + key,
+		BucketID:     bucket.ID,
+		OwnerActorID: owner,
+		Visibility:   vis,
+		CreatedAt:    created,
+		UpdatedAt:    created,
+	}
+	if err := deps.files.Create(context.Background(), row); err != nil {
+		t.Fatalf("seedListRow Create %q: %v", key, err)
+	}
+	if err := deps.buckets.AddUsage(context.Background(), bucket.ID, size); err != nil {
+		t.Fatalf("seedListRow AddUsage: %v", err)
+	}
+	return row
+}
+
+func TestListMyFiles_DefaultsAndOrdering(t *testing.T) {
+	deps, svc := newSvcFull(t, KeyStrategyRandom, "local", nil)
+
+	t0 := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
+	seedListRow(t, deps, testActorA, "k1", ossmodel.SystemBucketChat, ossmodel.VisibilityChat, "image/png", 100, t0)
+	seedListRow(t, deps, testActorA, "k2", ossmodel.SystemBucketChat, ossmodel.VisibilityPrivate, "image/jpeg", 200, t0.Add(time.Minute))
+	seedListRow(t, deps, testActorA, "k3", ossmodel.SystemBucketChat, ossmodel.VisibilityPublic, "application/pdf", 300, t0.Add(2*time.Minute))
+	// Different owner must not leak.
+	seedListRow(t, deps, testActorB, "kb", ossmodel.SystemBucketChat, ossmodel.VisibilityChat, "image/png", 50, t0)
+
+	res, err := svc.ListMyFiles(context.Background(), testActorA, ListMyFilesRequest{})
+	if err != nil {
+		t.Fatalf("ListMyFiles: %v", err)
+	}
+	if res.Total != 3 {
+		t.Errorf("total = %d, want 3", res.Total)
+	}
+	if res.Page != 1 || res.PageSize != DefaultListMyFilesPageSize {
+		t.Errorf("page=%d page_size=%d, want page=1 page_size=%d", res.Page, res.PageSize, DefaultListMyFilesPageSize)
+	}
+	if got := len(res.Files); got != 3 {
+		t.Fatalf("len(files) = %d, want 3", got)
+	}
+	if res.Files[0].Key != "k3" || res.Files[1].Key != "k2" || res.Files[2].Key != "k1" {
+		t.Errorf("ordering = [%s,%s,%s], want [k3,k2,k1]",
+			res.Files[0].Key, res.Files[1].Key, res.Files[2].Key)
+	}
+}
+
+func TestListMyFiles_BucketFilter_Resolves(t *testing.T) {
+	deps, svc := newSvcFull(t, KeyStrategyRandom, "local", nil)
+
+	t0 := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
+	seedListRow(t, deps, testActorA, "kchat", ossmodel.SystemBucketChat, ossmodel.VisibilityChat, "image/png", 100, t0)
+	seedListRow(t, deps, testActorA, "kpers", ossmodel.SystemBucketPersonal, ossmodel.VisibilityPrivate, "image/png", 100, t0.Add(time.Minute))
+
+	res, err := svc.ListMyFiles(context.Background(), testActorA, ListMyFilesRequest{
+		BucketName: ossmodel.SystemBucketPersonal,
+	})
+	if err != nil {
+		t.Fatalf("ListMyFiles: %v", err)
+	}
+	if res.Total != 1 || len(res.Files) != 1 || res.Files[0].Key != "kpers" {
+		t.Errorf("bucket filter result = %+v, want single 'kpers'", res)
+	}
+}
+
+func TestListMyFiles_UnknownBucket_EmptyNoError(t *testing.T) {
+	deps, svc := newSvcFull(t, KeyStrategyRandom, "local", nil)
+
+	t0 := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
+	seedListRow(t, deps, testActorA, "k1", ossmodel.SystemBucketChat, ossmodel.VisibilityChat, "image/png", 100, t0)
+
+	res, err := svc.ListMyFiles(context.Background(), testActorA, ListMyFilesRequest{
+		BucketName: "nonexistent-bucket",
+	})
+	if err != nil {
+		t.Fatalf("ListMyFiles: %v", err)
+	}
+	if res.Total != 0 || len(res.Files) != 0 {
+		t.Errorf("unknown bucket result = %+v, want empty", res)
+	}
+}
+
+func TestListMyFiles_RejectsInvalidVisibility(t *testing.T) {
+	_, svc := newSvcFull(t, KeyStrategyRandom, "local", nil)
+
+	_, err := svc.ListMyFiles(context.Background(), testActorA, ListMyFilesRequest{
+		Visibility: "weird",
+	})
+	if !errors.Is(err, ErrInvalidVisibility) {
+		t.Fatalf("expected ErrInvalidVisibility, got %v", err)
+	}
+}
+
+func TestListMyFiles_RequiresActor(t *testing.T) {
+	_, svc := newSvcFull(t, KeyStrategyRandom, "local", nil)
+	_, err := svc.ListMyFiles(context.Background(), "", ListMyFilesRequest{})
+	if !errors.Is(err, ErrActorRequired) {
+		t.Fatalf("expected ErrActorRequired, got %v", err)
+	}
+}
+
+func TestListMyFiles_PageSizeClamping(t *testing.T) {
+	deps, svc := newSvcFull(t, KeyStrategyRandom, "local", nil)
+
+	t0 := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < 5; i++ {
+		seedListRow(t, deps, testActorA, fmt.Sprintf("k%d", i), ossmodel.SystemBucketChat, ossmodel.VisibilityChat, "image/png", 1, t0.Add(time.Duration(i)*time.Minute))
+	}
+
+	// Excessive page_size clamped to MaxListMyFilesPageSize.
+	res, err := svc.ListMyFiles(context.Background(), testActorA, ListMyFilesRequest{PageSize: 9999})
+	if err != nil {
+		t.Fatalf("ListMyFiles: %v", err)
+	}
+	if res.PageSize != MaxListMyFilesPageSize {
+		t.Errorf("page_size clamp = %d, want %d", res.PageSize, MaxListMyFilesPageSize)
+	}
+
+	// Negative page_size falls back to default.
+	res, err = svc.ListMyFiles(context.Background(), testActorA, ListMyFilesRequest{PageSize: -1})
+	if err != nil {
+		t.Fatalf("ListMyFiles negative: %v", err)
+	}
+	if res.PageSize != DefaultListMyFilesPageSize {
+		t.Errorf("negative page_size = %d, want default %d", res.PageSize, DefaultListMyFilesPageSize)
+	}
+	// Page < 1 normalised to 1.
+	if res.Page != 1 {
+		t.Errorf("page = %d, want 1", res.Page)
+	}
+}
+
+func TestListMyFiles_IncludeDeleted(t *testing.T) {
+	deps, svc := newSvcFull(t, KeyStrategyRandom, "local", nil)
+
+	t0 := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
+	live := seedListRow(t, deps, testActorA, "k-live", ossmodel.SystemBucketChat, ossmodel.VisibilityChat, "image/png", 100, t0)
+	gone := seedListRow(t, deps, testActorA, "k-gone", ossmodel.SystemBucketChat, ossmodel.VisibilityChat, "image/png", 100, t0.Add(time.Minute))
+	deps.files.markDeletedForTest(testActorA, gone.Key, t0.Add(time.Hour))
+	_ = live
+
+	res, err := svc.ListMyFiles(context.Background(), testActorA, ListMyFilesRequest{})
+	if err != nil {
+		t.Fatalf("ListMyFiles default: %v", err)
+	}
+	if res.Total != 1 {
+		t.Errorf("default total = %d, want 1 (deleted excluded)", res.Total)
+	}
+
+	res, err = svc.ListMyFiles(context.Background(), testActorA, ListMyFilesRequest{IncludeDeleted: true})
+	if err != nil {
+		t.Fatalf("ListMyFiles include-deleted: %v", err)
+	}
+	if res.Total != 2 {
+		t.Errorf("include-deleted total = %d, want 2", res.Total)
+	}
+}
+
+func TestListMyFiles_VisibilityFilterNormalisesCase(t *testing.T) {
+	deps, svc := newSvcFull(t, KeyStrategyRandom, "local", nil)
+
+	t0 := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
+	seedListRow(t, deps, testActorA, "kchat", ossmodel.SystemBucketChat, ossmodel.VisibilityChat, "image/png", 100, t0)
+	seedListRow(t, deps, testActorA, "kpriv", ossmodel.SystemBucketChat, ossmodel.VisibilityPrivate, "image/png", 100, t0.Add(time.Minute))
+
+	res, err := svc.ListMyFiles(context.Background(), testActorA, ListMyFilesRequest{
+		Visibility: "PRIVATE",
+	})
+	if err != nil {
+		t.Fatalf("ListMyFiles: %v", err)
+	}
+	if res.Total != 1 || len(res.Files) != 1 || res.Files[0].Key != "kpriv" {
+		t.Errorf("case-insensitive visibility filter = %+v", res)
 	}
 }
