@@ -1,12 +1,39 @@
 package oss
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/peers-labs/peers-touch/station/frame/core/facility/storage"
 )
+
+// stubPresignBackend is a `storage.Backend` + `storage.PresignedBackend`
+// double used by capability tests to flip `presigned_upload` on
+// without spinning up a real S3-protocol server.
+type stubPresignBackend struct{}
+
+func (stubPresignBackend) Save(context.Context, string, io.Reader) (string, error) {
+	return "", nil
+}
+func (stubPresignBackend) Open(context.Context, string) (io.ReadCloser, int64, string, error) {
+	return nil, 0, "", nil
+}
+func (stubPresignBackend) Delete(context.Context, string) error { return nil }
+func (stubPresignBackend) PresignPut(context.Context, string, string, int64, string, time.Duration) (storage.PresignedRequest, error) {
+	return storage.PresignedRequest{}, nil
+}
+func (stubPresignBackend) PresignGet(context.Context, string, time.Duration) (storage.PresignedRequest, error) {
+	return storage.PresignedRequest{}, nil
+}
+func (stubPresignBackend) HeadObject(context.Context, string) (storage.HeadInfo, error) {
+	return storage.HeadInfo{}, nil
+}
 
 // TestResolveOriginAndBuildCID exercises the federation-critical decision
 // of how an OSS subserver advertises its externally-reachable origin and
@@ -91,6 +118,7 @@ func TestHandleCapabilitiesShape(t *testing.T) {
 		"version", "host", "path_base", "backend", "key_strategy",
 		"max_file_size", "max_files_per_message",
 		"signed_url", "upload_endpoint", "file_endpoint", "meta_endpoint",
+		"presigned_upload",
 	}
 	for _, k := range wantKeys {
 		if _, ok := got[k]; !ok {
@@ -103,10 +131,67 @@ func TestHandleCapabilitiesShape(t *testing.T) {
 	if got["signed_url"] != true {
 		t.Errorf("signed_url = %v, want true (signSecret set)", got["signed_url"])
 	}
-	if got["version"].(float64) != 1 {
-		t.Errorf("version = %v, want 1", got["version"])
+	// Version 2 introduced the presigned upload capability fields. Older
+	// clients that only check `version >= 1` still work because they
+	// ignore unknown fields; newer clients gate their behaviour on
+	// `version >= 2 && presigned_upload`.
+	if got["version"].(float64) != 2 {
+		t.Errorf("version = %v, want 2", got["version"])
 	}
 	if got["key_strategy"] != "cas" {
 		t.Errorf("key_strategy = %v, want cas", got["key_strategy"])
+	}
+	// Without a presigned-capable backend, `presigned_upload` is false
+	// and the endpoint map is omitted from the response.
+	if got["presigned_upload"] != false {
+		t.Errorf("presigned_upload = %v, want false (no PresignedBackend)", got["presigned_upload"])
+	}
+	if _, ok := got["presigned_endpoints"]; ok {
+		t.Error("presigned_endpoints should be omitted when feature is disabled")
+	}
+}
+
+// TestHandleCapabilities_PresignedFieldsWhenEnabled verifies that the
+// presigned upload capability fields appear when the active backend
+// implements `PresignedBackend` AND the threshold is non-zero. We
+// stub the backend with a fake that satisfies the interface; the
+// handler does not actually call into it for `/capabilities`, so the
+// fake's methods can return zero values.
+func TestHandleCapabilities_PresignedFieldsWhenEnabled(t *testing.T) {
+	s := &ossSubServer{
+		pathBase:           "/sub-oss",
+		hostOverride:       "https://example.com",
+		backendType:        "s3",
+		keyStrategy:        "cas",
+		maxFileSize:        16 << 20,
+		maxFilesPerMessage: 5,
+		backend:            stubPresignBackend{},
+		presignedThreshold: 8 << 20,
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/sub-oss/capabilities", nil)
+	s.handleCapabilities(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got["presigned_upload"] != true {
+		t.Errorf("presigned_upload = %v, want true", got["presigned_upload"])
+	}
+	if got["presigned_threshold"].(float64) != float64(8<<20) {
+		t.Errorf("presigned_threshold = %v, want %d", got["presigned_threshold"], 8<<20)
+	}
+	endpoints, ok := got["presigned_endpoints"].(map[string]any)
+	if !ok {
+		t.Fatalf("presigned_endpoints missing or wrong type: %v", got["presigned_endpoints"])
+	}
+	if endpoints["presign"] != "/sub-oss/presign-upload" {
+		t.Errorf("presign endpoint = %v", endpoints["presign"])
+	}
+	if endpoints["complete"] != "/sub-oss/upload-complete" {
+		t.Errorf("complete endpoint = %v", endpoints["complete"])
 	}
 }

@@ -3,6 +3,8 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"mime/multipart"
@@ -10,8 +12,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
+	"github.com/peers-labs/peers-touch/station/frame/core/facility/storage"
 )
 
 // fakeRepo is an in-memory FileRepository good enough for verifying
@@ -182,6 +186,276 @@ func TestSaveCAS_DifferentBytesGetDifferentKeys(t *testing.T) {
 	}
 	if backend.saveCount() != 2 {
 		t.Fatalf("expected 2 backend saves, got %d", backend.saveCount())
+	}
+}
+
+// fakePresignBackend is a minimal `storage.PresignedBackend` for
+// service-layer tests. It returns deterministic URLs and a
+// caller-controlled HEAD response so we can exercise both the dedup
+// short-circuit and the size/sha256 validation paths in
+// CompleteUpload without spinning up a real S3-protocol server.
+type fakePresignBackend struct {
+	mu          sync.Mutex
+	headSize    int64
+	headSha256  string
+	failPresign bool
+	failHead    bool
+}
+
+func (b *fakePresignBackend) Save(context.Context, string, io.Reader) (string, error) {
+	return "", nil
+}
+func (b *fakePresignBackend) Open(context.Context, string) (io.ReadCloser, int64, string, error) {
+	return nil, 0, "", errors.New("not implemented")
+}
+func (b *fakePresignBackend) Delete(context.Context, string) error { return nil }
+
+func (b *fakePresignBackend) PresignPut(_ context.Context, key, contentType string, contentLength int64, sha256Hex string, ttl time.Duration) (storage.PresignedRequest, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.failPresign {
+		return storage.PresignedRequest{}, errors.New("presign failure")
+	}
+	headers := map[string]string{}
+	if contentType != "" {
+		headers["Content-Type"] = contentType
+	}
+	if sha256Hex != "" {
+		headers["x-amz-checksum-sha256"] = sha256Hex
+	}
+	return storage.PresignedRequest{
+		Method:    "PUT",
+		URL:       "https://fake.example.com/" + key,
+		Headers:   headers,
+		MaxBytes:  contentLength,
+		ExpiresAt: time.Now().Add(ttl),
+	}, nil
+}
+
+func (b *fakePresignBackend) PresignGet(_ context.Context, key string, ttl time.Duration) (storage.PresignedRequest, error) {
+	return storage.PresignedRequest{
+		Method:    "GET",
+		URL:       "https://fake.example.com/" + key,
+		ExpiresAt: time.Now().Add(ttl),
+	}, nil
+}
+
+func (b *fakePresignBackend) HeadObject(context.Context, string) (storage.HeadInfo, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.failHead {
+		return storage.HeadInfo{}, errors.New("head failure")
+	}
+	return storage.HeadInfo{
+		Size:   b.headSize,
+		Sha256: b.headSha256,
+	}, nil
+}
+
+func sha256Hex(b []byte) string {
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
+}
+
+// TestPrepareUpload_CASShortCircuit verifies that PrepareUpload
+// returns the existing FileMeta with `AlreadyUploaded: true` when a
+// CAS row already exists for the supplied SHA-256. This is the
+// architectural guarantee that makes the presigned data path safe
+// to use for chat — duplicate uploads never round-trip through S3.
+func TestPrepareUpload_CASShortCircuit(t *testing.T) {
+	repo := newFakeRepo()
+	backend := newFakeBackend()
+	svc := NewFileServiceWith(repo, backend, KeyStrategyCAS, "s3")
+
+	body := []byte("hello presigned")
+	digest := sha256Hex(body)
+	preExisting := &ossmodel.FileMeta{
+		ID:      digest,
+		Key:     casKey(digest, ".txt"),
+		Name:    "first.txt",
+		Size:    int64(len(body)),
+		Backend: "s3",
+		Sha256:  digest,
+	}
+	if err := repo.Create(context.Background(), preExisting); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	pb := &fakePresignBackend{}
+	res, err := svc.PrepareUpload(context.Background(), pb, PrepareUploadRequest{
+		Filename:    "second.txt",
+		ContentType: "text/plain",
+		Size:        int64(len(body)),
+		Sha256:      digest,
+	}, time.Minute)
+	if err != nil {
+		t.Fatalf("PrepareUpload: %v", err)
+	}
+	if !res.AlreadyUploaded {
+		t.Fatal("expected AlreadyUploaded=true on CAS hit")
+	}
+	if res.Meta.Name != "first.txt" {
+		t.Errorf("dedup should return original filename; got %q", res.Meta.Name)
+	}
+}
+
+// TestPrepareUpload_CAS_RequiresSha256 verifies the strategy contract:
+// CAS keys are derived from sha256, so the client *must* declare it
+// up-front. We refuse to silently degrade to random keying because
+// that would defeat the dedup invariant.
+func TestPrepareUpload_CAS_RequiresSha256(t *testing.T) {
+	repo := newFakeRepo()
+	backend := newFakeBackend()
+	svc := NewFileServiceWith(repo, backend, KeyStrategyCAS, "s3")
+	pb := &fakePresignBackend{}
+
+	_, err := svc.PrepareUpload(context.Background(), pb, PrepareUploadRequest{
+		Filename: "file.bin", Size: 1024,
+	}, time.Minute)
+	if err == nil {
+		t.Fatal("expected error when CAS upload omits sha256")
+	}
+	if !strings.Contains(err.Error(), "sha256") {
+		t.Errorf("error should mention sha256, got: %v", err)
+	}
+}
+
+// TestPrepareUpload_RandomReturnsFreshKey — random strategy never
+// short-circuits on dedup; every call yields a new dated key.
+func TestPrepareUpload_RandomReturnsFreshKey(t *testing.T) {
+	repo := newFakeRepo()
+	backend := newFakeBackend()
+	svc := NewFileServiceWith(repo, backend, KeyStrategyRandom, "s3")
+	pb := &fakePresignBackend{}
+
+	first, err := svc.PrepareUpload(context.Background(), pb, PrepareUploadRequest{
+		Filename: "img.png", Size: 1024,
+	}, time.Minute)
+	if err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	second, err := svc.PrepareUpload(context.Background(), pb, PrepareUploadRequest{
+		Filename: "img.png", Size: 1024,
+	}, time.Minute)
+	if err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	if first.Meta.Key == second.Meta.Key {
+		t.Errorf("random strategy must yield unique keys, got %q twice", first.Meta.Key)
+	}
+	if first.AlreadyUploaded || second.AlreadyUploaded {
+		t.Errorf("random strategy never dedups, but AlreadyUploaded was set")
+	}
+}
+
+// TestCompleteUpload_HappyPath_CAS — bytes uploaded, head returns
+// matching size + sha256, FileMeta row gets created. This is the
+// terminal step of the presigned data path.
+func TestCompleteUpload_HappyPath_CAS(t *testing.T) {
+	repo := newFakeRepo()
+	backend := newFakeBackend()
+	svc := NewFileServiceWith(repo, backend, KeyStrategyCAS, "s3")
+
+	body := []byte("complete me")
+	digest := sha256Hex(body)
+	pb := &fakePresignBackend{headSize: int64(len(body)), headSha256: digest}
+
+	meta, err := svc.CompleteUpload(context.Background(), pb, CompleteUploadRequest{
+		Key:      casKey(digest, ".bin"),
+		Filename: "complete.bin",
+		Size:     int64(len(body)),
+		Sha256:   digest,
+	})
+	if err != nil {
+		t.Fatalf("CompleteUpload: %v", err)
+	}
+	if meta.Sha256 != digest {
+		t.Errorf("Sha256 = %q, want %q", meta.Sha256, digest)
+	}
+	if meta.Backend != "s3" {
+		t.Errorf("Backend = %q, want s3", meta.Backend)
+	}
+}
+
+// TestCompleteUpload_RejectsSizeMismatch — claimed size disagrees
+// with what actually landed in the bucket. This is the integrity
+// gate that prevents a client lying about the upload from polluting
+// the FileMeta table.
+func TestCompleteUpload_RejectsSizeMismatch(t *testing.T) {
+	repo := newFakeRepo()
+	backend := newFakeBackend()
+	svc := NewFileServiceWith(repo, backend, KeyStrategyRandom, "s3")
+	pb := &fakePresignBackend{headSize: 999}
+
+	_, err := svc.CompleteUpload(context.Background(), pb, CompleteUploadRequest{
+		Key:      "2026/04/27/abc.bin",
+		Filename: "abc.bin",
+		Size:     1024,
+	})
+	if err == nil {
+		t.Fatal("expected size mismatch error")
+	}
+	if !strings.Contains(err.Error(), "size mismatch") {
+		t.Errorf("error should mention size mismatch, got: %v", err)
+	}
+}
+
+// TestCompleteUpload_RejectsSha256Mismatch — when the bucket reports
+// a SHA-256 (because the client bound `x-amz-checksum-sha256`) and
+// it diverges from what the client claimed, we refuse to register
+// the upload. This is the end-to-end integrity contract for CAS.
+func TestCompleteUpload_RejectsSha256Mismatch(t *testing.T) {
+	repo := newFakeRepo()
+	backend := newFakeBackend()
+	svc := NewFileServiceWith(repo, backend, KeyStrategyCAS, "s3")
+	pb := &fakePresignBackend{
+		headSize:   10,
+		headSha256: strings.Repeat("a", 64),
+	}
+
+	_, err := svc.CompleteUpload(context.Background(), pb, CompleteUploadRequest{
+		Key:      "cas/bb/" + strings.Repeat("b", 64) + ".bin",
+		Filename: "x.bin",
+		Size:     10,
+		Sha256:   strings.Repeat("b", 64),
+	})
+	if err == nil {
+		t.Fatal("expected sha256 mismatch error")
+	}
+	if !strings.Contains(err.Error(), "sha256 mismatch") {
+		t.Errorf("error should mention sha256 mismatch, got: %v", err)
+	}
+}
+
+// TestCompleteUpload_IdempotentOnExistingKey — concurrent uploaders
+// of identical CAS bytes call CompleteUpload on the same key. The
+// second call sees the existing row and returns it instead of
+// erroring on the unique-index collision.
+func TestCompleteUpload_IdempotentOnExistingKey(t *testing.T) {
+	repo := newFakeRepo()
+	backend := newFakeBackend()
+	svc := NewFileServiceWith(repo, backend, KeyStrategyCAS, "s3")
+	digest := strings.Repeat("c", 64)
+	preExisting := &ossmodel.FileMeta{
+		ID: digest, Key: casKey(digest, ".bin"), Name: "winner.bin",
+		Backend: "s3", Sha256: digest, Size: 5,
+	}
+	if err := repo.Create(context.Background(), preExisting); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	pb := &fakePresignBackend{headSize: 5, headSha256: digest}
+
+	got, err := svc.CompleteUpload(context.Background(), pb, CompleteUploadRequest{
+		Key:      preExisting.Key,
+		Filename: "loser.bin",
+		Size:     5,
+		Sha256:   digest,
+	})
+	if err != nil {
+		t.Fatalf("CompleteUpload: %v", err)
+	}
+	if got.Name != "winner.bin" {
+		t.Errorf("expected winner's filename, got %q", got.Name)
 	}
 }
 
