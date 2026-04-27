@@ -32,7 +32,12 @@ import (
 //	v2: presigned upload — `presigned_upload`, `presigned_threshold`,
 //	    `presigned_endpoints`. Older clients keep working because
 //	    they ignore unknown fields.
-const capabilitiesVersion = 2
+//	v3: object lifecycle (PATCH/DELETE/restore + my-files listing) +
+//	    outbound federation (`federation_token_endpoint`) +
+//	    `capability_version` cache-busting handle. The two new
+//	    feature blocks (`lifecycle_endpoints`, `federation`) are
+//	    additive; clients that ignore them keep their v2 behaviour.
+const capabilitiesVersion = 3
 
 type ossURL struct{ name, path string }
 
@@ -64,6 +69,22 @@ func (s *ossSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("oss-presign-upload", base+"/presign-upload", server.POST, server.HTTPHandlerFunc(s.handlePresignUpload), uploadWrappers...),
 		server.NewHTTPHandler("oss-upload-complete", base+"/upload-complete", server.POST, server.HTTPHandlerFunc(s.handleUploadComplete), uploadWrappers...),
 		server.NewHTTPHandler("oss-file-get", base+"/file", server.GET, server.HTTPHandlerFunc(s.handleFileGet), publicWrappers...),
+		// Lifecycle endpoints share the upload wrapper stack — they
+		// are owner-only mutates and must run under JWT auth.
+		// `DELETE /file?key=…` is the soft-delete primitive;
+		// `POST /file/restore?key=…` reverses it within the
+		// configured grace window.
+		server.NewHTTPHandler("oss-file-delete", base+"/file", server.DELETE, server.HTTPHandlerFunc(s.handleFileDelete), uploadWrappers...),
+		server.NewHTTPHandler("oss-file-patch", base+"/file", server.PATCH, server.HTTPHandlerFunc(s.handleFilePatch), uploadWrappers...),
+		server.NewHTTPHandler("oss-file-restore", base+"/file/restore", server.POST, server.HTTPHandlerFunc(s.handleFileRestore), uploadWrappers...),
+		// Owner-scoped listing — requires JWT, no presign / signed
+		// URL gating because the response carries no bytes.
+		server.NewHTTPHandler("oss-my-files", base+"/my-files", server.GET, server.HTTPHandlerFunc(s.handleListMyFiles), uploadWrappers...),
+		// Outbound federation: the subject of the request mints a
+		// short-lived peer JWT bound to ONE file + ONE peer station
+		// so the bearer can fetch the bytes from the peer without
+		// the peer needing to re-authenticate the local user.
+		server.NewHTTPHandler("oss-federation-token", base+"/federation/token", server.POST, server.HTTPHandlerFunc(s.handleFederationToken), uploadWrappers...),
 		server.NewHTTPHandler("oss-capabilities", base+"/capabilities", server.GET, server.HTTPHandlerFunc(s.handleCapabilities), publicWrappers...),
 		server.NewTypedHandler("oss-meta", base+"/meta", server.POST, s.handleMetaGet, serverwrapper.LogID()),
 	}
@@ -450,7 +471,66 @@ func (s *ossSubServer) handleCapabilities(w http.ResponseWriter, r *http.Request
 			"complete": s.pathBase + "/upload-complete",
 		}
 	}
+
+	// v3 additions — capability_version, lifecycle endpoints,
+	// federation token minter. Each block is independently
+	// optional; clients gate on `version >= 3` before reading.
+
+	// capability_version is a stable opaque handle (ULID) that
+	// changes whenever the policy shape changes (visibility
+	// tightening, quota changes, federation key rotation). Remote
+	// caches use it as an If-None-Match-style validator: keep your
+	// snapshot if the value is unchanged, refetch otherwise.
+	resp["capability_version"] = s.readCapabilityVersion(r.Context())
+
+	resp["lifecycle_endpoints"] = map[string]string{
+		"delete":   s.pathBase + "/file",
+		"patch":    s.pathBase + "/file",
+		"restore":  s.pathBase + "/file/restore",
+		"my_files": s.pathBase + "/my-files",
+	}
+
+	federation := map[string]any{
+		// `outbound` reports whether *this* station can mint peer
+		// tokens. Off when fedKeys / localStationID is unwired
+		// (typically dev / unit-test mode); clients then fall back
+		// to direct same-origin reads.
+		"outbound":          s.federationOutboundEnabled(),
+		"max_ttl_seconds":   int(federationMaxTTL.Seconds()),
+		"token_type":        federationTokenType,
+		"local_station_id":  s.localStationID,
+		"mint_endpoint":     s.pathBase + "/federation/token",
+	}
+	resp["federation"] = federation
+
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// readCapabilityVersion returns the ULID stamped in `oss_meta`
+// under MetaKeyCapabilityVersion. We swallow errors here because
+// `/capabilities` is the entry-point clients ping before they have
+// any other diagnostics — surfacing a 500 just to advertise a
+// missing cache key would be a worse user experience than serving
+// the rest of the document with an empty version (clients then
+// treat it as "unknown, always refetch", which is correct).
+func (s *ossSubServer) readCapabilityVersion(ctx context.Context) string {
+	if s.metaRepo == nil {
+		return ""
+	}
+	v, err := s.metaRepo.Get(ctx, ossdb.MetaKeyCapabilityVersion)
+	if err != nil {
+		logger.Warnf(ctx, "[oss] capability_version read failed: %v", err)
+		return ""
+	}
+	return v
+}
+
+// federationOutboundEnabled reports whether all wiring required to
+// mint a peer JWT is present. We check the same preconditions
+// MintPeerToken would, so `/capabilities` cannot advertise a mint
+// endpoint that would 501 on the first call.
+func (s *ossSubServer) federationOutboundEnabled() bool {
+	return s.fedKeys != nil && s.localStationID != ""
 }
 
 // handleFileGet enforces the visibility policy attached to the

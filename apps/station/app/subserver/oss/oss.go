@@ -73,6 +73,7 @@ type ossSubServer struct {
 	bucketRepo   repo.BucketRepository
 	auditRepo    repo.AuditRepository
 	blobRepo     repo.BlobRepository
+	metaRepo     repo.MetaRepository
 	peerKeyRepo  repo.PeerKeyRepository
 	chatResolver ChatSessionResolver
 
@@ -216,6 +217,7 @@ func NewOSSSubServer(opts ...option.Option) server.Subserver {
 	s.bucketRepo = repo.NewBucketRepository(s.dbName)
 	s.auditRepo = repo.NewAuditRepository(s.dbName)
 	s.blobRepo = repo.NewBlobRepository(s.dbName)
+	s.metaRepo = repo.NewMetaRepository(s.dbName)
 	s.peerKeyRepo = repo.NewPeerKeyRepository(s.dbName)
 	s.fedKeys = newFederationKeyCache(s.peerKeyRepo)
 	s.localStationID = strings.TrimSpace(o.LocalStationID)
@@ -223,6 +225,7 @@ func NewOSSSubServer(opts ...option.Option) server.Subserver {
 		Files:         s.fileRepo,
 		Buckets:       s.bucketRepo,
 		Blobs:         s.blobRepo,
+		Meta:          s.metaRepo,
 		Backend:       s.backend,
 		BackendName:   s.backendType,
 		Strategy:      service.KeyStrategy(s.keyStrategy),

@@ -694,3 +694,472 @@ func TestBlobRepo_ListGCCandidatesFiltersByRefAndAge(t *testing.T) {
 		t.Fatalf("expected only old/zero; got %+v", got)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// FileRepository — MarkDeleted / Restore (S4)
+// ---------------------------------------------------------------------------
+
+// seedLiveFile inserts a minimal live FileMeta row so tests can
+// poke at the soft-delete state machine without dragging the full
+// upload writer in.
+func seedLiveFile(t *testing.T, db *gorm.DB, id, owner, key string) *ossmodel.FileMeta {
+	t.Helper()
+	row := &ossmodel.FileMeta{
+		ID:            id,
+		Key:           key,
+		Name:          "n",
+		Size:          10,
+		Backend:       "local",
+		Sha256:        "h",
+		OwnerActorID:  owner,
+		BucketID:      "bk-" + id,
+		Visibility:    ossmodel.VisibilityPrivate,
+		ChatSessionID: "",
+	}
+	if err := db.Create(row).Error; err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+	return row
+}
+
+func TestFileRepo_MarkDeleted_FlipsLiveRow(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewFileRepository("default")
+	ctx := context.Background()
+	row := seedLiveFile(t, db, "f1", "did:test:alice", "cas/aa/abc")
+
+	now := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
+	if err := r.MarkDeleted(ctx, row.ID, now); err != nil {
+		t.Fatalf("MarkDeleted: %v", err)
+	}
+
+	// Live find misses; include-deleted hits with DeletedAt set.
+	if _, err := r.FindByOwnerKey(ctx, "did:test:alice", "cas/aa/abc"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("live find should miss, got err=%v", err)
+	}
+	got, err := r.FindByOwnerKeyIncludeDeleted(ctx, "did:test:alice", "cas/aa/abc")
+	if err != nil {
+		t.Fatalf("include-deleted find: %v", err)
+	}
+	if got.DeletedAt == nil || !got.DeletedAt.Equal(now) {
+		t.Fatalf("DeletedAt not stamped: %+v", got.DeletedAt)
+	}
+	if !got.UpdatedAt.Equal(now) {
+		t.Fatalf("UpdatedAt not refreshed: %v", got.UpdatedAt)
+	}
+}
+
+func TestFileRepo_MarkDeleted_AlreadyDeletedIsIdempotent(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewFileRepository("default")
+	ctx := context.Background()
+	row := seedLiveFile(t, db, "f2", "did:test:alice", "cas/aa/dup")
+
+	first := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
+	if err := r.MarkDeleted(ctx, row.ID, first); err != nil {
+		t.Fatalf("first delete: %v", err)
+	}
+
+	// Second call must report ErrFileAlreadyDeleted *without*
+	// touching DeletedAt — the caller relies on this to skip
+	// re-debiting bucket/blob state.
+	second := first.Add(5 * time.Minute)
+	err := r.MarkDeleted(ctx, row.ID, second)
+	if !errors.Is(err, ErrFileAlreadyDeleted) {
+		t.Fatalf("expected ErrFileAlreadyDeleted, got %v", err)
+	}
+
+	got, err := r.FindByOwnerKeyIncludeDeleted(ctx, "did:test:alice", "cas/aa/dup")
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got.DeletedAt == nil || !got.DeletedAt.Equal(first) {
+		t.Fatalf("DeletedAt must remain the original timestamp, got %v", got.DeletedAt)
+	}
+}
+
+func TestFileRepo_MarkDeleted_UnknownIDReturnsErrFileNotFound(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewFileRepository("default")
+	err := r.MarkDeleted(context.Background(), "ghost", time.Now())
+	if !errors.Is(err, ErrFileNotFound) {
+		t.Fatalf("expected ErrFileNotFound, got %v", err)
+	}
+}
+
+func TestFileRepo_Restore_ClearsDeletedAt(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewFileRepository("default")
+	ctx := context.Background()
+	row := seedLiveFile(t, db, "f3", "did:test:alice", "cas/aa/restorable")
+
+	now := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
+	if err := r.MarkDeleted(ctx, row.ID, now); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	restoredAt := now.Add(time.Hour)
+	expiry := restoredAt.Add(7 * 24 * time.Hour)
+	if err := r.Restore(ctx, row.ID, restoredAt, &expiry); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+
+	got, err := r.FindByOwnerKey(ctx, "did:test:alice", "cas/aa/restorable")
+	if err != nil {
+		t.Fatalf("post-restore live find: %v", err)
+	}
+	if got.DeletedAt != nil {
+		t.Fatalf("DeletedAt must be cleared, got %v", got.DeletedAt)
+	}
+	if got.ExpiresAt == nil || !got.ExpiresAt.Equal(expiry) {
+		t.Fatalf("ExpiresAt not refreshed, got %v", got.ExpiresAt)
+	}
+	if !got.UpdatedAt.Equal(restoredAt) {
+		t.Fatalf("UpdatedAt not refreshed, got %v", got.UpdatedAt)
+	}
+}
+
+func TestFileRepo_Restore_UnknownIDReturnsErrFileNotFound(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewFileRepository("default")
+	err := r.Restore(context.Background(), "ghost", time.Now(), nil)
+	if !errors.Is(err, ErrFileNotFound) {
+		t.Fatalf("expected ErrFileNotFound, got %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// FileRepository — Patch (S5)
+// ---------------------------------------------------------------------------
+
+func TestFileRepo_Patch_AppliesNonNilFields(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewFileRepository("default")
+	ctx := context.Background()
+	row := seedLiveFile(t, db, "f-patch", "did:test:alice", "cas/aa/patchable")
+
+	now := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
+	exp := now.Add(48 * time.Hour)
+	vis := ossmodel.VisibilityPrivate
+	bid := "bk-new"
+	fname := "renamed.txt"
+	if err := r.Patch(ctx, row.ID, FilePatch{
+		Visibility:   &vis,
+		BucketID:     &bid,
+		Filename:     &fname,
+		ExpiresAtSet: true,
+		ExpiresAt:    &exp,
+	}, now); err != nil {
+		t.Fatalf("Patch: %v", err)
+	}
+
+	got, err := r.FindByOwnerKey(ctx, "did:test:alice", "cas/aa/patchable")
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got.Visibility != vis {
+		t.Errorf("visibility = %q, want %q", got.Visibility, vis)
+	}
+	if got.BucketID != bid {
+		t.Errorf("bucket_id = %q, want %q", got.BucketID, bid)
+	}
+	if got.Name != fname {
+		t.Errorf("name = %q, want %q", got.Name, fname)
+	}
+	if got.ExpiresAt == nil || !got.ExpiresAt.Equal(exp) {
+		t.Errorf("expires_at = %v, want %v", got.ExpiresAt, exp)
+	}
+	if !got.UpdatedAt.Equal(now) {
+		t.Errorf("updated_at = %v, want %v", got.UpdatedAt, now)
+	}
+}
+
+func TestFileRepo_Patch_ClearsExpiresAtWhenSetButNil(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewFileRepository("default")
+	ctx := context.Background()
+	row := seedLiveFile(t, db, "f-clear", "did:test:alice", "cas/aa/clear")
+
+	// Seed an expiry then clear it via patch.
+	exp := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	if err := r.Patch(ctx, row.ID, FilePatch{
+		ExpiresAtSet: true,
+		ExpiresAt:    &exp,
+	}, time.Date(2026, 4, 27, 0, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("seed expiry: %v", err)
+	}
+	if err := r.Patch(ctx, row.ID, FilePatch{
+		ExpiresAtSet: true,
+		ExpiresAt:    nil,
+	}, time.Date(2026, 4, 27, 1, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("clear expiry: %v", err)
+	}
+
+	got, err := r.FindByOwnerKey(ctx, "did:test:alice", "cas/aa/clear")
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got.ExpiresAt != nil {
+		t.Errorf("expires_at must be NULL after clear-patch, got %v", got.ExpiresAt)
+	}
+}
+
+func TestFileRepo_Patch_RejectsEmptyPatch(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewFileRepository("default")
+	row := seedLiveFile(t, db, "f-empty", "did:test:alice", "cas/aa/empty")
+
+	err := r.Patch(context.Background(), row.ID, FilePatch{}, time.Now())
+	if err == nil || err.Error() != "oss: file patch: empty patch" {
+		t.Fatalf("expected empty-patch error, got %v", err)
+	}
+}
+
+func TestFileRepo_Patch_DeletedRowReturnsErrFileNotFound(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewFileRepository("default")
+	ctx := context.Background()
+	row := seedLiveFile(t, db, "f-pd", "did:test:alice", "cas/aa/pd")
+	if err := r.MarkDeleted(ctx, row.ID, time.Now()); err != nil {
+		t.Fatalf("delete seed: %v", err)
+	}
+
+	fname := "renamed.txt"
+	err := r.Patch(ctx, row.ID, FilePatch{Filename: &fname}, time.Now())
+	if !errors.Is(err, ErrFileNotFound) {
+		t.Fatalf("expected ErrFileNotFound (soft-deleted row), got %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// MetaRepository (S5)
+// ---------------------------------------------------------------------------
+
+func TestMetaRepo_GetReturnsEmptyForMissingRow(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewMetaRepository("default")
+	got, err := r.Get(context.Background(), ossmodel.MetaKeyCapabilityVersion)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("expected empty string for missing row, got %q", got)
+	}
+	_ = db
+}
+
+// ---------------------------------------------------------------------------
+// FileRepository — ListByOwner (S6)
+// ---------------------------------------------------------------------------
+
+// seedFileRow inserts a fully-formed file row with the supplied
+// fields for ListByOwner test scenarios. It bypasses the production
+// helpers because we want to control CreatedAt explicitly.
+func seedFileRow(t *testing.T, db *gorm.DB, id, owner, key, bucketID, vis, mime string, size int64, created time.Time, deletedAt *time.Time) *ossmodel.FileMeta {
+	t.Helper()
+	row := &ossmodel.FileMeta{
+		ID:           id,
+		Key:          key,
+		Name:         id,
+		Size:         size,
+		Mime:         mime,
+		Backend:      "test",
+		Path:         "/tmp/" + key,
+		Sha256:       "",
+		BucketID:     bucketID,
+		OwnerActorID: owner,
+		Visibility:   vis,
+		CreatedAt:    created,
+		UpdatedAt:    created,
+		DeletedAt:    deletedAt,
+	}
+	if err := db.Create(row).Error; err != nil {
+		t.Fatalf("seed file row %q: %v", id, err)
+	}
+	return row
+}
+
+func TestFileRepo_ListByOwner_FiltersAndPaginates(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewFileRepository("default")
+	ctx := context.Background()
+
+	owner := "did:test:alice"
+	other := "did:test:bob"
+	bChat := "bk-chat"
+	bPersonal := "bk-personal"
+
+	t0 := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
+	// Three rows for alice, one for bob, one soft-deleted for alice.
+	seedFileRow(t, db, "f1", owner, "k1", bChat, ossmodel.VisibilityChat, "image/png", 100, t0, nil)
+	seedFileRow(t, db, "f2", owner, "k2", bChat, ossmodel.VisibilityPrivate, "image/jpeg", 200, t0.Add(time.Minute), nil)
+	seedFileRow(t, db, "f3", owner, "k3", bPersonal, ossmodel.VisibilityPublic, "application/pdf", 300, t0.Add(2*time.Minute), nil)
+	seedFileRow(t, db, "fbob", other, "k1", bChat, ossmodel.VisibilityChat, "image/png", 99, t0, nil)
+	deletedAt := t0.Add(time.Hour)
+	seedFileRow(t, db, "fdel", owner, "k4", bChat, ossmodel.VisibilityChat, "image/png", 50, t0.Add(3*time.Minute), &deletedAt)
+
+	// Default: live rows only, scoped to owner.
+	rows, total, err := r.ListByOwner(ctx, owner, ListByOwnerFilter{}, 50, 0)
+	if err != nil {
+		t.Fatalf("ListByOwner default: %v", err)
+	}
+	if total != 3 {
+		t.Errorf("default total = %d, want 3", total)
+	}
+	if got := len(rows); got != 3 {
+		t.Errorf("default len(rows) = %d, want 3", got)
+	}
+	// Order: created_at DESC ⇒ f3, f2, f1.
+	if rows[0].ID != "f3" || rows[1].ID != "f2" || rows[2].ID != "f1" {
+		t.Errorf("default order = [%s,%s,%s], want [f3,f2,f1]", rows[0].ID, rows[1].ID, rows[2].ID)
+	}
+
+	// IncludeDeleted: now sees f4 too.
+	rows, total, err = r.ListByOwner(ctx, owner, ListByOwnerFilter{IncludeDeleted: true}, 50, 0)
+	if err != nil {
+		t.Fatalf("ListByOwner include-deleted: %v", err)
+	}
+	if total != 4 {
+		t.Errorf("include-deleted total = %d, want 4", total)
+	}
+	if rows[0].ID != "fdel" {
+		t.Errorf("include-deleted order[0] = %s, want fdel", rows[0].ID)
+	}
+
+	// Bucket filter.
+	rows, total, _ = r.ListByOwner(ctx, owner, ListByOwnerFilter{BucketID: bPersonal}, 50, 0)
+	if total != 1 || len(rows) != 1 || rows[0].ID != "f3" {
+		t.Errorf("bucket filter rows=%v total=%d, want [f3] total=1", rows, total)
+	}
+
+	// Visibility filter.
+	rows, total, _ = r.ListByOwner(ctx, owner, ListByOwnerFilter{Visibility: ossmodel.VisibilityChat}, 50, 0)
+	if total != 1 || len(rows) != 1 || rows[0].ID != "f1" {
+		t.Errorf("visibility filter rows=%v total=%d, want [f1] total=1", rows, total)
+	}
+
+	// MIME prefix filter.
+	rows, total, _ = r.ListByOwner(ctx, owner, ListByOwnerFilter{MimePrefix: "image/"}, 50, 0)
+	if total != 2 {
+		t.Errorf("mime prefix total = %d, want 2", total)
+	}
+	if len(rows) != 2 || rows[0].ID != "f2" || rows[1].ID != "f1" {
+		t.Errorf("mime prefix rows = %v, want [f2 f1]", rows)
+	}
+
+	// Pagination: page_size=1.
+	rows, total, _ = r.ListByOwner(ctx, owner, ListByOwnerFilter{}, 1, 0)
+	if total != 3 || len(rows) != 1 || rows[0].ID != "f3" {
+		t.Errorf("page1 rows=%v total=%d, want [f3] total=3", rows, total)
+	}
+	rows, _, _ = r.ListByOwner(ctx, owner, ListByOwnerFilter{}, 1, 1)
+	if len(rows) != 1 || rows[0].ID != "f2" {
+		t.Errorf("page2 rows=%v, want [f2]", rows)
+	}
+	rows, _, _ = r.ListByOwner(ctx, owner, ListByOwnerFilter{}, 1, 5)
+	if len(rows) != 0 {
+		t.Errorf("page beyond total rows=%v, want empty", rows)
+	}
+}
+
+func TestFileRepo_ListByOwner_RejectsEmptyOwner(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+	_ = db
+	r := NewFileRepository("default")
+	if _, _, err := r.ListByOwner(context.Background(), "", ListByOwnerFilter{}, 10, 0); err == nil {
+		t.Fatal("expected error for empty owner, got nil")
+	}
+}
+
+func TestFileRepo_ListByOwner_LikeMetaCharsEscaped(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+	r := NewFileRepository("default")
+	ctx := context.Background()
+
+	owner := "did:test:alice"
+	t0 := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
+	seedFileRow(t, db, "fa", owner, "ka", "bk", ossmodel.VisibilityPrivate, "application/x_pdf", 1, t0, nil)
+	seedFileRow(t, db, "fb", owner, "kb", "bk", ossmodel.VisibilityPrivate, "application/xpdf", 1, t0.Add(time.Minute), nil)
+
+	// Without escaping, `application/x_` would match both rows
+	// because `_` is a single-character wildcard. Confirm only
+	// `application/x_pdf` is returned.
+	rows, total, err := r.ListByOwner(ctx, owner, ListByOwnerFilter{MimePrefix: "application/x_"}, 50, 0)
+	if err != nil {
+		t.Fatalf("ListByOwner: %v", err)
+	}
+	if total != 1 || len(rows) != 1 || rows[0].ID != "fa" {
+		t.Errorf("escaped prefix rows=%v total=%d, want [fa] total=1", rows, total)
+	}
+}
+
+func TestMetaRepo_SetCapabilityVersionInsertsThenUpdates(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewMetaRepository("default")
+	ctx := context.Background()
+
+	// First call: insert.
+	v1, err := r.SetCapabilityVersion(ctx, time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("first set: %v", err)
+	}
+	if v1 == "" {
+		t.Fatal("first set returned empty value")
+	}
+
+	got, err := r.Get(ctx, ossmodel.MetaKeyCapabilityVersion)
+	if err != nil || got != v1 {
+		t.Fatalf("Get post-insert = %q, %v; want %q", got, err, v1)
+	}
+
+	// Second call (later wallclock): update with a new ULID.
+	v2, err := r.SetCapabilityVersion(ctx, time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("second set: %v", err)
+	}
+	if v1 == v2 {
+		t.Fatalf("second set should mint a fresh value, got identical %q", v1)
+	}
+
+	got2, _ := r.Get(ctx, ossmodel.MetaKeyCapabilityVersion)
+	if got2 != v2 {
+		t.Fatalf("Get post-update = %q, want %q", got2, v2)
+	}
+
+	// Sanity: there should still be a single row for this key.
+	var n int64
+	if err := db.Model(&ossmodel.Meta{}).
+		Where("key = ?", ossmodel.MetaKeyCapabilityVersion).
+		Count(&n).Error; err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected exactly 1 capability_version row, got %d", n)
+	}
+}
