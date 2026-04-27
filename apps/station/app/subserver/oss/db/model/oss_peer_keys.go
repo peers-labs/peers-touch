@@ -47,8 +47,21 @@ type PeerKey struct {
 
 	// Pinned, when true, freezes this row: a kid mismatch will be
 	// rejected even if the new JWK is well-formed. Default false
-	// keeps v1 TOFU semantics; operators upgrade via dashboard.
+	// keeps TOFU semantics; operators upgrade via the dashboard
+	// `POST /federation/peers/:id/pin` endpoint.
 	Pinned bool `json:"pinned" gorm:"not null;default:false"`
+
+	// PinnedByActor is the dashboard operator (actor DID) who
+	// promoted this row from TOFU to pinned. Empty when Pinned is
+	// false, or when a legacy row was pinned before this column
+	// existed. The dashboard surfaces this so reviewers can answer
+	// "who decided to trust this peer?" without grepping audit logs.
+	PinnedByActor string `json:"pinned_by_actor,omitempty" gorm:"type:varchar(255);index"`
+
+	// PinnedAt is the wall-clock instant at which Pinned flipped to
+	// true. Pairs with PinnedByActor as the breadcrumb of operator
+	// intent. NULL on unpinned rows.
+	PinnedAt *time.Time `json:"pinned_at,omitempty"`
 }
 
 // TableName binds PeerKey to its `oss_peer_keys` table.
@@ -75,4 +88,18 @@ const (
 	// `oss_meta` for the kid this station claims without booting
 	// the binary.
 	MetaKeyFederationKID = "federation_kid"
+
+	// MetaKeyFederationPrivKeyPrev / MetaKeyFederationKIDPrev are
+	// the previous keypair, populated for the 24-hour dual-sign
+	// grace window after a key rotation. Verify accepts both the
+	// current and the `_prev` keys until `KeyRotationFinalizer`
+	// clears the rows. Mint always uses the current key.
+	MetaKeyFederationPrivKeyPrev = "federation_priv_pem_prev"
+	MetaKeyFederationKIDPrev     = "federation_kid_prev"
+
+	// MetaKeyFederationRotatedAt is the wall-clock instant of the
+	// most recent rotate-local-key call. The finalizer worker
+	// compares it against `now - 24h` to know when to clear the
+	// `_prev` rows.
+	MetaKeyFederationRotatedAt = "federation_rotated_at"
 )

@@ -54,7 +54,29 @@ type FileMeta struct {
 	// audience. Empty for `public`/`private` rows.
 	ChatSessionID string `json:"chat_session_id,omitempty" gorm:"index;type:varchar(64)"`
 
+	// ExpiresAt is the wall-clock deadline after which the TTL
+	// sweeper soft-deletes this row. NULL means "no expiry". The
+	// upload path defaults this from `oss_buckets.ttl_days` when
+	// the bucket has a TTL; the user can override via PATCH or
+	// clear it back to NULL. Indexed because the sweeper uses it
+	// as the leading predicate.
+	ExpiresAt *time.Time `json:"expires_at,omitempty" gorm:"index"`
+
+	// DeletedAt is the wall-clock instant at which this row entered
+	// the soft-delete state. NULL = live. We deliberately use a
+	// pointer here rather than `gorm.DeletedAt` because the OSS
+	// lifecycle path needs explicit control over which queries
+	// observe deleted rows (restore, blob GC) and which do not
+	// (user reads, owner listings, sweeper). Indexed because both
+	// the restore window check and the GC predicate hinge on it.
+	DeletedAt *time.Time `json:"deleted_at,omitempty" gorm:"index"`
+
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
+
+	// UpdatedAt is bumped by GORM on any column-level update; the
+	// PATCH handler relies on this to surface "edited" state to
+	// the dashboard without a per-mutation column dance.
+	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 // TableName pins FileMeta to its `oss_files` table.
