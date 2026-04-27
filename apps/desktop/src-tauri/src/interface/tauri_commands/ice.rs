@@ -7,7 +7,7 @@ use crate::infrastructure::station_client;
 use crate::state::AppState;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use tauri::{State, Window};
 
 // ---------------------------------------------------------------------
@@ -15,10 +15,11 @@ use tauri::{State, Window};
 //
 // Until commit f6ac7929 this file fronted Station's HTTP-polling
 // signaling subserver: `POST/GET /api/v1/ice/session/{new,get,offer,
-// answer,candidate,candidates}`. Every active conversation paid ~1
-// req/s for candidate polling, the offer/answer SDPs flowed in
-// plaintext through Station, and one polling loop per peer pair did
-// not survive offline → online transitions cleanly.
+// answer,candidate,candidates}` plus a peer-presence registry at
+// `/api/v1/ice/peer/{register,unregister,get}`. Every active
+// conversation paid ~1 req/s for candidate polling, the offer/answer
+// SDPs flowed in plaintext through Station, and one polling loop per
+// peer pair did not survive offline → online transitions cleanly.
 //
 // Phase 8 of the realtime architecture (see
 // docs/architecture/realtime/event-stream.md §2.7 and §3.4) replaced
@@ -31,19 +32,16 @@ use tauri::{State, Window};
 //     the same EventBus that already carries chat traffic, so a
 //     receiver gets signals on every active session of every active
 //     device with zero new wire surface.
+//   - SSE PresenceFlip events — the role-hint publisher
+//     (`/api/v1/ice/peer/register`) is gone; a peer's online/offline
+//     liveness is now carried by PresenceSupervisor + the realtime
+//     PresenceFlip event.
 //
 // What survives in this module is intentionally minimal:
 //
-//   - `ice_get_servers`  — fetch TURN credentials from the `turn`
-//                          subserver. WebRTC media plane still needs
-//                          ICE servers; the `turn` subserver was
-//                          never part of the deprecated signaling
-//                          subserver and stays untouched.
-//   - `ice_peer_register` — publishes a presence/role hint
-//                           (`client+p2p:connected` etc.) to Station
-//                           so other devices can see liveness.
-//                           Strictly informational, used by
-//                           friendChatP2p for its UI status.
+//   - `ice_get_servers` → `/api/v1/turn/ice-servers`. WebRTC media
+//     plane still needs ICE servers; the `turn` subserver was never
+//     part of the deprecated signaling subserver and stays untouched.
 //
 // Anything that smells like an ICE *session* — offer/answer/candidate
 // exchange — must NOT come back here. New code should use
@@ -98,38 +96,4 @@ pub fn ice_get_servers(state: State<'_, Arc<AppState>>, window: Window) -> AppRe
     };
 
     to_stub("ice_get_servers", resp)
-}
-
-// ============================================================================
-// Peer presence (informational only — NOT a signaling channel)
-// ============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IcePeerRegisterInput {
-    pub id: String,
-    pub role: Option<String>,
-    pub addrs: Option<Vec<String>>,
-}
-
-#[tauri::command]
-pub fn ice_peer_register(input: IcePeerRegisterInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    if input.id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
-    }
-
-    let body = json!({
-        "id": input.id,
-        "role": input.role.unwrap_or_else(|| "client".to_string()),
-        "addrs": input.addrs.unwrap_or_default(),
-    });
-
-    let resp = match station_client::request_json(Method::POST, "/api/v1/ice/peer/register", &token, None, Some(body)) {
-        Ok(v) => v,
-        Err(e) => return fail_station_request(e),
-    };
-    to_stub("ice_peer_register", resp)
 }

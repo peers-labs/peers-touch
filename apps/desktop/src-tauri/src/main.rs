@@ -306,7 +306,6 @@ fn main() {
             friend_chat::friend_chat_rotate_key_scoped,
             friend_chat::friend_chat_sync_from_station_scoped,
             ice::ice_get_servers,
-            ice::ice_peer_register,
             friend_chat::friend_chat_send_friend_request,
             friend_chat::friend_chat_accept_friend_request,
             friend_chat::friend_chat_reject_friend_request,
