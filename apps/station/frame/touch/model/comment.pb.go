@@ -619,198 +619,6 @@ func (x *GetCommentsResponse) GetHasMore() bool {
 	return false
 }
 
-type LikeCommentRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CommentId     string                 `protobuf:"bytes,1,opt,name=comment_id,json=commentId,proto3" json:"comment_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *LikeCommentRequest) Reset() {
-	*x = LikeCommentRequest{}
-	mi := &file_domain_social_comment_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *LikeCommentRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*LikeCommentRequest) ProtoMessage() {}
-
-func (x *LikeCommentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_comment_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use LikeCommentRequest.ProtoReflect.Descriptor instead.
-func (*LikeCommentRequest) Descriptor() ([]byte, []int) {
-	return file_domain_social_comment_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *LikeCommentRequest) GetCommentId() string {
-	if x != nil {
-		return x.CommentId
-	}
-	return ""
-}
-
-type LikeCommentResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
-	NewLikesCount int64                  `protobuf:"varint,2,opt,name=new_likes_count,json=newLikesCount,proto3" json:"new_likes_count,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *LikeCommentResponse) Reset() {
-	*x = LikeCommentResponse{}
-	mi := &file_domain_social_comment_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *LikeCommentResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*LikeCommentResponse) ProtoMessage() {}
-
-func (x *LikeCommentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_comment_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use LikeCommentResponse.ProtoReflect.Descriptor instead.
-func (*LikeCommentResponse) Descriptor() ([]byte, []int) {
-	return file_domain_social_comment_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *LikeCommentResponse) GetSuccess() bool {
-	if x != nil {
-		return x.Success
-	}
-	return false
-}
-
-func (x *LikeCommentResponse) GetNewLikesCount() int64 {
-	if x != nil {
-		return x.NewLikesCount
-	}
-	return 0
-}
-
-type UnlikeCommentRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CommentId     string                 `protobuf:"bytes,1,opt,name=comment_id,json=commentId,proto3" json:"comment_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UnlikeCommentRequest) Reset() {
-	*x = UnlikeCommentRequest{}
-	mi := &file_domain_social_comment_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UnlikeCommentRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UnlikeCommentRequest) ProtoMessage() {}
-
-func (x *UnlikeCommentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_comment_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UnlikeCommentRequest.ProtoReflect.Descriptor instead.
-func (*UnlikeCommentRequest) Descriptor() ([]byte, []int) {
-	return file_domain_social_comment_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *UnlikeCommentRequest) GetCommentId() string {
-	if x != nil {
-		return x.CommentId
-	}
-	return ""
-}
-
-type UnlikeCommentResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
-	NewLikesCount int64                  `protobuf:"varint,2,opt,name=new_likes_count,json=newLikesCount,proto3" json:"new_likes_count,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UnlikeCommentResponse) Reset() {
-	*x = UnlikeCommentResponse{}
-	mi := &file_domain_social_comment_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UnlikeCommentResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UnlikeCommentResponse) ProtoMessage() {}
-
-func (x *UnlikeCommentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_comment_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UnlikeCommentResponse.ProtoReflect.Descriptor instead.
-func (*UnlikeCommentResponse) Descriptor() ([]byte, []int) {
-	return file_domain_social_comment_proto_rawDescGZIP(), []int{12}
-}
-
-func (x *UnlikeCommentResponse) GetSuccess() bool {
-	if x != nil {
-		return x.Success
-	}
-	return false
-}
-
-func (x *UnlikeCommentResponse) GetNewLikesCount() int64 {
-	if x != nil {
-		return x.NewLikesCount
-	}
-	return 0
-}
-
 var File_domain_social_comment_proto protoreflect.FileDescriptor
 
 const file_domain_social_comment_proto_rawDesc = "" +
@@ -860,19 +668,7 @@ const file_domain_social_comment_proto_rawDesc = "" +
 	"\bcomments\x18\x01 \x03(\v2$.peers_touch.model.social.v1.CommentR\bcomments\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
 	"nextCursor\x12\x19\n" +
-	"\bhas_more\x18\x03 \x01(\bR\ahasMore\"3\n" +
-	"\x12LikeCommentRequest\x12\x1d\n" +
-	"\n" +
-	"comment_id\x18\x01 \x01(\tR\tcommentId\"W\n" +
-	"\x13LikeCommentResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\x12&\n" +
-	"\x0fnew_likes_count\x18\x02 \x01(\x03R\rnewLikesCount\"5\n" +
-	"\x14UnlikeCommentRequest\x12\x1d\n" +
-	"\n" +
-	"comment_id\x18\x01 \x01(\tR\tcommentId\"Y\n" +
-	"\x15UnlikeCommentResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\x12&\n" +
-	"\x0fnew_likes_count\x18\x02 \x01(\x03R\rnewLikesCount*5\n" +
+	"\bhas_more\x18\x03 \x01(\bR\ahasMore*5\n" +
 	"\vCommentSort\x12\n" +
 	"\n" +
 	"\x06NEWEST\x10\x00\x12\n" +
@@ -894,7 +690,7 @@ func file_domain_social_comment_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_social_comment_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_domain_social_comment_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_domain_social_comment_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_domain_social_comment_proto_goTypes = []any{
 	(CommentSort)(0),              // 0: peers_touch.model.social.v1.CommentSort
 	(*Comment)(nil),               // 1: peers_touch.model.social.v1.Comment
@@ -906,17 +702,13 @@ var file_domain_social_comment_proto_goTypes = []any{
 	(*DeleteCommentResponse)(nil), // 7: peers_touch.model.social.v1.DeleteCommentResponse
 	(*GetCommentsRequest)(nil),    // 8: peers_touch.model.social.v1.GetCommentsRequest
 	(*GetCommentsResponse)(nil),   // 9: peers_touch.model.social.v1.GetCommentsResponse
-	(*LikeCommentRequest)(nil),    // 10: peers_touch.model.social.v1.LikeCommentRequest
-	(*LikeCommentResponse)(nil),   // 11: peers_touch.model.social.v1.LikeCommentResponse
-	(*UnlikeCommentRequest)(nil),  // 12: peers_touch.model.social.v1.UnlikeCommentRequest
-	(*UnlikeCommentResponse)(nil), // 13: peers_touch.model.social.v1.UnlikeCommentResponse
-	(*timestamppb.Timestamp)(nil), // 14: google.protobuf.Timestamp
-	(*PostAuthor)(nil),            // 15: peers_touch.model.social.v1.PostAuthor
+	(*timestamppb.Timestamp)(nil), // 10: google.protobuf.Timestamp
+	(*PostAuthor)(nil),            // 11: peers_touch.model.social.v1.PostAuthor
 }
 var file_domain_social_comment_proto_depIdxs = []int32{
-	14, // 0: peers_touch.model.social.v1.Comment.created_at:type_name -> google.protobuf.Timestamp
-	14, // 1: peers_touch.model.social.v1.Comment.updated_at:type_name -> google.protobuf.Timestamp
-	15, // 2: peers_touch.model.social.v1.Comment.author:type_name -> peers_touch.model.social.v1.PostAuthor
+	10, // 0: peers_touch.model.social.v1.Comment.created_at:type_name -> google.protobuf.Timestamp
+	10, // 1: peers_touch.model.social.v1.Comment.updated_at:type_name -> google.protobuf.Timestamp
+	11, // 2: peers_touch.model.social.v1.Comment.author:type_name -> peers_touch.model.social.v1.PostAuthor
 	1,  // 3: peers_touch.model.social.v1.CreateCommentResponse.comment:type_name -> peers_touch.model.social.v1.Comment
 	1,  // 4: peers_touch.model.social.v1.UpdateCommentResponse.comment:type_name -> peers_touch.model.social.v1.Comment
 	0,  // 5: peers_touch.model.social.v1.GetCommentsRequest.sort:type_name -> peers_touch.model.social.v1.CommentSort
@@ -940,7 +732,7 @@ func file_domain_social_comment_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_social_comment_proto_rawDesc), len(file_domain_social_comment_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   13,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
