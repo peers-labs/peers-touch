@@ -232,21 +232,16 @@ func (s *ossSubServer) Init(ctx context.Context, opts ...option.Option) error {
 				&ossmodel.Audit{},
 				&ossmodel.Meta{},
 			)
-			// Bootstrap is idempotent — repeat calls return
-			// ErrAlreadyBootstrapped which we silently swallow.
-			// Any other failure is logged but non-fatal: the OSS
-			// subserver still serves uploads, treating files as
-			// pre-bootstrap legacy rows.
+			// Bootstrap stamps the schema version sentinel.
+			// Idempotent — repeat calls return ErrAlreadyBootstrapped.
+			// Any other failure aborts startup because system buckets
+			// must be creatable for uploads to succeed at all.
 			if res, err := repo.Bootstrap(ctx, repo.BootstrapDeps{DBName: s.dbName}); err != nil {
 				if !errors.Is(err, repo.ErrAlreadyBootstrapped) {
-					logger.Errorf(ctx, "[oss] bootstrap failed: %v", err)
+					return err
 				}
-			} else if res != nil && !res.Skipped {
-				logger.Infof(ctx,
-					"[oss] bootstrap v2 complete: actors=%d buckets=%d files=%d usage=%d in %dms",
-					res.ActorsSeeded, res.BucketsCreated, res.FilesBackfilled,
-					res.UsageReconciled, res.ElapsedMs,
-				)
+			} else if !res.Skipped {
+				logger.Infof(ctx, "[oss] schema v2 stamped in %dms", res.ElapsedMs)
 			}
 		}
 	}
