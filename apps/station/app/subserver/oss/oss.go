@@ -54,7 +54,10 @@ type ossSubServer struct {
 	backend      storage.Backend
 	authProvider auth.Provider
 	fileService  service.FileService
+	fileRepo     repo.FileRepository
 	bucketRepo   repo.BucketRepository
+	auditRepo    repo.AuditRepository
+	chatResolver ChatSessionResolver
 
 	// hostOverride / limits / backendType drive the `/capabilities`
 	// response and the `cid` URIs returned from `/upload`. See
@@ -136,10 +139,21 @@ func NewOSSSubServer(opts ...option.Option) server.Subserver {
 
 	// Initialize Service Layer. The bucket repo is mandatory: every
 	// upload debits a bucket and there is no service mode that
-	// bypasses quota accounting.
-	fileRepo := repo.NewFileRepository(s.dbName)
+	// bypasses quota accounting. The audit repo is mandatory for
+	// the read path so denials are recorded.
+	s.fileRepo = repo.NewFileRepository(s.dbName)
 	s.bucketRepo = repo.NewBucketRepository(s.dbName)
-	s.fileService = service.NewFileServiceWith(fileRepo, s.bucketRepo, s.backend, service.KeyStrategy(s.keyStrategy), s.backendType)
+	s.auditRepo = repo.NewAuditRepository(s.dbName)
+	s.fileService = service.NewFileServiceWith(s.fileRepo, s.bucketRepo, s.backend, service.KeyStrategy(s.keyStrategy), s.backendType)
+
+	// Default the chat-audience resolver to the SQL-backed view of
+	// the friend_chat_sessions table. Operators who run OSS in a
+	// federated topology will replace this via WithChatSessionResolver.
+	if o.ChatResolver != nil {
+		s.chatResolver = o.ChatResolver
+	} else if s.dbName != "" {
+		s.chatResolver = NewSQLChatSessionResolver(s.dbName)
+	}
 
 	return s
 }

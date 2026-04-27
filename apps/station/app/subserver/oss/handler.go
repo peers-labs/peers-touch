@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	ossdb "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	ossrepo "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/repo"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oss/service"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth"
@@ -170,11 +171,13 @@ func (s *ossSubServer) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cid := s.buildCID(r, meta.Key)
-	// `url` remains a *relative* path so legacy callers (avatar / header
-	// upload) keep working unchanged. `cid` is the new federated URI
-	// chat clients should embed in `MessageAttachment.cid`. `sha256`
-	// is non-empty only when the CAS strategy is active — clients use
-	// it to verify integrity on download.
+	// `url` is a *relative* path: callers that mount the OSS
+	// subserver under a non-default prefix (avatar / header upload
+	// today, more tomorrow) compose the absolute URL themselves.
+	// `cid` is the federated URI chat clients should embed in
+	// `MessageAttachment.cid`. `sha256` is non-empty only when the
+	// CAS strategy is active — clients use it to verify integrity
+	// on download.
 	resp := map[string]any{
 		"key":      meta.Key,
 		"cid":      cid,
@@ -438,6 +441,30 @@ func (s *ossSubServer) handleCapabilities(w http.ResponseWriter, r *http.Request
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// handleFileGet enforces the visibility policy attached to the
+// resolved FileMeta row before serving (or redirecting to) the
+// underlying bytes. The flow is:
+//
+//  1. Validate the optional HMAC `sign-secret` short URL — operators
+//     who configure one expect *all* GETs (public included) to
+//     present a fresh signature.
+//  2. Resolve a FileMeta. The lookup honours an explicit `&owner=`
+//     query param (federation case) and otherwise prefers the row
+//     owned by the JWT subject; absent that, falls back to the
+//     oldest row for the key (only useful for `public` reads).
+//  3. Run `checkRead` against the meta's Visibility and the caller's
+//     subject DID. Denials are recorded in `oss_audit` with a
+//     stable `Reason` so the dashboard can graph patterns.
+//  4. On allow, the existing presigned-redirect / stream pipeline
+//     takes over.
+//
+// Architectural notes:
+//   - We extract the JWT subject inline rather than wrapping the
+//     handler in `RequireJWT`: GETs to public files must work
+//     without a token, so the wrapper would refuse us.
+//   - There is no "best effort" silent-allow fallback. Unknown
+//     visibilities (which the schema forbids but we defend against
+//     anyway) deny.
 func (s *ossSubServer) handleFileGet(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	if !s.verifySignature(q) {
@@ -447,6 +474,22 @@ func (s *ossSubServer) handleFileGet(w http.ResponseWriter, r *http.Request) {
 	key := q.Get("key")
 	if key == "" {
 		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	subjectID := s.optionalSubjectID(r)
+	requestedOwner := strings.TrimSpace(q.Get("owner"))
+	meta, err := s.lookupFileMeta(r.Context(), key, subjectID, requestedOwner)
+	if err != nil || meta == nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	decision := checkRead(r.Context(), s.chatResolver, meta, subjectID, "")
+	if !decision.Allow {
+		s.recordAudit(r.Context(), meta, subjectID, "", decision.Reason)
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"code": "forbidden"})
 		return
 	}
 
@@ -481,6 +524,87 @@ func (s *ossSubServer) handleFileGet(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
 	_, _ = io.Copy(w, rc)
+}
+
+// optionalSubjectID validates the optional Bearer JWT and returns
+// the subject DID, or an empty string when no token is present /
+// the token is malformed. It deliberately does NOT 401 — public
+// files must be served without authentication.
+func (s *ossSubServer) optionalSubjectID(r *http.Request) string {
+	if s.authProvider == nil {
+		return ""
+	}
+	authHeader := r.Header.Get("Authorization")
+	if len(authHeader) < 7 || !strings.EqualFold(authHeader[:7], "bearer ") {
+		return ""
+	}
+	subject, err := s.authProvider.Validate(r.Context(), authHeader[7:])
+	if err != nil || subject == nil {
+		return ""
+	}
+	return subject.ID
+}
+
+// lookupFileMeta resolves the FileMeta row that should govern this
+// GET. Resolution order:
+//
+//  1. `?owner=` query param (federation case — peer station passes
+//     the originating actor DID alongside the file key);
+//  2. JWT subject (the most common case — actor reads their own row);
+//  3. fall through to FindByKey (oldest row), which only succeeds
+//     for `public` visibility because the audience check rejects
+//     the rest.
+func (s *ossSubServer) lookupFileMeta(ctx context.Context, key, subjectID, requestedOwner string) (*ossdb.FileMeta, error) {
+	if s.fileRepo == nil {
+		return nil, errors.New("oss: file repo not initialised")
+	}
+	if requestedOwner != "" {
+		if m, err := s.fileRepo.FindByOwnerKey(ctx, requestedOwner, key); err == nil && m != nil && m.Key == key {
+			return m, nil
+		}
+	}
+	if subjectID != "" {
+		if m, err := s.fileRepo.FindByOwnerKey(ctx, subjectID, key); err == nil && m != nil && m.Key == key {
+			return m, nil
+		}
+	}
+	m, err := s.fileRepo.FindByKey(ctx, key)
+	if err != nil || m == nil || m.Key != key {
+		return nil, err
+	}
+	return m, nil
+}
+
+// recordAudit writes an oss_audit row for a denied read. We only
+// audit denials by default — auditing every successful public read
+// would saturate the table without adding signal. Operators who
+// want a complete access log can enable it via a future
+// `audit-mode: all` knob (out of scope here).
+//
+// Action is fixed to `get`; the deny signal lives in `Outcome`. The
+// dashboard groups by (action, outcome, reason) so the schema
+// change to add new "denied actions" would only obscure the
+// underlying GET vs PUT distinction.
+func (s *ossSubServer) recordAudit(ctx context.Context, meta *ossdb.FileMeta, actorID, peerStationID, reason string) {
+	if s.auditRepo == nil {
+		return
+	}
+	evt := ossdb.Audit{
+		Action:        ossdb.AuditActionGet,
+		FileKey:       meta.Key,
+		BucketID:      meta.BucketID,
+		ActorID:       actorID,
+		PeerStationID: peerStationID,
+		SizeBytes:     meta.Size,
+		Outcome:       ossdb.AuditOutcomeDenied,
+		Reason:        reason,
+	}
+	if err := s.auditRepo.Append(ctx, evt); err != nil {
+		// Audit failures must not turn a good response into a bad
+		// one. Log and move on — the denial itself was already
+		// applied by the caller.
+		logger.Warnf(ctx, "[handleFileGet] audit append failed: %v", err)
+	}
 }
 
 // getMimeTypeByExtension returns MIME type based on file extension

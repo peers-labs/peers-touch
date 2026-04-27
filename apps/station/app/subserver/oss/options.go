@@ -56,10 +56,12 @@ type Options struct {
 	BackendType string
 
 	// KeyStrategy selects how object keys are derived from uploads.
-	// Empty / `random` keeps the legacy `YYYY/MM/DD/<rand>.<ext>`;
-	// `cas` switches to content-addressable storage which deduplicates
-	// identical bytes across uploaders. See `service.KeyStrategy` for
-	// the full rationale.
+	// `random` produces `YYYY/MM/DD/<rand>.<ext>` — used by the
+	// avatar / header endpoints where dedup hurts (every upload
+	// must invalidate the previous URL). `cas` is content-addressable
+	// storage and deduplicates identical bytes across uploaders;
+	// it is the default for chat attachments. See `service.KeyStrategy`
+	// for the full rationale.
 	KeyStrategy string
 
 	// PresignedUploadThreshold is the size (bytes) at which clients
@@ -86,6 +88,12 @@ type Options struct {
 	// `BackendType == "s3"`. Field-by-field documentation lives on
 	// `storage.S3Config`.
 	S3 S3BackendOptions
+
+	// ChatResolver overrides how `chat`-visibility GETs check
+	// audience membership. Default (when nil) is the SQL-backed
+	// resolver against `friend_chat_sessions`; tests and federated
+	// deployments can install a stub here.
+	ChatResolver ChatSessionResolver
 }
 
 // S3BackendOptions mirrors `storage.S3Config` at the YAML/options
@@ -148,7 +156,9 @@ func WithBackendType(t string) option.Option {
 	return wrapper.Wrap(func(o *Options) { o.BackendType = t })
 }
 
-// WithKeyStrategy selects `random` (legacy) or `cas` (content-addressable).
+// WithKeyStrategy selects the upload key derivation: `random`
+// (date-prefixed random keys, used by avatar / header uploads) or
+// `cas` (content-addressable, used by chat attachments).
 func WithKeyStrategy(s string) option.Option {
 	return wrapper.Wrap(func(o *Options) { o.KeyStrategy = s })
 }
@@ -172,6 +182,13 @@ func WithPresignedDownloadTTL(n int64) option.Option {
 // WithS3Config installs the S3-protocol driver configuration.
 func WithS3Config(s S3BackendOptions) option.Option {
 	return wrapper.Wrap(func(o *Options) { o.S3 = s })
+}
+
+// WithChatSessionResolver overrides how `chat`-visibility GETs check
+// audience membership. Tests pass a stub; federated deployments may
+// pass an HTTP-backed resolver that queries the peer station.
+func WithChatSessionResolver(r ChatSessionResolver) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.ChatResolver = r })
 }
 
 func getOptions(opts ...option.Option) *Options {
