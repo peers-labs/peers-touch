@@ -87,6 +87,15 @@ export function usePresence(): void {
         void api.friendChatPresenceStart().catch((error) => {
           log.warn('presence', 'friendChatPresenceStart failed', error);
         });
+
+        // Open the unified realtime SSE stream on the same edge.
+        // The Rust supervisor is idempotent — duplicate calls cancel
+        // and replace any in-flight supervisor for this actor — so
+        // a re-fire (e.g. session changed without going through full
+        // logout) is safe.
+        void api.realtimeStreamStart().catch((error) => {
+          log.warn('presence', 'realtimeStreamStart failed', error);
+        });
       }
     };
     tryFireLaunch();

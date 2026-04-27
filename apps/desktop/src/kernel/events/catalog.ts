@@ -8,6 +8,10 @@ export const EVENT = {
   GLOBAL_CONTEXT_PIPELINE_STARTED: 'global_context.pipeline_started',
   GLOBAL_CONTEXT_PIPELINE_FINISHED: 'global_context.pipeline_finished',
   GLOBAL_CONTEXT_PIPELINE_FAILED: 'global_context.pipeline_failed',
+  REALTIME_MESSAGE_RECEIVED: 'realtime.message_received',
+  REALTIME_PRESENCE_FLIP: 'realtime.presence_flip',
+  REALTIME_RESYNC: 'realtime.resync',
+  REALTIME_CONNECTION_STATE: 'realtime.connection_state',
 } as const;
 
 export type EventType = (typeof EVENT)[keyof typeof EVENT];

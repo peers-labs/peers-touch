@@ -3003,6 +3003,24 @@ export const api = {
   friendChatPresenceStop: () =>
     invokeRustDataFromStatus<void, { actor_id: string | null }>('friend_chat_presence_stop'),
 
+  /**
+   * Start the unified realtime SSE consumer for the current actor.
+   * Idempotent — the Rust side replaces any in-flight supervisor for
+   * the same actor. While running, the supervisor emits
+   * `realtime.event` Tauri events for every business / heartbeat /
+   * resync frame and `realtime.connection-state` on connect/disconnect.
+   * See docs/architecture/realtime/event-stream.md for the wire
+   * contract and the per-window device id semantics.
+   */
+  realtimeStreamStart: () =>
+    invokeRustDataFromStatus<void, { actor_id: string; device_id: string }>(
+      'realtime_stream_start',
+    ),
+
+  /** Cancel the realtime SSE consumer for the current actor. */
+  realtimeStreamStop: () =>
+    invokeRustDataFromStatus<void, { actor_id: string | null }>('realtime_stream_stop'),
+
   friendChatGetPending: (limit?: number) =>
     invokeRustProto('friend_chat_get_pending', GetPendingResponseSchema, { limit }),
 
