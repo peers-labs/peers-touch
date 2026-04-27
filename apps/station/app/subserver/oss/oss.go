@@ -226,7 +226,28 @@ func (s *ossSubServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.status = server.StatusStarting
 	if s.dbName != "" {
 		if rds, err := store.GetRDS(ctx, store.WithRDSDBName(s.dbName)); err == nil {
-			_ = rds.AutoMigrate(&ossmodel.FileMeta{})
+			_ = rds.AutoMigrate(
+				&ossmodel.FileMeta{},
+				&ossmodel.Bucket{},
+				&ossmodel.Audit{},
+				&ossmodel.Meta{},
+			)
+			// Bootstrap is idempotent — repeat calls return
+			// ErrAlreadyBootstrapped which we silently swallow.
+			// Any other failure is logged but non-fatal: the OSS
+			// subserver still serves uploads, treating files as
+			// pre-bootstrap legacy rows.
+			if res, err := repo.Bootstrap(ctx, repo.BootstrapDeps{DBName: s.dbName}); err != nil {
+				if !errors.Is(err, repo.ErrAlreadyBootstrapped) {
+					logger.Errorf(ctx, "[oss] bootstrap failed: %v", err)
+				}
+			} else if res != nil && !res.Skipped {
+				logger.Infof(ctx,
+					"[oss] bootstrap v2 complete: actors=%d buckets=%d files=%d usage=%d in %dms",
+					res.ActorsSeeded, res.BucketsCreated, res.FilesBackfilled,
+					res.UsageReconciled, res.ElapsedMs,
+				)
+			}
 		}
 	}
 	return nil
