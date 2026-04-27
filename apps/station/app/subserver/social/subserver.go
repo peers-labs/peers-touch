@@ -55,14 +55,13 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	// Create infrastructure repositories
 	postRepo := infrastructure.NewPostRepository(rds)
 	postContentRepo := infrastructure.NewPostContentRepository(rds)
-	likeRepo := infrastructure.NewLikeRepository(rds)
 	followRepo := infrastructure.NewFollowRepository(rds)
 
 	// Create domain converter
-	postConverter := domain.NewPostConverter(likeRepo)
+	postConverter := domain.NewPostConverter()
 
 	// Create application services
-	s.postSvc = application.NewPostService(rds, postRepo, postContentRepo, likeRepo, postConverter)
+	s.postSvc = application.NewPostService(rds, postRepo, postContentRepo, postConverter)
 	s.commentSvc = application.NewCommentService(rds)
 	s.relationshipSvc = application.NewRelationshipService(followRepo)
 	s.timelineSvc = application.NewTimelineService(postRepo, postConverter)

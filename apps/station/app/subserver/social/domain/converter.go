@@ -5,19 +5,23 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-type PostConverter struct {
-	likeRepo infrastructure.LikeRepository
-}
+// PostConverter translates between db.Post and proto Post.
+//
+// Note: legacy `interaction.is_liked` is no longer populated here. The Like
+// repository was removed during the Moments P0 cleanup; viewer-facing
+// reaction state will be filled from the (typed) reactions service that
+// lands in P1. Until then, `Post.Interaction` is left nil for non-author
+// viewers — clients should fall back to `Post.reactions` summaries.
+type PostConverter struct{}
 
-func NewPostConverter(likeRepo infrastructure.LikeRepository) *PostConverter {
-	return &PostConverter{likeRepo: likeRepo}
+func NewPostConverter() *PostConverter {
+	return &PostConverter{}
 }
 
 func (c *PostConverter) DBToProto(ctx context.Context, dbPost *db.Post, viewerID uint64) (*model.Post, error) {
@@ -56,12 +60,7 @@ func (c *PostConverter) DBToProto(ctx context.Context, dbPost *db.Post, viewerID
 		logger.Debugf(ctx, "Post %d has nil Author", dbPost.ID)
 	}
 
-	if viewerID > 0 {
-		isLiked, _ := c.likeRepo.IsPostLiked(ctx, viewerID, dbPost.ID)
-		post.Interaction = &model.PostInteraction{
-			IsLiked: isLiked,
-		}
-	}
+	_ = viewerID
 
 	if dbPost.Content != nil {
 		if err := c.fillContent(post, dbPost.Content); err != nil {
