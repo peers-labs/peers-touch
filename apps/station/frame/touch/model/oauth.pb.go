@@ -412,6 +412,7 @@ type OAuthBridgeResponse struct {
 	Username      string                 `protobuf:"bytes,8,opt,name=username,proto3" json:"username,omitempty"`
 	DisplayName   string                 `protobuf:"bytes,9,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	Email         string                 `protobuf:"bytes,10,opt,name=email,proto3" json:"email,omitempty"`
+	ActorRef      *ActorRef              `protobuf:"bytes,11,opt,name=actor_ref,proto3" json:"actor_ref,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -516,11 +517,18 @@ func (x *OAuthBridgeResponse) GetEmail() string {
 	return ""
 }
 
+func (x *OAuthBridgeResponse) GetActorRef() *ActorRef {
+	if x != nil {
+		return x.ActorRef
+	}
+	return nil
+}
+
 var File_domain_oauth_oauth_proto protoreflect.FileDescriptor
 
 const file_domain_oauth_oauth_proto_rawDesc = "" +
 	"\n" +
-	"\x18domain/oauth/oauth.proto\x12\x1apeers_touch.model.oauth.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf2\x01\n" +
+	"\x18domain/oauth/oauth.proto\x12\x1apeers_touch.model.oauth.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/actor/actor.proto\"\xf2\x01\n" +
 	"\vOAuthClient\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1b\n" +
@@ -560,7 +568,7 @@ const file_domain_oauth_oauth_proto_rawDesc = "" +
 	"\n" +
 	"avatar_url\x18\x06 \x01(\tR\tavatarUrl\x12\x0e\n" +
 	"\x02ts\x18\a \x01(\tR\x02ts\x12\x10\n" +
-	"\x03sig\x18\b \x01(\tR\x03sig\"\xcc\x02\n" +
+	"\x03sig\x18\b \x01(\tR\x03sig\"\x90\x03\n" +
 	"\x13OAuthBridgeResponse\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12!\n" +
@@ -576,7 +584,8 @@ const file_domain_oauth_oauth_proto_rawDesc = "" +
 	"\busername\x18\b \x01(\tR\busername\x12!\n" +
 	"\fdisplay_name\x18\t \x01(\tR\vdisplayName\x12\x14\n" +
 	"\x05email\x18\n" +
-	" \x01(\tR\x05emailBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
+	" \x01(\tR\x05email\x12B\n" +
+	"\tactor_ref\x18\v \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\tactor_refBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
 
 var (
 	file_domain_oauth_oauth_proto_rawDescOnce sync.Once
@@ -598,17 +607,19 @@ var file_domain_oauth_oauth_proto_goTypes = []any{
 	(*OAuthBridgeRequest)(nil),    // 3: peers_touch.model.oauth.v1.OAuthBridgeRequest
 	(*OAuthBridgeResponse)(nil),   // 4: peers_touch.model.oauth.v1.OAuthBridgeResponse
 	(*timestamppb.Timestamp)(nil), // 5: google.protobuf.Timestamp
+	(*ActorRef)(nil),              // 6: peers_touch.model.actor.v1.ActorRef
 }
 var file_domain_oauth_oauth_proto_depIdxs = []int32{
 	5, // 0: peers_touch.model.oauth.v1.OAuthClient.created_at:type_name -> google.protobuf.Timestamp
 	5, // 1: peers_touch.model.oauth.v1.OAuthAuthCode.expires_at:type_name -> google.protobuf.Timestamp
 	5, // 2: peers_touch.model.oauth.v1.OAuthToken.created_at:type_name -> google.protobuf.Timestamp
 	5, // 3: peers_touch.model.oauth.v1.OAuthToken.expires_at:type_name -> google.protobuf.Timestamp
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	6, // 4: peers_touch.model.oauth.v1.OAuthBridgeResponse.actor_ref:type_name -> peers_touch.model.actor.v1.ActorRef
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_domain_oauth_oauth_proto_init() }
@@ -616,6 +627,7 @@ func file_domain_oauth_oauth_proto_init() {
 	if File_domain_oauth_oauth_proto != nil {
 		return
 	}
+	file_domain_actor_actor_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

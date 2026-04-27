@@ -126,7 +126,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
               >
                 {/* Unified rounded-square avatar for consistent visual style */}
                 <UserSquareAvatar
-                  url={r.avatar}
+                  remoteUrl={r.avatar}
                   name={r.displayName || r.username}
                   size={36}
                 />

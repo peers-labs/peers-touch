@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Dropdown, Input } from '@lobehub/ui';
@@ -43,10 +43,6 @@ export function ChatSessionList() {
     activeSessionUlid,
     activeGroupUlid,
     loading,
-    loadSessions,
-    loadGroups,
-    loadGroupUnreadCounts,
-    loadConversationPreviews,
     setActiveTab,
     selectSession,
     selectGroup,
@@ -57,16 +53,10 @@ export function ChatSessionList() {
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showFindPeople, setShowFindPeople] = useState(false);
 
-  useEffect(() => {
-    void (async () => {
-      await loadSessions().catch(() => {});
-      await loadGroups().catch(() => {});
-      await Promise.all([
-        loadGroupUnreadCounts().catch(() => {}),
-        loadConversationPreviews().catch(() => {}),
-      ]);
-    })();
-  }, [loadSessions, loadGroups, loadGroupUnreadCounts, loadConversationPreviews]);
+  // NOTE: Initial data loading (sessions, groups, previews) is owned by
+  // `SocialChatPage`'s `tick()` effect — see comment there. We deliberately
+  // do NOT re-fire those calls here, otherwise the cold path runs every
+  // fetch twice in parallel and the spinner blocks longer than necessary.
 
   const conversations = useMemo(
     () => getUnifiedConversations(),
@@ -211,7 +201,7 @@ export function ChatSessionList() {
                     transition: 'background 0.15s',
                   }}
                 >
-                  <UserSquareAvatar url={c.avatar} name={name} size={36} />
+                  <UserSquareAvatar remoteUrl={c.avatar} name={name} size={36} />
 
                   <Flexbox flex={1} style={{ minWidth: 0 }}>
                     <Flexbox horizontal align="center" justify="space-between" gap={6}>

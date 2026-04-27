@@ -1,5 +1,6 @@
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::auth_identity;
+use crate::infrastructure::session_store::{self, SessionSource};
 use crate::infrastructure::station_client;
 use crate::infrastructure::storage::{self, StorageKind};
 use crate::model::oauth::{OAuthBridgeRequest, OAuthBridgeResponse};
@@ -194,7 +195,11 @@ fn save_oauth_callback(input: OAuthCallbackInput, ts: Option<String>, sig: Optio
     ) {
         Ok(bridge) => {
             if !bridge.access_token.is_empty() {
-                let _ = save_station_session(&bridge.actor_id, &bridge.access_token);
+                let _ = session_store::save(
+                    &bridge.actor_id,
+                    &bridge.access_token,
+                    SessionSource::OauthBridge,
+                );
             }
         }
         Err(e) => {
@@ -210,42 +215,6 @@ fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayl
         command: command.to_string(),
         status: data.to_string(),
     })
-}
-
-// ── Station session persistence ──
-// After a successful oauth-bridge call we store the Station JWT
-// to a file so it can be picked up by `ensure_station_session`.
-
-fn station_session_path() -> Result<PathBuf, String> {
-    storage::app_file_path("desktop", StorageKind::Data, &["auth", "station_session.json"])
-        .map_err(|e| format!("resolve station_session path: {e:?}"))
-}
-
-fn save_station_session(actor_id: &str, token: &str) -> Result<(), String> {
-    let path = station_session_path()?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("create auth dir: {e}"))?;
-    }
-    let data = json!({ "actor_id": actor_id, "token": token });
-    let content = serde_json::to_string_pretty(&data)
-        .map_err(|e| format!("encode station session: {e}"))?;
-    storage::write_string_atomic(&path, &content)
-        .map_err(|e| format!("write station session: {e:?}"))
-}
-
-/// Read a previously saved Station JWT (actor_id, token).
-/// Returns `None` when the file does not exist or cannot be parsed.
-pub fn read_station_session() -> Option<(String, String)> {
-    let path = station_session_path().ok()?;
-    let raw = fs::read_to_string(path).ok()?;
-    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    let actor_id = v.get("actor_id")?.as_str()?.to_string();
-    let token = v.get("token")?.as_str()?.to_string();
-    if token.is_empty() {
-        return None;
-    }
-    Some((actor_id, token))
 }
 
 /// Attempt to obtain a Station JWT by calling the oauth-bridge endpoint
@@ -275,7 +244,11 @@ pub fn try_bridge_from_connections() -> Option<(String, String)> {
         return None;
     }
 
-    let _ = save_station_session(&bridge.actor_id, &bridge.access_token);
+    let _ = session_store::save(
+        &bridge.actor_id,
+        &bridge.access_token,
+        SessionSource::OauthBridge,
+    );
     Some((bridge.actor_id, bridge.access_token))
 }
 

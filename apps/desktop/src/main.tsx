@@ -15,9 +15,15 @@ import './index.css';
 // When running outside Tauri WebView (e.g. Chrome), patch
 // __TAURI_INTERNALS__ so that invoke() routes through the
 // Rust HTTP gateway at 127.0.0.1:3030.
+//
+// When this branch runs, we expose `__PT_GATEWAY_BASE__` so other modules
+// (UserSquareAvatar) can serve binary content (avatars) through the
+// gateway too — `convertFileSrc` no-ops here and the browser cannot
+// render local filesystem paths.
 if (typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window)) {
   const port = import.meta.env.VITE_GATEWAY_PORT || '3030';
   const GATEWAY = `http://127.0.0.1:${port}`;
+  (window as any).__PT_GATEWAY_BASE__ = GATEWAY;
   (window as any).__TAURI_INTERNALS__ = {
     invoke: async (cmd: string, args?: Record<string, unknown>) => {
       const res = await fetch(GATEWAY, {

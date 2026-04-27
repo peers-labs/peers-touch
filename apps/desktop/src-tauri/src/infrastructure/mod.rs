@@ -1,5 +1,11 @@
+pub mod actor_bucket;
 pub mod auth_identity;
+pub mod avatar_cache;
+pub mod oss_cache;
+pub mod session_store;
 pub mod i18n;
+pub mod identity_event;
+pub mod window_session_registry;
 pub mod local_chat_store;
 pub mod logger;
 pub mod p2p;
