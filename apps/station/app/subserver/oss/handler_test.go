@@ -72,6 +72,7 @@ func TestHandleCapabilitiesShape(t *testing.T) {
 		hostOverride:       "https://example.com",
 		signSecret:         "secret",
 		backendType:        "local",
+		keyStrategy:        "cas",
 		maxFileSize:        16 << 20,
 		maxFilesPerMessage: 5,
 	}
@@ -87,7 +88,7 @@ func TestHandleCapabilitiesShape(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	wantKeys := []string{
-		"version", "host", "path_base", "backend",
+		"version", "host", "path_base", "backend", "key_strategy",
 		"max_file_size", "max_files_per_message",
 		"signed_url", "upload_endpoint", "file_endpoint", "meta_endpoint",
 	}
@@ -104,5 +105,8 @@ func TestHandleCapabilitiesShape(t *testing.T) {
 	}
 	if got["version"].(float64) != 1 {
 		t.Errorf("version = %v, want 1", got["version"])
+	}
+	if got["key_strategy"] != "cas" {
+		t.Errorf("key_strategy = %v, want cas", got["key_strategy"])
 	}
 }

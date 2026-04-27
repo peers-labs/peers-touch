@@ -187,6 +187,7 @@ YAML keys (`peers.node.server.subserver.oss.*`):
 | `max-file-size`           | `33554432` (32 MiB)| Per-file upload cap, in bytes.                        |
 | `max-files-per-message`   | `9`                | Advisory client-side limit.                           |
 | `backend`                 | `local`            | Storage driver; reserved for `s3`, `proxy`, …         |
+| `key-strategy`            | `random`           | `random` (legacy date+rand) or `cas` (sha256 dedup).  |
 
 For independent deployment (OSS in its own process), the operator:
 
@@ -247,7 +248,99 @@ caching the bytes provides little value.
    without a network round-trip) and falls back to `url` when local
    mirroring failed or was skipped.
 
-## 8. Invariants
+## 8. Key strategies
+
+The server-side function `service.FileService.SaveFile` selects the
+storage key via a configurable strategy:
+
+| Strategy   | Key shape                            | Dedup | Sha256 in meta |
+| ---------- | ------------------------------------ | ----- | -------------- |
+| `random`   | `YYYY/MM/DD/<rand16><ext>`           | no    | empty          |
+| `cas`      | `cas/<sha256[0:2]>/<sha256><ext>`    | yes   | populated      |
+
+The strategy is per-Station and fixed for the lifetime of the
+process. Switching live would create unbounded fan-out of equivalent
+metas pointing at the same bytes. Operators set it via
+`peers.node.server.subserver.oss.key-strategy: cas` in YAML; clients
+read it from `capabilities.key_strategy`.
+
+### CAS contract
+
+When `key-strategy: cas` is active:
+
+1. The server hashes the incoming multipart body (`sha256`) before
+   touching disk.
+2. Key is derived deterministically: `cas/<2-char shard>/<full
+   hash><ext>`. The shard prefix keeps any single directory bounded
+   as the dataset grows.
+3. If a `FileMeta` row already exists at that key, the server skips
+   the second `backend.Save` and returns the *existing* meta. This
+   means the original filename wins — when Alice uploads
+   `report.pdf`, then Bob uploads the *same bytes* under the name
+   `RENAMED.pdf`, Bob's response carries `filename: report.pdf`.
+   Older messages are never retroactively renamed.
+4. Concurrent uploads of identical bytes are reconciled by the
+   unique-index on `oss_files.key` — the loser of `Create` falls
+   back to `FindByKey` and returns the winner's meta.
+5. Upload response includes `sha256` so the client can persist it on
+   `MessageAttachment` for end-to-end integrity verification once
+   federated fetches land.
+
+`random` remains the default for backward compatibility — Stations
+upgraded mid-flight keep working without operator action, and legacy
+metas (without `Sha256`) coexist with new CAS metas in the same
+table.
+
+## 9. Local attachment cache & GC
+
+The desktop client mirrors fetched attachment bytes under
+`cache/files/oss/<sanitized-origin>/<key>`. Without GC the cache
+grows unboundedly — a chatty user can accumulate gigabytes over
+weeks. We address this with an explicit `oss_cache::gc(max_bytes)`
+function that:
+
+1. Walks the attachment dir and collects `(path, size, mtime)` per
+   file.
+2. Sums total bytes; if already under budget, returns
+   `GcReport { evicted: 0, ... }` without further work.
+3. Sorts by `mtime` ascending and deletes the oldest files until
+   total bytes fit under the budget.
+4. Best-effort prunes empty directories left behind.
+
+The trigger is the **Online → Offline** edge in
+`PresenceSupervisor::run_offline`. This is precisely the moment the
+user is no longer actively browsing chats — a few hundred ms of
+`fs::remove_file` calls is invisible. Importantly:
+
+- `AppShutdown` triggers **skip** GC. The user is exiting; spending
+  budget on disk reclamation is rude. Next launch's first
+  Offline→Online transition will GC instead.
+- The default budget is `256 MiB`, overridable via the
+  `OSS_CACHE_BUDGET_BYTES` environment variable. (Future: capability
+  fields and per-actor settings.)
+- mtime is approximate-LRU. We deliberately do not maintain an
+  access-time sidecar — the cost-benefit of crash-safety + zero
+  deps outweighs the imprecision.
+
+## 10. Lifecycle integration: Presence + Shutdown
+
+The shutdown path is symmetric to AppLaunch:
+
+1. Frontend `usePresence` already fires `AppLaunch` on mount.
+2. Tauri `RunEvent::ExitRequested` (wired in `main.rs`) iterates
+   `WindowSessionRegistry::snapshot_all()` and dispatches
+   `PresenceTrigger::AppShutdown` for each bound `(actor, jwt)`.
+3. The supervisor runs `run_offline` for each, which calls
+   Station's `/offline` and skips the GC pass.
+4. The main thread polls `JoinHandle::is_finished()` with a
+   3-second budget so a wedged Station cannot prevent process exit.
+
+This guarantees Station sees an explicit Offline transition rather
+than waiting for TCP keepalive expiry — which matters for the
+"deliver pending on next online" semantics: the next AppLaunch's
+`/online` POST is what triggers the pending drain.
+
+## 11. Invariants
 
 - `MessageAttachment.cid` is always either a valid `oss://...` URI
   or empty. Bare keys are accepted on input for backward
@@ -261,20 +354,32 @@ caching the bytes provides little value.
 - Local cache misses never break rendering. `oss_resolve_url`
   always returns at least an absolute URL when the URI is valid; the
   renderer can always fall back to network fetch.
+- CAS metas are append-only. `service.SaveFile` never mutates an
+  existing `FileMeta` — duplicates short-circuit before reaching
+  the `Create` path. This means metadata about a CAS object
+  (filename, mime, size) reflects the *first* uploader and is
+  invariant under subsequent re-uploads.
+- Shutdown is bounded. `RunEvent::ExitRequested` waits at most 3s
+  for Offline reconciles to complete; the process exits even if
+  Station is unreachable.
 
-## 9. Open work / future extensions
+## 12. Open work / future extensions
 
 - **S3Backend** behind `Backend` interface; `capabilities.backend =
   "s3"` skips local mirroring on the client.
 - **Presigned upload** for very large files (operator-controlled
-  via a future `presigned_upload: true` capability flag).
-- **Content addressing**: today `key` is a random ULID-style path.
-  A second mode keyed by content hash would let two recipients of
-  the same attachment share a cache entry. Out of scope for this
-  pass.
-- **Attachment GC**: the local cache grows unbounded. A simple LRU
-  pruner triggered from `presence.transition` (Online → Offline)
-  is a reasonable next step.
+  via a future `presigned_upload: true` capability flag) — most
+  meaningful once S3Backend lands.
+- **Capability-driven GC budget**: `capabilities.suggested_cache_bytes`
+  could replace the fixed 256 MiB / env-var pair.
+- **CAS reference counting**: today metas are forever. A
+  reference-count column on `oss_files` (incremented when a
+  `MessageAttachment` is sent, decremented on message delete) would
+  let the operator garbage-collect dereferenced objects.
 - **End-to-end encryption**: orthogonal — the encryption layer
-  wraps `MessageAttachment.cid` like it wraps text content. The
-  bytes on disk are still ciphertext.
+  wraps `MessageAttachment.cid` like it wraps text content. CAS is
+  meaningful only over plaintext bytes; if the client encrypts
+  per-message, two senders of the same plaintext produce different
+  ciphertexts and dedup degrades to "same key only when same
+  recipient and same message". This is a deliberate trade-off,
+  noted here so the decision is not relitigated.
