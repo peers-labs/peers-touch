@@ -214,6 +214,150 @@ func TestBucketRepo_DeleteRefusesNonEmptyWithoutForce(t *testing.T) {
 	}
 }
 
+func TestBucketRepo_Create_DuplicateReturnsErrBucketExists(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewBucketRepository("default")
+	ctx := context.Background()
+	actor := "did:test:dave"
+
+	// Seed once via EnsureSystem (canonical path).
+	if _, err := r.EnsureSystem(ctx, actor, ossmodel.SystemBucketSpecs[0]); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// A direct Create with the same (owner, name) tuple must surface
+	// ErrBucketExists rather than the raw GORM unique-constraint error
+	// — service-layer handlers depend on this stable sentinel to map
+	// 409 Conflict on the dashboard "Create bucket" endpoint.
+	dup := &ossmodel.Bucket{
+		ID:                "synthetic-dup",
+		Name:              ossmodel.SystemBucketAvatar,
+		OwnerActorID:      actor,
+		Kind:              ossmodel.BucketKindUser,
+		DefaultVisibility: ossmodel.VisibilityPublic,
+	}
+	if err := r.Create(ctx, dup); !errors.Is(err, ErrBucketExists) {
+		t.Fatalf("expected ErrBucketExists, got %v", err)
+	}
+
+	// And we must not have leaked a second row.
+	var n int64
+	_ = db.Model(&ossmodel.Bucket{}).
+		Where("owner_actor_id = ? AND name = ?", actor, ossmodel.SystemBucketAvatar).
+		Count(&n)
+	if n != 1 {
+		t.Fatalf("expected exactly 1 row, got %d", n)
+	}
+}
+
+func TestBucketRepo_UpdatePolicy(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewBucketRepository("default")
+	ctx := context.Background()
+	actor := "did:test:eve"
+
+	b, err := r.EnsureSystem(ctx, actor, ossmodel.SystemBucketSpecs[1]) // chat
+	if err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+
+	// Patch only some columns. nil pointers must mean "leave alone";
+	// zero values for set pointers must persist (TTLDays=0 = no TTL).
+	newVis := ossmodel.VisibilityPrivate
+	newQuota := int64(123456)
+	zeroTTL := int32(0)
+	if err := r.UpdatePolicy(ctx, b.ID, BucketPolicyUpdate{
+		DefaultVisibility: &newVis,
+		QuotaBytes:        &newQuota,
+		TTLDays:           &zeroTTL,
+	}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	got, err := r.FindByID(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got.DefaultVisibility != newVis || got.QuotaBytes != newQuota || got.TTLDays != 0 {
+		t.Fatalf("policy not applied: %+v", got)
+	}
+	// Description was not in the patch — must be unchanged.
+	if got.Description != ossmodel.SystemBucketSpecs[1].Description {
+		t.Fatalf("description leaked: want %q, got %q",
+			ossmodel.SystemBucketSpecs[1].Description, got.Description)
+	}
+
+	// Unknown bucket → ErrBucketNotFound.
+	if err := r.UpdatePolicy(ctx, "no-such", BucketPolicyUpdate{QuotaBytes: &newQuota}); !errors.Is(err, ErrBucketNotFound) {
+		t.Fatalf("expected ErrBucketNotFound, got %v", err)
+	}
+
+	// Empty patch (only updated_at would change) is a no-op and
+	// MUST NOT touch the row — operators can call PATCH with all
+	// nil pointers as a "ping" without bumping updated_at.
+	preTouch := got.UpdatedAt
+	if err := r.UpdatePolicy(ctx, b.ID, BucketPolicyUpdate{}); err != nil {
+		t.Fatalf("noop patch: %v", err)
+	}
+	post, _ := r.FindByID(ctx, b.ID)
+	if !post.UpdatedAt.Equal(preTouch) {
+		t.Fatalf("noop patch should not bump updated_at: pre=%v post=%v", preTouch, post.UpdatedAt)
+	}
+}
+
+func TestBucketRepo_ListByOwnerAndAll(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewBucketRepository("default")
+	ctx := context.Background()
+
+	// Seed: alice has avatar+chat, bob has personal only.
+	for _, actor := range []string{"did:test:alice", "did:test:bob"} {
+		spec := ossmodel.SystemBucketSpecs[2] // personal
+		if actor == "did:test:alice" {
+			spec = ossmodel.SystemBucketSpecs[0] // avatar
+			if _, err := r.EnsureSystem(ctx, actor, ossmodel.SystemBucketSpecs[1]); err != nil {
+				t.Fatalf("seed alice chat: %v", err)
+			}
+		}
+		if _, err := r.EnsureSystem(ctx, actor, spec); err != nil {
+			t.Fatalf("seed %s: %v", actor, err)
+		}
+	}
+
+	rows, err := r.ListByOwner(ctx, "did:test:alice")
+	if err != nil {
+		t.Fatalf("ListByOwner: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("alice should own 2 buckets, got %d: %+v", len(rows), rows)
+	}
+	for _, row := range rows {
+		if row.OwnerActorID != "did:test:alice" {
+			t.Fatalf("ListByOwner leaked owner %q", row.OwnerActorID)
+		}
+	}
+
+	all, err := r.ListAll(ctx)
+	if err != nil {
+		t.Fatalf("ListAll: %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("ListAll: want 3 buckets across both actors, got %d", len(all))
+	}
+	// Database-level sanity — the list and the COUNT must agree.
+	var n int64
+	_ = db.Model(&ossmodel.Bucket{}).Count(&n)
+	if int(n) != len(all) {
+		t.Fatalf("count drift: count=%d, list=%d", n, len(all))
+	}
+}
+
 // ---------------------------------------------------------------------------
 // AuditRepository tests
 // ---------------------------------------------------------------------------
