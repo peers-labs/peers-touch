@@ -52,6 +52,7 @@ type subServer struct {
 	chatDebugSvc *application.ChatDebugService
 	storageSvc   *application.StorageService
 	nodesSvc     *application.NodesService
+	ossSvc       *application.OSSService
 
 	// Infrastructure repositories (DDD infrastructure layer)
 	auditRepo infrastructure.AuditRepository
@@ -134,6 +135,7 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	actorQueryRepo := infrastructure.NewActorQueryRepository(rds)
 	storageRepo := infrastructure.NewStorageRepository(rds)
 	nodesRepo := infrastructure.NewNodesRepository(rds)
+	ossRepo := infrastructure.NewOSSRepository(rds)
 
 	s.auditRepo = auditRepo
 
@@ -143,6 +145,7 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.chatDebugSvc = application.NewChatDebugService(rds)
 	s.storageSvc = application.NewStorageService(storageRepo)
 	s.nodesSvc = application.NewNodesService(nodesRepo, nil)
+	s.ossSvc = application.NewOSSService(ossRepo)
 
 	// Try to resolve registry from the global default
 	s.registry = registry.GetDefaultRegistry()

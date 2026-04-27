@@ -15,10 +15,13 @@ package dashboard
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/infrastructure"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
@@ -74,6 +77,20 @@ const (
 	// Storage / Nodes
 	routeStorageInfo = "/dashboard/api/storage/info"
 	routeNodes       = "/dashboard/api/nodes"
+
+	// OSS management plane. The dashboard owns the read paths
+	// against the OSS subserver's tables; mutating endpoints are
+	// limited to operator trust actions (peer key pin/unpin).
+	routeOSSBuckets        = "/dashboard/api/oss/buckets"
+	routeOSSBucketDetail   = "/dashboard/api/oss/buckets/:id"
+	routeOSSBucketObjects  = "/dashboard/api/oss/buckets/:id/objects"
+	routeOSSObjects        = "/dashboard/api/oss/objects"
+	routeOSSAudit          = "/dashboard/api/oss/audit"
+	routeOSSUsage          = "/dashboard/api/oss/usage"
+	routeOSSFedMe          = "/dashboard/api/oss/federation/me"
+	routeOSSFedPeers       = "/dashboard/api/oss/federation/peers"
+	routeOSSFedPeerPin     = "/dashboard/api/oss/federation/peers/:id/pin"
+	routeOSSFedPeerUnpin   = "/dashboard/api/oss/federation/peers/:id/unpin"
 )
 
 // ---------------------------------------------------------------------------
@@ -169,6 +186,28 @@ func (h *dashboardHandler) handlers() []server.Handler {
 		// -- Nodes --
 		server.NewTypedHandler("dashboard-nodes", routeNodes, server.GET,
 			h.handleNodes, auth),
+
+		// -- OSS management plane --
+		server.NewTypedHandler("dashboard-oss-buckets", routeOSSBuckets, server.GET,
+			h.handleOSSListBuckets, auth),
+		server.NewTypedHandler("dashboard-oss-bucket-detail", routeOSSBucketDetail, server.GET,
+			h.handleOSSGetBucket, auth),
+		server.NewTypedHandler("dashboard-oss-bucket-objects", routeOSSBucketObjects, server.GET,
+			h.handleOSSListBucketObjects, auth),
+		server.NewTypedHandler("dashboard-oss-objects", routeOSSObjects, server.GET,
+			h.handleOSSListObjects, auth),
+		server.NewTypedHandler("dashboard-oss-audit", routeOSSAudit, server.GET,
+			h.handleOSSListAudit, auth),
+		server.NewTypedHandler("dashboard-oss-usage", routeOSSUsage, server.GET,
+			h.handleOSSUsage, auth),
+		server.NewTypedHandler("dashboard-oss-fed-me", routeOSSFedMe, server.GET,
+			h.handleOSSFederationMe, auth),
+		server.NewTypedHandler("dashboard-oss-fed-peers", routeOSSFedPeers, server.GET,
+			h.handleOSSFederationPeers, auth),
+		server.NewTypedHandler("dashboard-oss-fed-peer-pin", routeOSSFedPeerPin, server.POST,
+			h.handleOSSFederationPinPeer, auth),
+		server.NewTypedHandler("dashboard-oss-fed-peer-unpin", routeOSSFedPeerUnpin, server.POST,
+			h.handleOSSFederationUnpinPeer, auth),
 	}
 }
 
@@ -710,6 +749,235 @@ func (h *dashboardHandler) handleNodes(ctx context.Context, _ *domain.EmptyReque
 	}
 
 	return overview, nil
+}
+
+// ===========================================================================
+// OSS management plane handlers
+// ===========================================================================
+
+// handleOSSListBuckets — GET /dashboard/api/oss/buckets
+func (h *dashboardHandler) handleOSSListBuckets(ctx context.Context, _ *domain.EmptyRequest) (*domain.OSSBucketListResponse, error) {
+	if h.sub.ossSvc == nil {
+		return nil, serviceUnavailable("oss service unavailable")
+	}
+	resp, err := h.sub.ossSvc.ListBuckets(ctx)
+	if err != nil {
+		log.Errorf(ctx, "[dashboard] oss list buckets error: %v", err)
+		return nil, server.InternalError("failed to list buckets")
+	}
+	return resp, nil
+}
+
+// handleOSSGetBucket — GET /dashboard/api/oss/buckets/:id
+func (h *dashboardHandler) handleOSSGetBucket(ctx context.Context, _ *domain.EmptyRequest) (*domain.OSSBucketSummary, error) {
+	if h.sub.ossSvc == nil {
+		return nil, serviceUnavailable("oss service unavailable")
+	}
+	id := pathParam(ctx, "id")
+	if id == "" {
+		return nil, server.BadRequest("bucket id is required")
+	}
+	row, err := h.sub.ossSvc.GetBucket(ctx, id)
+	if err != nil {
+		log.Errorf(ctx, "[dashboard] oss get bucket error: %v", err)
+		return nil, server.InternalError("failed to load bucket")
+	}
+	if row == nil {
+		return nil, server.NotFound("bucket not found")
+	}
+	return row, nil
+}
+
+// handleOSSListBucketObjects — GET /dashboard/api/oss/buckets/:id/objects
+//
+// This is a sugar route over /objects?bucket_id=:id; it short-circuits
+// when the bucket does not exist so the dashboard does not have to
+// disambiguate "empty bucket" from "no bucket".
+func (h *dashboardHandler) handleOSSListBucketObjects(ctx context.Context, _ *domain.EmptyRequest) (*domain.OSSObjectListResponse, error) {
+	if h.sub.ossSvc == nil {
+		return nil, serviceUnavailable("oss service unavailable")
+	}
+	id := pathParam(ctx, "id")
+	if id == "" {
+		return nil, server.BadRequest("bucket id is required")
+	}
+	bucket, err := h.sub.ossSvc.GetBucket(ctx, id)
+	if err != nil {
+		log.Errorf(ctx, "[dashboard] oss bucket lookup error: %v", err)
+		return nil, server.InternalError("failed to load bucket")
+	}
+	if bucket == nil {
+		return nil, server.NotFound("bucket not found")
+	}
+	q := infrastructure.OSSObjectQuery{
+		BucketID:     id,
+		OwnerActorID: queryParam(ctx, "owner_actor_id"),
+		Visibility:   queryParam(ctx, "visibility"),
+		Mime:         queryParam(ctx, "mime"),
+		Page:         queryParamInt(ctx, "page", 1),
+		PageSize:     queryParamInt(ctx, "page_size", 50),
+	}
+	if q.PageSize > 200 {
+		q.PageSize = 200
+	}
+	resp, err := h.sub.ossSvc.ListObjects(ctx, q)
+	if err != nil {
+		log.Errorf(ctx, "[dashboard] oss list bucket objects error: %v", err)
+		return nil, server.InternalError("failed to list objects")
+	}
+	return resp, nil
+}
+
+// handleOSSListObjects — GET /dashboard/api/oss/objects
+//
+// Filters: bucket_id, owner_actor_id, visibility, mime, page,
+// page_size. All optional; an unfiltered call returns the most
+// recent N rows across all buckets.
+func (h *dashboardHandler) handleOSSListObjects(ctx context.Context, _ *domain.EmptyRequest) (*domain.OSSObjectListResponse, error) {
+	if h.sub.ossSvc == nil {
+		return nil, serviceUnavailable("oss service unavailable")
+	}
+	q := infrastructure.OSSObjectQuery{
+		BucketID:     queryParam(ctx, "bucket_id"),
+		OwnerActorID: queryParam(ctx, "owner_actor_id"),
+		Visibility:   queryParam(ctx, "visibility"),
+		Mime:         queryParam(ctx, "mime"),
+		Page:         queryParamInt(ctx, "page", 1),
+		PageSize:     queryParamInt(ctx, "page_size", 50),
+	}
+	if q.PageSize > 200 {
+		q.PageSize = 200
+	}
+	resp, err := h.sub.ossSvc.ListObjects(ctx, q)
+	if err != nil {
+		log.Errorf(ctx, "[dashboard] oss list objects error: %v", err)
+		return nil, server.InternalError("failed to list objects")
+	}
+	return resp, nil
+}
+
+// handleOSSListAudit — GET /dashboard/api/oss/audit
+//
+// Filters: action, actor_id, bucket_id, file_key, outcome, since,
+// until, page, page_size. `since`/`until` accept RFC3339 timestamps;
+// unparseable values are treated as zero (i.e. no bound).
+func (h *dashboardHandler) handleOSSListAudit(ctx context.Context, _ *domain.EmptyRequest) (*domain.OSSAuditListResponse, error) {
+	if h.sub.ossSvc == nil {
+		return nil, serviceUnavailable("oss service unavailable")
+	}
+	q := infrastructure.OSSAuditQuery{
+		Action:   queryParam(ctx, "action"),
+		ActorID:  queryParam(ctx, "actor_id"),
+		BucketID: queryParam(ctx, "bucket_id"),
+		FileKey:  queryParam(ctx, "file_key"),
+		Outcome:  queryParam(ctx, "outcome"),
+		Page:     queryParamInt(ctx, "page", 1),
+		PageSize: queryParamInt(ctx, "page_size", 50),
+	}
+	if q.PageSize > 200 {
+		q.PageSize = 200
+	}
+	if raw := queryParam(ctx, "since"); raw != "" {
+		if t, err := time.Parse(time.RFC3339, raw); err == nil {
+			q.Since = t
+		}
+	}
+	if raw := queryParam(ctx, "until"); raw != "" {
+		if t, err := time.Parse(time.RFC3339, raw); err == nil {
+			q.Until = t
+		}
+	}
+	resp, err := h.sub.ossSvc.ListAudit(ctx, q)
+	if err != nil {
+		log.Errorf(ctx, "[dashboard] oss list audit error: %v", err)
+		return nil, server.InternalError("failed to list audit events")
+	}
+	return resp, nil
+}
+
+// handleOSSUsage — GET /dashboard/api/oss/usage
+func (h *dashboardHandler) handleOSSUsage(ctx context.Context, _ *domain.EmptyRequest) (*domain.OSSUsageSummary, error) {
+	if h.sub.ossSvc == nil {
+		return nil, serviceUnavailable("oss service unavailable")
+	}
+	resp, err := h.sub.ossSvc.Usage(ctx)
+	if err != nil {
+		log.Errorf(ctx, "[dashboard] oss usage error: %v", err)
+		return nil, server.InternalError("failed to load usage")
+	}
+	return resp, nil
+}
+
+// handleOSSFederationMe — GET /dashboard/api/oss/federation/me
+//
+// Returns this station's outbound federation key — public material
+// only. The private key never leaves oss_meta; the dashboard would
+// have no legitimate reason to expose it.
+func (h *dashboardHandler) handleOSSFederationMe(ctx context.Context, _ *domain.EmptyRequest) (*domain.OSSFederationLocalKey, error) {
+	if h.sub.ossSvc == nil {
+		return nil, serviceUnavailable("oss service unavailable")
+	}
+	resp, err := h.sub.ossSvc.GetFederationLocal(ctx)
+	if err != nil {
+		log.Errorf(ctx, "[dashboard] oss federation me error: %v", err)
+		return nil, server.InternalError("failed to load federation key")
+	}
+	return resp, nil
+}
+
+// handleOSSFederationPeers — GET /dashboard/api/oss/federation/peers
+func (h *dashboardHandler) handleOSSFederationPeers(ctx context.Context, _ *domain.EmptyRequest) (*domain.OSSFederationPeersResponse, error) {
+	if h.sub.ossSvc == nil {
+		return nil, serviceUnavailable("oss service unavailable")
+	}
+	resp, err := h.sub.ossSvc.ListFederationPeers(ctx)
+	if err != nil {
+		log.Errorf(ctx, "[dashboard] oss federation peers error: %v", err)
+		return nil, server.InternalError("failed to list peers")
+	}
+	return resp, nil
+}
+
+// handleOSSFederationPinPeer — POST /dashboard/api/oss/federation/peers/:id/pin
+//
+// Promoting a TOFU row to Pinned=true is the operator's commitment
+// that this peer's current key is correct. We record it in the
+// dashboard audit trail so a future audit can prove who flipped it
+// when. The `:id` segment is the peer station id (NOT a numeric).
+func (h *dashboardHandler) handleOSSFederationPinPeer(ctx context.Context, _ *domain.EmptyRequest) (*domain.MessageResponse, error) {
+	return h.setPeerPin(ctx, true)
+}
+
+// handleOSSFederationUnpinPeer — POST /dashboard/api/oss/federation/peers/:id/unpin
+func (h *dashboardHandler) handleOSSFederationUnpinPeer(ctx context.Context, _ *domain.EmptyRequest) (*domain.MessageResponse, error) {
+	return h.setPeerPin(ctx, false)
+}
+
+func (h *dashboardHandler) setPeerPin(ctx context.Context, pinned bool) (*domain.MessageResponse, error) {
+	if h.sub.ossSvc == nil {
+		return nil, serviceUnavailable("oss service unavailable")
+	}
+	claims := getClaims(ctx)
+	peerID := pathParam(ctx, "id")
+	if peerID == "" {
+		return nil, server.BadRequest("peer station id is required")
+	}
+	if err := h.sub.ossSvc.SetPeerPin(ctx, peerID, pinned); err != nil {
+		if errors.Is(err, infrastructure.ErrPeerNotFound) {
+			return nil, server.NotFound("peer not found")
+		}
+		log.Errorf(ctx, "[dashboard] oss set peer pin error: %v", err)
+		return nil, server.InternalError("failed to update peer pin")
+	}
+	action := "oss_pin_peer"
+	msg := "peer pinned"
+	if !pinned {
+		action = "oss_unpin_peer"
+		msg = "peer unpinned"
+	}
+	h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username, action, "oss_peer",
+		"peer_station_id="+peerID, getClientIP(ctx), getUserAgent(ctx))
+	return &domain.MessageResponse{Message: msg}, nil
 }
 
 // ===========================================================================
