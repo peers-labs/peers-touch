@@ -241,6 +241,10 @@
   "chat.social.messageArea.placeholder": "输入消息...",
   "chat.social.messageArea.comingSoon": "即将推出",
   "chat.social.messageArea.uploadFailed": "文件上传失败",
+  "chat.social.messageArea.attachmentVisibleChat": "对聊天成员可见",
+  "chat.social.messageArea.attachmentVisiblePrivate": "私密 — 仅自己可见",
+  "chat.social.messageArea.attachmentScopeChat": "聊天",
+  "chat.social.messageArea.attachmentScopePrivate": "私密",
 
   "chat.social.sessionList.searchPlaceholder": "搜索...",
   "chat.social.sessionList.friends": "好友",
