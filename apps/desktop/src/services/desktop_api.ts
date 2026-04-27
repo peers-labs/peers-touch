@@ -3058,6 +3058,40 @@ export const api = {
     }),
 
   /**
+   * Publish a typing-state pulse onto the recipient's realtime SSE
+   * stream via Station's `POST /realtime/typing` ingress.
+   *
+   * Typing is purely advisory metadata — there is no payload, no
+   * encryption, no persistence. Senders should debounce locally
+   * (fire `typing=true` at most every ~3s while the user is typing,
+   * and fire `typing=false` after ~4s of inactivity / on send / on
+   * blur). Station fan-outs the pulse to the recipient only — no
+   * multi-device sender echo, since typing is about the actor's own
+   * activity that their other devices already know about.
+   */
+  realtimeTypingSend: (
+    recipientActorId: string,
+    sessionUlid: string,
+    typing: boolean,
+  ) =>
+    invokeRustDataFromStatus<
+      {
+        input: {
+          recipient_actor_id: string;
+          session_ulid: string;
+          typing: boolean;
+        };
+      },
+      Record<string, unknown>
+    >('realtime_typing_send', {
+      input: {
+        recipient_actor_id: recipientActorId,
+        session_ulid: sessionUlid,
+        typing,
+      },
+    }),
+
+  /**
    * Seal a WebRTC signaling plaintext (canonical JSON for SDP /
    * candidate / hangup) into the standalone signaling envelope
    * defined in `docs/architecture/realtime/event-stream.md` §2.7.2.

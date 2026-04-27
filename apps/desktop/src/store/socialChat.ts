@@ -107,6 +107,38 @@ interface SocialChatState {
   peerOnline: Record<string, boolean>;
   setPeerOnline: (did: string, online: boolean) => void;
 
+  /**
+   * Per-session typing-state map.
+   *
+   *   typingPeers[sessionUlid][peerActorId] = { typing, lastUpdate }
+   *
+   * `typing` mirrors the wire bit (true = peer is composing). The
+   * UI bubble must NOT trust `typing=true` indefinitely though —
+   * the sender's debouncer can die mid-pulse (network blip, app
+   * background, crash) and leave a phantom "is typing…" hanging on
+   * forever. We therefore stamp `lastUpdate` (ms epoch) each time we
+   * apply a frame and rely on a periodic GC sweep
+   * (`sweepTypingPeers`) that downgrades any `typing=true` whose
+   * `lastUpdate` is older than `TYPING_TTL_MS` (~6s — slightly
+   * longer than the sender's 3-4s debounce window so a brief packet
+   * loss doesn't blip the bubble away).
+   */
+  typingPeers: Record<string, Record<string, { typing: boolean; lastUpdate: number }>>;
+  /**
+   * Apply an inbound TypingState frame (from the realtime SSE
+   * stream). Idempotent — repeated `typing=true` pulses just bump
+   * `lastUpdate`, which is what the GC sweep needs to keep the
+   * bubble alive across the full keystroke burst.
+   */
+  applyTypingState: (sessionUlid: string, fromActorId: string, typing: boolean) => void;
+  /**
+   * Drop any `typing=true` entries whose last update is older than
+   * `staleBefore` ms. Called from the SocialChatPage on a 1-2s
+   * interval so phantom "is typing…" bubbles auto-clear when the
+   * sender goes silent without explicitly emitting `typing=false`.
+   */
+  sweepTypingPeers: (staleBefore: number) => void;
+
   loadSessions: () => Promise<void>;
   loadGroups: () => Promise<void>;
   setActiveTab: (tab: 'friend' | 'group') => void;
@@ -253,6 +285,7 @@ const initialSocialState: Pick<
   | 'sessionEncrypted'
   | 'friendP2pStatus'
   | 'peerOnline'
+  | 'typingPeers'
 > = {
   sessions: [],
   groups: [],
@@ -280,6 +313,7 @@ const initialSocialState: Pick<
   sessionEncrypted: {},
   friendP2pStatus: {},
   peerOnline: {},
+  typingPeers: {},
 };
 
 export const useSocialChatStore = create<SocialChatState>((set, get) => ({
@@ -839,6 +873,74 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       });
       if (!mutated) return state;
       return { messages: { ...state.messages, [sessionUlid]: next } };
+    });
+  },
+
+  applyTypingState: (sessionUlid, fromActorId, typing) => {
+    if (!sessionUlid || !fromActorId) return;
+    set((state) => {
+      const sessionMap = state.typingPeers[sessionUlid] ?? {};
+      const prev = sessionMap[fromActorId];
+      // Skip the set when nothing observable changes — a `typing=false`
+      // for an actor we already had cleared is common when the sender
+      // sends in quick succession (typing=true → send → typing=false),
+      // and avoiding the no-op write keeps the UI subscriber from
+      // re-rendering the message list on every keystroke.
+      if (!typing && !prev) return state;
+      const nextEntry = { typing, lastUpdate: Date.now() };
+      if (prev && prev.typing === typing) {
+        // Same state — only bump `lastUpdate` so the GC sweep keeps
+        // the bubble alive while the sender is still composing.
+        return {
+          typingPeers: {
+            ...state.typingPeers,
+            [sessionUlid]: { ...sessionMap, [fromActorId]: nextEntry },
+          },
+        };
+      }
+      return {
+        typingPeers: {
+          ...state.typingPeers,
+          [sessionUlid]: { ...sessionMap, [fromActorId]: nextEntry },
+        },
+      };
+    });
+  },
+
+  sweepTypingPeers: (staleBefore) => {
+    set((state) => {
+      let mutated = false;
+      const nextSessions: typeof state.typingPeers = {};
+      for (const [sessionUlid, byActor] of Object.entries(state.typingPeers)) {
+        let sessionMutated = false;
+        const nextActors: Record<string, { typing: boolean; lastUpdate: number }> = {};
+        for (const [actorId, entry] of Object.entries(byActor)) {
+          if (entry.typing && entry.lastUpdate < staleBefore) {
+            // Phantom typing — sender went silent without sending the
+            // `typing=false` pulse. Clear the entry entirely (rather
+            // than rewriting `typing=false`) so the map stays small
+            // even after long-lived chats.
+            sessionMutated = true;
+            continue;
+          }
+          if (!entry.typing) {
+            // We don't need to remember a `typing=false` past its
+            // arrival — the absence of an entry is also "not typing".
+            // Drop it to keep the map small.
+            sessionMutated = true;
+            continue;
+          }
+          nextActors[actorId] = entry;
+        }
+        if (sessionMutated) mutated = true;
+        if (Object.keys(nextActors).length > 0) {
+          nextSessions[sessionUlid] = nextActors;
+        } else if (Object.keys(byActor).length > 0) {
+          mutated = true;
+        }
+      }
+      if (!mutated) return state;
+      return { typingPeers: nextSessions };
     });
   },
 
