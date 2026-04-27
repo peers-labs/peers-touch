@@ -3,10 +3,11 @@ use std::sync::Arc;
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use rand::rngs::OsRng;
 use serde_json::json;
-use tauri::State;
+use tauri::{State, Window};
 use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::application::chat_storage;
+use crate::application::session_resolver;
 use crate::contracts::{ChatSearchLocalInput, StubPayload};
 use crate::domain::crypto::{
     self, CryptoSession, EncryptedMessage, GroupEncryptedMessage, GroupKeyState, X3DHBundle,
@@ -17,16 +18,12 @@ use crate::infrastructure::local_chat_store;
 use crate::infrastructure::storage::resolve_user_scope;
 use crate::state::AppState;
 
-fn actor_id_from_state(state: &State<'_, Arc<AppState>>) -> Option<String> {
-    state
-        .session
-        .lock()
-        .ok()
-        .and_then(|guard| guard.actor_id.clone())
+fn actor_id_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Option<String> {
+    session_resolver::actor_id_for_window(state.inner(), window)
 }
 
-fn user_scope_from_state(state: &State<'_, Arc<AppState>>) -> String {
-    let actor_id = actor_id_from_state(state);
+fn user_scope_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> String {
+    let actor_id = actor_id_from_state(state, window);
     resolve_user_scope(actor_id.as_deref())
 }
 
@@ -46,11 +43,11 @@ fn to_stub(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
 
 /// Unified local FTS search (friend / group / both) with optional conversation filter.
 #[tauri::command]
-pub fn chat_search_local(input: ChatSearchLocalInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
+pub fn chat_search_local(input: ChatSearchLocalInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
     if input.query.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "Search query is required", None);
     }
-    let user_scope = user_scope_from_state(&state);
+    let user_scope = user_scope_from_state(&state, &window);
     let limit = input.limit.unwrap_or(30).clamp(1, 200) as usize;
     let scope_filter = input.scope.trim();
     let conv = input
@@ -79,8 +76,8 @@ pub fn chat_search_local(input: ChatSearchLocalInput, state: State<'_, Arc<AppSt
 }
 
 #[tauri::command]
-pub fn crypto_generate_identity(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let actor_id = match actor_id_from_state(&state) {
+pub fn crypto_generate_identity(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let actor_id = match actor_id_from_state(&state, &window) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
             return AppResult::fail(
@@ -112,8 +109,8 @@ pub fn crypto_generate_identity(state: State<'_, Arc<AppState>>) -> AppResult<St
 }
 
 #[tauri::command]
-pub fn crypto_get_fingerprint(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let actor_id = match actor_id_from_state(&state) {
+pub fn crypto_get_fingerprint(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let actor_id = match actor_id_from_state(&state, &window) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
             return AppResult::fail(
@@ -141,8 +138,8 @@ pub fn crypto_get_fingerprint(state: State<'_, Arc<AppState>>) -> AppResult<Stub
 }
 
 #[tauri::command]
-pub fn crypto_get_key_bundle(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let actor_id = match actor_id_from_state(&state) {
+pub fn crypto_get_key_bundle(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let actor_id = match actor_id_from_state(&state, &window) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
             return AppResult::fail(
@@ -152,7 +149,7 @@ pub fn crypto_get_key_bundle(state: State<'_, Arc<AppState>>) -> AppResult<StubP
             );
         }
     };
-    let user_scope = user_scope_from_state(&state);
+    let user_scope = user_scope_from_state(&state, &window);
     let ik = match crypto::get_or_create_identity(actor_id.as_str()) {
         Ok(k) => k,
         Err(reason) => {
@@ -244,11 +241,12 @@ pub fn crypto_group_encrypt(
     group_id: String,
     plaintext: String,
     state: State<'_, Arc<AppState>>,
+    window: Window,
 ) -> AppResult<StubPayload> {
     if group_id.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "Group ID is required", None);
     }
-    let user_scope = user_scope_from_state(&state);
+    let user_scope = user_scope_from_state(&state, &window);
     let mut gk = match group_key_state_or_create(user_scope.as_str(), group_id.as_str()) {
         Ok(s) => s,
         Err(reason) => {
@@ -295,11 +293,12 @@ pub fn crypto_group_decrypt(
     epoch: u32,
     counter: u32,
     state: State<'_, Arc<AppState>>,
+    window: Window,
 ) -> AppResult<StubPayload> {
     if group_id.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "Group ID is required", None);
     }
-    let user_scope = user_scope_from_state(&state);
+    let user_scope = user_scope_from_state(&state, &window);
     let row = match local_chat_store::load_group_key(user_scope.as_str(), group_id.as_str()) {
         Ok(r) => r,
         Err(reason) => {
@@ -363,11 +362,11 @@ pub fn crypto_group_decrypt(
 }
 
 #[tauri::command]
-pub fn crypto_group_rotate_key(group_id: String, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
+pub fn crypto_group_rotate_key(group_id: String, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
     if group_id.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "Group ID is required", None);
     }
-    let user_scope = user_scope_from_state(&state);
+    let user_scope = user_scope_from_state(&state, &window);
     let mut gk = match local_chat_store::load_group_key(user_scope.as_str(), group_id.as_str()) {
         Ok(Some((k, epoch, counter))) if k.len() == 32 => {
             let mut key = [0u8; 32];
@@ -439,6 +438,7 @@ pub fn crypto_init_session(
     peer_spk_sig: String,
     peer_opk_pub: Option<String>,
     state: State<'_, Arc<AppState>>,
+    window: Window,
 ) -> AppResult<StubPayload> {
     if session_id.trim().is_empty() || peer_did.trim().is_empty() {
         return AppResult::fail(
@@ -447,7 +447,7 @@ pub fn crypto_init_session(
             None,
         );
     }
-    let actor_id = match actor_id_from_state(&state) {
+    let actor_id = match actor_id_from_state(&state, &window) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
             return AppResult::fail(
@@ -457,7 +457,7 @@ pub fn crypto_init_session(
             );
         }
     };
-    let user_scope = user_scope_from_state(&state);
+    let user_scope = user_scope_from_state(&state, &window);
     let ik = match crypto::get_or_create_identity(actor_id.as_str()) {
         Ok(k) => k,
         Err(reason) => {
@@ -562,11 +562,12 @@ pub fn crypto_encrypt_message(
     peer_did: String,
     plaintext: String,
     state: State<'_, Arc<AppState>>,
+    window: Window,
 ) -> AppResult<StubPayload> {
     if session_id.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "Session ID is required", None);
     }
-    let user_scope = user_scope_from_state(&state);
+    let user_scope = user_scope_from_state(&state, &window);
     let st = match local_chat_store::load_crypto_session(user_scope.as_str(), session_id.as_str()) {
         Ok(s) => s,
         Err(reason) => {
@@ -621,12 +622,13 @@ pub fn crypto_decrypt_message(
     counter: u32,
     ephemeral_key: Option<String>,
     state: State<'_, Arc<AppState>>,
+    window: Window,
 ) -> AppResult<StubPayload> {
     let _ = ephemeral_key;
     if session_id.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "Session ID is required", None);
     }
-    let user_scope = user_scope_from_state(&state);
+    let user_scope = user_scope_from_state(&state, &window);
     let st = match local_chat_store::load_crypto_session(user_scope.as_str(), session_id.as_str()) {
         Ok(s) => s,
         Err(reason) => {

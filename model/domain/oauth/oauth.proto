@@ -3,6 +3,7 @@ syntax = "proto3";
 package peers_touch.model.oauth.v1;
 
 import "google/protobuf/timestamp.proto";
+import "domain/actor/actor.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
 
@@ -60,4 +61,5 @@ message OAuthBridgeResponse {
   string username     = 8;
   string display_name = 9;
   string email        = 10;
+  peers_touch.model.actor.v1.ActorRef actor_ref = 11 [json_name = "actor_ref"];
 }

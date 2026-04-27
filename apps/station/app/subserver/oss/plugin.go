@@ -19,11 +19,15 @@ var ossOptions struct {
 			Server struct {
 				Subserver struct {
 					Oss struct {
-						Enabled    bool   `pconf:"enabled"`
-						Path       string `pconf:"path"`
-						DBName     string `pconf:"rds-name"`
-						StorePath  string `pconf:"store-path"`
-						SignSecret string `pconf:"sign-secret"`
+						Enabled            bool   `pconf:"enabled"`
+						Path               string `pconf:"path"`
+						DBName             string `pconf:"rds-name"`
+						StorePath          string `pconf:"store-path"`
+						SignSecret         string `pconf:"sign-secret"`
+						HostOverride       string `pconf:"host-override"`
+						MaxFileSize        int64  `pconf:"max-file-size"`
+						MaxFilesPerMessage int32  `pconf:"max-files-per-message"`
+						Backend            string `pconf:"backend"`
 					} `pconf:"oss"`
 				} `pconf:"subserver"`
 			} `pconf:"server"`
@@ -42,6 +46,10 @@ func (p *ossPlugin) Options() []option.Option {
 		WithDBName(ossOptions.Peers.Node.Server.Subserver.Oss.DBName),
 		WithStorePath(ossOptions.Peers.Node.Server.Subserver.Oss.StorePath),
 		WithSignSecret(ossOptions.Peers.Node.Server.Subserver.Oss.SignSecret),
+		WithHostOverride(ossOptions.Peers.Node.Server.Subserver.Oss.HostOverride),
+		WithMaxFileSize(ossOptions.Peers.Node.Server.Subserver.Oss.MaxFileSize),
+		WithMaxFilesPerMessage(ossOptions.Peers.Node.Server.Subserver.Oss.MaxFilesPerMessage),
+		WithBackendType(ossOptions.Peers.Node.Server.Subserver.Oss.Backend),
 		WithAuthProvider(authProvider),
 	}
 }

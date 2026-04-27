@@ -112,7 +112,7 @@ export function ChatContactsPanel() {
                   const isPending = req.status === 1;
                   return (
                     <Flexbox key={req.id} horizontal align="flex-start" gap={10} style={requestCardStyle}>
-                      <UserSquareAvatar url={peerAvatar} name={peerLabel} size={avatarSize} />
+                      <UserSquareAvatar remoteUrl={peerAvatar} name={peerLabel} size={avatarSize} />
                       <Flexbox flex={1} style={{ minWidth: 0 }} gap={6}>
                         <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0 }}>
                           <Text strong ellipsis style={{ fontSize: 13 }}>
@@ -184,7 +184,7 @@ export function ChatContactsPanel() {
                   const peerAvatar = req.receiverAvatar;
                   return (
                     <Flexbox key={req.id} horizontal align="flex-start" gap={10} style={requestCardStyle}>
-                      <UserSquareAvatar url={peerAvatar} name={peerLabel} size={avatarSize} />
+                      <UserSquareAvatar remoteUrl={peerAvatar} name={peerLabel} size={avatarSize} />
                       <Flexbox flex={1} style={{ minWidth: 0 }} gap={6}>
                         <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0 }}>
                           <Text strong ellipsis style={{ fontSize: 13 }}>
@@ -317,7 +317,7 @@ export function ChatContactsPanel() {
                     e.currentTarget.style.background = 'transparent';
                   }}
                 >
-                  <UserSquareAvatar url={peer.avatar} name={label} size={avatarSize} />
+                  <UserSquareAvatar remoteUrl={peer.avatar} name={label} size={avatarSize} />
                   <Flexbox flex={1} style={{ minWidth: 0 }}>
                     <Text strong ellipsis style={{ fontSize: 13 }}>
                       {label}

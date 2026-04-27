@@ -24,6 +24,11 @@ type subServer struct {
 	mu         sync.RWMutex
 	online     map[string]int64
 	pending    map[string][]pendingMessage
+
+	// presenceMu guards `presenceSubs`. Kept separate from `mu` so an SSE
+	// fan-out cannot block the chat send / online toggle paths.
+	presenceMu   sync.RWMutex
+	presenceSubs map[string]chan PresenceEvent // sub-id → buffered channel
 }
 
 type pendingMessage struct {
@@ -32,6 +37,51 @@ type pendingMessage struct {
 	SessionULID      string
 	EncryptedPayload []byte
 	CreatedAt        int64
+}
+
+// PresenceEvent is the JSON payload streamed to clients on /friend-chat/presence/stream.
+//
+// We deliberately use a hand-rolled struct rather than reusing the broader
+// `event.Event` schema: presence is small, very frequent, and consumed by
+// only the friend-chat header. Coupling it to the global event system
+// would force every presence flip to traverse the outbox + broker which
+// is wasteful for an in-memory ephemeral signal.
+type PresenceEvent struct {
+	Did     string `json:"did"`
+	Online  bool   `json:"online"`
+	AtUnix  int64  `json:"at"`
+}
+
+// publishPresence broadcasts a presence flip to every SSE subscriber.
+// Channel sends are non-blocking — if a subscriber's buffer is full, the
+// event is dropped for that subscriber (it can re-fetch /friend-chat/sessions
+// to resync). This keeps a slow/disconnected client from stalling the
+// online/offline path.
+func (s *subServer) publishPresence(did string, online bool) {
+	evt := PresenceEvent{Did: did, Online: online, AtUnix: time.Now().Unix()}
+	s.presenceMu.RLock()
+	for _, ch := range s.presenceSubs {
+		select {
+		case ch <- evt:
+		default:
+		}
+	}
+	s.presenceMu.RUnlock()
+}
+
+func (s *subServer) addPresenceSub(id string, ch chan PresenceEvent) {
+	s.presenceMu.Lock()
+	if s.presenceSubs == nil {
+		s.presenceSubs = make(map[string]chan PresenceEvent)
+	}
+	s.presenceSubs[id] = ch
+	s.presenceMu.Unlock()
+}
+
+func (s *subServer) removePresenceSub(id string) {
+	s.presenceMu.Lock()
+	delete(s.presenceSubs, id)
+	s.presenceMu.Unlock()
 }
 
 func NewFriendChatSubServer(opts ...option.Option) server.Subserver {

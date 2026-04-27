@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::application::session_resolver;
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -7,14 +8,10 @@ use crate::state::AppState;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::State;
+use tauri::{State, Window};
 
-fn token_from_state(state: &State<'_, Arc<AppState>>) -> Result<String, AppResult<StubPayload>> {
-    let guard = state.session.lock().map_err(|_| {
-        tracing::error!("Failed to acquire session lock");
-        AppResult::fail(ErrorCode::InternalError, "Failed to access session state", None)
-    })?;
-    let token = guard.token.clone().unwrap_or_default();
+fn token_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Result<String, AppResult<StubPayload>> {
+    let token = session_resolver::token_for_window(state.inner(), window).unwrap_or_default();
     if token.trim().is_empty() {
         return Err(AppResult::fail(
             ErrorCode::Unauthorized,
@@ -48,8 +45,8 @@ pub struct IceServersResponse {
 }
 
 #[tauri::command]
-pub fn ice_get_servers(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn ice_get_servers(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
     };
@@ -74,8 +71,8 @@ pub struct IcePeerRegisterInput {
 }
 
 #[tauri::command]
-pub fn ice_peer_register(input: IcePeerRegisterInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn ice_peer_register(input: IcePeerRegisterInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
     };
@@ -102,8 +99,8 @@ pub struct IcePeerUnregisterInput {
 }
 
 #[tauri::command]
-pub fn ice_peer_unregister(input: IcePeerUnregisterInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn ice_peer_unregister(input: IcePeerUnregisterInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
     };
@@ -125,8 +122,8 @@ pub struct IceSessionNewInput {
 }
 
 #[tauri::command]
-pub fn ice_session_new(input: IceSessionNewInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn ice_session_new(input: IceSessionNewInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
     };
@@ -147,8 +144,8 @@ pub struct IceSessionIdInput {
 }
 
 #[tauri::command]
-pub fn ice_session_get(input: IceSessionIdInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn ice_session_get(input: IceSessionIdInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
     };
@@ -170,8 +167,8 @@ pub struct IceSdpInput {
 }
 
 #[tauri::command]
-pub fn ice_session_offer_post(input: IceSdpInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn ice_session_offer_post(input: IceSdpInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
     };
@@ -187,8 +184,8 @@ pub fn ice_session_offer_post(input: IceSdpInput, state: State<'_, Arc<AppState>
 }
 
 #[tauri::command]
-pub fn ice_session_offer_get(input: IceSessionIdInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn ice_session_offer_get(input: IceSessionIdInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
     };
@@ -204,8 +201,8 @@ pub fn ice_session_offer_get(input: IceSessionIdInput, state: State<'_, Arc<AppS
 }
 
 #[tauri::command]
-pub fn ice_session_answer_post(input: IceSdpInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn ice_session_answer_post(input: IceSdpInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
     };
@@ -221,8 +218,8 @@ pub fn ice_session_answer_post(input: IceSdpInput, state: State<'_, Arc<AppState
 }
 
 #[tauri::command]
-pub fn ice_session_answer_get(input: IceSessionIdInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn ice_session_answer_get(input: IceSessionIdInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
     };
@@ -247,8 +244,8 @@ pub struct IceCandidateInput {
 }
 
 #[tauri::command]
-pub fn ice_session_candidate_post(input: IceCandidateInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn ice_session_candidate_post(input: IceCandidateInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
     };
@@ -270,8 +267,8 @@ pub fn ice_session_candidate_post(input: IceCandidateInput, state: State<'_, Arc
 }
 
 #[tauri::command]
-pub fn ice_session_candidates_get(input: IceSessionIdInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state) {
+pub fn ice_session_candidates_get(input: IceSessionIdInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
     };

@@ -3,11 +3,17 @@ package turn
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
 	"fmt"
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
@@ -51,12 +57,33 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.udpConn = udpConn
 	s.tcpLis = tcpLis
 
-	// Create TURN server
+	// Create TURN server.
+	//
+	// Auth uses RFC-5766 short-term credentials (a.k.a. TURN-REST):
+	//   username   = "<expiry-unix>:<name>"
+	//   credential = base64(HMAC-SHA1(authSecret, username))
+	//
+	// `ICEHandler.GenerateCredentials` (handed out via /api/v1/turn/ice-servers)
+	// emits exactly that pair. The previous implementation called
+	// `GenerateAuthKey(username, realm, username)`, which forced the
+	// password to equal the username — that never matches what the client
+	// presents, so every TURN allocation was rejected and WebRTC silently
+	// "Fallback"-ed with no media path at all.
+	authSecret := s.opts.AuthSecret
 	s.server, err = turn.NewServer(turn.ServerConfig{
 		Realm:         s.opts.Realm,
 		LoggerFactory: NewLoggerFactory(),
 		AuthHandler: func(username, realm string, srcAddr net.Addr) ([]byte, bool) {
-			return turn.GenerateAuthKey(username, realm, username), true
+			if authSecret == "" {
+				return nil, false
+			}
+			if !isShortTermCredentialFresh(username) {
+				return nil, false
+			}
+			mac := hmac.New(sha1.New, []byte(authSecret))
+			mac.Write([]byte(username))
+			password := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+			return turn.GenerateAuthKey(username, realm, password), true
 		},
 		ListenerConfigs: []turn.ListenerConfig{{
 			Listener: tcpLis,
@@ -141,4 +168,19 @@ func NewTurnSubServer(opts ...option.Option) server.Subserver {
 	}
 
 	return turnS
+}
+
+// isShortTermCredentialFresh accepts only credentials whose embedded expiry is
+// still in the future. Username format is "<unix-expiry>:<name>"; anything
+// else (no colon, non-numeric prefix, or already-expired) is rejected.
+func isShortTermCredentialFresh(username string) bool {
+	idx := strings.IndexByte(username, ':')
+	if idx <= 0 {
+		return false
+	}
+	expiry, err := strconv.ParseInt(username[:idx], 10, 64)
+	if err != nil {
+		return false
+	}
+	return time.Now().Unix() < expiry
 }

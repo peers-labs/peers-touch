@@ -11,6 +11,7 @@ import {
 import { useSocialChatStore } from '../../store/socialChat';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { SearchMessagesModal } from './SearchMessagesModal';
+import { AttachmentItem } from './AttachmentItem';
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import { toast } from '@lobehub/ui';
@@ -137,13 +138,13 @@ export function ChatMessageArea() {
   const setScrollToMessageUlid = useSocialChatStore((s) => s.setScrollToMessageUlid);
   const encryptionEnabled = useSocialChatStore((s) => s.encryptionEnabled);
   const friendP2pStatus = useSocialChatStore((s) => s.friendP2pStatus);
+  const peerOnline = useSocialChatStore((s) => s.peerOnline);
   const [inputValue, setInputValue] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [sending, setSending] = useState(false);
   const [replyToUlid, setReplyToUlid] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const prependRestoreRef = useRef<{ previousHeight: number } | null>(null);
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
@@ -186,19 +187,108 @@ export function ChatMessageArea() {
     return g ? t('chat.social.detail.membersCount', { count: g.memberCount }) : '';
   })();
 
+  // Resolve the active peer DID for friend conversations. Used by the
+  // header presence dot to decide whether the friend is reachable on
+  // station, separate from whether our P2P channel happens to be up.
+  const activePeerDid = (() => {
+    if (activeTab !== 'friend' || !activeUlid) return null;
+    const s = sessions.find((sess) => sess.ulid === activeUlid);
+    if (!s) return null;
+    if (currentUserDid) {
+      if (s.participantADid === currentUserDid) return s.participantBDid;
+      if (s.participantBDid === currentUserDid) return s.participantADid;
+    }
+    return s.participantBDid || s.participantADid || null;
+  })();
+
+  // Render the WebRTC transport badge.
+  //
+  // Real-time delivery is *only* via WebRTC DataChannel — there is no
+  // SSE / business-layer relay for chat messages. This badge reflects
+  // the *transport* used for live message delivery, NOT whether the
+  // peer is online. The two are independent: a peer can be online on
+  // station yet still be mid-ICE (DataChannel not open), and a peer
+  // can be offline yet leave a stale "connected" badge for a few
+  // seconds until WebRTC notices the disconnect.
+  //
+  // Labels:
+  //   - "Direct"     : ICE settled on host/srflx/prflx (P2P)
+  //   - "Relay"      : ICE settled on a TURN allocation (still real-time,
+  //                    just routed through station's TURN server)
+  //   - "Connecting" : DataChannel not open yet, transport unknown
+  //   - "P2P down"   : connection failed/closed; messages still flow via
+  //                    station's pending queue + 60 s safety-net poll
+  //
+  // The previous "Offline" label was the source of confusion that
+  // prompted this refactor — users read "Offline" as "the peer is
+  // offline", which is a different (and now separately rendered)
+  // concept. "P2P down" makes the scope explicit.
   const p2pBadge = (() => {
     if (activeTab !== 'friend' || !activeUlid) return null;
     const s = friendP2pStatus[activeUlid];
     if (!s) return null;
-    const label = s.state === 'connected' ? 'Direct' : s.state === 'connecting' ? 'Connecting' : s.state === 'failed' ? 'Fallback' : '';
-    if (!label) return null;
-    const color = s.state === 'connected' ? token.colorSuccess : s.state === 'connecting' ? token.colorWarning : token.colorTextQuaternary;
+    let label = '';
+    let color = token.colorTextQuaternary;
+    if (s.state === 'connected') {
+      if (s.transport === 'relay') {
+        label = 'Relay';
+        color = token.colorWarning;
+      } else if (s.transport === 'direct') {
+        label = 'Direct';
+        color = token.colorSuccess;
+      } else {
+        label = 'Connecting';
+        color = token.colorWarning;
+      }
+    } else if (s.state === 'connecting') {
+      label = 'Connecting';
+      color = token.colorWarning;
+    } else if (s.state === 'failed' || s.state === 'closed') {
+      label = 'P2P down';
+      color = token.colorTextQuaternary;
+    } else {
+      return null;
+    }
     const tip = s.detail ? `${label}: ${s.detail}` : label;
     return (
       <Tooltip title={tip}>
         <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 6, background: token.colorFillTertiary, color }}>
           {label}
         </span>
+      </Tooltip>
+    );
+  })();
+
+  // Peer-presence indicator. Truth source: Station's
+  // `/friend-chat/presence/stream` SSE, mirrored into `peerOnline` by
+  // `services/peerPresence.ts`. The seed comes from the
+  // `participant_*_online` snapshot embedded in the sessions list.
+  //
+  // Unknown (peer DID never seen by the SSE or the snapshot) renders
+  // *no* indicator rather than a grey dot — a grey dot would be hard
+  // to distinguish from "offline" at a glance, and "we don't know yet"
+  // is a real third state.
+  const peerOnlineIndicator = (() => {
+    if (activeTab !== 'friend' || !activePeerDid) return null;
+    const known = activePeerDid in peerOnline;
+    if (!known) return null;
+    const online = peerOnline[activePeerDid];
+    const tip = online
+      ? t('chat.social.presence.online', 'Online')
+      : t('chat.social.presence.offline', 'Offline');
+    return (
+      <Tooltip title={tip}>
+        <span
+          aria-label={tip}
+          style={{
+            display: 'inline-block',
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            background: online ? token.colorSuccess : token.colorTextQuaternary,
+            flexShrink: 0,
+          }}
+        />
       </Tooltip>
     );
   })();
@@ -280,19 +370,35 @@ export function ChatMessageArea() {
     }
   };
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !activeUlid) return;
+  // Pick a file via the native dialog → upload through Tauri (which
+  // handles JWT auth and returns a federated `oss://{host}/{key}`
+  // cid) → send as a message attachment. Friend and group flows
+  // share the same upload path; the cid resolution happens lazily on
+  // render via `useAttachmentUrl`.
+  const handleAttachClick = async () => {
+    if (!activeUlid) return;
+    let filePath: string;
+    try {
+      filePath = await api.pickChatAttachment();
+    } catch {
+      return;
+    }
+    if (!filePath) return;
+
     setSending(true);
     try {
-      const result = await api.uploadFile(file);
-      const isImage = file.type.startsWith('image/');
+      const uploaded = await api.chatUploadAttachment(filePath);
+      if (!uploaded) {
+        toast.error(t('chat.social.messageArea.uploadFailed'));
+        return;
+      }
+      const isImage = uploaded.mime_type?.startsWith('image/');
       const msgType = isImage ? 2 : 3;
       const attachment = {
-        cid: result.id,
-        filename: result.filename,
-        mime_type: result.mime_type,
-        size: result.size,
+        cid: uploaded.cid,
+        filename: uploaded.filename,
+        mime_type: uploaded.mime_type,
+        size: uploaded.size,
         thumbnail_cid: '',
       };
       if (activeTab === 'friend') {
@@ -302,9 +408,9 @@ export function ChatMessageArea() {
             ? session.participantBDid
             : session.participantADid
           : '';
-        await sendFriendMessage(activeUlid, receiverDid, file.name, msgType, undefined, [attachment]);
+        await sendFriendMessage(activeUlid, receiverDid, uploaded.filename, msgType, undefined, [attachment]);
       } else {
-        await sendGroupMessage(activeUlid, file.name, msgType, undefined, [attachment]);
+        await sendGroupMessage(activeUlid, uploaded.filename, msgType, undefined, [attachment]);
       }
     } catch (err) {
       log.error('chat', 'file upload failed', err);
@@ -312,7 +418,6 @@ export function ChatMessageArea() {
     } finally {
       setSending(false);
     }
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const replyingMsg = replyToUlid ? currentMessages.find((m) => m.ulid === replyToUlid) : null;
@@ -354,10 +459,13 @@ export function ChatMessageArea() {
         }}
       >
         <Flexbox horizontal align="center" gap={10}>
-          <UserSquareAvatar url={currentAvatar} name={currentName} size={36} />
+          <UserSquareAvatar remoteUrl={currentAvatar} name={currentName} size={36} />
           <Flexbox horizontal align="center" gap={6}>
             <Flexbox>
-              <Text strong style={{ fontSize: 14 }}>{currentName}</Text>
+              <Flexbox horizontal align="center" gap={6}>
+                <Text strong style={{ fontSize: 14 }}>{currentName}</Text>
+                {peerOnlineIndicator}
+              </Flexbox>
               <Text type="secondary" style={{ fontSize: 12 }}>{subtitle}</Text>
             </Flexbox>
             {p2pBadge}
@@ -492,46 +600,9 @@ export function ChatMessageArea() {
                     )}
                     {msg.attachments && msg.attachments.length > 0 && (
                       <Flexbox gap={4} style={{ marginTop: msg.content ? 4 : 0 }}>
-                        {msg.attachments.map((att, idx) => {
-                          if (att.mimeType?.startsWith('image/')) {
-                            return (
-                              <img
-                                key={idx}
-                                src={`/api/files/${att.cid}`}
-                                alt={att.filename}
-                                style={{ maxWidth: 200, maxHeight: 200, borderRadius: 6, cursor: 'pointer' }}
-                                onError={(ev) => {
-                                  (ev.target as HTMLImageElement).style.display = 'none';
-                                }}
-                              />
-                            );
-                          }
-                          return (
-                            <Flexbox
-                              key={idx}
-                              horizontal
-                              align="center"
-                              gap={8}
-                              style={{
-                                padding: '6px 10px',
-                                borderRadius: 6,
-                                background: isOwn ? 'rgba(255,255,255,0.15)' : token.colorFillTertiary,
-                                cursor: 'pointer',
-                              }}
-                              onClick={() => window.open(`/api/files/${att.cid}`, '_blank')}
-                            >
-                              <Paperclip size={14} />
-                              <Flexbox style={{ minWidth: 0 }}>
-                                <Text ellipsis style={{ fontSize: 12, color: isOwn ? '#fff' : token.colorText }}>
-                                  {att.filename}
-                                </Text>
-                                <Text style={{ fontSize: 10, color: isOwn ? 'rgba(255,255,255,0.6)' : token.colorTextQuaternary }}>
-                                  {(Number(att.size) / 1024).toFixed(1)} KB
-                                </Text>
-                              </Flexbox>
-                            </Flexbox>
-                          );
-                        })}
+                        {msg.attachments.map((att, idx) => (
+                          <AttachmentItem key={idx} attachment={att} isOwn={isOwn} />
+                        ))}
                       </Flexbox>
                     )}
                   </Flexbox>
@@ -603,19 +674,14 @@ export function ChatMessageArea() {
         )}
 
         <Flexbox horizontal align="flex-end" gap={8}>
-          {/* Visually hidden file input — avoid display:none which prevents
-             file dialog from opening in Tauri WKWebView */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            style={{ position: 'absolute', width: 0, height: 0, opacity: 0, overflow: 'hidden', pointerEvents: 'none' }}
-            onChange={handleFileSelect}
-          />
+          {/* Native file picker via Tauri — bypasses the WKWebView
+             input quirks and lets us upload through station_client
+             which already handles JWT auth. */}
           <Button
             type="text"
             icon={<Paperclip size={18} />}
             style={{ width: 36, height: 36, flexShrink: 0 }}
-            onClick={() => fileInputRef.current?.click()}
+            onClick={handleAttachClick}
             disabled={sending}
           />
           <EmojiPicker
