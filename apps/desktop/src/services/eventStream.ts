@@ -190,18 +190,51 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
       });
       return;
     }
+    case 'signaling': {
+      const s = kind.value;
+      // Map the protobuf enum back to the wire string form used at
+      // the ingress endpoint. Defensive: skip frames with unknown
+      // kinds rather than guess. This mirrors the inverse table in
+      // station/app/subserver/events/handler.go::signalKindMap.
+      const kindStr = signalKindFromEnum(s.kind);
+      if (!kindStr) {
+        log.warn('eventStream', 'unknown CallSignal kind, dropping', { kind: s.kind });
+        return;
+      }
+      eventBus.publish(EVENT.REALTIME_CALL_SIGNAL, {
+        eventId,
+        sessionUlid: s.sessionUlid,
+        fromActorId: s.fromActorId,
+        kind: kindStr,
+        payload: s.payload,
+      });
+      return;
+    }
     case 'receipt':
     case 'typing':
-    case 'signaling':
-      // Phase 5 only ships message + presence + resync to the UI.
-      // Receipts (read indicators), typing, and call signaling all
-      // ride on this same stream and will be wired in a follow-up
-      // when the consumer surfaces exist (read-receipt UI, voice/
-      // video signaling). Decoding here is a no-op so adding the
-      // consumer later is purely additive.
+      // Phase 5 ships message / presence / resync / signaling.
+      // Read receipts and typing indicators ride on the same
+      // stream and will be wired when the consumer surfaces
+      // exist. Decoding here is a no-op so adding the consumer
+      // later is purely additive.
       return;
     default:
       return;
+  }
+}
+
+// Inverse of station's signalKindMap. Keep these tables aligned —
+// adding a new CallSignal_Kind on the proto side requires growing
+// both maps in lockstep.
+function signalKindFromEnum(value: number): 'OFFER' | 'ANSWER' | 'CANDIDATE' | 'HANGUP' | null {
+  // The enum values come from the generated CallSignal_Kind proto:
+  //   OFFER=1, ANSWER=2, CANDIDATE=3, HANGUP=4 (KIND_UNSPECIFIED=0).
+  switch (value) {
+    case 1: return 'OFFER';
+    case 2: return 'ANSWER';
+    case 3: return 'CANDIDATE';
+    case 4: return 'HANGUP';
+    default: return null;
   }
 }
 

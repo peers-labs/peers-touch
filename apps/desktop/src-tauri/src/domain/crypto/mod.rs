@@ -1,4 +1,13 @@
 //! E2E crypto: Ed25519 identity, X25519 X3DH, AES-256-GCM, and symmetric ratchet chains.
+//!
+//! The signaling-only authenticated sealed-box envelope used by the
+//! realtime plane lives in the sibling `signaling_envelope` module —
+//! it is deliberately a separate primitive from the chat ratchet so
+//! ICE candidate loss / reorder cannot stall text messages. See
+//! `docs/architecture/realtime/event-stream.md` §2.7.2 for the
+//! contract.
+
+pub mod signaling_envelope;
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -112,6 +121,15 @@ pub struct X3DHResult {
 
 fn dh(secret: &StaticSecret, peer: &PublicKey) -> [u8; 32] {
     secret.diffie_hellman(peer).to_bytes()
+}
+
+/// Public wrapper around the package-private `dh` for the
+/// `signaling_envelope` sibling. Kept narrow on purpose: the
+/// signaling envelope is the only caller outside this module that
+/// needs raw ECDH access, and we don't want to widen `dh`'s
+/// visibility for general use.
+pub fn dh_for_signaling(secret: &StaticSecret, peer: &PublicKey) -> [u8; 32] {
+    dh(secret, peer)
 }
 
 /// Sender X3DH: verifies SPK signature, performs DH1..DH4, derives 32-byte secret.

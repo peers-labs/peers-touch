@@ -3021,6 +3021,87 @@ export const api = {
   realtimeStreamStop: () =>
     invokeRustDataFromStatus<void, { actor_id: string | null }>('realtime_stream_stop'),
 
+  /**
+   * Publish one WebRTC signaling event onto the recipient's realtime
+   * SSE stream via Station's `POST /realtime/signal` ingress
+   * (contract §2.7.1). `payloadB64` is the caller-side ciphertext
+   * envelope produced by the **standalone signaling envelope** (§2.7.2 —
+   * X25519 + HKDF-SHA256 + AES-256-GCM with random nonce + AAD bound to
+   * `session_ulid` and `kind`). It is intentionally NOT the chat
+   * ratchet ciphertext: the chat ratchet requires strict in-order
+   * delivery, which would stall on out-of-order ICE candidates.
+   * Station never decrypts the payload.
+   */
+  realtimeSignalSend: (
+    recipientActorId: string,
+    sessionUlid: string,
+    kind: 'OFFER' | 'ANSWER' | 'CANDIDATE' | 'HANGUP',
+    payloadB64: string,
+  ) =>
+    invokeRustDataFromStatus<
+      {
+        input: {
+          recipient_actor_id: string;
+          session_ulid: string;
+          kind: string;
+          payload_b64: string;
+        };
+      },
+      Record<string, unknown>
+    >('realtime_signal_send', {
+      input: {
+        recipient_actor_id: recipientActorId,
+        session_ulid: sessionUlid,
+        kind,
+        payload_b64: payloadB64,
+      },
+    }),
+
+  /**
+   * Seal a WebRTC signaling plaintext (canonical JSON for SDP /
+   * candidate / hangup) into the standalone signaling envelope
+   * defined in `docs/architecture/realtime/event-stream.md` §2.7.2.
+   * Returns base64 of the wire bytes
+   * `eph_pub(32B) || nonce(12B) || ciphertext || tag(16B)`.
+   *
+   * `peerIkPubB64` is the recipient's long-term Ed25519 identity
+   * public key (32 raw bytes, base64). The Rust side internally
+   * converts it to its Curve25519/X25519 image (Edwards → Montgomery)
+   * before performing the two ECDHs (ephemeral×peer and self×peer).
+   */
+  signalingEnvelopeSeal: (
+    peerIkPubB64: string,
+    sessionUlid: string,
+    kind: 'OFFER' | 'ANSWER' | 'CANDIDATE' | 'HANGUP',
+    plaintext: string,
+  ) =>
+    invokeAppResultStub<{ payload_b64: string }>('signaling_envelope_seal', {
+      peerIkPub: peerIkPubB64,
+      sessionUlid,
+      kind,
+      plaintext,
+    }),
+
+  /**
+   * Open an incoming signaling envelope, returning the canonical
+   * plaintext JSON. The AAD is `session_ulid || 0x1F || kind`, so a
+   * mismatch between the wire `kind` and the SSE-delivered metadata
+   * (or the wrong session) MUST surface as an authentication failure
+   * rather than producing wrong cleartext.
+   */
+  signalingEnvelopeOpen: (
+    senderIkPubB64: string,
+    sessionUlid: string,
+    kind: 'OFFER' | 'ANSWER' | 'CANDIDATE' | 'HANGUP',
+    payloadB64: string,
+  ) =>
+    invokeAppResultStub<{ plaintext: string }>('signaling_envelope_open', {
+      senderIkPub: senderIkPubB64,
+      sessionUlid,
+      kind,
+      payloadB64,
+    }),
+
   friendChatGetPending: (limit?: number) =>
     invokeRustProto('friend_chat_get_pending', GetPendingResponseSchema, { limit }),
 

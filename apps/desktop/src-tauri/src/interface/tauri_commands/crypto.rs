@@ -692,3 +692,207 @@ pub fn crypto_decrypt_message(
     };
     to_stub("crypto_decrypt_message", json!({ "plaintext": text }))
 }
+
+// ---------------------------------------------------------------------
+// Signaling envelope: stateless authenticated sealed-box.
+//
+// The realtime plane (docs/architecture/realtime/event-stream.md
+// §2.7) wraps every WebRTC signaling frame in a per-message envelope
+// derived from the local actor's long-term identity X25519 key plus
+// a fresh ephemeral X25519 keypair. This is intentionally a separate
+// primitive from the chat ratchet — see §2.7.2.1 for why coupling
+// signaling and chat in one ratchet would have made loss of a single
+// ICE candidate stall every following text message.
+//
+// These two commands are the only allowed entry points for sealing /
+// opening signaling payloads at the application boundary; the TS
+// `friendChatP2p` module calls them through the desktop_api wrapper.
+// ---------------------------------------------------------------------
+
+fn local_identity_x25519(
+    state: &State<'_, Arc<AppState>>,
+    window: &Window,
+) -> Result<(StaticSecret, PublicKey), AppResult<StubPayload>> {
+    let actor_id = match actor_id_from_state(state, window) {
+        Some(id) if !id.trim().is_empty() => id,
+        _ => {
+            return Err(AppResult::fail(
+                ErrorCode::Unauthorized,
+                "Authentication required — please log in",
+                None,
+            ));
+        }
+    };
+    let ik = match crypto::load_identity_key(actor_id.as_str()) {
+        Ok(Some(k)) => k,
+        Ok(None) => {
+            return Err(AppResult::fail(
+                ErrorCode::NotFound,
+                "No crypto identity found for the active actor",
+                None,
+            ));
+        }
+        Err(reason) => {
+            return Err(AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Identity load failed: {}", reason),
+                None,
+            ));
+        }
+    };
+    let kp = crypto::ed25519_to_x25519(&ik.signing_key);
+    Ok((kp.private, kp.public))
+}
+
+fn peer_x25519_pub_from_ed25519(label: &str, ed_pub_b64: &str) -> Result<PublicKey, AppResult<StubPayload>> {
+    let raw = match B64.decode(ed_pub_b64.trim()) {
+        Ok(b) => b,
+        Err(e) => {
+            return Err(AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("Invalid base64 for {}: {}", label, e),
+                None,
+            ));
+        }
+    };
+    if raw.len() != 32 {
+        return Err(AppResult::fail(
+            ErrorCode::InvalidArgument,
+            format!("{} must decode to 32 bytes, got {}", label, raw.len()),
+            None,
+        ));
+    }
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(&raw);
+    let verifying = match ed25519_dalek::VerifyingKey::from_bytes(&bytes) {
+        Ok(v) => v,
+        Err(e) => {
+            return Err(AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("{} is not a valid Ed25519 public key: {}", label, e),
+                None,
+            ));
+        }
+    };
+    crypto::ed25519_verifying_to_x25519_public(&verifying).map_err(|reason| {
+        AppResult::fail(
+            ErrorCode::InvalidArgument,
+            format!("{}: Ed25519 → X25519 conversion failed: {}", label, reason),
+            None,
+        )
+    })
+}
+
+#[tauri::command]
+pub fn signaling_envelope_seal(
+    peer_ik_pub: String,
+    session_ulid: String,
+    kind: String,
+    plaintext: String,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    if session_ulid.trim().is_empty() || kind.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "session_ulid and kind are required",
+            None,
+        );
+    }
+    let (self_priv, self_pub) = match local_identity_x25519(&state, &window) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let peer_pub = match peer_x25519_pub_from_ed25519("peer_ik_pub", &peer_ik_pub) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let sealed = match crypto::signaling_envelope::seal(
+        &self_priv,
+        &self_pub,
+        &peer_pub,
+        session_ulid.as_str(),
+        kind.as_str(),
+        plaintext.as_bytes(),
+    ) {
+        Ok(b) => b,
+        Err(reason) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Signaling envelope seal failed: {}", reason),
+                None,
+            );
+        }
+    };
+    to_stub(
+        "signaling_envelope_seal",
+        json!({ "payload_b64": B64.encode(&sealed) }),
+    )
+}
+
+#[tauri::command]
+pub fn signaling_envelope_open(
+    sender_ik_pub: String,
+    session_ulid: String,
+    kind: String,
+    payload_b64: String,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    if session_ulid.trim().is_empty() || kind.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "session_ulid and kind are required",
+            None,
+        );
+    }
+    let (self_priv, _self_pub) = match local_identity_x25519(&state, &window) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let sender_pub = match peer_x25519_pub_from_ed25519("sender_ik_pub", &sender_ik_pub) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let sealed = match B64.decode(payload_b64.trim()) {
+        Ok(b) => b,
+        Err(e) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("Invalid base64 for payload_b64: {}", e),
+                None,
+            );
+        }
+    };
+    let plaintext = match crypto::signaling_envelope::open(
+        &self_priv,
+        &sender_pub,
+        session_ulid.as_str(),
+        kind.as_str(),
+        &sealed,
+    ) {
+        Ok(b) => b,
+        Err(reason) => {
+            // Authentication failure / wrong sender / replay across
+            // contexts all surface here. Don't leak the AAD details
+            // back to the caller — just say it failed.
+            tracing::warn!(reason = %reason, "signaling_envelope_open: AEAD failed");
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Signaling envelope failed to authenticate",
+                None,
+            );
+        }
+    };
+    let text = match String::from_utf8(plaintext) {
+        Ok(s) => s,
+        Err(e) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Decrypted signaling plaintext is not valid UTF-8: {}", e),
+                None,
+            );
+        }
+    };
+    to_stub("signaling_envelope_open", json!({ "plaintext": text }))
+}

@@ -44,6 +44,25 @@ export interface RealtimeConnectionStatePayload {
   reason: string;
 }
 
+export type RealtimeCallSignalKind = 'OFFER' | 'ANSWER' | 'CANDIDATE' | 'HANGUP';
+
+export interface RealtimeCallSignalPayload {
+  /** Server-assigned event id. Opaque cursor; see contract §2.2. */
+  eventId: string;
+  /** Friend-chat session that owns the call. The receiver uses this
+   *  to look up the per-session ratchet for decryption. */
+  sessionUlid: string;
+  /** Originating actor DID (the caller). For multi-device sender
+   *  echo this can equal the local actor. */
+  fromActorId: string;
+  /** Which signaling phase this frame represents. */
+  kind: RealtimeCallSignalKind;
+  /** Opaque ciphertext envelope produced by the chat session ratchet
+   *  (contract §2.7.2). The receiver decrypts via
+   *  `cryptoDecryptMessage` after JSON-parsing the envelope. */
+  payload: Uint8Array;
+}
+
 export interface EventPayloadMap {
   [EVENT.AUTH_IDENTITY_CHANGED]: void;
   [EVENT.AUTH_SESSION_REVOKED]: SessionRevokedPayload;
@@ -58,6 +77,7 @@ export interface EventPayloadMap {
   [EVENT.REALTIME_PRESENCE_FLIP]: RealtimePresenceFlipPayload;
   [EVENT.REALTIME_RESYNC]: RealtimeResyncPayload;
   [EVENT.REALTIME_CONNECTION_STATE]: RealtimeConnectionStatePayload;
+  [EVENT.REALTIME_CALL_SIGNAL]: RealtimeCallSignalPayload;
 }
 
 export interface AppEvent<TType extends keyof EventPayloadMap> {
