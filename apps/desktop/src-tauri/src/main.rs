@@ -360,6 +360,54 @@ fn main() {
             notification::notification_preferences,
             notification::notification_preferences_update
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // Closing the symmetric pair to AppLaunch (fired from the
+            // frontend usePresence hook): when the user quits the app we
+            // owe Station an explicit AppShutdown trigger per bound
+            // actor, so its session is taken Offline immediately rather
+            // than waiting for the client TCP to time out. We block on
+            // the resulting reconcile threads so the network round-trip
+            // has a chance to complete before the process exits — but
+            // bound by a generous wall-clock budget so a wedged station
+            // cannot prevent shutdown.
+            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                let state = app.state::<Arc<state::AppState>>();
+                let supervisor = app.state::<Arc<application::presence::PresenceSupervisor>>();
+                let sessions = state.sessions.snapshot_all();
+                tracing::info!(
+                    bound_sessions = sessions.len(),
+                    "presence: dispatching AppShutdown for bound actors"
+                );
+                let mut handles = Vec::new();
+                for session in sessions {
+                    if session.actor.actor_id.is_empty() || session.jwt.trim().is_empty() {
+                        continue;
+                    }
+                    if let Some(h) = supervisor.notify(
+                        &session.actor.actor_id,
+                        &session.jwt,
+                        domain::presence::PresenceTrigger::AppShutdown,
+                        app.clone(),
+                    ) {
+                        handles.push(h);
+                    }
+                }
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+                let mut pending = handles;
+                while !pending.is_empty() && std::time::Instant::now() < deadline {
+                    pending.retain(|h| !h.is_finished());
+                    if !pending.is_empty() {
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                }
+                if !pending.is_empty() {
+                    tracing::warn!(
+                        remaining = pending.len(),
+                        "presence: AppShutdown deadline reached, abandoning remaining reconciles"
+                    );
+                }
+            }
+        });
 }
