@@ -146,8 +146,10 @@ func (s *ossSubServer) handleUpload(w http.ResponseWriter, r *http.Request) {
 	cid := s.buildCID(r, meta.Key)
 	// `url` remains a *relative* path so legacy callers (avatar / header
 	// upload) keep working unchanged. `cid` is the new federated URI
-	// chat clients should embed in `MessageAttachment.cid`.
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	// chat clients should embed in `MessageAttachment.cid`. `sha256`
+	// is non-empty only when the CAS strategy is active — clients use
+	// it to verify integrity on download.
+	resp := map[string]any{
 		"key":      meta.Key,
 		"cid":      cid,
 		"url":      s.pathBase + "/file?key=" + meta.Key,
@@ -156,7 +158,11 @@ func (s *ossSubServer) handleUpload(w http.ResponseWriter, r *http.Request) {
 		"filename": meta.Name,
 		"backend":  meta.Backend,
 		"host":     s.resolveOrigin(r),
-	})
+	}
+	if meta.Sha256 != "" {
+		resp["sha256"] = meta.Sha256
+	}
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // handleCapabilities advertises this OSS endpoint's runtime parameters so
@@ -177,6 +183,7 @@ func (s *ossSubServer) handleCapabilities(w http.ResponseWriter, r *http.Request
 		"host":                  s.resolveOrigin(r),
 		"path_base":             s.pathBase,
 		"backend":               s.backendType,
+		"key_strategy":          s.keyStrategy,
 		"max_file_size":         s.maxFileSize,
 		"max_files_per_message": s.maxFilesPerMessage,
 		"signed_url":            s.signSecret != "",
