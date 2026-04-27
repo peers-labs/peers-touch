@@ -555,6 +555,11 @@ pub struct AccountSyncAvatarInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AvatarResolveLocalInput {
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountUpsertOAuthInput {
     pub provider: String,
     pub provider_user_id: String,

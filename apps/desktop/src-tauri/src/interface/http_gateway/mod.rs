@@ -120,7 +120,38 @@ fn handle_request(mut request: tiny_http::Request, state: &AppState) {
         return;
     }
 
-    // Only accept POST
+    // GET /avatar?url=<remote-url>: serve a cached avatar image as bytes.
+    //
+    // This route exists because the dev-mode browser window cannot use
+    // Tauri's `convertFileSrc` to render local filesystem paths (the
+    // polyfill in `main.tsx` is a no-op). Without this route, an `<img>`
+    // pointed at `/Users/.../files/avatars/xxx` would fail to load and
+    // every avatar in the browser instance falls back to initials —
+    // making "two friends, one window shows the avatar, one doesn't"
+    // a visible bug under `make dev-dual`.
+    //
+    // We deliberately do NOT require auth on this endpoint. The gateway
+    // already binds to 127.0.0.1 only, so it is local-only by design;
+    // and the avatar cache only ever holds files we already chose to
+    // download from Station.
+    if request.method() == &tiny_http::Method::Get {
+        let url = request.url().to_string();
+        if url.starts_with("/avatar") || url.starts_with("/avatar?") {
+            handle_avatar_get(request, &url);
+            return;
+        }
+        // Unknown GET path → 404, but respond with proper CORS so the
+        // browser can read the body for diagnostics.
+        let body = json!({"ok": false, "error": "not found"}).to_string();
+        let response = tiny_http::Response::from_string(body)
+            .with_status_code(404)
+            .with_header(content_type_json())
+            .with_header(cors_origin());
+        let _ = request.respond(response);
+        return;
+    }
+
+    // Only accept POST for command dispatch
     if request.method() != &tiny_http::Method::Post {
         let body = json!({"ok": false, "error": "method not allowed"}).to_string();
         let response = tiny_http::Response::from_string(body)
@@ -180,6 +211,135 @@ fn handle_request(mut request: tiny_http::Request, state: &AppState) {
 }
 
 // -------------------------------------------------------------------------
+// /avatar route
+// -------------------------------------------------------------------------
+
+fn handle_avatar_get(request: tiny_http::Request, url: &str) {
+    let remote_url = match parse_avatar_query(url) {
+        Some(u) if !u.is_empty() => u,
+        _ => {
+            let body = json!({"ok": false, "error": "missing or empty 'url' query"}).to_string();
+            let response = tiny_http::Response::from_string(body)
+                .with_status_code(400)
+                .with_header(content_type_json())
+                .with_header(cors_origin());
+            let _ = request.respond(response);
+            return;
+        }
+    };
+
+    // Resolve via the same cache the Tauri webview uses. Both paths share
+    // one on-disk cache, so a hit in the native window guarantees a hit
+    // here too — no duplicate downloads.
+    let path = match crate::infrastructure::avatar_cache::ensure_local(&remote_url) {
+        Ok(p) => p,
+        Err(err) => {
+            tracing::debug!(error = %err, url = %remote_url, "avatar gateway: ensure_local failed");
+            // 404 instead of 5xx so the browser's <img onerror> path runs
+            // cleanly and falls back to the initials placeholder.
+            let body = json!({"ok": false, "error": format!("{}", err)}).to_string();
+            let response = tiny_http::Response::from_string(body)
+                .with_status_code(404)
+                .with_header(content_type_json())
+                .with_header(cors_origin());
+            let _ = request.respond(response);
+            return;
+        }
+    };
+
+    let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(err) => {
+            tracing::warn!(error = %err, path = %path.display(), "avatar gateway: read failed");
+            let body = json!({"ok": false, "error": format!("read failed: {}", err)}).to_string();
+            let response = tiny_http::Response::from_string(body)
+                .with_status_code(500)
+                .with_header(content_type_json())
+                .with_header(cors_origin());
+            let _ = request.respond(response);
+            return;
+        }
+    };
+
+    let mime = guess_image_mime(&path).unwrap_or("application/octet-stream");
+    let len = bytes.len();
+    // 5-minute browser cache: avatars rarely change and the URL hash
+    // already invalidates on content change (cache filename is derived
+    // from the remote URL).
+    let cache_header: tiny_http::Header = "Cache-Control: private, max-age=300".parse().unwrap();
+    let mime_header: tiny_http::Header = format!("Content-Type: {}", mime).parse().unwrap();
+    let response = tiny_http::Response::from_data(bytes)
+        .with_header(mime_header)
+        .with_header(cache_header)
+        .with_header(cors_origin());
+    let _ = request.respond(response);
+    tracing::debug!(url = %remote_url, bytes = len, mime, "avatar gateway: served");
+}
+
+fn parse_avatar_query(url: &str) -> Option<String> {
+    let qpos = url.find('?')?;
+    let qs = &url[qpos + 1..];
+    for pair in qs.split('&') {
+        let mut it = pair.splitn(2, '=');
+        let key = it.next().unwrap_or("");
+        let value = it.next().unwrap_or("");
+        if key == "url" {
+            return Some(percent_decode(value));
+        }
+    }
+    None
+}
+
+// Tiny percent-decoder. We only need this for the `url=` query parameter
+// (frontend passes `encodeURIComponent(remoteUrl)`). Avoiding a full
+// `urlencoding` crate dep keeps the gateway lean.
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'+' {
+            out.push(b' ');
+            i += 1;
+        } else if b == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(h), Some(l)) = (hi, lo) {
+                out.push(((h << 4) | l) as u8);
+                i += 3;
+            } else {
+                out.push(b);
+                i += 1;
+            }
+        } else {
+            out.push(b);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn guess_image_mime(path: &std::path::Path) -> Option<&'static str> {
+    let ext = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase());
+    match ext.as_deref() {
+        Some("png") => Some("image/png"),
+        Some("jpg") | Some("jpeg") => Some("image/jpeg"),
+        Some("gif") => Some("image/gif"),
+        Some("webp") => Some("image/webp"),
+        Some("svg") => Some("image/svg+xml"),
+        Some("bmp") => Some("image/bmp"),
+        Some("ico") => Some("image/x-icon"),
+        // Default for cache files (filename-hash, no extension): jpeg is
+        // the most common avatar format from the OSS server.
+        _ => Some("image/jpeg"),
+    }
+}
+
+// -------------------------------------------------------------------------
 // CORS & Content-Type helpers
 // -------------------------------------------------------------------------
 
@@ -188,7 +348,7 @@ fn cors_origin() -> tiny_http::Header {
 }
 
 fn cors_methods() -> tiny_http::Header {
-    "Access-Control-Allow-Methods: POST, OPTIONS".parse().unwrap()
+    "Access-Control-Allow-Methods: GET, POST, OPTIONS".parse().unwrap()
 }
 
 fn cors_headers() -> tiny_http::Header {
@@ -254,6 +414,33 @@ fn parse_args<T: serde::de::DeserializeOwned>(args: Value) -> Result<T, Value> {
             format!("invalid args: {e}"),
             None,
         ))
+    })
+}
+
+/// Debug HTTP gateway: resolve session token from the legacy global session lock.
+fn http_gateway_bearer_token(state: &AppState) -> Option<String> {
+    state
+        .session
+        .lock()
+        .ok()
+        .and_then(|g| g.token.clone())
+        .filter(|t| !t.trim().is_empty())
+}
+
+fn http_gateway_admin_context(state: &AppState) -> Option<crate::domain::admin::AccessContext> {
+    let g = state.session.lock().ok()?;
+    let token = g.token.clone().filter(|t| !t.trim().is_empty())?;
+    Some(crate::domain::admin::AccessContext {
+        actor_id: g.actor_id.clone(),
+        token: Some(token),
+    })
+}
+
+fn http_gateway_applet_context(state: &AppState) -> Option<crate::domain::applets::AccessContext> {
+    let g = state.session.lock().ok()?;
+    g.token.as_ref().filter(|t| !t.trim().is_empty())?;
+    Some(crate::domain::applets::AccessContext {
+        actor_id: g.actor_id.clone(),
     })
 }
 
@@ -428,55 +615,55 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         // =================================================================
         // Chat (no state)
         // =================================================================
-        "chat_list_conversations" => to_json(app_chat::chat_list_conversations()),
+        "chat_list_conversations" => to_json(app_chat::chat_list_conversations("")),
         "chat_list_messages" => {
             let input = match parse_args::<ChatListMessagesInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_chat::chat_list_messages(input))
+            to_json(app_chat::chat_list_messages("", input))
         }
         "chat_send_message" => {
             let input = match parse_args::<ChatSendMessageInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_chat::chat_send_message(input))
+            to_json(app_chat::chat_send_message("", input))
         }
         "chat_mark_read" => {
             let input = match parse_args::<ChatMarkReadInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_chat::chat_mark_read(input))
+            to_json(app_chat::chat_mark_read("", input))
         }
         "chat_delete_conversation" => {
             let input = match parse_args::<ChatConversationInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_chat::chat_delete_conversation(input))
+            to_json(app_chat::chat_delete_conversation("", input))
         }
         "chat_rename_conversation" => {
             let input = match parse_args::<ChatRenameConversationInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_chat::chat_rename_conversation(input))
+            to_json(app_chat::chat_rename_conversation("", input))
         }
         "chat_duplicate_conversation" => {
             let input = match parse_args::<ChatConversationInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_chat::chat_duplicate_conversation(input))
+            to_json(app_chat::chat_duplicate_conversation("", input))
         }
         "chat_smart_rename_conversation" => {
             let input = match parse_args::<ChatConversationInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_chat::chat_smart_rename_conversation(input))
+            to_json(app_chat::chat_smart_rename_conversation("", input))
         }
         "chat_set_conversation_model" => {
             let input = match parse_args::<ChatSetConversationModelInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_chat::chat_set_conversation_model(input))
+            to_json(app_chat::chat_set_conversation_model("", input))
         }
         "chat_delete_message" => {
             let input = match parse_args::<ChatMessageInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_chat::chat_delete_message(input))
+            to_json(app_chat::chat_delete_message("", input))
         }
         "chat_update_message" => {
             let input = match parse_args::<ChatUpdateMessageInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_chat::chat_update_message(input))
+            to_json(app_chat::chat_update_message("", input))
         }
         "chat_stop" => {
             let input = match parse_args::<ChatConversationInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_chat::chat_stop(input))
+            to_json(app_chat::chat_stop("", input))
         }
         // chat_completion_once: blocking call (originally async in tauri, runs sync here)
         "chat_completion_once" => {
             let input = match parse_args::<ChatCompletionInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_chat::chat_completion_once(input))
+            to_json(app_chat::chat_completion_once("", input))
         }
 
         // =================================================================
@@ -484,48 +671,97 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         // =================================================================
         "timeline_list" => {
             let input = match parse_args::<TimelineListInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_timeline::timeline_list(input))
+            to_json(app_timeline::timeline_list("", input))
         }
         "timeline_like" => {
             let input = match parse_args::<TimelineActionInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_timeline::timeline_like(input))
+            to_json(app_timeline::timeline_like("", input))
         }
         "timeline_comment" => {
             let input = match parse_args::<TimelineActionInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_timeline::timeline_comment(input))
+            to_json(app_timeline::timeline_comment("", input))
         }
         "timeline_repost" => {
             let input = match parse_args::<TimelineActionInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_timeline::timeline_repost(input))
+            to_json(app_timeline::timeline_repost("", input))
         }
 
         // =================================================================
-        // Profile (no state)
+        // Profile (session token via global lock — dev HTTP gateway)
         // =================================================================
-        "profile_get" => to_json(app_profile::profile_get(state)),
+        "profile_get" => match http_gateway_bearer_token(state) {
+            Some(t) => to_json(app_profile::profile_get(&t)),
+            None => to_json(AppResult::<StubPayload>::fail(
+                ErrorCode::Unauthorized,
+                "authentication required",
+                None,
+            )),
+        },
         "profile_update" => {
             let input = match parse_args::<ProfileUpdateInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_profile::profile_update(state, input))
+            match http_gateway_bearer_token(state) {
+                Some(t) => to_json(app_profile::profile_update(input, &t)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "profile_upload_avatar" => {
             let input = match parse_args::<FileUploadInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_profile::profile_upload_avatar(input))
+            match http_gateway_bearer_token(state) {
+                Some(t) => to_json(app_profile::profile_upload_avatar("", input, &t)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "profile_upload_header" => {
             let input = match parse_args::<FileUploadInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_profile::profile_upload_header(input))
+            match http_gateway_bearer_token(state) {
+                Some(t) => to_json(app_profile::profile_upload_header("", input, &t)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "profile_update_privacy" => {
             let input = match parse_args::<ProfilePrivacyInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_profile::profile_update_privacy(input))
+            match http_gateway_bearer_token(state) {
+                Some(t) => to_json(app_profile::profile_update_privacy("", &t, input)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "profile_upload_avatar_oss" => {
             let input = match parse_args::<FileUploadInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_profile::profile_upload_avatar_oss(state, input))
+            match http_gateway_bearer_token(state) {
+                Some(t) => to_json(app_profile::profile_upload_avatar_oss(input, &t)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "profile_upload_header_oss" => {
             let input = match parse_args::<FileUploadInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_profile::profile_upload_header_oss(state, input))
+            match http_gateway_bearer_token(state) {
+                Some(t) => to_json(app_profile::profile_upload_header_oss(input, &t)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "pick_image_file" => {
             let dialog = rfd::FileDialog::new()
@@ -544,36 +780,66 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             if input.avatar_url.is_empty() {
                 to_json(AppResult::<StubPayload>::fail(ErrorCode::InvalidArgument, "avatar_url is required", None))
             } else {
-                match crate::application::profile::sync_avatar_with_download(&input.avatar_url) {
-                    Ok(local_path) => {
-                        let status = match local_path {
-                            Some(p) => format!("synced_local:{}", p),
-                            None => "synced_remote_only".to_string(),
-                        };
-                        to_json(AppResult::success(StubPayload {
-                            command: "account_sync_avatar".to_string(),
-                            status,
-                        }))
-                    }
-                    Err(e) => to_json(AppResult::<StubPayload>::fail(ErrorCode::InternalError, &e, None)),
+                match http_gateway_bearer_token(state) {
+                    Some(t) => to_json(app_profile::account_sync_avatar(&input, &t)),
+                    None => to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::Unauthorized,
+                        "authentication required",
+                        None,
+                    )),
                 }
             }
         }
         "sync_user_profile" => {
-            to_json(crate::application::profile::sync_user_profile(&state))
+            let token = http_gateway_bearer_token(state);
+            let actor_id = state
+                .session
+                .lock()
+                .ok()
+                .and_then(|g| g.actor_id.clone())
+                .filter(|s| !s.trim().is_empty());
+            match (token, actor_id) {
+                (Some(t), Some(aid)) => to_json(crate::application::profile::sync_user_profile(&t, &aid)),
+                _ => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
 
         // =================================================================
         // Admin (state-dependent)
         // =================================================================
-        "admin_health" => to_json(app_admin::admin_health(state)),
+        "admin_health" => match http_gateway_admin_context(state) {
+            Some(ctx) => to_json(app_admin::admin_health(ctx)),
+            None => to_json(AppResult::<StubPayload>::fail(
+                ErrorCode::Unauthorized,
+                "authentication required",
+                None,
+            )),
+        },
         "admin_network_probe" => {
             let input = match parse_args::<AdminNetworkProbeInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_admin::admin_network_probe(state, input))
+            match http_gateway_admin_context(state) {
+                Some(ctx) => to_json(app_admin::admin_network_probe(ctx, input)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "admin_execute_action" => {
             let input = match parse_args::<AdminExecuteActionInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_admin::admin_execute_action(state, input))
+            match http_gateway_admin_context(state) {
+                Some(ctx) => to_json(app_admin::admin_execute_action(ctx, input)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
 
         // =================================================================
@@ -655,34 +921,34 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         // =================================================================
         // Agents (no state)
         // =================================================================
-        "agents_list" => to_json(app_agents::agents_list()),
+        "agents_list" => to_json(app_agents::agents_list("")),
         "agents_get" => {
             let input = match parse_args::<AgentIdInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_agents::agents_get(input))
+            to_json(app_agents::agents_get("", input))
         }
         "agents_create" => {
             let input = match parse_args::<AgentCreateInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_agents::agents_create(input))
+            to_json(app_agents::agents_create("", input))
         }
         "agents_update" => {
             let input = match parse_args::<AgentUpdateInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_agents::agents_update(input))
+            to_json(app_agents::agents_update("", input))
         }
         "agents_delete" => {
             let input = match parse_args::<AgentIdInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_agents::agents_delete(input))
+            to_json(app_agents::agents_delete("", input))
         }
         "agents_duplicate" => {
             let input = match parse_args::<AgentDuplicateInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_agents::agents_duplicate(input))
+            to_json(app_agents::agents_duplicate("", input))
         }
         "agents_search" => {
             let input = match parse_args::<AgentSearchInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_agents::agents_search(input))
+            to_json(app_agents::agents_search("", input))
         }
         "agents_list_sessions" => {
             let input = match parse_args::<AgentIdInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_agents::agents_list_sessions(input))
+            to_json(app_agents::agents_list_sessions("", input))
         }
 
         // =================================================================
@@ -885,34 +1151,90 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         // =================================================================
         // Applets (state-dependent)
         // =================================================================
-        "applets_list" => to_json(app_applets::applets_list(state)),
+        "applets_list" => match http_gateway_applet_context(state) {
+            Some(ctx) => to_json(app_applets::applets_list(ctx)),
+            None => to_json(AppResult::<StubPayload>::fail(
+                ErrorCode::Unauthorized,
+                "authentication required",
+                None,
+            )),
+        },
         "applets_get" => {
             let input = match parse_args::<AppletIdInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_applets::applets_get(state, input))
+            match http_gateway_applet_context(state) {
+                Some(ctx) => to_json(app_applets::applets_get(ctx, input)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "applets_activate" => {
             let input = match parse_args::<AppletIdInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_applets::applets_activate(state, input))
+            match http_gateway_applet_context(state) {
+                Some(ctx) => to_json(app_applets::applets_activate(ctx, input)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "applets_deactivate" => {
             let input = match parse_args::<AppletIdInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_applets::applets_deactivate(state, input))
+            match http_gateway_applet_context(state) {
+                Some(ctx) => to_json(app_applets::applets_deactivate(ctx, input)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "applets_get_config" => {
             let input = match parse_args::<AppletIdInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_applets::applets_get_config(state, input))
+            match http_gateway_applet_context(state) {
+                Some(ctx) => to_json(app_applets::applets_get_config(ctx, input)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "applets_set_config" => {
             let input = match parse_args::<AppletConfigSetInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_applets::applets_set_config(state, input))
+            match http_gateway_applet_context(state) {
+                Some(ctx) => to_json(app_applets::applets_set_config(ctx, input)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "applets_action" => {
             let input = match parse_args::<AppletActionInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_applets::applets_action(state, input))
+            match http_gateway_applet_context(state) {
+                Some(ctx) => to_json(app_applets::applets_action(ctx, input)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "applets_invoke" => {
             let input = match parse_args::<AppletInvokeInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_applets::applets_invoke(state, input))
+            match http_gateway_applet_context(state) {
+                Some(ctx) => to_json(app_applets::applets_invoke(ctx, input)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
 
         // =================================================================

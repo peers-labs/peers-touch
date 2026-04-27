@@ -10,9 +10,21 @@ mod interface;
 mod model;
 mod state;
 
+// Prost-generated `peers.actor` (session_api) and auth/oauth use `super::super::peers_touch::...`
+// when including `peers_touch.model.actor.v1.ActorRef`. Mirror that path at the crate root.
+pub mod peers_touch {
+    pub mod model {
+        pub mod actor {
+            pub mod v1 {
+                pub use crate::model::actor::v1::*;
+            }
+        }
+    }
+}
+
 use std::sync::Arc;
 use tauri::Manager;
-use interface::tauri_commands::{account, actor, admin, agent_growth, agent_scheduler, agents, applets, auth, channels, chat, cron, crypto, friend_chat, frontend_log, group_chat, ice, i18n, mcp, memory, model_config, models, notebook, notification, oauth2, profile, provider, search, settings, skills, skills_market, system, timeline, tools, tts};
+use interface::tauri_commands::{account, actor, admin, agent_growth, agent_scheduler, agents, applets, auth, channels, chat, cron, crypto, friend_chat, frontend_log, group_chat, ice, i18n, mcp, memory, model_config, models, notebook, notification, oauth2, oss, presence, profile, provider, search, settings, skills, skills_market, system, timeline, tools, tts};
 
 fn main() {
     let ctx = bootstrap::run();
@@ -24,9 +36,12 @@ fn main() {
     #[cfg(debug_assertions)]
     interface::http_gateway::start(Arc::clone(&app_state));
 
+    let presence_supervisor = Arc::new(application::presence::PresenceSupervisor::new());
+
     tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
         .manage(app_state)
+        .manage(presence_supervisor)
         .setup(|app| {
             let resource_dir = app.path()
                 .resource_dir()
@@ -34,6 +49,28 @@ fn main() {
             let state = app.state::<Arc<state::AppState>>();
             if let Err(e) = state.i18n.deploy_builtin_packs(&resource_dir) {
                 tracing::error!(error = %e, "Failed to deploy built-in i18n packs");
+            }
+
+            // Allow the asset:// protocol to read locally cached avatar files.
+            // Tauri 2 disables asset:// by default; the static scope in
+            // capabilities/default.json grants the permission, this call
+            // restricts the readable filesystem area to just the avatar cache.
+            match infrastructure::avatar_cache::avatars_dir() {
+                Ok(dir) => {
+                    if let Err(e) = std::fs::create_dir_all(&dir) {
+                        tracing::warn!(error = %e, dir = %dir.display(), "Failed to pre-create avatar cache dir");
+                    }
+                    let scope = app.asset_protocol_scope();
+                    if let Err(e) = scope.allow_directory(&dir, true) {
+                        tracing::error!(error = %e, dir = %dir.display(), "Failed to allow avatar dir on asset scope");
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to resolve avatar cache dir at startup");
+                }
+            }
+            if let Err(e) = infrastructure::session_store::migrate_legacy() {
+                tracing::warn!(error = %e, "session_store: migrate_legacy failed (continuing boot)");
             }
             Ok(())
         })
@@ -78,6 +115,7 @@ fn main() {
             profile::profile_update_privacy,
             profile::account_sync_avatar,
             profile::sync_user_profile,
+            profile::avatar_resolve_local,
             admin::admin_health,
             admin::admin_network_probe,
             admin::admin_execute_action,
@@ -223,7 +261,12 @@ fn main() {
             account::account_set_pin,
             account::account_unlock,
             account::account_list_restorable,
+            account::account_clear_session,
             account::account_remove_pin,
+            presence::presence_notify,
+            oss::pick_chat_attachment,
+            oss::chat_upload_attachment,
+            oss::oss_resolve_url,
             memory::memory_list,
             memory::memory_get,
             memory::memory_delete,
@@ -245,6 +288,8 @@ fn main() {
             friend_chat::friend_chat_sync_messages,
             friend_chat::friend_chat_go_online,
             friend_chat::friend_chat_go_offline,
+            friend_chat::friend_chat_presence_start,
+            friend_chat::friend_chat_presence_stop,
             friend_chat::friend_chat_get_pending,
             friend_chat::friend_chat_get_stats,
             friend_chat::friend_chat_local_search,
