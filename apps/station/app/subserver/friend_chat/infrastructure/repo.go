@@ -11,6 +11,28 @@ import (
 	"gorm.io/gorm"
 )
 
+// ErrMessageNotFound is returned by mutation methods when no row
+// matches the (sessionULID, messageULID) tuple. The handler maps it
+// to HTTP 404.
+var ErrMessageNotFound = errors.New("friend message not found")
+
+// ErrPermissionDenied is returned by mutation methods when the row
+// exists but the caller is not its sender. The handler maps it to
+// HTTP 404 (we deliberately collapse perm-denied + not-found at the
+// HTTP boundary so a non-owner cannot enumerate other actors' ulids;
+// see the handler for the exact mapping).
+var ErrPermissionDenied = errors.New("not message owner")
+
+// ErrMutationWindowClosed is returned when the mutation arrives
+// after the operator-tunable recall / edit window has elapsed. The
+// handler maps it to HTTP 422 (Unprocessable Entity) so the client
+// can show "this message is too old to recall".
+var ErrMutationWindowClosed = errors.New("mutation window closed")
+
+// ErrAlreadyRecalled is returned by edit when the target row has
+// already been recalled (an edit on a tombstone makes no sense).
+var ErrAlreadyRecalled = errors.New("message already recalled")
+
 type SessionModel struct {
 	ID              uint      `gorm:"column:id;primaryKey"`
 	ULID            string    `gorm:"column:ulid;size:64;uniqueIndex"`
@@ -39,9 +61,17 @@ type MessageModel struct {
 	EncryptedPayload []byte    `gorm:"column:encrypted_payload;type:bytea"`
 	ReplyToULID      string    `gorm:"column:reply_to_ulid;size:64"`
 	Status           int32     `gorm:"column:status"`
-	SentAt           time.Time `gorm:"column:sent_at;index"`
-	CreatedAt        time.Time `gorm:"column:created_at"`
-	UpdatedAt        time.Time `gorm:"column:updated_at"`
+	// Recalled is set by recall — content + encrypted_payload are
+	// cleared at the same time. Once true it never flips back.
+	Recalled bool `gorm:"column:recalled"`
+	// EditedAt is non-null when the row has been mutated via edit.
+	// We use a pointer here so GORM can leave the column NULL on
+	// fresh inserts; readers translate nil → zero-value time.Time
+	// in toDomainMessage.
+	EditedAt  *time.Time `gorm:"column:edited_at"`
+	SentAt    time.Time  `gorm:"column:sent_at;index"`
+	CreatedAt time.Time  `gorm:"column:created_at"`
+	UpdatedAt time.Time  `gorm:"column:updated_at"`
 }
 
 func (*MessageModel) TableName() string { return "friend_chat_messages" }
@@ -121,6 +151,10 @@ func toDomainSession(item SessionModel) domain.Session {
 }
 
 func toDomainMessage(item MessageModel) domain.Message {
+	var editedAt time.Time
+	if item.EditedAt != nil {
+		editedAt = *item.EditedAt
+	}
 	return domain.Message{
 		ID:               item.ULID,
 		SessionID:        item.SessionULID,
@@ -131,6 +165,8 @@ func toDomainMessage(item MessageModel) domain.Message {
 		EncryptedPayload: append([]byte(nil), item.EncryptedPayload...),
 		ReplyToID:        item.ReplyToULID,
 		Status:           item.Status,
+		Recalled:         item.Recalled,
+		EditedAt:         editedAt,
 		SentAt:           item.SentAt,
 		CreatedAt:        item.CreatedAt,
 		UpdatedAt:        item.UpdatedAt,
@@ -525,6 +561,214 @@ func (r *GormRepo) MarkRead(actorDID string, messageIDs []string, status int32) 
 		return nil, err
 	}
 	return acked, nil
+}
+
+// ============================================================================
+// Message Mutations: recall / edit / delete
+// ============================================================================
+//
+// All three share the same authorization gate: only the row's
+// `sender_did` may invoke the mutation, and we resolve that gate
+// inside the repo so application/service does not have to hand-craft
+// a second SELECT. Each mutation also returns a `MutationOutcome`
+// the handler uses to fan-out a realtime MessageMutation event so
+// peers learn about the change in real time.
+
+// RecallMessage clears the content + encrypted_payload of one message
+// and flips `recalled = true`. Returns ErrPermissionDenied when the
+// caller is not the sender, ErrMessageNotFound when no row matches,
+// or the underlying error from the DB. Idempotent: a recall on an
+// already-recalled message is a no-op (no event re-published).
+//
+// `recallWindow` is the operator-tunable time-after-send during
+// which a recall is permitted. Pass 0 to disable the window check
+// (only the sender-ownership rule applies).
+func (r *GormRepo) RecallMessage(actorDID, sessionULID, messageULID string, recallWindow time.Duration) (domain.MutationOutcome, error) {
+	var out domain.MutationOutcome
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var row MessageModel
+		if err := tx.Where("ulid = ? AND session_ulid = ?", messageULID, sessionULID).First(&row).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrMessageNotFound
+			}
+			return err
+		}
+		if row.SenderDID != actorDID {
+			// Surfacing ErrPermissionDenied (rather than NotFound)
+			// to the sender's own UI is fine — they already know the
+			// row exists; what we are denying is the *action*. To a
+			// non-owner we still want NotFound for opacity, which
+			// the handler maps from this same error.
+			return ErrPermissionDenied
+		}
+		if recallWindow > 0 && time.Since(row.SentAt) > recallWindow {
+			return ErrMutationWindowClosed
+		}
+		if row.Recalled {
+			// Idempotent: still return the row's metadata so the
+			// caller can decide whether to skip the event publish.
+			out = mutationOutcomeFrom(row, int32(realtimeKindRecall), nil, "")
+			return nil
+		}
+		now := time.Now()
+		if err := tx.Model(&row).Updates(map[string]interface{}{
+			"content":           "",
+			"encrypted_payload": nil,
+			"recalled":          true,
+			"updated_at":        now,
+		}).Error; err != nil {
+			return err
+		}
+		row.Content = ""
+		row.EncryptedPayload = nil
+		row.Recalled = true
+		row.UpdatedAt = now
+		out = mutationOutcomeFrom(row, int32(realtimeKindRecall), nil, "")
+		return nil
+	})
+	if err != nil {
+		return domain.MutationOutcome{}, err
+	}
+	return out, nil
+}
+
+// EditMessage replaces a message's body. Both `newContent` and
+// `newCiphertext` may be set; for E2EE chats the ciphertext is the
+// authoritative replacement and `newContent` is typically a
+// non-secret placeholder. We persist whatever the caller sends so
+// catch-up clients (cold sync) see the post-edit state without
+// needing a separate edit-history query.
+//
+// Edits on a recalled row are rejected: the recall is the terminal
+// state for a kept-but-cleared message. The caller surfaces this as
+// ErrMessageNotFound to mask the existence of the row from a
+// non-owner observer; the owner gets ErrAlreadyRecalled.
+func (r *GormRepo) EditMessage(actorDID, sessionULID, messageULID string, newContent string, newCiphertext []byte, editWindow time.Duration) (domain.MutationOutcome, error) {
+	var out domain.MutationOutcome
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var row MessageModel
+		if err := tx.Where("ulid = ? AND session_ulid = ?", messageULID, sessionULID).First(&row).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrMessageNotFound
+			}
+			return err
+		}
+		if row.SenderDID != actorDID {
+			return ErrPermissionDenied
+		}
+		if row.Recalled {
+			return ErrAlreadyRecalled
+		}
+		if editWindow > 0 && time.Since(row.SentAt) > editWindow {
+			return ErrMutationWindowClosed
+		}
+		now := time.Now()
+		updates := map[string]interface{}{
+			"content":           newContent,
+			"encrypted_payload": append([]byte(nil), newCiphertext...),
+			"edited_at":         &now,
+			"updated_at":        now,
+		}
+		if err := tx.Model(&row).Updates(updates).Error; err != nil {
+			return err
+		}
+		row.Content = newContent
+		row.EncryptedPayload = append([]byte(nil), newCiphertext...)
+		row.EditedAt = &now
+		row.UpdatedAt = now
+		out = mutationOutcomeFrom(row, int32(realtimeKindEdit), append([]byte(nil), newCiphertext...), newContent)
+		return nil
+	})
+	if err != nil {
+		return domain.MutationOutcome{}, err
+	}
+	return out, nil
+}
+
+// DeleteMessage hard-deletes the row plus its attachment rows in a
+// single transaction. We also clear the parent session's
+// `last_message_*` pointer when it referred to the deleted ulid, so
+// the conversation list does not display a deleted snippet on its
+// next refresh.
+//
+// We deliberately do not decrement unread_count_*: the receiver may
+// have already counted (and displayed) this message, and a delete
+// from the sender side should not retroactively change the
+// receiver's unread tally. The receiver's UI will re-read the
+// session next time and naturally drop the slot.
+func (r *GormRepo) DeleteMessage(actorDID, sessionULID, messageULID string) (domain.MutationOutcome, error) {
+	var out domain.MutationOutcome
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var row MessageModel
+		if err := tx.Where("ulid = ? AND session_ulid = ?", messageULID, sessionULID).First(&row).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrMessageNotFound
+			}
+			return err
+		}
+		if row.SenderDID != actorDID {
+			return ErrPermissionDenied
+		}
+		// Capture the outcome metadata BEFORE the delete so the
+		// caller still has SenderDID / SessionULID for the realtime
+		// fan-out, even though the row is about to vanish.
+		out = mutationOutcomeFrom(row, int32(realtimeKindDelete), nil, "")
+		if err := tx.Where("message_ulid = ?", messageULID).Delete(&MessageAttachmentModel{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Delete(&row).Error; err != nil {
+			return err
+		}
+		var session SessionModel
+		if err := tx.Where("ulid = ?", sessionULID).First(&session).Error; err == nil {
+			if session.LastMessageULID == messageULID {
+				// Best-effort: pick the next-newest message in the
+				// session, or zero out the pointer if this was the
+				// only message. We do not block on this — the
+				// previous_at/ulid recovery is a UI nicety.
+				var prev MessageModel
+				err := tx.Where("session_ulid = ?", sessionULID).Order("sent_at DESC").First(&prev).Error
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					session.LastMessageULID = ""
+					session.LastMessageAt = time.Time{}
+				} else if err == nil {
+					session.LastMessageULID = prev.ULID
+					session.LastMessageAt = prev.SentAt
+				}
+				session.UpdatedAt = time.Now()
+				_ = tx.Save(&session).Error
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return domain.MutationOutcome{}, err
+	}
+	return out, nil
+}
+
+// realtimeKind* mirror the realtime.MessageMutation_Kind enum on the
+// wire. We can't import the realtime proto from the repo package
+// without taking a heavier dependency, and these three values are
+// stable per the proto contract — adding a new kind requires
+// growing the enum and this list together.
+const (
+	realtimeKindRecall = 1
+	realtimeKindEdit   = 2
+	realtimeKindDelete = 3
+)
+
+func mutationOutcomeFrom(row MessageModel, kind int32, ciphertext []byte, content string) domain.MutationOutcome {
+	return domain.MutationOutcome{
+		Ulid:          row.ULID,
+		SessionULID:   row.SessionULID,
+		SenderDID:     row.SenderDID,
+		ReceiverDID:   row.ReceiverDID,
+		Kind:          kind,
+		NewContent:    content,
+		NewCiphertext: ciphertext,
+		MutatedAt:     time.Now(),
+	}
 }
 
 // ============================================================================

@@ -36,6 +36,7 @@ message StreamEvent {
     PresenceFlip    presence  = 14;
     CallSignal      signaling = 15;
     Resync          resync    = 16;
+    MessageMutation mutation  = 17;
   }
 }
 
@@ -123,6 +124,48 @@ message CallSignal {
     ANSWER           = 2;
     CANDIDATE        = 3;
     HANGUP           = 4;
+  }
+}
+
+// MessageMutation notifies a peer that a previously-delivered message
+// was retroactively modified by its author: recalled (content cleared
+// and a tombstone shown), edited (content replaced, edited_at stamped),
+// or deleted (row removed; UI removes the bubble entirely).
+//
+// Wire-level constraints:
+//   * RECALL: `new_content` MUST be empty. `new_ciphertext` MUST be
+//     empty. The receiver clears the bubble's text and renders a
+//     "this message was recalled" placeholder.
+//   * EDIT: For E2EE chats, `new_ciphertext` carries the freshly
+//     ratchet-encrypted body and `new_content` is empty. For chats
+//     where E2EE is not yet established (legacy / not-yet-keyed
+//     sessions), `new_content` carries plaintext. Receivers MUST
+//     prefer `new_ciphertext` when both are non-empty.
+//   * DELETE: both fields MUST be empty. Receivers remove the
+//     message from their store entirely.
+//
+// Mutations are authored by the message's original sender only.
+// Station rejects mutations from any other actor at the ingress
+// handler. The receiver's UI is forward-only: a stale RECALL
+// arriving after a DELETE for the same ulid is a no-op (the row no
+// longer exists).
+message MessageMutation {
+  string session_ulid  = 1;
+  string ulid          = 2;
+  string from_actor_id = 3;
+  Kind   kind          = 4;
+  bytes  new_ciphertext = 5;
+  string new_content    = 6;
+  // Server stamp of the mutation's wall-clock time, milliseconds
+  // since Unix epoch. Display-only; clients must not use it for
+  // ordering — trust the parent StreamEvent's `event_id`.
+  int64 mutated_ts_unix_ms = 7;
+
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    RECALL           = 1;
+    EDIT             = 2;
+    DELETE           = 3;
   }
 }
 

@@ -238,8 +238,41 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
       });
       return;
     }
+    case 'mutation': {
+      const m = kind.value;
+      const kindStr = mutationKindFromEnum(m.kind);
+      if (!kindStr) {
+        // KIND_UNSPECIFIED — defensive drop. A future arm we
+        // don't recognize is also dropped here so legacy clients
+        // don't crash on a server-only enum addition.
+        log.warn('eventStream', 'unknown MessageMutation kind, dropping', { kind: m.kind });
+        return;
+      }
+      eventBus.publish(EVENT.REALTIME_MESSAGE_MUTATION, {
+        eventId,
+        sessionUlid: m.sessionUlid,
+        messageUlid: m.ulid,
+        fromActorId: m.fromActorId,
+        kind: kindStr,
+        newContent: m.newContent ?? '',
+        newCiphertext: m.newCiphertext ?? new Uint8Array(),
+        mutatedTsUnixMs: Number(m.mutatedTsUnixMs),
+      });
+      return;
+    }
     default:
       return;
+  }
+}
+
+// Inverse of MessageMutation_Kind enum. Keep aligned with the
+// proto: KIND_UNSPECIFIED=0, RECALL=1, EDIT=2, DELETE=3.
+function mutationKindFromEnum(value: number): 'RECALL' | 'EDIT' | 'DELETE' | null {
+  switch (value) {
+    case 1: return 'RECALL';
+    case 2: return 'EDIT';
+    case 3: return 'DELETE';
+    default: return null;
   }
 }
 

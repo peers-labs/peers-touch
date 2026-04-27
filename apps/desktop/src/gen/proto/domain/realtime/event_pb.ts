@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/realtime/event.proto.
  */
 export const file_domain_realtime_event: GenFile = /*@__PURE__*/
-  fileDesc("Chtkb21haW4vcmVhbHRpbWUvZXZlbnQucHJvdG8SHXBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxIvADCgtTdHJlYW1FdmVudBIQCghldmVudF9pZBgBIAEoCRISCgp0c191bml4X21zGAIgASgDEjYKAmhiGAogASgLMigucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuSGVhcnRiZWF0SAASQQoHbWVzc2FnZRgLIAEoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1lc3NhZ2VFbnZlbG9wZUgAEkAKB3JlY2VpcHQYDCABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlUmVjZWlwdEgAEjwKBnR5cGluZxgNIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLlR5cGluZ1N0YXRlSAASPwoIcHJlc2VuY2UYDiABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5QcmVzZW5jZUZsaXBIABI+CglzaWduYWxpbmcYDyABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5DYWxsU2lnbmFsSAASNwoGcmVzeW5jGBAgASgLMiUucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuUmVzeW5jSABCBgoEa2luZCIjCglIZWFydGJlYXQSFgoOZmxvb3JfZXZlbnRfaWQYASABKAkilwEKD01lc3NhZ2VFbnZlbG9wZRIXCg9zZW5kZXJfYWN0b3JfaWQYASABKAkSGgoScmVjaXBpZW50X2FjdG9yX2lkGAIgASgJEhQKDHNlc3Npb25fdWxpZBgDIAEoCRIMCgR1bGlkGAQgASgJEhIKCmNpcGhlcnRleHQYBSABKAwSFwoPc2VudF90c191bml4X21zGAYgASgDIsQBCg5NZXNzYWdlUmVjZWlwdBIUCgxzZXNzaW9uX3VsaWQYASABKAkSDAoEdWxpZBgCIAEoCRJACgRraW5kGAMgASgOMjIucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuTWVzc2FnZVJlY2VpcHQuS2luZBIVCg1mcm9tX2FjdG9yX2lkGAQgASgJIjUKBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEg0KCURFTElWRVJFRBABEggKBFJFQUQQAiJKCgtUeXBpbmdTdGF0ZRIUCgxzZXNzaW9uX3VsaWQYASABKAkSFQoNZnJvbV9hY3Rvcl9pZBgCIAEoCRIOCgZ0eXBpbmcYAyABKAgiMAoMUHJlc2VuY2VGbGlwEhAKCGFjdG9yX2lkGAEgASgJEg4KBm9ubGluZRgCIAEoCCLYAQoKQ2FsbFNpZ25hbBIUCgxzZXNzaW9uX3VsaWQYASABKAkSFQoNZnJvbV9hY3Rvcl9pZBgCIAEoCRI8CgRraW5kGAMgASgOMi4ucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuQ2FsbFNpZ25hbC5LaW5kEg8KB3BheWxvYWQYBCABKAwiTgoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASCQoFT0ZGRVIQARIKCgZBTlNXRVIQAhINCglDQU5ESURBVEUQAxIKCgZIQU5HVVAQBCIxCgZSZXN5bmMSFwoPbmV3ZXN0X2V2ZW50X2lkGAEgASgJEg4KBnJlYXNvbhgCIAEoCUJPWk1naXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbC9yZWFsdGltZTtyZWFsdGltZWIGcHJvdG8z");
+  fileDesc("Chtkb21haW4vcmVhbHRpbWUvZXZlbnQucHJvdG8SHXBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxIrQECgtTdHJlYW1FdmVudBIQCghldmVudF9pZBgBIAEoCRISCgp0c191bml4X21zGAIgASgDEjYKAmhiGAogASgLMigucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuSGVhcnRiZWF0SAASQQoHbWVzc2FnZRgLIAEoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1lc3NhZ2VFbnZlbG9wZUgAEkAKB3JlY2VpcHQYDCABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlUmVjZWlwdEgAEjwKBnR5cGluZxgNIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLlR5cGluZ1N0YXRlSAASPwoIcHJlc2VuY2UYDiABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5QcmVzZW5jZUZsaXBIABI+CglzaWduYWxpbmcYDyABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5DYWxsU2lnbmFsSAASNwoGcmVzeW5jGBAgASgLMiUucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuUmVzeW5jSAASQgoIbXV0YXRpb24YESABKAsyLi5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlTXV0YXRpb25IAEIGCgRraW5kIiMKCUhlYXJ0YmVhdBIWCg5mbG9vcl9ldmVudF9pZBgBIAEoCSKXAQoPTWVzc2FnZUVudmVsb3BlEhcKD3NlbmRlcl9hY3Rvcl9pZBgBIAEoCRIaChJyZWNpcGllbnRfYWN0b3JfaWQYAiABKAkSFAoMc2Vzc2lvbl91bGlkGAMgASgJEgwKBHVsaWQYBCABKAkSEgoKY2lwaGVydGV4dBgFIAEoDBIXCg9zZW50X3RzX3VuaXhfbXMYBiABKAMixAEKDk1lc3NhZ2VSZWNlaXB0EhQKDHNlc3Npb25fdWxpZBgBIAEoCRIMCgR1bGlkGAIgASgJEkAKBGtpbmQYAyABKA4yMi5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlUmVjZWlwdC5LaW5kEhUKDWZyb21fYWN0b3JfaWQYBCABKAkiNQoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASDQoJREVMSVZFUkVEEAESCAoEUkVBRBACIkoKC1R5cGluZ1N0YXRlEhQKDHNlc3Npb25fdWxpZBgBIAEoCRIVCg1mcm9tX2FjdG9yX2lkGAIgASgJEg4KBnR5cGluZxgDIAEoCCIwCgxQcmVzZW5jZUZsaXASEAoIYWN0b3JfaWQYASABKAkSDgoGb25saW5lGAIgASgIItgBCgpDYWxsU2lnbmFsEhQKDHNlc3Npb25fdWxpZBgBIAEoCRIVCg1mcm9tX2FjdG9yX2lkGAIgASgJEjwKBGtpbmQYAyABKA4yLi5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5DYWxsU2lnbmFsLktpbmQSDwoHcGF5bG9hZBgEIAEoDCJOCgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIJCgVPRkZFUhABEgoKBkFOU1dFUhACEg0KCUNBTkRJREFURRADEgoKBkhBTkdVUBAEIpgCCg9NZXNzYWdlTXV0YXRpb24SFAoMc2Vzc2lvbl91bGlkGAEgASgJEgwKBHVsaWQYAiABKAkSFQoNZnJvbV9hY3Rvcl9pZBgDIAEoCRJBCgRraW5kGAQgASgOMjMucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuTWVzc2FnZU11dGF0aW9uLktpbmQSFgoObmV3X2NpcGhlcnRleHQYBSABKAwSEwoLbmV3X2NvbnRlbnQYBiABKAkSGgoSbXV0YXRlZF90c191bml4X21zGAcgASgDIj4KBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEgoKBlJFQ0FMTBABEggKBEVESVQQAhIKCgZERUxFVEUQAyIxCgZSZXN5bmMSFwoPbmV3ZXN0X2V2ZW50X2lkGAEgASgJEg4KBnJlYXNvbhgCIAEoCUJPWk1naXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbC9yZWFsdGltZTtyZWFsdGltZWIGcHJvdG8z");
 
 /**
  * StreamEvent is the single envelope every realtime frame uses.
@@ -85,6 +85,12 @@ export type StreamEvent = Message<"peers_touch.model.realtime.v1.StreamEvent"> &
      */
     value: Resync;
     case: "resync";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.realtime.v1.MessageMutation mutation = 17;
+     */
+    value: MessageMutation;
+    case: "mutation";
   } | { case: undefined; value?: undefined };
 };
 
@@ -372,6 +378,111 @@ export const CallSignal_KindSchema: GenEnum<CallSignal_Kind> = /*@__PURE__*/
   enumDesc(file_domain_realtime_event, 6, 0);
 
 /**
+ * MessageMutation notifies a peer that a previously-delivered message
+ * was retroactively modified by its author: recalled (content cleared
+ * and a tombstone shown), edited (content replaced, edited_at stamped),
+ * or deleted (row removed; UI removes the bubble entirely).
+ *
+ * Wire-level constraints:
+ *   * RECALL: `new_content` MUST be empty. `new_ciphertext` MUST be
+ *     empty. The receiver clears the bubble's text and renders a
+ *     "this message was recalled" placeholder.
+ *   * EDIT: For E2EE chats, `new_ciphertext` carries the freshly
+ *     ratchet-encrypted body and `new_content` is empty. For chats
+ *     where E2EE is not yet established (legacy / not-yet-keyed
+ *     sessions), `new_content` carries plaintext. Receivers MUST
+ *     prefer `new_ciphertext` when both are non-empty.
+ *   * DELETE: both fields MUST be empty. Receivers remove the
+ *     message from their store entirely.
+ *
+ * Mutations are authored by the message's original sender only.
+ * Station rejects mutations from any other actor at the ingress
+ * handler. The receiver's UI is forward-only: a stale RECALL
+ * arriving after a DELETE for the same ulid is a no-op (the row no
+ * longer exists).
+ *
+ * @generated from message peers_touch.model.realtime.v1.MessageMutation
+ */
+export type MessageMutation = Message<"peers_touch.model.realtime.v1.MessageMutation"> & {
+  /**
+   * @generated from field: string session_ulid = 1;
+   */
+  sessionUlid: string;
+
+  /**
+   * @generated from field: string ulid = 2;
+   */
+  ulid: string;
+
+  /**
+   * @generated from field: string from_actor_id = 3;
+   */
+  fromActorId: string;
+
+  /**
+   * @generated from field: peers_touch.model.realtime.v1.MessageMutation.Kind kind = 4;
+   */
+  kind: MessageMutation_Kind;
+
+  /**
+   * @generated from field: bytes new_ciphertext = 5;
+   */
+  newCiphertext: Uint8Array;
+
+  /**
+   * @generated from field: string new_content = 6;
+   */
+  newContent: string;
+
+  /**
+   * Server stamp of the mutation's wall-clock time, milliseconds
+   * since Unix epoch. Display-only; clients must not use it for
+   * ordering — trust the parent StreamEvent's `event_id`.
+   *
+   * @generated from field: int64 mutated_ts_unix_ms = 7;
+   */
+  mutatedTsUnixMs: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.realtime.v1.MessageMutation.
+ * Use `create(MessageMutationSchema)` to create a new message.
+ */
+export const MessageMutationSchema: GenMessage<MessageMutation> = /*@__PURE__*/
+  messageDesc(file_domain_realtime_event, 7);
+
+/**
+ * @generated from enum peers_touch.model.realtime.v1.MessageMutation.Kind
+ */
+export enum MessageMutation_Kind {
+  /**
+   * @generated from enum value: KIND_UNSPECIFIED = 0;
+   */
+  KIND_UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: RECALL = 1;
+   */
+  RECALL = 1,
+
+  /**
+   * @generated from enum value: EDIT = 2;
+   */
+  EDIT = 2,
+
+  /**
+   * @generated from enum value: DELETE = 3;
+   */
+  DELETE = 3,
+}
+
+/**
+ * Describes the enum peers_touch.model.realtime.v1.MessageMutation.Kind.
+ */
+export const MessageMutation_KindSchema: GenEnum<MessageMutation_Kind> = /*@__PURE__*/
+  enumDesc(file_domain_realtime_event, 7, 0);
+
+/**
  * Resync is the server's only signal that the client's Last-Event-ID
  * cursor falls outside the in-memory ring buffer. On receiving this,
  * clients MUST perform a cold catch-up before trusting any event
@@ -401,5 +512,5 @@ export type Resync = Message<"peers_touch.model.realtime.v1.Resync"> & {
  * Use `create(ResyncSchema)` to create a new message.
  */
 export const ResyncSchema: GenMessage<Resync> = /*@__PURE__*/
-  messageDesc(file_domain_realtime_event, 7);
+  messageDesc(file_domain_realtime_event, 8);
 
