@@ -3265,7 +3265,14 @@ export const api = {
       { did },
     ),
 
-  // ── ICE / Signaling (WebRTC) ──
+  // ── ICE / TURN ──
+  //
+  // Anything resembling an ICE *session* (offer/answer/candidate exchange)
+  // moved to the unified realtime SSE plane in Phase 8 — see
+  // `realtimeSignalSend` / `signalingEnvelopeSeal` / `signalingEnvelopeOpen`
+  // above and docs/architecture/realtime/event-stream.md §2.7. What
+  // remains here is just the TURN credentials fetch (media plane) and a
+  // best-effort presence/role hint so other devices can see liveness.
 
   iceGetServers: () =>
     invokeRustDataFromStatus<void, IceServersResponse>('ice_get_servers'),
@@ -3273,51 +3280,6 @@ export const api = {
   icePeerRegister: (id: string, role?: string, addrs?: string[]) =>
     invokeRustDataFromStatus<{ id: string; role?: string; addrs?: string[] }, IcePeerInfo>(
       'ice_peer_register', { id, role, addrs },
-    ),
-
-  icePeerUnregister: (id: string) =>
-    invokeRustDataFromStatus<{ id: string }, Record<string, unknown>>(
-      'ice_peer_unregister', { id },
-    ),
-
-  iceSessionNew: (a: string, b: string) =>
-    invokeRustDataFromStatus<{ a: string; b: string }, IceSession>(
-      'ice_session_new', { a, b },
-    ),
-
-  iceSessionGet: (id: string) =>
-    invokeRustDataFromStatus<{ id: string }, IceSession>(
-      'ice_session_get', { id },
-    ),
-
-  iceSessionOfferPost: (id: string, sdp: string) =>
-    invokeRustDataFromStatus<{ id: string; sdp: string }, Record<string, unknown>>(
-      'ice_session_offer_post', { id, sdp },
-    ),
-
-  iceSessionOfferGet: (id: string) =>
-    invokeRustDataFromStatus<{ id: string }, { sdp?: string }>(
-      'ice_session_offer_get', { id },
-    ),
-
-  iceSessionAnswerPost: (id: string, sdp: string) =>
-    invokeRustDataFromStatus<{ id: string; sdp: string }, Record<string, unknown>>(
-      'ice_session_answer_post', { id, sdp },
-    ),
-
-  iceSessionAnswerGet: (id: string) =>
-    invokeRustDataFromStatus<{ id: string }, { sdp?: string }>(
-      'ice_session_answer_get', { id },
-    ),
-
-  iceSessionCandidatePost: (id: string, candidate: string, mid?: string, mline?: number, from?: string) =>
-    invokeRustDataFromStatus<{ id: string; candidate: string; mid?: string; mline?: number; from?: string }, Record<string, unknown>>(
-      'ice_session_candidate_post', { id, candidate, mid, mline, from },
-    ),
-
-  iceSessionCandidatesGet: (id: string) =>
-    invokeRustDataFromStatus<{ id: string }, { candidates?: Array<{ candidate: string; mid?: string; mline?: number; from?: string }> }>(
-      'ice_session_candidates_get', { id },
     ),
 
   // ── Friend Request ──
@@ -3404,13 +3366,6 @@ export interface IcePeerInfo {
   role?: string;
   addrs?: string[];
   updated_at?: number;
-}
-
-export interface IceSession {
-  id: string;
-  a: string;
-  b: string;
-  created_at?: number;
 }
 
 /** Payload for friend/group chat send; field names match Station JSON and Rust `AttachmentInput`. */
