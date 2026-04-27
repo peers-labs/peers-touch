@@ -293,6 +293,7 @@ fn main() {
             realtime::realtime_stream_start,
             realtime::realtime_stream_stop,
             realtime::realtime_signal_send,
+            realtime::realtime_typing_send,
             friend_chat::friend_chat_get_pending,
             friend_chat::friend_chat_get_stats,
             friend_chat::friend_chat_local_search,

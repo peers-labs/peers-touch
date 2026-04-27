@@ -139,6 +139,7 @@ export function ChatMessageArea() {
   const encryptionEnabled = useSocialChatStore((s) => s.encryptionEnabled);
   const friendP2pStatus = useSocialChatStore((s) => s.friendP2pStatus);
   const peerOnline = useSocialChatStore((s) => s.peerOnline);
+  const typingPeers = useSocialChatStore((s) => s.typingPeers);
   const [inputValue, setInputValue] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [sending, setSending] = useState(false);
@@ -314,6 +315,128 @@ export function ChatMessageArea() {
     setReplyToUlid(null);
   }, [activeUlid]);
 
+  // ---- Typing-state outbound pulses --------------------------------
+  //
+  // Wire contract: see docs/architecture/realtime/event-stream.md
+  // §2.7 (TypingState). The sender emits *at most* one `typing=true`
+  // every 3s while the user is actively typing and a single
+  // `typing=false` once they pause for 4s, send, blur, or change
+  // session. The receiver's GC sweep (SocialChatPage) clears
+  // phantom typing after 6s of silence.
+  //
+  // Refs (rather than state) for the timer handles + last-true epoch
+  // because the typing path is hot — a state update on every
+  // keystroke would re-render every message and tank typing
+  // throughput on long conversations.
+  //
+  // Group chats have no recipient_actor_id we can route to today:
+  // the realtime stream is per-actor, and group fan-out would need
+  // server-side per-member republish. We therefore only emit typing
+  // for friend chats; group typing is intentionally deferred to the
+  // group_chat fan-out work.
+  const typingThrottleRef = useRef<{ lastTrueAt: number; idleTimer: number | null }>({
+    lastTrueAt: 0,
+    idleTimer: null,
+  });
+
+  const peerActorIdForTyping = activeTab === 'friend' ? activePeerDid : null;
+
+  const fireTyping = (typing: boolean) => {
+    if (!activeUlid || !peerActorIdForTyping) return;
+    api.realtimeTypingSend(peerActorIdForTyping, activeUlid, typing).catch((err) => {
+      // Typing is best-effort; debug-level only so a temporarily
+      // unreachable station does not spam the user-visible log.
+      log.debug('chat', 'typing pulse failed', { typing, error: err });
+    });
+  };
+
+  const scheduleIdleStop = () => {
+    const ref = typingThrottleRef.current;
+    if (ref.idleTimer != null) {
+      window.clearTimeout(ref.idleTimer);
+    }
+    ref.idleTimer = window.setTimeout(() => {
+      fireTyping(false);
+      ref.lastTrueAt = 0;
+      ref.idleTimer = null;
+    }, 4000);
+  };
+
+  const handleInputChange = (value: string) => {
+    setInputValue(value);
+    if (!activeUlid || !peerActorIdForTyping) return;
+    if (!value.trim()) {
+      // Empty input — treat as "stopped". Cancel the idle timer
+      // and emit `typing=false` only if we previously emitted true.
+      const ref = typingThrottleRef.current;
+      if (ref.idleTimer != null) {
+        window.clearTimeout(ref.idleTimer);
+        ref.idleTimer = null;
+      }
+      if (ref.lastTrueAt > 0) {
+        fireTyping(false);
+        ref.lastTrueAt = 0;
+      }
+      return;
+    }
+    const now = Date.now();
+    const ref = typingThrottleRef.current;
+    if (now - ref.lastTrueAt > 3000) {
+      fireTyping(true);
+      ref.lastTrueAt = now;
+    }
+    scheduleIdleStop();
+  };
+
+  // Cleanup on unmount / session switch: emit `typing=false` so the
+  // peer's bubble clears immediately rather than waiting for the
+  // GC sweep TTL. We deliberately use a ref-captured "last
+  // session/peer" rather than the closure-captured ones below
+  // because by the time this teardown runs the activeUlid has
+  // already changed.
+  const lastTypingTargetRef = useRef<{ sessionUlid: string; peerActorId: string } | null>(null);
+  useEffect(() => {
+    if (activeUlid && peerActorIdForTyping) {
+      lastTypingTargetRef.current = {
+        sessionUlid: activeUlid,
+        peerActorId: peerActorIdForTyping,
+      };
+    } else {
+      lastTypingTargetRef.current = null;
+    }
+    return () => {
+      const ref = typingThrottleRef.current;
+      if (ref.idleTimer != null) {
+        window.clearTimeout(ref.idleTimer);
+        ref.idleTimer = null;
+      }
+      if (ref.lastTrueAt > 0 && lastTypingTargetRef.current) {
+        const target = lastTypingTargetRef.current;
+        api
+          .realtimeTypingSend(target.peerActorId, target.sessionUlid, false)
+          .catch(() => {});
+        ref.lastTrueAt = 0;
+      }
+    };
+  }, [activeUlid, peerActorIdForTyping]);
+
+  // Receiver-side: derive whether the peer is composing in the
+  // currently-active conversation. We also expose a list of typing
+  // names for group chats once the group fan-out lands; for friend
+  // chats the entry is keyed on the peer's actor_id.
+  const peerIsTyping = (() => {
+    if (!activeUlid) return false;
+    const map = typingPeers[activeUlid];
+    if (!map) return false;
+    if (activeTab === 'friend') {
+      if (!peerActorIdForTyping) return false;
+      const e = map[peerActorIdForTyping];
+      return Boolean(e?.typing);
+    }
+    // For groups, "any peer typing" until the per-member panel lands.
+    return Object.values(map).some((e) => e.typing);
+  })();
+
   useEffect(() => {
     if (!scrollToMessageUlid || !activeUlid) return;
     const hasMsg = currentMessages.some((m) => m.ulid === scrollToMessageUlid);
@@ -346,6 +469,19 @@ export function ChatMessageArea() {
     setInputValue('');
     setReplyToUlid(null);
     setSending(true);
+    // Sending implies "stopped composing" — flip the bubble for the
+    // peer immediately rather than waiting on the 4s idle timer.
+    {
+      const ref = typingThrottleRef.current;
+      if (ref.idleTimer != null) {
+        window.clearTimeout(ref.idleTimer);
+        ref.idleTimer = null;
+      }
+      if (ref.lastTrueAt > 0) {
+        fireTyping(false);
+        ref.lastTrueAt = 0;
+      }
+    }
     try {
       if (activeTab === 'friend') {
         const session = sessions.find((s) => s.ulid === activeUlid);
@@ -440,6 +576,26 @@ export function ChatMessageArea() {
     .msg-row:hover .msg-hover-actions {
       opacity: 1 !important;
       pointer-events: auto !important;
+    }
+    .typing-dots {
+      display: inline-flex;
+      gap: 3px;
+      align-items: center;
+    }
+    .typing-dots > span {
+      display: inline-block;
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.35;
+      animation: typing-dot-bounce 1.2s infinite ease-in-out;
+    }
+    .typing-dots > span:nth-child(2) { animation-delay: 0.15s; }
+    .typing-dots > span:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes typing-dot-bounce {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+      30% { transform: translateY(-3px); opacity: 0.85; }
     }
   `;
 
@@ -641,6 +797,45 @@ export function ChatMessageArea() {
             );
           })
         )}
+        {peerIsTyping && (
+          // Receiver-side typing indicator. The bubble is laid out
+          // exactly like an incoming peer message so it doesn't shift
+          // the message list when it appears/disappears (avoiding a
+          // layout thrash). The dots are pure CSS animation; we
+          // intentionally don't use a spinner so it's distinguishable
+          // from "still loading messages".
+          <Flexbox
+            horizontal={false}
+            style={{
+              alignSelf: 'flex-start',
+              maxWidth: '70%',
+            }}
+          >
+            <Flexbox
+              horizontal
+              align="center"
+              gap={4}
+              style={{
+                padding: '8px 12px',
+                borderRadius: '12px 12px 12px 4px',
+                background: token.colorFillSecondary,
+                color: token.colorTextSecondary,
+                fontSize: 13,
+                lineHeight: 1.5,
+              }}
+              aria-label={t('chat.social.messageArea.typing', 'is typing…')}
+            >
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {t('chat.social.messageArea.typing', 'is typing…')}
+              </Text>
+              <span className="typing-dots" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+            </Flexbox>
+          </Flexbox>
+        )}
         <div ref={bottomRef} />
       </Flexbox>
 
@@ -700,8 +895,23 @@ export function ChatMessageArea() {
           />
           <TextArea
             value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
+            onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
+            onBlur={() => {
+              // Blurring the textarea is the user's "I'm stepping
+              // away" signal. Cancel the idle timer and emit one
+              // final `typing=false` so the peer's bubble clears
+              // without waiting on the GC TTL.
+              const ref = typingThrottleRef.current;
+              if (ref.idleTimer != null) {
+                window.clearTimeout(ref.idleTimer);
+                ref.idleTimer = null;
+              }
+              if (ref.lastTrueAt > 0) {
+                fireTyping(false);
+                ref.lastTrueAt = 0;
+              }
+            }}
             placeholder={t('chat.social.messageArea.placeholder')}
             autoSize={{ minRows: 1, maxRows: 4 }}
             style={{ flex: 1 }}
