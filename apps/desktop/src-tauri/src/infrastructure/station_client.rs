@@ -590,6 +590,9 @@ pub(crate) fn upload_multipart(
     path: &str,
     token: &str,
     file_path: &str,
+    bucket: &str,
+    visibility: &str,
+    chat_session_id: Option<&str>,
 ) -> Result<serde_json::Value, StationClientError> {
     let url = format!("{}{}", station_base_url(), path);
     tracing::debug!(path = %path, file = %file_path, "→ station (multipart upload)");
@@ -597,9 +600,14 @@ pub(crate) fn upload_multipart(
     let start = std::time::Instant::now();
     let client = build_client()?;
 
-    let form = reqwest::blocking::multipart::Form::new()
+    let mut form = reqwest::blocking::multipart::Form::new()
         .file("file", file_path)
         .map_err(|e| StationClientError::new(StationClientErrorKind::Network, format!("failed to open file for upload: {}", e), None))?;
+    form = form.text("bucket", bucket.to_string());
+    form = form.text("visibility", visibility.to_string());
+    if let Some(sid) = chat_session_id {
+        form = form.text("chat_session_id", sid.to_string());
+    }
 
     let resp = client
         .post(&url)

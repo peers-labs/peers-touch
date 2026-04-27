@@ -58,6 +58,8 @@ pub struct ChatAttachmentUploaded {
     /// older Station builds that pre-date the field.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub sha256: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub visibility: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,7 +76,13 @@ pub struct OssResolved {
     pub key: String,
 }
 
-pub fn chat_upload_attachment(file_path: &str, token: &str) -> AppResult<StubPayload> {
+pub fn chat_upload_attachment(
+    file_path: &str,
+    token: &str,
+    bucket: &str,
+    visibility: &str,
+    chat_session_id: Option<&str>,
+) -> AppResult<StubPayload> {
     if file_path.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
@@ -84,7 +92,14 @@ pub fn chat_upload_attachment(file_path: &str, token: &str) -> AppResult<StubPay
     }
     tracing::info!(file_path = %file_path, "Chat attachment upload start");
 
-    let resp = match station_client::upload_multipart("/sub-oss/upload", token, file_path) {
+    let resp = match station_client::upload_multipart(
+        "/sub-oss/upload",
+        token,
+        file_path,
+        bucket,
+        visibility,
+        if visibility == "chat" { chat_session_id } else { None },
+    ) {
         Ok(v) => v,
         Err(e) => {
             tracing::error!(error = %e, "Chat attachment upload failed");
@@ -135,6 +150,11 @@ pub fn chat_upload_attachment(file_path: &str, token: &str) -> AppResult<StubPay
             .get("sha256")
             .and_then(|v| v.as_str())
             .unwrap_or("")
+            .to_string(),
+        visibility: resp
+            .get("visibility")
+            .and_then(|v| v.as_str())
+            .unwrap_or(visibility)
             .to_string(),
     };
 

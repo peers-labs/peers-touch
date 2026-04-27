@@ -353,6 +353,18 @@ export interface PresenceTransitionEvent {
 }
 
 /**
+ * Tauri `chat_upload_attachment` command payload (field names match Rust
+ * `ChatUploadAttachmentInput`).
+ */
+export interface ChatUploadAttachmentInput {
+  file_path: string;
+  bucket: string;
+  visibility: 'public' | 'chat' | 'private';
+  /** Required when `visibility` is `chat`. */
+  chat_session_id?: string | null;
+}
+
+/**
  * Payload returned by `chat_upload_attachment`.
  *
  * `cid` is the federated URI (`oss://{host}/{key}`) the message must
@@ -376,6 +388,8 @@ export interface ChatAttachmentUploaded {
    * the sender claimed it was — meaningful end-to-end integrity
    * once federation lands. */
   sha256?: string;
+  /** Echoed or inferred OSS visibility: `public` | `chat` | `private`. */
+  visibility?: string;
 }
 
 /**
@@ -1981,10 +1995,10 @@ export const api = {
   // metadata to embed in `MessageAttachment`. See
   // `application/oss/mod.rs::ChatAttachmentUploaded` for the
   // authoritative shape.
-  chatUploadAttachment: (filePath: string) =>
-    invokeRustDataFromStatus<{ file_path: string }, ChatAttachmentUploaded>(
+  chatUploadAttachment: (input: ChatUploadAttachmentInput) =>
+    invokeRustDataFromStatus<ChatUploadAttachmentInput, ChatAttachmentUploaded>(
       'chat_upload_attachment',
-      { file_path: filePath },
+      input,
     ),
 
   // Resolve an `oss://` URI (or bare key) to a local cached path
@@ -2321,6 +2335,17 @@ export const api = {
   // Remove PIN protection from account — reuses AccountSetPinInput (same shape: account_id + pin)
   accountRemovePin: (accountId: string, pin: string) =>
     invokeRustDataFromStatus<AccountSetPinInput, { ok: boolean }>('account_remove_pin', {
+      account_id: accountId,
+      pin,
+    }),
+
+  // Re-link an existing PIN to the freshly issued session token. Used after a
+  // password / OAuth login on an account whose PIN protection survived but
+  // whose encrypted_session was wiped — the user enters the same PIN they
+  // already configured and the backend re-encrypts the new token under it.
+  // Errors map to UNAUTHORIZED (wrong PIN) / FORBIDDEN (locked out).
+  accountRelinkPin: (accountId: string, pin: string) =>
+    invokeRustDataFromStatus<AccountUnlockInput, { ok: boolean; account_id: string }>('account_relink_pin', {
       account_id: accountId,
       pin,
     }),
