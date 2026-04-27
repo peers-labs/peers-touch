@@ -2,16 +2,17 @@ package model
 
 import "time"
 
-// SchemaVersionV2 is the marker the bootstrap routine writes once it
-// has finished provisioning system buckets and backfilling existing
-// FileMeta rows. The boot sequence reads `oss_meta` first; if a row
-// with this version is present, the bootstrap is skipped.
+// SchemaVersionV2 is the marker the bootstrap routine writes after a
+// successful AutoMigrate. The boot sequence reads `oss_meta` first;
+// if a row with this version is present, bootstrap is skipped on
+// subsequent restarts. There is no backfill / data-migration step —
+// peers-oss is a greenfield application and the schema is the only
+// source of truth.
 //
 // Bumping this constant is a deliberate schema change — *do not* do
 // it casually. Any future migration that needs to re-run bootstrap
-// for already-upgraded stations should add a *new* version constant
-// (V3, V4, …) and a corresponding migration function, leaving V2
-// in place.
+// should add a *new* version constant (V3, V4, …) and the
+// corresponding `AutoMigrate` invocation, leaving V2 in place.
 const SchemaVersionV2 = "v2"
 
 // Meta is a tiny key/value table used for schema-version markers and
