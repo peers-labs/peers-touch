@@ -125,6 +125,58 @@ func (CallSignal_Kind) EnumDescriptor() ([]byte, []int) {
 	return file_domain_realtime_event_proto_rawDescGZIP(), []int{6, 0}
 }
 
+type MessageMutation_Kind int32
+
+const (
+	MessageMutation_KIND_UNSPECIFIED MessageMutation_Kind = 0
+	MessageMutation_RECALL           MessageMutation_Kind = 1
+	MessageMutation_EDIT             MessageMutation_Kind = 2
+	MessageMutation_DELETE           MessageMutation_Kind = 3
+)
+
+// Enum value maps for MessageMutation_Kind.
+var (
+	MessageMutation_Kind_name = map[int32]string{
+		0: "KIND_UNSPECIFIED",
+		1: "RECALL",
+		2: "EDIT",
+		3: "DELETE",
+	}
+	MessageMutation_Kind_value = map[string]int32{
+		"KIND_UNSPECIFIED": 0,
+		"RECALL":           1,
+		"EDIT":             2,
+		"DELETE":           3,
+	}
+)
+
+func (x MessageMutation_Kind) Enum() *MessageMutation_Kind {
+	p := new(MessageMutation_Kind)
+	*p = x
+	return p
+}
+
+func (x MessageMutation_Kind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MessageMutation_Kind) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_realtime_event_proto_enumTypes[2].Descriptor()
+}
+
+func (MessageMutation_Kind) Type() protoreflect.EnumType {
+	return &file_domain_realtime_event_proto_enumTypes[2]
+}
+
+func (x MessageMutation_Kind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use MessageMutation_Kind.Descriptor instead.
+func (MessageMutation_Kind) EnumDescriptor() ([]byte, []int) {
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{7, 0}
+}
+
 // StreamEvent is the single envelope every realtime frame uses.
 //
 // Protobuf wire bytes are base64-encoded into the SSE `data:` field;
@@ -149,6 +201,7 @@ type StreamEvent struct {
 	//	*StreamEvent_Presence
 	//	*StreamEvent_Signaling
 	//	*StreamEvent_Resync
+	//	*StreamEvent_Mutation
 	Kind          isStreamEvent_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -268,6 +321,15 @@ func (x *StreamEvent) GetResync() *Resync {
 	return nil
 }
 
+func (x *StreamEvent) GetMutation() *MessageMutation {
+	if x != nil {
+		if x, ok := x.Kind.(*StreamEvent_Mutation); ok {
+			return x.Mutation
+		}
+	}
+	return nil
+}
+
 type isStreamEvent_Kind interface {
 	isStreamEvent_Kind()
 }
@@ -300,6 +362,10 @@ type StreamEvent_Resync struct {
 	Resync *Resync `protobuf:"bytes,16,opt,name=resync,proto3,oneof"`
 }
 
+type StreamEvent_Mutation struct {
+	Mutation *MessageMutation `protobuf:"bytes,17,opt,name=mutation,proto3,oneof"`
+}
+
 func (*StreamEvent_Hb) isStreamEvent_Kind() {}
 
 func (*StreamEvent_Message) isStreamEvent_Kind() {}
@@ -313,6 +379,8 @@ func (*StreamEvent_Presence) isStreamEvent_Kind() {}
 func (*StreamEvent_Signaling) isStreamEvent_Kind() {}
 
 func (*StreamEvent_Resync) isStreamEvent_Kind() {}
+
+func (*StreamEvent_Mutation) isStreamEvent_Kind() {}
 
 // Heartbeat is emitted by the server every 15 seconds (default,
 // operator-tunable) so the client can detect a silent connection even
@@ -722,6 +790,123 @@ func (x *CallSignal) GetPayload() []byte {
 	return nil
 }
 
+// MessageMutation notifies a peer that a previously-delivered message
+// was retroactively modified by its author: recalled (content cleared
+// and a tombstone shown), edited (content replaced, edited_at stamped),
+// or deleted (row removed; UI removes the bubble entirely).
+//
+// Wire-level constraints:
+//   - RECALL: `new_content` MUST be empty. `new_ciphertext` MUST be
+//     empty. The receiver clears the bubble's text and renders a
+//     "this message was recalled" placeholder.
+//   - EDIT: For E2EE chats, `new_ciphertext` carries the freshly
+//     ratchet-encrypted body and `new_content` is empty. For chats
+//     where E2EE is not yet established (legacy / not-yet-keyed
+//     sessions), `new_content` carries plaintext. Receivers MUST
+//     prefer `new_ciphertext` when both are non-empty.
+//   - DELETE: both fields MUST be empty. Receivers remove the
+//     message from their store entirely.
+//
+// Mutations are authored by the message's original sender only.
+// Station rejects mutations from any other actor at the ingress
+// handler. The receiver's UI is forward-only: a stale RECALL
+// arriving after a DELETE for the same ulid is a no-op (the row no
+// longer exists).
+type MessageMutation struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionUlid   string                 `protobuf:"bytes,1,opt,name=session_ulid,json=sessionUlid,proto3" json:"session_ulid,omitempty"`
+	Ulid          string                 `protobuf:"bytes,2,opt,name=ulid,proto3" json:"ulid,omitempty"`
+	FromActorId   string                 `protobuf:"bytes,3,opt,name=from_actor_id,json=fromActorId,proto3" json:"from_actor_id,omitempty"`
+	Kind          MessageMutation_Kind   `protobuf:"varint,4,opt,name=kind,proto3,enum=peers_touch.model.realtime.v1.MessageMutation_Kind" json:"kind,omitempty"`
+	NewCiphertext []byte                 `protobuf:"bytes,5,opt,name=new_ciphertext,json=newCiphertext,proto3" json:"new_ciphertext,omitempty"`
+	NewContent    string                 `protobuf:"bytes,6,opt,name=new_content,json=newContent,proto3" json:"new_content,omitempty"`
+	// Server stamp of the mutation's wall-clock time, milliseconds
+	// since Unix epoch. Display-only; clients must not use it for
+	// ordering — trust the parent StreamEvent's `event_id`.
+	MutatedTsUnixMs int64 `protobuf:"varint,7,opt,name=mutated_ts_unix_ms,json=mutatedTsUnixMs,proto3" json:"mutated_ts_unix_ms,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *MessageMutation) Reset() {
+	*x = MessageMutation{}
+	mi := &file_domain_realtime_event_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MessageMutation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MessageMutation) ProtoMessage() {}
+
+func (x *MessageMutation) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_realtime_event_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MessageMutation.ProtoReflect.Descriptor instead.
+func (*MessageMutation) Descriptor() ([]byte, []int) {
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *MessageMutation) GetSessionUlid() string {
+	if x != nil {
+		return x.SessionUlid
+	}
+	return ""
+}
+
+func (x *MessageMutation) GetUlid() string {
+	if x != nil {
+		return x.Ulid
+	}
+	return ""
+}
+
+func (x *MessageMutation) GetFromActorId() string {
+	if x != nil {
+		return x.FromActorId
+	}
+	return ""
+}
+
+func (x *MessageMutation) GetKind() MessageMutation_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return MessageMutation_KIND_UNSPECIFIED
+}
+
+func (x *MessageMutation) GetNewCiphertext() []byte {
+	if x != nil {
+		return x.NewCiphertext
+	}
+	return nil
+}
+
+func (x *MessageMutation) GetNewContent() string {
+	if x != nil {
+		return x.NewContent
+	}
+	return ""
+}
+
+func (x *MessageMutation) GetMutatedTsUnixMs() int64 {
+	if x != nil {
+		return x.MutatedTsUnixMs
+	}
+	return 0
+}
+
 // Resync is the server's only signal that the client's Last-Event-ID
 // cursor falls outside the in-memory ring buffer. On receiving this,
 // clients MUST perform a cold catch-up before trusting any event
@@ -739,7 +924,7 @@ type Resync struct {
 
 func (x *Resync) Reset() {
 	*x = Resync{}
-	mi := &file_domain_realtime_event_proto_msgTypes[7]
+	mi := &file_domain_realtime_event_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -751,7 +936,7 @@ func (x *Resync) String() string {
 func (*Resync) ProtoMessage() {}
 
 func (x *Resync) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[7]
+	mi := &file_domain_realtime_event_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -764,7 +949,7 @@ func (x *Resync) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Resync.ProtoReflect.Descriptor instead.
 func (*Resync) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{7}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Resync) GetNewestEventId() string {
@@ -785,7 +970,7 @@ var File_domain_realtime_event_proto protoreflect.FileDescriptor
 
 const file_domain_realtime_event_proto_rawDesc = "" +
 	"\n" +
-	"\x1bdomain/realtime/event.proto\x12\x1dpeers_touch.model.realtime.v1\"\xbe\x04\n" +
+	"\x1bdomain/realtime/event.proto\x12\x1dpeers_touch.model.realtime.v1\"\x8c\x05\n" +
 	"\vStreamEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1c\n" +
 	"\n" +
@@ -797,7 +982,8 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\x06typing\x18\r \x01(\v2*.peers_touch.model.realtime.v1.TypingStateH\x00R\x06typing\x12I\n" +
 	"\bpresence\x18\x0e \x01(\v2+.peers_touch.model.realtime.v1.PresenceFlipH\x00R\bpresence\x12I\n" +
 	"\tsignaling\x18\x0f \x01(\v2).peers_touch.model.realtime.v1.CallSignalH\x00R\tsignaling\x12?\n" +
-	"\x06resync\x18\x10 \x01(\v2%.peers_touch.model.realtime.v1.ResyncH\x00R\x06resyncB\x06\n" +
+	"\x06resync\x18\x10 \x01(\v2%.peers_touch.model.realtime.v1.ResyncH\x00R\x06resync\x12L\n" +
+	"\bmutation\x18\x11 \x01(\v2..peers_touch.model.realtime.v1.MessageMutationH\x00R\bmutationB\x06\n" +
 	"\x04kind\"1\n" +
 	"\tHeartbeat\x12$\n" +
 	"\x0efloor_event_id\x18\x01 \x01(\tR\ffloorEventId\"\xe5\x01\n" +
@@ -839,7 +1025,23 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\x06ANSWER\x10\x02\x12\r\n" +
 	"\tCANDIDATE\x10\x03\x12\n" +
 	"\n" +
-	"\x06HANGUP\x10\x04\"H\n" +
+	"\x06HANGUP\x10\x04\"\xea\x02\n" +
+	"\x0fMessageMutation\x12!\n" +
+	"\fsession_ulid\x18\x01 \x01(\tR\vsessionUlid\x12\x12\n" +
+	"\x04ulid\x18\x02 \x01(\tR\x04ulid\x12\"\n" +
+	"\rfrom_actor_id\x18\x03 \x01(\tR\vfromActorId\x12G\n" +
+	"\x04kind\x18\x04 \x01(\x0e23.peers_touch.model.realtime.v1.MessageMutation.KindR\x04kind\x12%\n" +
+	"\x0enew_ciphertext\x18\x05 \x01(\fR\rnewCiphertext\x12\x1f\n" +
+	"\vnew_content\x18\x06 \x01(\tR\n" +
+	"newContent\x12+\n" +
+	"\x12mutated_ts_unix_ms\x18\a \x01(\x03R\x0fmutatedTsUnixMs\">\n" +
+	"\x04Kind\x12\x14\n" +
+	"\x10KIND_UNSPECIFIED\x10\x00\x12\n" +
+	"\n" +
+	"\x06RECALL\x10\x01\x12\b\n" +
+	"\x04EDIT\x10\x02\x12\n" +
+	"\n" +
+	"\x06DELETE\x10\x03\"H\n" +
 	"\x06Resync\x12&\n" +
 	"\x0fnewest_event_id\x18\x01 \x01(\tR\rnewestEventId\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reasonBOZMgithub.com/peers-labs/peers-touch/station/frame/touch/model/realtime;realtimeb\x06proto3"
@@ -856,35 +1058,39 @@ func file_domain_realtime_event_proto_rawDescGZIP() []byte {
 	return file_domain_realtime_event_proto_rawDescData
 }
 
-var file_domain_realtime_event_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_domain_realtime_event_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_domain_realtime_event_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_domain_realtime_event_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_domain_realtime_event_proto_goTypes = []any{
-	(MessageReceipt_Kind)(0), // 0: peers_touch.model.realtime.v1.MessageReceipt.Kind
-	(CallSignal_Kind)(0),     // 1: peers_touch.model.realtime.v1.CallSignal.Kind
-	(*StreamEvent)(nil),      // 2: peers_touch.model.realtime.v1.StreamEvent
-	(*Heartbeat)(nil),        // 3: peers_touch.model.realtime.v1.Heartbeat
-	(*MessageEnvelope)(nil),  // 4: peers_touch.model.realtime.v1.MessageEnvelope
-	(*MessageReceipt)(nil),   // 5: peers_touch.model.realtime.v1.MessageReceipt
-	(*TypingState)(nil),      // 6: peers_touch.model.realtime.v1.TypingState
-	(*PresenceFlip)(nil),     // 7: peers_touch.model.realtime.v1.PresenceFlip
-	(*CallSignal)(nil),       // 8: peers_touch.model.realtime.v1.CallSignal
-	(*Resync)(nil),           // 9: peers_touch.model.realtime.v1.Resync
+	(MessageReceipt_Kind)(0),  // 0: peers_touch.model.realtime.v1.MessageReceipt.Kind
+	(CallSignal_Kind)(0),      // 1: peers_touch.model.realtime.v1.CallSignal.Kind
+	(MessageMutation_Kind)(0), // 2: peers_touch.model.realtime.v1.MessageMutation.Kind
+	(*StreamEvent)(nil),       // 3: peers_touch.model.realtime.v1.StreamEvent
+	(*Heartbeat)(nil),         // 4: peers_touch.model.realtime.v1.Heartbeat
+	(*MessageEnvelope)(nil),   // 5: peers_touch.model.realtime.v1.MessageEnvelope
+	(*MessageReceipt)(nil),    // 6: peers_touch.model.realtime.v1.MessageReceipt
+	(*TypingState)(nil),       // 7: peers_touch.model.realtime.v1.TypingState
+	(*PresenceFlip)(nil),      // 8: peers_touch.model.realtime.v1.PresenceFlip
+	(*CallSignal)(nil),        // 9: peers_touch.model.realtime.v1.CallSignal
+	(*MessageMutation)(nil),   // 10: peers_touch.model.realtime.v1.MessageMutation
+	(*Resync)(nil),            // 11: peers_touch.model.realtime.v1.Resync
 }
 var file_domain_realtime_event_proto_depIdxs = []int32{
-	3, // 0: peers_touch.model.realtime.v1.StreamEvent.hb:type_name -> peers_touch.model.realtime.v1.Heartbeat
-	4, // 1: peers_touch.model.realtime.v1.StreamEvent.message:type_name -> peers_touch.model.realtime.v1.MessageEnvelope
-	5, // 2: peers_touch.model.realtime.v1.StreamEvent.receipt:type_name -> peers_touch.model.realtime.v1.MessageReceipt
-	6, // 3: peers_touch.model.realtime.v1.StreamEvent.typing:type_name -> peers_touch.model.realtime.v1.TypingState
-	7, // 4: peers_touch.model.realtime.v1.StreamEvent.presence:type_name -> peers_touch.model.realtime.v1.PresenceFlip
-	8, // 5: peers_touch.model.realtime.v1.StreamEvent.signaling:type_name -> peers_touch.model.realtime.v1.CallSignal
-	9, // 6: peers_touch.model.realtime.v1.StreamEvent.resync:type_name -> peers_touch.model.realtime.v1.Resync
-	0, // 7: peers_touch.model.realtime.v1.MessageReceipt.kind:type_name -> peers_touch.model.realtime.v1.MessageReceipt.Kind
-	1, // 8: peers_touch.model.realtime.v1.CallSignal.kind:type_name -> peers_touch.model.realtime.v1.CallSignal.Kind
-	9, // [9:9] is the sub-list for method output_type
-	9, // [9:9] is the sub-list for method input_type
-	9, // [9:9] is the sub-list for extension type_name
-	9, // [9:9] is the sub-list for extension extendee
-	0, // [0:9] is the sub-list for field type_name
+	4,  // 0: peers_touch.model.realtime.v1.StreamEvent.hb:type_name -> peers_touch.model.realtime.v1.Heartbeat
+	5,  // 1: peers_touch.model.realtime.v1.StreamEvent.message:type_name -> peers_touch.model.realtime.v1.MessageEnvelope
+	6,  // 2: peers_touch.model.realtime.v1.StreamEvent.receipt:type_name -> peers_touch.model.realtime.v1.MessageReceipt
+	7,  // 3: peers_touch.model.realtime.v1.StreamEvent.typing:type_name -> peers_touch.model.realtime.v1.TypingState
+	8,  // 4: peers_touch.model.realtime.v1.StreamEvent.presence:type_name -> peers_touch.model.realtime.v1.PresenceFlip
+	9,  // 5: peers_touch.model.realtime.v1.StreamEvent.signaling:type_name -> peers_touch.model.realtime.v1.CallSignal
+	11, // 6: peers_touch.model.realtime.v1.StreamEvent.resync:type_name -> peers_touch.model.realtime.v1.Resync
+	10, // 7: peers_touch.model.realtime.v1.StreamEvent.mutation:type_name -> peers_touch.model.realtime.v1.MessageMutation
+	0,  // 8: peers_touch.model.realtime.v1.MessageReceipt.kind:type_name -> peers_touch.model.realtime.v1.MessageReceipt.Kind
+	1,  // 9: peers_touch.model.realtime.v1.CallSignal.kind:type_name -> peers_touch.model.realtime.v1.CallSignal.Kind
+	2,  // 10: peers_touch.model.realtime.v1.MessageMutation.kind:type_name -> peers_touch.model.realtime.v1.MessageMutation.Kind
+	11, // [11:11] is the sub-list for method output_type
+	11, // [11:11] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_domain_realtime_event_proto_init() }
@@ -900,14 +1106,15 @@ func file_domain_realtime_event_proto_init() {
 		(*StreamEvent_Presence)(nil),
 		(*StreamEvent_Signaling)(nil),
 		(*StreamEvent_Resync)(nil),
+		(*StreamEvent_Mutation)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_realtime_event_proto_rawDesc), len(file_domain_realtime_event_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   8,
+			NumEnums:      3,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

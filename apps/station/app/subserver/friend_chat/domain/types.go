@@ -35,9 +35,40 @@ type Message struct {
 	ReplyToID        string
 	Status           int32
 	Attachments      []Attachment
-	SentAt           time.Time
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	// Recalled flips when the original sender invokes recall. The
+	// row is kept (so threading and search snippets stay coherent)
+	// but Content / EncryptedPayload are cleared and clients render
+	// a tombstone in place of the bubble. Mutually exclusive with
+	// the row even existing: a deleted message has no row at all.
+	Recalled bool
+	// EditedAt is the wall-clock at which the row's content was last
+	// replaced via edit. Zero-value when never edited. Display-only;
+	// clients must not use it for ordering.
+	EditedAt time.Time
+	SentAt   time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// MutationOutcome is the slice of metadata a recall / edit / delete
+// operation needs to publish a realtime MessageMutation event. The
+// repo layer fills it from the DB row that was actually mutated, so
+// the handler never has to second-guess "did the row exist? was the
+// caller the owner?" before fanning out.
+//
+// `NewContent` / `NewCiphertext` are populated on EDIT only; on
+// RECALL and DELETE both are zero-value. `Kind` mirrors the
+// realtime MessageMutation_Kind enum on the wire (RECALL=1, EDIT=2,
+// DELETE=3).
+type MutationOutcome struct {
+	Ulid          string
+	SessionULID   string
+	SenderDID     string
+	ReceiverDID   string
+	Kind          int32
+	NewContent    string
+	NewCiphertext []byte
+	MutatedAt     time.Time
 }
 
 // AckedMessage is the slice of metadata an ack operation needs to fan

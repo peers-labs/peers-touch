@@ -165,6 +165,44 @@ interface SocialChatState {
   toggleDetail: () => void;
   setShowDetail: (show: boolean) => void;
   deleteMessage: (ulid: string, messageUlid: string, kind?: 'friend' | 'group') => Promise<void>;
+  /**
+   * Recall a previously-sent friend chat message. Hits the
+   * `/friend-chat/message/recall` endpoint; on success the server
+   * fans out a `MessageMutation` event over SSE which this store's
+   * `applyMessageMutation` handler folds into the local cache —
+   * we deliberately do NOT mutate optimistically so all clients
+   * (including the sender's other devices) converge through the
+   * same realtime pipeline.
+   *
+   * Friend chat only — group chat keeps using `groupChatRecallMessage`
+   * with its own UI placement.
+   */
+  recallFriendMessage: (sessionUlid: string, messageUlid: string) => Promise<void>;
+  /**
+   * Edit a previously-sent friend chat message. At least one of
+   * `newContent` or `newCiphertext` must be non-empty; both may
+   * be provided when an E2EE session also keeps a plaintext index
+   * for local search. Like recall, the optimistic update is left
+   * to the realtime convergence path.
+   */
+  editFriendMessage: (
+    sessionUlid: string,
+    messageUlid: string,
+    newContent?: string,
+    newCiphertext?: Uint8Array,
+  ) => Promise<void>;
+  /**
+   * Apply an inbound `MessageMutation` from the realtime stream.
+   * Idempotent: re-applying the same RECALL/EDIT/DELETE on a row
+   * already in that state is a no-op so multi-device sender echo
+   * does not flicker.
+   */
+  applyMessageMutation: (
+    sessionUlid: string,
+    messageUlid: string,
+    kind: 'RECALL' | 'EDIT' | 'DELETE',
+    payload: { newContent: string; newCiphertext: Uint8Array; mutatedTsUnixMs: number },
+  ) => void;
   loadCurrentUserProfile: () => Promise<void>;
 
   loadFriendRequests: (status?: number, limit?: number, offset?: number) => Promise<void>;
@@ -685,8 +723,14 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       if (tab === 'group') {
         await api.groupChatDeleteMessage(ulid, messageUlid);
       } else {
-        // No dedicated friend delete RPC; sync read/ack state with server before local removal.
-        await api.friendChatAckMessages([messageUlid], FriendMessageStatus.READ);
+        // Friend chat: real server-side delete. The handler emits
+        // a `MessageMutation { kind=DELETE }` over SSE which is
+        // the canonical path that drops the row from the local
+        // cache (via `applyMessageMutation`). Removing it locally
+        // here too is just a best-effort optimistic update so the
+        // bubble disappears immediately for the deleter; the SSE
+        // round-trip would be ~30-100ms on the same machine.
+        await api.friendChatDeleteMessage(ulid, messageUlid);
       }
       set((state) => ({
         messages: {
@@ -698,6 +742,111 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       log.error('socialChat', 'deleteMessage failed', error);
       throw error;
     }
+  },
+
+  recallFriendMessage: async (sessionUlid, messageUlid) => {
+    try {
+      await api.friendChatRecallMessage(sessionUlid, messageUlid);
+      // Optimistic flip: mark the local row recalled immediately.
+      // The realtime echo will idempotently re-affirm the same
+      // state via `applyMessageMutation`.
+      get().applyMessageMutation(
+        sessionUlid,
+        messageUlid,
+        'RECALL',
+        { newContent: '', newCiphertext: new Uint8Array(), mutatedTsUnixMs: Date.now() },
+      );
+    } catch (error) {
+      log.error('socialChat', 'recallFriendMessage failed', error);
+      throw error;
+    }
+  },
+
+  editFriendMessage: async (sessionUlid, messageUlid, newContent, newCiphertext) => {
+    if ((!newContent || newContent.trim() === '') && (!newCiphertext || newCiphertext.byteLength === 0)) {
+      throw new Error('editFriendMessage: newContent or newCiphertext is required');
+    }
+    try {
+      await api.friendChatEditMessage(sessionUlid, messageUlid, newContent, newCiphertext);
+      get().applyMessageMutation(
+        sessionUlid,
+        messageUlid,
+        'EDIT',
+        {
+          newContent: newContent ?? '',
+          newCiphertext: newCiphertext ?? new Uint8Array(),
+          mutatedTsUnixMs: Date.now(),
+        },
+      );
+    } catch (error) {
+      log.error('socialChat', 'editFriendMessage failed', error);
+      throw error;
+    }
+  },
+
+  applyMessageMutation: (sessionUlid, messageUlid, kind, payload) => {
+    set((state) => {
+      const msgs = state.messages[sessionUlid];
+      if (!msgs || msgs.length === 0) {
+        return {} as Partial<SocialChatState>;
+      }
+      // DELETE removes the row entirely. RECALL keeps it (so reply
+      // chains don't dangle) but flips `recalled=true` and clears
+      // the body — the bubble renders as a tombstone client-side.
+      // EDIT replaces the content / ciphertext and stamps editedAt.
+      let mutated = false;
+      let next: typeof msgs;
+      if (kind === 'DELETE') {
+        next = msgs.filter((m) => {
+          if (m.ulid === messageUlid) {
+            mutated = true;
+            return false;
+          }
+          return true;
+        });
+      } else {
+        next = msgs.map((m) => {
+          if (m.ulid !== messageUlid) return m;
+          // Only friend chat carries `recalled` / `editedAt`; if a
+          // group message somehow gets routed here we silently
+          // skip — the wire contract wouldn't put one in this map
+          // anyway (group recall uses the group store).
+          if (!('recalled' in m)) return m;
+          const fcm = m as FriendChatMessage;
+          if (kind === 'RECALL') {
+            if (fcm.recalled) return m; // idempotent re-apply
+            mutated = true;
+            return {
+              ...fcm,
+              recalled: true,
+              content: '',
+              encryptedPayload: new Uint8Array(),
+            } as FriendChatMessage;
+          }
+          // kind === 'EDIT'
+          mutated = true;
+          // Cast to any to construct the proto Timestamp shape
+          // without importing the generated schema here. The store
+          // surface already treats `editedAt` as opaque; the chat
+          // bubble renders the tooltip "edited at <local time>".
+          // We only set the ms field — protobuf-es accepts a
+          // plain `{ seconds, nanos }` shape on assignment.
+          const seconds = BigInt(Math.floor(payload.mutatedTsUnixMs / 1000));
+          const nanos = (payload.mutatedTsUnixMs % 1000) * 1_000_000;
+          return {
+            ...fcm,
+            content: payload.newContent || fcm.content,
+            encryptedPayload:
+              payload.newCiphertext.byteLength > 0
+                ? payload.newCiphertext
+                : fcm.encryptedPayload,
+            editedAt: { seconds, nanos } as unknown as FriendChatMessage['editedAt'],
+          } as FriendChatMessage;
+        });
+      }
+      if (!mutated) return {} as Partial<SocialChatState>;
+      return { messages: { ...state.messages, [sessionUlid]: next } };
+    });
   },
 
   loadCurrentUserProfile: async () => {

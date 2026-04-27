@@ -188,6 +188,33 @@ pub struct FriendChatAckInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatRecallInput {
+    pub session_ulid: String,
+    pub message_ulid: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatEditInput {
+    pub session_ulid: String,
+    pub message_ulid: String,
+    /// Plaintext replacement body. Mutually optional with
+    /// `new_encrypted_payload`; at least one must be non-empty.
+    /// Both can be set at once when the chat upgrades to E2EE
+    /// mid-edit and the client wants to keep the legacy index
+    /// hot.
+    pub new_content: Option<String>,
+    /// E2EE replacement body. The TS layer decodes from base64
+    /// before reaching this contract — we accept raw bytes here.
+    pub new_encrypted_payload: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatDeleteInput {
+    pub session_ulid: String,
+    pub message_ulid: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupChatListInput {
     pub limit: Option<u32>,
     pub offset: Option<u32>,

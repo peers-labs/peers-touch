@@ -102,6 +102,37 @@ export interface RealtimeTypingStatePayload {
   typing: boolean;
 }
 
+/**
+ * Mutation kind, mirrors the wire `MessageMutation.Kind` enum. The
+ * dispatch boundary drops `KIND_UNSPECIFIED` so subscribers always
+ * see one of the concrete cases.
+ */
+export type RealtimeMessageMutationKind = 'RECALL' | 'EDIT' | 'DELETE';
+
+export interface RealtimeMessageMutationPayload {
+  /** Server-assigned event id. Opaque cursor; see contract §2.2. */
+  eventId: string;
+  /** Session that owns the mutated message. */
+  sessionUlid: string;
+  /** ULID of the *target* message — the one being recalled / edited
+   *  / deleted. Receiver uses this as the local store key. */
+  messageUlid: string;
+  /** DID of whoever performed the mutation. Today this must equal
+   *  the original sender (server-enforced); a future moderator path
+   *  could surface a different actor here. */
+  fromActorId: string;
+  /** Which mutation arm this frame represents. */
+  kind: RealtimeMessageMutationKind;
+  /** For EDIT only: the new plaintext body, or empty when the chat
+   *  is fully E2EE and only `newCiphertext` was supplied. */
+  newContent: string;
+  /** For EDIT only: the new ciphertext body, when applicable. */
+  newCiphertext: Uint8Array;
+  /** Server-stamped wall-clock at which the mutation landed.
+   *  Display-only: clients must NOT use it for ordering. */
+  mutatedTsUnixMs: number;
+}
+
 export interface EventPayloadMap {
   [EVENT.AUTH_IDENTITY_CHANGED]: void;
   [EVENT.AUTH_SESSION_REVOKED]: SessionRevokedPayload;
@@ -119,6 +150,7 @@ export interface EventPayloadMap {
   [EVENT.REALTIME_CALL_SIGNAL]: RealtimeCallSignalPayload;
   [EVENT.REALTIME_MESSAGE_RECEIPT]: RealtimeMessageReceiptPayload;
   [EVENT.REALTIME_TYPING_STATE]: RealtimeTypingStatePayload;
+  [EVENT.REALTIME_MESSAGE_MUTATION]: RealtimeMessageMutationPayload;
 }
 
 export interface AppEvent<TType extends keyof EventPayloadMap> {
