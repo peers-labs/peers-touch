@@ -57,9 +57,13 @@ export interface RealtimeCallSignalPayload {
   fromActorId: string;
   /** Which signaling phase this frame represents. */
   kind: RealtimeCallSignalKind;
-  /** Opaque ciphertext envelope produced by the chat session ratchet
-   *  (contract §2.7.2). The receiver decrypts via
-   *  `cryptoDecryptMessage` after JSON-parsing the envelope. */
+  /** Opaque ciphertext envelope produced by the standalone signaling
+   *  envelope (contract §2.7.2 — X25519 + HKDF-SHA256 + AES-256-GCM
+   *  with random nonce + AAD bound to `sessionUlid` and `kind`). The
+   *  receiver opens it via `api.signalingEnvelopeOpen`, NOT the chat
+   *  ratchet — see §2.7.2.1 for the rationale (chat ratchet requires
+   *  strict in-order delivery and would stall on dropped candidates).
+   *  Wire layout: `eph_pub(32B) || nonce(12B) || ciphertext || tag(16B)`. */
   payload: Uint8Array;
 }
 
