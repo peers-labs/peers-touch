@@ -372,12 +372,24 @@ fn unauthorized(message: impl Into<String>, details: serde_json::Value) -> AppRe
     AppResult::fail(ErrorCode::Unauthorized, message, Some(details))
 }
 
-/// Mark account as having a restorable session; if PIN is set, encrypt the token.
+/// Mark account as having a restorable session.
 ///
-/// For non-PIN accounts, only ONE session is active at a time. When a new account
-/// logs in, the previous non-PIN account's `has_session` is cleared so the
-/// account picker matches reality. Raw tokens are also stored per-actor in
-/// `infrastructure::session_store`.
+/// For non-PIN accounts, only ONE session is active at a time. When a new
+/// account logs in, the previous non-PIN account's `has_session` is cleared so
+/// the account picker matches reality. Raw tokens are also stored per-actor in
+/// `infrastructure::session_store`, keyed by `actor_id`, so a multi-actor
+/// scenario (foreground PIN account, background OAuth account) doesn't trample
+/// the legacy shared `session.json`.
+///
+/// PIN handling: if the account has dormant PIN protection (PIN configured
+/// but the encrypted session blob is gone — typically because a previous
+/// token was revoked and `clear_account_session` wiped the blob) we drop the
+/// PIN protection entirely. We can't re-encrypt the new token here because
+/// we don't have the user's PIN at password/OAuth login time, and leaving
+/// the dormant PIN in place sends the next cold-start picker into a
+/// guaranteed "no encrypted session" dead-end. Dropping it lets the post-
+/// login flow route the user through the normal `set_pin` prompt where
+/// they can opt back into PIN protection (or skip).
 fn mark_account_has_session(account_id: &str, _token: &str) {
     if let Ok(mut state) = crate::infrastructure::auth_identity::read_state() {
         for account in &mut state.accounts {
@@ -388,6 +400,13 @@ fn mark_account_has_session(account_id: &str, _token: &str) {
 
         if let Some(account) = state.accounts.iter_mut().find(|a| a.id == account_id) {
             account.has_session = true;
+            if account.pin_protection.is_some() && account.encrypted_session.is_none() {
+                tracing::info!(
+                    account_id = %account_id,
+                    "auth: dropping dormant PIN protection (no encrypted blob to unlock)"
+                );
+                account.pin_protection = None;
+            }
         }
 
         let _ = crate::infrastructure::auth_identity::write_state(&state);
