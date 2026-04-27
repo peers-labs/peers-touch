@@ -66,6 +66,7 @@ func Bootstrap(ctx context.Context, deps BootstrapDeps) (*BootstrapResult, error
 		&ossmodel.Bucket{},
 		&ossmodel.Audit{},
 		&ossmodel.Meta{},
+		&ossmodel.PeerKey{},
 	); err != nil {
 		return nil, err
 	}
