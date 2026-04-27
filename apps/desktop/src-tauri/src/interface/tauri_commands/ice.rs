@@ -10,6 +10,47 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{State, Window};
 
+// ---------------------------------------------------------------------
+// What this module is (and what it deliberately is NOT) anymore.
+//
+// Until commit f6ac7929 this file fronted Station's HTTP-polling
+// signaling subserver: `POST/GET /api/v1/ice/session/{new,get,offer,
+// answer,candidate,candidates}`. Every active conversation paid ~1
+// req/s for candidate polling, the offer/answer SDPs flowed in
+// plaintext through Station, and one polling loop per peer pair did
+// not survive offline → online transitions cleanly.
+//
+// Phase 8 of the realtime architecture (see
+// docs/architecture/realtime/event-stream.md §2.7 and §3.4) replaced
+// that surface with:
+//
+//   - `POST /realtime/signal` — single ingress, JWT-gated, opaque
+//     ciphertext payload (the standalone signaling envelope from
+//     §2.7.2 — X25519 + AES-256-GCM, AAD-bound to session_ulid+kind).
+//   - SSE fan-out via `GET /events/stream` — Station publishes onto
+//     the same EventBus that already carries chat traffic, so a
+//     receiver gets signals on every active session of every active
+//     device with zero new wire surface.
+//
+// What survives in this module is intentionally minimal:
+//
+//   - `ice_get_servers`  — fetch TURN credentials from the `turn`
+//                          subserver. WebRTC media plane still needs
+//                          ICE servers; the `turn` subserver was
+//                          never part of the deprecated signaling
+//                          subserver and stays untouched.
+//   - `ice_peer_register` — publishes a presence/role hint
+//                           (`client+p2p:connected` etc.) to Station
+//                           so other devices can see liveness.
+//                           Strictly informational, used by
+//                           friendChatP2p for its UI status.
+//
+// Anything that smells like an ICE *session* — offer/answer/candidate
+// exchange — must NOT come back here. New code should use
+// `realtime_signal_send` (interface/tauri_commands/realtime.rs) and
+// the SSE call-signal stream.
+// ---------------------------------------------------------------------
+
 fn token_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Result<String, AppResult<StubPayload>> {
     let token = session_resolver::token_for_window(state.inner(), window).unwrap_or_default();
     if token.trim().is_empty() {
@@ -60,7 +101,7 @@ pub fn ice_get_servers(state: State<'_, Arc<AppState>>, window: Window) -> AppRe
 }
 
 // ============================================================================
-// Signaling (WebRTC offer/answer/candidates exchange)
+// Peer presence (informational only — NOT a signaling channel)
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,194 +133,3 @@ pub fn ice_peer_register(input: IcePeerRegisterInput, state: State<'_, Arc<AppSt
     };
     to_stub("ice_peer_register", resp)
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IcePeerUnregisterInput {
-    pub id: String,
-}
-
-#[tauri::command]
-pub fn ice_peer_unregister(input: IcePeerUnregisterInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    if input.id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
-    }
-    let body = json!({ "id": input.id });
-    let resp = match station_client::request_json(Method::POST, "/api/v1/ice/peer/unregister", &token, None, Some(body)) {
-        Ok(v) => v,
-        Err(e) => return fail_station_request(e),
-    };
-    to_stub("ice_peer_unregister", resp)
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IceSessionNewInput {
-    pub a: String,
-    pub b: String,
-}
-
-#[tauri::command]
-pub fn ice_session_new(input: IceSessionNewInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    if input.a.trim().is_empty() || input.b.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "a and b are required", None);
-    }
-    let body = json!({ "a": input.a, "b": input.b });
-    let resp = match station_client::request_json(Method::POST, "/api/v1/ice/session/new", &token, None, Some(body)) {
-        Ok(v) => v,
-        Err(e) => return fail_station_request(e),
-    };
-    to_stub("ice_session_new", resp)
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IceSessionIdInput {
-    pub id: String,
-}
-
-#[tauri::command]
-pub fn ice_session_get(input: IceSessionIdInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    if input.id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
-    }
-    let query = vec![("id", input.id)];
-    let resp = match station_client::request_json(Method::GET, "/api/v1/ice/session/get", &token, Some(&query), None) {
-        Ok(v) => v,
-        Err(e) => return fail_station_request(e),
-    };
-    to_stub("ice_session_get", resp)
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IceSdpInput {
-    pub id: String,
-    pub sdp: String,
-}
-
-#[tauri::command]
-pub fn ice_session_offer_post(input: IceSdpInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    if input.id.trim().is_empty() || input.sdp.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "id and sdp are required", None);
-    }
-    let body = json!({ "id": input.id, "sdp": input.sdp });
-    let resp = match station_client::request_json(Method::POST, "/api/v1/ice/session/offer", &token, None, Some(body)) {
-        Ok(v) => v,
-        Err(e) => return fail_station_request(e),
-    };
-    to_stub("ice_session_offer_post", resp)
-}
-
-#[tauri::command]
-pub fn ice_session_offer_get(input: IceSessionIdInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    if input.id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
-    }
-    let query = vec![("id", input.id)];
-    let resp = match station_client::request_json(Method::GET, "/api/v1/ice/session/offer", &token, Some(&query), None) {
-        Ok(v) => v,
-        Err(e) => return fail_station_request(e),
-    };
-    to_stub("ice_session_offer_get", resp)
-}
-
-#[tauri::command]
-pub fn ice_session_answer_post(input: IceSdpInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    if input.id.trim().is_empty() || input.sdp.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "id and sdp are required", None);
-    }
-    let body = json!({ "id": input.id, "sdp": input.sdp });
-    let resp = match station_client::request_json(Method::POST, "/api/v1/ice/session/answer", &token, None, Some(body)) {
-        Ok(v) => v,
-        Err(e) => return fail_station_request(e),
-    };
-    to_stub("ice_session_answer_post", resp)
-}
-
-#[tauri::command]
-pub fn ice_session_answer_get(input: IceSessionIdInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    if input.id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
-    }
-    let query = vec![("id", input.id)];
-    let resp = match station_client::request_json(Method::GET, "/api/v1/ice/session/answer", &token, Some(&query), None) {
-        Ok(v) => v,
-        Err(e) => return fail_station_request(e),
-    };
-    to_stub("ice_session_answer_get", resp)
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IceCandidateInput {
-    pub id: String,
-    pub candidate: String,
-    pub mid: Option<String>,
-    pub mline: Option<i32>,
-    pub from: Option<String>,
-}
-
-#[tauri::command]
-pub fn ice_session_candidate_post(input: IceCandidateInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    if input.id.trim().is_empty() || input.candidate.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "id and candidate are required", None);
-    }
-    let body = json!({
-        "id": input.id,
-        "candidate": input.candidate,
-        "mid": input.mid,
-        "mline": input.mline.unwrap_or(0),
-        "from": input.from.unwrap_or_default(),
-    });
-    let resp = match station_client::request_json(Method::POST, "/api/v1/ice/session/candidate", &token, None, Some(body)) {
-        Ok(v) => v,
-        Err(e) => return fail_station_request(e),
-    };
-    to_stub("ice_session_candidate_post", resp)
-}
-
-#[tauri::command]
-pub fn ice_session_candidates_get(input: IceSessionIdInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    if input.id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
-    }
-    let query = vec![("id", input.id)];
-    let resp = match station_client::request_json(Method::GET, "/api/v1/ice/session/candidates", &token, Some(&query), None) {
-        Ok(v) => v,
-        Err(e) => return fail_station_request(e),
-    };
-    to_stub("ice_session_candidates_get", resp)
-}
-
