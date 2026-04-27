@@ -285,6 +285,37 @@ export function SocialChatPage() {
     return off;
   }, []);
 
+  // Realtime TypingState → update the per-session typing map. We
+  // skip self-frames (multi-device echo is not emitted by Station for
+  // typing, but cheap to filter defensively) and let the bubble
+  // GC sweep below handle phantom-typing cleanup. The sweep runs
+  // every 2s with a 6s TTL — slightly larger than the sender's
+  // 3-4s debounce so a brief packet drop doesn't flicker the bubble.
+  useEffect(() => {
+    const apply = useSocialChatStore.getState().applyTypingState;
+    const off = eventBus.subscribe(EVENT.REALTIME_TYPING_STATE, (payload) => {
+      const myDid = useSocialChatStore.getState().currentUserDid;
+      if (myDid && payload.fromActorId === myDid) return;
+      apply(payload.sessionUlid, payload.fromActorId, payload.typing);
+    });
+    return off;
+  }, []);
+
+  // Phantom-typing GC. The sender is supposed to fire `typing=false`
+  // on idle / send / blur, but networks die, apps background, and
+  // tabs close, leaving `typing=true` hanging on the receiver
+  // forever. A 2s sweep with a 6s stale-window keeps the bubble
+  // honest without racing the steady-state typing pulse.
+  useEffect(() => {
+    const TTL_MS = 6000;
+    const SWEEP_INTERVAL_MS = 2000;
+    const sweep = useSocialChatStore.getState().sweepTypingPeers;
+    const handle = window.setInterval(() => {
+      sweep(Date.now() - TTL_MS);
+    }, SWEEP_INTERVAL_MS);
+    return () => window.clearInterval(handle);
+  }, []);
+
   // --- P2P event registration: only re-subscribe when currentUserDid changes ---
   useEffect(() => {
     if (!currentUserDid) return;

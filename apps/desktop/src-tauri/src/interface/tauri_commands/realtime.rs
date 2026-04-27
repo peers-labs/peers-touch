@@ -156,3 +156,65 @@ pub fn realtime_signal_send(
     };
     to_stub("realtime_signal_send", resp)
 }
+
+/// Input for `realtime_typing_send`. Typing is purely advisory — no
+/// payload, no encryption — so this is the simplest possible RPC.
+/// We deliberately do not coalesce or debounce here: that lives in
+/// the TS layer next to the keystroke source so we don't double-
+/// debounce across IPC.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RealtimeTypingInput {
+    pub recipient_actor_id: String,
+    pub session_ulid: String,
+    pub typing: bool,
+}
+
+/// Publishes a typing-state pulse onto the recipient's realtime SSE
+/// stream via Station's `POST /realtime/typing` ingress.
+///
+/// Best-effort: a 5xx from Station is logged but surfaced to the
+/// caller too, so the TS layer can decide whether to retry the next
+/// pulse. Typing pulses self-heal — the very next keystroke (or the
+/// idle timer's typing=false flip) will reach the peer regardless of
+/// whether this one did.
+#[tauri::command]
+pub fn realtime_typing_send(
+    input: RealtimeTypingInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    if input.recipient_actor_id.trim().is_empty() || input.session_ulid.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "recipient_actor_id and session_ulid are required",
+            None,
+        );
+    }
+    let body = json!({
+        "recipient_actor_id": input.recipient_actor_id,
+        "session_ulid":       input.session_ulid,
+        "typing":             input.typing,
+    });
+    let resp = match station_client::request_json(
+        Method::POST,
+        "/realtime/typing",
+        &token,
+        None,
+        Some(body),
+    ) {
+        Ok(v) => v,
+        Err(reason) => {
+            // Typing failures are not user-visible — silently surface
+            // them via tracing and a structured error so a debug
+            // overlay can still see them, but the chat UI should
+            // treat the result as "best effort".
+            tracing::debug!(reason = %reason, "realtime_typing_send: station rejected publish");
+            return reason.into_app_result("Failed to publish typing state");
+        }
+    };
+    to_stub("realtime_typing_send", resp)
+}
