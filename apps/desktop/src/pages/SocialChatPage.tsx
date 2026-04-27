@@ -256,9 +256,34 @@ export function SocialChatPage() {
           return undefined;
         })
         .catch((error) => log.warn('socialChat', 'realtime sync failed', error));
+
+      // Auto-publish DELIVERED for inbound messages from a peer.
+      // Skip self-messages (sender echo for the multi-device case) so
+      // we don't loop a receipt for our own outgoing message — Station
+      // would simply ignore it via the `receiver_did = actor` filter
+      // anyway, but we save a round-trip.
+      const myDid = useSocialChatStore.getState().currentUserDid;
+      if (payload.senderActorId && myDid && payload.senderActorId !== myDid && payload.messageUlid) {
+        // FRIEND_MESSAGE_STATUS_DELIVERED = 3 in the wire enum.
+        api.friendChatAckMessages([payload.messageUlid], 3).catch((error) => {
+          log.warn('socialChat', 'auto DELIVERED ack failed', error);
+        });
+      }
     });
     return off;
   }, [loadMessages]);
+
+  // Realtime MessageReceipt → flip per-message status in the local
+  // store so the sender's UI updates the tick (✓ → ✓✓ → ✓✓read)
+  // without a poll. The store action is idempotent and forward-only,
+  // so duplicate frames or out-of-order receipts are safe.
+  useEffect(() => {
+    const apply = useSocialChatStore.getState().applyMessageReceipt;
+    const off = eventBus.subscribe(EVENT.REALTIME_MESSAGE_RECEIPT, (payload) => {
+      apply(payload.sessionUlid, payload.messageUlid, payload.kind);
+    });
+    return off;
+  }, []);
 
   // --- P2P event registration: only re-subscribe when currentUserDid changes ---
   useEffect(() => {

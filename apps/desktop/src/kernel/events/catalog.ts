@@ -13,6 +13,8 @@ export const EVENT = {
   REALTIME_RESYNC: 'realtime.resync',
   REALTIME_CONNECTION_STATE: 'realtime.connection_state',
   REALTIME_CALL_SIGNAL: 'realtime.call_signal',
+  REALTIME_MESSAGE_RECEIPT: 'realtime.message_receipt',
+  REALTIME_TYPING_STATE: 'realtime.typing_state',
 } as const;
 
 export type EventType = (typeof EVENT)[keyof typeof EVENT];

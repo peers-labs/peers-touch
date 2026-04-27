@@ -210,16 +210,49 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
       });
       return;
     }
-    case 'receipt':
-    case 'typing':
-      // Phase 5 ships message / presence / resync / signaling.
-      // Read receipts and typing indicators ride on the same
-      // stream and will be wired when the consumer surfaces
-      // exist. Decoding here is a no-op so adding the consumer
-      // later is purely additive.
+    case 'receipt': {
+      const r = kind.value;
+      const kindStr = receiptKindFromEnum(r.kind);
+      if (!kindStr) {
+        // KIND_UNSPECIFIED or a future enum we don't understand — drop
+        // it. Receipts are advisory; failing closed (no UI tick) is
+        // strictly better than guessing wrong.
+        return;
+      }
+      eventBus.publish(EVENT.REALTIME_MESSAGE_RECEIPT, {
+        eventId,
+        sessionUlid: r.sessionUlid,
+        messageUlid: r.ulid,
+        fromActorId: r.fromActorId,
+        kind: kindStr,
+      });
       return;
+    }
+    case 'typing': {
+      const t = kind.value;
+      eventBus.publish(EVENT.REALTIME_TYPING_STATE, {
+        eventId,
+        sessionUlid: t.sessionUlid,
+        fromActorId: t.fromActorId,
+        typing: Boolean(t.typing),
+      });
+      return;
+    }
     default:
       return;
+  }
+}
+
+// Mirror of station's receiptKindMap. Keep both tables aligned —
+// adding a new MessageReceipt_Kind on the proto side requires
+// growing this and the Station-side reverse map together.
+function receiptKindFromEnum(value: number): 'DELIVERED' | 'READ' | null {
+  // From generated MessageReceipt_Kind enum:
+  //   KIND_UNSPECIFIED=0, DELIVERED=1, READ=2.
+  switch (value) {
+    case 1: return 'DELIVERED';
+    case 2: return 'READ';
+    default: return null;
   }
 }
 
