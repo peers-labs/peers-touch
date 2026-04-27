@@ -27,6 +27,7 @@ pub mod oss;
 pub mod presence;
 pub mod profile;
 pub mod provider;
+pub mod realtime;
 pub mod search;
 pub mod settings;
 pub mod skills;
