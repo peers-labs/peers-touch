@@ -2,8 +2,11 @@ package oss
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oss/db/repo"
@@ -11,6 +14,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/facility/appdir"
 	"github.com/peers-labs/peers-touch/station/frame/core/facility/storage"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -25,6 +29,20 @@ const defaultMaxFileSize int64 = 32 << 20
 // capabilities. We do not enforce it server-side because each upload is a
 // separate request.
 const defaultMaxFilesPerMessage int32 = 9
+
+// defaultPresignedUploadThreshold is the size at which the desktop
+// client switches from multipart to direct presigned PUT, when the
+// active backend supports it. 8 MiB picks the inflection point where
+// multipart's in-memory buffering starts costing measurable RAM on
+// the Station while staying small enough that a single 5-minute
+// presign window comfortably covers typical home upload bandwidth.
+const defaultPresignedUploadThreshold int64 = 8 << 20
+
+// defaultPresignedTTL is the validity window of presigned PUT/GET URLs
+// when the operator leaves the value at zero. Long enough for typical
+// home bandwidth × the upload threshold, short enough that a leaked
+// URL is not a long-term liability.
+const defaultPresignedTTL = 5 * time.Minute
 
 type ossSubServer struct {
 	status       server.Status
@@ -45,8 +63,21 @@ type ossSubServer struct {
 	maxFilesPerMessage int32
 	backendType        string
 	keyStrategy        string
+
+	// Presigned-upload knobs. When the active backend implements
+	// `storage.PresignedBackend` AND `presignedThreshold > 0`, the
+	// subserver advertises the presigned data path via capabilities
+	// and accepts `/presign-upload` + `/upload-complete` requests.
+	presignedThreshold   int64
+	presignedUploadTTL   time.Duration
+	presignedDownloadTTL time.Duration
 }
 
+// NewOSSSubServer constructs the OSS subserver from operator-supplied
+// options. The constructor performs only argument validation and
+// in-process wiring; network I/O against the configured backend is
+// deferred to the first request so a misconfigured S3 bucket does not
+// abort process startup for unrelated subservers.
 func NewOSSSubServer(opts ...option.Option) server.Subserver {
 	o := getOptions(opts...)
 	s := &ossSubServer{status: server.StatusStopped, addrs: []string{}}
@@ -64,9 +95,9 @@ func NewOSSSubServer(opts ...option.Option) server.Subserver {
 	if s.maxFilesPerMessage <= 0 {
 		s.maxFilesPerMessage = defaultMaxFilesPerMessage
 	}
-	s.backendType = o.BackendType
+	s.backendType = strings.ToLower(strings.TrimSpace(o.BackendType))
 	if s.backendType == "" {
-		s.backendType = "local"
+		s.backendType = string(storage.DriverLocal)
 	}
 	s.keyStrategy = strings.ToLower(strings.TrimSpace(o.KeyStrategy))
 	switch s.keyStrategy {
@@ -83,17 +114,24 @@ func NewOSSSubServer(opts ...option.Option) server.Subserver {
 	if s.pathBase == "" {
 		s.pathBase = "/sub-oss"
 	}
-	if s.storePath == "" {
-		// Use appdir to resolve default data directory
-		dataDir, err := appdir.Resolve("station", "data")
-		if err == nil {
-			s.storePath = filepath.Join(dataDir, "oss")
-		} else {
-			// Fallback if appdir fails (unlikely)
-			s.storePath = "/tmp/oss"
-		}
+
+	s.presignedUploadTTL = secondsToDurationOr(o.PresignedUploadTTL, defaultPresignedTTL)
+	s.presignedDownloadTTL = secondsToDurationOr(o.PresignedDownloadTTL, defaultPresignedTTL)
+	s.presignedThreshold = o.PresignedUploadThreshold
+	if s.presignedThreshold < 0 {
+		s.presignedThreshold = 0
 	}
-	s.backend = storage.NewLocalBackend(s.storePath)
+	if s.presignedThreshold == 0 && backendSupportsPresign(s.backendType) {
+		s.presignedThreshold = defaultPresignedUploadThreshold
+	}
+
+	backend, err := buildBackend(s.backendType, o, &s.storePath)
+	if err != nil {
+		logger.Errorf(context.Background(), "[oss] backend init failed: %v — falling back to local", err)
+		s.backendType = string(storage.DriverLocal)
+		backend = storage.NewLocalBackend(s.storePath)
+	}
+	s.backend = backend
 
 	// Initialize Service Layer
 	fileRepo := repo.NewFileRepository(s.dbName)
@@ -101,6 +139,88 @@ func NewOSSSubServer(opts ...option.Option) server.Subserver {
 
 	return s
 }
+
+// buildBackend resolves the operator-configured driver via the
+// storage factory, defaulting `storePath` if the caller did not
+// supply one. Returning the populated `storePath` back to the
+// caller via the pointer keeps `oss.go`'s state correct for log
+// lines and migrations.
+func buildBackend(backendType string, o *Options, storePath *string) (storage.Backend, error) {
+	cfg := storage.Config{Driver: storage.Driver(backendType)}
+	switch storage.Driver(backendType) {
+	case storage.DriverLocal, "":
+		if *storePath == "" {
+			if dataDir, err := appdir.Resolve("station", "data"); err == nil {
+				*storePath = filepath.Join(dataDir, "oss")
+			} else {
+				*storePath = "/tmp/oss"
+			}
+		}
+		cfg.Driver = storage.DriverLocal
+		cfg.Local = &storage.LocalConfig{Root: *storePath}
+	case storage.DriverS3:
+		cfg.S3 = &storage.S3Config{
+			Endpoint:        o.S3.Endpoint,
+			Region:          o.S3.Region,
+			Bucket:          o.S3.Bucket,
+			AccessKeyID:     o.S3.AccessKeyID,
+			SecretAccessKey: o.S3.SecretAccessKey,
+			UseSSL:          o.S3.UseSSL,
+			ForcePathStyle:  o.S3.ForcePathStyle,
+			KeyPrefix:       o.S3.KeyPrefix,
+		}
+	default:
+		return nil, fmt.Errorf("unsupported backend %q", backendType)
+	}
+	b, err := storage.New(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+// presignedBackend returns the active backend's PresignedBackend
+// view, or nil when the driver does not support pre-signed URLs.
+// Callers use the nil check as the authoritative gate on whether
+// the presigned upload data path is available.
+func (s *ossSubServer) presignedBackend() storage.PresignedBackend {
+	if pb, ok := s.backend.(storage.PresignedBackend); ok && s.presignedThreshold > 0 {
+		return pb
+	}
+	return nil
+}
+
+// presignedUploadEnabled is the public-facing predicate behind the
+// `presigned_upload` capability flag. Kept separate from
+// `presignedBackend()` so future drivers that gate the feature on
+// their own side (e.g. quota, region) have a single seam to extend.
+func (s *ossSubServer) presignedUploadEnabled() bool {
+	return s.presignedBackend() != nil
+}
+
+func backendSupportsPresign(name string) bool {
+	switch storage.Driver(name) {
+	case storage.DriverS3:
+		return true
+	default:
+		return false
+	}
+}
+
+// secondsToDurationOr coerces an operator-supplied integer (seconds)
+// into a `time.Duration`, falling back to `fallback` when the value
+// is unset or negative.
+func secondsToDurationOr(seconds int64, fallback time.Duration) time.Duration {
+	if seconds <= 0 {
+		return fallback
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+// ErrUnsupportedBackend is returned by handlers whose path-specific
+// validation rejects an inbound key (e.g. presigned upload requested
+// while the active backend does not implement `PresignedBackend`).
+var ErrUnsupportedBackend = errors.New("oss: backend does not support requested operation")
 
 func (s *ossSubServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.status = server.StatusStarting
