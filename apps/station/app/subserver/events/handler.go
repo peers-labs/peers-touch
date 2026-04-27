@@ -2,7 +2,7 @@ package events
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -10,52 +10,42 @@ import (
 	"github.com/cloudwego/hertz/pkg/network"
 	"github.com/cloudwego/hertz/pkg/protocol"
 	"github.com/cloudwego/hertz/pkg/protocol/http1/resp"
-	"github.com/peers-labs/peers-touch/station/frame/core/auth"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
-	"github.com/peers-labs/peers-touch/station/frame/core/broker"
-	"github.com/peers-labs/peers-touch/station/frame/core/event"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
-	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
-	eventsmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/events"
-	"google.golang.org/protobuf/types/known/timestamppb"
+	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
+	"google.golang.org/protobuf/proto"
 )
 
-// newSSEWriter creates an SSE-compatible chunked body writer
+// Heartbeat cadence; see contract §2.4.
+const heartbeatInterval = 15 * time.Second
+
 func newSSEWriter(response *protocol.Response, writer network.Writer) network.ExtWriter {
 	return resp.NewChunkedBodyWriter(response, writer)
 }
 
 func (s *eventsSubServer) Handlers() []server.Handler {
-	logIDWrapper := serverwrapper.LogID()
-
-	// JWT wrapper for authenticated endpoints
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	jwtWrapper := serverwrapper.JWT(provider)
-
-	// Hertz JWT wrapper for SSE endpoint
 	hertzJWTWrapper := hertzadapter.RequireJWT(provider)
 
 	return []server.Handler{
-		// SSE stream endpoint - uses Hertz native handler for proper SSE streaming
-		server.NewHertzHandler("events-stream", "/events/stream", server.GET, s.handleSSEStreamHertz, hertzJWTWrapper),
-
-		// Pull endpoint for missed events - TypedHandler with Proto
-		server.NewTypedHandler("events-pull", "/events/pull", server.POST, s.handlePull, logIDWrapper, jwtWrapper),
-
-		// ACK endpoint for confirming event receipt - TypedHandler with Proto
-		server.NewTypedHandler("events-ack", "/events/ack", server.POST, s.handleAck, logIDWrapper, jwtWrapper),
-
-		// Stats endpoint (for debugging) - TypedHandler with Proto
-		server.NewTypedHandler("events-stats", "/events/stats", server.GET, s.handleStats, logIDWrapper),
+		// Single canonical realtime endpoint. Per contract §1.2 there
+		// are no per-feature SSE endpoints; every kind of realtime
+		// event multiplexes through this one stream.
+		server.NewHertzHandler("events-stream", "/events/stream", server.GET, s.handleStream, hertzJWTWrapper),
 	}
 }
 
-// handleSSEStreamHertz handles SSE stream connections using Hertz native streaming
-// GET /events/stream
-func (s *eventsSubServer) handleSSEStreamHertz(ctx context.Context, c *app.RequestContext) {
-	// Get authenticated user from Hertz context
+// handleStream serves the single SSE stream per device-window.
+//
+// Wire format per contract §2.3:
+//
+//	event: stream
+//	id:    <event_id>
+//	data:  <base64(protobuf StreamEvent)>
+//	\n
+func (s *eventsSubServer) handleStream(ctx context.Context, c *app.RequestContext) {
 	subject := hertzadapter.GetSubject(c)
 	if subject == nil {
 		c.JSON(401, map[string]string{"error": "unauthorized"})
@@ -63,240 +53,114 @@ func (s *eventsSubServer) handleSSEStreamHertz(ctx context.Context, c *app.Reque
 	}
 	actorID := subject.ID
 
-	es := event.GetGlobalEventSystem()
-	if es == nil {
-		c.JSON(503, map[string]string{"error": "event system not initialized"})
+	bus := GetBus()
+	if bus == nil {
+		c.JSON(503, map[string]string{"error": "event bus not initialized"})
 		return
 	}
 
-	lastEventID := string(c.GetHeader("Last-Event-ID"))
-	if lastEventID == "" {
-		lastEventID = c.Query("lastEventId")
+	cursor := string(c.GetHeader("Last-Event-ID"))
+	deviceID := string(c.GetHeader("X-Device-ID"))
+	if deviceID == "" {
+		deviceID = fmt.Sprintf("anon-%d", time.Now().UnixNano())
 	}
 
-	// Set SSE headers BEFORE hijacking the writer
+	// SSE response headers must be set before we hijack the writer.
 	c.Response.Header.Set("Content-Type", "text/event-stream")
 	c.Response.Header.Set("Cache-Control", "no-cache")
 	c.Response.Header.Set("Connection", "keep-alive")
-	c.Response.Header.Set("X-Accel-Buffering", "no") // Disable nginx buffering
+	c.Response.Header.Set("X-Accel-Buffering", "no") // disable nginx buffering
 	c.Response.Header.Set("Transfer-Encoding", "chunked")
 	c.SetStatusCode(200)
-
-	// Hijack the response writer for streaming (chunked transfer)
-	// This enables immediate flushing of data to the client
 	c.Response.HijackWriter(newSSEWriter(&c.Response, c.GetWriter()))
 
-	// Create connection context
 	connCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Create event channel for this connection
-	eventChan := make(chan *event.Event, 256)
-	connID := fmt.Sprintf("sse-%s-%d", actorID, time.Now().UnixNano())
+	sub, unsub, err := bus.Subscribe(connCtx, actorID, deviceID, cursor)
+	if err != nil {
+		logger.DefaultHelper.Warnf("events: subscribe failed actor=%s err=%v", actorID, err)
+		// Best-effort write; if it fails the connection is already gone.
+		_, _ = c.Write([]byte(fmt.Sprintf(": error %s\n\n", err.Error())))
+		_ = c.Flush()
+		return
+	}
+	defer unsub()
 
-	// Create wrapper connection for the hub
-	conn := &event.SSEConnection{
-		ID:          connID,
-		ActorID:     actorID,
-		Context:     connCtx,
-		Cancel:      cancel,
-		LastEventID: lastEventID,
-		ConnectedAt: time.Now(),
-		EventChan:   eventChan,
-		Subscribed:  make(map[event.EventType]bool),
+	logger.DefaultHelper.Infof("events: subscriber connected actor=%s device=%s cursor=%q", actorID, deviceID, cursor)
+
+	// Emit a comment frame so intermediaries flush the response head.
+	if _, err := c.Write([]byte(": connected\n\n")); err != nil {
+		return
+	}
+	if err := c.Flush(); err != nil {
+		return
 	}
 
-	// Register connection
-	es.Hub.RegisterSSE(conn)
-	defer es.Hub.Unregister(conn)
-
-	// Subscribe actor to receive all their events
-	es.Hub.GetRegistry().SubscribeActor(actorID, nil)
-
-	logger.DefaultHelper.Infof("SSE connection established for actor %s (Hertz streaming)", actorID)
-
-	// Send initial connection message - this must flush immediately
-	c.Write([]byte(": connected\n\n"))
-	c.Flush()
-
-	// If lastEventID provided, send missed events
-	if lastEventID != "" {
-		s.sendMissedEventsToHertz(c, actorID, lastEventID, es)
-	}
-
-	// Heartbeat ticker
-	heartbeat := time.NewTicker(30 * time.Second)
+	heartbeat := time.NewTicker(heartbeatInterval)
 	defer heartbeat.Stop()
 
-	// Main event loop
+	// Track the newest event_id we've sent on this connection so
+	// Heartbeat carries an accurate floor_event_id (contract §2.4).
+	var floorID string
+
 	for {
 		select {
 		case <-ctx.Done():
-			logger.DefaultHelper.Infof("SSE connection %s closed by client", connID)
 			return
 
 		case <-connCtx.Done():
-			logger.DefaultHelper.Infof("SSE connection %s closed by server", connID)
 			return
 
-		case evt, ok := <-eventChan:
+		case ev, ok := <-sub.Events:
 			if !ok {
+				logger.DefaultHelper.Infof("events: subscription closed actor=%s device=%s", actorID, deviceID)
 				return
 			}
-			data, err := json.Marshal(evt)
-			if err != nil {
-				logger.DefaultHelper.Errorf("Failed to marshal event: %v", err)
-				continue
-			}
-
-			// Write SSE formatted message
-			sseMsg := fmt.Sprintf("id: %s\nevent: %s\ndata: %s\n\n", evt.ID, evt.Type, string(data))
-			c.Write([]byte(sseMsg))
-			if err := c.Flush(); err != nil {
-				logger.DefaultHelper.Warnf("Failed to flush SSE: %v", err)
+			if err := writeFrame(c, ev); err != nil {
+				logger.DefaultHelper.Warnf("events: write failed actor=%s err=%v", actorID, err)
 				return
 			}
+			floorID = ev.GetEventId()
 
 		case <-heartbeat.C:
-			// Send heartbeat comment
-			c.Write([]byte(": heartbeat\n\n"))
-			if err := c.Flush(); err != nil {
-				logger.DefaultHelper.Warnf("Failed to flush heartbeat: %v", err)
+			hb := &realtime.StreamEvent{
+				// Heartbeat doesn't go through the bus and so doesn't
+				// participate in resume — by design (contract §2.4
+				// allows heartbeats to be best-effort). We still stamp
+				// a per-connection event_id so the client's
+				// Last-Event-ID never regresses.
+				EventId:  floorID,
+				TsUnixMs: time.Now().UTC().UnixMilli(),
+				Kind: &realtime.StreamEvent_Hb{
+					Hb: &realtime.Heartbeat{FloorEventId: floorID},
+				},
+			}
+			if err := writeFrame(c, hb); err != nil {
 				return
 			}
 		}
 	}
 }
 
-// sendMissedEventsToHertz sends missed events directly to Hertz context
-func (s *eventsSubServer) sendMissedEventsToHertz(c *app.RequestContext, actorID, lastEventID string, es *event.EventSystem) {
-	if es.Broker == nil {
-		return
-	}
-
-	topic := "events:" + actorID
-	messages, err := es.Broker.Pull(context.Background(), topic, lastEventID, 100, broker.PullOptions{})
+// writeFrame encodes ev as a single SSE frame per contract §2.3 and
+// flushes the underlying TCP socket.
+func writeFrame(c *app.RequestContext, ev *realtime.StreamEvent) error {
+	bytes, err := proto.Marshal(ev)
 	if err != nil {
-		logger.DefaultHelper.Warnf("Failed to pull missed events: %v", err)
-		return
+		return fmt.Errorf("marshal stream event: %w", err)
 	}
+	encoded := base64.StdEncoding.EncodeToString(bytes)
 
-	for _, msg := range messages {
-		var evt event.Event
-		if err := json.Unmarshal(msg.Payload, &evt); err != nil {
-			continue
+	// id: only present when we have one — heartbeats early in a
+	// connection may not yet have a floor.
+	if id := ev.GetEventId(); id != "" {
+		if _, err := c.Write([]byte("id: " + id + "\n")); err != nil {
+			return err
 		}
-		data, _ := json.Marshal(&evt)
-		fmt.Fprintf(c, "id: %s\n", evt.ID)
-		fmt.Fprintf(c, "event: %s\n", evt.Type)
-		fmt.Fprintf(c, "data: %s\n\n", string(data))
 	}
-	c.Flush()
-
-	logger.DefaultHelper.Infof("Sent %d missed events to actor %s", len(messages), actorID)
-}
-
-// sendMissedEvents sends events that were missed while the client was offline
-func (s *eventsSubServer) sendMissedEvents(conn *event.SSEConnection, lastEventID string, es *event.EventSystem) {
-	if es.Broker == nil {
-		return
+	if _, err := c.Write([]byte("event: stream\ndata: " + encoded + "\n\n")); err != nil {
+		return err
 	}
-
-	topic := "events:" + conn.ActorID
-	messages, err := es.Broker.Pull(conn.Context, topic, lastEventID, 100, broker.PullOptions{})
-	if err != nil {
-		logger.DefaultHelper.Warnf("Failed to pull missed events: %v", err)
-		return
-	}
-
-	for _, msg := range messages {
-		var evt event.Event
-		if err := json.Unmarshal(msg.Payload, &evt); err != nil {
-			continue
-		}
-		conn.Send(&evt)
-	}
-
-	logger.DefaultHelper.Infof("Sent %d missed events to actor %s", len(messages), conn.ActorID)
-}
-
-func (s *eventsSubServer) handlePull(ctx context.Context, req *eventsmodel.PullEventsRequest) (*eventsmodel.PullEventsResponse, error) {
-	subject := auth.GetSubject(ctx)
-	if subject == nil {
-		return nil, server.Unauthorized("authentication required")
-	}
-	actorID := subject.ID
-
-	limit := int(req.Limit)
-	if limit <= 0 || limit > 100 {
-		limit = 50
-	}
-
-	es := event.GetGlobalEventSystem()
-	if es == nil || es.Broker == nil {
-		return nil, server.InternalError("event system not available")
-	}
-
-	sinceID := ""
-	if req.SinceTs > 0 {
-		sinceID = fmt.Sprintf("%d", req.SinceTs)
-	}
-
-	topic := "events:" + actorID
-	messages, err := es.Broker.Pull(ctx, topic, sinceID, limit, broker.PullOptions{})
-	if err != nil {
-		logger.Error(ctx, "Failed to pull events", "error", err)
-		return nil, server.InternalErrorWithCause("failed to pull events", err)
-	}
-
-	events := make([]*eventsmodel.Event, 0, len(messages))
-	for _, msg := range messages {
-		var evt event.Event
-		if err := json.Unmarshal(msg.Payload, &evt); err != nil {
-			continue
-		}
-		events = append(events, &eventsmodel.Event{
-			Id:        evt.ID,
-			Type:      string(evt.Type),
-			Payload:   evt.Payload,
-			CreatedAt: timestamppb.New(evt.Timestamp),
-		})
-	}
-
-	return &eventsmodel.PullEventsResponse{
-		Events: events,
-	}, nil
-}
-
-func (s *eventsSubServer) handleAck(ctx context.Context, req *eventsmodel.AckEventsRequest) (*eventsmodel.AckEventsResponse, error) {
-	subject := auth.GetSubject(ctx)
-	if subject == nil {
-		return nil, server.Unauthorized("authentication required")
-	}
-	actorID := subject.ID
-
-	if len(req.EventIds) == 0 {
-		return nil, server.BadRequest("event_ids is required")
-	}
-
-	logger.Info(ctx, "Actor acknowledged events", "actorID", actorID, "count", len(req.EventIds))
-
-	return &eventsmodel.AckEventsResponse{
-		AckedCount: int32(len(req.EventIds)),
-	}, nil
-}
-
-func (s *eventsSubServer) handleStats(ctx context.Context, req *eventsmodel.GetEventsStatsRequest) (*eventsmodel.GetEventsStatsResponse, error) {
-	es := event.GetGlobalEventSystem()
-	if es == nil {
-		return nil, server.InternalError("event system not initialized")
-	}
-
-	hubStats := es.Hub.Stats()
-
-	return &eventsmodel.GetEventsStatsResponse{
-		PendingCount:  int64(hubStats["connections"].(int)),
-		TotalDelivered: 0,
-		ActiveStreams: int64(hubStats["connections"].(int)),
-	}, nil
+	return c.Flush()
 }
