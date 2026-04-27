@@ -28,6 +28,7 @@ type ActorSignRequest struct {
 	Password      string                 `protobuf:"bytes,3,opt,name=password,proto3" json:"password,omitempty"`
 	Namespace     string                 `protobuf:"bytes,10,opt,name=namespace,proto3" json:"namespace,omitempty"`
 	AccountType   string                 `protobuf:"bytes,11,opt,name=account_type,json=accountType,proto3" json:"account_type,omitempty"`
+	Kind          *ActorKind             `protobuf:"varint,12,opt,name=kind,proto3,enum=peers_touch.model.actor.v1.ActorKind,oneof" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -97,18 +98,27 @@ func (x *ActorSignRequest) GetAccountType() string {
 	return ""
 }
 
+func (x *ActorSignRequest) GetKind() ActorKind {
+	if x != nil && x.Kind != nil {
+		return *x.Kind
+	}
+	return ActorKind_ACTOR_KIND_UNSPECIFIED
+}
+
 var File_domain_actor_actor_signup_proto protoreflect.FileDescriptor
 
 const file_domain_actor_actor_signup_proto_rawDesc = "" +
 	"\n" +
-	"\x1fdomain/actor/actor_signup.proto\x12\x1apeers_touch.model.actor.v1\"\x99\x01\n" +
+	"\x1fdomain/actor/actor_signup.proto\x12\x1apeers_touch.model.actor.v1\x1a\x18domain/actor/actor.proto\"\xe2\x01\n" +
 	"\x10ActorSignRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12\x1a\n" +
 	"\bpassword\x18\x03 \x01(\tR\bpassword\x12\x1c\n" +
 	"\tnamespace\x18\n" +
 	" \x01(\tR\tnamespace\x12!\n" +
-	"\faccount_type\x18\v \x01(\tR\vaccountTypeBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
+	"\faccount_type\x18\v \x01(\tR\vaccountType\x12>\n" +
+	"\x04kind\x18\f \x01(\x0e2%.peers_touch.model.actor.v1.ActorKindH\x00R\x04kind\x88\x01\x01B\a\n" +
+	"\x05_kindBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
 
 var (
 	file_domain_actor_actor_signup_proto_rawDescOnce sync.Once
@@ -125,13 +135,15 @@ func file_domain_actor_actor_signup_proto_rawDescGZIP() []byte {
 var file_domain_actor_actor_signup_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_domain_actor_actor_signup_proto_goTypes = []any{
 	(*ActorSignRequest)(nil), // 0: peers_touch.model.actor.v1.ActorSignRequest
+	(ActorKind)(0),           // 1: peers_touch.model.actor.v1.ActorKind
 }
 var file_domain_actor_actor_signup_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	1, // 0: peers_touch.model.actor.v1.ActorSignRequest.kind:type_name -> peers_touch.model.actor.v1.ActorKind
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_domain_actor_actor_signup_proto_init() }
@@ -139,6 +151,8 @@ func file_domain_actor_actor_signup_proto_init() {
 	if File_domain_actor_actor_signup_proto != nil {
 		return
 	}
+	file_domain_actor_actor_proto_init()
+	file_domain_actor_actor_signup_proto_msgTypes[0].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

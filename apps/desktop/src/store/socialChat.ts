@@ -78,8 +78,36 @@ interface SocialChatState {
   ownFingerprint: string | null;
   /** sessionUlid → whether E2E is active for that conversation (future key-exchange wiring). */
   sessionEncrypted: Record<string, boolean>;
-  friendP2pStatus: Record<string, { state: string; detail?: string }>;
-  setFriendP2pStatus: (sessionUlid: string, state: string, detail?: string) => void;
+  /**
+   * Per-session WebRTC status. `transport` is the in-use ICE candidate type:
+   *   - `'direct'` = host/srflx/prflx (P2P)
+   *   - `'relay'`  = TURN relay (still real-time, just routed via station's TURN)
+   *   - `null`     = connection not established yet, or in-progress
+   *
+   * The UI uses `state` + `transport` to render Direct / Relay / Offline.
+   */
+  friendP2pStatus: Record<string, { state: string; detail?: string; transport?: 'direct' | 'relay' | null }>;
+  setFriendP2pStatus: (
+    sessionUlid: string,
+    state: string,
+    detail?: string,
+    transport?: 'direct' | 'relay' | null,
+  ) => void;
+
+  /**
+   * Server-confirmed presence per peer DID. Distinct from
+   * `friendP2pStatus` which reflects the *transport* (WebRTC P2P /
+   * TURN-relay / down) — a peer can be online yet have no P2P channel
+   * up (e.g. bootstrapping ICE), so the two concepts must not be
+   * conflated in the UI.
+   *
+   * Source of truth: Station's `/friend-chat/presence/stream` SSE
+   * (real-time push) plus the `participant_*_online` snapshot embedded
+   * in `friendChatListSessions` responses (used to seed the map on
+   * cold-start before the SSE has caught up).
+   */
+  peerOnline: Record<string, boolean>;
+  setPeerOnline: (did: string, online: boolean) => void;
 
   loadSessions: () => Promise<void>;
   loadGroups: () => Promise<void>;
@@ -127,6 +155,9 @@ interface SocialChatState {
 
   initEncryption: () => Promise<void>;
   establishSession: (sessionUlid: string, peerDid: string) => Promise<boolean>;
+  /** Clear actor-scoped in-memory data (used by the identity pipeline). */
+  reset: () => void;
+  hydrate: (actorId: string) => Promise<void>;
 }
 
 function activityFromSession(s: FriendChatSession): Date {
@@ -182,7 +213,34 @@ function createClientMessageUlid(): string {
   return `fcmc-${ts}-${rand}`;
 }
 
-export const useSocialChatStore = create<SocialChatState>((set, get) => ({
+const initialSocialState: Pick<
+  SocialChatState,
+  | 'sessions'
+  | 'groups'
+  | 'activeTab'
+  | 'activeSessionUlid'
+  | 'activeGroupUlid'
+  | 'messages'
+  | 'messageHasMore'
+  | 'messageLoadingMore'
+  | 'groupMembers'
+  | 'loading'
+  | 'showDetail'
+  | 'currentUserProfile'
+  | 'currentUserDid'
+  | 'friendRequests'
+  | 'groupUnreadCounts'
+  | 'lastPreviews'
+  | 'searchQuery'
+  | 'searchResults'
+  | 'searchLoading'
+  | 'scrollToMessageUlid'
+  | 'encryptionEnabled'
+  | 'ownFingerprint'
+  | 'sessionEncrypted'
+  | 'friendP2pStatus'
+  | 'peerOnline'
+> = {
   sessions: [],
   groups: [],
   activeTab: 'friend',
@@ -208,13 +266,43 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   ownFingerprint: null,
   sessionEncrypted: {},
   friendP2pStatus: {},
-  setFriendP2pStatus: (sessionUlid, state, detail) =>
+  peerOnline: {},
+};
+
+export const useSocialChatStore = create<SocialChatState>((set, get) => ({
+  ...initialSocialState,
+
+  reset: () => set({ ...initialSocialState }),
+
+  hydrate: async (actorId: string) => {
+    if (!actorId) return;
+    const { loadCurrentUserProfile, loadSessions, loadGroups } = get();
+    await loadCurrentUserProfile();
+    await Promise.all([loadSessions(), loadGroups()]);
+  },
+  setFriendP2pStatus: (sessionUlid, state, detail, transport) =>
     set((prev) => ({
       friendP2pStatus: {
         ...prev.friendP2pStatus,
-        [sessionUlid]: { state, ...(detail ? { detail } : {}) },
+        [sessionUlid]: {
+          state,
+          ...(detail ? { detail } : {}),
+          ...(transport !== undefined ? { transport } : {}),
+        },
       },
     })),
+
+  // Skip the set() if the value is already what we'd write. React+
+  // Zustand will otherwise re-render every consumer for a no-op flip,
+  // which is hot when SSE delivers many transitions in quick succession.
+  setPeerOnline: (did, online) => {
+    if (!did) return;
+    const prev = get().peerOnline[did];
+    if (prev === online) return;
+    set((state) => ({
+      peerOnline: { ...state.peerOnline, [did]: online },
+    }));
+  },
 
   initEncryption: async () => {
     try {
@@ -291,10 +379,29 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         return s;
       });
       const derivedDid = deriveCurrentUserDidFromSessions(list);
+
+      // Seed peerOnline from the snapshot embedded in this response.
+      // We deliberately *only seed*, never *overwrite*: an SSE flip
+      // that arrived 200ms before this list call must not be undone
+      // by the response we're parsing now (the snapshot is server-side
+      // serialized at request time, the SSE is live). Hence we only
+      // write to keys that are currently `undefined`.
+      const presenceSeed: Record<string, boolean> = {};
+      for (const s of list) {
+        const aDid = s.participantADid;
+        const bDid = s.participantBDid;
+        const r = s as any;
+        const aOnline = Boolean(r.participantAOnline ?? r.participant_a_online);
+        const bOnline = Boolean(r.participantBOnline ?? r.participant_b_online);
+        if (aDid && presenceSeed[aDid] === undefined) presenceSeed[aDid] = aOnline;
+        if (bDid && presenceSeed[bDid] === undefined) presenceSeed[bDid] = bOnline;
+      }
+
       set((state) => ({
         sessions: list,
         loading: false,
         ...(!state.currentUserDid && derivedDid ? { currentUserDid: derivedDid } : {}),
+        peerOnline: { ...presenceSeed, ...state.peerOnline },
       }));
     } catch (error) {
       log.error('socialChat', 'loadSessions failed', error);

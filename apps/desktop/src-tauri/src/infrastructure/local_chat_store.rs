@@ -20,9 +20,22 @@ pub struct LocalChatRecord {
 
 fn open_connection(user_scope: &str) -> Result<Connection, String> {
     let spec = DatabaseOpenSpec::new_chat_main(user_scope.to_string());
-    let provider = PlatformKeyProvider::new();
-    let conn = open_database(&spec, &provider).map_err(|e| format!("{e:?}"))?;
-    migrate(&conn)?;
+    let provider = PlatformKeyProvider::shared();
+    let conn = open_database(&spec, provider).map_err(|e| {
+        let detail = format!("{e:?}");
+        tracing::error!(
+            user_scope = user_scope,
+            domain = %spec.domain,
+            profile = %spec.profile,
+            error = %detail,
+            "local_chat_store: open_database failed"
+        );
+        format!("open_database failed for chat/main user_scope={user_scope}: {detail}")
+    })?;
+    migrate(&conn).map_err(|e| {
+        tracing::error!(user_scope = user_scope, error = %e, "local_chat_store: migrate failed");
+        format!("migrate failed for chat/main user_scope={user_scope}: {e}")
+    })?;
     Ok(conn)
 }
 
@@ -506,14 +519,14 @@ fn chrono_now() -> i64 {
 
 pub fn get_chat_key_version(user_scope: &str) -> Result<Option<i32>, String> {
     let spec = DatabaseOpenSpec::new_chat_main(user_scope.to_string());
-    let provider = PlatformKeyProvider::new();
-    get_database_key_version(&spec, &provider).map_err(|e| format!("{e:?}"))
+    let provider = PlatformKeyProvider::shared();
+    get_database_key_version(&spec, provider).map_err(|e| format!("{e:?}"))
 }
 
 pub fn rotate_chat_key(user_scope: &str, next_version: i32) -> Result<i32, String> {
     let spec = DatabaseOpenSpec::new_chat_main(user_scope.to_string());
-    let provider = PlatformKeyProvider::new();
-    rotate_database_key(&spec, &provider, next_version).map_err(|e| format!("{e:?}"))
+    let provider = PlatformKeyProvider::shared();
+    rotate_database_key(&spec, provider, next_version).map_err(|e| format!("{e:?}"))
 }
 
 /// Persist the local group symmetric key (32-byte blob) and ratchet counters for AES-GCM.

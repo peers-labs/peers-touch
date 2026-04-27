@@ -19,6 +19,7 @@ type Actor struct {
 	Image             string `gorm:"column:image;size:512"`                                                           // Header Image URL (JSON-LD: image)
 	Email             string `gorm:"column:email;uniqueIndex;size:255;not null"`                                      // Unique email address
 	PasswordHash      string `gorm:"column:password_hash;size:128;not null"`                                          // bcrypt hashed password
+	Kind              string `gorm:"column:kind;size:16;default:'p';not null"`                                        // ActorKind shorthand: p|g|o|s|a|n (identity.AccountType + 'n' for node)
 	// ActivityPub Standard Fields (Immutable URIs)
 	Url       string `gorm:"column:url;size:512"`       // JSON-LD: url
 	Inbox     string `gorm:"column:inbox;size:512"`     // JSON-LD: inbox
@@ -43,6 +44,9 @@ func (*Actor) TableName() string {
 func (a *Actor) BeforeCreate(tx *gorm.DB) error {
 	if a.ID == 0 {
 		a.ID = id.NextID()
+	}
+	if a.Kind == "" {
+		a.Kind = "p"
 	}
 	return nil
 }
