@@ -50,6 +50,13 @@ type Options struct {
 	// clients can decide whether features like presigned upload are
 	// worth offering.
 	BackendType string
+
+	// KeyStrategy selects how object keys are derived from uploads.
+	// Empty / `random` keeps the legacy `YYYY/MM/DD/<rand>.<ext>`;
+	// `cas` switches to content-addressable storage which deduplicates
+	// identical bytes across uploaders. See `service.KeyStrategy` for
+	// the full rationale.
+	KeyStrategy string
 }
 
 func WithPath(p string) option.Option {
@@ -78,6 +85,9 @@ func WithMaxFilesPerMessage(n int32) option.Option {
 }
 func WithBackendType(t string) option.Option {
 	return wrapper.Wrap(func(o *Options) { o.BackendType = t })
+}
+func WithKeyStrategy(s string) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.KeyStrategy = s })
 }
 
 func getOptions(opts ...option.Option) *Options {

@@ -37,6 +37,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::application::chat_storage;
 use crate::domain::presence::{PresenceState, PresenceTransition, PresenceTrigger};
+use crate::infrastructure::oss_cache;
 
 /// Window inside which a non-bypassing trigger is silently absorbed if
 /// reconcile already ran. Tuned just above the typical
@@ -222,7 +223,7 @@ impl PresenceSupervisor {
         token: &str,
         trigger: PresenceTrigger,
     ) -> ReconcileOutcome {
-        match chat_storage::friend_chat_offline(token) {
+        let result = match chat_storage::friend_chat_offline(token) {
             Ok(_) => {
                 tracing::info!(actor = actor_id, ?trigger, "presence: marked offline at station");
                 ReconcileOutcome::ok(0, Vec::new())
@@ -233,7 +234,29 @@ impl PresenceSupervisor {
                 tracing::warn!(actor = actor_id, ?trigger, error = %e, "presence: /offline failed");
                 ReconcileOutcome::ok(0, Vec::new())
             }
+        };
+
+        // The Online → Offline edge is the natural moment to reclaim
+        // disk: the user is no longer actively browsing chats so a
+        // pause for a few hundred ms of `fs::remove_file` calls is
+        // invisible. We do this *after* the /offline POST so a slow
+        // GC pass cannot delay the station-side state change. AppShutdown
+        // skips GC because the next launch will GC again on first
+        // Offline→Online → no need to spend the user's exit budget.
+        if !matches!(trigger, PresenceTrigger::AppShutdown) {
+            let report = oss_cache::gc_with_default_budget();
+            if report.evicted > 0 {
+                tracing::info!(
+                    actor = actor_id,
+                    evicted = report.evicted,
+                    bytes_before = report.bytes_before,
+                    bytes_after = report.bytes_after,
+                    "presence: oss attachment cache GC pass"
+                );
+            }
         }
+
+        result
     }
 
     fn run_online(

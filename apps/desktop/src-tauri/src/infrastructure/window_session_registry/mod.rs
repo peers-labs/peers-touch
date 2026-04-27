@@ -73,6 +73,20 @@ impl WindowSessionRegistry {
             .expect("WindowSessionRegistry read lock poisoned")
             .len()
     }
+
+    /// Snapshot every bound session.
+    ///
+    /// Used at process shutdown so the presence supervisor can fire one
+    /// `AppShutdown` trigger per (actor, jwt) pair — no other callers
+    /// should need this; per-window paths must go through `get` /
+    /// `actor` / `token` instead.
+    pub fn snapshot_all(&self) -> Vec<ActiveSession> {
+        let map = self
+            .inner
+            .read()
+            .expect("WindowSessionRegistry read lock poisoned");
+        map.values().cloned().collect()
+    }
 }
 
 #[cfg(test)]
