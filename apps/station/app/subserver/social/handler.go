@@ -13,13 +13,14 @@ import (
 )
 
 // Route constants
+//
+// Like/Unlike/Likers routes were removed during Moments P0 cleanup. Typed
+// reactions (POST /api/v1/social/posts/:id/react etc.) will land in P1 once
+// the application service supports `ReactionKind`.
 const (
 	routeSocialPosts        = "/api/v1/social/posts"
 	routeSocialPost         = "/api/v1/social/posts/:id"
-	routeSocialPostLike     = "/api/v1/social/posts/:id/like"
-	routeSocialPostUnlike   = "/api/v1/social/posts/:id/unlike"
 	routeSocialPostRepost   = "/api/v1/social/posts/:id/repost"
-	routeSocialPostLikers   = "/api/v1/social/posts/:id/likers"
 	routeSocialPostComments = "/api/v1/social/posts/:id/comments"
 	routeSocialComment      = "/api/v1/social/comments/:commentId"
 	routeSocialTimeline     = "/api/v1/social/timeline"
@@ -42,9 +43,6 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("social-get-post", routeSocialPost, server.GET, s.handleGetPost, cw),
 		server.NewTypedHandler("social-update-post", routeSocialPost, server.PUT, s.handleUpdatePost, cw, jw),
 		server.NewTypedHandler("social-delete-post", routeSocialPost, server.DELETE, s.handleDeletePost, cw, jw),
-		server.NewTypedHandler("social-like-post", routeSocialPostLike, server.POST, s.handleLikePost, cw, jw),
-		server.NewTypedHandler("social-unlike-post", routeSocialPostUnlike, server.POST, s.handleUnlikePost, cw, jw),
-		server.NewTypedHandler("social-get-post-likers", routeSocialPostLikers, server.GET, s.handleGetPostLikers, cw),
 		server.NewTypedHandler("social-repost-post", routeSocialPostRepost, server.POST, s.handleRepostPost, cw, jw),
 		server.NewTypedHandler("social-get-timeline", routeSocialTimeline, server.GET, s.handleGetTimeline, cw, jw),
 		server.NewTypedHandler("social-get-user-posts", routeSocialUserPosts, server.GET, s.handleGetUserPosts, cw, jw),
@@ -142,54 +140,6 @@ func (s *subServer) handleDeletePost(ctx context.Context, req *model.DeletePostR
 	}
 
 	return &model.DeletePostResponse{Success: true}, nil
-}
-
-func (s *subServer) handleLikePost(ctx context.Context, req *model.LikePostRequest) (*model.LikePostResponse, error) {
-	userID, exists := getUserID(ctx)
-	if !exists {
-		return nil, server.Unauthorized("authentication required")
-	}
-
-	if req.PostId == "" {
-		return nil, server.BadRequest("post_id is required")
-	}
-
-	resp, err := s.postSvc.LikePost(ctx, req.PostId, userID)
-	if err != nil {
-		logger.Error(ctx, "failed to like post", "error", err)
-		return nil, server.InternalErrorWithCause("failed to like post", err)
-	}
-
-	return resp, nil
-}
-
-func (s *subServer) handleUnlikePost(ctx context.Context, req *model.UnlikePostRequest) (*model.UnlikePostResponse, error) {
-	userID, exists := getUserID(ctx)
-	if !exists {
-		return nil, server.Unauthorized("authentication required")
-	}
-
-	if req.PostId == "" {
-		return nil, server.BadRequest("post_id is required")
-	}
-
-	resp, err := s.postSvc.UnlikePost(ctx, req.PostId, userID)
-	if err != nil {
-		logger.Error(ctx, "failed to unlike post", "error", err)
-		return nil, server.InternalErrorWithCause("failed to unlike post", err)
-	}
-
-	return resp, nil
-}
-
-func (s *subServer) handleGetPostLikers(ctx context.Context, req *model.GetPostLikersRequest) (*model.GetPostLikersResponse, error) {
-	resp, err := s.postSvc.GetPostLikers(ctx, req)
-	if err != nil {
-		logger.Error(ctx, "failed to get post likers", "error", err)
-		return nil, server.InternalErrorWithCause("failed to get post likers", err)
-	}
-
-	return resp, nil
 }
 
 func (s *subServer) handleRepostPost(ctx context.Context, req *model.RepostRequest) (*model.RepostResponse, error) {
