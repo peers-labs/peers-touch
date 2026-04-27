@@ -138,14 +138,12 @@ async function pickImageFile(): Promise<string | null> {
 
 function EditableAvatar({
   src,
-  localPath,
   fallbackText,
   size,
   uploading,
   onUpload,
 }: {
   src?: string;
-  localPath?: string;
   fallbackText: string;
   size: number;
   uploading: boolean;
@@ -165,8 +163,7 @@ function EditableAvatar({
       }}
     >
       <UserSquareAvatar
-        url={src}
-        localPath={localPath}
+        remoteUrl={src}
         name={fallbackText}
         size={size}
         radius={12}
@@ -362,7 +359,6 @@ const AUTO_SAVE_DELAY = 800;
 export function AccountTab() {
   const { t } = useTranslation('provider');
   const { token } = theme.useToken();
-  const avatarLocalPath = useSessionStore(s => s.currentUser?.avatarLocalPath);
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -383,7 +379,7 @@ export function AccountTab() {
           return api.syncUserProfile();
         }).then((result) => {
           if (result?.avatar_url) {
-            useSessionStore.getState().updateAvatar(result.avatar_url, result.avatar_local_path);
+            useSessionStore.getState().updateAvatar(result.avatar_url);
           }
         }).catch(() => {});
         useAccountIdentityStore.getState().load();
@@ -476,13 +472,13 @@ export function AccountTab() {
       setProfile(next);
 
       if (next.avatar) {
-        // Sync avatar to local cache and update session store so sidebar reflects immediately.
-        // 2026-04-25: Replaced silent .catch(() => {}) with user-facing error feedback.
+        // Warm the local cache and refresh identity store; the avatar component
+        // will render the cached file as soon as resolveLocal returns.
         api.accountSyncAvatar(next.avatar).then(() => {
           return api.syncUserProfile();
         }).then((result) => {
           if (result?.avatar_url) {
-            useSessionStore.getState().updateAvatar(result.avatar_url, result.avatar_local_path);
+            useSessionStore.getState().updateAvatar(result.avatar_url);
           }
         }).catch((error: any) => {
           toast.error(error?.message || t('provider.account.avatarHeader.failedToUploadAvatar'));
@@ -556,7 +552,6 @@ export function AccountTab() {
           <div style={{ marginLeft: 16 }}>
             <EditableAvatar
               src={profile.avatar || undefined}
-              localPath={avatarLocalPath}
               fallbackText={profile.display_name || profile.username}
               size={80}
               uploading={uploadingAvatar}

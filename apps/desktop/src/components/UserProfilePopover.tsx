@@ -64,7 +64,7 @@ export function UserProfilePopover({ children }: Props) {
         {/* Avatar + name */}
         <Flexbox horizontal gap={12} align="flex-end" style={{ marginTop: -24 }}>
           <UserSquareAvatar
-            url={avatarSrc}
+            remoteUrl={avatarSrc}
             name={displayName}
             size={56}
             radius={12}
@@ -175,14 +175,13 @@ export function UserProfilePopover({ children }: Props) {
   );
 }
 
-export function useUserAvatar(): { url?: string; localPath?: string; name: string; provider?: string } {
+export function useUserAvatar(): { url?: string; name: string; provider?: string } {
   const currentUser = useSessionStore((s) => s.currentUser);
   const { t } = useTranslation('layout');
 
   return useMemo(
     () => ({
       url: currentUser?.avatarUrl || undefined,
-      localPath: currentUser?.avatarLocalPath || undefined,
       name: currentUser?.name || t('layout.user.defaultName'),
       provider: currentUser?.loginProvider || currentUser?.loginMethod || undefined,
     }),

@@ -124,7 +124,7 @@ func GetActorHandlers() []ActorHandlerInfo {
 // ---------------------------------------------------------------------------
 
 func ActorSignup(c context.Context, ctx *app.RequestContext) {
-	var params model.ActorSignParams
+	var params model.ActorSignRequest
 	if err := ctx.Bind(&params); err != nil {
 		log.Warnf(c, "Signup bound params failed: %v", err)
 		ctx.JSON(http.StatusBadRequest, err.Error())
@@ -223,6 +223,11 @@ func ActorLogin(c context.Context, ctx *app.RequestContext) {
 			DisplayName: toString(result.User["display_name"]),
 			Email:       toString(result.User["email"]),
 		},
+	}
+	if actorIdNum > 0 {
+		if act, err := actor.GetActorByID(c, actorIdNum); err == nil && act != nil {
+			loginResp.ActorRef = actor.ProtoActorRef(act, baseURLFrom(ctx))
+		}
 	}
 	SuccessResponse(c, ctx, "Login successful", loginResp)
 }
