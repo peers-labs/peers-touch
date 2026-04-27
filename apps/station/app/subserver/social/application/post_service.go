@@ -18,7 +18,6 @@ type PostService struct {
 	db              *gorm.DB
 	postRepo        infrastructure.PostRepository
 	postContentRepo infrastructure.PostContentRepository
-	likeRepo        infrastructure.LikeRepository
 	postConverter   *domain.PostConverter
 }
 
@@ -26,14 +25,12 @@ func NewPostService(
 	db *gorm.DB,
 	postRepo infrastructure.PostRepository,
 	postContentRepo infrastructure.PostContentRepository,
-	likeRepo infrastructure.LikeRepository,
 	postConverter *domain.PostConverter,
 ) *PostService {
 	return &PostService{
 		db:              db,
 		postRepo:        postRepo,
 		postContentRepo: postContentRepo,
-		likeRepo:        likeRepo,
 		postConverter:   postConverter,
 	}
 }
@@ -263,125 +260,6 @@ func (s *PostService) DeletePost(ctx context.Context, postID string, userID uint
 	return nil
 }
 
-func (s *PostService) LikePost(ctx context.Context, postID string, userID uint64) (*model.LikePostResponse, error) {
-	logger.Info(ctx, "LikePost", "postID", postID, "userID", userID)
-
-	pid := domain.ParseID(postID)
-
-	isLiked, err := s.likeRepo.IsPostLiked(ctx, userID, pid)
-	if err != nil {
-		return nil, err
-	}
-	if isLiked {
-		return nil, fmt.Errorf("already liked")
-	}
-
-	like := &db.PostLike{
-		ID:        domain.Next(),
-		UserID:    userID,
-		PostID:    pid,
-		CreatedAt: time.Now(),
-	}
-
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(like).Error; err != nil {
-			return err
-		}
-
-		return tx.Model(&db.Post{}).
-			Where("id = ?", pid).
-			UpdateColumn("likes_count", gorm.Expr("likes_count + 1")).Error
-	})
-
-	if err != nil {
-		logger.Error(ctx, "failed to like post", "error", err)
-		return nil, err
-	}
-
-	count, _ := s.likeRepo.GetPostLikesCount(ctx, pid)
-
-	logger.Info(ctx, "LikePost success", "postID", postID)
-	return &model.LikePostResponse{
-		Success:       true,
-		NewLikesCount: count,
-	}, nil
-}
-
-func (s *PostService) UnlikePost(ctx context.Context, postID string, userID uint64) (*model.UnlikePostResponse, error) {
-	logger.Info(ctx, "UnlikePost", "postID", postID, "userID", userID)
-
-	pid := domain.ParseID(postID)
-
-	isLiked, err := s.likeRepo.IsPostLiked(ctx, userID, pid)
-	if err != nil {
-		return nil, err
-	}
-	if !isLiked {
-		return nil, fmt.Errorf("not liked yet")
-	}
-
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ? AND post_id = ?", userID, pid).
-			Delete(&db.PostLike{}).Error; err != nil {
-			return err
-		}
-
-		return tx.Model(&db.Post{}).
-			Where("id = ?", pid).
-			UpdateColumn("likes_count", gorm.Expr("likes_count - 1")).Error
-	})
-
-	if err != nil {
-		logger.Error(ctx, "failed to unlike post", "error", err)
-		return nil, err
-	}
-
-	count, _ := s.likeRepo.GetPostLikesCount(ctx, pid)
-
-	logger.Info(ctx, "UnlikePost success", "postID", postID)
-	return &model.UnlikePostResponse{
-		Success:       true,
-		NewLikesCount: count,
-	}, nil
-}
-
-func (s *PostService) GetPostLikers(ctx context.Context, req *model.GetPostLikersRequest) (*model.GetPostLikersResponse, error) {
-	logger.Debug(ctx, "GetPostLikers", "postID", req.PostId)
-
-	postID := domain.ParseID(req.PostId)
-	limit := int(req.Limit)
-	if limit == 0 {
-		limit = 20
-	}
-
-	var cursor *infrastructure.Cursor
-	if req.Cursor != "" {
-		cursor = parseCursor(req.Cursor)
-	}
-
-	actors, err := s.likeRepo.GetPostLikers(ctx, postID, cursor, limit)
-	if err != nil {
-		logger.Error(ctx, "failed to get post likers", "error", err)
-		return nil, err
-	}
-
-	users := make([]*model.PostAuthor, len(actors))
-	for i, actor := range actors {
-		users[i] = &model.PostAuthor{
-			Id:          fmt.Sprintf("%d", actor.ID),
-			Username:    actor.PreferredUsername,
-			DisplayName: actor.Name,
-			AvatarUrl:   actor.Icon,
-		}
-	}
-
-	return &model.GetPostLikersResponse{
-		Users:      users,
-		NextCursor: generateCursor(actors),
-		HasMore:    len(actors) == limit,
-	}, nil
-}
-
 func (s *PostService) RepostPost(ctx context.Context, req *model.RepostRequest, userID uint64) (*model.RepostResponse, error) {
 	logger.Info(ctx, "RepostPost", "postID", req.PostId, "userID", userID)
 
@@ -494,10 +372,10 @@ func canViewPost(post *db.Post, viewerID uint64) bool {
 	return true
 }
 
+// parseCursor decodes a cursor string into a typed Cursor.
+// TODO(P1): implement actual cursor encoding/decoding (currently a stub
+// shared with timeline_service).
 func parseCursor(cursorStr string) *infrastructure.Cursor {
+	_ = cursorStr
 	return nil
-}
-
-func generateCursor(actors []*db.Actor) string {
-	return ""
 }
