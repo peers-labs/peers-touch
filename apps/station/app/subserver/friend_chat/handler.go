@@ -4,14 +4,18 @@ import (
 	"context"
 	"strings"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -194,10 +198,60 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendMessage
 		})
 	}
 	s.mu.Unlock()
+
+	// Realtime fan-out: any device with a live SSE subscription on
+	// /events/stream for the recipient gets this message envelope on
+	// the same TCP connection. Offline recipients see nothing here;
+	// the pending queue above + cold catch-up on reconnect (contract
+	// §2.5 case-2) is their delivery path. Publishing is best-effort:
+	// failure does NOT roll back the persisted message.
+	//
+	// Multi-device sender echo: the sender's other devices subscribe
+	// to their own actor stream and need to see this outgoing message
+	// in real time too. We publish to both actor buses; bus internally
+	// clones so identical content with distinct event_ids reaches each
+	// subscriber set without aliasing.
+	if bus := events.GetBus(); bus != nil {
+		publishMessageToBus(bus, message, req.SessionUlid, req.ReceiverDid)
+		if subject.ID != req.ReceiverDid {
+			publishMessageToBus(bus, message, req.SessionUlid, subject.ID)
+		}
+	}
+
 	return &chat.SendMessageResponse{
 		Message:     friendChatMessageFromDomain(message),
 		RelayStatus: relayStatus,
 	}, nil
+}
+
+// publishMessageToBus emits a MessageEnvelope on the unified realtime
+// stream. The wire's `ciphertext` field carries the marshaled
+// FriendChatMessage today (before E2EE rolls out); receivers always
+// decode via `unmarshal(decrypt(ciphertext))` where decrypt is the
+// identity transform until sealed-sender lands. The wire schema does
+// not change.
+func publishMessageToBus(bus events.EventBus, m domain.Message, sessionULID, recipientID string) {
+	fcm := friendChatMessageFromDomain(m)
+	cipher, err := proto.Marshal(fcm)
+	if err != nil {
+		logger.DefaultHelper.Warnf("friend_chat: marshal message for bus failed: %v", err)
+		return
+	}
+	ev := &realtime.StreamEvent{
+		Kind: &realtime.StreamEvent_Message{
+			Message: &realtime.MessageEnvelope{
+				SenderActorId:    m.SenderDID,
+				RecipientActorId: recipientID,
+				SessionUlid:      sessionULID,
+				Ulid:             m.ID,
+				Ciphertext:       cipher,
+				SentTsUnixMs:     m.SentAt.UnixMilli(),
+			},
+		},
+	}
+	if _, err := bus.Publish(recipientID, ev); err != nil {
+		logger.DefaultHelper.Warnf("friend_chat: realtime publish failed actor=%s: %v", recipientID, err)
+	}
 }
 
 func (s *subServer) handleGetMessages(ctx context.Context, req *chat.GetMessagesRequest) (*chat.GetMessagesResponse, error) {
