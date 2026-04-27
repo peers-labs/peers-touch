@@ -1,0 +1,153 @@
+// Package domain — OSS-specific DTOs surfaced through the dashboard
+// `/dashboard/api/oss/*` family of endpoints.
+//
+// These are *projections* of the OSS subserver's internal models — the
+// dashboard never imports oss/db/repo, it queries the shared GORM
+// handle through its own infrastructure repo. The duplication is
+// intentional: it forces every field that crosses the API boundary
+// to be reviewed when the OSS schema changes.
+package domain
+
+import "time"
+
+// ---------------------------------------------------------------------------
+// Bucket DTOs
+// ---------------------------------------------------------------------------
+
+// OSSBucketSummary is one row in `GET /dashboard/api/oss/buckets`.
+// Fields mirror oss_buckets but expose only what the operator needs;
+// the underlying ULID `id` is preserved as the addressable key.
+type OSSBucketSummary struct {
+	ID                string    `json:"id"`
+	Name              string    `json:"name"`
+	OwnerActorID      string    `json:"owner_actor_id"`
+	Kind              string    `json:"kind"`
+	SystemKey         string    `json:"system_key,omitempty"`
+	DefaultVisibility string    `json:"default_visibility"`
+	QuotaBytes        int64     `json:"quota_bytes"`
+	UsedBytes         int64     `json:"used_bytes"`
+	FileCount         int64     `json:"file_count"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+// OSSBucketListResponse is the envelope for `GET /buckets`. It is not
+// paginated — the bucket count is operator-controlled (~handful per
+// actor) and a flat list is friendlier for the dashboard sidebar.
+type OSSBucketListResponse struct {
+	Items []OSSBucketSummary `json:"items"`
+	Total int                `json:"total"`
+}
+
+// ---------------------------------------------------------------------------
+// Object DTOs
+// ---------------------------------------------------------------------------
+
+// OSSObjectSummary is one file in the dashboard object table. We
+// deliberately omit Sha256 (operators rarely need the digest in the
+// list view; detail views can re-query) and Path (host-internal).
+type OSSObjectSummary struct {
+	ID            string    `json:"id"`
+	Key           string    `json:"key"`
+	Name          string    `json:"name"`
+	Size          int64     `json:"size"`
+	Mime          string    `json:"mime"`
+	Backend       string    `json:"backend"`
+	BucketID      string    `json:"bucket_id"`
+	OwnerActorID  string    `json:"owner_actor_id"`
+	Visibility    string    `json:"visibility"`
+	ChatSessionID string    `json:"chat_session_id,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+// OSSObjectListResponse is the paged response for `GET /objects` and
+// `GET /buckets/:id/objects`.
+type OSSObjectListResponse struct {
+	Items []OSSObjectSummary `json:"items"`
+	Total int64              `json:"total"`
+	Page  int                `json:"page"`
+}
+
+// ---------------------------------------------------------------------------
+// Audit DTOs
+// ---------------------------------------------------------------------------
+
+// OSSAuditEvent mirrors oss_audit. Reason is exposed verbatim so the
+// dashboard can group denials by stable code.
+type OSSAuditEvent struct {
+	ID            uint64    `json:"id"`
+	TS            time.Time `json:"ts"`
+	Action        string    `json:"action"`
+	FileKey       string    `json:"file_key"`
+	BucketID      string    `json:"bucket_id"`
+	ActorID       string    `json:"actor_id"`
+	PeerStationID string    `json:"peer_station_id,omitempty"`
+	SizeBytes     int64     `json:"size_bytes"`
+	Outcome       string    `json:"outcome"`
+	Reason        string    `json:"reason,omitempty"`
+}
+
+// OSSAuditListResponse is the paged audit response.
+type OSSAuditListResponse struct {
+	Items []OSSAuditEvent `json:"items"`
+	Total int64           `json:"total"`
+	Page  int             `json:"page"`
+}
+
+// ---------------------------------------------------------------------------
+// Usage DTOs
+// ---------------------------------------------------------------------------
+
+// OSSUsageSummary is the headline numbers for `GET /usage` — one
+// payload feeds the OSS overview card on the dashboard home.
+type OSSUsageSummary struct {
+	TotalBytes      int64                `json:"total_bytes"`
+	TotalFiles      int64                `json:"total_files"`
+	BucketCount     int                  `json:"bucket_count"`
+	TopOwners       []OSSOwnerUsage      `json:"top_owners,omitempty"`
+	VisibilityMix   []OSSVisibilityCount `json:"visibility_mix,omitempty"`
+}
+
+// OSSOwnerUsage is one row in TopOwners — descending by Bytes.
+type OSSOwnerUsage struct {
+	OwnerActorID string `json:"owner_actor_id"`
+	Bytes        int64  `json:"bytes"`
+	Files        int64  `json:"files"`
+}
+
+// OSSVisibilityCount is one row in VisibilityMix — used for the
+// public/chat/private pie chart.
+type OSSVisibilityCount struct {
+	Visibility string `json:"visibility"`
+	Files      int64  `json:"files"`
+	Bytes      int64  `json:"bytes"`
+}
+
+// ---------------------------------------------------------------------------
+// Federation DTOs
+// ---------------------------------------------------------------------------
+
+// OSSFederationLocalKey is the response for `GET /federation/me`.
+// PublicKeyPEM is safe to expose; PrivateKeyPEM is *never* surfaced —
+// reading the private key from the dashboard would defeat the
+// reason it lives in oss_meta in the first place.
+type OSSFederationLocalKey struct {
+	KID          string `json:"kid"`
+	PublicKeyPEM string `json:"public_key_pem"`
+	Generated    bool   `json:"generated"`
+}
+
+// OSSFederationPeer is one row in `GET /federation/peers`.
+type OSSFederationPeer struct {
+	PeerStationID string    `json:"peer_station_id"`
+	KID           string    `json:"kid"`
+	PublicKeyPEM  string    `json:"public_key_pem"`
+	FirstSeenAt   time.Time `json:"first_seen_at"`
+	LastSeenAt    time.Time `json:"last_seen_at"`
+	Pinned        bool      `json:"pinned"`
+}
+
+// OSSFederationPeersResponse wraps the peer list.
+type OSSFederationPeersResponse struct {
+	Items []OSSFederationPeer `json:"items"`
+}
