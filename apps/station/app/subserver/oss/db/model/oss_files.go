@@ -15,8 +15,14 @@ import "time"
 // is enforced at the service layer where a bucket lookup precedes
 // every Create.
 type FileMeta struct {
-	ID        string `json:"id"      gorm:"primaryKey;type:varchar(64)"`
-	Key       string `json:"key"     gorm:"uniqueIndex;type:varchar(255)"`
+	ID  string `json:"id"  gorm:"primaryKey;type:varchar(64)"`
+	// Key is the storage-backend key (e.g. `cas/aa/abc…`). It is
+	// *not* unique by itself: two actors uploading identical CAS
+	// bytes converge on the same key but each gets their own row
+	// (different visibility / bucket / quota). Uniqueness is
+	// enforced via the composite index `idx_oss_files_owner_key`
+	// declared on `OwnerActorID`.
+	Key string `json:"key" gorm:"uniqueIndex:idx_oss_files_owner_key;index;type:varchar(255)"`
 	Name      string `json:"name"    gorm:"type:varchar(255)"`
 	Size      int64  `json:"size"    gorm:"type:bigint;not null"`
 	Mime      string `json:"mime"    gorm:"type:varchar(100)"`
@@ -31,9 +37,11 @@ type FileMeta struct {
 	BucketID string `json:"bucket_id" gorm:"index;type:varchar(64);not null"`
 
 	// OwnerActorID is the DID of the actor that uploaded the file.
-	// Required. Used by `private` visibility checks and as the
-	// audit attribution.
-	OwnerActorID string `json:"owner_actor_id" gorm:"index;type:varchar(255);not null"`
+	// Required. Used by `private` visibility checks, as the audit
+	// attribution, and as the leading column of the composite
+	// `(owner_actor_id, key)` unique index that lets two actors
+	// independently claim the same CAS blob.
+	OwnerActorID string `json:"owner_actor_id" gorm:"uniqueIndex:idx_oss_files_owner_key;index;type:varchar(255);not null"`
 
 	// Visibility is exactly one of `public` / `chat` / `private`.
 	// Required. Defaults to the bucket's DefaultVisibility when the
