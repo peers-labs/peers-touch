@@ -51,6 +51,7 @@ func (p *ossPlugin) Options() []option.Option {
 		WithMaxFileSize(ossOptions.Peers.Node.Server.Subserver.Oss.MaxFileSize),
 		WithMaxFilesPerMessage(ossOptions.Peers.Node.Server.Subserver.Oss.MaxFilesPerMessage),
 		WithBackendType(ossOptions.Peers.Node.Server.Subserver.Oss.Backend),
+		WithKeyStrategy(ossOptions.Peers.Node.Server.Subserver.Oss.KeyStrategy),
 		WithAuthProvider(authProvider),
 	}
 }

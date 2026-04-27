@@ -53,6 +53,11 @@ pub struct ChatAttachmentUploaded {
     /// backends; for signed backends the renderer must call
     /// `oss_resolve_url`.
     pub preview_url: Option<String>,
+    /// Hex-encoded sha256 of the uploaded bytes when the Station
+    /// runs the CAS strategy. Empty for `random` keying or for
+    /// older Station builds that pre-date the field.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub sha256: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,6 +131,11 @@ pub fn chat_upload_attachment(file_path: &str, token: &str) -> AppResult<StubPay
         mime_type: resp.get("mime").and_then(|v| v.as_str()).unwrap_or("").to_string(),
         size: resp.get("size").and_then(|v| v.as_i64()).unwrap_or(0),
         preview_url,
+        sha256: resp
+            .get("sha256")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
     };
 
     let body = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
