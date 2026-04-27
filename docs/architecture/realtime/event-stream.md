@@ -293,37 +293,141 @@ opaque ciphertext.
 
 #### 2.7.2 Signaling payload encryption (Invariant)
 
-`payload` MUST be the per-friend-chat-session ratcheted ciphertext of
-the canonical signaling JSON below. It MUST NOT be cleartext SDP /
-candidate. The same X3DH-derived key + ChaCha20-Poly1305 ratchet that
-text messages use also wraps signaling — there is no separate key
-schedule.
+`payload` MUST be a **sealed, authenticated envelope** of the
+canonical signaling JSON below — never cleartext, never the
+chat-message ratchet's output.
 
-Canonical plaintext shape (UTF-8 JSON, before encryption):
+##### 2.7.2.1 Why not the chat ratchet
+
+The friend-chat E2EE primitive uses a strict in-order receive
+ratchet: a missing counter stalls subsequent decryption until the
+gap is filled. That property is correct for chat (a small set of
+strictly-ordered messages) but **wrong for signaling**:
+
+- ICE candidates arrive out-of-order in practice. host / srflx /
+  relay candidates surface from independent ICE-gathering phases at
+  unrelated wall-clock times; UDP candidate-pair reachability checks
+  reorder at every hop.
+- Signaling is loss-tolerant: a single dropped CANDIDATE doesn't
+  break a call (other candidate pairs negotiate). A single dropped
+  ratchet-encrypted CANDIDATE would *also* break every following
+  text message on the same session, because the chat ratchet would
+  see a counter gap.
+- Coupling text and signaling in one ratchet means a flaky call also
+  breaks chat. That's a coupling no one would design on purpose.
+
+##### 2.7.2.2 Envelope construction (Invariant)
+
+Each signal is encrypted independently using a **per-message
+ephemeral DH key** in addition to the long-term identity DH keys of
+both endpoints (a two-DH authenticated sealed-box, equivalent to the
+X3DH "core" without the SPK signature). The envelope is stateless:
+loss / reorder of any individual message has zero effect on any
+other.
+
+Sender (`Alice` → `Bob`):
+
+```
+1. eph_priv, eph_pub  ← X25519_keypair()                    // fresh per message
+2. shared_eph         ← X25519(eph_priv, Bob.identity_x_pub) // ephemeral DH
+3. shared_lt          ← X25519(Alice.identity_x_priv, Bob.identity_x_pub) // long-term DH; binds sender authenticity
+4. okm                ← HKDF-SHA256(
+                          ikm  = shared_eph || shared_lt,
+                          salt = eph_pub    || Alice.identity_x_pub,
+                          info = b"peers-touch:signaling:v1"
+                        )
+5. enc_key            ← okm[0..32]                          // 32-byte AES-256 key
+6. nonce              ← random_bytes(12)                    // GCM nonce
+7. aad                ← b"signaling:v1|" || session_ulid || b"|" || kind   // binds context
+8. ct||tag            ← AES-256-GCM-encrypt(enc_key, nonce, plaintext, aad)
+9. payload            ← eph_pub(32) || nonce(12) || ct||tag(N+16)
+10. zeroize(eph_priv, shared_eph, shared_lt, enc_key)
+```
+
+`Alice.identity_x_*` is the Ed25519 → X25519 conversion of the
+identity key already stored in the existing crypto module
+(`ed25519_to_x25519`). Senders do not introduce any new long-term
+key material.
+
+Receiver (`Bob`):
+
+```
+1. parse eph_pub(32) || nonce(12) || ct||tag(rest)
+2. shared_eph         ← X25519(Bob.identity_x_priv, eph_pub)
+3. shared_lt          ← X25519(Bob.identity_x_priv, Alice.identity_x_pub)
+4. okm                ← HKDF-SHA256(
+                          ikm  = shared_eph || shared_lt,
+                          salt = eph_pub    || Alice.identity_x_pub,
+                          info = b"peers-touch:signaling:v1"
+                        )
+5. enc_key            ← okm[0..32]
+6. aad                ← b"signaling:v1|" || session_ulid || b"|" || kind  // recomputed from envelope context
+7. plaintext          ← AES-256-GCM-decrypt(enc_key, nonce, ct||tag, aad)
+8. zeroize(shared_eph, shared_lt, enc_key)
+```
+
+Bob looks up `Alice.identity_x_pub` by `from_actor_id` (carried by
+the `CallSignal` frame). The mapping is already populated by the
+chat E2EE bootstrap when the conversation was first established;
+signaling never requires a second key-bundle fetch.
+
+Wire layout (all fixed-position, no length prefixes — receiver knows
+the sizes from the spec):
+
+```
+| eph_pub | nonce |   ciphertext   | tag |
+|   32 B  | 12 B  |   N bytes      | 16 B|   total = 60 + N
+```
+
+##### 2.7.2.3 Plaintext shapes
+
+Canonical plaintext (UTF-8 JSON, before encryption):
 
 ```json
-// kind=OFFER or kind=ANSWER
+// kind = OFFER or kind = ANSWER
 { "sdp": "v=0\r\no=- ..." }
 
-// kind=CANDIDATE
+// kind = CANDIDATE
 { "candidate": "candidate:...", "mid": "0", "mline": 0 }
 
-// kind=HANGUP
+// kind = HANGUP
 { "reason": "user_ended" | "timeout" | "error" }
 ```
 
-Rationale: signaling reveals network topology (host/srflx/relay
-candidate addresses), media format negotiation, and call timing — all
-of which are sensitive metadata. Reusing the chat session ratchet
-gives forward secrecy and per-message keys for free. A dedicated
-signaling-only envelope was rejected because it would have required
-a parallel key schedule with no security benefit and twice the
-maintenance.
+##### 2.7.2.4 Security properties
 
-The trade-off: a call cannot be initiated until the chat session is
-E2EE-established (X3DH bundle exchange completed for both peers).
-This is acceptable because the UI flow always initiates a call from
-an existing chat conversation — there is no "blind dial" path.
+- **Confidentiality**: SDP and candidate addresses are unreadable to
+  Station and any on-path attacker. Only the intended recipient's
+  identity-X25519 private key recovers `shared_lt`; no other party
+  (including a future-compromised station operator with logged
+  ciphertext) can decrypt past traffic.
+- **Sender authenticity**: deriving `enc_key` requires
+  `Alice.identity_x_priv`; a forger lacking it cannot produce a
+  ciphertext that decrypts under the recipient's key derivation.
+  The JWT-gated ingress (§2.7.1) is a *transport-layer* sender
+  check; this is the *cryptographic* check that survives a malicious
+  station.
+- **Replay resistance**: AAD binds `session_ulid` and `kind`, so a
+  ciphertext captured for one session cannot be replayed into
+  another. Repeat delivery within the same session is harmless for
+  signaling (offers / answers are idempotent on `setRemoteDescription`,
+  duplicate candidates are deduped by the WebRTC stack).
+- **Forward secrecy**: `eph_priv` is generated fresh per message and
+  zeroized immediately. Compromise of long-term identity keys does
+  not retroactively decrypt logged signaling unless the attacker
+  also captured the ephemeral private at send time.
+- **Out-of-order tolerance**: every message is independent. Loss or
+  reorder of one signal has zero effect on the next.
+
+##### 2.7.2.5 What this does NOT provide
+
+- **Anonymity**: `from_actor_id` is in cleartext on the SSE frame so
+  Station can route. Signaling reveals *who is calling whom* but not
+  *what they are negotiating*. Hiding the social graph is out of
+  this module's scope (would require oblivious routing).
+- **Per-call group key**: this is a 1-to-1 envelope. Group-call
+  signaling needs a separate group-key schedule and is explicitly
+  out of scope for v1.
 
 ---
 

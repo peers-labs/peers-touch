@@ -18,6 +18,8 @@
 
 use std::sync::Arc;
 
+use reqwest::Method;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, State, Window};
 
@@ -25,6 +27,7 @@ use crate::application::session_resolver;
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::event_stream;
+use crate::infrastructure::station_client;
 use crate::state::AppState;
 
 fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
@@ -81,4 +84,75 @@ pub fn realtime_stream_stop(
         return to_stub("realtime_stream_stop", json!({ "actor_id": actor_id }));
     }
     to_stub("realtime_stream_stop", json!({ "actor_id": null }))
+}
+
+/// Input for `realtime_signal_send`. The frontend has already
+/// produced `payload_b64` by ratchet-encrypting the canonical
+/// signaling JSON (see contract §2.7.2) using the chat session's
+/// existing E2EE primitives, so this command is a thin RPC pass-
+/// through — it does not touch crypto state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RealtimeSignalInput {
+    pub recipient_actor_id: String,
+    pub session_ulid: String,
+    /// One of "OFFER", "ANSWER", "CANDIDATE", "HANGUP". Validated
+    /// server-side; the client-side TS layer also constrains the
+    /// type, so a bad value here means a programmer error rather
+    /// than user input.
+    pub kind: String,
+    /// base64(opaque ciphertext envelope). Station never decodes
+    /// this beyond a length check.
+    pub payload_b64: String,
+}
+
+/// Publishes a single WebRTC signaling event onto the recipient's
+/// (and, for multi-device, sender's own) realtime SSE stream via
+/// Station's `POST /realtime/signal` ingress (contract §2.7.1).
+///
+/// The whole encryption envelope lives in `payload_b64`. Station
+/// never decrypts it; the receiver is the *only* party that can.
+/// This command therefore deliberately holds no crypto state — keep
+/// encryption in the TS layer where the chat session ratchet already
+/// lives.
+#[tauri::command]
+pub fn realtime_signal_send(
+    input: RealtimeSignalInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    if input.recipient_actor_id.trim().is_empty()
+        || input.session_ulid.trim().is_empty()
+        || input.kind.trim().is_empty()
+        || input.payload_b64.is_empty()
+    {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "recipient_actor_id, session_ulid, kind, payload_b64 are required",
+            None,
+        );
+    }
+    let body = json!({
+        "recipient_actor_id": input.recipient_actor_id,
+        "session_ulid":       input.session_ulid,
+        "kind":               input.kind,
+        "payload_b64":        input.payload_b64,
+    });
+    let resp = match station_client::request_json(
+        Method::POST,
+        "/realtime/signal",
+        &token,
+        None,
+        Some(body),
+    ) {
+        Ok(v) => v,
+        Err(reason) => {
+            tracing::warn!(reason = %reason, "realtime_signal_send: station rejected publish");
+            return reason.into_app_result("Failed to publish realtime signal");
+        }
+    };
+    to_stub("realtime_signal_send", resp)
 }
