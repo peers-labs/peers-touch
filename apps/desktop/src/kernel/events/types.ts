@@ -67,6 +67,41 @@ export interface RealtimeCallSignalPayload {
   payload: Uint8Array;
 }
 
+/**
+ * Receipt kind, mirrors `MessageReceipt.Kind` in the wire protobuf.
+ * `KIND_UNSPECIFIED` (enum 0) is dropped at the dispatch boundary —
+ * by the time a payload reaches an event subscriber the kind is
+ * guaranteed to be `DELIVERED` or `READ`.
+ */
+export type RealtimeMessageReceiptKind = 'DELIVERED' | 'READ';
+
+export interface RealtimeMessageReceiptPayload {
+  /** Server-assigned event id. Opaque cursor; see contract §2.2. */
+  eventId: string;
+  /** Session this receipt belongs to (matches `MessageEnvelope.sessionUlid`). */
+  sessionUlid: string;
+  /** ULID of the message being acknowledged (the *sender*'s ulid). */
+  messageUlid: string;
+  /** Originating actor DID — the *receiver* of the original message,
+   *  i.e. whoever is now reporting they got / read it. May equal the
+   *  local actor for multi-device echo. */
+  fromActorId: string;
+  /** Whether this is a delivery receipt or a read receipt. */
+  kind: RealtimeMessageReceiptKind;
+}
+
+export interface RealtimeTypingStatePayload {
+  /** Server-assigned event id. Opaque cursor; see contract §2.2. */
+  eventId: string;
+  /** Session this typing-state belongs to. */
+  sessionUlid: string;
+  /** Originating actor DID — whoever is (not) typing. May equal the
+   *  local actor for multi-device echo; consumers should ignore self. */
+  fromActorId: string;
+  /** True when the actor *started* typing, false when they stopped. */
+  typing: boolean;
+}
+
 export interface EventPayloadMap {
   [EVENT.AUTH_IDENTITY_CHANGED]: void;
   [EVENT.AUTH_SESSION_REVOKED]: SessionRevokedPayload;
@@ -82,6 +117,8 @@ export interface EventPayloadMap {
   [EVENT.REALTIME_RESYNC]: RealtimeResyncPayload;
   [EVENT.REALTIME_CONNECTION_STATE]: RealtimeConnectionStatePayload;
   [EVENT.REALTIME_CALL_SIGNAL]: RealtimeCallSignalPayload;
+  [EVENT.REALTIME_MESSAGE_RECEIPT]: RealtimeMessageReceiptPayload;
+  [EVENT.REALTIME_TYPING_STATE]: RealtimeTypingStatePayload;
 }
 
 export interface AppEvent<TType extends keyof EventPayloadMap> {

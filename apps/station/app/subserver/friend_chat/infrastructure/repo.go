@@ -414,33 +414,90 @@ func (r *GormRepo) ListMessages(sessionID, beforeUlid string, limit int) ([]doma
 	return out, nil
 }
 
-func (r *GormRepo) MarkRead(actorDID string, messageIDs []string, status int32) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&MessageModel{}).Where("ulid IN ?", messageIDs).Updates(map[string]interface{}{
-			"status":     status,
-			"updated_at": time.Now(),
-		}).Error; err != nil {
+// MarkRead persists a status flip (DELIVERED/READ/FAILED…) on a batch
+// of message ulids and returns one AckedMessage per row that was
+// actually updated. The caller (application.Service) uses that slice
+// to fan out realtime MessageReceipt events to each original sender.
+//
+// Why we resolve the message rows *inside* the transaction rather
+// than letting the caller pre-look-up the senders:
+//
+//  1. We need to ignore ulids the receiver doesn't own — both for
+//     security (don't leak that some unrelated ulid exists) and to
+//     avoid publishing receipts for messages the receiver never
+//     legitimately received. The cheapest filter is "must appear in
+//     `(ulid IN ?, receiver_did = actor)`" right next to the UPDATE.
+//  2. Doing the lookup in the same tx as the UPDATE means the
+//     returned slice is exactly the slice of rows that were flipped,
+//     even if a concurrent ack races us — the receipt fan-out and
+//     the persistence stay consistent.
+func (r *GormRepo) MarkRead(actorDID string, messageIDs []string, status int32) ([]domain.AckedMessage, error) {
+	var acked []domain.AckedMessage
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		// Resolve the rows the receiver actually owns. We pluck
+		// (ulid, sender_did, session_ulid) so the realtime publisher
+		// has all three without a second round-trip. The
+		// `receiver_did = actorDID` clause is the security gate.
+		type ackRow struct {
+			ULID        string
+			SenderDID   string
+			SessionULID string
+		}
+		var rows []ackRow
+		if err := tx.Model(&MessageModel{}).
+			Where("ulid IN ? AND receiver_did = ?", messageIDs, actorDID).
+			Select("ulid", "sender_did", "session_ulid").
+			Scan(&rows).Error; err != nil {
+			return err
+		}
+		if len(rows) == 0 {
+			return nil
+		}
+		legitULIDs := make([]string, 0, len(rows))
+		for _, row := range rows {
+			legitULIDs = append(legitULIDs, row.ULID)
+		}
+
+		// Only forward-flips: never downgrade an already-READ row to
+		// DELIVERED when a stale ack arrives out of order. Status
+		// progression follows FriendMessageStatus enum ordering
+		// (SENT=2 < DELIVERED=3 < READ=4) so a strict-greater filter
+		// is correct. UNSPECIFIED(0) and SENDING(1) won't appear on
+		// already-persisted server rows.
+		if err := tx.Model(&MessageModel{}).
+			Where("ulid IN ? AND status < ?", legitULIDs, status).
+			Updates(map[string]interface{}{
+				"status":     status,
+				"updated_at": time.Now(),
+			}).Error; err != nil {
 			return err
 		}
 
-		// Scope unread reset to only sessions that contain the acked messages
-		var sessionULIDs []string
-		if err := tx.Model(&MessageModel{}).
-			Where("ulid IN ?", messageIDs).
-			Distinct("session_ulid").
-			Pluck("session_ulid", &sessionULIDs).Error; err != nil {
-			return err
-		}
-		if len(sessionULIDs) > 0 {
-			if err := tx.Model(&SessionModel{}).
-				Where("ulid IN ? AND participant_a_did = ?", sessionULIDs, actorDID).
-				Update("unread_count_a", 0).Error; err != nil {
-				return err
+		// Scope unread reset to only sessions that contain the acked
+		// messages, and only when this ack is at-least READ.
+		// Otherwise a DELIVERED ack would zero the receiver's unread
+		// counter prematurely.
+		if status >= 4 { // FriendMessageStatus.READ
+			sessionULIDs := make([]string, 0, len(rows))
+			seen := map[string]struct{}{}
+			for _, row := range rows {
+				if _, ok := seen[row.SessionULID]; ok {
+					continue
+				}
+				seen[row.SessionULID] = struct{}{}
+				sessionULIDs = append(sessionULIDs, row.SessionULID)
 			}
-			if err := tx.Model(&SessionModel{}).
-				Where("ulid IN ? AND participant_b_did = ?", sessionULIDs, actorDID).
-				Update("unread_count_b", 0).Error; err != nil {
-				return err
+			if len(sessionULIDs) > 0 {
+				if err := tx.Model(&SessionModel{}).
+					Where("ulid IN ? AND participant_a_did = ?", sessionULIDs, actorDID).
+					Update("unread_count_a", 0).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&SessionModel{}).
+					Where("ulid IN ? AND participant_b_did = ?", sessionULIDs, actorDID).
+					Update("unread_count_b", 0).Error; err != nil {
+					return err
+				}
 			}
 		}
 
@@ -448,11 +505,26 @@ func (r *GormRepo) MarkRead(actorDID string, messageIDs []string, status int32) 
 			EventID:   fmt.Sprintf("fce-%d", time.Now().UnixNano()),
 			EventType: "friend.message.acked",
 			TargetID:  actorDID,
-			Payload:   fmt.Sprintf(`{"count":%d,"status":%d}`, len(messageIDs), status),
+			Payload:   fmt.Sprintf(`{"count":%d,"status":%d}`, len(rows), status),
 			Status:    "pending",
 		}
-		return tx.Create(&outbox).Error
+		if err := tx.Create(&outbox).Error; err != nil {
+			return err
+		}
+		acked = make([]domain.AckedMessage, len(rows))
+		for i, row := range rows {
+			acked[i] = domain.AckedMessage{
+				Ulid:        row.ULID,
+				SenderDID:   row.SenderDID,
+				SessionULID: row.SessionULID,
+			}
+		}
+		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return acked, nil
 }
 
 // ============================================================================

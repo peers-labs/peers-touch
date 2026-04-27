@@ -332,13 +332,107 @@ func (s *subServer) handleAckMessage(ctx context.Context, req *chat.MessageAckRe
 	if len(req.Ulids) == 0 {
 		return nil, server.BadRequest("ulids is required")
 	}
-	if err := s.service.AckMessages(subject.ID, req.Ulids, req.Status); err != nil {
+	acked, err := s.service.AckMessages(subject.ID, req.Ulids, req.Status)
+	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to ack messages", err)
 	}
 	s.mu.Lock()
 	delete(s.pending, subject.ID)
 	s.mu.Unlock()
+
+	// Realtime fan-out: each acked message gets a MessageReceipt
+	// emitted onto the *original sender's* event stream, so the
+	// sender's UI can flip the per-message status indicator without
+	// waiting for a poll. The receipt's `from_actor_id` is the
+	// receiver (this caller), since they're the actor reporting
+	// "I got / read this".
+	//
+	// Best-effort: persistence has already succeeded, and dropping a
+	// realtime receipt only delays the UI tick — the next time the
+	// sender lists messages they'll see the updated status from the
+	// DB. We translate FriendMessageStatus → MessageReceipt_Kind via
+	// receiptKindFromFriendStatus; values outside that mapping
+	// (SENDING, FAILED, UNSPECIFIED) are intentionally dropped here
+	// because they have no meaning on the realtime plane.
+	if len(acked) > 0 {
+		if bus := events.GetBus(); bus != nil {
+			rkind := receiptKindFromFriendStatus(req.Status)
+			if rkind != realtime.MessageReceipt_KIND_UNSPECIFIED {
+				publishReceiptsToSenders(bus, acked, subject.ID, rkind)
+			}
+		}
+	}
+
 	return &chat.MessageAckResponse{}, nil
+}
+
+// receiptKindFromFriendStatus maps the FriendMessageStatus enum (the
+// chat subserver's wire form) onto the realtime MessageReceipt_Kind
+// enum (the unified stream's form). The two enums live in different
+// proto packages on purpose: the chat status has SENDING/SENT/FAILED
+// states that only the chat protocol cares about, while the realtime
+// receipt is a small DELIVERED/READ broadcast.
+//
+// Keep the desktop-side mirror (eventStream.ts::receiptKindFromEnum)
+// aligned. Adding a new MessageReceipt_Kind on the proto side
+// requires updating both.
+func receiptKindFromFriendStatus(status int32) realtime.MessageReceipt_Kind {
+	switch status {
+	case 3: // FRIEND_MESSAGE_STATUS_DELIVERED
+		return realtime.MessageReceipt_DELIVERED
+	case 4: // FRIEND_MESSAGE_STATUS_READ
+		return realtime.MessageReceipt_READ
+	default:
+		return realtime.MessageReceipt_KIND_UNSPECIFIED
+	}
+}
+
+// publishReceiptsToSenders emits one MessageReceipt per acked message
+// onto the original sender's actor stream. We do NOT also publish to
+// the receiver's own bus — it's their own UI driving this call, and
+// they already have the local persistence flip via the same response.
+//
+// Receiver's other devices DO need to see READ receipts so that
+// "unread count = 0" sticks across devices; we cover that by
+// additionally publishing to the receiver's bus when the kind is READ
+// (skipped for DELIVERED to avoid the cross-device echo cost on the
+// far more frequent DELIVERED traffic). This matches the multi-device
+// behaviour of MessageEnvelope publish in handleSendMessage.
+func publishReceiptsToSenders(bus events.EventBus, acked []domain.AckedMessage, fromActorID string, kind realtime.MessageReceipt_Kind) {
+	for _, m := range acked {
+		ev := &realtime.StreamEvent{
+			Kind: &realtime.StreamEvent_Receipt{
+				Receipt: &realtime.MessageReceipt{
+					SessionUlid: m.SessionULID,
+					Ulid:        m.Ulid,
+					Kind:        kind,
+					FromActorId: fromActorID,
+				},
+			},
+		}
+		if _, err := bus.Publish(m.SenderDID, ev); err != nil {
+			logger.DefaultHelper.Warnf("friend_chat: realtime receipt publish failed sender=%s ulid=%s: %v",
+				m.SenderDID, m.Ulid, err)
+		}
+		if kind == realtime.MessageReceipt_READ && m.SenderDID != fromActorID {
+			// Multi-device echo on READ only — see the function-level
+			// comment for the rationale.
+			cloneEv := &realtime.StreamEvent{
+				Kind: &realtime.StreamEvent_Receipt{
+					Receipt: &realtime.MessageReceipt{
+						SessionUlid: m.SessionULID,
+						Ulid:        m.Ulid,
+						Kind:        kind,
+						FromActorId: fromActorID,
+					},
+				},
+			}
+			if _, err := bus.Publish(fromActorID, cloneEv); err != nil {
+				logger.DefaultHelper.Warnf("friend_chat: realtime receipt self-echo failed actor=%s ulid=%s: %v",
+					fromActorID, m.Ulid, err)
+			}
+		}
+	}
 }
 
 func (s *subServer) handleSyncMessages(ctx context.Context, req *chat.SyncMessagesRequest) (*chat.SyncMessagesResponse, error) {
