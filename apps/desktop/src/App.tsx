@@ -9,6 +9,7 @@ import './services/identityHandlers';
 import { installIdentityChangedBridge } from './services/identity_event';
 import { installPresenceBridge, teardownPresenceBridge } from './services/presence';
 import { installPeerPresenceBridge, teardownPeerPresenceBridge } from './services/peerPresence';
+import { installEventStreamBridge, teardownEventStreamBridge } from './services/eventStream';
 import { usePresence } from './hooks/usePresence';
 import { useSessionStore } from './store/session';
 import type { AppState, AppLifecycle } from './types/navigation';
@@ -48,6 +49,17 @@ function App() {
   useEffect(() => {
     void installPeerPresenceBridge();
     return () => teardownPeerPresenceBridge();
+  }, []);
+
+  // Realtime event-stream bridge: decodes the unified SSE plane
+  // (messages, presence, resync, …) into typed eventBus dispatches.
+  // The Rust supervisor lifetime is owned by `usePresence` (started
+  // on the same edge as `app_launch`); here we only install the
+  // decode listener, so the bridge itself is a singleton for the
+  // life of the renderer.
+  useEffect(() => {
+    void installEventStreamBridge();
+    return () => teardownEventStreamBridge();
   }, []);
 
   // Reset guard when user successfully returns to ready state,
