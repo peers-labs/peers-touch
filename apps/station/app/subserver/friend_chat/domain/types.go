@@ -40,6 +40,21 @@ type Message struct {
 	UpdatedAt        time.Time
 }
 
+// AckedMessage is the slice of metadata an ack operation needs to fan
+// out as a realtime MessageReceipt. The receipt is published to the
+// *original sender* (the receiver of the receipt is the SenderDID of
+// the message), keyed by the SessionULID. Returned by repo.MarkRead.
+//
+// We deliberately do not return the post-ack `Status` here — the
+// caller already passes the new status into MarkRead and propagates
+// the same value to the bus. Carrying it on the slice would invite
+// drift between "what we wrote" and "what we announced".
+type AckedMessage struct {
+	Ulid        string
+	SenderDID   string
+	SessionULID string
+}
+
 // FriendRequest represents a pending relationship request before chat session creation.
 type FriendRequest struct {
 	ID          string

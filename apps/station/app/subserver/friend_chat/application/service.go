@@ -15,7 +15,7 @@ type Repository interface {
 	ListMessages(sessionID, beforeUlid string, limit int) ([]domain.Message, error)
 	SearchMessages(actorDID, query, sessionUlid string, limit, offset int) ([]domain.Message, int, error)
 	LoadAttachments(messageULID string) ([]domain.Attachment, error)
-	MarkRead(actorDID string, messageIDs []string, status int32) error
+	MarkRead(actorDID string, messageIDs []string, status int32) ([]domain.AckedMessage, error)
 	CreateFriendRequest(senderDID, receiverDID, message string) (domain.FriendRequest, error)
 	GetFriendRequest(requestID string) (*domain.FriendRequest, error)
 	AcceptFriendRequest(requestID string) (*domain.FriendRequest, *domain.Session, error)
@@ -79,7 +79,14 @@ func (s *Service) ListMessages(sessionID, beforeUlid string, limit int) ([]domai
 	return s.repo.ListMessages(sessionID, beforeUlid, limit)
 }
 
-func (s *Service) AckMessages(actorDID string, messageIDs []string, status int32) error {
+// AckMessages flips the status flag on a batch of messages owned by
+// actorDID and returns the per-message metadata the handler uses to
+// fan out realtime MessageReceipt events.
+//
+// The slice is exactly the rows the receiver legitimately owned and
+// whose status was strictly forward-progressed (see repo.MarkRead);
+// the handler can publish without re-validating ownership.
+func (s *Service) AckMessages(actorDID string, messageIDs []string, status int32) ([]domain.AckedMessage, error) {
 	return s.repo.MarkRead(actorDID, messageIDs, status)
 }
 

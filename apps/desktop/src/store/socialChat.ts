@@ -143,6 +143,21 @@ interface SocialChatState {
   loadGroupUnreadCounts: () => Promise<void>;
   loadConversationPreviews: () => Promise<void>;
   ackFriendMessages: (ulids: string[], status: number) => Promise<void>;
+  /**
+   * Apply a realtime MessageReceipt to the local message store.
+   *
+   * Idempotent: status flips are forward-only (SENT < DELIVERED < READ
+   * in FriendMessageStatus enum) so a stale DELIVERED receipt arriving
+   * after a READ will not downgrade the UI tick. Called from the
+   * SocialChatPage SSE subscription, which already filters out
+   * self-emitted receipts (multi-device READ echoes are *kept* — the
+   * store action is the right place to perform the no-op clamp).
+   */
+  applyMessageReceipt: (
+    sessionUlid: string,
+    messageUlid: string,
+    kind: 'DELIVERED' | 'READ',
+  ) => void;
   markGroupRead: (groupUlid: string) => Promise<void>;
 
   getUnifiedConversations: () => UnifiedConversation[];
@@ -790,6 +805,41 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       log.error('socialChat', 'ackFriendMessages failed', error);
       throw error;
     }
+  },
+
+  applyMessageReceipt: (sessionUlid, messageUlid, kind) => {
+    // Map realtime MessageReceipt_Kind onto FriendMessageStatus —
+    // these are intentionally distinct enums (the chat status carries
+    // SENDING/SENT/FAILED that have no realtime meaning), so the
+    // mapping is partial. See station handler.go::receiptKindFromFriendStatus
+    // for the inverse table.
+    const target =
+      kind === 'READ'
+        ? FriendMessageStatus.READ
+        : kind === 'DELIVERED'
+          ? FriendMessageStatus.DELIVERED
+          : null;
+    if (target == null) return;
+
+    set((state) => {
+      const current = state.messages[sessionUlid];
+      if (!current || current.length === 0) return state;
+      let mutated = false;
+      const next = current.map((m) => {
+        const fcm = m as FriendChatMessage;
+        if (fcm.ulid !== messageUlid) return m;
+        // Forward-only: a stale DELIVERED arriving after READ is
+        // ignored, otherwise the receipt order on the wire would
+        // dictate the UI state and dropped frames could regress the
+        // tick. The persistence layer on Station applies the same
+        // strict-greater filter, so client and server agree.
+        if ((fcm.status ?? 0) >= target) return m;
+        mutated = true;
+        return { ...fcm, status: target } as FriendChatMessage;
+      });
+      if (!mutated) return state;
+      return { messages: { ...state.messages, [sessionUlid]: next } };
+    });
   },
 
   markGroupRead: async (groupUlid) => {
