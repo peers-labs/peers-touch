@@ -56,7 +56,7 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
         avatar={
           <UserProfilePopover>
             <div style={{ cursor: 'pointer', width: 36, height: 36 }}>
-              <UserSquareAvatar url={userAvatar.url} localPath={userAvatar.localPath} name={userAvatar.name} size={36} radius={8} />
+              <UserSquareAvatar remoteUrl={userAvatar.url} name={userAvatar.name} size={36} radius={8} />
             </div>
           </UserProfilePopover>
         }

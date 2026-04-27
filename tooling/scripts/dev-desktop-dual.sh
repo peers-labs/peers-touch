@@ -30,11 +30,13 @@ source "$SCRIPT_DIR/_ensure-station.sh"
 PIDS_TO_KILL=()
 
 cleanup() {
-  for pid in "${PIDS_TO_KILL[@]}"; do
-    if ps -p "$pid" >/dev/null 2>&1; then
-      kill "$pid" 2>/dev/null || true
-    fi
-  done
+  if [[ ${#PIDS_TO_KILL[@]} -gt 0 ]]; then
+    for pid in "${PIDS_TO_KILL[@]}"; do
+      if ps -p "$pid" >/dev/null 2>&1; then
+        kill "$pid" 2>/dev/null || true
+      fi
+    done
+  fi
   wait 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM

@@ -5,6 +5,11 @@ import { OnboardingView } from './views/OnboardingView';
 import { ResumingView } from './views/ResumingView';
 import { ReadyView } from './views/ReadyView';
 import { onSessionRevoked } from './services/desktop_api';
+import './services/identityHandlers';
+import { installIdentityChangedBridge } from './services/identity_event';
+import { installPresenceBridge, teardownPresenceBridge } from './services/presence';
+import { installPeerPresenceBridge, teardownPeerPresenceBridge } from './services/peerPresence';
+import { usePresence } from './hooks/usePresence';
 import { useSessionStore } from './store/session';
 import type { AppState, AppLifecycle } from './types/navigation';
 
@@ -21,6 +26,29 @@ const APP_VIEWS: Record<AppState, ComponentType<ViewProps>> = {
 function App() {
   const lifecycle = useAppLifecycle();
   const View = APP_VIEWS[lifecycle.state];
+
+  // Install the cross-window identity bridge once at app boot.
+  useEffect(() => {
+    installIdentityChangedBridge();
+  }, []);
+
+  // Presence supervisor: install the Tauri-side `presence.transition`
+  // listener and start emitting browser-lifecycle triggers.
+  useEffect(() => {
+    void installPresenceBridge();
+    return () => teardownPresenceBridge();
+  }, []);
+  usePresence();
+
+  // Peer-presence bridge: relays Station's friend-chat presence SSE
+  // (proxied by the Rust supervisor) into the social chat store. The
+  // listener itself is just a thin router; the supervisor lifetime is
+  // managed in `SocialChatPage` so it only runs when the user is on
+  // the chat surface.
+  useEffect(() => {
+    void installPeerPresenceBridge();
+    return () => teardownPeerPresenceBridge();
+  }, []);
 
   // Reset guard when user successfully returns to ready state,
   // so a future revocation can show the notification again.

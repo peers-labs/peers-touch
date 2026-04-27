@@ -1,7 +1,7 @@
 use crate::domain::storage::key_management::{KeyErrorCode, KeyMaterial, KeyProvider, KeyProviderError};
 use keyring::Entry;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlatformBackend {
@@ -19,6 +19,21 @@ pub struct PlatformKeyProvider {
 impl PlatformKeyProvider {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Process-wide shared instance. Caches resolved keys in-memory so the
+    /// hot path for chat-DB opens (every poll cycle, every command) does not
+    /// hammer the OS keychain. The first lookup per `key_ref` still hits the
+    /// OS keystore; subsequent calls return the cached `KeyMaterial`.
+    ///
+    /// Background: the previous implementation built a fresh provider with
+    /// an empty cache on every `open_connection`, causing 3+ keychain RPCs
+    /// per friend-chat sync × N sessions × every 5s polling cycle. Under
+    /// load macOS would intermittently fail these calls, surfacing as
+    /// "get cursor failed" in `friend_chat_sync_from_station_scoped`.
+    pub fn shared() -> &'static Self {
+        static INSTANCE: OnceLock<PlatformKeyProvider> = OnceLock::new();
+        INSTANCE.get_or_init(PlatformKeyProvider::default)
     }
 
     pub fn backend() -> PlatformBackend {
@@ -134,12 +149,30 @@ impl PlatformKeyProvider {
 
 impl KeyProvider for PlatformKeyProvider {
     fn get_or_create_key(&self, key_ref: &str) -> Result<KeyMaterial, KeyProviderError> {
+        // 1. Hot path: in-memory cache.
+        {
+            let guard = self
+                .store
+                .lock()
+                .map_err(|_| KeyProviderError::internal(key_ref, "key provider state lock poisoned"))?;
+            if let Some(item) = guard.get(key_ref) {
+                return Ok(item.clone());
+            }
+        }
+        // 2. Cold path: OS keystore. Populate the cache so subsequent
+        //    requests for the same key avoid the keychain RPC entirely.
         match Self::read_from_os_store(key_ref) {
-            Ok(Some(item)) => return Ok(item),
+            Ok(Some(item)) => {
+                if let Ok(mut guard) = self.store.lock() {
+                    guard.insert(key_ref.to_string(), item.clone());
+                }
+                return Ok(item);
+            }
             Ok(None) => {}
             Err(e) if e.code == KeyErrorCode::NotFound => {}
             Err(e) => return Err(e),
         }
+        // 3. Generate-and-persist a fresh key.
         let mut guard = self
             .store
             .lock()

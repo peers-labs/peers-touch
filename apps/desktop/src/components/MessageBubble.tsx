@@ -471,7 +471,7 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
         gap={8}
       >
         {isUser ? (
-          <UserSquareAvatar url={userAvatar?.url} name={userAvatar?.name} size={32} radius={8} />
+          <UserSquareAvatar remoteUrl={userAvatar?.url} name={userAvatar?.name} size={32} radius={8} />
         ) : (
           <Avatar
             avatar={agentAvatar || '🤖'}

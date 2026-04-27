@@ -4,24 +4,6 @@ use crate::domain::admin::{
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::contracts::{AdminExecuteActionInput, AdminNetworkProbeInput, StubPayload};
-use crate::state::AppState;
-
-fn current_access_context(state: &AppState) -> Result<AccessContext, AppResult<StubPayload>> {
-    match state.session.lock() {
-        Ok(session) => Ok(AccessContext {
-            actor_id: session.actor_id.clone(),
-            token: session.token.clone(),
-        }),
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to acquire session lock");
-            Err(AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to access session state: {}", e),
-                None,
-            ))
-        }
-    }
-}
 
 fn ensure_admin(
     context: &AccessContext,
@@ -44,12 +26,8 @@ fn ensure_admin(
     ))
 }
 
-pub fn admin_health(state: &AppState) -> AppResult<StubPayload> {
+pub fn admin_health(context: AccessContext) -> AppResult<StubPayload> {
     let request_id = build_request_id();
-    let context = match current_access_context(state) {
-        Ok(context) => context,
-        Err(error) => return error,
-    };
     if let Err(error) = ensure_admin(&context, AdminCapability::Health, &request_id) {
         return error;
     }
@@ -66,14 +44,10 @@ pub fn admin_health(state: &AppState) -> AppResult<StubPayload> {
 }
 
 pub fn admin_network_probe(
-    state: &AppState,
+    context: AccessContext,
     input: AdminNetworkProbeInput,
 ) -> AppResult<StubPayload> {
     let request_id = build_request_id();
-    let context = match current_access_context(state) {
-        Ok(context) => context,
-        Err(error) => return error,
-    };
     if let Err(error) = ensure_admin(&context, AdminCapability::NetworkProbe, &request_id) {
         return error;
     }
@@ -103,14 +77,10 @@ pub fn admin_network_probe(
 }
 
 pub fn admin_execute_action(
-    state: &AppState,
+    context: AccessContext,
     input: AdminExecuteActionInput,
 ) -> AppResult<StubPayload> {
     let request_id = build_request_id();
-    let context = match current_access_context(state) {
-        Ok(context) => context,
-        Err(error) => return error,
-    };
     if let Err(error) = ensure_admin(&context, AdminCapability::ExecuteAction, &request_id) {
         return error;
     }

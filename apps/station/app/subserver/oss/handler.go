@@ -35,8 +35,47 @@ func (s *ossSubServer) Handlers() []server.Handler {
 	return []server.Handler{
 		server.NewHTTPHandler("oss-upload", base+"/upload", server.POST, server.HTTPHandlerFunc(s.handleUpload), uploadWrappers...),
 		server.NewHTTPHandler("oss-file-get", base+"/file", server.GET, server.HTTPHandlerFunc(s.handleFileGet)),
+		server.NewHTTPHandler("oss-capabilities", base+"/capabilities", server.GET, server.HTTPHandlerFunc(s.handleCapabilities)),
 		server.NewTypedHandler("oss-meta", base+"/meta", server.POST, s.handleMetaGet, serverwrapper.LogID()),
 	}
+}
+
+// resolveOrigin returns the externally-reachable origin advertised by this
+// OSS subserver. It is the source of truth for both `cid` URIs returned by
+// `/upload` and the `host` field surfaced via `/capabilities`.
+//
+// Resolution order:
+//  1. `Options.HostOverride` — operator-supplied authoritative origin.
+//  2. The request's `X-Forwarded-Proto` + `Host` (or `r.Host`) headers —
+//     reflects whatever the client used to reach the station, which is
+//     correct for home deployments where the station has a single URL.
+//  3. `"self"` — last-resort sentinel; clients treat this as "same origin
+//     as the station they are talking to".
+func (s *ossSubServer) resolveOrigin(r *http.Request) string {
+	if s.hostOverride != "" {
+		return s.hostOverride
+	}
+	if r != nil && r.Host != "" {
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+			scheme = proto
+		}
+		return scheme + "://" + r.Host
+	}
+	return "self"
+}
+
+// buildCID assembles the federated content identifier returned to the
+// client. Format: `oss://{origin}/{key}` — origin is the result of
+// `resolveOrigin`. Receivers parse the URI to know which station to
+// pull the bytes from, enabling small-scale federation without a global
+// CDN. See `docs/architecture/oss/file-storage.md`.
+func (s *ossSubServer) buildCID(r *http.Request, key string) string {
+	origin := s.resolveOrigin(r)
+	return "oss://" + origin + "/" + key
 }
 
 func (s *ossSubServer) verifySignature(q urlQuery) bool {
@@ -66,7 +105,15 @@ func (s *ossSubServer) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
+	// 2026-04-26: Honor `Options.MaxFileSize` for both the multipart parse
+	// budget and a hard pre-save check. We trust `hdr.Size` because it
+	// comes from the parsed multipart frame, not the raw client claim.
+	maxSize := s.maxFileSize
+	if maxSize <= 0 {
+		maxSize = defaultMaxFileSize
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxSize+(1<<20))
+	if err := r.ParseMultipartForm(maxSize); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_multipart"})
 		return
@@ -78,6 +125,14 @@ func (s *ossSubServer) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
+	if hdr.Size > maxSize {
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error":    "file_too_large",
+			"max_size": maxSize,
+		})
+		return
+	}
 
 	meta, err := s.fileService.SaveFile(r.Context(), file, hdr)
 	if err != nil {
@@ -88,12 +143,46 @@ func (s *ossSubServer) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cid := s.buildCID(r, meta.Key)
+	// `url` remains a *relative* path so legacy callers (avatar / header
+	// upload) keep working unchanged. `cid` is the new federated URI
+	// chat clients should embed in `MessageAttachment.cid`.
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"key":     meta.Key,
-		"url":     s.pathBase + "/file?key=" + meta.Key,
-		"size":    meta.Size,
-		"mime":    meta.Mime,
-		"backend": meta.Backend,
+		"key":      meta.Key,
+		"cid":      cid,
+		"url":      s.pathBase + "/file?key=" + meta.Key,
+		"size":     meta.Size,
+		"mime":     meta.Mime,
+		"filename": meta.Name,
+		"backend":  meta.Backend,
+		"host":     s.resolveOrigin(r),
+	})
+}
+
+// handleCapabilities advertises this OSS endpoint's runtime parameters so
+// that clients (and peer stations, in federated deployments) can:
+//
+//   - Pre-validate uploads against `max_file_size` / `max_files_per_message`.
+//   - Discover the externally-reachable `host` to use when resolving
+//     `oss://{host}/{key}` URIs back to bytes.
+//   - Decide which features to enable based on `backend` (local vs s3 vs
+//     proxy) and `signed_url` flag.
+//
+// Public on purpose — the response carries no secrets, and clients need to
+// be able to query it before they have a JWT (e.g. on first login).
+func (s *ossSubServer) handleCapabilities(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"version":               1,
+		"host":                  s.resolveOrigin(r),
+		"path_base":             s.pathBase,
+		"backend":               s.backendType,
+		"max_file_size":         s.maxFileSize,
+		"max_files_per_message": s.maxFilesPerMessage,
+		"signed_url":            s.signSecret != "",
+		"upload_endpoint":       s.pathBase + "/upload",
+		"file_endpoint":         s.pathBase + "/file",
+		"meta_endpoint":         s.pathBase + "/meta",
 	})
 }
 

@@ -1,3 +1,7 @@
+import type { AccountIdentity } from '../services/desktop_api';
+
+export type { AccountIdentity };
+
 const CORE_PAGES = ['chat', 'agent', 'settings', 'search', 'notes', 'agent-profile'] as const;
 
 export type CorePage = (typeof CORE_PAGES)[number];
@@ -16,12 +20,13 @@ export interface SettingsNavState {
   highlightId?: string;
 }
 
+/** Onboarding / picker card user — distinct from `AccountIdentity` (device registry row). */
+// TODO(unified-actor): align naming and fields with AccountIdentity where possible.
 export interface SessionUser {
   name: string;
   email: string;
+  /** Remote avatar URL. Local caching is handled by UserSquareAvatar. */
   avatar?: string;
-  /** Absolute local file path for cached avatar image. */
-  avatarLocalPath?: string;
   /** Account identity ID (e.g. "password:abc" or "github:123"). Present for restorable accounts. */
   accountId?: string;
   /** Whether this account has a PIN set. */

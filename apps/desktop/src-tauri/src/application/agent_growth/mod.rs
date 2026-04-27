@@ -1,8 +1,7 @@
 use crate::contracts::StubPayload;
-use crate::error::{AppResult, ErrorCode};
+use crate::error::AppResult;
 use crate::infrastructure::station_client;
 use crate::model;
-use crate::state::AppState;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -102,12 +101,7 @@ fn growth_snapshot_to_json(r: &model::agent::GetGrowthSnapshotResponse) -> Value
     })
 }
 
-pub fn agent_growth_snapshot(input: AgentGrowthInput, state: &AppState) -> AppResult<StubPayload> {
-    let token = match token_from_state(state) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-
+pub fn agent_growth_snapshot(input: AgentGrowthInput, token: &str) -> AppResult<StubPayload> {
     let req = model::agent::GetGrowthSnapshotRequest {
         agent_id: input.agent_id,
     };
@@ -115,7 +109,7 @@ pub fn agent_growth_snapshot(input: AgentGrowthInput, state: &AppState) -> AppRe
     match station_client::request_proto::<
         model::agent::GetGrowthSnapshotRequest,
         model::agent::GetGrowthSnapshotResponse,
-    >(Method::POST, "/agent/growth/snapshot", &token, None, Some(&req))
+    >(Method::POST, "/agent/growth/snapshot", token, None, Some(&req))
     {
         Ok(resp) => {
             let status = serde_json::to_string(&growth_snapshot_to_json(&resp))
@@ -132,12 +126,7 @@ pub fn agent_growth_snapshot(input: AgentGrowthInput, state: &AppState) -> AppRe
     }
 }
 
-pub fn agent_memory_list(input: AgentMemoryListInput, state: &AppState) -> AppResult<StubPayload> {
-    let token = match token_from_state(state) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-
+pub fn agent_memory_list(input: AgentMemoryListInput, token: &str) -> AppResult<StubPayload> {
     let req = model::agent::ListMemoriesRequest {
         agent_id: input.agent_id,
         target: String::new(),
@@ -146,7 +135,7 @@ pub fn agent_memory_list(input: AgentMemoryListInput, state: &AppState) -> AppRe
     match station_client::request_proto::<
         model::agent::ListMemoriesRequest,
         model::agent::ListMemoriesResponse,
-    >(Method::POST, "/agent/memory/list", &token, None, Some(&req))
+    >(Method::POST, "/agent/memory/list", token, None, Some(&req))
     {
         Ok(resp) => {
             let items: Vec<Value> = resp.items.iter().map(memory_item_to_json).collect();
@@ -169,12 +158,7 @@ pub fn agent_memory_list(input: AgentMemoryListInput, state: &AppState) -> AppRe
     }
 }
 
-pub fn agent_skill_list(input: AgentSkillListInput, state: &AppState) -> AppResult<StubPayload> {
-    let token = match token_from_state(state) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-
+pub fn agent_skill_list(input: AgentSkillListInput, token: &str) -> AppResult<StubPayload> {
     let req = model::agent::ListSkillsRequest {
         agent_id: input.agent_id,
         category: String::new(),
@@ -183,7 +167,7 @@ pub fn agent_skill_list(input: AgentSkillListInput, state: &AppState) -> AppResu
     match station_client::request_proto::<
         model::agent::ListSkillsRequest,
         model::agent::ListSkillsResponse,
-    >(Method::POST, "/agent/skill/list", &token, None, Some(&req))
+    >(Method::POST, "/agent/skill/list", token, None, Some(&req))
     {
         Ok(resp) => {
             let skills: Vec<Value> = resp.skills.iter().map(skill_manifest_to_json).collect();
@@ -206,12 +190,7 @@ pub fn agent_skill_list(input: AgentSkillListInput, state: &AppState) -> AppResu
     }
 }
 
-pub fn agent_submit_feedback(input: AgentFeedbackInput, state: &AppState) -> AppResult<StubPayload> {
-    let token = match token_from_state(state) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-
+pub fn agent_submit_feedback(input: AgentFeedbackInput, token: &str) -> AppResult<StubPayload> {
     let req = model::agent::RecordFeedbackRequest {
         agent_id: input.agent_id,
         turn_id: input.turn_id,
@@ -223,7 +202,7 @@ pub fn agent_submit_feedback(input: AgentFeedbackInput, state: &AppState) -> App
     match station_client::request_proto::<
         model::agent::RecordFeedbackRequest,
         model::agent::RecordFeedbackResponse,
-    >(Method::POST, "/agent/growth/feedback", &token, None, Some(&req))
+    >(Method::POST, "/agent/growth/feedback", token, None, Some(&req))
     {
         Ok(resp) => {
             let payload = json!({ "id": resp.id });
@@ -239,20 +218,4 @@ pub fn agent_submit_feedback(input: AgentFeedbackInput, state: &AppState) -> App
             err.into_app_result("Failed to submit agent feedback")
         }
     }
-}
-
-fn token_from_state(state: &AppState) -> Result<String, AppResult<StubPayload>> {
-    let guard = state.session.lock().map_err(|e| {
-        tracing::error!(error = %e, "Failed to access session state");
-        AppResult::fail(ErrorCode::InternalError, "Failed to access session state", None)
-    })?;
-    let token = guard.token.clone().unwrap_or_default();
-    if token.trim().is_empty() {
-        return Err(AppResult::fail(
-            ErrorCode::Unauthorized,
-            "Authentication required — please log in",
-            None,
-        ));
-    }
-    Ok(token)
 }
