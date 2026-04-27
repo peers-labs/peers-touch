@@ -12,7 +12,7 @@ import type { MenuProps } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import {
   LayoutDashboard, Users, Key, Server,
-  HardDrive, Shield, Monitor, FileText, LogOut,
+  HardDrive, Cloud, Shield, Monitor, FileText, LogOut,
   Settings, UserCircle, Network,
 } from 'lucide-react';
 import { useHashRouter } from '../hooks/useHashRouter';
@@ -41,6 +41,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: PAGES.NODES,       icon: <Network size={20} />,         label: 'Nodes' },
   { key: PAGES.SUBSERVERS,  icon: <Server size={20} />,          label: 'Services' },
   { key: PAGES.STORAGE,     icon: <HardDrive size={20} />,       label: 'Storage' },
+  { key: PAGES.OSS,        icon: <Cloud size={20} />,            label: 'OSS' },
   { key: PAGES.SECURITY,    icon: <Shield size={20} />,          label: 'Security' },
   { key: PAGES.SYSTEM,      icon: <Monitor size={20} />,         label: 'System' },
   { key: PAGES.LOGS,        icon: <FileText size={20} />,        label: 'Logs' },
