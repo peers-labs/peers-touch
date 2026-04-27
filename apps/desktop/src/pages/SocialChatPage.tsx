@@ -11,6 +11,8 @@ import { api } from '../services/desktop_api';
 import { useSocialChatStore } from '../store/socialChat';
 import { log } from '../utils/logger';
 import { friendChatP2p } from '../modules/p2p/friendChatP2p';
+import { eventBus } from '../kernel/events';
+import { EVENT } from '../kernel/events/catalog';
 
 type ChatSubPage = 'chats' | 'contacts';
 
@@ -213,6 +215,32 @@ export function SocialChatPage() {
       window.clearInterval(timer);
     };
   }, [loadMessages, loadSessions, loadConversationPreviews]);
+
+  // --- Realtime SSE message arrival: server-pushed, no polling ---
+  //
+  // The single SSE stream (see docs/architecture/realtime/event-stream.md
+  // and services/eventStream.ts) fan-outs every incoming chat message
+  // to this subscriber. We mirror what the legacy P2P onEnvelope path
+  // did — delegate to friendChatSync to ingest the canonical message
+  // from Station + refresh the active conversation. The handler is
+  // intentionally small; ingestion (decrypt + persist + dedupe) lives
+  // in the sync pipeline so any path (SSE, future federation,
+  // catch-up) hits the same code.
+  useEffect(() => {
+    const off = eventBus.subscribe(EVENT.REALTIME_MESSAGE_RECEIVED, (payload) => {
+      const sid = payload.sessionUlid;
+      if (!sid) return;
+      api.friendChatSync(sid, 50, 1)
+        .then(() => {
+          if (activeTabRef.current === 'friend' && activeSessionRef.current === sid) {
+            return loadMessages(sid, 'friend');
+          }
+          return undefined;
+        })
+        .catch((error) => log.warn('socialChat', 'realtime sync failed', error));
+    });
+    return off;
+  }, [loadMessages]);
 
   // --- P2P event registration: only re-subscribe when currentUserDid changes ---
   useEffect(() => {
