@@ -11,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	ossrepo "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/repo"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oss/service"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth"
 	authhttp "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
@@ -111,11 +113,17 @@ func (s *ossSubServer) verifySignature(q urlQuery) bool {
 }
 
 func (s *ossSubServer) handleUpload(w http.ResponseWriter, r *http.Request) {
-	// Auth middleware (RequireJWT) is applied in Handlers() if authProvider is set.
-	// If no authProvider is set, we deny access by default for safety in this new strict mode,
-	// unless we want to allow public upload (unlikely).
+	// Auth middleware (RequireJWT) is applied in Handlers() if
+	// authProvider is set. We additionally require a subject — the
+	// JWT must resolve to a known actor — because every upload
+	// debits a per-actor bucket and writes an `OwnerActorID` row.
 	if s.authProvider == nil {
-		w.WriteHeader(http.StatusUnauthorized)
+		writeUploadAuthError(w, "auth_required")
+		return
+	}
+	subject := auth.GetSubject(r.Context())
+	if subject == nil || subject.ID == "" {
+		writeUploadAuthError(w, "auth_required")
 		return
 	}
 
@@ -148,12 +156,16 @@ func (s *ossSubServer) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	meta, err := s.fileService.SaveFile(r.Context(), file, hdr)
+	attr := service.UploadAttribution{
+		ActorID:       subject.ID,
+		BucketName:    strings.TrimSpace(r.FormValue("bucket")),
+		Visibility:    strings.TrimSpace(r.FormValue("visibility")),
+		ChatSessionID: strings.TrimSpace(r.FormValue("chat_session_id")),
+	}
+
+	meta, err := s.fileService.SaveFile(r.Context(), attr, file, hdr)
 	if err != nil {
-		// Log error through the project's unified logger instead of fmt.Printf
-		logger.Errorf(r.Context(), "[handleUpload] SaveFile failed: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("save_failed: %v", err)})
+		writeUploadServiceError(r.Context(), w, "handleUpload", err)
 		return
 	}
 
@@ -184,10 +196,51 @@ func (s *ossSubServer) handleUpload(w http.ResponseWriter, r *http.Request) {
 // the active key strategy and the eventual `HeadObject` in
 // `handleUploadComplete`.
 type presignUploadRequest struct {
-	Filename string `json:"filename"`
-	Mime     string `json:"mime"`
-	Size     int64  `json:"size"`
-	Sha256   string `json:"sha256,omitempty"`
+	Filename      string `json:"filename"`
+	Mime          string `json:"mime"`
+	Size          int64  `json:"size"`
+	Sha256        string `json:"sha256,omitempty"`
+	Bucket        string `json:"bucket,omitempty"`
+	Visibility    string `json:"visibility,omitempty"`
+	ChatSessionID string `json:"chat_session_id,omitempty"`
+}
+
+// writeUploadAuthError emits a 401 with a stable JSON shape so the
+// desktop client can match on `code` rather than parsing English.
+func writeUploadAuthError(w http.ResponseWriter, code string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnauthorized)
+	_ = json.NewEncoder(w).Encode(map[string]string{"code": code, "error": "authentication required"})
+}
+
+// writeUploadServiceError translates service-layer errors into HTTP
+// responses. The pattern is: errors.Is against typed sentinels for
+// 4xx mapping, fall through to 500 for everything else.
+func writeUploadServiceError(ctx context.Context, w http.ResponseWriter, where string, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	switch {
+	case errors.Is(err, service.ErrActorRequired):
+		writeUploadAuthError(w, "auth_required")
+	case errors.Is(err, service.ErrBucketUnknown):
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"code": "bucket_unknown", "error": err.Error()})
+	case errors.Is(err, service.ErrInvalidVisibility):
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"code": "invalid_visibility", "error": err.Error()})
+	case errors.Is(err, service.ErrChatSessionRequired):
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"code": "chat_session_required", "error": err.Error()})
+	case errors.Is(err, ossrepo.ErrQuotaExceeded):
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		_ = json.NewEncoder(w).Encode(map[string]string{"code": "quota_exceeded", "error": err.Error()})
+	case errors.Is(err, service.ErrPresignUnsupported):
+		w.WriteHeader(http.StatusNotImplemented)
+		_ = json.NewEncoder(w).Encode(map[string]string{"code": "presigned_upload_disabled", "error": err.Error()})
+	default:
+		logger.Errorf(ctx, "[%s] service error: %v", where, err)
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("save_failed: %v", err)})
+	}
 }
 
 // handlePresignUpload opens a presigned upload session. The client
@@ -199,7 +252,12 @@ type presignUploadRequest struct {
 // with `already_uploaded: true` and the client skips the PUT.
 func (s *ossSubServer) handlePresignUpload(w http.ResponseWriter, r *http.Request) {
 	if s.authProvider == nil {
-		w.WriteHeader(http.StatusUnauthorized)
+		writeUploadAuthError(w, "auth_required")
+		return
+	}
+	subject := auth.GetSubject(r.Context())
+	if subject == nil || subject.ID == "" {
+		writeUploadAuthError(w, "auth_required")
 		return
 	}
 	pb := s.presignedBackend()
@@ -226,21 +284,20 @@ func (s *ossSubServer) handlePresignUpload(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	res, err := s.fileService.PrepareUpload(r.Context(), pb, service.PrepareUploadRequest{
+	attr := service.UploadAttribution{
+		ActorID:       subject.ID,
+		BucketName:    strings.TrimSpace(req.Bucket),
+		Visibility:    strings.TrimSpace(req.Visibility),
+		ChatSessionID: strings.TrimSpace(req.ChatSessionID),
+	}
+	res, err := s.fileService.PrepareUpload(r.Context(), pb, attr, service.PrepareUploadRequest{
 		Filename:    req.Filename,
 		ContentType: req.Mime,
 		Size:        req.Size,
 		Sha256:      strings.ToLower(strings.TrimSpace(req.Sha256)),
 	}, s.presignedUploadTTL)
 	if err != nil {
-		if errors.Is(err, service.ErrPresignUnsupported) {
-			w.WriteHeader(http.StatusNotImplemented)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": "presigned_upload_disabled"})
-			return
-		}
-		logger.Errorf(r.Context(), "[handlePresignUpload] prepare failed: %v", err)
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		writeUploadServiceError(r.Context(), w, "handlePresignUpload", err)
 		return
 	}
 
@@ -270,11 +327,14 @@ func (s *ossSubServer) handlePresignUpload(w http.ResponseWriter, r *http.Reques
 
 // uploadCompleteRequest is the wire shape of `POST /sub-oss/upload-complete`.
 type uploadCompleteRequest struct {
-	Key      string `json:"key"`
-	Filename string `json:"filename"`
-	Mime     string `json:"mime"`
-	Size     int64  `json:"size"`
-	Sha256   string `json:"sha256,omitempty"`
+	Key           string `json:"key"`
+	Filename      string `json:"filename"`
+	Mime          string `json:"mime"`
+	Size          int64  `json:"size"`
+	Sha256        string `json:"sha256,omitempty"`
+	Bucket        string `json:"bucket,omitempty"`
+	Visibility    string `json:"visibility,omitempty"`
+	ChatSessionID string `json:"chat_session_id,omitempty"`
 }
 
 // handleUploadComplete registers a successfully PUT object as a
@@ -282,7 +342,12 @@ type uploadCompleteRequest struct {
 // the bytes landed and the size is honest before persisting.
 func (s *ossSubServer) handleUploadComplete(w http.ResponseWriter, r *http.Request) {
 	if s.authProvider == nil {
-		w.WriteHeader(http.StatusUnauthorized)
+		writeUploadAuthError(w, "auth_required")
+		return
+	}
+	subject := auth.GetSubject(r.Context())
+	if subject == nil || subject.ID == "" {
+		writeUploadAuthError(w, "auth_required")
 		return
 	}
 	pb := s.presignedBackend()
@@ -299,7 +364,13 @@ func (s *ossSubServer) handleUploadComplete(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	meta, err := s.fileService.CompleteUpload(r.Context(), pb, service.CompleteUploadRequest{
+	attr := service.UploadAttribution{
+		ActorID:       subject.ID,
+		BucketName:    strings.TrimSpace(req.Bucket),
+		Visibility:    strings.TrimSpace(req.Visibility),
+		ChatSessionID: strings.TrimSpace(req.ChatSessionID),
+	}
+	meta, err := s.fileService.CompleteUpload(r.Context(), pb, attr, service.CompleteUploadRequest{
 		Key:         req.Key,
 		Filename:    req.Filename,
 		ContentType: req.Mime,
@@ -307,9 +378,7 @@ func (s *ossSubServer) handleUploadComplete(w http.ResponseWriter, r *http.Reque
 		Sha256:      strings.ToLower(strings.TrimSpace(req.Sha256)),
 	})
 	if err != nil {
-		logger.Errorf(r.Context(), "[handleUploadComplete] complete failed: %v", err)
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		writeUploadServiceError(r.Context(), w, "handleUploadComplete", err)
 		return
 	}
 

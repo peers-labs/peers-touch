@@ -135,6 +135,19 @@ type SystemBucketSpec struct {
 // per actor. The numbers match the plan document
 // (`.dev-workflow/20260427-142337/plan.md`); changing them here is
 // considered a schema change and should ship behind a migration bump.
+// FindSystemBucketSpec returns the spec whose Name matches `name`,
+// or nil when the name does not refer to a system bucket. The
+// service layer calls this on every upload to decide whether to
+// EnsureSystem (system bucket) or FindByOwnerName (user bucket).
+func FindSystemBucketSpec(name string) *SystemBucketSpec {
+	for i := range SystemBucketSpecs {
+		if SystemBucketSpecs[i].Name == name {
+			return &SystemBucketSpecs[i]
+		}
+	}
+	return nil
+}
+
 var SystemBucketSpecs = []SystemBucketSpec{
 	{
 		Name:              SystemBucketAvatar,
@@ -156,8 +169,8 @@ var SystemBucketSpecs = []SystemBucketSpec{
 	},
 	{
 		Name:              SystemBucketPersonal,
-		SystemKey:         "",
-		Kind:              BucketKindUser,
+		SystemKey:         SystemBucketPersonal,
+		Kind:              BucketKindSystem,
 		DefaultVisibility: VisibilityPrivate,
 		QuotaBytes:        10 * 1024 * 1024 * 1024,
 		TTLDays:           0,
