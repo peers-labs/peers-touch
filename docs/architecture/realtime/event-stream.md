@@ -247,6 +247,84 @@ its cursor has been overwritten in the meantime, receive a `Resync`.
 This prevents one slow client from starving the SSE goroutine pool or
 exhausting station memory.
 
+### 2.7 Client → Server ingress endpoints
+
+The SSE stream is egress-only. Whenever a client needs to *originate*
+a real-time event (sending a chat message, posting a typing
+indicator, transmitting a WebRTC signal) it does so via a regular
+HTTP POST on a dedicated ingress endpoint. The endpoint persists or
+routes the payload as appropriate, then publishes an `EventBus.Publish`
+to fan it out over SSE to every involved actor's subscribers.
+
+This split is intentional: SSE is a one-way protocol and we don't
+want to graft a writer plane onto it (no SSE-over-fetch, no JSON-RPC
+over SSE, no WebSocket back-channel). HTTP POST is enough; reuse
+keeps the surface small.
+
+#### 2.7.1 Signaling ingress (Invariant)
+
+```
+POST /realtime/signal
+  Authorization: Bearer <jwt>
+  Content-Type:  application/json
+  Body:
+    {
+      "recipient_actor_id": "did:peers:...",      // who should receive the signal
+      "session_ulid":       "01HX...",            // chat session that owns the call
+      "kind":               "OFFER" | "ANSWER" | "CANDIDATE" | "HANGUP",
+      "payload_b64":        "<base64(opaque ciphertext)>"
+    }
+  → 204 No Content on success
+  → 400 if any required field is missing or `kind` is unknown
+  → 413 if payload_b64 decodes to more than 64 KiB (SDP ≤ ~5 KB,
+        candidates ≤ ~300 B in practice; cap is generous)
+```
+
+Station behaviour: validates fields, decodes `payload_b64` only to
+length-check it, then publishes a `StreamEvent.signaling = CallSignal{
+session_ulid, from_actor_id = <jwt subject>, kind, payload}` via
+`EventBus.Publish(recipient_actor_id, ...)`. If the sender is not the
+recipient (the normal case), Station also publishes a copy to
+`EventBus.Publish(sender_actor_id, ...)` for multi-device fan-out
+(other devices of the caller need to know the call was initiated).
+
+Station never inspects, decrypts, parses, or stores `payload`. It is
+opaque ciphertext.
+
+#### 2.7.2 Signaling payload encryption (Invariant)
+
+`payload` MUST be the per-friend-chat-session ratcheted ciphertext of
+the canonical signaling JSON below. It MUST NOT be cleartext SDP /
+candidate. The same X3DH-derived key + ChaCha20-Poly1305 ratchet that
+text messages use also wraps signaling — there is no separate key
+schedule.
+
+Canonical plaintext shape (UTF-8 JSON, before encryption):
+
+```json
+// kind=OFFER or kind=ANSWER
+{ "sdp": "v=0\r\no=- ..." }
+
+// kind=CANDIDATE
+{ "candidate": "candidate:...", "mid": "0", "mline": 0 }
+
+// kind=HANGUP
+{ "reason": "user_ended" | "timeout" | "error" }
+```
+
+Rationale: signaling reveals network topology (host/srflx/relay
+candidate addresses), media format negotiation, and call timing — all
+of which are sensitive metadata. Reusing the chat session ratchet
+gives forward secrecy and per-message keys for free. A dedicated
+signaling-only envelope was rejected because it would have required
+a parallel key schedule with no security benefit and twice the
+maintenance.
+
+The trade-off: a call cannot be initiated until the chat session is
+E2EE-established (X3DH bundle exchange completed for both peers).
+This is acceptable because the UI flow always initiates a call from
+an existing chat conversation — there is no "blind dial" path.
+
 ---
 
 ## 3. Server architecture
@@ -304,9 +382,19 @@ particular:
   is replaced by "does this actor have any live SSE subscriber". The
   pending queue itself remains as the cold-recovery path (§2.5 case 2)
   but stops being the everyday delivery mechanism.
-- TURN HTTP signaling endpoints (`/turn/ice/session/...`) — kept for
-  the TURN server itself, but their use as a signaling **transport**
-  is removed. Signaling moves entirely to `CallSignal` events.
+- The legacy `signaling` subserver
+  (`apps/station/frame/core/plugin/native/subserver/signaling/`) and
+  its 14 endpoints (`/api/v1/ice/session/{new,offer,answer,candidate,...}`,
+  `/api/v1/ice/peer/{register,unregister,get,...}`) are deleted in
+  full. Their replacement is the single
+  `POST /realtime/signal` ingress (§2.7.1) plus the `CallSignal`
+  oneof arm on the egress SSE stream.
+
+  Note: the `turn` subserver
+  (`apps/station/frame/core/plugin/native/subserver/turn/`) — which
+  hosts the actual UDP TURN relay plus
+  `GET /api/v1/turn/ice-servers` for credential discovery — stays.
+  That subserver is the media plane, not the signaling plane.
 
 ---
 
