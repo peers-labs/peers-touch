@@ -97,7 +97,12 @@ func init() {
 	config.RegisterOptions(&ossOptions)
 	// ensure our table migrates when store initializes
 	store.InitTableHooks(func(ctx context.Context, rds *gorm.DB) {
-		_ = rds.AutoMigrate(&ossmodel.FileMeta{})
+		_ = rds.AutoMigrate(
+			&ossmodel.FileMeta{},
+			&ossmodel.Bucket{},
+			&ossmodel.Audit{},
+			&ossmodel.Meta{},
+		)
 	})
 	plugin.SubserverPlugins["oss"] = &ossPlugin{}
 }
