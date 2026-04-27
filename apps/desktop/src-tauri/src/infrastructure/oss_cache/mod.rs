@@ -54,6 +54,13 @@ pub struct OssCapabilities {
     pub path_base: String,
     #[serde(default)]
     pub backend: String,
+    /// Active key strategy on the server. `random` means each
+    /// upload gets a fresh per-day key (legacy); `cas` means the
+    /// server deduplicates by sha256 and returns the canonical
+    /// `cas/<shard>/<hash>.<ext>` key. Empty when talking to an
+    /// older Station that pre-dates this field.
+    #[serde(default)]
+    pub key_strategy: String,
     #[serde(default)]
     pub max_file_size: i64,
     #[serde(default)]
