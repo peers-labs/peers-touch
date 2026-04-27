@@ -3270,17 +3270,14 @@ export const api = {
   // Anything resembling an ICE *session* (offer/answer/candidate exchange)
   // moved to the unified realtime SSE plane in Phase 8 — see
   // `realtimeSignalSend` / `signalingEnvelopeSeal` / `signalingEnvelopeOpen`
-  // above and docs/architecture/realtime/event-stream.md §2.7. What
-  // remains here is just the TURN credentials fetch (media plane) and a
-  // best-effort presence/role hint so other devices can see liveness.
+  // above and docs/architecture/realtime/event-stream.md §2.7. The role-
+  // hint publisher (`ice_peer_register`) was retired in 8.3c — peer
+  // online/offline liveness is now carried by PresenceFlip events on the
+  // canonical realtime stream. What remains here is just the TURN
+  // credentials fetch (media plane).
 
   iceGetServers: () =>
     invokeRustDataFromStatus<void, IceServersResponse>('ice_get_servers'),
-
-  icePeerRegister: (id: string, role?: string, addrs?: string[]) =>
-    invokeRustDataFromStatus<{ id: string; role?: string; addrs?: string[] }, IcePeerInfo>(
-      'ice_peer_register', { id, role, addrs },
-    ),
 
   // ── Friend Request ──
 
@@ -3359,13 +3356,6 @@ export interface UploadResult {
 export interface IceServersResponse {
   ice_servers: Array<{ urls: string[]; username?: string; credential?: string }>;
   ttl?: number;
-}
-
-export interface IcePeerInfo {
-  id: string;
-  role?: string;
-  addrs?: string[];
-  updated_at?: number;
 }
 
 /** Payload for friend/group chat send; field names match Station JSON and Rust `AttachmentInput`. */
