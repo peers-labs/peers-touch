@@ -141,33 +141,81 @@ var (
 	// does not implement `storage.PresignedBackend`. Handlers
 	// translate to HTTP 501.
 	ErrPresignUnsupported = errors.New("oss: active backend does not support presigned uploads")
+	// ErrMimeBlocked is returned when the upload's MIME matches a
+	// configured blocklist prefix. Handlers translate to HTTP 415
+	// (Unsupported Media Type) and stamp `reason=mime_blocked` on
+	// the audit row.
+	ErrMimeBlocked = errors.New("oss: mime blocked by policy")
 )
+
+// Config is the dependency envelope for the file service. We
+// switched from positional params to a Config struct in v3 because
+// the parameter list outgrew readability — uploads now coordinate
+// across `oss_files`, `oss_buckets`, *and* `oss_blobs`, plus a
+// MIME-blocklist gate, plus a clock for testable expiry computation.
+//
+// Required: `Files`, `Buckets`, `Blobs`, `Backend`, `BackendName`.
+// Optional: `Strategy` (defaults to random), `Clock` (defaults to
+// time.Now), `MimeBlocklist` (empty disables the gate).
+type Config struct {
+	Files       ossrepo.FileRepository
+	Buckets     ossrepo.BucketRepository
+	Blobs       ossrepo.BlobRepository
+	Backend     storage.Backend
+	BackendName string
+	Strategy    KeyStrategy
+
+	// MimeBlocklist is the same prefix list the OSS subserver
+	// publishes via `Options.MimeBlocklist`. Compared against the
+	// detected MIME with `strings.HasPrefix`. Empty disables the
+	// gate.
+	MimeBlocklist []string
+
+	// Clock is the time source used for `ExpiresAt` defaults and
+	// `Restore` timestamps. Tests inject a controllable clock to
+	// pin expiry to a known instant; production uses `time.Now`.
+	Clock func() time.Time
+}
 
 type fileService struct {
 	repo        ossrepo.FileRepository
 	buckets     ossrepo.BucketRepository
+	blobs       ossrepo.BlobRepository
 	backend     storage.Backend
 	backendName string
 	strategy    KeyStrategy
+
+	mimeBlocklist []string
+	clock         func() time.Time
 }
 
-// NewFileServiceWith constructs the service. All four collaborators
-// are required: there is no "service without a bucket repo" mode,
-// because every successful upload must debit a bucket and every
-// successful read must observe its visibility.
-func NewFileServiceWith(repo ossrepo.FileRepository, buckets ossrepo.BucketRepository, backend storage.Backend, strategy KeyStrategy, backendName string) FileService {
-	if strategy == "" {
-		strategy = KeyStrategyRandom
+// NewFileService constructs the file service from a populated
+// `Config`. Strategy defaults to `KeyStrategyRandom`, backend name
+// defaults to `"local"`, and clock defaults to `time.Now`.
+//
+// Every collaborator that touches state (`Files`, `Buckets`,
+// `Blobs`) is mandatory: there is no "service without a bucket
+// repo" mode, because every successful upload must debit a bucket
+// AND atomically maintain the blob ref_count.
+func NewFileService(cfg Config) FileService {
+	if cfg.Strategy == "" {
+		cfg.Strategy = KeyStrategyRandom
 	}
-	if backendName == "" {
-		backendName = "local"
+	if cfg.BackendName == "" {
+		cfg.BackendName = "local"
+	}
+	if cfg.Clock == nil {
+		cfg.Clock = time.Now
 	}
 	return &fileService{
-		repo:        repo,
-		buckets:     buckets,
-		backend:     backend,
-		backendName: backendName,
-		strategy:    strategy,
+		repo:          cfg.Files,
+		buckets:       cfg.Buckets,
+		blobs:         cfg.Blobs,
+		backend:       cfg.Backend,
+		backendName:   cfg.BackendName,
+		strategy:      cfg.Strategy,
+		mimeBlocklist: normaliseMimeBlocklist(cfg.MimeBlocklist),
+		clock:         cfg.Clock,
 	}
 }
 
@@ -240,7 +288,12 @@ func (s *fileService) SaveFile(ctx context.Context, attr UploadAttribution, file
 func (s *fileService) saveRandom(ctx context.Context, attr UploadAttribution, res *resolved, file multipart.File, header *multipart.FileHeader) (*ossmodel.FileMeta, error) {
 	rnd, _ := touchutil.RandomString(16)
 	ext := filepath.Ext(header.Filename)
-	day := time.Now().Format("2006/01/02")
+	mt := detectMime(ext)
+	if isBlockedMime(s.mimeBlocklist, mt) {
+		return nil, fmt.Errorf("%w: %s", ErrMimeBlocked, mt)
+	}
+	now := s.clock()
+	day := now.Format("2006/01/02")
 	// Use forward slash explicitly for OSS keys to be cross-platform and URL friendly
 	key := day + "/" + rnd + ext
 
@@ -254,33 +307,63 @@ func (s *fileService) saveRandom(ctx context.Context, attr UploadAttribution, re
 		return nil, err
 	}
 
+	if s.blobs != nil {
+		if _, terr := s.blobs.Touch(ctx, s.backendName, key, header.Size, ""); terr != nil {
+			_ = s.buckets.AddUsage(ctx, res.bucket.ID, -header.Size)
+			_ = s.backend.Delete(ctx, key)
+			return nil, terr
+		}
+	}
+
 	meta := &ossmodel.FileMeta{
 		ID:            rnd,
 		Key:           key,
 		Name:          header.Filename,
 		Size:          header.Size,
-		Mime:          detectMime(ext),
+		Mime:          mt,
 		Backend:       s.backendName,
 		Path:          fullPath,
 		BucketID:      res.bucket.ID,
 		OwnerActorID:  attr.ActorID,
 		Visibility:    res.visibility,
 		ChatSessionID: chatSessionForVisibility(attr.ChatSessionID, res.visibility),
-		CreatedAt:     time.Now(),
+		ExpiresAt:     defaultExpiresAt(now, res.bucket),
+		CreatedAt:     now,
 	}
 
 	if err := s.repo.Create(ctx, meta); err != nil {
+		// Random keys collide with vanishing probability; treat any
+		// Create error as fatal and clean up the blob bytes.
 		_ = s.buckets.AddUsage(ctx, res.bucket.ID, -header.Size)
+		if s.blobs != nil {
+			if _, dropped, _ := s.blobs.Release(ctx, s.backendName, key); dropped {
+				_ = s.backend.Delete(ctx, key)
+			}
+		}
 		return nil, err
 	}
 	return meta, nil
 }
 
 // saveCAS hashes the upload, derives a content-addressable key, and
-// returns the *existing* row owned by this actor if one already
-// exists. Two different actors uploading the same bytes share the
-// blob on disk but each get their own metadata row so visibility
-// and quota stay actor-scoped.
+// either:
+//
+//  1. Returns the *existing live* row owned by this actor (CAS
+//     dedup short-circuit; bytes already on disk, blob already
+//     refcounted) — the cheapest path.
+//  2. Revives a soft-deleted row owned by this actor, by clearing
+//     `DeletedAt`, bumping `UpdatedAt`, refreshing `ExpiresAt`
+//     against the bucket's TTL, debiting the bucket usage, and
+//     incrementing the blob's `RefCount` via `Touch`. Bytes are
+//     already on disk; we do not re-`backend.Save`.
+//  3. Performs a fresh upload: backend.Save, blobRepo.Touch,
+//     bucket.AddUsage, repo.Create. On any failure after Save we
+//     compensate by Release+AddUsage(-) so partial state never
+//     ships.
+//
+// Two *different* actors uploading the same bytes share the blob
+// on disk but each get their own metadata row so visibility and
+// quota stay actor-scoped.
 //
 // We rely on `multipart.File` being seekable — Go's mime/multipart
 // implementation keeps small parts in memory and spills large parts
@@ -294,9 +377,22 @@ func (s *fileService) saveCAS(ctx context.Context, attr UploadAttribution, res *
 
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 	key := casKey(sum, ext)
+	mt := detectMime(ext)
+	if isBlockedMime(s.mimeBlocklist, mt) {
+		return nil, fmt.Errorf("%w: %s", ErrMimeBlocked, mt)
+	}
 
+	// Step 1: live CAS dedup — cheapest path. The bytes are already
+	// counted under this actor's previous claim, so no usage debit.
 	if existing, err := s.repo.FindByOwnerKey(ctx, attr.ActorID, key); err == nil && existing != nil && existing.Key == key {
 		return existing, nil
+	}
+
+	// Step 2: revivable soft-deleted row? `IncludeDeleted` returns
+	// the row regardless of DeletedAt; we branch on the column to
+	// pick the revival path vs the fresh-upload path.
+	if maybeDeleted, err := s.repo.FindByOwnerKeyIncludeDeleted(ctx, attr.ActorID, key); err == nil && maybeDeleted != nil && maybeDeleted.Key == key && maybeDeleted.DeletedAt != nil {
+		return s.reviveCASRow(ctx, res, attr, maybeDeleted)
 	}
 
 	if err := s.buckets.AddUsage(ctx, res.bucket.ID, header.Size); err != nil {
@@ -313,13 +409,26 @@ func (s *fileService) saveCAS(ctx context.Context, attr UploadAttribution, res *
 		return nil, err
 	}
 
+	// Bytes are now on disk; the blob is "live" from the storage
+	// backend's POV. Bump the refcount BEFORE inserting the meta
+	// row so a crash between Save and Create still leaves the blob
+	// observable to the reconciler.
+	if s.blobs != nil {
+		if _, terr := s.blobs.Touch(ctx, s.backendName, key, header.Size, sum); terr != nil {
+			_ = s.buckets.AddUsage(ctx, res.bucket.ID, -header.Size)
+			_ = s.backend.Delete(ctx, key)
+			return nil, terr
+		}
+	}
+
 	id, _ := touchutil.RandomString(16)
+	now := s.clock()
 	meta := &ossmodel.FileMeta{
 		ID:            id,
 		Key:           key,
 		Name:          header.Filename,
 		Size:          header.Size,
-		Mime:          detectMime(ext),
+		Mime:          mt,
 		Backend:       s.backendName,
 		Path:          fullPath,
 		Sha256:        sum,
@@ -327,20 +436,134 @@ func (s *fileService) saveCAS(ctx context.Context, attr UploadAttribution, res *
 		OwnerActorID:  attr.ActorID,
 		Visibility:    res.visibility,
 		ChatSessionID: chatSessionForVisibility(attr.ChatSessionID, res.visibility),
-		CreatedAt:     time.Now(),
+		ExpiresAt:     defaultExpiresAt(now, res.bucket),
+		CreatedAt:     now,
 	}
 
 	if err := s.repo.Create(ctx, meta); err != nil {
 		// Most likely a (owner_actor_id, key) unique-index collision
 		// from a concurrent upload by the same actor of the same
-		// bytes. Roll back the usage debit and return the winner.
-		_ = s.buckets.AddUsage(ctx, res.bucket.ID, -header.Size)
+		// bytes. Roll back the usage debit + blob refcount and
+		// return the winner.
+		s.compensateAfterCreateFail(ctx, res.bucket.ID, key, header.Size)
 		if existing, err2 := s.repo.FindByOwnerKey(ctx, attr.ActorID, key); err2 == nil && existing != nil && existing.Key == key {
 			return existing, nil
 		}
 		return nil, err
 	}
 	return meta, nil
+}
+
+// reviveCASRow handles the "soft-deleted CAS hit" branch of
+// saveCAS. The on-disk bytes are still there (the BlobGC worker
+// has not run yet, by definition: the blob is either still ref'd
+// elsewhere OR within its grace window). We:
+//
+//  1. Re-debit the bucket usage — we credited it on the matching
+//     DELETE, so a fresh upload of the same bytes counts again.
+//  2. Re-bump the blob ref_count via Touch — same observation as
+//     (1) but for the physical-blob counter.
+//  3. Clear `DeletedAt` and refresh `ExpiresAt` against the
+//     current bucket TTL.
+//
+// Failures inside the revival path compensate symmetrically so the
+// caller never observes a half-revived row.
+func (s *fileService) reviveCASRow(ctx context.Context, res *resolved, attr UploadAttribution, row *ossmodel.FileMeta) (*ossmodel.FileMeta, error) {
+	if err := s.buckets.AddUsage(ctx, res.bucket.ID, row.Size); err != nil {
+		return nil, err
+	}
+	if s.blobs != nil {
+		if _, terr := s.blobs.Touch(ctx, s.backendName, row.Key, row.Size, row.Sha256); terr != nil {
+			_ = s.buckets.AddUsage(ctx, res.bucket.ID, -row.Size)
+			return nil, terr
+		}
+	}
+	now := s.clock()
+	expiry := defaultExpiresAt(now, res.bucket)
+	if err := s.repo.Restore(ctx, row.ID, now, expiry); err != nil {
+		// Best-effort compensation. If Touch already incremented the
+		// counter we leave it — the reconciler will catch any drift,
+		// and the worst case is one extra ref that the next DELETE
+		// will release.
+		_ = s.buckets.AddUsage(ctx, res.bucket.ID, -row.Size)
+		return nil, err
+	}
+	// Re-read so the caller sees the post-restore row state.
+	out, err := s.repo.FindByOwnerKey(ctx, attr.ActorID, row.Key)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// compensateAfterCreateFail rolls back the side-effects taken
+// between bucket.AddUsage and repo.Create on the fresh-upload path:
+// the usage debit and the blob refcount bump. We do *not* call
+// `backend.Delete` here — when Create fails on a duplicate
+// (owner, key) the bytes are correct (some other concurrent upload
+// won the race) and the blob refcount belongs to the winner. The
+// reconciler will reconcile any drift.
+func (s *fileService) compensateAfterCreateFail(ctx context.Context, bucketID, key string, size int64) {
+	_ = s.buckets.AddUsage(ctx, bucketID, -size)
+	if s.blobs != nil {
+		_, _, _ = s.blobs.Release(ctx, s.backendName, key)
+	}
+}
+
+// defaultExpiresAt returns now + bucket.TTLDays × 24h, or nil when
+// the bucket has no TTL policy. The upload writer assigns the
+// pointer directly into `oss_files.ExpiresAt`.
+func defaultExpiresAt(now time.Time, bucket *ossmodel.Bucket) *time.Time {
+	if bucket == nil || bucket.TTLDays <= 0 {
+		return nil
+	}
+	t := now.Add(time.Duration(bucket.TTLDays) * 24 * time.Hour)
+	return &t
+}
+
+// isBlockedMime returns true when `mt` matches any prefix in
+// `blocklist`. Match is prefix-based and case-insensitive on both
+// sides; the caller is responsible for already lowercasing the
+// blocklist (NewFileService normalises).
+func isBlockedMime(blocklist []string, mt string) bool {
+	if len(blocklist) == 0 || mt == "" {
+		return false
+	}
+	mt = strings.ToLower(mt)
+	for _, p := range blocklist {
+		if p == "" {
+			continue
+		}
+		if strings.HasPrefix(mt, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// normaliseMimeBlocklist trims, lowercases, and de-duplicates the
+// configured prefix set so the upload hot path can compare without
+// repeated allocations. Mirrors the helper of the same name in the
+// `oss` package — duplicated here so the service has no dependency
+// on its enclosing subserver package.
+func normaliseMimeBlocklist(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		v = strings.ToLower(strings.TrimSpace(v))
+		if v == "" {
+			continue
+		}
+		if _, dup := seen[v]; dup {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
 }
 
 // PrepareUpload opens a presigned upload session. CAS dedup
@@ -372,6 +595,9 @@ func (s *fileService) PrepareUpload(ctx context.Context, presigner storage.Presi
 	if contentType == "" {
 		contentType = detectMime(ext)
 	}
+	if isBlockedMime(s.mimeBlocklist, contentType) {
+		return PrepareUploadResult{}, fmt.Errorf("%w: %s", ErrMimeBlocked, contentType)
+	}
 
 	var key string
 	if s.strategy == KeyStrategyCAS {
@@ -385,9 +611,20 @@ func (s *fileService) PrepareUpload(ctx context.Context, presigner storage.Presi
 				AlreadyUploaded: true,
 			}, nil
 		}
+		// CAS revival on the presign path: matching the actor's
+		// own SHA-256 against a soft-deleted row is by construction
+		// safe — the bytes hash to the same key. We revive without
+		// requiring the client to re-PUT.
+		if maybeDeleted, err := s.repo.FindByOwnerKeyIncludeDeleted(ctx, attr.ActorID, key); err == nil && maybeDeleted != nil && maybeDeleted.Key == key && maybeDeleted.DeletedAt != nil {
+			revived, rerr := s.reviveCASRow(ctx, res, attr, maybeDeleted)
+			if rerr != nil {
+				return PrepareUploadResult{}, rerr
+			}
+			return PrepareUploadResult{Meta: revived, AlreadyUploaded: true}, nil
+		}
 	} else {
 		rnd, _ := touchutil.RandomString(16)
-		day := time.Now().Format("2006/01/02")
+		day := s.clock().Format("2006/01/02")
 		key = day + "/" + rnd + ext
 	}
 
@@ -439,6 +676,13 @@ func (s *fileService) CompleteUpload(ctx context.Context, presigner storage.Pres
 	if existing, err := s.repo.FindByOwnerKey(ctx, attr.ActorID, req.Key); err == nil && existing != nil && existing.Key == req.Key {
 		return existing, nil
 	}
+	// Tiny-race revival: a Delete may have raced between Prepare
+	// and Complete and soft-deleted the row we'd otherwise return.
+	// The bytes are still on disk, so revive symmetrically with
+	// the multipart `saveCAS` path.
+	if maybeDeleted, err := s.repo.FindByOwnerKeyIncludeDeleted(ctx, attr.ActorID, req.Key); err == nil && maybeDeleted != nil && maybeDeleted.Key == req.Key && maybeDeleted.DeletedAt != nil {
+		return s.reviveCASRow(ctx, res, attr, maybeDeleted)
+	}
 
 	head, err := presigner.HeadObject(ctx, req.Key)
 	if err != nil {
@@ -456,11 +700,6 @@ func (s *fileService) CompleteUpload(ctx context.Context, presigner storage.Pres
 		}
 	}
 
-	if err := s.buckets.AddUsage(ctx, res.bucket.ID, head.Size); err != nil {
-		return nil, err
-	}
-
-	id, _ := touchutil.RandomString(16)
 	mt := strings.TrimSpace(req.ContentType)
 	if mt == "" {
 		if head.Mime != "" {
@@ -469,7 +708,23 @@ func (s *fileService) CompleteUpload(ctx context.Context, presigner storage.Pres
 			mt = detectMime(strings.ToLower(filepath.Ext(req.Filename)))
 		}
 	}
+	if isBlockedMime(s.mimeBlocklist, mt) {
+		return nil, fmt.Errorf("%w: %s", ErrMimeBlocked, mt)
+	}
 
+	if err := s.buckets.AddUsage(ctx, res.bucket.ID, head.Size); err != nil {
+		return nil, err
+	}
+
+	if s.blobs != nil {
+		if _, terr := s.blobs.Touch(ctx, s.backendName, req.Key, head.Size, req.Sha256); terr != nil {
+			_ = s.buckets.AddUsage(ctx, res.bucket.ID, -head.Size)
+			return nil, terr
+		}
+	}
+
+	id, _ := touchutil.RandomString(16)
+	now := s.clock()
 	meta := &ossmodel.FileMeta{
 		ID:            id,
 		Key:           req.Key,
@@ -483,12 +738,14 @@ func (s *fileService) CompleteUpload(ctx context.Context, presigner storage.Pres
 		OwnerActorID:  attr.ActorID,
 		Visibility:    res.visibility,
 		ChatSessionID: chatSessionForVisibility(attr.ChatSessionID, res.visibility),
-		CreatedAt:     time.Now(),
+		ExpiresAt:     defaultExpiresAt(now, res.bucket),
+		CreatedAt:     now,
 	}
 	if err := s.repo.Create(ctx, meta); err != nil {
 		// Concurrent winner of the same (actor, key) — return their
-		// row and roll back the usage we just debited.
-		_ = s.buckets.AddUsage(ctx, res.bucket.ID, -head.Size)
+		// row and roll back the usage we just debited + the blob
+		// refcount we bumped.
+		s.compensateAfterCreateFail(ctx, res.bucket.ID, req.Key, head.Size)
 		if existing, err2 := s.repo.FindByOwnerKey(ctx, attr.ActorID, req.Key); err2 == nil && existing != nil && existing.Key == req.Key {
 			return existing, nil
 		}

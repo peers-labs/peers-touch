@@ -42,18 +42,29 @@ func (u ossURL) Name() string    { return u.name }
 func (s *ossSubServer) Handlers() []server.Handler {
 	base := strings.TrimRight(s.pathBase, "/")
 
-	// Create upload handler with optional auth wrapper
-	var uploadWrappers []server.Wrapper
+	// requestID is the always-on outer wrapper: every inbound
+	// request gets a fresh ULID stamped into ctx + response header
+	// so downstream audit / log calls share one correlation token.
+	requestID := server.HTTPWrapperAdapter(requestIDMiddleware)
+
+	// uploadWrappers stacks request-id (outer) + JWT (inner). The
+	// outer wrapper runs first per the standard middleware
+	// composition rule, so the JWT verifier sees the stamped
+	// context — useful when the verifier rejects and we want the
+	// audit row to carry the request id.
+	uploadWrappers := []server.Wrapper{requestID}
 	if s.authProvider != nil {
-		uploadWrappers = []server.Wrapper{server.HTTPWrapperAdapter(authhttp.RequireJWT(s.authProvider))}
+		uploadWrappers = append(uploadWrappers, server.HTTPWrapperAdapter(authhttp.RequireJWT(s.authProvider)))
 	}
+
+	publicWrappers := []server.Wrapper{requestID}
 
 	return []server.Handler{
 		server.NewHTTPHandler("oss-upload", base+"/upload", server.POST, server.HTTPHandlerFunc(s.handleUpload), uploadWrappers...),
 		server.NewHTTPHandler("oss-presign-upload", base+"/presign-upload", server.POST, server.HTTPHandlerFunc(s.handlePresignUpload), uploadWrappers...),
 		server.NewHTTPHandler("oss-upload-complete", base+"/upload-complete", server.POST, server.HTTPHandlerFunc(s.handleUploadComplete), uploadWrappers...),
-		server.NewHTTPHandler("oss-file-get", base+"/file", server.GET, server.HTTPHandlerFunc(s.handleFileGet)),
-		server.NewHTTPHandler("oss-capabilities", base+"/capabilities", server.GET, server.HTTPHandlerFunc(s.handleCapabilities)),
+		server.NewHTTPHandler("oss-file-get", base+"/file", server.GET, server.HTTPHandlerFunc(s.handleFileGet), publicWrappers...),
+		server.NewHTTPHandler("oss-capabilities", base+"/capabilities", server.GET, server.HTTPHandlerFunc(s.handleCapabilities), publicWrappers...),
 		server.NewTypedHandler("oss-meta", base+"/meta", server.POST, s.handleMetaGet, serverwrapper.LogID()),
 	}
 }
@@ -520,7 +531,7 @@ func (s *ossSubServer) handleFileGet(w http.ResponseWriter, r *http.Request) {
 		logger.Warnf(r.Context(), "[handleFileGet] presign get failed, streaming: %v", err)
 	}
 
-	rc, size, mt, err := s.backend.Open(r.Context(), key)
+	rc, size, mt, err := s.backend.Open(r.Context(), key, nil)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -671,12 +682,14 @@ func (s *ossSubServer) recordAudit(ctx context.Context, meta *ossdb.FileMeta, ac
 	evt := ossdb.Audit{
 		Action:        ossdb.AuditActionGet,
 		FileKey:       meta.Key,
+		FileID:        meta.ID,
 		BucketID:      meta.BucketID,
 		ActorID:       actorID,
 		PeerStationID: peerStationID,
 		SizeBytes:     meta.Size,
 		Outcome:       ossdb.AuditOutcomeDenied,
 		Reason:        reason,
+		RequestID:     RequestIDFromContext(ctx),
 	}
 	if err := s.auditRepo.Append(ctx, evt); err != nil {
 		// Audit failures must not turn a good response into a bad

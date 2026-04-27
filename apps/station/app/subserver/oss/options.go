@@ -104,6 +104,54 @@ type Options struct {
 	// station — a *different* station ID would fail the audience
 	// check anyway.
 	LocalStationID string
+
+	// MimeBlocklist is the set of MIME prefixes the upload path
+	// rejects with `oss_audit.reason = mime_blocked`. Match is
+	// prefix-based, so `application/x-msdownload` blocks exactly
+	// that MIME while `application/` would block every
+	// `application/*` payload. Empty list disables the gate.
+	MimeBlocklist []string
+
+	// SoftDeleteGraceDays is the window during which a soft-deleted
+	// file can be restored via `POST /sub-oss/file/:key/restore`.
+	// Zero falls back to 7. Outside the window the row is no longer
+	// restorable; the BlobGC worker becomes free to physically
+	// delete the underlying blob once its ref_count reaches zero.
+	SoftDeleteGraceDays int
+
+	// BlobGCGraceHours is the additional delay between a blob's
+	// ref_count reaching zero and the BlobGC worker physically
+	// deleting it. Stops a delete-then-immediate-reupload race
+	// from churning S3 objects. Zero falls back to 24.
+	BlobGCGraceHours int
+
+	// AuditRetentionDays is the window the AuditTrim worker uses
+	// to keep oss_audit rows. Zero falls back to 90.
+	AuditRetentionDays int
+
+	// WorkerTTLIntervalSeconds / WorkerBlobGCIntervalSeconds /
+	// WorkerReconcileIntervalSeconds pace the lifecycle workers.
+	// Zero falls back to 3600 / 3600 / 86400 respectively (the
+	// doc-defined defaults). Operators tightening these for tests
+	// can drop them all the way to 1 second; we do not gate on a
+	// minimum.
+	WorkerTTLIntervalSeconds       int64
+	WorkerBlobGCIntervalSeconds    int64
+	WorkerReconcileIntervalSeconds int64
+
+	// MetricsBearerToken gates `GET /sub-oss/metrics`. Empty means
+	// the endpoint is *disabled entirely* — we do not allow
+	// unauthenticated metrics scraping. Operators set a long random
+	// string and configure their Prometheus job with the matching
+	// bearer header.
+	MetricsBearerToken string
+
+	// MultipartUploadThreshold is the size (bytes) at which the
+	// client should switch from the multipart `/upload` endpoint to
+	// the multipart-protocol endpoints (`/multipart/{init,part,
+	// complete}`). Zero falls back to 100 MiB. No effect when the
+	// active backend does not implement `MultipartBackend`.
+	MultipartUploadThreshold int64
 }
 
 // S3BackendOptions mirrors `storage.S3Config` at the YAML/options
@@ -205,6 +253,53 @@ func WithChatSessionResolver(r ChatSessionResolver) option.Option {
 // Options.LocalStationID for the rationale.
 func WithLocalStationID(id string) option.Option {
 	return wrapper.Wrap(func(o *Options) { o.LocalStationID = id })
+}
+
+// WithMimeBlocklist installs the prefix list of refused upload MIMEs.
+func WithMimeBlocklist(prefixes []string) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.MimeBlocklist = prefixes })
+}
+
+// WithSoftDeleteGraceDays sets the restore window after a soft delete.
+func WithSoftDeleteGraceDays(d int) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.SoftDeleteGraceDays = d })
+}
+
+// WithBlobGCGraceHours sets the delay between ref_count→0 and
+// physical deletion of a blob.
+func WithBlobGCGraceHours(h int) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.BlobGCGraceHours = h })
+}
+
+// WithAuditRetentionDays sets the AuditTrim worker's retention window.
+func WithAuditRetentionDays(d int) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.AuditRetentionDays = d })
+}
+
+// WithWorkerTTLIntervalSeconds paces the TTLSweeper worker.
+func WithWorkerTTLIntervalSeconds(s int64) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.WorkerTTLIntervalSeconds = s })
+}
+
+// WithWorkerBlobGCIntervalSeconds paces the BlobGC worker.
+func WithWorkerBlobGCIntervalSeconds(s int64) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.WorkerBlobGCIntervalSeconds = s })
+}
+
+// WithWorkerReconcileIntervalSeconds paces the BucketReconciler worker.
+func WithWorkerReconcileIntervalSeconds(s int64) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.WorkerReconcileIntervalSeconds = s })
+}
+
+// WithMetricsBearerToken gates `/sub-oss/metrics`. Empty disables.
+func WithMetricsBearerToken(t string) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.MetricsBearerToken = t })
+}
+
+// WithMultipartUploadThreshold sets the size at which clients switch
+// to the multipart upload protocol.
+func WithMultipartUploadThreshold(n int64) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.MultipartUploadThreshold = n })
 }
 
 func getOptions(opts ...option.Option) *Options {
