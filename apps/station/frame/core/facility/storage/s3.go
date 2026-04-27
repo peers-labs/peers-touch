@@ -97,14 +97,33 @@ func (b *S3Backend) Save(ctx context.Context, key string, r io.Reader) (string, 
 	return s3URI(b.bucket, full), nil
 }
 
-// Open issues a `GetObject` and returns the byte stream + size + mime
-// triple that mirrors `LocalBackend.Open`. The HTTP request is *not*
-// consumed lazily until the caller starts reading — minio-go does the
-// HEAD-then-GET dance on `Stat()`, which is what we need for the
-// `Content-Length` we surface back to the caller.
-func (b *S3Backend) Open(ctx context.Context, key string) (io.ReadCloser, int64, string, error) {
+// Open issues a `GetObject` and returns the byte stream + total
+// size + mime triple. When `rng` is non-nil the request carries a
+// `Range` header so the underlying store streams only the requested
+// slice — important for video scrubbing and resumable downloads.
+//
+// The returned int64 is ALWAYS the full object size (read from the
+// `Content-Range` total when ranged, or the body's `Content-Length`
+// otherwise). Callers compute the response Content-Length from the
+// supplied range themselves.
+func (b *S3Backend) Open(ctx context.Context, key string, rng *Range) (io.ReadCloser, int64, string, error) {
 	full := b.fullKey(key)
-	obj, err := b.client.GetObject(ctx, b.bucket, full, minio.GetObjectOptions{})
+	opts := minio.GetObjectOptions{}
+	if rng != nil {
+		// minio-go's SetRange takes (start, end) inclusive and
+		// matches HTTP semantics. End == -1 means "to EOF" in our
+		// API; minio-go expects 0 in that case which means
+		// "unbounded" via SetRange(start, 0). The driver itself
+		// uses 0 as "ignore", so we translate -1 to 0 explicitly.
+		end := rng.End
+		if end < 0 {
+			end = 0
+		}
+		if err := opts.SetRange(rng.Start, end); err != nil {
+			return nil, 0, "", fmt.Errorf("storage.s3: range %d-%d: %w", rng.Start, rng.End, err)
+		}
+	}
+	obj, err := b.client.GetObject(ctx, b.bucket, full, opts)
 	if err != nil {
 		return nil, 0, "", fmt.Errorf("storage.s3: get %q: %w", full, err)
 	}
@@ -113,7 +132,75 @@ func (b *S3Backend) Open(ctx context.Context, key string) (io.ReadCloser, int64,
 		_ = obj.Close()
 		return nil, 0, "", fmt.Errorf("storage.s3: stat %q: %w", full, err)
 	}
-	return obj, st.Size, st.ContentType, nil
+	// When ranged, `st.Size` is the partial body length per minio-go.
+	// We reach for `st.Metadata`'s Content-Range header to recover
+	// the total. If absent (some S3-compat stores omit it on
+	// untruncated ranges) we fall back to `st.Size` — the caller
+	// noticing the discrepancy is preferable to silently lying.
+	totalSize := st.Size
+	if rng != nil {
+		if total := parseContentRangeTotal(st.Metadata.Get("Content-Range")); total > 0 {
+			totalSize = total
+		}
+	}
+	return obj, totalSize, st.ContentType, nil
+}
+
+// Stat issues a HEAD against `key` and returns the metadata triple
+// without transferring the body. Wired into `/sub-oss/healthz` and
+// the dashboard's object inspector.
+func (b *S3Backend) Stat(ctx context.Context, key string) (*StatInfo, error) {
+	full := b.fullKey(key)
+	st, err := b.client.StatObject(ctx, b.bucket, full, minio.StatObjectOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("storage.s3: stat %q: %w", full, err)
+	}
+	return &StatInfo{
+		Size: st.Size,
+		Mime: st.ContentType,
+		ETag: strings.Trim(st.ETag, `"`),
+	}, nil
+}
+
+// Healthz issues a `BucketExists` probe so we can distinguish the
+// three failure modes we care about: misconfigured endpoint
+// (network), bad credentials (auth), missing bucket (op error). All
+// three are surfaced as `error`; the OSS handler maps the first to
+// 503 and the latter two to 500.
+func (b *S3Backend) Healthz(ctx context.Context) error {
+	exists, err := b.client.BucketExists(ctx, b.bucket)
+	if err != nil {
+		return fmt.Errorf("storage.s3: healthz bucket-exists: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("storage.s3: healthz: bucket %q does not exist", b.bucket)
+	}
+	return nil
+}
+
+// parseContentRangeTotal extracts the trailing `/N` from a
+// `Content-Range: bytes A-B/N` header. Returns 0 when the header is
+// absent or malformed — caller falls back to the partial-body size.
+func parseContentRangeTotal(h string) int64 {
+	if h == "" {
+		return 0
+	}
+	idx := strings.LastIndex(h, "/")
+	if idx < 0 || idx == len(h)-1 {
+		return 0
+	}
+	tail := h[idx+1:]
+	if tail == "*" {
+		return 0
+	}
+	var out int64
+	for _, c := range tail {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		out = out*10 + int64(c-'0')
+	}
+	return out
 }
 
 // Delete removes the object at `key`. minio-go returns nil (not error)

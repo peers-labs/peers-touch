@@ -21,9 +21,13 @@ type stubPresignBackend struct{}
 func (stubPresignBackend) Save(context.Context, string, io.Reader) (string, error) {
 	return "", nil
 }
-func (stubPresignBackend) Open(context.Context, string) (io.ReadCloser, int64, string, error) {
+func (stubPresignBackend) Open(context.Context, string, *storage.Range) (io.ReadCloser, int64, string, error) {
 	return nil, 0, "", nil
 }
+func (stubPresignBackend) Stat(context.Context, string) (*storage.StatInfo, error) {
+	return &storage.StatInfo{}, nil
+}
+func (stubPresignBackend) Healthz(context.Context) error        { return nil }
 func (stubPresignBackend) Delete(context.Context, string) error { return nil }
 func (stubPresignBackend) PresignPut(context.Context, string, string, int64, string, time.Duration) (storage.PresignedRequest, error) {
 	return storage.PresignedRequest{}, nil
