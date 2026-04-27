@@ -206,8 +206,13 @@ type FriendChatSession struct {
 	ParticipantAAvatar      string `protobuf:"bytes,11,opt,name=participant_a_avatar,json=participantAAvatar,proto3" json:"participant_a_avatar,omitempty"`
 	ParticipantBDisplayName string `protobuf:"bytes,12,opt,name=participant_b_display_name,json=participantBDisplayName,proto3" json:"participant_b_display_name,omitempty"`
 	ParticipantBAvatar      string `protobuf:"bytes,13,opt,name=participant_b_avatar,json=participantBAvatar,proto3" json:"participant_b_avatar,omitempty"`
-	unknownFields           protoimpl.UnknownFields
-	sizeCache               protoimpl.SizeCache
+	// Initial presence snapshot for each participant. Populated by the
+	// session list endpoint from the in-memory online map; clients should
+	// subscribe to /friend-chat/presence/stream (SSE) for live updates.
+	ParticipantAOnline bool `protobuf:"varint,14,opt,name=participant_a_online,json=participantAOnline,proto3" json:"participant_a_online,omitempty"`
+	ParticipantBOnline bool `protobuf:"varint,15,opt,name=participant_b_online,json=participantBOnline,proto3" json:"participant_b_online,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *FriendChatSession) Reset() {
@@ -329,6 +334,20 @@ func (x *FriendChatSession) GetParticipantBAvatar() string {
 		return x.ParticipantBAvatar
 	}
 	return ""
+}
+
+func (x *FriendChatSession) GetParticipantAOnline() bool {
+	if x != nil {
+		return x.ParticipantAOnline
+	}
+	return false
+}
+
+func (x *FriendChatSession) GetParticipantBOnline() bool {
+	if x != nil {
+		return x.ParticipantBOnline
+	}
+	return false
 }
 
 type FriendChatMessage struct {
@@ -2608,7 +2627,7 @@ var File_domain_chat_friend_chat_proto protoreflect.FileDescriptor
 
 const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\n" +
-	"\x1ddomain/chat/friend_chat.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16domain/chat/chat.proto\"\x8f\x05\n" +
+	"\x1ddomain/chat/friend_chat.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16domain/chat/chat.proto\"\xf3\x05\n" +
 	"\x11FriendChatSession\x12\x12\n" +
 	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12*\n" +
 	"\x11participant_a_did\x18\x02 \x01(\tR\x0fparticipantADid\x12*\n" +
@@ -2625,7 +2644,9 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	" \x01(\tR\x17participantADisplayName\x120\n" +
 	"\x14participant_a_avatar\x18\v \x01(\tR\x12participantAAvatar\x12;\n" +
 	"\x1aparticipant_b_display_name\x18\f \x01(\tR\x17participantBDisplayName\x120\n" +
-	"\x14participant_b_avatar\x18\r \x01(\tR\x12participantBAvatar\"\xf6\x05\n" +
+	"\x14participant_b_avatar\x18\r \x01(\tR\x12participantBAvatar\x120\n" +
+	"\x14participant_a_online\x18\x0e \x01(\bR\x12participantAOnline\x120\n" +
+	"\x14participant_b_online\x18\x0f \x01(\bR\x12participantBOnline\"\xf6\x05\n" +
 	"\x11FriendChatMessage\x12\x12\n" +
 	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12!\n" +
 	"\fsession_ulid\x18\x02 \x01(\tR\vsessionUlid\x12\x1d\n" +

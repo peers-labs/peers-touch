@@ -7,29 +7,15 @@ import { onSessionRevoked } from '../services/desktop_api';
 import type { AccountIdentity } from '../services/desktop_api';
 import type { AppLifecycle, AppState, SessionUser } from '../types/navigation';
 
+// Warm-resume / auto-login on launch is intentionally disabled.
+// Project policy: every launch (including dev-dual where two windows boot
+// simultaneously) MUST land on the account picker. Even with a single known
+// account the user explicitly selects it. This keeps multi-account isolation
+// observable and prevents two windows in dev-dual from silently materialising
+// as the same identity from a shared on-disk session blob.
 const WARM_RESUME_KEY = 'pt.auth.lastActiveAt';
-const WARM_RESUME_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 
-function isWarmResume(): boolean {
-  try {
-    const stored = localStorage.getItem(WARM_RESUME_KEY);
-    if (!stored) return false;
-    const elapsed = Date.now() - Number(stored);
-    return elapsed < WARM_RESUME_THRESHOLD_MS;
-  } catch {
-    return false;
-  }
-}
-
-function touchActivity(): void {
-  try {
-    localStorage.setItem(WARM_RESUME_KEY, String(Date.now()));
-  } catch {
-    // noop
-  }
-}
-
-/** Clear warm-resume marker so next reload lands on onboarding. */
+/** Clear any leftover warm-resume marker (legacy installs). */
 export function clearWarmResume(): void {
   try {
     localStorage.removeItem(WARM_RESUME_KEY);
@@ -43,7 +29,6 @@ function accountToSessionUser(account: AccountIdentity): SessionUser {
     name: account.name || account.provider_user_id || 'User',
     email: account.email || '',
     avatar: account.avatar_url || undefined,
-    avatarLocalPath: account.avatar_local_path || undefined,
     accountId: account.id,
     hasPin: account.has_pin,
     hasSession: account.has_session,
@@ -52,13 +37,16 @@ function accountToSessionUser(account: AccountIdentity): SessionUser {
 }
 
 export function useAppLifecycle(): AppLifecycle {
-  const warm = isWarmResume();
-  const [state, setState] = useState<AppState>(warm ? 'resuming' : 'onboarding');
+  // Always start at 'onboarding' — auto-login is forbidden by policy.
+  const [state, setState] = useState<AppState>('onboarding');
   const [restoredUser, setRestoredUser] = useState<SessionUser | null>(null);
   const [knownAccounts, setKnownAccounts] = useState<SessionUser[]>([]);
   const [dataReady, setDataReady] = useState(false);
 
   useEffect(() => {
+    // Drop any legacy warm-resume marker so older clients converge on the
+    // new "always show picker" policy on first launch.
+    clearWarmResume();
     globalContext.bootstrap().catch(() => {});
   }, []);
 
@@ -66,13 +54,11 @@ export function useAppLifecycle(): AppLifecycle {
   useEffect(() => {
     const off = onSessionRevoked(() => {
       clearWarmResume();
-      // Clear global snapshot slice; session store is cleared by App handler.
       globalContext.runPipeline('session_logout').catch(() => {});
       setRestoredUser(null);
       setState('onboarding');
     });
     const unsub = useSessionStore.subscribe((s) => {
-      // Defensive: if auth flips false while in ready, ensure we don't keep showing app pages.
       if (!s.authenticated) {
         clearWarmResume();
         setRestoredUser(null);
@@ -85,6 +71,28 @@ export function useAppLifecycle(): AppLifecycle {
     };
   }, []);
 
+  // Re-fetch account list whenever we land on onboarding so the account
+  // picker always reflects the latest identities.json data (names, avatars).
+  useEffect(() => {
+    if (state !== 'onboarding') return;
+    api.accountListRestorable().then((accounts) => {
+      if (Array.isArray(accounts) && accounts.length > 0) {
+        const mapped = accounts.map(accountToSessionUser);
+        const { authenticated } = useSessionStore.getState();
+        // Non-PIN accounts share a single session.json; when the active session
+        // is gone, their token shadows are also gone. PIN-protected accounts
+        // each have their own per-account encrypted_session that is independent
+        // from the in-memory session, so keep their hasSession flag intact.
+        if (!authenticated) {
+          mapped.forEach(a => { if (!a.hasPin) a.hasSession = false; });
+        }
+        setKnownAccounts(mapped);
+      } else {
+        setKnownAccounts([]);
+      }
+    }).catch(() => {});
+  }, [state]);
+
   useEffect(() => {
     if (state === 'ready') {
       globalContext.setRuntimeAppState('ready');
@@ -94,59 +102,28 @@ export function useAppLifecycle(): AppLifecycle {
   }, [state]);
 
   useEffect(() => {
-    const session = useSessionStore.getState();
+    // On launch, do NOT auto-restore the in-memory session. We only need the
+    // OAuth2 connections (for the picker UI) and the on-disk identities list
+    // so the user can choose an account explicitly.
     const oauth2 = useOAuth2Store.getState();
 
     Promise.all([
-      session.restoreSession().catch(() => {}),
       oauth2.loadAll().catch(() => {}),
       api.accountListRestorable().catch(() => [] as AccountIdentity[]),
-    ]).then(([, , restorableAccounts]) => {
-      const { currentUser, authenticated } = useSessionStore.getState();
-      // Only set restoredUser when the session has real identity data.
-      // A session restored from a stale local token may have an empty name/actorId —
-      // in that case we must NOT show "Welcome back" and should fall through to login.
-      const hasRealIdentity = authenticated && currentUser && currentUser.actorId;
-      if (hasRealIdentity) {
-        const displayName = currentUser.name?.trim() || currentUser.email?.trim() || '';
-        if (displayName) {
-          setRestoredUser({
-            name: displayName,
-            email: currentUser.email || '',
-            avatar: currentUser.avatarUrl,
-            avatarLocalPath: currentUser.avatarLocalPath,
-          });
-        }
-      }
-
-      // Load all accounts that have restorable sessions
+    ]).then(([, restorableAccounts]) => {
+      // Load all accounts that have restorable sessions. Since the in-memory
+      // session was intentionally NOT restored, treat all non-PIN accounts as
+      // having no live session (they share the global session.json and we
+      // refuse to silently adopt it). PIN-protected accounts keep their flag
+      // because their encrypted_session is independent and unlock requires
+      // explicit PIN entry by the user.
       if (Array.isArray(restorableAccounts) && restorableAccounts.length > 0) {
         const accounts = restorableAccounts.map(accountToSessionUser);
-        // When the active session is expired/invalid, encrypted sessions contain the same
-        // expired token. Mark all accounts as having no active session so the account picker
-        // redirects to password login instead of PIN entry.
-        if (!authenticated) {
-          accounts.forEach(a => { a.hasSession = false; });
-        }
+        accounts.forEach(a => { if (!a.hasPin) a.hasSession = false; });
         setKnownAccounts(accounts);
       }
 
       setDataReady(true);
-
-      if (warm && hasRealIdentity) {
-        touchActivity();
-        // Background: sync user profile from Station (downloads avatar to local cache).
-        api.syncUserProfile().then((result) => {
-          if (result?.avatar_url) {
-            useSessionStore.getState().updateAvatar(result.avatar_url, result.avatar_local_path);
-          }
-        }).catch(() => {});
-        setState('ready');
-      } else if (warm) {
-        // Warm resume failed — session expired or missing, fall back to onboarding
-        clearWarmResume();
-        setState('onboarding');
-      }
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -155,14 +132,13 @@ export function useAppLifecycle(): AppLifecycle {
     const { authenticated } = useSessionStore.getState();
     if (!authenticated) return;
 
-    touchActivity();
     useOAuth2Store.getState().loadAll().catch(() => {});
 
     // Background: sync user profile from Station (downloads avatar to local cache).
     // Update session store avatar so sidebar reflects the latest.
     api.syncUserProfile().then((result) => {
       if (result?.avatar_url) {
-        useSessionStore.getState().updateAvatar(result.avatar_url, result.avatar_local_path);
+        useSessionStore.getState().updateAvatar(result.avatar_url);
       }
     }).catch(() => {});
     setState('ready');

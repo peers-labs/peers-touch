@@ -1,8 +1,7 @@
 use crate::contracts::StubPayload;
-use crate::error::{AppResult, ErrorCode};
+use crate::error::AppResult;
 use crate::infrastructure::station_client;
 use crate::model;
-use crate::state::AppState;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -51,12 +50,7 @@ fn scheduler_add_job_response_to_json(r: &model::agent::SchedulerAddJobResponse)
     })
 }
 
-pub fn agent_scheduler_start(input: SchedulerStartInput, state: &AppState) -> AppResult<StubPayload> {
-    let token = match token_from_state(state) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-
+pub fn agent_scheduler_start(input: SchedulerStartInput, token: &str) -> AppResult<StubPayload> {
     let req = model::agent::SchedulerStartRequest {
         agent_id: input.agent_id,
         review_interval_minutes: input.review_interval_minutes.unwrap_or(120),
@@ -66,7 +60,7 @@ pub fn agent_scheduler_start(input: SchedulerStartInput, state: &AppState) -> Ap
     match station_client::request_proto::<model::agent::SchedulerStartRequest, model::agent::SchedulerStartResponse>(
         Method::POST,
         "/agent/scheduler/start",
-        &token,
+        token,
         None,
         Some(&req),
     ) {
@@ -85,17 +79,12 @@ pub fn agent_scheduler_start(input: SchedulerStartInput, state: &AppState) -> Ap
     }
 }
 
-pub fn agent_scheduler_stop(state: &AppState) -> AppResult<StubPayload> {
-    let token = match token_from_state(state) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-
+pub fn agent_scheduler_stop(token: &str) -> AppResult<StubPayload> {
     let req = model::agent::SchedulerStopRequest {};
     match station_client::request_proto::<model::agent::SchedulerStopRequest, model::agent::SchedulerStopResponse>(
         Method::POST,
         "/agent/scheduler/stop",
-        &token,
+        token,
         None,
         Some(&req),
     ) {
@@ -114,16 +103,11 @@ pub fn agent_scheduler_stop(state: &AppState) -> AppResult<StubPayload> {
     }
 }
 
-pub fn agent_scheduler_status(state: &AppState) -> AppResult<StubPayload> {
-    let token = match token_from_state(state) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-
+pub fn agent_scheduler_status(token: &str) -> AppResult<StubPayload> {
     match station_client::request_proto::<model::agent::SchedulerStatusRequest, model::agent::SchedulerStatusResponse>(
         Method::GET,
         "/agent/scheduler/status",
-        &token,
+        token,
         None,
         None,
     ) {
@@ -142,12 +126,7 @@ pub fn agent_scheduler_status(state: &AppState) -> AppResult<StubPayload> {
     }
 }
 
-pub fn agent_scheduler_add_job(input: SchedulerAddJobInput, state: &AppState) -> AppResult<StubPayload> {
-    let token = match token_from_state(state) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-
+pub fn agent_scheduler_add_job(input: SchedulerAddJobInput, token: &str) -> AppResult<StubPayload> {
     let req = model::agent::SchedulerAddJobRequest {
         kind: input.kind,
         agent_id: input.agent_id,
@@ -157,7 +136,7 @@ pub fn agent_scheduler_add_job(input: SchedulerAddJobInput, state: &AppState) ->
     match station_client::request_proto::<model::agent::SchedulerAddJobRequest, model::agent::SchedulerAddJobResponse>(
         Method::POST,
         "/agent/scheduler/add-job",
-        &token,
+        token,
         None,
         Some(&req),
     ) {
@@ -174,20 +153,4 @@ pub fn agent_scheduler_add_job(input: SchedulerAddJobInput, state: &AppState) ->
             err.into_app_result("Failed to add agent scheduler job")
         }
     }
-}
-
-fn token_from_state(state: &AppState) -> Result<String, AppResult<StubPayload>> {
-    let guard = state.session.lock().map_err(|e| {
-        tracing::error!(error = %e, "Failed to access session state");
-        AppResult::fail(ErrorCode::InternalError, "Failed to access session state", None)
-    })?;
-    let token = guard.token.clone().unwrap_or_default();
-    if token.trim().is_empty() {
-        return Err(AppResult::fail(
-            ErrorCode::Unauthorized,
-            "Authentication required — please log in",
-            None,
-        ));
-    }
-    Ok(token)
 }
