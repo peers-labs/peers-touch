@@ -1,0 +1,464 @@
+package events
+
+import (
+	"context"
+	"crypto/rand"
+	"errors"
+	"fmt"
+	"sort"
+	"sync"
+	"time"
+
+	"github.com/oklog/ulid/v2"
+	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
+)
+
+// Defaults from docs/architecture/realtime/event-stream.md.
+//
+// Operators may override per Station via subserver options (future
+// work); the defaults below are deliberately the values quoted in
+// the contract so behaviour is predictable out of the box.
+const (
+	// DefaultRingBufferSize is the per-actor in-memory ring buffer
+	// length. When a reconnecting client's cursor falls outside this
+	// window the bus emits a Resync event (§2.5 case-2).
+	DefaultRingBufferSize = 1024
+
+	// DefaultSubscriberQueue is the per-subscriber in-memory channel
+	// capacity. A subscriber whose queue stays full at Publish time is
+	// considered wedged and gets dropped per §2.6.
+	DefaultSubscriberQueue = 64
+)
+
+// ErrBusClosed is returned by Publish/Subscribe after Close has run.
+var ErrBusClosed = errors.New("events: bus closed")
+
+// EventBus is the single fan-out point for every realtime event in
+// a Station process. See contract §3.3.
+//
+// Implementations are safe for concurrent use. There is one EventBus
+// per Station; it is exposed to other subservers via package-level
+// GetBus().
+type EventBus interface {
+	// Publish stamps ev with a fresh event_id and current ts, appends
+	// it to the actor's ring buffer, and fans out to every live
+	// subscriber for actor_id. Returns the assigned event_id.
+	//
+	// Caller fills in ev.Kind (and any payload fields). ev.EventId and
+	// ev.TsUnixMs are overwritten unconditionally — clients trust
+	// server-assigned values per §2.1.
+	Publish(actorID string, ev *realtime.StreamEvent) (string, error)
+
+	// Subscribe registers a new realtime stream subscriber. cursor is
+	// the client's Last-Event-ID; pass empty string for first connect.
+	//
+	// On return:
+	//   - sub.Events delivers live events plus replay (or a single
+	//     Resync) before any live event.
+	//   - cancel must be called by the caller when the SSE handler exits
+	//     so the subscriber is unregistered and its channel is closed.
+	Subscribe(ctx context.Context, actorID, deviceID, cursor string) (*Subscription, context.CancelFunc, error)
+
+	// Stats returns operator-facing counters.
+	Stats() Stats
+
+	// Close tears down all subscribers; subsequent Publish/Subscribe
+	// return ErrBusClosed.
+	Close()
+}
+
+// Subscription is the per-connection handle returned by Subscribe.
+type Subscription struct {
+	ActorID  string
+	DeviceID string
+
+	// Events delivers in-order events for the subscriber. Closed when
+	// the subscription ends (handler-cancelled or wedged-and-dropped).
+	Events <-chan *realtime.StreamEvent
+
+	// internal — set by the bus
+	send   chan *realtime.StreamEvent
+	bus    *eventBus
+	state  *actorState
+	closed bool
+	mu     sync.Mutex
+}
+
+// Stats is the snapshot returned by EventBus.Stats.
+type Stats struct {
+	ActiveActors      int
+	ActiveSubscribers int
+	BufferedEvents    int
+	WedgedDrops       uint64
+}
+
+// NewEventBus constructs an in-memory bus with default sizing.
+//
+// For tests or per-Station tuning, pass options:
+//
+//	NewEventBus(WithRingBufferSize(2048), WithClock(myClock))
+func NewEventBus(opts ...BusOption) EventBus {
+	cfg := busConfig{
+		ringSize: DefaultRingBufferSize,
+		queueCap: DefaultSubscriberQueue,
+		now:      func() time.Time { return time.Now().UTC() },
+		idGen:    defaultIDGen(),
+	}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	return &eventBus{
+		cfg:    cfg,
+		actors: make(map[string]*actorState),
+	}
+}
+
+// BusOption configures an EventBus at construction.
+type BusOption func(*busConfig)
+
+type busConfig struct {
+	ringSize int
+	queueCap int
+	now      func() time.Time
+	idGen    func() string
+}
+
+// WithRingBufferSize overrides DefaultRingBufferSize for this bus.
+func WithRingBufferSize(n int) BusOption {
+	return func(c *busConfig) {
+		if n > 0 {
+			c.ringSize = n
+		}
+	}
+}
+
+// WithSubscriberQueue overrides DefaultSubscriberQueue for this bus.
+func WithSubscriberQueue(n int) BusOption {
+	return func(c *busConfig) {
+		if n > 0 {
+			c.queueCap = n
+		}
+	}
+}
+
+// WithClock injects a deterministic clock; tests use this to assert
+// ts_unix_ms values without flakiness.
+func WithClock(now func() time.Time) BusOption {
+	return func(c *busConfig) {
+		if now != nil {
+			c.now = now
+		}
+	}
+}
+
+// WithIDGenerator injects a deterministic id generator; tests use
+// this to keep event_id strings stable.
+func WithIDGenerator(gen func() string) BusOption {
+	return func(c *busConfig) {
+		if gen != nil {
+			c.idGen = gen
+		}
+	}
+}
+
+func defaultIDGen() func() string {
+	var mu sync.Mutex
+	entropy := ulid.Monotonic(rand.Reader, 0)
+	return func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		ts := ulid.Timestamp(time.Now())
+		id, err := ulid.New(ts, entropy)
+		if err != nil {
+			// In the catastrophic case of monotonic entropy overflow
+			// within the same millisecond we fall back to a brand-new
+			// entropy source. This still keeps event_id unique per
+			// process; clients treat it as opaque so monotonicity gaps
+			// only matter for the pathological burst window itself.
+			entropy = ulid.Monotonic(rand.Reader, 0)
+			id = ulid.MustNew(ts, entropy)
+		}
+		return id.String()
+	}
+}
+
+// ---------------------------------------------------------------------
+// concrete eventBus
+// ---------------------------------------------------------------------
+
+type eventBus struct {
+	cfg busConfig
+
+	mu     sync.RWMutex
+	actors map[string]*actorState
+	closed bool
+
+	wedgedDrops uint64 // accessed under mu
+}
+
+// actorState is the per-actor state tree. All fields are guarded by
+// the actor's own mutex; the bus-level mu only guards the actors map
+// itself.
+type actorState struct {
+	mu     sync.Mutex
+	buffer []*realtime.StreamEvent // oldest first; len <= ringSize
+	subs   map[*Subscription]struct{}
+}
+
+func (b *eventBus) getOrCreateActor(actorID string) *actorState {
+	b.mu.RLock()
+	if a, ok := b.actors[actorID]; ok {
+		b.mu.RUnlock()
+		return a
+	}
+	b.mu.RUnlock()
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if a, ok := b.actors[actorID]; ok {
+		return a
+	}
+	a := &actorState{
+		subs: make(map[*Subscription]struct{}),
+	}
+	b.actors[actorID] = a
+	return a
+}
+
+// Publish — see EventBus.
+func (b *eventBus) Publish(actorID string, ev *realtime.StreamEvent) (string, error) {
+	if actorID == "" {
+		return "", fmt.Errorf("events: empty actorID")
+	}
+	if ev == nil {
+		return "", fmt.Errorf("events: nil event")
+	}
+
+	b.mu.RLock()
+	if b.closed {
+		b.mu.RUnlock()
+		return "", ErrBusClosed
+	}
+	b.mu.RUnlock()
+
+	ev.EventId = b.cfg.idGen()
+	ev.TsUnixMs = b.cfg.now().UnixMilli()
+
+	a := b.getOrCreateActor(actorID)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Append to ring buffer.
+	a.buffer = append(a.buffer, ev)
+	if len(a.buffer) > b.cfg.ringSize {
+		// Drop oldest in-place to bound allocation churn under hot fan-out.
+		copy(a.buffer, a.buffer[1:])
+		a.buffer = a.buffer[:b.cfg.ringSize]
+	}
+
+	// Fan out non-blocking. A wedged subscriber gets dropped per §2.6.
+	for sub := range a.subs {
+		select {
+		case sub.send <- ev:
+		default:
+			// Channel full — subscriber is wedged. Close it so the SSE
+			// handler exits its loop and the client reconnects (and, on
+			// reconnect, will likely receive a Resync since its cursor
+			// fell behind).
+			b.dropLocked(a, sub)
+		}
+	}
+
+	return ev.EventId, nil
+}
+
+// dropLocked closes a subscriber's channel and removes it from the
+// actor state. Caller must hold a.mu.
+func (b *eventBus) dropLocked(a *actorState, sub *Subscription) {
+	if _, ok := a.subs[sub]; !ok {
+		return
+	}
+	delete(a.subs, sub)
+
+	sub.mu.Lock()
+	if !sub.closed {
+		sub.closed = true
+		close(sub.send)
+	}
+	sub.mu.Unlock()
+
+	b.mu.Lock()
+	b.wedgedDrops++
+	b.mu.Unlock()
+}
+
+// Subscribe — see EventBus.
+func (b *eventBus) Subscribe(ctx context.Context, actorID, deviceID, cursor string) (*Subscription, context.CancelFunc, error) {
+	if actorID == "" {
+		return nil, nil, fmt.Errorf("events: empty actorID")
+	}
+
+	b.mu.RLock()
+	if b.closed {
+		b.mu.RUnlock()
+		return nil, nil, ErrBusClosed
+	}
+	b.mu.RUnlock()
+
+	a := b.getOrCreateActor(actorID)
+
+	sub := &Subscription{
+		ActorID:  actorID,
+		DeviceID: deviceID,
+		send:     make(chan *realtime.StreamEvent, b.cfg.queueCap),
+		bus:      b,
+		state:    a,
+	}
+	sub.Events = sub.send
+
+	a.mu.Lock()
+	// Replay (or Resync sentinel) BEFORE registering for live fan-out.
+	// This preserves ordering: every event the subscriber sees came
+	// either from replay (with eventId <= newest at subscribe time) or
+	// from live publish (with eventId strictly after).
+	replay := b.replayLocked(a, cursor)
+	for _, ev := range replay {
+		// Channel is brand-new and capacity == queueCap; replay length
+		// is bounded by ringSize. If queueCap < ringSize the surplus
+		// gets dropped with a wedged-counter bump — operators must
+		// configure queueCap >= ringSize for this not to bite, which is
+		// the documented expectation.
+		select {
+		case sub.send <- ev:
+		default:
+			b.dropLocked(a, sub)
+			a.mu.Unlock()
+			return nil, nil, fmt.Errorf("events: subscriber queue too small to hold replay (queue=%d, replay=%d)", b.cfg.queueCap, len(replay))
+		}
+	}
+	a.subs[sub] = struct{}{}
+	a.mu.Unlock()
+
+	cancel := func() {
+		a.mu.Lock()
+		b.dropLocked(a, sub)
+		a.mu.Unlock()
+	}
+
+	// Honour the caller's context: if it cancels, drop the subscription.
+	go func() {
+		<-ctx.Done()
+		cancel()
+	}()
+
+	return sub, cancel, nil
+}
+
+// replayLocked builds the replay slice for `cursor` against the
+// actor's current ring buffer. Caller must hold a.mu.
+//
+// Behaviour matches contract §2.5:
+//   - cursor == "": no replay (first connect path).
+//   - cursor strictly older than newest: replay (cursor, newest].
+//   - cursor outside buffer (older than buffer[0] or unrecognized):
+//     emit a single Resync sentinel; client must cold catch up.
+//   - cursor matches the newest event: no replay.
+//   - cursor at-or-after newest (e.g. process restart):
+//     emit a single Resync sentinel.
+func (b *eventBus) replayLocked(a *actorState, cursor string) []*realtime.StreamEvent {
+	if cursor == "" {
+		return nil
+	}
+	if len(a.buffer) == 0 {
+		return []*realtime.StreamEvent{newResync("", "buffer empty (process restart?)", b)}
+	}
+	newest := a.buffer[len(a.buffer)-1].EventId
+	oldest := a.buffer[0].EventId
+
+	if cursor == newest {
+		return nil
+	}
+	if cursor > newest {
+		// Client claims to have seen events newer than anything we hold —
+		// this happens after process restart wiped the buffer. Force a
+		// cold catch-up.
+		return []*realtime.StreamEvent{newResync(newest, "cursor newer than buffer (process restart?)", b)}
+	}
+	if cursor < oldest {
+		return []*realtime.StreamEvent{newResync(newest, "cursor evicted from ring buffer", b)}
+	}
+
+	// Binary-search for the cursor inside the buffer; replay strictly
+	// after it. If the cursor isn't an exact match (cursor was a real
+	// event but the buffer evicted it while still holding newer ones),
+	// the search returns the insertion index which is exactly what we
+	// want for "replay everything after this".
+	idx := sort.Search(len(a.buffer), func(i int) bool {
+		return a.buffer[i].EventId > cursor
+	})
+	if idx >= len(a.buffer) {
+		return nil
+	}
+	out := make([]*realtime.StreamEvent, len(a.buffer)-idx)
+	copy(out, a.buffer[idx:])
+	return out
+}
+
+func newResync(newestEventID, reason string, b *eventBus) *realtime.StreamEvent {
+	return &realtime.StreamEvent{
+		EventId:  b.cfg.idGen(),
+		TsUnixMs: b.cfg.now().UnixMilli(),
+		Kind: &realtime.StreamEvent_Resync{
+			Resync: &realtime.Resync{
+				NewestEventId: newestEventID,
+				Reason:        reason,
+			},
+		},
+	}
+}
+
+// Stats — see EventBus.
+func (b *eventBus) Stats() Stats {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	out := Stats{
+		ActiveActors: len(b.actors),
+		WedgedDrops:  b.wedgedDrops,
+	}
+	for _, a := range b.actors {
+		a.mu.Lock()
+		out.ActiveSubscribers += len(a.subs)
+		out.BufferedEvents += len(a.buffer)
+		a.mu.Unlock()
+	}
+	return out
+}
+
+// Close — see EventBus.
+func (b *eventBus) Close() {
+	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		return
+	}
+	b.closed = true
+	actors := b.actors
+	b.actors = make(map[string]*actorState)
+	b.mu.Unlock()
+
+	for _, a := range actors {
+		a.mu.Lock()
+		for sub := range a.subs {
+			delete(a.subs, sub)
+			sub.mu.Lock()
+			if !sub.closed {
+				sub.closed = true
+				close(sub.send)
+			}
+			sub.mu.Unlock()
+		}
+		a.buffer = nil
+		a.mu.Unlock()
+	}
+}
