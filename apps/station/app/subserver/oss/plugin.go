@@ -28,6 +28,7 @@ var ossOptions struct {
 						MaxFileSize        int64  `pconf:"max-file-size"`
 						MaxFilesPerMessage int32  `pconf:"max-files-per-message"`
 						Backend            string `pconf:"backend"`
+						KeyStrategy        string `pconf:"key-strategy"`
 					} `pconf:"oss"`
 				} `pconf:"subserver"`
 			} `pconf:"server"`
