@@ -71,39 +71,16 @@ export function SocialChatPage() {
     initEncryption().catch(() => {});
   }, [loadCurrentUserProfile, initEncryption]);
 
-  // --- Sync timer: 60 s safety-net only ---
-  //
-  // Real-time delivery is the responsibility of the WebRTC DataChannel
-  // (P2P-direct or TURN-relay; both are equally responsive). When the DC
-  // delivers a hint, `setOnEnvelope` below already triggers an immediate
-  // sync + `loadMessages` for the active session. The interval here is
-  // *only* a safety net for two corner cases:
-  //
-  //   1. WebRTC silently dies and `connectionstatechange` never fires
-  //      (rare, but happens on macOS when the network stack flaps).
-  //   2. The peer was offline when a message was sent, so it sits in
-  //      station's pending queue until we pull it. The proper fix for
-  //      (2) is an online/foreground-resume handshake that fetches
-  //      `/friend-chat/pending` once — that's a separate change; until
-  //      then this slow poll keeps the conversation eventually-consistent.
-  //
-  // 60 s was chosen because:
-  //   - It's slow enough that station-side keychain / DB pressure is
-  //     negligible even with dozens of sessions.
-  //   - It's fast enough that the worst-case "I closed my laptop and
-  //     re-opened it" reload feels reasonable.
-  //
-  // Do NOT lower this without first wiring up the explicit pending-pull
-  // handshake — the previous 5 s value was masking the absence of one.
-  // First-mount cold path: load list FAST so the user sees rows ASAP, then
-  // do the slow per-session sync in the background. Keeping these
-  // separated from `tick()` is important — `tick()` runs every 60s and the
-  // cold-path is one-shot. This effect runs exactly once per `SocialChatPage`
-  // mount; the page is keep-alive in `PageRouter`, so subsequent tab visits
-  // do not re-trigger this. We deliberately do NOT block on
-  // `friendChatSync` here — that's a multi-page Station fetch + DB ingest
-  // that historically dominated the cold-load spinner. It now runs as a
-  // detached background task while the list is already on screen.
+  // First-mount cold path: load list FAST so the user sees rows ASAP,
+  // then do the slow per-session sync in the background. This effect
+  // runs exactly once per `SocialChatPage` mount; the page is
+  // keep-alive in `PageRouter`, so subsequent tab visits do not
+  // re-trigger this. We deliberately do NOT block on `friendChatSync`
+  // here — that is a multi-page station fetch + local SQLite ingest
+  // that historically dominated the cold-load spinner. It now runs as
+  // a detached, idle-scheduled background task while the list is
+  // already on screen. The detailed band-by-band rationale lives in
+  // the body of `cold()` below.
   useEffect(() => {
     let disposed = false;
     const t0 = performance.now();
@@ -236,64 +213,26 @@ export function SocialChatPage() {
     };
   }, [loadSessions, loadGroups, loadGroupUnreadCounts, loadConversationPreviews]);
 
-  // --- Sync timer: 60 s safety-net only ---
+  // The 60s safety-net polling loop that used to live here was removed
+  // alongside the WebRTC text data plane. Its sole job was to recover
+  // from two failure modes:
   //
-  // Real-time delivery is the responsibility of the WebRTC DataChannel
-  // (P2P-direct or TURN-relay; both are equally responsive). When the DC
-  // delivers a hint, `setOnEnvelope` below already triggers an immediate
-  // sync + `loadMessages` for the active session. The interval here is
-  // *only* a safety net for two corner cases:
+  //   1. The DataChannel's hint arriving late (or not at all) on TURN
+  //      relay paths.
+  //   2. Pending station-queued messages sitting unfetched while a
+  //      peer was offline.
   //
-  //   1. WebRTC silently dies and `connectionstatechange` never fires
-  //      (rare, but happens on macOS when the network stack flaps).
-  //   2. The peer was offline when a message was sent, so it sits in
-  //      station's pending queue until we pull it. The proper fix for
-  //      (2) is an online/foreground-resume handshake that fetches
-  //      `/friend-chat/pending` once — that's a separate change; until
-  //      then this slow poll keeps the conversation eventually-consistent.
-  useEffect(() => {
-    let disposed = false;
-    let inFlight = false;
-    const tick = async () => {
-      if (disposed || inFlight) return;
-      inFlight = true;
-      try {
-        const currentSessions = sessionsRef.current;
-        for (const session of currentSessions) {
-          if (disposed) break;
-          try {
-            await api.friendChatSync(session.ulid, 50, 1);
-          } catch (error) {
-            log.error('socialChat', 'background sync failed', {
-              sessionUlid: session.ulid,
-              error,
-            });
-          }
-        }
-        if (disposed) return;
-        if (activeTabRef.current === 'friend' && activeSessionRef.current) {
-          await loadMessages(activeSessionRef.current, 'friend').catch((error) => {
-            log.warn('socialChat', 'active session refresh failed', { error });
-          });
-        }
-        await loadSessions().catch(() => {});
-        await loadConversationPreviews().catch(() => {});
-      } catch (error) {
-        log.error('socialChat', 'background sync loop failed', error);
-      } finally {
-        inFlight = false;
-      }
-    };
-
-    const timer = window.setInterval(() => {
-      tick().catch(() => {});
-    }, 60000);
-
-    return () => {
-      disposed = true;
-      window.clearInterval(timer);
-    };
-  }, [loadMessages, loadSessions, loadConversationPreviews]);
+  // Both are now handled by the realtime SSE stream:
+  //   - (1) is moot because SSE delivers the message itself, not a
+  //     hint, and station fans out to every active session.
+  //   - (2) is handled by the Presence Supervisor's offline→online
+  //     pending pull (see infrastructure/presence_supervisor) plus
+  //     the Resync StreamEvent that station emits if a client's
+  //     Last-Event-ID has fallen out of the ring buffer window.
+  //
+  // Resurrecting this loop without first deleting the SSE handler
+  // would re-introduce the duplicate-ingest cost that the EventBus
+  // was supposed to eliminate. Don't.
 
   // --- Realtime SSE message arrival: server-pushed, no polling ---
   //
@@ -325,6 +264,9 @@ export function SocialChatPage() {
   useEffect(() => {
     if (!currentUserDid) return;
 
+    // P2P here only carries transport status (so the UI can show
+    // "P2P direct / via relay / SSE-only"). The text data plane is
+    // SSE — see the REALTIME_MESSAGE_RECEIVED subscription above.
     friendChatP2p.setOnStatus((_myDid, peerDid, status) => {
       const sid = activeSessionRef.current;
       if (!sid || activeTabRef.current !== 'friend') return;
@@ -332,25 +274,11 @@ export function SocialChatPage() {
       setFriendP2pStatus(sid, status.state, status.detail, status.transport);
     });
 
-    friendChatP2p.setOnEnvelope((env) => {
-      const sid = env.sessionUlid;
-      if (!sid) return;
-      api.friendChatSync(sid, 50, 1)
-        .then(() => {
-          if (activeTabRef.current === 'friend' && activeSessionRef.current === sid) {
-            return loadMessages(sid, 'friend');
-          }
-          return undefined;
-        })
-        .catch((error) => log.warn('p2p', 'sync after hint failed', error));
-    });
-
     friendChatP2p.ensurePeerRegistered(currentUserDid).catch(() => {});
     return () => {
-      friendChatP2p.setOnEnvelope(null);
       friendChatP2p.setOnStatus(null);
     };
-  }, [currentUserDid, loadMessages, setFriendP2pStatus]);
+  }, [currentUserDid, setFriendP2pStatus]);
 
   // --- P2P connection: stabilized deps prevent close/reconnect cycles ---
   useEffect(() => {
