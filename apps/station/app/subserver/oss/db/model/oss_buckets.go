@@ -9,12 +9,13 @@
 //     refuse uploads before they touch the backend.
 //  2. A default visibility. New uploads inherit `DefaultVisibility`
 //     unless the caller explicitly overrides it on a per-object basis.
-//  3. A scoping handle for the dashboard portal (image 1/2 in the
-//     product mockups).
+//  3. A scoping handle for the dashboard portal.
 //
-// Three system-managed buckets are bootstrapped per actor on first
-// boot of v2 (see `repo.Bootstrap`). Operators can later create
-// `kind=user` buckets by hand.
+// System-managed buckets are created **lazily on first use** by each
+// actor — the service layer calls `BucketRepository.EnsureSystem`
+// inline on the upload path. There is no startup-time enumeration of
+// the actor universe, which keeps OSS decoupled from the friend_chat
+// schema.
 package model
 
 import "time"
@@ -34,8 +35,8 @@ const (
 )
 
 // IsKnownVisibility reports whether v is one of the values the OSS
-// subserver knows how to enforce. Unknown values fall through to
-// `chat` at the enforcement layer for safety.
+// subserver knows how to enforce. Unknown values are rejected at
+// the service layer; there is no implicit coercion.
 func IsKnownVisibility(v string) bool {
 	switch v {
 	case VisibilityPublic, VisibilityChat, VisibilityPrivate:

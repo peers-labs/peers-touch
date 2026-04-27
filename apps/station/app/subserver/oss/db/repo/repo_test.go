@@ -269,14 +269,11 @@ func TestAuditRepo_AppendQueryTrim(t *testing.T) {
 // Bootstrap tests
 // ---------------------------------------------------------------------------
 
-func TestBootstrap_SeedsSystemBucketsAndIsIdempotent(t *testing.T) {
+func TestBootstrap_StampsSchemaVersionAndIsIdempotent(t *testing.T) {
 	db := initStore(t)
 	reset(t, db)
 
-	res, err := Bootstrap(context.Background(), BootstrapDeps{
-		DBName:      "default",
-		ExtraActors: []string{"did:test:dave", "did:test:eve"},
-	})
+	res, err := Bootstrap(context.Background(), BootstrapDeps{DBName: "default"})
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
@@ -284,80 +281,32 @@ func TestBootstrap_SeedsSystemBucketsAndIsIdempotent(t *testing.T) {
 		t.Fatalf("first run should not skip")
 	}
 
-	// Each known actor (dave, eve, _legacy) gets the 3 system buckets.
-	expectedActors := 3
-	expectedBuckets := expectedActors * len(ossmodel.SystemBucketSpecs)
+	// Bootstrap is intentionally non-seeding: no buckets, no files
+	// exist after a clean migration. System buckets are created
+	// lazily by the upload-path service.
 	var n int64
 	if err := db.Model(&ossmodel.Bucket{}).Count(&n).Error; err != nil {
 		t.Fatalf("count: %v", err)
 	}
-	if n != int64(expectedBuckets) {
-		t.Fatalf("expected %d buckets, got %d", expectedBuckets, n)
+	if n != 0 {
+		t.Fatalf("expected 0 buckets after bootstrap, got %d", n)
 	}
 
-	// Second run should be a no-op short-circuited via meta.
-	res2, err := Bootstrap(context.Background(), BootstrapDeps{
-		DBName:      "default",
-		ExtraActors: []string{"did:test:dave"},
-	})
+	// Schema version row should exist.
+	var meta ossmodel.Meta
+	if err := db.Where("key = ?", ossmodel.MetaKeySchemaVersion).First(&meta).Error; err != nil {
+		t.Fatalf("schema version row: %v", err)
+	}
+	if meta.Value != ossmodel.SchemaVersionV2 {
+		t.Fatalf("expected schema_version=%s, got %s", ossmodel.SchemaVersionV2, meta.Value)
+	}
+
+	// Second run short-circuits via the sentinel.
+	res2, err := Bootstrap(context.Background(), BootstrapDeps{DBName: "default"})
 	if !errors.Is(err, ErrAlreadyBootstrapped) {
 		t.Fatalf("expected ErrAlreadyBootstrapped, got %v", err)
 	}
 	if res2 == nil || !res2.Skipped {
 		t.Fatalf("expected Skipped result on idempotent run")
-	}
-	// Bucket count unchanged.
-	if err := db.Model(&ossmodel.Bucket{}).Count(&n).Error; err != nil {
-		t.Fatalf("recount: %v", err)
-	}
-	if n != int64(expectedBuckets) {
-		t.Fatalf("idempotency leaked rows: now %d", n)
-	}
-}
-
-func TestBootstrap_BackfillsLegacyOrphanFiles(t *testing.T) {
-	db := initStore(t)
-	reset(t, db)
-
-	// Pre-seed a legacy oss_files row that has no owner / bucket /
-	// visibility — this simulates v1 data.
-	pre := &ossmodel.FileMeta{
-		ID:      "f1",
-		Key:     "abc123",
-		Name:    "old.bin",
-		Size:    42,
-		Backend: "local",
-		Path:    "abc123",
-	}
-	if err := db.Create(pre).Error; err != nil {
-		t.Fatalf("seed legacy file: %v", err)
-	}
-
-	if _, err := Bootstrap(context.Background(), BootstrapDeps{DBName: "default"}); err != nil {
-		t.Fatalf("bootstrap: %v", err)
-	}
-
-	var got ossmodel.FileMeta
-	if err := db.Where("id = ?", "f1").First(&got).Error; err != nil {
-		t.Fatalf("reload: %v", err)
-	}
-	if got.OwnerActorID != ossmodel.LegacyOwnerActorID {
-		t.Fatalf("expected legacy owner sentinel, got %q", got.OwnerActorID)
-	}
-	if got.Visibility != ossmodel.VisibilityChat {
-		t.Fatalf("expected chat visibility, got %q", got.Visibility)
-	}
-	if got.BucketID == "" {
-		t.Fatalf("expected bucket assigned, got empty")
-	}
-	// And the legacy actor's chat bucket should have one file
-	// reconciled into it.
-	var legacyChat ossmodel.Bucket
-	if err := db.Where("owner_actor_id = ? AND name = ?",
-		ossmodel.LegacyOwnerActorID, ossmodel.SystemBucketChat).First(&legacyChat).Error; err != nil {
-		t.Fatalf("legacy chat bucket: %v", err)
-	}
-	if legacyChat.ObjectCount != 1 || legacyChat.UsedBytes != 42 {
-		t.Fatalf("usage not reconciled: count=%d used=%d", legacyChat.ObjectCount, legacyChat.UsedBytes)
 	}
 }
