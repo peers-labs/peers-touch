@@ -44,6 +44,7 @@ type ossSubServer struct {
 	maxFileSize        int64
 	maxFilesPerMessage int32
 	backendType        string
+	keyStrategy        string
 }
 
 func NewOSSSubServer(opts ...option.Option) server.Subserver {
@@ -67,6 +68,18 @@ func NewOSSSubServer(opts ...option.Option) server.Subserver {
 	if s.backendType == "" {
 		s.backendType = "local"
 	}
+	s.keyStrategy = strings.ToLower(strings.TrimSpace(o.KeyStrategy))
+	switch s.keyStrategy {
+	case "", "random":
+		s.keyStrategy = "random"
+	case "cas":
+		// Accepted as-is.
+	default:
+		// Operator typo'd a value we don't understand. Refuse to
+		// silently fall back; surface clearly in logs and stay on
+		// the safe `random` strategy so uploads keep working.
+		s.keyStrategy = "random"
+	}
 	if s.pathBase == "" {
 		s.pathBase = "/sub-oss"
 	}
@@ -84,7 +97,7 @@ func NewOSSSubServer(opts ...option.Option) server.Subserver {
 
 	// Initialize Service Layer
 	fileRepo := repo.NewFileRepository(s.dbName)
-	s.fileService = service.NewFileService(fileRepo, s.backend)
+	s.fileService = service.NewFileServiceWith(fileRepo, s.backend, service.KeyStrategy(s.keyStrategy), s.backendType)
 
 	return s
 }
