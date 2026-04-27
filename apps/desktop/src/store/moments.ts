@@ -1,94 +1,33 @@
 import { create } from 'zustand';
-import type { Post, PostAuthor } from '../gen/proto/domain/social/post_pb';
+import type {
+  Audience,
+  Mention,
+  Post,
+  PostAuthor,
+  ReactionKind,
+  ReactionSummary,
+} from '../gen/proto/domain/social/post_pb';
 import type { Comment } from '../gen/proto/domain/social/comment_pb';
+import type { Circle, CircleMember } from '../gen/proto/domain/social/circle_pb';
 
-// ── Local placeholder types ────────────────────────────────────────
+// All proto-shaped types in this store come straight from the
+// `apps/desktop/src/gen/proto/domain/social/*` bundle, which is a
+// derived product produced by `model/build.sh`. If any of these
+// imports drift out of sync with `model/domain/social/*.proto`,
+// re-run `./model/build.sh` from the repo root.
 //
-// These mirror the new proto messages added in P0
-// (`Audience`, `ReactionKind`, `ReactionSummary`, `Mention`,
-// `Circle`, `CircleMember`). The TS-side proto generator for the
-// desktop has not been re-run yet — the existing `gen/proto/`
-// snapshot still reflects the pre-P0 schema. Once the desktop TS
-// gen pipeline is wired (separate tooling PR), the placeholder
-// `MomentXxx` aliases below collapse to `import type { Xxx } from
-// '../gen/proto/domain/social/...'` and every consumer keeps
-// compiling unchanged.
-//
-// Keeping these here — and *not* re-defining `Post` / `Comment` /
-// `PostAuthor` — is intentional: those messages already exist in
-// the gen output, so importing them is the source-of-truth path.
-// The aliases that follow are the *only* hand-written types in
-// this scaffold, and they each carry a `// TODO P1: replace with
-// generated import` comment so the swap is mechanical.
+// The store still owns three things that have no proto analogue and
+// must stay hand-written:
+//   1. `MomentFeedKind` — the desktop-side classification of feed
+//      surfaces (`home` / `explore`). Keyed feeds (per-circle,
+//      per-actor) live in their own records and are scoped by id
+//      strings rather than this enum.
+//   2. `MomentFeedState` — pagination / loading book-keeping that is
+//      pure UI concern; the wire protocol returns `next_cursor` /
+//      `has_more` but everything else here is local.
+//   3. The composer draft container — kept in store so navigating
+//      away from the composer doesn't lose work in progress.
 
-export type MomentAudienceKind =
-  | 'public'
-  | 'followers'
-  | 'circle'
-  | 'group'
-  | 'self'
-  | 'custom_allow'
-  | 'custom_deny';
-
-export type MomentReactionKind =
-  | 'unspecified'
-  | 'like'
-  | 'love'
-  | 'laugh'
-  | 'wow'
-  | 'celebrate';
-
-// TODO P1: replace with generated import once `Audience` is in the
-// desktop proto bundle.
-export interface MomentAudience {
-  kind: MomentAudienceKind;
-  baseKind?: MomentAudienceKind;
-  targetId?: string;
-  actorDids?: string[];
-}
-
-// TODO P1: replace with generated import once `ReactionSummary` is
-// in the desktop proto bundle.
-export interface MomentReactionSummary {
-  kind: MomentReactionKind;
-  count: number;
-  reactedByViewer: boolean;
-}
-
-// TODO P1: replace with generated import once `Mention` is in the
-// desktop proto bundle.
-export interface MomentMention {
-  actorId: string;
-  offset: number;
-  length: number;
-  display: string;
-}
-
-// TODO P1: replace with generated import once `Circle` is in the
-// desktop proto bundle.
-export interface MomentCircle {
-  id: string;
-  ownerId: string;
-  name: string;
-  description?: string;
-  memberCount: number;
-}
-
-// TODO P1: replace with generated import once `CircleMember` is in
-// the desktop proto bundle.
-export interface MomentCircleMember {
-  circleId: string;
-  actorId: string;
-  addedAt?: string;
-}
-
-// ── Store shape ────────────────────────────────────────────────────
-
-/**
- * The five surface lists Moments cares about. `home` and `explore`
- * map 1:1 onto the proto-side `TimelineType.HOME / PUBLIC`. `user`
- * and `circle` are keyed feeds and live in `keyedFeeds`.
- */
 export type MomentFeedKind = 'home' | 'explore';
 
 export interface MomentFeedState {
@@ -124,17 +63,17 @@ interface MomentsState {
   commentsLoading: Record<string, boolean>;
 
   // Per-post reaction summary list.
-  reactions: Record<string, MomentReactionSummary[]>;
+  reactions: Record<string, ReactionSummary[]>;
 
   // Publisher's circles (publisher-private audience labels).
-  circles: MomentCircle[];
-  circleMembers: Record<string, MomentCircleMember[]>;
+  circles: Circle[];
+  circleMembers: Record<string, CircleMember[]>;
 
   // Composer draft — kept in store so navigation away keeps state.
   composerDraft: {
     text: string;
-    audience: MomentAudience;
-    mentions: MomentMention[];
+    audience: Audience;
+    mentions: Mention[];
   } | null;
 
   // ── Actions (all P2 stubs) ───────────────────────────────────────
@@ -154,8 +93,8 @@ interface MomentsState {
   createComment: (postId: string, content: string, replyToCommentId?: string) => Promise<void>;
   deleteComment: (postId: string, commentId: string) => Promise<void>;
 
-  reactToPost: (postId: string, kind: MomentReactionKind) => Promise<void>;
-  unreactToPost: (postId: string, kind: MomentReactionKind) => Promise<void>;
+  reactToPost: (postId: string, kind: ReactionKind) => Promise<void>;
+  unreactToPost: (postId: string, kind: ReactionKind) => Promise<void>;
 
   listMyCircles: () => Promise<void>;
   createCircle: (name: string, description?: string) => Promise<string>;
