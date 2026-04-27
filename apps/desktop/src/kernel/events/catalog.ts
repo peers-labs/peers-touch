@@ -12,6 +12,7 @@ export const EVENT = {
   REALTIME_PRESENCE_FLIP: 'realtime.presence_flip',
   REALTIME_RESYNC: 'realtime.resync',
   REALTIME_CONNECTION_STATE: 'realtime.connection_state',
+  REALTIME_CALL_SIGNAL: 'realtime.call_signal',
 } as const;
 
 export type EventType = (typeof EVENT)[keyof typeof EVENT];
