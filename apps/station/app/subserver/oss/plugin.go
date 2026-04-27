@@ -13,22 +13,38 @@ import (
 	"gorm.io/gorm"
 )
 
+// ossOptions is the YAML schema for `peers.node.server.subserver.oss.*`.
+// Each field is documented on the matching `Options` field in
+// `options.go`. The S3 sub-block is loaded only when `backend: s3`.
 var ossOptions struct {
 	Peers struct {
 		Node struct {
 			Server struct {
 				Subserver struct {
 					Oss struct {
-						Enabled            bool   `pconf:"enabled"`
-						Path               string `pconf:"path"`
-						DBName             string `pconf:"rds-name"`
-						StorePath          string `pconf:"store-path"`
-						SignSecret         string `pconf:"sign-secret"`
-						HostOverride       string `pconf:"host-override"`
-						MaxFileSize        int64  `pconf:"max-file-size"`
-						MaxFilesPerMessage int32  `pconf:"max-files-per-message"`
-						Backend            string `pconf:"backend"`
-						KeyStrategy        string `pconf:"key-strategy"`
+						Enabled                  bool   `pconf:"enabled"`
+						Path                     string `pconf:"path"`
+						DBName                   string `pconf:"rds-name"`
+						StorePath                string `pconf:"store-path"`
+						SignSecret               string `pconf:"sign-secret"`
+						HostOverride             string `pconf:"host-override"`
+						MaxFileSize              int64  `pconf:"max-file-size"`
+						MaxFilesPerMessage       int32  `pconf:"max-files-per-message"`
+						Backend                  string `pconf:"backend"`
+						KeyStrategy              string `pconf:"key-strategy"`
+						PresignedUploadThreshold int64  `pconf:"presigned-upload-threshold"`
+						PresignedUploadTTL       int64  `pconf:"presigned-upload-ttl"`
+						PresignedDownloadTTL     int64  `pconf:"presigned-download-ttl"`
+						S3                       struct {
+							Endpoint        string `pconf:"endpoint"`
+							Region          string `pconf:"region"`
+							Bucket          string `pconf:"bucket"`
+							AccessKeyID     string `pconf:"access-key-id"`
+							SecretAccessKey string `pconf:"secret-access-key"`
+							UseSSL          bool   `pconf:"use-ssl"`
+							ForcePathStyle  bool   `pconf:"force-path-style"`
+							KeyPrefix       string `pconf:"key-prefix"`
+						} `pconf:"s3"`
 					} `pconf:"oss"`
 				} `pconf:"subserver"`
 			} `pconf:"server"`
@@ -42,16 +58,30 @@ func (p *ossPlugin) Name() string { return "oss" }
 
 func (p *ossPlugin) Options() []option.Option {
 	authProvider := auth.NewJWTProvider(auth.Get().Secret, auth.Get().AccessTTL)
+	cfg := ossOptions.Peers.Node.Server.Subserver.Oss
 	return []option.Option{
-		WithPath(ossOptions.Peers.Node.Server.Subserver.Oss.Path),
-		WithDBName(ossOptions.Peers.Node.Server.Subserver.Oss.DBName),
-		WithStorePath(ossOptions.Peers.Node.Server.Subserver.Oss.StorePath),
-		WithSignSecret(ossOptions.Peers.Node.Server.Subserver.Oss.SignSecret),
-		WithHostOverride(ossOptions.Peers.Node.Server.Subserver.Oss.HostOverride),
-		WithMaxFileSize(ossOptions.Peers.Node.Server.Subserver.Oss.MaxFileSize),
-		WithMaxFilesPerMessage(ossOptions.Peers.Node.Server.Subserver.Oss.MaxFilesPerMessage),
-		WithBackendType(ossOptions.Peers.Node.Server.Subserver.Oss.Backend),
-		WithKeyStrategy(ossOptions.Peers.Node.Server.Subserver.Oss.KeyStrategy),
+		WithPath(cfg.Path),
+		WithDBName(cfg.DBName),
+		WithStorePath(cfg.StorePath),
+		WithSignSecret(cfg.SignSecret),
+		WithHostOverride(cfg.HostOverride),
+		WithMaxFileSize(cfg.MaxFileSize),
+		WithMaxFilesPerMessage(cfg.MaxFilesPerMessage),
+		WithBackendType(cfg.Backend),
+		WithKeyStrategy(cfg.KeyStrategy),
+		WithPresignedUploadThreshold(cfg.PresignedUploadThreshold),
+		WithPresignedUploadTTL(cfg.PresignedUploadTTL),
+		WithPresignedDownloadTTL(cfg.PresignedDownloadTTL),
+		WithS3Config(S3BackendOptions{
+			Endpoint:        cfg.S3.Endpoint,
+			Region:          cfg.S3.Region,
+			Bucket:          cfg.S3.Bucket,
+			AccessKeyID:     cfg.S3.AccessKeyID,
+			SecretAccessKey: cfg.S3.SecretAccessKey,
+			UseSSL:          cfg.S3.UseSSL,
+			ForcePathStyle:  cfg.S3.ForcePathStyle,
+			KeyPrefix:       cfg.S3.KeyPrefix,
+		}),
 		WithAuthProvider(authProvider),
 	}
 }
