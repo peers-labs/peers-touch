@@ -35,7 +35,22 @@ var ossOptions struct {
 						PresignedUploadThreshold int64  `pconf:"presigned-upload-threshold"`
 						PresignedUploadTTL       int64  `pconf:"presigned-upload-ttl"`
 						PresignedDownloadTTL     int64  `pconf:"presigned-download-ttl"`
-						S3                       struct {
+						MultipartUploadThreshold int64  `pconf:"multipart-upload-threshold"`
+
+						// v3 lifecycle / observability knobs. All have a
+						// safe non-zero default in `oss.go` so leaving
+						// them unset in YAML keeps a working
+						// configuration.
+						MimeBlocklist                  []string `pconf:"mime-blocklist"`
+						SoftDeleteGraceDays            int      `pconf:"soft-delete-grace-days"`
+						BlobGCGraceHours               int      `pconf:"blob-gc-grace-hours"`
+						AuditRetentionDays             int      `pconf:"audit-retention-days"`
+						WorkerTTLIntervalSeconds       int64    `pconf:"worker-ttl-interval-seconds"`
+						WorkerBlobGCIntervalSeconds    int64    `pconf:"worker-blobgc-interval-seconds"`
+						WorkerReconcileIntervalSeconds int64    `pconf:"worker-reconcile-interval-seconds"`
+						MetricsBearerToken             string   `pconf:"metrics-bearer-token"`
+
+						S3 struct {
 							Endpoint        string `pconf:"endpoint"`
 							Region          string `pconf:"region"`
 							Bucket          string `pconf:"bucket"`
@@ -72,6 +87,15 @@ func (p *ossPlugin) Options() []option.Option {
 		WithPresignedUploadThreshold(cfg.PresignedUploadThreshold),
 		WithPresignedUploadTTL(cfg.PresignedUploadTTL),
 		WithPresignedDownloadTTL(cfg.PresignedDownloadTTL),
+		WithMultipartUploadThreshold(cfg.MultipartUploadThreshold),
+		WithMimeBlocklist(cfg.MimeBlocklist),
+		WithSoftDeleteGraceDays(cfg.SoftDeleteGraceDays),
+		WithBlobGCGraceHours(cfg.BlobGCGraceHours),
+		WithAuditRetentionDays(cfg.AuditRetentionDays),
+		WithWorkerTTLIntervalSeconds(cfg.WorkerTTLIntervalSeconds),
+		WithWorkerBlobGCIntervalSeconds(cfg.WorkerBlobGCIntervalSeconds),
+		WithWorkerReconcileIntervalSeconds(cfg.WorkerReconcileIntervalSeconds),
+		WithMetricsBearerToken(cfg.MetricsBearerToken),
 		WithS3Config(S3BackendOptions{
 			Endpoint:        cfg.S3.Endpoint,
 			Region:          cfg.S3.Region,
@@ -95,13 +119,20 @@ func (p *ossPlugin) New(opts ...option.Option) server.Subserver {
 
 func init() {
 	config.RegisterOptions(&ossOptions)
-	// ensure our table migrates when store initializes
+	// ensure our tables migrate when store initializes. The full
+	// migration list lives in repo.Bootstrap; we mirror it here
+	// for the early "table hook" phase that runs *before* any
+	// subserver Init call so other subservers querying our tables
+	// (the dashboard read-side, notably) do not race against an
+	// un-migrated schema.
 	store.InitTableHooks(func(ctx context.Context, rds *gorm.DB) {
 		_ = rds.AutoMigrate(
-			&ossmodel.FileMeta{},
-			&ossmodel.Bucket{},
 			&ossmodel.Audit{},
+			&ossmodel.Blob{},
+			&ossmodel.Bucket{},
+			&ossmodel.FileMeta{},
 			&ossmodel.Meta{},
+			&ossmodel.PeerKey{},
 		)
 	})
 	plugin.SubserverPlugins["oss"] = &ossPlugin{}

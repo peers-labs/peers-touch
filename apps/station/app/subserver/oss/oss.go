@@ -44,6 +44,21 @@ const defaultPresignedUploadThreshold int64 = 8 << 20
 // URL is not a long-term liability.
 const defaultPresignedTTL = 5 * time.Minute
 
+// v3 lifecycle / observability defaults. Each is the fallback used
+// when the matching `Options` field is left at zero. Documented
+// alongside the YAML keys in `docs/architecture/oss/file-storage.md §5`.
+const (
+	defaultMultipartUploadThreshold int64 = 100 << 20 // 100 MiB
+
+	defaultSoftDeleteGraceDays = 7
+	defaultBlobGCGraceHours    = 24
+	defaultAuditRetentionDays  = 90
+
+	defaultWorkerTTLInterval       = time.Hour
+	defaultWorkerBlobGCInterval    = time.Hour
+	defaultWorkerReconcileInterval = 24 * time.Hour
+)
+
 type ossSubServer struct {
 	status       server.Status
 	addrs        []string
@@ -57,6 +72,7 @@ type ossSubServer struct {
 	fileRepo     repo.FileRepository
 	bucketRepo   repo.BucketRepository
 	auditRepo    repo.AuditRepository
+	blobRepo     repo.BlobRepository
 	peerKeyRepo  repo.PeerKeyRepository
 	chatResolver ChatSessionResolver
 
@@ -90,6 +106,31 @@ type ossSubServer struct {
 	presignedThreshold   int64
 	presignedUploadTTL   time.Duration
 	presignedDownloadTTL time.Duration
+
+	// multipartThreshold is the size at which the desktop client
+	// switches from `/upload` to the multipart-protocol endpoints.
+	// Surfaced via /capabilities; only meaningful when the active
+	// backend implements `MultipartBackend`.
+	multipartThreshold int64
+
+	// mimeBlocklist is the set of MIME prefixes the upload writer
+	// rejects. See Options.MimeBlocklist.
+	mimeBlocklist []string
+
+	// metricsBearerToken gates `/sub-oss/metrics`. Empty disables
+	// the endpoint entirely.
+	metricsBearerToken string
+
+	// Lifecycle parameters. Each falls back to the documented
+	// default when the operator leaves the matching Options field
+	// at zero. The lifecycle workers (S11+) consume these via the
+	// subserver struct rather than re-reading Options every tick.
+	softDeleteGrace        time.Duration
+	blobGCGrace            time.Duration
+	auditRetention         time.Duration
+	workerTTLInterval      time.Duration
+	workerBlobGCInterval   time.Duration
+	workerReconcileInterval time.Duration
 }
 
 // NewOSSSubServer constructs the OSS subserver from operator-supplied
@@ -144,6 +185,21 @@ func NewOSSSubServer(opts ...option.Option) server.Subserver {
 		s.presignedThreshold = defaultPresignedUploadThreshold
 	}
 
+	s.multipartThreshold = o.MultipartUploadThreshold
+	if s.multipartThreshold <= 0 {
+		s.multipartThreshold = defaultMultipartUploadThreshold
+	}
+
+	s.mimeBlocklist = normaliseMimeBlocklist(o.MimeBlocklist)
+	s.metricsBearerToken = strings.TrimSpace(o.MetricsBearerToken)
+
+	s.softDeleteGrace = daysToDurationOr(o.SoftDeleteGraceDays, defaultSoftDeleteGraceDays*24*time.Hour)
+	s.blobGCGrace = hoursToDurationOr(o.BlobGCGraceHours, defaultBlobGCGraceHours*time.Hour)
+	s.auditRetention = daysToDurationOr(o.AuditRetentionDays, defaultAuditRetentionDays*24*time.Hour)
+	s.workerTTLInterval = secondsToDurationOr(o.WorkerTTLIntervalSeconds, defaultWorkerTTLInterval)
+	s.workerBlobGCInterval = secondsToDurationOr(o.WorkerBlobGCIntervalSeconds, defaultWorkerBlobGCInterval)
+	s.workerReconcileInterval = secondsToDurationOr(o.WorkerReconcileIntervalSeconds, defaultWorkerReconcileInterval)
+
 	backend, err := buildBackend(s.backendType, o, &s.storePath)
 	if err != nil {
 		logger.Errorf(context.Background(), "[oss] backend init failed: %v — falling back to local", err)
@@ -159,10 +215,19 @@ func NewOSSSubServer(opts ...option.Option) server.Subserver {
 	s.fileRepo = repo.NewFileRepository(s.dbName)
 	s.bucketRepo = repo.NewBucketRepository(s.dbName)
 	s.auditRepo = repo.NewAuditRepository(s.dbName)
+	s.blobRepo = repo.NewBlobRepository(s.dbName)
 	s.peerKeyRepo = repo.NewPeerKeyRepository(s.dbName)
 	s.fedKeys = newFederationKeyCache(s.peerKeyRepo)
 	s.localStationID = strings.TrimSpace(o.LocalStationID)
-	s.fileService = service.NewFileServiceWith(s.fileRepo, s.bucketRepo, s.backend, service.KeyStrategy(s.keyStrategy), s.backendType)
+	s.fileService = service.NewFileService(service.Config{
+		Files:         s.fileRepo,
+		Buckets:       s.bucketRepo,
+		Blobs:         s.blobRepo,
+		Backend:       s.backend,
+		BackendName:   s.backendType,
+		Strategy:      service.KeyStrategy(s.keyStrategy),
+		MimeBlocklist: s.mimeBlocklist,
+	})
 
 	// Default the chat-audience resolver to the SQL-backed view of
 	// the friend_chat_sessions table. Operators who run OSS in a
@@ -253,6 +318,70 @@ func secondsToDurationOr(seconds int64, fallback time.Duration) time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
+// daysToDurationOr / hoursToDurationOr keep the YAML side ergonomic
+// (operators write `7` for "seven days" rather than `604800`) while
+// the runtime always works in `time.Duration`. Negative values fall
+// back to `fallback` rather than rejecting outright — a misconfigured
+// row should not abort startup.
+func daysToDurationOr(days int, fallback time.Duration) time.Duration {
+	if days <= 0 {
+		return fallback
+	}
+	return time.Duration(days) * 24 * time.Hour
+}
+
+func hoursToDurationOr(hours int, fallback time.Duration) time.Duration {
+	if hours <= 0 {
+		return fallback
+	}
+	return time.Duration(hours) * time.Hour
+}
+
+// normaliseMimeBlocklist trims and lower-cases each entry, drops the
+// empties, and de-duplicates. We do this once at boot so the upload
+// hot path can compare with `strings.HasPrefix` against a stable
+// slice without per-request allocation.
+func normaliseMimeBlocklist(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		v = strings.ToLower(strings.TrimSpace(v))
+		if v == "" {
+			continue
+		}
+		if _, dup := seen[v]; dup {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
+}
+
+// isBlockedMime reports whether `mime` matches any prefix in
+// `s.mimeBlocklist`. The match is prefix-only: `application/`
+// blocks every `application/*` payload while a more specific entry
+// like `application/x-msdownload` blocks only that exact MIME.
+//
+// Empty mime is *not* blocked here (the upload validator already
+// rejects empty MIME with a different reason); callers should
+// invoke this only after the basic shape check.
+func (s *ossSubServer) isBlockedMime(mime string) bool {
+	if mime == "" || len(s.mimeBlocklist) == 0 {
+		return false
+	}
+	mime = strings.ToLower(mime)
+	for _, prefix := range s.mimeBlocklist {
+		if strings.HasPrefix(mime, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // ErrUnsupportedBackend is returned by handlers whose path-specific
 // validation rejects an inbound key (e.g. presigned upload requested
 // while the active backend does not implement `PresignedBackend`).
@@ -262,22 +391,31 @@ func (s *ossSubServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.status = server.StatusStarting
 	if s.dbName != "" {
 		if rds, err := store.GetRDS(ctx, store.WithRDSDBName(s.dbName)); err == nil {
+			// Defensive AutoMigrate. The authoritative migration
+			// runs inside repo.Bootstrap (which also stamps the
+			// schema sentinel and seeds capability_version);
+			// re-running it here keeps Init self-contained when
+			// the InitTableHooks pre-pass missed a model.
 			_ = rds.AutoMigrate(
-				&ossmodel.FileMeta{},
-				&ossmodel.Bucket{},
 				&ossmodel.Audit{},
+				&ossmodel.Blob{},
+				&ossmodel.Bucket{},
+				&ossmodel.FileMeta{},
 				&ossmodel.Meta{},
+				&ossmodel.PeerKey{},
 			)
-			// Bootstrap stamps the schema version sentinel.
-			// Idempotent — repeat calls return ErrAlreadyBootstrapped.
-			// Any other failure aborts startup because system buckets
-			// must be creatable for uploads to succeed at all.
+			// Bootstrap stamps the schema version sentinel and
+			// seeds `capability_version`. Idempotent — repeat
+			// calls return ErrAlreadyBootstrapped. Any other
+			// failure aborts startup because the OSS subsystem
+			// is structurally broken without a stamped schema.
 			if res, err := repo.Bootstrap(ctx, repo.BootstrapDeps{DBName: s.dbName}); err != nil {
 				if !errors.Is(err, repo.ErrAlreadyBootstrapped) {
 					return err
 				}
 			} else if !res.Skipped {
-				logger.Infof(ctx, "[oss] schema v2 stamped in %dms", res.ElapsedMs)
+				logger.Infof(ctx, "[oss] schema %s stamped in %dms",
+					ossmodel.SchemaVersionCurrent, res.ElapsedMs)
 			}
 		}
 	}

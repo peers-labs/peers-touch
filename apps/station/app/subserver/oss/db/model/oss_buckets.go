@@ -18,7 +18,11 @@
 // schema.
 package model
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 // Visibility levels enforced at /sub-oss/file GET.
 //
@@ -111,6 +115,21 @@ type Bucket struct {
 	Description string    `json:"description" gorm:"type:varchar(500)"`
 	CreatedAt   time.Time `json:"created_at"  gorm:"autoCreateTime"`
 	UpdatedAt   time.Time `json:"updated_at"  gorm:"autoUpdateTime"`
+
+	// DeletedAt is GORM's built-in soft-delete column. Buckets are
+	// rarely deleted (only via the dashboard `force=true` path) and
+	// when they are, default queries should hide them — operators
+	// should not see deleted buckets in the bucket list, owners
+	// should not be able to upload into them. The dashboard force-
+	// delete path uses `Unscoped()` for either hard delete or list-
+	// including-deleted views.
+	//
+	// Note: the unique index on (owner_actor_id, name) is *not*
+	// scoped by deleted_at, so the operator must hard-delete (or
+	// rename) before recreating a bucket with the same name. This
+	// is an explicit operator-friction trade for keeping the index
+	// portable across SQLite / Postgres.
+	DeletedAt gorm.DeletedAt `json:"deleted_at,omitempty" gorm:"index"`
 }
 
 // TableName binds the Bucket struct to `oss_buckets`. We intentionally

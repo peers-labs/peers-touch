@@ -59,6 +59,7 @@ func initStore(t *testing.T) *gorm.DB {
 			&ossmodel.Audit{},
 			&ossmodel.Meta{},
 			&ossmodel.PeerKey{},
+			&ossmodel.Blob{},
 		)
 		if storeErr != nil {
 			return
@@ -79,7 +80,7 @@ func initStore(t *testing.T) *gorm.DB {
 // shared cache.
 func reset(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	for _, table := range []string{"oss_files", "oss_buckets", "oss_audit", "oss_meta"} {
+	for _, table := range []string{"oss_files", "oss_buckets", "oss_audit", "oss_meta", "oss_blobs", "oss_peer_keys"} {
 		if err := db.Exec("DELETE FROM " + table).Error; err != nil {
 			t.Fatalf("reset %s: %v", table, err)
 		}
@@ -442,9 +443,21 @@ func TestBootstrap_StampsSchemaVersionAndIsIdempotent(t *testing.T) {
 	if err := db.Where("key = ?", ossmodel.MetaKeySchemaVersion).First(&meta).Error; err != nil {
 		t.Fatalf("schema version row: %v", err)
 	}
-	if meta.Value != ossmodel.SchemaVersionV2 {
-		t.Fatalf("expected schema_version=%s, got %s", ossmodel.SchemaVersionV2, meta.Value)
+	if meta.Value != ossmodel.SchemaVersionCurrent {
+		t.Fatalf("expected schema_version=%s, got %s", ossmodel.SchemaVersionCurrent, meta.Value)
 	}
+
+	// capability_version is seeded on first reach to v3 — clients
+	// rely on /capabilities surfacing a non-empty value, so absence
+	// is a contract violation rather than a soft-default.
+	var capMeta ossmodel.Meta
+	if err := db.Where("key = ?", ossmodel.MetaKeyCapabilityVersion).First(&capMeta).Error; err != nil {
+		t.Fatalf("capability_version row: %v", err)
+	}
+	if capMeta.Value == "" {
+		t.Fatalf("capability_version should be a non-empty ULID")
+	}
+	seedCap := capMeta.Value
 
 	// Second run short-circuits via the sentinel.
 	res2, err := Bootstrap(context.Background(), BootstrapDeps{DBName: "default"})
@@ -453,6 +466,16 @@ func TestBootstrap_StampsSchemaVersionAndIsIdempotent(t *testing.T) {
 	}
 	if res2 == nil || !res2.Skipped {
 		t.Fatalf("expected Skipped result on idempotent run")
+	}
+
+	// Idempotent run must NOT churn capability_version — only
+	// policy changes (PATCH visibility, key rotation) re-roll it.
+	if err := db.Where("key = ?", ossmodel.MetaKeyCapabilityVersion).First(&capMeta).Error; err != nil {
+		t.Fatalf("capability_version row after idempotent run: %v", err)
+	}
+	if capMeta.Value != seedCap {
+		t.Fatalf("idempotent bootstrap should not change capability_version (%s -> %s)",
+			seedCap, capMeta.Value)
 	}
 }
 
@@ -538,5 +561,136 @@ func TestPeerKeyRepo_TOFUInsertThenMismatch(t *testing.T) {
 	}
 	if err := r.UpsertTOFU(ctx, bad); !errors.Is(err, ErrPinnedKeyMismatch) {
 		t.Fatalf("expected ErrPinnedKeyMismatch, got %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// BlobRepository tests — Touch / Release / GC candidate semantics.
+// ---------------------------------------------------------------------------
+
+func TestBlobRepo_TouchInsertsThenIncrementsRefCount(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewBlobRepository("default")
+	ctx := context.Background()
+
+	// First Touch is an insert.
+	row, err := r.Touch(ctx, "local", "cas/aa/abc", 42, "deadbeef")
+	if err != nil {
+		t.Fatalf("touch insert: %v", err)
+	}
+	if row.RefCount != 1 {
+		t.Fatalf("expected ref_count=1 on insert, got %d", row.RefCount)
+	}
+	if row.Size != 42 || row.Sha256 != "deadbeef" {
+		t.Fatalf("insert payload mismatch: %+v", row)
+	}
+
+	// Second Touch increments. Size + sha bytes are *not* mutated
+	// on the increment path — same content, by definition.
+	row2, err := r.Touch(ctx, "local", "cas/aa/abc", 999, "ignored")
+	if err != nil {
+		t.Fatalf("touch increment: %v", err)
+	}
+	if row2.RefCount != 2 {
+		t.Fatalf("expected ref_count=2 after increment, got %d", row2.RefCount)
+	}
+	if row2.Size != 42 || row2.Sha256 != "deadbeef" {
+		t.Fatalf("increment must not mutate size/sha: %+v", row2)
+	}
+
+	// Sanity: only one row exists in the table.
+	var n int64
+	if err := db.Model(&ossmodel.Blob{}).Count(&n).Error; err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 blob row, got %d", n)
+	}
+}
+
+func TestBlobRepo_ReleaseDecrementsToZeroAndStops(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewBlobRepository("default")
+	ctx := context.Background()
+	if _, err := r.Touch(ctx, "local", "cas/bb/xyz", 7, "feedface"); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// First Release — counter goes 1 -> 0, dropped flag fires.
+	count, dropped, err := r.Release(ctx, "local", "cas/bb/xyz")
+	if err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if count != 0 || !dropped {
+		t.Fatalf("first release: count=%d dropped=%v", count, dropped)
+	}
+
+	// Second Release — counter is already at zero. Behaviour:
+	// returns (0, false, nil) — benign idempotent path.
+	count, dropped, err = r.Release(ctx, "local", "cas/bb/xyz")
+	if err != nil {
+		t.Fatalf("second release: %v", err)
+	}
+	if count != 0 || dropped {
+		t.Fatalf("second release should be a no-op: count=%d dropped=%v", count, dropped)
+	}
+
+	// Sanity: the row is still present (only the GC worker deletes
+	// rows; Release just decrements).
+	got, err := r.Get(ctx, "local", "cas/bb/xyz")
+	if err != nil || got == nil {
+		t.Fatalf("row gone after release: row=%v err=%v", got, err)
+	}
+}
+
+func TestBlobRepo_ReleaseUnknownKeyReturnsErrBlobNotFound(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewBlobRepository("default")
+	_, _, err := r.Release(context.Background(), "local", "missing")
+	if !errors.Is(err, ErrBlobNotFound) {
+		t.Fatalf("expected ErrBlobNotFound, got %v", err)
+	}
+}
+
+func TestBlobRepo_ListGCCandidatesFiltersByRefAndAge(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewBlobRepository("default")
+	ctx := context.Background()
+
+	// Seed two rows with different refcount + last_seen_at.
+	if _, err := r.Touch(ctx, "local", "cas/old/zero", 1, "h1"); err != nil {
+		t.Fatalf("seed old: %v", err)
+	}
+	if _, err := r.Touch(ctx, "local", "cas/young/one", 1, "h2"); err != nil {
+		t.Fatalf("seed young: %v", err)
+	}
+	// Drop the first to ref_count=0 and back-date its last_seen_at.
+	if _, _, err := r.Release(ctx, "local", "cas/old/zero"); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	pastTime := time.Now().Add(-48 * time.Hour)
+	if err := db.Model(&ossmodel.Blob{}).
+		Where("backend = ? AND key = ?", "local", "cas/old/zero").
+		Update("last_seen_at", pastTime).Error; err != nil {
+		t.Fatalf("backdate: %v", err)
+	}
+
+	// Cutoff is 1 hour ago: the old row qualifies, the young row
+	// (ref_count=1) is filtered out by the predicate.
+	cutoff := time.Now().Add(-time.Hour)
+	got, err := r.ListGCCandidates(ctx, cutoff, 100)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(got) != 1 || got[0].Key != "cas/old/zero" {
+		t.Fatalf("expected only old/zero; got %+v", got)
 	}
 }
