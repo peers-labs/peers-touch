@@ -45,6 +45,21 @@ type PeerKeyRepository interface {
 	// Best-effort: failure is not propagated so a slow KV write
 	// can never deny a federated GET.
 	TouchLastSeen(ctx context.Context, peerStationID string, ts time.Time)
+
+	// DeleteUnpinnedOlderThan removes peer-key rows where
+	// `pinned = false` AND `last_seen_at < olderThan`. Pinned
+	// rows are NEVER trimmed — once an operator promotes a peer
+	// to pinned, dropping the cache silently would invalidate
+	// the trust decision. Returns the row count actually
+	// removed so the worker can audit / surface a heartbeat
+	// number.
+	//
+	// Used exclusively by the PeerKeyTrim worker. The TOFU
+	// inbound verifier re-creates rows on demand, so a trimmed
+	// peer simply re-TOFUs on its next federated request —
+	// matching the documented "non-pinned trust expires after N
+	// days of silence" contract.
+	DeleteUnpinnedOlderThan(ctx context.Context, olderThan time.Time) (int64, error)
 }
 
 // Sentinel errors. Callers branch on these to distinguish "first
@@ -177,6 +192,22 @@ func (r *peerKeyRepo) TouchLastSeen(ctx context.Context, peerStationID string, t
 	_ = db.Model(&ossmodel.PeerKey{}).
 		Where("peer_station_id = ?", peerStationID).
 		Update("last_seen_at", ts).Error
+}
+
+func (r *peerKeyRepo) DeleteUnpinnedOlderThan(ctx context.Context, olderThan time.Time) (int64, error) {
+	if olderThan.IsZero() {
+		return 0, nil
+	}
+	db, err := r.getDB(ctx)
+	if err != nil {
+		return 0, err
+	}
+	res := db.Where("pinned = ? AND last_seen_at < ?", false, olderThan).
+		Delete(&ossmodel.PeerKey{})
+	if res.Error != nil {
+		return 0, res.Error
+	}
+	return res.RowsAffected, nil
 }
 
 // --- private meta helpers ---

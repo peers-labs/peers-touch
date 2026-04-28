@@ -305,6 +305,23 @@ func (r *fakeFileRepo) ListExpired(ctx context.Context, now time.Time, limit int
 	return out, nil
 }
 
+func (r *fakeFileRepo) SumByBucket(_ context.Context, bucketID string) (int64, int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var sum, count int64
+	for _, m := range r.byPK {
+		if m.DeletedAt != nil {
+			continue
+		}
+		if m.BucketID != bucketID {
+			continue
+		}
+		sum += m.Size
+		count++
+	}
+	return sum, count, nil
+}
+
 // sortFiles applies the canonical "newest first, deterministic
 // tiebreak" ordering used by ListByOwner. Implemented as an
 // insertion sort because the test datasets stay small (≤100s);
@@ -449,6 +466,18 @@ func (r *fakeBucketRepo) UpdatePolicy(_ context.Context, _ string, _ ossrepo.Buc
 }
 func (r *fakeBucketRepo) Delete(_ context.Context, _ string, _ bool) error { return nil }
 
+func (r *fakeBucketRepo) SetUsage(_ context.Context, bucketID string, usedBytes int64, objectCount int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	b, ok := r.byID[bucketID]
+	if !ok {
+		return ossrepo.ErrBucketNotFound
+	}
+	b.UsedBytes = usedBytes
+	b.ObjectCount = objectCount
+	return nil
+}
+
 // fakeBlobRepo is an in-memory `ossrepo.BlobRepository`. We track
 // the same composite key (backend, key) → row mapping the SQL
 // implementation does, with the same atomic semantics on Touch /
@@ -552,15 +581,21 @@ type fakeMetaRepo struct {
 	mu                sync.Mutex
 	capabilityVersion string
 	bumpCount         int
+	kv                map[string]string
 }
 
-func newFakeMetaRepo() *fakeMetaRepo { return &fakeMetaRepo{} }
+func newFakeMetaRepo() *fakeMetaRepo {
+	return &fakeMetaRepo{kv: map[string]string{}}
+}
 
 func (m *fakeMetaRepo) Get(_ context.Context, key string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if key == ossmodel.MetaKeyCapabilityVersion {
 		return m.capabilityVersion, nil
+	}
+	if v, ok := m.kv[key]; ok {
+		return v, nil
 	}
 	return "", nil
 }
@@ -571,6 +606,29 @@ func (m *fakeMetaRepo) SetCapabilityVersion(_ context.Context, now time.Time) (s
 	m.bumpCount++
 	m.capabilityVersion = "cap-" + now.UTC().Format("20060102T150405.000000000")
 	return m.capabilityVersion, nil
+}
+
+func (m *fakeMetaRepo) Set(_ context.Context, key, value string, _ time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.kv == nil {
+		m.kv = map[string]string{}
+	}
+	m.kv[key] = value
+	return nil
+}
+
+func (m *fakeMetaRepo) Delete(_ context.Context, keys ...string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var n int64
+	for _, k := range keys {
+		if _, ok := m.kv[k]; ok {
+			delete(m.kv, k)
+			n++
+		}
+	}
+	return n, nil
 }
 
 // newSvc is the canonical wiring for service tests. Strategy and

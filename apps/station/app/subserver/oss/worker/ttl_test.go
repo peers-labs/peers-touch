@@ -96,6 +96,7 @@ func (f *fakeFiles) Patch(context.Context, string, ossrepo.FilePatch, time.Time)
 func (f *fakeFiles) ListByOwner(context.Context, string, ossrepo.ListByOwnerFilter, int, int) ([]ossmodel.FileMeta, int64, error) {
 	return nil, 0, nil
 }
+func (f *fakeFiles) SumByBucket(context.Context, string) (int64, int64, error) { return 0, 0, nil }
 
 type fakeBuckets struct {
 	debits map[string]int64
@@ -126,7 +127,8 @@ func (b *fakeBuckets) EnsureSystem(context.Context, string, ossmodel.SystemBucke
 func (b *fakeBuckets) UpdatePolicy(context.Context, string, ossrepo.BucketPolicyUpdate) error {
 	return nil
 }
-func (b *fakeBuckets) Delete(context.Context, string, bool) error { return nil }
+func (b *fakeBuckets) Delete(context.Context, string, bool) error           { return nil }
+func (b *fakeBuckets) SetUsage(context.Context, string, int64, int64) error { return nil }
 
 type fakeBlobs struct {
 	releases map[string]int

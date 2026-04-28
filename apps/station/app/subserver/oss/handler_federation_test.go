@@ -69,6 +69,9 @@ func (s *stubFileRepo) ListByOwner(context.Context, string, ossrepo.ListByOwnerF
 func (s *stubFileRepo) ListExpired(context.Context, time.Time, int) ([]ossmodel.FileMeta, error) {
 	return nil, nil
 }
+func (s *stubFileRepo) SumByBucket(context.Context, string) (int64, int64, error) {
+	return 0, 0, nil
+}
 
 // stubAuditRepo collects appends so federation tests can assert
 // the audit row shape. Read paths return zero — federation does

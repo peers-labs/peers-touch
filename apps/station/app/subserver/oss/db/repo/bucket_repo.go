@@ -50,6 +50,20 @@ type BucketRepository interface {
 	// Delete removes a bucket row. Returns ErrBucketNotEmpty if
 	// `ObjectCount > 0` and force is false.
 	Delete(ctx context.Context, bucketID string, force bool) error
+
+	// SetUsage writes absolute (used_bytes, object_count) values.
+	// Used exclusively by the BucketReconciler worker to
+	// reconcile drift between the cached counters and the
+	// authoritative SUM(oss_files.size). The user-facing upload
+	// and delete paths must keep using `AddUsage` so the in-flight
+	// quota check stays atomic.
+	//
+	// We do not enforce the quota predicate here — by definition
+	// the reconciler is correcting an already-observed reality;
+	// rejecting the write because the new total exceeds the (now
+	// stale) quota would just leave the row drifted forever.
+	// The dashboard surfaces "over-quota" as a separate alert.
+	SetUsage(ctx context.Context, bucketID string, usedBytes int64, objectCount int64) error
 }
 
 // BucketPolicyUpdate is the patch envelope for UpdatePolicy. nil
@@ -292,6 +306,36 @@ func (r *bucketRepo) Delete(ctx context.Context, bucketID string, force bool) er
 		}
 	}
 	res := db.Where("id = ?", bucketID).Delete(&ossmodel.Bucket{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrBucketNotFound
+	}
+	return nil
+}
+
+func (r *bucketRepo) SetUsage(ctx context.Context, bucketID string, usedBytes int64, objectCount int64) error {
+	if bucketID == "" {
+		return errors.New("oss: bucket set-usage: bucketID required")
+	}
+	if usedBytes < 0 {
+		usedBytes = 0
+	}
+	if objectCount < 0 {
+		objectCount = 0
+	}
+	db, err := r.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	res := db.Model(&ossmodel.Bucket{}).
+		Where("id = ?", bucketID).
+		Updates(map[string]any{
+			"used_bytes":   usedBytes,
+			"object_count": objectCount,
+			"updated_at":   r.clock(),
+		})
 	if res.Error != nil {
 		return res.Error
 	}
