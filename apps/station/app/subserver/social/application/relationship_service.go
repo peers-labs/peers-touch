@@ -148,10 +148,9 @@ func (s *RelationshipService) GetRelationships(ctx context.Context, followerID u
 }
 
 func (s *RelationshipService) GetFollowers(ctx context.Context, actorID uint64, cursor string, limit int) ([]*model.Follower, string, int32, error) {
-	var repoCursor *infrastructure.Cursor
+	var repoCursor infrastructure.Cursor
 	if cursor != "" {
-		repoCursor = &infrastructure.Cursor{}
-		if err := infrastructure.DecodeCursor(cursor, repoCursor); err != nil {
+		if err := infrastructure.DecodeCursor(cursor, &repoCursor); err != nil {
 			return nil, "", 0, fmt.Errorf("invalid cursor: %w", err)
 		}
 	}
@@ -191,7 +190,7 @@ func (s *RelationshipService) GetFollowers(ctx context.Context, actorID uint64, 
 		lastFollow := follows[len(follows)-1]
 		nextCursor = infrastructure.EncodeCursor(&infrastructure.Cursor{
 			CreatedAt: lastFollow.CreatedAt,
-			ID:        lastFollow.ID,
+			LastID:    lastFollow.ID,
 		})
 	}
 
@@ -205,10 +204,9 @@ func (s *RelationshipService) GetFollowers(ctx context.Context, actorID uint64, 
 }
 
 func (s *RelationshipService) GetFollowing(ctx context.Context, actorID uint64, cursor string, limit int) ([]*model.Following, string, int32, error) {
-	var repoCursor *infrastructure.Cursor
+	var repoCursor infrastructure.Cursor
 	if cursor != "" {
-		repoCursor = &infrastructure.Cursor{}
-		if err := infrastructure.DecodeCursor(cursor, repoCursor); err != nil {
+		if err := infrastructure.DecodeCursor(cursor, &repoCursor); err != nil {
 			return nil, "", 0, fmt.Errorf("invalid cursor: %w", err)
 		}
 	}
@@ -249,7 +247,7 @@ func (s *RelationshipService) GetFollowing(ctx context.Context, actorID uint64, 
 		lastFollow := follows[len(follows)-1]
 		nextCursor = infrastructure.EncodeCursor(&infrastructure.Cursor{
 			CreatedAt: lastFollow.CreatedAt,
-			ID:        lastFollow.ID,
+			LastID:    lastFollow.ID,
 		})
 	}
 
