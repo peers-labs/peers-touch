@@ -232,6 +232,38 @@ type OSSFederationPeersResponse struct {
 	Items []OSSFederationPeer `json:"items"`
 }
 
+// ---------------------------------------------------------------------------
+// Workers DTO (S15)
+// ---------------------------------------------------------------------------
+
+// OSSWorkerHeartbeat is the dashboard-facing projection of one
+// background worker's recent activity, derived from `oss_audit`
+// action=`worker_run` rows (NOT from the in-process Scheduler
+// snapshot — see the rationale on `OSSRepository.ListWorkers`).
+//
+// `LastRunAt` is zero when the worker has not emitted any
+// heartbeat in the lookback window. `LastError` is non-empty only
+// when `LastOutcome == "error"`; the audit row's reason carries
+// `<name>: <message>` in that branch and we strip the prefix
+// here so the UI can render the message verbatim.
+type OSSWorkerHeartbeat struct {
+	Name        string    `json:"name"`
+	LastRunAt   time.Time `json:"last_run_at"`
+	LastOutcome string    `json:"last_outcome"` // "ok" | "error"
+	LastError   string    `json:"last_error,omitempty"`
+	RunCount    int64     `json:"run_count"`
+	ErrorCount  int64     `json:"error_count"`
+}
+
+// OSSWorkersSummary is the response envelope for
+// `GET /dashboard/api/oss/workers`. The `LookbackHours` echoes the
+// window the projection covered so a UI can label the panel
+// ("worker health, last 24h") without an extra round-trip.
+type OSSWorkersSummary struct {
+	Items         []OSSWorkerHeartbeat `json:"items"`
+	LookbackHours float64              `json:"lookback_hours"`
+}
+
 // OSSFederationRotateResponse is the body of a successful
 // `POST /dashboard/api/oss/federation/rotate-local-key`.
 //

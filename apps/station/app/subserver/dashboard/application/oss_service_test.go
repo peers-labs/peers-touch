@@ -83,6 +83,14 @@ type fakeOSSRepo struct {
 	rotateCalls  int
 	rotateReturn *domain.OSSFederationRotateResponse
 	rotateErr    error
+
+	forgetCalls []string
+	forgetErr   error
+
+	workersCalls    int
+	workersLastSpan time.Duration
+	workersReturn   *domain.OSSWorkersSummary
+	workersErr      error
 }
 
 func (f *fakeOSSRepo) ListBuckets(_ context.Context) ([]domain.OSSBucketSummary, error) {
@@ -217,6 +225,23 @@ func (f *fakeOSSRepo) RotateFederationLocalKey(_ context.Context) (*domain.OSSFe
 		return f.rotateReturn, nil
 	}
 	return &domain.OSSFederationRotateResponse{NewKID: "kid-new"}, nil
+}
+
+func (f *fakeOSSRepo) ForgetPeer(_ context.Context, peerStationID string) error {
+	f.forgetCalls = append(f.forgetCalls, peerStationID)
+	return f.forgetErr
+}
+
+func (f *fakeOSSRepo) ListWorkers(_ context.Context, lookback time.Duration) (*domain.OSSWorkersSummary, error) {
+	f.workersCalls++
+	f.workersLastSpan = lookback
+	if f.workersErr != nil {
+		return nil, f.workersErr
+	}
+	if f.workersReturn != nil {
+		return f.workersReturn, nil
+	}
+	return &domain.OSSWorkersSummary{LookbackHours: lookback.Hours()}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -648,5 +673,60 @@ func TestOSSService_RotateFederationLocalKey_PropagatesError(t *testing.T) {
 	_, err := svc.RotateFederationLocalKey(context.Background())
 	if err == nil || err.Error() != "rotation boom" {
 		t.Errorf("expected propagated error, got %v", err)
+	}
+}
+
+func TestOSSService_ForgetPeer_RequiresPeerID(t *testing.T) {
+	repo := &fakeOSSRepo{}
+	svc := NewOSSService(repo)
+	if err := svc.ForgetPeer(context.Background(), ""); err == nil {
+		t.Errorf("empty peer id should be rejected at the service layer")
+	}
+	if len(repo.forgetCalls) != 0 {
+		t.Errorf("repo should not be called on validation failure: %+v", repo.forgetCalls)
+	}
+}
+
+func TestOSSService_ForgetPeer_DelegatesToRepo(t *testing.T) {
+	repo := &fakeOSSRepo{}
+	svc := NewOSSService(repo)
+	if err := svc.ForgetPeer(context.Background(), "peer-x"); err != nil {
+		t.Fatalf("ForgetPeer: %v", err)
+	}
+	if len(repo.forgetCalls) != 1 || repo.forgetCalls[0] != "peer-x" {
+		t.Errorf("repo forget calls: %+v", repo.forgetCalls)
+	}
+}
+
+func TestOSSService_ListWorkers_RejectsNegativeLookback(t *testing.T) {
+	repo := &fakeOSSRepo{}
+	svc := NewOSSService(repo)
+	if _, err := svc.ListWorkers(context.Background(), -time.Second); err == nil {
+		t.Errorf("negative lookback should be rejected")
+	}
+	if repo.workersCalls != 0 {
+		t.Errorf("repo should not be called on validation failure")
+	}
+}
+
+func TestOSSService_ListWorkers_DelegatesAndPassesLookback(t *testing.T) {
+	want := &domain.OSSWorkersSummary{
+		Items: []domain.OSSWorkerHeartbeat{
+			{Name: "ttl_sweeper", RunCount: 4, ErrorCount: 1, LastOutcome: "ok"},
+		},
+		LookbackHours: 12,
+	}
+	repo := &fakeOSSRepo{workersReturn: want}
+	svc := NewOSSService(repo)
+
+	got, err := svc.ListWorkers(context.Background(), 12*time.Hour)
+	if err != nil {
+		t.Fatalf("ListWorkers: %v", err)
+	}
+	if got != want {
+		t.Errorf("response: got %+v want %+v", got, want)
+	}
+	if repo.workersLastSpan != 12*time.Hour {
+		t.Errorf("lookback should pass through unchanged: got %v", repo.workersLastSpan)
 	}
 }

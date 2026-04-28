@@ -76,6 +76,38 @@ type OSSRepository interface {
 	ListFederationPeers(ctx context.Context) ([]domain.OSSFederationPeer, error)
 	SetPeerPin(ctx context.Context, peerStationID string, pinned bool) error
 
+	// ForgetPeer removes the peer's TOFU row entirely so the next
+	// inbound request from this peer re-pairs from scratch. Pinned
+	// peers can also be forgotten — the operator's intent here
+	// ("I no longer trust *anything* about this peer") supersedes
+	// the pin contract, which only applies to in-place key
+	// rotations. Idempotent: forgetting a non-existent peer is
+	// not an error (it is a no-op + zero rows affected).
+	//
+	// We do NOT bump capability_version here. The peer key cache
+	// is *inbound* trust state; remote stations have their own
+	// view of *us* and a forget on our side is invisible to them
+	// (they will simply re-TOFU on their next request, which is
+	// the desired outcome).
+	ForgetPeer(ctx context.Context, peerStationID string) error
+
+	// ListWorkers projects per-worker heartbeat rows from
+	// `oss_audit` (action=`worker_run`) into a dashboard-shaped
+	// summary. The reason column carries either the worker name
+	// (success) or `<name>: <error>` (failure), so the projection
+	// can recover the worker identity from a string match in
+	// either branch. The lookback is bounded by the caller; the
+	// default is 24h which matches the dashboard's "last day"
+	// drill-down.
+	//
+	// We deliberately do NOT cross-call into the OSS subserver's
+	// in-process Scheduler.Snapshot() from here: that view would
+	// reset on every restart, which is misleading for a "is this
+	// worker healthy?" panel. The audit table is the durable
+	// source of truth — the in-process snapshot belongs in
+	// /metrics for Prometheus.
+	ListWorkers(ctx context.Context, lookback time.Duration) (*domain.OSSWorkersSummary, error)
+
 	// CreateBucket inserts a new `user`-kind bucket. The
 	// dashboard does NOT expose a Kind knob — system buckets
 	// are auto-provisioned by the OSS subserver (see
@@ -599,6 +631,150 @@ func (r *ossRepository) SetPeerPin(ctx context.Context, peerStationID string, pi
 	}
 	return nil
 }
+
+// ForgetPeer drops the entire row for `peerStationID`. Unlike
+// `SetPeerPin(.., false)` which preserves the kid for re-pinning,
+// this is a hard delete: the next inbound request from the peer
+// will trigger a fresh TOFU. Idempotent — a missing row returns
+// nil (no error) so the dashboard can offer a "forget" button
+// without worrying about double-clicks.
+func (r *ossRepository) ForgetPeer(ctx context.Context, peerStationID string) error {
+	if r.db == nil || peerStationID == "" {
+		return ErrPeerNotFound
+	}
+	if !r.db.Migrator().HasTable(tblOSSPeerKeys) {
+		return ErrPeerNotFound
+	}
+	return r.db.WithContext(ctx).Table(tblOSSPeerKeys).
+		Where("peer_station_id = ?", peerStationID).
+		Delete(struct{}{}).Error
+}
+
+// ListWorkers projects worker_run rows from oss_audit into a
+// per-worker summary. The implementation deliberately does its
+// aggregation in two passes (one DB query, one Go-side reduce)
+// rather than a single SQL GROUP BY:
+//
+//  1. Postgres + SQLite + MySQL all disagree about the syntax for
+//     extracting the leading "<name>:" prefix from `reason` (the
+//     error path) or distinguishing it from the success path
+//     (where `reason == name`). A portable SQL aggregate would
+//     need a dialect-specific case expression per backend.
+//  2. The volume is bounded — even with 10 workers running every
+//     hour, a 24h window is at most a few hundred rows. The
+//     dashboard query rate is operator-driven (single-digit hits
+//     per minute) so the I/O cost is negligible.
+//
+// The Go-side reduce is therefore both simpler and more portable.
+func (r *ossRepository) ListWorkers(ctx context.Context, lookback time.Duration) (*domain.OSSWorkersSummary, error) {
+	if lookback <= 0 {
+		lookback = 24 * time.Hour
+	}
+	if r.db == nil || !r.db.Migrator().HasTable(tblOSSAudit) {
+		return &domain.OSSWorkersSummary{
+			Items:         nil,
+			LookbackHours: lookback.Hours(),
+		}, nil
+	}
+
+	since := time.Now().Add(-lookback)
+	type heartbeatRow struct {
+		TS      time.Time `gorm:"column:ts"`
+		Outcome string    `gorm:"column:outcome"`
+		Reason  string    `gorm:"column:reason"`
+	}
+	var rows []heartbeatRow
+	err := r.db.WithContext(ctx).Table(tblOSSAudit).
+		Select("ts, outcome, reason").
+		Where("action = ? AND ts >= ?", auditActionWorkerRun, since).
+		Order("ts ASC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	// Reduce by worker name. The audit reason for a successful
+	// run is the worker name verbatim; for an errored run it is
+	// `<name>: <message...>` (truncated to 120 chars upstream).
+	type acc struct {
+		runs   int64
+		errs   int64
+		lastTS time.Time
+		lastOK string
+		lastEr string
+	}
+	bag := make(map[string]*acc)
+	for _, row := range rows {
+		name, errMsg := parseWorkerHeartbeatReason(row.Reason)
+		if name == "" {
+			continue
+		}
+		a, ok := bag[name]
+		if !ok {
+			a = &acc{}
+			bag[name] = a
+		}
+		a.runs++
+		if row.Outcome == auditOutcomeError {
+			a.errs++
+		}
+		if row.TS.After(a.lastTS) {
+			a.lastTS = row.TS
+			a.lastOK = row.Outcome
+			a.lastEr = errMsg
+		}
+	}
+
+	out := make([]domain.OSSWorkerHeartbeat, 0, len(bag))
+	for name, a := range bag {
+		hb := domain.OSSWorkerHeartbeat{
+			Name:        name,
+			LastRunAt:   a.lastTS,
+			LastOutcome: a.lastOK,
+			RunCount:    a.runs,
+			ErrorCount:  a.errs,
+		}
+		if hb.LastOutcome == auditOutcomeError {
+			hb.LastError = a.lastEr
+		}
+		out = append(out, hb)
+	}
+	// Stable order keeps the dashboard panel from flickering as
+	// the underlying map iteration is randomised per request.
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+
+	return &domain.OSSWorkersSummary{
+		Items:         out,
+		LookbackHours: lookback.Hours(),
+	}, nil
+}
+
+// parseWorkerHeartbeatReason recovers the worker name (and, when
+// present, the error message) from a `worker_run` reason string.
+// The scheduler upstream writes either `<name>` (success) or
+// `<name>: <truncated error>` (failure). We split on the *first*
+// `: ` so error messages that happen to contain a colon are
+// preserved verbatim.
+func parseWorkerHeartbeatReason(reason string) (name, errMsg string) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return "", ""
+	}
+	if idx := strings.Index(reason, ": "); idx > 0 {
+		return reason[:idx], strings.TrimSpace(reason[idx+2:])
+	}
+	return reason, ""
+}
+
+// auditActionWorkerRun + auditOutcomeError are duplicated here so
+// the dashboard repo does not import the OSS subserver's audit
+// model. They MUST stay in sync with `ossmodel.AuditActionWorkerRun`
+// and `ossmodel.AuditOutcomeError`; a drift would silently cause
+// the workers projection to return zero rows.
+const (
+	auditActionWorkerRun = "worker_run"
+	auditOutcomeError    = "error"
+)
 
 // ---------------------------------------------------------------------------
 // Bucket lifecycle (admin)
