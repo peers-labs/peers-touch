@@ -74,23 +74,9 @@ pub mod social {
     pub use v1::*;
 }
 
-pub mod mastodon {
-    pub mod v1 {
-        include!(concat!(env!("OUT_DIR"), "/peers_touch.model.mastodon.v1.rs"));
-    }
-    pub use v1::*;
-}
-
 pub mod activity {
     pub mod v1 {
         include!(concat!(env!("OUT_DIR"), "/peers_touch.model.activity.v1.rs"));
-    }
-    pub use v1::*;
-}
-
-pub mod activitypub {
-    pub mod v1 {
-        include!(concat!(env!("OUT_DIR"), "/peers_touch.model.activitypub.v1.rs"));
     }
     pub use v1::*;
 }
