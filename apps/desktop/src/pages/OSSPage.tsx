@@ -33,7 +33,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { Flexbox } from 'react-layout-kit';
 import {
   AlertTriangle, Eye, FolderOpen, Globe, Lock, MessageSquare, Pencil,
-  RefreshCw, RotateCcw, Trash2,
+  RefreshCw, RotateCcw, Trash2, Upload as UploadIcon,
 } from 'lucide-react';
 import dayjs, { type Dayjs } from 'dayjs';
 import { PageHeader } from '../components/PageHeader';
@@ -286,6 +286,176 @@ function PatchDialog({ file, open, onClose, onSubmitted }: PatchDialogProps) {
 }
 
 // ---------------------------------------------------------------------------
+// Upload dialog
+// ---------------------------------------------------------------------------
+
+/**
+ * UploadDialog — picks a file via the native dialog (Tauri side
+ * already exposes `pick_chat_attachment`, which returns the absolute
+ * path on success or rejects on cancel) and pushes it through the
+ * shared `chat_upload_attachment` command. We re-use that command
+ * because the Station endpoint (`/sub-oss/upload`) is identical for
+ * "uploaded from chat" and "uploaded standalone" — the only thing
+ * that changes is how we tell it to scope the file:
+ *
+ *   - `visibility = 'private'` (default) → only the owner can fetch.
+ *   - `visibility = 'public'`            → discoverable by any peer.
+ *   - `visibility = 'chat'`              → REQUIRES `chat_session_id`;
+ *                                          the Station validates
+ *                                          membership at fetch time.
+ *
+ * The Rust adapter already tags the upload with the right metadata
+ * and bumps `oss_blobs.ref_count`, so all this dialog has to do is
+ * collect the form, invoke, and refresh the listing on success.
+ */
+interface UploadDialogProps {
+  open: boolean;
+  onClose: () => void;
+  onUploaded: () => void;
+  defaultBucket?: string;
+}
+
+function UploadDialog({ open, onClose, onUploaded, defaultBucket }: UploadDialogProps) {
+  // The parent gates this component's mount on `open`, so the
+  // `useState` defaults below double as the per-session reset
+  // (each "Upload" click yields a fresh component instance). This
+  // avoids a `useEffect`-based reset and the "setState in effect"
+  // lint that comes with it.
+  const [filePath, setFilePath] = useState<string>('');
+  const [bucket, setBucket] = useState<string>(defaultBucket ?? 'attachments');
+  const [visibility, setVisibility] = useState<OssVisibility>('private');
+  const [chatSessionID, setChatSessionID] = useState<string>('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const onPick = useCallback(async () => {
+    try {
+      const path = await api.pickChatAttachment();
+      if (path) {
+        setFilePath(path);
+      }
+    } catch {
+      // User cancelled the native dialog — silent abort.
+    }
+  }, []);
+
+  const fileLabel = useMemo(() => {
+    if (!filePath) return '(no file chosen)';
+    const sep = filePath.includes('/') ? '/' : '\\';
+    return filePath.split(sep).pop() || filePath;
+  }, [filePath]);
+
+  const onSubmit = useCallback(async () => {
+    if (!filePath) {
+      message.warning('Pick a file first');
+      return;
+    }
+    if (!bucket.trim()) {
+      message.warning('Bucket name is required');
+      return;
+    }
+    if (visibility === 'chat' && !chatSessionID.trim()) {
+      message.warning('chat_session_id is required when visibility is chat');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const resp = await api.chatUploadAttachment({
+        file_path: filePath,
+        bucket: bucket.trim(),
+        visibility,
+        chat_session_id: visibility === 'chat' ? chatSessionID.trim() : null,
+      });
+      if (!resp) {
+        message.error('Upload failed');
+        return;
+      }
+      message.success(`Uploaded "${resp.filename}" (${(resp.size / 1024).toFixed(1)} KB)`);
+      onUploaded();
+      onClose();
+    } catch (err) {
+      log.error('oss', 'Upload failed', err);
+      message.error((err as Error)?.message || 'Upload failed');
+    } finally {
+      setSubmitting(false);
+    }
+  }, [filePath, bucket, visibility, chatSessionID, onUploaded, onClose]);
+
+  return (
+    <Modal
+      open={open}
+      title={
+        <Flexbox horizontal gap={8} align="center">
+          <UploadIcon size={16} />
+          <span>Upload to OSS</span>
+        </Flexbox>
+      }
+      onCancel={onClose}
+      onOk={onSubmit}
+      okButtonProps={{ loading: submitting, disabled: !filePath || !bucket.trim() }}
+      okText="Upload"
+      destroyOnHidden
+    >
+      <Form layout="vertical" component="div" size="middle">
+        <Form.Item label="File">
+          <Flexbox horizontal gap={8} align="center">
+            <Button icon={<UploadIcon size={14} />} onClick={onPick}>
+              Choose file
+            </Button>
+            <Tooltip title={filePath || ''}>
+              <Text
+                type={filePath ? undefined : 'secondary'}
+                style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              >
+                {fileLabel}
+              </Text>
+            </Tooltip>
+          </Flexbox>
+        </Form.Item>
+
+        <Form.Item
+          label="Bucket"
+          extra="The Station auto-creates user-kind buckets the first time you upload to them."
+        >
+          <AntdInput
+            value={bucket}
+            onChange={(e) => setBucket(e.target.value)}
+            placeholder="e.g. attachments, photos, archive"
+          />
+        </Form.Item>
+
+        <Form.Item
+          label="Visibility"
+          extra="`chat` scopes the file to a single chat session. `public` makes it readable by any peer."
+        >
+          <Segmented
+            value={visibility}
+            onChange={(v) => setVisibility(v as OssVisibility)}
+            options={[
+              { label: 'Private', value: 'private' },
+              { label: 'Chat',    value: 'chat' },
+              { label: 'Public',  value: 'public' },
+            ]}
+          />
+        </Form.Item>
+
+        {visibility === 'chat' && (
+          <Form.Item
+            label="Chat session ID"
+            extra="ULID of the conversation the file belongs to. Members of that session can fetch the bytes; non-members cannot."
+          >
+            <AntdInput
+              value={chatSessionID}
+              onChange={(e) => setChatSessionID(e.target.value)}
+              placeholder="session ULID"
+            />
+          </Form.Item>
+        )}
+      </Form>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page shell
 // ---------------------------------------------------------------------------
 
@@ -299,6 +469,7 @@ export function OSSPage() {
   const [page, setPage] = useState(1);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<OssFileMeta | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   const buildQuery = useCallback((): OssListMyFilesQuery => ({
     bucket: bucketFilter.trim() || undefined,
@@ -488,6 +659,14 @@ export function OSSPage() {
         icon={<FolderOpen size={20} />}
         extra={
           <Space>
+            <Button
+              type="primary"
+              icon={<UploadIcon size={14} />}
+              onClick={() => setUploadOpen(true)}
+              size="small"
+            >
+              Upload
+            </Button>
             <Button icon={<RefreshCw size={14} />} onClick={load} loading={loading} size="small">
               Refresh
             </Button>
@@ -584,6 +763,15 @@ export function OSSPage() {
         onClose={() => setEditTarget(null)}
         onSubmitted={load}
       />
+
+      {uploadOpen && (
+        <UploadDialog
+          open={uploadOpen}
+          onClose={() => setUploadOpen(false)}
+          onUploaded={load}
+          defaultBucket={bucketFilter.trim() || 'attachments'}
+        />
+      )}
     </Flexbox>
   );
 }
