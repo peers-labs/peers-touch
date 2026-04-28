@@ -12,6 +12,7 @@ package application
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/infrastructure"
@@ -109,4 +110,129 @@ func (s *OSSService) SetPeerPin(ctx context.Context, peerStationID string, pinne
 		return errors.New("peer_station_id is required")
 	}
 	return s.repo.SetPeerPin(ctx, peerStationID, pinned)
+}
+
+// ---------------------------------------------------------------------------
+// Bucket lifecycle (admin)
+// ---------------------------------------------------------------------------
+
+// Visibility constants — duplicated here so we don't pull
+// `oss/db/model` into the dashboard build (same rationale as the
+// repo's hardcoded table names). Drift between these and the OSS
+// subserver's `IsKnownVisibility` is caught by the repo layer
+// receiving the value through gorm — invalid strings would either
+// be rejected by a future CHECK constraint or surface as an OSS
+// upload-time validation error.
+const (
+	visibilityPublic  = "public"
+	visibilityChat    = "chat"
+	visibilityPrivate = "private"
+)
+
+func isKnownVisibility(v string) bool {
+	switch v {
+	case visibilityPublic, visibilityChat, visibilityPrivate:
+		return true
+	}
+	return false
+}
+
+// CreateBucket validates input and delegates to the repo. We
+// reject empty fields, unknown visibilities and negative
+// quotas/TTLs at this layer so the repo can stay schema-driven.
+func (s *OSSService) CreateBucket(ctx context.Context, req domain.OSSBucketCreateRequest) (*domain.OSSBucketSummary, error) {
+	owner := strings.TrimSpace(req.OwnerActorID)
+	name := strings.TrimSpace(req.Name)
+	if owner == "" {
+		return nil, errors.New("owner_actor_id is required")
+	}
+	if name == "" {
+		return nil, errors.New("name is required")
+	}
+	if len(name) > 120 {
+		return nil, errors.New("name must be <= 120 characters")
+	}
+	vis := strings.TrimSpace(req.DefaultVisibility)
+	if vis == "" {
+		// Default to `private` — the safest fallback for an
+		// admin-created bucket whose use-case is not yet
+		// known. Operators who want public/chat must pass
+		// the value explicitly.
+		vis = visibilityPrivate
+	}
+	if !isKnownVisibility(vis) {
+		return nil, errors.New("default_visibility must be one of: public, chat, private")
+	}
+	if req.QuotaBytes < 0 {
+		return nil, errors.New("quota_bytes must be >= 0")
+	}
+	if req.TTLDays < 0 {
+		return nil, errors.New("ttl_days must be >= 0")
+	}
+	return s.repo.CreateBucket(ctx, infrastructure.BucketCreateInput{
+		OwnerActorID:      owner,
+		Name:              name,
+		DefaultVisibility: vis,
+		QuotaBytes:        req.QuotaBytes,
+		TTLDays:           req.TTLDays,
+		Description:       strings.TrimSpace(req.Description),
+	})
+}
+
+// UpdateBucket validates a partial mutate. Empty patches are
+// rejected — the dashboard should not POST a no-op patch as a
+// "save" action; clients that have nothing to change should not
+// hit this endpoint at all.
+func (s *OSSService) UpdateBucket(ctx context.Context, bucketID string, req domain.OSSBucketUpdateRequest) (*domain.OSSBucketSummary, error) {
+	if bucketID == "" {
+		return nil, errors.New("bucket id is required")
+	}
+	in := infrastructure.BucketUpdateInput{}
+	if req.DefaultVisibility != nil {
+		v := strings.TrimSpace(*req.DefaultVisibility)
+		if !isKnownVisibility(v) {
+			return nil, errors.New("default_visibility must be one of: public, chat, private")
+		}
+		in.DefaultVisibility = &v
+	}
+	if req.QuotaBytes != nil {
+		if *req.QuotaBytes < 0 {
+			return nil, errors.New("quota_bytes must be >= 0")
+		}
+		in.QuotaBytes = req.QuotaBytes
+	}
+	if req.TTLDays != nil {
+		if *req.TTLDays < 0 {
+			return nil, errors.New("ttl_days must be >= 0")
+		}
+		in.TTLDays = req.TTLDays
+	}
+	if req.Description != nil {
+		d := strings.TrimSpace(*req.Description)
+		if len(d) > 500 {
+			return nil, errors.New("description must be <= 500 characters")
+		}
+		in.Description = &d
+	}
+	if in.DefaultVisibility == nil && in.QuotaBytes == nil && in.TTLDays == nil && in.Description == nil {
+		return nil, errors.New("at least one field must be provided")
+	}
+	return s.repo.UpdateBucket(ctx, bucketID, in)
+}
+
+// DeleteBucket gates on the `force` flag exactly like the OSS
+// subserver does: non-empty buckets refuse without force; system
+// buckets refuse even with force.
+func (s *OSSService) DeleteBucket(ctx context.Context, bucketID string, force bool) error {
+	if bucketID == "" {
+		return errors.New("bucket id is required")
+	}
+	return s.repo.DeleteBucket(ctx, bucketID, force)
+}
+
+// RecordOSSAudit forwards an admin-initiated audit row into
+// `oss_audit`. Wraps the repo so handlers do not import the
+// infrastructure package directly.
+func (s *OSSService) RecordOSSAudit(ctx context.Context, evt infrastructure.OSSAuditAppend) error {
+	return s.repo.RecordOSSAudit(ctx, evt)
 }

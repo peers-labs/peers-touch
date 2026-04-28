@@ -44,6 +44,27 @@ type fakeOSSRepo struct {
 		Pinned bool
 	}
 	pinErr error
+
+	// ----- S9: bucket lifecycle hooks -----
+	createCalls  []infrastructure.BucketCreateInput
+	createReturn *domain.OSSBucketSummary
+	createErr    error
+
+	updateCalls []struct {
+		ID    string
+		Patch infrastructure.BucketUpdateInput
+	}
+	updateReturn *domain.OSSBucketSummary
+	updateErr    error
+
+	deleteCalls []struct {
+		ID    string
+		Force bool
+	}
+	deleteErr error
+
+	auditAppends []infrastructure.OSSAuditAppend
+	auditAppendErr error
 }
 
 func (f *fakeOSSRepo) ListBuckets(_ context.Context) ([]domain.OSSBucketSummary, error) {
@@ -88,6 +109,48 @@ func (f *fakeOSSRepo) SetPeerPin(_ context.Context, peerStationID string, pinned
 		Pinned bool
 	}{peerStationID, pinned})
 	return nil
+}
+
+func (f *fakeOSSRepo) CreateBucket(_ context.Context, in infrastructure.BucketCreateInput) (*domain.OSSBucketSummary, error) {
+	f.createCalls = append(f.createCalls, in)
+	if f.createErr != nil {
+		return nil, f.createErr
+	}
+	if f.createReturn != nil {
+		return f.createReturn, nil
+	}
+	return &domain.OSSBucketSummary{
+		ID: "bucket-new", Name: in.Name, OwnerActorID: in.OwnerActorID,
+		Kind: "user", DefaultVisibility: in.DefaultVisibility,
+		QuotaBytes: in.QuotaBytes, TTLDays: 0,
+	}, nil
+}
+
+func (f *fakeOSSRepo) UpdateBucket(_ context.Context, id string, in infrastructure.BucketUpdateInput) (*domain.OSSBucketSummary, error) {
+	f.updateCalls = append(f.updateCalls, struct {
+		ID    string
+		Patch infrastructure.BucketUpdateInput
+	}{id, in})
+	if f.updateErr != nil {
+		return nil, f.updateErr
+	}
+	if f.updateReturn != nil {
+		return f.updateReturn, nil
+	}
+	return &domain.OSSBucketSummary{ID: id, Name: "x", OwnerActorID: "owner"}, nil
+}
+
+func (f *fakeOSSRepo) DeleteBucket(_ context.Context, id string, force bool) error {
+	f.deleteCalls = append(f.deleteCalls, struct {
+		ID    string
+		Force bool
+	}{id, force})
+	return f.deleteErr
+}
+
+func (f *fakeOSSRepo) RecordOSSAudit(_ context.Context, evt infrastructure.OSSAuditAppend) error {
+	f.auditAppends = append(f.auditAppends, evt)
+	return f.auditAppendErr
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +268,153 @@ func TestOSSService_SetPeerPin_PropagatesNotFound(t *testing.T) {
 	err := svc.SetPeerPin(context.Background(), "peer-x", true)
 	if !errors.Is(err, infrastructure.ErrPeerNotFound) {
 		t.Fatalf("want ErrPeerNotFound, got %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// S9: bucket lifecycle (admin) — service-layer validation
+// ---------------------------------------------------------------------------
+
+func TestOSSService_CreateBucket_ValidationErrors(t *testing.T) {
+	svc := NewOSSService(&fakeOSSRepo{})
+	ctx := context.Background()
+
+	cases := []struct {
+		name string
+		req  domain.OSSBucketCreateRequest
+	}{
+		{"missing owner", domain.OSSBucketCreateRequest{Name: "x"}},
+		{"missing name", domain.OSSBucketCreateRequest{OwnerActorID: "actor"}},
+		{"unknown visibility", domain.OSSBucketCreateRequest{OwnerActorID: "a", Name: "x", DefaultVisibility: "world"}},
+		{"negative quota", domain.OSSBucketCreateRequest{OwnerActorID: "a", Name: "x", QuotaBytes: -1}},
+		{"negative ttl", domain.OSSBucketCreateRequest{OwnerActorID: "a", Name: "x", TTLDays: -7}},
+	}
+	for _, c := range cases {
+		if _, err := svc.CreateBucket(ctx, c.req); err == nil {
+			t.Errorf("%s: want validation error", c.name)
+		}
+	}
+}
+
+func TestOSSService_CreateBucket_DefaultsToPrivateVisibility(t *testing.T) {
+	repo := &fakeOSSRepo{}
+	svc := NewOSSService(repo)
+
+	if _, err := svc.CreateBucket(context.Background(), domain.OSSBucketCreateRequest{
+		OwnerActorID: "actor-a",
+		Name:         "photos",
+	}); err != nil {
+		t.Fatalf("CreateBucket: %v", err)
+	}
+	if len(repo.createCalls) != 1 {
+		t.Fatalf("repo not called")
+	}
+	if repo.createCalls[0].DefaultVisibility != "private" {
+		t.Errorf("default visibility: want private, got %q", repo.createCalls[0].DefaultVisibility)
+	}
+}
+
+func TestOSSService_CreateBucket_PropagatesRepoConflict(t *testing.T) {
+	repo := &fakeOSSRepo{createErr: infrastructure.ErrBucketExists}
+	svc := NewOSSService(repo)
+
+	_, err := svc.CreateBucket(context.Background(), domain.OSSBucketCreateRequest{
+		OwnerActorID: "actor-a", Name: "photos",
+	})
+	if !errors.Is(err, infrastructure.ErrBucketExists) {
+		t.Fatalf("want ErrBucketExists, got %v", err)
+	}
+}
+
+func TestOSSService_UpdateBucket_RejectsEmptyPatch(t *testing.T) {
+	repo := &fakeOSSRepo{}
+	svc := NewOSSService(repo)
+
+	if _, err := svc.UpdateBucket(context.Background(), "b1", domain.OSSBucketUpdateRequest{}); err == nil {
+		t.Fatalf("empty patch should be rejected")
+	}
+	if len(repo.updateCalls) != 0 {
+		t.Errorf("repo should not be called on empty patch: %+v", repo.updateCalls)
+	}
+}
+
+func TestOSSService_UpdateBucket_PassesPointersThrough(t *testing.T) {
+	repo := &fakeOSSRepo{}
+	svc := NewOSSService(repo)
+
+	vis := "chat"
+	quota := int64(2048)
+	ttl := int32(14)
+	desc := "  refreshed  "
+	if _, err := svc.UpdateBucket(context.Background(), "b1", domain.OSSBucketUpdateRequest{
+		DefaultVisibility: &vis,
+		QuotaBytes:        &quota,
+		TTLDays:           &ttl,
+		Description:       &desc,
+	}); err != nil {
+		t.Fatalf("UpdateBucket: %v", err)
+	}
+	if len(repo.updateCalls) != 1 {
+		t.Fatalf("repo call count: %d", len(repo.updateCalls))
+	}
+	got := repo.updateCalls[0].Patch
+	if got.DefaultVisibility == nil || *got.DefaultVisibility != "chat" ||
+		got.QuotaBytes == nil || *got.QuotaBytes != 2048 ||
+		got.TTLDays == nil || *got.TTLDays != 14 ||
+		got.Description == nil || *got.Description != "refreshed" { // trimmed
+		t.Errorf("patch round-trip drift: %+v", got)
+	}
+}
+
+func TestOSSService_UpdateBucket_RejectsBadVisibilityAndNegatives(t *testing.T) {
+	svc := NewOSSService(&fakeOSSRepo{})
+	ctx := context.Background()
+
+	bad := "world"
+	if _, err := svc.UpdateBucket(ctx, "b1", domain.OSSBucketUpdateRequest{DefaultVisibility: &bad}); err == nil {
+		t.Errorf("bad visibility accepted")
+	}
+	negQuota := int64(-1)
+	if _, err := svc.UpdateBucket(ctx, "b1", domain.OSSBucketUpdateRequest{QuotaBytes: &negQuota}); err == nil {
+		t.Errorf("negative quota accepted")
+	}
+	negTTL := int32(-1)
+	if _, err := svc.UpdateBucket(ctx, "b1", domain.OSSBucketUpdateRequest{TTLDays: &negTTL}); err == nil {
+		t.Errorf("negative ttl accepted")
+	}
+}
+
+func TestOSSService_DeleteBucket_PassThroughForce(t *testing.T) {
+	repo := &fakeOSSRepo{}
+	svc := NewOSSService(repo)
+
+	if err := svc.DeleteBucket(context.Background(), "b1", true); err != nil {
+		t.Fatalf("DeleteBucket: %v", err)
+	}
+	if len(repo.deleteCalls) != 1 || repo.deleteCalls[0].ID != "b1" || !repo.deleteCalls[0].Force {
+		t.Errorf("delete pass-through: %+v", repo.deleteCalls)
+	}
+}
+
+func TestOSSService_DeleteBucket_RequiresID(t *testing.T) {
+	svc := NewOSSService(&fakeOSSRepo{})
+	if err := svc.DeleteBucket(context.Background(), "", false); err == nil {
+		t.Fatalf("empty id should error")
+	}
+}
+
+func TestOSSService_RecordOSSAudit_PassThrough(t *testing.T) {
+	repo := &fakeOSSRepo{}
+	svc := NewOSSService(repo)
+
+	evt := infrastructure.OSSAuditAppend{
+		Action: "bucket_create", BucketID: "b-1", DashboardActorID: "42", Outcome: "ok",
+	}
+	if err := svc.RecordOSSAudit(context.Background(), evt); err != nil {
+		t.Fatalf("RecordOSSAudit: %v", err)
+	}
+	if len(repo.auditAppends) != 1 || repo.auditAppends[0].Action != "bucket_create" {
+		t.Errorf("audit append not propagated: %+v", repo.auditAppends)
 	}
 }
 

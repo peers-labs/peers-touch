@@ -16,9 +16,13 @@ package infrastructure
 import (
 	"context"
 	"errors"
+	"math/rand"
 	"sort"
+	"strings"
+	"sync"
 	"time"
 
+	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
@@ -40,10 +44,17 @@ const (
 	metaKeyFedKID = "federation_kid"
 )
 
-// OSSRepository is the dashboard-side, read-mostly view of the OSS
-// subsystem. The single mutating method is SetPeerPin — operator
-// trust action, not a data-plane write — so the rest of the
-// surface is pure SELECT.
+// OSSRepository is the dashboard-side view of the OSS subsystem.
+// Reads dominate the surface; mutating methods are intentionally
+// few and audit-bearing:
+//
+//   - SetPeerPin — trust commitment for federation peers.
+//   - CreateBucket / UpdateBucket / DeleteBucket — operator-driven
+//     bucket lifecycle. System buckets are NOT created or deleted
+//     through this surface (see CreateBucket for rationale).
+//   - RecordOSSAudit — append-only emit into oss_audit, used by
+//     the bucket / object mutate paths so the change is captured
+//     in the OSS audit log alongside the dashboard admin audit.
 type OSSRepository interface {
 	ListBuckets(ctx context.Context) ([]domain.OSSBucketSummary, error)
 	GetBucket(ctx context.Context, bucketID string) (*domain.OSSBucketSummary, error)
@@ -54,6 +65,36 @@ type OSSRepository interface {
 	GetFederationLocal(ctx context.Context) (*domain.OSSFederationLocalKey, error)
 	ListFederationPeers(ctx context.Context) ([]domain.OSSFederationPeer, error)
 	SetPeerPin(ctx context.Context, peerStationID string, pinned bool) error
+
+	// CreateBucket inserts a new `user`-kind bucket. The
+	// dashboard does NOT expose a Kind knob — system buckets
+	// are auto-provisioned by the OSS subserver (see
+	// `oss/db/repo/bucket_repo.EnsureSystem`); letting an
+	// operator forge `kind=system` would give them a way to
+	// shadow a canonical bucket spec.
+	//
+	// Returns ErrBucketExists when (owner, name) collides.
+	CreateBucket(ctx context.Context, in BucketCreateInput) (*domain.OSSBucketSummary, error)
+
+	// UpdateBucket applies a partial mutate. Each non-nil pointer
+	// is set; nil pointers are left untouched. Returns
+	// ErrBucketNotFound when the id is unknown.
+	UpdateBucket(ctx context.Context, bucketID string, in BucketUpdateInput) (*domain.OSSBucketSummary, error)
+
+	// DeleteBucket soft-deletes the bucket via gorm.DeletedAt.
+	// Refuses non-empty buckets unless `force = true` — system
+	// buckets are NEVER deletable, even with force, because the
+	// upload path lazy-recreates them on next use which would
+	// produce a confusing audit trail.
+	DeleteBucket(ctx context.Context, bucketID string, force bool) error
+
+	// RecordOSSAudit appends one row to oss_audit. Used by the
+	// dashboard mutate handlers so admin-driven changes show up
+	// in the OSS-side audit log with `dashboard_actor_id` set.
+	// Errors are returned (caller logs) but never surface to the
+	// user — auditing must not turn a successful mutation into
+	// a 500.
+	RecordOSSAudit(ctx context.Context, evt OSSAuditAppend) error
 }
 
 // OSSObjectQuery is the filter envelope for ListObjects.
@@ -83,6 +124,57 @@ type OSSAuditQuery struct {
 // peer_station_id has never federated. The handler maps it to 404.
 var ErrPeerNotFound = errors.New("dashboard: oss: peer not found")
 
+// Bucket-mutate errors. Mirror the OSS subserver's error set
+// (oss/db/repo/bucket_repo.go) so dashboard callers get the same
+// failure categories without having to import the OSS package.
+var (
+	ErrBucketNotFound  = errors.New("dashboard: oss: bucket not found")
+	ErrBucketExists    = errors.New("dashboard: oss: bucket already exists")
+	ErrBucketNotEmpty  = errors.New("dashboard: oss: bucket not empty (use force=true)")
+	ErrBucketSystem    = errors.New("dashboard: oss: system buckets cannot be mutated")
+	ErrBucketBadInput  = errors.New("dashboard: oss: bucket input invalid")
+)
+
+// BucketCreateInput is the repo-side envelope for CreateBucket. The
+// service layer is responsible for filling sensible defaults; the
+// repo only writes what it is given.
+type BucketCreateInput struct {
+	OwnerActorID      string
+	Name              string
+	DefaultVisibility string
+	QuotaBytes        int64
+	TTLDays           int32
+	Description       string
+}
+
+// BucketUpdateInput is the repo-side envelope for UpdateBucket.
+// Pointer-vs-nil is the explicit "set vs leave alone" signal —
+// callers cannot use the zero value as a sentinel because zero is
+// a legitimate target for several columns (TTLDays=0 = no TTL,
+// Description="" = clear description).
+type BucketUpdateInput struct {
+	DefaultVisibility *string
+	QuotaBytes        *int64
+	TTLDays           *int32
+	Description       *string
+}
+
+// OSSAuditAppend is the value envelope for RecordOSSAudit. Mirrors
+// the columns the dashboard cares about; the repo fills `ts` and
+// any zero-valued primary key.
+type OSSAuditAppend struct {
+	Action           string
+	BucketID         string
+	FileKey          string
+	FileID           string
+	ActorID          string // file owner
+	DashboardActorID string // operator who triggered the change
+	SizeBytes        int64
+	Outcome          string // "ok", "denied", "not_found", "error"
+	Reason           string
+	RequestID        string
+}
+
 type ossRepository struct {
 	db *gorm.DB
 }
@@ -107,7 +199,8 @@ func (r *ossRepository) ListBuckets(ctx context.Context) ([]domain.OSSBucketSumm
 	}
 	var rows []domain.OSSBucketSummary
 	err := r.db.WithContext(ctx).Table(tblOSSBuckets).
-		Select("id, name, owner_actor_id, kind, system_key, default_visibility, quota_bytes, used_bytes, created_at, updated_at").
+		Select("id, name, owner_actor_id, kind, system_key, default_visibility, quota_bytes, used_bytes, ttl_days, description, created_at, updated_at").
+		Where("deleted_at IS NULL").
 		Order("created_at ASC").
 		Find(&rows).Error
 	if err != nil {
@@ -137,8 +230,8 @@ func (r *ossRepository) GetBucket(ctx context.Context, bucketID string) (*domain
 	}
 	var row domain.OSSBucketSummary
 	err := r.db.WithContext(ctx).Table(tblOSSBuckets).
-		Select("id, name, owner_actor_id, kind, system_key, default_visibility, quota_bytes, used_bytes, created_at, updated_at").
-		Where("id = ?", bucketID).
+		Select("id, name, owner_actor_id, kind, system_key, default_visibility, quota_bytes, used_bytes, ttl_days, description, created_at, updated_at").
+		Where("id = ? AND deleted_at IS NULL", bucketID).
 		First(&row).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -415,4 +508,238 @@ func (r *ossRepository) SetPeerPin(ctx context.Context, peerStationID string, pi
 		return ErrPeerNotFound
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Bucket lifecycle (admin)
+// ---------------------------------------------------------------------------
+
+const (
+	bucketKindUser   = "user"
+	bucketKindSystem = "system"
+)
+
+// bucketRow is the on-disk shape we read/write through gorm. We
+// duplicate the OSS subserver's `Bucket` struct here (rather than
+// importing it) so the dashboard module stays decoupled from the
+// OSS subserver's internal types — see the package doc-comment on
+// `oss_repo.go`.
+type bucketRow struct {
+	ID                string         `gorm:"primaryKey;column:id"`
+	Name              string         `gorm:"column:name"`
+	OwnerActorID      string         `gorm:"column:owner_actor_id"`
+	Kind              string         `gorm:"column:kind"`
+	SystemKey         string         `gorm:"column:system_key"`
+	DefaultVisibility string         `gorm:"column:default_visibility"`
+	QuotaBytes        int64          `gorm:"column:quota_bytes"`
+	UsedBytes         int64          `gorm:"column:used_bytes"`
+	ObjectCount       int64          `gorm:"column:object_count"`
+	TTLDays           int32          `gorm:"column:ttl_days"`
+	Description       string         `gorm:"column:description"`
+	CreatedAt         time.Time      `gorm:"column:created_at"`
+	UpdatedAt         time.Time      `gorm:"column:updated_at"`
+	DeletedAt         gorm.DeletedAt `gorm:"column:deleted_at;index"`
+}
+
+func (bucketRow) TableName() string { return tblOSSBuckets }
+
+func (r *ossRepository) CreateBucket(ctx context.Context, in BucketCreateInput) (*domain.OSSBucketSummary, error) {
+	if r.db == nil {
+		return nil, ErrBucketBadInput
+	}
+	owner := strings.TrimSpace(in.OwnerActorID)
+	name := strings.TrimSpace(in.Name)
+	if owner == "" || name == "" {
+		return nil, ErrBucketBadInput
+	}
+	if !r.db.Migrator().HasTable(tblOSSBuckets) {
+		// Schema not bootstrapped; refuse rather than autocreate
+		// because we'd be racing the OSS subserver's own
+		// `Bootstrap` migration.
+		return nil, ErrBucketBadInput
+	}
+	now := time.Now()
+	row := bucketRow{
+		ID:                newDashboardULID(now),
+		Name:              name,
+		OwnerActorID:      owner,
+		Kind:              bucketKindUser,
+		DefaultVisibility: in.DefaultVisibility,
+		QuotaBytes:        in.QuotaBytes,
+		TTLDays:           in.TTLDays,
+		Description:       in.Description,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	if err := r.db.WithContext(ctx).Create(&row).Error; err != nil {
+		if isUniqueViolationDashboard(err) {
+			return nil, ErrBucketExists
+		}
+		return nil, err
+	}
+	return r.GetBucket(ctx, row.ID)
+}
+
+func (r *ossRepository) UpdateBucket(ctx context.Context, bucketID string, in BucketUpdateInput) (*domain.OSSBucketSummary, error) {
+	if r.db == nil || bucketID == "" {
+		return nil, ErrBucketNotFound
+	}
+	if !r.db.Migrator().HasTable(tblOSSBuckets) {
+		return nil, ErrBucketNotFound
+	}
+
+	updates := map[string]any{"updated_at": time.Now()}
+	if in.DefaultVisibility != nil {
+		updates["default_visibility"] = *in.DefaultVisibility
+	}
+	if in.QuotaBytes != nil {
+		updates["quota_bytes"] = *in.QuotaBytes
+	}
+	if in.TTLDays != nil {
+		updates["ttl_days"] = *in.TTLDays
+	}
+	if in.Description != nil {
+		updates["description"] = *in.Description
+	}
+	// updated_at alone is a no-op patch — refuse so callers can
+	// catch "did you forget to set anything?" at the boundary.
+	if len(updates) == 1 {
+		return nil, ErrBucketBadInput
+	}
+
+	res := r.db.WithContext(ctx).Table(tblOSSBuckets).
+		Where("id = ?", bucketID).
+		Updates(updates)
+	if res.Error != nil {
+		return nil, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return nil, ErrBucketNotFound
+	}
+	return r.GetBucket(ctx, bucketID)
+}
+
+func (r *ossRepository) DeleteBucket(ctx context.Context, bucketID string, force bool) error {
+	if r.db == nil || bucketID == "" {
+		return ErrBucketNotFound
+	}
+	if !r.db.Migrator().HasTable(tblOSSBuckets) {
+		return ErrBucketNotFound
+	}
+	var row bucketRow
+	if err := r.db.WithContext(ctx).Where("id = ?", bucketID).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrBucketNotFound
+		}
+		return err
+	}
+	if row.Kind == bucketKindSystem {
+		return ErrBucketSystem
+	}
+	if !force && row.ObjectCount > 0 {
+		return ErrBucketNotEmpty
+	}
+	res := r.db.WithContext(ctx).Where("id = ?", bucketID).Delete(&bucketRow{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrBucketNotFound
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// OSS audit append (admin actions)
+// ---------------------------------------------------------------------------
+
+// auditRow mirrors ossmodel.Audit's column shape. Same
+// duplicate-rather-than-import rationale as bucketRow.
+type auditRow struct {
+	ID               uint64    `gorm:"primaryKey;autoIncrement;column:id"`
+	TS               time.Time `gorm:"column:ts;not null"`
+	Action           string    `gorm:"column:action"`
+	FileKey          string    `gorm:"column:file_key"`
+	BucketID         string    `gorm:"column:bucket_id"`
+	ActorID          string    `gorm:"column:actor_id"`
+	PeerStationID    string    `gorm:"column:peer_station_id"`
+	SizeBytes        int64     `gorm:"column:size_bytes"`
+	Outcome          string    `gorm:"column:outcome"`
+	Reason           string    `gorm:"column:reason"`
+	FileID           string    `gorm:"column:file_id"`
+	DashboardActorID string    `gorm:"column:dashboard_actor_id"`
+	RequestID        string    `gorm:"column:request_id"`
+}
+
+func (auditRow) TableName() string { return tblOSSAudit }
+
+func (r *ossRepository) RecordOSSAudit(ctx context.Context, evt OSSAuditAppend) error {
+	if r.db == nil {
+		return nil
+	}
+	if !r.db.Migrator().HasTable(tblOSSAudit) {
+		return nil
+	}
+	row := auditRow{
+		TS:               time.Now(),
+		Action:           evt.Action,
+		FileKey:          evt.FileKey,
+		BucketID:         evt.BucketID,
+		ActorID:          evt.ActorID,
+		FileID:           evt.FileID,
+		DashboardActorID: evt.DashboardActorID,
+		SizeBytes:        evt.SizeBytes,
+		Outcome:          evt.Outcome,
+		Reason:           evt.Reason,
+		RequestID:        evt.RequestID,
+	}
+	return r.db.WithContext(ctx).Create(&row).Error
+}
+
+// ---------------------------------------------------------------------------
+// Local helpers — kept here (not in a shared util) so the dashboard
+// module never imports oss/db/repo. The behaviour matches the OSS
+// subserver's util.go closely enough for our purposes.
+// ---------------------------------------------------------------------------
+
+var (
+	dashULIDEntropy   ulid.MonotonicReader
+	dashULIDEntropyMu sync.Mutex
+	dashULIDOnce      sync.Once
+)
+
+func newDashboardULID(now time.Time) string {
+	dashULIDOnce.Do(func() {
+		src := rand.New(rand.NewSource(time.Now().UnixNano())) //nolint:gosec
+		dashULIDEntropy = ulid.Monotonic(src, 0)
+	})
+	dashULIDEntropyMu.Lock()
+	defer dashULIDEntropyMu.Unlock()
+	id, err := ulid.New(ulid.Timestamp(now), dashULIDEntropy)
+	if err != nil {
+		return ulid.Make().String()
+	}
+	return id.String()
+}
+
+// isUniqueViolationDashboard duplicates oss/db/repo.isUniqueViolation
+// because the dashboard module deliberately does not import that
+// package. Matches the same pgconn / sqlite forms.
+func isUniqueViolationDashboard(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Postgres returns the `pgconn.PgError` type; we cannot
+	// import the package without pulling pgx into the dashboard
+	// build. Instead we string-match SQLSTATE 23505 in the
+	// formatted error — the production deployment surfaces it
+	// as part of the message.
+	msg := err.Error()
+	if strings.Contains(msg, "23505") {
+		return true
+	}
+	if strings.Contains(msg, "UNIQUE constraint failed") {
+		return true
+	}
+	return false
 }

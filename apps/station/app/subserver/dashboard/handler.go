@@ -79,8 +79,9 @@ const (
 	routeNodes       = "/dashboard/api/nodes"
 
 	// OSS management plane. The dashboard owns the read paths
-	// against the OSS subserver's tables; mutating endpoints are
-	// limited to operator trust actions (peer key pin/unpin).
+	// against the OSS subserver's tables; mutating endpoints
+	// cover bucket lifecycle (create / patch / delete) plus the
+	// existing operator trust actions (peer key pin / unpin).
 	routeOSSBuckets        = "/dashboard/api/oss/buckets"
 	routeOSSBucketDetail   = "/dashboard/api/oss/buckets/:id"
 	routeOSSBucketObjects  = "/dashboard/api/oss/buckets/:id/objects"
@@ -190,8 +191,14 @@ func (h *dashboardHandler) handlers() []server.Handler {
 		// -- OSS management plane --
 		server.NewTypedHandler("dashboard-oss-buckets", routeOSSBuckets, server.GET,
 			h.handleOSSListBuckets, auth),
+		server.NewTypedHandler("dashboard-oss-bucket-create", routeOSSBuckets, server.POST,
+			h.handleOSSCreateBucket, auth),
 		server.NewTypedHandler("dashboard-oss-bucket-detail", routeOSSBucketDetail, server.GET,
 			h.handleOSSGetBucket, auth),
+		server.NewTypedHandler("dashboard-oss-bucket-update", routeOSSBucketDetail, server.PATCH,
+			h.handleOSSUpdateBucket, auth),
+		server.NewTypedHandler("dashboard-oss-bucket-delete", routeOSSBucketDetail, server.DELETE,
+			h.handleOSSDeleteBucket, auth),
 		server.NewTypedHandler("dashboard-oss-bucket-objects", routeOSSBucketObjects, server.GET,
 			h.handleOSSListBucketObjects, auth),
 		server.NewTypedHandler("dashboard-oss-objects", routeOSSObjects, server.GET,
@@ -786,6 +793,182 @@ func (h *dashboardHandler) handleOSSGetBucket(ctx context.Context, _ *domain.Emp
 		return nil, server.NotFound("bucket not found")
 	}
 	return row, nil
+}
+
+// handleOSSCreateBucket — POST /dashboard/api/oss/buckets
+//
+// Operator-driven bucket creation. The dashboard NEVER creates
+// `system`-kind buckets through this endpoint (those are auto-
+// provisioned by the OSS subserver on first use); the service
+// layer hardcodes `kind = user`.
+//
+// Audit emission is deliberate and dual:
+//   - `oss_audit` row with `action = bucket_create` and the
+//     operator's id stamped in `dashboard_actor_id` so the OSS
+//     audit log captures the structural change with the right
+//     attribution.
+//   - dashboard admin audit so the operator activity stream shows
+//     the action under the admin's name (matches the existing
+//     pattern used by setPeerPin, etc.).
+func (h *dashboardHandler) handleOSSCreateBucket(ctx context.Context, req *domain.OSSBucketCreateRequest) (*domain.OSSBucketSummary, error) {
+	if h.sub.ossSvc == nil {
+		return nil, serviceUnavailable("oss service unavailable")
+	}
+	if req == nil {
+		return nil, server.BadRequest("request body is required")
+	}
+	claims := getClaims(ctx)
+	row, err := h.sub.ossSvc.CreateBucket(ctx, *req)
+	if err != nil {
+		switch {
+		case errors.Is(err, infrastructure.ErrBucketExists):
+			h.recordOSSBucketAudit(ctx, claims, "bucket_create", "", req.OwnerActorID,
+				"denied", "already_exists")
+			return nil, server.Conflict("bucket already exists")
+		case errors.Is(err, infrastructure.ErrBucketBadInput):
+			return nil, server.BadRequest(err.Error())
+		}
+		// Service-layer validation errors (visibility, name, …)
+		// surface as plain `errors.New("…")` strings; treat them
+		// as 400 so admins see the precise complaint rather than
+		// a 500 mystery.
+		if strings.HasPrefix(err.Error(), "owner_actor_id") ||
+			strings.HasPrefix(err.Error(), "name") ||
+			strings.HasPrefix(err.Error(), "default_visibility") ||
+			strings.HasPrefix(err.Error(), "quota_bytes") ||
+			strings.HasPrefix(err.Error(), "ttl_days") ||
+			strings.HasPrefix(err.Error(), "description") {
+			return nil, server.BadRequest(err.Error())
+		}
+		log.Errorf(ctx, "[dashboard] oss create bucket error: %v", err)
+		return nil, server.InternalError("failed to create bucket")
+	}
+	h.recordOSSBucketAudit(ctx, claims, "bucket_create", row.ID, row.OwnerActorID, "ok", "")
+	h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username, "oss_bucket_create", "oss_bucket",
+		"bucket_id="+row.ID+" name="+row.Name, getClientIP(ctx), getUserAgent(ctx))
+	return row, nil
+}
+
+// handleOSSUpdateBucket — PATCH /dashboard/api/oss/buckets/:id
+//
+// Partial-mutate of a bucket. The repo enforces "at least one
+// field changed"; the service rejects unknown visibilities and
+// negative numerics. Empty patches return 400 so the UI cannot
+// silently no-op a "save" action.
+func (h *dashboardHandler) handleOSSUpdateBucket(ctx context.Context, req *domain.OSSBucketUpdateRequest) (*domain.OSSBucketSummary, error) {
+	if h.sub.ossSvc == nil {
+		return nil, serviceUnavailable("oss service unavailable")
+	}
+	id := pathParam(ctx, "id")
+	if id == "" {
+		return nil, server.BadRequest("bucket id is required")
+	}
+	if req == nil {
+		return nil, server.BadRequest("request body is required")
+	}
+	claims := getClaims(ctx)
+	row, err := h.sub.ossSvc.UpdateBucket(ctx, id, *req)
+	if err != nil {
+		switch {
+		case errors.Is(err, infrastructure.ErrBucketNotFound):
+			return nil, server.NotFound("bucket not found")
+		case errors.Is(err, infrastructure.ErrBucketBadInput):
+			return nil, server.BadRequest(err.Error())
+		}
+		if strings.HasPrefix(err.Error(), "default_visibility") ||
+			strings.HasPrefix(err.Error(), "quota_bytes") ||
+			strings.HasPrefix(err.Error(), "ttl_days") ||
+			strings.HasPrefix(err.Error(), "description") ||
+			strings.HasPrefix(err.Error(), "at least one field") ||
+			strings.HasPrefix(err.Error(), "bucket id") {
+			return nil, server.BadRequest(err.Error())
+		}
+		log.Errorf(ctx, "[dashboard] oss update bucket error: %v", err)
+		return nil, server.InternalError("failed to update bucket")
+	}
+	h.recordOSSBucketAudit(ctx, claims, "bucket_update", row.ID, row.OwnerActorID, "ok", "")
+	h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username, "oss_bucket_update", "oss_bucket",
+		"bucket_id="+row.ID, getClientIP(ctx), getUserAgent(ctx))
+	return row, nil
+}
+
+// handleOSSDeleteBucket — DELETE /dashboard/api/oss/buckets/:id
+//
+// Soft-deletes via `gorm.DeletedAt`. `?force=true` skips the
+// "non-empty bucket" guard but NEVER overrides the system-bucket
+// guard — the OSS upload path lazy-recreates system buckets, so
+// hard-deleting one would produce a confusing audit history.
+func (h *dashboardHandler) handleOSSDeleteBucket(ctx context.Context, _ *domain.EmptyRequest) (*domain.MessageResponse, error) {
+	if h.sub.ossSvc == nil {
+		return nil, serviceUnavailable("oss service unavailable")
+	}
+	id := pathParam(ctx, "id")
+	if id == "" {
+		return nil, server.BadRequest("bucket id is required")
+	}
+	force := strings.EqualFold(strings.TrimSpace(queryParam(ctx, "force")), "true")
+	claims := getClaims(ctx)
+
+	// Fetch first so we can attribute the audit row to the right
+	// owner even after the row vanishes; cheap (single PK lookup).
+	row, _ := h.sub.ossSvc.GetBucket(ctx, id)
+
+	if err := h.sub.ossSvc.DeleteBucket(ctx, id, force); err != nil {
+		switch {
+		case errors.Is(err, infrastructure.ErrBucketNotFound):
+			return nil, server.NotFound("bucket not found")
+		case errors.Is(err, infrastructure.ErrBucketNotEmpty):
+			h.recordOSSBucketAudit(ctx, claims, "bucket_delete", id, ownerID(row),
+				"denied", "not_empty")
+			return nil, server.Conflict("bucket not empty (use ?force=true)")
+		case errors.Is(err, infrastructure.ErrBucketSystem):
+			h.recordOSSBucketAudit(ctx, claims, "bucket_delete", id, ownerID(row),
+				"denied", "system_bucket")
+			return nil, server.Forbidden("system buckets cannot be deleted")
+		}
+		log.Errorf(ctx, "[dashboard] oss delete bucket error: %v", err)
+		return nil, server.InternalError("failed to delete bucket")
+	}
+	h.recordOSSBucketAudit(ctx, claims, "bucket_delete", id, ownerID(row), "ok", "")
+	h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username, "oss_bucket_delete", "oss_bucket",
+		"bucket_id="+id+" force="+strconv.FormatBool(force), getClientIP(ctx), getUserAgent(ctx))
+	return &domain.MessageResponse{Message: "bucket deleted"}, nil
+}
+
+// recordOSSBucketAudit emits one row into oss_audit for a bucket
+// lifecycle event. Failures are logged-not-returned so a
+// downstream audit outage cannot turn a successful mutation into
+// a 500.
+func (h *dashboardHandler) recordOSSBucketAudit(ctx context.Context, claims *domain.DashboardClaims,
+	action, bucketID, ownerActorID, outcome, reason string) {
+	if h.sub.ossSvc == nil {
+		return
+	}
+	dashID := ""
+	if claims != nil {
+		dashID = strconv.FormatUint(claims.AdminID, 10)
+	}
+	if err := h.sub.ossSvc.RecordOSSAudit(ctx, infrastructure.OSSAuditAppend{
+		Action:           action,
+		BucketID:         bucketID,
+		ActorID:          ownerActorID,
+		DashboardActorID: dashID,
+		Outcome:          outcome,
+		Reason:           reason,
+	}); err != nil {
+		log.Warnf(ctx, "[dashboard] oss_audit append failed (action=%s bucket=%s): %v",
+			action, bucketID, err)
+	}
+}
+
+// ownerID is a tiny null-safe accessor so the audit recorder can
+// attribute "delete on missing bucket" to the empty owner without
+// dereferencing a nil pointer.
+func ownerID(b *domain.OSSBucketSummary) string {
+	if b == nil {
+		return ""
+	}
+	return b.OwnerActorID
 }
 
 // handleOSSListBucketObjects — GET /dashboard/api/oss/buckets/:id/objects
