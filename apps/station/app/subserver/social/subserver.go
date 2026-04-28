@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
-	"github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
@@ -13,8 +12,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
-	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	touch "github.com/peers-labs/peers-touch/station/frame/touch"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
 type subServer struct {
@@ -26,51 +25,57 @@ type subServer struct {
 	jwtWrapper    server.Wrapper
 
 	// Application services
-	postSvc         *application.PostService
+	momentSvc       *application.MomentService
 	commentSvc      *application.CommentService
-	relationshipSvc *application.RelationshipService
+	reactionSvc     *application.ReactionService
+	circleSvc       *application.CircleService
 	timelineSvc     *application.TimelineService
+	relationshipSvc *application.RelationshipService
 }
 
-func NewSocialSubServer(opts ...option.Option) server.Subserver {
+func NewSocialSubServer(_ ...option.Option) server.Subserver {
 	return &subServer{status: server.StatusStopped}
 }
 
-func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
+func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.status = server.StatusStarting
 
-	// Initialize wrappers
 	s.commonWrapper = touch.CommonAccessControlWrapper(model.RouteNameSocial)
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 	s.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
 
-	// Get database connection
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
 		return err
 	}
 
-	// Create infrastructure repositories
-	postRepo := infrastructure.NewPostRepository(rds)
-	postContentRepo := infrastructure.NewPostContentRepository(rds)
-	followRepo := infrastructure.NewFollowRepository(rds)
+	// Cross-subserver contracts. P1 wires the no-op default for both
+	// — the social subserver compiles and runs end-to-end without
+	// requiring chat / actor surfaces to ratify their lookup APIs
+	// first. P3 swaps in real implementations.
+	resolver := application.NewNoopActorResolver()
+	groups := application.NewNoopGroupMembershipChecker()
 
-	// Create domain converter
-	postConverter := domain.NewPostConverter()
+	repos := infrastructure.NewRepos(rds, resolver.ResolveID)
 
-	// Create application services
-	s.postSvc = application.NewPostService(rds, postRepo, postContentRepo, postConverter)
-	s.commentSvc = application.NewCommentService(rds)
-	s.relationshipSvc = application.NewRelationshipService(followRepo)
-	s.timelineSvc = application.NewTimelineService(postRepo, postConverter)
+	// Reaction service has no inter-service dependency; build first
+	// so the moment service can hold a pointer for hydration.
+	s.reactionSvc = application.NewReactionService(repos)
 
+	s.momentSvc = application.NewMomentService(rds, repos, resolver, groups, s.reactionSvc)
+	s.commentSvc = application.NewCommentService(repos, s.momentSvc)
+	s.circleSvc = application.NewCircleService(repos)
+	s.timelineSvc = application.NewTimelineService(repos, s.momentSvc, resolver, groups)
+	s.relationshipSvc = application.NewRelationshipService(repos.Follows)
+
+	log.Warn(ctx, "[social] CUSTOM_*/CIRCLE/GROUP audiences degrade until P3 wires real ActorResolver + GroupMembershipChecker")
 	log.Infof(ctx, "[social] subserver initialized")
 	return nil
 }
 
-func (s *subServer) Start(ctx context.Context, opts ...option.Option) error {
+func (s *subServer) Start(ctx context.Context, _ ...option.Option) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.status = server.StatusRunning
@@ -86,9 +91,7 @@ func (s *subServer) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (s *subServer) Name() string               { return "social" }
-func (s *subServer) Type() server.SubserverType { return server.SubserverTypeHTTP }
-func (s *subServer) Address() server.SubserverAddress {
-	return server.SubserverAddress{}
-}
-func (s *subServer) Status() server.Status { return s.status }
+func (s *subServer) Name() string                     { return "social" }
+func (s *subServer) Type() server.SubserverType       { return server.SubserverTypeHTTP }
+func (s *subServer) Address() server.SubserverAddress { return server.SubserverAddress{} }
+func (s *subServer) Status() server.Status            { return s.status }
