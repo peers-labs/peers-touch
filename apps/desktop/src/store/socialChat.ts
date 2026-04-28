@@ -4,7 +4,21 @@ import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { api, type ChatAttachmentInput } from '../services/desktop_api';
 import { FriendMessageStatus, type FriendChatSession, type FriendChatMessage } from '../gen/proto/domain/chat/friend_chat_pb';
 import type { Group, GroupMessage, GroupMember } from '../gen/proto/domain/chat/group_chat_pb';
+import {
+  ensureSkdmDistributed,
+  encryptForGroup,
+  decryptFromGroup,
+  handleInboundSkdm,
+  MissingSkdmError,
+  FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION,
+} from '../modules/identity/groupSenderKeys';
 import { log } from '../utils/logger';
+
+function bytesToB64(bytes: Uint8Array): string {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
 interface FriendRequestData {
   id: string;
   senderId: string;
@@ -615,7 +629,62 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       } else {
         data = await api.groupChatListMessages(ulid);
       }
-      const msgs = data?.messages || [];
+      let msgs = data?.messages || [];
+      // Friend-chat type=50 (FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION)
+      // is a control type carrying a Sender-Keys SKDM. We MUST NOT
+      // render these in the visible chat history -- they're a side
+      // channel for group E2EE bootstrap. Route the body to the SKDM
+      // consumer (best-effort, fire-and-forget) and drop the row from
+      // the displayed list. The fan-out is per-load, but
+      // cryptoGroupSkConsumeSkdm is idempotent (chain row keyed on
+      // primary key) so repeated processing of the same SKDM after a
+      // re-render is safe.
+      if (activeTab === 'friend') {
+        const fmsgs = msgs as FriendChatMessage[];
+        const myDid = get().currentUserDid;
+        for (const m of fmsgs) {
+          if (m.type !== FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION) continue;
+          if (myDid && m.senderDid === myDid) continue; // ignore our own echo
+          if (!m.content) continue;
+          // Fire-and-forget: handleInboundSkdm logs its own errors and
+          // never rejects (so a single bad SKDM cannot poison the load).
+          handleInboundSkdm(m.senderDid, m.content).catch((err) =>
+            log.warn('socialChat', 'handleInboundSkdm failed', err),
+          );
+        }
+        msgs = fmsgs.filter((m) => m.type !== FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION);
+      } else {
+        // Group chat: every non-recalled message body lives in
+        // `encrypted_payload` (Sender Keys ciphertext). Decrypt
+        // serially per-message and replace `content` with the
+        // plaintext so the renderer (which is content-driven) keeps
+        // working. Failures fall back to a "Decrypting…" placeholder
+        // -- usually means the SKDM hasn't arrived yet, in which
+        // case the next loadMessages pass after the SKDM lands will
+        // backfill. We do NOT silently drop the row; a missing
+        // SKDM should be visible to the user, not invisible.
+        const gmsgs = msgs as GroupMessage[];
+        const decoded: GroupMessage[] = [];
+        for (const m of gmsgs) {
+          if (m.recalled || !m.encryptedPayload || m.encryptedPayload.byteLength === 0) {
+            decoded.push(m);
+            continue;
+          }
+          try {
+            const payloadB64 = bytesToB64(m.encryptedPayload);
+            const out = await decryptFromGroup(ulid, payloadB64);
+            decoded.push({ ...m, content: out.plaintext } as GroupMessage);
+          } catch (err) {
+            if (err instanceof MissingSkdmError) {
+              decoded.push({ ...m, content: '[Waiting for sender key…]' } as GroupMessage);
+            } else {
+              log.warn('socialChat', 'group decrypt failed', err);
+              decoded.push({ ...m, content: '[Decrypt failed]' } as GroupMessage);
+            }
+          }
+        }
+        msgs = decoded;
+      }
       set((state) => ({
         messages: { ...state.messages, [ulid]: msgs as (FriendChatMessage | GroupMessage)[] },
         messageHasMore: {
@@ -729,13 +798,55 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   },
 
   sendGroupMessage: async (groupUlid, content, type, replyToUlid, _attachments) => {
+    // Group chat is end-to-end encrypted via Sender Keys
+    // (see peers-touch/docs/architecture/encryption/group-sender-keys.md).
+    // The send path is:
+    //   1. ensureSkdmDistributed -> ship our SKDM to every member
+    //      who hasn't received it yet, over the per-pair friend-chat
+    //      E2EE envelope (idempotent on repeat sends).
+    //   2. encryptForGroup -> wrap the plaintext as a
+    //      `GroupCiphertext` and base64 the bytes.
+    //   3. groupChatSendMessage -> Station sees ONLY the ciphertext
+    //      bytes; `content` is forced to "" by the Rust layer so a
+    //      buggy caller cannot smuggle plaintext alongside ciphertext.
+    //
+    // Any failure aborts the whole send: a chat that "looks sent"
+    // but reaches members in plaintext would be a security regression
+    // worse than just failing visibly.
+    const did = get().currentUserDid ?? '';
+    if (!did) {
+      throw new Error('No active actor; cannot send group message');
+    }
     try {
-      const sendContent = content;
-
-      // Group chat currently uses Station as the sole transport; attachments are not wired through the desktop bridge yet.
-      await api.groupChatSendMessage(groupUlid, sendContent, type, replyToUlid);
+      // Members from local cache when available; otherwise fetch
+      // fresh. The list is small (<=500) and member churn is rare
+      // so a single fetch per send is acceptable.
+      let members = get().groupMembers[groupUlid];
+      if (!members || members.length === 0) {
+        try {
+          const data = await api.groupChatGetMembers(groupUlid);
+          members = (data?.members || []) as GroupMember[];
+          set((state) => ({
+            groupMembers: { ...state.groupMembers, [groupUlid]: members! },
+          }));
+        } catch (err) {
+          log.warn('socialChat', 'sendGroupMessage: loadGroupMembers failed', err);
+          members = [];
+        }
+      }
+      const memberDids = members.map((m) => m.actorDid).filter((d): d is string => !!d);
+      await ensureSkdmDistributed(did, groupUlid, memberDids);
+      const encryptedPayloadB64 = await encryptForGroup(groupUlid, content);
+      await api.groupChatSendMessage(
+        groupUlid,
+        '',
+        type,
+        replyToUlid,
+        undefined,
+        undefined,
+        encryptedPayloadB64,
+      );
       await get().loadMessages(groupUlid, 'group');
-      const did = get().currentUserDid ?? '';
       set((state) => ({
         lastPreviews: {
           ...state.lastPreviews,

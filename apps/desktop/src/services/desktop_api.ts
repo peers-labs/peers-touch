@@ -3350,8 +3350,33 @@ export const api = {
   groupChatListMessages: (groupUlid: string, beforeUlid?: string, limit?: number) =>
     invokeRustProto('group_chat_list_messages', GetGroupMessagesResponseSchema, { group_ulid: groupUlid, before_ulid: beforeUlid, limit }),
 
-  groupChatSendMessage: (groupUlid: string, content: string, type?: number, replyToUlid?: string, mentionedDids?: string[], mentionAll?: boolean) =>
-    invokeRustProto('group_chat_send_message', SendGroupMessageResponseSchema, { group_ulid: groupUlid, content, type, reply_to_ulid: replyToUlid, mentioned_dids: mentionedDids, mention_all: mentionAll }),
+  // Group chat sends MUST carry `encryptedPayload` (the base64
+  // bytes of a `GroupCiphertext` produced by `cryptoGroupEncrypt`).
+  // The Rust layer pins `content` to "" regardless of what the JS
+  // layer passes; it is kept in the signature for source compat
+  // with old callers but a non-empty value is silently dropped.
+  // See `modules/identity/groupSenderKeys.ts` for the only correct
+  // entry point.
+  groupChatSendMessage: (
+    groupUlid: string,
+    content: string,
+    type?: number,
+    replyToUlid?: string,
+    mentionedDids?: string[],
+    mentionAll?: boolean,
+    encryptedPayload?: string,
+  ) =>
+    invokeRustProto('group_chat_send_message', SendGroupMessageResponseSchema, {
+      group_ulid: groupUlid,
+      content,
+      type,
+      reply_to_ulid: replyToUlid,
+      mentioned_dids: mentionedDids,
+      mention_all: mentionAll,
+      ...(encryptedPayload != null && encryptedPayload !== ''
+        ? { encrypted_payload: encryptedPayload }
+        : {}),
+    }),
 
   groupChatUnreadCount: (groupUlid?: string) =>
     invokeRustProto('group_chat_unread_count', GetUnreadCountResponseSchema, { group_ulid: groupUlid }),
