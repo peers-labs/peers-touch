@@ -3,12 +3,15 @@ package group_chat
 import (
 	"context"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	application_group_chat "github.com/peers-labs/peers-touch/station/app/subserver/group_chat/application"
 	group_chat_domain "github.com/peers-labs/peers-touch/station/app/subserver/group_chat/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -27,6 +30,7 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("gc-message-send", "/group-chat/message/send", server.POST, s.handleSendMessage, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-messages", "/group-chat/messages", server.GET, s.handleGetMessages, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-message-recall", "/group-chat/message/recall", server.POST, s.handleRecallMessage, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("gc-message-edit", "/group-chat/message/edit", server.POST, s.handleEditMessage, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-message-delete", "/group-chat/message/delete", server.POST, s.handleDeleteMessage, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-message-search", "/group-chat/messages/search", server.GET, s.handleSearchMessages, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-update-nickname", "/group-chat/member/nickname", server.PUT, s.handleUpdateMyNickname, logIDWrapper, s.jwtWrapper),
@@ -366,16 +370,34 @@ func (s *subServer) handleRecallMessage(ctx context.Context, req *chat.RecallGro
 	if req.GroupUlid == "" || req.MessageUlid == "" {
 		return nil, server.BadRequest("group_ulid and message_ulid are required")
 	}
-	if err := s.appService.RecallMessageByActor(subject.ID, req.GroupUlid, req.MessageUlid); err != nil {
-		if err == application_group_chat.ErrNotMember {
-			return nil, server.Forbidden(err.Error())
-		}
-		if err == application_group_chat.ErrMessageNotFound {
-			return nil, server.NotFound(err.Error())
-		}
-		return nil, server.InternalError("recall message failed")
+	out, err := s.appService.RecallMessageByActor(subject.ID, req.GroupUlid, req.MessageUlid)
+	if err != nil {
+		return nil, groupMutationErrorToHTTP(err)
 	}
+	publishGroupMutation(out, subject.ID)
 	return &chat.RecallGroupMessageResponse{Success: true}, nil
+}
+
+func (s *subServer) handleEditMessage(ctx context.Context, req *chat.EditGroupMessageRequest) (*chat.EditGroupMessageResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.GroupUlid == "" || req.MessageUlid == "" {
+		return nil, server.BadRequest("group_ulid and message_ulid are required")
+	}
+	out, err := s.appService.EditMessageByActor(
+		subject.ID,
+		req.GroupUlid,
+		req.MessageUlid,
+		req.GetNewContent(),
+		req.GetNewEncryptedPayload(),
+	)
+	if err != nil {
+		return nil, groupMutationErrorToHTTP(err)
+	}
+	publishGroupMutation(out, subject.ID)
+	return &chat.EditGroupMessageResponse{Success: true}, nil
 }
 
 func (s *subServer) handleDeleteMessage(ctx context.Context, req *chat.DeleteGroupMessageRequest) (*chat.DeleteGroupMessageResponse, error) {
@@ -386,16 +408,93 @@ func (s *subServer) handleDeleteMessage(ctx context.Context, req *chat.DeleteGro
 	if req.GroupUlid == "" || req.MessageUlid == "" {
 		return nil, server.BadRequest("group_ulid and message_ulid are required")
 	}
-	if err := s.appService.DeleteMessageByActor(subject.ID, req.GroupUlid, req.MessageUlid); err != nil {
-		if err == application_group_chat.ErrPermissionDenied {
-			return nil, server.Forbidden(err.Error())
-		}
-		if err == application_group_chat.ErrMessageNotFound {
-			return nil, server.NotFound(err.Error())
-		}
-		return nil, server.InternalError("delete message failed")
+	out, err := s.appService.DeleteMessageByActor(subject.ID, req.GroupUlid, req.MessageUlid)
+	if err != nil {
+		return nil, groupMutationErrorToHTTP(err)
 	}
+	publishGroupMutation(out, subject.ID)
 	return &chat.DeleteGroupMessageResponse{Success: true}, nil
+}
+
+// groupMutationErrorToHTTP mirrors friend_chat's mapper. We
+// collapse missing-row + non-owner onto 404 so a non-sender can't
+// enumerate other members' message ulids by probing.
+func groupMutationErrorToHTTP(err error) error {
+	switch err {
+	case application_group_chat.ErrGroupNotFound,
+		application_group_chat.ErrNotMember,
+		application_group_chat.ErrMessageNotFound:
+		return server.NotFound(err.Error())
+	case application_group_chat.ErrPermissionDenied:
+		return server.Forbidden(err.Error())
+	case application_group_chat.ErrMutationWindowClosed:
+		return server.BadRequest("mutation window has closed for this message")
+	case application_group_chat.ErrAlreadyRecalled:
+		return server.BadRequest("message already recalled")
+	case application_group_chat.ErrEmptyEdit:
+		return server.BadRequest(err.Error())
+	default:
+		return server.InternalErrorWithCause("mutation failed", err)
+	}
+}
+
+// publishGroupMutation emits one `MessageMutation` StreamEvent per
+// recipient (every member except the originator) and one self-echo
+// onto the originator's stream so their other devices converge.
+// Best-effort: persistence has already succeeded, so a failure here
+// only delays UI convergence — peers' next cold sync surfaces the
+// same change from the DB.
+func publishGroupMutation(out group_chat_domain.MutationOutcome, originatorActorID string) {
+	bus := events.GetBus()
+	if bus == nil {
+		return
+	}
+	var kind realtime.MessageMutation_Kind
+	switch out.Kind {
+	case 1:
+		kind = realtime.MessageMutation_RECALL
+	case 2:
+		kind = realtime.MessageMutation_EDIT
+	case 3:
+		kind = realtime.MessageMutation_DELETE
+	default:
+		kind = realtime.MessageMutation_KIND_UNSPECIFIED
+	}
+	build := func() *realtime.StreamEvent {
+		return &realtime.StreamEvent{
+			Kind: &realtime.StreamEvent_Mutation{
+				Mutation: &realtime.MessageMutation{
+					// SessionUlid for group chat carries the
+					// group ulid — the receiver's store
+					// indexes by `messages[<container>]` and
+					// the container id is the group for group
+					// messages. Friend chat carries the
+					// session ulid the same way.
+					SessionUlid:     out.GroupID,
+					Ulid:            out.Ulid,
+					FromActorId:     originatorActorID,
+					Kind:            kind,
+					NewCiphertext:   append([]byte(nil), out.NewCiphertext...),
+					NewContent:      out.NewContent,
+					MutatedTsUnixMs: out.MutatedAt.UnixMilli(),
+				},
+			},
+		}
+	}
+	for _, did := range out.RecipientDIDs {
+		if _, err := bus.Publish(did, build()); err != nil {
+			logger.DefaultHelper.Warnf("group_chat: realtime mutation publish failed group=%s ulid=%s recipient=%s kind=%v: %v",
+				out.GroupID, out.Ulid, did, kind, err)
+		}
+	}
+	// Self-echo to the originator's other devices. The originator
+	// is excluded from RecipientDIDs by construction
+	// (`groupRecipients` filters them out), so this is the single
+	// publish that lights up their multi-device set.
+	if _, err := bus.Publish(originatorActorID, build()); err != nil {
+		logger.DefaultHelper.Warnf("group_chat: realtime mutation self-echo failed group=%s ulid=%s actor=%s: %v",
+			out.GroupID, out.Ulid, originatorActorID, err)
+	}
 }
 
 func (s *subServer) handleSearchMessages(ctx context.Context, req *chat.SearchGroupMessagesRequest) (*chat.SearchGroupMessagesResponse, error) {
@@ -562,7 +661,7 @@ func toProtoMessage(item *message) *chat.GroupMessage {
 	if len(item.EncryptedPayload) > 0 {
 		enc = append([]byte(nil), item.EncryptedPayload...)
 	}
-	return &chat.GroupMessage{
+	out := &chat.GroupMessage{
 		Ulid:             item.ID,
 		GroupUlid:        item.GroupID,
 		SenderDid:        item.SenderDID,
@@ -573,8 +672,12 @@ func toProtoMessage(item *message) *chat.GroupMessage {
 		SentAt:           timestamppb.New(item.SentAt),
 		CreatedAt:        timestamppb.New(item.SentAt),
 		UpdatedAt:        timestamppb.New(item.SentAt),
-		Deleted:          item.Deleted,
+		Recalled:         item.Recalled,
 	}
+	if !item.EditedAt.IsZero() {
+		out.EditedAt = timestamppb.New(item.EditedAt)
+	}
+	return out
 }
 
 func toProtoMessageFromDomain(item *group_chat_domain.Message) *chat.GroupMessage {
@@ -585,7 +688,7 @@ func toProtoMessageFromDomain(item *group_chat_domain.Message) *chat.GroupMessag
 	if len(item.EncryptedPayload) > 0 {
 		enc = append([]byte(nil), item.EncryptedPayload...)
 	}
-	return &chat.GroupMessage{
+	out := &chat.GroupMessage{
 		Ulid:             item.ID,
 		GroupUlid:        item.GroupID,
 		SenderDid:        item.SenderDID,
@@ -597,7 +700,12 @@ func toProtoMessageFromDomain(item *group_chat_domain.Message) *chat.GroupMessag
 		SentAt:           timestamppb.New(item.SentAt),
 		CreatedAt:        timestamppb.New(item.SentAt),
 		UpdatedAt:        timestamppb.New(item.SentAt),
+		Recalled:         item.Recalled,
 	}
+	if !item.EditedAt.IsZero() {
+		out.EditedAt = timestamppb.New(item.EditedAt)
+	}
+	return out
 }
 
 func groupAttachmentsFromProto(in []*chat.GroupMessageAttachment) []group_chat_domain.Attachment {

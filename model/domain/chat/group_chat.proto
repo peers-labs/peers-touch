@@ -78,8 +78,22 @@ message GroupMessage {
   google.protobuf.Timestamp sent_at = 10;
   google.protobuf.Timestamp created_at = 11;
   google.protobuf.Timestamp updated_at = 12;
-  bool deleted = 13;                         // 是否被撤回
+  // recalled flips when the original sender recalls the message.
+  // The row is preserved (so threading & search snippets stay
+  // coherent) but content + encrypted_payload are cleared and the
+  // client renders a tombstone in place of the bubble. Mutually
+  // exclusive with the row existing at all: a deleted message has
+  // no row. Field number 13 was previously named `deleted` with
+  // identical semantics — renamed for parity with friend chat
+  // and the realtime MessageMutation contract. Wire compat is
+  // preserved (same field number, same type, same on-disk column
+  // mapping via the GORM tag).
+  bool recalled = 13;
   bytes encrypted_payload = 14;
+  // edited_at is set when the message body has been replaced via
+  // an edit. Display-only — clients MUST NOT use it for ordering.
+  // Mirrors FriendChatMessage.edited_at semantics.
+  google.protobuf.Timestamp edited_at = 15;
 }
 
 enum GroupMessageType {
@@ -350,6 +364,20 @@ message DeleteGroupMessageRequest {
 }
 
 message DeleteGroupMessageResponse {
+  bool success = 1;
+}
+
+// 编辑消息 — Mirrors EditFriendMessageRequest. At least one of
+// new_content / new_encrypted_payload must be non-empty; both
+// may be set when an E2EE chat also keeps a plaintext index.
+message EditGroupMessageRequest {
+  string group_ulid = 1;
+  string message_ulid = 2;
+  string new_content = 3;
+  bytes new_encrypted_payload = 4;
+}
+
+message EditGroupMessageResponse {
   bool success = 1;
 }
 
