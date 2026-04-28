@@ -124,6 +124,17 @@ message CallSignal {
     ANSWER           = 2;
     CANDIDATE        = 3;
     HANGUP           = 4;
+    // Application-layer ringing protocol. CALL_REQUEST initiates a
+    // voice or video call (the WebRTC OFFER / ANSWER / CANDIDATE
+    // exchange that follows is the same as for the data-plane
+    // handshake — these kinds only exist so the UI can show a
+    // ringing modal before media renegotiation starts). The
+    // payload's plaintext form is JSON: `{"kind":"audio"|"video",
+    // "callId":"<ulid>"}`.
+    CALL_REQUEST     = 5;
+    CALL_ACCEPT      = 6;
+    CALL_REJECT      = 7;
+    CALL_END         = 8;
   }
 }
 
