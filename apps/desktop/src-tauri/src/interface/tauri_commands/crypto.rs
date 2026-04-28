@@ -9,12 +9,17 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use crate::application::chat_storage;
 use crate::application::session_resolver;
 use crate::contracts::{ChatSearchLocalInput, StubPayload};
+use crate::domain::crypto::sender_keys::{
+    self, GroupCiphertextWire, SenderChainState, SenderKeyDistributionPayload,
+};
 use crate::domain::crypto::{self, CryptoSession, EncryptedMessage, X3DHBundle};
-use ed25519_dalek::Signer;
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::local_chat_store;
 use crate::infrastructure::storage::resolve_user_scope;
+use crate::model::chat as model_chat;
 use crate::state::AppState;
+use ed25519_dalek::Signer;
+use prost::Message as _;
 
 fn actor_id_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Option<String> {
     session_resolver::actor_id_for_window(state.inner(), window)
@@ -502,6 +507,509 @@ pub fn crypto_decrypt_message(
         }
     };
     to_stub("crypto_decrypt_message", json!({ "plaintext": text }))
+}
+
+// ---------------------------------------------------------------------
+// Sender Keys (group chat E2EE).
+//
+// Four entry points the JS layer calls into:
+//
+//   crypto_group_sk_emit_skdm    -> "give me the SKDM bytes for this
+//                                    (group, me) chain so I can
+//                                    deliver them over friend chat".
+//                                    Mints + persists the chain on
+//                                    first use.
+//   crypto_group_sk_consume_skdm -> "I just received this SKDM over
+//                                    a friend-chat type-50 control
+//                                    message; install the chain".
+//   crypto_group_encrypt         -> "wrap this plaintext as a
+//                                    GroupCiphertext I can stuff
+//                                    into SendGroupMessageRequest
+//                                    .encrypted_payload".
+//   crypto_group_decrypt         -> "I just got an
+//                                    encrypted_payload off the wire;
+//                                    give me the plaintext back".
+//
+// All four require an authenticated active actor. The TS layer talks
+// to them through `desktop_api`; nothing else in Rust calls them
+// directly. See peers-touch/docs/architecture/encryption/group-sender-keys.md.
+// ---------------------------------------------------------------------
+
+fn sk_authed_scope(
+    state: &State<'_, Arc<AppState>>,
+    window: &Window,
+) -> Result<(String, String), AppResult<StubPayload>> {
+    let actor_id = match actor_id_from_state(state, window) {
+        Some(id) if !id.trim().is_empty() => id,
+        _ => {
+            return Err(AppResult::fail(
+                ErrorCode::Unauthorized,
+                "Authentication required — please log in",
+                None,
+            ));
+        }
+    };
+    let scope = user_scope_from_state(state, window);
+    Ok((actor_id, scope))
+}
+
+fn proto_skdm_to_payload(
+    msg: &model_chat::SenderKeyDistributionMessage,
+) -> Result<SenderKeyDistributionPayload, String> {
+    if msg.group_ulid.is_empty() || msg.sender_did.is_empty() {
+        return Err("SKDM missing group_ulid or sender_did".to_string());
+    }
+    if msg.chain_key.len() != 32 {
+        return Err(format!(
+            "SKDM chain_key must be 32 bytes (got {})",
+            msg.chain_key.len()
+        ));
+    }
+    if msg.sender_sig_pub.len() != 32 {
+        return Err(format!(
+            "SKDM sender_sig_pub must be 32 bytes (got {})",
+            msg.sender_sig_pub.len()
+        ));
+    }
+    let mut chain_key = [0u8; 32];
+    chain_key.copy_from_slice(&msg.chain_key);
+    let mut sender_sig_pub = [0u8; 32];
+    sender_sig_pub.copy_from_slice(&msg.sender_sig_pub);
+    Ok(SenderKeyDistributionPayload {
+        group_ulid: msg.group_ulid.clone(),
+        sender_did: msg.sender_did.clone(),
+        sender_key_id: msg.sender_key_id,
+        chain_key,
+        counter: msg.counter,
+        sender_sig_pub,
+    })
+}
+
+fn payload_to_proto_skdm(
+    payload: &SenderKeyDistributionPayload,
+) -> model_chat::SenderKeyDistributionMessage {
+    model_chat::SenderKeyDistributionMessage {
+        group_ulid: payload.group_ulid.clone(),
+        sender_did: payload.sender_did.clone(),
+        sender_key_id: payload.sender_key_id,
+        chain_key: payload.chain_key.to_vec(),
+        counter: payload.counter,
+        sender_sig_pub: payload.sender_sig_pub.to_vec(),
+    }
+}
+
+fn wire_to_proto_ciphertext(w: &GroupCiphertextWire) -> model_chat::GroupCiphertext {
+    model_chat::GroupCiphertext {
+        version: w.version,
+        sender_did: w.sender_did.clone(),
+        sender_key_id: w.sender_key_id,
+        counter: w.counter,
+        ciphertext: w.ciphertext.clone(),
+        signature: w.signature.to_vec(),
+    }
+}
+
+fn proto_ciphertext_to_wire(
+    p: &model_chat::GroupCiphertext,
+) -> Result<GroupCiphertextWire, String> {
+    if p.signature.len() != 64 {
+        return Err(format!(
+            "GroupCiphertext signature must be 64 bytes (got {})",
+            p.signature.len()
+        ));
+    }
+    if p.sender_did.is_empty() {
+        return Err("GroupCiphertext missing sender_did".to_string());
+    }
+    let mut signature = [0u8; 64];
+    signature.copy_from_slice(&p.signature);
+    Ok(GroupCiphertextWire {
+        version: p.version,
+        sender_did: p.sender_did.clone(),
+        sender_key_id: p.sender_key_id,
+        counter: p.counter,
+        ciphertext: p.ciphertext.clone(),
+        signature,
+    })
+}
+
+/// Mint or load the local sender chain for `group_ulid` and return
+/// the SKDM bytes (proto-encoded `SenderKeyDistributionMessage`)
+/// that the caller will deliver pairwise over friend chat as a
+/// type-50 control message.
+///
+/// Idempotent on the storage side: calling this command N times
+/// without rotating returns the *same* SKDM (same key, same
+/// counter) so the JS layer can safely retry on transient failures.
+/// Rotation is a separate (future) command — this one never
+/// advances `sender_key_id`.
+#[tauri::command]
+pub fn crypto_group_sk_emit_skdm(
+    group_ulid: String,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    if group_ulid.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "group_ulid is required", None);
+    }
+    let (actor_id, scope) = match sk_authed_scope(&state, &window) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let chain = match local_chat_store::latest_local_sender_chain(
+        scope.as_str(),
+        group_ulid.as_str(),
+        actor_id.as_str(),
+    ) {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            // First send into this group. Mint and persist a
+            // generation-1 chain. Persist-then-distribute order
+            // matters: if we crash after distribution but before
+            // persistence, peers would have a key we cannot use.
+            let fresh = sender_keys::create_local_chain(
+                group_ulid.as_str(),
+                actor_id.as_str(),
+                1,
+            );
+            if let Err(reason) = local_chat_store::save_group_sender_chain(scope.as_str(), &fresh)
+            {
+                return AppResult::fail(
+                    ErrorCode::InternalError,
+                    format!("Failed to persist new sender chain: {}", reason),
+                    None,
+                );
+            }
+            fresh
+        }
+        Err(reason) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to load sender chain: {}", reason),
+                None,
+            );
+        }
+    };
+    let payload = sender_keys::snapshot_for_skdm(&chain);
+    let proto = payload_to_proto_skdm(&payload);
+    let mut buf = Vec::with_capacity(proto.encoded_len());
+    proto.encode(&mut buf).expect("prost SKDM encode");
+    to_stub(
+        "crypto_group_sk_emit_skdm",
+        json!({
+            "group_ulid": group_ulid,
+            "sender_did": actor_id,
+            "sender_key_id": chain.sender_key_id,
+            "skdm_b64": B64.encode(&buf),
+        }),
+    )
+}
+
+/// Install a sender chain we received as a type-50 friend-chat
+/// payload. The friend-chat layer has already authenticated the
+/// envelope (we know the SKDM came from `claimed_sender_did`'s
+/// device); here we add the application-level integrity check that
+/// the embedded `sender_did` matches.
+///
+/// Returns the (group_ulid, sender_did, sender_key_id) we installed
+/// so the caller can mark the friend-chat control message as
+/// processed.
+#[tauri::command]
+pub fn crypto_group_sk_consume_skdm(
+    claimed_sender_did: String,
+    skdm_b64: String,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    if claimed_sender_did.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "claimed_sender_did is required",
+            None,
+        );
+    }
+    let (_actor_id, scope) = match sk_authed_scope(&state, &window) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let raw = match B64.decode(skdm_b64.trim()) {
+        Ok(b) => b,
+        Err(e) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("Invalid base64 for skdm_b64: {}", e),
+                None,
+            );
+        }
+    };
+    let proto = match model_chat::SenderKeyDistributionMessage::decode(raw.as_slice()) {
+        Ok(p) => p,
+        Err(e) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("SKDM proto decode failed: {}", e),
+                None,
+            );
+        }
+    };
+    if proto.sender_did != claimed_sender_did {
+        // Friend-chat envelope says A sent it but the embedded SKDM
+        // claims to be from B's chain. Reject -- otherwise A could
+        // distribute B's key as their own and frame B for messages
+        // they didn't send.
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "SKDM sender_did does not match the friend-chat envelope sender",
+            None,
+        );
+    }
+    let payload = match proto_skdm_to_payload(&proto) {
+        Ok(p) => p,
+        Err(e) => return AppResult::fail(ErrorCode::InvalidArgument, e, None),
+    };
+    let chain = match sender_keys::consume_skdm(&payload) {
+        Ok(c) => c,
+        Err(e) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("SKDM consume failed: {}", e),
+                None,
+            );
+        }
+    };
+    if let Err(reason) = local_chat_store::save_group_sender_chain(scope.as_str(), &chain) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to persist received sender chain: {}", reason),
+            None,
+        );
+    }
+    to_stub(
+        "crypto_group_sk_consume_skdm",
+        json!({
+            "group_ulid": chain.group_ulid,
+            "sender_did": chain.sender_did,
+            "sender_key_id": chain.sender_key_id,
+        }),
+    )
+}
+
+/// Encrypt `plaintext_b64` under the local sender chain for
+/// `group_ulid` and return the wire bytes that should be stuffed
+/// into `SendGroupMessageRequest.encrypted_payload`.
+///
+/// Errors with `NotFound` if no local chain has been minted yet.
+/// The TS layer is expected to call `crypto_group_sk_emit_skdm`
+/// before the first send to bootstrap the chain.
+#[tauri::command]
+pub fn crypto_group_encrypt(
+    group_ulid: String,
+    plaintext_b64: String,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    if group_ulid.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "group_ulid is required", None);
+    }
+    let (actor_id, scope) = match sk_authed_scope(&state, &window) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let plaintext = match B64.decode(plaintext_b64.trim()) {
+        Ok(b) => b,
+        Err(e) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("Invalid base64 for plaintext_b64: {}", e),
+                None,
+            );
+        }
+    };
+    let mut chain = match local_chat_store::latest_local_sender_chain(
+        scope.as_str(),
+        group_ulid.as_str(),
+        actor_id.as_str(),
+    ) {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            return AppResult::fail(
+                ErrorCode::NotFound,
+                "No local sender chain for group; emit SKDM first",
+                None,
+            );
+        }
+        Err(reason) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to load sender chain: {}", reason),
+                None,
+            );
+        }
+    };
+    let wire = match sender_keys::encrypt(&mut chain, &plaintext) {
+        Ok(w) => w,
+        Err(e) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Sender-keys encrypt failed: {}", e),
+                None,
+            );
+        }
+    };
+    // Persist BEFORE returning the ciphertext. AES-GCM key reuse on
+    // a re-encrypt with the un-advanced chain would be catastrophic,
+    // so we'd rather fail the send than risk that.
+    if let Err(reason) = local_chat_store::save_group_sender_chain(scope.as_str(), &chain) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to persist advanced chain: {}", reason),
+            None,
+        );
+    }
+    let proto = wire_to_proto_ciphertext(&wire);
+    let mut buf = Vec::with_capacity(proto.encoded_len());
+    proto.encode(&mut buf).expect("prost GroupCiphertext encode");
+    to_stub(
+        "crypto_group_encrypt",
+        json!({
+            "encrypted_payload_b64": B64.encode(&buf),
+            "sender_key_id": wire.sender_key_id,
+            "counter": wire.counter,
+        }),
+    )
+}
+
+/// Decrypt a `GroupCiphertext` payload that just arrived off the
+/// wire. The caller passes the bytes from
+/// `GroupMessage.encrypted_payload`; we look up the chain by
+/// `(group_ulid, sender_did, sender_key_id)` -- the last comes from
+/// inside the wire.
+///
+/// Returns `NotFound` if the SKDM hasn't been processed yet -- the
+/// caller should hold the message in a re-decrypt queue and try
+/// again after the next SKDM arrives. Returns plaintext as base64
+/// so binary-content groups (image / file body, etc.) round-trip
+/// losslessly.
+#[tauri::command]
+pub fn crypto_group_decrypt(
+    group_ulid: String,
+    encrypted_payload_b64: String,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    if group_ulid.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "group_ulid is required", None);
+    }
+    let (_actor_id, scope) = match sk_authed_scope(&state, &window) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let raw = match B64.decode(encrypted_payload_b64.trim()) {
+        Ok(b) => b,
+        Err(e) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("Invalid base64 for encrypted_payload_b64: {}", e),
+                None,
+            );
+        }
+    };
+    let proto = match model_chat::GroupCiphertext::decode(raw.as_slice()) {
+        Ok(p) => p,
+        Err(e) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("GroupCiphertext proto decode failed: {}", e),
+                None,
+            );
+        }
+    };
+    let wire = match proto_ciphertext_to_wire(&proto) {
+        Ok(w) => w,
+        Err(e) => return AppResult::fail(ErrorCode::InvalidArgument, e, None),
+    };
+    let chain = match local_chat_store::load_group_sender_chain(
+        scope.as_str(),
+        group_ulid.as_str(),
+        wire.sender_did.as_str(),
+        wire.sender_key_id,
+    ) {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            return AppResult::fail(
+                ErrorCode::NotFound,
+                "No sender chain for (group, sender, sender_key_id); SKDM not yet processed",
+                None,
+            );
+        }
+        Err(reason) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to load sender chain: {}", reason),
+                None,
+            );
+        }
+    };
+    let pre_skipped = match local_chat_store::load_group_skipped_keys(
+        scope.as_str(),
+        group_ulid.as_str(),
+        wire.sender_did.as_str(),
+        wire.sender_key_id,
+    ) {
+        Ok(map) => map,
+        Err(reason) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to load skipped keys: {}", reason),
+                None,
+            );
+        }
+    };
+    let was_skipped = pre_skipped.contains_key(&wire.counter);
+    let outcome = match sender_keys::decrypt(&chain, &wire, &pre_skipped) {
+        Ok(o) => o,
+        Err(e) => {
+            // Surface the variant string so the UI can tell apart
+            // "possibly forged" (bad signature) from "out of sync"
+            // (skip too far) and react appropriately.
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Sender-keys decrypt failed: {}", e),
+                None,
+            );
+        }
+    };
+    let advanced = SenderChainState {
+        group_ulid: chain.group_ulid.clone(),
+        sender_did: chain.sender_did.clone(),
+        sender_key_id: chain.sender_key_id,
+        chain_key: outcome.advanced_chain_key,
+        counter: outcome.advanced_counter,
+        signing_seed: chain.signing_seed,
+        verifying_key: chain.verifying_key,
+    };
+    let consumed = if was_skipped { Some(wire.counter) } else { None };
+    if let Err(reason) = local_chat_store::apply_group_decrypt_outcome(
+        scope.as_str(),
+        &advanced,
+        &outcome.new_skipped,
+        consumed,
+    ) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to persist decrypt outcome: {}", reason),
+            None,
+        );
+    }
+    to_stub(
+        "crypto_group_decrypt",
+        json!({
+            "plaintext_b64": B64.encode(&outcome.plaintext),
+            "sender_did": wire.sender_did,
+            "sender_key_id": wire.sender_key_id,
+            "counter": wire.counter,
+        }),
+    )
 }
 
 // ---------------------------------------------------------------------
