@@ -39,6 +39,7 @@ import {
   GetGroupMembersResponseSchema,
   RemoveMemberResponseSchema,
   RecallGroupMessageResponseSchema,
+  EditGroupMessageResponseSchema,
   DeleteGroupMessageResponseSchema,
   SearchGroupMessagesResponseSchema,
   UpdateMyNicknameResponseSchema,
@@ -3254,6 +3255,21 @@ export const api = {
 
   groupChatRecallMessage: (groupUlid: string, messageUlid: string) =>
     invokeRustProto('group_chat_recall_message', RecallGroupMessageResponseSchema, { group_ulid: groupUlid, message_ulid: messageUlid }),
+
+  groupChatEditMessage: (
+    groupUlid: string,
+    messageUlid: string,
+    newContent?: string,
+    newEncryptedPayload?: Uint8Array,
+  ) =>
+    invokeRustProto('group_chat_edit_message', EditGroupMessageResponseSchema, {
+      group_ulid: groupUlid,
+      message_ulid: messageUlid,
+      ...(newContent != null && newContent !== '' ? { new_content: newContent } : {}),
+      ...(newEncryptedPayload != null && newEncryptedPayload.byteLength > 0
+        ? { new_encrypted_payload: Array.from(newEncryptedPayload) }
+        : {}),
+    }),
 
   groupChatDeleteMessage: (groupUlid: string, messageUlid: string) =>
     invokeRustProto('group_chat_delete_message', DeleteGroupMessageResponseSchema, { group_ulid: groupUlid, message_ulid: messageUlid }),

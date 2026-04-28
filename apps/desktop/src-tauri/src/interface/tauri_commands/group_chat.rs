@@ -4,7 +4,8 @@ use crate::application::chat_storage;
 use crate::application::session_resolver;
 use crate::infrastructure::station_client;
 use crate::contracts::{
-    ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput, ChatScopeCursorSetInput, GroupChatListInput,
+    ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput, ChatScopeCursorSetInput, GroupChatEditInput,
+    GroupChatListInput,
     GroupChatListMessagesInput, GroupChatMarkReadInput, GroupChatSendInput, GroupChatUnreadInput, StubPayload,
     GroupChatSyncInput, GroupChatCreateGroupInput, GroupChatLeaveGroupInput,
     GroupAckOfflineInput, GroupCreateInput, GroupInviteInput, GroupJoinInput,
@@ -14,6 +15,7 @@ use crate::contracts::{
 };
 use crate::model;
 use crate::state::AppState;
+use prost::Message;
 use reqwest::Method;
 use serde_json::{json, Value};
 use tauri::{State, Window};
@@ -29,6 +31,19 @@ fn token_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Result
     }
     Ok(token)
 }
+
+fn token_from_state_proto(state: &State<'_, Arc<AppState>>, window: &Window) -> Result<String, AppResult<Vec<u8>>> {
+    let token = session_resolver::token_for_window(state.inner(), window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return Err(AppResult::fail(
+            ErrorCode::Unauthorized,
+            "authentication required",
+            None,
+        ));
+    }
+    Ok(token)
+}
+
 
 fn actor_id_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Option<String> {
     session_resolver::actor_id_for_window(state.inner(), window)
@@ -559,54 +574,103 @@ pub fn group_chat_remove_member(input: GroupRemoveMemberInput, state: State<'_, 
     to_stub("group_chat_remove_member", data)
 }
 
-/// Recall (withdraw) a message in a group.
+/// Recall (withdraw) a message in a group. Returns proto bytes
+/// for `RecallGroupMessageResponse`. On success Station fans out
+/// a `MessageMutation { kind=RECALL }` event over SSE so peers'
+/// stores converge via `applyMessageMutation`.
 #[tauri::command]
-pub fn group_chat_recall_message(input: GroupMessageActionInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state, &window) {
+pub fn group_chat_recall_message(input: GroupMessageActionInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
         Ok(token) => token,
         Err(error) => return error,
     };
-
-    let data = match request_json(
-        Method::POST,
-        "/group-chat/message/recall",
-        &token,
-        None,
-        Some(json!({
-            "group_ulid": input.group_ulid,
-            "message_ulid": input.message_ulid,
-        })),
-    ) {
-        Ok(data) => data,
-        Err(error) => return error,
+    if input.group_ulid.trim().is_empty() || input.message_ulid.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "group_ulid and message_ulid are required",
+            None,
+        );
+    }
+    let req = model::chat::RecallGroupMessageRequest {
+        group_ulid: input.group_ulid,
+        message_ulid: input.message_ulid,
     };
-
-    to_stub("group_chat_recall_message", data)
+    let resp = match station_client::request_proto::<model::chat::RecallGroupMessageRequest, model::chat::RecallGroupMessageResponse>(
+        Method::POST, "/group-chat/message/recall", &token, None, Some(&req),
+    ) {
+        Ok(r) => r,
+        Err(e) => return e.into_app_result("station request failed"),
+    };
+    AppResult::success(resp.encode_to_vec())
 }
 
-/// Delete a message in a group.
+/// Edit a previously-sent group message. Same window + ownership
+/// gates as friend chat. At least one of `new_content` or
+/// `new_encrypted_payload` must be non-empty.
 #[tauri::command]
-pub fn group_chat_delete_message(input: GroupMessageActionInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state, &window) {
+pub fn group_chat_edit_message(input: GroupChatEditInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
         Ok(token) => token,
         Err(error) => return error,
     };
-
-    let data = match request_json(
-        Method::POST,
-        "/group-chat/message/delete",
-        &token,
-        None,
-        Some(json!({
-            "group_ulid": input.group_ulid,
-            "message_ulid": input.message_ulid,
-        })),
+    if input.group_ulid.trim().is_empty() || input.message_ulid.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "group_ulid and message_ulid are required",
+            None,
+        );
+    }
+    let new_content = input.new_content.unwrap_or_default();
+    let new_payload = input.new_encrypted_payload.unwrap_or_default();
+    if new_content.trim().is_empty() && new_payload.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "new_content or new_encrypted_payload is required",
+            None,
+        );
+    }
+    let req = model::chat::EditGroupMessageRequest {
+        group_ulid: input.group_ulid,
+        message_ulid: input.message_ulid,
+        new_content,
+        new_encrypted_payload: new_payload,
+    };
+    let resp = match station_client::request_proto::<model::chat::EditGroupMessageRequest, model::chat::EditGroupMessageResponse>(
+        Method::POST, "/group-chat/message/edit", &token, None, Some(&req),
     ) {
-        Ok(data) => data,
+        Ok(r) => r,
+        Err(e) => return e.into_app_result("station request failed"),
+    };
+    AppResult::success(resp.encode_to_vec())
+}
+
+/// Delete (hard-remove) a message in a group. Sender or admin /
+/// owner only. Server publishes a `MessageMutation { kind=DELETE }`
+/// over SSE on success.
+#[tauri::command]
+pub fn group_chat_delete_message(input: GroupMessageActionInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(token) => token,
         Err(error) => return error,
     };
-
-    to_stub("group_chat_delete_message", data)
+    if input.group_ulid.trim().is_empty() || input.message_ulid.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "group_ulid and message_ulid are required",
+            None,
+        );
+    }
+    let req = model::chat::DeleteGroupMessageRequest {
+        group_ulid: input.group_ulid,
+        message_ulid: input.message_ulid,
+    };
+    let resp = match station_client::request_proto::<model::chat::DeleteGroupMessageRequest, model::chat::DeleteGroupMessageResponse>(
+        Method::POST, "/group-chat/message/delete", &token, None, Some(&req),
+    ) {
+        Ok(r) => r,
+        Err(e) => return e.into_app_result("station request failed"),
+    };
+    AppResult::success(resp.encode_to_vec())
 }
 
 /// Search messages within a group.

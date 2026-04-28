@@ -1,6 +1,7 @@
 package group_chat
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -29,9 +30,13 @@ type message struct {
 	Content          string
 	EncryptedPayload []byte
 	ReplyToID        string
-	Deleted          bool
-	Attachments      []domain.Attachment
-	SentAt           time.Time
+	// Recalled — see messageModel.Recalled. Renamed from `Deleted`
+	// for parity with the proto + friend_chat. The semantic was
+	// already "recalled (tombstone)" not "soft-deleted".
+	Recalled    bool
+	EditedAt    time.Time
+	Attachments []domain.Attachment
+	SentAt      time.Time
 }
 
 type member struct {
@@ -176,6 +181,8 @@ func (s *service) ListMessages(groupID, beforeUlid string, limit int) ([]domain.
 			ReplyToID:        item.ReplyToID,
 			Attachments:      append([]domain.Attachment(nil), item.Attachments...),
 			EncryptedPayload: enc,
+			Recalled:         item.Recalled,
+			EditedAt:         item.EditedAt,
 			SentAt:           item.SentAt,
 		})
 	}
@@ -294,12 +301,63 @@ func (s *service) AcceptInvitation(invitationID, actorDID string) (string, bool)
 	return s.acceptInvitation(invitationID, actorDID)
 }
 
-func (s *service) RecallMessage(messageID string) bool {
-	return s.recallMessage(messageID)
+// RecallMessage flips `recalled = true` on the row identified by
+// messageULID, clearing content + encrypted_payload at the same
+// time, then returns a `MutationOutcome` describing what changed
+// so the application/handler layers can fan out a realtime
+// `MessageMutation` event. Sender-ownership and the recall window
+// are enforced here; the application layer is only responsible
+// for membership.
+//
+// Errors:
+//   - "group message not found"  — no row with that ulid in the group
+//   - "not message owner"        — actor isn't the original sender
+//   - "mutation window closed"   — sent_at older than recallWindow
+//   - "message already recalled" — idempotency guard, treated as success at handler
+func (s *service) RecallMessage(actorDID, groupID, messageULID string, recallWindow time.Duration) (domain.MutationOutcome, error) {
+	return s.recallMessage(actorDID, groupID, messageULID, recallWindow)
 }
 
-func (s *service) DeleteMessage(messageID string) bool {
-	return s.deleteMessage(messageID)
+// EditMessage replaces content + encrypted_payload with the
+// caller-supplied values and stamps `edited_at = now()`. Same
+// gating as RecallMessage; an edit on a recalled tombstone is
+// rejected ("message already recalled").
+func (s *service) EditMessage(actorDID, groupID, messageULID, newContent string, newCiphertext []byte, editWindow time.Duration) (domain.MutationOutcome, error) {
+	return s.editMessage(actorDID, groupID, messageULID, newContent, newCiphertext, editWindow)
+}
+
+// DeleteMessage hard-deletes the row + its attachment metadata.
+// Sender-ownership is enforced here; admin/owner moderation
+// override happens in the application layer (which re-issues the
+// call under the original sender's DID after looking it up via
+// GetMessageSender). The window does NOT apply to delete — once
+// you can recall, you can also rewrite the row to a tombstone;
+// once you can delete the row entirely is a softer constraint.
+func (s *service) DeleteMessage(actorDID, groupID, messageULID string) (domain.MutationOutcome, error) {
+	return s.deleteMessage(actorDID, groupID, messageULID)
+}
+
+// GetMessageSender resolves the original sender DID for a row,
+// used by the application layer's admin/owner delete-override
+// path (so the repo's uniform "actor must equal sender" check
+// stays simple — moderation is a policy concern, not a storage
+// concern). Returns ("", false) when the row is missing.
+func (s *service) GetMessageSender(groupID, messageULID string) (string, bool) {
+	if s.db != nil {
+		var row messageModel
+		if err := s.db.Select("sender_did").
+			Where("group_ulid = ? AND ulid = ?", groupID, messageULID).
+			First(&row).Error; err != nil {
+			return "", false
+		}
+		return row.SenderDID, true
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if msg, ok := s.messagesByID[messageULID]; ok && msg.GroupID == groupID {
+		return msg.SenderDID, true
+	}
+	return "", false
 }
 
 func (s *service) SearchMessages(groupID, query string, limit int) ([]domain.Message, error) {
@@ -319,6 +377,8 @@ func (s *service) SearchMessages(groupID, query string, limit int) ([]domain.Mes
 			ReplyToID:        item.ReplyToID,
 			Attachments:      append([]domain.Attachment(nil), item.Attachments...),
 			EncryptedPayload: enc,
+			Recalled:         item.Recalled,
+			EditedAt:         item.EditedAt,
 			SentAt:           item.SentAt,
 		})
 	}
@@ -441,7 +501,8 @@ func (s *service) bootstrapFromDB() error {
 			Content:          item.Content,
 			EncryptedPayload: enc,
 			ReplyToID:        item.ReplyToID,
-			Deleted:          item.Deleted,
+			Recalled:         item.Recalled,
+			EditedAt:         derefTime(item.EditedAt),
 			SentAt:           item.SentAt,
 		}
 		s.messages[m.GroupID] = append(s.messages[m.GroupID], m)
@@ -671,7 +732,7 @@ func (s *service) appendMessage(groupID, senderDID string, messageType int32, co
 				Content:          content,
 				EncryptedPayload: enc,
 				ReplyToID:        replyToID,
-				Deleted:          false,
+				Recalled:         false,
 				SentAt:           now,
 				CreatedAt:        now,
 				UpdatedAt:        now,
@@ -800,7 +861,8 @@ func (s *service) listMessages(groupID, beforeUlid string, limit int) []message 
 						Content:          row.Content,
 						EncryptedPayload: enc,
 						ReplyToID:        row.ReplyToID,
-						Deleted:          row.Deleted,
+						Recalled:         row.Recalled,
+						EditedAt:         derefTime(row.EditedAt),
 						SentAt:           row.SentAt,
 					})
 				}
@@ -825,7 +887,8 @@ func (s *service) listMessages(groupID, beforeUlid string, limit int) []message 
 					Content:          rows[i].Content,
 					EncryptedPayload: enc,
 					ReplyToID:        rows[i].ReplyToID,
-					Deleted:          rows[i].Deleted,
+					Recalled:         rows[i].Recalled,
+					EditedAt:         derefTime(rows[i].EditedAt),
 					SentAt:           rows[i].SentAt,
 				})
 			}
@@ -1266,64 +1329,254 @@ func (s *service) acceptInvitation(invitationID, actorDID string) (string, bool)
 	return item.GroupID, true
 }
 
-func (s *service) recallMessage(messageID string) bool {
+// realtimeKindRecall / Edit / Delete mirror MessageMutation_Kind
+// in the proto. We avoid importing the proto here so the storage
+// layer stays free of wire-package dependencies; the handler does
+// the int → enum translation at the publish site. Numbers must
+// stay in sync with the proto enum.
+const (
+	realtimeKindRecall = 1
+	realtimeKindEdit   = 2
+	realtimeKindDelete = 3
+)
+
+// errMsgs are repo-level error sentinels surfaced to the
+// application layer through `mapMutationError` (see
+// application/service.go). String form is part of the contract.
+var (
+	errGroupMessageNotFound = errors.New("group message not found")
+	errNotMessageOwner      = errors.New("not message owner")
+	errMutationWindowClosed = errors.New("mutation window closed")
+	errMessageAlreadyRecall = errors.New("message already recalled")
+)
+
+// loadMessageForMutation centralises the row-fetch + ownership +
+// window check used by recall / edit / delete. Returns the
+// in-memory `message` snapshot (DB-backed when `s.db != nil`,
+// otherwise the in-memory shadow) so callers can stamp the
+// outcome with the original metadata before mutating.
+func (s *service) loadMessageForMutation(actorDID, groupID, messageULID string, window time.Duration, allowRecalled bool) (message, error) {
+	var msg message
 	if s.db != nil {
-		return s.db.Model(&messageModel{}).Where("ulid = ?", messageID).Updates(map[string]interface{}{
-			"deleted":           true,
-			"content":           "",
-			"encrypted_payload": nil,
-			"updated_at":        time.Now(),
-		}).Error == nil
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	msg, ok := s.messagesByID[messageID]
-	if !ok {
-		return false
-	}
-	msg.Deleted = true
-	msg.Content = ""
-	msg.EncryptedPayload = nil
-	s.messagesByID[messageID] = msg
-	items := s.messages[msg.GroupID]
-	for i := range items {
-		if items[i].ID == messageID {
-			items[i].Deleted = true
-			items[i].Content = ""
-			items[i].EncryptedPayload = nil
+		var row messageModel
+		if err := s.db.Where("group_ulid = ? AND ulid = ?", groupID, messageULID).First(&row).Error; err != nil {
+			return message{}, errGroupMessageNotFound
 		}
+		var enc []byte
+		if len(row.EncryptedPayload) > 0 {
+			enc = append([]byte(nil), row.EncryptedPayload...)
+		}
+		msg = message{
+			ID:               row.ULID,
+			GroupID:          row.GroupULID,
+			SenderDID:        row.SenderDID,
+			Type:             row.Type,
+			Content:          row.Content,
+			EncryptedPayload: enc,
+			ReplyToID:        row.ReplyToID,
+			Recalled:         row.Recalled,
+			EditedAt:         derefTime(row.EditedAt),
+			SentAt:           row.SentAt,
+		}
+	} else {
+		s.mu.RLock()
+		m, ok := s.messagesByID[messageULID]
+		s.mu.RUnlock()
+		if !ok || m.GroupID != groupID {
+			return message{}, errGroupMessageNotFound
+		}
+		msg = m
 	}
-	s.messages[msg.GroupID] = items
-	return true
+	if msg.SenderDID != actorDID {
+		return message{}, errNotMessageOwner
+	}
+	if !allowRecalled && msg.Recalled {
+		return message{}, errMessageAlreadyRecall
+	}
+	if window > 0 && !msg.SentAt.IsZero() && time.Since(msg.SentAt) > window {
+		return message{}, errMutationWindowClosed
+	}
+	return msg, nil
 }
 
-func (s *service) deleteMessage(messageID string) bool {
+// groupRecipients returns every member DID for the group except
+// the originator. Used for realtime fan-out — the originator's
+// other devices receive a self-echo through a separate publish at
+// the handler layer (see publishMutationToParticipants).
+func (s *service) groupRecipients(groupID, exceptDID string) []string {
 	if s.db != nil {
-		err := s.db.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Where("message_ulid = ?", messageID).Delete(&MessageAttachmentModel{}).Error; err != nil {
-				return err
+		var rows []memberModel
+		if err := s.db.Select("actor_did").Where("group_ulid = ?", groupID).Find(&rows).Error; err != nil {
+			return nil
+		}
+		out := make([]string, 0, len(rows))
+		for _, r := range rows {
+			if r.ActorDID == exceptDID {
+				continue
 			}
-			return tx.Where("ulid = ?", messageID).Delete(&messageModel{}).Error
-		})
-		return err == nil
+			out = append(out, r.ActorDID)
+		}
+		return out
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	msg, ok := s.messagesByID[messageID]
-	if !ok {
-		return false
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.members[groupID] == nil {
+		return nil
 	}
-	items := s.messages[msg.GroupID]
-	out := make([]message, 0, len(items))
-	for _, item := range items {
-		if item.ID == messageID {
+	out := make([]string, 0, len(s.members[groupID]))
+	for did := range s.members[groupID] {
+		if did == exceptDID {
 			continue
 		}
-		out = append(out, item)
+		out = append(out, did)
 	}
-	s.messages[msg.GroupID] = out
-	delete(s.messagesByID, messageID)
-	return true
+	return out
+}
+
+func (s *service) recallMessage(actorDID, groupID, messageULID string, window time.Duration) (domain.MutationOutcome, error) {
+	if _, err := s.loadMessageForMutation(actorDID, groupID, messageULID, window, false); err != nil {
+		return domain.MutationOutcome{}, err
+	}
+	now := time.Now()
+	if s.db != nil {
+		if err := s.db.Model(&messageModel{}).
+			Where("group_ulid = ? AND ulid = ? AND sender_did = ?", groupID, messageULID, actorDID).
+			Updates(map[string]interface{}{
+				"deleted":           true, // on-disk column is still `deleted`
+				"content":           "",
+				"encrypted_payload": nil,
+				"updated_at":        now,
+			}).Error; err != nil {
+			return domain.MutationOutcome{}, err
+		}
+	} else {
+		s.mu.Lock()
+		if shadow, ok := s.messagesByID[messageULID]; ok {
+			shadow.Recalled = true
+			shadow.Content = ""
+			shadow.EncryptedPayload = nil
+			s.messagesByID[messageULID] = shadow
+		}
+		items := s.messages[groupID]
+		for i := range items {
+			if items[i].ID == messageULID {
+				items[i].Recalled = true
+				items[i].Content = ""
+				items[i].EncryptedPayload = nil
+			}
+		}
+		s.messages[groupID] = items
+		s.mu.Unlock()
+	}
+	return domain.MutationOutcome{
+		Ulid:          messageULID,
+		GroupID:       groupID,
+		SenderDID:     actorDID,
+		RecipientDIDs: s.groupRecipients(groupID, actorDID),
+		Kind:          realtimeKindRecall,
+		MutatedAt:     now,
+	}, nil
+}
+
+func (s *service) editMessage(actorDID, groupID, messageULID, newContent string, newCiphertext []byte, window time.Duration) (domain.MutationOutcome, error) {
+	if _, err := s.loadMessageForMutation(actorDID, groupID, messageULID, window, false); err != nil {
+		return domain.MutationOutcome{}, err
+	}
+	now := time.Now()
+	updates := map[string]interface{}{
+		"content":    newContent,
+		"updated_at": now,
+		"edited_at":  now,
+	}
+	// Only stamp encrypted_payload when the caller actually
+	// provided one — leaving the column untouched preserves the
+	// row's original ciphertext for chats that haven't migrated.
+	if len(newCiphertext) > 0 {
+		updates["encrypted_payload"] = append([]byte(nil), newCiphertext...)
+	}
+	if s.db != nil {
+		if err := s.db.Model(&messageModel{}).
+			Where("group_ulid = ? AND ulid = ? AND sender_did = ?", groupID, messageULID, actorDID).
+			Updates(updates).Error; err != nil {
+			return domain.MutationOutcome{}, err
+		}
+	} else {
+		s.mu.Lock()
+		if shadow, ok := s.messagesByID[messageULID]; ok {
+			shadow.Content = newContent
+			if len(newCiphertext) > 0 {
+				shadow.EncryptedPayload = append([]byte(nil), newCiphertext...)
+			}
+			shadow.EditedAt = now
+			s.messagesByID[messageULID] = shadow
+		}
+		items := s.messages[groupID]
+		for i := range items {
+			if items[i].ID == messageULID {
+				items[i].Content = newContent
+				if len(newCiphertext) > 0 {
+					items[i].EncryptedPayload = append([]byte(nil), newCiphertext...)
+				}
+				items[i].EditedAt = now
+			}
+		}
+		s.messages[groupID] = items
+		s.mu.Unlock()
+	}
+	return domain.MutationOutcome{
+		Ulid:          messageULID,
+		GroupID:       groupID,
+		SenderDID:     actorDID,
+		RecipientDIDs: s.groupRecipients(groupID, actorDID),
+		Kind:          realtimeKindEdit,
+		NewContent:    newContent,
+		NewCiphertext: append([]byte(nil), newCiphertext...),
+		MutatedAt:     now,
+	}, nil
+}
+
+func (s *service) deleteMessage(actorDID, groupID, messageULID string) (domain.MutationOutcome, error) {
+	// Delete bypasses the recall window — see the public
+	// DeleteMessage doc-comment for the rationale. We do still
+	// require sender-ownership; admin / owner override is
+	// applied in the application layer.
+	msg, err := s.loadMessageForMutation(actorDID, groupID, messageULID, 0, true)
+	if err != nil {
+		return domain.MutationOutcome{}, err
+	}
+	now := time.Now()
+	if s.db != nil {
+		if err := s.db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Where("message_ulid = ?", messageULID).Delete(&MessageAttachmentModel{}).Error; err != nil {
+				return err
+			}
+			return tx.Where("group_ulid = ? AND ulid = ? AND sender_did = ?", groupID, messageULID, actorDID).
+				Delete(&messageModel{}).Error
+		}); err != nil {
+			return domain.MutationOutcome{}, err
+		}
+	} else {
+		s.mu.Lock()
+		items := s.messages[msg.GroupID]
+		out := make([]message, 0, len(items))
+		for _, item := range items {
+			if item.ID == messageULID {
+				continue
+			}
+			out = append(out, item)
+		}
+		s.messages[msg.GroupID] = out
+		delete(s.messagesByID, messageULID)
+		s.mu.Unlock()
+	}
+	return domain.MutationOutcome{
+		Ulid:          messageULID,
+		GroupID:       groupID,
+		SenderDID:     actorDID,
+		RecipientDIDs: s.groupRecipients(groupID, actorDID),
+		Kind:          realtimeKindDelete,
+		MutatedAt:     now,
+	}, nil
 }
 
 func (s *service) searchMessages(groupID, query string, limit int) []message {
@@ -1345,7 +1598,8 @@ func (s *service) searchMessages(groupID, query string, limit int) []message {
 					Content:          row.Content,
 					EncryptedPayload: enc,
 					ReplyToID:        row.ReplyToID,
-					Deleted:          row.Deleted,
+					Recalled:         row.Recalled,
+					EditedAt:         derefTime(row.EditedAt),
 					SentAt:           row.SentAt,
 				})
 			}
@@ -1551,4 +1805,17 @@ func (s *service) stats() (int32, int32, int64, int32) {
 		}
 	}
 	return totalGroups, totalMembers, totalMessages, activeGroups
+}
+
+// derefTime returns the zero-value time.Time when the input is nil.
+// We model nullable timestamp columns (notably edited_at) as
+// `*time.Time` in the GORM model so a fresh insert leaves the column
+// NULL rather than stamping epoch-zero, but in-memory + domain
+// types use plain `time.Time` with the convention that the zero
+// value means "unset". This helper bridges the two.
+func derefTime(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return *t
 }

@@ -2012,6 +2012,32 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Err(e) => e,
             }
         }
+        // Admin / debug HTTP bridge for the new edit endpoint —
+        // the production data-plane is the Tauri proto command
+        // (group_chat_edit_message); this gateway entry exists so
+        // operators can drive edits from the dashboard / curl.
+        "group_chat_edit_message" => {
+            let input = match parse_args::<GroupChatEditInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let mut body = json!({
+                "group_ulid": input.group_ulid,
+                "message_ulid": input.message_ulid,
+            });
+            if let Some(content) = input.new_content.filter(|c| !c.trim().is_empty()) {
+                body["new_content"] = json!(content);
+            }
+            if let Some(ct) = input.new_encrypted_payload.filter(|c| !c.is_empty()) {
+                // base64 the payload for the JSON wire — the
+                // proto path is byte-clean, but JSON has no
+                // canonical bytes representation.
+                use base64::{engine::general_purpose::STANDARD, Engine as _};
+                body["new_encrypted_payload_b64"] = json!(STANDARD.encode(&ct));
+            }
+            match station_request_json(Method::POST, "/group-chat/message/edit", &token, None, Some(body)) {
+                Ok(data) => to_json(to_stub("group_chat_edit_message", data)),
+                Err(e) => e,
+            }
+        }
         "group_chat_search_messages" => {
             let input = match parse_args::<GroupSearchMessagesInput>(args) { Ok(v) => v, Err(e) => return e };
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
