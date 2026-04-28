@@ -55,6 +55,9 @@ const (
 	routeSocialUserSearch = "/api/v1/social/users/search"
 	routeSocialUserMe     = "/api/v1/social/users/me"
 
+	// Self-stats (drives the user-side dashboard panel)
+	routeSocialMyStats = "/api/v1/social/me/stats"
+
 	// Circles
 	routeSocialCircles      = "/api/v1/social/circles"
 	routeSocialCircle       = "/api/v1/social/circles/:id"
@@ -102,6 +105,7 @@ func (s *subServer) Handlers() []server.Handler {
 		// User search / me
 		server.NewTypedHandler("social-search-users", routeSocialUserSearch, server.GET, s.handleSearchUsers, cw, jw),
 		server.NewTypedHandler("social-get-me", routeSocialUserMe, server.GET, s.handleGetMe, cw, jw),
+		server.NewTypedHandler("social-my-stats", routeSocialMyStats, server.GET, s.handleGetMyStats, cw, jw),
 
 		// Circles
 		server.NewTypedHandler("social-create-circle", routeSocialCircles, server.POST, s.handleCreateCircle, cw, jw),
@@ -636,6 +640,29 @@ func (s *subServer) handleListCircleMembers(ctx context.Context, req *model.List
 		return nil, server.InternalErrorWithCause("failed to list circle members", err)
 	}
 	return resp, nil
+}
+
+// --- Stats ---------------------------------------------------------
+
+func (s *subServer) handleGetMyStats(ctx context.Context, _ *model.GetMyMomentsStatsRequest) (*model.GetMyMomentsStatsResponse, error) {
+	userID, ok := getUserID(ctx)
+	if !ok {
+		return nil, server.Unauthorized("authentication required")
+	}
+	stats, err := s.statsSvc.MyStats(ctx, userID)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("failed to compute moments stats", err)
+	}
+	return &model.GetMyMomentsStatsResponse{
+		PostsCount:             stats.PostsCount,
+		CommentsCount:          stats.CommentsCount,
+		ReactionsGivenCount:    stats.ReactionsGivenCount,
+		CommentsReceivedCount:  stats.CommentsReceivedCount,
+		ReactionsReceivedCount: stats.ReactionsReceivedCount,
+		FollowingCount:         stats.FollowingCount,
+		FollowersCount:         stats.FollowersCount,
+		CirclesCount:           stats.CirclesCount,
+	}, nil
 }
 
 // --- Helpers ----------------------------------------------------
