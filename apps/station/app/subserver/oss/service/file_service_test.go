@@ -265,6 +265,46 @@ func (r *fakeFileRepo) ListByOwner(ctx context.Context, owner string, filter oss
 	return out, total, nil
 }
 
+func (r *fakeFileRepo) ListExpired(ctx context.Context, now time.Time, limit int) ([]ossmodel.FileMeta, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if limit <= 0 {
+		limit = 100
+	}
+	matched := make([]*ossmodel.FileMeta, 0)
+	for _, m := range r.byPK {
+		if m.DeletedAt != nil {
+			continue
+		}
+		if m.ExpiresAt == nil {
+			continue
+		}
+		if !m.ExpiresAt.Before(now) {
+			continue
+		}
+		matched = append(matched, m)
+	}
+	// Sort by ExpiresAt ASC for deterministic worker ordering.
+	for i := 1; i < len(matched); i++ {
+		for j := i; j > 0; j-- {
+			a, b := matched[j-1], matched[j]
+			if a.ExpiresAt != nil && b.ExpiresAt != nil && a.ExpiresAt.After(*b.ExpiresAt) {
+				matched[j-1], matched[j] = b, a
+				continue
+			}
+			break
+		}
+	}
+	if len(matched) > limit {
+		matched = matched[:limit]
+	}
+	out := make([]ossmodel.FileMeta, 0, len(matched))
+	for _, m := range matched {
+		out = append(out, *m)
+	}
+	return out, nil
+}
+
 // sortFiles applies the canonical "newest first, deterministic
 // tiebreak" ordering used by ListByOwner. Implemented as an
 // insertion sort because the test datasets stay small (≤100s);

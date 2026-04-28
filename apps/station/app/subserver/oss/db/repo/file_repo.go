@@ -101,6 +101,19 @@ type FileRepository interface {
 	// `Filter.IncludeDeleted = true` to surface them (used by the
 	// dashboard "trash" view).
 	ListByOwner(ctx context.Context, owner string, filter ListByOwnerFilter, limit, offset int) ([]ossmodel.FileMeta, int64, error)
+
+	// ListExpired returns live rows whose `expires_at` is non-NULL
+	// and < `now`, ordered by `expires_at ASC` so the worker
+	// drains the oldest first. `limit` bounds the worker's batch
+	// size to avoid runaway DELETEs on a backlog. The TTLSweeper
+	// worker uses this to drive bulk soft-delete + bucket usage
+	// debit + blob refcount release; per the v3 plan, drift in
+	// any of those follow-on writes is corrected by the
+	// BucketReconciler / BlobGC workers.
+	//
+	// Soft-deleted rows are excluded — there is nothing to expire
+	// when the file is already in the tombstone state.
+	ListExpired(ctx context.Context, now time.Time, limit int) ([]ossmodel.FileMeta, error)
 }
 
 // ListByOwnerFilter captures the user-facing search predicates the
@@ -385,6 +398,25 @@ func (r *fileRepo) ListByOwner(ctx context.Context, owner string, filter ListByO
 		return nil, 0, err
 	}
 	return rows, total, nil
+}
+
+func (r *fileRepo) ListExpired(ctx context.Context, now time.Time, limit int) ([]ossmodel.FileMeta, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	db, err := r.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var rows []ossmodel.FileMeta
+	err = db.Model(&ossmodel.FileMeta{}).
+		Where("deleted_at IS NULL").
+		Where("expires_at IS NOT NULL").
+		Where("expires_at < ?", now).
+		Order("expires_at ASC").
+		Limit(limit).
+		Find(&rows).Error
+	return rows, err
 }
 
 // likeEscape escapes the SQL LIKE meta-characters `%`, `_`, and the
