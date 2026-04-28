@@ -1,13 +1,14 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button } from '@lobehub/ui';
 import { Divider, theme, Typography } from 'antd';
-import { X, Search, BarChart3, LogOut, Ban, UserPlus, Lock } from 'lucide-react';
+import { X, Search, BarChart3, LogOut, Ban, UserPlus, Lock, ShieldCheck } from 'lucide-react';
 import { useSocialChatStore } from '../../store/socialChat';
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import type { GroupMember } from '../../gen/proto/domain/chat/group_chat_pb';
+import { SafetyVerificationPanel } from './SafetyVerificationPanel';
 
 const { Text, Title } = Typography;
 
@@ -52,9 +53,27 @@ export function ChatDetailPanel() {
   } = useSocialChatStore();
   const encryptionEnabled = useSocialChatStore((s) => s.encryptionEnabled);
   const ownFingerprint = useSocialChatStore((s) => s.ownFingerprint);
+  const currentUserDid = useSocialChatStore((s) => s.currentUserDid);
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const isGroup = activeTab === 'group';
+  // The verify section is collapsed by default — most users won't
+  // open it on every glance at a chat, and the QR / fetch is
+  // network-bound. Lazy mount also defers the bundle fetch.
+  const [verifyOpen, setVerifyOpen] = useState(false);
+
+  // Resolve the peer DID for friend chats. Group safety numbers
+  // are an N×N problem (each pair has its own number) and we
+  // intentionally defer them until the chat ratchet upgrade —
+  // see docs/architecture/crypto/double-ratchet-migration.md.
+  const peerDid = (() => {
+    if (activeTab !== 'friend' || !activeUlid || !currentUserDid) return '';
+    const s = sessions.find((x) => x.ulid === activeUlid);
+    if (!s) return '';
+    if (s.participantADid === currentUserDid) return s.participantBDid || '';
+    if (s.participantBDid === currentUserDid) return s.participantADid || '';
+    return '';
+  })();
 
   const currentName = (() => {
     if (activeTab === 'friend') {
@@ -235,7 +254,32 @@ export function ChatDetailPanel() {
             <Text type="secondary" style={{ fontSize: 11, fontFamily: 'monospace', wordBreak: 'break-all' }}>
               {ownFingerprint || '—'}
             </Text>
+            {/* Identity verification — only meaningful on friend
+                chats where there is a single peer to compare
+                against. Group safety numbers wait on the chat
+                ratchet upgrade. */}
+            {!isGroup && peerDid ? (
+              <Button
+                type={verifyOpen ? 'default' : 'primary'}
+                ghost={!verifyOpen}
+                icon={<ShieldCheck size={14} />}
+                size="small"
+                onClick={() => setVerifyOpen((v) => !v)}
+                style={{ marginTop: 4 }}
+              >
+                {verifyOpen
+                  ? t('chat.social.verify.hide')
+                  : t('chat.social.verify.show')}
+              </Button>
+            ) : null}
           </Flexbox>
+          {!isGroup && peerDid && verifyOpen && currentUserDid ? (
+            <SafetyVerificationPanel
+              localActorDid={currentUserDid}
+              localFingerprint={ownFingerprint || ''}
+              peerDid={peerDid}
+            />
+          ) : null}
         </>
       )}
     </Flexbox>
