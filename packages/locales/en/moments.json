@@ -79,6 +79,11 @@
   "moments.stats.posts": "Posts",
   "moments.stats.followers": "Followers",
   "moments.stats.following": "Following",
+  "moments.stats.circles": "Circles",
+  "moments.stats.commentsReceived": "Comments",
+  "moments.stats.commentsReceivedHint": "Total comments others have left on your posts.",
+  "moments.stats.reactionsReceived": "Reactions",
+  "moments.stats.reactionsReceivedHint": "Total reactions others have placed on your posts.",
 
   "moments.circle.create": "New Circle",
   "moments.circle.namePlaceholder": "Circle name",

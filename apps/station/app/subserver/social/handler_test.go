@@ -79,6 +79,7 @@ func newHandlerFixture(t *testing.T) *handlerFixture {
 	circleSvc := application.NewCircleService(repos)
 	timelineSvc := application.NewTimelineService(repos, momentSvc, resolver, groups)
 	relationshipSvc := application.NewRelationshipService(repos.Follows)
+	statsSvc := application.NewStatsService(gdb, repos)
 
 	s := &subServer{
 		momentSvc:       momentSvc,
@@ -87,6 +88,7 @@ func newHandlerFixture(t *testing.T) *handlerFixture {
 		circleSvc:       circleSvc,
 		timelineSvc:     timelineSvc,
 		relationshipSvc: relationshipSvc,
+		statsSvc:        statsSvc,
 	}
 
 	return &handlerFixture{subserver: s, gdb: gdb, repos: repos}
@@ -338,6 +340,47 @@ func TestHandler_GetPost_RequiresPostID(t *testing.T) {
 // ---------------------------------------------------------------------------
 // 404 path for unknown post id
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Stats
+// ---------------------------------------------------------------------------
+
+func TestHandler_GetMyStats_RejectsAnonymous(t *testing.T) {
+	f := newHandlerFixture(t)
+	_, err := f.subserver.handleGetMyStats(withViewer(0), &model.GetMyMomentsStatsRequest{})
+	if err == nil {
+		t.Fatal("expected anon caller to be rejected from /me/stats")
+	}
+}
+
+func TestHandler_GetMyStats_ReflectsAuthorPostCount(t *testing.T) {
+	// Sanity: after creating two PUBLIC posts, the stats endpoint
+	// returns posts_count=2. The remaining counters stay zero
+	// (no comments/reactions/follows). Locks the wiring between
+	// the StatsService and the handler.
+	f := newHandlerFixture(t)
+	const author = uint64(42)
+
+	for i := 0; i < 2; i++ {
+		if _, err := f.subserver.handleCreatePost(
+			withViewer(author),
+			textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "post"),
+		); err != nil {
+			t.Fatalf("seed post %d: %v", i, err)
+		}
+	}
+
+	resp, err := f.subserver.handleGetMyStats(withViewer(author), &model.GetMyMomentsStatsRequest{})
+	if err != nil {
+		t.Fatalf("get my stats: %v", err)
+	}
+	if resp.PostsCount != 2 {
+		t.Fatalf("posts_count = %d, want 2", resp.PostsCount)
+	}
+	if resp.ReactionsGivenCount != 0 || resp.CommentsCount != 0 {
+		t.Fatalf("expected zero engagement counters, got %+v", resp)
+	}
+}
 
 func TestHandler_GetPost_NotFoundOnMissingID(t *testing.T) {
 	f := newHandlerFixture(t)

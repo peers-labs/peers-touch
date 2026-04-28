@@ -358,6 +358,40 @@ enum TimelineSort {
 }
 
 // ============================================================================
+// 个人统计（Moments dashboard）
+// ============================================================================
+
+// GetMyMomentsStats returns aggregate counters for the calling user's
+// Moments surface — the data that powers the user-side dashboard
+// panel. All values are computed live (no caching layer in P2).
+message GetMyMomentsStatsRequest {}
+
+message GetMyMomentsStatsResponse {
+  // Total non-deleted posts authored by the caller, summed across
+  // social_public_posts and social_private_posts.
+  int64 posts_count = 1;
+  // Total non-deleted comments authored by the caller across every
+  // post they're replying to.
+  int64 comments_count = 2;
+  // Total reactions authored by the caller (every reaction this user
+  // has placed across the system).
+  int64 reactions_given_count = 3;
+  // Sum of comments_count across the caller's own non-deleted posts —
+  // i.e. how much engagement their content has attracted.
+  int64 comments_received_count = 4;
+  // Total reactions placed BY OTHERS on the caller's non-deleted
+  // posts.
+  int64 reactions_received_count = 5;
+  // Number of accounts the caller follows.
+  int64 following_count = 6;
+  // Number of accounts following the caller.
+  int64 followers_count = 7;
+  // Number of circles the caller has created (publisher-private
+  // audience labels).
+  int64 circles_count = 8;
+}
+
+// ============================================================================
 // 互动
 // ============================================================================
 
