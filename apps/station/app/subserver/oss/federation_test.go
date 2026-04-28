@@ -48,6 +48,12 @@ func (r *fakePeerKeyRepo) SaveLocalKey(_ context.Context, priv, pub, kid string)
 	return nil
 }
 
+func (r *fakePeerKeyRepo) GetCurrentKID(_ context.Context) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.kid, nil
+}
+
 func (r *fakePeerKeyRepo) GetPeer(_ context.Context, peerStationID string) (*ossmodel.PeerKey, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -176,6 +182,49 @@ func TestFederationKeyCache_LoadOrGenerate(t *testing.T) {
 	}
 	if k2.kid != k1.kid {
 		t.Errorf("rehydrated kid drifted: %q vs %q", k2.kid, k1.kid)
+	}
+}
+
+// TestFederationKeyCache_RecheckPicksUpRotation simulates the
+// dashboard-driven rotation flow: an out-of-band write changes
+// the persisted KID, and the cache's recheck-on-Get path must
+// reload to the new keypair without restarting the subserver.
+func TestFederationKeyCache_RecheckPicksUpRotation(t *testing.T) {
+	repo := newFakePeerKeyRepo()
+	c := newFederationKeyCache(repo)
+	// Force the recheck to fire on the very next Get() so the
+	// test does not have to sleep for the production TTL.
+	c.recheckTTL = time.Nanosecond
+
+	first, err := c.get(context.Background())
+	if err != nil {
+		t.Fatalf("first get: %v", err)
+	}
+
+	// Out-of-band write: simulates the dashboard's
+	// RotateFederationLocalKey replacing the canonical slots.
+	pub2, priv2, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate replacement: %v", err)
+	}
+	priv2PEM, pub2PEM, kid2, err := encodeFederationKey(priv2, pub2)
+	if err != nil {
+		t.Fatalf("encode replacement: %v", err)
+	}
+	if err := repo.SaveLocalKey(context.Background(), priv2PEM, pub2PEM, kid2); err != nil {
+		t.Fatalf("save replacement: %v", err)
+	}
+
+	// The cache must observe the new KID on the next Get(): the
+	// once-load already happened, so this exercises the recheck
+	// branch (not the once.Do branch).
+	second, err := c.get(context.Background())
+	if err != nil {
+		t.Fatalf("second get: %v", err)
+	}
+	if second.kid != kid2 {
+		t.Errorf("recheck did not pick up rotation: cached=%q first=%q want=%q",
+			second.kid, first.kid, kid2)
 	}
 }
 

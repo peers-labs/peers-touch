@@ -231,3 +231,20 @@ type OSSFederationPeer struct {
 type OSSFederationPeersResponse struct {
 	Items []OSSFederationPeer `json:"items"`
 }
+
+// OSSFederationRotateResponse is the body of a successful
+// `POST /dashboard/api/oss/federation/rotate-local-key`.
+//
+// `NewKID` is the freshly generated identifier; `PreviousKID`
+// echoes back the kid we just demoted to the `_prev` slot so the
+// operator can sanity-check the rotation in the audit log.
+// `RotatedAt` is the timestamp the worker uses when deciding when
+// to clear the `_prev` slot, and `CapabilityVersion` is the new
+// `oss_meta.capability_version` that peers will observe on their
+// next `/sub-oss/capabilities` refresh.
+type OSSFederationRotateResponse struct {
+	NewKID            string    `json:"new_kid"`
+	PreviousKID       string    `json:"previous_kid,omitempty"`
+	RotatedAt         time.Time `json:"rotated_at"`
+	CapabilityVersion string    `json:"capability_version,omitempty"`
+}
