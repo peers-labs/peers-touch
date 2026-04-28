@@ -86,6 +86,7 @@ const (
 	routeOSSBucketDetail   = "/dashboard/api/oss/buckets/:id"
 	routeOSSBucketObjects  = "/dashboard/api/oss/buckets/:id/objects"
 	routeOSSObjects        = "/dashboard/api/oss/objects"
+	routeOSSObjectDetail   = "/dashboard/api/oss/objects/:id"
 	routeOSSAudit          = "/dashboard/api/oss/audit"
 	routeOSSUsage          = "/dashboard/api/oss/usage"
 	routeOSSFedMe          = "/dashboard/api/oss/federation/me"
@@ -203,6 +204,12 @@ func (h *dashboardHandler) handlers() []server.Handler {
 			h.handleOSSListBucketObjects, auth),
 		server.NewTypedHandler("dashboard-oss-objects", routeOSSObjects, server.GET,
 			h.handleOSSListObjects, auth),
+		server.NewTypedHandler("dashboard-oss-object-detail", routeOSSObjectDetail, server.GET,
+			h.handleOSSGetObject, auth),
+		server.NewTypedHandler("dashboard-oss-object-patch", routeOSSObjectDetail, server.PATCH,
+			h.handleOSSAdminPatchObject, auth),
+		server.NewTypedHandler("dashboard-oss-object-delete", routeOSSObjectDetail, server.DELETE,
+			h.handleOSSAdminDeleteObject, auth),
 		server.NewTypedHandler("dashboard-oss-audit", routeOSSAudit, server.GET,
 			h.handleOSSListAudit, auth),
 		server.NewTypedHandler("dashboard-oss-usage", routeOSSUsage, server.GET,
@@ -1009,6 +1016,158 @@ func (h *dashboardHandler) handleOSSListBucketObjects(ctx context.Context, _ *do
 		return nil, server.InternalError("failed to list objects")
 	}
 	return resp, nil
+}
+
+// handleOSSGetObject — GET /dashboard/api/oss/objects/:id
+//
+// Returns the admin detail for a single file, including soft-
+// deleted rows so the operator can inspect the lifecycle history
+// before acting.
+func (h *dashboardHandler) handleOSSGetObject(ctx context.Context, _ *domain.EmptyRequest) (*domain.OSSObjectAdminDetail, error) {
+	if h.sub.ossSvc == nil {
+		return nil, serviceUnavailable("oss service unavailable")
+	}
+	id := pathParam(ctx, "id")
+	if id == "" {
+		return nil, server.BadRequest("object id is required")
+	}
+	row, err := h.sub.ossSvc.GetObject(ctx, id)
+	if err != nil {
+		log.Errorf(ctx, "[dashboard] oss get object error: %v", err)
+		return nil, server.InternalError("failed to load object")
+	}
+	if row == nil {
+		return nil, server.NotFound("object not found")
+	}
+	return row, nil
+}
+
+// handleOSSAdminPatchObject — PATCH /dashboard/api/oss/objects/:id
+//
+// Operator-driven object mutate. Bypasses owner permission
+// checks (this is the operator's escape hatch) but DOES enforce
+// the same visibility / chat-session invariants as the user
+// PATCH path so the row never lands in an invalid state.
+//
+// Bucket-move is intentionally NOT supported here — quota
+// transfer is owner-scoped by design (see file_service.PatchFile);
+// operators who need to move a file across buckets should ask
+// the owner to use the user PATCH endpoint.
+//
+// Audits are dual: `oss_audit` row with action=
+// `admin_visibility_override` plus dashboard admin audit.
+func (h *dashboardHandler) handleOSSAdminPatchObject(ctx context.Context, req *domain.OSSObjectAdminPatchRequest) (*domain.OSSObjectAdminDetail, error) {
+	if h.sub.ossSvc == nil {
+		return nil, serviceUnavailable("oss service unavailable")
+	}
+	id := pathParam(ctx, "id")
+	if id == "" {
+		return nil, server.BadRequest("object id is required")
+	}
+	if req == nil {
+		return nil, server.BadRequest("request body is required")
+	}
+	claims := getClaims(ctx)
+
+	row, err := h.sub.ossSvc.AdminPatchObject(ctx, id, *req)
+	if err != nil {
+		switch {
+		case errors.Is(err, infrastructure.ErrFileNotFound):
+			return nil, server.NotFound("object not found")
+		case errors.Is(err, infrastructure.ErrFileAlreadyDeleted):
+			h.recordOSSObjectAudit(ctx, claims, "admin_visibility_override", id, nil,
+				"denied", "already_deleted")
+			return nil, server.Conflict("object is already deleted")
+		case errors.Is(err, infrastructure.ErrFileChatNeedsSession):
+			return nil, server.BadRequest("visibility=chat requires chat_session_id")
+		case errors.Is(err, infrastructure.ErrFileBadInput):
+			return nil, server.BadRequest("invalid patch input")
+		}
+		if strings.HasPrefix(err.Error(), "visibility") ||
+			strings.HasPrefix(err.Error(), "object id") ||
+			strings.HasPrefix(err.Error(), "at least one field") {
+			return nil, server.BadRequest(err.Error())
+		}
+		log.Errorf(ctx, "[dashboard] oss admin patch object error: %v", err)
+		return nil, server.InternalError("failed to patch object")
+	}
+	h.recordOSSObjectAudit(ctx, claims, "admin_visibility_override", id, row, "ok", "")
+	h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username, "oss_object_admin_patch", "oss_object",
+		"object_id="+id, getClientIP(ctx), getUserAgent(ctx))
+	return row, nil
+}
+
+// handleOSSAdminDeleteObject — DELETE /dashboard/api/oss/objects/:id
+//
+// Operator force-delete. Idempotent: a re-delete of an already
+// soft-deleted row returns 200 with the existing detail and
+// emits an audit row with reason=already_deleted.
+//
+// We do NOT debit bucket usage or decrement blob refcount here —
+// per the v3 plan, the BucketReconciler / BlobGC workers (S11+)
+// own ground-truth reconciliation. Doing the debit synchronously
+// from the dashboard would risk drift between this path and the
+// OSS subserver's owner-scoped DeleteFile.
+func (h *dashboardHandler) handleOSSAdminDeleteObject(ctx context.Context, _ *domain.EmptyRequest) (*domain.OSSObjectAdminDetail, error) {
+	if h.sub.ossSvc == nil {
+		return nil, serviceUnavailable("oss service unavailable")
+	}
+	id := pathParam(ctx, "id")
+	if id == "" {
+		return nil, server.BadRequest("object id is required")
+	}
+	claims := getClaims(ctx)
+
+	row, err := h.sub.ossSvc.AdminDeleteObject(ctx, id)
+	if err != nil {
+		if errors.Is(err, infrastructure.ErrFileAlreadyDeleted) && row != nil {
+			h.recordOSSObjectAudit(ctx, claims, "admin_delete", id, row, "ok", "already_deleted")
+			h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username, "oss_object_admin_delete", "oss_object",
+				"object_id="+id+" already_deleted", getClientIP(ctx), getUserAgent(ctx))
+			return row, nil
+		}
+		if errors.Is(err, infrastructure.ErrFileNotFound) {
+			return nil, server.NotFound("object not found")
+		}
+		log.Errorf(ctx, "[dashboard] oss admin delete object error: %v", err)
+		return nil, server.InternalError("failed to delete object")
+	}
+	h.recordOSSObjectAudit(ctx, claims, "admin_delete", id, row, "ok", "")
+	h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username, "oss_object_admin_delete", "oss_object",
+		"object_id="+id, getClientIP(ctx), getUserAgent(ctx))
+	return row, nil
+}
+
+// recordOSSObjectAudit emits one row into oss_audit for an
+// admin-driven object mutation. Same fire-and-forget contract
+// as recordOSSBucketAudit — auditing must not turn a successful
+// mutation into a 500.
+func (h *dashboardHandler) recordOSSObjectAudit(ctx context.Context, claims *domain.DashboardClaims,
+	action, fileID string, row *domain.OSSObjectAdminDetail, outcome, reason string) {
+	if h.sub.ossSvc == nil {
+		return
+	}
+	dashID := ""
+	if claims != nil {
+		dashID = strconv.FormatUint(claims.AdminID, 10)
+	}
+	evt := infrastructure.OSSAuditAppend{
+		Action:           action,
+		FileID:           fileID,
+		DashboardActorID: dashID,
+		Outcome:          outcome,
+		Reason:           reason,
+	}
+	if row != nil {
+		evt.FileKey = row.Key
+		evt.BucketID = row.BucketID
+		evt.ActorID = row.OwnerActorID
+		evt.SizeBytes = row.Size
+	}
+	if err := h.sub.ossSvc.RecordOSSAudit(ctx, evt); err != nil {
+		log.Warnf(ctx, "[dashboard] oss_audit append failed (action=%s file=%s): %v",
+			action, fileID, err)
+	}
 }
 
 // handleOSSListObjects — GET /dashboard/api/oss/objects

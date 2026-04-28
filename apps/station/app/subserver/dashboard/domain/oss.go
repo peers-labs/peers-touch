@@ -102,6 +102,52 @@ type OSSObjectListResponse struct {
 	Page  int                `json:"page"`
 }
 
+// OSSObjectAdminDetail is the response for `GET /objects/:id` and
+// the return shape of admin PATCH / DELETE. It surfaces the
+// lifecycle columns (`expires_at`, `deleted_at`, `updated_at`)
+// the list view omits — operators acting on a single object need
+// the full state to make an informed decision.
+type OSSObjectAdminDetail struct {
+	ID            string     `json:"id"`
+	Key           string     `json:"key"`
+	Name          string     `json:"name"`
+	Size          int64      `json:"size"`
+	Mime          string     `json:"mime"`
+	Backend       string     `json:"backend"`
+	BucketID      string     `json:"bucket_id"`
+	OwnerActorID  string     `json:"owner_actor_id"`
+	Visibility    string     `json:"visibility"`
+	ChatSessionID string     `json:"chat_session_id,omitempty"`
+	Sha256        string     `json:"sha256,omitempty"`
+	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
+	DeletedAt     *time.Time `json:"deleted_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+// OSSObjectAdminPatchRequest is the JSON body of
+// `PATCH /dashboard/api/oss/objects/:id`.
+//
+// Field semantics (the dashboard goes through the TypedHandler
+// codec, which cannot distinguish "field omitted" from "field =
+// null", so we use the following conventions):
+//
+//   - Visibility: nil = leave alone; set = update. Whitelist
+//     enforced at the service layer.
+//   - ChatSessionID: nil = leave alone; "" = clear; non-empty =
+//     set. Empty-string-as-clear is unambiguous because chat
+//     session IDs cannot legitimately be empty.
+//   - ExpiresAt: nil = leave alone; set = update.
+//   - ClearExpiresAt: when true, force the column to NULL
+//     regardless of ExpiresAt. Used because *time.Time has no
+//     natural "cleared" sentinel that survives JSON round-trips.
+type OSSObjectAdminPatchRequest struct {
+	Visibility     *string    `json:"visibility,omitempty"`
+	ChatSessionID  *string    `json:"chat_session_id,omitempty"`
+	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
+	ClearExpiresAt bool       `json:"clear_expires_at,omitempty"`
+}
+
 // ---------------------------------------------------------------------------
 // Audit DTOs
 // ---------------------------------------------------------------------------
