@@ -585,6 +585,87 @@ where
     Ok(result)
 }
 
+/// Authenticated JSON request — minimal helper for OSS subserver
+/// endpoints that speak plain JSON (not the `PeersResponse`
+/// protobuf envelope). Returns the parsed JSON body verbatim on
+/// 2xx; on non-success we round-trip the same `build_error_for_status`
+/// path the protobuf helpers use so callers see consistent error
+/// kinds (HttpStatus / SessionRevoked / etc.).
+///
+/// `query` is appended verbatim — use `&[("foo", "bar".into())]`.
+/// `body` is sent as JSON when `Some`. Pass `None` for GET / DELETE.
+pub(crate) fn request_json_auth(
+    method: Method,
+    path: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+    body: Option<&Value>,
+) -> Result<Value, StationClientError> {
+    let url = format!("{}{}", station_base_url(), path);
+    tracing::debug!(method = %method, path = %path, "→ station (json, auth)");
+
+    let start = std::time::Instant::now();
+    let client = build_client()?;
+
+    let mut req = client
+        .request(method.clone(), &url)
+        .bearer_auth(token)
+        .header("Accept", "application/json");
+
+    if let Some(q) = query {
+        req = req.query(q);
+    }
+    if let Some(b) = body {
+        req = req.json(b);
+    } else if matches!(method, Method::POST | Method::PATCH | Method::PUT) {
+        // POST / PATCH without a body still needs a content-type or
+        // some servers (Hertz binders included) reject the request
+        // with a confusing "missing body" error.
+        req = req.header("Content-Type", "application/json");
+    }
+
+    let resp = req.send().map_err(|e| {
+        let elapsed = start.elapsed().as_millis();
+        tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR (json-auth)");
+        StationClientError::new(StationClientErrorKind::Network, format!("request failed: {}", e), None)
+    })?;
+
+    let status = resp.status();
+    let elapsed = start.elapsed().as_millis();
+
+    let bytes = resp.bytes().map_err(|e| {
+        tracing::error!(path = %path, error = %e, "← station READ_ERROR (json-auth)");
+        StationClientError::new(StationClientErrorKind::Decode, format!("read body failed: {}", e), None)
+    })?;
+
+    if !status.is_success() {
+        let text = String::from_utf8_lossy(&bytes).to_string();
+        tracing::warn!(
+            path = %path,
+            status = status.as_u16(),
+            elapsed_ms = elapsed,
+            body = %text,
+            "← station FAIL (json-auth)",
+        );
+        return Err(build_error_for_status(status.as_u16(), path, &text));
+    }
+
+    // The OSS handlers return 204 No Content for some mutations;
+    // surface that as `Value::Null` rather than failing on empty
+    // body decode.
+    if bytes.is_empty() {
+        tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json-auth, empty)");
+        return Ok(Value::Null);
+    }
+
+    let result: Value = serde_json::from_slice(&bytes).map_err(|e| {
+        tracing::error!(path = %path, error = %e, "← station JSON_ERROR (json-auth)");
+        StationClientError::new(StationClientErrorKind::Decode, format!("decode json response failed: {}", e), None)
+    })?;
+    tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json-auth)");
+    Ok(result)
+}
+
 /// Upload a local file to Station OSS via multipart/form-data POST.
 pub(crate) fn upload_multipart(
     path: &str,

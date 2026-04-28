@@ -44,6 +44,49 @@ pub struct OssResolveUrlInput {
     pub uri: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct OssListMyFilesInput {
+    #[serde(default)]
+    pub bucket: Option<String>,
+    #[serde(default)]
+    pub visibility: Option<String>,
+    #[serde(default)]
+    pub mime: Option<String>,
+    #[serde(default)]
+    pub include_deleted: bool,
+    #[serde(default)]
+    pub page: Option<i32>,
+    #[serde(default)]
+    pub page_size: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OssKeyInput {
+    pub key: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OssPatchFileInput {
+    pub key: String,
+    #[serde(default)]
+    pub visibility: Option<String>,
+    #[serde(default)]
+    pub chat_session_id: Option<String>,
+    #[serde(default)]
+    pub bucket: Option<String>,
+    #[serde(default)]
+    pub filename: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<String>,
+    #[serde(default)]
+    pub clear_expires_at: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OssInvalidateCacheInput {
+    pub uri: String,
+}
+
 fn require_token(state: &Arc<AppState>, window: &Window) -> Result<String, AppResult<StubPayload>> {
     let token = session_resolver::token_for_window(state, window).unwrap_or_default();
     if token.trim().is_empty() {
@@ -136,4 +179,77 @@ pub fn chat_upload_attachment(
 #[tauri::command]
 pub fn oss_resolve_url(input: OssResolveUrlInput) -> AppResult<StubPayload> {
     application_oss::oss_resolve_url(&input.uri)
+}
+
+#[tauri::command]
+pub fn oss_list_my_files(
+    input: OssListMyFilesInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match require_token(state.inner(), &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let query = application_oss::ListMyFilesQuery {
+        bucket: input.bucket,
+        visibility: input.visibility,
+        mime: input.mime,
+        include_deleted: input.include_deleted,
+        page: input.page,
+        page_size: input.page_size,
+    };
+    application_oss::oss_list_my_files(&token, &query)
+}
+
+#[tauri::command]
+pub fn oss_delete_file(
+    input: OssKeyInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match require_token(state.inner(), &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    application_oss::oss_delete_file(&token, &input.key)
+}
+
+#[tauri::command]
+pub fn oss_restore_file(
+    input: OssKeyInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match require_token(state.inner(), &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    application_oss::oss_restore_file(&token, &input.key)
+}
+
+#[tauri::command]
+pub fn oss_patch_file(
+    input: OssPatchFileInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match require_token(state.inner(), &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let body = application_oss::PatchFileBody {
+        visibility: input.visibility,
+        chat_session_id: input.chat_session_id,
+        bucket: input.bucket,
+        filename: input.filename,
+        expires_at: input.expires_at,
+        clear_expires_at: input.clear_expires_at,
+    };
+    application_oss::oss_patch_file(&token, &input.key, &body)
+}
+
+#[tauri::command]
+pub fn oss_invalidate_cache(input: OssInvalidateCacheInput) -> AppResult<StubPayload> {
+    application_oss::oss_invalidate_cache(&input.uri)
 }
