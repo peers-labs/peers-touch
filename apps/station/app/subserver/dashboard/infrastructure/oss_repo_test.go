@@ -297,3 +297,160 @@ func TestOSSRepository_FederationLocalAndPeers(t *testing.T) {
 		t.Errorf("pin missing peer: want ErrPeerNotFound, got %v", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// S9: bucket lifecycle (admin) — CreateBucket / UpdateBucket / DeleteBucket
+//
+// These exercise the dashboard's own writes (it does NOT delegate to the
+// OSS subserver's repo). We verify the repo respects the same
+// (owner, name) uniqueness, refuses non-empty buckets without `force`,
+// and never deletes system buckets.
+// ---------------------------------------------------------------------------
+
+func TestOSSRepository_CreateBucket_HappyAndConflict(t *testing.T) {
+	db := newOSSTestDB(t)
+	repo := NewOSSRepository(db)
+	ctx := context.Background()
+
+	got, err := repo.CreateBucket(ctx, BucketCreateInput{
+		OwnerActorID:      "actor-x",
+		Name:              "photos",
+		DefaultVisibility: "private",
+		QuotaBytes:        1024,
+		TTLDays:           30,
+		Description:       "personal albums",
+	})
+	if err != nil {
+		t.Fatalf("CreateBucket happy: %v", err)
+	}
+	if got == nil || got.OwnerActorID != "actor-x" || got.Name != "photos" {
+		t.Fatalf("CreateBucket happy returned %+v", got)
+	}
+	if got.DefaultVisibility != "private" || got.QuotaBytes != 1024 {
+		t.Errorf("CreateBucket persisted wrong values: %+v", got)
+	}
+
+	// Same (owner, name) → ErrBucketExists, not a generic error.
+	if _, err := repo.CreateBucket(ctx, BucketCreateInput{
+		OwnerActorID: "actor-x",
+		Name:         "photos",
+	}); err != ErrBucketExists {
+		t.Errorf("conflict: want ErrBucketExists, got %v", err)
+	}
+
+	// Empty owner / name → ErrBucketBadInput at the repo boundary.
+	if _, err := repo.CreateBucket(ctx, BucketCreateInput{Name: "x"}); err != ErrBucketBadInput {
+		t.Errorf("missing owner: want ErrBucketBadInput, got %v", err)
+	}
+	if _, err := repo.CreateBucket(ctx, BucketCreateInput{OwnerActorID: "x"}); err != ErrBucketBadInput {
+		t.Errorf("missing name: want ErrBucketBadInput, got %v", err)
+	}
+}
+
+func TestOSSRepository_UpdateBucket_PartialPatchAndNotFound(t *testing.T) {
+	db := newOSSTestDB(t)
+	repo := NewOSSRepository(db)
+	ctx := context.Background()
+
+	seedBuckets(t, db, ossmodel.Bucket{
+		ID: "b-update", Name: "photos", OwnerActorID: "actor-x", Kind: "user",
+		DefaultVisibility: "private", QuotaBytes: 100, TTLDays: 7, Description: "old",
+	})
+
+	newQuota := int64(500)
+	newDesc := "new"
+	got, err := repo.UpdateBucket(ctx, "b-update", BucketUpdateInput{
+		QuotaBytes:  &newQuota,
+		Description: &newDesc,
+	})
+	if err != nil {
+		t.Fatalf("UpdateBucket: %v", err)
+	}
+	if got == nil || got.QuotaBytes != 500 {
+		t.Errorf("quota not updated: %+v", got)
+	}
+	// Untouched columns must remain. We re-query through the repo
+	// because UpdateBucket already returned a freshly-projected
+	// summary — but Description is on the summary too.
+	if got.DefaultVisibility != "private" || got.Name != "photos" {
+		t.Errorf("untouched columns drifted: %+v", got)
+	}
+
+	// Empty patch → ErrBucketBadInput (repo guards it; the service
+	// has its own guard, this protects against a buggy service.)
+	if _, err := repo.UpdateBucket(ctx, "b-update", BucketUpdateInput{}); err != ErrBucketBadInput {
+		t.Errorf("empty patch: want ErrBucketBadInput, got %v", err)
+	}
+
+	if _, err := repo.UpdateBucket(ctx, "no-such", BucketUpdateInput{QuotaBytes: &newQuota}); err != ErrBucketNotFound {
+		t.Errorf("missing id: want ErrBucketNotFound, got %v", err)
+	}
+}
+
+func TestOSSRepository_DeleteBucket_GuardsAndForce(t *testing.T) {
+	db := newOSSTestDB(t)
+	repo := NewOSSRepository(db)
+	ctx := context.Background()
+
+	seedBuckets(t, db,
+		ossmodel.Bucket{ID: "b-empty", Name: "empty", OwnerActorID: "a", Kind: "user", DefaultVisibility: "private"},
+		ossmodel.Bucket{ID: "b-full", Name: "full", OwnerActorID: "a", Kind: "user", DefaultVisibility: "private", ObjectCount: 3, UsedBytes: 999},
+		ossmodel.Bucket{ID: "b-system", Name: "chat", OwnerActorID: "a", Kind: "system", SystemKey: "chat", DefaultVisibility: "chat"},
+	)
+
+	// Empty + non-force → ok.
+	if err := repo.DeleteBucket(ctx, "b-empty", false); err != nil {
+		t.Fatalf("delete empty: %v", err)
+	}
+	got, _ := repo.GetBucket(ctx, "b-empty")
+	if got != nil {
+		t.Errorf("b-empty should be soft-deleted (not visible via GetBucket): %+v", got)
+	}
+
+	// Non-empty + non-force → ErrBucketNotEmpty.
+	if err := repo.DeleteBucket(ctx, "b-full", false); err != ErrBucketNotEmpty {
+		t.Errorf("delete full no-force: want ErrBucketNotEmpty, got %v", err)
+	}
+
+	// Non-empty + force → ok (operator override).
+	if err := repo.DeleteBucket(ctx, "b-full", true); err != nil {
+		t.Fatalf("delete full force: %v", err)
+	}
+
+	// System buckets are NEVER deletable, even with force.
+	if err := repo.DeleteBucket(ctx, "b-system", true); err != ErrBucketSystem {
+		t.Errorf("delete system force: want ErrBucketSystem, got %v", err)
+	}
+
+	// Missing id → ErrBucketNotFound.
+	if err := repo.DeleteBucket(ctx, "no-such", false); err != ErrBucketNotFound {
+		t.Errorf("delete missing: want ErrBucketNotFound, got %v", err)
+	}
+}
+
+func TestOSSRepository_RecordOSSAudit_AppendsRow(t *testing.T) {
+	db := newOSSTestDB(t)
+	repo := NewOSSRepository(db)
+	ctx := context.Background()
+
+	if err := repo.RecordOSSAudit(ctx, OSSAuditAppend{
+		Action:           "bucket_create",
+		BucketID:         "b-1",
+		ActorID:          "actor-x",
+		DashboardActorID: "42",
+		Outcome:          "ok",
+	}); err != nil {
+		t.Fatalf("RecordOSSAudit: %v", err)
+	}
+
+	rows, total, err := repo.ListAudit(ctx, OSSAuditQuery{Action: "bucket_create", Page: 1, PageSize: 50})
+	if err != nil {
+		t.Fatalf("ListAudit: %v", err)
+	}
+	if total != 1 || len(rows) != 1 {
+		t.Fatalf("expected 1 row, got total=%d rows=%d", total, len(rows))
+	}
+	if rows[0].BucketID != "b-1" || rows[0].ActorID != "actor-x" || rows[0].Outcome != "ok" {
+		t.Errorf("row mismatch: %+v", rows[0])
+	}
+}
