@@ -87,6 +87,12 @@ func (s *ossSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("oss-federation-token", base+"/federation/token", server.POST, server.HTTPHandlerFunc(s.handleFederationToken), uploadWrappers...),
 		server.NewHTTPHandler("oss-capabilities", base+"/capabilities", server.GET, server.HTTPHandlerFunc(s.handleCapabilities), publicWrappers...),
 		server.NewTypedHandler("oss-meta", base+"/meta", server.POST, s.handleMetaGet, serverwrapper.LogID()),
+		// Observability surface (S14): /healthz is a public probe
+		// (no auth — it must work when JWT plumbing is broken too);
+		// /metrics is gated by a static bearer token so the default
+		// deployment does not accidentally publish telemetry.
+		server.NewHTTPHandler("oss-healthz", base+"/healthz", server.GET, server.HTTPHandlerFunc(s.handleHealthz), publicWrappers...),
+		server.NewHTTPHandler("oss-metrics", base+"/metrics", server.GET, server.HTTPHandlerFunc(s.handleMetrics), publicWrappers...),
 	}
 }
 
