@@ -212,9 +212,17 @@ message Location {
 
 message CreatePostRequest {
   PostType type = 1;
+  // Deprecated: replaced by `audience` (field 4). Server uses `audience`
+  // when present and falls back to `visibility` only for legacy clients.
+  // Will be removed in P4 once the desktop scaffold is fully on Audience.
   PostVisibility visibility = 2;
   string reply_to_post_id = 3;
-  
+  // Audience selector (Moments). REQUIRED for posts created via the new
+  // `/api/v1/social/moments` route. Mutually exclusive with `visibility`
+  // — when both are set the server uses `audience` and ignores
+  // `visibility` per the deprecation note above.
+  Audience audience = 4;
+
   oneof content {
     CreateTextPostRequest text = 10;
     CreateImagePostRequest image = 11;
