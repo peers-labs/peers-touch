@@ -26,6 +26,7 @@
 // worker thread and our station_client helpers are blocking too.
 
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
@@ -247,4 +248,290 @@ fn urlencode(input: &str) -> String {
         }
     }
     out
+}
+
+// ---------------------------------------------------------------------------
+// User-owned file lifecycle (S16)
+//
+// These wrappers call the v3 lifecycle endpoints on the bound Station
+// and return the raw JSON envelope verbatim — the renderer wants the
+// full server shape (incl. server-timestamps) and re-typing it on the
+// Rust side would be lossy without buying us much.
+//
+// Every mutation also calls `attachment_invalidate` so the on-disk
+// cache cannot resurrect bytes the server has just retired or
+// re-classified. The invalidation is best-effort: a missing cache
+// file is not an error, and a filesystem failure (rare) is logged
+// but does not fail the IPC call — the server-side state is the
+// source of truth and will re-issue 403 / 410 on next fetch.
+// ---------------------------------------------------------------------------
+
+/// Filter envelope for `oss_list_my_files`. All fields are
+/// optional; the empty `Default` corresponds to "first page,
+/// default page-size, no predicates, exclude tombstones", which
+/// matches the server's defaults verbatim.
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct ListMyFilesQuery {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bucket: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<String>,
+    /// Server uses `LIKE '<prefix>%'` after escaping LIKE
+    /// metacharacters; pass plain prefixes like "image/".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime: Option<String>,
+    #[serde(default)]
+    pub include_deleted: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_size: Option<i32>,
+}
+
+/// PATCH envelope. Each field is double-optional in JSON terms:
+///
+///   - `Option::None` → not sent (server leaves the column alone).
+///   - `Some(value)` → sent, server applies the new value.
+///
+/// `expires_at` requires extra care: a `null` body field means
+/// "clear the column", which is distinct from "leave alone". The
+/// `clear_expires_at` boolean explicitly carries that intent and is
+/// translated to a JSON `null` on the wire.
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct PatchFileBody {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bucket: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+    #[serde(default)]
+    pub clear_expires_at: bool,
+}
+
+pub fn oss_list_my_files(token: &str, query: &ListMyFilesQuery) -> AppResult<StubPayload> {
+    let mut params: Vec<(&str, String)> = Vec::new();
+    if let Some(v) = query.bucket.as_ref().filter(|s| !s.trim().is_empty()) {
+        params.push(("bucket", v.trim().to_string()));
+    }
+    if let Some(v) = query.visibility.as_ref().filter(|s| !s.trim().is_empty()) {
+        params.push(("visibility", v.trim().to_string()));
+    }
+    if let Some(v) = query.mime.as_ref().filter(|s| !s.trim().is_empty()) {
+        params.push(("mime", v.trim().to_string()));
+    }
+    if query.include_deleted {
+        params.push(("include_deleted", "1".to_string()));
+    }
+    if let Some(p) = query.page {
+        if p > 0 {
+            params.push(("page", p.to_string()));
+        }
+    }
+    if let Some(ps) = query.page_size {
+        if ps > 0 {
+            params.push(("page_size", ps.to_string()));
+        }
+    }
+
+    match station_client::request_json_auth(
+        reqwest::Method::GET,
+        "/sub-oss/my-files",
+        token,
+        Some(&params),
+        None,
+    ) {
+        Ok(v) => json_payload("oss_list_my_files", &v),
+        Err(e) => {
+            tracing::error!(error = %e, "oss list_my_files failed");
+            e.into_app_result("Failed to list files")
+        }
+    }
+}
+
+pub fn oss_delete_file(token: &str, key: &str) -> AppResult<StubPayload> {
+    if key.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "key is required", None);
+    }
+    let key_owned = key.trim().to_string();
+    let params: [(&str, String); 1] = [("key", key_owned.clone())];
+
+    match station_client::request_json_auth(
+        reqwest::Method::DELETE,
+        "/sub-oss/file",
+        token,
+        Some(&params),
+        None,
+    ) {
+        Ok(v) => {
+            invalidate_local_cache(&key_owned, "delete");
+            json_payload("oss_delete_file", &v)
+        }
+        Err(e) => {
+            tracing::error!(error = %e, key = %key_owned, "oss delete_file failed");
+            e.into_app_result("Failed to delete file")
+        }
+    }
+}
+
+pub fn oss_restore_file(token: &str, key: &str) -> AppResult<StubPayload> {
+    if key.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "key is required", None);
+    }
+    let key_owned = key.trim().to_string();
+    let params: [(&str, String); 1] = [("key", key_owned.clone())];
+
+    match station_client::request_json_auth(
+        reqwest::Method::POST,
+        "/sub-oss/file/restore",
+        token,
+        Some(&params),
+        None,
+    ) {
+        Ok(v) => {
+            // A successful restore re-publishes the row — drop any
+            // stale cached copy that might have been retained out of
+            // band (e.g. the file was force-deleted and then
+            // restored within the same session).
+            invalidate_local_cache(&key_owned, "restore");
+            json_payload("oss_restore_file", &v)
+        }
+        Err(e) => {
+            tracing::error!(error = %e, key = %key_owned, "oss restore_file failed");
+            e.into_app_result("Failed to restore file")
+        }
+    }
+}
+
+pub fn oss_patch_file(
+    token: &str,
+    key: &str,
+    body: &PatchFileBody,
+) -> AppResult<StubPayload> {
+    if key.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "key is required", None);
+    }
+    if body.visibility.is_none()
+        && body.chat_session_id.is_none()
+        && body.bucket.is_none()
+        && body.filename.is_none()
+        && body.expires_at.is_none()
+        && !body.clear_expires_at
+    {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "patch body has no changes",
+            None,
+        );
+    }
+    if let Some(v) = body.visibility.as_deref() {
+        let lc = v.trim().to_ascii_lowercase();
+        if lc != "public" && lc != "chat" && lc != "private" {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "visibility must be one of: public, chat, private",
+                None,
+            );
+        }
+    }
+
+    let mut payload = serde_json::Map::<String, Value>::new();
+    if let Some(v) = body.visibility.as_ref() {
+        payload.insert("visibility".to_string(), Value::String(v.trim().to_string()));
+    }
+    if let Some(v) = body.chat_session_id.as_ref() {
+        payload.insert("chat_session_id".to_string(), Value::String(v.trim().to_string()));
+    }
+    if let Some(v) = body.bucket.as_ref() {
+        payload.insert("bucket".to_string(), Value::String(v.trim().to_string()));
+    }
+    if let Some(v) = body.filename.as_ref() {
+        payload.insert("filename".to_string(), Value::String(v.trim().to_string()));
+    }
+    // `clear_expires_at` wins over `expires_at` — sending both would
+    // be a client bug, but the explicit "clear" intent is the safer
+    // tiebreaker (otherwise a UI that toggles a checkbox could leak
+    // a stale stamp onto the wire).
+    if body.clear_expires_at {
+        payload.insert("expires_at".to_string(), Value::Null);
+    } else if let Some(v) = body.expires_at.as_ref() {
+        payload.insert("expires_at".to_string(), Value::String(v.trim().to_string()));
+    }
+    let body_json: Value = Value::Object(payload);
+
+    let key_owned = key.trim().to_string();
+    let params: [(&str, String); 1] = [("key", key_owned.clone())];
+
+    match station_client::request_json_auth(
+        reqwest::Method::PATCH,
+        "/sub-oss/file",
+        token,
+        Some(&params),
+        Some(&body_json),
+    ) {
+        Ok(v) => {
+            // Any visibility tighten / chat-scope change can flip
+            // who is allowed to fetch the bytes; our local cache
+            // outlives that decision and would serve stale content
+            // to receivers if not flushed.
+            invalidate_local_cache(&key_owned, "patch");
+            json_payload("oss_patch_file", &v)
+        }
+        Err(e) => {
+            tracing::error!(error = %e, key = %key_owned, "oss patch_file failed");
+            e.into_app_result("Failed to patch file")
+        }
+    }
+}
+
+/// Renderer-driven cache eviction. Used after the bound Station
+/// changes a file's lifecycle out-of-band (e.g. the operator
+/// force-deleted from the dashboard) so the next view does not
+/// surface the stale copy.
+pub fn oss_invalidate_cache(uri: &str) -> AppResult<StubPayload> {
+    let parsed = match OssUri::parse(uri) {
+        Ok(u) => u,
+        Err(e) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("invalid oss uri: {e}"),
+                None,
+            )
+        }
+    };
+    if let Err(err) = oss_cache::attachment_invalidate(&parsed) {
+        tracing::warn!(error = %err, uri = %uri, "oss cache invalidate failed");
+        // We deliberately do NOT propagate cache errors: the call
+        // is advisory. The renderer should not see "delete failed
+        // because the cache evict couldn't take a write lock".
+    }
+    AppResult::success(StubPayload {
+        command: "oss_invalidate_cache".to_string(),
+        status: json!({ "ok": true, "uri": parsed.to_uri() }).to_string(),
+    })
+}
+
+fn invalidate_local_cache(key: &str, op: &str) {
+    // The user's own files always live on the bound Station; we
+    // build the canonical OssUri from the local origin so the cache
+    // path matches whatever `attachment_ensure` would write.
+    let origin = station_client::station_base_url();
+    let uri = OssUri {
+        origin,
+        key: key.to_string(),
+    };
+    if let Err(err) = oss_cache::attachment_invalidate(&uri) {
+        tracing::warn!(error = %err, key = %key, op = %op, "post-mutation cache invalidate failed");
+    }
+}
+
+fn json_payload(command: &'static str, value: &Value) -> AppResult<StubPayload> {
+    AppResult::success(StubPayload {
+        command: command.to_string(),
+        status: serde_json::to_string(value).unwrap_or_else(|_| "{}".to_string()),
+    })
 }
