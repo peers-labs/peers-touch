@@ -29,7 +29,6 @@
   "moments.placeholder.userEmpty": "该用户暂无对你可见的动态。",
   "moments.placeholder.searchEmpty": "按昵称或 @用户名搜索。",
   "moments.placeholder.noResults": "没有匹配的结果。",
-  "moments.placeholder.scaffold": "本页是 Moments 脚手架（P0）的一部分，功能将在 P2 阶段接入。",
 
   "moments.audience.public": "公开",
   "moments.audience.followers": "仅关注者",

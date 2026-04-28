@@ -122,5 +122,3 @@ export function MomentsUserView({
   );
 }
 
-// Legacy module-registry alias retained for transition. See MomentsApp.
-export { MomentsApp as MomentsUserPage } from './MomentsApp';
