@@ -56,9 +56,15 @@ func (s *CommentService) CreateComment(ctx context.Context, req *model.CreateCom
 		return nil, fmt.Errorf("parent post %d is deleted", parentPostID)
 	}
 
-	postClass, err := s.classifyPost(ctx, parentPostID)
-	if err != nil {
-		return nil, err
+	// PostClass is derived from the parent's audience — the parent we
+	// just loaded passed the visibility check, so its audience kind is
+	// authoritative. PUBLIC → public class, anything else → private
+	// class. This avoids an extra repo round-trip and the
+	// "viewerID=0 filter strips SELF posts" trap that a naive
+	// classifyPost lookup would hit.
+	postClass := domain.PostClassPrivate
+	if parent.Audience == nil || parent.Audience.Kind == model.Audience_PUBLIC {
+		postClass = domain.PostClassPublic
 	}
 
 	if req.ReplyToCommentId != "" {
@@ -174,23 +180,6 @@ func (s *CommentService) ListByPost(ctx context.Context, parentPostID uint64, cu
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
 	}, nil
-}
-
-// classifyPost looks up the post in either repo to determine its
-// PostClass. Returns "" + error if the post isn't found in either
-// table.
-func (s *CommentService) classifyPost(ctx context.Context, postID uint64) (domain.PostClass, error) {
-	if p, err := s.repos.PublicPosts.GetByID(ctx, postID); err != nil {
-		return "", err
-	} else if p != nil {
-		return domain.PostClassPublic, nil
-	}
-	if p, err := s.repos.PrivatePosts.GetByID(ctx, postID, 0); err != nil {
-		return "", err
-	} else if p != nil {
-		return domain.PostClassPrivate, nil
-	}
-	return "", fmt.Errorf("post %d not found in either storage class", postID)
 }
 
 func (s *CommentService) bumpCommentsCount(ctx context.Context, postID uint64, class domain.PostClass, delta int64) (int64, error) {
