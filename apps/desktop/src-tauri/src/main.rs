@@ -123,6 +123,7 @@ fn main() {
             social::social_circle_add_members,
             social::social_circle_remove_members,
             social::social_circle_list_members,
+            social::social_get_my_stats,
             profile::profile_get,
             profile::profile_update,
             profile::profile_upload_avatar,

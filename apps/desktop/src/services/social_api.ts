@@ -31,6 +31,7 @@ import {
   DeletePostResponseSchema,
   ListPostsResponseSchema,
   GetTimelineResponseSchema,
+  GetMyMomentsStatsResponseSchema,
   ReactToPostResponseSchema,
   UnreactToPostResponseSchema,
   ReactionKind,
@@ -44,6 +45,7 @@ import {
   type DeletePostResponse,
   type ListPostsResponse,
   type GetTimelineResponse,
+  type GetMyMomentsStatsResponse,
   type Post,
   type ReactToPostResponse,
   type UnreactToPostResponse,
@@ -469,6 +471,23 @@ export async function socialCircleRemoveMembers(
     circle_id: circleId,
     member_dids: memberDids,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Stats
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch the dashboard-panel counters for the logged-in user. Cheap
+ * enough to call on every Moments-tab open; the station computes
+ * each value live with simple SQL aggregates.
+ */
+export async function socialGetMyStats(): Promise<GetMyMomentsStatsResponse> {
+  return invokeRustProto<undefined, GetMyMomentsStatsResponse>(
+    'social_get_my_stats',
+    GetMyMomentsStatsResponseSchema,
+    undefined,
+  );
 }
 
 export async function socialCircleListMembers(

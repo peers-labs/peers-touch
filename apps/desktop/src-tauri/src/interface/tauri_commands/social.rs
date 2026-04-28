@@ -741,6 +741,27 @@ pub fn social_circle_remove_members(
     AppResult::success(resp.encode_to_vec())
 }
 
+/// `social_get_my_stats` returns the aggregate Moments counters for
+/// the calling user — the data behind the dashboard panel. Cheap
+/// enough to fetch on every Moments-tab open; the station computes
+/// each counter live with simple SQL aggregates.
+#[tauri::command]
+pub fn social_get_my_stats(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let resp: model::social::GetMyMomentsStatsResponse =
+        match get_proto("/api/v1/social/me/stats", &token, None) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "get my moments stats failed"),
+        };
+    AppResult::success(resp.encode_to_vec())
+}
+
 #[tauri::command]
 pub fn social_circle_list_members(
     input: SocialCircleListMembersInput,
