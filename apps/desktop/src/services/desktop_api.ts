@@ -3485,13 +3485,70 @@ export const api = {
       ...(ephemeralKey != null && ephemeralKey !== '' ? { ephemeral_key: ephemeralKey } : {}),
     }),
 
-  // cryptoGroupEncrypt / cryptoGroupDecrypt / cryptoGroupRotateKey
-  // were removed alongside the dead Rust commands they bound to. They
-  // had no callers anywhere in the frontend, and the Rust side was
-  // never registered in tauri::generate_handler! so calling them would
-  // have failed at runtime regardless. The replacement Sender Keys API
-  // will land per the design doc at
-  // peers-touch/docs/architecture/encryption/group-sender-keys.md.
+  // ── Group chat E2EE: Sender Keys ──
+  //
+  // Four primitives:
+  //   * cryptoGroupSkEmitSkdm    -> get the SKDM bytes to ship to a
+  //                                 single peer over friend chat.
+  //                                 Idempotent on the server side
+  //                                 (returns the same chain key /
+  //                                 counter until the next rotation).
+  //   * cryptoGroupSkConsumeSkdm -> install a chain we received as a
+  //                                 friend-chat type=50 control body.
+  //                                 `claimedSenderDid` MUST equal the
+  //                                 friend-chat envelope sender DID
+  //                                 -- guards against A re-distributing
+  //                                 B's chain as their own.
+  //   * cryptoGroupEncrypt       -> wrap a plaintext for
+  //                                 SendGroupMessageRequest
+  //                                 .encrypted_payload. Plaintext is
+  //                                 base64 so binary content (image /
+  //                                 file body) round-trips losslessly.
+  //   * cryptoGroupDecrypt       -> reverse direction. Returns
+  //                                 base64; caller decodes to UTF-8
+  //                                 if it knows the body is text.
+  //
+  // See peers-touch/docs/architecture/encryption/group-sender-keys.md
+  // for the protocol and `crypto/sender_keys.rs` for the primitive.
+
+  cryptoGroupSkEmitSkdm: (groupUlid: string) =>
+    invokeAppResultStub<{
+      group_ulid: string;
+      sender_did: string;
+      sender_key_id: number;
+      skdm_b64: string;
+    }>('crypto_group_sk_emit_skdm', { group_ulid: groupUlid }),
+
+  cryptoGroupSkConsumeSkdm: (claimedSenderDid: string, skdmB64: string) =>
+    invokeAppResultStub<{
+      group_ulid: string;
+      sender_did: string;
+      sender_key_id: number;
+    }>('crypto_group_sk_consume_skdm', {
+      claimed_sender_did: claimedSenderDid,
+      skdm_b64: skdmB64,
+    }),
+
+  cryptoGroupEncrypt: (groupUlid: string, plaintextB64: string) =>
+    invokeAppResultStub<{
+      encrypted_payload_b64: string;
+      sender_key_id: number;
+      counter: number;
+    }>('crypto_group_encrypt', {
+      group_ulid: groupUlid,
+      plaintext_b64: plaintextB64,
+    }),
+
+  cryptoGroupDecrypt: (groupUlid: string, encryptedPayloadB64: string) =>
+    invokeAppResultStub<{
+      plaintext_b64: string;
+      sender_did: string;
+      sender_key_id: number;
+      counter: number;
+    }>('crypto_group_decrypt', {
+      group_ulid: groupUlid,
+      encrypted_payload_b64: encryptedPayloadB64,
+    }),
 
   keyExchangeUploadBundle: (bundle: CryptoKeyBundlePayload) =>
     invokeRustDataFromStatus<CryptoKeyBundlePayload, Record<string, unknown>>(
