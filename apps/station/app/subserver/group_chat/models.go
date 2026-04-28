@@ -39,10 +39,20 @@ type messageModel struct {
 	Content          string    `gorm:"column:content;type:text"`
 	EncryptedPayload []byte    `gorm:"column:encrypted_payload;type:bytea"`
 	ReplyToID        string    `gorm:"column:reply_to_id;size:64"`
-	Deleted          bool      `gorm:"column:deleted"`
-	SentAt           time.Time `gorm:"column:sent_at;index"`
-	CreatedAt        time.Time `gorm:"column:created_at"`
-	UpdatedAt        time.Time `gorm:"column:updated_at"`
+	// Recalled flips on recall — content + encrypted_payload are
+	// cleared at the same time. The on-disk column is still
+	// `deleted` for backward DB compat (preserves existing rows
+	// without a migration); the field rename here aligns with the
+	// proto + friend_chat parity. Renaming the column itself can
+	// land in a follow-up migration.
+	Recalled bool `gorm:"column:deleted"`
+	// EditedAt is non-null when the row has been mutated via edit.
+	// Pointer so GORM leaves the column NULL on fresh inserts;
+	// readers translate nil → zero-value time.Time downstream.
+	EditedAt  *time.Time `gorm:"column:edited_at"`
+	SentAt    time.Time  `gorm:"column:sent_at;index"`
+	CreatedAt time.Time  `gorm:"column:created_at"`
+	UpdatedAt time.Time  `gorm:"column:updated_at"`
 }
 
 func (messageModel) TableName() string { return "group_chat_messages" }

@@ -174,10 +174,17 @@ interface SocialChatState {
    * (including the sender's other devices) converge through the
    * same realtime pipeline.
    *
-   * Friend chat only — group chat keeps using `groupChatRecallMessage`
-   * with its own UI placement.
+   * For group chat use `recallGroupMessage` — same realtime
+   * convergence semantics, different RPC + container key.
    */
   recallFriendMessage: (sessionUlid: string, messageUlid: string) => Promise<void>;
+  /**
+   * Recall a previously-sent group message. Sender + recall-window
+   * gates are enforced at the Station; on success the server fans
+   * out a `MessageMutation { kind=RECALL }` over SSE which this
+   * store's `applyMessageMutation` folds in.
+   */
+  recallGroupMessage: (groupUlid: string, messageUlid: string) => Promise<void>;
   /**
    * Edit a previously-sent friend chat message. At least one of
    * `newContent` or `newCiphertext` must be non-empty; both may
@@ -187,6 +194,13 @@ interface SocialChatState {
    */
   editFriendMessage: (
     sessionUlid: string,
+    messageUlid: string,
+    newContent?: string,
+    newCiphertext?: Uint8Array,
+  ) => Promise<void>;
+  /** Group-chat counterpart to `editFriendMessage`. */
+  editGroupMessage: (
+    groupUlid: string,
     messageUlid: string,
     newContent?: string,
     newCiphertext?: Uint8Array,
@@ -723,21 +737,19 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       if (tab === 'group') {
         await api.groupChatDeleteMessage(ulid, messageUlid);
       } else {
-        // Friend chat: real server-side delete. The handler emits
-        // a `MessageMutation { kind=DELETE }` over SSE which is
-        // the canonical path that drops the row from the local
-        // cache (via `applyMessageMutation`). Removing it locally
-        // here too is just a best-effort optimistic update so the
-        // bubble disappears immediately for the deleter; the SSE
-        // round-trip would be ~30-100ms on the same machine.
         await api.friendChatDeleteMessage(ulid, messageUlid);
       }
-      set((state) => ({
-        messages: {
-          ...state.messages,
-          [ulid]: (state.messages[ulid] || []).filter((m) => m.ulid !== messageUlid),
-        },
-      }));
+      // Optimistic removal — the SSE echo will idempotently apply
+      // the same DELETE mutation through `applyMessageMutation`.
+      // We funnel through the unified path so future mutation
+      // arms (e.g. moderation undelete) only need updating in one
+      // place.
+      get().applyMessageMutation(
+        ulid,
+        messageUlid,
+        'DELETE',
+        { newContent: '', newCiphertext: new Uint8Array(), mutatedTsUnixMs: Date.now() },
+      );
     } catch (error) {
       log.error('socialChat', 'deleteMessage failed', error);
       throw error;
@@ -784,16 +796,61 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     }
   },
 
+  recallGroupMessage: async (groupUlid, messageUlid) => {
+    try {
+      await api.groupChatRecallMessage(groupUlid, messageUlid);
+      get().applyMessageMutation(
+        groupUlid,
+        messageUlid,
+        'RECALL',
+        { newContent: '', newCiphertext: new Uint8Array(), mutatedTsUnixMs: Date.now() },
+      );
+    } catch (error) {
+      log.error('socialChat', 'recallGroupMessage failed', error);
+      throw error;
+    }
+  },
+
+  editGroupMessage: async (groupUlid, messageUlid, newContent, newCiphertext) => {
+    if ((!newContent || newContent.trim() === '') && (!newCiphertext || newCiphertext.byteLength === 0)) {
+      throw new Error('editGroupMessage: newContent or newCiphertext is required');
+    }
+    try {
+      await api.groupChatEditMessage(groupUlid, messageUlid, newContent, newCiphertext);
+      get().applyMessageMutation(
+        groupUlid,
+        messageUlid,
+        'EDIT',
+        {
+          newContent: newContent ?? '',
+          newCiphertext: newCiphertext ?? new Uint8Array(),
+          mutatedTsUnixMs: Date.now(),
+        },
+      );
+    } catch (error) {
+      log.error('socialChat', 'editGroupMessage failed', error);
+      throw error;
+    }
+  },
+
   applyMessageMutation: (sessionUlid, messageUlid, kind, payload) => {
     set((state) => {
       const msgs = state.messages[sessionUlid];
       if (!msgs || msgs.length === 0) {
         return {} as Partial<SocialChatState>;
       }
-      // DELETE removes the row entirely. RECALL keeps it (so reply
-      // chains don't dangle) but flips `recalled=true` and clears
-      // the body — the bubble renders as a tombstone client-side.
-      // EDIT replaces the content / ciphertext and stamps editedAt.
+      // The container key `sessionUlid` carries either a friend
+      // session ulid OR a group ulid — same map, two arms. Both
+      // FriendChatMessage and GroupMessage carry `recalled` and
+      // `editedAt` (added in proto v?? as part of the unified
+      // MessageMutation contract), so the mutation arms can be
+      // applied uniformly without branching by chat kind.
+      //
+      // DELETE removes the row entirely. RECALL keeps it (so
+      // reply chains don't dangle) but flips `recalled=true` and
+      // clears the body — the bubble renders as a tombstone.
+      // EDIT replaces content / encryptedPayload and stamps
+      // `editedAt`.
       let mutated = false;
       let next: typeof msgs;
       if (kind === 'DELETE') {
@@ -807,41 +864,35 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       } else {
         next = msgs.map((m) => {
           if (m.ulid !== messageUlid) return m;
-          // Only friend chat carries `recalled` / `editedAt`; if a
-          // group message somehow gets routed here we silently
-          // skip — the wire contract wouldn't put one in this map
-          // anyway (group recall uses the group store).
-          if (!('recalled' in m)) return m;
-          const fcm = m as FriendChatMessage;
+          if (!('recalled' in m)) return m; // safety net for legacy rows
           if (kind === 'RECALL') {
-            if (fcm.recalled) return m; // idempotent re-apply
+            if ((m as { recalled?: boolean }).recalled === true) return m; // idempotent
             mutated = true;
             return {
-              ...fcm,
+              ...m,
               recalled: true,
               content: '',
               encryptedPayload: new Uint8Array(),
-            } as FriendChatMessage;
+            } as FriendChatMessage | GroupMessage;
           }
           // kind === 'EDIT'
           mutated = true;
-          // Cast to any to construct the proto Timestamp shape
-          // without importing the generated schema here. The store
-          // surface already treats `editedAt` as opaque; the chat
-          // bubble renders the tooltip "edited at <local time>".
-          // We only set the ms field — protobuf-es accepts a
-          // plain `{ seconds, nanos }` shape on assignment.
+          // Build a proto-compatible Timestamp without importing
+          // the schema. Both FriendChatMessage.editedAt and
+          // GroupMessage.editedAt accept the same `{ seconds, nanos }`
+          // shape (protobuf-es plain object form).
           const seconds = BigInt(Math.floor(payload.mutatedTsUnixMs / 1000));
           const nanos = (payload.mutatedTsUnixMs % 1000) * 1_000_000;
+          const existingEnc = (m as { encryptedPayload?: Uint8Array }).encryptedPayload;
           return {
-            ...fcm,
-            content: payload.newContent || fcm.content,
+            ...m,
+            content: payload.newContent || m.content,
             encryptedPayload:
               payload.newCiphertext.byteLength > 0
                 ? payload.newCiphertext
-                : fcm.encryptedPayload,
+                : existingEnc ?? new Uint8Array(),
             editedAt: { seconds, nanos } as unknown as FriendChatMessage['editedAt'],
-          } as FriendChatMessage;
+          } as FriendChatMessage | GroupMessage;
         });
       }
       if (!mutated) return {} as Partial<SocialChatState>;
