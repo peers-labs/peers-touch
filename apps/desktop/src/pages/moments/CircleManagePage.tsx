@@ -265,5 +265,3 @@ export function CircleManageView() {
   );
 }
 
-// Legacy module-registry alias retained for transition. See MomentsApp.
-export { MomentsApp as CircleManagePage } from './MomentsApp';

@@ -111,5 +111,3 @@ export function MomentDetailView({
   );
 }
 
-// Legacy module-registry alias retained for transition. See MomentsApp.
-export { MomentsApp as MomentDetailPage } from './MomentsApp';

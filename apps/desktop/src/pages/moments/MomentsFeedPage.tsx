@@ -91,8 +91,3 @@ export function MomentsFeedView({ viewerActorId: _viewerActorId, onOpenPost, onA
     </div>
   );
 }
-
-// Legacy module-registry entry kept as a no-op re-export so any
-// stale `import { MomentsFeedPage }` site keeps building during the
-// transition. C8 (cleanup) removes the alias.
-export { MomentsApp as MomentsFeedPage } from './MomentsApp';
