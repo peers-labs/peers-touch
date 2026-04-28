@@ -93,7 +93,9 @@ const (
 	routeOSSFedPeers       = "/dashboard/api/oss/federation/peers"
 	routeOSSFedPeerPin     = "/dashboard/api/oss/federation/peers/:id/pin"
 	routeOSSFedPeerUnpin   = "/dashboard/api/oss/federation/peers/:id/unpin"
+	routeOSSFedPeerForget  = "/dashboard/api/oss/federation/peers/:id"
 	routeOSSFedRotate      = "/dashboard/api/oss/federation/rotate-local-key"
+	routeOSSWorkers        = "/dashboard/api/oss/workers"
 )
 
 // ---------------------------------------------------------------------------
@@ -225,6 +227,10 @@ func (h *dashboardHandler) handlers() []server.Handler {
 			h.handleOSSFederationUnpinPeer, auth),
 		server.NewTypedHandler("dashboard-oss-fed-rotate", routeOSSFedRotate, server.POST,
 			h.handleOSSFederationRotateLocalKey, auth),
+		server.NewTypedHandler("dashboard-oss-fed-peer-forget", routeOSSFedPeerForget, server.DELETE,
+			h.handleOSSFederationForgetPeer, auth),
+		server.NewTypedHandler("dashboard-oss-workers", routeOSSWorkers, server.GET,
+			h.handleOSSListWorkers, auth),
 	}
 }
 
@@ -1406,6 +1412,83 @@ func (h *dashboardHandler) recordOSSFederationAudit(ctx context.Context, claims 
 		log.Warnf(ctx, "[dashboard] oss_audit append failed (action=key_rotate new_kid=%s): %v",
 			newKID, err)
 	}
+}
+
+// handleOSSFederationForgetPeer — DELETE /dashboard/api/oss/federation/peers/:id
+//
+// Hard-removes the peer's TOFU row. Distinct from
+// `handleOSSFederationUnpinPeer`, which only flips the pinned
+// flag — forgetting drops the kid entirely so the next inbound
+// request from the peer re-pairs from scratch. We record both an
+// admin-side audit row and an `oss_audit` row tagged with the
+// dashboard actor id so the operator's intent is captured in the
+// federation-side trail too.
+func (h *dashboardHandler) handleOSSFederationForgetPeer(ctx context.Context, _ *domain.EmptyRequest) (*domain.MessageResponse, error) {
+	if h.sub.ossSvc == nil {
+		return nil, serviceUnavailable("oss service unavailable")
+	}
+	claims := getClaims(ctx)
+	peerID := pathParam(ctx, "id")
+	if peerID == "" {
+		return nil, server.BadRequest("peer station id is required")
+	}
+	if err := h.sub.ossSvc.ForgetPeer(ctx, peerID); err != nil {
+		if errors.Is(err, infrastructure.ErrPeerNotFound) {
+			return nil, server.NotFound("peer not found")
+		}
+		log.Errorf(ctx, "[dashboard] oss forget peer error: %v", err)
+		// Audit the failure on both trails — the operator
+		// initiated a security-sensitive action.
+		h.recordOSSFederationAudit(ctx, claims, "", peerID, "error", err.Error())
+		if claims != nil {
+			h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username,
+				"oss_forget_peer", "oss_peer",
+				"peer_station_id="+peerID+" error="+err.Error(),
+				getClientIP(ctx), getUserAgent(ctx))
+		}
+		return nil, server.InternalError("failed to forget peer")
+	}
+
+	h.recordOSSFederationAudit(ctx, claims, "", peerID, "ok", "")
+	if claims != nil {
+		h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username,
+			"oss_forget_peer", "oss_peer",
+			"peer_station_id="+peerID, getClientIP(ctx), getUserAgent(ctx))
+	}
+	return &domain.MessageResponse{Message: "peer forgotten"}, nil
+}
+
+// handleOSSListWorkers — GET /dashboard/api/oss/workers
+//
+// Returns the per-worker heartbeat projection over `oss_audit`.
+// The lookback window is taken from the optional `?hours=` query
+// param (defaulting to 24h, capped at 30d so a curious operator
+// cannot accidentally walk the entire audit table).
+func (h *dashboardHandler) handleOSSListWorkers(ctx context.Context, _ *domain.EmptyRequest) (*domain.OSSWorkersSummary, error) {
+	if h.sub.ossSvc == nil {
+		return nil, serviceUnavailable("oss service unavailable")
+	}
+	const (
+		defaultLookback = 24 * time.Hour
+		maxLookback     = 30 * 24 * time.Hour
+	)
+	lookback := defaultLookback
+	if hoursStr := queryParam(ctx, "hours"); hoursStr != "" {
+		hours, err := strconv.ParseFloat(hoursStr, 64)
+		if err != nil || hours <= 0 {
+			return nil, server.BadRequest("hours must be a positive number")
+		}
+		lookback = time.Duration(hours * float64(time.Hour))
+		if lookback > maxLookback {
+			lookback = maxLookback
+		}
+	}
+	resp, err := h.sub.ossSvc.ListWorkers(ctx, lookback)
+	if err != nil {
+		log.Errorf(ctx, "[dashboard] oss list workers error: %v", err)
+		return nil, server.InternalError("failed to load workers")
+	}
+	return resp, nil
 }
 
 // ===========================================================================
