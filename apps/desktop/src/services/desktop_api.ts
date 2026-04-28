@@ -409,6 +409,107 @@ export interface OssResolved {
   key: string;
 }
 
+// ────────────────────────────────────────────────────────────────────
+// OSS — owner-side lifecycle (S16). All endpoints below operate on
+// the caller's own files; cross-actor mutation lives behind the
+// dashboard admin surface.
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * Visibility tiers exposed by the OSS subserver. Mirrors the Go-side
+ * whitelist in `service.PatchRequest`. Use the union type so callers
+ * cannot accidentally PATCH an unknown value.
+ */
+export type OssVisibility = 'public' | 'chat' | 'private';
+
+/** Filter envelope for `api.ossListMyFiles`. All fields optional. */
+export interface OssListMyFilesQuery {
+  bucket?: string;
+  visibility?: OssVisibility | string;
+  /**
+   * Server `LIKE '<prefix>%'` over `oss_files.mime`. Pass plain
+   * prefixes like `image/`; the server escapes LIKE metacharacters.
+   */
+  mime?: string;
+  include_deleted?: boolean;
+  page?: number;
+  page_size?: number;
+}
+
+/**
+ * Mirrors `oss_files` row shape verbatim. We expose the columns the
+ * MyFiles UI needs; richer fields (e.g. `Sha256`) are still present
+ * in the underlying response but are typed as `unknown` here so the
+ * UI layer treats them as opaque metadata.
+ */
+export interface OssFileMeta {
+  id: string;
+  key: string;
+  name: string;
+  size: number;
+  mime: string;
+  backend: string;
+  bucket_id: string;
+  owner_actor_id: string;
+  visibility: OssVisibility | string;
+  chat_session_id?: string;
+  expires_at?: string | null;
+  deleted_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  sha256?: string;
+}
+
+export interface OssMyFilesResponse {
+  files: OssFileMeta[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface OssDeleteResponse {
+  key: string;
+  deleted_at: string | null;
+  already_deleted: boolean;
+}
+
+export interface OssRestoreResponse {
+  key: string;
+  deleted_at: string | null;
+  expires_at: string | null;
+  updated_at: string;
+}
+
+/**
+ * PATCH body. `clear_expires_at` is the explicit "set the column to
+ * NULL" intent — distinct from omitting `expires_at` (leave alone)
+ * or sending a stamp (set to value). The server accepts at most one
+ * of the two; we collapse the precedence in the Rust adapter.
+ */
+export interface OssPatchFileBody {
+  visibility?: OssVisibility | string;
+  chat_session_id?: string;
+  bucket?: string;
+  filename?: string;
+  /** RFC3339 stamp; omit to leave column unchanged. */
+  expires_at?: string;
+  /** When true, force the column to NULL regardless of `expires_at`. */
+  clear_expires_at?: boolean;
+}
+
+export interface OssPatchResponse {
+  key: string;
+  visibility: OssVisibility | string;
+  chat_session_id?: string;
+  bucket_id: string;
+  filename: string;
+  expires_at?: string | null;
+  updated_at: string;
+  fields_changed: string[];
+  /** Present only when the patch tightened visibility. */
+  capability_version?: string;
+}
+
 export interface Session {
   id: string;
   key: string;
@@ -2010,6 +2111,45 @@ export const api = {
   // present and fall back to `url`.
   ossResolveUrl: (uri: string) =>
     invokeRustDataFromStatus<{ uri: string }, OssResolved>('oss_resolve_url', { uri }),
+
+  // ── OSS owner-side lifecycle (S16) ──
+  //
+  // Each mutation transparently invalidates the local oss_cache
+  // copy on the Rust side, so callers do NOT need to call
+  // `ossInvalidateCache` after a successful patch / delete /
+  // restore. The standalone helper exists for the rare cases
+  // where the renderer learns about an out-of-band change
+  // (e.g. a dashboard force-delete announced via SSE).
+
+  ossListMyFiles: (query?: OssListMyFilesQuery) =>
+    invokeRustDataFromStatus<OssListMyFilesQuery, OssMyFilesResponse>(
+      'oss_list_my_files',
+      query ?? {},
+    ),
+
+  ossDeleteFile: (key: string) =>
+    invokeRustDataFromStatus<{ key: string }, OssDeleteResponse>(
+      'oss_delete_file',
+      { key },
+    ),
+
+  ossRestoreFile: (key: string) =>
+    invokeRustDataFromStatus<{ key: string }, OssRestoreResponse>(
+      'oss_restore_file',
+      { key },
+    ),
+
+  ossPatchFile: (key: string, body: OssPatchFileBody) =>
+    invokeRustDataFromStatus<OssPatchFileBody & { key: string }, OssPatchResponse>(
+      'oss_patch_file',
+      { key, ...body },
+    ),
+
+  ossInvalidateCache: (uri: string) =>
+    invokeRustDataFromStatus<{ uri: string }, { ok: boolean; uri: string }>(
+      'oss_invalidate_cache',
+      { uri },
+    ),
 
   accountSyncAvatar: (avatarUrl: string) =>
     invokeRustCommand<{ avatar_url: string }, TauriStubPayload>('account_sync_avatar', { avatar_url: avatarUrl }),
