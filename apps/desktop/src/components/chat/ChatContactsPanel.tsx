@@ -4,24 +4,11 @@ import { Flexbox } from 'react-layout-kit';
 import { Button, Tag } from '@lobehub/ui';
 import { Collapse, Empty, Tabs, theme, Typography } from 'antd';
 import { UserPlus, Users, Contact, ChevronRight, Check, X } from 'lucide-react';
-import { useSocialChatStore } from '../../store/socialChat';
-import type { FriendChatSession } from '../../gen/proto/domain/chat/friend_chat_pb';
+import { peerOfSession, useSocialChatStore } from '../../store/socialChat';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { log } from '../../utils/logger';
 
 const { Text } = Typography;
-
-function peerProfile(s: FriendChatSession, viewerDid: string | null): { name: string; avatar: string } {
-  if (viewerDid) {
-    if (s.participantADid === viewerDid) {
-      return { name: s.participantBDisplayName || s.participantBDid || '', avatar: s.participantBAvatar || '' };
-    }
-    if (s.participantBDid === viewerDid) {
-      return { name: s.participantADisplayName || s.participantADid || '', avatar: s.participantAAvatar || '' };
-    }
-  }
-  return { name: s.participantBDisplayName || s.participantBDid || s.participantADid || '', avatar: s.participantBAvatar || s.participantAAvatar || '' };
-}
 
 const PANEL_WIDTH = 240;
 
@@ -292,7 +279,7 @@ export function ChatContactsPanel() {
         ) : (
           <Flexbox gap={2}>
             {sessions.map((s) => {
-              const peer = peerProfile(s, currentUserDid);
+              const peer = peerOfSession(s, currentUserDid);
               const label = peer.name || t('chat.social.sessionList.unknown');
               return (
                 <Flexbox
