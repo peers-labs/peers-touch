@@ -27,6 +27,8 @@ type OSSBucketSummary struct {
 	QuotaBytes        int64     `json:"quota_bytes"`
 	UsedBytes         int64     `json:"used_bytes"`
 	FileCount         int64     `json:"file_count"`
+	TTLDays           int32     `json:"ttl_days"`
+	Description       string    `json:"description,omitempty"`
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 }
@@ -37,6 +39,38 @@ type OSSBucketSummary struct {
 type OSSBucketListResponse struct {
 	Items []OSSBucketSummary `json:"items"`
 	Total int                `json:"total"`
+}
+
+// OSSBucketCreateRequest is the JSON body of
+// `POST /dashboard/api/oss/buckets`. The dashboard creates only
+// `user`-kind buckets — `system` buckets are auto-provisioned by
+// the OSS subserver on first use, and exposing a "kind" knob would
+// let an operator stomp on the canonical system specs.
+//
+// All numeric fields default to zero ("unlimited" for QuotaBytes,
+// "no TTL" for TTLDays); DefaultVisibility falls back to `private`
+// at the service layer when omitted.
+type OSSBucketCreateRequest struct {
+	OwnerActorID      string `json:"owner_actor_id"`
+	Name              string `json:"name"`
+	DefaultVisibility string `json:"default_visibility"`
+	QuotaBytes        int64  `json:"quota_bytes"`
+	TTLDays           int32  `json:"ttl_days"`
+	Description       string `json:"description"`
+}
+
+// OSSBucketUpdateRequest is the JSON body of
+// `PATCH /dashboard/api/oss/buckets/:id`. Each pointer field is
+// explicitly nil-vs-set so the dashboard can clear `description`
+// (set to "") without having to re-send every other field. Name
+// and OwnerActorID are *not* updatable — mutating either would
+// break the unique (owner, name) index and is best handled by
+// recreating the bucket.
+type OSSBucketUpdateRequest struct {
+	DefaultVisibility *string `json:"default_visibility,omitempty"`
+	QuotaBytes        *int64  `json:"quota_bytes,omitempty"`
+	TTLDays           *int32  `json:"ttl_days,omitempty"`
+	Description       *string `json:"description,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
