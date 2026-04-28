@@ -2,12 +2,13 @@ use super::storage::key_provider::PlatformKeyProvider;
 use super::storage::get_database_key_version;
 use super::storage::open_database;
 use super::storage::rotate_database_key;
+use crate::domain::crypto::sender_keys::{SenderChainState, SkippedMessageKey};
 use crate::domain::crypto::CryptoSessionState;
 use crate::domain::storage::database::DatabaseOpenSpec;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -169,7 +170,54 @@ fn migrate(conn: &Connection) -> Result<(), String> {
         -- for the replacement design. Existing tables on already-migrated
         -- devices are left in place for a future migration to drop them
         -- explicitly; they are inert because no code path reads or writes
-        -- them anymore.",
+        -- them anymore.
+        --
+        -- Sender Keys persistence (G3 of the rollout). Two tables:
+        --   * group_sender_keys:        one row per (group, sender,
+        --                               sender_key_id) chain. Holds the
+        --                               current chain key + counter, the
+        --                               sender's signing seed (NULL on
+        --                               receiver-side rows), and the
+        --                               verifying key.
+        --   * group_skipped_message_keys: derived; one row per
+        --                               counter we leapfrogged on the
+        --                               receive side. Consumed exactly
+        --                               once and then deleted.
+        --
+        -- Atomicity rule: callers MUST persist a chain advance and the
+        -- corresponding skipped-key inserts in the same SQLite
+        -- transaction. Splitting them risks losing skipped rows after
+        -- a crash, which would make the corresponding intermediate
+        -- messages permanently undecryptable. apply_group_decrypt_outcome
+        -- below is the only correct write path for receive flow.
+        CREATE TABLE IF NOT EXISTS group_sender_keys (
+            group_ulid     TEXT    NOT NULL,
+            sender_did     TEXT    NOT NULL,
+            sender_key_id  INTEGER NOT NULL,
+            chain_key      BLOB    NOT NULL,
+            counter        INTEGER NOT NULL,
+            -- NULL for chains we received over an SKDM. NOT NULL for
+            -- chains we mint locally (we are the sender for this row).
+            -- Receivers MUST refuse to encrypt against rows whose seed
+            -- is NULL -- enforced in the crypto layer, not in SQL.
+            signing_seed   BLOB,
+            verifying_key  BLOB    NOT NULL,
+            updated_at     INTEGER NOT NULL,
+            PRIMARY KEY (group_ulid, sender_did, sender_key_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_group_sender_keys_local
+            ON group_sender_keys(group_ulid, sender_did, sender_key_id DESC)
+            WHERE signing_seed IS NOT NULL;
+        CREATE TABLE IF NOT EXISTS group_skipped_message_keys (
+            group_ulid     TEXT    NOT NULL,
+            sender_did     TEXT    NOT NULL,
+            sender_key_id  INTEGER NOT NULL,
+            counter        INTEGER NOT NULL,
+            key            BLOB    NOT NULL,
+            nonce          BLOB    NOT NULL,
+            created_at     INTEGER NOT NULL,
+            PRIMARY KEY (group_ulid, sender_did, sender_key_id, counter)
+        );",
     )
     .map_err(|e| e.to_string())
 }
@@ -623,11 +671,414 @@ pub fn rotate_chat_key(user_scope: &str, next_version: i32) -> Result<i32, Strin
     result
 }
 
-// save_group_key / load_group_key removed alongside the dead
-// crypto_group_encrypt/decrypt/rotate Tauri commands. The shared-key
-// approach they backed had no distribution mechanism and was
-// architecturally broken; the replacement is the Sender Keys protocol
-// designed in
-// peers-touch/docs/architecture/encryption/group-sender-keys.md, which
-// will introduce its own per-(group, sender) state tables when it
-// lands.
+// ---------------------------------------------------------------------------
+// Sender Keys persistence
+// ---------------------------------------------------------------------------
+//
+// Storage rules of thumb for callers:
+//
+//   * Receive path  -> ALWAYS go through `apply_group_decrypt_outcome`.
+//     It wraps chain advance + new skipped-key inserts + (optional)
+//     consumed-skipped-key delete in one SQLite transaction so a
+//     crash mid-write cannot leave the chain ahead of its keys.
+//
+//   * Send path     -> call `save_group_sender_chain` AFTER the
+//     ciphertext bytes have been handed to the network layer. If the
+//     network call fails the saved chain still advances, which is
+//     correct: AES-GCM key reuse would be catastrophic, so we'd
+//     rather drop one message than risk reusing a (key, nonce) pair.
+//
+//   * Distribution -> `latest_local_sender_chain` returns the highest
+//     `sender_key_id` we own for `(group, sender)`. SKDM emission
+//     uses `snapshot_for_skdm` on the returned state.
+
+/// Upsert a Sender-Keys chain row.
+///
+/// Caller controls whether `signing_seed` is `Some(_)` (we own the
+/// chain) or `None` (received via SKDM). The DB does not second-guess
+/// that distinction — see the schema comment for the invariant.
+pub fn save_group_sender_chain(user_scope: &str, chain: &SenderChainState) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    save_group_sender_chain_with_conn(&conn, chain)
+}
+
+fn save_group_sender_chain_with_conn(
+    conn: &Connection,
+    chain: &SenderChainState,
+) -> Result<(), String> {
+    let now = chrono_now();
+    let signing_seed = chain.signing_seed.as_ref().map(|s| s.as_slice());
+    conn.execute(
+        "INSERT INTO group_sender_keys(
+            group_ulid, sender_did, sender_key_id,
+            chain_key, counter, signing_seed, verifying_key, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+         ON CONFLICT(group_ulid, sender_did, sender_key_id) DO UPDATE SET
+            chain_key      = excluded.chain_key,
+            counter        = excluded.counter,
+            -- Never *demote* a row from sender (Some signing_seed) to
+            -- receiver (None) silently. The only path that nullifies
+            -- signing_seed is an explicit `clear_local_signing_seed`
+            -- helper (not exposed yet; future post-rotation cleanup).
+            signing_seed   = COALESCE(excluded.signing_seed, group_sender_keys.signing_seed),
+            verifying_key  = excluded.verifying_key,
+            updated_at     = excluded.updated_at",
+        params![
+            chain.group_ulid,
+            chain.sender_did,
+            chain.sender_key_id as i64,
+            chain.chain_key.as_ref(),
+            chain.counter as i64,
+            signing_seed,
+            chain.verifying_key.as_ref(),
+            now,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn row_to_sender_chain(
+    group_ulid: String,
+    sender_did: String,
+    sender_key_id: u32,
+    chain_key_blob: Vec<u8>,
+    counter: u32,
+    signing_seed_blob: Option<Vec<u8>>,
+    verifying_key_blob: Vec<u8>,
+) -> Result<SenderChainState, String> {
+    if chain_key_blob.len() != 32 {
+        return Err("invalid chain_key length in group_sender_keys".to_string());
+    }
+    if verifying_key_blob.len() != 32 {
+        return Err("invalid verifying_key length in group_sender_keys".to_string());
+    }
+    let mut chain_key = [0u8; 32];
+    chain_key.copy_from_slice(&chain_key_blob);
+    let mut verifying_key = [0u8; 32];
+    verifying_key.copy_from_slice(&verifying_key_blob);
+    let signing_seed = match signing_seed_blob {
+        Some(b) if b.len() == 32 => {
+            let mut a = [0u8; 32];
+            a.copy_from_slice(&b);
+            Some(a)
+        }
+        Some(_) => return Err("invalid signing_seed length in group_sender_keys".to_string()),
+        None => None,
+    };
+    Ok(SenderChainState {
+        group_ulid,
+        sender_did,
+        sender_key_id,
+        chain_key,
+        counter,
+        signing_seed,
+        verifying_key,
+    })
+}
+
+/// Load a specific (group, sender, sender_key_id) chain. Returns
+/// `Ok(None)` if no row exists -- typical when we haven't yet
+/// processed the SKDM for that generation.
+pub fn load_group_sender_chain(
+    user_scope: &str,
+    group_ulid: &str,
+    sender_did: &str,
+    sender_key_id: u32,
+) -> Result<Option<SenderChainState>, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    let mut stmt = conn
+        .prepare(
+            "SELECT chain_key, counter, signing_seed, verifying_key
+             FROM group_sender_keys
+             WHERE group_ulid = ?1 AND sender_did = ?2 AND sender_key_id = ?3",
+        )
+        .map_err(|e| e.to_string())?;
+    let row = stmt
+        .query_row(params![group_ulid, sender_did, sender_key_id as i64], |r| {
+            let chain_key_blob: Vec<u8> = r.get(0)?;
+            let counter: i64 = r.get(1)?;
+            let signing_seed_blob: Option<Vec<u8>> = r.get(2)?;
+            let verifying_key_blob: Vec<u8> = r.get(3)?;
+            Ok((chain_key_blob, counter as u32, signing_seed_blob, verifying_key_blob))
+        })
+        .optional()
+        .map_err(|e| e.to_string())?;
+    match row {
+        None => Ok(None),
+        Some((ck, counter, ss, vk)) => Ok(Some(row_to_sender_chain(
+            group_ulid.to_string(),
+            sender_did.to_string(),
+            sender_key_id,
+            ck,
+            counter,
+            ss,
+            vk,
+        )?)),
+    }
+}
+
+/// Highest `sender_key_id` for which we own the signing seed. Used
+/// by the send path: "what chain should I use to encrypt my next
+/// message?". Returns `Ok(None)` when we have never emitted to this
+/// group (the caller should mint a fresh chain via
+/// `create_local_chain` and persist it before encrypting).
+pub fn latest_local_sender_chain(
+    user_scope: &str,
+    group_ulid: &str,
+    sender_did: &str,
+) -> Result<Option<SenderChainState>, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    let mut stmt = conn
+        .prepare(
+            "SELECT sender_key_id, chain_key, counter, signing_seed, verifying_key
+             FROM group_sender_keys
+             WHERE group_ulid = ?1 AND sender_did = ?2 AND signing_seed IS NOT NULL
+             ORDER BY sender_key_id DESC
+             LIMIT 1",
+        )
+        .map_err(|e| e.to_string())?;
+    let row = stmt
+        .query_row(params![group_ulid, sender_did], |r| {
+            let sender_key_id: i64 = r.get(0)?;
+            let chain_key_blob: Vec<u8> = r.get(1)?;
+            let counter: i64 = r.get(2)?;
+            let signing_seed_blob: Option<Vec<u8>> = r.get(3)?;
+            let verifying_key_blob: Vec<u8> = r.get(4)?;
+            Ok((
+                sender_key_id as u32,
+                chain_key_blob,
+                counter as u32,
+                signing_seed_blob,
+                verifying_key_blob,
+            ))
+        })
+        .optional()
+        .map_err(|e| e.to_string())?;
+    match row {
+        None => Ok(None),
+        Some((sender_key_id, ck, counter, ss, vk)) => Ok(Some(row_to_sender_chain(
+            group_ulid.to_string(),
+            sender_did.to_string(),
+            sender_key_id,
+            ck,
+            counter,
+            ss,
+            vk,
+        )?)),
+    }
+}
+
+/// Load all skipped-message-keys for a single (group, sender,
+/// sender_key_id), keyed by counter. Receive path uses this to
+/// short-circuit OOO catch-up: if the inbound counter is already in
+/// the map we decrypt straight from there without touching the
+/// chain.
+pub fn load_group_skipped_keys(
+    user_scope: &str,
+    group_ulid: &str,
+    sender_did: &str,
+    sender_key_id: u32,
+) -> Result<BTreeMap<u32, SkippedMessageKey>, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    let mut stmt = conn
+        .prepare(
+            "SELECT counter, key, nonce
+             FROM group_skipped_message_keys
+             WHERE group_ulid = ?1 AND sender_did = ?2 AND sender_key_id = ?3",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![group_ulid, sender_did, sender_key_id as i64], |r| {
+            let counter: i64 = r.get(0)?;
+            let key_blob: Vec<u8> = r.get(1)?;
+            let nonce_blob: Vec<u8> = r.get(2)?;
+            Ok((counter as u32, key_blob, nonce_blob))
+        })
+        .map_err(|e| e.to_string())?;
+    let mut out: BTreeMap<u32, SkippedMessageKey> = BTreeMap::new();
+    for row in rows {
+        let (counter, key_blob, nonce_blob) = row.map_err(|e| e.to_string())?;
+        if key_blob.len() != 32 || nonce_blob.len() != 12 {
+            return Err("invalid skipped-key column lengths".to_string());
+        }
+        let mut key = [0u8; 32];
+        key.copy_from_slice(&key_blob);
+        let mut nonce = [0u8; 12];
+        nonce.copy_from_slice(&nonce_blob);
+        out.insert(
+            counter,
+            SkippedMessageKey {
+                group_ulid: group_ulid.to_string(),
+                sender_did: sender_did.to_string(),
+                sender_key_id,
+                counter,
+                key,
+                nonce,
+            },
+        );
+    }
+    Ok(out)
+}
+
+/// Atomic write for the receive path. Everything happens in one
+/// transaction:
+///
+/// 1. Save the new chain state (`chain` already carries the bumped
+///    counter / advanced chain key returned in `DecryptOutcome`).
+/// 2. Insert any newly materialised skipped keys (no-op when the
+///    decrypt was in-order).
+/// 3. If the message we just decrypted *was* a skipped one,
+///    `consumed_counter = Some(c)` deletes that row so the same
+///    skipped key cannot be replayed.
+///
+/// Either everything lands or nothing does. The transaction is the
+/// only correctness gate against the "chain advanced but skipped
+/// rows lost" failure mode that would silently brick OOO recovery.
+pub fn apply_group_decrypt_outcome(
+    user_scope: &str,
+    chain: &SenderChainState,
+    new_skipped: &[SkippedMessageKey],
+    consumed_counter: Option<u32>,
+) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let mut conn = conn.lock();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    save_group_sender_chain_with_conn(&tx, chain)?;
+    let now = chrono_now();
+    for s in new_skipped {
+        tx.execute(
+            "INSERT OR IGNORE INTO group_skipped_message_keys(
+                group_ulid, sender_did, sender_key_id, counter, key, nonce, created_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                s.group_ulid,
+                s.sender_did,
+                s.sender_key_id as i64,
+                s.counter as i64,
+                s.key.as_ref(),
+                s.nonce.as_ref(),
+                now,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    if let Some(c) = consumed_counter {
+        tx.execute(
+            "DELETE FROM group_skipped_message_keys
+             WHERE group_ulid = ?1 AND sender_did = ?2
+               AND sender_key_id = ?3 AND counter = ?4",
+            params![chain.group_ulid, chain.sender_did, chain.sender_key_id as i64, c as i64],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod sender_key_tests {
+    use super::*;
+    use crate::domain::crypto::sender_keys::{
+        consume_skdm, create_local_chain, decrypt, encrypt, snapshot_for_skdm,
+    };
+
+    fn unique_scope(tag: &str) -> String {
+        format!(
+            "test-sk-{tag}-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        )
+    }
+
+    #[test]
+    fn round_trip_with_persistence() {
+        // End-to-end: a sender chain we mint locally is persisted
+        // and re-loaded; the same persistence path on the receiver
+        // side replays our SKDM and decrypts an OOO sequence.
+        let scope_s = unique_scope("send");
+        let scope_r = unique_scope("recv");
+
+        let mut local = create_local_chain("g-1", "did:peers:alice", 1);
+        save_group_sender_chain(&scope_s, &local).unwrap();
+        let reloaded = latest_local_sender_chain(&scope_s, "g-1", "did:peers:alice")
+            .unwrap()
+            .expect("chain present");
+        assert_eq!(reloaded.sender_key_id, 1);
+        assert_eq!(reloaded.counter, 0);
+        assert!(reloaded.signing_seed.is_some());
+
+        // Distribute to receiver via SKDM.
+        let payload = snapshot_for_skdm(&local);
+        let recv = consume_skdm(&payload).unwrap();
+        save_group_sender_chain(&scope_r, &recv).unwrap();
+
+        // Sender produces three messages out of order in receive.
+        let m0 = encrypt(&mut local, b"a").unwrap();
+        let m1 = encrypt(&mut local, b"b").unwrap();
+        let m2 = encrypt(&mut local, b"c").unwrap();
+        save_group_sender_chain(&scope_s, &local).unwrap();
+
+        // Receive m2 first.
+        let recv_state = load_group_sender_chain(&scope_r, "g-1", "did:peers:alice", 1)
+            .unwrap()
+            .unwrap();
+        let pre = load_group_skipped_keys(&scope_r, "g-1", "did:peers:alice", 1).unwrap();
+        let out2 = decrypt(&recv_state, &m2, &pre).unwrap();
+        assert_eq!(out2.plaintext, b"c");
+        assert_eq!(out2.new_skipped.len(), 2);
+
+        let advanced = SenderChainState {
+            group_ulid: recv_state.group_ulid.clone(),
+            sender_did: recv_state.sender_did.clone(),
+            sender_key_id: recv_state.sender_key_id,
+            chain_key: out2.advanced_chain_key,
+            counter: out2.advanced_counter,
+            signing_seed: recv_state.signing_seed,
+            verifying_key: recv_state.verifying_key,
+        };
+        apply_group_decrypt_outcome(&scope_r, &advanced, &out2.new_skipped, None).unwrap();
+
+        // m0 arrives late and decrypts from the persisted skipped-key store.
+        let recv_state2 = load_group_sender_chain(&scope_r, "g-1", "did:peers:alice", 1)
+            .unwrap()
+            .unwrap();
+        let pre2 = load_group_skipped_keys(&scope_r, "g-1", "did:peers:alice", 1).unwrap();
+        assert!(pre2.contains_key(&0));
+        let out0 = decrypt(&recv_state2, &m0, &pre2).unwrap();
+        assert_eq!(out0.plaintext, b"a");
+        // After consuming m0, delete the row.
+        apply_group_decrypt_outcome(&scope_r, &recv_state2, &[], Some(0)).unwrap();
+        let pre3 = load_group_skipped_keys(&scope_r, "g-1", "did:peers:alice", 1).unwrap();
+        assert!(!pre3.contains_key(&0));
+        assert!(pre3.contains_key(&1));
+
+        // m1 also decrypts.
+        let out1 = decrypt(&recv_state2, &m1, &pre3).unwrap();
+        assert_eq!(out1.plaintext, b"b");
+    }
+
+    #[test]
+    fn signing_seed_is_not_silently_clobbered() {
+        // A stray "I just got an SKDM for my own chain" upsert
+        // (signing_seed = None) MUST NOT erase the seed of a row we
+        // own. Without this guard a spurious echo of our own
+        // distribution would lock us out of our own chain.
+        let scope = unique_scope("noclobber");
+        let local = create_local_chain("g-9", "did:peers:gus", 1);
+        save_group_sender_chain(&scope, &local).unwrap();
+        let payload = snapshot_for_skdm(&local);
+        let recv_view = consume_skdm(&payload).unwrap();
+        save_group_sender_chain(&scope, &recv_view).unwrap();
+        let after = load_group_sender_chain(&scope, "g-9", "did:peers:gus", 1)
+            .unwrap()
+            .unwrap();
+        assert!(after.signing_seed.is_some());
+    }
+}
