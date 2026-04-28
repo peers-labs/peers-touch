@@ -97,5 +97,3 @@ export function MomentsExploreView({ viewerActorId: _viewerActorId, onOpenPost, 
   );
 }
 
-// Legacy module-registry alias retained for transition. See MomentsApp.
-export { MomentsApp as MomentsExplorePage } from './MomentsApp';

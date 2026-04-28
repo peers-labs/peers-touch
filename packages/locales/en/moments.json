@@ -29,7 +29,6 @@
   "moments.placeholder.userEmpty": "This actor hasn't published any posts visible to you.",
   "moments.placeholder.searchEmpty": "Search for actors by name or @username.",
   "moments.placeholder.noResults": "No matches found.",
-  "moments.placeholder.scaffold": "This page is part of the Moments scaffold (P0). Functionality lands in P2.",
 
   "moments.audience.public": "Public",
   "moments.audience.followers": "Followers only",
