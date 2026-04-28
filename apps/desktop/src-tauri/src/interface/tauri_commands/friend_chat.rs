@@ -173,6 +173,11 @@ fn map_attachments(inputs: &[AttachmentInput]) -> Vec<model_chat::FriendMessageA
             mime_type: a.mime_type.clone(),
             size: a.size,
             thumbnail_cid: a.thumbnail_cid.clone().unwrap_or_default(),
+            // Visibility is sender-authoritative -- propagated from the
+            // attachment input which the OSS upload path filled in. Missing
+            // input means "unknown", which the renderer treats as
+            // unbadged.
+            visibility: a.visibility.clone().unwrap_or_default(),
         })
         .collect()
 }

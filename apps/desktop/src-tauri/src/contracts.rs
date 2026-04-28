@@ -127,6 +127,13 @@ pub struct AttachmentInput {
     pub mime_type: String,
     pub size: i64,
     pub thumbnail_cid: Option<String>,
+    /// Sender-authoritative visibility ("public" / "chat" / "private").
+    /// Plumbed through to the proto FriendMessageAttachment.visibility
+    /// so the receiver can render the badge that matches the OSS file
+    /// row. Optional so older callers stay source-compatible; missing
+    /// value is treated as "unknown" downstream.
+    #[serde(default)]
+    pub visibility: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

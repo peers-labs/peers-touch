@@ -70,6 +70,16 @@ enum FriendMessageType {
   FRIEND_MESSAGE_TYPE_FILE = 3;
   FRIEND_MESSAGE_TYPE_AUDIO = 4;
   FRIEND_MESSAGE_TYPE_VIDEO = 5;
+
+  // Control type. The friend session is being used as a transport
+  // for a SenderKeyDistributionMessage (see group_chat.proto). The
+  // recipient MUST route the body to the group sender-key store and
+  // MUST NOT render the message in the visible chat history. The
+  // body lives in `encrypted_payload` (still under the friend chat
+  // E2EE envelope) and decodes as `peers_touch.model.chat.v1.SenderKeyDistributionMessage`.
+  // Numbered well above the user-visible types to leave room for
+  // future user-facing types without colliding with control types.
+  FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION = 50;
 }
 
 enum FriendMessageStatus {
