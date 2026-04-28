@@ -20,8 +20,8 @@ type SocialCircle struct {
 	OwnerID uint64 `gorm:"column:owner_id;index:idx_scircle_owner;not null"`
 
 	Name        string `gorm:"column:name;type:varchar(64);not null"`
-	Emoji       string `gorm:"column:emoji;type:varchar(16)"`
-	MemberCount int32  `gorm:"column:member_count;default:0"`
+	Description string `gorm:"column:description;type:varchar(200)"`
+	MemberCount int64  `gorm:"column:member_count;default:0"`
 
 	CreatedAt time.Time  `gorm:"column:created_at"`
 	UpdatedAt time.Time  `gorm:"column:updated_at"`

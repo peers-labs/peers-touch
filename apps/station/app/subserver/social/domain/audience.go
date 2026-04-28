@@ -204,3 +204,62 @@ func ValidateAudience(a *model.Audience) error {
 	}
 	return nil
 }
+
+// ValidateForAuthor layers author-aware semantic checks on top of
+// `ValidateAudience`'s shape checks. It MUST be called by the
+// application layer before persisting a Post; persistence after this
+// returns nil is guaranteed not to violate any author-bound invariant.
+//
+// Checks (after `ValidateAudience` has passed):
+//
+//   - CIRCLE/GROUP target_id is non-zero (already enforced by
+//     ValidateAudience but re-asserted here for defensive depth).
+//   - For CUSTOM_ALLOW / CUSTOM_DENY, the author's own DID must NOT
+//     appear in the actor list. Including yourself in your own allow
+//     list is meaningless (you can always read your own posts) and
+//     including yourself in your own deny list would be silently
+//     unenforced (you'll see your own post anyway via the author
+//     shortcut in CanRead). Either case is almost certainly a client
+//     bug; surfacing it as a 400 is friendlier than silent ignore.
+//
+// What this function intentionally does NOT check (deferred to the
+// application layer because they require external lookups):
+//
+//   - Whether a CIRCLE's target_id refers to a circle owned by this
+//     author — that needs a CircleRepository call (MomentService does it).
+//   - Whether the author is a member of a GROUP target — that needs a
+//     GroupMembershipChecker call (MomentService does it).
+//   - Whether each DID in CUSTOM_* resolves to a known local actor —
+//     that's an ActorResolver concern, optional in P1 (no-op default).
+//
+// Splitting "shape" (ValidateAudience), "author-bound" (this function),
+// and "cross-subserver" (MomentService) keeps the domain layer testable
+// without DB / chat dependencies while still covering the predicate
+// "would creating this Post violate any audience invariant".
+func ValidateForAuthor(authorDID string, a *model.Audience) error {
+	if err := ValidateAudience(a); err != nil {
+		return err
+	}
+	switch a.Kind {
+	case model.Audience_CIRCLE, model.Audience_GROUP:
+		// ValidateAudience already enforced TargetId != 0; keep the
+		// re-check so future readers see the invariant explicitly.
+		if a.TargetId == 0 {
+			return fmt.Errorf("%s audience requires target_id (re-check)", a.Kind)
+		}
+
+	case model.Audience_CUSTOM_ALLOW, model.Audience_CUSTOM_DENY:
+		if authorDID == "" {
+			// Without a DID we cannot enforce "author not in own list";
+			// fail closed. In practice the application layer always has
+			// the author's DID at hand.
+			return fmt.Errorf("%s audience requires non-empty author DID for self-inclusion check", a.Kind)
+		}
+		for _, did := range a.ActorDids {
+			if did == authorDID {
+				return fmt.Errorf("%s audience must not include the author themselves", a.Kind)
+			}
+		}
+	}
+	return nil
+}
