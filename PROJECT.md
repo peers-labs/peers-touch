@@ -4,7 +4,8 @@ PeerTouch 项目结构
 
 * [apps](./apps)
     * [desktop](./apps/desktop): 桌面端（TypeScript + Tauri）
-    * [mobile/flutter](./apps/mobile/flutter): 移动端
+    * [mobile/android](./apps/mobile/android): Android 原生（Kotlin + Compose + Lynx）
+    * [mobile/ios](./apps/mobile/ios): iOS 原生（Swift + Lynx）
     * [mobile/harmony](./apps/mobile/harmony): 鸿蒙占位
     * [station](./apps/station)
         * [app](./apps/station/app): 后端应用
