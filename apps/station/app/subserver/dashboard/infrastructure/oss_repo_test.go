@@ -428,6 +428,174 @@ func TestOSSRepository_DeleteBucket_GuardsAndForce(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// S10: object lifecycle (admin) — GetObject / AdminPatchObject / AdminDeleteObject
+// ---------------------------------------------------------------------------
+
+func TestOSSRepository_GetObject_FoundAndMissing(t *testing.T) {
+	db := newOSSTestDB(t)
+	repo := NewOSSRepository(db)
+	ctx := context.Background()
+
+	seedFiles(t, db, ossmodel.FileMeta{
+		ID: "f-1", Key: "k1", Name: "n1", BucketID: "b1", OwnerActorID: "a",
+		Visibility: "private", Backend: "local", Size: 7,
+	})
+
+	got, err := repo.GetObject(ctx, "f-1")
+	if err != nil {
+		t.Fatalf("GetObject: %v", err)
+	}
+	if got == nil || got.ID != "f-1" || got.Key != "k1" || got.Size != 7 {
+		t.Fatalf("GetObject: %+v", got)
+	}
+
+	miss, err := repo.GetObject(ctx, "no-such")
+	if err != nil {
+		t.Fatalf("GetObject miss: %v", err)
+	}
+	if miss != nil {
+		t.Errorf("missing object should be nil, got %+v", miss)
+	}
+}
+
+func TestOSSRepository_AdminPatchObject_UpdatesAndBumpsCapability(t *testing.T) {
+	db := newOSSTestDB(t)
+	repo := NewOSSRepository(db)
+	ctx := context.Background()
+
+	seedFiles(t, db, ossmodel.FileMeta{
+		ID: "f-1", Key: "k", Name: "n", BucketID: "b", OwnerActorID: "a",
+		Visibility: "public", Backend: "local",
+	})
+
+	// Tightening public → private MUST bump capability_version.
+	priv := "private"
+	got, err := repo.AdminPatchObject(ctx, "f-1", AdminPatchObjectInput{Visibility: &priv})
+	if err != nil {
+		t.Fatalf("AdminPatchObject tighten: %v", err)
+	}
+	if got == nil || got.Visibility != "private" {
+		t.Fatalf("post-patch: %+v", got)
+	}
+	var capVersion string
+	if err := db.Table(tblOSSMeta).Select("value").Where("key = ?", metaKeyCapVersion).
+		Scan(&capVersion).Error; err != nil {
+		t.Fatalf("read cap version: %v", err)
+	}
+	if capVersion == "" {
+		t.Errorf("capability_version should be set after tighten")
+	}
+
+	// A subsequent loosening (private → public) should NOT bump
+	// capability_version (loosening is observable on next access).
+	pub := "public"
+	if _, err := repo.AdminPatchObject(ctx, "f-1", AdminPatchObjectInput{Visibility: &pub}); err != nil {
+		t.Fatalf("loosen: %v", err)
+	}
+	var capVersionAfter string
+	_ = db.Table(tblOSSMeta).Select("value").Where("key = ?", metaKeyCapVersion).
+		Scan(&capVersionAfter).Error
+	if capVersionAfter != capVersion {
+		t.Errorf("loosening should not bump cap version: prev=%q now=%q", capVersion, capVersionAfter)
+	}
+}
+
+func TestOSSRepository_AdminPatchObject_RejectsChatWithoutSession(t *testing.T) {
+	db := newOSSTestDB(t)
+	repo := NewOSSRepository(db)
+	ctx := context.Background()
+
+	seedFiles(t, db, ossmodel.FileMeta{
+		ID: "f-1", Key: "k", Name: "n", BucketID: "b", OwnerActorID: "a",
+		Visibility: "private", Backend: "local",
+	})
+
+	chat := "chat"
+	if _, err := repo.AdminPatchObject(ctx, "f-1", AdminPatchObjectInput{Visibility: &chat}); err != ErrFileChatNeedsSession {
+		t.Errorf("chat without session: want ErrFileChatNeedsSession, got %v", err)
+	}
+
+	sess := "sess-1"
+	if _, err := repo.AdminPatchObject(ctx, "f-1", AdminPatchObjectInput{
+		Visibility:       &chat,
+		ChatSessionID:    &sess,
+		ChatSessionIDSet: true,
+	}); err != nil {
+		t.Errorf("chat with session: unexpected err %v", err)
+	}
+}
+
+func TestOSSRepository_AdminPatchObject_AwayFromChatClearsSession(t *testing.T) {
+	db := newOSSTestDB(t)
+	repo := NewOSSRepository(db)
+	ctx := context.Background()
+
+	seedFiles(t, db, ossmodel.FileMeta{
+		ID: "f-1", Key: "k", Name: "n", BucketID: "b", OwnerActorID: "a",
+		Visibility: "chat", ChatSessionID: "sess-1", Backend: "local",
+	})
+
+	priv := "private"
+	got, err := repo.AdminPatchObject(ctx, "f-1", AdminPatchObjectInput{Visibility: &priv})
+	if err != nil {
+		t.Fatalf("AdminPatchObject: %v", err)
+	}
+	if got.ChatSessionID != "" {
+		t.Errorf("session_id should be cleared after move away from chat: %+v", got)
+	}
+}
+
+func TestOSSRepository_AdminPatchObject_RejectsDeletedRow(t *testing.T) {
+	db := newOSSTestDB(t)
+	repo := NewOSSRepository(db)
+	ctx := context.Background()
+
+	now := time.Now()
+	seedFiles(t, db, ossmodel.FileMeta{
+		ID: "f-1", Key: "k", Name: "n", BucketID: "b", OwnerActorID: "a",
+		Visibility: "private", Backend: "local", DeletedAt: &now,
+	})
+
+	priv := "private"
+	if _, err := repo.AdminPatchObject(ctx, "f-1", AdminPatchObjectInput{Visibility: &priv}); err != ErrFileAlreadyDeleted {
+		t.Errorf("patch deleted: want ErrFileAlreadyDeleted, got %v", err)
+	}
+}
+
+func TestOSSRepository_AdminDeleteObject_HappyAndIdempotent(t *testing.T) {
+	db := newOSSTestDB(t)
+	repo := NewOSSRepository(db)
+	ctx := context.Background()
+
+	seedFiles(t, db, ossmodel.FileMeta{
+		ID: "f-1", Key: "k", Name: "n", BucketID: "b", OwnerActorID: "a",
+		Visibility: "private", Backend: "local",
+	})
+
+	got, err := repo.AdminDeleteObject(ctx, "f-1")
+	if err != nil {
+		t.Fatalf("AdminDeleteObject: %v", err)
+	}
+	if got == nil || got.DeletedAt == nil {
+		t.Errorf("post-delete row should carry deleted_at: %+v", got)
+	}
+
+	// Second delete must be idempotent: returns the row + ErrFileAlreadyDeleted.
+	got2, err2 := repo.AdminDeleteObject(ctx, "f-1")
+	if err2 != ErrFileAlreadyDeleted {
+		t.Errorf("idempotent re-delete: want ErrFileAlreadyDeleted, got %v", err2)
+	}
+	if got2 == nil || got2.ID != "f-1" {
+		t.Errorf("idempotent re-delete should still return row: %+v", got2)
+	}
+
+	// Missing id stays a clean NotFound.
+	if _, err := repo.AdminDeleteObject(ctx, "no-such"); err != ErrFileNotFound {
+		t.Errorf("missing id: want ErrFileNotFound, got %v", err)
+	}
+}
+
 func TestOSSRepository_RecordOSSAudit_AppendsRow(t *testing.T) {
 	db := newOSSTestDB(t)
 	repo := NewOSSRepository(db)
