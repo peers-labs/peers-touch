@@ -77,6 +77,12 @@ type MessageModel struct {
 func (*MessageModel) TableName() string { return "friend_chat_messages" }
 
 // MessageAttachmentModel stores per-message attachment metadata (blobs addressed by CID).
+//
+// Visibility mirrors the OSS subserver's `oss_files.visibility`
+// (the values are kept in lock-step on purpose). It is recorded
+// here at write time so the receiver does not have to call back
+// to the OSS subserver just to render a tiny chip on the bubble.
+// Empty string is the legacy / "not declared" sentinel.
 type MessageAttachmentModel struct {
 	ID           uint   `gorm:"column:id;primaryKey"`
 	MessageULID  string `gorm:"column:message_ulid;size:64;index"`
@@ -85,6 +91,7 @@ type MessageAttachmentModel struct {
 	MimeType     string `gorm:"column:mime_type;size:128"`
 	Size         int64  `gorm:"column:size"`
 	ThumbnailCID string `gorm:"column:thumbnail_cid;size:255"`
+	Visibility   string `gorm:"column:visibility;size:16"`
 }
 
 func (MessageAttachmentModel) TableName() string {
@@ -180,6 +187,7 @@ func attachmentRowToDomain(m MessageAttachmentModel) domain.Attachment {
 		MimeType:     m.MimeType,
 		Size:         m.Size,
 		ThumbnailCID: m.ThumbnailCID,
+		Visibility:   m.Visibility,
 	}
 }
 
@@ -329,6 +337,7 @@ func (r *GormRepo) AppendMessage(message domain.Message) (domain.Message, error)
 				MimeType:     a.MimeType,
 				Size:         a.Size,
 				ThumbnailCID: a.ThumbnailCID,
+				Visibility:   a.Visibility,
 			}
 			if err := tx.Create(&row).Error; err != nil {
 				return err

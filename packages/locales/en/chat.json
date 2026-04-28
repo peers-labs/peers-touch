@@ -282,8 +282,10 @@
   "chat.social.messageArea.uploadFailed": "Failed to upload file",
   "chat.social.messageArea.attachmentVisibleChat": "Visible to chat members",
   "chat.social.messageArea.attachmentVisiblePrivate": "Private — only you",
+  "chat.social.messageArea.attachmentVisiblePublic": "Public — anyone with the link can fetch this file",
   "chat.social.messageArea.attachmentScopeChat": "Chat",
   "chat.social.messageArea.attachmentScopePrivate": "Private",
+  "chat.social.messageArea.attachmentScopePublic": "Public",
 
   "chat.social.sessionList.searchPlaceholder": "Search...",
   "chat.social.sessionList.friends": "Friends",

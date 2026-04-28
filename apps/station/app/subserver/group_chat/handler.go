@@ -723,6 +723,7 @@ func groupAttachmentsFromProto(in []*chat.GroupMessageAttachment) []group_chat_d
 			MimeType:     a.GetMimeType(),
 			Size:         a.GetSize(),
 			ThumbnailCID: a.GetThumbnailCid(),
+			Visibility:   a.GetVisibility(),
 		})
 	}
 	return out
@@ -740,6 +741,7 @@ func groupAttachmentsToProto(in []group_chat_domain.Attachment) []*chat.GroupMes
 			MimeType:     a.MimeType,
 			Size:         a.Size,
 			ThumbnailCid: a.ThumbnailCID,
+			Visibility:   a.Visibility,
 		})
 	}
 	return out

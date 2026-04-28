@@ -11,7 +11,7 @@ import {
 import { useSocialChatStore } from '../../store/socialChat';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { SearchMessagesModal } from './SearchMessagesModal';
-import { AttachmentItem } from './AttachmentItem';
+import { AttachmentItem, type ChatAttachmentVisibilityHint } from './AttachmentItem';
 import { friendChatP2p } from '../../modules/p2p/friendChatP2p';
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
@@ -26,6 +26,23 @@ const { Text } = Typography;
 
 function isFriendMsg(msg: FriendChatMessage | GroupMessage): msg is FriendChatMessage {
   return 'sessionUlid' in msg;
+}
+
+/**
+ * Coerce the wire-format `visibility` string into the badge hint
+ * the receiver UI understands. Returns `undefined` for empty /
+ * unknown values so the AttachmentItem renders no chip — this is
+ * the legacy / "sender did not declare" path.
+ */
+function normalizeVisibilityHint(v: string | undefined): ChatAttachmentVisibilityHint | undefined {
+  switch (v) {
+    case 'public':
+    case 'chat':
+    case 'private':
+      return v;
+    default:
+      return undefined;
+  }
 }
 
 function formatMsgTime(ts: Timestamp | undefined): string {
@@ -684,6 +701,11 @@ export function ChatMessageArea() {
         mime_type: uploaded.mime_type,
         size: uploaded.size,
         thumbnail_cid: '',
+        // The OSS subserver echoes `visibility` in the upload
+        // response; default to the value we just asked for so the
+        // recipient renders the correct scope chip even when the
+        // server build does not yet populate the field.
+        visibility: uploaded.visibility ?? 'chat',
       };
       if (activeTab === 'friend') {
         const session = sessions.find((s) => s.ulid === activeUlid);
@@ -974,7 +996,19 @@ export function ChatMessageArea() {
                             key={idx}
                             attachment={att}
                             isOwn={isOwn}
-                            visibilityHint={isOwn ? 'chat' : undefined}
+                            // Receiver-side scope badge: the sender is
+                            // authoritative for visibility (the field
+                            // is populated at upload time and travels
+                            // with the message). When the field is
+                            // empty (legacy senders), receivers see
+                            // their own message scope as the fallback
+                            // and our own messages still default to
+                            // "chat" since that's the only scope the
+                            // current upload UI emits.
+                            visibilityHint={
+                              normalizeVisibilityHint(att.visibility)
+                              ?? (isOwn ? 'chat' : undefined)
+                            }
                           />
                         ))}
                       </Flexbox>

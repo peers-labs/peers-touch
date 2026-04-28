@@ -3,12 +3,22 @@ package domain
 import "time"
 
 // Attachment references blob storage for a message (e.g. image/file).
+//
+// Visibility echoes the OSS-side `oss_files.visibility` for the
+// attachment's primary `CID` ("public" / "chat" / "private"). The
+// sender is authoritative — the server stores it verbatim and the
+// receiver renders a badge so the recipient can tell at a glance
+// whether the file is reach-restricted to this chat session or has
+// been published to a wider audience. An empty string means the
+// sender did not declare a scope (legacy clients) and the UI MUST
+// render no badge in that case.
 type Attachment struct {
 	CID          string
 	Filename     string
 	MimeType     string
 	Size         int64
 	ThumbnailCID string
+	Visibility   string
 }
 
 type Session struct {
