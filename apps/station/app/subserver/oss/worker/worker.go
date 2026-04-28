@@ -77,6 +77,69 @@ type Scheduler struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 	stopCh chan struct{}
+
+	statsMu sync.RWMutex
+	stats   map[string]*workerStats
+}
+
+// workerStats captures the rolling state of a single worker. It
+// lives entirely in the scheduler's process so a restart resets
+// it — durable history goes through the `oss_audit` heartbeat
+// rows. The snapshot view (`Snapshot()`) feeds `/healthz` /
+// `/metrics` and the dashboard "workers" tab.
+type workerStats struct {
+	interval     time.Duration
+	lastRunAt    time.Time
+	lastDuration time.Duration
+	lastOutcome  string // "ok" | "error" | "" (never run)
+	lastError    string
+	runCount     uint64
+	errorCount   uint64
+}
+
+// WorkerSnapshot is the read-only projection one worker exposes to
+// the observability surface. Times are zero when the worker has
+// never run in this process; callers should branch on
+// `LastRunAt.IsZero()`.
+//
+// `RunCount` / `ErrorCount` are process-local counters (reset on
+// restart). For long-horizon trends operators should query
+// `oss_audit` directly — see `AuditActionWorkerRun`.
+type WorkerSnapshot struct {
+	Name         string
+	Interval     time.Duration
+	LastRunAt    time.Time
+	LastDuration time.Duration
+	LastOutcome  string
+	LastError    string
+	RunCount     uint64
+	ErrorCount   uint64
+}
+
+// Snapshot returns the current rolling stats for every registered
+// worker. The result is a fresh slice safe for callers to retain;
+// no scheduler-internal pointers are exposed.
+func (s *Scheduler) Snapshot() []WorkerSnapshot {
+	out := make([]WorkerSnapshot, 0, len(s.workers))
+	s.statsMu.RLock()
+	defer s.statsMu.RUnlock()
+	for _, w := range s.workers {
+		st := s.stats[w.Name()]
+		snap := WorkerSnapshot{
+			Name:     w.Name(),
+			Interval: w.Interval(),
+		}
+		if st != nil {
+			snap.LastRunAt = st.lastRunAt
+			snap.LastDuration = st.lastDuration
+			snap.LastOutcome = st.lastOutcome
+			snap.LastError = st.lastError
+			snap.RunCount = st.runCount
+			snap.ErrorCount = st.errorCount
+		}
+		out = append(out, snap)
+	}
+	return out
 }
 
 // NewScheduler builds a Scheduler bound to the given workers, lock
@@ -97,6 +160,7 @@ func NewScheduler(workers []Worker, lock LeaderLock, audit repo.AuditRepository)
 		audit:   audit,
 		clock:   time.Now,
 		stopCh:  make(chan struct{}),
+		stats:   make(map[string]*workerStats, len(workers)),
 	}
 }
 
@@ -193,7 +257,33 @@ func (s *Scheduler) tick(ctx context.Context, w Worker) {
 	if rerr != nil {
 		log.Warnf(ctx, "[oss-worker] %s run error after %s: %v", w.Name(), elapsed, rerr)
 	}
+	s.recordStats(w, start, elapsed, rerr)
 	s.emitHeartbeat(ctx, w.Name(), rerr)
+}
+
+// recordStats updates the rolling per-worker counters consumed by
+// `Snapshot()`. Counters never reset within the process; on
+// restart they begin at zero again — durable history is the
+// `oss_audit` heartbeat row stream.
+func (s *Scheduler) recordStats(w Worker, start time.Time, elapsed time.Duration, runErr error) {
+	s.statsMu.Lock()
+	defer s.statsMu.Unlock()
+	st, ok := s.stats[w.Name()]
+	if !ok {
+		st = &workerStats{interval: w.Interval()}
+		s.stats[w.Name()] = st
+	}
+	st.lastRunAt = start
+	st.lastDuration = elapsed
+	st.runCount++
+	if runErr != nil {
+		st.lastOutcome = ossmodel.AuditOutcomeError
+		st.lastError = runErr.Error()
+		st.errorCount++
+	} else {
+		st.lastOutcome = ossmodel.AuditOutcomeOK
+		st.lastError = ""
+	}
 }
 
 // emitHeartbeat appends one row to oss_audit so the dashboard /
