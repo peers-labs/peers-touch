@@ -65,12 +65,31 @@ enum GroupRole {
 // ==================== 群消息 ====================
 
 // 群消息
+//
+// Group chat is end-to-end encrypted under the Sender Keys protocol
+// (see peers-touch/docs/architecture/encryption/group-sender-keys.md).
+// `encrypted_payload` carries the wire-encoded `GroupCiphertext`
+// (defined below) and is the ONLY source of message body for new
+// messages. Station treats it as opaque bytes -- it does not, and
+// cannot, decode it.
+//
+// `content` is preserved on the wire ONLY so historical recall /
+// edit / delete code paths and existing local indexes do not panic
+// on the field's disappearance. It MUST be empty for any message
+// produced by a Sender-Keys-capable client. Station rejects send
+// requests that populate it (see `SendGroupMessageRequest`).
 message GroupMessage {
   string ulid = 1;
   string group_ulid = 2;
   string sender_did = 3;
   GroupMessageType type = 4;
-  string content = 5;
+  // DEPRECATED: always empty for new messages. Plaintext bodies were
+  // dropped when group chat moved to Sender Keys. Kept around so old
+  // rows in already-shipped local SQLCipher caches still parse; new
+  // senders MUST encode the body inside `encrypted_payload` as a
+  // `GroupCiphertext`. Will be promoted from "deprecated and empty"
+  // to "removed (reserved field number)" in a future proto rev.
+  string content = 5 [deprecated = true];
   repeated GroupMessageAttachment attachments = 6;
   string reply_to_ulid = 7;                  // 回复的消息ID
   repeated string mentioned_dids = 8;        // @的成员
@@ -80,20 +99,89 @@ message GroupMessage {
   google.protobuf.Timestamp updated_at = 12;
   // recalled flips when the original sender recalls the message.
   // The row is preserved (so threading & search snippets stay
-  // coherent) but content + encrypted_payload are cleared and the
-  // client renders a tombstone in place of the bubble. Mutually
-  // exclusive with the row existing at all: a deleted message has
-  // no row. Field number 13 was previously named `deleted` with
-  // identical semantics — renamed for parity with friend chat
-  // and the realtime MessageMutation contract. Wire compat is
-  // preserved (same field number, same type, same on-disk column
-  // mapping via the GORM tag).
+  // coherent) but encrypted_payload is cleared and the client
+  // renders a tombstone in place of the bubble. Field number 13
+  // was previously named `deleted`; renamed for parity with friend
+  // chat and the realtime MessageMutation contract. Wire compat is
+  // preserved (same field number / type / GORM column mapping).
   bool recalled = 13;
+  // Wire form is `GroupCiphertext` (see below) encoded as proto
+  // bytes. Required for Sender-Keys-capable senders.
   bytes encrypted_payload = 14;
   // edited_at is set when the message body has been replaced via
   // an edit. Display-only — clients MUST NOT use it for ordering.
-  // Mirrors FriendChatMessage.edited_at semantics.
+  // Mirrors FriendChatMessage.edited_at semantics. Edits also
+  // produce a fresh GroupCiphertext at the sender's current chain
+  // counter (the original chain key is already gone).
   google.protobuf.Timestamp edited_at = 15;
+}
+
+// ==================== Sender-Keys wire format ====================
+
+// GroupCiphertext is the wire form of a single Sender-Keys-encrypted
+// group message body. It is encoded into bytes and stored as the
+// content of `GroupMessage.encrypted_payload`. Station NEVER decodes
+// this -- it is passed through opaquely and the AAD bind below
+// guarantees ciphertext from one (group, sender, key_id) cannot be
+// replayed under another.
+//
+// AAD layout (bound via AES-GCM associated data):
+//   group_ulid || 0x1F || sender_did || 0x1F
+//     || sender_key_id (4B big-endian) || 0x1F
+//     || counter      (4B big-endian)
+//
+// `signature` covers the SHA-256 of the same bytes that go into
+// AAD, concatenated with the ciphertext, and is verified against
+// `sender_sig_pub` carried in the SenderKeyDistributionMessage that
+// originally introduced this `(sender_did, sender_key_id)` to the
+// receiver. Verification failure MUST surface a "possibly forged"
+// warning and MUST NOT silently fall back to plaintext.
+message GroupCiphertext {
+  // Wire-format version. Currently always 1. A non-1 value MUST be
+  // surfaced as a fatal "unknown ciphertext format" error -- there
+  // is no graceful fallback. Bumped if the AAD layout, the chain
+  // KDF labels, or the signature cover-bytes ever change.
+  uint32 version = 1;
+  // Owner of the sender chain that produced this message. Always
+  // equal to `GroupMessage.sender_did`; stored here too because
+  // `GroupCiphertext` decodes in isolation inside crypto code paths
+  // that do not have the surrounding GroupMessage on hand.
+  string sender_did = 2;
+  // Sender-key id. Bumps on every forced rotation (member add /
+  // remove / user-triggered "Reset group encryption"). Pair
+  // (sender_did, sender_key_id) uniquely identifies a chain.
+  uint32 sender_key_id = 3;
+  // Strictly increasing within (sender_did, sender_key_id). Used
+  // by receivers to fast-forward the chain and by the AAD bind to
+  // prevent replay across counters.
+  uint32 counter = 4;
+  bytes ciphertext = 5;
+  // Ed25519(sender_sig_priv, sha256(AAD || ciphertext)). 64 bytes.
+  bytes signature = 6;
+}
+
+// SenderKeyDistributionMessage seeds a receiver's view of the
+// sender's chain. Delivered as the body of a friend-chat message
+// with type FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION (see
+// friend_chat.proto), which gives it the friend-session's E2EE
+// envelope + identity authentication for free. Station never sees
+// the chain key.
+message SenderKeyDistributionMessage {
+  string group_ulid = 1;
+  string sender_did = 2;
+  uint32 sender_key_id = 3;
+  // 32-byte chain key, the seed of the receiving hash chain.
+  bytes chain_key = 4;
+  // Counter at which the sender's chain currently sits. Usually 0
+  // for a fresh chain; non-zero when an existing member redistributes
+  // a partially-advanced chain to a newcomer (rare; ratchet-resume
+  // semantics).
+  uint32 counter = 5;
+  // Ed25519 public key (32 B). Recipients use this to verify every
+  // GroupCiphertext.signature attributed to this (sender_did,
+  // sender_key_id) pair. The matching private key never leaves the
+  // sender's device.
+  bytes sender_sig_pub = 6;
 }
 
 enum GroupMessageType {
@@ -260,10 +348,18 @@ message RemoveMemberResponse {
 }
 
 // 发送群消息
+//
+// `encrypted_payload` carries the wire-encoded `GroupCiphertext`
+// (see GroupMessage doc). Required: Station rejects requests whose
+// encrypted_payload is empty, AND requests that populate `content`
+// (the latter would silently leak the body to Station). Attachments
+// stay outside the ciphertext envelope -- attachment encryption is
+// tracked separately in oss-encryption.md.
 message SendGroupMessageRequest {
   string group_ulid = 1;
   GroupMessageType type = 2;
-  string content = 3;
+  // DEPRECATED: must be empty for new sends. See GroupMessage.content.
+  string content = 3 [deprecated = true];
   repeated GroupMessageAttachment attachments = 4;
   string reply_to_ulid = 5;
   repeated string mentioned_dids = 6;

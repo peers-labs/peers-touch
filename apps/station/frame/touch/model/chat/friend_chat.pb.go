@@ -31,25 +31,36 @@ const (
 	FriendMessageType_FRIEND_MESSAGE_TYPE_FILE        FriendMessageType = 3
 	FriendMessageType_FRIEND_MESSAGE_TYPE_AUDIO       FriendMessageType = 4
 	FriendMessageType_FRIEND_MESSAGE_TYPE_VIDEO       FriendMessageType = 5
+	// Control type. The friend session is being used as a transport
+	// for a SenderKeyDistributionMessage (see group_chat.proto). The
+	// recipient MUST route the body to the group sender-key store and
+	// MUST NOT render the message in the visible chat history. The
+	// body lives in `encrypted_payload` (still under the friend chat
+	// E2EE envelope) and decodes as `peers_touch.model.chat.v1.SenderKeyDistributionMessage`.
+	// Numbered well above the user-visible types to leave room for
+	// future user-facing types without colliding with control types.
+	FriendMessageType_FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION FriendMessageType = 50
 )
 
 // Enum value maps for FriendMessageType.
 var (
 	FriendMessageType_name = map[int32]string{
-		0: "FRIEND_MESSAGE_TYPE_UNSPECIFIED",
-		1: "FRIEND_MESSAGE_TYPE_TEXT",
-		2: "FRIEND_MESSAGE_TYPE_IMAGE",
-		3: "FRIEND_MESSAGE_TYPE_FILE",
-		4: "FRIEND_MESSAGE_TYPE_AUDIO",
-		5: "FRIEND_MESSAGE_TYPE_VIDEO",
+		0:  "FRIEND_MESSAGE_TYPE_UNSPECIFIED",
+		1:  "FRIEND_MESSAGE_TYPE_TEXT",
+		2:  "FRIEND_MESSAGE_TYPE_IMAGE",
+		3:  "FRIEND_MESSAGE_TYPE_FILE",
+		4:  "FRIEND_MESSAGE_TYPE_AUDIO",
+		5:  "FRIEND_MESSAGE_TYPE_VIDEO",
+		50: "FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION",
 	}
 	FriendMessageType_value = map[string]int32{
-		"FRIEND_MESSAGE_TYPE_UNSPECIFIED": 0,
-		"FRIEND_MESSAGE_TYPE_TEXT":        1,
-		"FRIEND_MESSAGE_TYPE_IMAGE":       2,
-		"FRIEND_MESSAGE_TYPE_FILE":        3,
-		"FRIEND_MESSAGE_TYPE_AUDIO":       4,
-		"FRIEND_MESSAGE_TYPE_VIDEO":       5,
+		"FRIEND_MESSAGE_TYPE_UNSPECIFIED":             0,
+		"FRIEND_MESSAGE_TYPE_TEXT":                    1,
+		"FRIEND_MESSAGE_TYPE_IMAGE":                   2,
+		"FRIEND_MESSAGE_TYPE_FILE":                    3,
+		"FRIEND_MESSAGE_TYPE_AUDIO":                   4,
+		"FRIEND_MESSAGE_TYPE_VIDEO":                   5,
+		"FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION": 50,
 	}
 )
 
@@ -3157,14 +3168,15 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\x1aDeleteFriendMessageRequest\x12!\n" +
 	"\fsession_ulid\x18\x01 \x01(\tR\vsessionUlid\x12!\n" +
 	"\fmessage_ulid\x18\x02 \x01(\tR\vmessageUlid\"\x1d\n" +
-	"\x1bDeleteFriendMessageResponse*\xd1\x01\n" +
+	"\x1bDeleteFriendMessageResponse*\x82\x02\n" +
 	"\x11FriendMessageType\x12#\n" +
 	"\x1fFRIEND_MESSAGE_TYPE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18FRIEND_MESSAGE_TYPE_TEXT\x10\x01\x12\x1d\n" +
 	"\x19FRIEND_MESSAGE_TYPE_IMAGE\x10\x02\x12\x1c\n" +
 	"\x18FRIEND_MESSAGE_TYPE_FILE\x10\x03\x12\x1d\n" +
 	"\x19FRIEND_MESSAGE_TYPE_AUDIO\x10\x04\x12\x1d\n" +
-	"\x19FRIEND_MESSAGE_TYPE_VIDEO\x10\x05*\xe6\x01\n" +
+	"\x19FRIEND_MESSAGE_TYPE_VIDEO\x10\x05\x12/\n" +
+	"+FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION\x102*\xe6\x01\n" +
 	"\x13FriendMessageStatus\x12%\n" +
 	"!FRIEND_MESSAGE_STATUS_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dFRIEND_MESSAGE_STATUS_SENDING\x10\x01\x12\x1e\n" +
