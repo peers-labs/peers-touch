@@ -31,6 +31,15 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
 
+// ossFileServiceProvider is the cross-subserver hand-off contract
+// the dashboard uses to discover the OSS subserver's `FileService`
+// without importing its internal types. The OSS subserver exposes
+// the same shape under `oss.FileServiceProvider`; we duplicate the
+// interface here so the dashboard package never imports `oss`
+// (avoiding the import cycle that would otherwise emerge once the
+// OSS subserver pulls in dashboard-side types for federation).
+type ossFileServiceProvider = application.FileServiceProvider
+
 // Compile-time interface check.
 var _ server.Subserver = (*subServer)(nil)
 
@@ -202,6 +211,27 @@ func (s *subServer) Start(ctx context.Context, opts ...option.Option) error {
 		}
 		if s.nodesSvc != nil {
 			s.nodesSvc.SetRegistry(s.registry)
+		}
+	}
+
+	// Resolve the OSS sibling subserver so the dashboard's admin
+	// upload path can re-use its FileService instead of duplicating
+	// the storage-write code path. Deliberately best-effort: an
+	// operator running a dashboard-only deployment (or a test
+	// harness without OSS wired up) keeps the read paths working;
+	// the upload endpoint surfaces 503 instead of NPE'ing.
+	if s.ossSvc != nil {
+		for _, sib := range s.subservers {
+			if sib == nil || sib.Name() != "oss" {
+				continue
+			}
+			if provider, ok := sib.(ossFileServiceProvider); ok {
+				s.ossSvc.SetFileServiceProvider(provider)
+				if provider.FileService() != nil {
+					log.Infof(ctx, "[dashboard] oss admin upload wired (max=%d bytes)", provider.MaxFileSize())
+				}
+			}
+			break
 		}
 	}
 

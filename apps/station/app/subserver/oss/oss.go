@@ -610,3 +610,42 @@ func (s *ossSubServer) Type() server.SubserverType     { return server.Subserver
 func (s *ossSubServer) Address() server.SubserverAddress {
 	return server.SubserverAddress{Address: s.addrs}
 }
+
+// ---------------------------------------------------------------------------
+// Sibling-subserver accessors
+//
+// These let other subservers (today: `dashboard`) reuse the OSS
+// subserver's already-wired application-layer dependencies instead
+// of re-building a parallel write path against the storage backend
+// + GORM tables. Keeping the accessors on this struct (rather than
+// exposing the dependency at construction time) means the
+// dashboard's `Start()` can resolve the OSS subserver from the
+// shared `server.Options.SubserverInstances` snapshot — the same
+// mechanism it already uses for status/overview projection.
+// ---------------------------------------------------------------------------
+
+// FileService returns the OSS subserver's FileService. May return
+// nil when called before Init has wired the dependency tree, which
+// is expected during early-boot test harnesses.
+func (s *ossSubServer) FileService() service.FileService {
+	return s.fileService
+}
+
+// MaxFileSize returns the upload size cap the OSS HTTP handler
+// enforces. Callers that want to short-circuit oversized requests
+// (the dashboard admin upload, for example) should mirror this
+// budget against `http.MaxBytesReader` rather than rely on the
+// service layer to reject after the bytes have moved.
+func (s *ossSubServer) MaxFileSize() int64 {
+	return s.maxFileSize
+}
+
+// FileServiceProvider is the cross-package interface other
+// subservers can use to type-assert against the OSS subserver
+// without importing the unexported `*ossSubServer` symbol. The
+// `dashboard` subserver does this at `Start()` time when scanning
+// the shared `SubserverInstances` snapshot.
+type FileServiceProvider interface {
+	FileService() service.FileService
+	MaxFileSize() int64
+}

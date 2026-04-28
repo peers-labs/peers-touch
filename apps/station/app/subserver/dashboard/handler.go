@@ -15,11 +15,14 @@ package dashboard
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/infrastructure"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -85,6 +88,7 @@ const (
 	routeOSSBuckets        = "/dashboard/api/oss/buckets"
 	routeOSSBucketDetail   = "/dashboard/api/oss/buckets/:id"
 	routeOSSBucketObjects  = "/dashboard/api/oss/buckets/:id/objects"
+	routeOSSBucketUpload   = "/dashboard/api/oss/buckets/:id/upload"
 	routeOSSObjects        = "/dashboard/api/oss/objects"
 	routeOSSObjectDetail   = "/dashboard/api/oss/objects/:id"
 	routeOSSAudit          = "/dashboard/api/oss/audit"
@@ -205,6 +209,12 @@ func (h *dashboardHandler) handlers() []server.Handler {
 			h.handleOSSDeleteBucket, auth),
 		server.NewTypedHandler("dashboard-oss-bucket-objects", routeOSSBucketObjects, server.GET,
 			h.handleOSSListBucketObjects, auth),
+		// Multipart upload — registered as a raw HTTP handler so we
+		// can stream the request body through `r.ParseMultipartForm`
+		// without round-tripping through the typed-handler JSON
+		// codec. The auth wrapper still runs (claims live in ctx).
+		server.NewHTTPHandler("dashboard-oss-bucket-upload", routeOSSBucketUpload, server.POST,
+			server.HTTPHandlerFunc(h.handleOSSAdminUpload), auth),
 		server.NewTypedHandler("dashboard-oss-objects", routeOSSObjects, server.GET,
 			h.handleOSSListObjects, auth),
 		server.NewTypedHandler("dashboard-oss-object-detail", routeOSSObjectDetail, server.GET,
@@ -985,6 +995,161 @@ func ownerID(b *domain.OSSBucketSummary) string {
 		return ""
 	}
 	return b.OwnerActorID
+}
+
+// handleOSSAdminUpload — POST /dashboard/api/oss/buckets/:id/upload
+//
+// Operator-driven upload to a specific bucket. The bucket's
+// `OwnerActorID` is what the OSS subserver stamps on the resulting
+// `oss_files` row — the operator is acting on behalf of that owner,
+// the same model that backs the existing
+// `admin_visibility_override` and `admin_delete` paths.
+//
+// Auth: standard dashboard JWT (the auth wrapper still applies to
+// HTTP-style handlers; we read the claims from ctx).
+//
+// Multipart shape (mirrors `/sub-oss/upload`):
+//
+//   - `file`              — the bytes (required)
+//   - `visibility`        — public / chat / private (optional;
+//                            falls back to bucket DefaultVisibility)
+//   - `chat_session_id`   — required iff resolved visibility=chat
+//   - `filename`          — display-name override (optional)
+//
+// Audits are dual:
+//
+//   - `oss_audit` row with action=`admin_upload` and the operator's
+//     id stamped in `dashboard_actor_id` so the OSS audit log
+//     captures the structural change with the right attribution.
+//   - dashboard admin audit so the operator activity stream shows
+//     the action under the admin's name.
+//
+// Errors map to:
+//
+//   - 400 invalid_multipart / file_required / chat_session_required /
+//         visibility / quota_exceeded (when the OSS service rejects)
+//   - 404 bucket not found
+//   - 413 file_too_large (size > MaxFileSize)
+//   - 503 admin upload not wired (oss subserver missing)
+func (h *dashboardHandler) handleOSSAdminUpload(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if h.sub.ossSvc == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "oss_service_unavailable", "oss service unavailable")
+		return
+	}
+
+	bucketID := pathParam(ctx, "id")
+	if bucketID == "" {
+		writeJSONError(w, http.StatusBadRequest, "bucket_required", "bucket id is required")
+		return
+	}
+
+	maxSize := h.sub.ossSvc.AdminUploadFileSize()
+	if maxSize <= 0 {
+		// FileService is not wired — surface a clean 503 instead of
+		// silently parsing the entire request body.
+		writeJSONError(w, http.StatusServiceUnavailable, "admin_upload_unavailable",
+			"oss admin upload is not available — oss subserver not wired")
+		return
+	}
+
+	// Mirror `/sub-oss/upload`'s parse budget: max upload size + a
+	// 1 MiB cushion for multipart frame overhead. The OSS handler
+	// does the same — keeping the budget identical means the same
+	// request body that succeeds against `/sub-oss/upload` succeeds
+	// here too.
+	r.Body = http.MaxBytesReader(w, r.Body, maxSize+(1<<20))
+	if err := r.ParseMultipartForm(maxSize); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid_multipart", "invalid multipart form")
+		return
+	}
+
+	file, hdr, err := r.FormFile("file")
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "file_required", "file is required")
+		return
+	}
+	defer file.Close()
+	if hdr.Size > maxSize {
+		writeJSONErrorObj(w, http.StatusRequestEntityTooLarge, map[string]any{
+			"code":     "file_too_large",
+			"error":    "file too large",
+			"max_size": maxSize,
+		})
+		return
+	}
+
+	in := application.AdminUploadInput{
+		BucketID:      bucketID,
+		Visibility:    strings.TrimSpace(r.FormValue("visibility")),
+		ChatSessionID: strings.TrimSpace(r.FormValue("chat_session_id")),
+		Filename:      strings.TrimSpace(r.FormValue("filename")),
+		File:          file,
+		Header:        hdr,
+	}
+
+	claims := getClaims(ctx)
+	row, err := h.sub.ossSvc.AdminUploadObject(ctx, in)
+	if err != nil {
+		h.translateAdminUploadError(ctx, w, claims, bucketID, err)
+		return
+	}
+
+	h.recordOSSObjectAudit(ctx, claims, "admin_upload", row.ID, row, "ok", "")
+	h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username, "oss_object_admin_upload", "oss_object",
+		"object_id="+row.ID+" bucket_id="+bucketID, getClientIP(ctx), getUserAgent(ctx))
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(row)
+}
+
+// translateAdminUploadError maps service-layer errors from the
+// OSS file service into HTTP responses with stable `code` strings
+// the frontend can match on. Mirrors the mapping
+// `writeUploadServiceError` performs in the OSS subserver so an
+// operator using either upload path sees the same vocabulary.
+func (h *dashboardHandler) translateAdminUploadError(ctx context.Context, w http.ResponseWriter,
+	claims *domain.DashboardClaims, bucketID string, err error) {
+	msg := err.Error()
+	switch {
+	case errors.Is(err, application.ErrAdminUploadUnavailable):
+		writeJSONError(w, http.StatusServiceUnavailable, "admin_upload_unavailable", msg)
+	case errors.Is(err, application.ErrAdminUploadBucketRequired):
+		writeJSONError(w, http.StatusBadRequest, "bucket_required", msg)
+	case strings.HasPrefix(msg, "bucket not found"),
+		strings.HasPrefix(msg, "bucket has no owner_actor_id"):
+		h.recordOSSBucketAudit(ctx, claims, "admin_upload", bucketID, "", "denied", "bucket_not_found")
+		writeJSONError(w, http.StatusNotFound, "bucket_not_found", msg)
+	case strings.HasPrefix(msg, "visibility"):
+		writeJSONError(w, http.StatusBadRequest, "invalid_visibility", msg)
+	default:
+		// Fall through with a generic 500 plus the underlying message.
+		// The OSS service emits `chat_session_required`, `quota_exceeded`
+		// etc. as wrapped errors; we surface them verbatim so an
+		// operator sees the precise complaint.
+		log.Errorf(ctx, "[dashboard] oss admin upload error: %v", err)
+		switch {
+		case strings.Contains(msg, "chat_session_id"):
+			writeJSONError(w, http.StatusBadRequest, "chat_session_required", msg)
+		case strings.Contains(msg, "quota"):
+			writeJSONError(w, http.StatusRequestEntityTooLarge, "quota_exceeded", msg)
+		default:
+			writeJSONError(w, http.StatusInternalServerError, "upload_failed", msg)
+		}
+	}
+}
+
+// writeJSONError emits a stable JSON error envelope so the dashboard
+// frontend can match on `code` rather than parse English.
+func writeJSONError(w http.ResponseWriter, status int, code, message string) {
+	writeJSONErrorObj(w, status, map[string]any{"code": code, "error": message})
+}
+
+func writeJSONErrorObj(w http.ResponseWriter, status int, body map[string]any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 // handleOSSListBucketObjects — GET /dashboard/api/oss/buckets/:id/objects
