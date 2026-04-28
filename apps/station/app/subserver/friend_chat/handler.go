@@ -901,6 +901,7 @@ func friendAttachmentsFromProto(in []*chat.FriendMessageAttachment) []domain.Att
 			MimeType:     a.GetMimeType(),
 			Size:         a.GetSize(),
 			ThumbnailCID: a.GetThumbnailCid(),
+			Visibility:   a.GetVisibility(),
 		})
 	}
 	return out
@@ -918,6 +919,7 @@ func friendAttachmentsToProto(in []domain.Attachment) []*chat.FriendMessageAttac
 			MimeType:     a.MimeType,
 			Size:         a.Size,
 			ThumbnailCid: a.ThumbnailCID,
+			Visibility:   a.Visibility,
 		})
 	}
 	return out

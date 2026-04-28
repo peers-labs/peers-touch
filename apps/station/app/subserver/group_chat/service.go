@@ -135,6 +135,7 @@ func (s *service) mergeGroupAttachmentsIntoDomainMessages(messages []domain.Mess
 			MimeType:     row.MimeType,
 			Size:         row.Size,
 			ThumbnailCID: row.ThumbnailCID,
+			Visibility:   row.Visibility,
 		})
 	}
 	for i := range messages {
@@ -747,6 +748,7 @@ func (s *service) appendMessage(groupID, senderDID string, messageType int32, co
 					MimeType:     a.MimeType,
 					Size:         a.Size,
 					ThumbnailCID: a.ThumbnailCID,
+					Visibility:   a.Visibility,
 				}
 				if err := tx.Create(&row).Error; err != nil {
 					return err

@@ -3,12 +3,21 @@ package domain
 import "time"
 
 // Attachment references blob storage for a group message (e.g. image/file).
+//
+// Visibility echoes the OSS-side `oss_files.visibility` for the
+// attachment's primary `CID` ("public" / "chat" / "private"). Sender-
+// authoritative; the server stores it verbatim. The receiver uses
+// the value to render a scope badge so the recipient can tell
+// whether the file is reach-restricted to this group or has been
+// published more broadly. Empty string means "not declared" (legacy)
+// and the UI MUST render no badge in that case.
 type Attachment struct {
 	CID          string
 	Filename     string
 	MimeType     string
 	Size         int64
 	ThumbnailCID string
+	Visibility   string
 }
 
 type Group struct {

@@ -87,6 +87,15 @@ message FriendMessageAttachment {
   string mime_type = 3;
   int64 size = 4;
   string thumbnail_cid = 5;
+  // visibility echoes the OSS subserver's `oss_files.visibility`
+  // for this attachment ("public" / "chat" / "private"). The
+  // sender is authoritative — the receiver UI surfaces it as a
+  // badge so the user can tell at a glance whether the file
+  // they are looking at is reach-restricted to this chat session
+  // or has been published to a wider audience. Empty string is
+  // treated as "unknown" by older clients and rendered without
+  // a badge; new servers SHOULD always populate it.
+  string visibility = 6;
 }
 
 message MessageEnvelope {
