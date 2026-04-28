@@ -10,6 +10,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
 )
@@ -115,6 +116,27 @@ func (s *MomentService) CreateMoment(ctx context.Context, req *model.CreatePostR
 
 	if err := s.assertAudienceTargetReachable(ctx, authorID, req.Audience); err != nil {
 		return nil, err
+	}
+
+	// Repost gate: the caller must be able to READ the original post
+	// before they're allowed to wrap it in a public REPOST envelope.
+	// Without this check, anyone holding a private post id could turn
+	// "I know this id exists in author X's private inventory" into a
+	// publicly attributable wrapper post. We only validate readability
+	// here; whether the original is itself reposted is a P3 concern
+	// (we'd need to walk the chain).
+	if req.Type == model.PostType_REPOST {
+		original := req.GetRepost().GetOriginalPostId()
+		if original == "" {
+			return nil, fmt.Errorf("repost requires original_post_id")
+		}
+		readable, gerr := s.GetMoment(ctx, original, authorID)
+		if gerr != nil {
+			return nil, fmt.Errorf("repost gate: %w", gerr)
+		}
+		if readable == nil {
+			return nil, fmt.Errorf("repost source post %s is not readable", original)
+		}
 	}
 
 	mentions := req.Audience.GetActorDids()
@@ -300,21 +322,16 @@ func (s *MomentService) ListByAuthor(ctx context.Context, authorID, viewerID uin
 	}
 
 	merged, hasMore := mergePostsByCreatedAtDesc(pubPosts, privPosts, limit)
-	out := make([]*model.Post, 0, len(merged))
 
 	viewer, _ := buildViewer(ctx, viewerID, s.repos, s.resolver.ResolveID, s.groups)
+	readable := merged[:0]
 	for _, p := range merged {
 		if ok, _ := domain.CanRead(viewer, p.AuthorID, p.Audience, p.IsDeleted()); !ok {
 			continue
 		}
-		hydrated, err := s.hydratePost(ctx, p, viewerID)
-		if err != nil {
-			logger.Warn(ctx, "list_by_author: hydration partial", "post_id", p.ID, "error", err)
-		}
-		if hydrated != nil {
-			out = append(out, hydrated)
-		}
+		readable = append(readable, p)
 	}
+	out := s.hydratePosts(ctx, readable, viewerID)
 
 	var nextCursor string
 	if hasMore && len(merged) > 0 {
@@ -324,17 +341,76 @@ func (s *MomentService) ListByAuthor(ctx context.Context, authorID, viewerID uin
 	return out, nextCursor, hasMore, nil
 }
 
-// hydratePost fills in the wire-shape `model.Post`'s author, reactions,
-// and viewer-interaction fields. Returns the converted post even if a
-// sub-step errors so clients render partial; the error is propagated
-// for logging.
-func (s *MomentService) hydratePost(ctx context.Context, p *domain.Post, viewerID uint64) (*model.Post, error) {
+// hydratePosts is the batch sibling of `hydratePost` — use it whenever
+// a list of posts will be returned to the wire (timeline, profile,
+// list-by-author). It collapses what would otherwise be N+1 author
+// lookups into one IN-clause query, matching the same pattern we use
+// in `comment_service.go::ListByPost`.
+//
+// Reactions and viewer-interaction are still computed per-post for now
+// — `ReactionService.Aggregate` already uses denormalised
+// `reactions_count_json` columns so it's a single index hit per post,
+// not a join. Folding it into the batch path is a P3 optimisation.
+//
+// Posts whose body decoding fails are logged and STILL returned with
+// partial content; we never drop a post from a list silently.
+func (s *MomentService) hydratePosts(ctx context.Context, posts []*domain.Post, viewerID uint64) []*model.Post {
+	if len(posts) == 0 {
+		return nil
+	}
+
+	authorIDs := make([]uint64, 0, len(posts))
+	for _, p := range posts {
+		if p != nil {
+			authorIDs = append(authorIDs, p.AuthorID)
+		}
+	}
+	authors, err := actor.GetActorsByIDs(ctx, authorIDs)
+	if err != nil {
+		// A failure here does not block rendering — we just lose the
+		// `Author` decoration for this page. Log and continue.
+		logger.Warn(ctx, "hydrate_posts: batch author lookup failed", "error", err)
+		authors = make(map[uint64]*db.Actor, 0)
+	}
+
+	out := make([]*model.Post, 0, len(posts))
+	for _, p := range posts {
+		if p == nil {
+			continue
+		}
+		hp, hErr := s.hydratePostWith(ctx, p, viewerID, authors)
+		if hErr != nil {
+			logger.Warn(ctx, "hydrate_posts: partial hydration", "post_id", p.ID, "error", hErr)
+		}
+		if hp != nil {
+			out = append(out, hp)
+		}
+	}
+	return out
+}
+
+// hydratePostWith is a low-level variant of `hydratePost` that takes a
+// pre-fetched author map (from `hydratePosts`) instead of doing a
+// per-call DB lookup. The single-post `hydratePost` path delegates to
+// this with a nil map → falls back to per-call lookup.
+func (s *MomentService) hydratePostWith(ctx context.Context, p *domain.Post, viewerID uint64, authors map[uint64]*db.Actor) (*model.Post, error) {
 	out, convErr := s.conv.DomainToProto(p)
 	if out == nil {
 		return nil, convErr
 	}
 
-	if a, err := actor.GetActorByID(ctx, p.AuthorID); err == nil && a != nil {
+	var a *db.Actor
+	if authors != nil {
+		a = authors[p.AuthorID]
+	}
+	if a == nil {
+		// Either single-post path or batch missed (concurrent delete,
+		// FK violation in dev DB, ...). Fall back to a per-call hit.
+		if got, err := actor.GetActorByID(ctx, p.AuthorID); err == nil {
+			a = got
+		}
+	}
+	if a != nil {
 		out.Author = &model.PostAuthor{
 			Id:          fmt.Sprintf("%d", a.ID),
 			Username:    a.PreferredUsername,
@@ -352,9 +428,6 @@ func (s *MomentService) hydratePost(ctx context.Context, p *domain.Post, viewerI
 
 	if viewerID != 0 {
 		out.Interaction = &model.PostInteraction{}
-		// `is_liked` retired in favour of typed reactions; the flag is
-		// derived purely from the LIKE summary so that legacy clients
-		// keep rendering a boolean indicator until they migrate.
 		for _, r := range out.Reactions {
 			if r.Kind == model.ReactionKind_REACTION_LIKE && r.ReactedByViewer {
 				out.Interaction.IsLiked = true
@@ -370,6 +443,17 @@ func (s *MomentService) hydratePost(ctx context.Context, p *domain.Post, viewerI
 		out.UpdatedAt = timestamppb.New(p.UpdatedAt)
 	}
 	return out, convErr
+}
+
+// hydratePost fills in the wire-shape `model.Post`'s author, reactions,
+// and viewer-interaction fields. Returns the converted post even if a
+// sub-step errors so clients render partial; the error is propagated
+// for logging.
+//
+// For single-post read paths (GetMoment / CreateMoment response).
+// List paths MUST use `hydratePosts` to avoid N+1 author lookups.
+func (s *MomentService) hydratePost(ctx context.Context, p *domain.Post, viewerID uint64) (*model.Post, error) {
+	return s.hydratePostWith(ctx, p, viewerID, nil)
 }
 
 // mergePostsByCreatedAtDesc merges two pre-sorted (DESC by created_at +

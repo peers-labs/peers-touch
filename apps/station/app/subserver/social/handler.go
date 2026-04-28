@@ -268,6 +268,9 @@ func (s *subServer) handleReact(ctx context.Context, req *model.ReactToPostReque
 	if req.Kind == model.ReactionKind_REACTION_UNSPECIFIED {
 		return nil, server.BadRequest("reaction kind is required")
 	}
+	if err := s.assertReadable(ctx, req.PostId, userID); err != nil {
+		return nil, err
+	}
 	summaries, err := s.reactionSvc.React(ctx, req.PostId, userID, req.Kind)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("react failed", err)
@@ -283,11 +286,40 @@ func (s *subServer) handleUnreact(ctx context.Context, req *model.UnreactToPostR
 	if req.PostId == "" {
 		return nil, server.BadRequest("post_id is required")
 	}
+	if err := s.assertReadable(ctx, req.PostId, userID); err != nil {
+		return nil, err
+	}
 	summaries, err := s.reactionSvc.Unreact(ctx, req.PostId, userID, req.Kind)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("unreact failed", err)
 	}
 	return &model.UnreactToPostResponse{Success: true, Reactions: summaries}, nil
+}
+
+// assertReadable is the single-source-of-truth visibility gate used by
+// every endpoint that mutates a post-bound resource WITHOUT going
+// through MomentService directly (React / Unreact / list-comments).
+//
+// It must be called BEFORE the underlying service operates on the
+// post — otherwise the service would happily write a row keyed on a
+// post id the caller has no right to know exists, leaking existence
+// + state through side-channels (reaction count bumps, comment-list
+// non-emptiness).
+//
+// The check is intentionally identical in shape to the read path:
+// MomentService.GetMoment applies CanRead with the viewer's own
+// relationship graph. A nil result here means "post doesn't exist OR
+// caller can't read it" — surfaced as 404, never 403, so the wire
+// shape doesn't disclose existence to non-readers.
+func (s *subServer) assertReadable(ctx context.Context, postID string, viewerID uint64) error {
+	post, err := s.momentSvc.GetMoment(ctx, postID, viewerID)
+	if err != nil {
+		return server.InternalErrorWithCause("visibility check failed", err)
+	}
+	if post == nil {
+		return server.NotFound("post not found")
+	}
+	return nil
 }
 
 // --- Comment handlers ----------------------------------------------------
@@ -299,6 +331,18 @@ func (s *subServer) handleGetPostComments(ctx context.Context, req *model.GetCom
 	postID := domain.ParseID(req.PostId)
 	if postID == 0 {
 		return nil, server.BadRequest("invalid post_id")
+	}
+	// Comments inherit visibility from the parent post — gate on the
+	// parent BEFORE listing rows, otherwise we'd happily return a
+	// SELF post's comment thread to anyone holding the post id.
+	// Anonymous viewers (viewerID == 0) get the same gate; PUBLIC
+	// posts pass, anything else 404s on them.
+	var viewerID uint64
+	if id, ok := getUserID(ctx); ok {
+		viewerID = id
+	}
+	if err := s.assertReadable(ctx, req.PostId, viewerID); err != nil {
+		return nil, err
 	}
 	resp, err := s.commentSvc.ListByPost(ctx, postID, req.Cursor, int(req.Limit))
 	if err != nil {
