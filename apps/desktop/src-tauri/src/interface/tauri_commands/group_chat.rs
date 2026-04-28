@@ -160,6 +160,26 @@ pub fn group_chat_send_message(input: GroupChatSendInput, state: State<'_, Arc<A
         Ok(token) => token,
         Err(error) => return error,
     };
+    // Sender Keys is the only supported send path. We forward the
+    // sender's `encrypted_payload` (base64-encoded bytes of a
+    // `GroupCiphertext` proto, produced by `crypto_group_encrypt`)
+    // and pin `content` to the empty string. The plaintext field
+    // is not optional-by-coincidence here -- we explicitly set ""
+    // so a misbehaving caller cannot smuggle plaintext in alongside
+    // ciphertext. Station will additionally enforce the same
+    // invariant in G6 (it MUST reject populated `content`); the
+    // desktop layer enforcing it client-side first means a buggy
+    // build cannot accidentally publish plaintext history.
+    let encrypted_payload = match input.encrypted_payload.as_ref() {
+        Some(s) if !s.trim().is_empty() => s.clone(),
+        _ => {
+            return AppResult::fail(
+                crate::error::ErrorCode::InvalidArgument,
+                "encrypted_payload is required for group sends; call cryptoGroupEncrypt first",
+                None,
+            );
+        }
+    };
     let data = match request_json(
         Method::POST,
         "/group-chat/message/send",
@@ -167,11 +187,12 @@ pub fn group_chat_send_message(input: GroupChatSendInput, state: State<'_, Arc<A
         None,
         Some(json!({
             "group_ulid": input.group_ulid,
-            "content": input.content,
+            "content": "",
             "type": input.r#type.unwrap_or(1),
             "reply_to_ulid": input.reply_to_ulid.unwrap_or_default(),
             "mentioned_dids": input.mentioned_dids.unwrap_or_default(),
             "mention_all": input.mention_all.unwrap_or(false),
+            "encrypted_payload": encrypted_payload,
         })),
     ) {
         Ok(data) => data,
