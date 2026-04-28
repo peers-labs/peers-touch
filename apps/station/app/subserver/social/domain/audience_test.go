@@ -641,3 +641,128 @@ func TestValidateCircle(t *testing.T) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// ValidateForAuthor
+// ---------------------------------------------------------------------------
+
+func TestValidateForAuthor_DelegatesShape(t *testing.T) {
+	// Shape errors from ValidateAudience must propagate before any
+	// author-bound check kicks in.
+	cases := []struct {
+		name   string
+		a      *model.Audience
+		author string
+	}{
+		{"nil audience", nil, "did:peers:author"},
+		{"unspecified", &model.Audience{Kind: model.Audience_KIND_UNSPECIFIED}, "did:peers:author"},
+		{"circle missing target", &model.Audience{Kind: model.Audience_CIRCLE}, "did:peers:author"},
+		{"custom_allow empty list", &model.Audience{Kind: model.Audience_CUSTOM_ALLOW}, "did:peers:author"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := ValidateForAuthor(tc.author, tc.a); err == nil {
+				t.Fatalf("expected shape error, got nil for %#v", tc.a)
+			}
+		})
+	}
+}
+
+func TestValidateForAuthor_AuthorSelfInclusion(t *testing.T) {
+	const authorDID = "did:peers:alice"
+	cases := []struct {
+		name string
+		a    *model.Audience
+		want bool // true = should be allowed
+	}{
+		{
+			"custom_allow excludes author",
+			&model.Audience{
+				Kind:      model.Audience_CUSTOM_ALLOW,
+				ActorDids: []string{"did:peers:bob", "did:peers:carol"},
+			},
+			true,
+		},
+		{
+			"custom_allow includes author",
+			&model.Audience{
+				Kind:      model.Audience_CUSTOM_ALLOW,
+				ActorDids: []string{"did:peers:bob", authorDID},
+			},
+			false,
+		},
+		{
+			"custom_deny excludes author",
+			&model.Audience{
+				Kind:      model.Audience_CUSTOM_DENY,
+				BaseKind:  model.Audience_PUBLIC,
+				ActorDids: []string{"did:peers:bob"},
+			},
+			true,
+		},
+		{
+			"custom_deny includes author",
+			&model.Audience{
+				Kind:      model.Audience_CUSTOM_DENY,
+				BaseKind:  model.Audience_FOLLOWERS,
+				ActorDids: []string{authorDID, "did:peers:bob"},
+			},
+			false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateForAuthor(authorDID, tc.a)
+			if tc.want && err != nil {
+				t.Fatalf("expected allow, got %v", err)
+			}
+			if !tc.want && err == nil {
+				t.Fatal("expected reject, got nil")
+			}
+		})
+	}
+}
+
+func TestValidateForAuthor_RequiresAuthorDIDForCustom(t *testing.T) {
+	cases := []*model.Audience{
+		{Kind: model.Audience_CUSTOM_ALLOW, ActorDids: []string{"did:peers:bob"}},
+		{Kind: model.Audience_CUSTOM_DENY, BaseKind: model.Audience_PUBLIC, ActorDids: []string{"did:peers:bob"}},
+	}
+	for _, a := range cases {
+		t.Run(a.Kind.String(), func(t *testing.T) {
+			if err := ValidateForAuthor("", a); err == nil {
+				t.Fatal("empty author DID must be rejected for CUSTOM_*")
+			}
+		})
+	}
+}
+
+func TestValidateForAuthor_PublicFollowersSelfNoAuthorRequired(t *testing.T) {
+	// PUBLIC / FOLLOWERS / SELF do not need the author DID.
+	cases := []model.Audience_Kind{
+		model.Audience_PUBLIC,
+		model.Audience_FOLLOWERS,
+		model.Audience_SELF,
+	}
+	for _, kind := range cases {
+		t.Run(kind.String(), func(t *testing.T) {
+			if err := ValidateForAuthor("", &model.Audience{Kind: kind}); err != nil {
+				t.Fatalf("expected allow for %s with empty author, got %v", kind, err)
+			}
+		})
+	}
+}
+
+func TestValidateForAuthor_CircleGroupTargetReassertedAfterShape(t *testing.T) {
+	// ValidateAudience already enforces TargetId != 0 — but ValidateForAuthor
+	// re-asserts it. Both should reject; the test exists to lock in the
+	// belt-and-braces invariant.
+	for _, kind := range []model.Audience_Kind{model.Audience_CIRCLE, model.Audience_GROUP} {
+		t.Run(kind.String(), func(t *testing.T) {
+			err := ValidateForAuthor("did:peers:alice", &model.Audience{Kind: kind, TargetId: 0})
+			if err == nil {
+				t.Fatal("missing target_id must be rejected")
+			}
+		})
+	}
+}
