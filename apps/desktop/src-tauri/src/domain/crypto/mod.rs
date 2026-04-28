@@ -8,6 +8,7 @@
 //! contract.
 
 pub mod signaling_envelope;
+pub mod sender_keys;
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
