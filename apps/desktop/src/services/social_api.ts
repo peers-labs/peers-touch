@@ -135,13 +135,16 @@ export function buildCreatePostRequest(draft: MomentDraft): CreatePostRequest {
   // The oneof inner value MUST be a properly-constructed message —
   // bufbuild's `toBinary` rejects bare POJOs because it can't tell
   // which schema to use for the embedded fields.
+  // The oneof case names are the camelCased proto field names
+  // (`text` / `image` / `repost` are FIELD names of CreatePostRequest,
+  // not the message-type short forms).
   switch (draft.kind) {
     case 'text':
       req.type = PostType.TEXT;
       req.content = {
         case: 'text',
         value: create(CreateTextPostRequestSchema, { text: draft.text }),
-      };
+      } as any;
       break;
     case 'image':
       req.type = PostType.IMAGE;
@@ -151,7 +154,7 @@ export function buildCreatePostRequest(draft: MomentDraft): CreatePostRequest {
           text: draft.text,
           imageIds: draft.imageIds,
         }),
-      };
+      } as any;
       break;
     case 'repost':
       req.type = PostType.REPOST;
@@ -161,7 +164,7 @@ export function buildCreatePostRequest(draft: MomentDraft): CreatePostRequest {
           originalPostId: draft.originalPostId,
           comment: draft.comment,
         }),
-      };
+      } as any;
       break;
   }
   if (draft.replyToPostId) {
