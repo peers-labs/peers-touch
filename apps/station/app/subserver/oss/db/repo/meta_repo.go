@@ -40,6 +40,18 @@ type MetaRepository interface {
 	// can echo it into audit rows / response headers without a
 	// second round-trip.
 	SetCapabilityVersion(ctx context.Context, now time.Time) (string, error)
+
+	// Set writes (key, value, updated_at). Upserts on the
+	// composite key. Used by the federation key-rotation flow
+	// (write `_prev` slot + rotated_at) and the rotation
+	// finalizer worker.
+	Set(ctx context.Context, key, value string, now time.Time) error
+
+	// Delete drops the rows matching `keys`. Idempotent —
+	// missing rows are not errors. Used by the rotation
+	// finalizer to clear the `_prev` keypair after the
+	// dual-sign window expires.
+	Delete(ctx context.Context, keys ...string) (int64, error)
 }
 
 type metaRepo struct {
@@ -77,6 +89,42 @@ func (r *metaRepo) Get(ctx context.Context, key string) (string, error) {
 		return "", err
 	}
 	return m.Value, nil
+}
+
+func (r *metaRepo) Set(ctx context.Context, key, value string, now time.Time) error {
+	if key == "" {
+		return errors.New("oss: meta set: key required")
+	}
+	db, err := r.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	res := db.Model(&ossmodel.Meta{}).
+		Where("key = ?", key).
+		Updates(map[string]any{"value": value, "updated_at": now})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return db.Create(&ossmodel.Meta{
+			Key:       key,
+			Value:     value,
+			UpdatedAt: now,
+		}).Error
+	}
+	return nil
+}
+
+func (r *metaRepo) Delete(ctx context.Context, keys ...string) (int64, error) {
+	if len(keys) == 0 {
+		return 0, nil
+	}
+	db, err := r.getDB(ctx)
+	if err != nil {
+		return 0, err
+	}
+	res := db.Where("key IN ?", keys).Delete(&ossmodel.Meta{})
+	return res.RowsAffected, res.Error
 }
 
 func (r *metaRepo) SetCapabilityVersion(ctx context.Context, now time.Time) (string, error) {
