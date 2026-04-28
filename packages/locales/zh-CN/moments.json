@@ -79,6 +79,11 @@
   "moments.stats.posts": "动态",
   "moments.stats.followers": "粉丝",
   "moments.stats.following": "关注",
+  "moments.stats.circles": "圈子",
+  "moments.stats.commentsReceived": "收到评论",
+  "moments.stats.commentsReceivedHint": "他人在你的动态下留下的评论总数。",
+  "moments.stats.reactionsReceived": "收到互动",
+  "moments.stats.reactionsReceivedHint": "他人在你的动态上留下的互动总数。",
 
   "moments.circle.create": "新建圈子",
   "moments.circle.namePlaceholder": "圈子名称",

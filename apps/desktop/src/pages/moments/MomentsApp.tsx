@@ -5,6 +5,7 @@ import { Flexbox } from 'react-layout-kit';
 import { Plus, Search, Sparkles, UsersRound } from 'lucide-react';
 import { PageHeader } from '../../components/PageHeader';
 import { MomentComposer } from '../../components/moments/MomentComposer';
+import { MomentsStatsPanel } from '../../components/moments/MomentsStatsPanel';
 import { MomentsFeedView } from './MomentsFeedPage';
 import { MomentsExploreView } from './MomentsExplorePage';
 import { MomentDetailView } from './MomentDetailPage';
@@ -43,6 +44,10 @@ export function MomentsApp() {
   const { token } = theme.useToken();
   const [view, setView] = useState<MomentsView>({ kind: 'tab', tab: 'feed' });
   const [composerOpen, setComposerOpen] = useState(false);
+  // statsKey is bumped after a successful compose so the
+  // MomentsStatsPanel re-fetches fresh counters without
+  // requiring a global refresh.
+  const [statsKey, setStatsKey] = useState(0);
 
   const me = useDiscoveryStore((s) => s.me);
   const loadMe = useDiscoveryStore((s) => s.loadMe);
@@ -194,12 +199,21 @@ export function MomentsApp() {
           minHeight: 0,
         }}
       >
-        <div style={{ maxWidth: 720, margin: '0 auto' }}>{content}</div>
+        <div style={{ maxWidth: 720, margin: '0 auto' }}>
+          {/* Stats panel is hidden on push-views (detail / user) so
+              the user's attention stays on the focused content; it
+              reappears the moment they navigate back to a tab. */}
+          {view.kind === 'tab' && <MomentsStatsPanel refreshKey={statsKey} />}
+          {content}
+        </div>
       </div>
       <MomentComposer
         open={composerOpen}
         onClose={() => setComposerOpen(false)}
-        onPublished={() => goTab('feed')}
+        onPublished={() => {
+          setStatsKey((k) => k + 1);
+          goTab('feed');
+        }}
       />
     </Flexbox>
   );
