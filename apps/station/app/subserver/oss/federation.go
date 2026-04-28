@@ -80,6 +80,14 @@ type federationKey struct {
 // use, then keeps it in memory for the lifetime of the subserver.
 // Concurrent callers race only on the first load — once present,
 // reads are lock-free.
+//
+// The cache also runs a short-TTL "did the persisted KID change?"
+// check on every Get(). The dashboard's S13 rotate-local-key
+// endpoint writes directly to `oss_meta` (it deliberately does not
+// reach into this subserver's process), so we need a way for the
+// cache to notice that a rotation happened. The check costs one
+// indexed primary-key lookup per `recheckTTL`, which is amortised
+// to ~zero on the mint hot path.
 type federationKeyCache struct {
 	repo ossrepo.PeerKeyRepository
 
@@ -87,25 +95,91 @@ type federationKeyCache struct {
 	mu   sync.RWMutex
 	key  *federationKey
 	err  error
+
+	// recheckTTL bounds how stale the cached key may be relative
+	// to a dashboard-driven rotation. Defaults to 30s — well
+	// inside the 24h dual-sign grace window so a rotation is
+	// observed long before `_prev` is finalized.
+	recheckTTL    time.Duration
+	lastCheckedAt time.Time
 }
 
+// federationKeyRecheckTTL is the default upper bound on staleness
+// for the cached federation keypair. Exported as a constant so
+// tests can reason about it without re-deriving the value.
+const federationKeyRecheckTTL = 30 * time.Second
+
 func newFederationKeyCache(repo ossrepo.PeerKeyRepository) *federationKeyCache {
-	return &federationKeyCache{repo: repo}
+	return &federationKeyCache{repo: repo, recheckTTL: federationKeyRecheckTTL}
 }
 
 // get returns the cached key, loading-or-generating it on first
 // call. Errors from the load path are sticky: a KV outage at boot
 // should not be silently retried on every mint.
+//
+// After the once-load succeeds, every call also peeks at the
+// persisted KID and reloads when it differs from the cached one.
+// A reload failure does NOT invalidate the cached key — the OSS
+// subserver keeps minting with whatever it had until the next
+// successful peek. This trades a brief window of post-rotation
+// stale signing for resilience to a flaky DB.
 func (c *federationKeyCache) get(ctx context.Context) (*federationKey, error) {
 	c.once.Do(func() {
 		k, err := c.loadOrGenerate(ctx)
 		c.mu.Lock()
 		c.key, c.err = k, err
+		c.lastCheckedAt = time.Now()
 		c.mu.Unlock()
 	})
+
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.key, c.err
+	cached := c.key
+	cachedErr := c.err
+	lastChecked := c.lastCheckedAt
+	ttl := c.recheckTTL
+	c.mu.RUnlock()
+
+	// Sticky error from initial load — surface as-is, do not
+	// attempt a recheck (the recheck path can't repair a
+	// broken parse / corrupt PEM).
+	if cachedErr != nil {
+		return cached, cachedErr
+	}
+	if ttl <= 0 || time.Since(lastChecked) < ttl {
+		return cached, nil
+	}
+
+	// Do the cheap "did KID change?" lookup. We hold no lock
+	// during the DB read so concurrent mints proceed against
+	// the cached key.
+	currentKID, kidErr := c.repo.GetCurrentKID(ctx)
+	now := time.Now()
+	if kidErr != nil || currentKID == "" || cached == nil || currentKID == cached.kid {
+		// Either we couldn't read, the row is gone (treat as
+		// "no rotation observable"), or the kid is unchanged.
+		// In all three cases we just bump lastCheckedAt and
+		// keep serving the cached key.
+		c.mu.Lock()
+		c.lastCheckedAt = now
+		c.mu.Unlock()
+		return cached, nil
+	}
+
+	// KID drift — the dashboard rotated underneath us. Reload
+	// the full keypair from storage. A reload failure leaves
+	// the cache as-is.
+	fresh, err := c.loadOrGenerate(ctx)
+	if err != nil || fresh == nil {
+		c.mu.Lock()
+		c.lastCheckedAt = now
+		c.mu.Unlock()
+		return cached, nil
+	}
+	c.mu.Lock()
+	c.key = fresh
+	c.lastCheckedAt = now
+	c.mu.Unlock()
+	return fresh, nil
 }
 
 func (c *federationKeyCache) loadOrGenerate(ctx context.Context) (*federationKey, error) {

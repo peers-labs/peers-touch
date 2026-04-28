@@ -93,6 +93,7 @@ const (
 	routeOSSFedPeers       = "/dashboard/api/oss/federation/peers"
 	routeOSSFedPeerPin     = "/dashboard/api/oss/federation/peers/:id/pin"
 	routeOSSFedPeerUnpin   = "/dashboard/api/oss/federation/peers/:id/unpin"
+	routeOSSFedRotate      = "/dashboard/api/oss/federation/rotate-local-key"
 )
 
 // ---------------------------------------------------------------------------
@@ -222,6 +223,8 @@ func (h *dashboardHandler) handlers() []server.Handler {
 			h.handleOSSFederationPinPeer, auth),
 		server.NewTypedHandler("dashboard-oss-fed-peer-unpin", routeOSSFedPeerUnpin, server.POST,
 			h.handleOSSFederationUnpinPeer, auth),
+		server.NewTypedHandler("dashboard-oss-fed-rotate", routeOSSFedRotate, server.POST,
+			h.handleOSSFederationRotateLocalKey, auth),
 	}
 }
 
@@ -1320,6 +1323,89 @@ func (h *dashboardHandler) setPeerPin(ctx context.Context, pinned bool) (*domain
 	h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username, action, "oss_peer",
 		"peer_station_id="+peerID, getClientIP(ctx), getUserAgent(ctx))
 	return &domain.MessageResponse{Message: msg}, nil
+}
+
+// handleOSSFederationRotateLocalKey — POST /dashboard/api/oss/federation/rotate-local-key
+//
+// Provisions a fresh Ed25519 keypair for this station's outbound
+// federation identity. The previous keypair is demoted to the
+// `_prev` slot for the dual-sign grace window so peers that
+// cached our pubkey can still verify in-flight tokens until the
+// `KeyRotationFinalizer` worker (S12) clears them.
+//
+// Two audit rows are emitted:
+//   - the dashboard's own admin trail (who triggered it, from
+//     where), via `authSvc.RecordAudit`
+//   - the OSS subserver's `oss_audit` trail (action=`key_rotate`,
+//     reason carries `prev_kid` / `new_kid`), via
+//     `recordOSSFederationAudit`
+//
+// The OSS subserver's in-memory federation key cache reloads on
+// its own short TTL, so callers do not need to coordinate with
+// the OSS subserver here.
+func (h *dashboardHandler) handleOSSFederationRotateLocalKey(ctx context.Context, _ *domain.EmptyRequest) (*domain.OSSFederationRotateResponse, error) {
+	if h.sub.ossSvc == nil {
+		return nil, serviceUnavailable("oss service unavailable")
+	}
+	claims := getClaims(ctx)
+
+	resp, err := h.sub.ossSvc.RotateFederationLocalKey(ctx)
+	if err != nil {
+		log.Errorf(ctx, "[dashboard] oss federation rotate error: %v", err)
+		// Audit the failure too — the operator initiated a
+		// security-sensitive action, the trail must capture
+		// outcomes regardless of success.
+		h.recordOSSFederationAudit(ctx, claims, "", "", "error", err.Error())
+		if claims != nil {
+			h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username,
+				"oss_federation_rotate", "oss_federation",
+				"error="+err.Error(), getClientIP(ctx), getUserAgent(ctx))
+		}
+		return nil, server.InternalError("failed to rotate federation key")
+	}
+
+	h.recordOSSFederationAudit(ctx, claims, resp.NewKID, resp.PreviousKID, "ok", "")
+	if claims != nil {
+		reason := "new_kid=" + resp.NewKID
+		if resp.PreviousKID != "" {
+			reason += " prev_kid=" + resp.PreviousKID
+		}
+		h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username,
+			"oss_federation_rotate", "oss_federation",
+			reason, getClientIP(ctx), getUserAgent(ctx))
+	}
+	return resp, nil
+}
+
+// recordOSSFederationAudit emits one row into oss_audit for a
+// federation key-rotation event. Same fail-soft semantics as
+// recordOSSBucketAudit / recordOSSObjectAudit — auditing must not
+// turn a successful rotation into a 500.
+func (h *dashboardHandler) recordOSSFederationAudit(ctx context.Context, claims *domain.DashboardClaims,
+	newKID, prevKID, outcome, errReason string) {
+	if h.sub.ossSvc == nil {
+		return
+	}
+	dashID := ""
+	if claims != nil {
+		dashID = strconv.FormatUint(claims.AdminID, 10)
+	}
+	reason := "new_kid=" + newKID
+	if prevKID != "" {
+		reason += " prev_kid=" + prevKID
+	}
+	if errReason != "" {
+		reason = errReason
+	}
+	if err := h.sub.ossSvc.RecordOSSAudit(ctx, infrastructure.OSSAuditAppend{
+		Action:           "key_rotate",
+		DashboardActorID: dashID,
+		Outcome:          outcome,
+		Reason:           reason,
+	}); err != nil {
+		log.Warnf(ctx, "[dashboard] oss_audit append failed (action=key_rotate new_kid=%s): %v",
+			newKID, err)
+	}
 }
 
 // ===========================================================================

@@ -308,3 +308,20 @@ func (s *OSSService) AdminDeleteObject(ctx context.Context, id string) (*domain.
 	}
 	return s.repo.AdminDeleteObject(ctx, id)
 }
+
+// ---------------------------------------------------------------------------
+// Federation key rotation (admin)
+// ---------------------------------------------------------------------------
+
+// RotateFederationLocalKey provisions a new Ed25519 federation
+// keypair for this station, demoting the existing one to the
+// `_prev` slot for the dual-sign grace window. The handler is
+// responsible for the dashboard audit row and the `oss_audit`
+// `key_rotate` event. We do not gate on "rotation already in
+// progress" — repeated rotations within the grace window simply
+// shift the `_prev` slot forward, which is a safe (if unusual)
+// operation since `_prev` is only consulted by the finalizer
+// worker.
+func (s *OSSService) RotateFederationLocalKey(ctx context.Context) (*domain.OSSFederationRotateResponse, error) {
+	return s.repo.RotateFederationLocalKey(ctx)
+}
