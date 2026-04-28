@@ -15,8 +15,14 @@ package infrastructure
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base32"
+	"encoding/pem"
 	"errors"
-	"math/rand"
+	mathrand "math/rand"
 	"sort"
 	"strings"
 	"sync"
@@ -40,8 +46,12 @@ const (
 )
 
 const (
-	metaKeyFedPub = "federation_pub_pem"
-	metaKeyFedKID = "federation_kid"
+	metaKeyFedPriv      = "federation_priv_pem"
+	metaKeyFedPub       = "federation_pub_pem"
+	metaKeyFedKID       = "federation_kid"
+	metaKeyFedPrivPrev  = "federation_priv_pem_prev"
+	metaKeyFedKIDPrev   = "federation_kid_prev"
+	metaKeyFedRotatedAt = "federation_rotated_at"
 )
 
 // OSSRepository is the dashboard-side view of the OSS subsystem.
@@ -130,6 +140,25 @@ type OSSRepository interface {
 	// debit synchronously from the dashboard would risk drift
 	// between this path and the OSS subserver's own DeleteFile.
 	AdminDeleteObject(ctx context.Context, id string) (*domain.OSSObjectAdminDetail, error)
+
+	// RotateFederationLocalKey generates a fresh Ed25519 keypair
+	// for this station's federation identity. The previous key
+	// material is moved to the `*_prev` oss_meta slots and the
+	// rotation timestamp is stamped — the KeyRotationFinalizer
+	// worker (S12) clears `_prev` once the configured dual-sign
+	// grace window has elapsed.
+	//
+	// The returned summary echoes the new KID and the bumped
+	// `capability_version` so the dashboard UI can show "rotation
+	// succeeded; peers will see a key change after their next
+	// /capabilities refresh". Errors are returned verbatim — the
+	// handler maps DB failures to 500.
+	//
+	// We deliberately do NOT call into the OSS subserver's
+	// in-memory `federationKeyCache` from here: the cache reloads
+	// on its own short TTL after every Get(). The dashboard owns
+	// the storage; the OSS subserver owns the cache.
+	RotateFederationLocalKey(ctx context.Context) (*domain.OSSFederationRotateResponse, error)
 }
 
 // OSSObjectQuery is the filter envelope for ListObjects.
@@ -918,6 +947,187 @@ func (r *ossRepository) AdminDeleteObject(ctx context.Context, id string) (*doma
 	return toAdminDetail(&row), nil
 }
 
+// RotateFederationLocalKey replaces the station's outbound
+// federation keypair with a freshly generated Ed25519 pair, while
+// preserving the previous one in the `_prev` slots so peers that
+// have cached our pubkey can verify in-flight tokens for the
+// dual-sign grace window. Workflow:
+//
+//  1. Read the current (priv, pub, kid). When none exists yet
+//     (greenfield install) we still mint a new pair and skip the
+//     `_prev` writes so the first rotation acts like an initial
+//     provision.
+//  2. Generate a fresh Ed25519 keypair and re-derive its KID.
+//  3. In a single write batch, copy the current priv+kid into the
+//     `_prev` slots (when they exist), persist the new keypair as
+//     the canonical slots, stamp `federation_rotated_at`, and bump
+//     `capability_version` so peers re-fetch on their next refresh.
+//
+// Returns the new KID, the previous KID (empty on greenfield), the
+// rotation timestamp, and the bumped capability_version. Errors
+// are returned verbatim — callers are responsible for surfacing
+// them as 5xx and recording an admin audit.
+func (r *ossRepository) RotateFederationLocalKey(ctx context.Context) (*domain.OSSFederationRotateResponse, error) {
+	if r.db == nil || !r.db.Migrator().HasTable(tblOSSMeta) {
+		return nil, errors.New("oss meta table not available")
+	}
+
+	// 1. Read current keypair via the meta table. Missing rows
+	//    are not errors; they signal a fresh deployment.
+	prevPriv, err := r.readMetaValue(ctx, metaKeyFedPriv)
+	if err != nil {
+		return nil, err
+	}
+	prevKID, err := r.readMetaValue(ctx, metaKeyFedKID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Mint a fresh keypair. Failure here aborts before we
+	//    touch any storage so a partial rotation cannot wedge
+	//    the federation key cache.
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	privPEM, pubPEM, kid, err := encodeFederationKeyForRotation(priv, pub)
+	if err != nil {
+		return nil, err
+	}
+	if kid == prevKID {
+		// Astronomically unlikely (256-bit collision) but we
+		// refuse rather than silently roll the same kid back
+		// into place — a re-roll would be confusing in audit.
+		return nil, errors.New("oss: federation: rotation produced identical kid; retry")
+	}
+
+	now := time.Now()
+	rotatedAt := now.UTC()
+	rotatedAtStr := rotatedAt.Format(time.RFC3339Nano)
+
+	// 3. Persist the new state. We do every write inside a
+	//    single transaction so a failure mid-batch cannot leave
+	//    the keys mismatched against the rotation timestamp.
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Move the current keypair into the prev slot. Only
+		// when there *is* a current key — first rotation on a
+		// freshly bootstrapped station has nothing to demote.
+		if prevPriv != "" {
+			if err := upsertMetaTx(tx, metaKeyFedPrivPrev, prevPriv, now); err != nil {
+				return err
+			}
+		}
+		if prevKID != "" {
+			if err := upsertMetaTx(tx, metaKeyFedKIDPrev, prevKID, now); err != nil {
+				return err
+			}
+		}
+		if err := upsertMetaTx(tx, metaKeyFedPriv, privPEM, now); err != nil {
+			return err
+		}
+		if err := upsertMetaTx(tx, metaKeyFedPub, pubPEM, now); err != nil {
+			return err
+		}
+		if err := upsertMetaTx(tx, metaKeyFedKID, kid, now); err != nil {
+			return err
+		}
+		if err := upsertMetaTx(tx, metaKeyFedRotatedAt, rotatedAtStr, now); err != nil {
+			return err
+		}
+		// Bump capability_version inside the same transaction
+		// so peers cannot observe a half-rotated state on a
+		// /capabilities re-read between the key write and the
+		// version bump.
+		newCap := newDashboardULID(now)
+		return upsertMetaTx(tx, metaKeyCapVersion, newCap, now)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	newCap, _ := r.readMetaValue(ctx, metaKeyCapVersion)
+
+	return &domain.OSSFederationRotateResponse{
+		NewKID:            kid,
+		PreviousKID:       prevKID,
+		RotatedAt:         rotatedAt,
+		CapabilityVersion: newCap,
+	}, nil
+}
+
+// readMetaValue reads a single oss_meta row's value. Returns ""
+// when the row is absent, with a nil error — matches the OSS
+// MetaRepository.Get semantics so the rotation flow can branch on
+// "first rotation" vs "regular rotation" without a custom
+// sentinel.
+func (r *ossRepository) readMetaValue(ctx context.Context, key string) (string, error) {
+	type metaRowSelect struct{ Value string }
+	var row metaRowSelect
+	err := r.db.WithContext(ctx).Table(tblOSSMeta).
+		Select("value").
+		Where("key = ?", key).
+		Take(&row).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	return row.Value, nil
+}
+
+// upsertMetaTx writes (key, value, updated_at) inside the given
+// transaction. Insert-or-update via WHERE-then-INSERT is the same
+// shape the OSS MetaRepository uses, kept here to avoid importing
+// the OSS subserver's repo from the dashboard.
+func upsertMetaTx(tx *gorm.DB, key, value string, now time.Time) error {
+	type metaRow struct {
+		Key       string    `gorm:"primaryKey;column:key"`
+		Value     string    `gorm:"column:value"`
+		UpdatedAt time.Time `gorm:"column:updated_at"`
+	}
+	res := tx.Table(tblOSSMeta).Where("key = ?", key).
+		Updates(map[string]any{"value": value, "updated_at": now})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		row := metaRow{Key: key, Value: value, UpdatedAt: now}
+		if err := tx.Table(tblOSSMeta).Create(&row).Error; err != nil {
+			if !isUniqueViolationDashboard(err) {
+				return err
+			}
+			// Race lost: another writer inserted the row in
+			// the gap. Re-apply the update so our value wins.
+			if err2 := tx.Table(tblOSSMeta).Where("key = ?", key).
+				Updates(map[string]any{"value": value, "updated_at": now}).Error; err2 != nil {
+				return err2
+			}
+		}
+	}
+	return nil
+}
+
+// encodeFederationKeyForRotation marshals an Ed25519 keypair to
+// the PEM shape persisted in oss_meta. Mirrors the OSS subserver's
+// `encodeFederationKey` so a rehydration on either side produces
+// the same KID for the same key bytes.
+func encodeFederationKeyForRotation(priv ed25519.PrivateKey, pub ed25519.PublicKey) (privPEM, pubPEM, kid string, err error) {
+	privDER, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		return "", "", "", err
+	}
+	pubDER, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		return "", "", "", err
+	}
+	privPEM = string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privDER}))
+	pubPEM = string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER}))
+	sum := sha256.Sum256(pubDER)
+	kid = strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:]))[:26]
+	return privPEM, pubPEM, kid, nil
+}
+
 // visibilityIsTightening tells whether the move from prev → next
 // is restrictive (caches must invalidate). The order, from most
 // permissive to least, is public > chat > private.
@@ -1035,7 +1245,7 @@ var (
 
 func newDashboardULID(now time.Time) string {
 	dashULIDOnce.Do(func() {
-		src := rand.New(rand.NewSource(time.Now().UnixNano())) //nolint:gosec
+		src := mathrand.New(mathrand.NewSource(time.Now().UnixNano())) //nolint:gosec
 		dashULIDEntropy = ulid.Monotonic(src, 0)
 	})
 	dashULIDEntropyMu.Lock()
