@@ -437,3 +437,25 @@ await api.friendChatSendMessage(sessionUlid, receiverDid, '', type, undefined, u
 4. **Station is untrusted** — Station must never have access to plaintext message content or private keys
 5. **Backward compatible** — Unencrypted messages remain readable during migration
 6. **Proto-first** — All new wire types defined in `model/domain/` proto files first
+
+---
+
+## 10. Companion Design Documents
+
+This document is the umbrella architecture; the upgrade and per-arm
+designs live in dedicated companion docs and supersede the
+phased-implementation tables above for their respective arms:
+
+- `chat-ratchet-upgrade.md` — replaces the chain-only friend-chat
+  ratchet with the Signal Double Ratchet. Defines the wire-format
+  versioning, the X3DH-time version pin, and the M0..M5 migration /
+  rollback plan. Until that lands, friend chat remains on the
+  chain-only ratchet shipped in
+  `peers-chat/apps/desktop/src-tauri/src/domain/crypto/mod.rs`.
+- `group-sender-keys.md` — replaces the (intentionally removed)
+  dead `GroupKeyState` stubs with the Signal Group v2 Sender Keys
+  protocol, distributed via the existing pairwise friend-chat E2E
+  channel. Defines the `GroupCiphertext` wire format inside
+  `GroupMessage.encrypted_payload`, the `SenderKeyDistributionMessage`
+  control type, the rotation triggers, and the G0..G5 migration plan.
+  Until that lands, group chat is plaintext on the wire.
