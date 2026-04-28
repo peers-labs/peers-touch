@@ -12,24 +12,67 @@ package application
 import (
 	"context"
 	"errors"
+	"mime/multipart"
 	"strings"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/infrastructure"
+	ossservice "github.com/peers-labs/peers-touch/station/app/subserver/oss/service"
 )
 
 // OSSService binds the dashboard handler layer to the OSS-facing
 // repo. Construction is intentionally minimal so tests can wire a
 // fake repo without a database.
+//
+// `fileService` is the cross-subserver hand-off used by the admin
+// upload path (`POST /dashboard/api/oss/buckets/:id/upload`). It
+// is intentionally optional — when the OSS subserver is not loaded
+// (test harness, dashboard-only deployment) the upload endpoint
+// surfaces a clean 503 instead of NPE'ing on the writer side.
 type OSSService struct {
-	repo infrastructure.OSSRepository
+	repo        infrastructure.OSSRepository
+	fileService ossservice.FileService
+	maxFileSize int64
 }
 
 // NewOSSService builds an OSSService bound to the given repo.
+// `fileService` and `maxFileSize` may be supplied later via
+// `SetFileServiceProvider` once sibling subservers are resolved at
+// `Start()` time.
 func NewOSSService(repo infrastructure.OSSRepository) *OSSService {
 	return &OSSService{repo: repo}
 }
+
+// FileServiceProvider mirrors the cross-package contract on the
+// OSS subserver — kept here so the dashboard does not import
+// `oss.FileServiceProvider` directly (avoids a forward dependency
+// from `application` to a sibling subserver type). The dashboard's
+// `Start()` performs the type assertion against the OSS subserver
+// instance and forwards what it discovers.
+type FileServiceProvider interface {
+	FileService() ossservice.FileService
+	MaxFileSize() int64
+}
+
+// SetFileServiceProvider plugs in the OSS subserver's `FileService`
+// + max-upload budget. Calling with `nil` (or with a provider that
+// returns a nil FileService) leaves the admin upload endpoint
+// unconfigured — `AdminUploadObject` will then return
+// `ErrAdminUploadUnavailable`.
+func (s *OSSService) SetFileServiceProvider(p FileServiceProvider) {
+	if p == nil {
+		s.fileService = nil
+		s.maxFileSize = 0
+		return
+	}
+	s.fileService = p.FileService()
+	s.maxFileSize = p.MaxFileSize()
+}
+
+// AdminUploadFileSize returns the upload-size budget the OSS
+// subserver enforces. Zero when the FileService is not wired.
+func (s *OSSService) AdminUploadFileSize() int64 { return s.maxFileSize }
 
 // ---------------------------------------------------------------------------
 // Read paths — direct delegation to the repo. Kept here (rather
@@ -349,4 +392,128 @@ func (s *OSSService) AdminDeleteObject(ctx context.Context, id string) (*domain.
 // worker.
 func (s *OSSService) RotateFederationLocalKey(ctx context.Context) (*domain.OSSFederationRotateResponse, error) {
 	return s.repo.RotateFederationLocalKey(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// Admin upload (admin)
+// ---------------------------------------------------------------------------
+
+// ErrAdminUploadUnavailable is returned by `AdminUploadObject` when
+// the OSS sibling subserver is not loaded (or has not exposed its
+// `FileService` yet). The handler maps this to 503 so an operator
+// running a cut-down deployment sees a clean error rather than a
+// generic 500.
+var ErrAdminUploadUnavailable = errors.New("oss admin upload is not available — oss subserver not wired")
+
+// ErrAdminUploadBucketRequired is returned when the caller did
+// not supply a bucket id. The handler ought to enforce this
+// upstream too; we double-check here so the service contract is
+// self-defending.
+var ErrAdminUploadBucketRequired = errors.New("bucket id is required")
+
+// AdminUploadInput carries the operator's intent for the
+// dashboard's `POST /buckets/:id/upload` endpoint.
+//
+// Visibility, ChatSessionID and Filename are optional:
+//
+//   - Visibility: empty → inherit the bucket's `DefaultVisibility`
+//     (the OSS service applies the same fallback for owner uploads,
+//     so this keeps admin uploads behaviourally identical to a user
+//     PUT against the same bucket).
+//   - ChatSessionID: required iff resolved visibility is `chat`;
+//     enforced server-side by the OSS service so we don't duplicate
+//     the rule here.
+//   - Filename: empty → use the multipart header's filename. Set
+//     when the operator wants to override the on-disk display name.
+type AdminUploadInput struct {
+	BucketID      string
+	Visibility    string
+	ChatSessionID string
+	Filename      string
+	File          multipart.File
+	Header        *multipart.FileHeader
+}
+
+// AdminUploadObject performs an operator-driven upload into the
+// named bucket. The bucket's `OwnerActorID` is what the OSS
+// FileService stamps on the resulting `oss_files` row — this is
+// the architectural equivalent of "admin acted on behalf of the
+// owner", which is the same model the existing
+// `AdminPatchObject` / `AdminDeleteObject` paths use.
+//
+// We deliberately do NOT allow the operator to pin a different
+// `actor_id` on the resulting row; doing so would let the
+// dashboard exfiltrate uploads under a fake identity. If a
+// future use-case needs that, it should be a separate audited
+// endpoint with a distinct action code.
+func (s *OSSService) AdminUploadObject(ctx context.Context, in AdminUploadInput) (*domain.OSSObjectAdminDetail, error) {
+	if s.fileService == nil {
+		return nil, ErrAdminUploadUnavailable
+	}
+	bucketID := strings.TrimSpace(in.BucketID)
+	if bucketID == "" {
+		return nil, ErrAdminUploadBucketRequired
+	}
+	if in.File == nil || in.Header == nil {
+		return nil, errors.New("file and header are required")
+	}
+
+	bucket, err := s.repo.GetBucket(ctx, bucketID)
+	if err != nil {
+		return nil, err
+	}
+	if bucket == nil {
+		return nil, errors.New("bucket not found")
+	}
+	if strings.TrimSpace(bucket.OwnerActorID) == "" {
+		// System buckets have no owner — they are auto-provisioned
+		// by the OSS subserver on first user write and the dashboard
+		// should not be ginning up uploads against them under an
+		// empty actor id (the file service would reject it anyway,
+		// but the error message would be cryptic).
+		return nil, errors.New("bucket has no owner_actor_id; system buckets are not eligible for admin upload")
+	}
+
+	visibility := strings.TrimSpace(in.Visibility)
+	if visibility != "" && !isKnownVisibility(visibility) {
+		return nil, errors.New("visibility must be one of: public, chat, private")
+	}
+	if visibility == "" {
+		visibility = strings.TrimSpace(bucket.DefaultVisibility)
+	}
+
+	if in.Filename != "" {
+		// Honor the operator's display-name override. We mutate a
+		// local copy of the header so the underlying multipart
+		// reader's housekeeping fields are preserved.
+		hdr := *in.Header
+		hdr.Filename = in.Filename
+		in.Header = &hdr
+	}
+
+	attr := ossservice.UploadAttribution{
+		ActorID:       bucket.OwnerActorID,
+		BucketName:    bucket.Name,
+		Visibility:    visibility,
+		ChatSessionID: strings.TrimSpace(in.ChatSessionID),
+	}
+	meta, err := s.fileService.SaveFile(ctx, attr, in.File, in.Header)
+	if err != nil {
+		return nil, err
+	}
+
+	// Re-project the freshly created row through the dashboard's
+	// admin-detail repo lookup so the response shape matches what
+	// the operator sees on the rest of the Objects surface.
+	if meta == nil || meta.ID == "" {
+		return nil, errors.New("oss save returned an empty file meta")
+	}
+	row, err := s.repo.GetObject(ctx, meta.ID)
+	if err != nil {
+		return nil, err
+	}
+	if row == nil {
+		return nil, errors.New("oss admin upload produced row but lookup found none")
+	}
+	return row, nil
 }
