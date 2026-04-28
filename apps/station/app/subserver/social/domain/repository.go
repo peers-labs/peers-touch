@@ -21,6 +21,19 @@ type PublicPostRepository interface {
 	// the HOME multi-source merge. Empty `authorIDs` → empty result.
 	ListPublicByAuthors(ctx context.Context, authorIDs []uint64, c Cursor, limit int) ([]*Post, error)
 
+	// ListPublicHot returns public posts ranked by an engagement-decayed
+	// score (newer + more interactions ranks higher), with a tie-break
+	// on (created_at DESC, id DESC) so cursor pagination is stable.
+	// Implementations should return rows whose (score, created_at, id)
+	// is strictly less than the cursor's, treating the zero cursor as
+	// "from the top".
+	//
+	// The score formula is intentionally simple — see the
+	// implementation for the exact SQL — and lives entirely in the
+	// repository layer because it's a database-side concern. The
+	// application layer only chooses RECENT vs HOT.
+	ListPublicHot(ctx context.Context, c HotCursor, limit int) ([]*Post, error)
+
 	// UpdateCommentsCount applies a relative delta to the denormalized
 	// `comments_count` column. Returns the new count. Negative deltas
 	// must not push the counter below zero (implementations clamp).
