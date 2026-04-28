@@ -95,10 +95,14 @@ pub fn realtime_stream_stop(
 pub struct RealtimeSignalInput {
     pub recipient_actor_id: String,
     pub session_ulid: String,
-    /// One of "OFFER", "ANSWER", "CANDIDATE", "HANGUP". Validated
-    /// server-side; the client-side TS layer also constrains the
-    /// type, so a bad value here means a programmer error rather
-    /// than user input.
+    /// One of the realtime CallSignal kinds — the WebRTC primitives
+    /// "OFFER" / "ANSWER" / "CANDIDATE" / "HANGUP", or the
+    /// application-level ringing kinds
+    /// "CALL_REQUEST" / "CALL_ACCEPT" / "CALL_REJECT" / "CALL_END"
+    /// (the latter four wrap a JSON body inside the same sealed
+    /// envelope so Station never sees the call metadata). Validated
+    /// server-side; the TS layer also constrains the type, so a bad
+    /// value here means a programmer error rather than user input.
     pub kind: String,
     /// base64(opaque ciphertext envelope). Station never decodes
     /// this beyond a length check.

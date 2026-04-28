@@ -5,7 +5,7 @@ import type { GenMessage } from '@bufbuild/protobuf/codegenv2';
 import { log } from '../utils/logger';
 import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
-import type { SessionRevokedPayload } from '../kernel/events/types';
+import type { SessionRevokedPayload, RealtimeCallSignalKind } from '../kernel/events/types';
 import {
   GetSessionsResponseSchema,
   CreateSessionResponseSchema,
@@ -3097,7 +3097,7 @@ export const api = {
   realtimeSignalSend: (
     recipientActorId: string,
     sessionUlid: string,
-    kind: 'OFFER' | 'ANSWER' | 'CANDIDATE' | 'HANGUP',
+    kind: RealtimeCallSignalKind,
     payloadB64: string,
   ) =>
     invokeRustDataFromStatus<
@@ -3168,7 +3168,7 @@ export const api = {
   signalingEnvelopeSeal: (
     peerIkPubB64: string,
     sessionUlid: string,
-    kind: 'OFFER' | 'ANSWER' | 'CANDIDATE' | 'HANGUP',
+    kind: RealtimeCallSignalKind,
     plaintext: string,
   ) =>
     invokeAppResultStub<{ payload_b64: string }>('signaling_envelope_seal', {
@@ -3188,7 +3188,7 @@ export const api = {
   signalingEnvelopeOpen: (
     senderIkPubB64: string,
     sessionUlid: string,
-    kind: 'OFFER' | 'ANSWER' | 'CANDIDATE' | 'HANGUP',
+    kind: RealtimeCallSignalKind,
     payloadB64: string,
   ) =>
     invokeAppResultStub<{ plaintext: string }>('signaling_envelope_open', {

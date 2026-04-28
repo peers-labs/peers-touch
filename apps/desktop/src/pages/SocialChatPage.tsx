@@ -7,6 +7,7 @@ import { ChatSessionList } from '../components/chat/ChatSessionList';
 import { ChatContactsPanel } from '../components/chat/ChatContactsPanel';
 import { ChatMessageArea } from '../components/chat/ChatMessageArea';
 import { ChatDetailPanel } from '../components/chat/ChatDetailPanel';
+import { CallSurface } from '../components/chat/CallSurface';
 import { api } from '../services/desktop_api';
 import { useSocialChatStore } from '../store/socialChat';
 import { log } from '../utils/logger';
@@ -433,6 +434,9 @@ export function SocialChatPage() {
       {/* Right area: message content */}
       <ChatMessageArea />
       {showDetail && <ChatDetailPanel />}
+      {/* Voice / video call surface — page-level so a ringing call
+          stays visible regardless of which conversation is open. */}
+      <CallSurface />
     </Flexbox>
   );
 }

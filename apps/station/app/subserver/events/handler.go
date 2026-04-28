@@ -32,10 +32,14 @@ const signalIngressMaxPayloadBytes = 64 * 1024
 // reflecting it, keeps the JSON contract stable across proto-gen
 // tweaks.
 var signalKindMap = map[string]realtime.CallSignal_Kind{
-	"OFFER":     realtime.CallSignal_OFFER,
-	"ANSWER":    realtime.CallSignal_ANSWER,
-	"CANDIDATE": realtime.CallSignal_CANDIDATE,
-	"HANGUP":    realtime.CallSignal_HANGUP,
+	"OFFER":        realtime.CallSignal_OFFER,
+	"ANSWER":       realtime.CallSignal_ANSWER,
+	"CANDIDATE":    realtime.CallSignal_CANDIDATE,
+	"HANGUP":       realtime.CallSignal_HANGUP,
+	"CALL_REQUEST": realtime.CallSignal_CALL_REQUEST,
+	"CALL_ACCEPT":  realtime.CallSignal_CALL_ACCEPT,
+	"CALL_REJECT":  realtime.CallSignal_CALL_REJECT,
+	"CALL_END":     realtime.CallSignal_CALL_END,
 }
 
 // Heartbeat cadence; see contract §2.4.
