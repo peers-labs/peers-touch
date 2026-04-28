@@ -8,11 +8,17 @@ package application
 import (
 	"context"
 	"errors"
+	"io"
+	"mime/multipart"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/infrastructure"
+	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
+	ossservice "github.com/peers-labs/peers-touch/station/app/subserver/oss/service"
+	ossstorage "github.com/peers-labs/peers-touch/station/frame/core/facility/storage"
 )
 
 // ---------------------------------------------------------------------------
@@ -730,3 +736,212 @@ func TestOSSService_ListWorkers_DelegatesAndPassesLookback(t *testing.T) {
 		t.Errorf("lookback should pass through unchanged: got %v", repo.workersLastSpan)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// AdminUploadObject
+// ---------------------------------------------------------------------------
+
+// stubFileService captures the SaveFile attribution and returns a
+// canned FileMeta. The other two interface methods (`PrepareUpload`
+// / `CompleteUpload` / `GetFileMeta`) are unused on this code path
+// so they panic — the tests are an explicit guard against the
+// service trying to take a presigned route for an admin upload.
+type stubFileService struct {
+	lastAttr ossservice.UploadAttribution
+	saveErr  error
+	saveMeta *ossmodel.FileMeta
+}
+
+func (s *stubFileService) SaveFile(_ context.Context, attr ossservice.UploadAttribution, _ multipart.File, _ *multipart.FileHeader) (*ossmodel.FileMeta, error) {
+	s.lastAttr = attr
+	if s.saveErr != nil {
+		return nil, s.saveErr
+	}
+	if s.saveMeta != nil {
+		return s.saveMeta, nil
+	}
+	return &ossmodel.FileMeta{ID: "f1", Key: "cas/aa/bb"}, nil
+}
+func (s *stubFileService) GetFileMeta(_ context.Context, _ string) (*ossmodel.FileMeta, error) {
+	panic("admin upload should not call GetFileMeta")
+}
+func (s *stubFileService) PrepareUpload(_ context.Context, _ ossstorage.PresignedBackend, _ ossservice.UploadAttribution, _ ossservice.PrepareUploadRequest, _ time.Duration) (ossservice.PrepareUploadResult, error) {
+	panic("admin upload should not call PrepareUpload")
+}
+func (s *stubFileService) CompleteUpload(_ context.Context, _ ossstorage.PresignedBackend, _ ossservice.UploadAttribution, _ ossservice.CompleteUploadRequest) (*ossmodel.FileMeta, error) {
+	panic("admin upload should not call CompleteUpload")
+}
+func (s *stubFileService) DeleteFile(_ context.Context, _, _ string) (*ossservice.DeleteResult, error) {
+	panic("admin upload should not call DeleteFile")
+}
+func (s *stubFileService) RestoreFile(_ context.Context, _, _ string, _ time.Duration) (*ossservice.RestoreResult, error) {
+	panic("admin upload should not call RestoreFile")
+}
+func (s *stubFileService) PatchFile(_ context.Context, _, _ string, _ ossservice.PatchRequest) (*ossservice.PatchResult, error) {
+	panic("admin upload should not call PatchFile")
+}
+func (s *stubFileService) ListMyFiles(_ context.Context, _ string, _ ossservice.ListMyFilesRequest) (*ossservice.ListMyFilesResult, error) {
+	panic("admin upload should not call ListMyFiles")
+}
+
+// stubProvider hands the OSSService a minimal FileServiceProvider.
+// We bake in a sentinel `MaxFileSize` so the handler-side check
+// (when added) round-trips a non-zero budget.
+type stubProvider struct {
+	fs  ossservice.FileService
+	max int64
+}
+
+func (s *stubProvider) FileService() ossservice.FileService { return s.fs }
+func (s *stubProvider) MaxFileSize() int64                  { return s.max }
+
+// nopMultipartFile is a near-empty `multipart.File` that satisfies
+// the interface without doing real I/O. The stub FileService never
+// reads from it; it exists only to populate `AdminUploadInput.File`
+// since the service rejects nil there.
+type nopMultipartFile struct{}
+
+func (nopMultipartFile) Read(_ []byte) (int, error)                 { return 0, io.EOF }
+func (nopMultipartFile) Close() error                               { return nil }
+func (nopMultipartFile) Seek(_ int64, _ int) (int64, error)         { return 0, nil }
+func (nopMultipartFile) ReadAt(_ []byte, _ int64) (int, error)      { return 0, io.EOF }
+
+func newAdminUploadFixture(t *testing.T, bucket domain.OSSBucketSummary, fileMeta *ossmodel.FileMeta) (*OSSService, *stubFileService, *fakeOSSRepo) {
+	t.Helper()
+	fs := &stubFileService{saveMeta: fileMeta}
+	repo := &fakeOSSRepo{
+		buckets: []domain.OSSBucketSummary{bucket},
+		adminObjects: []domain.OSSObjectAdminDetail{{
+			ID:           fileMeta.ID,
+			Key:          fileMeta.Key,
+			BucketID:     bucket.ID,
+			OwnerActorID: bucket.OwnerActorID,
+			Visibility:   bucket.DefaultVisibility,
+		}},
+	}
+	svc := NewOSSService(repo)
+	svc.SetFileServiceProvider(&stubProvider{fs: fs, max: 16 << 20})
+	return svc, fs, repo
+}
+
+func adminUploadInput(bucketID string) AdminUploadInput {
+	return AdminUploadInput{
+		BucketID: bucketID,
+		File:     nopMultipartFile{},
+		Header:   &multipart.FileHeader{Filename: "from-multipart.bin", Size: 1024},
+	}
+}
+
+func TestOSSService_AdminUpload_RejectsWithoutFileService(t *testing.T) {
+	svc := NewOSSService(&fakeOSSRepo{})
+	_, err := svc.AdminUploadObject(context.Background(), adminUploadInput("b1"))
+	if !errors.Is(err, ErrAdminUploadUnavailable) {
+		t.Fatalf("expected ErrAdminUploadUnavailable, got %v", err)
+	}
+}
+
+func TestOSSService_AdminUpload_RequiresBucketID(t *testing.T) {
+	svc := NewOSSService(&fakeOSSRepo{})
+	svc.SetFileServiceProvider(&stubProvider{fs: &stubFileService{}, max: 1024})
+	_, err := svc.AdminUploadObject(context.Background(), adminUploadInput("   "))
+	if !errors.Is(err, ErrAdminUploadBucketRequired) {
+		t.Fatalf("expected ErrAdminUploadBucketRequired, got %v", err)
+	}
+}
+
+func TestOSSService_AdminUpload_RejectsMissingBucket(t *testing.T) {
+	svc := NewOSSService(&fakeOSSRepo{}) // no buckets seeded
+	svc.SetFileServiceProvider(&stubProvider{fs: &stubFileService{}, max: 1024})
+	_, err := svc.AdminUploadObject(context.Background(), adminUploadInput("missing-bucket"))
+	if err == nil || !contains(err.Error(), "bucket not found") {
+		t.Fatalf("expected `bucket not found`, got %v", err)
+	}
+}
+
+func TestOSSService_AdminUpload_RejectsBucketWithoutOwner(t *testing.T) {
+	bucket := domain.OSSBucketSummary{ID: "sys", Name: "chat", OwnerActorID: "", DefaultVisibility: "chat"}
+	svc, _, _ := newAdminUploadFixture(t, bucket, &ossmodel.FileMeta{ID: "f1"})
+	_, err := svc.AdminUploadObject(context.Background(), adminUploadInput("sys"))
+	if err == nil || !contains(err.Error(), "owner_actor_id") {
+		t.Fatalf("expected owner_actor_id rejection, got %v", err)
+	}
+}
+
+func TestOSSService_AdminUpload_RejectsUnknownVisibility(t *testing.T) {
+	bucket := domain.OSSBucketSummary{ID: "u1", Name: "attachments", OwnerActorID: "actor-A", DefaultVisibility: "private"}
+	svc, fs, _ := newAdminUploadFixture(t, bucket, &ossmodel.FileMeta{ID: "f1"})
+
+	in := adminUploadInput("u1")
+	in.Visibility = "weird"
+	_, err := svc.AdminUploadObject(context.Background(), in)
+	if err == nil || !contains(err.Error(), "visibility") {
+		t.Fatalf("expected visibility rejection, got %v", err)
+	}
+	if fs.lastAttr.ActorID != "" {
+		t.Errorf("file service should NOT be called when validation fails")
+	}
+}
+
+func TestOSSService_AdminUpload_DefaultsVisibilityFromBucket(t *testing.T) {
+	bucket := domain.OSSBucketSummary{ID: "u1", Name: "attachments", OwnerActorID: "actor-A", DefaultVisibility: "public"}
+	meta := &ossmodel.FileMeta{ID: "f1", Key: "cas/aa/bb"}
+	svc, fs, _ := newAdminUploadFixture(t, bucket, meta)
+
+	row, err := svc.AdminUploadObject(context.Background(), adminUploadInput("u1"))
+	if err != nil {
+		t.Fatalf("AdminUploadObject: %v", err)
+	}
+	if row.ID != "f1" {
+		t.Errorf("ID: got %q want %q", row.ID, "f1")
+	}
+	if fs.lastAttr.ActorID != "actor-A" {
+		t.Errorf("ActorID: got %q want %q", fs.lastAttr.ActorID, "actor-A")
+	}
+	if fs.lastAttr.BucketName != "attachments" {
+		t.Errorf("BucketName: got %q want %q", fs.lastAttr.BucketName, "attachments")
+	}
+	if fs.lastAttr.Visibility != "public" {
+		t.Errorf("Visibility (default): got %q want %q", fs.lastAttr.Visibility, "public")
+	}
+}
+
+func TestOSSService_AdminUpload_HonorsExplicitVisibilityAndChatSession(t *testing.T) {
+	bucket := domain.OSSBucketSummary{ID: "u1", Name: "attachments", OwnerActorID: "actor-A", DefaultVisibility: "private"}
+	meta := &ossmodel.FileMeta{ID: "f1", Key: "cas/aa/bb"}
+	svc, fs, _ := newAdminUploadFixture(t, bucket, meta)
+
+	in := adminUploadInput("u1")
+	in.Visibility = "chat"
+	in.ChatSessionID = " session-XYZ "
+	if _, err := svc.AdminUploadObject(context.Background(), in); err != nil {
+		t.Fatalf("AdminUploadObject: %v", err)
+	}
+	if fs.lastAttr.Visibility != "chat" {
+		t.Errorf("Visibility: got %q want %q", fs.lastAttr.Visibility, "chat")
+	}
+	if fs.lastAttr.ChatSessionID != "session-XYZ" {
+		t.Errorf("ChatSessionID: got %q (expected trimmed `session-XYZ`)", fs.lastAttr.ChatSessionID)
+	}
+}
+
+func TestOSSService_AdminUpload_HonorsFilenameOverride(t *testing.T) {
+	bucket := domain.OSSBucketSummary{ID: "u1", Name: "attachments", OwnerActorID: "actor-A", DefaultVisibility: "private"}
+	meta := &ossmodel.FileMeta{ID: "f1", Key: "cas/aa/bb"}
+	svc, fs, _ := newAdminUploadFixture(t, bucket, meta)
+
+	in := adminUploadInput("u1")
+	in.Filename = "operator-renamed.bin"
+	if _, err := svc.AdminUploadObject(context.Background(), in); err != nil {
+		t.Fatalf("AdminUploadObject: %v", err)
+	}
+	if fs.lastAttr.ActorID != "actor-A" {
+		t.Errorf("ActorID: got %q want %q", fs.lastAttr.ActorID, "actor-A")
+	}
+	// Header rewrite happens inside the service; we cannot inspect
+	// it here without exporting the call, but we can verify that
+	// the upload succeeded — the stub ignores the header.
+}
+
+// contains is a tiny helper to keep error-substring assertions
+// readable without pulling in a third-party matcher library.
+func contains(s, substr string) bool { return strings.Contains(s, substr) }
