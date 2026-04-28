@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/infrastructure"
@@ -65,6 +66,19 @@ type fakeOSSRepo struct {
 
 	auditAppends []infrastructure.OSSAuditAppend
 	auditAppendErr error
+
+	adminObjects []domain.OSSObjectAdminDetail
+
+	adminPatchCalls []struct {
+		ID string
+		In infrastructure.AdminPatchObjectInput
+	}
+	adminPatchReturn *domain.OSSObjectAdminDetail
+	adminPatchErr    error
+
+	adminDeleteCalls  []string
+	adminDeleteReturn *domain.OSSObjectAdminDetail
+	adminDeleteErr    error
 }
 
 func (f *fakeOSSRepo) ListBuckets(_ context.Context) ([]domain.OSSBucketSummary, error) {
@@ -151,6 +165,43 @@ func (f *fakeOSSRepo) DeleteBucket(_ context.Context, id string, force bool) err
 func (f *fakeOSSRepo) RecordOSSAudit(_ context.Context, evt infrastructure.OSSAuditAppend) error {
 	f.auditAppends = append(f.auditAppends, evt)
 	return f.auditAppendErr
+}
+
+// ----- S10: object admin hooks ----------------------------------------------
+
+func (f *fakeOSSRepo) GetObject(_ context.Context, id string) (*domain.OSSObjectAdminDetail, error) {
+	for i := range f.adminObjects {
+		if f.adminObjects[i].ID == id {
+			cp := f.adminObjects[i]
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+
+func (f *fakeOSSRepo) AdminPatchObject(_ context.Context, id string, in infrastructure.AdminPatchObjectInput) (*domain.OSSObjectAdminDetail, error) {
+	f.adminPatchCalls = append(f.adminPatchCalls, struct {
+		ID string
+		In infrastructure.AdminPatchObjectInput
+	}{id, in})
+	if f.adminPatchErr != nil {
+		return nil, f.adminPatchErr
+	}
+	if f.adminPatchReturn != nil {
+		return f.adminPatchReturn, nil
+	}
+	return &domain.OSSObjectAdminDetail{ID: id, Visibility: "private"}, nil
+}
+
+func (f *fakeOSSRepo) AdminDeleteObject(_ context.Context, id string) (*domain.OSSObjectAdminDetail, error) {
+	f.adminDeleteCalls = append(f.adminDeleteCalls, id)
+	if f.adminDeleteErr != nil {
+		return f.adminDeleteReturn, f.adminDeleteErr
+	}
+	if f.adminDeleteReturn != nil {
+		return f.adminDeleteReturn, nil
+	}
+	return &domain.OSSObjectAdminDetail{ID: id}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -415,6 +466,117 @@ func TestOSSService_RecordOSSAudit_PassThrough(t *testing.T) {
 	}
 	if len(repo.auditAppends) != 1 || repo.auditAppends[0].Action != "bucket_create" {
 		t.Errorf("audit append not propagated: %+v", repo.auditAppends)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// S10: object admin endpoints — service-layer translation
+// ---------------------------------------------------------------------------
+
+func TestOSSService_GetObject_RequiresID(t *testing.T) {
+	svc := NewOSSService(&fakeOSSRepo{})
+	if _, err := svc.GetObject(context.Background(), ""); err == nil {
+		t.Fatalf("empty id should error")
+	}
+}
+
+func TestOSSService_AdminPatchObject_RejectsEmptyPatch(t *testing.T) {
+	repo := &fakeOSSRepo{}
+	svc := NewOSSService(repo)
+	if _, err := svc.AdminPatchObject(context.Background(), "f1", domain.OSSObjectAdminPatchRequest{}); err == nil {
+		t.Fatalf("empty patch should be rejected")
+	}
+	if len(repo.adminPatchCalls) != 0 {
+		t.Errorf("repo should not be called on empty patch: %+v", repo.adminPatchCalls)
+	}
+}
+
+func TestOSSService_AdminPatchObject_TranslatesEmptyChatSessionAsClear(t *testing.T) {
+	repo := &fakeOSSRepo{}
+	svc := NewOSSService(repo)
+
+	empty := ""
+	if _, err := svc.AdminPatchObject(context.Background(), "f1", domain.OSSObjectAdminPatchRequest{
+		ChatSessionID: &empty,
+	}); err != nil {
+		t.Fatalf("AdminPatchObject: %v", err)
+	}
+	if len(repo.adminPatchCalls) != 1 {
+		t.Fatalf("repo not called once")
+	}
+	got := repo.adminPatchCalls[0].In
+	if !got.ChatSessionIDSet || got.ChatSessionID != nil {
+		t.Errorf("empty chat_session_id should clear: got Set=%v Ptr=%v", got.ChatSessionIDSet, got.ChatSessionID)
+	}
+}
+
+func TestOSSService_AdminPatchObject_TranslatesNonEmptyChatSession(t *testing.T) {
+	repo := &fakeOSSRepo{}
+	svc := NewOSSService(repo)
+
+	id := "  sess-123  "
+	if _, err := svc.AdminPatchObject(context.Background(), "f1", domain.OSSObjectAdminPatchRequest{
+		ChatSessionID: &id,
+	}); err != nil {
+		t.Fatalf("AdminPatchObject: %v", err)
+	}
+	got := repo.adminPatchCalls[0].In
+	if !got.ChatSessionIDSet || got.ChatSessionID == nil || *got.ChatSessionID != "sess-123" {
+		t.Errorf("non-empty session should set + trim: %+v", got)
+	}
+}
+
+func TestOSSService_AdminPatchObject_ClearExpiresAtWins(t *testing.T) {
+	repo := &fakeOSSRepo{}
+	svc := NewOSSService(repo)
+
+	now := time.Now()
+	if _, err := svc.AdminPatchObject(context.Background(), "f1", domain.OSSObjectAdminPatchRequest{
+		ExpiresAt:      &now, // would set, but...
+		ClearExpiresAt: true, // ... clear flag wins
+	}); err != nil {
+		t.Fatalf("AdminPatchObject: %v", err)
+	}
+	got := repo.adminPatchCalls[0].In
+	if !got.ExpiresAtSet || got.ExpiresAt != nil {
+		t.Errorf("clear flag should win over set: %+v", got)
+	}
+}
+
+func TestOSSService_AdminPatchObject_RejectsBadVisibility(t *testing.T) {
+	svc := NewOSSService(&fakeOSSRepo{})
+	bad := "world"
+	if _, err := svc.AdminPatchObject(context.Background(), "f1", domain.OSSObjectAdminPatchRequest{
+		Visibility: &bad,
+	}); err == nil {
+		t.Fatalf("bad visibility accepted")
+	}
+}
+
+func TestOSSService_AdminDeleteObject_PassThrough(t *testing.T) {
+	repo := &fakeOSSRepo{}
+	svc := NewOSSService(repo)
+	if _, err := svc.AdminDeleteObject(context.Background(), "f1"); err != nil {
+		t.Fatalf("AdminDeleteObject: %v", err)
+	}
+	if len(repo.adminDeleteCalls) != 1 || repo.adminDeleteCalls[0] != "f1" {
+		t.Errorf("delete call: %+v", repo.adminDeleteCalls)
+	}
+}
+
+func TestOSSService_AdminDeleteObject_PropagatesAlreadyDeleted(t *testing.T) {
+	repo := &fakeOSSRepo{
+		adminDeleteErr:    infrastructure.ErrFileAlreadyDeleted,
+		adminDeleteReturn: &domain.OSSObjectAdminDetail{ID: "f1"},
+	}
+	svc := NewOSSService(repo)
+
+	row, err := svc.AdminDeleteObject(context.Background(), "f1")
+	if !errors.Is(err, infrastructure.ErrFileAlreadyDeleted) {
+		t.Fatalf("want ErrFileAlreadyDeleted, got %v", err)
+	}
+	if row == nil || row.ID != "f1" {
+		t.Errorf("row should still be returned for idempotent path: %+v", row)
 	}
 }
 

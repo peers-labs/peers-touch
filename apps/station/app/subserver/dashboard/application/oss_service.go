@@ -236,3 +236,75 @@ func (s *OSSService) DeleteBucket(ctx context.Context, bucketID string, force bo
 func (s *OSSService) RecordOSSAudit(ctx context.Context, evt infrastructure.OSSAuditAppend) error {
 	return s.repo.RecordOSSAudit(ctx, evt)
 }
+
+// ---------------------------------------------------------------------------
+// Object lifecycle (admin)
+// ---------------------------------------------------------------------------
+
+// GetObject returns the admin detail for one file by ID; nil
+// when missing. The dashboard handler uses this for the lookup
+// before audit emission so the row's owner / bucket are
+// available even when the object has been soft-deleted.
+func (s *OSSService) GetObject(ctx context.Context, id string) (*domain.OSSObjectAdminDetail, error) {
+	if id == "" {
+		return nil, errors.New("object id is required")
+	}
+	return s.repo.GetObject(ctx, id)
+}
+
+// AdminPatchObject applies a partial mutate driven by an
+// operator. The translation from request → repo input is the
+// place we encode the "empty string clears chat_session_id /
+// clear_expires_at flag clears expires_at" conventions
+// documented on the request DTO.
+func (s *OSSService) AdminPatchObject(ctx context.Context, id string, req domain.OSSObjectAdminPatchRequest) (*domain.OSSObjectAdminDetail, error) {
+	if id == "" {
+		return nil, errors.New("object id is required")
+	}
+	in := infrastructure.AdminPatchObjectInput{}
+
+	if req.Visibility != nil {
+		v := strings.TrimSpace(*req.Visibility)
+		if !isKnownVisibility(v) {
+			return nil, errors.New("visibility must be one of: public, chat, private")
+		}
+		in.Visibility = &v
+	}
+
+	if req.ChatSessionID != nil {
+		trimmed := strings.TrimSpace(*req.ChatSessionID)
+		in.ChatSessionIDSet = true
+		if trimmed == "" {
+			in.ChatSessionID = nil // explicit clear
+		} else {
+			in.ChatSessionID = &trimmed
+		}
+	}
+
+	switch {
+	case req.ClearExpiresAt:
+		// Operator wants the column NULLed regardless of
+		// any value they may also have included.
+		in.ExpiresAtSet = true
+		in.ExpiresAt = nil
+	case req.ExpiresAt != nil:
+		in.ExpiresAtSet = true
+		in.ExpiresAt = req.ExpiresAt
+	}
+
+	if in.Visibility == nil && !in.ChatSessionIDSet && !in.ExpiresAtSet {
+		return nil, errors.New("at least one field must be provided")
+	}
+	return s.repo.AdminPatchObject(ctx, id, in)
+}
+
+// AdminDeleteObject soft-deletes a file by ID. The repo returns
+// the (deleted) row alongside ErrFileAlreadyDeleted on idempotent
+// re-deletes; we forward that to the handler so it can emit the
+// `already_deleted` reason without an extra read.
+func (s *OSSService) AdminDeleteObject(ctx context.Context, id string) (*domain.OSSObjectAdminDetail, error) {
+	if id == "" {
+		return nil, errors.New("object id is required")
+	}
+	return s.repo.AdminDeleteObject(ctx, id)
+}
