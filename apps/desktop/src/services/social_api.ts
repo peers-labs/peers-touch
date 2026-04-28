@@ -229,14 +229,20 @@ export async function socialGetTimeline(
   limit?: number,
   sort: TimelineSort = 'recent',
 ): Promise<GetTimelineResponse> {
+  // The station's typed handler reads `sort` via proto-JSON enum
+  // names. We only send the field when the client explicitly opts in
+  // to HOT — RECENT is the proto default and the station's omission
+  // path is a touch faster (no enum lookup). The wire string MUST
+  // match the proto enum name exactly.
+  const sortWire = sort === 'hot' ? 'TIMELINE_SORT_HOT' : undefined;
   return invokeRustProto<
-    { type: TimelineKindWire; cursor?: string; limit?: number; sort?: TimelineSort },
+    { type: TimelineKindWire; cursor?: string; limit?: number; sort?: string },
     GetTimelineResponse
   >('social_get_timeline', GetTimelineResponseSchema, {
     type,
     cursor,
     limit,
-    sort,
+    sort: sortWire,
   });
 }
 

@@ -48,6 +48,9 @@ func (s *TimelineService) GetTimeline(ctx context.Context, req *model.GetTimelin
 	}
 	switch req.Type {
 	case model.TimelineType_TIMELINE_PUBLIC:
+		if req.Sort == model.TimelineSort_TIMELINE_SORT_HOT {
+			return s.getPublicHotTimeline(ctx, req.Cursor, limit, viewerID)
+		}
 		return s.getPublicTimeline(ctx, req.Cursor, limit, viewerID)
 	case model.TimelineType_TIMELINE_USER:
 		userID := domain.ParseID(req.UserId)
@@ -87,6 +90,35 @@ func (s *TimelineService) getPublicTimeline(ctx context.Context, cursor string, 
 	if hasMore && len(rows) > 0 {
 		last := rows[len(rows)-1]
 		nextCursor = domain.Cursor{LastID: last.ID, CreatedAt: last.CreatedAt}.Encode()
+	}
+	return &model.GetTimelineResponse{Posts: posts, NextCursor: nextCursor, HasMore: hasMore}, nil
+}
+
+// getPublicHotTimeline returns the trending public feed. Repo
+// computes the score in SQL and orders by it; we only need to encode
+// the next cursor from the last row of the page.
+func (s *TimelineService) getPublicHotTimeline(ctx context.Context, cursor string, limit int, viewerID uint64) (*model.GetTimelineResponse, error) {
+	c, err := domain.DecodeHotCursor(cursor)
+	if err != nil {
+		return nil, fmt.Errorf("invalid hot cursor: %w", err)
+	}
+	rows, err := s.repos.PublicPosts.ListPublicHot(ctx, c, limit+1)
+	if err != nil {
+		return nil, err
+	}
+	hasMore := len(rows) > limit
+	if hasMore {
+		rows = rows[:limit]
+	}
+	posts := s.moments.hydratePosts(ctx, rows, viewerID)
+	var nextCursor string
+	if hasMore && len(rows) > 0 {
+		last := rows[len(rows)-1]
+		nextCursor = domain.HotCursor{
+			Score:     float64(last.CommentsCount),
+			CreatedAt: last.CreatedAt,
+			LastID:    last.ID,
+		}.Encode()
 	}
 	return &model.GetTimelineResponse{Posts: posts, NextCursor: nextCursor, HasMore: hasMore}, nil
 }

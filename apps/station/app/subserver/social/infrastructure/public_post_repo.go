@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
@@ -102,6 +103,51 @@ func (r *publicPostRepo) ListPublic(ctx context.Context, c domain.Cursor, limit 
 	}
 	var rows []*db.SocialPublicPost
 	if err := q.Order("created_at DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return r.hydrate(rows), nil
+}
+
+// ListPublicHot returns the trending public posts from the last
+// `hotWindow` (7 days), ranked by a SQL-portable score. The score is
+// intentionally simple — `comments_count` floored at 0 — so the
+// ordering works on both Postgres and SQLite without `pow()` or
+// epoch arithmetic. Future iterations can swap in a decayed score
+// without changing the interface; the cursor already carries a
+// float `Score` for forward compatibility.
+//
+// Tie-break order: `(score DESC, created_at DESC, id DESC)` so
+// pagination is deterministic. The HotCursor records all three so
+// `(score, created_at, id) < (?, ?, ?)` row-value comparison can
+// resume cleanly across pages.
+//
+// Posts older than the window are excluded — "hot" means "engaged
+// with recently"; without the time bound a single ancient mega-post
+// would dominate the feed forever.
+func (r *publicPostRepo) ListPublicHot(ctx context.Context, c domain.HotCursor, limit int) ([]*domain.Post, error) {
+	const hotWindow = 7 * 24 * time.Hour
+	since := time.Now().Add(-hotWindow)
+
+	q := r.db.WithContext(ctx).
+		Where("deleted_at IS NULL AND created_at >= ?", since)
+	if !c.IsZero() {
+		// Score is the post's `comments_count`. We want to admit
+		// posts whose (score, created_at, id) is strictly less
+		// than the cursor's. Some engines do not support tuple
+		// compares involving expressions; rewriting in disjunctive
+		// normal form keeps it portable.
+		q = q.Where(
+			"(comments_count < ?) OR (comments_count = ? AND created_at < ?) OR (comments_count = ? AND created_at = ? AND id < ?)",
+			int64(c.Score),
+			int64(c.Score), c.CreatedAt,
+			int64(c.Score), c.CreatedAt, c.LastID,
+		)
+	}
+	var rows []*db.SocialPublicPost
+	if err := q.
+		Order("comments_count DESC, created_at DESC, id DESC").
+		Limit(limit).
+		Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	return r.hydrate(rows), nil
