@@ -236,6 +236,57 @@ func (TimelineType) EnumDescriptor() ([]byte, []int) {
 	return file_domain_social_post_proto_rawDescGZIP(), []int{3}
 }
 
+// TimelineSort selects the ranking strategy used when serving a
+// timeline. RECENT (default) returns posts in created_at DESC order
+// — the cheap, predictable shape suitable for HOME and USER. HOT
+// returns posts ranked by an engagement-decayed score; only the
+// PUBLIC timeline implements it today.
+type TimelineSort int32
+
+const (
+	TimelineSort_TIMELINE_SORT_RECENT TimelineSort = 0
+	TimelineSort_TIMELINE_SORT_HOT    TimelineSort = 1
+)
+
+// Enum value maps for TimelineSort.
+var (
+	TimelineSort_name = map[int32]string{
+		0: "TIMELINE_SORT_RECENT",
+		1: "TIMELINE_SORT_HOT",
+	}
+	TimelineSort_value = map[string]int32{
+		"TIMELINE_SORT_RECENT": 0,
+		"TIMELINE_SORT_HOT":    1,
+	}
+)
+
+func (x TimelineSort) Enum() *TimelineSort {
+	p := new(TimelineSort)
+	*p = x
+	return p
+}
+
+func (x TimelineSort) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TimelineSort) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_social_post_proto_enumTypes[4].Descriptor()
+}
+
+func (TimelineSort) Type() protoreflect.EnumType {
+	return &file_domain_social_post_proto_enumTypes[4]
+}
+
+func (x TimelineSort) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TimelineSort.Descriptor instead.
+func (TimelineSort) EnumDescriptor() ([]byte, []int) {
+	return file_domain_social_post_proto_rawDescGZIP(), []int{4}
+}
+
 // ============================================================================
 // Reactions (typed, replaces simple Like)
 // ============================================================================
@@ -281,11 +332,11 @@ func (x ReactionKind) String() string {
 }
 
 func (ReactionKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_social_post_proto_enumTypes[4].Descriptor()
+	return file_domain_social_post_proto_enumTypes[5].Descriptor()
 }
 
 func (ReactionKind) Type() protoreflect.EnumType {
-	return &file_domain_social_post_proto_enumTypes[4]
+	return &file_domain_social_post_proto_enumTypes[5]
 }
 
 func (x ReactionKind) Number() protoreflect.EnumNumber {
@@ -294,7 +345,7 @@ func (x ReactionKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ReactionKind.Descriptor instead.
 func (ReactionKind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_social_post_proto_rawDescGZIP(), []int{4}
+	return file_domain_social_post_proto_rawDescGZIP(), []int{5}
 }
 
 type Audience_Kind int32
@@ -345,11 +396,11 @@ func (x Audience_Kind) String() string {
 }
 
 func (Audience_Kind) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_social_post_proto_enumTypes[5].Descriptor()
+	return file_domain_social_post_proto_enumTypes[6].Descriptor()
 }
 
 func (Audience_Kind) Type() protoreflect.EnumType {
-	return &file_domain_social_post_proto_enumTypes[5]
+	return &file_domain_social_post_proto_enumTypes[6]
 }
 
 func (x Audience_Kind) Number() protoreflect.EnumNumber {
@@ -2876,11 +2927,14 @@ func (x *PostFilter) GetExcludeReposts() bool {
 }
 
 type GetTimelineRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          TimelineType           `protobuf:"varint,1,opt,name=type,proto3,enum=peers_touch.model.social.v1.TimelineType" json:"type,omitempty"`
-	Cursor        string                 `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`
-	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
-	UserId        string                 `protobuf:"bytes,4,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Type   TimelineType           `protobuf:"varint,1,opt,name=type,proto3,enum=peers_touch.model.social.v1.TimelineType" json:"type,omitempty"`
+	Cursor string                 `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	Limit  int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	UserId string                 `protobuf:"bytes,4,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	// Optional sort strategy. Currently only meaningful for
+	// TIMELINE_PUBLIC; all other timelines fix RECENT order.
+	Sort          TimelineSort `protobuf:"varint,5,opt,name=sort,proto3,enum=peers_touch.model.social.v1.TimelineSort" json:"sort,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2941,6 +2995,13 @@ func (x *GetTimelineRequest) GetUserId() string {
 		return x.UserId
 	}
 	return ""
+}
+
+func (x *GetTimelineRequest) GetSort() TimelineSort {
+	if x != nil {
+		return x.Sort
+	}
+	return TimelineSort_TIMELINE_SORT_RECENT
 }
 
 type GetTimelineResponse struct {
@@ -3939,12 +4000,13 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"visibility\x18\x02 \x03(\x0e2+.peers_touch.model.social.v1.PostVisibilityR\n" +
 	"visibility\x12'\n" +
 	"\x0fexclude_replies\x18\x03 \x01(\bR\x0eexcludeReplies\x12'\n" +
-	"\x0fexclude_reposts\x18\x04 \x01(\bR\x0eexcludeReposts\"\x9a\x01\n" +
+	"\x0fexclude_reposts\x18\x04 \x01(\bR\x0eexcludeReposts\"\xd9\x01\n" +
 	"\x12GetTimelineRequest\x12=\n" +
 	"\x04type\x18\x01 \x01(\x0e2).peers_touch.model.social.v1.TimelineTypeR\x04type\x12\x16\n" +
 	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x17\n" +
-	"\auser_id\x18\x04 \x01(\tR\x06userId\"\x8a\x01\n" +
+	"\auser_id\x18\x04 \x01(\tR\x06userId\x12=\n" +
+	"\x04sort\x18\x05 \x01(\x0e2).peers_touch.model.social.v1.TimelineSortR\x04sort\"\x8a\x01\n" +
 	"\x13GetTimelineResponse\x127\n" +
 	"\x05posts\x18\x01 \x03(\v2!.peers_touch.model.social.v1.PostR\x05posts\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
@@ -4034,7 +4096,10 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\fTimelineType\x12\x11\n" +
 	"\rTIMELINE_HOME\x10\x00\x12\x11\n" +
 	"\rTIMELINE_USER\x10\x01\x12\x13\n" +
-	"\x0fTIMELINE_PUBLIC\x10\x02*\x8c\x01\n" +
+	"\x0fTIMELINE_PUBLIC\x10\x02*?\n" +
+	"\fTimelineSort\x12\x18\n" +
+	"\x14TIMELINE_SORT_RECENT\x10\x00\x12\x15\n" +
+	"\x11TIMELINE_SORT_HOT\x10\x01*\x8c\x01\n" +
 	"\fReactionKind\x12\x18\n" +
 	"\x14REACTION_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rREACTION_LIKE\x10\x01\x12\x11\n" +
@@ -4055,131 +4120,133 @@ func file_domain_social_post_proto_rawDescGZIP() []byte {
 	return file_domain_social_post_proto_rawDescData
 }
 
-var file_domain_social_post_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
+var file_domain_social_post_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
 var file_domain_social_post_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
 var file_domain_social_post_proto_goTypes = []any{
 	(PostType)(0),                       // 0: peers_touch.model.social.v1.PostType
 	(PostVisibility)(0),                 // 1: peers_touch.model.social.v1.PostVisibility
 	(VideoQuality)(0),                   // 2: peers_touch.model.social.v1.VideoQuality
 	(TimelineType)(0),                   // 3: peers_touch.model.social.v1.TimelineType
-	(ReactionKind)(0),                   // 4: peers_touch.model.social.v1.ReactionKind
-	(Audience_Kind)(0),                  // 5: peers_touch.model.social.v1.Audience.Kind
-	(*Post)(nil),                        // 6: peers_touch.model.social.v1.Post
-	(*PostStats)(nil),                   // 7: peers_touch.model.social.v1.PostStats
-	(*PostAuthor)(nil),                  // 8: peers_touch.model.social.v1.PostAuthor
-	(*PostInteraction)(nil),             // 9: peers_touch.model.social.v1.PostInteraction
-	(*TextPost)(nil),                    // 10: peers_touch.model.social.v1.TextPost
-	(*ImagePost)(nil),                   // 11: peers_touch.model.social.v1.ImagePost
-	(*VideoPost)(nil),                   // 12: peers_touch.model.social.v1.VideoPost
-	(*LinkPost)(nil),                    // 13: peers_touch.model.social.v1.LinkPost
-	(*PollPost)(nil),                    // 14: peers_touch.model.social.v1.PollPost
-	(*RepostPost)(nil),                  // 15: peers_touch.model.social.v1.RepostPost
-	(*LocationPost)(nil),                // 16: peers_touch.model.social.v1.LocationPost
-	(*ImageAttachment)(nil),             // 17: peers_touch.model.social.v1.ImageAttachment
-	(*VideoAttachment)(nil),             // 18: peers_touch.model.social.v1.VideoAttachment
-	(*VideoVariant)(nil),                // 19: peers_touch.model.social.v1.VideoVariant
-	(*LinkPreview)(nil),                 // 20: peers_touch.model.social.v1.LinkPreview
-	(*Location)(nil),                    // 21: peers_touch.model.social.v1.Location
-	(*CreatePostRequest)(nil),           // 22: peers_touch.model.social.v1.CreatePostRequest
-	(*CreateTextPostRequest)(nil),       // 23: peers_touch.model.social.v1.CreateTextPostRequest
-	(*CreateImagePostRequest)(nil),      // 24: peers_touch.model.social.v1.CreateImagePostRequest
-	(*CreateVideoPostRequest)(nil),      // 25: peers_touch.model.social.v1.CreateVideoPostRequest
-	(*CreateLinkPostRequest)(nil),       // 26: peers_touch.model.social.v1.CreateLinkPostRequest
-	(*CreatePollPostRequest)(nil),       // 27: peers_touch.model.social.v1.CreatePollPostRequest
-	(*CreateRepostRequest)(nil),         // 28: peers_touch.model.social.v1.CreateRepostRequest
-	(*CreateLocationPostRequest)(nil),   // 29: peers_touch.model.social.v1.CreateLocationPostRequest
-	(*CreatePostResponse)(nil),          // 30: peers_touch.model.social.v1.CreatePostResponse
-	(*UpdatePostRequest)(nil),           // 31: peers_touch.model.social.v1.UpdatePostRequest
-	(*UpdatePostResponse)(nil),          // 32: peers_touch.model.social.v1.UpdatePostResponse
-	(*DeletePostRequest)(nil),           // 33: peers_touch.model.social.v1.DeletePostRequest
-	(*DeletePostResponse)(nil),          // 34: peers_touch.model.social.v1.DeletePostResponse
-	(*GetPostRequest)(nil),              // 35: peers_touch.model.social.v1.GetPostRequest
-	(*GetPostResponse)(nil),             // 36: peers_touch.model.social.v1.GetPostResponse
-	(*ListPostsRequest)(nil),            // 37: peers_touch.model.social.v1.ListPostsRequest
-	(*ListPostsResponse)(nil),           // 38: peers_touch.model.social.v1.ListPostsResponse
-	(*PostFilter)(nil),                  // 39: peers_touch.model.social.v1.PostFilter
-	(*GetTimelineRequest)(nil),          // 40: peers_touch.model.social.v1.GetTimelineRequest
-	(*GetTimelineResponse)(nil),         // 41: peers_touch.model.social.v1.GetTimelineResponse
-	(*RepostRequest)(nil),               // 42: peers_touch.model.social.v1.RepostRequest
-	(*RepostResponse)(nil),              // 43: peers_touch.model.social.v1.RepostResponse
-	(*Audience)(nil),                    // 44: peers_touch.model.social.v1.Audience
-	(*ReactionSummary)(nil),             // 45: peers_touch.model.social.v1.ReactionSummary
-	(*Mention)(nil),                     // 46: peers_touch.model.social.v1.Mention
-	(*ReactToPostRequest)(nil),          // 47: peers_touch.model.social.v1.ReactToPostRequest
-	(*ReactToPostResponse)(nil),         // 48: peers_touch.model.social.v1.ReactToPostResponse
-	(*UnreactToPostRequest)(nil),        // 49: peers_touch.model.social.v1.UnreactToPostRequest
-	(*UnreactToPostResponse)(nil),       // 50: peers_touch.model.social.v1.UnreactToPostResponse
-	(*ListReactionsRequest)(nil),        // 51: peers_touch.model.social.v1.ListReactionsRequest
-	(*ListReactionsResponse)(nil),       // 52: peers_touch.model.social.v1.ListReactionsResponse
-	(*ListReactionsResponse_Entry)(nil), // 53: peers_touch.model.social.v1.ListReactionsResponse.Entry
-	(*timestamppb.Timestamp)(nil),       // 54: google.protobuf.Timestamp
-	(*Poll)(nil),                        // 55: peers_touch.model.activity.v1.Poll
+	(TimelineSort)(0),                   // 4: peers_touch.model.social.v1.TimelineSort
+	(ReactionKind)(0),                   // 5: peers_touch.model.social.v1.ReactionKind
+	(Audience_Kind)(0),                  // 6: peers_touch.model.social.v1.Audience.Kind
+	(*Post)(nil),                        // 7: peers_touch.model.social.v1.Post
+	(*PostStats)(nil),                   // 8: peers_touch.model.social.v1.PostStats
+	(*PostAuthor)(nil),                  // 9: peers_touch.model.social.v1.PostAuthor
+	(*PostInteraction)(nil),             // 10: peers_touch.model.social.v1.PostInteraction
+	(*TextPost)(nil),                    // 11: peers_touch.model.social.v1.TextPost
+	(*ImagePost)(nil),                   // 12: peers_touch.model.social.v1.ImagePost
+	(*VideoPost)(nil),                   // 13: peers_touch.model.social.v1.VideoPost
+	(*LinkPost)(nil),                    // 14: peers_touch.model.social.v1.LinkPost
+	(*PollPost)(nil),                    // 15: peers_touch.model.social.v1.PollPost
+	(*RepostPost)(nil),                  // 16: peers_touch.model.social.v1.RepostPost
+	(*LocationPost)(nil),                // 17: peers_touch.model.social.v1.LocationPost
+	(*ImageAttachment)(nil),             // 18: peers_touch.model.social.v1.ImageAttachment
+	(*VideoAttachment)(nil),             // 19: peers_touch.model.social.v1.VideoAttachment
+	(*VideoVariant)(nil),                // 20: peers_touch.model.social.v1.VideoVariant
+	(*LinkPreview)(nil),                 // 21: peers_touch.model.social.v1.LinkPreview
+	(*Location)(nil),                    // 22: peers_touch.model.social.v1.Location
+	(*CreatePostRequest)(nil),           // 23: peers_touch.model.social.v1.CreatePostRequest
+	(*CreateTextPostRequest)(nil),       // 24: peers_touch.model.social.v1.CreateTextPostRequest
+	(*CreateImagePostRequest)(nil),      // 25: peers_touch.model.social.v1.CreateImagePostRequest
+	(*CreateVideoPostRequest)(nil),      // 26: peers_touch.model.social.v1.CreateVideoPostRequest
+	(*CreateLinkPostRequest)(nil),       // 27: peers_touch.model.social.v1.CreateLinkPostRequest
+	(*CreatePollPostRequest)(nil),       // 28: peers_touch.model.social.v1.CreatePollPostRequest
+	(*CreateRepostRequest)(nil),         // 29: peers_touch.model.social.v1.CreateRepostRequest
+	(*CreateLocationPostRequest)(nil),   // 30: peers_touch.model.social.v1.CreateLocationPostRequest
+	(*CreatePostResponse)(nil),          // 31: peers_touch.model.social.v1.CreatePostResponse
+	(*UpdatePostRequest)(nil),           // 32: peers_touch.model.social.v1.UpdatePostRequest
+	(*UpdatePostResponse)(nil),          // 33: peers_touch.model.social.v1.UpdatePostResponse
+	(*DeletePostRequest)(nil),           // 34: peers_touch.model.social.v1.DeletePostRequest
+	(*DeletePostResponse)(nil),          // 35: peers_touch.model.social.v1.DeletePostResponse
+	(*GetPostRequest)(nil),              // 36: peers_touch.model.social.v1.GetPostRequest
+	(*GetPostResponse)(nil),             // 37: peers_touch.model.social.v1.GetPostResponse
+	(*ListPostsRequest)(nil),            // 38: peers_touch.model.social.v1.ListPostsRequest
+	(*ListPostsResponse)(nil),           // 39: peers_touch.model.social.v1.ListPostsResponse
+	(*PostFilter)(nil),                  // 40: peers_touch.model.social.v1.PostFilter
+	(*GetTimelineRequest)(nil),          // 41: peers_touch.model.social.v1.GetTimelineRequest
+	(*GetTimelineResponse)(nil),         // 42: peers_touch.model.social.v1.GetTimelineResponse
+	(*RepostRequest)(nil),               // 43: peers_touch.model.social.v1.RepostRequest
+	(*RepostResponse)(nil),              // 44: peers_touch.model.social.v1.RepostResponse
+	(*Audience)(nil),                    // 45: peers_touch.model.social.v1.Audience
+	(*ReactionSummary)(nil),             // 46: peers_touch.model.social.v1.ReactionSummary
+	(*Mention)(nil),                     // 47: peers_touch.model.social.v1.Mention
+	(*ReactToPostRequest)(nil),          // 48: peers_touch.model.social.v1.ReactToPostRequest
+	(*ReactToPostResponse)(nil),         // 49: peers_touch.model.social.v1.ReactToPostResponse
+	(*UnreactToPostRequest)(nil),        // 50: peers_touch.model.social.v1.UnreactToPostRequest
+	(*UnreactToPostResponse)(nil),       // 51: peers_touch.model.social.v1.UnreactToPostResponse
+	(*ListReactionsRequest)(nil),        // 52: peers_touch.model.social.v1.ListReactionsRequest
+	(*ListReactionsResponse)(nil),       // 53: peers_touch.model.social.v1.ListReactionsResponse
+	(*ListReactionsResponse_Entry)(nil), // 54: peers_touch.model.social.v1.ListReactionsResponse.Entry
+	(*timestamppb.Timestamp)(nil),       // 55: google.protobuf.Timestamp
+	(*Poll)(nil),                        // 56: peers_touch.model.activity.v1.Poll
 }
 var file_domain_social_post_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.social.v1.Post.type:type_name -> peers_touch.model.social.v1.PostType
 	1,  // 1: peers_touch.model.social.v1.Post.visibility:type_name -> peers_touch.model.social.v1.PostVisibility
-	54, // 2: peers_touch.model.social.v1.Post.created_at:type_name -> google.protobuf.Timestamp
-	54, // 3: peers_touch.model.social.v1.Post.updated_at:type_name -> google.protobuf.Timestamp
-	7,  // 4: peers_touch.model.social.v1.Post.stats:type_name -> peers_touch.model.social.v1.PostStats
-	8,  // 5: peers_touch.model.social.v1.Post.author:type_name -> peers_touch.model.social.v1.PostAuthor
-	9,  // 6: peers_touch.model.social.v1.Post.interaction:type_name -> peers_touch.model.social.v1.PostInteraction
-	10, // 7: peers_touch.model.social.v1.Post.text_post:type_name -> peers_touch.model.social.v1.TextPost
-	11, // 8: peers_touch.model.social.v1.Post.image_post:type_name -> peers_touch.model.social.v1.ImagePost
-	12, // 9: peers_touch.model.social.v1.Post.video_post:type_name -> peers_touch.model.social.v1.VideoPost
-	13, // 10: peers_touch.model.social.v1.Post.link_post:type_name -> peers_touch.model.social.v1.LinkPost
-	14, // 11: peers_touch.model.social.v1.Post.poll_post:type_name -> peers_touch.model.social.v1.PollPost
-	15, // 12: peers_touch.model.social.v1.Post.repost_post:type_name -> peers_touch.model.social.v1.RepostPost
-	16, // 13: peers_touch.model.social.v1.Post.location_post:type_name -> peers_touch.model.social.v1.LocationPost
-	44, // 14: peers_touch.model.social.v1.Post.audience:type_name -> peers_touch.model.social.v1.Audience
-	45, // 15: peers_touch.model.social.v1.Post.reactions:type_name -> peers_touch.model.social.v1.ReactionSummary
-	46, // 16: peers_touch.model.social.v1.Post.typed_mentions:type_name -> peers_touch.model.social.v1.Mention
-	17, // 17: peers_touch.model.social.v1.ImagePost.images:type_name -> peers_touch.model.social.v1.ImageAttachment
-	18, // 18: peers_touch.model.social.v1.VideoPost.video:type_name -> peers_touch.model.social.v1.VideoAttachment
-	20, // 19: peers_touch.model.social.v1.LinkPost.link:type_name -> peers_touch.model.social.v1.LinkPreview
-	55, // 20: peers_touch.model.social.v1.PollPost.poll:type_name -> peers_touch.model.activity.v1.Poll
-	6,  // 21: peers_touch.model.social.v1.RepostPost.original_post:type_name -> peers_touch.model.social.v1.Post
-	21, // 22: peers_touch.model.social.v1.LocationPost.location:type_name -> peers_touch.model.social.v1.Location
-	17, // 23: peers_touch.model.social.v1.LocationPost.images:type_name -> peers_touch.model.social.v1.ImageAttachment
+	55, // 2: peers_touch.model.social.v1.Post.created_at:type_name -> google.protobuf.Timestamp
+	55, // 3: peers_touch.model.social.v1.Post.updated_at:type_name -> google.protobuf.Timestamp
+	8,  // 4: peers_touch.model.social.v1.Post.stats:type_name -> peers_touch.model.social.v1.PostStats
+	9,  // 5: peers_touch.model.social.v1.Post.author:type_name -> peers_touch.model.social.v1.PostAuthor
+	10, // 6: peers_touch.model.social.v1.Post.interaction:type_name -> peers_touch.model.social.v1.PostInteraction
+	11, // 7: peers_touch.model.social.v1.Post.text_post:type_name -> peers_touch.model.social.v1.TextPost
+	12, // 8: peers_touch.model.social.v1.Post.image_post:type_name -> peers_touch.model.social.v1.ImagePost
+	13, // 9: peers_touch.model.social.v1.Post.video_post:type_name -> peers_touch.model.social.v1.VideoPost
+	14, // 10: peers_touch.model.social.v1.Post.link_post:type_name -> peers_touch.model.social.v1.LinkPost
+	15, // 11: peers_touch.model.social.v1.Post.poll_post:type_name -> peers_touch.model.social.v1.PollPost
+	16, // 12: peers_touch.model.social.v1.Post.repost_post:type_name -> peers_touch.model.social.v1.RepostPost
+	17, // 13: peers_touch.model.social.v1.Post.location_post:type_name -> peers_touch.model.social.v1.LocationPost
+	45, // 14: peers_touch.model.social.v1.Post.audience:type_name -> peers_touch.model.social.v1.Audience
+	46, // 15: peers_touch.model.social.v1.Post.reactions:type_name -> peers_touch.model.social.v1.ReactionSummary
+	47, // 16: peers_touch.model.social.v1.Post.typed_mentions:type_name -> peers_touch.model.social.v1.Mention
+	18, // 17: peers_touch.model.social.v1.ImagePost.images:type_name -> peers_touch.model.social.v1.ImageAttachment
+	19, // 18: peers_touch.model.social.v1.VideoPost.video:type_name -> peers_touch.model.social.v1.VideoAttachment
+	21, // 19: peers_touch.model.social.v1.LinkPost.link:type_name -> peers_touch.model.social.v1.LinkPreview
+	56, // 20: peers_touch.model.social.v1.PollPost.poll:type_name -> peers_touch.model.activity.v1.Poll
+	7,  // 21: peers_touch.model.social.v1.RepostPost.original_post:type_name -> peers_touch.model.social.v1.Post
+	22, // 22: peers_touch.model.social.v1.LocationPost.location:type_name -> peers_touch.model.social.v1.Location
+	18, // 23: peers_touch.model.social.v1.LocationPost.images:type_name -> peers_touch.model.social.v1.ImageAttachment
 	2,  // 24: peers_touch.model.social.v1.VideoAttachment.quality:type_name -> peers_touch.model.social.v1.VideoQuality
-	19, // 25: peers_touch.model.social.v1.VideoAttachment.variants:type_name -> peers_touch.model.social.v1.VideoVariant
+	20, // 25: peers_touch.model.social.v1.VideoAttachment.variants:type_name -> peers_touch.model.social.v1.VideoVariant
 	0,  // 26: peers_touch.model.social.v1.CreatePostRequest.type:type_name -> peers_touch.model.social.v1.PostType
 	1,  // 27: peers_touch.model.social.v1.CreatePostRequest.visibility:type_name -> peers_touch.model.social.v1.PostVisibility
-	44, // 28: peers_touch.model.social.v1.CreatePostRequest.audience:type_name -> peers_touch.model.social.v1.Audience
-	23, // 29: peers_touch.model.social.v1.CreatePostRequest.text:type_name -> peers_touch.model.social.v1.CreateTextPostRequest
-	24, // 30: peers_touch.model.social.v1.CreatePostRequest.image:type_name -> peers_touch.model.social.v1.CreateImagePostRequest
-	25, // 31: peers_touch.model.social.v1.CreatePostRequest.video:type_name -> peers_touch.model.social.v1.CreateVideoPostRequest
-	26, // 32: peers_touch.model.social.v1.CreatePostRequest.link:type_name -> peers_touch.model.social.v1.CreateLinkPostRequest
-	27, // 33: peers_touch.model.social.v1.CreatePostRequest.poll:type_name -> peers_touch.model.social.v1.CreatePollPostRequest
-	28, // 34: peers_touch.model.social.v1.CreatePostRequest.repost:type_name -> peers_touch.model.social.v1.CreateRepostRequest
-	29, // 35: peers_touch.model.social.v1.CreatePostRequest.location:type_name -> peers_touch.model.social.v1.CreateLocationPostRequest
-	21, // 36: peers_touch.model.social.v1.CreateLocationPostRequest.location:type_name -> peers_touch.model.social.v1.Location
-	6,  // 37: peers_touch.model.social.v1.CreatePostResponse.post:type_name -> peers_touch.model.social.v1.Post
+	45, // 28: peers_touch.model.social.v1.CreatePostRequest.audience:type_name -> peers_touch.model.social.v1.Audience
+	24, // 29: peers_touch.model.social.v1.CreatePostRequest.text:type_name -> peers_touch.model.social.v1.CreateTextPostRequest
+	25, // 30: peers_touch.model.social.v1.CreatePostRequest.image:type_name -> peers_touch.model.social.v1.CreateImagePostRequest
+	26, // 31: peers_touch.model.social.v1.CreatePostRequest.video:type_name -> peers_touch.model.social.v1.CreateVideoPostRequest
+	27, // 32: peers_touch.model.social.v1.CreatePostRequest.link:type_name -> peers_touch.model.social.v1.CreateLinkPostRequest
+	28, // 33: peers_touch.model.social.v1.CreatePostRequest.poll:type_name -> peers_touch.model.social.v1.CreatePollPostRequest
+	29, // 34: peers_touch.model.social.v1.CreatePostRequest.repost:type_name -> peers_touch.model.social.v1.CreateRepostRequest
+	30, // 35: peers_touch.model.social.v1.CreatePostRequest.location:type_name -> peers_touch.model.social.v1.CreateLocationPostRequest
+	22, // 36: peers_touch.model.social.v1.CreateLocationPostRequest.location:type_name -> peers_touch.model.social.v1.Location
+	7,  // 37: peers_touch.model.social.v1.CreatePostResponse.post:type_name -> peers_touch.model.social.v1.Post
 	1,  // 38: peers_touch.model.social.v1.UpdatePostRequest.visibility:type_name -> peers_touch.model.social.v1.PostVisibility
-	6,  // 39: peers_touch.model.social.v1.UpdatePostResponse.post:type_name -> peers_touch.model.social.v1.Post
-	6,  // 40: peers_touch.model.social.v1.GetPostResponse.post:type_name -> peers_touch.model.social.v1.Post
-	39, // 41: peers_touch.model.social.v1.ListPostsRequest.filter:type_name -> peers_touch.model.social.v1.PostFilter
-	6,  // 42: peers_touch.model.social.v1.ListPostsResponse.posts:type_name -> peers_touch.model.social.v1.Post
+	7,  // 39: peers_touch.model.social.v1.UpdatePostResponse.post:type_name -> peers_touch.model.social.v1.Post
+	7,  // 40: peers_touch.model.social.v1.GetPostResponse.post:type_name -> peers_touch.model.social.v1.Post
+	40, // 41: peers_touch.model.social.v1.ListPostsRequest.filter:type_name -> peers_touch.model.social.v1.PostFilter
+	7,  // 42: peers_touch.model.social.v1.ListPostsResponse.posts:type_name -> peers_touch.model.social.v1.Post
 	1,  // 43: peers_touch.model.social.v1.PostFilter.visibility:type_name -> peers_touch.model.social.v1.PostVisibility
 	3,  // 44: peers_touch.model.social.v1.GetTimelineRequest.type:type_name -> peers_touch.model.social.v1.TimelineType
-	6,  // 45: peers_touch.model.social.v1.GetTimelineResponse.posts:type_name -> peers_touch.model.social.v1.Post
-	6,  // 46: peers_touch.model.social.v1.RepostResponse.repost:type_name -> peers_touch.model.social.v1.Post
-	5,  // 47: peers_touch.model.social.v1.Audience.kind:type_name -> peers_touch.model.social.v1.Audience.Kind
-	5,  // 48: peers_touch.model.social.v1.Audience.base_kind:type_name -> peers_touch.model.social.v1.Audience.Kind
-	4,  // 49: peers_touch.model.social.v1.ReactionSummary.kind:type_name -> peers_touch.model.social.v1.ReactionKind
-	4,  // 50: peers_touch.model.social.v1.ReactToPostRequest.kind:type_name -> peers_touch.model.social.v1.ReactionKind
-	45, // 51: peers_touch.model.social.v1.ReactToPostResponse.reactions:type_name -> peers_touch.model.social.v1.ReactionSummary
-	4,  // 52: peers_touch.model.social.v1.UnreactToPostRequest.kind:type_name -> peers_touch.model.social.v1.ReactionKind
-	45, // 53: peers_touch.model.social.v1.UnreactToPostResponse.reactions:type_name -> peers_touch.model.social.v1.ReactionSummary
-	4,  // 54: peers_touch.model.social.v1.ListReactionsRequest.kind:type_name -> peers_touch.model.social.v1.ReactionKind
-	53, // 55: peers_touch.model.social.v1.ListReactionsResponse.entries:type_name -> peers_touch.model.social.v1.ListReactionsResponse.Entry
-	8,  // 56: peers_touch.model.social.v1.ListReactionsResponse.Entry.reactor:type_name -> peers_touch.model.social.v1.PostAuthor
-	4,  // 57: peers_touch.model.social.v1.ListReactionsResponse.Entry.kind:type_name -> peers_touch.model.social.v1.ReactionKind
-	54, // 58: peers_touch.model.social.v1.ListReactionsResponse.Entry.reacted_at:type_name -> google.protobuf.Timestamp
-	59, // [59:59] is the sub-list for method output_type
-	59, // [59:59] is the sub-list for method input_type
-	59, // [59:59] is the sub-list for extension type_name
-	59, // [59:59] is the sub-list for extension extendee
-	0,  // [0:59] is the sub-list for field type_name
+	4,  // 45: peers_touch.model.social.v1.GetTimelineRequest.sort:type_name -> peers_touch.model.social.v1.TimelineSort
+	7,  // 46: peers_touch.model.social.v1.GetTimelineResponse.posts:type_name -> peers_touch.model.social.v1.Post
+	7,  // 47: peers_touch.model.social.v1.RepostResponse.repost:type_name -> peers_touch.model.social.v1.Post
+	6,  // 48: peers_touch.model.social.v1.Audience.kind:type_name -> peers_touch.model.social.v1.Audience.Kind
+	6,  // 49: peers_touch.model.social.v1.Audience.base_kind:type_name -> peers_touch.model.social.v1.Audience.Kind
+	5,  // 50: peers_touch.model.social.v1.ReactionSummary.kind:type_name -> peers_touch.model.social.v1.ReactionKind
+	5,  // 51: peers_touch.model.social.v1.ReactToPostRequest.kind:type_name -> peers_touch.model.social.v1.ReactionKind
+	46, // 52: peers_touch.model.social.v1.ReactToPostResponse.reactions:type_name -> peers_touch.model.social.v1.ReactionSummary
+	5,  // 53: peers_touch.model.social.v1.UnreactToPostRequest.kind:type_name -> peers_touch.model.social.v1.ReactionKind
+	46, // 54: peers_touch.model.social.v1.UnreactToPostResponse.reactions:type_name -> peers_touch.model.social.v1.ReactionSummary
+	5,  // 55: peers_touch.model.social.v1.ListReactionsRequest.kind:type_name -> peers_touch.model.social.v1.ReactionKind
+	54, // 56: peers_touch.model.social.v1.ListReactionsResponse.entries:type_name -> peers_touch.model.social.v1.ListReactionsResponse.Entry
+	9,  // 57: peers_touch.model.social.v1.ListReactionsResponse.Entry.reactor:type_name -> peers_touch.model.social.v1.PostAuthor
+	5,  // 58: peers_touch.model.social.v1.ListReactionsResponse.Entry.kind:type_name -> peers_touch.model.social.v1.ReactionKind
+	55, // 59: peers_touch.model.social.v1.ListReactionsResponse.Entry.reacted_at:type_name -> google.protobuf.Timestamp
+	60, // [60:60] is the sub-list for method output_type
+	60, // [60:60] is the sub-list for method input_type
+	60, // [60:60] is the sub-list for extension type_name
+	60, // [60:60] is the sub-list for extension extendee
+	0,  // [0:60] is the sub-list for field type_name
 }
 
 func init() { file_domain_social_post_proto_init() }
@@ -4213,7 +4280,7 @@ func file_domain_social_post_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_social_post_proto_rawDesc), len(file_domain_social_post_proto_rawDesc)),
-			NumEnums:      6,
+			NumEnums:      7,
 			NumMessages:   48,
 			NumExtensions: 0,
 			NumServices:   0,
