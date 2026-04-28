@@ -161,14 +161,15 @@ fn migrate(conn: &Connection) -> Result<(), String> {
             private_key BLOB NOT NULL,
             consumed INTEGER NOT NULL DEFAULT 0
         );
-        CREATE TABLE IF NOT EXISTS crypto_group_keys (
-            group_id TEXT NOT NULL PRIMARY KEY,
-            key_data BLOB NOT NULL,
-            epoch INTEGER NOT NULL DEFAULT 1,
-            counter INTEGER NOT NULL DEFAULT 0,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        );",
+        -- The crypto_group_keys table is intentionally NOT created. The
+        -- previous design (one shared symmetric key per group, generated
+        -- per-device with no distribution) was removed alongside the
+        -- crypto_group_encrypt/decrypt/rotate Tauri commands -- see
+        -- peers-touch/docs/architecture/encryption/group-sender-keys.md
+        -- for the replacement design. Existing tables on already-migrated
+        -- devices are left in place for a future migration to drop them
+        -- explicitly; they are inert because no code path reads or writes
+        -- them anymore.",
     )
     .map_err(|e| e.to_string())
 }
@@ -622,66 +623,11 @@ pub fn rotate_chat_key(user_scope: &str, next_version: i32) -> Result<i32, Strin
     result
 }
 
-/// Persist the local group symmetric key (32-byte blob) and ratchet counters for AES-GCM.
-pub fn save_group_key(
-    user_scope: &str,
-    group_id: &str,
-    key: &[u8; 32],
-    epoch: u32,
-    counter: u32,
-) -> Result<(), String> {
-    let conn = open_connection(user_scope)?;
-    let conn = conn.lock();
-    let now = chrono_now();
-    let created_at: i64 = conn
-        .query_row(
-            "SELECT created_at FROM crypto_group_keys WHERE group_id = ?1",
-            params![group_id],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|e| e.to_string())?
-        .unwrap_or(now);
-    conn.execute(
-        "INSERT INTO crypto_group_keys(group_id, key_data, epoch, counter, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-         ON CONFLICT(group_id) DO UPDATE SET
-           key_data=excluded.key_data,
-           epoch=excluded.epoch,
-           counter=excluded.counter,
-           updated_at=excluded.updated_at",
-        params![
-            group_id,
-            key.as_slice(),
-            epoch as i64,
-            counter as i64,
-            created_at,
-            now,
-        ],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-/// Load group key material and counters, if present.
-pub fn load_group_key(
-    user_scope: &str,
-    group_id: &str,
-) -> Result<Option<(Vec<u8>, u32, u32)>, String> {
-    let conn = open_connection(user_scope)?;
-    let conn = conn.lock();
-    let row = conn
-        .query_row(
-            "SELECT key_data, epoch, counter FROM crypto_group_keys WHERE group_id = ?1",
-            params![group_id],
-            |row| {
-                let key_data: Vec<u8> = row.get(0)?;
-                let epoch: i64 = row.get(1)?;
-                let counter: i64 = row.get(2)?;
-                Ok((key_data, epoch as u32, counter as u32))
-            },
-        )
-        .optional()
-        .map_err(|e| e.to_string())?;
-    Ok(row)
-}
+// save_group_key / load_group_key removed alongside the dead
+// crypto_group_encrypt/decrypt/rotate Tauri commands. The shared-key
+// approach they backed had no distribution mechanism and was
+// architecturally broken; the replacement is the Sender Keys protocol
+// designed in
+// peers-touch/docs/architecture/encryption/group-sender-keys.md, which
+// will introduce its own per-(group, sender) state tables when it
+// lands.

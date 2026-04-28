@@ -3345,24 +3345,13 @@ export const api = {
       ...(ephemeralKey != null && ephemeralKey !== '' ? { ephemeral_key: ephemeralKey } : {}),
     }),
 
-  cryptoGroupEncrypt: (groupId: string, plaintext: string) =>
-    invokeAppResultStub<{ ciphertext: string; epoch: number; counter: number }>('crypto_group_encrypt', {
-      group_id: groupId,
-      plaintext,
-    }),
-
-  cryptoGroupDecrypt: (groupId: string, ciphertext: string, epoch: number, counter: number) =>
-    invokeAppResultStub<{ plaintext: string }>('crypto_group_decrypt', {
-      group_id: groupId,
-      ciphertext,
-      epoch,
-      counter,
-    }),
-
-  cryptoGroupRotateKey: (groupId: string) =>
-    invokeAppResultStub<{ epoch: number }>('crypto_group_rotate_key', {
-      group_id: groupId,
-    }),
+  // cryptoGroupEncrypt / cryptoGroupDecrypt / cryptoGroupRotateKey
+  // were removed alongside the dead Rust commands they bound to. They
+  // had no callers anywhere in the frontend, and the Rust side was
+  // never registered in tauri::generate_handler! so calling them would
+  // have failed at runtime regardless. The replacement Sender Keys API
+  // will land per the design doc at
+  // peers-touch/docs/architecture/encryption/group-sender-keys.md.
 
   keyExchangeUploadBundle: (bundle: CryptoKeyBundlePayload) =>
     invokeRustDataFromStatus<CryptoKeyBundlePayload, Record<string, unknown>>(
