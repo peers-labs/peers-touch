@@ -759,12 +759,21 @@ func (x *GroupMessage) GetEditedAt() *timestamppb.Timestamp {
 }
 
 type GroupMessageAttachment struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Cid           string                 `protobuf:"bytes,1,opt,name=cid,proto3" json:"cid,omitempty"`
-	Filename      string                 `protobuf:"bytes,2,opt,name=filename,proto3" json:"filename,omitempty"`
-	MimeType      string                 `protobuf:"bytes,3,opt,name=mime_type,json=mimeType,proto3" json:"mime_type,omitempty"`
-	Size          int64                  `protobuf:"varint,4,opt,name=size,proto3" json:"size,omitempty"`
-	ThumbnailCid  string                 `protobuf:"bytes,5,opt,name=thumbnail_cid,json=thumbnailCid,proto3" json:"thumbnail_cid,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Cid          string                 `protobuf:"bytes,1,opt,name=cid,proto3" json:"cid,omitempty"`
+	Filename     string                 `protobuf:"bytes,2,opt,name=filename,proto3" json:"filename,omitempty"`
+	MimeType     string                 `protobuf:"bytes,3,opt,name=mime_type,json=mimeType,proto3" json:"mime_type,omitempty"`
+	Size         int64                  `protobuf:"varint,4,opt,name=size,proto3" json:"size,omitempty"`
+	ThumbnailCid string                 `protobuf:"bytes,5,opt,name=thumbnail_cid,json=thumbnailCid,proto3" json:"thumbnail_cid,omitempty"`
+	// visibility echoes the OSS subserver's `oss_files.visibility`
+	// for this attachment ("public" / "chat" / "private"). The
+	// sender is authoritative — the receiver UI surfaces it as a
+	// badge so the user can tell at a glance whether the file
+	// they are looking at is reach-restricted to this group or
+	// has been published to a wider audience. Empty string is
+	// treated as "unknown" by older clients and rendered without
+	// a badge; new servers SHOULD always populate it.
+	Visibility    string `protobuf:"bytes,6,opt,name=visibility,proto3" json:"visibility,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -830,6 +839,13 @@ func (x *GroupMessageAttachment) GetSize() int64 {
 func (x *GroupMessageAttachment) GetThumbnailCid() string {
 	if x != nil {
 		return x.ThumbnailCid
+	}
+	return ""
+}
+
+func (x *GroupMessageAttachment) GetVisibility() string {
+	if x != nil {
+		return x.Visibility
 	}
 	return ""
 }
@@ -3652,13 +3668,16 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x1a\n" +
 	"\brecalled\x18\r \x01(\bR\brecalled\x12+\n" +
 	"\x11encrypted_payload\x18\x0e \x01(\fR\x10encryptedPayload\x127\n" +
-	"\tedited_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\beditedAt\"\x9c\x01\n" +
+	"\tedited_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\beditedAt\"\xbc\x01\n" +
 	"\x16GroupMessageAttachment\x12\x10\n" +
 	"\x03cid\x18\x01 \x01(\tR\x03cid\x12\x1a\n" +
 	"\bfilename\x18\x02 \x01(\tR\bfilename\x12\x1b\n" +
 	"\tmime_type\x18\x03 \x01(\tR\bmimeType\x12\x12\n" +
 	"\x04size\x18\x04 \x01(\x03R\x04size\x12#\n" +
-	"\rthumbnail_cid\x18\x05 \x01(\tR\fthumbnailCid\"\xc4\x02\n" +
+	"\rthumbnail_cid\x18\x05 \x01(\tR\fthumbnailCid\x12\x1e\n" +
+	"\n" +
+	"visibility\x18\x06 \x01(\tR\n" +
+	"visibility\"\xc4\x02\n" +
 	"\x0fGroupInvitation\x12\x12\n" +
 	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12\x1d\n" +
 	"\n" +
