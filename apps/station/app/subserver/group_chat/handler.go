@@ -145,26 +145,59 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendGroupMe
 	if req.GroupUlid == "" {
 		return nil, server.BadRequest("group_ulid is required")
 	}
-	if req.Content == "" && len(req.Attachments) == 0 && len(req.GetEncryptedPayload()) == 0 {
-		return nil, server.BadRequest("content, attachments, or encrypted_payload are required")
+	// Group chat is end-to-end encrypted via Sender Keys (see
+	// peers-touch/docs/architecture/encryption/group-sender-keys.md).
+	// Station MUST NOT see plaintext bodies. Two invariants:
+	//   1. encrypted_payload is required for any new message that
+	//      carries a body (i.e. anything that isn't a pure
+	//      attachment-only post or a recall).
+	//   2. content MUST be empty -- a populated content field would
+	//      either be (a) a pre-G5 desktop build that doesn't know
+	//      about Sender Keys, or (b) a malicious client trying to
+	//      smuggle plaintext alongside ciphertext. Either way we
+	//      reject the send rather than silently log plaintext to
+	//      our DB.
+	// Attachment-only sends are still accepted with empty
+	// encrypted_payload because the attachment metadata (CID,
+	// filename, etc.) is intentionally cleartext for the OSS
+	// pipeline -- attachment ENCRYPTION is tracked in
+	// oss-encryption.md, not here.
+	if req.Content != "" {
+		return nil, server.BadRequest(
+			"content is not accepted for group sends; the body must live in encrypted_payload")
+	}
+	if len(req.Attachments) == 0 && len(req.GetEncryptedPayload()) == 0 {
+		return nil, server.BadRequest(
+			"encrypted_payload (or attachments) is required")
 	}
 	msgType := int32(req.Type)
 	if msgType == 0 {
 		msgType = 1
 	}
 	atts := groupAttachmentsFromProto(req.Attachments)
-	item := s.appService.SendMessage(req.GroupUlid, subject.ID, msgType, req.Content, req.ReplyToUlid, atts, req.GetEncryptedPayload())
+	// Always pass an empty plaintext content downstream. The body
+	// reaches recipients via `encrypted_payload`; the persisted row's
+	// `content` column stays empty (and would be rejected if a future
+	// migration removed the column entirely, per the proto's
+	// `[deprecated = true]` annotation).
+	item := s.appService.SendMessage(req.GroupUlid, subject.ID, msgType, "", req.ReplyToUlid, atts, req.GetEncryptedPayload())
 	var respEnc []byte
 	if len(item.EncryptedPayload) > 0 {
 		respEnc = append([]byte(nil), item.EncryptedPayload...)
 	}
 	return &chat.SendGroupMessageResponse{
 		Message: &chat.GroupMessage{
-			Ulid:             item.ID,
-			GroupUlid:        item.GroupID,
-			SenderDid:        item.SenderDID,
-			Type:             chat.GroupMessageType(item.Type),
-			Content:          item.Content,
+			Ulid:      item.ID,
+			GroupUlid: item.GroupID,
+			SenderDid: item.SenderDID,
+			Type:      chat.GroupMessageType(item.Type),
+			// Content is intentionally omitted. New senders never set
+			// it; legacy rows that historically carried plaintext are
+			// not re-emitted from this handler -- the receiver sees an
+			// empty body and the renderer falls back to its
+			// "[Decrypt failed]" / "[Waiting for sender key…]" path,
+			// which is strictly better UX than serving stale plaintext
+			// from before the E2EE migration.
 			ReplyToUlid:      item.ReplyToID,
 			MentionedDids:    req.MentionedDids,
 			MentionAll:       req.MentionAll,
@@ -206,11 +239,14 @@ func (s *subServer) handleGetMessages(ctx context.Context, req *chat.GetGroupMes
 			listEnc = append([]byte(nil), item.EncryptedPayload...)
 		}
 		out = append(out, &chat.GroupMessage{
-			Ulid:             item.ID,
-			GroupUlid:        item.GroupID,
-			SenderDid:        item.SenderDID,
-			Type:             chat.GroupMessageType(item.Type),
-			Content:          item.Content,
+			Ulid:      item.ID,
+			GroupUlid: item.GroupID,
+			SenderDid: item.SenderDID,
+			Type:      chat.GroupMessageType(item.Type),
+			// Content omitted -- see handleSendMessage response
+			// for rationale. Persisted plaintext (legacy rows) is
+			// not re-emitted; the body MUST come from
+			// EncryptedPayload via the Sender Keys decrypt path.
 			ReplyToUlid:      item.ReplyToID,
 			Attachments:      groupAttachmentsToProto(item.Attachments),
 			EncryptedPayload: listEnc,
@@ -690,12 +726,14 @@ func toProtoMessage(item *message) *chat.GroupMessage {
 	if len(item.EncryptedPayload) > 0 {
 		enc = append([]byte(nil), item.EncryptedPayload...)
 	}
+	// Content intentionally omitted from the wire form for the
+	// Sender Keys migration -- see handleSendMessage's response
+	// builder for the rationale. Body lives in EncryptedPayload.
 	out := &chat.GroupMessage{
 		Ulid:             item.ID,
 		GroupUlid:        item.GroupID,
 		SenderDid:        item.SenderDID,
 		Type:             chat.GroupMessageType(item.Type),
-		Content:          item.Content,
 		ReplyToUlid:      item.ReplyToID,
 		EncryptedPayload: enc,
 		SentAt:           timestamppb.New(item.SentAt),
@@ -717,12 +755,12 @@ func toProtoMessageFromDomain(item *group_chat_domain.Message) *chat.GroupMessag
 	if len(item.EncryptedPayload) > 0 {
 		enc = append([]byte(nil), item.EncryptedPayload...)
 	}
+	// Content intentionally omitted -- see toProtoMessage above.
 	out := &chat.GroupMessage{
 		Ulid:             item.ID,
 		GroupUlid:        item.GroupID,
 		SenderDid:        item.SenderDID,
 		Type:             chat.GroupMessageType(item.Type),
-		Content:          item.Content,
 		ReplyToUlid:      item.ReplyToID,
 		Attachments:      groupAttachmentsToProto(item.Attachments),
 		EncryptedPayload: enc,
