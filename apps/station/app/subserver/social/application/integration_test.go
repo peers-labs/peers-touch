@@ -624,3 +624,160 @@ func TestCircle_AddRemoveMembersUpdatesDenormalCount(t *testing.T) {
 		t.Fatalf("circle row member_count = %d, want 3", dbCount)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Visibility gates (P1 closure)
+//
+// These tests pin the contract the handler layer relies on: any
+// endpoint that mutates a post-bound resource (react, list comments,
+// repost) must FIRST gate on visibility via MomentService.GetMoment.
+// The handler implementation is a 1-line delegation; the real
+// invariant is "GetMoment returns nil for an unauthorised viewer",
+// which we lock in here once for both wires.
+// ---------------------------------------------------------------------------
+
+func TestVisibilityGate_GetMomentIsNilForUnauthorisedViewer(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	const author = uint64(100)
+	const stranger = uint64(200)
+
+	// SELF — only the author can read.
+	selfPost, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_SELF},
+		Content:  textBody("dear diary"),
+	}, author)
+	if err != nil {
+		t.Fatalf("create SELF: %v", err)
+	}
+
+	if got, _ := f.moments.GetMoment(ctx, selfPost.Id, stranger); got != nil {
+		t.Fatalf("SELF post must be nil for stranger; got %+v", got)
+	}
+	if got, _ := f.moments.GetMoment(ctx, selfPost.Id, author); got == nil {
+		t.Fatal("SELF post must be visible to author")
+	}
+
+	// FOLLOWERS — only followers can read.
+	followersPost, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
+		Content:  textBody("for the inner circle"),
+	}, author)
+	if err != nil {
+		t.Fatalf("create FOLLOWERS: %v", err)
+	}
+
+	if got, _ := f.moments.GetMoment(ctx, followersPost.Id, stranger); got != nil {
+		t.Fatalf("FOLLOWERS post must be nil for non-follower; got %+v", got)
+	}
+
+	// Become a follower; now visible.
+	seedFollow(t, f, /*follower*/ stranger, /*following*/ author)
+	if got, _ := f.moments.GetMoment(ctx, followersPost.Id, stranger); got == nil {
+		t.Fatal("FOLLOWERS post must be visible after follow")
+	}
+}
+
+// TestImagePost_AttachmentsCarryCID asserts the read path returns
+// `ImageAttachment.Url == Id == cid` so a desktop client can render the
+// image with a single field lookup. Pre-P1-closure the converter only
+// populated `Id` and clients had to know "Id is also the URL" — that
+// implicit contract is now explicit.
+func TestImagePost_AttachmentsCarryCID(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	const author = uint64(100)
+	cids := []string{
+		"oss://station.local/2026/04/28/img-aaa.png",
+		"oss://station.local/2026/04/28/img-bbb.jpg",
+	}
+
+	post, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_IMAGE,
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		Content: &model.CreatePostRequest_Image{
+			Image: &model.CreateImagePostRequest{
+				Text:     "two photos",
+				ImageIds: cids,
+			},
+		},
+	}, author)
+	if err != nil {
+		t.Fatalf("create IMAGE: %v", err)
+	}
+
+	got := post.GetImagePost()
+	if got == nil {
+		t.Fatalf("expected ImagePost content, got %T", post.Content)
+	}
+	if len(got.Images) != len(cids) {
+		t.Fatalf("expected %d images, got %d", len(cids), len(got.Images))
+	}
+	for i, img := range got.Images {
+		if img.Id != cids[i] {
+			t.Fatalf("image[%d].Id = %q, want %q", i, img.Id, cids[i])
+		}
+		if img.Url != cids[i] {
+			t.Fatalf("image[%d].Url = %q, want %q (cid mirrored to Url)", i, img.Url, cids[i])
+		}
+	}
+}
+
+func TestVisibilityGate_RepostRejectsUnreadableSource(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	const author = uint64(100)
+	const reposter = uint64(200)
+
+	// Author writes a SELF-only post.
+	private, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_SELF},
+		Content:  textBody("private musing"),
+	}, author)
+	if err != nil {
+		t.Fatalf("create SELF: %v", err)
+	}
+
+	// Reposter tries to wrap it in a public REPOST envelope. Without
+	// the gate, this would succeed and turn "I know id X exists in
+	// author's private inventory" into a publicly-attributable post.
+	_, err = f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_REPOST,
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		Content: &model.CreatePostRequest_Repost{
+			Repost: &model.CreateRepostRequest{
+				OriginalPostId: private.Id,
+				Comment:        "look at this",
+			},
+		},
+	}, reposter)
+	if err == nil {
+		t.Fatal("repost of unreadable source must be rejected")
+	}
+
+	// And the reposter's own public post can be reposted by themselves
+	// (sanity: gate doesn't false-positive on legitimate flows).
+	pub, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		Content:  textBody("public statement"),
+	}, reposter)
+	if err != nil {
+		t.Fatalf("create PUBLIC: %v", err)
+	}
+	if _, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_REPOST,
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		Content: &model.CreatePostRequest_Repost{
+			Repost: &model.CreateRepostRequest{OriginalPostId: pub.Id, Comment: "self-quote"},
+		},
+	}, reposter); err != nil {
+		t.Fatalf("legitimate repost must succeed: %v", err)
+	}
+}

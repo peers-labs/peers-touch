@@ -394,7 +394,7 @@ func (c *PostConverter) decodeContent(out *model.Post, p *Post) error {
 			var ids []string
 			if err := json.Unmarshal([]byte(p.AttachmentsJSON), &ids); err == nil {
 				for _, id := range ids {
-					body.Images = append(body.Images, &model.ImageAttachment{Id: id})
+					body.Images = append(body.Images, newImageAttachment(id))
 				}
 			} else {
 				return fmt.Errorf("decode image attachments: %w", err)
@@ -410,7 +410,7 @@ func (c *PostConverter) decodeContent(out *model.Post, p *Post) error {
 				return fmt.Errorf("decode video attachments: %w", err)
 			}
 			if id := v["video_id"]; id != "" {
-				body.Video = &model.VideoAttachment{Id: id}
+				body.Video = newVideoAttachment(id)
 			}
 		}
 		out.Content = &model.Post_VideoPost{VideoPost: body}
@@ -454,7 +454,7 @@ func (c *PostConverter) decodeContent(out *model.Post, p *Post) error {
 			}
 			body.Location = payload.Location
 			for _, id := range payload.ImageIDs {
-				body.Images = append(body.Images, &model.ImageAttachment{Id: id})
+				body.Images = append(body.Images, newImageAttachment(id))
 			}
 		}
 		out.Content = &model.Post_LocationPost{LocationPost: body}
@@ -469,6 +469,37 @@ func (c *PostConverter) decodeContent(out *model.Post, p *Post) error {
 		}
 	}
 	return nil
+}
+
+// newImageAttachment / newVideoAttachment construct the wire form for a
+// single attachment from the OSS-bound id stored in `attachments_json`.
+//
+// The id stored in the DB is itself a self-describing OSS Content
+// Identifier (`oss://{origin}/{key}` — see
+// `docs/architecture/oss/file-storage.md`). The CID is therefore both
+// the canonical handle AND a directly-fetchable URL (the OSS subserver
+// resolves `cid → bytes` via `/api/v1/oss/file?cid=...`). We mirror it
+// into the `Url` field so clients only need to look at one field; the
+// `Id` field stays for legacy clients and audit/dedup paths that key on
+// "the bytes" rather than "where to fetch them".
+//
+// `ThumbnailUrl` is left empty in P1 — the OSS image-pipeline that
+// generates thumbnails is a P3 deliverable. Clients that want a small
+// preview should request the original CID with a server-side resize
+// query parameter (also P3); for now they render the full image and
+// rely on the browser/Tauri image cache.
+func newImageAttachment(cid string) *model.ImageAttachment {
+	return &model.ImageAttachment{
+		Id:  cid,
+		Url: cid,
+	}
+}
+
+func newVideoAttachment(cid string) *model.VideoAttachment {
+	return &model.VideoAttachment{
+		Id:  cid,
+		Url: cid,
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -6,7 +6,6 @@ import (
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
-	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
@@ -83,16 +82,7 @@ func (s *TimelineService) getPublicTimeline(ctx context.Context, cursor string, 
 	if hasMore {
 		rows = rows[:limit]
 	}
-	posts := make([]*model.Post, 0, len(rows))
-	for _, p := range rows {
-		hydrated, err := s.moments.hydratePost(ctx, p, viewerID)
-		if err != nil {
-			logger.Warn(ctx, "public timeline: hydration partial", "post_id", p.ID, "error", err)
-		}
-		if hydrated != nil {
-			posts = append(posts, hydrated)
-		}
-	}
+	posts := s.moments.hydratePosts(ctx, rows, viewerID)
 	var nextCursor string
 	if hasMore && len(rows) > 0 {
 		last := rows[len(rows)-1]
@@ -185,21 +175,16 @@ func (s *TimelineService) getHomeTimeline(ctx context.Context, cursor string, li
 		merged = merged[:limit]
 	}
 
-	posts := make([]*model.Post, 0, len(merged))
 	srcLastSeen := make(map[string]*domain.Post)
+	readable := make([]*domain.Post, 0, len(merged))
 	for _, p := range merged {
 		if ok, _ := domain.CanRead(viewer, p.AuthorID, p.Audience, p.IsDeleted()); !ok {
 			continue
 		}
-		hydrated, err := s.moments.hydratePost(ctx, p, viewerID)
-		if err != nil {
-			logger.Warn(ctx, "home timeline: hydration partial", "post_id", p.ID, "error", err)
-		}
-		if hydrated != nil {
-			posts = append(posts, hydrated)
-		}
+		readable = append(readable, p)
 		srcLastSeen[srcOf[p]] = p
 	}
+	posts := s.moments.hydratePosts(ctx, readable, viewerID)
 
 	if !hasMore {
 		return &model.GetTimelineResponse{Posts: posts}, nil
