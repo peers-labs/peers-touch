@@ -114,6 +114,18 @@ type FileRepository interface {
 	// Soft-deleted rows are excluded — there is nothing to expire
 	// when the file is already in the tombstone state.
 	ListExpired(ctx context.Context, now time.Time, limit int) ([]ossmodel.FileMeta, error)
+
+	// SumByBucket returns `(SUM(size), COUNT(*))` over live rows
+	// in the bucket, used by the BucketReconciler worker to
+	// compare against `oss_buckets.used_bytes / object_count`
+	// and correct accumulated drift. Soft-deleted rows are
+	// excluded — they are not counted in `used_bytes` either.
+	//
+	// The query is intentionally scoped to a single bucket
+	// (rather than returning the full join in one shot) so the
+	// worker can drain large deployments incrementally without
+	// holding a multi-table snapshot in memory.
+	SumByBucket(ctx context.Context, bucketID string) (sumBytes int64, count int64, err error)
 }
 
 // ListByOwnerFilter captures the user-facing search predicates the
@@ -398,6 +410,31 @@ func (r *fileRepo) ListByOwner(ctx context.Context, owner string, filter ListByO
 		return nil, 0, err
 	}
 	return rows, total, nil
+}
+
+func (r *fileRepo) SumByBucket(ctx context.Context, bucketID string) (int64, int64, error) {
+	if bucketID == "" {
+		return 0, 0, errors.New("oss: file sum-by-bucket: bucketID required")
+	}
+	db, err := r.getDB(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	// COALESCE so an empty bucket returns 0 rather than a
+	// scan error — gorm will surface the NULL otherwise.
+	type aggRow struct {
+		SumBytes int64 `gorm:"column:sum_bytes"`
+		Count    int64 `gorm:"column:row_count"`
+	}
+	var agg aggRow
+	err = db.Model(&ossmodel.FileMeta{}).
+		Select("COALESCE(SUM(size), 0) AS sum_bytes, COUNT(*) AS row_count").
+		Where("bucket_id = ? AND deleted_at IS NULL", bucketID).
+		Scan(&agg).Error
+	if err != nil {
+		return 0, 0, err
+	}
+	return agg.SumBytes, agg.Count, nil
 }
 
 func (r *fileRepo) ListExpired(ctx context.Context, now time.Time, limit int) ([]ossmodel.FileMeta, error) {

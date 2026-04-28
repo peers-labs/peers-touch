@@ -55,9 +55,16 @@ const (
 	defaultBlobGCGraceHours    = 24
 	defaultAuditRetentionDays  = 90
 
-	defaultWorkerTTLInterval       = time.Hour
-	defaultWorkerBlobGCInterval    = time.Hour
-	defaultWorkerReconcileInterval = 24 * time.Hour
+	defaultPeerKeyMaxIdleDays           = 30
+	defaultFederationRotationGraceHours = 24
+	defaultBucketReconcileDriftPermille = 10 // 1%
+
+	defaultWorkerTTLInterval         = time.Hour
+	defaultWorkerBlobGCInterval      = time.Hour
+	defaultWorkerReconcileInterval   = 24 * time.Hour
+	defaultWorkerPeerKeyTrimInterval = 24 * time.Hour
+	defaultWorkerKeyRotationInterval = time.Hour
+	defaultWorkerAuditTrimInterval   = 24 * time.Hour
 )
 
 type ossSubServer struct {
@@ -127,12 +134,18 @@ type ossSubServer struct {
 	// default when the operator leaves the matching Options field
 	// at zero. The lifecycle workers (S11+) consume these via the
 	// subserver struct rather than re-reading Options every tick.
-	softDeleteGrace        time.Duration
-	blobGCGrace            time.Duration
-	auditRetention         time.Duration
-	workerTTLInterval      time.Duration
-	workerBlobGCInterval   time.Duration
-	workerReconcileInterval time.Duration
+	softDeleteGrace              time.Duration
+	blobGCGrace                  time.Duration
+	auditRetention               time.Duration
+	peerKeyMaxIdle               time.Duration
+	federationRotationGrace      time.Duration
+	bucketReconcileDriftPermille int
+	workerTTLInterval            time.Duration
+	workerBlobGCInterval         time.Duration
+	workerReconcileInterval      time.Duration
+	workerPeerKeyTrimInterval    time.Duration
+	workerKeyRotationInterval    time.Duration
+	workerAuditTrimInterval      time.Duration
 
 	// workerScheduler runs the background lifecycle workers
 	// (TTLSweeper / BlobGC for S11; Reconciler / PeerKeyTrim /
@@ -205,9 +218,19 @@ func NewOSSSubServer(opts ...option.Option) server.Subserver {
 	s.softDeleteGrace = daysToDurationOr(o.SoftDeleteGraceDays, defaultSoftDeleteGraceDays*24*time.Hour)
 	s.blobGCGrace = hoursToDurationOr(o.BlobGCGraceHours, defaultBlobGCGraceHours*time.Hour)
 	s.auditRetention = daysToDurationOr(o.AuditRetentionDays, defaultAuditRetentionDays*24*time.Hour)
+	s.peerKeyMaxIdle = daysToDurationOr(o.PeerKeyMaxIdleDays, defaultPeerKeyMaxIdleDays*24*time.Hour)
+	s.federationRotationGrace = hoursToDurationOr(o.FederationRotationGraceHours, defaultFederationRotationGraceHours*time.Hour)
+	if o.BucketReconcileDriftPermille > 0 {
+		s.bucketReconcileDriftPermille = o.BucketReconcileDriftPermille
+	} else {
+		s.bucketReconcileDriftPermille = defaultBucketReconcileDriftPermille
+	}
 	s.workerTTLInterval = secondsToDurationOr(o.WorkerTTLIntervalSeconds, defaultWorkerTTLInterval)
 	s.workerBlobGCInterval = secondsToDurationOr(o.WorkerBlobGCIntervalSeconds, defaultWorkerBlobGCInterval)
 	s.workerReconcileInterval = secondsToDurationOr(o.WorkerReconcileIntervalSeconds, defaultWorkerReconcileInterval)
+	s.workerPeerKeyTrimInterval = secondsToDurationOr(o.WorkerPeerKeyTrimIntervalSeconds, defaultWorkerPeerKeyTrimInterval)
+	s.workerKeyRotationInterval = secondsToDurationOr(o.WorkerKeyRotationIntervalSeconds, defaultWorkerKeyRotationInterval)
+	s.workerAuditTrimInterval = secondsToDurationOr(o.WorkerAuditTrimIntervalSeconds, defaultWorkerAuditTrimInterval)
 
 	backend, err := buildBackend(s.backendType, o, &s.storePath)
 	if err != nil {
@@ -460,6 +483,18 @@ func (s *ossSubServer) Stop(ctx context.Context) error {
 // the subserver did not initialise (e.g. SQLite-only test boots
 // that skip the audit repo) are silently skipped — the TTL /
 // BlobGC contract requires a real audit repo.
+//
+// The set of workers we register here is the v3 lifecycle bundle:
+//
+//   - TTLSweeper          — soft-delete expired files (S11)
+//   - BlobGC              — physically GC orphaned blobs (S11)
+//   - BucketReconciler    — correct bucket usage drift (S12)
+//   - PeerKeyTrim         — drop stale unpinned peer keys (S12)
+//   - KeyRotationFinalize — clear `_prev` after dual-sign (S12)
+//   - AuditTrim           — bound oss_audit row count (S12)
+//
+// All run under the same scheduler / leader lock so multi-instance
+// deployments do not double-fire any of them.
 func (s *ossSubServer) startWorkers(ctx context.Context) error {
 	if s.workerScheduler != nil {
 		return nil
@@ -468,7 +503,7 @@ func (s *ossSubServer) startWorkers(ctx context.Context) error {
 		return errors.New("oss: workers: missing dependencies (fileRepo/blobRepo/auditRepo/backend)")
 	}
 
-	workers := make([]worker.Worker, 0, 2)
+	workers := make([]worker.Worker, 0, 6)
 
 	if s.workerTTLInterval > 0 {
 		ttl, err := worker.NewTTLSweeper(worker.TTLSweeperConfig{
@@ -500,14 +535,67 @@ func (s *ossSubServer) startWorkers(ctx context.Context) error {
 		workers = append(workers, gc)
 	}
 
+	if s.workerReconcileInterval > 0 && s.bucketRepo != nil {
+		rec, err := worker.NewBucketReconciler(worker.BucketReconcilerConfig{
+			Buckets:       s.bucketRepo,
+			Files:         s.fileRepo,
+			Audit:         s.auditRepo,
+			Interval:      s.workerReconcileInterval,
+			DriftPermille: s.bucketReconcileDriftPermille,
+		})
+		if err != nil {
+			return fmt.Errorf("oss: workers: bucket_reconcile: %w", err)
+		}
+		workers = append(workers, rec)
+	}
+
+	if s.workerPeerKeyTrimInterval > 0 && s.peerKeyRepo != nil {
+		pkt, err := worker.NewPeerKeyTrim(worker.PeerKeyTrimConfig{
+			Peers:    s.peerKeyRepo,
+			Audit:    s.auditRepo,
+			MaxIdle:  s.peerKeyMaxIdle,
+			Interval: s.workerPeerKeyTrimInterval,
+		})
+		if err != nil {
+			return fmt.Errorf("oss: workers: peer_key_trim: %w", err)
+		}
+		workers = append(workers, pkt)
+	}
+
+	if s.workerKeyRotationInterval > 0 && s.metaRepo != nil {
+		krf, err := worker.NewKeyRotationFinalizer(worker.KeyRotationFinalizerConfig{
+			Meta:     s.metaRepo,
+			Audit:    s.auditRepo,
+			Grace:    s.federationRotationGrace,
+			Interval: s.workerKeyRotationInterval,
+		})
+		if err != nil {
+			return fmt.Errorf("oss: workers: key_rotation: %w", err)
+		}
+		workers = append(workers, krf)
+	}
+
+	if s.workerAuditTrimInterval > 0 {
+		at, err := worker.NewAuditTrim(worker.AuditTrimConfig{
+			Audit:     s.auditRepo,
+			Retention: s.auditRetention,
+			Interval:  s.workerAuditTrimInterval,
+		})
+		if err != nil {
+			return fmt.Errorf("oss: workers: audit_trim: %w", err)
+		}
+		workers = append(workers, at)
+	}
+
 	if len(workers) == 0 {
 		return nil
 	}
 
-	// MemLock is correct for single-instance deployments; the
-	// PgAdvisoryLock implementation lands in S12 alongside the
-	// reconciler. The lock is keyed per worker name, so even a
-	// future Postgres swap-in keeps the same call site.
+	// MemLock is correct for single-instance deployments; a
+	// PgAdvisoryLock implementation can swap in here without
+	// touching any of the worker constructors. The lock is
+	// keyed per worker name so even a multi-instance station
+	// runs each worker on exactly one node per tick.
 	s.workerScheduler = worker.NewScheduler(workers, worker.NewMemLock(), s.auditRepo)
 	if err := s.workerScheduler.Start(ctx); err != nil {
 		s.workerScheduler = nil

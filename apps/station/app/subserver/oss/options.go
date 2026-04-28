@@ -139,6 +139,38 @@ type Options struct {
 	WorkerBlobGCIntervalSeconds    int64
 	WorkerReconcileIntervalSeconds int64
 
+	// WorkerPeerKeyTrimIntervalSeconds paces the PeerKeyTrim
+	// worker. Zero falls back to 86400 (24h).
+	WorkerPeerKeyTrimIntervalSeconds int64
+
+	// WorkerKeyRotationIntervalSeconds paces the
+	// KeyRotationFinalizer worker. Zero falls back to 3600 (1h).
+	WorkerKeyRotationIntervalSeconds int64
+
+	// WorkerAuditTrimIntervalSeconds paces the AuditTrim worker.
+	// Zero falls back to 86400 (24h).
+	WorkerAuditTrimIntervalSeconds int64
+
+	// PeerKeyMaxIdleDays is the silence window after which an
+	// unpinned peer-key row is trimmed by PeerKeyTrim. Zero falls
+	// back to 30. Pinned rows are NEVER trimmed regardless of
+	// idle time.
+	PeerKeyMaxIdleDays int
+
+	// FederationRotationGraceHours is the dual-sign window the
+	// KeyRotationFinalizer waits before clearing the `_prev`
+	// keypair after `MetaKeyFederationRotatedAt`. Zero falls back
+	// to 24.
+	FederationRotationGraceHours int
+
+	// BucketReconcileDriftPermille is the per-mille (parts of
+	// 1000) drift threshold the BucketReconciler tolerates before
+	// rewriting a bucket's `used_bytes`. Zero falls back to 10
+	// (= 1%). The reconciler always rewrites when the *count*
+	// disagrees by any margin — counts are integers, drift there
+	// is unambiguously a bug.
+	BucketReconcileDriftPermille int
+
 	// MetricsBearerToken gates `GET /sub-oss/metrics`. Empty means
 	// the endpoint is *disabled entirely* — we do not allow
 	// unauthenticated metrics scraping. Operators set a long random
@@ -289,6 +321,40 @@ func WithWorkerBlobGCIntervalSeconds(s int64) option.Option {
 // WithWorkerReconcileIntervalSeconds paces the BucketReconciler worker.
 func WithWorkerReconcileIntervalSeconds(s int64) option.Option {
 	return wrapper.Wrap(func(o *Options) { o.WorkerReconcileIntervalSeconds = s })
+}
+
+// WithWorkerPeerKeyTrimIntervalSeconds paces the PeerKeyTrim worker.
+func WithWorkerPeerKeyTrimIntervalSeconds(s int64) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.WorkerPeerKeyTrimIntervalSeconds = s })
+}
+
+// WithWorkerKeyRotationIntervalSeconds paces the KeyRotationFinalizer worker.
+func WithWorkerKeyRotationIntervalSeconds(s int64) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.WorkerKeyRotationIntervalSeconds = s })
+}
+
+// WithWorkerAuditTrimIntervalSeconds paces the AuditTrim worker.
+func WithWorkerAuditTrimIntervalSeconds(s int64) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.WorkerAuditTrimIntervalSeconds = s })
+}
+
+// WithPeerKeyMaxIdleDays sets the silence window after which an
+// unpinned peer-key row is trimmed by PeerKeyTrim.
+func WithPeerKeyMaxIdleDays(d int) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.PeerKeyMaxIdleDays = d })
+}
+
+// WithFederationRotationGraceHours sets the dual-sign window the
+// KeyRotationFinalizer waits before clearing the previous keypair.
+func WithFederationRotationGraceHours(h int) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.FederationRotationGraceHours = h })
+}
+
+// WithBucketReconcileDriftPermille sets the per-mille drift
+// threshold the BucketReconciler tolerates before rewriting
+// `used_bytes`. 10 = 1%.
+func WithBucketReconcileDriftPermille(permille int) option.Option {
+	return wrapper.Wrap(func(o *Options) { o.BucketReconcileDriftPermille = permille })
 }
 
 // WithMetricsBearerToken gates `/sub-oss/metrics`. Empty disables.

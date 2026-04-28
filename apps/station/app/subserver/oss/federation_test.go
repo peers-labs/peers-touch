@@ -89,6 +89,22 @@ func (r *fakePeerKeyRepo) TouchLastSeen(_ context.Context, peerStationID string,
 	}
 }
 
+func (r *fakePeerKeyRepo) DeleteUnpinnedOlderThan(_ context.Context, olderThan time.Time) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var n int64
+	for id, v := range r.peers {
+		if v.Pinned {
+			continue
+		}
+		if v.LastSeenAt.Before(olderThan) {
+			delete(r.peers, id)
+			n++
+		}
+	}
+	return n, nil
+}
+
 // makeServer wires a minimal ossSubServer suitable for federation
 // unit tests: just the fields VerifyPeerToken / MintPeerToken read.
 func makeFederationServer(t *testing.T, repo ossrepo.PeerKeyRepository, stationID string) *ossSubServer {

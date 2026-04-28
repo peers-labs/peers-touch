@@ -1163,3 +1163,199 @@ func TestMetaRepo_SetCapabilityVersionInsertsThenUpdates(t *testing.T) {
 		t.Fatalf("expected exactly 1 capability_version row, got %d", n)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// S12 additions: SumByBucket / SetUsage / DeleteUnpinnedOlderThan / Meta Set+Delete
+// ---------------------------------------------------------------------------
+
+func TestFileRepo_SumByBucketIgnoresDeletedRows(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewFileRepository("default")
+	ctx := context.Background()
+	now := time.Now()
+	deletedAt := now.Add(-time.Minute)
+
+	rows := []ossmodel.FileMeta{
+		{ID: "f1", Key: "k1", BucketID: "bk_a", Size: 10, CreatedAt: now},
+		{ID: "f2", Key: "k2", BucketID: "bk_a", Size: 25, CreatedAt: now},
+		{ID: "f3", Key: "k3", BucketID: "bk_a", Size: 999, CreatedAt: now, DeletedAt: &deletedAt},
+		{ID: "f4", Key: "k4", BucketID: "bk_b", Size: 7, CreatedAt: now},
+	}
+	for i := range rows {
+		if err := r.Create(ctx, &rows[i]); err != nil {
+			t.Fatalf("seed %s: %v", rows[i].ID, err)
+		}
+	}
+
+	bytes, count, err := r.SumByBucket(ctx, "bk_a")
+	if err != nil {
+		t.Fatalf("SumByBucket: %v", err)
+	}
+	if bytes != 35 || count != 2 {
+		t.Errorf("bk_a sum: got (%d,%d), want (35,2)", bytes, count)
+	}
+
+	// Empty bucket.
+	bytes, count, err = r.SumByBucket(ctx, "bk_unknown")
+	if err != nil {
+		t.Fatalf("SumByBucket unknown: %v", err)
+	}
+	if bytes != 0 || count != 0 {
+		t.Errorf("unknown bucket should yield zeros, got (%d,%d)", bytes, count)
+	}
+
+	// Empty id is rejected.
+	if _, _, err := r.SumByBucket(ctx, ""); err == nil {
+		t.Error("empty bucketID should error")
+	}
+}
+
+func TestBucketRepo_SetUsageRewritesAbsoluteCounters(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewBucketRepository("default")
+	ctx := context.Background()
+
+	b := &ossmodel.Bucket{
+		ID: "bk_setusage", Name: "u", OwnerActorID: "did:test:alice",
+		Kind: ossmodel.BucketKindUser, DefaultVisibility: "private",
+		UsedBytes: 100, ObjectCount: 5,
+	}
+	if err := r.Create(ctx, b); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if err := r.SetUsage(ctx, b.ID, 9_999, 42); err != nil {
+		t.Fatalf("SetUsage: %v", err)
+	}
+	got, err := r.FindByID(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("FindByID: %v", err)
+	}
+	if got.UsedBytes != 9_999 || got.ObjectCount != 42 {
+		t.Errorf("SetUsage write: got (%d,%d), want (9999,42)", got.UsedBytes, got.ObjectCount)
+	}
+
+	// Negative inputs clamp to zero rather than corrupting the row.
+	if err := r.SetUsage(ctx, b.ID, -1, -1); err != nil {
+		t.Fatalf("SetUsage negative: %v", err)
+	}
+	got, _ = r.FindByID(ctx, b.ID)
+	if got.UsedBytes != 0 || got.ObjectCount != 0 {
+		t.Errorf("negative SetUsage should clamp to zero, got (%d,%d)", got.UsedBytes, got.ObjectCount)
+	}
+
+	// Unknown id surfaces ErrBucketNotFound.
+	if err := r.SetUsage(ctx, "missing", 1, 1); !errors.Is(err, ErrBucketNotFound) {
+		t.Errorf("unknown id: got %v, want ErrBucketNotFound", err)
+	}
+	_ = db
+}
+
+func TestPeerKeyRepo_DeleteUnpinnedOlderThanSpresPinned(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewPeerKeyRepository("default")
+	ctx := context.Background()
+	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	old := now.Add(-60 * 24 * time.Hour)
+	fresh := now.Add(-time.Hour)
+	pinAt := now
+
+	rows := []ossmodel.PeerKey{
+		{PeerStationID: "p1", KID: "k1", PublicKeyPEM: "x", FirstSeenAt: old, LastSeenAt: old},
+		{PeerStationID: "p2", KID: "k2", PublicKeyPEM: "x", FirstSeenAt: fresh, LastSeenAt: fresh},
+		{PeerStationID: "p3", KID: "k3", PublicKeyPEM: "x", FirstSeenAt: old, LastSeenAt: old, Pinned: true, PinnedAt: &pinAt},
+	}
+	for i := range rows {
+		if err := db.Create(&rows[i]).Error; err != nil {
+			t.Fatalf("seed %s: %v", rows[i].PeerStationID, err)
+		}
+	}
+
+	cutoff := now.Add(-30 * 24 * time.Hour)
+	deleted, err := r.DeleteUnpinnedOlderThan(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("DeleteUnpinnedOlderThan: %v", err)
+	}
+	if deleted != 1 {
+		t.Errorf("deleted: got %d, want 1 (only p1 should be trimmed)", deleted)
+	}
+
+	// p1 gone, p2 + p3 still present.
+	for _, want := range []string{"p2", "p3"} {
+		row, err := r.GetPeer(ctx, want)
+		if err != nil {
+			t.Fatalf("GetPeer %s: %v", want, err)
+		}
+		if row == nil {
+			t.Errorf("expected %s to survive trim", want)
+		}
+	}
+	if row, _ := r.GetPeer(ctx, "p1"); row != nil {
+		t.Errorf("p1 should have been trimmed")
+	}
+
+	// Zero cutoff is a quiet no-op.
+	if n, err := r.DeleteUnpinnedOlderThan(ctx, time.Time{}); err != nil || n != 0 {
+		t.Errorf("zero cutoff: got (%d,%v), want (0,nil)", n, err)
+	}
+}
+
+func TestMetaRepo_SetAndDelete(t *testing.T) {
+	db := initStore(t)
+	reset(t, db)
+
+	r := NewMetaRepository("default")
+	ctx := context.Background()
+	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+
+	// Insert via Set.
+	if err := r.Set(ctx, "test_key_a", "value-1", now); err != nil {
+		t.Fatalf("Set insert: %v", err)
+	}
+	got, err := r.Get(ctx, "test_key_a")
+	if err != nil || got != "value-1" {
+		t.Fatalf("Get after insert: got (%q,%v)", got, err)
+	}
+
+	// Update via Set.
+	if err := r.Set(ctx, "test_key_a", "value-2", now.Add(time.Hour)); err != nil {
+		t.Fatalf("Set update: %v", err)
+	}
+	got, _ = r.Get(ctx, "test_key_a")
+	if got != "value-2" {
+		t.Errorf("post-update: got %q, want value-2", got)
+	}
+
+	// Delete handles a mix of present and absent keys.
+	if err := r.Set(ctx, "test_key_b", "value-b", now); err != nil {
+		t.Fatalf("Set b: %v", err)
+	}
+	deleted, err := r.Delete(ctx, "test_key_a", "test_key_b", "missing_key")
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if deleted != 2 {
+		t.Errorf("Delete count: got %d, want 2", deleted)
+	}
+	if got, _ := r.Get(ctx, "test_key_a"); got != "" {
+		t.Errorf("test_key_a should be cleared, got %q", got)
+	}
+
+	// Delete with no keys is a quiet no-op.
+	if n, err := r.Delete(ctx); err != nil || n != 0 {
+		t.Errorf("empty Delete: got (%d,%v)", n, err)
+	}
+
+	// Empty key on Set is rejected.
+	if err := r.Set(ctx, "", "x", now); err == nil {
+		t.Error("empty key should error")
+	}
+
+	_ = db
+}
