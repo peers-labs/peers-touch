@@ -330,6 +330,9 @@ message GetTimelineRequest {
   string cursor = 2;
   int32 limit = 3;
   string user_id = 4;
+  // Optional sort strategy. Currently only meaningful for
+  // TIMELINE_PUBLIC; all other timelines fix RECENT order.
+  TimelineSort sort = 5;
 }
 
 message GetTimelineResponse {
@@ -342,6 +345,16 @@ enum TimelineType {
   TIMELINE_HOME = 0;
   TIMELINE_USER = 1;
   TIMELINE_PUBLIC = 2;
+}
+
+// TimelineSort selects the ranking strategy used when serving a
+// timeline. RECENT (default) returns posts in created_at DESC order
+// — the cheap, predictable shape suitable for HOME and USER. HOT
+// returns posts ranked by an engagement-decayed score; only the
+// PUBLIC timeline implements it today.
+enum TimelineSort {
+  TIMELINE_SORT_RECENT = 0;
+  TIMELINE_SORT_HOT = 1;
 }
 
 // ============================================================================
