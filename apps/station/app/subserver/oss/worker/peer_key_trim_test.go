@@ -32,6 +32,7 @@ func (p *peerTrimFake) LoadLocalKey(context.Context) (string, string, string, er
 	return "", "", "", nil
 }
 func (p *peerTrimFake) SaveLocalKey(context.Context, string, string, string) error { return nil }
+func (p *peerTrimFake) GetCurrentKID(context.Context) (string, error)              { return "", nil }
 func (p *peerTrimFake) GetPeer(context.Context, string) (*ossmodel.PeerKey, error) { return nil, nil }
 func (p *peerTrimFake) UpsertTOFU(context.Context, ossmodel.PeerKey) error          { return nil }
 func (p *peerTrimFake) TouchLastSeen(context.Context, string, time.Time)            {}

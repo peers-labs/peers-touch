@@ -30,6 +30,19 @@ type PeerKeyRepository interface {
 	// behaviour a future rotation tool wants.
 	SaveLocalKey(ctx context.Context, privPEM, pubPEM, kid string) error
 
+	// GetCurrentKID returns just the KID currently stamped in
+	// `oss_meta`. Returns ("", nil) when no key has been generated
+	// yet — callers should treat that as "no rotation observable"
+	// and keep using whatever they've cached.
+	//
+	// This is the cheap probe the federation key cache uses on
+	// every Get() once its `recheckTTL` has elapsed: a single
+	// indexed lookup we can compare against the in-memory KID to
+	// notice a dashboard-driven rotation. Reading the full
+	// keypair (LoadLocalKey) would be wasteful since the
+	// overwhelmingly common outcome is "no change".
+	GetCurrentKID(ctx context.Context) (string, error)
+
 	// GetPeer returns the cached row for this peer station, or
 	// (nil, nil) if it has never been seen.
 	GetPeer(ctx context.Context, peerStationID string) (*ossmodel.PeerKey, error)
@@ -109,6 +122,14 @@ func (r *peerKeyRepo) LoadLocalKey(ctx context.Context) (string, string, string,
 		return "", "", "", ErrNoLocalKey
 	}
 	return priv, pub, kid, nil
+}
+
+func (r *peerKeyRepo) GetCurrentKID(ctx context.Context) (string, error) {
+	db, err := r.getDB(ctx)
+	if err != nil {
+		return "", err
+	}
+	return readMeta(db, ossmodel.MetaKeyFederationKID)
 }
 
 func (r *peerKeyRepo) SaveLocalKey(ctx context.Context, priv, pub, kid string) error {

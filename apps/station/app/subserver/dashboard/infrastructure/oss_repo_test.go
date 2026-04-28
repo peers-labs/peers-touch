@@ -622,3 +622,140 @@ func TestOSSRepository_RecordOSSAudit_AppendsRow(t *testing.T) {
 		t.Errorf("row mismatch: %+v", rows[0])
 	}
 }
+
+// ---------------------------------------------------------------------------
+// S13: federation rotate-local-key
+// ---------------------------------------------------------------------------
+
+// readMetaForTest is a tiny helper that pokes oss_meta directly to
+// confirm the rotation wrote the correct slots. We do not import
+// the OSS subserver's MetaRepository here because the dashboard
+// repo deliberately does not depend on it; the on-disk shape is
+// the contract.
+func readMetaForTest(t *testing.T, db *gorm.DB, key string) string {
+	t.Helper()
+	var row ossmodel.Meta
+	if err := db.Where("key = ?", key).Take(&row).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return ""
+		}
+		t.Fatalf("read meta %q: %v", key, err)
+	}
+	return row.Value
+}
+
+func TestOSSRepository_RotateFederationLocalKey_FirstRotationGreenfield(t *testing.T) {
+	db := newOSSTestDB(t)
+	repo := NewOSSRepository(db)
+	ctx := context.Background()
+
+	resp, err := repo.RotateFederationLocalKey(ctx)
+	if err != nil {
+		t.Fatalf("RotateFederationLocalKey: %v", err)
+	}
+	if resp == nil || resp.NewKID == "" {
+		t.Fatalf("expected non-empty new kid; got %+v", resp)
+	}
+	if resp.PreviousKID != "" {
+		t.Errorf("greenfield rotation should not echo a previous kid: %q", resp.PreviousKID)
+	}
+	if resp.RotatedAt.IsZero() {
+		t.Errorf("rotated_at must be set")
+	}
+	if resp.CapabilityVersion == "" {
+		t.Errorf("capability_version must be bumped on rotation")
+	}
+
+	// On disk: priv/pub/kid populated, no `_prev` slots, rotated_at present.
+	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationKID); got != resp.NewKID {
+		t.Errorf("MetaKeyFederationKID: got %q want %q", got, resp.NewKID)
+	}
+	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationPrivKey); got == "" {
+		t.Errorf("MetaKeyFederationPrivKey must be populated")
+	}
+	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationPubKey); got == "" {
+		t.Errorf("MetaKeyFederationPubKey must be populated")
+	}
+	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationPrivKeyPrev); got != "" {
+		t.Errorf("first rotation must not write _prev priv: %q", got)
+	}
+	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationKIDPrev); got != "" {
+		t.Errorf("first rotation must not write _prev kid: %q", got)
+	}
+	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationRotatedAt); got == "" {
+		t.Errorf("MetaKeyFederationRotatedAt must be stamped")
+	}
+}
+
+func TestOSSRepository_RotateFederationLocalKey_DemotesPrevious(t *testing.T) {
+	db := newOSSTestDB(t)
+	repo := NewOSSRepository(db)
+	ctx := context.Background()
+
+	// First rotation establishes a baseline keypair to demote.
+	first, err := repo.RotateFederationLocalKey(ctx)
+	if err != nil {
+		t.Fatalf("seed rotation: %v", err)
+	}
+	firstPriv := readMetaForTest(t, db, ossmodel.MetaKeyFederationPrivKey)
+	if firstPriv == "" {
+		t.Fatalf("seed priv missing")
+	}
+
+	// Second rotation must surface the previous kid and copy the
+	// outgoing priv into the `_prev` slot.
+	second, err := repo.RotateFederationLocalKey(ctx)
+	if err != nil {
+		t.Fatalf("rotate again: %v", err)
+	}
+	if second.PreviousKID != first.NewKID {
+		t.Errorf("second rotation prev_kid: got %q want %q", second.PreviousKID, first.NewKID)
+	}
+	if second.NewKID == first.NewKID {
+		t.Errorf("rotation should produce a new kid; got identical %q", second.NewKID)
+	}
+
+	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationKIDPrev); got != first.NewKID {
+		t.Errorf("MetaKeyFederationKIDPrev: got %q want %q", got, first.NewKID)
+	}
+	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationPrivKeyPrev); got != firstPriv {
+		t.Errorf("MetaKeyFederationPrivKeyPrev: should hold the demoted priv, got mismatch")
+	}
+
+	// The canonical slots must reflect the new key.
+	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationKID); got != second.NewKID {
+		t.Errorf("canonical KID after rotate: got %q want %q", got, second.NewKID)
+	}
+	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationPrivKey); got == firstPriv {
+		t.Errorf("canonical priv was not rotated")
+	}
+}
+
+func TestOSSRepository_RotateFederationLocalKey_BumpsCapabilityVersion(t *testing.T) {
+	db := newOSSTestDB(t)
+	repo := NewOSSRepository(db)
+	ctx := context.Background()
+
+	// Seed an initial capability_version so we can prove the
+	// rotation overwrote it. Without a seed the first rotation
+	// would be the row's first write, which is also "bumped" but
+	// not as informative for the assertion.
+	if err := db.Create(&ossmodel.Meta{
+		Key: metaKeyCapVersion, Value: "before-rotate", UpdatedAt: time.Now(),
+	}).Error; err != nil {
+		t.Fatalf("seed capability_version: %v", err)
+	}
+
+	resp, err := repo.RotateFederationLocalKey(ctx)
+	if err != nil {
+		t.Fatalf("RotateFederationLocalKey: %v", err)
+	}
+	if resp.CapabilityVersion == "" || resp.CapabilityVersion == "before-rotate" {
+		t.Errorf("capability_version must change on rotation: %q", resp.CapabilityVersion)
+	}
+
+	got := readMetaForTest(t, db, metaKeyCapVersion)
+	if got != resp.CapabilityVersion {
+		t.Errorf("capability_version on disk: got %q want %q", got, resp.CapabilityVersion)
+	}
+}

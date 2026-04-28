@@ -79,6 +79,10 @@ type fakeOSSRepo struct {
 	adminDeleteCalls  []string
 	adminDeleteReturn *domain.OSSObjectAdminDetail
 	adminDeleteErr    error
+
+	rotateCalls  int
+	rotateReturn *domain.OSSFederationRotateResponse
+	rotateErr    error
 }
 
 func (f *fakeOSSRepo) ListBuckets(_ context.Context) ([]domain.OSSBucketSummary, error) {
@@ -202,6 +206,17 @@ func (f *fakeOSSRepo) AdminDeleteObject(_ context.Context, id string) (*domain.O
 		return f.adminDeleteReturn, nil
 	}
 	return &domain.OSSObjectAdminDetail{ID: id}, nil
+}
+
+func (f *fakeOSSRepo) RotateFederationLocalKey(_ context.Context) (*domain.OSSFederationRotateResponse, error) {
+	f.rotateCalls++
+	if f.rotateErr != nil {
+		return nil, f.rotateErr
+	}
+	if f.rotateReturn != nil {
+		return f.rotateReturn, nil
+	}
+	return &domain.OSSFederationRotateResponse{NewKID: "kid-new"}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -601,5 +616,37 @@ func TestOSSService_FederationPassThrough(t *testing.T) {
 	}
 	if len(resp.Items) != 2 {
 		t.Fatalf("peers count: %d", len(resp.Items))
+	}
+}
+
+func TestOSSService_RotateFederationLocalKey_DelegatesAndReturns(t *testing.T) {
+	want := &domain.OSSFederationRotateResponse{
+		NewKID:            "kid-new",
+		PreviousKID:       "kid-old",
+		CapabilityVersion: "cv-1",
+	}
+	repo := &fakeOSSRepo{rotateReturn: want}
+	svc := NewOSSService(repo)
+
+	got, err := svc.RotateFederationLocalKey(context.Background())
+	if err != nil {
+		t.Fatalf("RotateFederationLocalKey: %v", err)
+	}
+	if got != want {
+		t.Errorf("response: got %+v want %+v", got, want)
+	}
+	if repo.rotateCalls != 1 {
+		t.Errorf("expected 1 rotate call, got %d", repo.rotateCalls)
+	}
+}
+
+func TestOSSService_RotateFederationLocalKey_PropagatesError(t *testing.T) {
+	boom := errors.New("rotation boom")
+	repo := &fakeOSSRepo{rotateErr: boom}
+	svc := NewOSSService(repo)
+
+	_, err := svc.RotateFederationLocalKey(context.Background())
+	if err == nil || err.Error() != "rotation boom" {
+		t.Errorf("expected propagated error, got %v", err)
 	}
 }
