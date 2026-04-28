@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/infrastructure"
@@ -110,6 +111,30 @@ func (s *OSSService) SetPeerPin(ctx context.Context, peerStationID string, pinne
 		return errors.New("peer_station_id is required")
 	}
 	return s.repo.SetPeerPin(ctx, peerStationID, pinned)
+}
+
+// ForgetPeer removes a peer's TOFU row entirely. The next inbound
+// federated request from this peer will re-TOFU from scratch.
+// Distinct from `SetPeerPin(..., false)` which only flips the
+// pinned flag (the kid is preserved and a future key rotation
+// would be silently accepted under unpinned-TOFU semantics).
+func (s *OSSService) ForgetPeer(ctx context.Context, peerStationID string) error {
+	if peerStationID == "" {
+		return errors.New("peer_station_id is required")
+	}
+	return s.repo.ForgetPeer(ctx, peerStationID)
+}
+
+// ListWorkers returns the per-worker heartbeat projection over
+// `oss_audit`. The default lookback is 24h; the handler can pass
+// a different window for "show me last 7 days" UI flows. We reject
+// negative lookbacks at this layer so the repo never has to
+// re-validate.
+func (s *OSSService) ListWorkers(ctx context.Context, lookback time.Duration) (*domain.OSSWorkersSummary, error) {
+	if lookback < 0 {
+		return nil, errors.New("lookback must be >= 0")
+	}
+	return s.repo.ListWorkers(ctx, lookback)
 }
 
 // ---------------------------------------------------------------------------

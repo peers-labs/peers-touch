@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -728,6 +729,136 @@ func TestOSSRepository_RotateFederationLocalKey_DemotesPrevious(t *testing.T) {
 	}
 	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationPrivKey); got == firstPriv {
 		t.Errorf("canonical priv was not rotated")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// S15: ForgetPeer + ListWorkers projection
+// ---------------------------------------------------------------------------
+
+func TestOSSRepository_ForgetPeer_DropsRowAndIsIdempotent(t *testing.T) {
+	db := newOSSTestDB(t)
+	repo := NewOSSRepository(db)
+	ctx := context.Background()
+
+	now := time.Now().UTC()
+	if err := db.Create(&ossmodel.PeerKey{
+		PeerStationID: "peer-1", KID: "kid-1", PublicKeyPEM: "PEM",
+		FirstSeenAt: now, LastSeenAt: now, Pinned: true,
+	}).Error; err != nil {
+		t.Fatalf("seed peer: %v", err)
+	}
+
+	// First forget removes the row, even though it is pinned —
+	// pin only protects against silent rotation, NOT the
+	// operator's explicit forget intent.
+	if err := repo.ForgetPeer(ctx, "peer-1"); err != nil {
+		t.Fatalf("ForgetPeer: %v", err)
+	}
+	peers, _ := repo.ListFederationPeers(ctx)
+	if len(peers) != 0 {
+		t.Errorf("expected peer to be gone, got %+v", peers)
+	}
+
+	// Second forget on a missing peer must not error — idempotent.
+	if err := repo.ForgetPeer(ctx, "peer-1"); err != nil {
+		t.Errorf("idempotent re-forget should succeed, got %v", err)
+	}
+
+	// Empty peer id is rejected as a guard against accidental
+	// "forget all" requests from a buggy UI.
+	if err := repo.ForgetPeer(ctx, ""); err != ErrPeerNotFound {
+		t.Errorf("empty peer id: want ErrPeerNotFound, got %v", err)
+	}
+}
+
+func TestOSSRepository_ListWorkers_ProjectsHeartbeats(t *testing.T) {
+	db := newOSSTestDB(t)
+	repo := NewOSSRepository(db)
+	ctx := context.Background()
+
+	now := time.Now().UTC()
+	seedAudit(t, db,
+		// Two ttl_sweeper runs: an older success then a fresh error.
+		ossmodel.Audit{Action: "worker_run", Outcome: "ok", Reason: "ttl_sweeper", TS: now.Add(-2 * time.Hour)},
+		ossmodel.Audit{Action: "worker_run", Outcome: "error", Reason: "ttl_sweeper: kaboom: timeout", TS: now.Add(-30 * time.Minute)},
+		// One blob_gc success — should appear with no error.
+		ossmodel.Audit{Action: "worker_run", Outcome: "ok", Reason: "blob_gc", TS: now.Add(-time.Hour)},
+		// Off-action row — must be ignored even if it mentions a worker name.
+		ossmodel.Audit{Action: "delete", Outcome: "ok", Reason: "ttl_sweeper", TS: now.Add(-time.Minute)},
+		// Outside the lookback window — must be ignored.
+		ossmodel.Audit{Action: "worker_run", Outcome: "ok", Reason: "ttl_sweeper", TS: now.Add(-72 * time.Hour)},
+	)
+
+	got, err := repo.ListWorkers(ctx, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("ListWorkers: %v", err)
+	}
+	if got == nil {
+		t.Fatalf("nil response")
+	}
+	if got.LookbackHours != 24 {
+		t.Errorf("LookbackHours: got %v want 24", got.LookbackHours)
+	}
+	if len(got.Items) != 2 {
+		t.Fatalf("workers count: got %d (%+v) want 2", len(got.Items), got.Items)
+	}
+
+	byName := map[string]domain.OSSWorkerHeartbeat{}
+	for _, h := range got.Items {
+		byName[h.Name] = h
+	}
+	ttl := byName["ttl_sweeper"]
+	if ttl.RunCount != 2 {
+		t.Errorf("ttl_sweeper RunCount: got %d want 2", ttl.RunCount)
+	}
+	if ttl.ErrorCount != 1 {
+		t.Errorf("ttl_sweeper ErrorCount: got %d want 1", ttl.ErrorCount)
+	}
+	if ttl.LastOutcome != "error" {
+		t.Errorf("ttl_sweeper LastOutcome: got %q want error", ttl.LastOutcome)
+	}
+	if ttl.LastError != "kaboom: timeout" {
+		t.Errorf("ttl_sweeper LastError: got %q want %q (the colon-after-prefix should be preserved)",
+			ttl.LastError, "kaboom: timeout")
+	}
+
+	gc := byName["blob_gc"]
+	if gc.RunCount != 1 || gc.ErrorCount != 0 || gc.LastOutcome != "ok" || gc.LastError != "" {
+		t.Errorf("blob_gc projection wrong: %+v", gc)
+	}
+}
+
+func TestOSSRepository_ListWorkers_DefaultsLookbackTo24h(t *testing.T) {
+	db := newOSSTestDB(t)
+	repo := NewOSSRepository(db)
+	ctx := context.Background()
+
+	got, err := repo.ListWorkers(ctx, 0)
+	if err != nil {
+		t.Fatalf("ListWorkers: %v", err)
+	}
+	if got.LookbackHours != 24 {
+		t.Errorf("zero lookback should default to 24h, got %v", got.LookbackHours)
+	}
+}
+
+func TestParseWorkerHeartbeatReason(t *testing.T) {
+	cases := []struct {
+		in, name, msg string
+	}{
+		{"ttl_sweeper", "ttl_sweeper", ""},
+		{"blob_gc: oh no", "blob_gc", "oh no"},
+		{"key_rotate: error: timed out", "key_rotate", "error: timed out"},
+		{"  trimmed  ", "trimmed", ""},
+		{"", "", ""},
+	}
+	for _, tc := range cases {
+		gotName, gotMsg := parseWorkerHeartbeatReason(tc.in)
+		if gotName != tc.name || gotMsg != tc.msg {
+			t.Errorf("parseWorkerHeartbeatReason(%q): got (%q, %q) want (%q, %q)",
+				tc.in, gotName, gotMsg, tc.name, tc.msg)
+		}
 	}
 }
 
