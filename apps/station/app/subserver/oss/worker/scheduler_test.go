@@ -175,3 +175,84 @@ func TestScheduler_DoubleStartRefused(t *testing.T) {
 		t.Errorf("second Start should error to prevent double scheduling")
 	}
 }
+
+func TestScheduler_SnapshotBeforeAnyRunReturnsZeros(t *testing.T) {
+	w := &fakeWorker{name: "ttl_sweeper", interval: time.Hour}
+	sched := NewScheduler([]Worker{w}, NewMemLock(), nil)
+
+	snaps := sched.Snapshot()
+	if len(snaps) != 1 {
+		t.Fatalf("snapshot len: got %d want 1", len(snaps))
+	}
+	got := snaps[0]
+	if got.Name != "ttl_sweeper" {
+		t.Errorf("name: %q", got.Name)
+	}
+	if got.Interval != time.Hour {
+		t.Errorf("interval should pass through Worker.Interval(): %v", got.Interval)
+	}
+	if !got.LastRunAt.IsZero() {
+		t.Errorf("never-run worker should have zero LastRunAt: %v", got.LastRunAt)
+	}
+	if got.LastOutcome != "" || got.LastError != "" {
+		t.Errorf("never-run worker should not surface outcome/error: %+v", got)
+	}
+	if got.RunCount != 0 || got.ErrorCount != 0 {
+		t.Errorf("counters should start at 0: runs=%d errs=%d", got.RunCount, got.ErrorCount)
+	}
+}
+
+func TestScheduler_SnapshotTracksOutcomeAndCounts(t *testing.T) {
+	// Two workers: one always succeeds, one always errors. We
+	// run the scheduler long enough for >=1 tick on each, then
+	// assert their snapshots reflect outcome / counts independently.
+	okW := &fakeWorker{name: "ttl_sweeper", interval: 30 * time.Millisecond}
+	failW := &fakeWorker{name: "blob_gc", interval: 30 * time.Millisecond, runErr: errors.New("boom")}
+	sched := NewScheduler([]Worker{okW, failW}, NewMemLock(), nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := sched.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	time.Sleep(110 * time.Millisecond)
+	sched.Stop()
+
+	snaps := sched.Snapshot()
+	if len(snaps) != 2 {
+		t.Fatalf("snapshot len: got %d want 2", len(snaps))
+	}
+	byName := map[string]WorkerSnapshot{}
+	for _, s := range snaps {
+		byName[s.Name] = s
+	}
+
+	ok := byName["ttl_sweeper"]
+	if ok.LastOutcome != ossmodel.AuditOutcomeOK {
+		t.Errorf("ok worker outcome: %q", ok.LastOutcome)
+	}
+	if ok.LastError != "" {
+		t.Errorf("ok worker should have empty LastError: %q", ok.LastError)
+	}
+	if ok.RunCount < 2 {
+		t.Errorf("ok worker should have >=2 runs, got %d", ok.RunCount)
+	}
+	if ok.ErrorCount != 0 {
+		t.Errorf("ok worker should have 0 errors, got %d", ok.ErrorCount)
+	}
+	if ok.LastRunAt.IsZero() {
+		t.Errorf("ok worker LastRunAt must be set")
+	}
+
+	fail := byName["blob_gc"]
+	if fail.LastOutcome != ossmodel.AuditOutcomeError {
+		t.Errorf("fail worker outcome: %q", fail.LastOutcome)
+	}
+	if fail.LastError != "boom" {
+		t.Errorf("fail worker LastError: %q", fail.LastError)
+	}
+	if fail.ErrorCount == 0 || fail.ErrorCount != fail.RunCount {
+		t.Errorf("fail worker errors=runs expected; got runs=%d errs=%d",
+			fail.RunCount, fail.ErrorCount)
+	}
+}
