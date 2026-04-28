@@ -328,6 +328,7 @@ fn main() {
             group_chat::group_chat_get_members,
             group_chat::group_chat_remove_member,
             group_chat::group_chat_recall_message,
+            group_chat::group_chat_edit_message,
             group_chat::group_chat_delete_message,
             group_chat::group_chat_search_messages,
             group_chat::group_chat_update_nickname,

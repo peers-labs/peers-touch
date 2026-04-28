@@ -179,6 +179,7 @@ export function ChatMessageArea() {
     activeTab, activeSessionUlid, activeGroupUlid, messages, loading,
     sessions, groups, loadMessages, loadOlderMessages, sendFriendMessage, sendGroupMessage, toggleDetail,
     deleteMessage, recallFriendMessage, editFriendMessage,
+    recallGroupMessage, editGroupMessage,
   } = useSocialChatStore();
   const messageHasMore = useSocialChatStore((s) => s.messageHasMore);
   const messageLoadingMore = useSocialChatStore((s) => s.messageLoadingMore);
@@ -539,15 +540,20 @@ export function ChatMessageArea() {
       }
     }
     try {
-      if (editTarget && activeTab === 'friend') {
-        // Edit path. Friend chat only — group chat editing is not
-        // wired here yet (group's existing recall RPC could be
-        // extended later). The store action handles the
-        // optimistic local apply; the realtime echo confirms it.
+      if (editTarget) {
+        // Edit path — works for both friend & group chats now that
+        // both use the unified MessageMutation contract. The store
+        // action does the optimistic apply; the realtime echo
+        // confirms it. Encrypted-payload edits are gated off in
+        // `canEdit` (see comment there) so we always pass plaintext.
         try {
-          await editFriendMessage(activeUlid, editTarget, content);
+          if (activeTab === 'friend') {
+            await editFriendMessage(activeUlid, editTarget, content);
+          } else {
+            await editGroupMessage(activeUlid, editTarget, content);
+          }
         } catch (err) {
-          log.error('chat', 'editFriendMessage failed', err);
+          log.error('chat', 'edit message failed', err);
           toast.error(t('chat.social.messageArea.editFailed', 'Edit failed'));
         }
         return;
@@ -571,26 +577,29 @@ export function ChatMessageArea() {
   /**
    * Resolve the friend message corresponding to a ulid in the
    * currently-active session. Returns null when the active tab is
-   * group chat (the recall / edit UI is friend-only here).
+   * Returns the row regardless of chat kind — both FriendChatMessage
+   * and GroupMessage carry the recall / edit-relevant fields after
+   * the unified MessageMutation contract landed.
    */
-  const findFriendMsg = (ulid: string): FriendChatMessage | null => {
-    if (activeTab !== 'friend') return null;
-    const m = currentMessages.find((x) => x.ulid === ulid);
-    if (!m || !isFriendMsg(m)) return null;
-    return m;
+  const findActiveMsg = (ulid: string): FriendChatMessage | GroupMessage | null => {
+    return currentMessages.find((x) => x.ulid === ulid) ?? null;
   };
 
-  const handleRecall = async (msg: FriendChatMessage) => {
+  const handleRecall = async (msg: FriendChatMessage | GroupMessage) => {
     if (!activeUlid) return;
     try {
-      await recallFriendMessage(activeUlid, msg.ulid);
+      if (isFriendMsg(msg)) {
+        await recallFriendMessage(activeUlid, msg.ulid);
+      } else {
+        await recallGroupMessage(activeUlid, msg.ulid);
+      }
     } catch (err) {
-      log.error('chat', 'recallFriendMessage failed', err);
+      log.error('chat', 'recall message failed', err);
       toast.error(t('chat.social.messageArea.recallFailed', 'Recall failed'));
     }
   };
 
-  const handleStartEdit = (msg: FriendChatMessage) => {
+  const handleStartEdit = (msg: FriendChatMessage | GroupMessage) => {
     // Only plaintext messages are editable today. An E2EE chat
     // would need a separate flow that re-encrypts under the active
     // ratchet key before issuing the RPC; we deliberately disable
@@ -788,16 +797,19 @@ export function ChatMessageArea() {
             const isGroup = !isFriendMsg(msg);
             const hasReply = (isFriendMsg(msg) ? msg.replyToUlid : (msg as GroupMessage).replyToUlid) || '';
             const isEncryptedPlaceholder = msg.content === '[Encrypted Message]';
-            const isFriend = isFriendMsg(msg);
-            const isRecalled = isFriend && (msg as FriendChatMessage).recalled === true;
-            const editedAt = isFriend ? (msg as FriendChatMessage).editedAt : undefined;
-            // Friend chat mutation gating. Server enforces the same
-            // rules; the UI only hides buttons that are guaranteed
-            // to fail so we don't rage-click 422s onto the user.
+            // Both FriendChatMessage and GroupMessage carry
+            // `recalled` + `editedAt` as of the unified
+            // MessageMutation contract. The UI no longer needs to
+            // branch by chat kind for these flags.
+            const isRecalled = (msg as { recalled?: boolean }).recalled === true;
+            const editedAt = (msg as { editedAt?: FriendChatMessage['editedAt'] }).editedAt;
+            // Mutation gating. Server enforces the same window /
+            // ownership rules; the UI hides buttons that are
+            // guaranteed to fail so we don't 422 the user.
             const sentMs = msg.sentAt ? timestampDate(msg.sentAt).getTime() : (msg.createdAt ? timestampDate(msg.createdAt).getTime() : 0);
             const withinWindow = sentMs > 0 && (Date.now() - sentMs) < FRIEND_RECALL_WINDOW_MS;
-            const canRecall = isOwn && isFriend && !isRecalled && withinWindow;
-            const canEdit = isOwn && isFriend && !isRecalled && withinWindow && !isEncryptedPlaceholder;
+            const canRecall = isOwn && !isRecalled && withinWindow;
+            const canEdit = isOwn && !isRecalled && withinWindow && !isEncryptedPlaceholder;
 
             const bubbleBg = isOwn ? token.colorPrimary : token.colorFillSecondary;
             const bubbleColor = isOwn ? '#fff' : token.colorText;
@@ -839,12 +851,12 @@ export function ChatMessageArea() {
                       }
                     }}
                     onRecall={() => {
-                      const fcm = findFriendMsg(msg.ulid);
-                      if (fcm) handleRecall(fcm);
+                      const target = findActiveMsg(msg.ulid);
+                      if (target) handleRecall(target);
                     }}
                     onEdit={() => {
-                      const fcm = findFriendMsg(msg.ulid);
-                      if (fcm) handleStartEdit(fcm);
+                      const target = findActiveMsg(msg.ulid);
+                      if (target) handleStartEdit(target);
                     }}
                   />
 

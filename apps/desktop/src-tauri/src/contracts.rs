@@ -995,6 +995,18 @@ pub struct GroupMessageActionInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatEditInput {
+    pub group_ulid: String,
+    pub message_ulid: String,
+    /// Plaintext replacement body. Mutually optional with
+    /// `new_encrypted_payload`; at least one must be non-empty.
+    pub new_content: Option<String>,
+    /// E2EE replacement body. Decoded from base64 by the TS layer
+    /// before reaching this contract.
+    pub new_encrypted_payload: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupSearchMessagesInput {
     pub group_ulid: String,
     pub query: String,
