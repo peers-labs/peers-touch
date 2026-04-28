@@ -31,6 +31,7 @@ import { fromBinary } from '@bufbuild/protobuf';
 
 import { eventBus } from '../kernel/events';
 import { EVENT } from '../kernel/events/catalog';
+import type { RealtimeCallSignalKind } from '../kernel/events/types';
 import { StreamEventSchema } from '../gen/proto/domain/realtime/event_pb';
 import { api } from './desktop_api';
 import { log } from '../utils/logger';
@@ -292,14 +293,20 @@ function receiptKindFromEnum(value: number): 'DELIVERED' | 'READ' | null {
 // Inverse of station's signalKindMap. Keep these tables aligned —
 // adding a new CallSignal_Kind on the proto side requires growing
 // both maps in lockstep.
-function signalKindFromEnum(value: number): 'OFFER' | 'ANSWER' | 'CANDIDATE' | 'HANGUP' | null {
+function signalKindFromEnum(value: number): RealtimeCallSignalKind | null {
   // The enum values come from the generated CallSignal_Kind proto:
-  //   OFFER=1, ANSWER=2, CANDIDATE=3, HANGUP=4 (KIND_UNSPECIFIED=0).
+  //   OFFER=1, ANSWER=2, CANDIDATE=3, HANGUP=4,
+  //   CALL_REQUEST=5, CALL_ACCEPT=6, CALL_REJECT=7, CALL_END=8
+  //   (KIND_UNSPECIFIED=0).
   switch (value) {
     case 1: return 'OFFER';
     case 2: return 'ANSWER';
     case 3: return 'CANDIDATE';
     case 4: return 'HANGUP';
+    case 5: return 'CALL_REQUEST';
+    case 6: return 'CALL_ACCEPT';
+    case 7: return 'CALL_REJECT';
+    case 8: return 'CALL_END';
     default: return null;
   }
 }

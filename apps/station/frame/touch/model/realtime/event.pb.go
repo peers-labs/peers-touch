@@ -78,6 +78,17 @@ const (
 	CallSignal_ANSWER           CallSignal_Kind = 2
 	CallSignal_CANDIDATE        CallSignal_Kind = 3
 	CallSignal_HANGUP           CallSignal_Kind = 4
+	// Application-layer ringing protocol. CALL_REQUEST initiates a
+	// voice or video call (the WebRTC OFFER / ANSWER / CANDIDATE
+	// exchange that follows is the same as for the data-plane
+	// handshake — these kinds only exist so the UI can show a
+	// ringing modal before media renegotiation starts). The
+	// payload's plaintext form is JSON: `{"kind":"audio"|"video",
+	// "callId":"<ulid>"}`.
+	CallSignal_CALL_REQUEST CallSignal_Kind = 5
+	CallSignal_CALL_ACCEPT  CallSignal_Kind = 6
+	CallSignal_CALL_REJECT  CallSignal_Kind = 7
+	CallSignal_CALL_END     CallSignal_Kind = 8
 )
 
 // Enum value maps for CallSignal_Kind.
@@ -88,6 +99,10 @@ var (
 		2: "ANSWER",
 		3: "CANDIDATE",
 		4: "HANGUP",
+		5: "CALL_REQUEST",
+		6: "CALL_ACCEPT",
+		7: "CALL_REJECT",
+		8: "CALL_END",
 	}
 	CallSignal_Kind_value = map[string]int32{
 		"KIND_UNSPECIFIED": 0,
@@ -95,6 +110,10 @@ var (
 		"ANSWER":           2,
 		"CANDIDATE":        3,
 		"HANGUP":           4,
+		"CALL_REQUEST":     5,
+		"CALL_ACCEPT":      6,
+		"CALL_REJECT":      7,
+		"CALL_END":         8,
 	}
 )
 
@@ -1011,13 +1030,13 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\x06typing\x18\x03 \x01(\bR\x06typing\"A\n" +
 	"\fPresenceFlip\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x16\n" +
-	"\x06online\x18\x02 \x01(\bR\x06online\"\x81\x02\n" +
+	"\x06online\x18\x02 \x01(\bR\x06online\"\xc4\x02\n" +
 	"\n" +
 	"CallSignal\x12!\n" +
 	"\fsession_ulid\x18\x01 \x01(\tR\vsessionUlid\x12\"\n" +
 	"\rfrom_actor_id\x18\x02 \x01(\tR\vfromActorId\x12B\n" +
 	"\x04kind\x18\x03 \x01(\x0e2..peers_touch.model.realtime.v1.CallSignal.KindR\x04kind\x12\x18\n" +
-	"\apayload\x18\x04 \x01(\fR\apayload\"N\n" +
+	"\apayload\x18\x04 \x01(\fR\apayload\"\x90\x01\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\t\n" +
 	"\x05OFFER\x10\x01\x12\n" +
@@ -1025,7 +1044,11 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\x06ANSWER\x10\x02\x12\r\n" +
 	"\tCANDIDATE\x10\x03\x12\n" +
 	"\n" +
-	"\x06HANGUP\x10\x04\"\xea\x02\n" +
+	"\x06HANGUP\x10\x04\x12\x10\n" +
+	"\fCALL_REQUEST\x10\x05\x12\x0f\n" +
+	"\vCALL_ACCEPT\x10\x06\x12\x0f\n" +
+	"\vCALL_REJECT\x10\a\x12\f\n" +
+	"\bCALL_END\x10\b\"\xea\x02\n" +
 	"\x0fMessageMutation\x12!\n" +
 	"\fsession_ulid\x18\x01 \x01(\tR\vsessionUlid\x12\x12\n" +
 	"\x04ulid\x18\x02 \x01(\tR\x04ulid\x12\"\n" +

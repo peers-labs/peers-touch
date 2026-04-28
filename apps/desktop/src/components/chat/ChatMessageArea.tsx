@@ -12,6 +12,7 @@ import { useSocialChatStore } from '../../store/socialChat';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { SearchMessagesModal } from './SearchMessagesModal';
 import { AttachmentItem } from './AttachmentItem';
+import { friendChatP2p } from '../../modules/p2p/friendChatP2p';
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import { toast } from '@lobehub/ui';
@@ -585,6 +586,33 @@ export function ChatMessageArea() {
     return currentMessages.find((x) => x.ulid === ulid) ?? null;
   };
 
+  /** Voice / video calls are only meaningful for friend chats with
+   *  an active RTCPeerConnection — the call piggy-backs onto the
+   *  same PC used for chat hints. Group calls and "cold" calls
+   *  (where no PC is open yet) are explicitly out of scope until
+   *  SFU support lands. */
+  const callsAvailable = (() => {
+    if (activeTab !== 'friend' || !activeUlid || !currentUserDid) return false;
+    const s = friendP2pStatus[activeUlid];
+    return !!s && s.state === 'connected';
+  })();
+
+  const handleStartCall = async (kind: 'audio' | 'video') => {
+    if (!callsAvailable || !currentUserDid) return;
+    const session = sessions.find((s) => s.ulid === activeUlid);
+    if (!session) return;
+    const peerDid = session.participantADid === currentUserDid
+      ? session.participantBDid
+      : session.participantADid;
+    if (!peerDid) return;
+    try {
+      await friendChatP2p.startCall(currentUserDid, peerDid, kind);
+    } catch (err) {
+      log.error('chat', 'startCall failed', err);
+      toast.error(t('chat.social.call.mediaDenied'));
+    }
+  };
+
   const handleRecall = async (msg: FriendChatMessage | GroupMessage) => {
     if (!activeUlid) return;
     try {
@@ -753,11 +781,40 @@ export function ChatMessageArea() {
           </Flexbox>
         </Flexbox>
         <Flexbox horizontal align="center" gap={4}>
-          <Tooltip title={t('chat.social.messageArea.comingSoon')}>
-            <Button type="text" icon={<Phone size={16} />} disabled style={{ width: 32, height: 32 }} />
+          {/* Voice / video calls. Only meaningful for friend chats
+              that already have an established P2P connection — the
+              call rides on the same RTCPeerConnection used for chat
+              hints. Group calls and "cold" calls (where no PC is
+              open yet) are deferred until SFU support lands. */}
+          <Tooltip
+            title={
+              callsAvailable
+                ? t('chat.social.call.startAudio')
+                : t('chat.social.call.unsupported')
+            }
+          >
+            <Button
+              type="text"
+              icon={<Phone size={16} />}
+              disabled={!callsAvailable}
+              style={{ width: 32, height: 32 }}
+              onClick={() => handleStartCall('audio')}
+            />
           </Tooltip>
-          <Tooltip title={t('chat.social.messageArea.comingSoon')}>
-            <Button type="text" icon={<Video size={16} />} disabled style={{ width: 32, height: 32 }} />
+          <Tooltip
+            title={
+              callsAvailable
+                ? t('chat.social.call.startVideo')
+                : t('chat.social.call.unsupported')
+            }
+          >
+            <Button
+              type="text"
+              icon={<Video size={16} />}
+              disabled={!callsAvailable}
+              style={{ width: 32, height: 32 }}
+              onClick={() => handleStartCall('video')}
+            />
           </Tooltip>
           <Tooltip title={t('chat.social.search.title')}>
             <Button
