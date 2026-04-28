@@ -62,7 +62,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 
 	// Reaction service has no inter-service dependency; build first
 	// so the moment service can hold a pointer for hydration.
-	s.reactionSvc = application.NewReactionService(repos)
+	s.reactionSvc = application.NewReactionService(rds, repos)
 
 	s.momentSvc = application.NewMomentService(rds, repos, resolver, groups, s.reactionSvc)
 	s.commentSvc = application.NewCommentService(repos, s.momentSvc)
