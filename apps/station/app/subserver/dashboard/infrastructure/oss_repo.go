@@ -95,6 +95,41 @@ type OSSRepository interface {
 	// user — auditing must not turn a successful mutation into
 	// a 500.
 	RecordOSSAudit(ctx context.Context, evt OSSAuditAppend) error
+
+	// GetObject returns one file's projection by oss_files.id.
+	// Returns nil when the row does not exist; the dashboard
+	// admin paths need this lookup separately from ListObjects
+	// because they address files by ULID, not (owner, key). The
+	// projection includes soft-deleted rows so the admin UI can
+	// inspect the lifecycle history; callers that want only-live
+	// rows must filter on the returned `DeletedAt`.
+	GetObject(ctx context.Context, id string) (*domain.OSSObjectAdminDetail, error)
+
+	// AdminPatchObject applies an operator-driven mutate to the
+	// file row identified by ID. Owner permission checks are
+	// bypassed (this is the operator's intended escape hatch);
+	// quota / bucket-move logic is NOT supported here — operators
+	// who need to move a file across buckets should ask the owner
+	// to use the user PATCH endpoint, since the cross-bucket
+	// quota dance is owner-scoped by design.
+	//
+	// On visibility tightening (public → chat / private, or
+	// chat → private) the repo bumps `oss_meta.capability_version`
+	// in the same transaction as the file row update, mirroring
+	// the user PATCH behaviour so remote caches invalidate.
+	AdminPatchObject(ctx context.Context, id string, in AdminPatchObjectInput) (*domain.OSSObjectAdminDetail, error)
+
+	// AdminDeleteObject soft-deletes the file row identified by
+	// ID. Idempotent: a re-delete of an already-deleted row
+	// returns ErrFileAlreadyDeleted (handler treats as 200 with
+	// `already_deleted=true`).
+	//
+	// Bucket usage debit + blob refcount decrement are NOT
+	// performed here; the BucketReconciler / BlobGC workers
+	// (S11+) own ground-truth reconciliation, and doing the
+	// debit synchronously from the dashboard would risk drift
+	// between this path and the OSS subserver's own DeleteFile.
+	AdminDeleteObject(ctx context.Context, id string) (*domain.OSSObjectAdminDetail, error)
 }
 
 // OSSObjectQuery is the filter envelope for ListObjects.
@@ -135,6 +170,15 @@ var (
 	ErrBucketBadInput  = errors.New("dashboard: oss: bucket input invalid")
 )
 
+// Object admin-mutate errors. Closed set so handler error mapping
+// is exhaustive without string sniffing.
+var (
+	ErrFileNotFound        = errors.New("dashboard: oss: file not found")
+	ErrFileAlreadyDeleted  = errors.New("dashboard: oss: file already deleted")
+	ErrFileBadInput        = errors.New("dashboard: oss: file input invalid")
+	ErrFileChatNeedsSession = errors.New("dashboard: oss: chat visibility requires chat_session_id")
+)
+
 // BucketCreateInput is the repo-side envelope for CreateBucket. The
 // service layer is responsible for filling sensible defaults; the
 // repo only writes what it is given.
@@ -157,6 +201,23 @@ type BucketUpdateInput struct {
 	QuotaBytes        *int64
 	TTLDays           *int32
 	Description       *string
+}
+
+// AdminPatchObjectInput is the repo-side envelope for
+// AdminPatchObject. Each pointer field is "set vs leave alone";
+// `ChatSessionIDSet` is the explicit-clear flag (a nil
+// `ChatSessionID` with `ChatSessionIDSet=true` means "clear it",
+// matching the user PATCH path).
+//
+// `ExpiresAtSet` carries the same explicit-null semantics as the
+// user PATCH endpoint: caller distinguishes "leave unchanged"
+// from "clear the TTL".
+type AdminPatchObjectInput struct {
+	Visibility       *string
+	ChatSessionID    *string
+	ChatSessionIDSet bool
+	ExpiresAt        *time.Time
+	ExpiresAtSet     bool
 }
 
 // OSSAuditAppend is the value envelope for RecordOSSAudit. Mirrors
@@ -648,6 +709,270 @@ func (r *ossRepository) DeleteBucket(ctx context.Context, bucketID string, force
 	}
 	return nil
 }
+
+// ---------------------------------------------------------------------------
+// Object lifecycle (admin)
+// ---------------------------------------------------------------------------
+
+// fileRow mirrors ossmodel.FileMeta's column shape — same
+// duplicate-rather-than-import rationale as bucketRow / auditRow.
+// Only the columns the dashboard reads or writes are listed.
+type fileRow struct {
+	ID            string     `gorm:"primaryKey;column:id"`
+	Key           string     `gorm:"column:key"`
+	Name          string     `gorm:"column:name"`
+	Size          int64      `gorm:"column:size"`
+	Mime          string     `gorm:"column:mime"`
+	Backend       string     `gorm:"column:backend"`
+	BucketID      string     `gorm:"column:bucket_id"`
+	OwnerActorID  string     `gorm:"column:owner_actor_id"`
+	Visibility    string     `gorm:"column:visibility"`
+	ChatSessionID string     `gorm:"column:chat_session_id"`
+	Sha256        string     `gorm:"column:sha256"`
+	ExpiresAt     *time.Time `gorm:"column:expires_at"`
+	DeletedAt     *time.Time `gorm:"column:deleted_at"`
+	CreatedAt     time.Time  `gorm:"column:created_at"`
+	UpdatedAt     time.Time  `gorm:"column:updated_at"`
+}
+
+func (fileRow) TableName() string { return tblOSSFiles }
+
+func toAdminDetail(r *fileRow) *domain.OSSObjectAdminDetail {
+	if r == nil {
+		return nil
+	}
+	return &domain.OSSObjectAdminDetail{
+		ID:            r.ID,
+		Key:           r.Key,
+		Name:          r.Name,
+		Size:          r.Size,
+		Mime:          r.Mime,
+		Backend:       r.Backend,
+		BucketID:      r.BucketID,
+		OwnerActorID:  r.OwnerActorID,
+		Visibility:    r.Visibility,
+		ChatSessionID: r.ChatSessionID,
+		Sha256:        r.Sha256,
+		ExpiresAt:     r.ExpiresAt,
+		DeletedAt:     r.DeletedAt,
+		CreatedAt:     r.CreatedAt,
+		UpdatedAt:     r.UpdatedAt,
+	}
+}
+
+func (r *ossRepository) GetObject(ctx context.Context, id string) (*domain.OSSObjectAdminDetail, error) {
+	if r.db == nil || id == "" {
+		return nil, nil
+	}
+	if !r.db.Migrator().HasTable(tblOSSFiles) {
+		return nil, nil
+	}
+	var row fileRow
+	err := r.db.WithContext(ctx).
+		Where("id = ?", id).
+		First(&row).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return toAdminDetail(&row), nil
+}
+
+func (r *ossRepository) AdminPatchObject(ctx context.Context, id string, in AdminPatchObjectInput) (*domain.OSSObjectAdminDetail, error) {
+	if r.db == nil || id == "" {
+		return nil, ErrFileNotFound
+	}
+	if !r.db.Migrator().HasTable(tblOSSFiles) {
+		return nil, ErrFileNotFound
+	}
+
+	var row fileRow
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrFileNotFound
+		}
+		return nil, err
+	}
+	if row.DeletedAt != nil {
+		// Patching a deleted row would let admins resurrect
+		// state without going through the (audit-bearing)
+		// restore path. Refuse.
+		return nil, ErrFileAlreadyDeleted
+	}
+
+	updates := map[string]any{"updated_at": time.Now()}
+	prevVis := row.Visibility
+	newVis := prevVis
+
+	if in.Visibility != nil {
+		v := strings.TrimSpace(*in.Visibility)
+		if v != visibilityPublicConst && v != visibilityChatConst && v != visibilityPrivateConst {
+			return nil, ErrFileBadInput
+		}
+		newVis = v
+		updates["visibility"] = v
+	}
+
+	// Couple chat_session_id with the post-patch visibility so the
+	// row's invariant "chat ⇒ has session_id" cannot be broken
+	// from the admin path either.
+	postSession := row.ChatSessionID
+	if in.ChatSessionIDSet {
+		if in.ChatSessionID == nil {
+			postSession = ""
+		} else {
+			postSession = strings.TrimSpace(*in.ChatSessionID)
+		}
+		updates["chat_session_id"] = postSession
+	}
+	if newVis == visibilityChatConst && postSession == "" {
+		return nil, ErrFileChatNeedsSession
+	}
+	if newVis != visibilityChatConst && postSession != "" {
+		// Tightening / changing visibility away from chat must
+		// clear the session id even if the patch did not say
+		// so explicitly — otherwise audits would lie.
+		updates["chat_session_id"] = ""
+	}
+
+	if in.ExpiresAtSet {
+		if in.ExpiresAt == nil {
+			updates["expires_at"] = nil
+		} else {
+			updates["expires_at"] = *in.ExpiresAt
+		}
+	}
+
+	if len(updates) == 1 {
+		// Only updated_at. Refuse so callers see the no-op as
+		// a 400 rather than a silently-successful save.
+		return nil, ErrFileBadInput
+	}
+
+	res := r.db.WithContext(ctx).Table(tblOSSFiles).Where("id = ?", id).Updates(updates)
+	if res.Error != nil {
+		return nil, res.Error
+	}
+	if res.RowsAffected == 0 {
+		// Lost a race with a delete or a concurrent admin
+		// mutate that flipped deleted_at.
+		return nil, ErrFileNotFound
+	}
+
+	// Visibility tightening bumps capability_version so remote
+	// caches re-read the new policy. Loosening does NOT bump —
+	// permissive moves are observable to clients on the next
+	// access without invalidation. We do this AFTER the file
+	// update so a failure here is not silently masking a
+	// successful policy mutation.
+	if visibilityIsTightening(prevVis, newVis) {
+		if err := r.bumpCapabilityVersion(ctx); err != nil {
+			// Log-and-continue would be wrong: the cache will
+			// happily serve a stale policy. Surface as a 500
+			// so the operator retries.
+			return nil, err
+		}
+	}
+
+	return r.GetObject(ctx, id)
+}
+
+func (r *ossRepository) AdminDeleteObject(ctx context.Context, id string) (*domain.OSSObjectAdminDetail, error) {
+	if r.db == nil || id == "" {
+		return nil, ErrFileNotFound
+	}
+	if !r.db.Migrator().HasTable(tblOSSFiles) {
+		return nil, ErrFileNotFound
+	}
+
+	var row fileRow
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrFileNotFound
+		}
+		return nil, err
+	}
+	if row.DeletedAt != nil {
+		// Idempotent return: caller treats as "already done"
+		// and emits an audit row with reason="already_deleted".
+		return toAdminDetail(&row), ErrFileAlreadyDeleted
+	}
+	now := time.Now()
+	res := r.db.WithContext(ctx).Table(tblOSSFiles).
+		Where("id = ? AND deleted_at IS NULL", id).
+		Updates(map[string]any{
+			"deleted_at": now,
+			"updated_at": now,
+		})
+	if res.Error != nil {
+		return nil, res.Error
+	}
+	if res.RowsAffected == 0 {
+		// Lost the race to a concurrent delete.
+		return nil, ErrFileAlreadyDeleted
+	}
+	row.DeletedAt = &now
+	row.UpdatedAt = now
+	return toAdminDetail(&row), nil
+}
+
+// visibilityIsTightening tells whether the move from prev → next
+// is restrictive (caches must invalidate). The order, from most
+// permissive to least, is public > chat > private.
+func visibilityIsTightening(prev, next string) bool {
+	rank := map[string]int{
+		visibilityPublicConst:  3,
+		visibilityChatConst:    2,
+		visibilityPrivateConst: 1,
+	}
+	return rank[next] > 0 && rank[prev] > 0 && rank[next] < rank[prev]
+}
+
+// bumpCapabilityVersion writes a fresh ULID into oss_meta
+// (capability_version). We use upsert semantics so the first call
+// after a clean bootstrap also creates the row.
+func (r *ossRepository) bumpCapabilityVersion(ctx context.Context) error {
+	if r.db == nil || !r.db.Migrator().HasTable(tblOSSMeta) {
+		return nil
+	}
+	now := time.Now()
+	val := newDashboardULID(now)
+	type metaRow struct {
+		Key       string    `gorm:"primaryKey;column:key"`
+		Value     string    `gorm:"column:value"`
+		UpdatedAt time.Time `gorm:"column:updated_at"`
+	}
+	row := metaRow{Key: metaKeyCapVersion, Value: val, UpdatedAt: now}
+	res := r.db.WithContext(ctx).Table(tblOSSMeta).Where("key = ?", metaKeyCapVersion).
+		Updates(map[string]any{"value": val, "updated_at": now})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		// Row didn't exist yet; insert.
+		if err := r.db.WithContext(ctx).Table(tblOSSMeta).Create(&row).Error; err != nil {
+			// Race: another writer may have inserted in the
+			// gap. Treat unique violation as success — the
+			// invariant "capability_version is fresh after
+			// this call" still holds.
+			if !isUniqueViolationDashboard(err) {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// Visibility constants — duplicated here so the repo does not
+// import the domain or oss subserver model.
+const (
+	visibilityPublicConst   = "public"
+	visibilityChatConst     = "chat"
+	visibilityPrivateConst  = "private"
+	metaKeyCapVersion       = "capability_version"
+)
 
 // ---------------------------------------------------------------------------
 // OSS audit append (admin actions)
