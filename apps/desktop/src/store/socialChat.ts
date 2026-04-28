@@ -276,16 +276,49 @@ function friendUnreadForViewer(s: FriendChatSession, viewerDid: string | null): 
   return Math.max(s.unreadCountA ?? 0, s.unreadCountB ?? 0);
 }
 
-function peerDisplayName(s: FriendChatSession, viewerDid: string | null): string {
+/**
+ * Resolve the *other* participant of a friend session relative to the
+ * current viewer. Centralised here so callers (session list, contacts
+ * panel, contacts page, group-create modal, ...) all agree on:
+ *   - which side is "the friend" when the viewer is participant A
+ *     vs. when the viewer is participant B,
+ *   - the display-name fallback chain (proto display_name -> DID),
+ *   - the avatar URL fallback chain (proto avatar -> empty string,
+ *     which UserSquareAvatar then resolves through its own
+ *     local-then-remote-then-fallback rules).
+ *
+ * `viewerDid == null` means "unknown viewer" — we then guess the B
+ * side, but every caller that has the user's own DID should pass it.
+ */
+export function peerOfSession(
+  s: FriendChatSession,
+  viewerDid: string | null,
+): { did: string; name: string; avatar: string } {
   if (viewerDid) {
     if (s.participantADid === viewerDid) {
-      return (s as any).participantBDisplayName || s.participantBDid || s.participantADid;
+      return {
+        did: s.participantBDid || '',
+        name: s.participantBDisplayName || s.participantBDid || '',
+        avatar: s.participantBAvatar || '',
+      };
     }
     if (s.participantBDid === viewerDid) {
-      return (s as any).participantADisplayName || s.participantADid || s.participantBDid;
+      return {
+        did: s.participantADid || '',
+        name: s.participantADisplayName || s.participantADid || '',
+        avatar: s.participantAAvatar || '',
+      };
     }
   }
-  return (s as any).participantBDisplayName || s.participantBDid || s.participantADid || '';
+  return {
+    did: s.participantBDid || s.participantADid || '',
+    name: s.participantBDisplayName || s.participantBDid || s.participantADid || '',
+    avatar: s.participantBAvatar || s.participantAAvatar || '',
+  };
+}
+
+function peerDisplayName(s: FriendChatSession, viewerDid: string | null): string {
+  return peerOfSession(s, viewerDid).name;
 }
 
 /** When profile has no id yet, infer own DID as the only participant common to all sessions (needs 2+ distinct peers). */

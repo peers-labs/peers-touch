@@ -53,6 +53,35 @@ func (s *subServer) handleCreate(ctx context.Context, req *chat.CreateGroupReque
 		return nil, server.BadRequest("name is required")
 	}
 	item := s.appService.CreateGroup(subject.ID, req.Name, req.Description)
+	// Honour `initial_member_dids` from the proto contract. Previously
+	// this field was silently dropped on the floor, which made the
+	// "Start Group Chat" UI look like it had failed -- the group was
+	// created but only contained the owner, so neither side saw any
+	// joinable conversation. We add members directly (as if the owner
+	// invited and they accepted in one step) because the UI semantics
+	// for `initial_member_dids` are "these people are already in the
+	// group on creation," not "send them an invite they have to
+	// accept." Self-DID is filtered out (the creator is added by
+	// CreateGroup itself), duplicates are de-duped, and we re-fetch
+	// the group at the end so the response carries the correct
+	// MemberCount instead of the stale snapshot from CreateGroup.
+	if len(req.InitialMemberDids) > 0 {
+		seen := make(map[string]struct{}, len(req.InitialMemberDids))
+		seen[subject.ID] = struct{}{}
+		for _, did := range req.InitialMemberDids {
+			if did == "" {
+				continue
+			}
+			if _, dup := seen[did]; dup {
+				continue
+			}
+			seen[did] = struct{}{}
+			s.appService.AddMember(item.ID, did, subject.ID)
+		}
+		if refreshed, ok := s.appService.GetGroup(item.ID); ok {
+			item = *refreshed
+		}
+	}
 	return &chat.CreateGroupResponse{
 		Group: &chat.Group{
 			Ulid:        item.ID,

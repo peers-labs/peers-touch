@@ -305,6 +305,8 @@
   "chat.social.createGroup.noContacts": "No contacts found",
   "chat.social.createGroup.cancel": "Cancel",
   "chat.social.createGroup.finish": "Finish",
+  "chat.social.createGroup.defaultName": "Group ({{count}})",
+  "chat.social.createGroup.failed": "Failed to create group. Please try again.",
 
   "chat.social.findPeople.title": "Find People",
   "chat.social.findPeople.searchPlaceholder": "Search by username...",

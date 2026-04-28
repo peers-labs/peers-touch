@@ -1,40 +1,58 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Input } from '@lobehub/ui';
+import { Button, Input, toast } from '@lobehub/ui';
 import { theme, Modal, Typography } from 'antd';
 import { Search, Check } from 'lucide-react';
-import { useSocialChatStore } from '../../store/socialChat';
+import { peerOfSession, useSocialChatStore } from '../../store/socialChat';
+import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { api } from '../../services/desktop_api';
-import type { FriendChatSession } from '../../gen/proto/domain/chat/friend_chat_pb';
+import { log } from '../../utils/logger';
 
 const { Text } = Typography;
-
-function getInitial(name: string): string {
-  if (!name) return '?';
-  return name.charAt(0).toUpperCase();
-}
 
 interface Props {
   open: boolean;
   onClose: () => void;
 }
 
+interface Contact {
+  did: string;
+  name: string;
+  avatar: string;
+}
+
 export function CreateGroupModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const { sessions, loadGroups } = useSocialChatStore();
+  const { sessions, currentUserDid, loadGroups } = useSocialChatStore();
 
   const [searchText, setSearchText] = useState('');
   const [selectedDids, setSelectedDids] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
 
-  const contacts: { did: string; name: string }[] = useMemo(() => {
-    return sessions.map((s: FriendChatSession) => ({
-      did: s.participantBDid,
-      name: s.participantBDid || t('chat.social.sessionList.unknown'),
-    }));
-  }, [sessions]);
+  // Resolve every friend session to "the other side" relative to the
+  // current user. peerOfSession centralises the A/B selection so we
+  // can never accidentally list ourselves as an invitable contact
+  // (which is exactly what the previous `participantBDid`-as-name
+  // implementation did when the viewer happened to be participant B).
+  // De-dup by DID -- the same friend can appear in more than one
+  // session row in some federated edge cases.
+  const contacts: Contact[] = useMemo(() => {
+    const seen = new Map<string, Contact>();
+    for (const s of sessions) {
+      const peer = peerOfSession(s, currentUserDid);
+      if (!peer.did) continue;
+      if (currentUserDid && peer.did === currentUserDid) continue;
+      if (seen.has(peer.did)) continue;
+      seen.set(peer.did, {
+        did: peer.did,
+        name: peer.name || t('chat.social.sessionList.unknown'),
+        avatar: peer.avatar,
+      });
+    }
+    return Array.from(seen.values());
+  }, [sessions, currentUserDid, t]);
 
   const filteredContacts = useMemo(() => {
     if (!searchText.trim()) return contacts;
@@ -59,13 +77,21 @@ export function CreateGroupModal({ open, onClose }: Props) {
     setCreating(true);
     try {
       const memberDids = Array.from(selectedDids);
-      const groupName = memberDids.length <= 3
-        ? memberDids.map((d) => d.slice(0, 8)).join(', ')
-        : `Group (${memberDids.length + 1})`;
+      // Build a default group name from the *display names* of the
+      // selected peers (not their raw DIDs, which used to bleed
+      // 64-character ULID-like strings into the title). Fall back to
+      // a short placeholder when peers have no display name yet.
+      const namesByDid = new Map(contacts.map((c) => [c.did, c.name]));
+      const groupName =
+        memberDids.length <= 3
+          ? memberDids.map((d) => namesByDid.get(d) ?? d.slice(0, 8)).join(', ')
+          : t('chat.social.createGroup.defaultName', { count: memberDids.length + 1 });
       await api.groupChatCreateGroup(groupName, '', memberDids);
       await loadGroups();
       handleClose();
-    } catch {
+    } catch (err) {
+      log.error('chat', 'createGroup failed', err);
+      toast.error(t('chat.social.createGroup.failed'));
     } finally {
       setCreating(false);
     }
@@ -150,22 +176,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
                   >
                     {selected && <Check size={14} style={{ color: '#fff' }} />}
                   </Flexbox>
-                  <Flexbox
-                    align="center"
-                    justify="center"
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 16,
-                      background: token.colorFillSecondary,
-                      color: token.colorTextSecondary,
-                      fontSize: 13,
-                      fontWeight: 600,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {getInitial(contact.name)}
-                  </Flexbox>
+                  <UserSquareAvatar remoteUrl={contact.avatar} name={contact.name} size={32} />
                   <Text ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>
                     {contact.name}
                   </Text>
