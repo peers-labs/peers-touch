@@ -9,5 +9,4 @@ pub mod presence;
 pub mod profile;
 pub mod settings;
 pub mod storage;
-pub mod timeline;
 pub mod user_profile;
