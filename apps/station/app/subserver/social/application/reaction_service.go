@@ -9,6 +9,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	"gorm.io/gorm"
 )
 
 // ReactionService handles typed reactions (LIKE / LOVE / LAUGH / WOW /
@@ -17,10 +19,15 @@ import (
 // snapshot so list queries don't pay an N+1 aggregation cost.
 type ReactionService struct {
 	repos *infrastructure.Repos
+	gdb   *gorm.DB
 }
 
-func NewReactionService(repos *infrastructure.Repos) *ReactionService {
-	return &ReactionService{repos: repos}
+// NewReactionService takes both the repo bundle (for high-level
+// operations) AND the bare *gorm.DB (for the post-class lookup which
+// MUST bypass the viewer-bound visibility filter — class
+// identification is a storage concern, not an authorisation one).
+func NewReactionService(gdb *gorm.DB, repos *infrastructure.Repos) *ReactionService {
+	return &ReactionService{repos: repos, gdb: gdb}
 }
 
 // React records `(post, viewer, kind)` and refreshes the post's
@@ -111,37 +118,38 @@ func (s *ReactionService) Aggregate(ctx context.Context, postID, viewerID uint64
 	return summaries, nil
 }
 
-// resolvePostClass locates the post's storage class (public or
-// private). Returns (0, "") if the post doesn't exist in either repo.
-// Private repo lookup uses viewerID = 0 (anonymous) here because we
-// only need the class — visibility was already enforced upstream.
+// resolvePostClass looks up the post's storage class without applying
+// the per-viewer visibility filter — class identification is an
+// internal storage concern, NOT an authorisation decision (the
+// authorisation gate is the handler's responsibility before calling
+// React/Unreact). We therefore query the underlying tables directly
+// rather than going through `PrivatePosts.GetByID` whose viewer-bound
+// filter would strip SELF posts when called with `viewerID == 0`.
 func (s *ReactionService) resolvePostClass(ctx context.Context, postIDStr string) (uint64, domain.PostClass, error) {
 	postID := domain.ParseID(postIDStr)
 	if postID == 0 {
 		return 0, "", fmt.Errorf("invalid post_id %q", postIDStr)
 	}
 
-	if p, err := s.repos.PublicPosts.GetByID(ctx, postID); err != nil {
+	var pubCount, privCount int64
+	if err := s.gdb.WithContext(ctx).
+		Model(&db.SocialPublicPost{}).
+		Where("id = ? AND deleted_at IS NULL", postID).
+		Count(&pubCount).Error; err != nil {
 		return 0, "", err
-	} else if p != nil {
+	}
+	if pubCount > 0 {
 		return postID, domain.PostClassPublic, nil
 	}
-
-	// Private lookup with viewerID = author-id alias 0; the repo's
-	// CUSTOM_DENY/ALLOW filter would normally trip here. We use a
-	// "skip-filter" lookup by passing the author id (0 is treated as
-	// non-author so we can't shortcut) — instead, re-fetch with the
-	// public-style Where on the underlying table. For simplicity and
-	// to keep the API surface narrow, we just attempt the private
-	// GetByID with viewerID = 0; if filtered out we treat as not-found
-	// — the upstream visibility check already happened, so this is a
-	// safe degradation.
-	if p, err := s.repos.PrivatePosts.GetByID(ctx, postID, 0); err != nil {
+	if err := s.gdb.WithContext(ctx).
+		Model(&db.SocialPrivatePost{}).
+		Where("id = ? AND deleted_at IS NULL", postID).
+		Count(&privCount).Error; err != nil {
 		return 0, "", err
-	} else if p != nil {
+	}
+	if privCount > 0 {
 		return postID, domain.PostClassPrivate, nil
 	}
-
 	return 0, "", nil
 }
 

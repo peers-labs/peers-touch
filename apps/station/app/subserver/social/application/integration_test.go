@@ -1,0 +1,626 @@
+package application
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"sync/atomic"
+	"testing"
+
+	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+)
+
+// fixtureDBSeq guarantees a unique in-memory shared-cache DSN per
+// test. We MUST use `cache=shared` (otherwise GORM's connection pool
+// would each see a fresh per-connection :memory: DB and migrations
+// applied on one connection would be invisible to another), but
+// without per-test isolation that single shared cache leaks state
+// across tests run in the same package binary.
+var fixtureDBSeq atomic.Uint64
+
+// These tests exercise the full Moments stack — repository ↔ application
+// service ↔ domain validation ↔ CanRead — against an ephemeral sqlite
+// in-memory DB. They lock in the architectural invariants that any
+// future refactor must preserve:
+//
+//   - Storage separation: PUBLIC posts in `social_public_posts`,
+//     non-PUBLIC in `social_private_posts` (Create panics on misroute).
+//   - Audience-filtered reads: PUBLIC visible to anonymous; SELF
+//     visible only to author; FOLLOWERS only to followers.
+//   - Reaction snapshot refresh on toggle.
+//   - Comment visibility inheritance from the parent post + 1-level
+//     reply nesting enforcement.
+//   - Soft-delete tombstoning (deleted posts invisible to everyone,
+//     including the author).
+//
+// We deliberately don't seed the actor table — the hydration path
+// tolerates a missing actor (Author field stays nil) and we assert on
+// the structural invariants rather than display fields.
+
+// ---------------------------------------------------------------------------
+// Fixture
+// ---------------------------------------------------------------------------
+
+type fixture struct {
+	gdb       *gorm.DB
+	repos     *infrastructure.Repos
+	moments   *MomentService
+	reactions *ReactionService
+	circles   *CircleService
+	comments  *CommentService
+	timeline  *TimelineService
+}
+
+func newFixture(t *testing.T) *fixture {
+	t.Helper()
+	dsn := fmt.Sprintf("file:moments_test_%d?mode=memory&cache=shared&_pragma=foreign_keys(1)", fixtureDBSeq.Add(1))
+	gdb, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := gdb.AutoMigrate(
+		&db.SocialPublicPost{},
+		&db.SocialPrivatePost{},
+		&db.SocialPrivateAudienceGrant{},
+		&db.SocialComment{},
+		&db.SocialReaction{},
+		&db.SocialCircle{},
+		&db.SocialCircleMember{},
+		&db.Follow{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	resolver := NewNoopActorResolver()
+	groups := NewNoopGroupMembershipChecker()
+	repos := infrastructure.NewRepos(gdb, resolver.ResolveID)
+
+	reactions := NewReactionService(gdb, repos)
+	moments := NewMomentService(gdb, repos, resolver, groups, reactions)
+	comments := NewCommentService(repos, moments)
+	circles := NewCircleService(repos)
+	timeline := NewTimelineService(repos, moments, resolver, groups)
+
+	return &fixture{
+		gdb:       gdb,
+		repos:     repos,
+		moments:   moments,
+		reactions: reactions,
+		circles:   circles,
+		comments:  comments,
+		timeline:  timeline,
+	}
+}
+
+// seedFollow records `follower → following` directly via the repo (skipping
+// RelationshipService to keep the test free of subject-extraction
+// concerns).
+func seedFollow(t *testing.T, f *fixture, follower, following uint64) {
+	t.Helper()
+	if err := f.repos.Follows.Follow(context.Background(), follower, following); err != nil {
+		t.Fatalf("seed follow %d->%d: %v", follower, following, err)
+	}
+}
+
+func textBody(text string) *model.CreatePostRequest_Text {
+	return &model.CreatePostRequest_Text{Text: &model.CreateTextPostRequest{Text: text}}
+}
+
+// ---------------------------------------------------------------------------
+// Storage separation
+// ---------------------------------------------------------------------------
+
+func TestStorageSeparation_PublicLandsInPublicTable(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	post, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		Content:  textBody("hello world"),
+	}, /*authorID*/ 100)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	var pubCount, privCount int64
+	f.gdb.Model(&db.SocialPublicPost{}).Count(&pubCount)
+	f.gdb.Model(&db.SocialPrivatePost{}).Count(&privCount)
+	if pubCount != 1 || privCount != 0 {
+		t.Fatalf("expected 1 public + 0 private rows, got pub=%d priv=%d", pubCount, privCount)
+	}
+
+	if post.Audience == nil || post.Audience.Kind != model.Audience_PUBLIC {
+		t.Fatalf("returned audience kind = %v, want PUBLIC", post.Audience)
+	}
+}
+
+func TestStorageSeparation_FollowersLandsInPrivateTable(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	if _, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
+		Content:  textBody("for my followers"),
+	}, 100); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	var pubCount, privCount int64
+	f.gdb.Model(&db.SocialPublicPost{}).Count(&pubCount)
+	f.gdb.Model(&db.SocialPrivatePost{}).Count(&privCount)
+	if pubCount != 0 || privCount != 1 {
+		t.Fatalf("expected 0 public + 1 private row, got pub=%d priv=%d", pubCount, privCount)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Audience-filtered reads
+// ---------------------------------------------------------------------------
+
+func TestRead_PublicVisibleToAnonymous(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	created, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		Content:  textBody("public note"),
+	}, 100)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	got, err := f.moments.GetMoment(ctx, created.Id, 0 /* anonymous */)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got == nil {
+		t.Fatal("anonymous viewer should be able to read PUBLIC post")
+	}
+}
+
+func TestRead_SelfOnlyVisibleToAuthor(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	created, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_SELF},
+		Content:  textBody("dear diary"),
+	}, 100)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if got, _ := f.moments.GetMoment(ctx, created.Id, 100); got == nil {
+		t.Fatal("author should always see their own SELF post")
+	}
+	if got, _ := f.moments.GetMoment(ctx, created.Id, 200); got != nil {
+		t.Fatal("non-author must not see SELF post")
+	}
+	if got, _ := f.moments.GetMoment(ctx, created.Id, 0); got != nil {
+		t.Fatal("anonymous viewer must not see SELF post")
+	}
+}
+
+func TestRead_FollowersOnlyVisibleToFollowers(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	const author, follower, stranger = uint64(100), uint64(200), uint64(300)
+	seedFollow(t, f, follower, author)
+
+	created, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
+		Content:  textBody("followers only"),
+	}, author)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if got, _ := f.moments.GetMoment(ctx, created.Id, author); got == nil {
+		t.Fatal("author must see their own FOLLOWERS post")
+	}
+	if got, _ := f.moments.GetMoment(ctx, created.Id, follower); got == nil {
+		t.Fatal("follower must see FOLLOWERS post")
+	}
+	if got, _ := f.moments.GetMoment(ctx, created.Id, stranger); got != nil {
+		t.Fatal("stranger must not see FOLLOWERS post")
+	}
+	if got, _ := f.moments.GetMoment(ctx, created.Id, 0); got != nil {
+		t.Fatal("anonymous viewer must not see FOLLOWERS post")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Soft-delete cascade
+// ---------------------------------------------------------------------------
+
+func TestDelete_TombstonesPostFromEveryone(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	const author = uint64(100)
+	created, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		Content:  textBody("ephemeral"),
+	}, author)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if err := f.moments.DeleteMoment(ctx, created.Id, author); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	if got, _ := f.moments.GetMoment(ctx, created.Id, author); got != nil {
+		t.Fatal("author must not see deleted post (CanRead invariant 1)")
+	}
+	if got, _ := f.moments.GetMoment(ctx, created.Id, 0); got != nil {
+		t.Fatal("anonymous viewer must not see deleted post")
+	}
+}
+
+func TestDelete_ByNonAuthorIsNoop(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	created, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		Content:  textBody("not yours"),
+	}, /*author*/ 100)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Different actor attempts to delete — silently no-op (no error,
+	// no tombstone applied).
+	if err := f.moments.DeleteMoment(ctx, created.Id, /*non-author*/ 200); err != nil {
+		t.Fatalf("non-author delete should not error: %v", err)
+	}
+
+	if got, _ := f.moments.GetMoment(ctx, created.Id, 0); got == nil {
+		t.Fatal("post must remain visible after non-author delete attempt")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Reactions
+// ---------------------------------------------------------------------------
+
+func TestReact_AddRemoveAndSnapshotRefresh(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	const author, viewer = uint64(100), uint64(200)
+	created, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		Content:  textBody("react to me"),
+	}, author)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	summaries, err := f.reactions.React(ctx, created.Id, viewer, model.ReactionKind_REACTION_LIKE)
+	if err != nil {
+		t.Fatalf("react: %v", err)
+	}
+	if len(summaries) != 1 || summaries[0].Kind != model.ReactionKind_REACTION_LIKE || summaries[0].Count != 1 {
+		t.Fatalf("after react: %+v", summaries)
+	}
+	if !summaries[0].ReactedByViewer {
+		t.Fatal("reacted_by_viewer must be true for the reactor")
+	}
+
+	// Idempotent: re-reacting with same kind shouldn't duplicate.
+	if _, err := f.reactions.React(ctx, created.Id, viewer, model.ReactionKind_REACTION_LIKE); err != nil {
+		t.Fatalf("re-react: %v", err)
+	}
+	var n int64
+	f.gdb.Model(&db.SocialReaction{}).Count(&n)
+	if n != 1 {
+		t.Fatalf("re-react must be idempotent at composite-key level, got %d rows", n)
+	}
+
+	// Different kind from same viewer — second reaction allowed.
+	if _, err := f.reactions.React(ctx, created.Id, viewer, model.ReactionKind_REACTION_LOVE); err != nil {
+		t.Fatalf("react LOVE: %v", err)
+	}
+	f.gdb.Model(&db.SocialReaction{}).Count(&n)
+	if n != 2 {
+		t.Fatalf("expected 2 reaction rows after LOVE, got %d", n)
+	}
+
+	// Snapshot refresh: the parent post's reactions_count_json should
+	// reflect both kinds.
+	var snapshot string
+	f.gdb.Model(&db.SocialPublicPost{}).
+		Select("reactions_count_json").
+		Where("id = ?", domain.ParseID(created.Id)).
+		Scan(&snapshot)
+	if !strings.Contains(snapshot, "REACTION_LIKE") || !strings.Contains(snapshot, "REACTION_LOVE") {
+		t.Fatalf("snapshot must include both kinds, got %q", snapshot)
+	}
+
+	// Unreact LIKE: should drop the count to zero for LIKE but keep
+	// LOVE.
+	if _, err := f.reactions.Unreact(ctx, created.Id, viewer, model.ReactionKind_REACTION_LIKE); err != nil {
+		t.Fatalf("unreact: %v", err)
+	}
+	f.gdb.Model(&db.SocialReaction{}).Count(&n)
+	if n != 1 {
+		t.Fatalf("expected 1 row after unreact, got %d", n)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Comments
+// ---------------------------------------------------------------------------
+
+func TestComment_OneLevelReplyNesting(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	const author = uint64(100)
+	post, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		Content:  textBody("discussion starter"),
+	}, author)
+	if err != nil {
+		t.Fatalf("create post: %v", err)
+	}
+	postID := domain.ParseID(post.Id)
+
+	top, err := f.comments.CreateComment(ctx, &model.CreateCommentRequest{
+		PostId:  post.Id,
+		Content: "first!",
+	}, postID, /*viewer*/ 200)
+	if err != nil {
+		t.Fatalf("create top-level comment: %v", err)
+	}
+
+	// Reply to a top-level comment is allowed.
+	if _, err := f.comments.CreateComment(ctx, &model.CreateCommentRequest{
+		PostId:           post.Id,
+		Content:          "second",
+		ReplyToCommentId: top.Id,
+	}, postID, /*viewer*/ 300); err != nil {
+		t.Fatalf("reply to top-level: %v", err)
+	}
+
+	// Reply to a reply must be rejected (one-level nesting).
+	var lastReplyID string
+	{
+		// Re-fetch the second comment so we have its id.
+		resp, _ := f.comments.ListByPost(ctx, postID, "", 50)
+		for _, c := range resp.Comments {
+			if c.ReplyToCommentId == top.Id {
+				lastReplyID = c.Id
+				break
+			}
+		}
+	}
+	if lastReplyID == "" {
+		t.Fatal("could not locate reply for two-level test")
+	}
+	_, err = f.comments.CreateComment(ctx, &model.CreateCommentRequest{
+		PostId:           post.Id,
+		Content:          "third",
+		ReplyToCommentId: lastReplyID,
+	}, postID, /*viewer*/ 400)
+	if err == nil || !strings.Contains(err.Error(), "one-level nesting") {
+		t.Fatalf("two-level reply must be rejected, got err=%v", err)
+	}
+}
+
+func TestComment_VisibilityInheritsFromPost(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	const author = uint64(100)
+	post, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_SELF},
+		Content:  textBody("private thought"),
+	}, author)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	postID := domain.ParseID(post.Id)
+
+	// Non-author cannot create a comment on a SELF post (parent
+	// invisibility cascades).
+	if _, err := f.comments.CreateComment(ctx, &model.CreateCommentRequest{
+		PostId:  post.Id,
+		Content: "hi",
+	}, postID, /*non-author*/ 200); err == nil {
+		t.Fatal("non-author must not be able to comment on SELF post")
+	}
+
+	// Author can.
+	if _, err := f.comments.CreateComment(ctx, &model.CreateCommentRequest{
+		PostId:  post.Id,
+		Content: "self-note",
+	}, postID, author); err != nil {
+		t.Fatalf("author comment on SELF post: %v", err)
+	}
+}
+
+func TestComment_DecrementsCountOnDelete(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	const author = uint64(100)
+	post, _ := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		Content:  textBody("counter"),
+	}, author)
+	postID := domain.ParseID(post.Id)
+
+	c, _ := f.comments.CreateComment(ctx, &model.CreateCommentRequest{PostId: post.Id, Content: "a"}, postID, 200)
+	c2, _ := f.comments.CreateComment(ctx, &model.CreateCommentRequest{PostId: post.Id, Content: "b"}, postID, 300)
+
+	var afterCreate int64
+	f.gdb.Model(&db.SocialPublicPost{}).Select("comments_count").Where("id = ?", postID).Scan(&afterCreate)
+	if afterCreate != 2 {
+		t.Fatalf("comments_count after 2 creates = %d, want 2", afterCreate)
+	}
+	_ = c2
+
+	if err := f.comments.DeleteComment(ctx, domain.ParseID(c.Id), 200); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	var afterDelete int64
+	f.gdb.Model(&db.SocialPublicPost{}).Select("comments_count").Where("id = ?", postID).Scan(&afterDelete)
+	if afterDelete != 1 {
+		t.Fatalf("comments_count after 1 delete = %d, want 1", afterDelete)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Audience validation (rejected at the application boundary)
+// ---------------------------------------------------------------------------
+
+func TestCreateMoment_RejectsMissingAudience(t *testing.T) {
+	f := newFixture(t)
+	_, err := f.moments.CreateMoment(context.Background(), &model.CreatePostRequest{
+		Type:    model.PostType_TEXT,
+		Content: textBody("no audience"),
+	}, 100)
+	if err == nil {
+		t.Fatal("missing audience must be rejected")
+	}
+}
+
+func TestCreateMoment_RejectsInvalidAudienceShape(t *testing.T) {
+	f := newFixture(t)
+	cases := []struct {
+		name string
+		a    *model.Audience
+	}{
+		{"circle missing target", &model.Audience{Kind: model.Audience_CIRCLE}},
+		{"custom_allow empty list", &model.Audience{Kind: model.Audience_CUSTOM_ALLOW}},
+		{"custom_deny base CIRCLE", &model.Audience{
+			Kind:      model.Audience_CUSTOM_DENY,
+			BaseKind:  model.Audience_CIRCLE,
+			ActorDids: []string{"did:peers:x"},
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := f.moments.CreateMoment(context.Background(), &model.CreatePostRequest{
+				Type:     model.PostType_TEXT,
+				Audience: tc.a,
+				Content:  textBody("invalid"),
+			}, 100)
+			if err == nil {
+				t.Fatalf("expected reject for %s", tc.name)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Circle service basics (no DID resolver in P1 — owner ops only)
+// ---------------------------------------------------------------------------
+
+func TestCircle_CreateRenameDelete(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	const owner = uint64(100)
+
+	created, err := f.circles.Create(ctx, &model.CreateCircleRequest{
+		Name:        "Family",
+		Description: "Parents + sibling",
+	}, owner)
+	if err != nil {
+		t.Fatalf("create circle: %v", err)
+	}
+	if created.OwnerId != owner || created.Name != "Family" {
+		t.Fatalf("created circle = %+v", created)
+	}
+
+	desc := "Updated description"
+	renamed, err := f.circles.Rename(ctx, &model.RenameCircleRequest{
+		CircleId:    created.Id,
+		Name:        "Close Family",
+		Description: &desc,
+	}, owner)
+	if err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if renamed.Name != "Close Family" || renamed.Description != desc {
+		t.Fatalf("rename did not apply: %+v", renamed)
+	}
+
+	// A different actor cannot delete.
+	if err := f.circles.Delete(ctx, created.Id, /*not-owner*/ 200); err == nil {
+		t.Fatal("non-owner delete must be rejected")
+	}
+	if err := f.circles.Delete(ctx, created.Id, owner); err != nil {
+		t.Fatalf("owner delete: %v", err)
+	}
+}
+
+func TestCircle_AddRemoveMembersUpdatesDenormalCount(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	const owner = uint64(100)
+	created, _ := f.circles.Create(ctx, &model.CreateCircleRequest{Name: "Friends"}, owner)
+
+	added, total, err := f.circles.AddMembers(ctx, &model.AddCircleMemberRequest{
+		CircleId:   created.Id,
+		MemberDids: []string{"did:peers:a", "did:peers:b", "did:peers:c"},
+	}, owner)
+	if err != nil {
+		t.Fatalf("add members: %v", err)
+	}
+	if added != 3 || total != 3 {
+		t.Fatalf("added=%d total=%d, want 3/3", added, total)
+	}
+
+	// Re-add overlapping list — duplicates excluded from added_count.
+	added, total, err = f.circles.AddMembers(ctx, &model.AddCircleMemberRequest{
+		CircleId:   created.Id,
+		MemberDids: []string{"did:peers:b", "did:peers:c", "did:peers:d"},
+	}, owner)
+	if err != nil {
+		t.Fatalf("re-add: %v", err)
+	}
+	if added != 1 || total != 4 {
+		t.Fatalf("after re-add: added=%d total=%d, want 1/4", added, total)
+	}
+
+	removed, total, err := f.circles.RemoveMembers(ctx, &model.RemoveCircleMemberRequest{
+		CircleId:   created.Id,
+		MemberDids: []string{"did:peers:a", "did:peers:zzz" /* not present */},
+	}, owner)
+	if err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if removed != 1 || total != 3 {
+		t.Fatalf("after remove: removed=%d total=%d, want 1/3", removed, total)
+	}
+
+	// Denormalised count on the circle row matches.
+	var dbCount int64
+	f.gdb.Model(&db.SocialCircle{}).Select("member_count").Where("id = ?", created.Id).Scan(&dbCount)
+	if dbCount != 3 {
+		t.Fatalf("circle row member_count = %d, want 3", dbCount)
+	}
+}
