@@ -11,6 +11,7 @@ import (
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oss/db/repo"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oss/service"
+	"github.com/peers-labs/peers-touch/station/app/subserver/oss/worker"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/facility/appdir"
 	"github.com/peers-labs/peers-touch/station/frame/core/facility/storage"
@@ -132,6 +133,13 @@ type ossSubServer struct {
 	workerTTLInterval      time.Duration
 	workerBlobGCInterval   time.Duration
 	workerReconcileInterval time.Duration
+
+	// workerScheduler runs the background lifecycle workers
+	// (TTLSweeper / BlobGC for S11; Reconciler / PeerKeyTrim /
+	// KeyRotationFinalizer / AuditTrim are added in S12). Lazy:
+	// only constructed when at least one worker has a positive
+	// interval AND the OSS subserver has all required deps.
+	workerScheduler *worker.Scheduler
 }
 
 // NewOSSSubServer constructs the OSS subserver from operator-supplied
@@ -427,10 +435,87 @@ func (s *ossSubServer) Init(ctx context.Context, opts ...option.Option) error {
 
 func (s *ossSubServer) Start(ctx context.Context, opts ...option.Option) error {
 	s.status = server.StatusRunning
+	if err := s.startWorkers(ctx); err != nil {
+		// Worker startup failure is logged-not-fatal: the
+		// per-request data plane is independent of the
+		// background workers, so a misconfigured TTLSweeper
+		// must not abort the subserver. Operators see the
+		// failure in audit + logs and fix the deps.
+		logger.Errorf(ctx, "[oss] background workers failed to start: %v", err)
+	}
 	return nil
 }
 
-func (s *ossSubServer) Stop(ctx context.Context) error { s.status = server.StatusStopped; return nil }
+func (s *ossSubServer) Stop(ctx context.Context) error {
+	s.status = server.StatusStopped
+	if s.workerScheduler != nil {
+		s.workerScheduler.Stop()
+	}
+	return nil
+}
+
+// startWorkers constructs the background lifecycle workers and
+// hands them to a Scheduler. Idempotent: subsequent calls are
+// no-ops once the scheduler is running. Workers requiring deps
+// the subserver did not initialise (e.g. SQLite-only test boots
+// that skip the audit repo) are silently skipped — the TTL /
+// BlobGC contract requires a real audit repo.
+func (s *ossSubServer) startWorkers(ctx context.Context) error {
+	if s.workerScheduler != nil {
+		return nil
+	}
+	if s.fileRepo == nil || s.blobRepo == nil || s.auditRepo == nil || s.backend == nil {
+		return errors.New("oss: workers: missing dependencies (fileRepo/blobRepo/auditRepo/backend)")
+	}
+
+	workers := make([]worker.Worker, 0, 2)
+
+	if s.workerTTLInterval > 0 {
+		ttl, err := worker.NewTTLSweeper(worker.TTLSweeperConfig{
+			Files:       s.fileRepo,
+			Buckets:     s.bucketRepo,
+			Blobs:       s.blobRepo,
+			Audit:       s.auditRepo,
+			BackendName: s.backendType,
+			Interval:    s.workerTTLInterval,
+		})
+		if err != nil {
+			return fmt.Errorf("oss: workers: ttl: %w", err)
+		}
+		workers = append(workers, ttl)
+	}
+
+	if s.workerBlobGCInterval > 0 {
+		gc, err := worker.NewBlobGC(worker.BlobGCConfig{
+			Blobs:       s.blobRepo,
+			Backend:     s.backend,
+			Audit:       s.auditRepo,
+			BackendName: s.backendType,
+			Grace:       s.blobGCGrace,
+			Interval:    s.workerBlobGCInterval,
+		})
+		if err != nil {
+			return fmt.Errorf("oss: workers: blob_gc: %w", err)
+		}
+		workers = append(workers, gc)
+	}
+
+	if len(workers) == 0 {
+		return nil
+	}
+
+	// MemLock is correct for single-instance deployments; the
+	// PgAdvisoryLock implementation lands in S12 alongside the
+	// reconciler. The lock is keyed per worker name, so even a
+	// future Postgres swap-in keeps the same call site.
+	s.workerScheduler = worker.NewScheduler(workers, worker.NewMemLock(), s.auditRepo)
+	if err := s.workerScheduler.Start(ctx); err != nil {
+		s.workerScheduler = nil
+		return fmt.Errorf("oss: workers: scheduler start: %w", err)
+	}
+	logger.Infof(ctx, "[oss] %d background worker(s) started", len(workers))
+	return nil
+}
 func (s *ossSubServer) Status() server.Status          { return s.status }
 func (s *ossSubServer) Name() string                   { return "oss" }
 func (s *ossSubServer) Type() server.SubserverType     { return server.SubserverTypeHTTP }
