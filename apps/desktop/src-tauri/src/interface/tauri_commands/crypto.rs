@@ -9,9 +9,7 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use crate::application::chat_storage;
 use crate::application::session_resolver;
 use crate::contracts::{ChatSearchLocalInput, StubPayload};
-use crate::domain::crypto::{
-    self, CryptoSession, EncryptedMessage, GroupEncryptedMessage, GroupKeyState, X3DHBundle,
-};
+use crate::domain::crypto::{self, CryptoSession, EncryptedMessage, X3DHBundle};
 use ed25519_dalek::Signer;
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::local_chat_store;
@@ -216,208 +214,21 @@ pub fn crypto_get_key_bundle(state: State<'_, Arc<AppState>>, window: Window) ->
     )
 }
 
-fn group_key_state_or_create(user_scope: &str, group_id: &str) -> Result<GroupKeyState, String> {
-    match local_chat_store::load_group_key(user_scope, group_id)? {
-        Some((k, epoch, counter)) if k.len() == 32 => {
-            let mut key = [0u8; 32];
-            key.copy_from_slice(&k[..32]);
-            Ok(GroupKeyState {
-                group_id: group_id.to_string(),
-                key,
-                epoch,
-                counter,
-            })
-        }
-        _ => {
-            let s = GroupKeyState::generate(group_id);
-            local_chat_store::save_group_key(user_scope, group_id, &s.key, s.epoch, s.counter)?;
-            Ok(s)
-        }
-    }
-}
-
-#[tauri::command]
-pub fn crypto_group_encrypt(
-    group_id: String,
-    plaintext: String,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    if group_id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "Group ID is required", None);
-    }
-    let user_scope = user_scope_from_state(&state, &window);
-    let mut gk = match group_key_state_or_create(user_scope.as_str(), group_id.as_str()) {
-        Ok(s) => s,
-        Err(reason) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Group key operation failed: {}", reason),
-                None,
-            );
-        }
-    };
-    let enc = match gk.encrypt(plaintext.as_bytes()) {
-        Ok(e) => e,
-        Err(reason) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Encryption failed: {}", reason),
-                None,
-            );
-        }
-    };
-    if let Err(reason) =
-        local_chat_store::save_group_key(user_scope.as_str(), group_id.as_str(), &gk.key, gk.epoch, gk.counter)
-    {
-        return AppResult::fail(
-            ErrorCode::InternalError,
-            format!("Failed to save group encryption key: {}", reason),
-            None,
-        );
-    }
-    to_stub(
-        "crypto_group_encrypt",
-        json!({
-            "ciphertext": B64.encode(&enc.ciphertext),
-            "epoch": enc.epoch,
-            "counter": enc.counter,
-        }),
-    )
-}
-
-#[tauri::command]
-pub fn crypto_group_decrypt(
-    group_id: String,
-    ciphertext: String,
-    epoch: u32,
-    counter: u32,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    if group_id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "Group ID is required", None);
-    }
-    let user_scope = user_scope_from_state(&state, &window);
-    let row = match local_chat_store::load_group_key(user_scope.as_str(), group_id.as_str()) {
-        Ok(r) => r,
-        Err(reason) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Group key operation failed: {}", reason),
-                None,
-            );
-        }
-    };
-    let Some((k, _e, _c)) = row else {
-        return AppResult::fail(ErrorCode::NotFound, "Group encryption key not found", None);
-    };
-    if k.len() != 32 {
-        return AppResult::fail(ErrorCode::InternalError, "Stored group encryption key data is invalid", None);
-    }
-    let mut key = [0u8; 32];
-    key.copy_from_slice(&k[..32]);
-    let ct_raw = match B64.decode(ciphertext.trim()) {
-        Ok(b) => b,
-        Err(e) => {
-            return AppResult::fail(
-                ErrorCode::InvalidArgument,
-                format!("Invalid base64 ciphertext: {}", e),
-                None,
-            );
-        }
-    };
-    let gk = GroupKeyState {
-        group_id: group_id.clone(),
-        key,
-        epoch: 0,
-        counter: 0,
-    };
-    let msg = GroupEncryptedMessage {
-        ciphertext: ct_raw,
-        epoch,
-        counter,
-    };
-    let plain = match gk.decrypt(&msg) {
-        Ok(p) => p,
-        Err(reason) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Decryption failed: {}", reason),
-                None,
-            );
-        }
-    };
-    let text = match String::from_utf8(plain) {
-        Ok(s) => s,
-        Err(e) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Decrypted plaintext is not valid UTF-8: {}", e),
-                None,
-            );
-        }
-    };
-    to_stub("crypto_group_decrypt", json!({ "plaintext": text }))
-}
-
-#[tauri::command]
-pub fn crypto_group_rotate_key(group_id: String, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
-    if group_id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "Group ID is required", None);
-    }
-    let user_scope = user_scope_from_state(&state, &window);
-    let mut gk = match local_chat_store::load_group_key(user_scope.as_str(), group_id.as_str()) {
-        Ok(Some((k, epoch, counter))) if k.len() == 32 => {
-            let mut key = [0u8; 32];
-            key.copy_from_slice(&k[..32]);
-            GroupKeyState {
-                group_id: group_id.clone(),
-                key,
-                epoch,
-                counter,
-            }
-        }
-        Ok(None) => {
-            let s = GroupKeyState::generate(group_id.as_str());
-            if let Err(reason) = local_chat_store::save_group_key(
-                user_scope.as_str(),
-                group_id.as_str(),
-                &s.key,
-                s.epoch,
-                s.counter,
-            ) {
-                return AppResult::fail(
-                    ErrorCode::InternalError,
-                    format!("Failed to save group encryption key: {}", reason),
-                    None,
-                );
-            }
-            return to_stub("crypto_group_rotate_key", json!({ "epoch": s.epoch }));
-        }
-        Ok(Some(_)) => {
-            return AppResult::fail(ErrorCode::InternalError, "Stored group encryption key data is invalid", None);
-        }
-        Err(reason) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Group key operation failed: {}", reason),
-                None,
-            );
-        }
-    };
-    gk.rotate();
-    if let Err(reason) =
-        local_chat_store::save_group_key(user_scope.as_str(), group_id.as_str(), &gk.key, gk.epoch, gk.counter)
-    {
-        return AppResult::fail(
-            ErrorCode::InternalError,
-            format!("Failed to save group encryption key: {}", reason),
-            None,
-        );
-    }
-    to_stub("crypto_group_rotate_key", json!({ "epoch": gk.epoch }))
-}
+// NOTE: The previous crypto_group_encrypt / crypto_group_decrypt /
+// crypto_group_rotate_key Tauri commands were removed in commit
+// landing alongside docs/architecture/encryption/group-sender-keys.md
+// in the peers-touch worktree. They were:
+//   1. Never registered in main.rs::tauri::generate_handler!
+//      (i.e. unreachable from the JS layer at runtime).
+//   2. Unused by the TS layer (no callers anywhere in apps/desktop/src).
+//   3. Architecturally broken: GroupKeyState::generate() produced a
+//      fresh random key per-device with no distribution mechanism, so
+//      two members would never share a key for the same group.
+// The replacement is the Sender Keys protocol designed in
+// peers-touch/docs/architecture/encryption/group-sender-keys.md, which
+// will land in a follow-up commit per the G0..G5 phase plan documented
+// there. Until that lands, group chat is plaintext on the wire and the
+// codebase no longer pretends otherwise.
 
 fn decode_b64_fixed<const N: usize>(label: &str, data: &str) -> Result<[u8; N], String> {
     let raw = B64.decode(data.trim()).map_err(|e| format!("{label} base64: {e}"))?;
