@@ -44,7 +44,20 @@ export interface RealtimeConnectionStatePayload {
   reason: string;
 }
 
-export type RealtimeCallSignalKind = 'OFFER' | 'ANSWER' | 'CANDIDATE' | 'HANGUP';
+export type RealtimeCallSignalKind =
+  | 'OFFER'
+  | 'ANSWER'
+  | 'CANDIDATE'
+  | 'HANGUP'
+  // Application-layer ringing protocol — see CallSignal.Kind in
+  // model/domain/realtime/event.proto. These kinds wrap a JSON
+  // body (`{"callId":"<ulid>","kind":"audio"|"video"}`) inside the
+  // same sealed signaling envelope used for SDP / candidates, so
+  // Station never sees the call metadata.
+  | 'CALL_REQUEST'
+  | 'CALL_ACCEPT'
+  | 'CALL_REJECT'
+  | 'CALL_END';
 
 export interface RealtimeCallSignalPayload {
   /** Server-assigned event id. Opaque cursor; see contract §2.2. */
