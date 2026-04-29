@@ -13,6 +13,7 @@ import (
 
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	touchauth "github.com/peers-labs/peers-touch/station/frame/touch/auth"
+	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
@@ -71,6 +72,11 @@ func OAuthLogin(c context.Context, ctx *app.RequestContext) {
 		Username:     touchString(result.User["username"]),
 		DisplayName:  touchString(result.User["display_name"]),
 		Email:        touchString(result.User["email"]),
+	}
+	if actorIDNum > 0 {
+		if act, err := touchactor.GetActorByID(c, uint64(actorIDNum)); err == nil && act != nil {
+			response.ActorRef = touchactor.ProtoActorRef(act, baseURLFrom(ctx))
+		}
 	}
 
 	SuccessResponse(c, ctx, "OAuth login successful", response)

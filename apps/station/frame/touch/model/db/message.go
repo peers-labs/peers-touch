@@ -10,20 +10,20 @@ import (
 type MessageType string
 
 type Message struct {
-	ID         uint64      `gorm:"primary_key;autoIncrement:false"`
-	ULID       string      `gorm:"uniqueIndex;size:32;not null"`
-	ConvPK     uint64      `gorm:"index;not null"`
-	ConvID     string      `gorm:"index;size:64;not null"`
-	SenderDID  string      `gorm:"size:128;index"`
-	TS         int64       `gorm:"index"`
-	Type       MessageType `gorm:"size:16;index"`
-	ParentID   string      `gorm:"size:32"`
-	ThreadID   string      `gorm:"size:32"`
-	ContentCID string      `gorm:"size:128"`
-	Deleted    bool        `gorm:"index"`
-	TTLAt      time.Time   `gorm:"index"`
-	CreatedAt  time.Time   `gorm:"created_at"`
-	UpdatedAt  time.Time   `gorm:"updated_at"`
+	ID         uint64      `gorm:"column:id;primary_key;autoIncrement:false"`
+	ULID       string      `gorm:"column:ulid;uniqueIndex;size:32;not null"`
+	ConvPK     uint64      `gorm:"column:conv_pk;index;not null"`
+	ConvID     string      `gorm:"column:conv_id;index;size:64;not null"`
+	SenderDID  string      `gorm:"column:sender_did;size:128;index"`
+	TS         int64       `gorm:"column:ts;index"`
+	Type       MessageType `gorm:"column:type;size:16;index"`
+	ParentID   string      `gorm:"column:parent_id;size:32"`
+	ThreadID   string      `gorm:"column:thread_id;size:32"`
+	ContentCID string      `gorm:"column:content_cid;size:128"`
+	Deleted    bool        `gorm:"column:deleted;index"`
+	TTLAt      time.Time   `gorm:"column:ttl_at;index"`
+	CreatedAt  time.Time   `gorm:"column:created_at"`
+	UpdatedAt  time.Time   `gorm:"column:updated_at"`
 }
 
 func (*Message) TableName() string { return "touch_message" }

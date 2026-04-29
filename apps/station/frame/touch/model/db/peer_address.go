@@ -11,14 +11,10 @@ const (
 )
 
 type PeerAddress struct {
-	// `gorm:"primaryKey"` indicates this field is the primary key
-	ID uint64 `gorm:"primaryKey"`
-	// `gorm:"size:255;index"` sets the maximum length of the string to 255 and adds an index for faster queries
-	PeerID string `gorm:"size:255;index"`
-	// `gorm:"size:255"` sets the maximum length of the string to 255
-	Addr string `gorm:"size:255"`
-	// `gorm:"size:255;index"` sets the maximum length of the string to 255 and adds an index for faster queries
-	Typ PeerAddrType `gorm:"size:255;index"`
+	ID     uint64       `gorm:"column:id;primaryKey"`
+	PeerID string       `gorm:"column:peer_id;size:255;index"`
+	Addr   string       `gorm:"column:addr;size:255"`
+	Typ    PeerAddrType `gorm:"column:typ;size:255;index"`
 }
 
 func (*PeerAddress) TableName() string {

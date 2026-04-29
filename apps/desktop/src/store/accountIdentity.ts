@@ -1,6 +1,15 @@
 import { create } from 'zustand';
-import { api, type AccountIdentity } from '../services/desktop_api';
+import { api, type AccountIdentity, type AuthSessionResponse } from '../services/desktop_api';
 import { EVENT, eventBus } from '../kernel/events';
+import { markLocalIdentityAction } from '../services/identity_event';
+import { runIdentityPipeline } from '../services/identityPipeline';
+
+const initialState = {
+  accounts: [] as AccountIdentity[],
+  activeAccountId: undefined as string | undefined,
+  loading: false,
+  error: undefined as string | undefined,
+};
 
 interface AccountIdentityStore {
   accounts: AccountIdentity[];
@@ -9,6 +18,9 @@ interface AccountIdentityStore {
   error?: string;
   load: () => Promise<void>;
   switchAccount: (id: string) => Promise<void>;
+  unlockWithPin: (accountId: string, pin: string) => Promise<void>;
+  reset: () => void;
+  hydrate: (actorId: string) => Promise<void>;
 }
 
 let loadPromise: Promise<void> | null = null;
@@ -22,10 +34,16 @@ function accountsEqual(a: AccountIdentity[], b: AccountIdentity[]): boolean {
 }
 
 export const useAccountIdentityStore = create<AccountIdentityStore>((set, get) => ({
-  accounts: [],
-  activeAccountId: undefined,
-  loading: false,
-  error: undefined,
+  ...initialState,
+
+  reset: () => {
+    loadPromise = null;
+    set({ ...initialState });
+  },
+
+  hydrate: async (_actorId: string) => {
+    await get().load();
+  },
 
   load: async () => {
     if (loadPromise) return loadPromise;
@@ -55,7 +73,25 @@ export const useAccountIdentityStore = create<AccountIdentityStore>((set, get) =
   },
 
   switchAccount: async (id: string) => {
+    markLocalIdentityAction();
     await api.accountSwitch(id);
+    const restored = await api.authRestoreSession();
+    await runIdentityPipeline({
+      reason: 'switch',
+      actorId: restored.actor_id ?? id,
+      loginMethod: restored.login_method ?? null,
+    });
+    await get().load();
+  },
+
+  unlockWithPin: async (accountId: string, pin: string) => {
+    markLocalIdentityAction();
+    const resp: AuthSessionResponse = await api.accountUnlock(accountId, pin);
+    await runIdentityPipeline({
+      reason: 'unlock',
+      actorId: resp.actor_id ?? null,
+      loginMethod: resp.login_method ?? null,
+    });
     await get().load();
   },
 }));

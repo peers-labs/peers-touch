@@ -59,7 +59,15 @@ export function ChatDetailPanel() {
   const currentName = (() => {
     if (activeTab === 'friend') {
       const s = sessions.find((s) => s.ulid === activeUlid);
-      return s ? s.participantBDid || '' : '';
+      if (!s) return '';
+      const did = useSocialChatStore.getState().currentUserDid;
+      if (did) {
+        if (s.participantADid === did)
+          return (s as any).participantBDisplayName || s.participantBDid || '';
+        if (s.participantBDid === did)
+          return (s as any).participantADisplayName || s.participantADid || '';
+      }
+      return (s as any).participantBDisplayName || s.participantBDid || '';
     }
     const g = groups.find((g) => g.ulid === activeUlid);
     return g?.name || '';

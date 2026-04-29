@@ -115,7 +115,45 @@ export interface RustCommandResult<T = Record<string, any>> {
   error?: RustCommandError;
 }
 
-const QUIET_COMMANDS = new Set(['logs_tail', 'frontend_log', 'visitor_heartbeat']);
+// Always-quiet (regardless of mode): commands that fire many times per
+// second and would drown out everything else.
+const ALWAYS_QUIET_COMMANDS = new Set([
+  'logs_tail',
+  'frontend_log',
+  'visitor_heartbeat',
+  'ice_session_candidates_get',
+  'ice_session_candidate_post',
+  'ice_session_offer_get',
+  'ice_session_offer_post',
+  'ice_session_answer_get',
+  'ice_session_answer_post',
+  'ice_peer_register',
+  'notification_list',
+]);
+
+// Quiet only in production. In dev we want timing for these so we can
+// debug cold-start performance ("first chat tab click is slow") and the
+// 60s background sync loop. Toggle via `localStorage.setItem('pt.debug.quietChat', '1')`
+// if the noise becomes a problem during a specific session.
+const PROD_QUIET_COMMANDS = new Set([
+  'friend_chat_sync_from_station_scoped',
+  'friend_chat_list_sessions',
+  'friend_chat_list_messages',
+]);
+
+function isQuietCommand(command: string): boolean {
+  if (ALWAYS_QUIET_COMMANDS.has(command)) return true;
+  if (PROD_QUIET_COMMANDS.has(command)) {
+    const isDev = typeof import.meta !== 'undefined' && (import.meta as any).env?.DEV;
+    let userOverride = false;
+    try {
+      userOverride = typeof localStorage !== 'undefined'
+        && localStorage.getItem('pt.debug.quietChat') === '1';
+    } catch { /* no localStorage in some contexts */ }
+    return !isDev || userOverride;
+  }
+  return false;
+}
 
 function publishSessionRevoked(payload: SessionRevokedPayload) {
   eventBus.publish(EVENT.AUTH_SESSION_REVOKED, payload);
@@ -145,7 +183,7 @@ async function invokeRustCommand<TInput, TData>(
   command: string,
   input?: TInput,
 ): Promise<RustCommandResult<TData>> {
-  const quiet = QUIET_COMMANDS.has(command);
+  const quiet = isQuietCommand(command);
   const start = Date.now();
   if (!quiet) {
     log.info('api', `→ ${command}`, input != null ? { req: input } : undefined);
@@ -155,7 +193,14 @@ async function invokeRustCommand<TInput, TData>(
     const result = await invoke<RustCommandResult<TData>>(command, payload);
     const elapsed = Date.now() - start;
     if (!result.ok) {
-      log.warn('api', `← ${command} FAIL (${elapsed}ms)`, { error: result.error?.message });
+      // Surface `details.reason` from the Rust side so we don't have to
+      // round-trip to the binary just to read why a command failed.
+      const detailsReason = (result.error?.details as any)?.reason;
+      log.warn('api', `← ${command} FAIL (${elapsed}ms)`, {
+        error: result.error?.message,
+        code: result.error?.code,
+        ...(detailsReason ? { reason: detailsReason } : {}),
+      });
       const revoked = extractSessionRevoked(result.error);
       if (revoked) publishSessionRevoked(revoked);
     } else if (!quiet) {
@@ -231,7 +276,7 @@ async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
 }
 
 async function invokeAppResultStub<TOut>(command: string, payload?: Record<string, unknown>): Promise<TOut> {
-  const quiet = QUIET_COMMANDS.has(command);
+  const quiet = isQuietCommand(command);
   const start = Date.now();
   if (!quiet) {
     log.info('api', `→ ${command}`, payload != null ? { req: payload } : undefined);
@@ -277,6 +322,66 @@ function parseOAuthCallbackFromUrl(urlText: string): OAuthCallbackInput | null {
     profile_url: url.searchParams.get('profile_url') || undefined,
     expires_at: url.searchParams.get('expires_at') || undefined,
   };
+}
+
+/**
+ * Wire form for presence triggers (mirrors `domain::presence::PresenceTrigger`
+ * in the Rust crate). Frontend modules emit one of these strings; the Rust
+ * supervisor decides whether the trigger warrants a reconcile.
+ */
+export type PresenceTrigger =
+  | 'app_launch'
+  | 'app_foreground'
+  | 'app_background'
+  | 'app_shutdown'
+  | 'identity_restored'
+  | 'identity_switched'
+  | 'identity_logged_out'
+  | 'network_online'
+  | 'network_offline'
+  | 'heartbeat'
+  | 'manual';
+
+/** Payload emitted by Rust on `presence.transition` Tauri events. */
+export interface PresenceTransitionEvent {
+  actor_id: string;
+  from: 'offline' | 'online';
+  to: 'offline' | 'online';
+  trigger: PresenceTrigger;
+  reconciled_count: number;
+  affected_sessions: string[];
+}
+
+/**
+ * Payload returned by `chat_upload_attachment`.
+ *
+ * `cid` is the federated URI (`oss://{host}/{key}`) the message must
+ * carry. `preview_url` is a convenience absolute URL for the renderer
+ * to display the file *immediately* without going through
+ * `oss_resolve_url`; it is `null` for backends that require signed
+ * URLs.
+ */
+export interface ChatAttachmentUploaded {
+  cid: string;
+  key: string;
+  host: string;
+  filename: string;
+  mime_type: string;
+  size: number;
+  preview_url?: string | null;
+}
+
+/**
+ * Result of `oss_resolve_url`. The renderer should prefer
+ * `local_path` (it is served via Tauri's `convertFileSrc`) and fall
+ * back to `url` when the attachment is not yet cached or the backend
+ * requires signed URLs.
+ */
+export interface OssResolved {
+  local_path?: string | null;
+  url: string;
+  host: string;
+  key: string;
 }
 
 export interface Session {
@@ -1123,6 +1228,7 @@ export interface AuthSessionResponse extends TauriStubPayload {
   name?: string;
   email?: string;
   avatar_url?: string;
+  avatar_local_path?: string;
   login_method?: string;
 }
 
@@ -1851,8 +1957,43 @@ export const api = {
     throw new Error(response.error?.message || 'pick_image_file failed');
   },
 
+  // ── Chat OSS attachments ───────────────────────────────────────
+  // Pick an arbitrary file via the native dialog and return its
+  // absolute path. Resolves with the path on success, rejects when
+  // the user cancels.
+  pickChatAttachment: async (): Promise<string> => {
+    const response = await invokeRustCommand<void, TauriStubPayload>('pick_chat_attachment');
+    if (response.ok && response.data?.status) {
+      return response.data.status;
+    }
+    throw new Error(response.error?.message || 'pick_chat_attachment failed');
+  },
+
+  // Push the local file to the bound Station's OSS subserver and
+  // return the federated `oss://{host}/{key}` URI plus enough
+  // metadata to embed in `MessageAttachment`. See
+  // `application/oss/mod.rs::ChatAttachmentUploaded` for the
+  // authoritative shape.
+  chatUploadAttachment: (filePath: string) =>
+    invokeRustDataFromStatus<{ file_path: string }, ChatAttachmentUploaded>(
+      'chat_upload_attachment',
+      { file_path: filePath },
+    ),
+
+  // Resolve an `oss://` URI (or bare key) to a local cached path
+  // and an absolute URL. Renderer should prefer `local_path` when
+  // present and fall back to `url`.
+  ossResolveUrl: (uri: string) =>
+    invokeRustDataFromStatus<{ uri: string }, OssResolved>('oss_resolve_url', { uri }),
+
   accountSyncAvatar: (avatarUrl: string) =>
     invokeRustCommand<{ avatar_url: string }, TauriStubPayload>('account_sync_avatar', { avatar_url: avatarUrl }),
+
+  avatarResolveLocal: (remoteUrl: string) =>
+    invokeRustDataFromStatus<{ url: string }, { local_path?: string | null }>(
+      'avatar_resolve_local',
+      { url: remoteUrl },
+    ),
 
   syncUserProfile: () =>
     invokeRustDataFromStatus<void, {
@@ -2162,6 +2303,13 @@ export const api = {
       account_id: accountId,
       pin,
     }),
+
+  // Drop the encrypted session blob for an account. Used after the backend
+  // tells us the stored token is dead (server restart, kicked, expired) so
+  // the next launch routes the user to the right login form instead of
+  // popping the PIN screen against a token that can never validate.
+  accountClearSession: (accountId: string) =>
+    invokeRustDataFromStatus<AccountIdInput, { ok: boolean }>('account_clear_session', { id: accountId }),
 
   // Remove PIN protection from account — reuses AccountSetPinInput (same shape: account_id + pin)
   accountRemovePin: (accountId: string, pin: string) =>
@@ -2753,6 +2901,27 @@ export const api = {
   friendChatAckMessages: (ulids: string[], status: number) =>
     invokeRustProto('friend_chat_ack_messages', MessageAckResponseSchema, { ulids, status }),
 
+  /**
+   * Fire a presence trigger to the Rust supervisor. Always resolves; the
+   * supervisor decides whether to act based on cooldown / state. See
+   * {@link PresenceTrigger} for the wire vocabulary.
+   *
+   * The frontend never blocks on this — it's a fire-and-forget hint.
+   */
+  presenceNotify: (trigger: PresenceTrigger) =>
+    invokeRustCommand<{ trigger: PresenceTrigger }, { command: string; status: string }>(
+      'presence_notify',
+      { trigger },
+    ).catch((err) => {
+      // Best-effort: lifecycle hooks must never surface errors to the UI.
+      try {
+        // Use console.debug instead of warn so production builds stay quiet.
+        // eslint-disable-next-line no-console
+        console.debug('[presence] presenceNotify failed', trigger, err);
+      } catch { /* noop */ }
+      return { command: 'presence_notify', status: '{"accepted":false}' };
+    }),
+
   friendChatLocalSearch: (query: string, limit?: number) =>
     invokeRustDataFromStatus<ChatLocalSearchInput, { messages: any[] }>(
       'friend_chat_local_search_scoped', { query, limit },
@@ -2788,6 +2957,19 @@ export const api = {
 
   friendChatGoOffline: (did?: string) =>
     invokeRustProto('friend_chat_go_offline', OnlineResponseSchema, { did }),
+
+  /**
+   * Start the long-lived presence SSE supervisor for the current
+   * window's actor. Idempotent; the Rust side replaces any in-flight
+   * supervisor for the same actor. While running, station emits
+   * `presence.peer-changed` Tauri events for every online/offline flip.
+   */
+  friendChatPresenceStart: () =>
+    invokeRustDataFromStatus<void, { actor_id: string }>('friend_chat_presence_start'),
+
+  /** Cancel the presence supervisor for the current actor. */
+  friendChatPresenceStop: () =>
+    invokeRustDataFromStatus<void, { actor_id: string | null }>('friend_chat_presence_stop'),
 
   friendChatGetPending: (limit?: number) =>
     invokeRustProto('friend_chat_get_pending', GetPendingResponseSchema, { limit }),

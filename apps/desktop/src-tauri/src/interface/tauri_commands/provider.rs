@@ -1,22 +1,15 @@
 use std::sync::Arc;
-use crate::error::{AppResult, ErrorCode};
+use crate::error::AppResult;
 use crate::contracts::{
     ProviderCheckInput, ProviderCreateInput, ProviderIdInput, ProviderUpdateInput, StubPayload,
 };
 use crate::application::provider as application_provider;
+use crate::application::session_resolver;
 use crate::state::AppState;
-use tauri::State;
+use tauri::{State, Window};
 
-fn resolve_scope_from_state(state: &State<'_, Arc<AppState>>) -> Result<Option<String>, AppResult<StubPayload>> {
-    let guard = state.session.lock().map_err(|_| {
-        tracing::error!("Failed to acquire session lock");
-        AppResult::fail(
-            ErrorCode::InternalError,
-            "Failed to access session state",
-            None,
-        )
-    })?;
-    let scope = guard.actor_id.clone().unwrap_or_default();
+fn resolve_scope_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Result<Option<String>, AppResult<StubPayload>> {
+    let scope = session_resolver::actor_id_for_window(state.inner(), window).unwrap_or_default();
     let scope = scope.trim();
     if scope.is_empty() {
         return Ok(None);
@@ -53,8 +46,8 @@ fn provider_list_available_models_for_scope(scope: Option<&str>) -> AppResult<St
 }
 
 #[tauri::command]
-pub fn provider_list(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let scope = match resolve_scope_from_state(&state) {
+pub fn provider_list(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
     };
@@ -62,8 +55,8 @@ pub fn provider_list(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> 
 }
 
 #[tauri::command]
-pub fn provider_get(input: ProviderIdInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let scope = match resolve_scope_from_state(&state) {
+pub fn provider_get(input: ProviderIdInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
     };
@@ -71,8 +64,8 @@ pub fn provider_get(input: ProviderIdInput, state: State<'_, Arc<AppState>>) -> 
 }
 
 #[tauri::command]
-pub fn provider_update(input: ProviderUpdateInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let scope = match resolve_scope_from_state(&state) {
+pub fn provider_update(input: ProviderUpdateInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
     };
@@ -80,8 +73,8 @@ pub fn provider_update(input: ProviderUpdateInput, state: State<'_, Arc<AppState
 }
 
 #[tauri::command]
-pub fn provider_check(input: ProviderCheckInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let scope = match resolve_scope_from_state(&state) {
+pub fn provider_check(input: ProviderCheckInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
     };
@@ -89,8 +82,8 @@ pub fn provider_check(input: ProviderCheckInput, state: State<'_, Arc<AppState>>
 }
 
 #[tauri::command]
-pub fn provider_create(input: ProviderCreateInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let scope = match resolve_scope_from_state(&state) {
+pub fn provider_create(input: ProviderCreateInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
     };
@@ -98,8 +91,8 @@ pub fn provider_create(input: ProviderCreateInput, state: State<'_, Arc<AppState
 }
 
 #[tauri::command]
-pub fn provider_delete(input: ProviderIdInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let scope = match resolve_scope_from_state(&state) {
+pub fn provider_delete(input: ProviderIdInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
     };
@@ -107,8 +100,8 @@ pub fn provider_delete(input: ProviderIdInput, state: State<'_, Arc<AppState>>) 
 }
 
 #[tauri::command]
-pub fn provider_apply_preset(input: ProviderIdInput, state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let scope = match resolve_scope_from_state(&state) {
+pub fn provider_apply_preset(input: ProviderIdInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
     };
@@ -116,8 +109,8 @@ pub fn provider_apply_preset(input: ProviderIdInput, state: State<'_, Arc<AppSta
 }
 
 #[tauri::command]
-pub fn provider_list_available_models(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    let scope = match resolve_scope_from_state(&state) {
+pub fn provider_list_available_models(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
     };

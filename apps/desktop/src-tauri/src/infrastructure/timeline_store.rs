@@ -1,6 +1,9 @@
-use std::sync::{LazyLock, Mutex};
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
 use crate::domain::timeline::{TimelineActionOutcome, TimelineError, TimelineListOutcome};
+
+use crate::infrastructure::actor_bucket::actor_bucket_id;
 
 #[derive(Clone)]
 struct TimelinePost {
@@ -45,18 +48,38 @@ impl Default for TimelineStore {
     }
 }
 
-static TIMELINE_STORE: LazyLock<Mutex<TimelineStore>> =
-    LazyLock::new(|| Mutex::new(TimelineStore::default()));
+struct TimelineStores {
+    buckets: HashMap<String, TimelineStore>,
+}
+
+static TIMELINE_STORES: OnceLock<Mutex<TimelineStores>> = OnceLock::new();
+
+fn timeline_stores() -> &'static Mutex<TimelineStores> {
+    TIMELINE_STORES.get_or_init(|| Mutex::new(TimelineStores {
+        buckets: HashMap::new(),
+    }))
+}
+
+fn with_timeline_store<T, F>(actor_id: &str, f: F) -> Result<T, TimelineError>
+where
+    F: FnOnce(&mut TimelineStore) -> Result<T, TimelineError>,
+{
+    let key = actor_bucket_id(actor_id);
+    let mut stores = timeline_stores()
+        .lock()
+        .map_err(|_| TimelineError::Internal("failed to lock timeline store".to_string()))?;
+    let store = stores.buckets.entry(key).or_default();
+    f(store)
+}
 
 pub fn list(
+    actor_id: &str,
     cursor: Option<&str>,
     limit: Option<u32>,
 ) -> Result<TimelineListOutcome, TimelineError> {
+    with_timeline_store(actor_id, |store| {
     let limit_value = limit.unwrap_or(20).clamp(1, 50) as usize;
     let start = parse_cursor(cursor)?;
-    let store = TIMELINE_STORE
-        .lock()
-        .map_err(|_| TimelineError::Internal("failed to lock timeline store".to_string()))?;
     if start > store.posts.len() {
         return Err(TimelineError::InvalidArgument(
             "cursor out of range".to_string(),
@@ -71,10 +94,11 @@ pub fn list(
         next_cursor,
         post_ids,
     })
+    })
 }
 
-pub fn like(post_id: &str) -> Result<TimelineActionOutcome, TimelineError> {
-    with_optimistic_update(post_id, None, |post| {
+pub fn like(actor_id: &str, post_id: &str) -> Result<TimelineActionOutcome, TimelineError> {
+    with_optimistic_update(actor_id, post_id, None, |post| {
         if post.liked_by_me {
             post.liked_by_me = false;
             if post.like_count > 0 {
@@ -89,19 +113,24 @@ pub fn like(post_id: &str) -> Result<TimelineActionOutcome, TimelineError> {
     })
 }
 
-pub fn comment(post_id: &str, content: &str) -> Result<TimelineActionOutcome, TimelineError> {
+pub fn comment(
+    actor_id: &str,
+    post_id: &str,
+    content: &str,
+) -> Result<TimelineActionOutcome, TimelineError> {
     if content.trim().is_empty() {
         return Err(TimelineError::InvalidArgument(
             "comment content is required".to_string(),
         ));
     }
-    with_optimistic_update(post_id, Some(content), |post| {
+    with_optimistic_update(actor_id, post_id, Some(content), |post| {
         post.comment_count += 1;
         "commented".to_string()
     })
 }
 
 pub fn repost(
+    actor_id: &str,
     post_id: &str,
     content: Option<&str>,
 ) -> Result<TimelineActionOutcome, TimelineError> {
@@ -112,7 +141,7 @@ pub fn repost(
             ));
         }
     }
-    with_optimistic_update(post_id, content, |post| {
+    with_optimistic_update(actor_id, post_id, content, |post| {
         post.repost_count += 1;
         "reposted".to_string()
     })
@@ -129,6 +158,7 @@ fn parse_cursor(cursor: Option<&str>) -> Result<usize, TimelineError> {
 }
 
 fn with_optimistic_update<F>(
+    actor_id: &str,
     post_id: &str,
     content: Option<&str>,
     apply: F,
@@ -142,9 +172,7 @@ where
             "post_id is required".to_string(),
         ));
     }
-    let mut store = TIMELINE_STORE
-        .lock()
-        .map_err(|_| TimelineError::Internal("failed to lock timeline store".to_string()))?;
+    with_timeline_store(actor_id, |store| {
     let index = store
         .posts
         .iter()
@@ -172,6 +200,7 @@ where
         repost_count: current.repost_count,
         rolled_back: false,
     })
+    })
 }
 
 fn should_fail(post_id: &str, content: Option<&str>) -> bool {
@@ -182,4 +211,30 @@ fn should_fail(post_id: &str, content: Option<&str>) -> bool {
         return value.to_ascii_lowercase().contains("#rollback");
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timeline_stores_isolate_actors() {
+        let a = "actor-timeline-a";
+        let b = "actor-timeline-b";
+        like(a, "post-1001").expect("like a");
+        assert!(get_like_state(a, "post-1001"));
+        assert!(!get_like_state(b, "post-1001"), "actor B must not see A's like mutation");
+    }
+
+    fn get_like_state(actor_id: &str, post_id: &str) -> bool {
+        with_timeline_store(actor_id, |store| {
+            let post = store
+                .posts
+                .iter()
+                .find(|p| p.id == post_id)
+                .ok_or(TimelineError::NotFound("missing".to_string()))?;
+            Ok(post.liked_by_me)
+        })
+        .expect("ok")
+    }
 }

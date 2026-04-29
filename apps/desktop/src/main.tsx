@@ -4,6 +4,8 @@ import { ThemeProvider } from '@lobehub/ui';
 import { I18nextProvider } from 'react-i18next';
 import { log } from './utils/logger';
 import { initI18n } from './i18n';
+// Side-effect: register global error / unhandledrejection handlers once.
+import './kernel/events/global-error';
 import App from './App';
 import SharePage from './pages/SharePage';
 import './modules';
@@ -13,9 +15,15 @@ import './index.css';
 // When running outside Tauri WebView (e.g. Chrome), patch
 // __TAURI_INTERNALS__ so that invoke() routes through the
 // Rust HTTP gateway at 127.0.0.1:3030.
+//
+// When this branch runs, we expose `__PT_GATEWAY_BASE__` so other modules
+// (UserSquareAvatar) can serve binary content (avatars) through the
+// gateway too — `convertFileSrc` no-ops here and the browser cannot
+// render local filesystem paths.
 if (typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window)) {
   const port = import.meta.env.VITE_GATEWAY_PORT || '3030';
   const GATEWAY = `http://127.0.0.1:${port}`;
+  (window as any).__PT_GATEWAY_BASE__ = GATEWAY;
   (window as any).__TAURI_INTERNALS__ = {
     invoke: async (cmd: string, args?: Record<string, unknown>) => {
       const res = await fetch(GATEWAY, {
@@ -66,13 +74,6 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
     return this.props.children;
   }
 }
-
-window.addEventListener('error', (e) => {
-  log.error('app', 'Uncaught error', { message: e.message, filename: e.filename, lineno: e.lineno });
-});
-window.addEventListener('unhandledrejection', (e) => {
-  log.error('app', 'Unhandled rejection', { reason: String(e.reason) });
-});
 
 async function bootstrap() {
   window.__PT_BOOT_STATUS__?.('Loading language packs…');

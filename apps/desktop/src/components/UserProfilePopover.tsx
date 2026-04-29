@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Avatar, Popover, Typography, Divider, Spin, theme } from 'antd';
+import { Popover, Typography, Divider, Spin, theme } from 'antd';
 import { Button } from '@lobehub/ui';
 import { Globe } from 'lucide-react';
 import { useSessionStore } from '../store/session';
+import { UserSquareAvatar } from './common/UserSquareAvatar';
 import { api, type AccountProfile } from '../services/desktop_api';
 import { EVENT, eventBus } from '../kernel/events';
 
@@ -62,22 +63,13 @@ export function UserProfilePopover({ children }: Props) {
       <Flexbox gap={12} style={{ padding: '0 16px 16px' }}>
         {/* Avatar + name */}
         <Flexbox horizontal gap={12} align="flex-end" style={{ marginTop: -24 }}>
-          <Avatar
-            src={avatarSrc || undefined}
+          <UserSquareAvatar
+            remoteUrl={avatarSrc}
+            name={displayName}
             size={56}
-            shape="square"
-            style={{
-              background: token.colorPrimaryBg,
-              color: token.colorPrimary,
-              border: `2px solid ${token.colorBgContainer}`,
-              borderRadius: 10,
-              fontSize: 22,
-              fontWeight: 700,
-              flexShrink: 0,
-            }}
-          >
-            {(displayName || 'P').slice(0, 1).toUpperCase()}
-          </Avatar>
+            radius={12}
+            border={`2px solid ${token.colorBgContainer}`}
+          />
 
           <Flexbox gap={2} style={{ paddingBottom: 4, minWidth: 0 }}>
             <Text strong style={{ fontSize: 15, lineHeight: 1.3 }} ellipsis>

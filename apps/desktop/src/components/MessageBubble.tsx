@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import type { ChatMessage, ToolCallInfo } from '../store/chat';
 import { useChatStore } from '../store/chat';
+import { UserSquareAvatar } from './common/UserSquareAvatar';
 import MessageCard, { type CardData } from './MessageCard';
 import { parseDeepLink } from '../utils/deeplink';
 import { EVENT, eventBus } from '../kernel/events';
@@ -469,24 +470,14 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
         align="center"
         gap={8}
       >
-        {isUser && userAvatar?.url ? (
-          <img
-            src={userAvatar.url}
-            alt={userAvatar.name}
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              objectFit: 'cover',
-              flexShrink: 0,
-            }}
-          />
+        {isUser ? (
+          <UserSquareAvatar remoteUrl={userAvatar?.url} name={userAvatar?.name} size={32} radius={8} />
         ) : (
           <Avatar
-            avatar={isUser ? '👤' : (agentAvatar || '🤖')}
+            avatar={agentAvatar || '🤖'}
             size={32}
             shape="square"
-            background={isUser ? token.colorPrimary : 'linear-gradient(135deg, #667eea, #764ba2)'}
+            background="linear-gradient(135deg, #667eea, #764ba2)"
             style={{ flexShrink: 0 }}
           />
         )}
