@@ -3554,6 +3554,18 @@ export const api = {
       skdm_b64: skdmB64,
     }),
 
+  // Force-rotate the local sender chain for `groupUlid`. After this
+  // returns the caller MUST call `resetSkdmDistribution` and a fresh
+  // `ensureSkdmDistributed` so the new chain reaches every member;
+  // otherwise the dedupe set will suppress redistribution and peers
+  // will silently fail to decrypt post-rotation messages.
+  cryptoGroupSkRotate: (groupUlid: string) =>
+    invokeAppResultStub<{
+      group_ulid: string;
+      sender_did: string;
+      sender_key_id: number;
+    }>('crypto_group_sk_rotate', { group_ulid: groupUlid }),
+
   cryptoGroupEncrypt: (groupUlid: string, plaintextB64: string) =>
     invokeAppResultStub<{
       encrypted_payload_b64: string;

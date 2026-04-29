@@ -302,6 +302,27 @@ export function SocialChatPage() {
     return off;
   }, []);
 
+  // Group Sender-Keys late-arrival recovery. When a peer's SKDM
+  // lands AFTER one (or many) of their group ciphertexts -- common
+  // race because SKDM and message use the same SSE stream but
+  // travel through different per-recipient envelopes -- the message
+  // rows sit on `[Waiting for sender key…]` until something
+  // re-decrypts them. handleInboundSkdm publishes
+  // GROUP_SKDM_INSTALLED on a successful install; the store action
+  // walks the cached message list for that group and re-runs
+  // decryption. Narrowing by senderDid keeps the work cheap when
+  // the placeholder belongs to a different peer who is still
+  // missing.
+  useEffect(() => {
+    const off = eventBus.subscribe(EVENT.GROUP_SKDM_INSTALLED, (payload) => {
+      const redecrypt = useSocialChatStore.getState().redecryptGroupMessages;
+      redecrypt(payload.groupUlid, payload.senderDid).catch((err) =>
+        log.warn('socialChat', 'redecryptGroupMessages failed', err),
+      );
+    });
+    return off;
+  }, []);
+
   // Realtime MessageMutation → fold recall / edit / delete into the
   // local message store so peers (including the sender's other
   // devices) see the change without a poll. The store action is

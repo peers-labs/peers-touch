@@ -310,6 +310,7 @@ fn main() {
             crypto::signaling_envelope_open,
             crypto::crypto_group_sk_emit_skdm,
             crypto::crypto_group_sk_consume_skdm,
+            crypto::crypto_group_sk_rotate,
             crypto::crypto_group_encrypt,
             crypto::crypto_group_decrypt,
             friend_chat::friend_chat_local_search_scoped,

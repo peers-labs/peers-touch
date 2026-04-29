@@ -705,6 +705,74 @@ pub fn crypto_group_sk_emit_skdm(
     )
 }
 
+/// Force-rotate our local sender chain for `group_ulid`.
+///
+/// Mints a fresh chain at `sender_key_id = max_known + 1` so it
+/// cannot collide with anything a peer might already have on file
+/// (including past chains we minted and then forgot about). The
+/// caller (TS layer) is responsible for clearing the SKDM-sent
+/// ledger so the next send re-distributes the new chain to every
+/// member -- without the clear, the dedupe set would suppress the
+/// re-distribution and peers would silently fail to decrypt
+/// post-rotation messages.
+///
+/// Returns the freshly-minted `sender_key_id` so the caller can
+/// log it / surface it in UI ("group encryption was reset").
+///
+/// The previous chain is kept in storage so receivers can still
+/// decrypt any in-flight ciphertext we sent before rotating; only
+/// new sends use the new chain (because `latest_local_sender_chain`
+/// returns the highest sender_key_id with a signing seed).
+#[tauri::command]
+pub fn crypto_group_sk_rotate(
+    group_ulid: String,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    if group_ulid.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "group_ulid is required", None);
+    }
+    let (actor_id, scope) = match sk_authed_scope(&state, &window) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let next_id = match local_chat_store::max_sender_key_id(
+        scope.as_str(),
+        group_ulid.as_str(),
+        actor_id.as_str(),
+    ) {
+        Ok(Some(v)) => v.checked_add(1).unwrap_or(1),
+        Ok(None) => 1,
+        Err(reason) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to query max sender_key_id: {}", reason),
+                None,
+            );
+        }
+    };
+    let fresh = sender_keys::create_local_chain(
+        group_ulid.as_str(),
+        actor_id.as_str(),
+        next_id,
+    );
+    if let Err(reason) = local_chat_store::save_group_sender_chain(scope.as_str(), &fresh) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to persist rotated chain: {}", reason),
+            None,
+        );
+    }
+    to_stub(
+        "crypto_group_sk_rotate",
+        json!({
+            "group_ulid": group_ulid,
+            "sender_did": actor_id,
+            "sender_key_id": next_id,
+        }),
+    )
+}
+
 /// Install a sender chain we received as a type-50 friend-chat
 /// payload. The friend-chat layer has already authenticated the
 /// envelope (we know the SKDM came from `claimed_sender_did`'s
