@@ -271,18 +271,6 @@ pub struct ChatKeyRotateInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TimelineListInput {
-    pub cursor: Option<String>,
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TimelineActionInput {
-    pub post_id: String,
-    pub content: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileUpdateInput {
     pub display_name: Option<String>,
     pub note: Option<String>,
@@ -1114,4 +1102,170 @@ pub struct NotificationPreferenceUpdateInput {
     pub enabled: bool,
     pub push_enabled: bool,
     pub sound_enabled: bool,
+}
+
+// ===========================================================================
+// Social (Moments) — Tauri command inputs
+//
+// All payloads here are POJOs deserialized from the JS-side `invoke()`
+// call. The richer wire shapes (Audience selectors, Mention positions,
+// reaction summaries) live on protobuf messages that the TS layer
+// constructs and encodes BEFORE calling the BFF — this avoids
+// duplicating the audience / mention discriminator logic in three
+// places (TS / Rust / Go).
+//
+// `serde(default)` is used for optional fields so older clients keep
+// working when the schema gains a non-required knob.
+// ===========================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialCreateMomentInput {
+    /// Encoded `CreatePostRequest` proto bytes. The TS layer composes the
+    /// proto (oneof content + audience selector) and ships it as a single
+    /// opaque blob; the BFF only forwards.
+    pub payload: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialGetMomentInput {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialDeleteMomentInput {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialListByAuthorInput {
+    pub user_id: String,
+    #[serde(default)]
+    pub cursor: Option<String>,
+    #[serde(default)]
+    pub limit: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialGetTimelineInput {
+    /// One of "PUBLIC" / "HOME" / "USER" — string-typed because the
+    /// station handler accepts the enum-name form on the query string.
+    pub r#type: String,
+    #[serde(default)]
+    pub cursor: Option<String>,
+    #[serde(default)]
+    pub limit: Option<i32>,
+    /// Optional sort knob — `"recent"` (default) or `"hot"`. Only the
+    /// PUBLIC timeline honours `hot`; HOME / USER stay on recency.
+    #[serde(default)]
+    pub sort: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialReactInput {
+    pub post_id: String,
+    /// `ReactionKind` enum value (1=LIKE, 2=LOVE, 3=LAUGH, 4=WOW, 5=SAD).
+    /// 0 (`REACTION_UNSPECIFIED`) is rejected at the BFF.
+    pub kind: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialUnreactInput {
+    pub post_id: String,
+    /// `0` clears all reactions by the viewer; otherwise removes only
+    /// the specified kind.
+    #[serde(default)]
+    pub kind: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialGetCommentsInput {
+    pub post_id: String,
+    #[serde(default)]
+    pub cursor: Option<String>,
+    #[serde(default)]
+    pub limit: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialCreateCommentInput {
+    pub post_id: String,
+    pub content: String,
+    /// Empty string ↔ top-level comment.
+    #[serde(default)]
+    pub reply_to_comment_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialDeleteCommentInput {
+    pub comment_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialFollowInput {
+    pub target_user_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialGetFollowersInput {
+    /// `None` ↔ "for the calling actor".
+    #[serde(default)]
+    pub user_id: Option<String>,
+    #[serde(default)]
+    pub cursor: Option<String>,
+    #[serde(default)]
+    pub limit: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialGetFollowingInput {
+    #[serde(default)]
+    pub user_id: Option<String>,
+    #[serde(default)]
+    pub cursor: Option<String>,
+    #[serde(default)]
+    pub limit: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialGetRelationshipInput {
+    pub target_user_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialCircleCreateInput {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub member_dids: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialCircleRenameInput {
+    pub circle_id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialCircleDeleteInput {
+    pub circle_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialCircleAddMembersInput {
+    pub circle_id: String,
+    pub member_dids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialCircleRemoveMembersInput {
+    pub circle_id: String,
+    pub member_dids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialCircleListMembersInput {
+    pub circle_id: String,
 }

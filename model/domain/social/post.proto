@@ -15,15 +15,19 @@ message Post {
   string id = 1;
   string author_id = 2;
   PostType type = 3;
+  // Deprecated: kept for backward compatibility with existing service /
+  // DB code. New publishing flow should populate `audience` (field 50)
+  // and let P1+ application layer translate into `visibility` for
+  // legacy storage. Do not remove until P1 migration completes.
   PostVisibility visibility = 4;
   google.protobuf.Timestamp created_at = 5;
   google.protobuf.Timestamp updated_at = 6;
   bool is_deleted = 7;
-  
+
   PostStats stats = 10;
   PostAuthor author = 20;
   PostInteraction interaction = 21;
-  
+
   oneof content {
     TextPost text_post = 30;
     ImagePost image_post = 31;
@@ -33,8 +37,23 @@ message Post {
     RepostPost repost_post = 35;
     LocationPost location_post = 36;
   }
-  
+
   string reply_to_post_id = 40;
+
+  // ==== Moments extensions (P0) ====
+  // Coexist with legacy `visibility` until P1 service migration. When
+  // both are present, `audience` is the source of truth.
+  Audience audience = 50;
+  // Aggregated typed reactions for this post; supersedes
+  // `interaction.is_liked` semantics. The viewer's own reactions are
+  // signalled via `ReactionSummary.reacted_by_viewer`.
+  repeated ReactionSummary reactions = 51;
+  // Position-aware @-mentions inside the post body. The legacy
+  // `mentions: repeated string` inside variant types (TextPost, ...)
+  // remains for simple username extraction, but UI rendering should
+  // prefer `typed_mentions` which carries offset/length so highlighting
+  // works without re-parsing the text.
+  repeated Mention typed_mentions = 52;
 }
 
 enum PostType {
@@ -193,9 +212,17 @@ message Location {
 
 message CreatePostRequest {
   PostType type = 1;
+  // Deprecated: replaced by `audience` (field 4). Server uses `audience`
+  // when present and falls back to `visibility` only for legacy clients.
+  // Will be removed in P4 once the desktop scaffold is fully on Audience.
   PostVisibility visibility = 2;
   string reply_to_post_id = 3;
-  
+  // Audience selector (Moments). REQUIRED for posts created via the new
+  // `/api/v1/social/moments` route. Mutually exclusive with `visibility`
+  // — when both are set the server uses `audience` and ignores
+  // `visibility` per the deprecation note above.
+  Audience audience = 4;
+
   oneof content {
     CreateTextPostRequest text = 10;
     CreateImagePostRequest image = 11;
@@ -303,6 +330,9 @@ message GetTimelineRequest {
   string cursor = 2;
   int32 limit = 3;
   string user_id = 4;
+  // Optional sort strategy. Currently only meaningful for
+  // TIMELINE_PUBLIC; all other timelines fix RECENT order.
+  TimelineSort sort = 5;
 }
 
 message GetTimelineResponse {
@@ -317,27 +347,53 @@ enum TimelineType {
   TIMELINE_PUBLIC = 2;
 }
 
+// TimelineSort selects the ranking strategy used when serving a
+// timeline. RECENT (default) returns posts in created_at DESC order
+// — the cheap, predictable shape suitable for HOME and USER. HOT
+// returns posts ranked by an engagement-decayed score; only the
+// PUBLIC timeline implements it today.
+enum TimelineSort {
+  TIMELINE_SORT_RECENT = 0;
+  TIMELINE_SORT_HOT = 1;
+}
+
+// ============================================================================
+// 个人统计（Moments dashboard）
+// ============================================================================
+
+// GetMyMomentsStats returns aggregate counters for the calling user's
+// Moments surface — the data that powers the user-side dashboard
+// panel. All values are computed live (no caching layer in P2).
+message GetMyMomentsStatsRequest {}
+
+message GetMyMomentsStatsResponse {
+  // Total non-deleted posts authored by the caller, summed across
+  // social_public_posts and social_private_posts.
+  int64 posts_count = 1;
+  // Total non-deleted comments authored by the caller across every
+  // post they're replying to.
+  int64 comments_count = 2;
+  // Total reactions authored by the caller (every reaction this user
+  // has placed across the system).
+  int64 reactions_given_count = 3;
+  // Sum of comments_count across the caller's own non-deleted posts —
+  // i.e. how much engagement their content has attracted.
+  int64 comments_received_count = 4;
+  // Total reactions placed BY OTHERS on the caller's non-deleted
+  // posts.
+  int64 reactions_received_count = 5;
+  // Number of accounts the caller follows.
+  int64 following_count = 6;
+  // Number of accounts following the caller.
+  int64 followers_count = 7;
+  // Number of circles the caller has created (publisher-private
+  // audience labels).
+  int64 circles_count = 8;
+}
+
 // ============================================================================
 // 互动
 // ============================================================================
-
-message LikePostRequest {
-  string post_id = 1;
-}
-
-message LikePostResponse {
-  bool success = 1;
-  int64 new_likes_count = 2;
-}
-
-message UnlikePostRequest {
-  string post_id = 1;
-}
-
-message UnlikePostResponse {
-  bool success = 1;
-  int64 new_likes_count = 2;
-}
 
 message RepostRequest {
   string post_id = 1;
@@ -348,14 +404,116 @@ message RepostResponse {
   Post repost = 1;
 }
 
-message GetPostLikersRequest {
-  string post_id = 1;
-  string cursor = 2;
-  int32 limit = 3;
+// ============================================================================
+// Audience (Moments visibility model, P0)
+// ============================================================================
+// `Audience` describes who can read a post. It is the publish-time decision
+// frozen onto the post; `Audience.Kind` MUST be immutable after creation
+// (changing audience after the fact would require re-fanout and is not
+// supported in v1).
+//
+// Field semantics by Kind:
+//   PUBLIC         — visible to anyone (federated when ActivityPub lands).
+//                    target_id / actor_dids / base_kind: unused.
+//   FOLLOWERS      — visible to author's followers + author. unused: as PUBLIC.
+//   CIRCLE         — visible to members of `target_id` circle (publisher-owned).
+//                    target_id required.
+//   GROUP          — visible to members of `target_id` chat.Group.
+//                    target_id required.
+//   SELF           — author-only (private note). all others unused.
+//   CUSTOM_ALLOW   — visible only to `actor_dids`. allow_list, length>=1.
+//                    base_kind: unused (the list IS the rule).
+//   CUSTOM_DENY    — visible per `base_kind` MINUS `actor_dids`. base_kind
+//                    MUST be PUBLIC or FOLLOWERS, actor_dids MUST be non-empty.
+message Audience {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    PUBLIC = 1;
+    FOLLOWERS = 2;
+    CIRCLE = 3;
+    GROUP = 4;
+    SELF = 5;
+    CUSTOM_ALLOW = 6;
+    CUSTOM_DENY = 7;
+  }
+  Kind kind = 1;
+  // Required iff kind == CIRCLE or GROUP.
+  uint64 target_id = 2;
+  // Required iff kind == CUSTOM_ALLOW or CUSTOM_DENY.
+  repeated string actor_dids = 3;
+  // ONLY meaningful when kind == CUSTOM_DENY: the base set the deny list
+  // is subtracted from. MUST be PUBLIC or FOLLOWERS. For all other Kinds
+  // this field is silently ignored.
+  Kind base_kind = 4;
 }
 
-message GetPostLikersResponse {
-  repeated PostAuthor users = 1;
+// ============================================================================
+// Reactions (typed, replaces simple Like)
+// ============================================================================
+enum ReactionKind {
+  REACTION_UNSPECIFIED = 0;
+  REACTION_LIKE = 1;
+  REACTION_LOVE = 2;
+  REACTION_LAUGH = 3;
+  REACTION_WOW = 4;
+  REACTION_CELEBRATE = 5;
+}
+
+// Aggregated reaction count for a single ReactionKind on a Post.
+message ReactionSummary {
+  ReactionKind kind = 1;
+  int64 count = 2;
+  // True iff the requesting viewer has reacted with `kind` themselves.
+  bool reacted_by_viewer = 3;
+}
+
+// Position-aware @-mention. `offset` and `length` are UTF-16 code unit
+// indices into the post body so JS / Java / Swift can splice without
+// re-parsing. `display` is the rendered handle (no leading `@`).
+message Mention {
+  string actor_id = 1;
+  int32 offset = 2;
+  int32 length = 3;
+  string display = 4;
+}
+
+message ReactToPostRequest {
+  string post_id = 1;
+  ReactionKind kind = 2;
+}
+
+message ReactToPostResponse {
+  bool success = 1;
+  // Updated summary reflecting the viewer's new reaction. May contain
+  // counts for all kinds, not just the one just added.
+  repeated ReactionSummary reactions = 2;
+}
+
+message UnreactToPostRequest {
+  string post_id = 1;
+  ReactionKind kind = 2;
+}
+
+message UnreactToPostResponse {
+  bool success = 1;
+  repeated ReactionSummary reactions = 2;
+}
+
+message ListReactionsRequest {
+  string post_id = 1;
+  // Optional filter: when non-zero, only reactors of this kind are returned.
+  ReactionKind kind = 2;
+  string cursor = 3;
+  int32 limit = 4;
+}
+
+message ListReactionsResponse {
+  message Entry {
+    PostAuthor reactor = 1;
+    ReactionKind kind = 2;
+    google.protobuf.Timestamp reacted_at = 3;
+  }
+  repeated Entry entries = 1;
   string next_cursor = 2;
   bool has_more = 3;
 }

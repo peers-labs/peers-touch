@@ -24,7 +24,7 @@ pub mod peers_touch {
 
 use std::sync::Arc;
 use tauri::Manager;
-use interface::tauri_commands::{account, actor, admin, agent_growth, agent_scheduler, agents, applets, auth, channels, chat, cron, crypto, friend_chat, frontend_log, group_chat, ice, i18n, mcp, memory, model_config, models, notebook, notification, oauth2, oss, presence, profile, provider, search, settings, skills, skills_market, system, timeline, tools, tts};
+use interface::tauri_commands::{account, actor, admin, agent_growth, agent_scheduler, agents, applets, auth, channels, chat, cron, crypto, friend_chat, frontend_log, group_chat, ice, i18n, mcp, memory, model_config, models, notebook, notification, oauth2, oss, presence, profile, provider, search, settings, skills, skills_market, social, system, tools, tts};
 
 fn main() {
     let ctx = bootstrap::run();
@@ -101,10 +101,29 @@ fn main() {
             chat::chat_update_message,
             chat::chat_stop,
             chat::chat_completion_once,
-            timeline::timeline_list,
-            timeline::timeline_like,
-            timeline::timeline_comment,
-            timeline::timeline_repost,
+            social::social_create_moment,
+            social::social_get_moment,
+            social::social_delete_moment,
+            social::social_list_by_author,
+            social::social_get_timeline,
+            social::social_react,
+            social::social_unreact,
+            social::social_get_comments,
+            social::social_create_comment,
+            social::social_delete_comment,
+            social::social_follow,
+            social::social_unfollow,
+            social::social_get_followers,
+            social::social_get_following,
+            social::social_get_relationship,
+            social::social_circle_create,
+            social::social_circle_rename,
+            social::social_circle_delete,
+            social::social_circle_list_mine,
+            social::social_circle_add_members,
+            social::social_circle_remove_members,
+            social::social_circle_list_members,
+            social::social_get_my_stats,
             profile::profile_get,
             profile::profile_update,
             profile::profile_upload_avatar,
