@@ -12,33 +12,56 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/infrastructure"
+	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 )
 
+// dashboard-side claim attribute keys used to round-trip
+// per-admin business fields through the framework jwtProvider's
+// generic `attrs` claim. Lifted to constants so the marshaling
+// (Login) and unmarshaling (ValidateToken) sides stay in sync —
+// a typo on either side would silently produce empty fields.
+const (
+	attrUsername = "username"
+	attrRole     = "role"
+)
+
 // AuthService handles all authentication, session, and admin CRUD operations.
+//
+// As of the auth-unification refactor it no longer owns its own HMAC
+// JWT implementation — sign + parse delegate to the framework's
+// `coreauth.Provider`. The session lifecycle (DashboardSession rows,
+// revocation on password change, etc) stays here because it is a
+// dashboard-specific concern: the framework's `SessionValidator`
+// hook is not enough to express "rebuild a session from a 401-aware
+// audit log" semantics.
 type AuthService struct {
 	adminRepo   infrastructure.AdminRepository
 	sessionRepo infrastructure.SessionRepository
 	auditRepo   infrastructure.AuditRepository
-	jwtSecret   []byte
+	jwtProvider coreauth.Provider
 	sessionTTL  time.Duration
 }
 
-// NewAuthService constructs an AuthService.
+// NewAuthService constructs an AuthService bound to a framework
+// `coreauth.Provider`. Callers (subserver.go) build the provider
+// via `coreauth.NewJWTProvider(secret, sessionTTL)` so secret /
+// TTL handling lives in one place across the binary.
+//
 // If sessionTTL is zero, it defaults to 24 hours.
 func NewAuthService(
 	adminRepo infrastructure.AdminRepository,
 	sessionRepo infrastructure.SessionRepository,
 	auditRepo infrastructure.AuditRepository,
-	jwtSecret string,
+	jwtProvider coreauth.Provider,
 	sessionTTL time.Duration,
 ) *AuthService {
 	if sessionTTL == 0 {
@@ -48,7 +71,7 @@ func NewAuthService(
 		adminRepo:   adminRepo,
 		sessionRepo: sessionRepo,
 		auditRepo:   auditRepo,
-		jwtSecret:   []byte(jwtSecret),
+		jwtProvider: jwtProvider,
 		sessionTTL:  sessionTTL,
 	}
 }
@@ -141,28 +164,33 @@ func (s *AuthService) Login(ctx context.Context, username, password, ip, userAge
 		return nil, fmt.Errorf("failed to generate session id: %w", err)
 	}
 
-	// Generate JWT token
+	// Mint the dashboard JWT through the framework provider.
+	// Per-admin business fields ride in Credentials.Attributes;
+	// the provider serialises them into the `attrs` claim so
+	// ValidateToken can reconstruct the typed DashboardClaims
+	// without re-querying the DB on every request.
 	now := time.Now()
-	exp := now.Add(s.sessionTTL)
-	claims := domain.DashboardClaims{
-		AdminID:   admin.ID,
-		Username:  admin.Username,
-		Role:      string(admin.Role),
+	subject, token, err := s.jwtProvider.Authenticate(ctx, coreauth.Credentials{
+		SubjectID: strconv.FormatUint(admin.ID, 10),
 		SessionID: sessionID,
-		RegisteredClaims: jwt.RegisteredClaims{
-			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(exp),
-			Subject:   fmt.Sprintf("%d", admin.ID),
-			Issuer:    "peers-dashboard",
+		Attributes: map[string]string{
+			attrUsername: admin.Username,
+			attrRole:     string(admin.Role),
 		},
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenStr, err := token.SignedString(s.jwtSecret)
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to sign jwt: %w", err)
+		return nil, fmt.Errorf("failed to mint dashboard jwt: %w", err)
 	}
+	if subject == nil || token == nil {
+		// Defensive — a well-formed Provider returns both.
+		return nil, errors.New("dashboard auth: jwt provider returned nil subject/token")
+	}
+	tokenStr := token.Value
+	exp := token.ExpiresAt
 
-	// Persist the session
+	// Persist the session — independent of the JWT lifecycle so
+	// password change / explicit logout can revoke a still-valid
+	// JWT without touching the signing material.
 	session := &domain.DashboardSession{
 		SessionID:    sessionID,
 		AdminID:      admin.ID,
@@ -199,30 +227,35 @@ func (s *AuthService) Login(ctx context.Context, username, password, ip, userAge
 	}, nil
 }
 
-// ValidateToken validates a JWT token and returns the embedded claims.
-// It additionally verifies the admin still exists and is not disabled.
+// ValidateToken validates a JWT through the framework provider
+// and returns the typed DashboardClaims. It additionally verifies
+// the admin still exists and is not disabled — the framework
+// handles signature + exp; admin liveness is dashboard business.
 func (s *AuthService) ValidateToken(ctx context.Context, tokenStr string) (*domain.DashboardClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenStr, &domain.DashboardClaims{}, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
-		}
-		return s.jwtSecret, nil
-	})
-	if err != nil {
+	subject, err := s.jwtProvider.Validate(ctx, tokenStr)
+	if err != nil || subject == nil {
 		return nil, domain.ErrUnauthorized
 	}
 
-	claims, ok := token.Claims.(*domain.DashboardClaims)
-	if !ok || !token.Valid {
+	adminID, parseErr := strconv.ParseUint(subject.ID, 10, 64)
+	if parseErr != nil {
+		// Token shape we don't recognise — not a dashboard
+		// JWT (e.g. someone forwarded a user-facing access
+		// token here). Reject as auth failure rather than
+		// 500.
 		return nil, domain.ErrUnauthorized
 	}
 
-	// Verify admin still exists and is active
-	if _, err := s.adminRepo.FindActiveByID(ctx, claims.AdminID); err != nil {
+	if _, err := s.adminRepo.FindActiveByID(ctx, adminID); err != nil {
 		return nil, domain.ErrUnauthorized
 	}
 
-	return claims, nil
+	return &domain.DashboardClaims{
+		AdminID:   adminID,
+		Username:  subject.Attributes[attrUsername],
+		Role:      subject.Attributes[attrRole],
+		SessionID: subject.SessionID,
+	}, nil
 }
 
 // Logout revokes a session identified by sessionID for the given admin.
