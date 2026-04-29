@@ -135,13 +135,24 @@ func findOrRegisterActor(ctx context.Context, req *model.OAuthBridgeRequest, bas
 		email = fmt.Sprintf("%s@oauth.local", username)
 	}
 
-	params := &model.ActorSignParams{
+	// ActorSignRequest.Check enforces 5–20 char names; OAuth gateway usernames can be short.
+	for len(username) < 5 {
+		username = username + "0"
+	}
+	if len(username) > 20 {
+		username = username[:20]
+	}
+
+	signReq := &model.ActorSignRequest{
 		Name:     username,
 		Email:    email,
 		Password: password,
 	}
+	if err := signReq.Check(); err != nil {
+		return nil, fmt.Errorf("signup params: %w", err)
+	}
 
-	if err := actor.SignUp(ctx, params, baseURL); err != nil {
+	if err := actor.SignUp(ctx, signReq, baseURL); err != nil {
 		return nil, fmt.Errorf("signup: %w", err)
 	}
 

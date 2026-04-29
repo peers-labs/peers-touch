@@ -5,24 +5,18 @@
 // subserver handler and proto definitions are aligned with the desktop contract.
 // TODO(agent): align `agent.proto` + Station `HandleExecuteTurn` with the full turn payload, then use `request_proto`.
 use crate::contracts::{AgentExecuteTurnInput, StubPayload};
-use crate::error::{AppResult, ErrorCode};
+use crate::error::AppResult;
 use crate::infrastructure::station_client;
-use crate::state::AppState;
 use reqwest::Method;
 use serde_json::json;
 
-pub fn agent_execute_turn(input: AgentExecuteTurnInput, state: &AppState) -> AppResult<StubPayload> {
+pub fn agent_execute_turn(input: AgentExecuteTurnInput, token: &str) -> AppResult<StubPayload> {
     tracing::info!(
         command = "agent_execute_turn",
         agent_id = %input.agent_id,
         conversation_id = %input.conversation_id,
         "Executing agent turn via Station"
     );
-
-    let token = match token_from_state(state) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
 
     let body = json!({
         "conversation_id": input.conversation_id,
@@ -40,7 +34,7 @@ pub fn agent_execute_turn(input: AgentExecuteTurnInput, state: &AppState) -> App
     match station_client::request_json(
         Method::POST,
         "/agent/turn/execute",
-        &token,
+        token,
         None,
         Some(body),
     ) {
@@ -58,20 +52,4 @@ pub fn agent_execute_turn(input: AgentExecuteTurnInput, state: &AppState) -> App
             err.into_app_result("Failed to execute agent turn")
         }
     }
-}
-
-fn token_from_state(state: &AppState) -> Result<String, AppResult<StubPayload>> {
-    let guard = state.session.lock().map_err(|e| {
-        tracing::error!(error = %e, "Failed to access session state");
-        AppResult::fail(ErrorCode::InternalError, "Failed to access session state", None)
-    })?;
-    let token = guard.token.clone().unwrap_or_default();
-    if token.trim().is_empty() {
-        return Err(AppResult::fail(
-            ErrorCode::Unauthorized,
-            "Authentication required — please log in",
-            None,
-        ));
-    }
-    Ok(token)
 }

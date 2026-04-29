@@ -22,6 +22,11 @@ pub mod infrastructure {
     pub mod storage;
     #[path = "station_client.rs"]
     pub(crate) mod station_client;
+    // Mirrors the bin crate so `state::AppState` can build under `cargo test
+    // --lib`. PR-3 will cull the lib crate down once the registry is wired
+    // through every command path.
+    #[path = "window_session_registry/mod.rs"]
+    pub mod window_session_registry;
 }
 
 pub mod domain {
@@ -31,6 +36,8 @@ pub mod domain {
         #[path = "key_management.rs"]
         pub mod key_management;
     }
+    #[path = "identity/mod.rs"]
+    pub mod identity;
 }
 
 pub mod interface {
@@ -46,6 +53,8 @@ pub mod interface {
 }
 
 pub mod application {
+    #[path = "session_resolver/mod.rs"]
+    pub mod session_resolver;
     #[path = "provider/mod.rs"]
     pub mod provider;
     #[path = "models/mod.rs"]

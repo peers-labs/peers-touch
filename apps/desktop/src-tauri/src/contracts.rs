@@ -19,6 +19,7 @@ pub struct AuthSessionPayload {
     pub name: Option<String>,
     pub email: Option<String>,
     pub avatar_url: Option<String>,
+    pub avatar_local_path: Option<String>,
     pub login_method: Option<String>,
 }
 
@@ -551,6 +552,11 @@ pub struct AccountIdInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountSyncAvatarInput {
     pub avatar_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AvatarResolveLocalInput {
+    pub url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

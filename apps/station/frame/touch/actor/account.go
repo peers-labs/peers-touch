@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -19,7 +20,17 @@ const (
 	bcryptCost = 12
 )
 
-func SignUp(c context.Context, actorParams *model.ActorSignParams, baseURL string) error {
+func SignUp(c context.Context, req *model.ActorSignRequest, baseURL string) error {
+	if req == nil {
+		return fmt.Errorf("nil signup request")
+	}
+
+	profile := signupProfileFromRequest(req)
+	namespace := strings.TrimSpace(req.GetNamespace())
+	if namespace == "" {
+		namespace = "peers"
+	}
+
 	rds, err := store.GetRDS(c)
 	if err != nil {
 		log.Warnf(c, "[SignUp] Get db err: %v", err)
@@ -27,7 +38,7 @@ func SignUp(c context.Context, actorParams *model.ActorSignParams, baseURL strin
 	}
 
 	var existsActors []db.Actor
-	if err = rds.Where("preferred_username = ? OR email = ?", actorParams.Name, actorParams.Email).Find(&existsActors).Error; err != nil {
+	if err = rds.Where("preferred_username = ? OR email = ?", req.GetName(), req.GetEmail()).Find(&existsActors).Error; err != nil {
 		log.Warnf(c, "[SignUp] Check existing actor err: %v", err)
 		return err
 	}
@@ -42,16 +53,17 @@ func SignUp(c context.Context, actorParams *model.ActorSignParams, baseURL strin
 		return err
 	}
 
-	actorPath := fmt.Sprintf("%s/activitypub/%s", baseURL, actorParams.Name)
+	actorPath := fmt.Sprintf("%s/activitypub/%s", baseURL, req.GetName())
 	a := db.Actor{
-		PreferredUsername: actorParams.Name,
-		Email:             actorParams.Email,
-		Name:              actorParams.Name,
-		Type:              "Person",
-		Namespace:         "peers",
+		PreferredUsername: req.GetName(),
+		Email:             req.GetEmail(),
+		Name:              req.GetName(),
+		Type:              profile.apType,
+		Kind:              profile.kindDB,
+		Namespace:         namespace,
 		PublicKey:         pubPEM,
 		PrivateKey:        privPEM,
-		Url:               fmt.Sprintf("%s/users/%s", baseURL, actorParams.Name),
+		Url:               fmt.Sprintf("%s/users/%s", baseURL, req.GetName()),
 		Inbox:             fmt.Sprintf("%s/inbox", actorPath),
 		Outbox:            fmt.Sprintf("%s/outbox", actorPath),
 		Followers:         fmt.Sprintf("%s/followers", actorPath),
@@ -60,13 +72,13 @@ func SignUp(c context.Context, actorParams *model.ActorSignParams, baseURL strin
 		Endpoints:         fmt.Sprintf(`{"sharedInbox": "%s/activitypub/inbox"}`, baseURL),
 	}
 
-	a.PasswordHash, err = generateHash(actorParams.Password)
+	a.PasswordHash, err = generateHash(req.GetPassword())
 	if err != nil {
 		log.Warnf(c, "[SignUp] Generate hash err: %v", err)
 		return err
 	}
 
-	createdIdentity, err := identity.CreateIdentity(c, actorParams.Name, "peers", identity.TypePerson)
+	createdIdentity, err := identity.CreateIdentity(c, req.GetName(), namespace, profile.identityType)
 	if err != nil {
 		log.Warnf(c, "[SignUp] Create identity err: %v", err)
 		return err

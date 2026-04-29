@@ -1,4 +1,5 @@
 use crate::domain::pin_lock::{self, EncryptedSession, PinProtection};
+use crate::infrastructure::avatar_cache;
 use crate::infrastructure::storage::{self, StorageKind};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -195,6 +196,36 @@ pub fn find_profile_by_actor_id(actor_id: &str) -> Option<AccountIdentity> {
     state.accounts.first().cloned()
 }
 
+/// Resolve the canonical `account_id` (e.g. `password:123`, `github:456`) for a
+/// Station `actor_id`. Used by token-bound writers (profile sync, avatar sync)
+/// to pick the correct LocalAccount record without trusting the volatile
+/// `active_account_id` pointer.
+///
+/// Search order:
+/// 1. The currently-active account, if its `provider_user_id` matches.
+/// 2. Any account whose `provider_user_id` matches.
+/// 3. `None` if no record holds this actor.
+pub fn find_account_id_by_actor_id(actor_id: &str) -> Option<String> {
+    if actor_id.trim().is_empty() {
+        return None;
+    }
+    let state = read_state().ok()?;
+
+    if let Some(active_id) = state.active_account_id.as_deref() {
+        if let Some(acc) = state.accounts.iter().find(|a| a.id == active_id) {
+            if acc.provider_user_id == actor_id {
+                return Some(acc.id.clone());
+            }
+        }
+    }
+
+    state
+        .accounts
+        .iter()
+        .find(|a| a.provider_user_id == actor_id)
+        .map(|a| a.id.clone())
+}
+
 /// Update the avatar URL for the currently active account identity.
 /// Called after uploading a new avatar to Station, so the sidebar avatar stays in sync.
 pub fn update_active_avatar(avatar_url: &str) -> Result<(), String> {
@@ -357,56 +388,19 @@ pub fn remove_account_pin(account_id: &str, pin: &str) -> Result<(), String> {
 /// List all accounts that have a saved session (for the account picker).
 pub fn list_restorable_accounts() -> Result<Vec<AccountIdentity>, String> {
     let state = read_state()?;
-    Ok(state
-        .accounts
-        .into_iter()
-        .filter(|a| a.has_session)
-        .collect())
+    // Return all known accounts so the account picker shows every user
+    // that has ever logged in. The frontend handles expired sessions by
+    // redirecting to the login form instead of PIN entry.
+    Ok(state.accounts)
 }
 
 // ---------------------------------------------------------------------------
-// Local avatar file management
+// Avatar metadata sync
 // ---------------------------------------------------------------------------
-
-/// Resolve the directory for locally cached avatar files.
-fn avatars_dir() -> Result<PathBuf, String> {
-    storage::app_file_path("desktop", StorageKind::Data, &["files", "avatars"])
-        .map_err(|err| format!("failed to resolve avatars dir: {err:?}"))
-}
-
-/// Download a remote avatar image to the local cache directory.
-/// Returns the absolute path of the cached file on success.
-pub fn download_avatar(remote_url: &str) -> Result<PathBuf, String> {
-    if remote_url.trim().is_empty() {
-        return Err("empty remote URL".to_string());
-    }
-
-    let dir = avatars_dir()?;
-    fs::create_dir_all(&dir).map_err(|e| format!("failed to create avatars dir: {e}"))?;
-
-    let filename = crate::domain::user_profile::avatar_local_filename(remote_url);
-    let dest = dir.join(&filename);
-
-    // Skip download if file already exists and is non-empty.
-    if dest.exists() && dest.metadata().map(|m| m.len() > 0).unwrap_or(false) {
-        return Ok(dest);
-    }
-
-    let response = reqwest::blocking::get(remote_url)
-        .map_err(|e| format!("avatar download failed: {e}"))?;
-
-    if !response.status().is_success() {
-        return Err(format!("avatar download returned status {}", response.status()));
-    }
-
-    let bytes = response.bytes().map_err(|e| format!("failed to read avatar response: {e}"))?;
-    if bytes.is_empty() {
-        return Err("avatar download returned empty body".to_string());
-    }
-
-    fs::write(&dest, &bytes).map_err(|e| format!("failed to write avatar file: {e}"))?;
-    Ok(dest)
-}
+//
+// File-level avatar I/O lives in `infrastructure::avatar_cache`. This module
+// only persists the *metadata* (avatar_url + avatar_local_path) and delegates
+// the actual download / lookup. Keeps identity-vs-cache boundaries clean.
 
 /// Update the avatar_local_path for the currently active account.
 pub fn update_active_avatar_local_path(local_path: &str) -> Result<(), String> {
@@ -420,8 +414,8 @@ pub fn update_active_avatar_local_path(local_path: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Sync a user profile from Station: update metadata in identities.json and
-/// download avatar to local cache. Returns the local avatar path if successful.
+/// Sync user profile metadata into `identities.json` and warm the avatar
+/// cache (best-effort). Returns the cached avatar path if available.
 pub fn sync_profile_locally(
     account_id: &str,
     name: Option<&str>,
@@ -436,7 +430,6 @@ pub fn sync_profile_locally(
         .find(|a| a.id == account_id)
         .ok_or_else(|| format!("account not found: {account_id}"))?;
 
-    // Update metadata fields (only overwrite if new value is non-empty).
     if let Some(n) = name.filter(|v| !v.is_empty()) {
         account.name = n.to_string();
     }
@@ -448,30 +441,18 @@ pub fn sync_profile_locally(
     }
 
     let mut local_path: Option<String> = None;
-
     if let Some(url) = avatar_url.filter(|v| !v.is_empty()) {
         account.avatar_url = url.to_string();
-
-        // Attempt to download avatar to local cache.
-        match download_avatar(url) {
-            Ok(path) => {
-                let path_str = path.to_string_lossy().to_string();
-                account.avatar_local_path = Some(path_str.clone());
-                local_path = Some(path_str);
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, url = %url, "Failed to cache avatar locally, will use remote URL");
-                // Keep the remote URL, clear stale local path.
-                account.avatar_local_path = None;
-            }
-        }
+        local_path = avatar_cache::try_ensure_local_string(url);
+        account.avatar_local_path = local_path.clone();
     }
 
     write_state(&state)?;
     Ok(local_path)
 }
 
-/// Get the local avatar path for a given account, if it exists and the file is present.
+/// Look up the cached avatar path for a given account. Returns `None` when
+/// the metadata is missing or the on-disk file is not present.
 pub fn get_avatar_local_path(account_id: &str) -> Option<String> {
     let state = read_state().ok()?;
     let account = state.accounts.iter().find(|a| a.id == account_id)?;

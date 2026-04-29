@@ -100,9 +100,15 @@ func (r *actorQueryRepository) GetActorStatus(ctx context.Context, actorID uint6
 }
 
 func (r *actorQueryRepository) CountPostsByAuthor(ctx context.Context, authorID uint64) (int64, error) {
-	var count int64
-	err := r.db.WithContext(ctx).Model(&touchdb.Post{}).Where("author_id = ?", authorID).Count(&count).Error
-	return count, err
+	// Public + private posts are physically separated (D1.A); sum them.
+	var pub, priv int64
+	if err := r.db.WithContext(ctx).Model(&touchdb.SocialPublicPost{}).Where("author_id = ?", authorID).Count(&pub).Error; err != nil {
+		return 0, err
+	}
+	if err := r.db.WithContext(ctx).Model(&touchdb.SocialPrivatePost{}).Where("author_id = ?", authorID).Count(&priv).Error; err != nil {
+		return 0, err
+	}
+	return pub + priv, nil
 }
 
 func (r *actorQueryRepository) CountFollowers(ctx context.Context, actorID uint64) (int64, error) {
@@ -211,20 +217,29 @@ func (r *actorQueryRepository) RecentActors(ctx context.Context, limit int) ([]t
 }
 
 func (r *actorQueryRepository) CountPosts(ctx context.Context) (int64, error) {
-	var c int64
-	err := r.db.WithContext(ctx).Model(&touchdb.Post{}).Count(&c).Error
-	return c, err
+	var pub, priv int64
+	if err := r.db.WithContext(ctx).Model(&touchdb.SocialPublicPost{}).Count(&pub).Error; err != nil {
+		return 0, err
+	}
+	if err := r.db.WithContext(ctx).Model(&touchdb.SocialPrivatePost{}).Count(&priv).Error; err != nil {
+		return 0, err
+	}
+	return pub + priv, nil
 }
 
 func (r *actorQueryRepository) CountComments(ctx context.Context) (int64, error) {
 	var c int64
-	err := r.db.WithContext(ctx).Model(&touchdb.Comment{}).Count(&c).Error
+	err := r.db.WithContext(ctx).Model(&touchdb.SocialComment{}).Count(&c).Error
 	return c, err
 }
 
+// CountLikes preserves the dashboard's prior semantic of "user engagement on
+// posts" by counting LIKE-kind reactions specifically. Other reaction kinds
+// (LOVE / LAUGH / etc.) are intentionally excluded so historical metrics
+// remain comparable.
 func (r *actorQueryRepository) CountLikes(ctx context.Context) (int64, error) {
 	var c int64
-	err := r.db.WithContext(ctx).Model(&touchdb.PostLike{}).Count(&c).Error
+	err := r.db.WithContext(ctx).Model(&touchdb.SocialReaction{}).Where("kind = ?", "LIKE").Count(&c).Error
 	return c, err
 }
 
@@ -235,9 +250,14 @@ func (r *actorQueryRepository) CountFollows(ctx context.Context) (int64, error) 
 }
 
 func (r *actorQueryRepository) CountPostsSince(ctx context.Context, since time.Time) (int64, error) {
-	var c int64
-	err := r.db.WithContext(ctx).Model(&touchdb.Post{}).Where("created_at >= ?", since).Count(&c).Error
-	return c, err
+	var pub, priv int64
+	if err := r.db.WithContext(ctx).Model(&touchdb.SocialPublicPost{}).Where("created_at >= ?", since).Count(&pub).Error; err != nil {
+		return 0, err
+	}
+	if err := r.db.WithContext(ctx).Model(&touchdb.SocialPrivatePost{}).Where("created_at >= ?", since).Count(&priv).Error; err != nil {
+		return 0, err
+	}
+	return pub + priv, nil
 }
 
 func (r *actorQueryRepository) ListActivePeersSessions(ctx context.Context, limit int) ([]domain.PeersSessionInfo, error) {

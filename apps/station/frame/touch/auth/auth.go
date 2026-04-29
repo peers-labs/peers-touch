@@ -15,7 +15,22 @@ import (
 	"gorm.io/gorm"
 )
 
-const DefaultSessionDuration = 24 * time.Hour
+// DefaultSessionDuration is the lifetime of an actor's session record in the
+// Station session table. Tokens issued for that session inherit the same TTL
+// (see `IssueTokenAndSession`). We default to 30 days because:
+//
+//   - The chat client is treated as a long-lived "trusted device" — kicking
+//     people out every 24h forces them through the picker → PIN dance for no
+//     security gain (the PIN protects the encrypted token at rest, and the
+//     server still revokes on logout / `CreateWithKick`).
+//   - Anything below ~7 days made the dev-dual workflow unusable: two windows
+//     on the same device-type kick each other and any restart of Station
+//     erases the row, both of which surfaced as the confusing "session
+//     revoked" red banner on the PIN screen.
+//
+// Operators that want a shorter window can override this via a session config
+// once we wire one up; today this constant is the single source of truth.
+const DefaultSessionDuration = 30 * 24 * time.Hour
 
 var sessionManager *session.Manager
 

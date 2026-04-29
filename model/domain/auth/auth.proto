@@ -4,6 +4,7 @@ package peers_touch.model.auth.v1;
 
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/any.proto";
+import "domain/actor/actor.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
 
@@ -34,4 +35,5 @@ message LoginResponse {
   AuthTokens tokens = 1;
   string session_id = 2;
   AuthActorInfo actor = 3;
+  peers_touch.model.actor.v1.ActorRef actor_ref = 4 [json_name = "actor_ref"];
 }

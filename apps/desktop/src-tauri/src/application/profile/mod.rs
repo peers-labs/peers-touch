@@ -5,12 +5,11 @@
 
 use crate::domain::profile::{ProfileError, UploadKind};
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::{profile_store, station_client};
+use crate::infrastructure::{avatar_cache, profile_store, station_client};
 use crate::contracts::{
-    FileUploadInput, ProfilePrivacyInput, ProfileUpdateInput, StubPayload,
+    AccountSyncAvatarInput, FileUploadInput, ProfilePrivacyInput, ProfileUpdateInput, StubPayload,
 };
 use crate::model::actor::{ActorProfile, UpdateProfileRequest, UserLink};
-use crate::state::AppState;
 use reqwest::Method;
 use serde_json::{json, Value};
 
@@ -22,15 +21,11 @@ fn map_station_error(command: &str, verb: &str, err: station_client::StationClie
 //
 // `/actor/profile` uses Touch `SuccessResponse` with protobuf `ActorProfile` in `PeersResponse.data`.
 
-pub fn profile_get(state: &AppState) -> AppResult<StubPayload> {
-    let token = match token_from_state(state) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
+pub fn profile_get(token: &str) -> AppResult<StubPayload> {
     match station_client::request_peers_proto_no_body::<ActorProfile>(
         Method::GET,
         "/actor/profile",
-        &token,
+        token,
         None,
     ) {
         Ok(p) => success_with_data("profile_get", actor_profile_to_value(&p)),
@@ -41,23 +36,19 @@ pub fn profile_get(state: &AppState) -> AppResult<StubPayload> {
     }
 }
 
-pub fn profile_update(state: &AppState, input: ProfileUpdateInput) -> AppResult<StubPayload> {
-    let token = match token_from_state(state) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
+pub fn profile_update(input: ProfileUpdateInput, token: &str) -> AppResult<StubPayload> {
     let body = profile_input_to_proto(&input);
     match station_client::request_peers_proto_no_payload(
         Method::POST,
         "/actor/profile",
-        &token,
+        token,
         None,
         Some(&body),
     ) {
         Ok(()) => match station_client::request_peers_proto_no_body::<ActorProfile>(
             Method::GET,
             "/actor/profile",
-            &token,
+            token,
             None,
         ) {
             Ok(p) => success_with_data("profile_update", actor_profile_to_value(&p)),
@@ -75,27 +66,20 @@ pub fn profile_update(state: &AppState, input: ProfileUpdateInput) -> AppResult<
 
 // ── Station OSS upload ──
 
-pub fn profile_upload_avatar_oss(state: &AppState, input: FileUploadInput) -> AppResult<StubPayload> {
-    upload_and_set_profile_image(state, &input.file_path, "avatar")
+pub fn profile_upload_avatar_oss(input: FileUploadInput, token: &str) -> AppResult<StubPayload> {
+    upload_and_set_profile_image(token, &input.file_path, "avatar")
 }
 
-pub fn profile_upload_header_oss(state: &AppState, input: FileUploadInput) -> AppResult<StubPayload> {
-    upload_and_set_profile_image(state, &input.file_path, "header")
+pub fn profile_upload_header_oss(input: FileUploadInput, token: &str) -> AppResult<StubPayload> {
+    upload_and_set_profile_image(token, &input.file_path, "header")
 }
 
-fn upload_and_set_profile_image(state: &AppState, file_path: &str, field: &str) -> AppResult<StubPayload> {
+fn upload_and_set_profile_image(token: &str, file_path: &str, field: &str) -> AppResult<StubPayload> {
     tracing::info!(file_path = %file_path, field = %field, "Starting profile image upload");
-    let token = match token_from_state(state) {
-        Ok(t) => t,
-        Err(e) => {
-            tracing::warn!(field = %field, "Profile image upload aborted: no valid session token");
-            return e;
-        }
-    };
 
     // Step 1: Upload to OSS
     tracing::info!(file_path = %file_path, "Uploading image to OSS");
-    let oss_resp = match station_client::upload_multipart("/sub-oss/upload", &token, file_path) {
+    let oss_resp = match station_client::upload_multipart("/sub-oss/upload", token, file_path) {
         Ok(v) => {
             tracing::info!("OSS upload succeeded");
             v
@@ -141,19 +125,19 @@ fn upload_and_set_profile_image(state: &AppState, file_path: &str, field: &str) 
     match station_client::request_peers_proto_no_payload(
         Method::POST,
         "/actor/profile",
-        &token,
+        token,
         None,
         Some(&body),
     ) {
         Ok(()) => {
             // Sync avatar to local auth identity and download to local cache.
             if field == "avatar" {
-                let _ = sync_avatar_with_download(&absolute_url);
+                let _ = sync_avatar_with_download(token, &absolute_url);
             }
             match station_client::request_peers_proto_no_body::<ActorProfile>(
                 Method::GET,
                 "/actor/profile",
-                &token,
+                token,
                 None,
             ) {
                 Ok(p) => success_with_data(
@@ -175,16 +159,16 @@ fn upload_and_set_profile_image(state: &AppState, file_path: &str, field: &str) 
 
 // ── Local profile fallbacks (kept for backward compat) ──
 
-pub fn profile_upload_avatar(input: FileUploadInput) -> AppResult<StubPayload> {
-    map_upload("profile_upload_avatar", UploadKind::Avatar, input)
+pub fn profile_upload_avatar(actor_id: &str, input: FileUploadInput, token: &str) -> AppResult<StubPayload> {
+    map_upload("profile_upload_avatar", UploadKind::Avatar, input, token, actor_id)
 }
 
-pub fn profile_upload_header(input: FileUploadInput) -> AppResult<StubPayload> {
-    map_upload("profile_upload_header", UploadKind::Header, input)
+pub fn profile_upload_header(actor_id: &str, input: FileUploadInput, token: &str) -> AppResult<StubPayload> {
+    map_upload("profile_upload_header", UploadKind::Header, input, token, actor_id)
 }
 
-pub fn profile_update_privacy(input: ProfilePrivacyInput) -> AppResult<StubPayload> {
-    match profile_store::update_privacy(input.visibility, input.allow_direct_message) {
+pub fn profile_update_privacy(actor_id: &str, _token: &str, input: ProfilePrivacyInput) -> AppResult<StubPayload> {
+    match profile_store::update_privacy(actor_id, input.visibility, input.allow_direct_message) {
         Ok(snapshot) => AppResult::success(StubPayload {
             command: "profile_update_privacy".to_string(),
             status: format!("privacy:{} dm:{}", snapshot.visibility, snapshot.allow_direct_message),
@@ -193,8 +177,14 @@ pub fn profile_update_privacy(input: ProfilePrivacyInput) -> AppResult<StubPaylo
     }
 }
 
-fn map_upload(command: &str, kind: UploadKind, input: FileUploadInput) -> AppResult<StubPayload> {
-    match profile_store::upload(kind, &input.file_path) {
+fn map_upload(
+    command: &str,
+    kind: UploadKind,
+    input: FileUploadInput,
+    token: &str,
+    actor_id: &str,
+) -> AppResult<StubPayload> {
+    match profile_store::upload(actor_id, kind, &input.file_path) {
         Ok(outcome) if outcome.rolled_back => AppResult::fail(
             ErrorCode::Conflict,
             format!(
@@ -205,7 +195,7 @@ fn map_upload(command: &str, kind: UploadKind, input: FileUploadInput) -> AppRes
         ),
         Ok(outcome) => {
             if outcome.field == "avatar" {
-                let _ = sync_avatar_with_download(&outcome.value);
+                let _ = sync_avatar_with_download(token, &outcome.value);
             }
             AppResult::success(StubPayload {
                 command: command.to_string(),
@@ -217,22 +207,6 @@ fn map_upload(command: &str, kind: UploadKind, input: FileUploadInput) -> AppRes
 }
 
 // ── Helpers ──
-
-fn token_from_state(state: &AppState) -> Result<String, AppResult<StubPayload>> {
-    let guard = state.session.lock().map_err(|e| {
-        tracing::error!(error = %e, "Failed to access session state");
-        AppResult::fail(ErrorCode::InternalError, "Failed to access session state", None)
-    })?;
-    let token = guard.token.clone().unwrap_or_default();
-    if token.trim().is_empty() {
-        return Err(AppResult::fail(
-            ErrorCode::Unauthorized,
-            "Authentication required — please log in",
-            None,
-        ));
-    }
-    Ok(token)
-}
 
 fn actor_profile_to_value(p: &ActorProfile) -> Value {
     let links: Vec<Value> = p
@@ -346,19 +320,28 @@ fn map_error(command: &str, error: ProfileError) -> AppResult<StubPayload> {
 // 2026-04-21: Fetches profile from Station and syncs all user data
 // (metadata + avatar file) to local storage in a single operation.
 
-/// Fetch the active user's profile from Station, sync metadata and avatar to local storage.
-/// Returns a JSON payload with the synced profile including `avatar_local_path`.
-pub fn sync_user_profile(state: &AppState) -> AppResult<StubPayload> {
-    let token = match token_from_state(state) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
+/// Fetch the user's profile from Station and sync metadata + avatar to local storage.
+///
+/// `actor_id` MUST be the actor whose token is being used for this call. We
+/// intentionally do NOT consult `identities.json::active_account_id` to pick
+/// the destination record — under multi-window dev (`make dev-dual`) and right
+/// after PIN unlock, `active_account_id` may lag behind the per-window session
+/// and would cause us to write actor X's profile into actor Y's record (the
+/// "both rows show User B" bug).
+pub fn sync_user_profile(token: &str, actor_id: &str) -> AppResult<StubPayload> {
+    if actor_id.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::Unauthorized,
+            "sync_user_profile: caller has no bound actor",
+            None,
+        );
+    }
 
     // Fetch full profile from Station.
     let profile = match station_client::request_peers_proto_no_body::<ActorProfile>(
         Method::GET,
         "/actor/profile",
-        &token,
+        token,
         None,
     ) {
         Ok(p) => p,
@@ -368,6 +351,23 @@ pub fn sync_user_profile(state: &AppState) -> AppResult<StubPayload> {
         }
     };
 
+    // Cross-check: the profile we just received MUST belong to `actor_id`. If
+    // Station returns a different actor (token mismatch / hijacked session),
+    // refuse to write — silent corruption of identities.json is the worst
+    // possible failure mode here.
+    if !profile.id.is_empty() && profile.id != actor_id {
+        tracing::error!(
+            caller_actor = %actor_id,
+            station_actor = %profile.id,
+            "sync_user_profile: actor mismatch between caller token and Station response; refusing to write"
+        );
+        return AppResult::fail(
+            ErrorCode::Unauthorized,
+            "sync_user_profile: actor mismatch between caller and Station response",
+            None,
+        );
+    }
+
     // Resolve avatar URL to absolute.
     let avatar_url = if !profile.avatar.is_empty() && profile.avatar.starts_with('/') {
         format!("{}{}", station_client::station_base_url(), profile.avatar)
@@ -375,20 +375,23 @@ pub fn sync_user_profile(state: &AppState) -> AppResult<StubPayload> {
         profile.avatar.clone()
     };
 
-    // Determine account_id from session state.
-    let account_id = state.session.lock()
-        .ok()
-        .and_then(|g| g.actor_id.clone())
-        .map(|aid| format!("password:{}", aid))
-        .unwrap_or_default();
-
-    if account_id.is_empty() {
-        return AppResult::fail(
-            ErrorCode::Unauthorized,
-            "No active session to sync profile for",
-            None,
-        );
-    }
+    // Pick the LocalAccount whose `provider_user_id` matches `actor_id`. This
+    // is the only correct destination — `active_account_id` is a UI/router
+    // hint and is not authoritative for token-bound writes.
+    let account_id = match crate::infrastructure::auth_identity::find_account_id_by_actor_id(actor_id) {
+        Some(id) => id,
+        None => {
+            tracing::error!(
+                actor_id = %actor_id,
+                "sync_user_profile: no LocalAccount matches caller actor_id; refusing to write"
+            );
+            return AppResult::fail(
+                ErrorCode::NotFound,
+                "sync_user_profile: caller actor has no local account record",
+                None,
+            );
+        }
+    };
 
     // Sync all profile data + download avatar to local cache.
     let avatar_local = crate::infrastructure::auth_identity::sync_profile_locally(
@@ -423,25 +426,47 @@ pub fn sync_user_profile(state: &AppState) -> AppResult<StubPayload> {
     })
 }
 
-/// Sync avatar for the active account: update remote URL and download to local cache.
-/// Enhanced version of the old `account_sync_avatar` that also caches the file locally.
-pub fn sync_avatar_with_download(avatar_url: &str) -> Result<Option<String>, String> {
-    // Update remote URL in identities.json.
+/// Sync avatar for the active account: update remote URL and warm the local cache.
+/// Returns the cached file path when the download succeeds, `None` otherwise.
+/// `token` is reserved for future Station-authenticated download paths; callers pass the session access token.
+pub fn sync_avatar_with_download(_token: &str, avatar_url: &str) -> Result<Option<String>, String> {
     crate::infrastructure::auth_identity::update_active_avatar(avatar_url)?;
 
-    // Download to local cache.
-    if avatar_url.is_empty() {
-        return Ok(None);
+    let local_path = avatar_cache::try_ensure_local_string(avatar_url);
+    if let Some(ref path) = local_path {
+        crate::infrastructure::auth_identity::update_active_avatar_local_path(path)?;
     }
-    match crate::infrastructure::auth_identity::download_avatar(avatar_url) {
-        Ok(path) => {
-            let path_str = path.to_string_lossy().to_string();
-            crate::infrastructure::auth_identity::update_active_avatar_local_path(&path_str)?;
-            Ok(Some(path_str))
+    Ok(local_path)
+}
+
+/// Resolve the local cache path for any avatar URL. The single backend entry
+/// point used by the `UserSquareAvatar` component to honor the project rule
+/// "always render local images". Downloads on cache miss, returns `None` if
+/// the URL is empty or the download cannot complete.
+pub fn avatar_resolve_local(remote_url: &str) -> Option<String> {
+    avatar_cache::try_ensure_local_string(remote_url)
+}
+
+/// Download Station avatar to local cache and link it to the active auth identity.
+pub fn account_sync_avatar(input: &AccountSyncAvatarInput, token: &str) -> AppResult<StubPayload> {
+    match sync_avatar_with_download(token, &input.avatar_url) {
+        Ok(local_path) => {
+            let status = match local_path {
+                Some(p) => format!("synced_local:{}", p),
+                None => "synced_remote_only".to_string(),
+            };
+            AppResult::success(StubPayload {
+                command: "account_sync_avatar".to_string(),
+                status,
+            })
         }
         Err(e) => {
-            tracing::warn!(error = %e, "Avatar download failed, remote URL still saved");
-            Ok(None)
+            tracing::error!(error = %e, "Failed to sync avatar");
+            AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to sync avatar: {}", e),
+                None,
+            )
         }
     }
 }
