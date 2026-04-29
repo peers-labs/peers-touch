@@ -58,7 +58,6 @@ func initStore(t *testing.T) *gorm.DB {
 			&ossmodel.Bucket{},
 			&ossmodel.Audit{},
 			&ossmodel.Meta{},
-			&ossmodel.PeerKey{},
 			&ossmodel.Blob{},
 		)
 		if storeErr != nil {
@@ -80,7 +79,7 @@ func initStore(t *testing.T) *gorm.DB {
 // shared cache.
 func reset(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	for _, table := range []string{"oss_files", "oss_buckets", "oss_audit", "oss_meta", "oss_blobs", "oss_peer_keys"} {
+	for _, table := range []string{"oss_files", "oss_buckets", "oss_audit", "oss_meta", "oss_blobs"} {
 		if err := db.Exec("DELETE FROM " + table).Error; err != nil {
 			t.Fatalf("reset %s: %v", table, err)
 		}
@@ -476,91 +475,6 @@ func TestBootstrap_StampsSchemaVersionAndIsIdempotent(t *testing.T) {
 	if capMeta.Value != seedCap {
 		t.Fatalf("idempotent bootstrap should not change capability_version (%s -> %s)",
 			seedCap, capMeta.Value)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// PeerKeyRepository tests — local key persistence + TOFU pin.
-// ---------------------------------------------------------------------------
-
-func TestPeerKeyRepo_LocalKeyRoundtrip(t *testing.T) {
-	db := initStore(t)
-	reset(t, db)
-
-	r := NewPeerKeyRepository("default")
-	ctx := context.Background()
-
-	// Empty store reports the sentinel so the federation cache
-	// knows to generate.
-	if _, _, _, err := r.LoadLocalKey(ctx); !errors.Is(err, ErrNoLocalKey) {
-		t.Fatalf("expected ErrNoLocalKey on empty store, got %v", err)
-	}
-
-	if err := r.SaveLocalKey(ctx, "PRIV-PEM", "PUB-PEM", "kid-x"); err != nil {
-		t.Fatalf("save: %v", err)
-	}
-
-	priv, pub, kid, err := r.LoadLocalKey(ctx)
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	if priv != "PRIV-PEM" || pub != "PUB-PEM" || kid != "kid-x" {
-		t.Fatalf("roundtrip mismatch: %q / %q / %q", priv, pub, kid)
-	}
-
-	// Save again under the same keys to confirm idempotency.
-	if err := r.SaveLocalKey(ctx, "PRIV-PEM-2", "PUB-PEM-2", "kid-y"); err != nil {
-		t.Fatalf("save 2: %v", err)
-	}
-	_, _, kid2, _ := r.LoadLocalKey(ctx)
-	if kid2 != "kid-y" {
-		t.Fatalf("overwrite kid lost: %q", kid2)
-	}
-}
-
-func TestPeerKeyRepo_TOFUInsertThenMismatch(t *testing.T) {
-	db := initStore(t)
-	reset(t, db)
-
-	r := NewPeerKeyRepository("default")
-	ctx := context.Background()
-
-	// First sighting — TOFU insert.
-	row := ossmodel.PeerKey{
-		PeerStationID: "station-A",
-		KID:           "kid-honest",
-		PublicKeyPEM:  "PUB",
-	}
-	if err := r.UpsertTOFU(ctx, row); err != nil {
-		t.Fatalf("first upsert: %v", err)
-	}
-	got, err := r.GetPeer(ctx, "station-A")
-	if err != nil || got == nil || got.KID != "kid-honest" {
-		t.Fatalf("after TOFU: row=%v err=%v", got, err)
-	}
-
-	// Same kid → success (touch only).
-	if err := r.UpsertTOFU(ctx, row); err != nil {
-		t.Fatalf("repeat upsert: %v", err)
-	}
-
-	// Different kid for the same peer → hard reject.
-	bad := row
-	bad.KID = "kid-mallory"
-	bad.PublicKeyPEM = "PUB2"
-	if err := r.UpsertTOFU(ctx, bad); !errors.Is(err, ErrPeerKeyMismatch) {
-		t.Fatalf("expected ErrPeerKeyMismatch, got %v", err)
-	}
-
-	// After pinning, the same forged input must still fail with
-	// the *pinned* sentinel — operators care about the distinction.
-	if err := db.Model(&ossmodel.PeerKey{}).
-		Where("peer_station_id = ?", "station-A").
-		Update("pinned", true).Error; err != nil {
-		t.Fatalf("pin: %v", err)
-	}
-	if err := r.UpsertTOFU(ctx, bad); !errors.Is(err, ErrPinnedKeyMismatch) {
-		t.Fatalf("expected ErrPinnedKeyMismatch, got %v", err)
 	}
 }
 
@@ -1253,57 +1167,6 @@ func TestBucketRepo_SetUsageRewritesAbsoluteCounters(t *testing.T) {
 		t.Errorf("unknown id: got %v, want ErrBucketNotFound", err)
 	}
 	_ = db
-}
-
-func TestPeerKeyRepo_DeleteUnpinnedOlderThanSpresPinned(t *testing.T) {
-	db := initStore(t)
-	reset(t, db)
-
-	r := NewPeerKeyRepository("default")
-	ctx := context.Background()
-	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
-	old := now.Add(-60 * 24 * time.Hour)
-	fresh := now.Add(-time.Hour)
-	pinAt := now
-
-	rows := []ossmodel.PeerKey{
-		{PeerStationID: "p1", KID: "k1", PublicKeyPEM: "x", FirstSeenAt: old, LastSeenAt: old},
-		{PeerStationID: "p2", KID: "k2", PublicKeyPEM: "x", FirstSeenAt: fresh, LastSeenAt: fresh},
-		{PeerStationID: "p3", KID: "k3", PublicKeyPEM: "x", FirstSeenAt: old, LastSeenAt: old, Pinned: true, PinnedAt: &pinAt},
-	}
-	for i := range rows {
-		if err := db.Create(&rows[i]).Error; err != nil {
-			t.Fatalf("seed %s: %v", rows[i].PeerStationID, err)
-		}
-	}
-
-	cutoff := now.Add(-30 * 24 * time.Hour)
-	deleted, err := r.DeleteUnpinnedOlderThan(ctx, cutoff)
-	if err != nil {
-		t.Fatalf("DeleteUnpinnedOlderThan: %v", err)
-	}
-	if deleted != 1 {
-		t.Errorf("deleted: got %d, want 1 (only p1 should be trimmed)", deleted)
-	}
-
-	// p1 gone, p2 + p3 still present.
-	for _, want := range []string{"p2", "p3"} {
-		row, err := r.GetPeer(ctx, want)
-		if err != nil {
-			t.Fatalf("GetPeer %s: %v", want, err)
-		}
-		if row == nil {
-			t.Errorf("expected %s to survive trim", want)
-		}
-	}
-	if row, _ := r.GetPeer(ctx, "p1"); row != nil {
-		t.Errorf("p1 should have been trimmed")
-	}
-
-	// Zero cutoff is a quiet no-op.
-	if n, err := r.DeleteUnpinnedOlderThan(ctx, time.Time{}); err != nil || n != 0 {
-		t.Errorf("zero cutoff: got (%d,%v), want (0,nil)", n, err)
-	}
 }
 
 func TestMetaRepo_SetAndDelete(t *testing.T) {

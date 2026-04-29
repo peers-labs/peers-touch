@@ -26,6 +26,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/oss/db/repo"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oss/service"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/facility/storage"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -68,8 +69,9 @@ func initOSSIntegStore(t *testing.T) *gorm.DB {
 			&ossmodel.Bucket{},
 			&ossmodel.Audit{},
 			&ossmodel.Meta{},
-			&ossmodel.PeerKey{},
 			&ossmodel.Blob{},
+			&federation.AuthLocalKeyRow{},
+			&federation.PeerKeyRow{},
 		)
 		if ossIntegErr != nil {
 			return
@@ -86,7 +88,8 @@ func resetOSSInteg(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	for _, tbl := range []string{
 		"oss_files", "oss_buckets", "oss_audit",
-		"oss_meta", "oss_blobs", "oss_peer_keys",
+		"oss_meta", "oss_blobs",
+		federation.PeerKeyTable, federation.AuthLocalKeyTable,
 	} {
 		if err := db.Exec("DELETE FROM " + tbl).Error; err != nil {
 			t.Fatalf("reset %s: %v", tbl, err)

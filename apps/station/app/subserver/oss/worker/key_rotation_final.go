@@ -1,21 +1,21 @@
 // KeyRotationFinalizer — clears the previous federation keypair
 // once the dual-sign window after a rotation has elapsed.
 //
-// The key-rotation flow (S13) writes the new keypair into the
-// canonical `MetaKeyFederation{Priv,Pub,KID}` rows AND copies the
-// outgoing keypair into `MetaKeyFederation{PrivKeyPrev,KIDPrev}`,
-// stamping `MetaKeyFederationRotatedAt = now`. During the dual-sign
-// window the verifier accepts both the current and the previous
-// kid so peers with cached short-lived JWTs (60s TTL) can still
-// validate while they refresh capabilities.
+// Rotation is owned by the framework: `auth/federation`'s
+// KeyStore atomically demotes the existing `current` row to
+// `prev` and writes the new keypair into `current`. During the
+// dual-sign window the verifier MAY accept tokens signed by
+// either the current or the previous kid so peers with cached
+// short-lived JWTs can still validate while they refresh
+// capabilities.
 //
-// Once `now - rotatedAt > FederationRotationGrace` the previous
-// keypair is no longer useful — any token signed by it has long
-// since expired. The finalizer drops the three `_prev`/`rotated_at`
-// rows in one transaction and audits the closure with
-// action=key_rotate, reason=rotation_finalized.
+// Once the wall-clock distance between the prev row's
+// GeneratedAt and now exceeds `Grace`, the previous keypair is
+// no longer useful — any token signed by it has long since
+// expired. The finalizer drops the `prev` row and audits the
+// closure with action=key_rotate, reason=rotation_finalized.
 //
-// The worker tolerates absence (rotation never happened) as a
+// The worker tolerates absence (no rotation in flight) as a
 // no-op; the only failure path that surfaces is a real DB error.
 package worker
 
@@ -27,15 +27,22 @@ import (
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	ossrepo "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/repo"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 )
 
 // KeyRotationFinalizerConfig configures the finalizer.
 type KeyRotationFinalizerConfig struct {
-	Meta  ossrepo.MetaRepository
+	// Keys is the framework KeyStore that owns the local
+	// signing keypair (`auth_local_keys`). Required. The
+	// finalizer reads `prev` and clears it once Grace elapses.
+	Keys federation.KeyStore
+
+	// Audit emits the operator-facing closure record. Required.
 	Audit ossrepo.AuditRepository
 
-	// Grace is the dual-sign window. Defaults to 24h.
+	// Grace is the dual-sign window. Defaults to
+	// federation.DefaultDualSignGrace (24h).
 	Grace time.Duration
 
 	// Interval is the cadence between ticks. Defaults to 1h —
@@ -54,14 +61,14 @@ type KeyRotationFinalizer struct {
 
 // NewKeyRotationFinalizer constructs and validates the finalizer.
 func NewKeyRotationFinalizer(cfg KeyRotationFinalizerConfig) (*KeyRotationFinalizer, error) {
-	if cfg.Meta == nil {
-		return nil, errors.New("worker: key_rotation: Meta repo is required")
+	if cfg.Keys == nil {
+		return nil, errors.New("worker: key_rotation: Keys store is required")
 	}
 	if cfg.Audit == nil {
 		return nil, errors.New("worker: key_rotation: Audit repo is required")
 	}
 	if cfg.Grace <= 0 {
-		cfg.Grace = 24 * time.Hour
+		cfg.Grace = federation.DefaultDualSignGrace
 	}
 	if cfg.Interval <= 0 {
 		cfg.Interval = time.Hour
@@ -76,11 +83,16 @@ func NewKeyRotationFinalizer(cfg KeyRotationFinalizerConfig) (*KeyRotationFinali
 func (w *KeyRotationFinalizer) Name() string            { return "key_rotation_finalizer" }
 func (w *KeyRotationFinalizer) Interval() time.Duration { return w.cfg.Interval }
 
-// RunOnce checks the rotation timestamp and clears the `_prev`
-// keypair if the grace window has elapsed.
+// RunOnce inspects the prev slot and clears it if the grace
+// window has elapsed.
 func (w *KeyRotationFinalizer) RunOnce(ctx context.Context) error {
-	rotatedRaw, err := w.cfg.Meta.Get(ctx, ossmodel.MetaKeyFederationRotatedAt)
+	prev, err := w.cfg.Keys.Load(ctx, federation.SlotPrev)
 	if err != nil {
+		if errors.Is(err, federation.ErrNoLocalKey) {
+			// No rotation in flight. Quiet no-op — the
+			// scheduler heartbeat already records the tick.
+			return nil
+		}
 		_ = w.cfg.Audit.Append(ctx, ossmodel.Audit{
 			Action:  ossmodel.AuditActionKeyRotate,
 			Outcome: ossmodel.AuditOutcomeError,
@@ -88,43 +100,15 @@ func (w *KeyRotationFinalizer) RunOnce(ctx context.Context) error {
 		})
 		return err
 	}
-	if rotatedRaw == "" {
-		// No rotation in flight. Quiet no-op — the
-		// scheduler heartbeat already records the tick.
-		return nil
-	}
-	rotatedAt, err := time.Parse(time.RFC3339Nano, rotatedRaw)
-	if err != nil {
-		// Try the loose RFC3339 form too — the rotation
-		// flow may have stamped a wall-clock string with
-		// second precision.
-		rotatedAt, err = time.Parse(time.RFC3339, rotatedRaw)
-	}
-	if err != nil {
-		_ = w.cfg.Audit.Append(ctx, ossmodel.Audit{
-			Action:  ossmodel.AuditActionKeyRotate,
-			Outcome: ossmodel.AuditOutcomeError,
-			Reason:  "rotation_parse: " + rotatedRaw,
-		})
-		return fmt.Errorf("worker: key_rotation: parse rotated_at %q: %w", rotatedRaw, err)
-	}
 
-	if w.now().Sub(rotatedAt) < w.cfg.Grace {
+	cutoff := w.now().Add(-w.cfg.Grace)
+	if prev.GeneratedAt.After(cutoff) {
 		// Still inside the dual-sign window — leave the
-		// `_prev` slot in place.
+		// `prev` slot in place.
 		return nil
 	}
 
-	// Grace elapsed. Drop the prev keypair AND the rotated_at
-	// stamp so the next rotation starts cleanly. We keep the
-	// audit row separate from the delete so the operator log
-	// reads as "we cleared the prev key at T".
-	deleted, err := w.cfg.Meta.Delete(ctx,
-		ossmodel.MetaKeyFederationPrivKeyPrev,
-		ossmodel.MetaKeyFederationKIDPrev,
-		ossmodel.MetaKeyFederationRotatedAt,
-	)
-	if err != nil {
+	if err := w.cfg.Keys.ClearPrev(ctx); err != nil {
 		_ = w.cfg.Audit.Append(ctx, ossmodel.Audit{
 			Action:  ossmodel.AuditActionKeyRotate,
 			Outcome: ossmodel.AuditOutcomeError,
@@ -135,7 +119,8 @@ func (w *KeyRotationFinalizer) RunOnce(ctx context.Context) error {
 	if err := w.cfg.Audit.Append(ctx, ossmodel.Audit{
 		Action:  ossmodel.AuditActionKeyRotate,
 		Outcome: ossmodel.AuditOutcomeOK,
-		Reason:  fmt.Sprintf("rotation_finalized rotated_at=%s cleared=%d", rotatedAt.UTC().Format(time.RFC3339), deleted),
+		Reason: fmt.Sprintf("rotation_finalized prev_kid=%s prev_generated_at=%s",
+			prev.Kid, prev.GeneratedAt.UTC().Format(time.RFC3339)),
 	}); err != nil {
 		log.Warnf(ctx, "[oss-worker] key_rotation audit append failed: %v", err)
 	}

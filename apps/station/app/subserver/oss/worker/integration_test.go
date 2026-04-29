@@ -22,6 +22,7 @@ import (
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oss/db/repo"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/facility/storage"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -75,8 +76,9 @@ func initIntegrationStore(t *testing.T) *gorm.DB {
 			&ossmodel.Bucket{},
 			&ossmodel.Audit{},
 			&ossmodel.Meta{},
-			&ossmodel.PeerKey{},
 			&ossmodel.Blob{},
+			&federation.AuthLocalKeyRow{},
+			&federation.PeerKeyRow{},
 		)
 		if integrationErr != nil {
 			return
@@ -96,7 +98,8 @@ func resetIntegration(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	for _, tbl := range []string{
 		"oss_files", "oss_buckets", "oss_audit",
-		"oss_meta", "oss_blobs", "oss_peer_keys",
+		"oss_meta", "oss_blobs",
+		federation.PeerKeyTable, federation.AuthLocalKeyTable,
 	} {
 		if err := db.Exec("DELETE FROM " + tbl).Error; err != nil {
 			t.Fatalf("reset %s: %v", tbl, err)
@@ -426,19 +429,19 @@ func TestPeerKeyTrim_Integration_DropsUnpinnedIdleOnly(t *testing.T) {
 	idle := now.Add(-30 * 24 * time.Hour)
 	recent := now.Add(-time.Hour)
 
-	if err := db.Create([]ossmodel.PeerKey{
-		{PeerStationID: "old-unpinned", KID: "k1", PublicKeyPEM: "PEM",
+	if err := db.Create([]federation.PeerKeyRow{
+		{StationID: "old-unpinned", Kid: "k1", PubPEM: "PEM",
 			FirstSeenAt: idle, LastSeenAt: idle, Pinned: false},
-		{PeerStationID: "old-pinned", KID: "k2", PublicKeyPEM: "PEM",
+		{StationID: "old-pinned", Kid: "k2", PubPEM: "PEM",
 			FirstSeenAt: idle, LastSeenAt: idle, Pinned: true},
-		{PeerStationID: "fresh-unpinned", KID: "k3", PublicKeyPEM: "PEM",
+		{StationID: "fresh-unpinned", Kid: "k3", PubPEM: "PEM",
 			FirstSeenAt: recent, LastSeenAt: recent, Pinned: false},
 	}).Error; err != nil {
 		t.Fatalf("seed peers: %v", err)
 	}
 
 	trim, err := NewPeerKeyTrim(PeerKeyTrimConfig{
-		Peers:    repo.NewPeerKeyRepository(integrationDBName),
+		Peers:    federation.NewPeerKeyStoreGORM(integrationDBName),
 		Audit:    repo.NewAuditRepository(integrationDBName),
 		MaxIdle:  7 * 24 * time.Hour,
 		Interval: 24 * time.Hour,
@@ -451,13 +454,13 @@ func TestPeerKeyTrim_Integration_DropsUnpinnedIdleOnly(t *testing.T) {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
-	var rows []ossmodel.PeerKey
+	var rows []federation.PeerKeyRow
 	if err := db.Find(&rows).Error; err != nil {
 		t.Fatalf("read peers: %v", err)
 	}
 	left := map[string]bool{}
 	for _, r := range rows {
-		left[r.PeerStationID] = true
+		left[r.StationID] = true
 	}
 	if left["old-unpinned"] {
 		t.Errorf("idle unpinned peer should be trimmed")
@@ -482,21 +485,35 @@ func TestKeyRotationFinalizer_Integration_ClearsPrevAfterGrace(t *testing.T) {
 
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
 	rotated := now.Add(-25 * time.Hour) // 1h beyond a 24h grace
-	rotatedAt := rotated.Format(time.RFC3339Nano)
 
-	seedMeta := []ossmodel.Meta{
-		{Key: ossmodel.MetaKeyFederationPrivKeyPrev, Value: "prev-priv", UpdatedAt: rotated},
-		{Key: ossmodel.MetaKeyFederationKIDPrev, Value: "kid-old", UpdatedAt: rotated},
-		{Key: ossmodel.MetaKeyFederationRotatedAt, Value: rotatedAt, UpdatedAt: rotated},
+	store := federation.NewKeyStoreGORM(integrationDBName)
+	current, err := federation.MintLocalKey(now)
+	if err != nil {
+		t.Fatalf("mint current: %v", err)
 	}
-	for _, m := range seedMeta {
-		if err := db.Create(&m).Error; err != nil {
-			t.Fatalf("seed meta %s: %v", m.Key, err)
-		}
+	if err := store.PutCurrent(ctx, current); err != nil {
+		t.Fatalf("put current: %v", err)
+	}
+	prev, err := federation.MintLocalKey(rotated)
+	if err != nil {
+		t.Fatalf("mint prev: %v", err)
+	}
+	// Stamp prev directly so GeneratedAt sits in the past — the
+	// store API has no "set prev" verb because production never
+	// rolls back a rotation, but tests need the trip wire.
+	if err := db.Create(&federation.AuthLocalKeyRow{
+		Slot:        federation.SlotPrev,
+		Kid:         prev.Kid,
+		PrivPEM:     prev.PrivPEM,
+		PubPEM:      prev.PubPEM,
+		GeneratedAt: rotated,
+		UpdatedAt:   rotated,
+	}).Error; err != nil {
+		t.Fatalf("seed prev row: %v", err)
 	}
 
 	final, err := NewKeyRotationFinalizer(KeyRotationFinalizerConfig{
-		Meta:     repo.NewMetaRepository(integrationDBName),
+		Keys:     store,
 		Audit:    repo.NewAuditRepository(integrationDBName),
 		Grace:    24 * time.Hour,
 		Interval: time.Hour,
@@ -509,16 +526,10 @@ func TestKeyRotationFinalizer_Integration_ClearsPrevAfterGrace(t *testing.T) {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
-	for _, key := range []string{
-		ossmodel.MetaKeyFederationPrivKeyPrev,
-		ossmodel.MetaKeyFederationKIDPrev,
-		ossmodel.MetaKeyFederationRotatedAt,
-	} {
-		var row ossmodel.Meta
-		err := db.Where("`key` = ?", key).Take(&row).Error
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			t.Errorf("meta %q should be cleared after grace, got err=%v row=%+v", key, err, row)
-		}
+	var row federation.AuthLocalKeyRow
+	err = db.Where("slot = ?", federation.SlotPrev).Take(&row).Error
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Errorf("prev slot should be cleared after grace, got err=%v row=%+v", err, row)
 	}
 }
 
@@ -530,19 +541,24 @@ func TestKeyRotationFinalizer_Integration_LeavesPrevWithinGrace(t *testing.T) {
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
 	rotated := now.Add(-time.Hour) // well inside a 24h grace
 
-	if err := db.Create(&ossmodel.Meta{
-		Key: ossmodel.MetaKeyFederationPrivKeyPrev, Value: "prev-priv", UpdatedAt: rotated,
-	}).Error; err != nil {
-		t.Fatalf("seed prev priv: %v", err)
+	store := federation.NewKeyStoreGORM(integrationDBName)
+	prev, err := federation.MintLocalKey(rotated)
+	if err != nil {
+		t.Fatalf("mint prev: %v", err)
 	}
-	if err := db.Create(&ossmodel.Meta{
-		Key: ossmodel.MetaKeyFederationRotatedAt, Value: rotated.Format(time.RFC3339Nano), UpdatedAt: rotated,
+	if err := db.Create(&federation.AuthLocalKeyRow{
+		Slot:        federation.SlotPrev,
+		Kid:         prev.Kid,
+		PrivPEM:     prev.PrivPEM,
+		PubPEM:      prev.PubPEM,
+		GeneratedAt: rotated,
+		UpdatedAt:   rotated,
 	}).Error; err != nil {
-		t.Fatalf("seed rotated_at: %v", err)
+		t.Fatalf("seed prev row: %v", err)
 	}
 
 	final, err := NewKeyRotationFinalizer(KeyRotationFinalizerConfig{
-		Meta:     repo.NewMetaRepository(integrationDBName),
+		Keys:     store,
 		Audit:    repo.NewAuditRepository(integrationDBName),
 		Grace:    24 * time.Hour,
 		Interval: time.Hour,
@@ -555,9 +571,9 @@ func TestKeyRotationFinalizer_Integration_LeavesPrevWithinGrace(t *testing.T) {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
-	var stillThere ossmodel.Meta
-	if err := db.Where("`key` = ?", ossmodel.MetaKeyFederationPrivKeyPrev).Take(&stillThere).Error; err != nil {
-		t.Errorf("prev priv must NOT be cleared inside the grace window: %v", err)
+	var stillThere federation.AuthLocalKeyRow
+	if err := db.Where("slot = ?", federation.SlotPrev).Take(&stillThere).Error; err != nil {
+		t.Errorf("prev slot must NOT be cleared inside the grace window: %v", err)
 	}
 }
 
