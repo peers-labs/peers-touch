@@ -3468,6 +3468,13 @@ export const api = {
   cryptoGetFingerprint: () =>
     invokeAppResultStub<{ fingerprint: string }>('crypto_get_fingerprint'),
 
+  cryptoRatchetTelemetrySnapshot: () =>
+    invokeAppResultStub<{
+      legacy_decrypts: number;
+      dr_decrypts: number;
+      since_unix_ms: number;
+    }>('crypto_ratchet_telemetry_snapshot'),
+
   cryptoGetKeyBundle: () =>
     invokeAppResultStub<CryptoKeyBundlePayload>('crypto_get_key_bundle'),
 
@@ -3593,11 +3600,14 @@ export const api = {
       bundle,
     ),
 
-  keyExchangeFetchBundle: (did: string) =>
-    invokeRustDataFromStatus<{ did: string }, KeyExchangeBundleResponse>(
+  keyExchangeFetchBundle: (did: string, deviceId?: string) =>
+    invokeRustDataFromStatus<{ did: string; device_id?: string }, KeyExchangeFetchBundlesResponse>(
       'key_exchange_fetch_bundle',
-      { did },
+      { did, ...(deviceId != null && deviceId !== '' ? { device_id: deviceId } : {}) },
     ),
+
+  accountGetDeviceId: () =>
+    invokeRustDataFromStatus<void, { device_id: string }>('account_get_device_id'),
 
   // ── ICE / TURN ──
   //
@@ -3710,15 +3720,29 @@ export interface CryptoKeyBundlePayload {
   opk_pubs: string[];
 }
 
-export interface KeyExchangeBundleResponse {
-  actor_did: string;
+/** One device-published bundle from Station (`FetchKeyBundleResponse.bundles`). */
+export interface KeyExchangeWireBundle {
+  did: string;
+  device_id: string;
   ik_pub: string;
-  fingerprint: string;
-  spk_id: number;
+  /** SHA-256 hex over raw IK bytes; added by the desktop stub (not on wire proto). */
+  fingerprint?: string;
   spk_pub: string;
   spk_sig: string;
-  opk_id?: number;
-  opk_pub?: string;
+  opks: string[];
+  published_at_unix_ms: number;
+}
+
+export interface KeyExchangeFetchBundlesResponse {
+  bundles: KeyExchangeWireBundle[];
+}
+
+/** Most recently published bundle for a DID (server returns `published_at` desc). */
+export function pickLatestKeyExchangeBundle(
+  res: KeyExchangeFetchBundlesResponse | null | undefined,
+): KeyExchangeWireBundle | undefined {
+  const first = res?.bundles?.[0];
+  return first;
 }
 
 export interface FriendRequestData {

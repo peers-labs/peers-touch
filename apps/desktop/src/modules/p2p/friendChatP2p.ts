@@ -1,4 +1,4 @@
-import { api } from '../../services/desktop_api';
+import { api, pickLatestKeyExchangeBundle } from '../../services/desktop_api';
 import { eventBus } from '../../kernel/events/bus';
 import { EVENT } from '../../kernel/events/catalog';
 import type {
@@ -56,7 +56,7 @@ import { log } from '../../utils/logger';
 // One subtle invariant: peer's long-term Ed25519 identity public key
 // (its *non-DH* form) is required by both seal() and open(). We rely
 // on the existing X3DH bundle exchange to surface it via
-// `api.keyExchangeFetchBundle(did).ik_pub`, and cache it process-wide
+// `api.keyExchangeFetchBundle(did)` and `pickLatestKeyExchangeBundle`, caching the IK
 // so a chatty conversation doesn't hammer Station once per signal.
 // First-contact trust is identical to the existing chat-establishment
 // trust (same Station, same endpoint, same X3DH bundle), so this does
@@ -138,7 +138,7 @@ function pickTransportFromStats(stats: RTCStatsReport): FriendChatP2pTransport {
 
 // ── Peer identity-key cache ──
 // Long-term Ed25519 identity public keys (base64) keyed by DID. Filled
-// lazily on first need from `keyExchangeFetchBundle`. The key never
+// lazily on first need from `keyExchangeFetchBundle` + `pickLatestKeyExchangeBundle`.
 // rotates per actor, so an in-process cache is sufficient; if a peer
 // publishes a new bundle, the user-visible "fingerprint mismatch"
 // detection on chat-message decryption will catch it before signaling
@@ -153,7 +153,8 @@ async function loadPeerIk(peerDid: string): Promise<string> {
   if (inflight) return inflight;
   const promise = (async () => {
     try {
-      const bundle = await api.keyExchangeFetchBundle(peerDid);
+      const resp = await api.keyExchangeFetchBundle(peerDid);
+      const bundle = pickLatestKeyExchangeBundle(resp);
       const ik = String(bundle?.ik_pub || '').trim();
       if (!ik) {
         throw new Error(`peer ${peerDid} has no published ik_pub`);

@@ -20,7 +20,7 @@ import { Flexbox } from 'react-layout-kit';
 import { Alert, Button, Spin, Tag, theme, Tooltip, Typography } from 'antd';
 import { Check, RefreshCw, ShieldAlert, ShieldCheck, ShieldQuestion } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import { api } from '../../services/desktop_api';
+import { api, pickLatestKeyExchangeBundle } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import {
   buildSafetyQrPayload,
@@ -84,20 +84,18 @@ export function SafetyVerificationPanel({ localActorDid, localFingerprint, peerD
   // keeps the localStorage-backed ledger as the source of truth.
   const [tick, setTick] = useState(0);
 
-  // Pull the peer's published bundle. We only ever need the
-  // identity-key fingerprint here; the Station already exposes it
-  // explicitly in `KeyExchangeBundleResponse.fingerprint`. The
-  // bundle is small (a few hundred bytes) so we don't bother
-  // caching across mount cycles — re-fetching keeps the displayed
-  // material fresh in case the peer just rotated.
+  // Pull the peer's published bundle(s). Prefer the latest `device_id` row's
+  // `fingerprint` field (SHA-256 hex over the verifying key) computed by the
+  // desktop stub from `ik_pub`.
   useEffect(() => {
     if (!peerDid) return;
     let cancelled = false;
     setLoading(true);
     api
       .keyExchangeFetchBundle(peerDid)
-      .then((bundle) => {
+      .then((resp) => {
         if (cancelled) return;
+        const bundle = pickLatestKeyExchangeBundle(resp);
         const fp = String(bundle?.fingerprint || '').trim();
         if (!fp) {
           log.warn('safetyPanel', 'peer bundle missing fingerprint', { peerDid });

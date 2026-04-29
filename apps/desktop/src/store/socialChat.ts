@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 
-import { api, type ChatAttachmentInput } from '../services/desktop_api';
+import { api, pickLatestKeyExchangeBundle, type ChatAttachmentInput } from '../services/desktop_api';
 import { FriendMessageStatus, type FriendChatSession, type FriendChatMessage } from '../gen/proto/domain/chat/friend_chat_pb';
 import type { Group, GroupMessage, GroupMember } from '../gen/proto/domain/chat/group_chat_pb';
 import {
@@ -488,17 +488,19 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       return sessionEncrypted[sessionUlid] ?? false;
     }
     try {
-      const peerBundle = await api.keyExchangeFetchBundle(peerDid);
-      if (!peerBundle.ik_pub || !peerBundle.spk_pub) {
+      const peerResp = await api.keyExchangeFetchBundle(peerDid);
+      const peerBundle = pickLatestKeyExchangeBundle(peerResp);
+      if (!peerBundle?.ik_pub || !peerBundle.spk_pub) {
         return false;
       }
+      const opkPub = peerBundle.opks?.[0];
       await api.cryptoInitSession(
         sessionUlid,
         peerDid,
         peerBundle.ik_pub,
         peerBundle.spk_pub,
         peerBundle.spk_sig,
-        peerBundle.opk_pub,
+        opkPub,
       );
       set((state) => ({
         sessionEncrypted: { ...state.sessionEncrypted, [sessionUlid]: true },
