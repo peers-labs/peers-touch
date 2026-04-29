@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button } from '@lobehub/ui';
-import { Divider, theme, Typography } from 'antd';
-import { X, Search, BarChart3, LogOut, Ban, UserPlus, Lock, ShieldCheck } from 'lucide-react';
+import { Button, toast } from '@lobehub/ui';
+import { Divider, Modal, theme, Typography } from 'antd';
+import { X, Search, BarChart3, LogOut, Ban, UserPlus, Lock, ShieldCheck, Sparkles } from 'lucide-react';
 import { useSocialChatStore } from '../../store/socialChat';
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import type { GroupMember } from '../../gen/proto/domain/chat/group_chat_pb';
+import { readFeatureFlags } from '../../modules/settings/featureFlags';
 import { SafetyVerificationPanel } from './SafetyVerificationPanel';
 
 const { Text, Title } = Typography;
@@ -105,6 +106,44 @@ export function ChatDetailPanel() {
       loadGroupMembers(activeUlid);
     }
   }, [isGroup, activeUlid, loadGroupMembers]);
+
+  const handleConfirmUpgrade = async () => {
+    /*
+     * M3 implementation: invoke api.cryptoSessionRefresh() (or equivalent) to tear down
+     * the session and re-run X3DH so the new Double Ratchet session starts at v = 1.
+     * That API does not exist yet — this handler is a QA stub when crypto.dr_enabled is on.
+     */
+    log.info('chat', 'Encryption upgrade requested by user', {
+      sessionUlid: activeUlid,
+      peerDid,
+      drEnabled: true,
+    });
+    toast.info(t('chat.social.encryption.upgradeStubFired'));
+  };
+
+  const openEncryptionUpgradeModal = () => {
+    const drEnabled = readFeatureFlags().cryptoDrEnabled;
+    Modal.confirm({
+      title: t('chat.social.encryption.upgradeTitle'),
+      width: 480,
+      content: (
+        <Flexbox gap={10}>
+          <Text style={{ display: 'block' }}>{t('chat.social.encryption.upgradeBody.line1')}</Text>
+          <Text style={{ display: 'block' }}>{t('chat.social.encryption.upgradeBody.line2')}</Text>
+          <Text style={{ display: 'block' }}>{t('chat.social.encryption.upgradeBody.line3')}</Text>
+          {!drEnabled ? (
+            <Text type="secondary" style={{ fontSize: 12, marginTop: 4 }}>
+              {t('chat.social.encryption.upgradeBlocked')}
+            </Text>
+          ) : null}
+        </Flexbox>
+      ),
+      okText: t('chat.social.encryption.upgradeOk'),
+      cancelText: t('common.action.cancel', { ns: 'common' }),
+      okButtonProps: { disabled: !drEnabled },
+      onOk: drEnabled ? () => handleConfirmUpgrade() : undefined,
+    });
+  };
 
   return (
     <Flexbox
@@ -279,6 +318,19 @@ export function ChatDetailPanel() {
               localFingerprint={ownFingerprint || ''}
               peerDid={peerDid}
             />
+          ) : null}
+          {activeTab === 'friend' ? (
+            <Flexbox style={{ padding: '8px 16px 12px' }}>
+              <Button
+                type="text"
+                icon={<Sparkles size={16} />}
+                style={{ justifyContent: 'flex-start', height: 36 }}
+                block
+                onClick={openEncryptionUpgradeModal}
+              >
+                {t('chat.social.encryption.upgradeButton')}
+              </Button>
+            </Flexbox>
           ) : null}
         </>
       )}
