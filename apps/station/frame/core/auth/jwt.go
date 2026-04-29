@@ -16,6 +16,13 @@ type jwtProvider struct {
 type jwtClaims struct {
 	SubjectID string `json:"subject_id"`
 	SessionID string `json:"session_id,omitempty"`
+	// Attributes carries arbitrary string→string metadata the
+	// caller passed via Credentials.Attributes. Round-tripped
+	// verbatim. Intended for per-module business fields
+	// (admin_id, role, username, …) that the receiver wants
+	// without re-querying the DB. Optional; tokens minted before
+	// this field existed deserialise with Attributes == nil.
+	Attributes map[string]string `json:"attrs,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -52,6 +59,7 @@ func (p *jwtProvider) Authenticate(ctx context.Context, cred Credentials) (*Subj
 	claims := jwtClaims{
 		SubjectID:        cred.SubjectID,
 		SessionID:        cred.SessionID,
+		Attributes:       cred.Attributes,
 		RegisteredClaims: jwt.RegisteredClaims{IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(exp)},
 	}
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -78,7 +86,11 @@ func (p *jwtProvider) Validate(ctx context.Context, token string) (*Subject, err
 	if !ok || !tok.Valid {
 		return nil, err
 	}
-	return &Subject{ID: c.SubjectID, SessionID: c.SessionID, Attributes: map[string]string{}}, nil
+	attrs := c.Attributes
+	if attrs == nil {
+		attrs = map[string]string{}
+	}
+	return &Subject{ID: c.SubjectID, SessionID: c.SessionID, Attributes: attrs}, nil
 }
 
 func (p *jwtProvider) Revoke(ctx context.Context, token string) error { return nil }

@@ -369,6 +369,13 @@ export interface ChatAttachmentUploaded {
   mime_type: string;
   size: number;
   preview_url?: string | null;
+  /**
+   * Hex sha256 of the uploaded bytes. Populated only when the
+   * Station runs the `cas` key strategy; empty otherwise. Use it
+   * to verify the attachment downloaded from peers matches what
+   * the sender claimed it was — meaningful end-to-end integrity
+   * once federation lands. */
+  sha256?: string;
 }
 
 /**

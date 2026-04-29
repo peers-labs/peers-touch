@@ -104,6 +104,11 @@ var knownTables = []domain.StorageTableCount{
 	{Group: "Dashboard", Table: "dashboard_admins"},
 	{Group: "Dashboard", Table: "dashboard_sessions"},
 	{Group: "Dashboard", Table: "dashboard_audit_logs"},
+	{Group: "OSS", Table: "oss_buckets"},
+	{Group: "OSS", Table: "oss_files"},
+	{Group: "OSS", Table: "oss_audit"},
+	{Group: "OSS", Table: "oss_peer_keys"},
+	{Group: "OSS", Table: "oss_meta"},
 }
 
 // TableCounts issues a COUNT(*) for every known table that exists in the

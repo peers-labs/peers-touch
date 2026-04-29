@@ -6,6 +6,10 @@
 > video). Avatar / profile-image upload retains its existing path
 > (`profile_upload_avatar_oss` → `/sub-oss/upload`) but now benefits
 > from the same federated `cid` URI as a side effect.
+>
+> 2026-04-27: §6 rewritten around the pluggable backend factory and
+> the new `PresignedBackend` capability; §6.2 covers the presigned
+> upload data path; capabilities response bumped to `version: 2`.
 
 ## 1. Goals
 
@@ -148,18 +152,31 @@ to pre-validate uploads and to know how to fetch bytes:
 
 ```jsonc
 {
-  "version": 1,
+  "version": 2,
   "host": "https://files.example.com",
   "path_base": "/sub-oss",
-  "backend": "local",
+  "backend": "s3",
+  "key_strategy": "cas",
   "max_file_size": 33554432,
   "max_files_per_message": 9,
   "signed_url": false,
   "upload_endpoint": "/sub-oss/upload",
   "file_endpoint": "/sub-oss/file",
-  "meta_endpoint": "/sub-oss/meta"
+  "meta_endpoint": "/sub-oss/meta",
+  "presigned_upload": true,
+  "presigned_threshold": 8388608,
+  "presigned_endpoints": {
+    "presign":  "/sub-oss/presign-upload",
+    "complete": "/sub-oss/upload-complete"
+  }
 }
 ```
+
+`version: 2` introduces the presigned upload fields; older clients
+that only check `version >= 1` keep working because they ignore
+unknown fields. Stations whose active backend does not implement
+`PresignedBackend` simply omit the `presigned_*` block — the client
+treats that as "fall through to multipart".
 
 Clients cache this in process-memory keyed by origin (no disk
 persistence — the document is small, refreshes cheaply, and operator
@@ -177,17 +194,29 @@ federation).
 
 YAML keys (`peers.node.server.subserver.oss.*`):
 
-| Key                       | Default            | Purpose                                              |
-| ------------------------- | ------------------ | ---------------------------------------------------- |
-| `enabled`                 | `false`            | Toggle the entire subserver.                          |
-| `path`                    | `/sub-oss`         | Base path, mounted under the station's HTTP server.  |
-| `rds-name`                | (depends)          | GORM data source name for the file metadata table.   |
-| `store-path`              | `<datadir>/oss`    | Filesystem root for the local backend.               |
-| `sign-secret`             | `""`               | HMAC secret for signed URLs. Empty disables signing. |
-| `host-override`           | `""`               | Public origin to advertise / embed in `cid` URIs.    |
-| `max-file-size`           | `33554432` (32 MiB)| Per-file upload cap, in bytes.                        |
-| `max-files-per-message`   | `9`                | Advisory client-side limit.                           |
-| `backend`                 | `local`            | Storage driver; reserved for `s3`, `proxy`, …         |
+| Key                          | Default            | Purpose                                              |
+| ---------------------------- | ------------------ | ---------------------------------------------------- |
+| `enabled`                    | `false`            | Toggle the entire subserver.                          |
+| `path`                       | `/sub-oss`         | Base path, mounted under the station's HTTP server.  |
+| `rds-name`                   | (depends)          | GORM data source name for the file metadata table.   |
+| `store-path`                 | `<datadir>/oss`    | Filesystem root for the `local` backend.             |
+| `sign-secret`                | `""`               | HMAC secret for signed URLs. Empty disables signing. |
+| `host-override`              | `""`               | Public origin to advertise / embed in `cid` URIs.    |
+| `max-file-size`              | `33554432` (32 MiB)| Per-file upload cap, in bytes.                        |
+| `max-files-per-message`      | `9`                | Advisory client-side limit.                           |
+| `backend`                    | `local`            | Storage driver: `local` or `s3`.                      |
+| `key-strategy`               | `random`           | `random` (legacy date+rand) or `cas` (sha256 dedup).  |
+| `presigned-upload-threshold` | `8388608` (8 MiB)  | Bytes ≥ threshold route through presigned PUT.        |
+| `presigned-upload-ttl`       | `300` (s)          | Validity window of presigned PUT URLs.                |
+| `presigned-download-ttl`     | `300` (s)          | Validity window of `/file` 302 GET URLs.              |
+| `s3.endpoint`                | (required if `s3`) | Host:port of the S3-protocol endpoint.                |
+| `s3.region`                  | `""`               | Region label sent to the bucket (driver-specific).    |
+| `s3.bucket`                  | (required if `s3`) | Bucket name. Single bucket per Station.               |
+| `s3.access-key-id`           | (required if `s3`) | IAM-style access key.                                 |
+| `s3.secret-access-key`       | (required if `s3`) | Secret key. Read from env, never check in to git.     |
+| `s3.use-ssl`                 | `false`            | Toggle TLS. Honors explicit `https://` in endpoint.   |
+| `s3.force-path-style`        | `false`            | `true` for non-AWS (MinIO, R2, B2, …).                |
+| `s3.key-prefix`              | `""`               | Prepended to every object key (multi-tenant bucket).  |
 
 For independent deployment (OSS in its own process), the operator:
 
@@ -200,21 +229,173 @@ The chat station's clients still upload to whichever station their
 JWT is bound to; the indirection only matters when a *different*
 station fetches an attachment via `oss://other-host/key`.
 
-## 6. Backends and signing
+## 6. Backends — pluggable storage drivers
 
-Today only `LocalBackend` is implemented. Future drivers (S3,
-proxying to another station) plug in via the existing
-`storage.Backend` interface — `Save`, `Open`, `Delete`. The active
-driver is surfaced through `capabilities.backend` so the client can:
+The file plane is built around two interfaces and a factory:
 
-- Show the user that uploads land in a local NAS vs. a public bucket.
-- Decide whether to attempt local mirroring (only meaningful for
-  `local` and `proxy` — for `s3` the renderer talks to S3 directly).
+```
+                ┌─────────────────────────────────────────────────┐
+                │  storage.Backend                                │
+                │   - Save(ctx, key, r) (string, error)           │
+                │   - Open(ctx, key)  (io.ReadCloser, …)          │
+                │   - Delete(ctx, key) error                      │
+                └────────────────┬───────────────┬────────────────┘
+                                 │ implements    │ implements
+                                 ▼               ▼
+            ┌──────────────────────────┐ ┌──────────────────────────┐
+            │  LocalBackend            │ │  S3Backend (minio-go)    │
+            │   filesystem at root     │ │   any S3-protocol store  │
+            └──────────────────────────┘ │  also implements:        │
+                                         │  storage.PresignedBackend│
+                                         │   - PresignPut           │
+                                         │   - PresignGet           │
+                                         │   - HeadObject           │
+                                         └──────────────────────────┘
+```
 
-`signed_url == true` flips the resolver into a "do not mirror" mode:
-the client returns the absolute URL untouched and lets the renderer
-make the network request, because the signature is short-lived and
-caching the bytes provides little value.
+Three architectural decisions shape this layout:
+
+1. **Minimal core interface.** `Backend` is the smallest contract a
+   storage driver must satisfy. Adding S3 did not require touching
+   the interface — just a new file (`s3.go`) that satisfies it.
+
+2. **Capabilities as opt-in interfaces.** `PresignedBackend` is a
+   *separate* interface a driver implements only when it can issue
+   pre-signed URLs natively. Callers feature-detect:
+   `if pb, ok := b.(storage.PresignedBackend); ok { … }`. This means
+   the OSS subserver runs against any future driver (a hypothetical
+   `IPFSBackend`, an in-cluster proxy, …) without growing a
+   monolithic `Backend` interface that every driver has to fake.
+
+3. **Single active backend per Station.** The factory picks one
+   driver at process start based on `backend: local | s3`. We
+   considered keeping multiple drivers live for "old `local` rows
+   stay readable after switching to `s3`" — this round we explicitly
+   drop that requirement (operator's call: don't switch backends
+   mid-life unless you have an external migration strategy). The
+   `FileMeta.Backend` column is still populated faithfully so a
+   future migration tool has the provenance it needs.
+
+### 6.1 Drivers
+
+#### `LocalBackend` — the home default
+
+Stores bytes under `store-path/<key>` on the host filesystem. Zero
+external dependencies, zero credentials, no per-request signing. It
+is the right backend for the home-deployment story spelled out in
+§1: a NAS or mini-PC with one process and one disk.
+
+#### `S3Backend` — any S3-protocol store
+
+Implements `Backend` + `PresignedBackend` over `minio-go/v7`. The
+"S3" here refers to the **protocol**, not the vendor: anything that
+speaks the protocol works.
+
+- AWS S3 — `force-path-style: false`.
+- MinIO (self-hosted) — `force-path-style: true`. Aligns naturally
+  with the home-decentralization story: a household can run MinIO
+  on the same NAS that hosts the Station.
+- Cloudflare R2 / Backblaze B2 / GCS S3-compat / Alibaba/Tencent OSS
+  S3-compat — `force-path-style: true`, point `endpoint` at the
+  vendor's S3-compat host.
+
+Constructor performs *no* network I/O. Misconfigured credentials
+surface at the first request, not at process startup, so an OSS
+problem cannot block unrelated subservers from starting.
+
+### 6.2 Presigned upload — direct PUT data path
+
+For files at or above `presigned-upload-threshold` (default 8 MiB),
+the desktop client bypasses the multipart `/upload` endpoint and PUTs
+bytes directly to the underlying storage backend. The Station only
+participates by signing URLs and registering metadata afterwards —
+its bandwidth cost is `O(1)` per upload regardless of file size.
+
+```
+desktop                         station                       S3-bucket
+  │                                │                              │
+  │── POST /presign-upload ───────▶│                              │
+  │   {filename,mime,size,sha256}  │                              │
+  │                                │  (CAS dedup hit?)            │
+  │                                │  → row exists → return meta  │
+  │                                │                              │
+  │◀── {url, headers, max_bytes} ──│                              │
+  │                                │                              │
+  │── PUT {url} (file body) ─────────────────────────────────────▶│
+  │   x-amz-checksum-sha256: …     │                              │
+  │   Content-Type: …              │                              │
+  │◀──────── 200 OK ──────────────────────────────────────────────│
+  │                                │                              │
+  │── POST /upload-complete ──────▶│                              │
+  │   {key, size, sha256, …}       │  HeadObject(key) → validate  │
+  │                                │  Create FileMeta             │
+  │◀── {cid, host, key, sha256} ───│                              │
+```
+
+Properties this gives us, in priority order:
+
+- **Bandwidth offload.** For S3-protocol backends the station never
+  sees the bytes. A 100 MB upload costs the station ≈ 1 KB of HTTP
+  in / out instead of 100 MB of proxy traffic.
+
+- **End-to-end integrity (CAS).** When `key-strategy: cas`, the
+  client must declare the SHA-256 up-front. The station binds it
+  into the presigned URL via `x-amz-checksum-sha256` — the underlying
+  store rejects the upload if the actual bytes hash to a different
+  value. `/upload-complete` then `HeadObject`s the bucket and
+  rejects size mismatches as a defense in depth.
+
+- **CAS dedup short-circuit.** When the supplied SHA-256 already
+  maps to a `FileMeta` row, `/presign-upload` returns the existing
+  meta with `already_uploaded: true`. The client never PUTs. This
+  is the core efficiency win that justifies CAS for chat: a popular
+  meme uploaded by 50 users transfers bytes only once.
+
+- **Graceful degradation.** When the active backend does not
+  implement `PresignedBackend`, the capabilities response omits
+  `presigned_*` fields and the client uses multipart for everything.
+  When it does, but the presign step fails (network blip, signature
+  drift), the client logs and falls back to multipart — the user's
+  upload always completes.
+
+The download path is symmetric: when the active backend supports
+`PresignGet`, `/sub-oss/file` issues an `HTTP 302` to a short-lived
+presigned GET URL. Renderers follow redirects transparently, so the
+existing `oss_resolve_url` consumers need no change.
+
+### 6.3 Backend selection at the client
+
+`capabilities.backend` and `capabilities.presigned_upload` together
+decide what the desktop client does:
+
+| `backend` | `signed_url` | `presigned_upload` | Upload path                  | Resolve path                      |
+| --------- | ------------ | ------------------ | ---------------------------- | --------------------------------- |
+| `local`   | false        | false              | multipart (always)           | mirror to `cache/files/oss/…`     |
+| `local`   | true         | false              | multipart                    | absolute URL (no mirror)          |
+| `s3`      | false        | true               | presigned (≥ threshold)      | absolute URL → station 302 → S3   |
+
+For S3-protocol backends the desktop client **does not mirror to
+disk**: S3 itself is the distributed cache, the station's 302
+gives the renderer direct access, and a second on-disk copy would
+just waste bandwidth.
+
+### 6.4 Switching backends — non-goal
+
+Switching `backend: local` → `backend: s3` (or vice versa) is **not**
+a supported live migration. After the switch, old `FileMeta` rows
+whose bytes physically live on the previous backend become
+unreachable through `/file`. Operators who care about historic
+attachments should plan one of:
+
+- Keep the old backend's bytes around (e.g. mount the old `store-path`
+  read-only) and accept that `/file` returns 404 for those keys, or
+- Run a one-shot migration tool (out of scope for this round) that
+  reads old rows via the old backend and writes them through the new
+  one, updating `FileMeta.Backend` accordingly.
+
+We chose this trade-off deliberately: a Station with no users yet
+has nothing to migrate, and a Station with users should not be
+silently re-keying their data without an explicit migration step.
 
 ## 7. Management plane
 
@@ -385,7 +566,99 @@ the pin/unpin endpoints exist.
    without a network round-trip) and falls back to `url` when local
    mirroring failed or was skipped.
 
-## 10. Invariants
+## 8. Key strategies
+
+The server-side function `service.FileService.SaveFile` selects the
+storage key via a configurable strategy:
+
+| Strategy   | Key shape                            | Dedup | Sha256 in meta |
+| ---------- | ------------------------------------ | ----- | -------------- |
+| `random`   | `YYYY/MM/DD/<rand16><ext>`           | no    | empty          |
+| `cas`      | `cas/<sha256[0:2]>/<sha256><ext>`    | yes   | populated      |
+
+The strategy is per-Station and fixed for the lifetime of the
+process. Switching live would create unbounded fan-out of equivalent
+metas pointing at the same bytes. Operators set it via
+`peers.node.server.subserver.oss.key-strategy: cas` in YAML; clients
+read it from `capabilities.key_strategy`.
+
+### CAS contract
+
+When `key-strategy: cas` is active:
+
+1. The server hashes the incoming multipart body (`sha256`) before
+   touching disk.
+2. Key is derived deterministically: `cas/<2-char shard>/<full
+   hash><ext>`. The shard prefix keeps any single directory bounded
+   as the dataset grows.
+3. If a `FileMeta` row already exists at that key, the server skips
+   the second `backend.Save` and returns the *existing* meta. This
+   means the original filename wins — when Alice uploads
+   `report.pdf`, then Bob uploads the *same bytes* under the name
+   `RENAMED.pdf`, Bob's response carries `filename: report.pdf`.
+   Older messages are never retroactively renamed.
+4. Concurrent uploads of identical bytes are reconciled by the
+   unique-index on `oss_files.key` — the loser of `Create` falls
+   back to `FindByKey` and returns the winner's meta.
+5. Upload response includes `sha256` so the client can persist it on
+   `MessageAttachment` for end-to-end integrity verification once
+   federated fetches land.
+
+`random` remains the default for backward compatibility — Stations
+upgraded mid-flight keep working without operator action, and legacy
+metas (without `Sha256`) coexist with new CAS metas in the same
+table.
+
+## 9. Local attachment cache & GC
+
+The desktop client mirrors fetched attachment bytes under
+`cache/files/oss/<sanitized-origin>/<key>`. Without GC the cache
+grows unboundedly — a chatty user can accumulate gigabytes over
+weeks. We address this with an explicit `oss_cache::gc(max_bytes)`
+function that:
+
+1. Walks the attachment dir and collects `(path, size, mtime)` per
+   file.
+2. Sums total bytes; if already under budget, returns
+   `GcReport { evicted: 0, ... }` without further work.
+3. Sorts by `mtime` ascending and deletes the oldest files until
+   total bytes fit under the budget.
+4. Best-effort prunes empty directories left behind.
+
+The trigger is the **Online → Offline** edge in
+`PresenceSupervisor::run_offline`. This is precisely the moment the
+user is no longer actively browsing chats — a few hundred ms of
+`fs::remove_file` calls is invisible. Importantly:
+
+- `AppShutdown` triggers **skip** GC. The user is exiting; spending
+  budget on disk reclamation is rude. Next launch's first
+  Offline→Online transition will GC instead.
+- The default budget is `256 MiB`, overridable via the
+  `OSS_CACHE_BUDGET_BYTES` environment variable. (Future: capability
+  fields and per-actor settings.)
+- mtime is approximate-LRU. We deliberately do not maintain an
+  access-time sidecar — the cost-benefit of crash-safety + zero
+  deps outweighs the imprecision.
+
+## 10. Lifecycle integration: Presence + Shutdown
+
+The shutdown path is symmetric to AppLaunch:
+
+1. Frontend `usePresence` already fires `AppLaunch` on mount.
+2. Tauri `RunEvent::ExitRequested` (wired in `main.rs`) iterates
+   `WindowSessionRegistry::snapshot_all()` and dispatches
+   `PresenceTrigger::AppShutdown` for each bound `(actor, jwt)`.
+3. The supervisor runs `run_offline` for each, which calls
+   Station's `/offline` and skips the GC pass.
+4. The main thread polls `JoinHandle::is_finished()` with a
+   3-second budget so a wedged Station cannot prevent process exit.
+
+This guarantees Station sees an explicit Offline transition rather
+than waiting for TCP keepalive expiry — which matters for the
+"deliver pending on next online" semantics: the next AppLaunch's
+`/online` POST is what triggers the pending drain.
+
+## 11. Invariants
 
 - `MessageAttachment.cid` is always either a valid `oss://...` URI
   or empty. The send path should emit the full URI; parsers may still
@@ -404,19 +677,36 @@ the pin/unpin endpoints exist.
 - Local cache misses never break rendering. `oss_resolve_url`
   always returns at least an absolute URL when the URI is valid; the
   renderer can always fall back to network fetch.
+- CAS metas are append-only. `service.SaveFile` never mutates an
+  existing `FileMeta` — duplicates short-circuit before reaching
+  the `Create` path. This means metadata about a CAS object
+  (filename, mime, size) reflects the *first* uploader and is
+  invariant under subsequent re-uploads.
+- Shutdown is bounded. `RunEvent::ExitRequested` waits at most 3s
+  for Offline reconciles to complete; the process exits even if
+  Station is unreachable.
 
-## 11. Open work / future extensions
+## 12. Open work / future extensions
 
-- **S3Backend** behind `Backend` interface; `capabilities.backend =
-  "s3"` skips local mirroring on the client.
-- **Presigned upload** for very large files (operator-controlled
-  via a future `presigned_upload: true` capability flag).
-- **Bucket / attachment lifecycle**: `ttl_days` and client cache
-  growth still want explicit GC or LRU policies; nothing here is
-  automatic on the server beyond audit trimming.
-- **Attachment GC**: the local cache grows unbounded. A simple LRU
-  pruner triggered from `presence.transition` (Online → Offline)
-  is a reasonable next step.
+- **Cross-backend migration tool.** A one-shot binary that walks
+  `oss_files` rows whose `backend` does not match the configured
+  driver, copies the bytes through the new driver, and updates
+  `FileMeta`. The current architecture supports this — the table
+  records provenance — but the tool itself is out of scope.
+- **Capability-driven GC budget**: `capabilities.suggested_cache_bytes`
+  could replace the fixed 256 MiB / env-var pair.
+- **CAS reference counting**: today metas are forever. A
+  reference-count column on `oss_files` (incremented when a
+  `MessageAttachment` is sent, decremented on message delete) would
+  let the operator garbage-collect dereferenced objects. Requires a
+  separate message-lifecycle design pass; deferred.
+- **Multi-region / multi-bucket S3.** Today `S3Config` is single-
+  bucket. A future iteration could pick a bucket per actor or per
+  household to isolate quotas and access policies.
 - **End-to-end encryption**: orthogonal — the encryption layer
-  wraps `MessageAttachment.cid` like it wraps text content. The
-  bytes on disk are still ciphertext.
+  wraps `MessageAttachment.cid` like it wraps text content. CAS is
+  meaningful only over plaintext bytes; if the client encrypts
+  per-message, two senders of the same plaintext produce different
+  ciphertexts and dedup degrades to "same key only when same
+  recipient and same message". This is a deliberate trade-off,
+  noted here so the decision is not relitigated.
