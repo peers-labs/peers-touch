@@ -12,31 +12,15 @@ import (
 
 // imageFixture wraps newFixture with the production OssMediaResolver so
 // we can exercise the real CID-validation path. The OSS file table is
-// created alongside the social tables and seeded per-test via
-// `seedOssKey`. We don't reuse `newFixture` directly because that one
-// wires the no-op resolver to keep the existing P1 fixtures green.
-//
-// The OSS subserver's `FileMeta` model carries a Postgres-flavoured
-// `default:now()` clause that sqlite rejects, so we hand-roll a
-// portable CREATE TABLE here mirroring the column set GORM uses on
-// the production path. The OSS model still owns the canonical schema;
-// this function only tracks it for tests.
+// migrated via the canonical OSS model (sqlite-compatible since the
+// 2026-04 OSS schema rewrite) and seeded per-test via `seedOssKey`.
+// We don't reuse `newFixture` directly because that one wires the
+// no-op resolver to keep the existing P1 fixtures green.
 func newImageFixture(t *testing.T) *fixture {
 	t.Helper()
 	f := newFixture(t)
-	const ddl = `CREATE TABLE oss_files (
-		id          TEXT PRIMARY KEY,
-		key         TEXT UNIQUE,
-		name        TEXT,
-		size        INTEGER,
-		mime        TEXT,
-		backend     TEXT,
-		path        TEXT,
-		sha256      TEXT,
-		created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-	)`
-	if err := f.gdb.Exec(ddl).Error; err != nil {
-		t.Fatalf("create oss_files (sqlite): %v", err)
+	if err := f.gdb.AutoMigrate(&ossmodel.FileMeta{}); err != nil {
+		t.Fatalf("migrate oss_files: %v", err)
 	}
 	resolver := NewNoopActorResolver()
 	groups := NewNoopGroupMembershipChecker()
@@ -47,17 +31,22 @@ func newImageFixture(t *testing.T) *fixture {
 
 // seedOssKey inserts a minimal FileMeta row so the resolver's
 // `key IN (...)` lookup succeeds. The non-key fields are set to
-// realistic-but-arbitrary values; nothing else exercises them.
+// realistic-but-arbitrary values that satisfy the post-2026-04 OSS
+// schema's NOT NULL columns (BucketID / OwnerActorID / Visibility).
+// Nothing else exercises them — the resolver only consults `key`.
 func seedOssKey(t *testing.T, f *fixture, key string) {
 	t.Helper()
 	row := &ossmodel.FileMeta{
-		ID:      "test-" + key,
-		Key:     key,
-		Name:    "img.png",
-		Size:    1024,
-		Mime:    "image/png",
-		Backend: "local",
-		Path:    "/tmp/" + key,
+		ID:           "test-" + key,
+		Key:          key,
+		Name:         "img.png",
+		Size:         1024,
+		Mime:         "image/png",
+		Backend:      "local",
+		Path:         "/tmp/" + key,
+		BucketID:     "test-bucket",
+		OwnerActorID: "did:test:author",
+		Visibility:   "public",
 	}
 	if err := f.gdb.Create(row).Error; err != nil {
 		t.Fatalf("seed oss_files key=%q: %v", key, err)
