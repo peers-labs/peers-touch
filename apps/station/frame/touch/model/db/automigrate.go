@@ -21,10 +21,19 @@ func init() {
 			// Chat models
 			&Conversation{}, &ConvMember{}, &Message{},
 			&Attachment{}, &Receipt{}, &Reaction{}, &KeyEpoch{},
-			// Social models (ActivityPub compatible)
-			&Post{}, &PostContent{}, &PostMedia{},
-			&PostLike{}, &Comment{}, &CommentLike{},
-			&Follow{}, &PollVote{},
+			// Social — Moments family (see docs/architecture/social/moments.md §6).
+			//
+			// Public / private posts physically separated via table-name
+			// prefix (D1.A) so a SQL bug in the public path can never read
+			// from the private one. CUSTOM_ALLOW/DENY actor lists, comments,
+			// reactions, and circles each get their own table.
+			&SocialPublicPost{}, &SocialPrivatePost{},
+			&SocialPrivateAudienceGrant{},
+			&SocialComment{}, &SocialReaction{},
+			&SocialCircle{}, &SocialCircleMember{},
+			// Cross-domain relationship (kept generic — used by social subserver
+			// today, may be reused by chat / oss later).
+			&Follow{},
 		)
 		if err != nil {
 			panic(fmt.Errorf("auto migrate failed: %v", err))
