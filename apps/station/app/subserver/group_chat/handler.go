@@ -2,7 +2,10 @@ package group_chat
 
 import (
 	"context"
+	"crypto/rand"
+	"time"
 
+	"github.com/oklog/ulid/v2"
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	application_group_chat "github.com/peers-labs/peers-touch/station/app/subserver/group_chat/application"
 	group_chat_domain "github.com/peers-labs/peers-touch/station/app/subserver/group_chat/domain"
@@ -359,6 +362,8 @@ func (s *subServer) handleJoin(ctx context.Context, req *chat.JoinGroupRequest) 
 		}
 		return nil, server.InternalError("join group failed")
 	}
+	recipients := collectGroupMemberDIDs(s, req.GroupUlid)
+	publishGroupMembershipChange(req.GroupUlid, subject.ID, realtime.GroupMembershipChange_KIND_ADDED, recipients)
 	return &chat.JoinGroupResponse{Membership: toProtoMemberFromDomain(memberItem)}, nil
 }
 
@@ -370,6 +375,14 @@ func (s *subServer) handleLeave(ctx context.Context, req *chat.LeaveGroupRequest
 	if req.GroupUlid == "" {
 		return nil, server.BadRequest("group_ulid is required")
 	}
+	allBefore := collectGroupMemberDIDs(s, req.GroupUlid)
+	others := make([]string, 0, len(allBefore))
+	for _, did := range allBefore {
+		if did == "" || did == subject.ID {
+			continue
+		}
+		others = append(others, did)
+	}
 	if err := s.appService.LeaveByActor(subject.ID, req.GroupUlid); err != nil {
 		if err == application_group_chat.ErrOwnerCannotLeave {
 			return nil, server.Forbidden(err.Error())
@@ -379,6 +392,7 @@ func (s *subServer) handleLeave(ctx context.Context, req *chat.LeaveGroupRequest
 		}
 		return nil, server.InternalError("leave group failed")
 	}
+	publishGroupMembershipChange(req.GroupUlid, subject.ID, realtime.GroupMembershipChange_KIND_LEFT, others)
 	return &chat.LeaveGroupResponse{Success: true}, nil
 }
 
@@ -415,6 +429,7 @@ func (s *subServer) handleRemoveMember(ctx context.Context, req *chat.RemoveMemb
 	if req.GroupUlid == "" || req.ActorDid == "" {
 		return nil, server.BadRequest("group_ulid and actor_did are required")
 	}
+	recipients := collectGroupMemberDIDs(s, req.GroupUlid)
 	if err := s.appService.RemoveMemberByActor(subject.ID, req.GroupUlid, req.ActorDid); err != nil {
 		if err == application_group_chat.ErrPermissionDenied || err == application_group_chat.ErrCannotRemoveOwner {
 			return nil, server.Forbidden(err.Error())
@@ -424,6 +439,7 @@ func (s *subServer) handleRemoveMember(ctx context.Context, req *chat.RemoveMemb
 		}
 		return nil, server.InternalError("remove member failed")
 	}
+	publishGroupMembershipChange(req.GroupUlid, req.ActorDid, realtime.GroupMembershipChange_KIND_REMOVED, recipients)
 	return &chat.RemoveMemberResponse{Success: true}, nil
 }
 
@@ -559,6 +575,64 @@ func publishGroupMutation(out group_chat_domain.MutationOutcome, originatorActor
 	if _, err := bus.Publish(originatorActorID, build()); err != nil {
 		logger.DefaultHelper.Warnf("group_chat: realtime mutation self-echo failed group=%s ulid=%s actor=%s: %v",
 			out.GroupID, out.Ulid, originatorActorID, err)
+	}
+}
+
+// collectGroupMemberDIDs returns every member DID for groupUlid using
+// paginated ListMembers so large rosters fan out completely.
+func collectGroupMemberDIDs(s *subServer, groupUlid string) []string {
+	const pageSize = 500
+	out := make([]string, 0)
+	offset := 0
+	for {
+		members, total := s.appService.ListMembers(groupUlid, pageSize, offset)
+		for _, m := range members {
+			if m.ActorDID != "" {
+				out = append(out, m.ActorDID)
+			}
+		}
+		offset += len(members)
+		if offset >= total || len(members) == 0 {
+			break
+		}
+	}
+	return out
+}
+
+// publishGroupMembershipChange emits one `GroupMembershipChange`
+// StreamEvent per recipient on best-effort terms (the DB mutation has
+// already committed). Each StreamEvent gets a fresh envelope
+// `event_id` from the bus; the payload's `event_id` is a shared
+// logical id for correlating the same roster change across devices.
+func publishGroupMembershipChange(groupUlid, actorDID string, kind realtime.GroupMembershipChange_Kind, recipientDIDs []string) {
+	bus := events.GetBus()
+	if bus == nil || len(recipientDIDs) == 0 {
+		return
+	}
+	entropy := ulid.Monotonic(rand.Reader, 0)
+	bizID := ulid.MustNew(ulid.Timestamp(time.Now().UTC()), entropy).String()
+	changedTs := time.Now().UTC().UnixMilli()
+	build := func() *realtime.StreamEvent {
+		return &realtime.StreamEvent{
+			Kind: &realtime.StreamEvent_GroupMembershipChange{
+				GroupMembershipChange: &realtime.GroupMembershipChange{
+					EventId:         bizID,
+					GroupUlid:       groupUlid,
+					ActorDid:        actorDID,
+					Kind:            kind,
+					ChangedTsUnixMs: changedTs,
+				},
+			},
+		}
+	}
+	for _, did := range recipientDIDs {
+		if did == "" {
+			continue
+		}
+		if _, err := bus.Publish(did, build()); err != nil {
+			logger.DefaultHelper.Warnf("group_chat: realtime group membership publish failed group=%s actor=%s recipient=%s kind=%v: %v",
+				groupUlid, actorDID, did, kind, err)
+		}
 	}
 }
 
