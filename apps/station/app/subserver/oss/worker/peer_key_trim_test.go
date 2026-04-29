@@ -8,11 +8,13 @@ import (
 	"time"
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 )
 
-// peerTrimFake is a tiny PeerKeyRepository tailored to PeerKeyTrim's
-// surface — only DeleteUnpinnedOlderThan needs to do real work; the
-// other methods are unused stubs.
+// peerTrimFake is a thin federation.PeerKeyStore tailored to the
+// PeerKeyTrim worker — only DeleteUnpinnedOlderThan needs real
+// behaviour; the other methods are unused stubs that satisfy the
+// interface.
 type peerTrimFake struct {
 	gotCutoff time.Time
 	deleted   int64
@@ -27,15 +29,14 @@ func (p *peerTrimFake) DeleteUnpinnedOlderThan(_ context.Context, olderThan time
 	return p.deleted, nil
 }
 
-// Stub methods.
-func (p *peerTrimFake) LoadLocalKey(context.Context) (string, string, string, error) {
-	return "", "", "", nil
-}
-func (p *peerTrimFake) SaveLocalKey(context.Context, string, string, string) error { return nil }
-func (p *peerTrimFake) GetCurrentKID(context.Context) (string, error)              { return "", nil }
-func (p *peerTrimFake) GetPeer(context.Context, string) (*ossmodel.PeerKey, error) { return nil, nil }
-func (p *peerTrimFake) UpsertTOFU(context.Context, ossmodel.PeerKey) error          { return nil }
-func (p *peerTrimFake) TouchLastSeen(context.Context, string, time.Time)            {}
+// federation.PeerKeyStore stubs.
+func (p *peerTrimFake) Get(context.Context, string) (*federation.PeerKey, error) { return nil, nil }
+func (p *peerTrimFake) UpsertTOFU(context.Context, federation.PeerKey) error     { return nil }
+func (p *peerTrimFake) TouchLastSeen(context.Context, string, time.Time)         {}
+func (p *peerTrimFake) List(context.Context) ([]federation.PeerKey, error)       { return nil, nil }
+func (p *peerTrimFake) Pin(context.Context, string, string, time.Time) error     { return nil }
+func (p *peerTrimFake) Unpin(context.Context, string) error                      { return nil }
+func (p *peerTrimFake) Forget(context.Context, string) (int64, error)            { return 0, nil }
 
 func TestPeerKeyTrim_NewValidates(t *testing.T) {
 	if _, err := NewPeerKeyTrim(PeerKeyTrimConfig{Audit: &recordingAudit{}}); err == nil {
@@ -81,8 +82,6 @@ func TestPeerKeyTrim_HappyPathAuditsCount(t *testing.T) {
 }
 
 func TestPeerKeyTrim_NoOpQuietAudits(t *testing.T) {
-	// When nothing was deleted we want zero audit rows beyond
-	// the scheduler's own heartbeat (handled elsewhere).
 	peers := &peerTrimFake{deleted: 0}
 	audit := &recordingAudit{}
 	trim, _ := NewPeerKeyTrim(PeerKeyTrimConfig{Peers: peers, Audit: audit})

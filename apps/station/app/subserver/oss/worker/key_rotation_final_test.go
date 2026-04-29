@@ -4,85 +4,112 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 )
 
-// rotationFakeMeta tracks reads, writes, and deletes so we can
-// assert that the finalizer only clears the keys when the grace
-// window has elapsed.
-type rotationFakeMeta struct {
-	mu       sync.Mutex
-	kv       map[string]string
-	getErr   error
-	delErr   error
-	deleted  []string
+// rotationFakeKeys is a tiny federation.KeyStore that reports a
+// rotation in flight when its `prev` slot is populated. Tests
+// adjust the GeneratedAt timestamp on prev to drive the
+// inside-grace / past-grace branches.
+type rotationFakeKeys struct {
+	current  *federation.LocalKey
+	prev     *federation.LocalKey
+	loadErr  error
+	clearErr error
+	cleared  bool
 }
 
-func newRotationFakeMeta() *rotationFakeMeta {
-	return &rotationFakeMeta{kv: map[string]string{}}
-}
-
-func (m *rotationFakeMeta) Get(_ context.Context, key string) (string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.getErr != nil {
-		return "", m.getErr
+func (k *rotationFakeKeys) Load(_ context.Context, slot string) (*federation.LocalKey, error) {
+	if k.loadErr != nil {
+		return nil, k.loadErr
 	}
-	return m.kv[key], nil
+	switch slot {
+	case federation.SlotCurrent:
+		if k.current == nil {
+			return nil, federation.ErrNoLocalKey
+		}
+		cp := *k.current
+		return &cp, nil
+	case federation.SlotPrev:
+		if k.prev == nil {
+			return nil, federation.ErrNoLocalKey
+		}
+		cp := *k.prev
+		return &cp, nil
+	}
+	return nil, errors.New("rotationFakeKeys: bad slot")
 }
 
-func (m *rotationFakeMeta) SetCapabilityVersion(context.Context, time.Time) (string, error) {
-	return "", nil
+func (k *rotationFakeKeys) LoadCurrentKid(context.Context) (string, error) {
+	if k.current == nil {
+		return "", nil
+	}
+	return k.current.Kid, nil
 }
 
-func (m *rotationFakeMeta) Set(_ context.Context, key, value string, _ time.Time) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.kv[key] = value
+func (k *rotationFakeKeys) PutCurrent(_ context.Context, key *federation.LocalKey) error {
+	cp := *key
+	k.current = &cp
 	return nil
 }
 
-func (m *rotationFakeMeta) Delete(_ context.Context, keys ...string) (int64, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.delErr != nil {
-		return 0, m.delErr
+func (k *rotationFakeKeys) Rotate(_ context.Context, key *federation.LocalKey) (*federation.RotateResult, error) {
+	res := &federation.RotateResult{NewKid: key.Kid, RotatedAt: time.Now()}
+	if k.current != nil {
+		demoted := *k.current
+		k.prev = &demoted
+		res.PreviousKid = k.current.Kid
 	}
-	var n int64
-	for _, k := range keys {
-		if _, ok := m.kv[k]; ok {
-			delete(m.kv, k)
-			n++
-			m.deleted = append(m.deleted, k)
-		}
+	cp := *key
+	k.current = &cp
+	return res, nil
+}
+
+func (k *rotationFakeKeys) ClearPrev(context.Context) error {
+	if k.clearErr != nil {
+		return k.clearErr
 	}
-	return n, nil
+	k.cleared = true
+	k.prev = nil
+	return nil
+}
+
+// stubLocalKey returns a non-empty *federation.LocalKey with
+// the given GeneratedAt; the cryptographic material is
+// irrelevant for the finalizer's behaviour.
+func stubLocalKey(kid string, generatedAt time.Time) *federation.LocalKey {
+	return &federation.LocalKey{
+		Kid:         kid,
+		PrivPEM:     "PRIV",
+		PubPEM:      "PUB",
+		GeneratedAt: generatedAt,
+	}
 }
 
 func TestKeyRotationFinalizer_NewValidates(t *testing.T) {
 	if _, err := NewKeyRotationFinalizer(KeyRotationFinalizerConfig{Audit: &recordingAudit{}}); err == nil {
-		t.Errorf("missing Meta should error")
+		t.Errorf("missing Keys should error")
 	}
-	if _, err := NewKeyRotationFinalizer(KeyRotationFinalizerConfig{Meta: newRotationFakeMeta()}); err == nil {
+	if _, err := NewKeyRotationFinalizer(KeyRotationFinalizerConfig{Keys: &rotationFakeKeys{}}); err == nil {
 		t.Errorf("missing Audit should error")
 	}
 }
 
 func TestKeyRotationFinalizer_NoRotationInFlight(t *testing.T) {
-	meta := newRotationFakeMeta()
+	keys := &rotationFakeKeys{}
 	audit := &recordingAudit{}
 	krf, _ := NewKeyRotationFinalizer(KeyRotationFinalizerConfig{
-		Meta: meta, Audit: audit,
+		Keys: keys, Audit: audit,
 	})
 	if err := krf.RunOnce(context.Background()); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
-	if len(meta.deleted) != 0 {
-		t.Errorf("no keys should be deleted when no rotation is in flight")
+	if keys.cleared {
+		t.Errorf("no clear expected when prev slot is empty")
 	}
 	if len(audit.snapshot()) != 0 {
 		t.Errorf("no audit rows expected on the no-op path")
@@ -91,26 +118,22 @@ func TestKeyRotationFinalizer_NoRotationInFlight(t *testing.T) {
 
 func TestKeyRotationFinalizer_InsideGraceLeavesAlone(t *testing.T) {
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
-	rotated := now.Add(-12 * time.Hour) // 12h ago, grace is 24h
-	meta := newRotationFakeMeta()
-	meta.kv[ossmodel.MetaKeyFederationRotatedAt] = rotated.Format(time.RFC3339Nano)
-	meta.kv[ossmodel.MetaKeyFederationPrivKeyPrev] = "prev-priv"
-	meta.kv[ossmodel.MetaKeyFederationKIDPrev] = "prev-kid"
+	keys := &rotationFakeKeys{prev: stubLocalKey("prev-kid", now.Add(-12*time.Hour))}
 
 	audit := &recordingAudit{}
 	krf, _ := NewKeyRotationFinalizer(KeyRotationFinalizerConfig{
-		Meta: meta, Audit: audit,
+		Keys: keys, Audit: audit,
 		Grace: 24 * time.Hour,
 		Now:   func() time.Time { return now },
 	})
 	if err := krf.RunOnce(context.Background()); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
-	if _, ok := meta.kv[ossmodel.MetaKeyFederationRotatedAt]; !ok {
-		t.Errorf("rotated_at should still be present inside the grace window")
+	if keys.cleared {
+		t.Errorf("prev slot must be preserved inside the grace window")
 	}
-	if _, ok := meta.kv[ossmodel.MetaKeyFederationPrivKeyPrev]; !ok {
-		t.Errorf("prev priv key should still be present inside the grace window")
+	if keys.prev == nil {
+		t.Errorf("prev slot must still be populated inside the grace window")
 	}
 	if len(audit.snapshot()) != 0 {
 		t.Errorf("no audit rows expected when grace has not elapsed")
@@ -119,29 +142,19 @@ func TestKeyRotationFinalizer_InsideGraceLeavesAlone(t *testing.T) {
 
 func TestKeyRotationFinalizer_GraceElapsedClearsAndAudits(t *testing.T) {
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
-	rotated := now.Add(-48 * time.Hour) // 48h ago, well past 24h grace
-	meta := newRotationFakeMeta()
-	meta.kv[ossmodel.MetaKeyFederationRotatedAt] = rotated.Format(time.RFC3339Nano)
-	meta.kv[ossmodel.MetaKeyFederationPrivKeyPrev] = "prev-priv"
-	meta.kv[ossmodel.MetaKeyFederationKIDPrev] = "prev-kid"
+	keys := &rotationFakeKeys{prev: stubLocalKey("prev-kid", now.Add(-48*time.Hour))}
 
 	audit := &recordingAudit{}
 	krf, _ := NewKeyRotationFinalizer(KeyRotationFinalizerConfig{
-		Meta: meta, Audit: audit,
+		Keys: keys, Audit: audit,
 		Grace: 24 * time.Hour,
 		Now:   func() time.Time { return now },
 	})
 	if err := krf.RunOnce(context.Background()); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
-	for _, k := range []string{
-		ossmodel.MetaKeyFederationRotatedAt,
-		ossmodel.MetaKeyFederationPrivKeyPrev,
-		ossmodel.MetaKeyFederationKIDPrev,
-	} {
-		if _, ok := meta.kv[k]; ok {
-			t.Errorf("expected %q to be cleared after grace elapsed", k)
-		}
+	if !keys.cleared || keys.prev != nil {
+		t.Errorf("prev slot should be cleared after the grace window")
 	}
 	rows := audit.snapshot()
 	if len(rows) != 1 {
@@ -153,37 +166,19 @@ func TestKeyRotationFinalizer_GraceElapsedClearsAndAudits(t *testing.T) {
 	if !strings.Contains(rows[0].Reason, "rotation_finalized") {
 		t.Errorf("audit reason should mention finalization: %q", rows[0].Reason)
 	}
-}
-
-func TestKeyRotationFinalizer_AcceptsRFC3339SecondPrecision(t *testing.T) {
-	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
-	rotated := now.Add(-48 * time.Hour)
-	meta := newRotationFakeMeta()
-	meta.kv[ossmodel.MetaKeyFederationRotatedAt] = rotated.Format(time.RFC3339)
-	meta.kv[ossmodel.MetaKeyFederationPrivKeyPrev] = "prev-priv"
-
-	krf, _ := NewKeyRotationFinalizer(KeyRotationFinalizerConfig{
-		Meta: meta, Audit: &recordingAudit{},
-		Grace: 24 * time.Hour,
-		Now:   func() time.Time { return now },
-	})
-	if err := krf.RunOnce(context.Background()); err != nil {
-		t.Fatalf("RunOnce: %v", err)
-	}
-	if _, ok := meta.kv[ossmodel.MetaKeyFederationPrivKeyPrev]; ok {
-		t.Errorf("RFC3339-second timestamp should also trigger finalization")
+	if !strings.Contains(rows[0].Reason, "prev-kid") {
+		t.Errorf("audit reason should include the prev kid: %q", rows[0].Reason)
 	}
 }
 
-func TestKeyRotationFinalizer_BadTimestampAuditedAndPropagates(t *testing.T) {
-	meta := newRotationFakeMeta()
-	meta.kv[ossmodel.MetaKeyFederationRotatedAt] = "this-is-not-a-time"
+func TestKeyRotationFinalizer_LoadFailureAuditedAndPropagates(t *testing.T) {
+	keys := &rotationFakeKeys{loadErr: errors.New("db dialer broken")}
 	audit := &recordingAudit{}
 	krf, _ := NewKeyRotationFinalizer(KeyRotationFinalizerConfig{
-		Meta: meta, Audit: audit,
+		Keys: keys, Audit: audit,
 	})
 	if err := krf.RunOnce(context.Background()); err == nil {
-		t.Fatalf("invalid rotated_at timestamp should propagate as an error")
+		t.Fatalf("load failure should propagate")
 	}
 	rows := audit.snapshot()
 	if len(rows) != 1 || rows[0].Outcome != ossmodel.AuditOutcomeError {
@@ -193,14 +188,13 @@ func TestKeyRotationFinalizer_BadTimestampAuditedAndPropagates(t *testing.T) {
 
 func TestKeyRotationFinalizer_DeleteFailureAudited(t *testing.T) {
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
-	rotated := now.Add(-48 * time.Hour)
-	meta := newRotationFakeMeta()
-	meta.kv[ossmodel.MetaKeyFederationRotatedAt] = rotated.Format(time.RFC3339Nano)
-	meta.delErr = errors.New("constraint violation")
-
+	keys := &rotationFakeKeys{
+		prev:     stubLocalKey("prev-kid", now.Add(-48*time.Hour)),
+		clearErr: errors.New("constraint violation"),
+	}
 	audit := &recordingAudit{}
 	krf, _ := NewKeyRotationFinalizer(KeyRotationFinalizerConfig{
-		Meta: meta, Audit: audit,
+		Keys: keys, Audit: audit,
 		Grace: 24 * time.Hour,
 		Now:   func() time.Time { return now },
 	})
