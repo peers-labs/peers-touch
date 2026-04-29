@@ -115,7 +115,16 @@ fn invalidate_pool(user_scope: &str) {
     }
 }
 
+/// One-time migrations tracked per chat DB (per `user_scope`).
+const LEGACY_GROUP_PLAINTEXT_WIPE_MIGRATION: &str = "legacy_group_plaintext_wipe_v1";
+
 fn migrate(conn: &Connection) -> Result<(), String> {
+    migrate_schema(conn)?;
+    apply_one_time_migrations(conn)?;
+    Ok(())
+}
+
+fn migrate_schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS chat_messages (
             scope TEXT NOT NULL,
@@ -217,9 +226,71 @@ fn migrate(conn: &Connection) -> Result<(), String> {
             nonce          BLOB    NOT NULL,
             created_at     INTEGER NOT NULL,
             PRIMARY KEY (group_ulid, sender_did, sender_key_id, counter)
+        );
+        -- Group messages persisted locally with optional Sender Keys ciphertext.
+        -- Pre-E2EE history stored plaintext in `content` only; post-G0 rows use
+        -- `encrypted_payload` and pin `content` to '' (see group_chat send path).
+        CREATE TABLE IF NOT EXISTS group_messages (
+            ulid               TEXT    NOT NULL PRIMARY KEY,
+            group_ulid         TEXT    NOT NULL DEFAULT '',
+            sender_did         TEXT    NOT NULL DEFAULT '',
+            content            TEXT    NOT NULL DEFAULT '',
+            encrypted_payload  BLOB,
+            sent_at            INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS chat_applied_migrations (
+            name        TEXT PRIMARY KEY,
+            applied_at  INTEGER NOT NULL
         );",
     )
     .map_err(|e| e.to_string())
+}
+
+fn wipe_legacy_group_plaintext_rows(conn: &Connection) -> Result<u64, String> {
+    conn.execute(
+        "UPDATE group_messages
+         SET content = ''
+         WHERE content IS NOT NULL AND content != ''
+           AND (encrypted_payload IS NULL OR length(encrypted_payload) = 0)",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(conn.changes() as u64)
+}
+
+fn apply_one_time_migrations(conn: &Connection) -> Result<(), String> {
+    let already: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM chat_applied_migrations WHERE name = ?1",
+            params![LEGACY_GROUP_PLAINTEXT_WIPE_MIGRATION],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if already > 0 {
+        return Ok(());
+    }
+    let rows_wiped = wipe_legacy_group_plaintext_rows(conn)?;
+    conn.execute(
+        "INSERT INTO chat_applied_migrations(name, applied_at) VALUES (?1, ?2)",
+        params![LEGACY_GROUP_PLAINTEXT_WIPE_MIGRATION, chrono_now()],
+    )
+    .map_err(|e| e.to_string())?;
+    tracing::info!(
+        migration = LEGACY_GROUP_PLAINTEXT_WIPE_MIGRATION,
+        rows_wiped,
+        "local_chat_store: wiped pre-E2EE group message plaintext bodies"
+    );
+    Ok(())
+}
+
+#[cfg(test)]
+pub(crate) fn test_migrate_schema_only(conn: &Connection) -> Result<(), String> {
+    migrate_schema(conn)
+}
+
+#[cfg(test)]
+pub(crate) fn test_apply_one_time_migrations(conn: &Connection) -> Result<(), String> {
+    apply_one_time_migrations(conn)
 }
 
 fn upsert_record(conn: &Connection, item: &LocalChatRecord) -> Result<(), String> {
@@ -1145,5 +1216,91 @@ mod sender_key_tests {
             .unwrap()
             .unwrap();
         assert!(after.signing_seed.is_some());
+    }
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::{test_apply_one_time_migrations, test_migrate_schema_only};
+    use crate::domain::storage::database::DatabaseOpenSpec;
+    use crate::infrastructure::storage::key_provider::PlatformKeyProvider;
+    use crate::infrastructure::storage::open_database;
+    use rusqlite::params;
+
+    fn unique_scope(tag: &str) -> String {
+        format!(
+            "test-mig-{tag}-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        )
+    }
+
+    #[test]
+    fn legacy_group_plaintext_wipe_runs_once_and_is_idempotent() {
+        let scope = unique_scope("plain");
+        let spec = DatabaseOpenSpec::new_chat_main(scope);
+        let conn =
+            open_database(&spec, PlatformKeyProvider::shared()).expect("open_database(chat/main)");
+
+        test_migrate_schema_only(&conn).expect("schema migration");
+
+        let legacy_ulid = "01HXTESTLEGACY000000000000";
+        let sk_ulid = "01HXTESTPOSTSK000000000000";
+        let ciphertext: Vec<u8> = vec![0x01, 0x02, 0xde, 0xad];
+
+        conn.execute(
+            "INSERT INTO group_messages(ulid, group_ulid, sender_did, content, encrypted_payload, sent_at)
+             VALUES (?1, 'g1', 'did:legacy', 'secret plaintext', NULL, 1000)",
+            params![legacy_ulid],
+        )
+        .expect("insert legacy row");
+        conn.execute(
+            "INSERT INTO group_messages(ulid, group_ulid, sender_did, content, encrypted_payload, sent_at)
+             VALUES (?1, 'g1', 'did:sk', '', ?2, 2000)",
+            params![sk_ulid, ciphertext.as_slice()],
+        )
+        .expect("insert sender-key row");
+
+        test_apply_one_time_migrations(&conn).expect("first one-time migration");
+
+        let leg_content: String = conn
+            .query_row(
+                "SELECT content FROM group_messages WHERE ulid = ?1",
+                params![legacy_ulid],
+                |r| r.get(0),
+            )
+            .expect("read legacy content");
+        assert_eq!(leg_content, "");
+
+        let sk_payload: Vec<u8> = conn
+            .query_row(
+                "SELECT encrypted_payload FROM group_messages WHERE ulid = ?1",
+                params![sk_ulid],
+                |r| r.get(0),
+            )
+            .expect("read sk ciphertext");
+        assert_eq!(sk_payload, ciphertext);
+
+        test_apply_one_time_migrations(&conn).expect("second one-time migration");
+
+        let leg_content_2: String = conn
+            .query_row(
+                "SELECT content FROM group_messages WHERE ulid = ?1",
+                params![legacy_ulid],
+                |r| r.get(0),
+            )
+            .expect("read legacy after second migration");
+        assert_eq!(leg_content_2, "");
+
+        let sk_payload_2: Vec<u8> = conn
+            .query_row(
+                "SELECT encrypted_payload FROM group_messages WHERE ulid = ?1",
+                params![sk_ulid],
+                |r| r.get(0),
+            )
+            .expect("read sk ciphertext after second migration");
+        assert_eq!(sk_payload_2, ciphertext);
     }
 }
