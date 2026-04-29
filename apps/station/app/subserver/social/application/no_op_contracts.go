@@ -51,3 +51,19 @@ func (noopGroupChecker) IsMember(_ context.Context, _ uint64, _ uint64) (bool, e
 func (noopGroupChecker) MembershipsForViewer(_ context.Context, _ uint64) ([]uint64, error) {
 	return nil, nil
 }
+
+// noopMediaResolver is the default `domain.MediaResolver` implementation
+// for tests and any subserver wiring that does not have the OSS DB
+// handle available. It accepts every CID without inspecting the
+// origin or looking up the key. This is the ONLY safe default that
+// keeps the existing P1 integration tests (which create posts with
+// fabricated `oss://station.local/...` CIDs) green; production
+// wiring MUST replace it with `infrastructure.NewOssMediaResolver`
+// (see `subserver.go`).
+type noopMediaResolver struct{}
+
+func NewNoopMediaResolver() domain.MediaResolver { return noopMediaResolver{} }
+
+func (noopMediaResolver) ValidateCIDs(_ context.Context, _ []string) error {
+	return nil
+}
