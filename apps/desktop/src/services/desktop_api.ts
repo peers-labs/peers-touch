@@ -266,7 +266,7 @@ async function invokeRustDataFromStatus<TInput, TOut>(
   throw err;
 }
 
-async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
+export async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
   command: string,
   schema: GenMessage<TMsg>,
   input?: TInput,

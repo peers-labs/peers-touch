@@ -1,0 +1,117 @@
+syntax = "proto3";
+
+package peers_touch.model.social.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
+
+// ============================================================================
+// Circle (publisher-private audience label, P0)
+// ============================================================================
+// A `Circle` is a NAMED LIST OF DIDs owned by exactly one actor, used to
+// narrow `Audience.kind = CIRCLE` posts. Members do NOT know they are in a
+// circle and circles are NOT bidirectional — they are publisher-side metadata
+// only. Compare with `chat.Group` which is a shared, bidirectional chat space.
+//
+// All circle data MUST be stored in the `social_private` schema (see
+// `docs/architecture/social/moments.md` §"Storage invariants") and MUST NOT
+// federate over ActivityPub. P0 only defines the proto shape; the GORM
+// model and repository land in P1.
+
+message Circle {
+  uint64 id = 1;
+  uint64 owner_id = 2;
+  string name = 3;
+  string description = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+  int64 member_count = 7;
+}
+
+message CircleMember {
+  uint64 circle_id = 1;
+  // Actor identity. Stored as DID (string) rather than internal uint64
+  // so cross-Station members can be added in future (still local-only
+  // for v1).
+  string actor_did = 2;
+  google.protobuf.Timestamp added_at = 3;
+}
+
+// ============================================================================
+// API messages
+// ============================================================================
+
+message CreateCircleRequest {
+  string name = 1;
+  string description = 2;
+  // Optional initial members (DIDs). Empty allowed.
+  repeated string member_dids = 3;
+}
+
+message CreateCircleResponse {
+  Circle circle = 1;
+}
+
+message RenameCircleRequest {
+  uint64 circle_id = 1;
+  string name = 2;
+  optional string description = 3;
+}
+
+message RenameCircleResponse {
+  Circle circle = 1;
+}
+
+message DeleteCircleRequest {
+  uint64 circle_id = 1;
+}
+
+message DeleteCircleResponse {
+  bool success = 1;
+}
+
+message AddCircleMemberRequest {
+  uint64 circle_id = 1;
+  // Bulk add allowed; deduplicated server-side.
+  repeated string member_dids = 2;
+}
+
+message AddCircleMemberResponse {
+  // Number of NEW members actually added (excludes duplicates).
+  int32 added_count = 1;
+  int64 member_count = 2;
+}
+
+message RemoveCircleMemberRequest {
+  uint64 circle_id = 1;
+  repeated string member_dids = 2;
+}
+
+message RemoveCircleMemberResponse {
+  int32 removed_count = 1;
+  int64 member_count = 2;
+}
+
+message ListMyCirclesRequest {
+  string cursor = 1;
+  int32 limit = 2;
+}
+
+message ListMyCirclesResponse {
+  repeated Circle circles = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+}
+
+message ListCircleMembersRequest {
+  uint64 circle_id = 1;
+  string cursor = 2;
+  int32 limit = 3;
+}
+
+message ListCircleMembersResponse {
+  repeated CircleMember members = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+}

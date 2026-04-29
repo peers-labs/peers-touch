@@ -33,8 +33,8 @@ pub mod search;
 pub mod settings;
 pub mod skills;
 pub mod skills_market;
+pub mod social;
 pub mod system;
-pub mod timeline;
 pub mod tools;
 pub mod tts;
 

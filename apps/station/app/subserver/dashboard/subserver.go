@@ -24,12 +24,22 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/infrastructure"
+	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
+
+// ossFileServiceProvider is the cross-subserver hand-off contract
+// the dashboard uses to discover the OSS subserver's `FileService`
+// without importing its internal types. The OSS subserver exposes
+// the same shape under `oss.FileServiceProvider`; we duplicate the
+// interface here so the dashboard package never imports `oss`
+// (avoiding the import cycle that would otherwise emerge once the
+// OSS subserver pulls in dashboard-side types for federation).
+type ossFileServiceProvider = application.FileServiceProvider
 
 // Compile-time interface check.
 var _ server.Subserver = (*subServer)(nil)
@@ -52,6 +62,7 @@ type subServer struct {
 	chatDebugSvc *application.ChatDebugService
 	storageSvc   *application.StorageService
 	nodesSvc     *application.NodesService
+	ossSvc       *application.OSSService
 
 	// Infrastructure repositories (DDD infrastructure layer)
 	auditRepo infrastructure.AuditRepository
@@ -134,15 +145,23 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	actorQueryRepo := infrastructure.NewActorQueryRepository(rds)
 	storageRepo := infrastructure.NewStorageRepository(rds)
 	nodesRepo := infrastructure.NewNodesRepository(rds)
+	ossRepo := infrastructure.NewOSSRepository(rds)
 
 	s.auditRepo = auditRepo
 
-	s.authSvc = application.NewAuthService(adminRepo, sessionRepo, auditRepo, jwtSecret, sessionTTL)
+	// Build the framework-level JWT provider once and hand it
+	// to AuthService. Doing it here (rather than inside
+	// NewAuthService) keeps `application/` decoupled from
+	// configuration: the secret + TTL only ever cross the
+	// dashboard boundary at this single line.
+	jwtProvider := coreauth.NewJWTProvider(jwtSecret, sessionTTL)
+	s.authSvc = application.NewAuthService(adminRepo, sessionRepo, auditRepo, jwtProvider, sessionTTL)
 	s.overviewSvc = application.NewOverviewService(actorQueryRepo, auditRepo, nil)
 	s.actorsSvc = application.NewActorService(actorQueryRepo)
 	s.chatDebugSvc = application.NewChatDebugService(rds)
 	s.storageSvc = application.NewStorageService(storageRepo)
 	s.nodesSvc = application.NewNodesService(nodesRepo, nil)
+	s.ossSvc = application.NewOSSService(ossRepo)
 
 	// Try to resolve registry from the global default
 	s.registry = registry.GetDefaultRegistry()
@@ -199,6 +218,27 @@ func (s *subServer) Start(ctx context.Context, opts ...option.Option) error {
 		}
 		if s.nodesSvc != nil {
 			s.nodesSvc.SetRegistry(s.registry)
+		}
+	}
+
+	// Resolve the OSS sibling subserver so the dashboard's admin
+	// upload path can re-use its FileService instead of duplicating
+	// the storage-write code path. Deliberately best-effort: an
+	// operator running a dashboard-only deployment (or a test
+	// harness without OSS wired up) keeps the read paths working;
+	// the upload endpoint surfaces 503 instead of NPE'ing.
+	if s.ossSvc != nil {
+		for _, sib := range s.subservers {
+			if sib == nil || sib.Name() != "oss" {
+				continue
+			}
+			if provider, ok := sib.(ossFileServiceProvider); ok {
+				s.ossSvc.SetFileServiceProvider(provider)
+				if provider.FileService() != nil {
+					log.Infof(ctx, "[dashboard] oss admin upload wired (max=%d bytes)", provider.MaxFileSize())
+				}
+			}
+			break
 		}
 	}
 
