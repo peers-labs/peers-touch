@@ -3,7 +3,6 @@ import { Flexbox } from 'react-layout-kit';
 import { Tooltip, toast } from '@lobehub/ui';
 import { useSessionStore } from '../../store/session';
 import {
-  Avatar,
   Empty,
   Input,
   AutoComplete,
@@ -26,6 +25,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@lobehub/ui';
 import { api, type AccountProfile, type AccountProfileLink } from '../../services/desktop_api';
+import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { useAccountIdentityStore } from '../../store/accountIdentity';
 import { useTranslation } from 'react-i18next';
 import { SettingsContainer, SettingsSection } from './SettingsLayout';
@@ -162,21 +162,13 @@ function EditableAvatar({
         height: size,
       }}
     >
-      <Avatar
-        src={src || undefined}
+      <UserSquareAvatar
+        remoteUrl={src}
+        name={fallbackText}
         size={size}
-        shape="square"
-        style={{
-          background: token.colorPrimaryBg,
-          color: token.colorPrimary,
-          border: `2px solid ${token.colorBorderSecondary}`,
-          borderRadius: 12,
-          fontSize: size * 0.38,
-          fontWeight: 700,
-        }}
-      >
-        {(fallbackText || 'P').slice(0, 1).toUpperCase()}
-      </Avatar>
+        radius={12}
+        border={`2px solid ${token.colorBorderSecondary}`}
+      />
 
       <div
         style={{
@@ -383,7 +375,13 @@ export function AccountTab() {
       setProfile(next);
 
       if (next.avatar) {
-        api.accountSyncAvatar(next.avatar).catch(() => {});
+        api.accountSyncAvatar(next.avatar).then(() => {
+          return api.syncUserProfile();
+        }).then((result) => {
+          if (result?.avatar_url) {
+            useSessionStore.getState().updateAvatar(result.avatar_url);
+          }
+        }).catch(() => {});
         useAccountIdentityStore.getState().load();
         useSessionStore.getState().updateAvatar(next.avatar);
       }
@@ -474,7 +472,17 @@ export function AccountTab() {
       setProfile(next);
 
       if (next.avatar) {
-        api.accountSyncAvatar(next.avatar).catch(() => {});
+        // Warm the local cache and refresh identity store; the avatar component
+        // will render the cached file as soon as resolveLocal returns.
+        api.accountSyncAvatar(next.avatar).then(() => {
+          return api.syncUserProfile();
+        }).then((result) => {
+          if (result?.avatar_url) {
+            useSessionStore.getState().updateAvatar(result.avatar_url);
+          }
+        }).catch((error: any) => {
+          toast.error(error?.message || t('provider.account.avatarHeader.failedToUploadAvatar'));
+        });
         useAccountIdentityStore.getState().load();
         useSessionStore.getState().updateAvatar(next.avatar);
       }

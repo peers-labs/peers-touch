@@ -345,6 +345,8 @@ func HTTPWrapperAdapter(httpWrapper func(ctx context.Context, next http.Handler)
 type httpRequestAdapter struct {
 	r           *http.Request
 	originalReq Request // Preserve original request for Hertz context access
+	bodyCache   []byte
+	bodyRead    bool
 }
 
 func (r *httpRequestAdapter) Context() context.Context {
@@ -374,11 +376,15 @@ func (r *httpRequestAdapter) Path() string {
 }
 
 func (r *httpRequestAdapter) Body() []byte {
+	if r.bodyRead {
+		return r.bodyCache
+	}
+	r.bodyRead = true
 	if r.r.Body == nil {
 		return nil
 	}
-	b, _ := io.ReadAll(r.r.Body)
-	return b
+	r.bodyCache, _ = io.ReadAll(r.r.Body)
+	return r.bodyCache
 }
 
 // GetHertzContext returns the underlying Hertz context if available

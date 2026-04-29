@@ -1,19 +1,15 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button } from '@lobehub/ui';
-import { Collapse, Empty, Tabs, Tag, theme, Typography } from 'antd';
+import { Button, Tag } from '@lobehub/ui';
+import { Collapse, Empty, Tabs, theme, Typography } from 'antd';
 import { UserPlus, Users, Contact, ChevronRight, Check, X } from 'lucide-react';
 import { useSocialChatStore } from '../../store/socialChat';
 import type { FriendChatSession } from '../../gen/proto/domain/chat/friend_chat_pb';
+import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { log } from '../../utils/logger';
 
 const { Text } = Typography;
-
-function getInitial(label: string): string {
-  if (!label) return '?';
-  return label.charAt(0).toUpperCase();
-}
 
 function peerProfile(s: FriendChatSession, viewerDid: string | null): { name: string; avatar: string } {
   if (viewerDid) {
@@ -73,32 +69,23 @@ export function ChatContactsPanel() {
   );
 
   const requestCardStyle: CSSProperties = {
-    padding: '8px 10px',
-    borderRadius: 8,
+    padding: '10px 12px',
+    borderRadius: 10,
     border: `1px solid ${token.colorBorderSecondary}`,
     background: token.colorFillQuaternary,
   };
 
-  const avatarStyle: CSSProperties = {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    background: token.colorFillSecondary,
-    color: token.colorTextSecondary,
-    fontSize: 13,
-    fontWeight: 600,
-    flexShrink: 0,
-  };
+  const avatarSize = 36;
 
   function statusTag(status: number) {
     if (status === 1) {
-      return <Tag color="processing">{t('chat.social.contacts.status.pending')}</Tag>;
+      return <Tag color="blue">{t('chat.social.contacts.status.pending')}</Tag>;
     }
     if (status === 2) {
-      return <Tag color="success">{t('chat.social.contacts.status.accepted')}</Tag>;
+      return <Tag color="green">{t('chat.social.contacts.status.accepted')}</Tag>;
     }
     if (status === 3) {
-      return <Tag color="default">{t('chat.social.contacts.status.rejected')}</Tag>;
+      return <Tag>{t('chat.social.contacts.status.rejected')}</Tag>;
     }
     return null;
   }
@@ -118,34 +105,28 @@ export function ChatContactsPanel() {
                 description={t('chat.social.contacts.noReceivedRequests')}
               />
             ) : (
-              <Flexbox gap={6}>
+              <Flexbox gap={8}>
                 {receivedRequests.map((req) => {
                   const peerLabel = req.senderDisplayName || req.senderId;
                   const peerAvatar = req.senderAvatar;
                   const isPending = req.status === 1;
                   return (
-                    <Flexbox key={req.id} horizontal align="flex-start" gap={8} style={requestCardStyle}>
-                      {peerAvatar ? (
-                        <img src={peerAvatar} alt={peerLabel} style={{ ...avatarStyle, objectFit: 'cover' }} />
-                      ) : (
-                        <Flexbox align="center" justify="center" style={avatarStyle}>
-                          {getInitial(peerLabel)}
-                        </Flexbox>
-                      )}
-                      <Flexbox flex={1} style={{ minWidth: 0 }} gap={4}>
-                        <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0 }}>
-                          <Text strong ellipsis style={{ fontSize: 12 }}>
+                    <Flexbox key={req.id} horizontal align="flex-start" gap={10} style={requestCardStyle}>
+                      <UserSquareAvatar remoteUrl={peerAvatar} name={peerLabel} size={avatarSize} />
+                      <Flexbox flex={1} style={{ minWidth: 0 }} gap={6}>
+                        <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0 }}>
+                          <Text strong ellipsis style={{ fontSize: 13 }}>
                             {peerLabel}
                           </Text>
                           {statusTag(req.status)}
                         </Flexbox>
                         {req.message ? (
-                          <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
+                          <Text type="secondary" ellipsis style={{ fontSize: 12 }}>
                             {req.message}
                           </Text>
                         ) : null}
                         {isPending ? (
-                          <Flexbox horizontal gap={6} style={{ marginTop: 2 }}>
+                          <Flexbox horizontal gap={8} style={{ marginTop: 4 }}>
                             <Button
                               size="small"
                               type="primary"
@@ -197,28 +178,22 @@ export function ChatContactsPanel() {
             sentRequests.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.contacts.noSentRequests')} />
             ) : (
-              <Flexbox gap={6}>
+              <Flexbox gap={8}>
                 {sentRequests.map((req) => {
                   const peerLabel = req.receiverDisplayName || req.receiverId;
                   const peerAvatar = req.receiverAvatar;
                   return (
-                    <Flexbox key={req.id} horizontal align="flex-start" gap={8} style={requestCardStyle}>
-                      {peerAvatar ? (
-                        <img src={peerAvatar} alt={peerLabel} style={{ ...avatarStyle, objectFit: 'cover' }} />
-                      ) : (
-                        <Flexbox align="center" justify="center" style={avatarStyle}>
-                          {getInitial(peerLabel)}
-                        </Flexbox>
-                      )}
-                      <Flexbox flex={1} style={{ minWidth: 0 }} gap={4}>
-                        <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0 }}>
-                          <Text strong ellipsis style={{ fontSize: 12 }}>
+                    <Flexbox key={req.id} horizontal align="flex-start" gap={10} style={requestCardStyle}>
+                      <UserSquareAvatar remoteUrl={peerAvatar} name={peerLabel} size={avatarSize} />
+                      <Flexbox flex={1} style={{ minWidth: 0 }} gap={6}>
+                        <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0 }}>
+                          <Text strong ellipsis style={{ fontSize: 13 }}>
                             {peerLabel}
                           </Text>
                           {statusTag(req.status)}
                         </Flexbox>
                         {req.message ? (
-                          <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
+                          <Text type="secondary" ellipsis style={{ fontSize: 12 }}>
                             {req.message}
                           </Text>
                         ) : null}
@@ -284,8 +259,8 @@ export function ChatContactsPanel() {
                   e.currentTarget.style.background = 'transparent';
                 }}
               >
-                <Flexbox align="center" justify="center" style={avatarStyle}>
-                  {getInitial(g.name || '?')}
+                <Flexbox align="center" justify="center" style={{ width: avatarSize, height: avatarSize, borderRadius: Math.max(8, Math.floor(avatarSize * 0.25)), background: token.colorFillSecondary, color: token.colorTextSecondary, fontSize: 14, fontWeight: 600, flexShrink: 0 }}>
+                  {(g.name || '?').charAt(0).toUpperCase()}
                 </Flexbox>
                 <Flexbox flex={1} style={{ minWidth: 0 }}>
                   <Text strong ellipsis style={{ fontSize: 13 }}>
@@ -342,13 +317,7 @@ export function ChatContactsPanel() {
                     e.currentTarget.style.background = 'transparent';
                   }}
                 >
-                  {peer.avatar ? (
-                    <img src={peer.avatar} alt={label} style={{ ...avatarStyle, objectFit: 'cover' }} />
-                  ) : (
-                    <Flexbox align="center" justify="center" style={avatarStyle}>
-                      {getInitial(label)}
-                    </Flexbox>
-                  )}
+                  <UserSquareAvatar remoteUrl={peer.avatar} name={label} size={avatarSize} />
                   <Flexbox flex={1} style={{ minWidth: 0 }}>
                     <Text strong ellipsis style={{ fontSize: 13 }}>
                       {label}

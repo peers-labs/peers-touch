@@ -7,6 +7,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth"
+	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
@@ -15,7 +17,14 @@ import (
 
 func (s *subServer) Handlers() []server.Handler {
 	logIDWrapper := serverwrapper.LogID()
+	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
+	hertzJWTWrapper := hertzadapter.RequireJWT(provider)
 	return []server.Handler{
+		// Presence stream — Hertz native handler, same shape as /events/stream.
+		// Clients open this once and receive PresenceEvent JSON for every
+		// online/offline transition (plus an initial snapshot of currently
+		// online DIDs). Filtering by friend graph is done client-side.
+		server.NewHertzHandler("fc-presence-stream", "/friend-chat/presence/stream", server.GET, s.handlePresenceStream, hertzJWTWrapper),
 		server.NewTypedHandler("fc-session-create", "/friend-chat/session/create", server.POST, s.handleCreateSession, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-sessions", "/friend-chat/sessions", server.GET, s.handleGetSessions, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-message-send", "/friend-chat/message/send", server.POST, s.handleSendMessage, logIDWrapper, s.jwtWrapper),
@@ -95,18 +104,32 @@ func (s *subServer) handleGetSessions(ctx context.Context, req *chat.GetSessions
 	}
 	profiles := s.repo.BatchLoadActorSummaries(idSlice)
 
+	// Snapshot the online map once so all sessions in this response see a
+	// consistent view (avoids two participants in the same response
+	// disagreeing because of an online flip mid-loop).
+	s.mu.RLock()
+	onlineSnapshot := make(map[string]struct{}, len(s.online))
+	for did := range s.online {
+		onlineSnapshot[did] = struct{}{}
+	}
+	s.mu.RUnlock()
+
 	out := make([]*chat.FriendChatSession, 0, len(items))
 	for _, item := range items {
+		_, aOnline := onlineSnapshot[item.ParticipantADID]
+		_, bOnline := onlineSnapshot[item.ParticipantBDID]
 		sess := &chat.FriendChatSession{
-			Ulid:            item.ID,
-			ParticipantADid: item.ParticipantADID,
-			ParticipantBDid: item.ParticipantBDID,
-			LastMessageUlid: item.LastMessageID,
-			LastMessageAt:   timestamppb.New(item.LastMessageAt),
-			UnreadCountA:    item.UnreadCountA,
-			UnreadCountB:    item.UnreadCountB,
-			CreatedAt:       timestamppb.New(item.CreatedAt),
-			UpdatedAt:       timestamppb.New(item.UpdatedAt),
+			Ulid:               item.ID,
+			ParticipantADid:    item.ParticipantADID,
+			ParticipantBDid:    item.ParticipantBDID,
+			LastMessageUlid:    item.LastMessageID,
+			LastMessageAt:      timestamppb.New(item.LastMessageAt),
+			UnreadCountA:       item.UnreadCountA,
+			UnreadCountB:       item.UnreadCountB,
+			CreatedAt:          timestamppb.New(item.CreatedAt),
+			UpdatedAt:          timestamppb.New(item.UpdatedAt),
+			ParticipantAOnline: aOnline,
+			ParticipantBOnline: bOnline,
 		}
 		if p, ok := profiles[item.ParticipantADID]; ok {
 			sess.ParticipantADisplayName = p.DisplayName
@@ -309,9 +332,16 @@ func (s *subServer) handleOnline(ctx context.Context, req *chat.OnlineRequest) (
 	if did == "" {
 		return nil, server.BadRequest("did is required")
 	}
+	// Only publish a presence change on the rising edge so reconnect storms
+	// (every visibilitychange triggers /online) don't fan out a broadcast
+	// per ping.
 	s.mu.Lock()
+	_, wasOnline := s.online[did]
 	s.online[did] = timestamppb.Now().GetSeconds()
 	s.mu.Unlock()
+	if !wasOnline {
+		s.publishPresence(did, true)
+	}
 	return &chat.OnlineResponse{Status: "online"}, nil
 }
 
@@ -328,8 +358,12 @@ func (s *subServer) handleOffline(ctx context.Context, req *chat.OnlineRequest) 
 		return nil, server.BadRequest("did is required")
 	}
 	s.mu.Lock()
+	_, wasOnline := s.online[did]
 	delete(s.online, did)
 	s.mu.Unlock()
+	if wasOnline {
+		s.publishPresence(did, false)
+	}
 	return &chat.OnlineResponse{Status: "offline"}, nil
 }
 

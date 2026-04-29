@@ -134,7 +134,7 @@ pub(crate) fn post_json_no_auth(
     body: Value,
 ) -> Result<Value, StationClientError> {
     let url = format!("{}{}", station_base_url(), path);
-    tracing::info!(path = %path, "→ station (json, no-auth)");
+    tracing::debug!(path = %path, "→ station (json, no-auth)");
 
     let start = std::time::Instant::now();
     let client = build_client()?;
@@ -172,7 +172,7 @@ pub(crate) fn post_json_no_auth(
         ));
     }
 
-    tracing::info!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json, no-auth)");
+    tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json, no-auth)");
     Ok(result)
 }
 
@@ -196,7 +196,7 @@ pub(crate) fn request_peers_proto_no_body<Payload: Message + Default>(
     query: Option<&[(&str, String)]>,
 ) -> Result<Payload, StationClientError> {
     let url = format!("{}{}", station_base_url(), path);
-    tracing::info!(method = %method, path = %path, "→ station (peers proto)");
+    tracing::debug!(method = %method, path = %path, "→ station (peers proto)");
 
     let start = std::time::Instant::now();
     let client = build_client()?;
@@ -237,7 +237,7 @@ pub(crate) fn request_peers_proto_no_body<Payload: Message + Default>(
     let resp_len = bytes.len();
     let result = decode_peers_envelope(bytes.as_ref())?;
 
-    tracing::info!(
+    tracing::debug!(
         path = %path,
         status = status.as_u16(),
         elapsed_ms = elapsed,
@@ -258,7 +258,7 @@ pub(crate) fn request_peers_proto_no_payload<Req: Message>(
 ) -> Result<(), StationClientError> {
     let url = format!("{}{}", station_base_url(), path);
     let body_len = body.map(|b| b.encoded_len()).unwrap_or(0);
-    tracing::info!(
+    tracing::debug!(
         method = %method,
         path = %path,
         body_bytes = body_len,
@@ -313,7 +313,7 @@ pub(crate) fn request_peers_proto_no_payload<Req: Message>(
         StationClientError::new(StationClientErrorKind::Decode, format!("decode PeersResponse: {}", e), None)
     })?;
 
-    tracing::info!(
+    tracing::debug!(
         path = %path,
         status = status.as_u16(),
         elapsed_ms = elapsed,
@@ -338,7 +338,7 @@ where
 {
     let url = format!("{}{}", station_base_url(), path);
     let body_len = body.map(|b| b.encoded_len()).unwrap_or(0);
-    tracing::info!(
+    tracing::debug!(
         method = %method,
         path = %path,
         body_bytes = body_len,
@@ -391,7 +391,7 @@ where
     let resp_len = bytes.len();
     let result = decode_peers_envelope(bytes.as_ref())?;
 
-    tracing::info!(
+    tracing::debug!(
         path = %path,
         status = status.as_u16(),
         elapsed_ms = elapsed,
@@ -409,7 +409,7 @@ where
     Payload: Message + Default,
 {
     let url = format!("{}{}", station_base_url(), path);
-    tracing::info!(path = %path, body_bytes = body.encoded_len(), "→ station (peers proto, no-auth)");
+    tracing::debug!(path = %path, body_bytes = body.encoded_len(), "→ station (peers proto, no-auth)");
 
     let start = std::time::Instant::now();
     let client = build_client()?;
@@ -445,7 +445,7 @@ where
         ));
     }
 
-    tracing::info!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (peers proto, no-auth)");
+    tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (peers proto, no-auth)");
     decode_peers_envelope(bytes.as_ref())
 }
 
@@ -459,7 +459,7 @@ pub(crate) fn request_json(
     body: Option<Value>,
 ) -> Result<Value, StationClientError> {
     let url = format!("{}{}", station_base_url(), path);
-    tracing::info!(method = %method, path = %path, "→ station (json)");
+    tracing::debug!(method = %method, path = %path, "→ station (json)");
 
     let start = std::time::Instant::now();
     let client = build_client()?;
@@ -501,7 +501,7 @@ pub(crate) fn request_json(
         StationClientError::new(StationClientErrorKind::Decode, format!("decode json response failed: {}", e), None)
     })?;
 
-    tracing::info!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json)");
+    tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json)");
     Ok(result)
 }
 
@@ -518,7 +518,7 @@ where
 {
     let url = format!("{}{}", station_base_url(), path);
     let body_len = body.map(|b| b.encoded_len()).unwrap_or(0);
-    tracing::info!(
+    tracing::debug!(
         method = %method,
         path = %path,
         body_bytes = body_len,
@@ -574,7 +574,7 @@ where
         StationClientError::new(StationClientErrorKind::Decode, format!("decode proto response failed: {}", e), None)
     })?;
 
-    tracing::info!(
+    tracing::debug!(
         path = %path,
         status = status.as_u16(),
         elapsed_ms = elapsed,
@@ -592,7 +592,7 @@ pub(crate) fn upload_multipart(
     file_path: &str,
 ) -> Result<serde_json::Value, StationClientError> {
     let url = format!("{}{}", station_base_url(), path);
-    tracing::info!(path = %path, file = %file_path, "→ station (multipart upload)");
+    tracing::debug!(path = %path, file = %file_path, "→ station (multipart upload)");
 
     let start = std::time::Instant::now();
     let client = build_client()?;
@@ -627,6 +627,6 @@ pub(crate) fn upload_multipart(
         return Err(build_error_for_status(status.as_u16(), path, &format!("{{\"code\":\"{}\",\"error\":\"{}\"}}", code_str, msg)));
     }
 
-    tracing::info!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (multipart)");
+    tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (multipart)");
     Ok(result)
 }

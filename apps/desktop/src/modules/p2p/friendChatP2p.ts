@@ -6,10 +6,26 @@ import { log } from '../../utils/logger';
 
 export type FriendChatP2pState = 'idle' | 'connecting' | 'connected' | 'failed' | 'closed';
 
+/**
+ * Which ICE candidate pair the established RTCPeerConnection is actually
+ * using. `null` while the pair has not been selected yet (or the connection
+ * never reached `connected`). The naming follows WebRTC's own taxonomy:
+ *
+ *   - `direct` = host / srflx / prflx — UDP/TCP path between the two peers
+ *   - `relay`  = both sides talk through a TURN allocation
+ *
+ * The UI surfaces this so users can tell "real-time over P2P" from
+ * "real-time over TURN relay" — both are equally responsive, but TURN
+ * costs station bandwidth and has implications for privacy. **There is no
+ * SSE / business-layer relay; the entire real-time path is WebRTC.**
+ */
+export type FriendChatP2pTransport = 'direct' | 'relay' | null;
+
 export interface FriendChatP2pStatus {
   state: FriendChatP2pState;
   detail?: string;
   signalingSessionId?: string;
+  transport?: FriendChatP2pTransport;
 }
 
 export type FriendChatP2pOnEnvelope = (envelope: MessageEnvelope) => void;
@@ -33,6 +49,39 @@ function asBytes(data: unknown): Uint8Array | null {
   return null;
 }
 
+/**
+ * Inspect an RTCStatsReport for the in-use ICE candidate pair and return
+ * which transport flavour it represents. Returns `null` while the pair
+ * has not been selected yet.
+ *
+ * The traversal mirrors what Chrome devtools' `chrome://webrtc-internals`
+ * does: find the `candidate-pair` whose `nominated && (selected ||
+ * state === 'succeeded')` flag is set, then follow `localCandidateId`.
+ * `candidateType === 'relay'` means TURN relay; everything else
+ * (`host`, `srflx`, `prflx`) is a direct path.
+ */
+function pickTransportFromStats(stats: RTCStatsReport): FriendChatP2pTransport {
+  let selectedPairId: string | null = null;
+  const candidates = new Map<string, RTCStats & { candidateType?: string }>();
+  for (const stat of stats.values()) {
+    const s = stat as any;
+    if (s.type === 'candidate-pair') {
+      const isSelected = s.selected === true ||
+        (s.nominated === true && (s.state === 'succeeded' || s.state === 'in-progress'));
+      if (isSelected) {
+        selectedPairId = s.localCandidateId || null;
+      }
+    } else if (s.type === 'local-candidate' || s.type === 'remote-candidate') {
+      if (s.id) candidates.set(s.id, s);
+    }
+  }
+  if (!selectedPairId) return null;
+  const local = candidates.get(selectedPairId);
+  const candidateType = (local as any)?.candidateType;
+  if (!candidateType) return null;
+  return candidateType === 'relay' ? 'relay' : 'direct';
+}
+
 type ConnKey = string; // `${myDid}::${peerDid}`
 
 interface Conn {
@@ -41,6 +90,8 @@ interface Conn {
   status: FriendChatP2pStatus;
   seenCandidates: Set<string>;
   candidateLoopStopped: boolean;
+  /** Stop flag for the {@link transportProbeLoop} once the connection terminates. */
+  transportProbeStopped: boolean;
 }
 
 class FriendChatP2pManager {
@@ -113,20 +164,30 @@ class FriendChatP2pManager {
       status,
       seenCandidates: new Set<string>(),
       candidateLoopStopped: false,
+      transportProbeStopped: false,
     };
     this.conns.set(key, conn);
 
     pc.onconnectionstatechange = () => {
       const s = pc.connectionState;
       if (s === 'connected') {
-        conn.status = { state: 'connected', signalingSessionId };
+        conn.candidateLoopStopped = true;
+        // Spin up the transport probe so we can distinguish P2P-direct
+        // from TURN-relay; emit an interim status while the probe runs
+        // (`transport: null` means "connected but path not yet known").
+        conn.status = { state: 'connected', signalingSessionId, transport: null };
         this.emitStatus(myDid, peerDid, conn.status);
         this.updatePeerRole(myDid, 'client+p2p:connected').catch(() => {});
+        this.startTransportProbe(myDid, peerDid, conn);
       } else if (s === 'failed') {
+        conn.candidateLoopStopped = true;
+        conn.transportProbeStopped = true;
         conn.status = { state: 'failed', detail: 'webrtc connection failed', signalingSessionId };
         this.emitStatus(myDid, peerDid, conn.status);
         this.updatePeerRole(myDid, 'client+p2p:failed').catch(() => {});
       } else if (s === 'closed') {
+        conn.candidateLoopStopped = true;
+        conn.transportProbeStopped = true;
         conn.status = { state: 'closed', signalingSessionId };
         this.emitStatus(myDid, peerDid, conn.status);
         this.updatePeerRole(myDid, 'client+p2p:closed').catch(() => {});
@@ -138,9 +199,22 @@ class FriendChatP2pManager {
       dc.binaryType = 'arraybuffer';
       dc.onopen = () => {
         log.info('p2p', 'datachannel open', { peerDid, signalingSessionId });
-        conn.status = { state: 'connected', signalingSessionId };
+        // Preserve any transport the probe may have already resolved —
+        // `dc.onopen` and `connectionstate==='connected'` race, and
+        // re-emitting without `transport` would briefly flicker the UI
+        // back to "connected (unknown path)".
+        conn.status = {
+          state: 'connected',
+          signalingSessionId,
+          transport: conn.status.transport ?? null,
+        };
         this.emitStatus(myDid, peerDid, conn.status);
         this.updatePeerRole(myDid, 'client+p2p:connected').catch(() => {});
+        // Probe again in case the data channel opened *before* the
+        // connectionstatechange handler had a chance to start one.
+        if (!conn.transportProbeStopped && conn.status.transport == null) {
+          this.startTransportProbe(myDid, peerDid, conn);
+        }
       };
       dc.onclose = () => {
         log.warn('p2p', 'datachannel closed', { peerDid, signalingSessionId });
@@ -178,7 +252,13 @@ class FriendChatP2pManager {
     };
 
     const pollCandidates = async () => {
+      const INITIAL_DELAY = 600;
+      const DELAY_INCREMENT = 200;
+      const MAX_DELAY = 5000;
+      let delay = INITIAL_DELAY;
+
       while (!conn.candidateLoopStopped) {
+        let receivedNew = false;
         try {
           const data = await api.iceSessionCandidatesGet(signalingSessionId);
           const list = ((data as any)?.candidates || []) as Array<any>;
@@ -191,6 +271,7 @@ class FriendChatP2pManager {
             const key2 = `${from}|${mid}|${mline}|${candidate}`;
             if (conn.seenCandidates.has(key2)) continue;
             conn.seenCandidates.add(key2);
+            receivedNew = true;
             if (candidate) {
               await pc.addIceCandidate({ candidate, sdpMid: mid || undefined, sdpMLineIndex: Number.isFinite(mline) ? mline : undefined })
                 .catch(() => {});
@@ -199,7 +280,14 @@ class FriendChatP2pManager {
         } catch {
           // ignore; server may return 404 until first candidate exists
         }
-        await sleep(600);
+
+        // Reset delay when new candidates arrive; otherwise back off progressively.
+        if (receivedNew) {
+          delay = INITIAL_DELAY;
+        } else {
+          delay = Math.min(delay + DELAY_INCREMENT, MAX_DELAY);
+        }
+        await sleep(delay);
       }
     };
     pollCandidates().catch(() => {});
@@ -249,6 +337,69 @@ class FriendChatP2pManager {
       this.emitStatus(myDid, peerDid, conn.status);
       return conn.status;
     }
+  }
+
+  // Tear down every active connection; intended for component unmount cleanup.
+  closeAll() {
+    for (const conn of this.conns.values()) {
+      conn.candidateLoopStopped = true;
+      conn.transportProbeStopped = true;
+      try { conn.dc?.close(); } catch { /* best-effort */ }
+      try { conn.pc.close(); } catch { /* best-effort */ }
+    }
+    this.conns.clear();
+  }
+
+  /**
+   * Resolve which ICE candidate pair the connection is actually using.
+   *
+   * `RTCPeerConnection.connectionState === 'connected'` only tells us
+   * "media flows"; it does not say whether that's via host candidates,
+   * a server-reflexive (STUN) pair, or a TURN allocation. We need that
+   * distinction so the UI can show "Direct" vs "Relay" honestly instead
+   * of mis-labelling TURN as "Fallback".
+   *
+   * The probe re-checks every 4 s for ~30 s after handshake (TURN
+   * allocations sometimes win the candidate race late). It stops as
+   * soon as the connection terminates, the transport is determined and
+   * stable, or the budget runs out.
+   */
+  private startTransportProbe(myDid: string, peerDid: string, conn: Conn) {
+    let elapsed = 0;
+    const intervalMs = 4000;
+    const budgetMs = 32000;
+
+    const probe = async () => {
+      if (conn.transportProbeStopped) return;
+      if (conn.pc.connectionState !== 'connected') return;
+      let transport: FriendChatP2pTransport = null;
+      try {
+        const stats = await conn.pc.getStats();
+        transport = pickTransportFromStats(stats);
+      } catch (error) {
+        log.warn('p2p', 'getStats probe failed', { peerDid, error });
+        return;
+      }
+      if (!transport) return;
+      // Only emit if the transport just became known or flipped.
+      if (conn.status.transport === transport) return;
+      conn.status = { ...conn.status, transport };
+      this.emitStatus(myDid, peerDid, conn.status);
+      // Once we settle on a transport, stop the loop. WebRTC won't silently
+      // switch pairs without going through `iceconnectionstatechange`, and
+      // we react to that via the existing `onconnectionstatechange` hook.
+      conn.transportProbeStopped = true;
+    };
+
+    const tick = async () => {
+      while (!conn.transportProbeStopped && elapsed < budgetMs) {
+        await probe();
+        if (conn.transportProbeStopped) return;
+        await sleep(intervalMs);
+        elapsed += intervalMs;
+      }
+    };
+    tick().catch(() => {});
   }
 
   sendMessageHint(myDid: string, peerDid: string, sessionUlid: string, messageUlid: string): boolean {

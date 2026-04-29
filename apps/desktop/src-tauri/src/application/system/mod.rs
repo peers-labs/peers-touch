@@ -203,33 +203,57 @@ pub fn wizard_api_execute(_input: WizardExecuteApiInput) -> AppResult<StubPayloa
 }
 
 pub fn onboarding_reset() -> AppResult<StubPayload> {
-    let files: [Result<PathBuf, _>; 2] = [
-        storage::app_file_path("desktop", StorageKind::Data, &["oauth2", "connections.json"]),
-        storage::app_file_path("desktop", StorageKind::Data, &["account", "identities.json"]),
-    ];
-    for file in files {
-        let path = match file {
-            Ok(v) => v,
-            Err(err) => {
-                tracing::error!(error = %err, "Failed to resolve onboarding reset file path");
-                return AppResult::fail(
-                    ErrorCode::InternalError,
-                    format!("Failed to resolve reset file path: {}", err),
-                    None,
-                )
-            }
-        };
-        if path.exists() {
-            if let Err(err) = fs::remove_file(&path) {
-                tracing::error!(error = %err, path = %path.display(), "Failed to remove onboarding reset file");
-                return AppResult::fail(
-                    ErrorCode::InternalError,
-                    format!("Failed to clear reset file: {}", err),
-                    None,
-                );
+    // Only clear the *active* account — never wipe other accounts' data.
+    let mut identity_state = match auth_identity::read_state() {
+        Ok(s) => s,
+        Err(err) => {
+            tracing::error!(error = %err, "onboarding_reset: failed to read identity state");
+            return AppResult::fail(ErrorCode::InternalError, err, None);
+        }
+    };
+
+    let active_id = match &identity_state.active_account_id {
+        Some(id) => id.clone(),
+        None => {
+            // No active account — nothing to reset.
+            return success_payload("onboarding_reset", json!({ "ok": true }));
+        }
+    };
+
+    // Extract the provider portion from account id ("{provider}:{provider_user_id}")
+    let active_provider = active_id.split(':').next().unwrap_or("").to_string();
+
+    // Remove only the active account from identities; keep all others intact.
+    identity_state.accounts.retain(|a| a.id != active_id);
+    identity_state.active_account_id = None;
+    if let Err(err) = auth_identity::write_state(&identity_state) {
+        tracing::error!(error = %err, "onboarding_reset: failed to write identity state");
+        return AppResult::fail(ErrorCode::InternalError, err, None);
+    }
+
+    // Remove only the matching provider entry from OAuth connections.
+    if !active_provider.is_empty() {
+        let conn_path = storage::app_file_path(
+            "desktop",
+            StorageKind::Data,
+            &["oauth2", "connections.json"],
+        );
+        if let Ok(path) = conn_path {
+            if path.exists() {
+                if let Ok(text) = fs::read_to_string(&path) {
+                    if let Ok(mut map) =
+                        serde_json::from_str::<std::collections::HashMap<String, serde_json::Value>>(&text)
+                    {
+                        map.remove(&active_provider);
+                        if let Ok(json) = serde_json::to_string_pretty(&map) {
+                            let _ = storage::write_string_atomic(&path, &json);
+                        }
+                    }
+                }
             }
         }
     }
+
     success_payload("onboarding_reset", json!({ "ok": true }))
 }
 
