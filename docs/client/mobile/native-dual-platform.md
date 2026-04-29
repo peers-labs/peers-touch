@@ -29,10 +29,6 @@ Peers Touch Mobile 的主线是：
 - Mobile 不存在 Desktop 那种 `desktop-web -> desktop-rust -> station` 的多运行时链路，UI 与业务逻辑同进程。
 - Applet 在 Mobile 端通过原生 `LynxView` 承载，Bridge 与生命周期都更适合由原生宿主管理。
 
-### 2.2 已废弃路径
-
-`apps/mobile/flutter/` 只保留历史痕迹，不是当前实现路径，也不是未来扩展方向。
-
 ---
 
 ## 3. 系统关系

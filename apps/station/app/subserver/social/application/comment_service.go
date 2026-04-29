@@ -3,154 +3,192 @@ package application
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"time"
 
-	"github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
+	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
-	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
-	"google.golang.org/protobuf/types/known/timestamppb"
-	"gorm.io/gorm"
 )
 
+// CommentService handles comments on Moments. v1 supports at most one
+// level of reply nesting (`parent_comment_id` may be set to a top-level
+// comment, but the parent's parent_comment_id MUST be nil — enforced
+// here, not in the DB).
+//
+// Visibility: a comment is visible iff its parent post is visible to
+// the viewer (architecture invariant 9). This service therefore relies
+// on MomentService.GetMoment to gate the parent post lookup before
+// any comment can be created or read.
 type CommentService struct {
-	db *gorm.DB
+	repos   *infrastructure.Repos
+	moments *MomentService
+	conv    *domain.PostConverter
 }
 
-func NewCommentService(db *gorm.DB) *CommentService {
-	return &CommentService{db: db}
+func NewCommentService(repos *infrastructure.Repos, moments *MomentService) *CommentService {
+	return &CommentService{repos: repos, moments: moments, conv: domain.NewPostConverter()}
 }
 
-func (s *CommentService) GetPostComments(ctx context.Context, postID uint64, limit int) (*model.GetCommentsResponse, error) {
-	var comments []db.Comment
+// CreateComment validates the parent post exists + is readable + is
+// not deleted, then validates the optional reply target (must be a
+// top-level comment on the same post). Returns the created comment
+// hydrated with author info.
+func (s *CommentService) CreateComment(ctx context.Context, req *model.CreateCommentRequest, parentPostID, authorID uint64) (*model.Comment, error) {
+	if req == nil {
+		return nil, fmt.Errorf("CreateCommentRequest is nil")
+	}
+	if authorID == 0 {
+		return nil, fmt.Errorf("authentication required")
+	}
+	if req.Content == "" {
+		return nil, fmt.Errorf("content is required")
+	}
 
-	err := s.db.Where("post_id = ? AND deleted_at IS NULL", postID).
-		Order("created_at DESC").
-		Limit(limit).
-		Find(&comments).Error
-
+	parent, err := s.moments.GetMoment(ctx, fmt.Sprintf("%d", parentPostID), authorID)
 	if err != nil {
-		logger.Error(ctx, "Failed to get comments", "error", err, "postID", postID)
-		return nil, err
+		return nil, fmt.Errorf("lookup parent post: %w", err)
+	}
+	if parent == nil {
+		return nil, fmt.Errorf("parent post %d not found or not readable", parentPostID)
+	}
+	if parent.IsDeleted {
+		return nil, fmt.Errorf("parent post %d is deleted", parentPostID)
 	}
 
-	protoComments := make([]*model.Comment, 0, len(comments))
-	for i := range comments {
-		protoComment, err := s.convertDBCommentToProto(ctx, &comments[i])
-		if err != nil {
-			logger.Warn(ctx, "Failed to convert comment", "error", err, "commentID", comments[i].ID)
-			continue
-		}
-		protoComments = append(protoComments, protoComment)
-	}
-
-	return &model.GetCommentsResponse{
-		Comments: protoComments,
-		HasMore:  false,
-	}, nil
-}
-
-func (s *CommentService) CreateComment(ctx context.Context, req *model.CreateCommentRequest, postID uint64, authorID uint64) (*model.Comment, error) {
-	now := time.Now()
-
-	dbComment := &db.Comment{
-		ID:        domain.Next(),
-		PostID:    postID,
-		AuthorID:  authorID,
-		Content:   req.Content,
-		CreatedAt: now,
-		UpdatedAt: now,
+	// PostClass is derived from the parent's audience — the parent we
+	// just loaded passed the visibility check, so its audience kind is
+	// authoritative. PUBLIC → public class, anything else → private
+	// class. This avoids an extra repo round-trip and the
+	// "viewerID=0 filter strips SELF posts" trap that a naive
+	// classifyPost lookup would hit.
+	postClass := domain.PostClassPrivate
+	if parent.Audience == nil || parent.Audience.Kind == model.Audience_PUBLIC {
+		postClass = domain.PostClassPublic
 	}
 
 	if req.ReplyToCommentId != "" {
-		replyToID, err := strconv.ParseUint(req.ReplyToCommentId, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("invalid reply_to_comment_id: %w", err)
+		parentCommentID := domain.ParseID(req.ReplyToCommentId)
+		if parentCommentID == 0 {
+			return nil, fmt.Errorf("invalid reply_to_comment_id %q", req.ReplyToCommentId)
 		}
-		dbComment.ReplyToCommentID = &replyToID
+		parentComment, err := s.repos.Comments.GetByID(ctx, parentCommentID)
+		if err != nil {
+			return nil, err
+		}
+		if parentComment == nil {
+			return nil, fmt.Errorf("parent comment %d not found", parentCommentID)
+		}
+		if parentComment.PostID != parentPostID {
+			return nil, fmt.Errorf("parent comment belongs to a different post")
+		}
+		if !parentComment.IsTopLevel() {
+			return nil, fmt.Errorf("can only reply to a top-level comment (one-level nesting in v1)")
+		}
 	}
 
-	err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(dbComment).Error; err != nil {
-			return err
-		}
-
-		return tx.Model(&db.Post{}).
-			Where("id = ?", postID).
-			UpdateColumn("comments_count", gorm.Expr("comments_count + 1")).
-			Error
-	})
-
+	d, err := s.conv.CreateCommentRequestToDomain(req, authorID, parentPostID, postClass)
 	if err != nil {
-		logger.Error(ctx, "Failed to create comment", "error", err)
 		return nil, err
 	}
+	if err := s.repos.Comments.Create(ctx, d); err != nil {
+		return nil, fmt.Errorf("create comment: %w", err)
+	}
 
-	return s.convertDBCommentToProto(ctx, dbComment)
+	if _, err := s.bumpCommentsCount(ctx, parentPostID, postClass, +1); err != nil {
+		logger.Warn(ctx, "comment.create: comments_count bump failed", "post_id", parentPostID, "error", err)
+	}
+
+	out := s.conv.CommentToProto(d)
+	if a, err := actor.GetActorByID(ctx, authorID); err == nil && a != nil {
+		out.Author = &model.PostAuthor{
+			Id:          fmt.Sprintf("%d", a.ID),
+			Username:    a.PreferredUsername,
+			DisplayName: a.Name,
+			AvatarUrl:   a.Icon,
+		}
+	}
+
+	logger.Info(ctx, "comment.created", "post_id", parentPostID, "comment_id", d.ID, "author_id", authorID)
+	return out, nil
 }
 
-func (s *CommentService) DeleteComment(ctx context.Context, commentID uint64, userID uint64) error {
-	var comment db.Comment
-	err := s.db.Where("id = ? AND author_id = ?", commentID, userID).
-		First(&comment).Error
+// DeleteComment soft-deletes by author. No-op if the caller isn't the
+// author.
+func (s *CommentService) DeleteComment(ctx context.Context, commentID, authorID uint64) error {
+	if authorID == 0 {
+		return fmt.Errorf("authentication required")
+	}
 
+	c, err := s.repos.Comments.GetByID(ctx, commentID)
 	if err != nil {
 		return err
 	}
-
-	postID := comment.PostID
-
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		now := time.Now()
-		if err := tx.Model(&db.Comment{}).
-			Where("id = ?", commentID).
-			Update("deleted_at", now).Error; err != nil {
-			return err
-		}
-
-		return tx.Model(&db.Post{}).
-			Where("id = ?", postID).
-			UpdateColumn("comments_count", gorm.Expr("comments_count - 1")).
-			Error
-	})
-
-	if err != nil {
-		logger.Error(ctx, "Failed to delete comment", "error", err)
-		return err
+	if c == nil {
+		return nil
 	}
 
+	if err := s.repos.Comments.Delete(ctx, commentID, authorID); err != nil {
+		return err
+	}
+	if _, err := s.bumpCommentsCount(ctx, c.PostID, c.PostClass, -1); err != nil {
+		logger.Warn(ctx, "comment.delete: comments_count decrement failed", "post_id", c.PostID, "error", err)
+	}
+	logger.Info(ctx, "comment.deleted", "comment_id", commentID, "author_id", authorID)
 	return nil
 }
 
-func (s *CommentService) convertDBCommentToProto(ctx context.Context, dbComment *db.Comment) (*model.Comment, error) {
-	var author db.Actor
-	if err := s.db.Where("id = ?", dbComment.AuthorID).First(&author).Error; err != nil {
+// ListByPost returns one page of comments for a parent post. Visibility
+// is gated by the upstream parent-post check; this service trusts the
+// caller to have validated readability before invoking.
+func (s *CommentService) ListByPost(ctx context.Context, parentPostID uint64, cursor string, limit int) (*model.GetCommentsResponse, error) {
+	c, err := domain.DecodeCursor(cursor)
+	if err != nil {
+		return nil, fmt.Errorf("invalid cursor: %w", err)
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	rows, err := s.repos.Comments.ListByPost(ctx, parentPostID, c, limit+1)
+	if err != nil {
 		return nil, err
 	}
-
-	replyToCommentID := ""
-	if dbComment.ReplyToCommentID != nil {
-		replyToCommentID = strconv.FormatUint(*dbComment.ReplyToCommentID, 10)
+	hasMore := len(rows) > limit
+	if hasMore {
+		rows = rows[:limit]
 	}
-
-	return &model.Comment{
-		Id:        strconv.FormatUint(dbComment.ID, 10),
-		PostId:    strconv.FormatUint(dbComment.PostID, 10),
-		AuthorId:  strconv.FormatUint(dbComment.AuthorID, 10),
-		Content:   dbComment.Content,
-		CreatedAt: timestamppb.New(dbComment.CreatedAt),
-		UpdatedAt: timestamppb.New(dbComment.UpdatedAt),
-		IsDeleted: dbComment.DeletedAt != nil,
-		Author: &model.PostAuthor{
-			Id:          strconv.FormatUint(author.ID, 10),
-			Username:    author.PreferredUsername,
-			DisplayName: author.Name,
-			AvatarUrl:   author.Icon,
-		},
-		LikesCount:       dbComment.LikesCount,
-		IsLiked:          false,
-		ReplyToCommentId: replyToCommentID,
-		RepliesCount:     dbComment.RepliesCount,
+	comments := make([]*model.Comment, 0, len(rows))
+	for _, row := range rows {
+		out := s.conv.CommentToProto(row)
+		if a, err := actor.GetActorByID(ctx, row.AuthorID); err == nil && a != nil {
+			out.Author = &model.PostAuthor{
+				Id:          fmt.Sprintf("%d", a.ID),
+				Username:    a.PreferredUsername,
+				DisplayName: a.Name,
+				AvatarUrl:   a.Icon,
+			}
+		}
+		comments = append(comments, out)
+	}
+	var nextCursor string
+	if hasMore && len(rows) > 0 {
+		last := rows[len(rows)-1]
+		nextCursor = domain.Cursor{LastID: last.ID, CreatedAt: last.CreatedAt}.Encode()
+	}
+	return &model.GetCommentsResponse{
+		Comments:   comments,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
 	}, nil
+}
+
+func (s *CommentService) bumpCommentsCount(ctx context.Context, postID uint64, class domain.PostClass, delta int64) (int64, error) {
+	switch class {
+	case domain.PostClassPublic:
+		return s.repos.PublicPosts.UpdateCommentsCount(ctx, postID, delta)
+	case domain.PostClassPrivate:
+		return s.repos.PrivatePosts.UpdateCommentsCount(ctx, postID, delta)
+	default:
+		return 0, fmt.Errorf("unknown post class %q", class)
+	}
 }
