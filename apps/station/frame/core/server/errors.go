@@ -62,6 +62,13 @@ func NotFound(message string) *HandlerError {
 	return NewHandlerError(http.StatusNotFound, message)
 }
 
+// Conflict represents HTTP 409 — used by the dashboard OSS bucket
+// mutate endpoints when a (owner, name) collision or a non-empty
+// bucket would invalidate the operation.
+func Conflict(message string) *HandlerError {
+	return NewHandlerError(http.StatusConflict, message)
+}
+
 func InternalError(message string) *HandlerError {
 	return NewHandlerError(http.StatusInternalServerError, message)
 }
