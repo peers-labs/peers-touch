@@ -5,6 +5,7 @@ import (
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/config"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
@@ -132,7 +133,11 @@ func init() {
 			&ossmodel.Bucket{},
 			&ossmodel.FileMeta{},
 			&ossmodel.Meta{},
-			&ossmodel.PeerKey{},
+			// Framework auth/federation tables ride along while
+			// OSS is the only consumer; a future framework Init
+			// will own them outright.
+			&federation.AuthLocalKeyRow{},
+			&federation.PeerKeyRow{},
 		)
 	})
 	plugin.SubserverPlugins["oss"] = &ossPlugin{}

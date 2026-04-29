@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
@@ -13,6 +14,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/oss/service"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oss/worker"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth/scope"
 	"github.com/peers-labs/peers-touch/station/frame/core/facility/appdir"
 	"github.com/peers-labs/peers-touch/station/frame/core/facility/storage"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -20,6 +23,42 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
+
+// FederationScopeName is the issuance scope OSS registers with
+// the framework auth scope registry. The dashboard's federation
+// surface and any inbound verifier reference this same constant
+// so a typo on either side trips at compile time.
+const FederationScopeName = "oss-federation-pull"
+
+// FederationOSSKeyClaim is the only custom claim OSS attaches to
+// outbound peer tokens. The framework's scope policy enforces
+// that no other custom keys can sneak in.
+const FederationOSSKeyClaim = "oss_key"
+
+// federationMaxTTL caps the lifetime of any OSS federation token.
+// 60s keeps replay windows tiny while comfortably covering a slow
+// federated GET.
+const federationMaxTTL = 60 * time.Second
+
+// ossScopeOnce guards scope registration so re-entered Init calls
+// (test harnesses share the global registry) do not double-register.
+var ossScopeOnce sync.Once
+
+// registerFederationScope is the single registration site for the
+// OSS scope. Encapsulated so tests that reset the scope registry
+// (`scope.ResetForTest`) can re-register on demand by re-doing
+// the once-Do gate.
+func registerFederationScope() {
+	scope.MustRegister(scope.Scope{
+		Name:        FederationScopeName,
+		Description: "outbound OSS peer JWT (per-object federated GET)",
+		Policy: scope.Policy{
+			TTLMax:           federationMaxTTL,
+			AudienceRequired: true,
+			AllowedClaimKeys: []string{FederationOSSKeyClaim},
+		},
+	})
+}
 
 // defaultMaxFileSize is the per-file upload cap when the operator does not
 // override `Options.MaxFileSize`. 32 MiB matches the multipart parser's
@@ -82,15 +121,17 @@ type ossSubServer struct {
 	auditRepo    repo.AuditRepository
 	blobRepo     repo.BlobRepository
 	metaRepo     repo.MetaRepository
-	peerKeyRepo  repo.PeerKeyRepository
 	chatResolver ChatSessionResolver
 
-	// fedKeys holds the Ed25519 keypair this station signs
-	// federation tokens with. Lazily loaded from oss_meta on the
-	// first Mint call — keeping this off the boot path means a
-	// station that never federates never generates a key it does
-	// not need.
-	fedKeys *federationKeyCache
+	// fedCache wraps the framework KeyStore and produces the
+	// LocalKey that Mint signs with. Lazy: a station that never
+	// federates never generates a keypair it does not need.
+	fedCache *federation.KeyCache
+
+	// peerKeys is the framework's TOFU/pin store for inbound
+	// peer public keys. Replaces the legacy
+	// `repo.PeerKeyRepository` half that lived inside OSS.
+	peerKeys federation.PeerKeyStore
 
 	// localStationID is what we stamp into outbound federation
 	// tokens as `iss`, and what we expect inbound tokens to claim
@@ -249,8 +290,12 @@ func NewOSSSubServer(opts ...option.Option) server.Subserver {
 	s.auditRepo = repo.NewAuditRepository(s.dbName)
 	s.blobRepo = repo.NewBlobRepository(s.dbName)
 	s.metaRepo = repo.NewMetaRepository(s.dbName)
-	s.peerKeyRepo = repo.NewPeerKeyRepository(s.dbName)
-	s.fedKeys = newFederationKeyCache(s.peerKeyRepo)
+	// Federation key + peer-key persistence both moved to
+	// `frame/core/auth/federation` as part of the
+	// auth-unification refactor. The OSS subserver only owns
+	// the *cache* + the per-call business glue.
+	s.peerKeys = federation.NewPeerKeyStoreGORM(s.dbName)
+	s.fedCache = federation.NewKeyCache(federation.NewKeyStoreGORM(s.dbName))
 	s.localStationID = strings.TrimSpace(o.LocalStationID)
 	s.fileService = service.NewFileService(service.Config{
 		Files:         s.fileRepo,
@@ -423,6 +468,11 @@ var ErrUnsupportedBackend = errors.New("oss: backend does not support requested 
 
 func (s *ossSubServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.status = server.StatusStarting
+	// Idempotent: scope.MustRegister panics on duplicate, so we
+	// wrap in once.Do for test re-entry. The federation scope
+	// must be registered before any inbound request arrives —
+	// install-time validation in wrapper code panics otherwise.
+	ossScopeOnce.Do(registerFederationScope)
 	if s.dbName != "" {
 		if rds, err := store.GetRDS(ctx, store.WithRDSDBName(s.dbName)); err == nil {
 			// Defensive AutoMigrate. The authoritative migration
@@ -430,13 +480,18 @@ func (s *ossSubServer) Init(ctx context.Context, opts ...option.Option) error {
 			// schema sentinel and seeds capability_version);
 			// re-running it here keeps Init self-contained when
 			// the InitTableHooks pre-pass missed a model.
+			//
+			// The framework `auth/federation` tables ride along
+			// here for now because OSS is the only consumer; a
+			// future framework-level Init will move them out.
 			_ = rds.AutoMigrate(
 				&ossmodel.Audit{},
 				&ossmodel.Blob{},
 				&ossmodel.Bucket{},
 				&ossmodel.FileMeta{},
 				&ossmodel.Meta{},
-				&ossmodel.PeerKey{},
+				&federation.AuthLocalKeyRow{},
+				&federation.PeerKeyRow{},
 			)
 			// Bootstrap stamps the schema version sentinel and
 			// seeds `capability_version`. Idempotent — repeat
@@ -549,9 +604,9 @@ func (s *ossSubServer) startWorkers(ctx context.Context) error {
 		workers = append(workers, rec)
 	}
 
-	if s.workerPeerKeyTrimInterval > 0 && s.peerKeyRepo != nil {
+	if s.workerPeerKeyTrimInterval > 0 && s.peerKeys != nil {
 		pkt, err := worker.NewPeerKeyTrim(worker.PeerKeyTrimConfig{
-			Peers:    s.peerKeyRepo,
+			Peers:    s.peerKeys,
 			Audit:    s.auditRepo,
 			MaxIdle:  s.peerKeyMaxIdle,
 			Interval: s.workerPeerKeyTrimInterval,
@@ -562,9 +617,9 @@ func (s *ossSubServer) startWorkers(ctx context.Context) error {
 		workers = append(workers, pkt)
 	}
 
-	if s.workerKeyRotationInterval > 0 && s.metaRepo != nil {
+	if s.workerKeyRotationInterval > 0 && s.fedCache != nil {
 		krf, err := worker.NewKeyRotationFinalizer(worker.KeyRotationFinalizerConfig{
-			Meta:     s.metaRepo,
+			Keys:     s.fedCache.Store(),
 			Audit:    s.auditRepo,
 			Grace:    s.federationRotationGrace,
 			Interval: s.workerKeyRotationInterval,

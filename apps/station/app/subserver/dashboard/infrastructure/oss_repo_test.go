@@ -13,6 +13,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -28,7 +29,8 @@ func newOSSTestDB(t *testing.T) *gorm.DB {
 		&ossmodel.Bucket{},
 		&ossmodel.Audit{},
 		&ossmodel.Meta{},
-		&ossmodel.PeerKey{},
+		&federation.AuthLocalKeyRow{},
+		&federation.PeerKeyRow{},
 	); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
@@ -249,28 +251,30 @@ func TestOSSRepository_FederationLocalAndPeers(t *testing.T) {
 		t.Errorf("empty federation should be ungenerated: %+v", got)
 	}
 
-	if err := db.Create(&ossmodel.Meta{Key: ossmodel.MetaKeyFederationPubKey, Value: "PEM"}).Error; err != nil {
-		t.Fatalf("seed pub: %v", err)
+	now := time.Now().UTC()
+	mintedKey, err := federation.MintLocalKey(now)
+	if err != nil {
+		t.Fatalf("mint local key: %v", err)
 	}
-	if err := db.Create(&ossmodel.Meta{Key: ossmodel.MetaKeyFederationKID, Value: "kid-1"}).Error; err != nil {
-		t.Fatalf("seed kid: %v", err)
+	if err := db.Create(&federation.AuthLocalKeyRow{
+		Slot: federation.SlotCurrent, Kid: mintedKey.Kid,
+		PrivPEM: mintedKey.PrivPEM, PubPEM: mintedKey.PubPEM,
+		GeneratedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed local key: %v", err)
 	}
 
 	got, err = repo.GetFederationLocal(context.Background())
 	if err != nil {
 		t.Fatalf("GetFederationLocal seeded: %v", err)
 	}
-	if !got.Generated || got.PublicKeyPEM != "PEM" || got.KID != "kid-1" {
+	if !got.Generated || got.PublicKeyPEM != mintedKey.PubPEM || got.KID != mintedKey.Kid {
 		t.Errorf("seeded federation: %+v", got)
 	}
 
-	now := time.Now().UTC()
-	if err := db.Create(&ossmodel.PeerKey{
-		PeerStationID: "peer-1",
-		KID:           "kid-x",
-		PublicKeyPEM:  "PEER-PEM",
-		FirstSeenAt:   now.Add(-time.Hour),
-		LastSeenAt:    now,
+	if err := db.Create(&federation.PeerKeyRow{
+		StationID: "peer-1", Kid: "kid-x", PubPEM: "PEER-PEM",
+		FirstSeenAt: now.Add(-time.Hour), LastSeenAt: now,
 	}).Error; err != nil {
 		t.Fatalf("seed peer: %v", err)
 	}
@@ -628,21 +632,21 @@ func TestOSSRepository_RecordOSSAudit_AppendsRow(t *testing.T) {
 // S13: federation rotate-local-key
 // ---------------------------------------------------------------------------
 
-// readMetaForTest is a tiny helper that pokes oss_meta directly to
-// confirm the rotation wrote the correct slots. We do not import
-// the OSS subserver's MetaRepository here because the dashboard
-// repo deliberately does not depend on it; the on-disk shape is
-// the contract.
-func readMetaForTest(t *testing.T, db *gorm.DB, key string) string {
+// readSlotForTest is a tiny helper that pokes the framework's
+// `auth_local_keys` table directly to confirm a rotation wrote
+// the expected slot. The on-disk shape is the contract — we do
+// not go through the framework's KeyStore so this test sees the
+// truth even if the iface ever changes.
+func readSlotForTest(t *testing.T, db *gorm.DB, slot string) federation.AuthLocalKeyRow {
 	t.Helper()
-	var row ossmodel.Meta
-	if err := db.Where("key = ?", key).Take(&row).Error; err != nil {
+	var row federation.AuthLocalKeyRow
+	if err := db.Where("slot = ?", slot).Take(&row).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return ""
+			return federation.AuthLocalKeyRow{}
 		}
-		t.Fatalf("read meta %q: %v", key, err)
+		t.Fatalf("read slot %q: %v", slot, err)
 	}
-	return row.Value
+	return row
 }
 
 func TestOSSRepository_RotateFederationLocalKey_FirstRotationGreenfield(t *testing.T) {
@@ -667,24 +671,16 @@ func TestOSSRepository_RotateFederationLocalKey_FirstRotationGreenfield(t *testi
 		t.Errorf("capability_version must be bumped on rotation")
 	}
 
-	// On disk: priv/pub/kid populated, no `_prev` slots, rotated_at present.
-	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationKID); got != resp.NewKID {
-		t.Errorf("MetaKeyFederationKID: got %q want %q", got, resp.NewKID)
+	cur := readSlotForTest(t, db, federation.SlotCurrent)
+	if cur.Kid != resp.NewKID {
+		t.Errorf("current slot kid: got %q want %q", cur.Kid, resp.NewKID)
 	}
-	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationPrivKey); got == "" {
-		t.Errorf("MetaKeyFederationPrivKey must be populated")
+	if cur.PrivPEM == "" || cur.PubPEM == "" {
+		t.Errorf("current slot must carry priv+pub PEM; got %+v", cur)
 	}
-	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationPubKey); got == "" {
-		t.Errorf("MetaKeyFederationPubKey must be populated")
-	}
-	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationPrivKeyPrev); got != "" {
-		t.Errorf("first rotation must not write _prev priv: %q", got)
-	}
-	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationKIDPrev); got != "" {
-		t.Errorf("first rotation must not write _prev kid: %q", got)
-	}
-	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationRotatedAt); got == "" {
-		t.Errorf("MetaKeyFederationRotatedAt must be stamped")
+	prev := readSlotForTest(t, db, federation.SlotPrev)
+	if prev.Kid != "" {
+		t.Errorf("greenfield rotation must not write prev slot: %+v", prev)
 	}
 }
 
@@ -693,18 +689,16 @@ func TestOSSRepository_RotateFederationLocalKey_DemotesPrevious(t *testing.T) {
 	repo := NewOSSRepository(db)
 	ctx := context.Background()
 
-	// First rotation establishes a baseline keypair to demote.
 	first, err := repo.RotateFederationLocalKey(ctx)
 	if err != nil {
 		t.Fatalf("seed rotation: %v", err)
 	}
-	firstPriv := readMetaForTest(t, db, ossmodel.MetaKeyFederationPrivKey)
+	firstCur := readSlotForTest(t, db, federation.SlotCurrent)
+	firstPriv := firstCur.PrivPEM
 	if firstPriv == "" {
 		t.Fatalf("seed priv missing")
 	}
 
-	// Second rotation must surface the previous kid and copy the
-	// outgoing priv into the `_prev` slot.
 	second, err := repo.RotateFederationLocalKey(ctx)
 	if err != nil {
 		t.Fatalf("rotate again: %v", err)
@@ -716,18 +710,19 @@ func TestOSSRepository_RotateFederationLocalKey_DemotesPrevious(t *testing.T) {
 		t.Errorf("rotation should produce a new kid; got identical %q", second.NewKID)
 	}
 
-	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationKIDPrev); got != first.NewKID {
-		t.Errorf("MetaKeyFederationKIDPrev: got %q want %q", got, first.NewKID)
+	prev := readSlotForTest(t, db, federation.SlotPrev)
+	if prev.Kid != first.NewKID {
+		t.Errorf("prev slot kid: got %q want %q", prev.Kid, first.NewKID)
 	}
-	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationPrivKeyPrev); got != firstPriv {
-		t.Errorf("MetaKeyFederationPrivKeyPrev: should hold the demoted priv, got mismatch")
+	if prev.PrivPEM != firstPriv {
+		t.Errorf("prev slot priv: should hold the demoted priv, got mismatch")
 	}
 
-	// The canonical slots must reflect the new key.
-	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationKID); got != second.NewKID {
-		t.Errorf("canonical KID after rotate: got %q want %q", got, second.NewKID)
+	cur := readSlotForTest(t, db, federation.SlotCurrent)
+	if cur.Kid != second.NewKID {
+		t.Errorf("canonical KID after rotate: got %q want %q", cur.Kid, second.NewKID)
 	}
-	if got := readMetaForTest(t, db, ossmodel.MetaKeyFederationPrivKey); got == firstPriv {
+	if cur.PrivPEM == firstPriv {
 		t.Errorf("canonical priv was not rotated")
 	}
 }
@@ -742,8 +737,8 @@ func TestOSSRepository_ForgetPeer_DropsRowAndIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now().UTC()
-	if err := db.Create(&ossmodel.PeerKey{
-		PeerStationID: "peer-1", KID: "kid-1", PublicKeyPEM: "PEM",
+	if err := db.Create(&federation.PeerKeyRow{
+		StationID: "peer-1", Kid: "kid-1", PubPEM: "PEM",
 		FirstSeenAt: now, LastSeenAt: now, Pinned: true,
 	}).Error; err != nil {
 		t.Fatalf("seed peer: %v", err)
@@ -885,8 +880,11 @@ func TestOSSRepository_RotateFederationLocalKey_BumpsCapabilityVersion(t *testin
 		t.Errorf("capability_version must change on rotation: %q", resp.CapabilityVersion)
 	}
 
-	got := readMetaForTest(t, db, metaKeyCapVersion)
-	if got != resp.CapabilityVersion {
-		t.Errorf("capability_version on disk: got %q want %q", got, resp.CapabilityVersion)
+	var row ossmodel.Meta
+	if err := db.Where("key = ?", metaKeyCapVersion).Take(&row).Error; err != nil {
+		t.Fatalf("read capability_version: %v", err)
+	}
+	if row.Value != resp.CapabilityVersion {
+		t.Errorf("capability_version on disk: got %q want %q", row.Value, resp.CapabilityVersion)
 	}
 }

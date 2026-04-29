@@ -153,6 +153,14 @@ func (c *KeyCache) loadOrGenerate(ctx context.Context) (*LocalKey, error) {
 	return fresh, nil
 }
 
+// Store returns the underlying KeyStore. Exposed so background
+// workers (rotation finalizer, audit / dashboard surfaces) can
+// reach the persistence boundary without each caller re-wiring a
+// second store handle.
+func (c *KeyCache) Store() KeyStore {
+	return c.store
+}
+
 // ResetForTest clears the cache's once-state so a subsequent
 // Get() reruns load-or-generate. Production code MUST NOT call
 // this; the ugly name is intentional. Tests use it between

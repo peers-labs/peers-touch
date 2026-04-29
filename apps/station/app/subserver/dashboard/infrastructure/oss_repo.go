@@ -1,6 +1,8 @@
 // Package infrastructure — OSSRepository surfaces read-only views of
 // the OSS subserver's tables (oss_buckets, oss_files, oss_audit,
-// oss_peer_keys, oss_meta) for the dashboard `/oss/*` endpoints.
+// oss_meta) and the framework's federation tables
+// (`auth_local_keys`, `auth_peer_keys`) for the dashboard
+// `/oss/*` endpoints.
 //
 // Why a dashboard-owned repo (rather than importing oss/db/repo)?
 //   - Strict layering: the dashboard is a *presentation* layer; it
@@ -8,19 +10,15 @@
 //   - The dashboard projects fewer columns than the OSS service
 //     does (no Path, no Sha256 in list views) — sharing the OSS
 //     repo would push those projection rules into the wrong package.
-//   - Pin/unpin actions on peer keys are operator-driven trust
-//     decisions; they belong here next to the dashboard's audit
-//     table writes, not next to the OSS upload/download paths.
+//   - Federation key + peer-key management lives in
+//     `frame/core/auth/federation` so multiple subservers can share
+//     the same keypair / TOFU cache. The dashboard talks to that
+//     layer through the framework's KeyStore / PeerKeyStore
+//     interfaces; OSS-specific tables stay local to this file.
 package infrastructure
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
-	"crypto/sha256"
-	"crypto/x509"
-	"encoding/base32"
-	"encoding/pem"
 	"errors"
 	mathrand "math/rand"
 	"sort"
@@ -32,26 +30,17 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 )
 
 // Table names are intentionally hardcoded (matching ossmodel.TableName())
 // so this repo does not import the OSS subserver model package and we
 // do not couple dashboard build to OSS schema refactors.
 const (
-	tblOSSBuckets  = "oss_buckets"
-	tblOSSFiles    = "oss_files"
-	tblOSSAudit    = "oss_audit"
-	tblOSSPeerKeys = "oss_peer_keys"
-	tblOSSMeta     = "oss_meta"
-)
-
-const (
-	metaKeyFedPriv      = "federation_priv_pem"
-	metaKeyFedPub       = "federation_pub_pem"
-	metaKeyFedKID       = "federation_kid"
-	metaKeyFedPrivPrev  = "federation_priv_pem_prev"
-	metaKeyFedKIDPrev   = "federation_kid_prev"
-	metaKeyFedRotatedAt = "federation_rotated_at"
+	tblOSSBuckets = "oss_buckets"
+	tblOSSFiles   = "oss_files"
+	tblOSSAudit   = "oss_audit"
+	tblOSSMeta    = "oss_meta"
 )
 
 // OSSRepository is the dashboard-side view of the OSS subsystem.
@@ -299,13 +288,27 @@ type OSSAuditAppend struct {
 
 type ossRepository struct {
 	db *gorm.DB
+
+	// Federation surfaces are reached through the framework's
+	// auth/federation package. Storing them as fields lets tests
+	// inject in-memory variants without touching the GORM handle
+	// (and lets a future split move these into a dedicated
+	// FederationRepository without churning every caller).
+	keyStore  federation.KeyStore
+	peerStore federation.PeerKeyStore
 }
 
 // NewOSSRepository returns an OSSRepository bound to the shared
 // *gorm.DB handle the dashboard already owns. No separate
-// connection pool is created.
+// connection pool is created. The federation key + peer stores
+// are derived from the same handle so a dashboard restart sees
+// the same canonical state OSS does.
 func NewOSSRepository(db *gorm.DB) OSSRepository {
-	return &ossRepository{db: db}
+	return &ossRepository{
+		db:        db,
+		keyStore:  federation.NewKeyStoreGORMWithDB(db),
+		peerStore: federation.NewPeerKeyStoreGORMWithDB(db),
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -578,58 +581,71 @@ func (r *ossRepository) Usage(ctx context.Context) (*domain.OSSUsageSummary, err
 
 func (r *ossRepository) GetFederationLocal(ctx context.Context) (*domain.OSSFederationLocalKey, error) {
 	out := &domain.OSSFederationLocalKey{}
-	if r.db == nil || !r.db.Migrator().HasTable(tblOSSMeta) {
+	if r.keyStore == nil {
 		return out, nil
 	}
-	type kv struct{ Value string }
-	var pubRow kv
-	if err := r.db.WithContext(ctx).Table(tblOSSMeta).
-		Select("value").
-		Where("key = ?", metaKeyFedPub).
-		Scan(&pubRow).Error; err != nil {
+	key, err := r.keyStore.Load(ctx, federation.SlotCurrent)
+	if err != nil {
+		if errors.Is(err, federation.ErrNoLocalKey) {
+			return out, nil
+		}
 		return nil, err
 	}
-	var kidRow kv
-	if err := r.db.WithContext(ctx).Table(tblOSSMeta).
-		Select("value").
-		Where("key = ?", metaKeyFedKID).
-		Scan(&kidRow).Error; err != nil {
-		return nil, err
-	}
-	out.PublicKeyPEM = pubRow.Value
-	out.KID = kidRow.Value
-	out.Generated = pubRow.Value != "" && kidRow.Value != ""
+	out.KID = key.Kid
+	out.PublicKeyPEM = key.PubPEM
+	out.Generated = key.PubPEM != "" && key.Kid != ""
 	return out, nil
 }
 
 func (r *ossRepository) ListFederationPeers(ctx context.Context) ([]domain.OSSFederationPeer, error) {
-	if r.db == nil || !r.db.Migrator().HasTable(tblOSSPeerKeys) {
+	if r.peerStore == nil {
 		return nil, nil
 	}
-	var rows []domain.OSSFederationPeer
-	err := r.db.WithContext(ctx).Table(tblOSSPeerKeys).
-		Order("last_seen_at DESC").
-		Find(&rows).Error
-	return rows, err
+	rows, err := r.peerStore.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.OSSFederationPeer, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, domain.OSSFederationPeer{
+			PeerStationID: row.StationID,
+			KID:           row.Kid,
+			PublicKeyPEM:  row.PubPEM,
+			FirstSeenAt:   row.FirstSeenAt,
+			LastSeenAt:    row.LastSeenAt,
+			Pinned:        row.Pinned,
+		})
+	}
+	// `LastSeenAt DESC` is the order callers expect — the
+	// framework store returns alphabetical, so we rotate here.
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].LastSeenAt.After(out[j].LastSeenAt)
+	})
+	return out, nil
 }
 
 func (r *ossRepository) SetPeerPin(ctx context.Context, peerStationID string, pinned bool) error {
-	if r.db == nil || peerStationID == "" {
+	if r.peerStore == nil || peerStationID == "" {
 		return ErrPeerNotFound
 	}
-	if !r.db.Migrator().HasTable(tblOSSPeerKeys) {
+	if pinned {
+		err := r.peerStore.Pin(ctx, peerStationID, "", time.Now())
+		if errors.Is(err, federation.ErrUnknownPeer) {
+			return ErrPeerNotFound
+		}
+		return err
+	}
+	// Unpin requires the row to exist, but the framework's
+	// Unpin is silently idempotent. Probe once so the dashboard
+	// gets the same "peer unknown" surface for both branches.
+	row, err := r.peerStore.Get(ctx, peerStationID)
+	if err != nil {
+		return err
+	}
+	if row == nil {
 		return ErrPeerNotFound
 	}
-	res := r.db.WithContext(ctx).Table(tblOSSPeerKeys).
-		Where("peer_station_id = ?", peerStationID).
-		Update("pinned", pinned)
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return ErrPeerNotFound
-	}
-	return nil
+	return r.peerStore.Unpin(ctx, peerStationID)
 }
 
 // ForgetPeer drops the entire row for `peerStationID`. Unlike
@@ -639,15 +655,11 @@ func (r *ossRepository) SetPeerPin(ctx context.Context, peerStationID string, pi
 // nil (no error) so the dashboard can offer a "forget" button
 // without worrying about double-clicks.
 func (r *ossRepository) ForgetPeer(ctx context.Context, peerStationID string) error {
-	if r.db == nil || peerStationID == "" {
+	if r.peerStore == nil || peerStationID == "" {
 		return ErrPeerNotFound
 	}
-	if !r.db.Migrator().HasTable(tblOSSPeerKeys) {
-		return ErrPeerNotFound
-	}
-	return r.db.WithContext(ctx).Table(tblOSSPeerKeys).
-		Where("peer_station_id = ?", peerStationID).
-		Delete(struct{}{}).Error
+	_, err := r.peerStore.Forget(ctx, peerStationID)
+	return err
 }
 
 // ListWorkers projects worker_run rows from oss_audit into a
@@ -1124,109 +1136,43 @@ func (r *ossRepository) AdminDeleteObject(ctx context.Context, id string) (*doma
 }
 
 // RotateFederationLocalKey replaces the station's outbound
-// federation keypair with a freshly generated Ed25519 pair, while
-// preserving the previous one in the `_prev` slots so peers that
-// have cached our pubkey can verify in-flight tokens for the
-// dual-sign grace window. Workflow:
+// federation keypair with a freshly generated Ed25519 pair via
+// the framework's `federation.RotateLocalKey`, then bumps the
+// `oss_meta.capability_version` so remote peers refresh on their
+// next `/sub-oss/capabilities` poll.
 //
-//  1. Read the current (priv, pub, kid). When none exists yet
-//     (greenfield install) we still mint a new pair and skip the
-//     `_prev` writes so the first rotation acts like an initial
-//     provision.
-//  2. Generate a fresh Ed25519 keypair and re-derive its KID.
-//  3. In a single write batch, copy the current priv+kid into the
-//     `_prev` slots (when they exist), persist the new keypair as
-//     the canonical slots, stamp `federation_rotated_at`, and bump
-//     `capability_version` so peers re-fetch on their next refresh.
-//
-// Returns the new KID, the previous KID (empty on greenfield), the
-// rotation timestamp, and the bumped capability_version. Errors
-// are returned verbatim — callers are responsible for surfacing
-// them as 5xx and recording an admin audit.
+// The KeyStore atomically demotes the current row to `prev` and
+// writes the new keypair into `current` — that two-step happens
+// in a single transaction inside the framework. We do NOT bundle
+// the capability bump into the same transaction because the
+// rotation lives in `auth_local_keys` (framework table) while
+// `capability_version` lives in `oss_meta` (subserver table) and
+// crossing tables is not worth the dialect-specific complexity:
+// a peer that catches the rotation mid-bump will see the new
+// pubkey AND the bumped capability_version on the very next
+// poll either way, since both writes complete before the
+// dashboard returns.
 func (r *ossRepository) RotateFederationLocalKey(ctx context.Context) (*domain.OSSFederationRotateResponse, error) {
-	if r.db == nil || !r.db.Migrator().HasTable(tblOSSMeta) {
-		return nil, errors.New("oss meta table not available")
+	if r.keyStore == nil {
+		return nil, errors.New("federation key store not configured")
 	}
-
-	// 1. Read current keypair via the meta table. Missing rows
-	//    are not errors; they signal a fresh deployment.
-	prevPriv, err := r.readMetaValue(ctx, metaKeyFedPriv)
+	res, err := federation.RotateLocalKey(ctx, r.keyStore, nil)
 	if err != nil {
 		return nil, err
 	}
-	prevKID, err := r.readMetaValue(ctx, metaKeyFedKID)
-	if err != nil {
-		return nil, err
+	if r.db != nil && r.db.Migrator().HasTable(tblOSSMeta) {
+		if err := r.bumpCapabilityVersion(ctx); err != nil {
+			return nil, err
+		}
 	}
-
-	// 2. Mint a fresh keypair. Failure here aborts before we
-	//    touch any storage so a partial rotation cannot wedge
-	//    the federation key cache.
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return nil, err
+	newCap := ""
+	if r.db != nil && r.db.Migrator().HasTable(tblOSSMeta) {
+		newCap, _ = r.readMetaValue(ctx, metaKeyCapVersion)
 	}
-	privPEM, pubPEM, kid, err := encodeFederationKeyForRotation(priv, pub)
-	if err != nil {
-		return nil, err
-	}
-	if kid == prevKID {
-		// Astronomically unlikely (256-bit collision) but we
-		// refuse rather than silently roll the same kid back
-		// into place — a re-roll would be confusing in audit.
-		return nil, errors.New("oss: federation: rotation produced identical kid; retry")
-	}
-
-	now := time.Now()
-	rotatedAt := now.UTC()
-	rotatedAtStr := rotatedAt.Format(time.RFC3339Nano)
-
-	// 3. Persist the new state. We do every write inside a
-	//    single transaction so a failure mid-batch cannot leave
-	//    the keys mismatched against the rotation timestamp.
-	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Move the current keypair into the prev slot. Only
-		// when there *is* a current key — first rotation on a
-		// freshly bootstrapped station has nothing to demote.
-		if prevPriv != "" {
-			if err := upsertMetaTx(tx, metaKeyFedPrivPrev, prevPriv, now); err != nil {
-				return err
-			}
-		}
-		if prevKID != "" {
-			if err := upsertMetaTx(tx, metaKeyFedKIDPrev, prevKID, now); err != nil {
-				return err
-			}
-		}
-		if err := upsertMetaTx(tx, metaKeyFedPriv, privPEM, now); err != nil {
-			return err
-		}
-		if err := upsertMetaTx(tx, metaKeyFedPub, pubPEM, now); err != nil {
-			return err
-		}
-		if err := upsertMetaTx(tx, metaKeyFedKID, kid, now); err != nil {
-			return err
-		}
-		if err := upsertMetaTx(tx, metaKeyFedRotatedAt, rotatedAtStr, now); err != nil {
-			return err
-		}
-		// Bump capability_version inside the same transaction
-		// so peers cannot observe a half-rotated state on a
-		// /capabilities re-read between the key write and the
-		// version bump.
-		newCap := newDashboardULID(now)
-		return upsertMetaTx(tx, metaKeyCapVersion, newCap, now)
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	newCap, _ := r.readMetaValue(ctx, metaKeyCapVersion)
-
 	return &domain.OSSFederationRotateResponse{
-		NewKID:            kid,
-		PreviousKID:       prevKID,
-		RotatedAt:         rotatedAt,
+		NewKID:            res.NewKid,
+		PreviousKID:       res.PreviousKid,
+		RotatedAt:         res.RotatedAt.UTC(),
 		CapabilityVersion: newCap,
 	}, nil
 }
@@ -1282,26 +1228,6 @@ func upsertMetaTx(tx *gorm.DB, key, value string, now time.Time) error {
 		}
 	}
 	return nil
-}
-
-// encodeFederationKeyForRotation marshals an Ed25519 keypair to
-// the PEM shape persisted in oss_meta. Mirrors the OSS subserver's
-// `encodeFederationKey` so a rehydration on either side produces
-// the same KID for the same key bytes.
-func encodeFederationKeyForRotation(priv ed25519.PrivateKey, pub ed25519.PublicKey) (privPEM, pubPEM, kid string, err error) {
-	privDER, err := x509.MarshalPKCS8PrivateKey(priv)
-	if err != nil {
-		return "", "", "", err
-	}
-	pubDER, err := x509.MarshalPKIXPublicKey(pub)
-	if err != nil {
-		return "", "", "", err
-	}
-	privPEM = string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privDER}))
-	pubPEM = string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER}))
-	sum := sha256.Sum256(pubDER)
-	kid = strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:]))[:26]
-	return privPEM, pubPEM, kid, nil
 }
 
 // visibilityIsTightening tells whether the move from prev → next

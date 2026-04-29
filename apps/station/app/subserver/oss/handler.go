@@ -17,6 +17,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/oss/service"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth"
 	authhttp "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -496,18 +497,18 @@ func (s *ossSubServer) handleCapabilities(w http.ResponseWriter, r *http.Request
 		"my_files": s.pathBase + "/my-files",
 	}
 
-	federation := map[string]any{
+	federationCaps := map[string]any{
 		// `outbound` reports whether *this* station can mint peer
-		// tokens. Off when fedKeys / localStationID is unwired
+		// tokens. Off when fedCache / localStationID is unwired
 		// (typically dev / unit-test mode); clients then fall back
 		// to direct same-origin reads.
-		"outbound":          s.federationOutboundEnabled(),
-		"max_ttl_seconds":   int(federationMaxTTL.Seconds()),
-		"token_type":        federationTokenType,
-		"local_station_id":  s.localStationID,
-		"mint_endpoint":     s.pathBase + "/federation/token",
+		"outbound":         s.federationOutboundEnabled(),
+		"max_ttl_seconds":  int(federationMaxTTL.Seconds()),
+		"token_type":       federation.FederationTokenType,
+		"local_station_id": s.localStationID,
+		"mint_endpoint":    s.pathBase + "/federation/token",
 	}
-	resp["federation"] = federation
+	resp["federation"] = federationCaps
 
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -533,10 +534,10 @@ func (s *ossSubServer) readCapabilityVersion(ctx context.Context) string {
 
 // federationOutboundEnabled reports whether all wiring required to
 // mint a peer JWT is present. We check the same preconditions
-// MintPeerToken would, so `/capabilities` cannot advertise a mint
-// endpoint that would 501 on the first call.
+// the mint path enforces so `/capabilities` cannot advertise a
+// mint endpoint that would 501 on the first call.
 func (s *ossSubServer) federationOutboundEnabled() bool {
-	return s.fedKeys != nil && s.localStationID != ""
+	return s.fedCache != nil && s.localStationID != ""
 }
 
 // handleFileGet enforces the visibility policy attached to the
@@ -671,21 +672,27 @@ func (s *ossSubServer) optionalSubjectID(r *http.Request) string {
 // asking for: a token minted for object X cannot authorise a GET
 // of object Y.
 func (s *ossSubServer) tryPeerToken(r *http.Request, expectedKey string) (string, string) {
-	if s.peerKeyRepo == nil {
+	if s.peerKeys == nil || s.localStationID == "" {
 		return "", ""
 	}
 	bearer := bearerFromRequest(r)
 	if bearer == "" || !isFederationToken(bearer) {
 		return "", ""
 	}
-	res, err := s.VerifyPeerToken(r.Context(), bearer, expectedKey, s.localStationID)
+	claims, err := federation.Verify(r.Context(), s.peerKeys, bearer, FederationScopeName, s.localStationID)
 	if err != nil {
 		// Log at debug only — a federated client frequently retries
 		// with a stale token and we do not want to flood the logs.
 		logger.Debugf(r.Context(), "[handleFileGet] peer token verify failed: %v", err)
 		return "", ""
 	}
-	return res.ActorDID, res.PeerStationID
+	if v, _ := claims.Get(FederationOSSKeyClaim); v != expectedKey {
+		// Per-object binding is OSS business policy: the framework
+		// only verified the cryptographic + scope correctness.
+		logger.Debugf(r.Context(), "[handleFileGet] peer token oss_key mismatch: got %q want %q", v, expectedKey)
+		return "", ""
+	}
+	return claims.Subject, claims.Issuer
 }
 
 // bearerFromRequest extracts the value of `Authorization: Bearer …`,
@@ -718,7 +725,7 @@ func isFederationToken(bearer string) bool {
 	}
 	// We only look for the typ string verbatim — proper JSON
 	// decode is unnecessary at this point and slower.
-	return strings.Contains(string(hdr), `"typ":"`+federationTokenType+`"`)
+	return strings.Contains(string(hdr), `"typ":"`+federation.FederationTokenType+`"`)
 }
 
 // lookupFileMeta resolves the FileMeta row that should govern this

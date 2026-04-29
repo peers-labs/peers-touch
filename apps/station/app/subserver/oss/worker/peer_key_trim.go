@@ -26,13 +26,17 @@ import (
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	ossrepo "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/repo"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 )
 
 // PeerKeyTrimConfig configures the PeerKeyTrim worker.
 type PeerKeyTrimConfig struct {
-	// Peers is the persistence boundary. Required.
-	Peers ossrepo.PeerKeyRepository
+	// Peers is the framework's TOFU/pin store. Required. The
+	// trim worker reads only DeleteUnpinnedOlderThan, but the
+	// rest of the surface is reachable for richer future audits
+	// (e.g. "before deleting, list and snapshot the row").
+	Peers federation.PeerKeyStore
 
 	// Audit appends the worker_run heartbeat with the trim
 	// count. Required.

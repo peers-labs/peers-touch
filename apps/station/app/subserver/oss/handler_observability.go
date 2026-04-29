@@ -120,14 +120,14 @@ func (s *ossSubServer) checkBackend(ctx context.Context) healthCheck {
 // federation keypair. Sticky errors from a corrupt PEM surface
 // here as a probe failure — operator must intervene.
 func (s *ossSubServer) checkFederationKey(ctx context.Context) healthCheck {
-	if s.fedKeys == nil {
+	if s.fedCache == nil {
 		return healthCheck{Status: "fail", Reason: "federation key cache not configured"}
 	}
-	k, err := s.fedKeys.get(ctx)
+	k, err := s.fedCache.Get(ctx)
 	if err != nil {
 		return healthCheck{Status: "fail", Reason: err.Error()}
 	}
-	if k == nil || k.kid == "" {
+	if k == nil || k.Kid == "" {
 		return healthCheck{Status: "fail", Reason: "federation key missing"}
 	}
 	return healthCheck{Status: "ok"}
@@ -236,7 +236,7 @@ func (s *ossSubServer) writeMetricsBody(ctx context.Context, w http.ResponseWrit
 	// healthy, 0 otherwise. This is the most common alert
 	// target ("oss_up == 0 for 5m → page operator").
 	up := 1.0
-	if s.metaRepo == nil || s.backend == nil || s.fedKeys == nil {
+	if s.metaRepo == nil || s.backend == nil || s.fedCache == nil {
 		up = 0
 	} else {
 		hctx, cancel := context.WithTimeout(ctx, 2*time.Second)
