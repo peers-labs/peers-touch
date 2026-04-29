@@ -9,6 +9,30 @@ import type {
 } from '../gen/proto/domain/social/post_pb';
 import type { Comment } from '../gen/proto/domain/social/comment_pb';
 import type { Circle, CircleMember } from '../gen/proto/domain/social/circle_pb';
+import {
+  socialCreateMoment,
+  socialDeleteMoment,
+  socialGetComments,
+  socialGetMoment,
+  socialGetTimeline,
+  socialListByAuthor,
+  socialReact,
+  socialUnreact,
+  socialCreateComment,
+  socialDeleteComment,
+  socialCircleCreate,
+  socialCircleDelete,
+  socialCircleListMembers,
+  socialCircleListMine,
+  socialCircleRename,
+  socialCircleAddMembers,
+  socialCircleRemoveMembers,
+  type MomentDraft,
+  type TimelineSort,
+} from '../services/social_api';
+import { log } from '../utils/logger';
+
+const TAG = 'moments-store';
 
 // All proto-shaped types in this store come straight from the
 // `apps/desktop/src/gen/proto/domain/social/*` bundle, which is a
@@ -37,6 +61,8 @@ export interface MomentFeedState {
   loading: boolean;
   /** Last successful fetch — drives the `pull-to-refresh` UI. */
   loadedAt?: number;
+  /** Active sort for explore-style feeds; HOME stays on `recent`. */
+  sort?: TimelineSort;
 }
 
 const emptyFeed = (): MomentFeedState => ({
@@ -59,14 +85,18 @@ interface MomentsState {
 
   // Per-post threads, indexed by post id.
   comments: Record<string, Comment[]>;
+  commentsCursor: Record<string, string>;
   commentsHasMore: Record<string, boolean>;
   commentsLoading: Record<string, boolean>;
 
-  // Per-post reaction summary list.
+  // Per-post reaction summary list. Sourced from `Post.reactions` on
+  // every refresh — the explicit map exists so optimistic toggles in
+  // the UI can patch a single post without re-rendering the whole feed.
   reactions: Record<string, ReactionSummary[]>;
 
   // Publisher's circles (publisher-private audience labels).
   circles: Circle[];
+  circlesLoading: boolean;
   circleMembers: Record<string, CircleMember[]>;
 
   // Composer draft — kept in store so navigation away keeps state.
@@ -76,29 +106,33 @@ interface MomentsState {
     mentions: Mention[];
   } | null;
 
-  // ── Actions (all P2 stubs) ───────────────────────────────────────
-  // The signatures are deliberately narrow and proto-shaped so the
-  // P2 service-layer wiring is a fill-in-the-body exercise, not a
-  // signature redesign.
+  // ── Actions ─────────────────────────────────────────────────────
 
-  loadFeed: (kind: MomentFeedKind, refresh?: boolean) => Promise<void>;
+  loadFeed: (
+    kind: MomentFeedKind,
+    options?: { refresh?: boolean; sort?: TimelineSort },
+  ) => Promise<void>;
   loadCircleFeed: (circleId: string, refresh?: boolean) => Promise<void>;
   loadUserFeed: (actorId: string, refresh?: boolean) => Promise<void>;
 
-  loadPost: (postId: string) => Promise<void>;
-  createPost: (draft: NonNullable<MomentsState['composerDraft']>) => Promise<string>;
+  loadPost: (postId: string) => Promise<Post | undefined>;
+  createPost: (draft: MomentDraft) => Promise<string>;
   deletePost: (postId: string) => Promise<void>;
 
-  loadComments: (postId: string, cursor?: string) => Promise<void>;
-  createComment: (postId: string, content: string, replyToCommentId?: string) => Promise<void>;
+  loadComments: (postId: string, refresh?: boolean) => Promise<void>;
+  createComment: (
+    postId: string,
+    content: string,
+    replyToCommentId?: string,
+  ) => Promise<void>;
   deleteComment: (postId: string, commentId: string) => Promise<void>;
 
   reactToPost: (postId: string, kind: ReactionKind) => Promise<void>;
-  unreactToPost: (postId: string, kind: ReactionKind) => Promise<void>;
+  unreactToPost: (postId: string, kind?: ReactionKind) => Promise<void>;
 
   listMyCircles: () => Promise<void>;
   createCircle: (name: string, description?: string) => Promise<string>;
-  renameCircle: (circleId: string, name: string) => Promise<void>;
+  renameCircle: (circleId: string, name: string, description?: string) => Promise<void>;
   deleteCircle: (circleId: string) => Promise<void>;
   loadCircleMembers: (circleId: string) => Promise<void>;
   addCircleMember: (circleId: string, actorId: string) => Promise<void>;
@@ -119,10 +153,12 @@ const initialState: Pick<
   | 'circleFeeds'
   | 'userFeeds'
   | 'comments'
+  | 'commentsCursor'
   | 'commentsHasMore'
   | 'commentsLoading'
   | 'reactions'
   | 'circles'
+  | 'circlesLoading'
   | 'circleMembers'
   | 'composerDraft'
 > = {
@@ -132,47 +168,409 @@ const initialState: Pick<
   circleFeeds: {},
   userFeeds: {},
   comments: {},
+  commentsCursor: {},
   commentsHasMore: {},
   commentsLoading: {},
   reactions: {},
   circles: [],
+  circlesLoading: false,
   circleMembers: {},
   composerDraft: null,
 };
 
-// All async actions are P2 stubs. Signatures must remain stable so
-// the P2 service-layer wiring is a fill-in exercise. Each stub
-// returns the right resolved type without side effects.
+/**
+ * Merge a freshly-fetched batch of posts into the normalised maps.
+ * Returns the ordered list of ids the caller should append to whichever
+ * feed it was loading. Author hydration is opportunistic: if the post
+ * carries an embedded `author`, we record it for cheap re-render of
+ * future timeline items — otherwise the UI falls back to "Unknown".
+ */
+function ingestPosts(
+  state: Pick<MomentsState, 'postsById' | 'authorsById' | 'reactions'>,
+  posts: Post[],
+): { postsById: typeof state.postsById; authorsById: typeof state.authorsById; reactions: typeof state.reactions; ids: string[] } {
+  const postsById = { ...state.postsById };
+  const authorsById = { ...state.authorsById };
+  const reactions = { ...state.reactions };
+  const ids: string[] = [];
+  for (const p of posts) {
+    if (!p.id) continue;
+    postsById[p.id] = p;
+    if (p.author && p.author.id) {
+      authorsById[p.author.id] = p.author;
+    }
+    if (p.reactions && p.reactions.length) {
+      reactions[p.id] = p.reactions;
+    }
+    ids.push(p.id);
+  }
+  return { postsById, authorsById, reactions, ids };
+}
 
-const notImplemented = (name: string): never => {
-  throw new Error(`moments.${name} is a P0 scaffold stub — wire in P2`);
-};
-
-export const useMomentsStore = create<MomentsState>((set) => ({
+export const useMomentsStore = create<MomentsState>((set, get) => ({
   ...initialState,
 
-  loadFeed: async () => notImplemented('loadFeed'),
-  loadCircleFeed: async () => notImplemented('loadCircleFeed'),
-  loadUserFeed: async () => notImplemented('loadUserFeed'),
+  // -------------------------------------------------------------------------
+  // Feeds
+  // -------------------------------------------------------------------------
 
-  loadPost: async () => notImplemented('loadPost'),
-  createPost: async () => notImplemented('createPost'),
-  deletePost: async () => notImplemented('deletePost'),
+  loadFeed: async (kind, options) => {
+    const refresh = options?.refresh ?? false;
+    const sort = options?.sort ?? get().feeds[kind].sort ?? 'recent';
+    const current = get().feeds[kind];
+    if (current.loading) return;
+    set((s) => ({
+      feeds: { ...s.feeds, [kind]: { ...current, loading: true } },
+    }));
 
-  loadComments: async () => notImplemented('loadComments'),
-  createComment: async () => notImplemented('createComment'),
-  deleteComment: async () => notImplemented('deleteComment'),
+    const wireKind = kind === 'home' ? 'HOME' : 'PUBLIC';
+    const cursor = refresh ? '' : current.nextCursor;
+    try {
+      const resp = await socialGetTimeline(wireKind, cursor || undefined, undefined, sort);
+      set((s) => {
+        const merged = ingestPosts(s, resp.posts);
+        const prevIds = refresh ? [] : s.feeds[kind].postIds;
+        const seen = new Set(prevIds);
+        const nextIds = [...prevIds, ...merged.ids.filter((id) => !seen.has(id))];
+        return {
+          postsById: merged.postsById,
+          authorsById: merged.authorsById,
+          reactions: merged.reactions,
+          feeds: {
+            ...s.feeds,
+            [kind]: {
+              postIds: nextIds,
+              nextCursor: resp.nextCursor,
+              hasMore: resp.hasMore,
+              loading: false,
+              loadedAt: Date.now(),
+              sort,
+            },
+          },
+        };
+      });
+    } catch (err) {
+      log.warn(TAG, 'loadFeed failed', { kind, err: String(err) });
+      set((s) => ({
+        feeds: { ...s.feeds, [kind]: { ...s.feeds[kind], loading: false } },
+      }));
+      throw err;
+    }
+  },
 
-  reactToPost: async () => notImplemented('reactToPost'),
-  unreactToPost: async () => notImplemented('unreactToPost'),
+  loadCircleFeed: async (circleId, refresh = false) => {
+    // Backend support for per-circle feed reads ships in P3 — the
+    // server-side ActorResolver / GroupMembershipChecker is required
+    // to enforce membership. Until then we return an empty,
+    // explicitly-loaded feed so the UI shows a "Coming in P3" stub
+    // rather than a perpetual spinner.
+    const current = get().circleFeeds[circleId] ?? emptyFeed();
+    set((s) => ({
+      circleFeeds: {
+        ...s.circleFeeds,
+        [circleId]: {
+          ...current,
+          postIds: refresh ? [] : current.postIds,
+          loading: false,
+          loadedAt: Date.now(),
+          hasMore: false,
+          nextCursor: '',
+        },
+      },
+    }));
+    log.info(TAG, 'loadCircleFeed: noop (P3)', { circleId });
+  },
 
-  listMyCircles: async () => notImplemented('listMyCircles'),
-  createCircle: async () => notImplemented('createCircle'),
-  renameCircle: async () => notImplemented('renameCircle'),
-  deleteCircle: async () => notImplemented('deleteCircle'),
-  loadCircleMembers: async () => notImplemented('loadCircleMembers'),
-  addCircleMember: async () => notImplemented('addCircleMember'),
-  removeCircleMember: async () => notImplemented('removeCircleMember'),
+  loadUserFeed: async (actorId, refresh = false) => {
+    const current = get().userFeeds[actorId] ?? emptyFeed();
+    if (current.loading) return;
+    set((s) => ({
+      userFeeds: {
+        ...s.userFeeds,
+        [actorId]: { ...current, loading: true },
+      },
+    }));
+    const cursor = refresh ? '' : current.nextCursor;
+    try {
+      const resp = await socialListByAuthor(actorId, cursor || undefined);
+      set((s) => {
+        const merged = ingestPosts(s, resp.posts);
+        const prevIds = refresh ? [] : (s.userFeeds[actorId]?.postIds ?? []);
+        const seen = new Set(prevIds);
+        const nextIds = [...prevIds, ...merged.ids.filter((id) => !seen.has(id))];
+        return {
+          postsById: merged.postsById,
+          authorsById: merged.authorsById,
+          reactions: merged.reactions,
+          userFeeds: {
+            ...s.userFeeds,
+            [actorId]: {
+              postIds: nextIds,
+              nextCursor: resp.nextCursor,
+              hasMore: resp.hasMore,
+              loading: false,
+              loadedAt: Date.now(),
+            },
+          },
+        };
+      });
+    } catch (err) {
+      log.warn(TAG, 'loadUserFeed failed', { actorId, err: String(err) });
+      set((s) => ({
+        userFeeds: {
+          ...s.userFeeds,
+          [actorId]: { ...(s.userFeeds[actorId] ?? emptyFeed()), loading: false },
+        },
+      }));
+      throw err;
+    }
+  },
+
+  // -------------------------------------------------------------------------
+  // Single-post operations
+  // -------------------------------------------------------------------------
+
+  loadPost: async (postId) => {
+    try {
+      const post = await socialGetMoment(postId);
+      if (!post) return undefined;
+      set((s) => {
+        const merged = ingestPosts(s, [post]);
+        return {
+          postsById: merged.postsById,
+          authorsById: merged.authorsById,
+          reactions: merged.reactions,
+        };
+      });
+      return post;
+    } catch (err) {
+      log.warn(TAG, 'loadPost failed', { postId, err: String(err) });
+      throw err;
+    }
+  },
+
+  createPost: async (draft) => {
+    const post = await socialCreateMoment(draft);
+    if (!post || !post.id) {
+      throw new Error('createPost: server returned no post');
+    }
+    set((s) => {
+      const merged = ingestPosts(s, [post]);
+      // New post lands at the head of HOME; explore will pick it up
+      // on the next refresh (server-side audience may exclude it).
+      const homeIds = [post.id, ...s.feeds.home.postIds.filter((id) => id !== post.id)];
+      return {
+        postsById: merged.postsById,
+        authorsById: merged.authorsById,
+        reactions: merged.reactions,
+        feeds: {
+          ...s.feeds,
+          home: { ...s.feeds.home, postIds: homeIds },
+        },
+      };
+    });
+    return post.id;
+  },
+
+  deletePost: async (postId) => {
+    await socialDeleteMoment(postId);
+    set((s) => {
+      const { [postId]: _drop, ...rest } = s.postsById;
+      const filterIds = (ids: string[]) => ids.filter((id) => id !== postId);
+      return {
+        postsById: rest,
+        feeds: {
+          home: { ...s.feeds.home, postIds: filterIds(s.feeds.home.postIds) },
+          explore: { ...s.feeds.explore, postIds: filterIds(s.feeds.explore.postIds) },
+        },
+        userFeeds: Object.fromEntries(
+          Object.entries(s.userFeeds).map(([k, v]) => [
+            k,
+            { ...v, postIds: filterIds(v.postIds) },
+          ]),
+        ),
+        circleFeeds: Object.fromEntries(
+          Object.entries(s.circleFeeds).map(([k, v]) => [
+            k,
+            { ...v, postIds: filterIds(v.postIds) },
+          ]),
+        ),
+      };
+    });
+  },
+
+  // -------------------------------------------------------------------------
+  // Comments
+  // -------------------------------------------------------------------------
+
+  loadComments: async (postId, refresh = false) => {
+    const loading = get().commentsLoading[postId];
+    if (loading) return;
+    set((s) => ({
+      commentsLoading: { ...s.commentsLoading, [postId]: true },
+    }));
+    const cursor = refresh ? '' : (get().commentsCursor[postId] ?? '');
+    try {
+      const resp = await socialGetComments(postId, cursor || undefined);
+      set((s) => {
+        const prev = refresh ? [] : (s.comments[postId] ?? []);
+        const seen = new Set(prev.map((c) => c.id));
+        const merged = [...prev, ...resp.comments.filter((c) => !seen.has(c.id))];
+        return {
+          comments: { ...s.comments, [postId]: merged },
+          commentsCursor: { ...s.commentsCursor, [postId]: resp.nextCursor },
+          commentsHasMore: { ...s.commentsHasMore, [postId]: resp.hasMore },
+          commentsLoading: { ...s.commentsLoading, [postId]: false },
+        };
+      });
+    } catch (err) {
+      log.warn(TAG, 'loadComments failed', { postId, err: String(err) });
+      set((s) => ({
+        commentsLoading: { ...s.commentsLoading, [postId]: false },
+      }));
+      throw err;
+    }
+  },
+
+  createComment: async (postId, content, replyToCommentId) => {
+    const comment = await socialCreateComment(postId, content, replyToCommentId);
+    if (!comment) return;
+    set((s) => ({
+      comments: {
+        ...s.comments,
+        [postId]: [...(s.comments[postId] ?? []), comment],
+      },
+    }));
+    // Optimistically bump the on-card count so the user sees feedback
+    // before the next timeline refresh. The authoritative count is
+    // overwritten on the next `loadFeed` / `loadPost`.
+    set((s) => {
+      const post = s.postsById[postId];
+      if (!post || !post.stats) return s;
+      const stats = { ...post.stats };
+      stats.commentsCount = (stats.commentsCount ?? 0n) + 1n;
+      return {
+        postsById: { ...s.postsById, [postId]: { ...post, stats } as Post },
+      };
+    });
+  },
+
+  deleteComment: async (postId, commentId) => {
+    await socialDeleteComment(commentId);
+    set((s) => ({
+      comments: {
+        ...s.comments,
+        [postId]: (s.comments[postId] ?? []).filter((c) => c.id !== commentId),
+      },
+    }));
+  },
+
+  // -------------------------------------------------------------------------
+  // Reactions
+  // -------------------------------------------------------------------------
+
+  reactToPost: async (postId, kind) => {
+    try {
+      const resp = await socialReact(postId, kind);
+      // The server returns the post-wide reaction summary list; trust
+      // that as the new source of truth instead of doing a local diff.
+      set((s) => ({
+        reactions: { ...s.reactions, [postId]: resp.reactions ?? [] },
+      }));
+    } catch (err) {
+      log.warn(TAG, 'reactToPost failed', { postId, kind, err: String(err) });
+      throw err;
+    }
+  },
+
+  unreactToPost: async (postId, kind) => {
+    try {
+      const resp = await socialUnreact(postId, kind);
+      set((s) => ({
+        reactions: { ...s.reactions, [postId]: resp.reactions ?? [] },
+      }));
+    } catch (err) {
+      log.warn(TAG, 'unreactToPost failed', { postId, kind, err: String(err) });
+      throw err;
+    }
+  },
+
+  // -------------------------------------------------------------------------
+  // Circles
+  // -------------------------------------------------------------------------
+
+  listMyCircles: async () => {
+    if (get().circlesLoading) return;
+    set({ circlesLoading: true });
+    try {
+      const resp = await socialCircleListMine();
+      set({ circles: resp.circles ?? [], circlesLoading: false });
+    } catch (err) {
+      log.warn(TAG, 'listMyCircles failed', { err: String(err) });
+      set({ circlesLoading: false });
+      throw err;
+    }
+  },
+
+  createCircle: async (name, description) => {
+    const resp = await socialCircleCreate(name, description);
+    if (!resp.circle) {
+      throw new Error('createCircle: server returned no circle');
+    }
+    set((s) => ({ circles: [resp.circle as Circle, ...s.circles] }));
+    return String(resp.circle.id ?? '');
+  },
+
+  renameCircle: async (circleId, name, description) => {
+    await socialCircleRename(circleId, name, description);
+    set((s) => ({
+      circles: s.circles.map((c) =>
+        String(c.id) === circleId
+          ? ({ ...c, name, description: description ?? c.description } as Circle)
+          : c,
+      ),
+    }));
+  },
+
+  deleteCircle: async (circleId) => {
+    await socialCircleDelete(circleId);
+    set((s) => ({
+      circles: s.circles.filter((c) => String(c.id) !== circleId),
+      circleMembers: Object.fromEntries(
+        Object.entries(s.circleMembers).filter(([k]) => k !== circleId),
+      ),
+    }));
+  },
+
+  loadCircleMembers: async (circleId) => {
+    const resp = await socialCircleListMembers(circleId);
+    set((s) => ({
+      circleMembers: { ...s.circleMembers, [circleId]: resp.members ?? [] },
+    }));
+  },
+
+  addCircleMember: async (circleId, actorId) => {
+    await socialCircleAddMembers(circleId, [actorId]);
+    // Refresh members so the UI reflects the canonical server state
+    // (server may dedupe / reject already-present DIDs silently).
+    await get().loadCircleMembers(circleId);
+  },
+
+  removeCircleMember: async (circleId, actorId) => {
+    await socialCircleRemoveMembers(circleId, [actorId]);
+    set((s) => ({
+      circleMembers: {
+        ...s.circleMembers,
+        [circleId]: (s.circleMembers[circleId] ?? []).filter(
+          (m) => m.actorDid !== actorId,
+        ),
+      },
+    }));
+  },
+
+  // -------------------------------------------------------------------------
+  // Composer draft + reset
+  // -------------------------------------------------------------------------
 
   setComposerDraft: (draft) => set({ composerDraft: draft }),
   clearComposerDraft: () => set({ composerDraft: null }),
