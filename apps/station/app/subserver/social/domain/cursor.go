@@ -104,6 +104,52 @@ func (m MultiSourceCursor) Encode() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
+// HotCursor encodes a pagination position for a HOT-sorted timeline.
+// HOT pages must order by (score DESC, created_at DESC, id DESC) so we
+// pin all three values; the `(score, created_at, id) < (?, ?, ?)`
+// row-value comparison gives stable, gap-free pagination on every
+// engine that supports row-value compare (postgres + sqlite ≥ 3.15).
+//
+// Score is intentionally encoded as float64 — the SQL formula is a
+// real number, and the cursor must round-trip the exact value the
+// previous page emitted to avoid skipping rows that share the same
+// integer floor.
+type HotCursor struct {
+	Score     float64   `json:"s,omitempty"`
+	CreatedAt time.Time `json:"ts,omitempty"`
+	LastID    uint64    `json:"id,omitempty"`
+}
+
+func (c HotCursor) IsZero() bool {
+	return c.Score == 0 && c.LastID == 0 && c.CreatedAt.IsZero()
+}
+
+func (c HotCursor) Encode() string {
+	if c.IsZero() {
+		return ""
+	}
+	b, err := json.Marshal(c)
+	if err != nil {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+func DecodeHotCursor(s string) (HotCursor, error) {
+	if s == "" {
+		return HotCursor{}, nil
+	}
+	b, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		return HotCursor{}, fmt.Errorf("decode hot cursor: %w", err)
+	}
+	var c HotCursor
+	if err := json.Unmarshal(b, &c); err != nil {
+		return HotCursor{}, fmt.Errorf("unmarshal hot cursor: %w", err)
+	}
+	return c, nil
+}
+
 func DecodeMultiSourceCursor(s string) (MultiSourceCursor, error) {
 	if s == "" {
 		return MultiSourceCursor{}, nil
