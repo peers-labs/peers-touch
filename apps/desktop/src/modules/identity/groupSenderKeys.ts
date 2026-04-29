@@ -53,6 +53,7 @@
 
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
+import { eventBus, EVENT } from '../../kernel/events';
 
 export class MissingSkdmError extends Error {
   constructor(public readonly groupUlid: string, public readonly senderDid: string | null) {
@@ -112,6 +113,47 @@ export function resetSkdmDistribution(actorId: string, groupUlid: string): void 
     localStorage.removeItem(sentKey(actorId, groupUlid));
   } catch (err) {
     log.warn('groupSenderKeys', 'reset sent-set failed', err);
+  }
+}
+
+/**
+ * Force-rotate the local sender chain for `groupUlid`.
+ *
+ * Trigger this whenever the group's effective membership shrinks
+ * from our perspective -- a removed peer who keeps the old chain
+ * key can otherwise decrypt every future message (no
+ * post-compromise security). The Rust side mints a new chain at
+ * `max_known_sender_key_id + 1`; we clear the SKDM-sent ledger so
+ * the next `ensureSkdmDistributed` re-distributes the new chain
+ * to every remaining member.
+ *
+ * The OLD chain row is intentionally kept in storage on both ends
+ * so any in-flight ciphertext we sent before rotating still
+ * decrypts; only NEW sends use the rotated chain (because
+ * `latest_local_sender_chain` returns the highest sender_key_id
+ * with a signing seed).
+ *
+ * Idempotent in the sense that calling it twice in a row produces
+ * a generation that is one higher than necessary -- harmless but
+ * wasteful. Callers should de-bounce rotations driven by the same
+ * underlying event (e.g. a single `loadGroupMembers` diff).
+ */
+export async function rotateGroupSenderChain(
+  actorId: string,
+  groupUlid: string,
+): Promise<{ senderKeyId: number } | null> {
+  if (!actorId || !groupUlid) return null;
+  try {
+    const r = await api.cryptoGroupSkRotate(groupUlid);
+    resetSkdmDistribution(actorId, groupUlid);
+    log.info(
+      'groupSenderKeys',
+      `rotated sender chain group=${groupUlid} new_key_id=${r.sender_key_id}`,
+    );
+    return { senderKeyId: r.sender_key_id };
+  } catch (err) {
+    log.error('groupSenderKeys', 'rotateGroupSenderChain failed', err);
+    return null;
   }
 }
 
@@ -340,6 +382,17 @@ export async function handleInboundSkdm(
       'groupSenderKeys',
       `installed SKDM group=${r.group_ulid} sender=${r.sender_did} key_id=${r.sender_key_id}`,
     );
+    // Notify the store so any group ciphertext that previously
+    // failed with MissingSkdmError for this (group, sender,
+    // key_id) gets re-tried. Without this the late-arriving
+    // SKDM would only unblock messages received AFTER it lands;
+    // the ones already in the store would stay stuck on
+    // `[Waiting for sender key…]` until the user reloads.
+    eventBus.publish(EVENT.GROUP_SKDM_INSTALLED, {
+      groupUlid: r.group_ulid,
+      senderDid: r.sender_did,
+      senderKeyId: r.sender_key_id,
+    });
   } catch (err) {
     log.warn('groupSenderKeys', 'cryptoGroupSkConsumeSkdm failed', err);
   }
