@@ -12,7 +12,6 @@ import (
 	"encoding/hex"
 	"net"
 
-	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -23,13 +22,19 @@ const BcryptCost = 12
 // JWT claims
 // ---------------------------------------------------------------------------
 
-// DashboardClaims carries admin identity inside JWT tokens.
+// DashboardClaims is the typed projection of a verified
+// dashboard JWT, returned by AuthService.ValidateToken and
+// stashed into the request context by the dashboard middleware.
+//
+// Since the auth-unification refactor it no longer doubles as a
+// jwt.Claims implementation: the framework's `coreauth.Provider`
+// signs + parses the wire format with its own claim shape, and
+// this struct is purely a typed view for downstream handlers.
 type DashboardClaims struct {
 	AdminID   uint64 `json:"admin_id"`
 	Username  string `json:"username"`
 	Role      string `json:"role"`
 	SessionID string `json:"session_id"`
-	jwt.RegisteredClaims
 }
 
 // ---------------------------------------------------------------------------
