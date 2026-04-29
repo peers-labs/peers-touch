@@ -41,10 +41,6 @@
   - `apps/mobile/android/`
   - `apps/mobile/ios/`
 
-当前明确不再作为主线的实现：
-
-- `apps/mobile/flutter/`
-
 Mobile 当前已明确成立的事实：
 
 1. 双端原生实现是主线，不走 Kotlin Multiplatform。

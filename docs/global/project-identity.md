@@ -96,8 +96,6 @@ Mobile is a native dual-platform client:
 - Android: Kotlin + Jetpack Compose
 - iOS: Swift + SwiftUI
 
-`apps/mobile/flutter/` is historical only and not the active implementation direction.
-
 ### 5.3 Station
 
 Station is the shared backend runtime that owns:
