@@ -9,6 +9,8 @@
 
 pub mod signaling_envelope;
 pub mod sender_keys;
+pub mod double_ratchet;
+pub mod telemetry;
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -329,12 +331,14 @@ impl CryptoSession {
             ));
         }
         let mk = self.recv_ratchet.next_message_keys();
-        aes_gcm_decrypt(
+        let plain = aes_gcm_decrypt(
             &mk.encryption_key,
             &mk.nonce,
             msg.ciphertext.as_slice(),
             b"",
-        )
+        )?;
+        telemetry::record_legacy_decrypt();
+        Ok(plain)
     }
 }
 

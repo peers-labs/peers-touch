@@ -12,6 +12,7 @@ pub mod chat_storage;
 pub mod cron;
 pub mod friend_chat;
 pub mod group_chat;
+pub mod key_exchange;
 pub mod mcp;
 pub mod memory;
 pub mod model_config;

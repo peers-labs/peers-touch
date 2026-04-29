@@ -42,6 +42,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 rfd = "0.15"
 tokio = { version = "1", features = ["rt"] }
+ulid = "1.1"
 
 [features]
 default = ["custom-protocol"]
