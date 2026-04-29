@@ -6,6 +6,7 @@ import (
 	"time"
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"gorm.io/gorm"
 )
@@ -72,9 +73,38 @@ func Bootstrap(ctx context.Context, deps BootstrapDeps) (*BootstrapResult, error
 		&ossmodel.Bucket{},
 		&ossmodel.FileMeta{},
 		&ossmodel.Meta{},
-		&ossmodel.PeerKey{},
+		// Framework auth/federation tables live alongside the
+		// OSS schema while OSS is the only consumer; a future
+		// framework-level Bootstrap will move them out.
+		&federation.AuthLocalKeyRow{},
+		&federation.PeerKeyRow{},
 	); err != nil {
 		return nil, err
+	}
+	// Drop legacy OSS-owned federation table if it lingers from
+	// a pre-unification deployment. No production data exists
+	// (the rename is part of the same release as the rest of
+	// the auth-unification cut), so the drop is unconditional.
+	if db.Migrator().HasTable("oss_peer_keys") {
+		if err := db.Migrator().DropTable("oss_peer_keys"); err != nil {
+			return nil, err
+		}
+	}
+	// Drop legacy oss_meta rows that used to carry the
+	// federation keypair before it moved to `auth_local_keys`.
+	// Same rationale as the table drop above; this keeps a
+	// fresh GetFederationLocal from echoing stale state.
+	for _, key := range []string{
+		"federation_priv_pem",
+		"federation_pub_pem",
+		"federation_kid",
+		"federation_priv_pem_prev",
+		"federation_kid_prev",
+		"federation_rotated_at",
+	} {
+		if err := db.Where("`key` = ?", key).Delete(&ossmodel.Meta{}).Error; err != nil {
+			return nil, err
+		}
 	}
 
 	if v, err := readSchemaVersion(db); err == nil && v == ossmodel.SchemaVersionCurrent {

@@ -13,6 +13,7 @@ import (
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	ossrepo "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/repo"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 )
 
 // stubFileRepo is the in-memory FileRepository used to drive
@@ -91,16 +92,21 @@ func (s *stubAuditRepo) Trim(context.Context, time.Time) (int64, error) { return
 
 // newFederationHandlerServer wires the minimum surface
 // `handleFederationToken` actually reaches: auth, file lookup,
-// audit append, and the federation key cache (via fakePeerKeyRepo
-// from federation_test.go).
+// audit append, and the framework federation key cache.
+//
+// Scope registration rides through the same once.Do gate the
+// production Init uses so re-runs of the test binary stay
+// deterministic regardless of which subserver test fires first.
 func newFederationHandlerServer(files *stubFileRepo, audits *stubAuditRepo) *ossSubServer {
-	repoFed := newFakePeerKeyRepo()
+	ossScopeOnce.Do(registerFederationScope)
+	memStore := federation.NewInMemoryKeyStore()
 	return &ossSubServer{
 		pathBase:       "/sub-oss",
 		authProvider:   stubAuthProvider{},
 		fileRepo:       files,
 		auditRepo:      audits,
-		fedKeys:        newFederationKeyCache(repoFed),
+		fedCache:       federation.NewKeyCache(memStore),
+		peerKeys:       federation.NewInMemoryPeerKeyStore(),
 		localStationID: "station-A",
 	}
 }
@@ -307,7 +313,7 @@ func TestHandleFederationToken_HappyPath_PublicFile(t *testing.T) {
 // fetching, not 500.
 func TestHandleFederationToken_DisabledWhenNoKeyCache(t *testing.T) {
 	s := newFederationHandlerServer(newStubFileRepo(), &stubAuditRepo{})
-	s.fedKeys = nil
+	s.fedCache = nil
 
 	rec := httptest.NewRecorder()
 	req := withSubject(httptest.NewRequest(http.MethodPost, "/sub-oss/federation/token",

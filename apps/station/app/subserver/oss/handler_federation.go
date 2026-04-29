@@ -12,6 +12,7 @@ import (
 
 	ossdb "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 )
 
@@ -91,11 +92,12 @@ func (s *ossSubServer) handleFederationToken(w http.ResponseWriter, r *http.Requ
 		s.writeFederationMintError(r, w, nil, http.StatusUnauthorized, federationReasonAuthRequired, "auth required")
 		return
 	}
-	if s.fedKeys == nil {
-		// No federation key cache → minting is structurally
-		// disabled (typically a unit-test wiring; production
-		// always wires one). 501 lets desktop clients fall back
-		// to non-federated rendering without alarming users.
+	if s.fedCache == nil || s.localStationID == "" {
+		// No federation key cache or no station identity →
+		// minting is structurally disabled (typically a
+		// unit-test wiring; production always wires both). 501
+		// lets desktop clients fall back to non-federated
+		// rendering without alarming users.
 		s.writeFederationMintError(r, w, nil, http.StatusNotImplemented, federationReasonUnsupported, "federation disabled")
 		return
 	}
@@ -155,12 +157,13 @@ func (s *ossSubServer) handleFederationToken(w http.ResponseWriter, r *http.Requ
 	peerStationID := hashOrigin(target)
 
 	ttl := time.Duration(req.TTLSeconds) * time.Second
-	token, err := s.MintPeerToken(r.Context(), MintPeerTokenRequest{
-		LocalStationID: s.localStationID,
-		PeerStationID:  peerStationID,
-		ActorDID:       subject.ID,
-		FileKey:        key,
-		TTL:            ttl,
+	token, err := federation.Mint(r.Context(), s.fedCache, federation.MintRequest{
+		Scope:    FederationScopeName,
+		Issuer:   s.localStationID,
+		Audience: peerStationID,
+		Subject:  subject.ID,
+		TTL:      ttl,
+		Custom:   map[string]string{FederationOSSKeyClaim: key},
 	})
 	if err != nil {
 		logger.Errorf(r.Context(), "[oss] federation mint failed key=%s: %v", key, err)
@@ -169,10 +172,10 @@ func (s *ossSubServer) handleFederationToken(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	keyMaterial, _ := s.fedKeys.get(r.Context())
+	keyMaterial, _ := s.fedCache.Get(r.Context())
 	kid := ""
 	if keyMaterial != nil {
-		kid = keyMaterial.kid
+		kid = keyMaterial.Kid
 	}
 	expClamped := ttl
 	if expClamped <= 0 || expClamped > federationMaxTTL {

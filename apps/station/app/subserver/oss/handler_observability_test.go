@@ -3,7 +3,6 @@ package oss
 import (
 	"context"
 	"crypto/ed25519"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +15,7 @@ import (
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oss/worker"
+	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/facility/storage"
 )
 
@@ -53,13 +53,13 @@ func (s *stubObsMeta) SetCapabilityVersion(context.Context, time.Time) (string, 
 // federation key cache. The caller can post-tweak fields per test.
 func makeObsServer(t *testing.T) *ossSubServer {
 	t.Helper()
-	repo := newFakePeerKeyRepo()
+	memStore := federation.NewInMemoryKeyStore()
 	return &ossSubServer{
 		pathBase:    "/sub-oss",
 		backendType: "local",
 		backend:     stubObsBackend{},
 		metaRepo:    &stubObsMeta{},
-		fedKeys:     newFederationKeyCache(repo),
+		fedCache:    federation.NewKeyCache(memStore),
 	}
 }
 
@@ -303,23 +303,17 @@ func TestFederationKeyHealthCheck_Generates(t *testing.T) {
 		t.Fatalf("status: got %d want 200", rec.Code)
 	}
 	// Confirm the side-effect: the cache has a non-empty kid now.
-	k, err := s.fedKeys.get(req.Context())
+	k, err := s.fedCache.Get(req.Context())
 	if err != nil {
-		t.Fatalf("post-healthz fedKeys.get: %v", err)
+		t.Fatalf("post-healthz fedCache.Get: %v", err)
 	}
-	if k == nil || k.kid == "" {
+	if k == nil || k.Kid == "" {
 		t.Errorf("federation key cache should be populated after healthz: %+v", k)
 	}
-	// Also sanity-check we have a real Ed25519 keypair.
-	if len(k.priv) != ed25519.PrivateKeySize {
-		t.Errorf("priv length: got %d want %d", len(k.priv), ed25519.PrivateKeySize)
+	if len(k.Priv) != ed25519.PrivateKeySize {
+		t.Errorf("priv length: got %d want %d", len(k.Priv), ed25519.PrivateKeySize)
 	}
-	// And the public key bytes are not empty.
-	if len(k.pub) == 0 {
+	if len(k.Pub) == 0 {
 		t.Errorf("pub key should be populated")
 	}
-	// rand import keeps go vet quiet; we only use it transitively
-	// through the cache, but explicit reference is clearer for
-	// future maintenance.
-	_ = rand.Reader
 }

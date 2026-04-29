@@ -155,13 +155,13 @@ func TestHandleCapabilitiesShape(t *testing.T) {
 		t.Errorf("missing v3 key %q", "lifecycle_endpoints")
 	}
 	// `federation` is also unconditional, but its `outbound` flag
-	// is false here because no fedKeys / localStationID is wired.
+	// is false here because no fedCache / localStationID is wired.
 	fed, ok := got["federation"].(map[string]any)
 	if !ok {
 		t.Fatalf("federation key missing or wrong type: %v", got["federation"])
 	}
 	if fed["outbound"] != false {
-		t.Errorf("federation.outbound = %v, want false (no fedKeys)", fed["outbound"])
+		t.Errorf("federation.outbound = %v, want false (no fedCache)", fed["outbound"])
 	}
 	if fed["mint_endpoint"] != "/sub-oss/federation/token" {
 		t.Errorf("federation.mint_endpoint = %v", fed["mint_endpoint"])
