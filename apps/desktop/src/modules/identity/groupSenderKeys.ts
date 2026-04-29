@@ -49,6 +49,13 @@
  * tracking which member DIDs already received the current chain.
  * Cleared by `resetSkdmDistribution` after a forced rotation so
  * the next emit reaches everyone again.
+ *
+ * Parallel pending ledger:
+ *   `groupSenderKeys:skdm-pending:<actorId>:<groupUlid>`
+ * tracks member DIDs that did not get the SKDM in the last attempt
+ * (offline, missing bundle, etc.). `retrySkdmDistributionFor` runs
+ * when presence flips online so we do not rely on the user sending
+ * another group message to retry.
  */
 
 import { api } from '../../services/desktop_api';
@@ -63,6 +70,7 @@ export class MissingSkdmError extends Error {
 }
 
 const SENT_KEY_PREFIX = 'groupSenderKeys:skdm-sent';
+const PENDING_KEY_PREFIX = 'groupSenderKeys:skdm-pending';
 export const FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION = 50;
 /**
  * Wire `kind` for the signaling envelope when carrying an SKDM.
@@ -76,6 +84,10 @@ const SKDM_ENVELOPE_KIND = 'GROUP_SKDM';
 
 function sentKey(actorId: string, groupUlid: string): string {
   return `${SENT_KEY_PREFIX}:${actorId}:${groupUlid}`;
+}
+
+function pendingKey(actorId: string, groupUlid: string): string {
+  return `${PENDING_KEY_PREFIX}:${actorId}:${groupUlid}`;
 }
 
 function loadSentSet(actorId: string, groupUlid: string): Set<string> {
@@ -98,6 +110,30 @@ function saveSentSet(actorId: string, groupUlid: string, set: Set<string>): void
   }
 }
 
+function loadPendingSet(actorId: string, groupUlid: string): Set<string> {
+  try {
+    const raw = localStorage.getItem(pendingKey(actorId, groupUlid));
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return new Set();
+    return new Set(arr.filter((v): v is string => typeof v === 'string'));
+  } catch {
+    return new Set();
+  }
+}
+
+function savePendingSet(actorId: string, groupUlid: string, set: Set<string>): void {
+  try {
+    if (set.size === 0) {
+      localStorage.removeItem(pendingKey(actorId, groupUlid));
+    } else {
+      localStorage.setItem(pendingKey(actorId, groupUlid), JSON.stringify(Array.from(set)));
+    }
+  } catch (err) {
+    log.warn('groupSenderKeys', 'persist pending-set failed', err);
+  }
+}
+
 /**
  * Reset the SKDM-sent ledger for a group.
  *
@@ -111,6 +147,7 @@ function saveSentSet(actorId: string, groupUlid: string, set: Set<string>): void
 export function resetSkdmDistribution(actorId: string, groupUlid: string): void {
   try {
     localStorage.removeItem(sentKey(actorId, groupUlid));
+    localStorage.removeItem(pendingKey(actorId, groupUlid));
   } catch (err) {
     log.warn('groupSenderKeys', 'reset sent-set failed', err);
   }
@@ -176,12 +213,105 @@ function skdmEnvelopeSession(senderDid: string): string {
 }
 
 /**
+ * Seal and send one SKDM to `peerDid` (friend-chat type=50). Returns
+ * true when the carrier was accepted; false on skip or error.
+ */
+async function dispatchSkdmToPeer(
+  actorId: string,
+  peerDid: string,
+  skdmBytesB64: string,
+): Promise<boolean> {
+  try {
+    const bundle = await api.keyExchangeFetchBundle(peerDid);
+    const peerIkPub = String(bundle?.ik_pub || '').trim();
+    if (!peerIkPub) {
+      log.warn('groupSenderKeys', `peer ${peerDid} has no published ik_pub; skipping SKDM`);
+      return false;
+    }
+
+    const sealed = await api.signalingEnvelopeSeal(
+      peerIkPub,
+      skdmEnvelopeSession(actorId),
+      SKDM_ENVELOPE_KIND as never,
+      skdmBytesB64,
+    );
+
+    const session = await api.friendChatCreateSession(peerDid);
+    const sessionUlid = session?.session?.ulid ?? '';
+    if (!sessionUlid) {
+      log.warn('groupSenderKeys', `no session ulid for ${peerDid}; skipping SKDM`);
+      return false;
+    }
+
+    await api.friendChatSendMessage(
+      sessionUlid,
+      peerDid,
+      sealed.payload_b64,
+      FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION,
+    );
+    return true;
+  } catch (err) {
+    log.warn('groupSenderKeys', `SKDM dispatch failed to ${peerDid}`, err);
+    return false;
+  }
+}
+
+/**
+ * When a peer transitions online, retry SKDM delivery for any group
+ * where they are still pending (see pending ledger). Uses the in-
+ * memory `groupMembers` snapshot from `socialChat` — groups not
+ * loaded there are skipped until the next `ensureSkdmDistributed`.
+ */
+export async function retrySkdmDistributionFor(actorId: string, peerDid: string): Promise<void> {
+  if (!actorId || !peerDid) return;
+  const { useSocialChatStore } = await import('../../store/socialChat');
+  const groupMembers = useSocialChatStore.getState().groupMembers;
+
+  for (const [groupUlid, members] of Object.entries(groupMembers)) {
+    if (!members?.length) continue;
+
+    const pending = loadPendingSet(actorId, groupUlid);
+    if (!pending.has(peerDid)) continue;
+
+    const stillMember = members.some((m) => m.actorDid === peerDid);
+    if (!stillMember) {
+      pending.delete(peerDid);
+      savePendingSet(actorId, groupUlid, pending);
+      continue;
+    }
+
+    const sent = loadSentSet(actorId, groupUlid);
+    if (sent.has(peerDid)) {
+      pending.delete(peerDid);
+      savePendingSet(actorId, groupUlid, pending);
+      continue;
+    }
+
+    let skdmBytesB64: string;
+    try {
+      const r = await api.cryptoGroupSkEmitSkdm(groupUlid);
+      skdmBytesB64 = r.skdm_b64;
+    } catch {
+      continue;
+    }
+
+    const ok = await dispatchSkdmToPeer(actorId, peerDid, skdmBytesB64);
+    if (ok) {
+      sent.add(peerDid);
+      pending.delete(peerDid);
+      saveSentSet(actorId, groupUlid, sent);
+      savePendingSet(actorId, groupUlid, pending);
+    }
+  }
+}
+
+/**
  * Make sure every `memberDids[]` member (except `actorId`) has our
  * current SKDM. Members already marked in the sent ledger are
  * skipped. Failure to reach a single member is logged but does not
  * abort the whole call -- partial distribution is still valuable
- * (the missed peer will get the SKDM on next `ensureSkdmDistributed`
- * pass).
+ * (the missed peer is recorded in the pending ledger and can be
+ * retried via `retrySkdmDistributionFor` when they come online).
  */
 export async function ensureSkdmDistributed(
   actorId: string,
@@ -190,14 +320,19 @@ export async function ensureSkdmDistributed(
 ): Promise<void> {
   if (!actorId || !groupUlid) return;
   const sent = loadSentSet(actorId, groupUlid);
+  const pending = loadPendingSet(actorId, groupUlid);
+
+  // TODO(multi-device-echo): `key_exchange.FetchKeyBundleResponse` carries a single
+  // `ik_pub` per DID (`model/domain/key_exchange/key_exchange.proto`); there is no
+  // device-scoped bundle in `keyExchangeFetchBundle(did)`. Until Station stores and
+  // returns per-device identity keys (and friend-chat can route to a specific device),
+  // we cannot seal distinct SKDM envelopes for each of "my" devices that share this DID.
+  // The `did !== actorId` filter correctly skips redundant self-delivery to the same IK
+  // as this client but cannot unlock cross-device sender echo. Do not remove this filter
+  // without bundle-layer support — sending to the same DID would still target only one IK.
   const targets = memberDids.filter((did) => !!did && did !== actorId && !sent.has(did));
   if (targets.length === 0) return;
 
-  // Mint (lazy) and fetch SKDM bytes ONCE for the whole batch --
-  // calling emit_skdm is idempotent within a generation, so if the
-  // cache already had a chain we get the same bytes, but doing it
-  // once per call keeps log volume sane and avoids gratuitous
-  // SQLCipher hits.
   let skdmBytesB64: string;
   try {
     const r = await api.cryptoGroupSkEmitSkdm(groupUlid);
@@ -208,64 +343,17 @@ export async function ensureSkdmDistributed(
   }
 
   for (const peerDid of targets) {
-    try {
-      // Resolve the peer's long-term Ed25519 identity public key.
-      // The signaling envelope converts it internally to its
-      // X25519 image for the DH; we just need to hand over the
-      // base64 of the raw 32 Ed25519 bytes Station has on file.
-      const bundle = await api.keyExchangeFetchBundle(peerDid);
-      const peerIkPub = String(bundle?.ik_pub || '').trim();
-      if (!peerIkPub) {
-        log.warn('groupSenderKeys', `peer ${peerDid} has no published ik_pub; skipping SKDM`);
-        continue;
-      }
-
-      // The signaling envelope kind is 'GROUP_SKDM' -- not in the
-      // RealtimeCallSignalKind union, so we cast. The Rust side
-      // accepts any string for `kind` (it just goes into AAD); the
-      // TS-side typing is a safety net for the realtime call path,
-      // not a correctness requirement.
-      const sealed = await api.signalingEnvelopeSeal(
-        peerIkPub,
-        skdmEnvelopeSession(actorId),
-        SKDM_ENVELOPE_KIND as never,
-        skdmBytesB64,
-      );
-
-      // We need a friend session to ride. `friendChatCreateSession`
-      // is idempotent: returns the existing session if one exists,
-      // creates one if not. Carrying SKDM creates a side-effect of
-      // bootstrapping the friend session itself, which is fine --
-      // anyone in a group with us is by definition a contact-of-
-      // -contact at minimum.
-      const session = await api.friendChatCreateSession(peerDid);
-      const sessionUlid = session?.session?.ulid ?? '';
-      if (!sessionUlid) {
-        log.warn('groupSenderKeys', `no session ulid for ${peerDid}; skipping SKDM`);
-        continue;
-      }
-
-      // The carrier is a friend-chat message of type=50. We put the
-      // sealed envelope in `content` (base64); leaving
-      // encrypted_payload empty bypasses the friend-chat ratchet
-      // path entirely, so SKDM delivery does NOT depend on having
-      // an established 1:1 E2EE session.
-      await api.friendChatSendMessage(
-        sessionUlid,
-        peerDid,
-        sealed.payload_b64,
-        FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION,
-      );
-
+    const ok = await dispatchSkdmToPeer(actorId, peerDid, skdmBytesB64);
+    if (ok) {
       sent.add(peerDid);
-    } catch (err) {
-      // Don't poison the whole batch; the next ensureSkdmDistributed
-      // pass will retry.
-      log.warn('groupSenderKeys', `SKDM dispatch failed to ${peerDid}`, err);
+      pending.delete(peerDid);
+    } else {
+      pending.add(peerDid);
     }
   }
 
   saveSentSet(actorId, groupUlid, sent);
+  savePendingSet(actorId, groupUlid, pending);
 }
 
 /**

@@ -261,8 +261,40 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
       });
       return;
     }
+    case 'groupMembershipChange': {
+      const g = kind.value;
+      const memberKind = groupMembershipKindFromEnum(g.kind);
+      if (!memberKind) {
+        log.warn('eventStream', 'unknown GroupMembershipChange kind, dropping', { kind: g.kind });
+        return;
+      }
+      eventBus.publish(EVENT.REALTIME_GROUP_MEMBERSHIP_CHANGE, {
+        eventId,
+        changeEventId: g.eventId ?? '',
+        groupUlid: g.groupUlid,
+        actorDid: g.actorDid,
+        kind: memberKind,
+        changedTsUnixMs: Number(g.changedTsUnixMs),
+      });
+      return;
+    }
     default:
       return;
+  }
+}
+
+// Inverse of GroupMembershipChange.Kind enum. Align with proto:
+// KIND_UNSPECIFIED=0, KIND_ADDED=1, KIND_REMOVED=2, KIND_LEFT=3.
+function groupMembershipKindFromEnum(value: number): 'ADDED' | 'REMOVED' | 'LEFT' | null {
+  switch (value) {
+    case 1:
+      return 'ADDED';
+    case 2:
+      return 'REMOVED';
+    case 3:
+      return 'LEFT';
+    default:
+      return null;
   }
 }
 
