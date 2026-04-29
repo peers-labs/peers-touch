@@ -141,6 +141,19 @@ pub fn crypto_get_fingerprint(state: State<'_, Arc<AppState>>, window: Window) -
 }
 
 #[tauri::command]
+pub fn crypto_ratchet_telemetry_snapshot() -> AppResult<StubPayload> {
+    let snap = crate::domain::crypto::telemetry::snapshot();
+    to_stub(
+        "crypto_ratchet_telemetry_snapshot",
+        json!({
+            "legacy_decrypts": snap.legacy_decrypts,
+            "dr_decrypts": snap.dr_decrypts,
+            "since_unix_ms": snap.since_unix_ms,
+        }),
+    )
+}
+
+#[tauri::command]
 pub fn crypto_get_key_bundle(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
     let actor_id = match actor_id_from_state(&state, &window) {
         Some(id) if !id.trim().is_empty() => id,

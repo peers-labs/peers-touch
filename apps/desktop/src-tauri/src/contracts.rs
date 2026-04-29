@@ -186,6 +186,7 @@ pub struct KeyExchangeUploadInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyExchangeFetchInput {
     pub did: String,
+    pub device_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

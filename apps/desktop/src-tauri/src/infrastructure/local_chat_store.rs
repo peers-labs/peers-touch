@@ -2,6 +2,7 @@ use super::storage::key_provider::PlatformKeyProvider;
 use super::storage::get_database_key_version;
 use super::storage::open_database;
 use super::storage::rotate_database_key;
+use crate::domain::crypto::double_ratchet::{DrSessionState, DrSkippedMessageKey};
 use crate::domain::crypto::sender_keys::{SenderChainState, SkippedMessageKey};
 use crate::domain::crypto::CryptoSessionState;
 use crate::domain::storage::database::DatabaseOpenSpec;
@@ -117,6 +118,7 @@ fn invalidate_pool(user_scope: &str) {
 
 /// One-time migrations tracked per chat DB (per `user_scope`).
 const LEGACY_GROUP_PLAINTEXT_WIPE_MIGRATION: &str = "legacy_group_plaintext_wipe_v1";
+const ADD_DR_SQL_COLUMNS_V1: &str = "add_double_ratchet_columns_v1";
 
 fn migrate(conn: &Connection) -> Result<(), String> {
     migrate_schema(conn)?;
@@ -259,6 +261,12 @@ fn wipe_legacy_group_plaintext_rows(conn: &Connection) -> Result<u64, String> {
 }
 
 fn apply_one_time_migrations(conn: &Connection) -> Result<(), String> {
+    apply_legacy_group_plaintext_wipe_v1(conn)?;
+    apply_add_double_ratchet_columns_v1(conn)?;
+    Ok(())
+}
+
+fn apply_legacy_group_plaintext_wipe_v1(conn: &Connection) -> Result<(), String> {
     let already: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM chat_applied_migrations WHERE name = ?1",
@@ -279,6 +287,51 @@ fn apply_one_time_migrations(conn: &Connection) -> Result<(), String> {
         migration = LEGACY_GROUP_PLAINTEXT_WIPE_MIGRATION,
         rows_wiped,
         "local_chat_store: wiped pre-E2EE group message plaintext bodies"
+    );
+    Ok(())
+}
+
+fn apply_add_double_ratchet_columns_v1(conn: &Connection) -> Result<(), String> {
+    let already: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM chat_applied_migrations WHERE name = ?1",
+            params![ADD_DR_SQL_COLUMNS_V1],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if already > 0 {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "ALTER TABLE crypto_sessions ADD COLUMN version INTEGER NOT NULL DEFAULT 0;
+         ALTER TABLE crypto_sessions ADD COLUMN dr_root_key BLOB;
+         ALTER TABLE crypto_sessions ADD COLUMN dr_self_priv BLOB;
+         ALTER TABLE crypto_sessions ADD COLUMN dr_self_pub BLOB;
+         ALTER TABLE crypto_sessions ADD COLUMN dr_peer_pub BLOB;
+         ALTER TABLE crypto_sessions ADD COLUMN dr_send_chain_key BLOB;
+         ALTER TABLE crypto_sessions ADD COLUMN dr_recv_chain_key BLOB;
+         ALTER TABLE crypto_sessions ADD COLUMN dr_ns INTEGER NOT NULL DEFAULT 0;
+         ALTER TABLE crypto_sessions ADD COLUMN dr_nr INTEGER NOT NULL DEFAULT 0;
+         ALTER TABLE crypto_sessions ADD COLUMN dr_pn INTEGER NOT NULL DEFAULT 0;
+
+         CREATE TABLE IF NOT EXISTS crypto_skipped_keys (
+             session_id   TEXT NOT NULL,
+             dh_peer_pub  BLOB NOT NULL,
+             counter      INTEGER NOT NULL,
+             message_key  BLOB NOT NULL,
+             created_at   INTEGER NOT NULL,
+             PRIMARY KEY (session_id, dh_peer_pub, counter)
+         );",
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO chat_applied_migrations(name, applied_at) VALUES (?1, ?2)",
+        params![ADD_DR_SQL_COLUMNS_V1, chrono_now()],
+    )
+    .map_err(|e| e.to_string())?;
+    tracing::info!(
+        migration = ADD_DR_SQL_COLUMNS_V1,
+        "local_chat_store: applied Double Ratchet SQLCipher columns"
     );
     Ok(())
 }
@@ -611,6 +664,242 @@ pub fn load_crypto_session(user_scope: &str, session_id: &str) -> Result<Option<
         is_initiator,
         pending_ephemeral,
     }))
+}
+
+// ---------------------------------------------------------------------------
+// Double Ratchet persistence (`version = 1` rows only)
+// ---------------------------------------------------------------------------
+
+/// Placeholder v=0 chain material once a session migrates to DR — keeps the
+/// legacy NOT NULL columns satisfied without retaining stale chain state.
+fn dr_placeholder_chain_bytes() -> [u8; 32] {
+    [0u8; 32]
+}
+
+fn save_dr_session_with_conn(conn: &Connection, state: &DrSessionState) -> Result<(), String> {
+    let now = chrono_now();
+    let exists: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM crypto_sessions WHERE session_id = ?1",
+            params![state.session_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if exists == 0 {
+        return Err(
+            "save_dr_session: missing crypto_sessions row; persist CryptoSessionState (v=0) first"
+                .to_string(),
+        );
+    }
+    let z = dr_placeholder_chain_bytes();
+    let dr_peer = state.peer_pub.as_ref().map(|p| p.as_slice());
+    let dr_sck = state.send_chain_key.as_ref().map(|p| p.as_slice());
+    let dr_rck = state.recv_chain_key.as_ref().map(|p| p.as_slice());
+    conn.execute(
+        "UPDATE crypto_sessions SET
+            version = 1,
+            dr_root_key = ?1,
+            dr_self_priv = ?2,
+            dr_self_pub = ?3,
+            dr_peer_pub = ?4,
+            dr_send_chain_key = ?5,
+            dr_recv_chain_key = ?6,
+            dr_ns = ?7,
+            dr_nr = ?8,
+            dr_pn = ?9,
+            send_chain_key = ?10,
+            recv_chain_key = ?11,
+            send_counter = 0,
+            recv_counter = 0,
+            updated_at = ?12
+         WHERE session_id = ?13",
+        params![
+            state.root_key.as_slice(),
+            state.self_priv.as_slice(),
+            state.self_pub.as_slice(),
+            dr_peer,
+            dr_sck,
+            dr_rck,
+            state.n_send as i64,
+            state.n_recv as i64,
+            state.n_prev as i64,
+            z.as_slice(),
+            z.as_slice(),
+            now,
+            state.session_id,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Upsert DR material for an existing `crypto_sessions` row (`version` → 1).
+pub fn save_dr_session(user_scope: &str, state: &DrSessionState) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    save_dr_session_with_conn(&conn, state)
+}
+
+/// Load DR session state for `version = 1` rows only.
+pub fn load_dr_session(user_scope: &str, session_id: &str) -> Result<Option<DrSessionState>, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    let mut stmt = conn
+        .prepare(
+            "SELECT dr_root_key, dr_self_priv, dr_self_pub, dr_peer_pub, dr_send_chain_key,
+                    dr_recv_chain_key, dr_ns, dr_nr, dr_pn
+             FROM crypto_sessions WHERE session_id = ?1 AND version = 1",
+        )
+        .map_err(|e| e.to_string())?;
+    let row = stmt
+        .query_row(params![session_id], |r| {
+            Ok((
+                r.get::<_, Option<Vec<u8>>>(0)?,
+                r.get::<_, Option<Vec<u8>>>(1)?,
+                r.get::<_, Option<Vec<u8>>>(2)?,
+                r.get::<_, Option<Vec<u8>>>(3)?,
+                r.get::<_, Option<Vec<u8>>>(4)?,
+                r.get::<_, Option<Vec<u8>>>(5)?,
+                r.get::<_, i64>(6)? as u32,
+                r.get::<_, i64>(7)? as u32,
+                r.get::<_, i64>(8)? as u32,
+            ))
+        })
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let Some((rk_b, sp_b, s_pub_b, pp_b, sck_b, rck_b, ns, nr, pn)) = row else {
+        return Ok(None);
+    };
+    let Some(rk_b) = rk_b else {
+        return Ok(None);
+    };
+    let Some(sp_b) = sp_b else {
+        return Ok(None);
+    };
+    let Some(s_pub_b) = s_pub_b else {
+        return Ok(None);
+    };
+    if rk_b.len() != 32 || sp_b.len() != 32 || s_pub_b.len() != 32 {
+        return Err("invalid DR key material length in crypto_sessions".to_string());
+    }
+    let peer_pub = match pp_b {
+        None => None,
+        Some(b) if b.is_empty() => None,
+        Some(b) if b.len() == 32 => {
+            let mut p = [0u8; 32];
+            p.copy_from_slice(&b);
+            Some(p)
+        }
+        Some(_) => return Err("invalid dr_peer_pub length in crypto_sessions".to_string()),
+    };
+    let mut root_key = [0u8; 32];
+    root_key.copy_from_slice(&rk_b);
+    let mut self_priv = [0u8; 32];
+    self_priv.copy_from_slice(&sp_b);
+    let mut self_pub = [0u8; 32];
+    self_pub.copy_from_slice(&s_pub_b);
+    let send_chain_key = match sck_b {
+        None => None,
+        Some(b) if b.len() == 32 => {
+            let mut c = [0u8; 32];
+            c.copy_from_slice(&b);
+            Some(c)
+        }
+        Some(_) => return Err("invalid dr_send_chain_key length".to_string()),
+    };
+    let recv_chain_key = match rck_b {
+        None => None,
+        Some(b) if b.len() == 32 => {
+            let mut c = [0u8; 32];
+            c.copy_from_slice(&b);
+            Some(c)
+        }
+        Some(_) => return Err("invalid dr_recv_chain_key length".to_string()),
+    };
+    Ok(Some(DrSessionState {
+        session_id: session_id.to_string(),
+        root_key,
+        self_priv,
+        self_pub,
+        peer_pub,
+        send_chain_key,
+        recv_chain_key,
+        n_send: ns,
+        n_recv: nr,
+        n_prev: pn,
+    }))
+}
+
+pub fn load_dr_skipped_keys(user_scope: &str, session_id: &str) -> Result<Vec<DrSkippedMessageKey>, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    let mut stmt = conn
+        .prepare("SELECT dh_peer_pub, counter, message_key FROM crypto_skipped_keys WHERE session_id = ?1")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![session_id], |r| {
+            let dh: Vec<u8> = r.get(0)?;
+            let ctr: i64 = r.get(1)?;
+            let mk: Vec<u8> = r.get(2)?;
+            Ok((dh, ctr as u32, mk))
+        })
+        .map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (dh, ctr, mk) = row.map_err(|e| e.to_string())?;
+        if dh.len() != 32 || mk.len() != 32 {
+            return Err("invalid skipped-key column lengths (DR)".to_string());
+        }
+        let mut peer_pub = [0u8; 32];
+        peer_pub.copy_from_slice(&dh);
+        let mut message_key = [0u8; 32];
+        message_key.copy_from_slice(&mk);
+        out.push(DrSkippedMessageKey {
+            session_id: session_id.to_string(),
+            peer_pub,
+            counter: ctr,
+            message_key,
+        });
+    }
+    Ok(out)
+}
+
+/// Atomic write for the DR receive path — session advance + skipped-key rows.
+pub fn apply_dr_decrypt_outcome(
+    user_scope: &str,
+    advanced: &DrSessionState,
+    new_skipped: &[DrSkippedMessageKey],
+    consumed: Option<([u8; 32], u32)>,
+) -> Result<(), String> {
+    let conn = open_connection(user_scope)?;
+    let mut conn = conn.lock();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    save_dr_session_with_conn(&tx, advanced)?;
+    let now = chrono_now();
+    for s in new_skipped {
+        tx.execute(
+            "INSERT OR IGNORE INTO crypto_skipped_keys(
+                session_id, dh_peer_pub, counter, message_key, created_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                s.session_id,
+                s.peer_pub.as_slice(),
+                s.counter as i64,
+                s.message_key.as_slice(),
+                now,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    if let Some((dh, ctr)) = consumed {
+        tx.execute(
+            "DELETE FROM crypto_skipped_keys WHERE session_id = ?1 AND dh_peer_pub = ?2 AND counter = ?3",
+            params![advanced.session_id, dh.as_slice(), ctr as i64],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// Store signed pre-key material for later X3DH receive paths.
@@ -1216,6 +1505,98 @@ mod sender_key_tests {
             .unwrap()
             .unwrap();
         assert!(after.signing_seed.is_some());
+    }
+}
+
+#[cfg(test)]
+mod dr_persistence_tests {
+    use super::*;
+    use crate::domain::crypto::double_ratchet::{decrypt, encrypt, init_initiator, init_responder};
+    use rand::rngs::OsRng;
+    use rand::RngCore;
+    use x25519_dalek::{PublicKey, StaticSecret};
+
+    fn unique_scope(tag: &str) -> String {
+        format!(
+            "test-dr-{tag}-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        )
+    }
+
+    fn placeholder_chain() -> [u8; 32] {
+        [0xAB; 32]
+    }
+
+    #[test]
+    fn dr_round_trip_with_persistence() {
+        let scope_i = unique_scope("init");
+        let scope_r = unique_scope("resp");
+        let sid = format!(
+            "dr-sess-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+
+        let base_i = CryptoSessionState {
+            session_id: sid.clone(),
+            peer_did: "did:peers:bob".to_string(),
+            send_chain_key: placeholder_chain(),
+            send_counter: 0,
+            recv_chain_key: placeholder_chain(),
+            recv_counter: 0,
+            established: true,
+            is_initiator: true,
+            pending_ephemeral: None,
+        };
+        save_crypto_session(&scope_i, &base_i).unwrap();
+
+        let mut shared = [0u8; 32];
+        OsRng.fill_bytes(&mut shared);
+        let bob_priv = StaticSecret::random_from_rng(&mut OsRng);
+        let bob_pub = PublicKey::from(&bob_priv).to_bytes();
+
+        let mut alice = init_initiator(&sid, &shared, bob_pub);
+        save_dr_session(&scope_i, &alice).unwrap();
+
+        let wire = encrypt(&mut alice, b"hello-dr-sql", b"aad").unwrap();
+        save_dr_session(&scope_i, &alice).unwrap();
+
+        let base_r = CryptoSessionState {
+            session_id: sid.clone(),
+            peer_did: "did:peers:alice".to_string(),
+            send_chain_key: placeholder_chain(),
+            send_counter: 0,
+            recv_chain_key: placeholder_chain(),
+            recv_counter: 0,
+            established: true,
+            is_initiator: false,
+            pending_ephemeral: None,
+        };
+        save_crypto_session(&scope_r, &base_r).unwrap();
+
+        let bob = init_responder(&sid, &shared, bob_priv.to_bytes());
+        save_dr_session(&scope_r, &bob).unwrap();
+
+        let loaded_bob = load_dr_session(&scope_r, &sid).unwrap().expect("bob dr state");
+        let pre = load_dr_skipped_keys(&scope_r, &sid).unwrap();
+        let out = decrypt(&loaded_bob, &wire, &pre, b"aad").unwrap();
+        apply_dr_decrypt_outcome(
+            &scope_r,
+            &out.advanced_state,
+            &out.new_skipped,
+            out.consumed_skipped,
+        )
+        .unwrap();
+
+        assert_eq!(out.plaintext, b"hello-dr-sql");
+
+        let bob_reloaded = load_dr_session(&scope_r, &sid).unwrap().unwrap();
+        assert_eq!(bob_reloaded.n_recv, out.advanced_state.n_recv);
     }
 }
 
