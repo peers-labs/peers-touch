@@ -69,21 +69,3 @@ enum CommentSort {
   OLDEST = 1;
   MOST_LIKED = 2;
 }
-
-message LikeCommentRequest {
-  string comment_id = 1;
-}
-
-message LikeCommentResponse {
-  bool success = 1;
-  int64 new_likes_count = 2;
-}
-
-message UnlikeCommentRequest {
-  string comment_id = 1;
-}
-
-message UnlikeCommentResponse {
-  bool success = 1;
-  int64 new_likes_count = 2;
-}

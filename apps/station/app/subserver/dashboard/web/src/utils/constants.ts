@@ -9,6 +9,7 @@ export const PAGES = {
   NODES: 'nodes',
   SUBSERVERS: 'subservers',
   STORAGE: 'storage',
+  OSS: 'oss',
   SECURITY: 'security',
   SYSTEM: 'system',
   LOGS: 'logs',
