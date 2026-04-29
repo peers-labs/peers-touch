@@ -13,4 +13,3 @@ pub mod profile_store;
 pub mod realtime;
 pub(crate) mod station_client;
 pub mod storage;
-pub mod timeline_store;

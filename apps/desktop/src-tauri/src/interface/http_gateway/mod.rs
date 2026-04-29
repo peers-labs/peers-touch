@@ -43,7 +43,6 @@ use crate::application::settings as app_settings;
 use crate::application::skills as app_skills;
 use crate::application::skills_market as app_skills_market;
 use crate::application::system as app_system;
-use crate::application::timeline as app_timeline;
 use crate::application::tools as app_tools;
 use crate::application::tts as app_tts;
 
@@ -666,25 +665,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             to_json(app_chat::chat_completion_once("", input))
         }
 
-        // =================================================================
-        // Timeline (no state)
-        // =================================================================
-        "timeline_list" => {
-            let input = match parse_args::<TimelineListInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_timeline::timeline_list("", input))
-        }
-        "timeline_like" => {
-            let input = match parse_args::<TimelineActionInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_timeline::timeline_like("", input))
-        }
-        "timeline_comment" => {
-            let input = match parse_args::<TimelineActionInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_timeline::timeline_comment("", input))
-        }
-        "timeline_repost" => {
-            let input = match parse_args::<TimelineActionInput>(args) { Ok(v) => v, Err(e) => return e };
-            to_json(app_timeline::timeline_repost("", input))
-        }
+        // Note: legacy `timeline_*` dev-HTTP routes were removed in P2. The
+        // new `social_*` Tauri commands target proto-typed responses and
+        // are not exposed via the dev HTTP gateway (which only speaks
+        // JSON / StubPayload). If you need to exercise them from a
+        // browser harness, use the Tauri devtools `invoke()` panel
+        // instead.
 
         // =================================================================
         // Profile (session token via global lock — dev HTTP gateway)
