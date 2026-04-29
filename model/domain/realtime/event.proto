@@ -29,14 +29,15 @@ message StreamEvent {
   int64 ts_unix_ms = 2;
 
   oneof kind {
-    Heartbeat       hb        = 10;
-    MessageEnvelope message   = 11;
-    MessageReceipt  receipt   = 12;
-    TypingState     typing    = 13;
-    PresenceFlip    presence  = 14;
-    CallSignal      signaling = 15;
-    Resync          resync    = 16;
-    MessageMutation mutation  = 17;
+    Heartbeat             hb                       = 10;
+    MessageEnvelope       message                  = 11;
+    MessageReceipt        receipt                  = 12;
+    TypingState           typing                   = 13;
+    PresenceFlip          presence                 = 14;
+    CallSignal            signaling                = 15;
+    Resync                resync                   = 16;
+    MessageMutation       mutation                 = 17;
+    GroupMembershipChange group_membership_change   = 18;
   }
 }
 
@@ -177,6 +178,25 @@ message MessageMutation {
     RECALL           = 1;
     EDIT             = 2;
     DELETE           = 3;
+  }
+}
+
+// GroupMembershipChange notifies subscribers that a group's roster
+// changed in real time (join, kick, or voluntary leave). Every
+// affected actor receives a frame on their SSE stream so clients
+// can refresh cached membership and rotate Sender Keys promptly.
+message GroupMembershipChange {
+  string event_id = 1; // server ULID, opaque cursor
+  string group_ulid = 2;
+  string actor_did = 3; // the member whose membership flipped
+  Kind kind = 4;
+  int64 changed_ts_unix_ms = 5;
+
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_ADDED = 1;
+    KIND_REMOVED = 2; // an admin kicked them
+    KIND_LEFT = 3;    // they left voluntarily
   }
 }
 

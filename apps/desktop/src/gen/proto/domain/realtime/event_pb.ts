@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/realtime/event.proto.
  */
 export const file_domain_realtime_event: GenFile = /*@__PURE__*/
-  fileDesc("Chtkb21haW4vcmVhbHRpbWUvZXZlbnQucHJvdG8SHXBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxIrQECgtTdHJlYW1FdmVudBIQCghldmVudF9pZBgBIAEoCRISCgp0c191bml4X21zGAIgASgDEjYKAmhiGAogASgLMigucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuSGVhcnRiZWF0SAASQQoHbWVzc2FnZRgLIAEoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1lc3NhZ2VFbnZlbG9wZUgAEkAKB3JlY2VpcHQYDCABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlUmVjZWlwdEgAEjwKBnR5cGluZxgNIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLlR5cGluZ1N0YXRlSAASPwoIcHJlc2VuY2UYDiABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5QcmVzZW5jZUZsaXBIABI+CglzaWduYWxpbmcYDyABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5DYWxsU2lnbmFsSAASNwoGcmVzeW5jGBAgASgLMiUucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuUmVzeW5jSAASQgoIbXV0YXRpb24YESABKAsyLi5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlTXV0YXRpb25IAEIGCgRraW5kIiMKCUhlYXJ0YmVhdBIWCg5mbG9vcl9ldmVudF9pZBgBIAEoCSKXAQoPTWVzc2FnZUVudmVsb3BlEhcKD3NlbmRlcl9hY3Rvcl9pZBgBIAEoCRIaChJyZWNpcGllbnRfYWN0b3JfaWQYAiABKAkSFAoMc2Vzc2lvbl91bGlkGAMgASgJEgwKBHVsaWQYBCABKAkSEgoKY2lwaGVydGV4dBgFIAEoDBIXCg9zZW50X3RzX3VuaXhfbXMYBiABKAMixAEKDk1lc3NhZ2VSZWNlaXB0EhQKDHNlc3Npb25fdWxpZBgBIAEoCRIMCgR1bGlkGAIgASgJEkAKBGtpbmQYAyABKA4yMi5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlUmVjZWlwdC5LaW5kEhUKDWZyb21fYWN0b3JfaWQYBCABKAkiNQoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASDQoJREVMSVZFUkVEEAESCAoEUkVBRBACIkoKC1R5cGluZ1N0YXRlEhQKDHNlc3Npb25fdWxpZBgBIAEoCRIVCg1mcm9tX2FjdG9yX2lkGAIgASgJEg4KBnR5cGluZxgDIAEoCCIwCgxQcmVzZW5jZUZsaXASEAoIYWN0b3JfaWQYASABKAkSDgoGb25saW5lGAIgASgIIpsCCgpDYWxsU2lnbmFsEhQKDHNlc3Npb25fdWxpZBgBIAEoCRIVCg1mcm9tX2FjdG9yX2lkGAIgASgJEjwKBGtpbmQYAyABKA4yLi5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5DYWxsU2lnbmFsLktpbmQSDwoHcGF5bG9hZBgEIAEoDCKQAQoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASCQoFT0ZGRVIQARIKCgZBTlNXRVIQAhINCglDQU5ESURBVEUQAxIKCgZIQU5HVVAQBBIQCgxDQUxMX1JFUVVFU1QQBRIPCgtDQUxMX0FDQ0VQVBAGEg8KC0NBTExfUkVKRUNUEAcSDAoIQ0FMTF9FTkQQCCKYAgoPTWVzc2FnZU11dGF0aW9uEhQKDHNlc3Npb25fdWxpZBgBIAEoCRIMCgR1bGlkGAIgASgJEhUKDWZyb21fYWN0b3JfaWQYAyABKAkSQQoEa2luZBgEIAEoDjIzLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1lc3NhZ2VNdXRhdGlvbi5LaW5kEhYKDm5ld19jaXBoZXJ0ZXh0GAUgASgMEhMKC25ld19jb250ZW50GAYgASgJEhoKEm11dGF0ZWRfdHNfdW5peF9tcxgHIAEoAyI+CgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIKCgZSRUNBTEwQARIICgRFRElUEAISCgoGREVMRVRFEAMiMQoGUmVzeW5jEhcKD25ld2VzdF9ldmVudF9pZBgBIAEoCRIOCgZyZWFzb24YAiABKAlCT1pNZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvcmVhbHRpbWU7cmVhbHRpbWViBnByb3RvMw");
+  fileDesc("Chtkb21haW4vcmVhbHRpbWUvZXZlbnQucHJvdG8SHXBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxIo0FCgtTdHJlYW1FdmVudBIQCghldmVudF9pZBgBIAEoCRISCgp0c191bml4X21zGAIgASgDEjYKAmhiGAogASgLMigucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuSGVhcnRiZWF0SAASQQoHbWVzc2FnZRgLIAEoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1lc3NhZ2VFbnZlbG9wZUgAEkAKB3JlY2VpcHQYDCABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlUmVjZWlwdEgAEjwKBnR5cGluZxgNIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLlR5cGluZ1N0YXRlSAASPwoIcHJlc2VuY2UYDiABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5QcmVzZW5jZUZsaXBIABI+CglzaWduYWxpbmcYDyABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5DYWxsU2lnbmFsSAASNwoGcmVzeW5jGBAgASgLMiUucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuUmVzeW5jSAASQgoIbXV0YXRpb24YESABKAsyLi5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlTXV0YXRpb25IABJXChdncm91cF9tZW1iZXJzaGlwX2NoYW5nZRgSIAEoCzI0LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkdyb3VwTWVtYmVyc2hpcENoYW5nZUgAQgYKBGtpbmQiIwoJSGVhcnRiZWF0EhYKDmZsb29yX2V2ZW50X2lkGAEgASgJIpcBCg9NZXNzYWdlRW52ZWxvcGUSFwoPc2VuZGVyX2FjdG9yX2lkGAEgASgJEhoKEnJlY2lwaWVudF9hY3Rvcl9pZBgCIAEoCRIUCgxzZXNzaW9uX3VsaWQYAyABKAkSDAoEdWxpZBgEIAEoCRISCgpjaXBoZXJ0ZXh0GAUgASgMEhcKD3NlbnRfdHNfdW5peF9tcxgGIAEoAyLEAQoOTWVzc2FnZVJlY2VpcHQSFAoMc2Vzc2lvbl91bGlkGAEgASgJEgwKBHVsaWQYAiABKAkSQAoEa2luZBgDIAEoDjIyLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1lc3NhZ2VSZWNlaXB0LktpbmQSFQoNZnJvbV9hY3Rvcl9pZBgEIAEoCSI1CgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABINCglERUxJVkVSRUQQARIICgRSRUFEEAIiSgoLVHlwaW5nU3RhdGUSFAoMc2Vzc2lvbl91bGlkGAEgASgJEhUKDWZyb21fYWN0b3JfaWQYAiABKAkSDgoGdHlwaW5nGAMgASgIIjAKDFByZXNlbmNlRmxpcBIQCghhY3Rvcl9pZBgBIAEoCRIOCgZvbmxpbmUYAiABKAgimwIKCkNhbGxTaWduYWwSFAoMc2Vzc2lvbl91bGlkGAEgASgJEhUKDWZyb21fYWN0b3JfaWQYAiABKAkSPAoEa2luZBgDIAEoDjIuLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkNhbGxTaWduYWwuS2luZBIPCgdwYXlsb2FkGAQgASgMIpABCgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIJCgVPRkZFUhABEgoKBkFOU1dFUhACEg0KCUNBTkRJREFURRADEgoKBkhBTkdVUBAEEhAKDENBTExfUkVRVUVTVBAFEg8KC0NBTExfQUNDRVBUEAYSDwoLQ0FMTF9SRUpFQ1QQBxIMCghDQUxMX0VORBAIIpgCCg9NZXNzYWdlTXV0YXRpb24SFAoMc2Vzc2lvbl91bGlkGAEgASgJEgwKBHVsaWQYAiABKAkSFQoNZnJvbV9hY3Rvcl9pZBgDIAEoCRJBCgRraW5kGAQgASgOMjMucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuTWVzc2FnZU11dGF0aW9uLktpbmQSFgoObmV3X2NpcGhlcnRleHQYBSABKAwSEwoLbmV3X2NvbnRlbnQYBiABKAkSGgoSbXV0YXRlZF90c191bml4X21zGAcgASgDIj4KBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEgoKBlJFQ0FMTBABEggKBEVESVQQAhIKCgZERUxFVEUQAyKEAgoVR3JvdXBNZW1iZXJzaGlwQ2hhbmdlEhAKCGV2ZW50X2lkGAEgASgJEhIKCmdyb3VwX3VsaWQYAiABKAkSEQoJYWN0b3JfZGlkGAMgASgJEkcKBGtpbmQYBCABKA4yOS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5Hcm91cE1lbWJlcnNoaXBDaGFuZ2UuS2luZBIaChJjaGFuZ2VkX3RzX3VuaXhfbXMYBSABKAMiTQoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASDgoKS0lORF9BRERFRBABEhAKDEtJTkRfUkVNT1ZFRBACEg0KCUtJTkRfTEVGVBADIjEKBlJlc3luYxIXCg9uZXdlc3RfZXZlbnRfaWQYASABKAkSDgoGcmVhc29uGAIgASgJQk9aTWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsL3JlYWx0aW1lO3JlYWx0aW1lYgZwcm90bzM");
 
 /**
  * StreamEvent is the single envelope every realtime frame uses.
@@ -91,6 +91,12 @@ export type StreamEvent = Message<"peers_touch.model.realtime.v1.StreamEvent"> &
      */
     value: MessageMutation;
     case: "mutation";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.realtime.v1.GroupMembershipChange group_membership_change = 18;
+     */
+    value: GroupMembershipChange;
+    case: "groupMembershipChange";
   } | { case: undefined; value?: undefined };
 };
 
@@ -511,6 +517,87 @@ export const MessageMutation_KindSchema: GenEnum<MessageMutation_Kind> = /*@__PU
   enumDesc(file_domain_realtime_event, 7, 0);
 
 /**
+ * GroupMembershipChange notifies subscribers that a group's roster
+ * changed in real time (join, kick, or voluntary leave). Every
+ * affected actor receives a frame on their SSE stream so clients
+ * can refresh cached membership and rotate Sender Keys promptly.
+ *
+ * @generated from message peers_touch.model.realtime.v1.GroupMembershipChange
+ */
+export type GroupMembershipChange = Message<"peers_touch.model.realtime.v1.GroupMembershipChange"> & {
+  /**
+   * server ULID, opaque cursor
+   *
+   * @generated from field: string event_id = 1;
+   */
+  eventId: string;
+
+  /**
+   * @generated from field: string group_ulid = 2;
+   */
+  groupUlid: string;
+
+  /**
+   * the member whose membership flipped
+   *
+   * @generated from field: string actor_did = 3;
+   */
+  actorDid: string;
+
+  /**
+   * @generated from field: peers_touch.model.realtime.v1.GroupMembershipChange.Kind kind = 4;
+   */
+  kind: GroupMembershipChange_Kind;
+
+  /**
+   * @generated from field: int64 changed_ts_unix_ms = 5;
+   */
+  changedTsUnixMs: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.realtime.v1.GroupMembershipChange.
+ * Use `create(GroupMembershipChangeSchema)` to create a new message.
+ */
+export const GroupMembershipChangeSchema: GenMessage<GroupMembershipChange> = /*@__PURE__*/
+  messageDesc(file_domain_realtime_event, 8);
+
+/**
+ * @generated from enum peers_touch.model.realtime.v1.GroupMembershipChange.Kind
+ */
+export enum GroupMembershipChange_Kind {
+  /**
+   * @generated from enum value: KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: KIND_ADDED = 1;
+   */
+  ADDED = 1,
+
+  /**
+   * an admin kicked them
+   *
+   * @generated from enum value: KIND_REMOVED = 2;
+   */
+  REMOVED = 2,
+
+  /**
+   * they left voluntarily
+   *
+   * @generated from enum value: KIND_LEFT = 3;
+   */
+  LEFT = 3,
+}
+
+/**
+ * Describes the enum peers_touch.model.realtime.v1.GroupMembershipChange.Kind.
+ */
+export const GroupMembershipChange_KindSchema: GenEnum<GroupMembershipChange_Kind> = /*@__PURE__*/
+  enumDesc(file_domain_realtime_event, 8, 0);
+
+/**
  * Resync is the server's only signal that the client's Last-Event-ID
  * cursor falls outside the in-memory ring buffer. On receiving this,
  * clients MUST perform a cold catch-up before trusting any event
@@ -540,5 +627,5 @@ export type Resync = Message<"peers_touch.model.realtime.v1.Resync"> & {
  * Use `create(ResyncSchema)` to create a new message.
  */
 export const ResyncSchema: GenMessage<Resync> = /*@__PURE__*/
-  messageDesc(file_domain_realtime_event, 8);
+  messageDesc(file_domain_realtime_event, 9);
 
