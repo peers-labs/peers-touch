@@ -24,6 +24,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/infrastructure"
+	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
@@ -148,7 +149,13 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 
 	s.auditRepo = auditRepo
 
-	s.authSvc = application.NewAuthService(adminRepo, sessionRepo, auditRepo, jwtSecret, sessionTTL)
+	// Build the framework-level JWT provider once and hand it
+	// to AuthService. Doing it here (rather than inside
+	// NewAuthService) keeps `application/` decoupled from
+	// configuration: the secret + TTL only ever cross the
+	// dashboard boundary at this single line.
+	jwtProvider := coreauth.NewJWTProvider(jwtSecret, sessionTTL)
+	s.authSvc = application.NewAuthService(adminRepo, sessionRepo, auditRepo, jwtProvider, sessionTTL)
 	s.overviewSvc = application.NewOverviewService(actorQueryRepo, auditRepo, nil)
 	s.actorsSvc = application.NewActorService(actorQueryRepo)
 	s.chatDebugSvc = application.NewChatDebugService(rds)
