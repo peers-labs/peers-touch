@@ -1,16 +1,19 @@
-// OSS application service — chat attachment upload & federated URI resolution.
+// OSS application service — attachment upload & federated URI resolution.
 //
 // Two responsibilities, kept in this module so the Tauri layer never has
 // to think about Station's wire shape:
 //
-//   1. `upload_attachment(file_path, token)` — pushes a local file to
-//      Station via the existing `/sub-oss/upload` endpoint and returns
-//      the canonical attachment payload (`cid`, `key`, `host`, `mime`,
-//      `size`, `filename`). The `cid` is the federated URI that should
-//      be embedded in `MessageAttachment.cid`. Older Station builds
-//      that pre-date the URI work return only `key`/`url`; we
+//   1. `upload_attachment(file_path, token, consumer)` — pushes a local
+//      file to Station via the existing `/sub-oss/upload` endpoint and
+//      returns the canonical attachment payload (`cid`, `key`, `host`,
+//      `mime`, `size`, `filename`). The `cid` is the federated URI
+//      that should be embedded in `MessageAttachment.cid` (chat) or
+//      `CreateImagePostRequest.image_ids` (Moments). Older Station
+//      builds that pre-date the URI work return only `key`/`url`; we
 //      synthesize a `cid` from `station_base_url` so older deployments
 //      continue to function.
+//      The `consumer` label is for log correlation only — the wire
+//      contract is identical across modules.
 //
 //   2. `resolve_url(uri)` — turns a `cid` (URI form or bare key) into
 //      something the renderer can display:
@@ -32,10 +35,10 @@ use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::oss_cache::{self, OssCacheError, OssUri};
 use crate::infrastructure::station_client;
 
-/// Result returned by `chat_upload_attachment` to the frontend. The
-/// shape mirrors `MessageAttachment` proto fields so the renderer can
-/// pass it straight into a `friend_chat.send_message` / group send
-/// without further mapping.
+/// Result returned by `upload_attachment` to the frontend. The shape
+/// mirrors `MessageAttachment` / `ImageAttachment` proto fields so the
+/// renderer can pass it straight into a `friend_chat.send_message` /
+/// group send / Moments createPost without further mapping.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatAttachmentUploaded {
     /// Federated URI: `oss://{host}/{key}` — store this in the message.
@@ -69,7 +72,11 @@ pub struct OssResolved {
     pub key: String,
 }
 
-pub fn chat_upload_attachment(file_path: &str, token: &str) -> AppResult<StubPayload> {
+pub fn upload_attachment(
+    file_path: &str,
+    token: &str,
+    consumer: &str,
+) -> AppResult<StubPayload> {
     if file_path.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
@@ -77,12 +84,12 @@ pub fn chat_upload_attachment(file_path: &str, token: &str) -> AppResult<StubPay
             None,
         );
     }
-    tracing::info!(file_path = %file_path, "Chat attachment upload start");
+    tracing::info!(file_path = %file_path, consumer = %consumer, "OSS attachment upload start");
 
     let resp = match station_client::upload_multipart("/sub-oss/upload", token, file_path) {
         Ok(v) => v,
         Err(e) => {
-            tracing::error!(error = %e, "Chat attachment upload failed");
+            tracing::error!(error = %e, consumer = %consumer, "OSS attachment upload failed");
             return e.into_app_result("Failed to upload attachment");
         }
     };
@@ -130,7 +137,7 @@ pub fn chat_upload_attachment(file_path: &str, token: &str) -> AppResult<StubPay
 
     let body = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
     AppResult::success(StubPayload {
-        command: "chat_upload_attachment".to_string(),
+        command: format!("oss_upload_attachment_{}", consumer),
         status: body,
     })
 }
