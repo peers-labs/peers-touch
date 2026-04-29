@@ -6,12 +6,20 @@
   "moments.tab.explore": "Explore",
   "moments.tab.circle": "Circles",
   "moments.tab.profile": "Profile",
+  "moments.tab.recent": "Recent",
+  "moments.tab.hot": "Hot",
 
   "moments.action.compose": "New Post",
   "moments.action.refresh": "Refresh",
   "moments.action.openPost": "Open",
   "moments.action.manageCircles": "Manage Circles",
   "moments.action.comingSoon": "Coming soon",
+  "moments.action.showMore": "Show more",
+  "moments.action.loadMore": "Load more",
+  "moments.action.cancel": "Cancel",
+  "moments.action.more": "More",
+  "moments.action.search": "Search",
+  "moments.action.viewProfile": "View profile",
 
   "moments.placeholder.empty": "Nothing here yet",
   "moments.placeholder.feedEmpty": "Your feed will appear here once you follow people or join circles.",
@@ -19,7 +27,8 @@
   "moments.placeholder.circleEmpty": "You haven't created any circles yet. Circles let you publish to a private audience.",
   "moments.placeholder.detailEmpty": "Select a post to see its comments and reactions.",
   "moments.placeholder.userEmpty": "This actor hasn't published any posts visible to you.",
-  "moments.placeholder.scaffold": "This page is part of the Moments scaffold (P0). Functionality lands in P2.",
+  "moments.placeholder.searchEmpty": "Search for actors by name or @username.",
+  "moments.placeholder.noResults": "No matches found.",
 
   "moments.audience.public": "Public",
   "moments.audience.followers": "Followers only",
@@ -28,13 +37,17 @@
   "moments.audience.self": "Only me",
   "moments.audience.customAllow": "Allow list",
   "moments.audience.customDeny": "Deny list",
+  "moments.audience.comingP3": "Available in P3 — needs the actor / membership resolver.",
+  "moments.audience.comingP3Tag": "(P3)",
 
   "moments.reaction.like": "Like",
   "moments.reaction.love": "Love",
   "moments.reaction.laugh": "Laugh",
   "moments.reaction.wow": "Wow",
   "moments.reaction.celebrate": "Celebrate",
+  "moments.reaction.add": "React",
 
+  "moments.compose.title": "New Post",
   "moments.compose.placeholder": "What's on your mind?",
   "moments.compose.audienceLabel": "Audience",
   "moments.compose.attachImage": "Image",
@@ -44,11 +57,40 @@
   "moments.compose.attachPoll": "Poll",
   "moments.compose.publish": "Publish",
   "moments.compose.cancel": "Cancel",
+  "moments.compose.published": "Posted",
+  "moments.compose.emptyError": "Write something first",
+  "moments.compose.imageDisabled": "Image upload arrives with OSS in a follow-up release",
+
+  "moments.comment.placeholder": "Reply…",
+  "moments.comment.publish": "Post",
+  "moments.comment.empty": "No comments yet. Be the first to reply.",
+  "moments.comment.reply": "Reply",
+  "moments.comment.delete": "Delete",
+  "moments.comment.replyingTo": "Replying to",
+
+  "moments.author.unknown": "Unknown",
+
+  "moments.follow.follow": "Follow",
+  "moments.follow.unfollow": "Unfollow",
+  "moments.follow.following": "Following",
+  "moments.follow.loading": "Loading",
+
+  "moments.stats.posts": "Posts",
+  "moments.stats.followers": "Followers",
+  "moments.stats.following": "Following",
+  "moments.stats.circles": "Circles",
+  "moments.stats.commentsReceived": "Comments",
+  "moments.stats.commentsReceivedHint": "Total comments others have left on your posts.",
+  "moments.stats.reactionsReceived": "Reactions",
+  "moments.stats.reactionsReceivedHint": "Total reactions others have placed on your posts.",
 
   "moments.circle.create": "New Circle",
   "moments.circle.namePlaceholder": "Circle name",
   "moments.circle.descriptionPlaceholder": "Description (optional)",
   "moments.circle.memberCount": "{{count}} members",
   "moments.circle.delete": "Delete circle",
-  "moments.circle.rename": "Rename"
+  "moments.circle.rename": "Rename",
+
+  "moments.search.title": "Find people",
+  "moments.search.placeholder": "Search by name or @username"
 }

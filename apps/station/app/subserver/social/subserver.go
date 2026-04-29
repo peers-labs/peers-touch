@@ -31,6 +31,7 @@ type subServer struct {
 	circleSvc       *application.CircleService
 	timelineSvc     *application.TimelineService
 	relationshipSvc *application.RelationshipService
+	statsSvc        *application.StatsService
 }
 
 func NewSocialSubServer(_ ...option.Option) server.Subserver {
@@ -69,6 +70,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	s.circleSvc = application.NewCircleService(repos)
 	s.timelineSvc = application.NewTimelineService(repos, s.momentSvc, resolver, groups)
 	s.relationshipSvc = application.NewRelationshipService(repos.Follows)
+	s.statsSvc = application.NewStatsService(rds, repos)
 
 	log.Warn(ctx, "[social] CUSTOM_*/CIRCLE/GROUP audiences degrade until P3 wires real ActorResolver + GroupMembershipChecker")
 	log.Infof(ctx, "[social] subserver initialized")
