@@ -2,8 +2,6 @@
 
 > Load this file when working on `apps/mobile/android/` or `apps/mobile/ios/`.
 > Parent rules: [AGENTS.md](../../AGENTS.md)
->
-> `apps/mobile/flutter/` is deprecated. Do not read, modify, or reference it.
 
 ---
 
