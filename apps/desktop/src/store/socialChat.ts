@@ -9,6 +9,7 @@ import {
   encryptForGroup,
   decryptFromGroup,
   handleInboundSkdm,
+  rotateGroupSenderChain,
   MissingSkdmError,
   FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION,
 } from '../modules/identity/groupSenderKeys';
@@ -176,6 +177,18 @@ interface SocialChatState {
     attachments?: ChatAttachmentInput[],
   ) => Promise<void>;
   loadGroupMembers: (groupUlid: string) => Promise<void>;
+  /**
+   * Re-attempt decryption of any group ciphertext currently stuck on
+   * the `[Waiting for sender key…]` / `[Decrypt failed]` placeholder.
+   *
+   * Triggered by the `GROUP_SKDM_INSTALLED` event so a late-arriving
+   * SKDM unblocks all the messages it was supposed to unblock without
+   * forcing the user to reload the chat. When `senderDid` is
+   * provided we only retry rows attributed to that sender (cheap
+   * narrowing on the common single-peer case); when omitted we retry
+   * every placeholder in the group.
+   */
+  redecryptGroupMessages: (groupUlid: string, senderDid?: string) => Promise<void>;
   toggleDetail: () => void;
   setShowDetail: (show: boolean) => void;
   deleteMessage: (ulid: string, messageUlid: string, kind?: 'friend' | 'group') => Promise<void>;
@@ -862,14 +875,98 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   loadGroupMembers: async (groupUlid) => {
     try {
       const data = await api.groupChatGetMembers(groupUlid);
-      const members = data?.members || [];
+      const members = (data?.members || []) as GroupMember[];
+
+      // Forced rotation on observed membership shrinkage. We diff
+      // the freshly-fetched member list against the cached one; if
+      // any DID we previously knew about is gone AND we (the
+      // current actor) are still in the group, rotate our local
+      // sender chain so the departed member's copy of the chain
+      // key cannot decrypt our future messages.
+      //
+      // We don't have an SSE event for membership changes yet
+      // (tracked separately), so this poll-driven diff is the
+      // current trigger. It misses the case where the departed
+      // member leaves AND the current device never reloads members
+      // before sending again -- a follow-up SSE
+      // GroupMembershipChange event will close that gap. Until
+      // then, the best-effort rotation is strictly better than
+      // nothing.
+      const did = get().currentUserDid;
+      const oldMembers = get().groupMembers[groupUlid];
+      if (did && oldMembers && oldMembers.length > 0) {
+        const oldDids = new Set(oldMembers.map((m) => m.actorDid).filter((d): d is string => !!d));
+        const newDids = new Set(members.map((m) => m.actorDid).filter((d): d is string => !!d));
+        const stillIn = newDids.has(did);
+        const removed = [...oldDids].filter((d) => !newDids.has(d) && d !== did);
+        if (stillIn && removed.length > 0) {
+          rotateGroupSenderChain(did, groupUlid).catch((err) =>
+            log.warn('socialChat', 'rotateGroupSenderChain failed', err),
+          );
+        }
+      }
+
       set((state) => ({
-        groupMembers: { ...state.groupMembers, [groupUlid]: members as GroupMember[] },
+        groupMembers: { ...state.groupMembers, [groupUlid]: members },
       }));
     } catch (error) {
       log.error('socialChat', 'loadGroupMembers failed', error);
       throw error;
     }
+  },
+
+  redecryptGroupMessages: async (groupUlid, senderDid) => {
+    // Guards: nothing to do if we have no cached messages for this
+    // group yet (the next loadMessages will decrypt fresh anyway).
+    const cached = get().messages[groupUlid] as GroupMessage[] | undefined;
+    if (!cached || cached.length === 0) return;
+
+    // Identify rows that are encrypted-but-undecrypted. We use the
+    // placeholder strings as the "stuck" sentinel because they are
+    // produced exclusively by loadMessages' MissingSkdm / generic
+    // failure arm; any successfully-decrypted row has the real
+    // plaintext in `content` already.
+    const PLACEHOLDERS = new Set(['[Waiting for sender key…]', '[Decrypt failed]']);
+    const rows = cached.filter((m) => {
+      if (m.recalled) return false;
+      if (!m.encryptedPayload || m.encryptedPayload.byteLength === 0) return false;
+      if (!PLACEHOLDERS.has(m.content || '')) return false;
+      if (senderDid && m.senderDid && m.senderDid !== senderDid) return false;
+      return true;
+    });
+    if (rows.length === 0) return;
+
+    // Walk in original order; we update at the end as a single
+    // setState so React doesn't re-render once per message.
+    const decrypted = new Map<string, string>();
+    for (const m of rows) {
+      try {
+        const payloadB64 = bytesToB64(m.encryptedPayload);
+        const out = await decryptFromGroup(groupUlid, payloadB64);
+        decrypted.set(m.ulid, out.plaintext);
+      } catch (err) {
+        // Still missing -- e.g. the SKDM that arrived was for a
+        // DIFFERENT sender than this row. Leave the placeholder in
+        // place so the next install (or next loadMessages) tries
+        // again.
+        if (!(err instanceof MissingSkdmError)) {
+          log.warn('socialChat', 'redecryptGroupMessages: decrypt failed', err);
+        }
+      }
+    }
+    if (decrypted.size === 0) return;
+
+    set((state) => {
+      const list = state.messages[groupUlid] as GroupMessage[] | undefined;
+      if (!list) return state;
+      const next = list.map((m) => {
+        const plain = decrypted.get(m.ulid);
+        return plain == null ? m : ({ ...m, content: plain } as GroupMessage);
+      });
+      return {
+        messages: { ...state.messages, [groupUlid]: next as (FriendChatMessage | GroupMessage)[] },
+      };
+    });
   },
 
   toggleDetail: () => set((state) => ({ showDetail: !state.showDetail })),

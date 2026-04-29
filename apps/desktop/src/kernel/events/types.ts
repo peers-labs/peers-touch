@@ -146,6 +146,23 @@ export interface RealtimeMessageMutationPayload {
   mutatedTsUnixMs: number;
 }
 
+/**
+ * Group Sender-Keys distribution-message install notification.
+ *
+ * Fired by `handleInboundSkdm` after a peer's SKDM has been
+ * decoded, authenticated, and persisted. The store subscribes
+ * and re-attempts decryption of any group ciphertext that
+ * previously failed with `MissingSkdmError` for the same
+ * `(groupUlid, senderDid, senderKeyId)` tuple, so a late SKDM
+ * unblocks all the messages it was supposed to unblock without
+ * forcing the user to reload the chat.
+ */
+export interface GroupSkdmInstalledPayload {
+  groupUlid: string;
+  senderDid: string;
+  senderKeyId: number;
+}
+
 export interface EventPayloadMap {
   [EVENT.AUTH_IDENTITY_CHANGED]: void;
   [EVENT.AUTH_SESSION_REVOKED]: SessionRevokedPayload;
@@ -164,6 +181,7 @@ export interface EventPayloadMap {
   [EVENT.REALTIME_MESSAGE_RECEIPT]: RealtimeMessageReceiptPayload;
   [EVENT.REALTIME_TYPING_STATE]: RealtimeTypingStatePayload;
   [EVENT.REALTIME_MESSAGE_MUTATION]: RealtimeMessageMutationPayload;
+  [EVENT.GROUP_SKDM_INSTALLED]: GroupSkdmInstalledPayload;
 }
 
 export interface AppEvent<TType extends keyof EventPayloadMap> {

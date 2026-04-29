@@ -16,6 +16,13 @@ export const EVENT = {
   REALTIME_MESSAGE_RECEIPT: 'realtime.message_receipt',
   REALTIME_TYPING_STATE: 'realtime.typing_state',
   REALTIME_MESSAGE_MUTATION: 'realtime.message_mutation',
+  // Fired by handleInboundSkdm after a peer's Sender Keys
+  // distribution message has been successfully consumed and
+  // persisted. Subscribers (socialChat) use this to re-attempt
+  // decryption of any group ciphertext that previously failed
+  // with MissingSkdmError for the same (groupUlid, senderDid,
+  // senderKeyId) tuple.
+  GROUP_SKDM_INSTALLED: 'crypto.group_skdm_installed',
 } as const;
 
 export type EventType = (typeof EVENT)[keyof typeof EVENT];
