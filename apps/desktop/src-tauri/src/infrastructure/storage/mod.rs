@@ -1,15 +1,79 @@
 pub mod key_provider;
 
 use crate::domain::storage::database::{DatabaseOpenSpec, EncryptionLevel};
-use crate::domain::storage::key_management::{KeyProvider, KeyProviderError};
-use rusqlite::{params, Connection};
+use crate::domain::storage::key_management::{KeyMaterial, KeyProvider, KeyProviderError};
+use rusqlite::{ffi, params, Connection};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::ffi::CStr;
 use std::fmt;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// SQLCipher accepts a textual passphrase the same way `PRAGMA key = '...'` does: passphrase
+/// bytes are the UTF-8 encoding of this lossy string (see `sqlite3.c` pragma KEY branch,
+/// which calls `sqlite3_key_v2` with `strlen(zRight)`). Building a single-quoted SQL literal
+/// from that string breaks when the passphrase contains NULs, unescaped tokens, or bytes that
+/// confuse the SQL tokenizer—so we call `sqlite3_key_v2` directly with an explicit length.
+fn sqlcipher_passphrase_bytes(key: &KeyMaterial) -> Vec<u8> {
+    String::from_utf8_lossy(&key.key_bytes).into_owned().into_bytes()
+}
+
+fn sqlcipher_errmsg(conn: &Connection) -> String {
+    unsafe {
+        let p = ffi::sqlite3_errmsg(conn.handle());
+        if p.is_null() {
+            return String::new();
+        }
+        CStr::from_ptr(p).to_string_lossy().into_owned()
+    }
+}
+
+fn apply_sqlcipher_key(conn: &Connection, key: &KeyMaterial) -> Result<(), StorageError> {
+    let pass = sqlcipher_passphrase_bytes(key);
+    let n = i32::try_from(pass.len()).map_err(|_| {
+        StorageError::WriteFailed("sqlcipher passphrase length exceeds i32::MAX".to_string())
+    })?;
+    let rc = unsafe {
+        ffi::sqlite3_key_v2(
+            conn.handle(),
+            c"main".as_ptr().cast(),
+            pass.as_ptr().cast(),
+            n,
+        )
+    };
+    if rc != ffi::SQLITE_OK {
+        return Err(StorageError::WriteFailed(format!(
+            "sqlite3_key_v2 failed (code {rc}): {}",
+            sqlcipher_errmsg(conn)
+        )));
+    }
+    Ok(())
+}
+
+fn apply_sqlcipher_rekey(conn: &Connection, new_key: &KeyMaterial) -> Result<(), StorageError> {
+    let pass = sqlcipher_passphrase_bytes(new_key);
+    let n = i32::try_from(pass.len()).map_err(|_| {
+        StorageError::WriteFailed("sqlcipher passphrase length exceeds i32::MAX".to_string())
+    })?;
+    let rc = unsafe {
+        ffi::sqlite3_rekey_v2(
+            conn.handle(),
+            c"main".as_ptr().cast(),
+            pass.as_ptr().cast(),
+            n,
+        )
+    };
+    if rc != ffi::SQLITE_OK {
+        return Err(StorageError::WriteFailed(format!(
+            "sqlite3_rekey_v2 failed (code {rc}): {}",
+            sqlcipher_errmsg(conn)
+        )));
+    }
+    Ok(())
+}
 
 #[derive(Debug)]
 pub enum StorageError {
@@ -155,10 +219,7 @@ pub fn open_database(
     let conn = Connection::open(path).map_err(|error| StorageError::WriteFailed(error.to_string()))?;
     if spec.encryption_level != EncryptionLevel::L0 {
         let key = key_provider.get_or_create_key(&spec.key_ref)?;
-        let key_text = String::from_utf8_lossy(&key.key_bytes).replace('\'', "''");
-        let pragma_key = format!("PRAGMA key = '{key_text}';");
-        conn.execute_batch(&pragma_key)
-            .map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+        apply_sqlcipher_key(&conn, &key)?;
         conn.execute_batch("SELECT count(*) FROM sqlite_master;")
             .map_err(|_| StorageError::WriteFailed(
                 "database key verification failed: wrong key or corrupted database".to_string(),
@@ -219,9 +280,8 @@ pub fn rotate_database_key(
     let prev_key = key_provider.get_or_create_key(&spec.key_ref)?;
     let conn = open_database(spec, key_provider)?;
     let rotated = key_provider.rotate_key(&spec.key_ref, next_version)?;
-    let key_text = String::from_utf8_lossy(&rotated.key_bytes).replace('\'', "''");
-    let pragma_rekey = format!("PRAGMA rekey = '{key_text}';");
-    if let Err(rekey_err) = conn.execute_batch(&pragma_rekey) {
+    let rekey_result = apply_sqlcipher_rekey(&conn, &rotated);
+    if let Err(rekey_err) = rekey_result {
         tracing::error!(domain = %spec.domain, profile = %spec.profile, error = %rekey_err, "Database rekey failed, rolling back");
         let _ = key_provider.rotate_key(&spec.key_ref, prev_key.key_version);
         return Err(StorageError::WriteFailed(format!(
