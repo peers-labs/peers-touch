@@ -30,6 +30,7 @@ use crate::application::channels as app_channels;
 use crate::application::chat as app_chat;
 use crate::application::chat_storage;
 use crate::application::cron as app_cron;
+use crate::application::key_exchange::{device_install, wire};
 use crate::application::mcp as app_mcp;
 use crate::application::memory as app_memory;
 use crate::application::model_config as app_model_config;
@@ -1434,6 +1435,29 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         // =================================================================
         "account_list" => to_json(app_account::account_list()),
         "account_get_active" => to_json(app_account::account_get_active()),
+        "account_get_device_id" => {
+            let actor_id = match actor_id_from_state(state) {
+                Some(id) if !id.trim().is_empty() => id,
+                Some(_) | None => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::Unauthorized,
+                        "authentication required",
+                        None,
+                    ));
+                }
+            };
+            match device_install::get_or_create_device_id(actor_id.as_str()) {
+                Ok(device_id) => to_json(AppResult::success(StubPayload {
+                    command: "account_get_device_id".to_string(),
+                    status: json!({ "device_id": device_id }).to_string(),
+                })),
+                Err(e) => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InternalError,
+                    format!("device_id: {e}"),
+                    None,
+                )),
+            }
+        },
         "account_switch" => {
             let input = match parse_args::<AccountIdInput>(args) { Ok(v) => v, Err(e) => return e };
             to_json(app_account::account_switch(input))
@@ -1658,6 +1682,26 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         "key_exchange_upload_bundle" => {
             let input = match parse_args::<KeyExchangeUploadInput>(args) { Ok(v) => v, Err(e) => return e };
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let actor_id = match actor_id_from_state(state) {
+                Some(id) if !id.trim().is_empty() => id,
+                Some(_) | None => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::Unauthorized,
+                        "authentication required",
+                        None,
+                    ));
+                }
+            };
+            let device_id = match device_install::get_or_create_device_id(actor_id.as_str()) {
+                Ok(id) => id,
+                Err(e) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("device_id: {e}"),
+                        None,
+                    ));
+                }
+            };
             let req = model::key_exchange::UploadKeyBundleRequest {
                 ik_pub: input.ik_pub,
                 spk_id: input.spk_id,
@@ -1665,6 +1709,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 spk_sig: input.spk_sig,
                 opk_ids: input.opk_ids,
                 opk_pubs: input.opk_pubs,
+                device_id,
             };
             match station_client::request_proto::<
                 model::key_exchange::UploadKeyBundleRequest,
@@ -1673,31 +1718,43 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Ok(_r) => to_json(to_stub("key_exchange_upload_bundle", json!({}))),
                 Err(e) => to_json(e.into_app_result::<StubPayload>("Station request failed")),
             }
-        }
+        },
         "key_exchange_fetch_bundle" => {
             let input = match parse_args::<KeyExchangeFetchInput>(args) { Ok(v) => v, Err(e) => return e };
             let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
             if input.did.trim().is_empty() {
                 return to_json(AppResult::<StubPayload>::fail(ErrorCode::InvalidArgument, "did is required", None));
             }
-            let req = model::key_exchange::FetchKeyBundleRequest { did: input.did };
+            let req = model::key_exchange::FetchKeyBundleRequest {
+                did: input.did,
+                device_id: input.device_id.unwrap_or_default(),
+            };
             match station_client::request_proto::<
                 model::key_exchange::FetchKeyBundleRequest,
                 model::key_exchange::FetchKeyBundleResponse,
             >(Method::POST, "/key-exchange/keys/bundle/fetch", &token, None, Some(&req)) {
-                Ok(r) => to_json(to_stub("key_exchange_fetch_bundle", json!({
-                    "actor_did": r.actor_did,
-                    "ik_pub": r.ik_pub,
-                    "fingerprint": r.fingerprint,
-                    "spk_id": r.spk_id,
-                    "spk_pub": r.spk_pub,
-                    "spk_sig": r.spk_sig,
-                    "opk_id": r.opk_id,
-                    "opk_pub": r.opk_pub,
-                }))),
+                Ok(r) => {
+                    let bundles_json: Vec<Value> = r
+                        .bundles
+                        .iter()
+                        .map(|b| {
+                            json!({
+                                "did": b.did,
+                                "device_id": b.device_id,
+                                "ik_pub": b.ik_pub,
+                                "fingerprint": wire::identity_fingerprint_hex(&b.ik_pub),
+                                "spk_pub": b.spk_pub,
+                                "spk_sig": b.spk_sig,
+                                "opks": b.opks,
+                                "published_at_unix_ms": b.published_at_unix_ms,
+                            })
+                        })
+                        .collect();
+                    to_json(to_stub("key_exchange_fetch_bundle", json!({ "bundles": bundles_json })))
+                }
                 Err(e) => to_json(e.into_app_result::<StubPayload>("Station request failed")),
             }
-        }
+        },
         "friend_chat_local_search" => {
             let input = match parse_args::<ChatLocalSearchInput>(args) { Ok(v) => v, Err(e) => return e };
             if input.query.trim().is_empty() {

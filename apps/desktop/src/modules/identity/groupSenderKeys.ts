@@ -82,6 +82,32 @@ export const FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION = 50;
  */
 const SKDM_ENVELOPE_KIND = 'GROUP_SKDM';
 
+/** Stable device key for ledgers: empty/whitespace wire id => legacy bucket. */
+function wireDeviceKey(deviceId: string | undefined): string {
+  const t = String(deviceId ?? '').trim();
+  return t === '' ? 'legacy' : t;
+}
+
+/** Dedupe key for SKDM distribution state (per peer DID + publisher device). */
+function skdmRecipientKey(did: string, deviceId: string | undefined): string {
+  return `${did}::${wireDeviceKey(deviceId)}`;
+}
+
+function parseSkdmRecipientKey(key: string): { did: string; deviceKey: string } {
+  const idx = key.indexOf('::');
+  if (idx === -1) return { did: key, deviceKey: 'legacy' };
+  return { did: key.slice(0, idx), deviceKey: key.slice(idx + 2) };
+}
+
+/** Pre–per-device ledgers stored bare DIDs — normalize to legacy bucket only. */
+function migrateLedgerSet(set: Set<string>): Set<string> {
+  const out = new Set<string>();
+  for (const k of set) {
+    out.add(k.includes('::') ? k : skdmRecipientKey(k, ''));
+  }
+  return out;
+}
+
 function sentKey(actorId: string, groupUlid: string): string {
   return `${SENT_KEY_PREFIX}:${actorId}:${groupUlid}`;
 }
@@ -96,7 +122,7 @@ function loadSentSet(actorId: string, groupUlid: string): Set<string> {
     if (!raw) return new Set();
     const arr = JSON.parse(raw);
     if (!Array.isArray(arr)) return new Set();
-    return new Set(arr.filter((v): v is string => typeof v === 'string'));
+    return migrateLedgerSet(new Set(arr.filter((v): v is string => typeof v === 'string')));
   } catch {
     return new Set();
   }
@@ -116,7 +142,7 @@ function loadPendingSet(actorId: string, groupUlid: string): Set<string> {
     if (!raw) return new Set();
     const arr = JSON.parse(raw);
     if (!Array.isArray(arr)) return new Set();
-    return new Set(arr.filter((v): v is string => typeof v === 'string'));
+    return migrateLedgerSet(new Set(arr.filter((v): v is string => typeof v === 'string')));
   } catch {
     return new Set();
   }
@@ -213,24 +239,24 @@ function skdmEnvelopeSession(senderDid: string): string {
 }
 
 /**
- * Seal and send one SKDM to `peerDid` (friend-chat type=50). Returns
- * true when the carrier was accepted; false on skip or error.
+ * Seal and send one SKDM to `peerDid` using a specific published `peerIkPub`
+ * (friend-chat type=50). Returns true when the carrier was accepted.
  */
-async function dispatchSkdmToPeer(
+async function dispatchSkdmToPeerIk(
   actorId: string,
   peerDid: string,
+  peerIkPub: string,
   skdmBytesB64: string,
 ): Promise<boolean> {
   try {
-    const bundle = await api.keyExchangeFetchBundle(peerDid);
-    const peerIkPub = String(bundle?.ik_pub || '').trim();
-    if (!peerIkPub) {
-      log.warn('groupSenderKeys', `peer ${peerDid} has no published ik_pub; skipping SKDM`);
+    const peerIk = String(peerIkPub || '').trim();
+    if (!peerIk) {
+      log.warn('groupSenderKeys', `peer ${peerDid} has no ik_pub for SKDM target; skipping`);
       return false;
     }
 
     const sealed = await api.signalingEnvelopeSeal(
-      peerIkPub,
+      peerIk,
       skdmEnvelopeSession(actorId),
       SKDM_ENVELOPE_KIND as never,
       skdmBytesB64,
@@ -271,18 +297,20 @@ export async function retrySkdmDistributionFor(actorId: string, peerDid: string)
     if (!members?.length) continue;
 
     const pending = loadPendingSet(actorId, groupUlid);
-    if (!pending.has(peerDid)) continue;
+    const keysForPeer = [...pending].filter((k) => parseSkdmRecipientKey(k).did === peerDid);
+    if (!keysForPeer.length) continue;
 
     const stillMember = members.some((m) => m.actorDid === peerDid);
     if (!stillMember) {
-      pending.delete(peerDid);
+      for (const k of keysForPeer) pending.delete(k);
       savePendingSet(actorId, groupUlid, pending);
       continue;
     }
 
     const sent = loadSentSet(actorId, groupUlid);
-    if (sent.has(peerDid)) {
-      pending.delete(peerDid);
+    const outstanding = keysForPeer.filter((k) => !sent.has(k));
+    if (!outstanding.length) {
+      for (const k of keysForPeer) pending.delete(k);
       savePendingSet(actorId, groupUlid, pending);
       continue;
     }
@@ -295,22 +323,37 @@ export async function retrySkdmDistributionFor(actorId: string, peerDid: string)
       continue;
     }
 
-    const ok = await dispatchSkdmToPeer(actorId, peerDid, skdmBytesB64);
-    if (ok) {
-      sent.add(peerDid);
-      pending.delete(peerDid);
-      saveSentSet(actorId, groupUlid, sent);
-      savePendingSet(actorId, groupUlid, pending);
+    let bundles;
+    try {
+      const resp = await api.keyExchangeFetchBundle(peerDid);
+      bundles = resp.bundles ?? [];
+    } catch {
+      continue;
     }
+
+    for (const lk of outstanding) {
+      const { deviceKey } = parseSkdmRecipientKey(lk);
+      const bundle = bundles.find((b) => wireDeviceKey(b.device_id) === deviceKey);
+      const ik = String(bundle?.ik_pub ?? '').trim();
+      if (!ik) continue;
+
+      const ok = await dispatchSkdmToPeerIk(actorId, peerDid, ik, skdmBytesB64);
+      if (ok) {
+        sent.add(lk);
+        pending.delete(lk);
+      }
+    }
+
+    saveSentSet(actorId, groupUlid, sent);
+    savePendingSet(actorId, groupUlid, pending);
   }
 }
 
 /**
- * Make sure every `memberDids[]` member (except `actorId`) has our
- * current SKDM. Members already marked in the sent ledger are
- * skipped. Failure to reach a single member is logged but does not
- * abort the whole call -- partial distribution is still valuable
- * (the missed peer is recorded in the pending ledger and can be
+ * Make sure every `memberDids[]` member device has our current SKDM. Members
+ * already marked in the sent ledger are skipped. Failure to reach a recipient
+ * device is logged but does not abort the whole call — partial distribution is
+ * still valuable (the missed target is recorded in the pending ledger and can be
  * retried via `retrySkdmDistributionFor` when they come online).
  */
 export async function ensureSkdmDistributed(
@@ -319,19 +362,47 @@ export async function ensureSkdmDistributed(
   memberDids: string[],
 ): Promise<void> {
   if (!actorId || !groupUlid) return;
+
+  let myDeviceId = '';
+  try {
+    const d = await api.accountGetDeviceId();
+    myDeviceId = String(d?.device_id ?? '').trim();
+  } catch (err) {
+    log.error('groupSenderKeys', 'accountGetDeviceId failed (required for multi-device SKDM)', err);
+    return;
+  }
+  if (!myDeviceId) {
+    log.error('groupSenderKeys', 'empty local device_id; cannot fan out SKDM');
+    return;
+  }
+
   const sent = loadSentSet(actorId, groupUlid);
   const pending = loadPendingSet(actorId, groupUlid);
 
-  // TODO(multi-device-echo): `key_exchange.FetchKeyBundleResponse` carries a single
-  // `ik_pub` per DID (`model/domain/key_exchange/key_exchange.proto`); there is no
-  // device-scoped bundle in `keyExchangeFetchBundle(did)`. Until Station stores and
-  // returns per-device identity keys (and friend-chat can route to a specific device),
-  // we cannot seal distinct SKDM envelopes for each of "my" devices that share this DID.
-  // The `did !== actorId` filter correctly skips redundant self-delivery to the same IK
-  // as this client but cannot unlock cross-device sender echo. Do not remove this filter
-  // without bundle-layer support — sending to the same DID would still target only one IK.
-  const targets = memberDids.filter((did) => !!did && did !== actorId && !sent.has(did));
-  if (targets.length === 0) return;
+  const uniqueDids = [...new Set(memberDids.filter(Boolean))];
+  type Work = { ledgerKey: string; peerDid: string; ikPub: string };
+  const work: Work[] = [];
+
+  for (const did of uniqueDids) {
+    let resp;
+    try {
+      resp = await api.keyExchangeFetchBundle(did);
+    } catch (err) {
+      log.warn('groupSenderKeys', `fetch bundles failed for ${did}`, err);
+      continue;
+    }
+    const bundles = resp.bundles ?? [];
+    for (const b of bundles) {
+      if (String(b.device_id ?? '').trim() === myDeviceId) continue;
+      const lk = skdmRecipientKey(did, b.device_id);
+      if (sent.has(lk)) continue;
+      const ikPub = String(b.ik_pub ?? '').trim();
+      if (!ikPub) continue;
+      work.push({ ledgerKey: lk, peerDid: did, ikPub });
+    }
+  }
+
+  if (work.length === 0) return;
 
   let skdmBytesB64: string;
   try {
@@ -342,13 +413,13 @@ export async function ensureSkdmDistributed(
     throw err;
   }
 
-  for (const peerDid of targets) {
-    const ok = await dispatchSkdmToPeer(actorId, peerDid, skdmBytesB64);
+  for (const w of work) {
+    const ok = await dispatchSkdmToPeerIk(actorId, w.peerDid, w.ikPub, skdmBytesB64);
     if (ok) {
-      sent.add(peerDid);
-      pending.delete(peerDid);
+      sent.add(w.ledgerKey);
+      pending.delete(w.ledgerKey);
     } else {
-      pending.add(peerDid);
+      pending.add(w.ledgerKey);
     }
   }
 
@@ -416,7 +487,8 @@ export async function decryptFromGroup(
  * the bytes of a signaling envelope sealed against our own IK.
  *
  * Steps:
- *   1. Resolve the sender's IK via the published bundle.
+ *   1. Resolve the sender's IK via published bundle(s): the wire SKDM does not yet
+ *      include `device_id`, so we may need to try multiple `ik_pub` values.
  *   2. Open the signaling envelope (this authenticates the sender
  *      cryptographically -- if their IK rotated and we have the
  *      old one cached, the open will fail rather than silently
@@ -439,11 +511,14 @@ export async function handleInboundSkdm(
     log.warn('groupSenderKeys', 'handleInboundSkdm: missing senderDid or sealedB64');
     return;
   }
-  let senderIkPub: string;
+  let senderIkCandidates: string[] = [];
   try {
-    const bundle = await api.keyExchangeFetchBundle(senderDid);
-    senderIkPub = String(bundle?.ik_pub || '').trim();
-    if (!senderIkPub) {
+    const fetchResp = await api.keyExchangeFetchBundle(senderDid);
+    const bundles = fetchResp.bundles ?? [];
+    senderIkCandidates = bundles
+      .map((b) => String(b?.ik_pub ?? '').trim())
+      .filter((ik) => ik.length > 0);
+    if (!senderIkCandidates.length) {
       log.warn('groupSenderKeys', `inbound SKDM: sender ${senderDid} has no published ik_pub`);
       return;
     }
@@ -451,17 +526,27 @@ export async function handleInboundSkdm(
     log.warn('groupSenderKeys', 'inbound SKDM: keyExchangeFetchBundle failed', err);
     return;
   }
-  let skdmB64: string;
-  try {
-    const opened = await api.signalingEnvelopeOpen(
-      senderIkPub,
-      skdmEnvelopeSession(senderDid),
-      SKDM_ENVELOPE_KIND as never,
-      sealedB64,
-    );
-    skdmB64 = opened.plaintext;
-  } catch (err) {
-    log.warn('groupSenderKeys', 'inbound SKDM: signaling envelope open failed', err);
+
+  // Friend-chat / SKDM protos do not yet carry the publisher's device_id. The envelope
+  // was sealed against a specific device IK; try each published bundle (newest first)
+  // until `signalingEnvelopeOpen` succeeds.
+  let skdmB64: string | null = null;
+  for (const senderIkPub of senderIkCandidates) {
+    try {
+      const opened = await api.signalingEnvelopeOpen(
+        senderIkPub,
+        skdmEnvelopeSession(senderDid),
+        SKDM_ENVELOPE_KIND as never,
+        sealedB64,
+      );
+      skdmB64 = opened.plaintext;
+      break;
+    } catch {
+      /* try next IK */
+    }
+  }
+  if (skdmB64 == null) {
+    log.warn('groupSenderKeys', 'inbound SKDM: no published IK opened this envelope');
     return;
   }
   try {

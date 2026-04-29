@@ -24,7 +24,7 @@ pub mod peers_touch {
 
 use std::sync::Arc;
 use tauri::Manager;
-use interface::tauri_commands::{account, actor, admin, agent_growth, agent_scheduler, agents, applets, auth, channels, chat, cron, crypto, friend_chat, frontend_log, group_chat, ice, i18n, mcp, memory, model_config, models, notebook, notification, oauth2, oss, presence, profile, provider, realtime, search, settings, skills, skills_market, system, timeline, tools, tts};
+use interface::tauri_commands::{account, actor, admin, agent_growth, agent_scheduler, agents, applets, auth, channels, chat, cron, crypto, friend_chat, frontend_log, group_chat, ice, i18n, key_exchange, mcp, memory, model_config, models, notebook, notification, oauth2, oss, presence, profile, provider, realtime, search, settings, skills, skills_market, system, timeline, tools, tts};
 
 fn main() {
     let ctx = bootstrap::run();
@@ -263,6 +263,7 @@ fn main() {
             account::account_list_restorable,
             account::account_clear_session,
             account::account_remove_pin,
+            account::account_get_device_id,
             presence::presence_notify,
             oss::pick_chat_attachment,
             oss::chat_upload_attachment,
@@ -305,7 +306,10 @@ fn main() {
             friend_chat::friend_chat_get_pending,
             friend_chat::friend_chat_get_stats,
             friend_chat::friend_chat_local_search,
+            key_exchange::key_exchange_upload_bundle,
+            key_exchange::key_exchange_fetch_bundle,
             crypto::chat_search_local,
+            crypto::crypto_ratchet_telemetry_snapshot,
             crypto::signaling_envelope_seal,
             crypto::signaling_envelope_open,
             crypto::crypto_group_sk_emit_skdm,

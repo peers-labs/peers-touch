@@ -11,6 +11,7 @@ import { CallSurface } from '../components/chat/CallSurface';
 import { api } from '../services/desktop_api';
 import { useSocialChatStore } from '../store/socialChat';
 import { log } from '../utils/logger';
+import { readFeatureFlags } from '../modules/settings/featureFlags';
 import { friendChatP2p } from '../modules/p2p/friendChatP2p';
 import { rotateGroupSenderChain } from '../modules/identity/groupSenderKeys';
 import { eventBus } from '../kernel/events';
@@ -73,6 +74,18 @@ export function SocialChatPage() {
     loadCurrentUserProfile().catch(() => {});
     initEncryption().catch(() => {});
   }, [loadCurrentUserProfile, initEncryption]);
+
+  useEffect(() => {
+    if (!readFeatureFlags().cryptoDrTelemetryEnabled) return;
+    let cancelled = false;
+    const tick = () =>
+      api.cryptoRatchetTelemetrySnapshot().then((s) => {
+        if (!cancelled) log.info('crypto', 'ratchet decrypt counts', s);
+      }).catch(() => {});
+    tick();
+    const h = window.setInterval(tick, 24 * 60 * 60 * 1000);
+    return () => { cancelled = true; window.clearInterval(h); };
+  }, []);
 
   // First-mount cold path: load list FAST so the user sees rows ASAP,
   // then do the slow per-session sync in the background. This effect

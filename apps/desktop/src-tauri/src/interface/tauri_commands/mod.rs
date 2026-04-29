@@ -16,6 +16,7 @@ pub mod frontend_log;
 pub mod group_chat;
 pub mod ice;
 pub mod i18n;
+pub mod key_exchange;
 pub mod mcp;
 pub mod memory;
 pub mod model_config;
