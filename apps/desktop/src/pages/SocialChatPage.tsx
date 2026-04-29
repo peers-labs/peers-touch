@@ -12,8 +12,10 @@ import { api } from '../services/desktop_api';
 import { useSocialChatStore } from '../store/socialChat';
 import { log } from '../utils/logger';
 import { friendChatP2p } from '../modules/p2p/friendChatP2p';
+import { rotateGroupSenderChain } from '../modules/identity/groupSenderKeys';
 import { eventBus } from '../kernel/events';
 import { EVENT } from '../kernel/events/catalog';
+import { retrySkdmDistributionFor } from '../modules/identity/groupSenderKeys';
 
 type ChatSubPage = 'chats' | 'contacts';
 
@@ -323,6 +325,22 @@ export function SocialChatPage() {
     return off;
   }, []);
 
+  // SKDM offline recovery: when a group member comes online, retry any
+  // pending SKDM distribution recorded in groupSenderKeys (they may have
+  // missed the carrier while offline without the user sending again).
+  useEffect(() => {
+    const off = eventBus.subscribe(EVENT.REALTIME_PRESENCE_FLIP, (payload) => {
+      if (!payload.online) return;
+      const did = useSocialChatStore.getState().currentUserDid;
+      if (!did) return;
+      if (payload.actorId === did) return;
+      retrySkdmDistributionFor(did, payload.actorId).catch((err) =>
+        log.warn('socialChat', 'retrySkdmDistributionFor failed', err),
+      );
+    });
+    return off;
+  }, []);
+
   // Realtime MessageMutation → fold recall / edit / delete into the
   // local message store so peers (including the sender's other
   // devices) see the change without a poll. The store action is
@@ -341,6 +359,38 @@ export function SocialChatPage() {
           mutatedTsUnixMs: payload.mutatedTsUnixMs,
         },
       );
+    });
+    return off;
+  }, []);
+
+  // Realtime group roster changes → Sender Keys rotation + member cache
+  // refresh for remaining members; clear local selection when we are out.
+  useEffect(() => {
+    const off = eventBus.subscribe(EVENT.REALTIME_GROUP_MEMBERSHIP_CHANGE, (payload) => {
+      const did = useSocialChatStore.getState().currentUserDid;
+      if (payload.kind === 'ADDED') {
+        void useSocialChatStore.getState().loadGroupMembers(payload.groupUlid).catch((err) =>
+          log.warn('socialChat', 'loadGroupMembers after roster add failed', err),
+        );
+        return;
+      }
+      if (payload.kind === 'REMOVED' || payload.kind === 'LEFT') {
+        if (did && payload.actorDid === did) {
+          void useSocialChatStore.getState().loadGroups().catch((err) =>
+            log.warn('socialChat', 'loadGroups after membership end failed', err),
+          );
+          useSocialChatStore.getState().selectGroup('');
+          return;
+        }
+        if (did) {
+          void rotateGroupSenderChain(did, payload.groupUlid).catch((err) =>
+            log.warn('socialChat', 'rotateGroupSenderChain failed', err),
+          );
+        }
+        void useSocialChatStore.getState().loadGroupMembers(payload.groupUlid).catch((err) =>
+          log.warn('socialChat', 'loadGroupMembers after roster shrink failed', err),
+        );
+      }
     });
     return off;
   }, []);
