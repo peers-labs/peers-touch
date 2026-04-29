@@ -48,8 +48,9 @@ func NewTypedHandler[Req, Resp any](
 			reqValue.Elem().Set(reflect.New(reqValue.Elem().Type().Elem()))
 		}
 
-		if len(req.Body()) > 0 {
-			if err := requestSerializer.Unmarshal(req.Body(), &request); err != nil {
+		body := req.Body()
+		if len(body) > 0 {
+			if err := requestSerializer.Unmarshal(body, &request); err != nil {
 				logger.Error(ctx, "Failed to deserialize request", "error", err, "contentType", contentType)
 				return &HandlerError{
 					Code:    http.StatusBadRequest,

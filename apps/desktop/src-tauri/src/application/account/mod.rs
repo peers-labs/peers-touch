@@ -31,6 +31,18 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
 }
 
 fn to_json(account: &auth_identity::AccountIdentity) -> serde_json::Value {
+    // `has_session` reported to the frontend must reflect whether the picker
+    // can actually restore this account, not just whether some metadata flag
+    // is set on disk. For PIN-protected accounts that means the encrypted
+    // blob has to exist — otherwise routing into PIN entry guarantees a
+    // "no encrypted session" dead-end the user can never escape from the
+    // picker. Non-PIN accounts keep the raw flag because their token lives
+    // in the per-actor session_store, not on the AccountIdentity row.
+    let has_session = if account.pin_protection.is_some() {
+        account.has_session && account.encrypted_session.is_some()
+    } else {
+        account.has_session
+    };
     json!({
         "id": account.id,
         "provider": account.provider,
@@ -43,7 +55,7 @@ fn to_json(account: &auth_identity::AccountIdentity) -> serde_json::Value {
         "created_at": account.created_at,
         "last_login_at": account.last_login_at,
         "has_pin": account.pin_protection.is_some(),
-        "has_session": account.has_session,
+        "has_session": has_session,
     })
 }
 

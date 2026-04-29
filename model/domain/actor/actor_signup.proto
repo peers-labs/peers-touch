@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package peers_touch.model.actor.v1;
 
+import "domain/actor/actor.proto";
+
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
 
 message ActorSignRequest {
@@ -10,5 +12,6 @@ message ActorSignRequest {
   string password = 3;
   string namespace = 10;
   string account_type = 11;
+  optional ActorKind kind = 12 [json_name = "kind"];
 }
 

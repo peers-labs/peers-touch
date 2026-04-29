@@ -22,6 +22,9 @@ interface GlobalContextState {
   refreshFromSources: () => Promise<void>
   startRuntimeBindings: () => void
   runPipeline: (name: PipelineName, payload?: PipelinePayload) => Promise<void>
+  /** Clear identity/session/oauth slices (identity pipeline). Preserves runtime/network/workspace chrome. */
+  reset: () => void
+  hydrate: (actorId: string) => Promise<void>
 }
 
 function now() {
@@ -383,6 +386,24 @@ export const useGlobalContextStore = create<GlobalContextState>((set, get) => ({
         offOffline()
       },
     })
+  },
+
+  reset: () => {
+    set((prev) => ({
+      snapshot: {
+        ...createInitialSnapshot(),
+        runtime: prev.snapshot.runtime,
+        network: prev.snapshot.network,
+        workspace: prev.snapshot.workspace,
+        task: prev.snapshot.task,
+        notification: prev.snapshot.notification,
+      },
+    }))
+    publishUpdate('identity/session')
+  },
+
+  hydrate: async (_actorId: string) => {
+    await get().refreshFromSources()
   },
 
   runPipeline: async (name, _payload) => {

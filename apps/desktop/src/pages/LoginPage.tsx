@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Input, message, theme, Typography, Spin } from 'antd';
-import { Github, Mail, Eye, EyeOff, ArrowRight, RefreshCw, Lock, LogIn, CheckCircle2, XCircle, X, ChevronRight, ShieldCheck, ArrowLeft } from 'lucide-react';
+import { Alert, Button, Input, message, notification, theme, Typography, Spin } from 'antd';
+import { AlertTriangle, Github, Mail, Eye, EyeOff, ArrowRight, RefreshCw, Lock, LogIn, CheckCircle2, XCircle, X, ChevronRight, ShieldCheck, ArrowLeft } from 'lucide-react';
 import { useOAuth2Store } from '../store/oauth2';
 import { useSessionStore } from '../store/session';
 import { api, AuthCommandException } from '../services/desktop_api';
 import type { OAuth2ProviderSummary } from '../services/desktop_api';
+import { useAccountIdentityStore } from '../store/accountIdentity';
 import { UserSquareAvatar } from '../components/common/UserSquareAvatar';
 import { PlatformLogo } from '../components/common/PlatformLogo';
 import { BRANDING } from '../branding';
@@ -37,6 +38,8 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
   const { t } = useTranslation('auth');
   const { providers, connections, loadAll, startAuth } = useOAuth2Store();
   const { loginWithPassword } = useSessionStore();
+  const unlockWithPin = useAccountIdentityStore((s) => s.unlockWithPin);
+  const switchAccount = useAccountIdentityStore((s) => s.switchAccount);
 
   // restoredUser is only set when the session has real identity data (actorId + name).
   // If null, the user has no valid session — go directly to login form.
@@ -71,6 +74,24 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
   const [pinLoading, setPinLoading] = useState(false);
   const pinInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
+  // Expired-session re-auth state. Set when an account's stored session can
+  // no longer be revived (server-side revoke, expired, kicked, or simply not
+  // present). The login form uses this to (1) pre-fill email + tab to the
+  // account's original provider so the user doesn't pick the wrong path, and
+  // (2) show a "welcome back, please re-auth" banner instead of a generic
+  // login screen. We never funnel the user through PIN when this is set —
+  // the encrypted_session blob has already been cleared on the backend.
+  const [expiredAccount, setExpiredAccount] = useState<SessionUser | null>(null);
+  // 'revoked'  → server-side revoke/expire confirmed; show warning Alert.
+  // 'continue' → cold-boot or no saved session; show neutral "continue as X".
+  const [reauthReason, setReauthReason] = useState<'revoked' | 'continue'>('continue');
+
+  // PIN-screen revoke overlay: when the unlock probe comes back as "session
+  // expired", we don't silently jump screens — we replace the PIN inputs
+  // with an explicit "session expired" panel for ~1.2s so the user clearly
+  // sees what happened, then route them to the right login form.
+  const [pinRevoked, setPinRevoked] = useState(false);
+
   // Set PIN state (after first login)
   const [newPinDigits, setNewPinDigits] = useState<string[]>(Array(PIN_LENGTH).fill(''));
   const [confirmPinDigits, setConfirmPinDigits] = useState<string[]>(Array(PIN_LENGTH).fill(''));
@@ -98,10 +119,13 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     [providers],
   );
 
+  // When the user picks an account from the picker, show that account's info
+  // instead of the auto-restored session user (which may be a different account).
   const welcomeUser: SessionUser = useMemo(() => {
+    if (selectedAccount && selectedAccount.name) return selectedAccount;
     if (restoredUser && restoredUser.name) return restoredUser;
     return { name: '', email: '' };
-  }, [restoredUser]);
+  }, [selectedAccount, restoredUser]);
 
   const handleEmailLogin = useCallback(async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -184,6 +208,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     setConnectProvider(null);
     setAuthState('idle');
     setAuthError('');
+    setExpiredAccount(null);
     if (hasMultipleAccounts) {
       setLoginState('account_picker');
     } else {
@@ -205,31 +230,100 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
   }, [hasMultipleAccounts, hasValidRestoredUser]);
 
   const handleNewAccountLogin = useCallback(() => {
+    // "Add another account" is a fresh start — wipe the expired-session
+    // context so we don't show "Welcome back, Alice" while Bob is signing
+    // in for the first time.
+    setExpiredAccount(null);
+    setSelectedAccount(null);
+    setEmail('');
+    setPassword('');
     setLoginState('logged_out');
     setTab('quick');
   }, []);
 
   // ── Account Picker ──
 
-  const handleSelectAccount = useCallback((account: SessionUser) => {
+  /**
+   * Route a user-selected account to the login form pre-configured for the
+   * provider they originally signed in with. We never want a github user to
+   * land on the email/password tab (they have no password), and an
+   * email-password user shouldn't be staring at a github button.
+   *
+   * `expired` toggles the "session expired" banner so we can also reuse this
+   * helper from the PIN-unlock recovery path.
+   */
+  const routeToProviderLogin = useCallback((account: SessionUser, expired: boolean) => {
+    setSelectedAccount(account);
+    // Always surface account context (avatar/name/email) on the login form
+    // when re-auth is needed — that's what makes this feel like "welcome
+    // back" instead of a cold-blank login screen. Only the wording changes:
+    // "revoked" tone for confirmed expirations, "continue" tone otherwise.
+    setExpiredAccount(account);
+    setReauthReason(expired ? 'revoked' : 'continue');
+    setPinError('');
+    setPinDigits(Array(PIN_LENGTH).fill(''));
+    setPinRevoked(false);
+
+    const provider = (account.provider || '').toLowerCase();
+    if (provider === 'password' || provider === '' || provider === 'email') {
+      setTab('email');
+      setEmail(account.email || '');
+      setPassword('');
+    } else {
+      // OAuth provider (github, google, …) — quick tab. The matching button
+      // is highlighted automatically because `connectProvider` gets set in
+      // the next effect once the provider list is hydrated.
+      setTab('quick');
+    }
+    setLoginState('logged_out');
+  }, []);
+
+  const handleSelectAccount = useCallback(async (account: SessionUser) => {
     setSelectedAccount(account);
     setPinDigits(Array(PIN_LENGTH).fill(''));
     setPinError('');
+    setExpiredAccount(null);
+
     if (account.hasPin && account.hasSession) {
-      // PIN set + encrypted session available — unlock via PIN
+      // PIN set + encrypted session available — unlock via PIN. The PIN
+      // submit handler validates the decrypted token against Station and
+      // will fall back to the provider login form on revoke (see
+      // `handlePinSubmit`).
       setLoginState('pin_entry');
       setTimeout(() => pinInputRefs.current[0]?.focus(), 50);
-    } else {
-      // Either no PIN, or PIN set but no saved session — need fresh login
-      const { authenticated } = useSessionStore.getState();
-      if (authenticated) {
-        setLoginState('welcome_back');
-      } else {
-        // Session expired or invalid — go to login form directly
-        setLoginState('logged_out');
-      }
+      return;
     }
-  }, []);
+
+    if (account.hasSession && account.accountId) {
+      // Has a valid session but no PIN — switch backend identity marker
+      // and verify the restored session actually belongs to this account.
+      // Non-PIN accounts share a single session.json, so the active token
+      // might belong to a different account.
+      try {
+        await switchAccount(account.accountId);
+        const { currentUser } = useSessionStore.getState();
+        if (currentUser?.email && account.email && currentUser.email !== account.email) {
+          // Restored session belongs to a different user — require fresh login
+          routeToProviderLogin(account, true);
+          return;
+        }
+        setLoginState('welcome_back');
+      } catch {
+        // If switch/restore fails, the in-memory token is dead. Drop the
+        // local encrypted session for this account so we don't loop the user
+        // through PIN next time, and route to the matching login form.
+        if (account.accountId) {
+          try { await api.accountClearSession(account.accountId); } catch { /* noop */ }
+        }
+        routeToProviderLogin(account, true);
+      }
+      return;
+    }
+
+    // No saved session — go straight to the right login form for this
+    // account's provider. This is the normal "stale picker entry" path.
+    routeToProviderLogin(account, false);
+  }, [switchAccount, routeToProviderLogin]);
 
   // ── PIN Entry ──
 
@@ -265,20 +359,47 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     setPinLoading(true);
     setPinError('');
     try {
-      const resp = await api.accountUnlock(selectedAccount.accountId, pin);
-      const user = resp.actor_id ? {
-        actorId: resp.actor_id,
-        name: resp.name || '',
-        email: resp.email || '',
-        avatarUrl: resp.avatar_url || undefined,
-        loginMethod: (resp.login_method as 'password' | 'oauth') || 'password',
-      } : null;
-      if (user) {
-        useSessionStore.setState({ currentUser: user, authenticated: true });
-      }
+      await unlockWithPin(selectedAccount.accountId, pin);
       onComplete();
     } catch (err: any) {
       const details = err instanceof AuthCommandException ? err.details : undefined;
+
+      // Server-side revoke / expiration: the PIN was correct but the token
+      // it unlocks is no longer accepted by Station. Pestering the user to
+      // retype the PIN is pointless — the encrypted blob is permanently
+      // dead. Clear it locally, briefly show an explicit "session expired"
+      // panel on the PIN screen so the user sees the cause, then redirect
+      // to the provider's login form for fresh credentials/OAuth.
+      const isRevoked = details?.code === 'session_revoked'
+        || (err instanceof AuthCommandException && err.code === 'UNAUTHORIZED'
+            && typeof err.message === 'string'
+            && err.message.toLowerCase().includes('session revoked'));
+      if (isRevoked) {
+        if (selectedAccount?.accountId) {
+          try { await api.accountClearSession(selectedAccount.accountId); } catch { /* noop */ }
+        }
+        setPinRevoked(true);
+        // Persistent corner notification — ~6s, dismissible. Used in
+        // addition to the inline overlay because users coming back from
+        // another window/tab may otherwise miss the screen change entirely.
+        notification.warning({
+          message: t('auth.pin.sessionExpiredTitle', { defaultValue: 'Session expired' }),
+          description: t('auth.pin.sessionExpiredDesc', {
+            defaultValue: `Your saved session for ${selectedAccount.name || 'this account'} is no longer valid. Sign in again to continue.`,
+            name: selectedAccount.name || 'this account',
+          }),
+          placement: 'topRight',
+          duration: 6,
+        });
+        // Give the inline overlay a beat so the user actually reads it
+        // before we yank them to the login form.
+        setTimeout(() => {
+          setPinRevoked(false);
+          routeToProviderLogin(selectedAccount, true);
+        }, 1400);
+        return;
+      }
+
       if (details?.remaining_secs) {
         setPinError(t('auth.pin.lockedOut', { defaultValue: `Account locked. Retry in ${details.remaining_secs}s` }));
       } else if (details?.attempts_remaining !== undefined) {
@@ -291,7 +412,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     } finally {
       setPinLoading(false);
     }
-  }, [selectedAccount, pinDigits, onComplete]);
+  }, [selectedAccount, pinDigits, onComplete, t, unlockWithPin, routeToProviderLogin]);
 
   // Auto-submit PIN when all digits are entered
   useEffect(() => {
@@ -608,7 +729,12 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
             {t('auth.accountPicker.subtitle', { defaultValue: 'Select an account to continue' })}
           </Text>
 
-          <div style={{ width: '100%', maxHeight: 260, overflowY: 'auto' }}>
+          <div style={{
+            width: '100%',
+            maxHeight: 136,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+          }}>
             <Flexbox gap={6}>
               {knownAccounts.map(account => (
                 <button
@@ -637,11 +763,10 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                   }}
                 >
                   <UserSquareAvatar
-                    url={account.avatar}
-                    localPath={account.avatarLocalPath}
+                    remoteUrl={account.avatar}
                     name={account.name}
                     size={40}
-                    radius={20}
+                    radius={8}
                   />
                   <Flexbox gap={2} style={{ flex: 1, minWidth: 0 }}>
                     <Text strong style={{ fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -653,7 +778,30 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                       </Text>
                     )}
                   </Flexbox>
-                  <Flexbox horizontal gap={4} align="center">
+                  <Flexbox horizontal gap={6} align="center">
+                    {!account.hasSession && (
+                      // No restorable session locally — clicking will route
+                      // straight to the provider's login form rather than
+                      // attempting to resume. Surface that up-front so the
+                      // user isn't surprised.
+                      <span
+                        title={t('auth.accountPicker.signInRequired', {
+                          defaultValue: 'Sign in required',
+                        })}
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 600,
+                          padding: '2px 6px',
+                          borderRadius: 6,
+                          color: token.colorWarningText,
+                          background: token.colorWarningBg,
+                          border: `1px solid ${token.colorWarningBorder}`,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {t('auth.accountPicker.signInBadge', { defaultValue: 'Sign in' })}
+                      </span>
+                    )}
                     {account.hasPin && (
                       <ShieldCheck size={14} style={{ color: token.colorSuccess, flexShrink: 0 }} />
                     )}
@@ -683,6 +831,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
           <button
             onClick={() => {
               setSelectedAccount(null);
+              setExpiredAccount(null);
               setLoginState(hasMultipleAccounts ? 'account_picker' : 'logged_out');
             }}
             style={{
@@ -699,11 +848,10 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
 
           <div style={{ position: 'relative', marginBottom: 16, marginTop: 8 }}>
             <UserSquareAvatar
-              url={selectedAccount.avatar}
-              localPath={selectedAccount.avatarLocalPath}
+              remoteUrl={selectedAccount.avatar}
               name={selectedAccount.name}
               size={72}
-              radius={36}
+              radius={12}
               border={`3px solid ${token.colorBgContainer}`}
             />
           </div>
@@ -712,19 +860,52 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
             {selectedAccount.name}
           </h3>
           <Text type="secondary" style={{ fontSize: 12, marginBottom: 24 }}>
-            {t('auth.pin.enterPin', { defaultValue: 'Enter your PIN to unlock' })}
+            {pinRevoked
+              ? t('auth.pin.sessionExpiredHint', { defaultValue: 'Saved session is no longer valid' })
+              : t('auth.pin.enterPin', { defaultValue: 'Enter your PIN to unlock' })}
           </Text>
 
-          {renderPinInputRow(pinDigits, pinInputRefs, handlePinChange, handlePinKeyDown, pinLoading)}
+          {pinRevoked ? (
+            // Explicit revoke panel — replaces the PIN inputs so the user
+            // unmistakably sees that the saved session is dead and we're
+            // about to send them to fresh re-auth. Stays visible for ~1.4s
+            // before `handlePinSubmit` triggers `routeToProviderLogin`.
+            <Flexbox
+              gap={10}
+              align="center"
+              style={{
+                width: '100%',
+                padding: '14px 16px',
+                borderRadius: 12,
+                background: token.colorWarningBg,
+                border: `1px solid ${token.colorWarningBorder}`,
+              }}
+            >
+              <AlertTriangle size={28} color={token.colorWarningText} />
+              <Text strong style={{ fontSize: 14, color: token.colorWarningText, textAlign: 'center' }}>
+                {t('auth.pin.sessionExpiredTitle', { defaultValue: 'Session expired' })}
+              </Text>
+              <Text type="secondary" style={{ fontSize: 12, textAlign: 'center' }}>
+                {t('auth.pin.sessionExpiredRedirect', {
+                  defaultValue: 'Redirecting you to sign in again…',
+                })}
+              </Text>
+              <Spin size="small" />
+            </Flexbox>
+          ) : (
+            <>
+              {renderPinInputRow(pinDigits, pinInputRefs, handlePinChange, handlePinKeyDown, pinLoading)}
 
-          {pinError && (
-            <Text type="danger" style={{ fontSize: 12, marginTop: 10, textAlign: 'center' }}>
-              {pinError}
-            </Text>
-          )}
+              {pinError && (
+                <Text type="danger" style={{ fontSize: 12, marginTop: 10, textAlign: 'center' }}>
+                  {pinError}
+                </Text>
+              )}
 
-          {pinLoading && (
-            <Spin size="small" style={{ marginTop: 12 }} />
+              {pinLoading && (
+                <Spin size="small" style={{ marginTop: 12 }} />
+              )}
+            </>
           )}
         </>
       );
@@ -789,17 +970,16 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                 position: 'absolute',
                 inset: -4,
                 background: BRANDING.colors.gradient,
-                borderRadius: '50%',
+                borderRadius: 14,
                 filter: 'blur(20px)',
                 opacity: 0.2,
               }}
             />
             <UserSquareAvatar
-              url={welcomeUser.avatar}
-              localPath={welcomeUser.avatarLocalPath}
+              remoteUrl={welcomeUser.avatar}
               name={welcomeUser.name}
               size={88}
-              radius={44}
+              radius={14}
               border={`3px solid ${token.colorBgContainer}`}
             />
             <div
@@ -811,7 +991,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                 height: 18,
                 background: '#52c41a',
                 border: `2px solid ${token.colorBgContainer}`,
-                borderRadius: '50%',
+                borderRadius: 6,
               }}
             />
           </div>
@@ -904,11 +1084,10 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
             ) : (
               <>
                 <UserSquareAvatar
-                  url={welcomeUser.avatar}
-                  localPath={welcomeUser.avatarLocalPath}
+                  remoteUrl={welcomeUser.avatar}
                   name={welcomeUser.name}
                   size={24}
-                  radius={12}
+                  radius={6}
                 />
                 <ChevronRight size={12} style={{ color: token.colorTextTertiary }} />
               </>
@@ -930,11 +1109,65 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
         )}
 
         <h2 style={{ fontSize: 22, fontWeight: 700, color: token.colorText, margin: '0 0 6px' }}>
-          {t('auth.login.title')}
+          {expiredAccount
+            ? t('auth.login.welcomeBackTitle', { defaultValue: 'Welcome back' })
+            : t('auth.login.title')}
         </h2>
-        <Text type="secondary" style={{ fontSize: 13, marginBottom: 24 }}>
-          {t('auth.login.subtitle')}
+        <Text type="secondary" style={{ fontSize: 13, marginBottom: expiredAccount ? 12 : 24, textAlign: 'center' }}>
+          {expiredAccount
+            ? reauthReason === 'revoked'
+              ? t('auth.login.expiredSubtitle', {
+                  defaultValue: 'Sign in again to continue where you left off.',
+                })
+              : t('auth.login.continueSubtitle', {
+                  defaultValue: 'Sign in to continue.',
+                })
+            : t('auth.login.subtitle')}
         </Text>
+
+        {expiredAccount && (
+          <Alert
+            type={reauthReason === 'revoked' ? 'warning' : 'info'}
+            showIcon
+            icon={
+              reauthReason === 'revoked'
+                ? <AlertTriangle size={18} style={{ color: token.colorWarningText }} />
+                : <Lock size={18} style={{ color: token.colorInfoText }} />
+            }
+            style={{ width: '100%', marginBottom: 18, borderRadius: 12, padding: '10px 12px' }}
+            message={
+              <Text
+                strong
+                style={{
+                  fontSize: 13,
+                  color: reauthReason === 'revoked' ? token.colorWarningText : token.colorInfoText,
+                }}
+              >
+                {reauthReason === 'revoked'
+                  ? t('auth.login.expiredAlertTitle', { defaultValue: 'Session expired' })
+                  : t('auth.login.continueAlertTitle', { defaultValue: 'Sign in required' })}
+              </Text>
+            }
+            description={
+              <Flexbox horizontal gap={10} align="center" style={{ marginTop: 6 }}>
+                <UserSquareAvatar
+                  remoteUrl={expiredAccount.avatar}
+                  name={expiredAccount.name}
+                  size={32}
+                  radius={6}
+                />
+                <Flexbox gap={2} style={{ flex: 1, minWidth: 0 }}>
+                  <Text strong style={{ fontSize: 13 }}>{expiredAccount.name}</Text>
+                  {expiredAccount.email && (
+                    <Text type="secondary" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {expiredAccount.email}
+                    </Text>
+                  )}
+                </Flexbox>
+              </Flexbox>
+            }
+          />
+        )}
 
         <div
           style={{
@@ -958,13 +1191,17 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
         <div style={{ width: '100%' }}>
           {tab === 'quick' ? (
             <Flexbox gap={10}>
-              {oauth2AccountProviders.map(provider => (
+              {oauth2AccountProviders.map(provider => {
+                const isExpiredProvider =
+                  expiredAccount?.provider?.toLowerCase() === provider.id.toLowerCase();
+                const highlight = connectProvider?.id === provider.id || isExpiredProvider;
+                return (
                 <Button
                   key={provider.id}
                   ref={(el) => { buttonRefs.current[provider.id] = el; }}
                   style={{
                     ...oauthButtonStyle,
-                    ...(connectProvider?.id === provider.id
+                    ...(highlight
                       ? { borderColor: provider.color || token.colorPrimary, color: provider.color || token.colorPrimary }
                       : {}),
                   }}
@@ -977,7 +1214,8 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                 >
                   {t('auth.login.continueWith', { provider: provider.name })}
                 </Button>
-              ))}
+                );
+              })}
               {oauth2AccountProviders.length === 0 && (
                 <>
                   <Button style={oauthButtonStyle} icon={<Github size={18} />} disabled>

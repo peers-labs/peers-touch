@@ -12,7 +12,7 @@ prost-build = "0.14.3"
 tauri-build = { version = "2.0.1", features = [] }
 
 [dependencies]
-tauri = { version = "2.0.1", features = [] }
+tauri = { version = "2.0.1", features = ["protocol-asset"] }
 tauri-plugin-deep-link = "2.0.1"
 tiny_http = "0.12"
 threadpool = "1.8"
@@ -41,6 +41,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 rfd = "0.15"
+tokio = { version = "1", features = ["rt"] }
 
 [features]
 default = ["custom-protocol"]

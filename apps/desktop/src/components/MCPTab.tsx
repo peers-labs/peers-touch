@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { log } from '@/utils/logger';
 import { Flexbox } from 'react-layout-kit';
 import {
   Card, Modal, Switch, Empty,
@@ -351,7 +352,7 @@ function MCPServerDetailModal({
   const [testing, setTesting] = useState(false);
 
   useEffect(() => {
-    api.getMCPServer(name).then(setServer).catch(console.error);
+    api.getMCPServer(name).then(setServer).catch((err) => log.error('mcp', 'Failed to load MCP server', { error: String(err) }));
   }, [name]);
 
   const handleTest = async () => {

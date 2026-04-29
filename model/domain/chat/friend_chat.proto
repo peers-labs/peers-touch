@@ -22,6 +22,11 @@ message FriendChatSession {
   string participant_a_avatar = 11;
   string participant_b_display_name = 12;
   string participant_b_avatar = 13;
+  // Initial presence snapshot for each participant. Populated by the
+  // session list endpoint from the in-memory online map; clients should
+  // subscribe to /friend-chat/presence/stream (SSE) for live updates.
+  bool participant_a_online = 14;
+  bool participant_b_online = 15;
 }
 
 message FriendChatMessage {

@@ -5,7 +5,6 @@ use crate::error::{AppResult, ErrorCode};
 use crate::contracts::{
     AppletActionInput, AppletConfigSetInput, AppletIdInput, AppletInvokeInput, StubPayload,
 };
-use crate::state::AppState;
 use serde_json::{json, Value};
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
@@ -21,22 +20,6 @@ fn invalid_argument(message: &str, request_id: &str) -> AppResult<StubPayload> {
         message,
         Some(serde_json::json!({ "requestId": request_id })),
     )
-}
-
-fn current_access_context(state: &AppState) -> Result<AccessContext, AppResult<StubPayload>> {
-    match state.session.lock() {
-        Ok(session) => Ok(AccessContext {
-            actor_id: session.actor_id.clone(),
-        }),
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to acquire session lock");
-            Err(AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to access session state: {}", e),
-                None,
-            ))
-        }
-    }
 }
 
 fn ensure_allowed(
@@ -68,7 +51,7 @@ fn ensure_allowed(
 }
 
 fn invoke_gateway(
-    state: &AppState,
+    context: &AccessContext,
     command: &str,
     applet_id: Option<&str>,
     capability: &str,
@@ -76,13 +59,9 @@ fn invoke_gateway(
     params: Option<Value>,
 ) -> AppResult<StubPayload> {
     let request_id = build_request_id();
-    let context = match current_access_context(state) {
-        Ok(context) => context,
-        Err(error) => return error,
-    };
     let normalized_capability = normalize_capability(capability);
     if let Err(error) = ensure_allowed(
-        &context,
+        context,
         &request_id,
         command,
         applet_id,
@@ -137,17 +116,17 @@ fn invoke_gateway(
     success_payload(command, response)
 }
 
-pub fn applets_list(state: &AppState) -> AppResult<StubPayload> {
-    invoke_gateway(state, "applets_list", None, "applets.list", None, None)
+pub fn applets_list(context: AccessContext) -> AppResult<StubPayload> {
+    invoke_gateway(&context, "applets_list", None, "applets.list", None, None)
 }
 
-pub fn applets_get(state: &AppState, input: AppletIdInput) -> AppResult<StubPayload> {
+pub fn applets_get(context: AccessContext, input: AppletIdInput) -> AppResult<StubPayload> {
     let request_id = build_request_id();
     if input.id.trim().is_empty() {
         return invalid_argument("id is required", &request_id);
     }
     invoke_gateway(
-        state,
+        &context,
         "applets_get",
         Some(input.id.trim()),
         "applets.get",
@@ -156,13 +135,13 @@ pub fn applets_get(state: &AppState, input: AppletIdInput) -> AppResult<StubPayl
     )
 }
 
-pub fn applets_activate(state: &AppState, input: AppletIdInput) -> AppResult<StubPayload> {
+pub fn applets_activate(context: AccessContext, input: AppletIdInput) -> AppResult<StubPayload> {
     let request_id = build_request_id();
     if input.id.trim().is_empty() {
         return invalid_argument("id is required", &request_id);
     }
     invoke_gateway(
-        state,
+        &context,
         "applets_activate",
         Some(input.id.trim()),
         "applets.activate",
@@ -171,13 +150,13 @@ pub fn applets_activate(state: &AppState, input: AppletIdInput) -> AppResult<Stu
     )
 }
 
-pub fn applets_deactivate(state: &AppState, input: AppletIdInput) -> AppResult<StubPayload> {
+pub fn applets_deactivate(context: AccessContext, input: AppletIdInput) -> AppResult<StubPayload> {
     let request_id = build_request_id();
     if input.id.trim().is_empty() {
         return invalid_argument("id is required", &request_id);
     }
     invoke_gateway(
-        state,
+        &context,
         "applets_deactivate",
         Some(input.id.trim()),
         "applets.deactivate",
@@ -186,13 +165,13 @@ pub fn applets_deactivate(state: &AppState, input: AppletIdInput) -> AppResult<S
     )
 }
 
-pub fn applets_get_config(state: &AppState, input: AppletIdInput) -> AppResult<StubPayload> {
+pub fn applets_get_config(context: AccessContext, input: AppletIdInput) -> AppResult<StubPayload> {
     let request_id = build_request_id();
     if input.id.trim().is_empty() {
         return invalid_argument("id is required", &request_id);
     }
     invoke_gateway(
-        state,
+        &context,
         "applets_get_config",
         Some(input.id.trim()),
         "applets.get_config",
@@ -201,14 +180,17 @@ pub fn applets_get_config(state: &AppState, input: AppletIdInput) -> AppResult<S
     )
 }
 
-pub fn applets_set_config(state: &AppState, input: AppletConfigSetInput) -> AppResult<StubPayload> {
+pub fn applets_set_config(
+    context: AccessContext,
+    input: AppletConfigSetInput,
+) -> AppResult<StubPayload> {
     let request_id = build_request_id();
     if input.id.trim().is_empty() {
         return invalid_argument("id is required", &request_id);
     }
     let _ = input.config;
     invoke_gateway(
-        state,
+        &context,
         "applets_set_config",
         Some(input.id.trim()),
         "applets.set_config",
@@ -217,7 +199,10 @@ pub fn applets_set_config(state: &AppState, input: AppletConfigSetInput) -> AppR
     )
 }
 
-pub fn applets_action(state: &AppState, input: AppletActionInput) -> AppResult<StubPayload> {
+pub fn applets_action(
+    context: AccessContext,
+    input: AppletActionInput,
+) -> AppResult<StubPayload> {
     let request_id = build_request_id();
     if input.id.trim().is_empty() {
         return invalid_argument("id is required", &request_id);
@@ -226,7 +211,7 @@ pub fn applets_action(state: &AppState, input: AppletActionInput) -> AppResult<S
         return invalid_argument("action is required", &request_id);
     }
     invoke_gateway(
-        state,
+        &context,
         "applets_action",
         Some(input.id.trim()),
         "applets.action",
@@ -235,7 +220,10 @@ pub fn applets_action(state: &AppState, input: AppletActionInput) -> AppResult<S
     )
 }
 
-pub fn applets_invoke(state: &AppState, input: AppletInvokeInput) -> AppResult<StubPayload> {
+pub fn applets_invoke(
+    context: AccessContext,
+    input: AppletInvokeInput,
+) -> AppResult<StubPayload> {
     let request_id = build_request_id();
     if input.id.trim().is_empty() {
         return invalid_argument("id is required", &request_id);
@@ -244,7 +232,7 @@ pub fn applets_invoke(state: &AppState, input: AppletInvokeInput) -> AppResult<S
         return invalid_argument("capability is required", &request_id);
     }
     invoke_gateway(
-        state,
+        &context,
         "applets_invoke",
         Some(input.id.trim()),
         input.capability.as_str(),

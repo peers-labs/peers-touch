@@ -7,52 +7,151 @@
 use std::sync::Arc;
 use crate::error::{AppResult, ErrorCode};
 use crate::contracts::{
-    AccountSyncAvatarInput, FileUploadInput, ProfilePrivacyInput, ProfileUpdateInput, StubPayload,
+    AccountSyncAvatarInput, AvatarResolveLocalInput, FileUploadInput, ProfilePrivacyInput,
+    ProfileUpdateInput, StubPayload,
 };
 use crate::application::profile as application_profile;
+use crate::application::session_resolver;
 use crate::state::AppState;
-use tauri::State;
+use tauri::{Manager, State, Window};
 
-#[tauri::command]
-pub fn profile_get(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    application_profile::profile_get(state.inner())
+fn require_token(
+    state: &Arc<AppState>,
+    window: &Window,
+) -> Result<String, AppResult<StubPayload>> {
+    let token = session_resolver::token_for_window(state, window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return Err(AppResult::fail(
+            ErrorCode::Unauthorized,
+            "authentication required",
+            None,
+        ));
+    }
+    Ok(token)
 }
 
 #[tauri::command]
-pub fn profile_update(state: State<'_, Arc<AppState>>, input: ProfileUpdateInput) -> AppResult<StubPayload> {
-    application_profile::profile_update(state.inner(), input)
+pub fn profile_get(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let token = match require_token(state.inner(), &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    application_profile::profile_get(&token)
 }
 
 #[tauri::command]
-pub fn profile_upload_avatar(input: FileUploadInput) -> AppResult<StubPayload> {
-    application_profile::profile_upload_avatar(input)
+pub fn profile_update(
+    state: State<'_, Arc<AppState>>,
+    input: ProfileUpdateInput,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match require_token(state.inner(), &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    application_profile::profile_update(input, &token)
 }
 
 #[tauri::command]
-pub fn profile_upload_header(input: FileUploadInput) -> AppResult<StubPayload> {
-    application_profile::profile_upload_header(input)
+pub fn profile_upload_avatar(
+    state: State<'_, Arc<AppState>>,
+    input: FileUploadInput,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match require_token(state.inner(), &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    application_profile::profile_upload_avatar(&actor_id, input, &token)
 }
 
 #[tauri::command]
-pub fn profile_upload_avatar_oss(state: State<'_, Arc<AppState>>, input: FileUploadInput) -> AppResult<StubPayload> {
-    application_profile::profile_upload_avatar_oss(state.inner(), input)
+pub fn profile_upload_header(
+    state: State<'_, Arc<AppState>>,
+    input: FileUploadInput,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match require_token(state.inner(), &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    application_profile::profile_upload_header(&actor_id, input, &token)
+}
+
+// 2026-04-25: Changed from sync to async with spawn_blocking.
+// The sync variant blocks the Tauri main thread on macOS while making
+// multiple sequential HTTP requests (OSS upload + profile update + profile get
+// + avatar download), which can deadlock or timeout — same class of issue
+// that was fixed for pick_image_file (see below).
+// Uses AppHandle instead of State to avoid lifetime issues in async commands.
+#[tauri::command]
+pub async fn profile_upload_avatar_oss(
+    app: tauri::AppHandle,
+    input: FileUploadInput,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
+    let token = match require_token(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    tokio::task::spawn_blocking(move || application_profile::profile_upload_avatar_oss(input, &token))
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "profile_upload_avatar_oss task panicked");
+            AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Avatar upload task failed: {}", e),
+                None,
+            )
+        })
 }
 
 #[tauri::command]
-pub fn profile_upload_header_oss(state: State<'_, Arc<AppState>>, input: FileUploadInput) -> AppResult<StubPayload> {
-    application_profile::profile_upload_header_oss(state.inner(), input)
+pub async fn profile_upload_header_oss(
+    app: tauri::AppHandle,
+    input: FileUploadInput,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
+    let token = match require_token(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    tokio::task::spawn_blocking(move || application_profile::profile_upload_header_oss(input, &token))
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "profile_upload_header_oss task panicked");
+            AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Header upload task failed: {}", e),
+                None,
+            )
+        })
 }
 
 #[tauri::command]
-pub fn profile_update_privacy(input: ProfilePrivacyInput) -> AppResult<StubPayload> {
-    application_profile::profile_update_privacy(input)
+pub fn profile_update_privacy(
+    state: State<'_, Arc<AppState>>,
+    input: ProfilePrivacyInput,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match require_token(state.inner(), &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    application_profile::profile_update_privacy(&actor_id, &token, input)
 }
 
 // 2026-04-21: Changed from sync rfd::FileDialog to async rfd::AsyncFileDialog.
 // The sync variant deadlocks on macOS under Tauri 2 because the command handler
 // blocks the main thread while NSOpenPanel also needs the main run-loop.
 #[tauri::command]
-pub async fn pick_image_file() -> AppResult<StubPayload> {
+pub async fn pick_image_file(window: Window) -> AppResult<StubPayload> {
+    let _ = window;
     tracing::info!("Opening file picker dialog for image selection");
     let dialog = rfd::AsyncFileDialog::new()
         .set_title("Select Image")
@@ -77,32 +176,62 @@ pub async fn pick_image_file() -> AppResult<StubPayload> {
 /// Sync avatar URL to local auth identity and download to local cache.
 /// Called by frontend after profile avatar is loaded or changed on Station.
 #[tauri::command]
-pub fn account_sync_avatar(input: AccountSyncAvatarInput) -> AppResult<StubPayload> {
-    match application_profile::sync_avatar_with_download(&input.avatar_url) {
-        Ok(local_path) => {
-            let status = match local_path {
-                Some(p) => format!("synced_local:{}", p),
-                None => "synced_remote_only".to_string(),
-            };
-            AppResult::success(StubPayload {
-                command: "account_sync_avatar".to_string(),
-                status,
-            })
-        }
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to sync avatar");
-            AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Failed to sync avatar: {}", e),
-                None,
-            )
-        }
-    }
+pub fn account_sync_avatar(
+    state: State<'_, Arc<AppState>>,
+    input: AccountSyncAvatarInput,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match require_token(state.inner(), &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    application_profile::account_sync_avatar(&input, &token)
 }
 
 /// Fetch profile from Station and sync all user data (metadata + avatar) to local storage.
 // 2026-04-21: New aggregated sync command for user profile local caching.
+// 2026-04-26: Pass the per-window actor_id so the application layer writes
+//             into the correct LocalAccount record and does not rely on the
+//             volatile `active_account_id` pointer.
 #[tauri::command]
-pub fn sync_user_profile(state: State<'_, Arc<AppState>>) -> AppResult<StubPayload> {
-    application_profile::sync_user_profile(state.inner())
+pub fn sync_user_profile(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let token = match require_token(state.inner(), &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    if actor_id.is_empty() {
+        return AppResult::fail(
+            ErrorCode::Unauthorized,
+            "sync_user_profile: window has no bound actor",
+            None,
+        );
+    }
+    application_profile::sync_user_profile(&token, &actor_id)
+}
+
+/// Resolve a remote avatar URL to a local cache file, downloading it on miss.
+/// Wrapped in `spawn_blocking` because the worst case performs a synchronous
+/// HTTP download from Station (must not block the Tauri main thread).
+// 2026-04-25: Single backend entry point for the unified UserSquareAvatar
+//             component (replaces ad-hoc avatar_local_path plumbing).
+#[tauri::command]
+pub async fn avatar_resolve_local(
+    input: AvatarResolveLocalInput,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let _ = window;
+    let url = input.url.unwrap_or_default();
+    let resolved = tokio::task::spawn_blocking(move || application_profile::avatar_resolve_local(&url))
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "avatar_resolve_local task panicked");
+            None
+        });
+
+    let payload = serde_json::json!({ "local_path": resolved });
+    AppResult::success(StubPayload {
+        command: "avatar_resolve_local".to_string(),
+        status: payload.to_string(),
+    })
 }

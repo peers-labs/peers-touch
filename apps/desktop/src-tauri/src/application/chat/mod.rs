@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use crate::domain::chat::{self, Conversation, DeliveryVia, Message};
+use crate::infrastructure::actor_bucket::actor_bucket_id;
 use crate::infrastructure::realtime;
 
 #[derive(Default)]
@@ -75,10 +76,32 @@ impl ChatStore {
     }
 }
 
-static CHAT_STORE: OnceLock<Mutex<ChatStore>> = OnceLock::new();
+struct ChatStores {
+    buckets: HashMap<String, ChatStore>,
+}
 
-fn chat_store() -> &'static Mutex<ChatStore> {
-    CHAT_STORE.get_or_init(|| Mutex::new(ChatStore::seeded()))
+static CHAT_STORES: OnceLock<Mutex<ChatStores>> = OnceLock::new();
+
+fn chat_stores() -> &'static Mutex<ChatStores> {
+    CHAT_STORES.get_or_init(|| Mutex::new(ChatStores {
+        buckets: HashMap::new(),
+    }))
+}
+
+fn with_chat_app_result<F>(actor_id: &str, f: F) -> AppResult<StubPayload>
+where
+    F: FnOnce(&mut ChatStore) -> AppResult<StubPayload>,
+{
+    let key = actor_bucket_id(actor_id);
+    let mut stores = match chat_stores().lock() {
+        Ok(g) => g,
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire chat store lock");
+            return internal_error(&format!("Failed to access chat store: {}", e));
+        }
+    };
+    let store = stores.buckets.entry(key).or_insert_with(ChatStore::seeded);
+    f(store)
 }
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
@@ -98,42 +121,37 @@ fn internal_error(message: &str) -> AppResult<StubPayload> {
     AppResult::fail(ErrorCode::InternalError, message, None)
 }
 
-pub fn chat_list_conversations() -> AppResult<StubPayload> {
+pub fn chat_list_conversations(actor_id: &str) -> AppResult<StubPayload> {
     tracing::info!(command = "chat_list_conversations", "Listing conversations");
-    let guard = match chat_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to acquire chat store lock");
-            return internal_error(&format!("Failed to access chat store: {}", e));
-        }
-    };
-    let mut conversations: Vec<_> = guard.conversations.values().cloned().collect();
-    conversations.sort_by(|a, b| b.last_timestamp_ms.cmp(&a.last_timestamp_ms));
-    let data = conversations
-        .into_iter()
-        .map(|conversation| {
-            json!({
-                "id": conversation.id,
-                "title": conversation.title,
-                "modelName": conversation.model,
-                "unreadCount": conversation.unread_count,
-                "messageCount": guard.messages.get(&conversation.id).map(|list| list.len()).unwrap_or(0),
-                "lastMessageId": conversation.last_message_id,
-                "lastTimestampMs": conversation.last_timestamp_ms
+    with_chat_app_result(actor_id, |store| {
+        let mut conversations: Vec<_> = store.conversations.values().cloned().collect();
+        conversations.sort_by(|a, b| b.last_timestamp_ms.cmp(&a.last_timestamp_ms));
+        let data = conversations
+            .into_iter()
+            .map(|conversation| {
+                json!({
+                    "id": conversation.id,
+                    "title": conversation.title,
+                    "modelName": conversation.model,
+                    "unreadCount": conversation.unread_count,
+                    "messageCount": store.messages.get(&conversation.id).map(|list| list.len()).unwrap_or(0),
+                    "lastMessageId": conversation.last_message_id,
+                    "lastTimestampMs": conversation.last_timestamp_ms
+                })
             })
-        })
-        .collect::<Vec<_>>();
-    tracing::info!(command = "chat_list_conversations", count = data.len(), "Conversations listed");
-    realtime::publish_chat_event("chat_list_conversations", "all", None);
-    success_payload(
-        "chat_list_conversations",
-        json!({
-            "conversations": data
-        }),
-    )
+            .collect::<Vec<_>>();
+        tracing::info!(command = "chat_list_conversations", count = data.len(), "Conversations listed");
+        realtime::publish_chat_event("chat_list_conversations", "all", None);
+        success_payload(
+            "chat_list_conversations",
+            json!({
+                "conversations": data
+            }),
+        )
+    })
 }
 
-pub fn chat_list_messages(input: ChatListMessagesInput) -> AppResult<StubPayload> {
+pub fn chat_list_messages(actor_id: &str, input: ChatListMessagesInput) -> AppResult<StubPayload> {
     tracing::info!(command = "chat_list_messages", conversation_id = %input.conversation_id, "Listing messages");
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
@@ -143,77 +161,72 @@ pub fn chat_list_messages(input: ChatListMessagesInput) -> AppResult<StubPayload
     let cursor = chat::parse_cursor(input.cursor.as_deref());
 
     let agent_id = chat::extract_agent_id(&conversation_id);
-    let mut guard = match chat_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to acquire chat store lock");
-            return internal_error(&format!("Failed to access chat store: {}", e));
-        }
-    };
-    let now = chat::now_ms();
-    guard.ensure_conversation(&conversation_id, &agent_id, now);
-    let messages = guard
-        .messages
-        .get(&conversation_id)
-        .cloned()
-        .unwrap_or_default();
-    let start_index = cursor
-        .as_ref()
-        .and_then(|cursor_id| {
-            messages
-                .iter()
-                .position(|message| message.id == cursor_id.as_str())
-        })
-        .map(|index| index.saturating_add(1))
-        .unwrap_or(0);
-    let page = messages
-        .iter()
-        .skip(start_index)
-        .take(limit)
-        .map(|message| {
-            let via = match message.via {
-                DeliveryVia::P2p => "p2p",
-                DeliveryVia::Relay => "relay",
-            };
-            json!({
-                "id": message.id,
-                "role": message.role,
-                "conversationId": message.conversation_id,
-                "content": message.content,
-                "read": message.read,
-                "modelName": guard
-                    .conversations
-                    .get(&conversation_id)
-                    .and_then(|conversation| conversation.model.clone())
-                    .unwrap_or_default(),
-                "via": via,
-                "retryCount": message.retry_count,
-                "createdAt": message.timestamp_ms
+    with_chat_app_result(actor_id, |store| {
+        let now = chat::now_ms();
+        store.ensure_conversation(&conversation_id, &agent_id, now);
+        let messages = store
+            .messages
+            .get(&conversation_id)
+            .cloned()
+            .unwrap_or_default();
+        let start_index = cursor
+            .as_ref()
+            .and_then(|cursor_id| {
+                messages
+                    .iter()
+                    .position(|message| message.id == cursor_id.as_str())
             })
-        })
-        .collect::<Vec<_>>();
-    let next_cursor = page
-        .last()
-        .and_then(|item| item.get("id"))
-        .and_then(|item| item.as_str())
-        .map(|value| value.to_string());
-    tracing::debug!(command = "chat_list_messages", conversation_id = %conversation_id, count = page.len(), "Messages retrieved");
-    realtime::publish_chat_event(
-        "chat_list_messages",
-        &conversation_id,
-        next_cursor.as_deref(),
-    );
-    success_payload(
-        "chat_list_messages",
-        json!({
-            "conversationId": conversation_id,
-            "nextCursor": next_cursor,
-            "messages": page
-        }),
-    )
+            .map(|index| index.saturating_add(1))
+            .unwrap_or(0);
+        let page = messages
+            .iter()
+            .skip(start_index)
+            .take(limit)
+            .map(|message| {
+                let via = match message.via {
+                    DeliveryVia::P2p => "p2p",
+                    DeliveryVia::Relay => "relay",
+                };
+                json!({
+                    "id": message.id,
+                    "role": message.role,
+                    "conversationId": message.conversation_id,
+                    "content": message.content,
+                    "read": message.read,
+                    "modelName": store
+                        .conversations
+                        .get(&conversation_id)
+                        .and_then(|conversation| conversation.model.clone())
+                        .unwrap_or_default(),
+                    "via": via,
+                    "retryCount": message.retry_count,
+                    "createdAt": message.timestamp_ms
+                })
+            })
+            .collect::<Vec<_>>();
+        let next_cursor = page
+            .last()
+            .and_then(|item| item.get("id"))
+            .and_then(|item| item.as_str())
+            .map(|value| value.to_string());
+        tracing::debug!(command = "chat_list_messages", conversation_id = %conversation_id, count = page.len(), "Messages retrieved");
+        realtime::publish_chat_event(
+            "chat_list_messages",
+            &conversation_id,
+            next_cursor.as_deref(),
+        );
+        success_payload(
+            "chat_list_messages",
+            json!({
+                "conversationId": conversation_id,
+                "nextCursor": next_cursor,
+                "messages": page
+            }),
+        )
+    })
 }
 
-pub fn chat_send_message(input: ChatSendMessageInput) -> AppResult<StubPayload> {
+pub fn chat_send_message(actor_id: &str, input: ChatSendMessageInput) -> AppResult<StubPayload> {
     tracing::info!(command = "chat_send_message", conversation_id = %input.conversation_id, "Sending message");
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
@@ -227,51 +240,46 @@ pub fn chat_send_message(input: ChatSendMessageInput) -> AppResult<StubPayload> 
 
     let agent_id = chat::extract_agent_id(&conversation_id);
     let timestamp_ms = chat::now_ms();
-    let mut guard = match chat_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to acquire chat store lock");
-            return internal_error(&format!("Failed to access chat store: {}", e));
-        }
-    };
-    let unread_count = {
-        let conversation = guard.ensure_conversation(&conversation_id, &agent_id, timestamp_ms);
-        conversation.last_message_id = Some(message_id.clone());
-        conversation.last_timestamp_ms = timestamp_ms;
-        conversation.unread_count = conversation.unread_count.saturating_add(1);
-        conversation.unread_count
-    };
-    guard
-        .messages
-        .entry(conversation_id.clone())
-        .or_default()
-        .push(Message {
-            id: message_id.clone(),
-            conversation_id: conversation_id.clone(),
-            content: content.clone(),
-            role: "user".to_string(),
-            read: false,
-            via: DeliveryVia::Relay,
-            retry_count: 0,
-            timestamp_ms,
-        });
+    with_chat_app_result(actor_id, |store| {
+        let unread_count = {
+            let conversation = store.ensure_conversation(&conversation_id, &agent_id, timestamp_ms);
+            conversation.last_message_id = Some(message_id.clone());
+            conversation.last_timestamp_ms = timestamp_ms;
+            conversation.unread_count = conversation.unread_count.saturating_add(1);
+            conversation.unread_count
+        };
+        store
+            .messages
+            .entry(conversation_id.clone())
+            .or_default()
+            .push(Message {
+                id: message_id.clone(),
+                conversation_id: conversation_id.clone(),
+                content: content.clone(),
+                role: "user".to_string(),
+                read: false,
+                via: DeliveryVia::Relay,
+                retry_count: 0,
+                timestamp_ms,
+            });
 
-    realtime::publish_chat_event(
-        "chat_send_message",
-        &conversation_id,
-        Some(&message_id),
-    );
-    success_payload(
-        "chat_send_message",
-        json!({
-            "conversationId": conversation_id,
-            "messageId": message_id,
-            "unreadCount": unread_count
-        }),
-    )
+        realtime::publish_chat_event(
+            "chat_send_message",
+            &conversation_id,
+            Some(&message_id),
+        );
+        success_payload(
+            "chat_send_message",
+            json!({
+                "conversationId": conversation_id,
+                "messageId": message_id,
+                "unreadCount": unread_count
+            }),
+        )
+    })
 }
 
-pub fn chat_mark_read(input: ChatMarkReadInput) -> AppResult<StubPayload> {
+pub fn chat_mark_read(actor_id: &str, input: ChatMarkReadInput) -> AppResult<StubPayload> {
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
         Err(message) => return invalid_argument(message),
@@ -281,68 +289,58 @@ pub fn chat_mark_read(input: ChatMarkReadInput) -> AppResult<StubPayload> {
         return invalid_argument("message_id is required".to_string());
     }
 
-    let mut guard = match chat_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to acquire chat store lock");
-            return internal_error(&format!("Failed to access chat store: {}", e));
+    with_chat_app_result(actor_id, |store| {
+        let messages = match store.messages.get_mut(&conversation_id) {
+            Some(messages) => messages,
+            None => return AppResult::fail(ErrorCode::NotFound, "Conversation not found", None),
+        };
+        let mut found = false;
+        for message in messages.iter_mut() {
+            if message.id == message_id.as_str() {
+                found = true;
+                message.read = true;
+            }
         }
-    };
-    let messages = match guard.messages.get_mut(&conversation_id) {
-        Some(messages) => messages,
-        None => return AppResult::fail(ErrorCode::NotFound, "Conversation not found", None),
-    };
-    let mut found = false;
-    for message in messages.iter_mut() {
-        if message.id == message_id.as_str() {
-            found = true;
-            message.read = true;
+        if !found {
+            return AppResult::fail(ErrorCode::NotFound, "Message not found", None);
         }
-    }
-    if !found {
-        return AppResult::fail(ErrorCode::NotFound, "Message not found", None);
-    }
-    let unread_count = messages.iter().filter(|item| !item.read).count() as u32;
-    if let Some(conversation) = guard.conversations.get_mut(&conversation_id) {
-        conversation.unread_count = unread_count;
-        conversation.last_timestamp_ms = chat::now_ms();
-    }
-    realtime::publish_chat_event(
-        "chat_mark_read",
-        &conversation_id,
-        Some(&message_id),
-    );
-    success_payload(
-        "chat_mark_read",
-        json!({
-            "conversationId": conversation_id,
-            "messageId": message_id,
-            "unreadCount": unread_count
-        }),
-    )
+        let unread_count = messages.iter().filter(|item| !item.read).count() as u32;
+        if let Some(conversation) = store.conversations.get_mut(&conversation_id) {
+            conversation.unread_count = unread_count;
+            conversation.last_timestamp_ms = chat::now_ms();
+        }
+        realtime::publish_chat_event(
+            "chat_mark_read",
+            &conversation_id,
+            Some(&message_id),
+        );
+        success_payload(
+            "chat_mark_read",
+            json!({
+                "conversationId": conversation_id,
+                "messageId": message_id,
+                "unreadCount": unread_count
+            }),
+        )
+    })
 }
 
-pub fn chat_delete_conversation(input: ChatConversationInput) -> AppResult<StubPayload> {
+pub fn chat_delete_conversation(actor_id: &str, input: ChatConversationInput) -> AppResult<StubPayload> {
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
         Err(message) => return invalid_argument(message),
     };
-    let mut guard = match chat_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to acquire chat store lock");
-            return internal_error(&format!("Failed to access chat store: {}", e));
-        }
-    };
-    guard.conversations.remove(&conversation_id);
-    guard.messages.remove(&conversation_id);
-    success_payload(
-        "chat_delete_conversation",
-        json!({ "ok": true, "conversationId": conversation_id }),
-    )
+    with_chat_app_result(actor_id, |store| {
+        store.conversations.remove(&conversation_id);
+        store.messages.remove(&conversation_id);
+        success_payload(
+            "chat_delete_conversation",
+            json!({ "ok": true, "conversationId": conversation_id }),
+        )
+    })
 }
 
-pub fn chat_rename_conversation(input: ChatRenameConversationInput) -> AppResult<StubPayload> {
+pub fn chat_rename_conversation(actor_id: &str, input: ChatRenameConversationInput) -> AppResult<StubPayload> {
     tracing::info!(command = "chat_rename_conversation", conversation_id = %input.conversation_id, title = %input.title, "Renaming conversation");
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
@@ -353,175 +351,150 @@ pub fn chat_rename_conversation(input: ChatRenameConversationInput) -> AppResult
         return invalid_argument("title is required".to_string());
     }
     let agent_id = chat::extract_agent_id(&conversation_id);
-    let mut guard = match chat_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to acquire chat store lock");
-            return internal_error(&format!("Failed to access chat store: {}", e));
-        }
-    };
-    let now = chat::now_ms();
-    let conversation = guard.ensure_conversation(&conversation_id, &agent_id, now);
-    conversation.title = title.clone();
-    conversation.last_timestamp_ms = now;
-    success_payload(
-        "chat_rename_conversation",
-        json!({ "ok": true, "conversationId": conversation_id, "title": title }),
-    )
+    with_chat_app_result(actor_id, |store| {
+        let now = chat::now_ms();
+        let conversation = store.ensure_conversation(&conversation_id, &agent_id, now);
+        conversation.title = title.clone();
+        conversation.last_timestamp_ms = now;
+        success_payload(
+            "chat_rename_conversation",
+            json!({ "ok": true, "conversationId": conversation_id, "title": title }),
+        )
+    })
 }
 
-pub fn chat_duplicate_conversation(input: ChatConversationInput) -> AppResult<StubPayload> {
+pub fn chat_duplicate_conversation(actor_id: &str, input: ChatConversationInput) -> AppResult<StubPayload> {
     let source_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
         Err(message) => return invalid_argument(message),
     };
-    let mut guard = match chat_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to acquire chat store lock");
-            return internal_error(&format!("Failed to access chat store: {}", e));
-        }
-    };
-    let source_conversation = match guard.conversations.get(&source_id).cloned() {
-        Some(conversation) => conversation,
-        None => return AppResult::fail(ErrorCode::NotFound, "Conversation not found", None),
-    };
-    let now = chat::now_ms();
-    let duplicated_id = format!("{}-copy-{}", source_id, now);
-    let mut duplicated_conversation = source_conversation.clone();
-    duplicated_conversation.id = duplicated_id.clone();
-    duplicated_conversation.title = format!("{} Copy", source_conversation.title);
-    duplicated_conversation.last_timestamp_ms = now;
-    guard
-        .conversations
-        .insert(duplicated_id.clone(), duplicated_conversation);
-    let duplicated_messages = guard
-        .messages
-        .get(&source_id)
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|mut message| {
-            message.id = chat::next_message_id(Some(&format!("{}-copy", message.id)));
-            message.conversation_id = duplicated_id.clone();
-            message
-        })
-        .collect::<Vec<_>>();
-    guard
-        .messages
-        .insert(duplicated_id.clone(), duplicated_messages);
-    success_payload(
-        "chat_duplicate_conversation",
-        json!({ "ok": true, "conversationId": duplicated_id }),
-    )
+    with_chat_app_result(actor_id, |store| {
+        let source_conversation = match store.conversations.get(&source_id).cloned() {
+            Some(conversation) => conversation,
+            None => return AppResult::fail(ErrorCode::NotFound, "Conversation not found", None),
+        };
+        let now = chat::now_ms();
+        let duplicated_id = format!("{}-copy-{}", source_id, now);
+        let mut duplicated_conversation = source_conversation.clone();
+        duplicated_conversation.id = duplicated_id.clone();
+        duplicated_conversation.title = format!("{} Copy", source_conversation.title);
+        duplicated_conversation.last_timestamp_ms = now;
+        store
+            .conversations
+            .insert(duplicated_id.clone(), duplicated_conversation);
+        let duplicated_messages = store
+            .messages
+            .get(&source_id)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|mut message| {
+                message.id = chat::next_message_id(Some(&format!("{}-copy", message.id)));
+                message.conversation_id = duplicated_id.clone();
+                message
+            })
+            .collect::<Vec<_>>();
+        store
+            .messages
+            .insert(duplicated_id.clone(), duplicated_messages);
+        success_payload(
+            "chat_duplicate_conversation",
+            json!({ "ok": true, "conversationId": duplicated_id }),
+        )
+    })
 }
 
-pub fn chat_smart_rename_conversation(input: ChatConversationInput) -> AppResult<StubPayload> {
+pub fn chat_smart_rename_conversation(actor_id: &str, input: ChatConversationInput) -> AppResult<StubPayload> {
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
         Err(message) => return invalid_argument(message),
     };
     let agent_id = chat::extract_agent_id(&conversation_id);
-    let mut guard = match chat_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to acquire chat store lock");
-            return internal_error(&format!("Failed to access chat store: {}", e));
-        }
-    };
-    let now = chat::now_ms();
-    let title = if let Some(messages) = guard.messages.get(&conversation_id) {
-        if let Some(last_message) = messages.last() {
-            let content = last_message.content.trim();
-            if content.is_empty() {
-                format!("Topic {}", now)
+    with_chat_app_result(actor_id, |store| {
+        let now = chat::now_ms();
+        let title = if let Some(messages) = store.messages.get(&conversation_id) {
+            if let Some(last_message) = messages.last() {
+                let content = last_message.content.trim();
+                if content.is_empty() {
+                    format!("Topic {}", now)
+                } else {
+                    content.chars().take(28).collect::<String>()
+                }
             } else {
-                content.chars().take(28).collect::<String>()
+                format!("Topic {}", now)
             }
         } else {
             format!("Topic {}", now)
-        }
-    } else {
-        format!("Topic {}", now)
-    };
-    let conversation = guard.ensure_conversation(&conversation_id, &agent_id, now);
-    conversation.title = title.clone();
-    conversation.last_timestamp_ms = now;
-    success_payload(
-        "chat_smart_rename_conversation",
-        json!({ "ok": true, "conversationId": conversation_id, "title": title }),
-    )
+        };
+        let conversation = store.ensure_conversation(&conversation_id, &agent_id, now);
+        conversation.title = title.clone();
+        conversation.last_timestamp_ms = now;
+        success_payload(
+            "chat_smart_rename_conversation",
+            json!({ "ok": true, "conversationId": conversation_id, "title": title }),
+        )
+    })
 }
 
-pub fn chat_set_conversation_model(input: ChatSetConversationModelInput) -> AppResult<StubPayload> {
+pub fn chat_set_conversation_model(actor_id: &str, input: ChatSetConversationModelInput) -> AppResult<StubPayload> {
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
         Err(message) => return invalid_argument(message),
     };
     let model = input.model.trim().to_string();
     let agent_id = chat::extract_agent_id(&conversation_id);
-    let mut guard = match chat_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to acquire chat store lock");
-            return internal_error(&format!("Failed to access chat store: {}", e));
-        }
-    };
-    let now = chat::now_ms();
-    let conversation = guard.ensure_conversation(&conversation_id, &agent_id, now);
-    conversation.model = if model.is_empty() {
-        None
-    } else {
-        Some(model.clone())
-    };
-    conversation.last_timestamp_ms = now;
-    success_payload(
-        "chat_set_conversation_model",
-        json!({ "ok": true, "conversationId": conversation_id, "model": model }),
-    )
+    with_chat_app_result(actor_id, |store| {
+        let now = chat::now_ms();
+        let conversation = store.ensure_conversation(&conversation_id, &agent_id, now);
+        conversation.model = if model.is_empty() {
+            None
+        } else {
+            Some(model.clone())
+        };
+        conversation.last_timestamp_ms = now;
+        success_payload(
+            "chat_set_conversation_model",
+            json!({ "ok": true, "conversationId": conversation_id, "model": model }),
+        )
+    })
 }
 
-pub fn chat_delete_message(input: ChatMessageInput) -> AppResult<StubPayload> {
+pub fn chat_delete_message(actor_id: &str, input: ChatMessageInput) -> AppResult<StubPayload> {
     let message_id = input.message_id.trim().to_string();
     if message_id.is_empty() {
         return invalid_argument("message_id is required".to_string());
     }
-    let mut guard = match chat_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to acquire chat store lock");
-            return internal_error(&format!("Failed to access chat store: {}", e));
-        }
-    };
-    let target = guard
-        .messages
-        .iter()
-        .find_map(|(conversation_id, messages)| {
-            messages
-                .iter()
-                .position(|message| message.id == message_id)
-                .map(|index| (conversation_id.clone(), index))
-        });
-    if let Some((conversation_id, index)) = target {
-        if let Some(messages) = guard.messages.get_mut(&conversation_id) {
-            messages.remove(index);
-            let unread_count = messages.iter().filter(|item| !item.read).count() as u32;
-            let last_message_id = messages.last().map(|item| item.id.clone());
-            if let Some(conversation) = guard.conversations.get_mut(&conversation_id) {
-                conversation.unread_count = unread_count;
-                conversation.last_message_id = last_message_id;
-                conversation.last_timestamp_ms = chat::now_ms();
+    with_chat_app_result(actor_id, |store| {
+        let target = store
+            .messages
+            .iter()
+            .find_map(|(conversation_id, messages)| {
+                messages
+                    .iter()
+                    .position(|message| message.id == message_id)
+                    .map(|index| (conversation_id.clone(), index))
+            });
+        if let Some((conversation_id, index)) = target {
+            if let Some(messages) = store.messages.get_mut(&conversation_id) {
+                messages.remove(index);
+                let unread_count = messages.iter().filter(|item| !item.read).count() as u32;
+                let last_message_id = messages.last().map(|item| item.id.clone());
+                if let Some(conversation) = store.conversations.get_mut(&conversation_id) {
+                    conversation.unread_count = unread_count;
+                    conversation.last_message_id = last_message_id;
+                    conversation.last_timestamp_ms = chat::now_ms();
+                }
             }
+            return success_payload(
+                "chat_delete_message",
+                json!({ "ok": true, "conversationId": conversation_id, "messageId": message_id }),
+            );
         }
-        return success_payload(
-            "chat_delete_message",
-            json!({ "ok": true, "conversationId": conversation_id, "messageId": message_id }),
-        );
-    }
-    AppResult::fail(ErrorCode::NotFound, "Message not found", None)
+        AppResult::fail(ErrorCode::NotFound, "Message not found", None)
+    })
 }
 
-pub fn chat_update_message(input: ChatUpdateMessageInput) -> AppResult<StubPayload> {
+pub fn chat_update_message(actor_id: &str, input: ChatUpdateMessageInput) -> AppResult<StubPayload> {
     let message_id = input.message_id.trim().to_string();
     if message_id.is_empty() {
         return invalid_argument("message_id is required".to_string());
@@ -530,43 +503,38 @@ pub fn chat_update_message(input: ChatUpdateMessageInput) -> AppResult<StubPaylo
         Ok(content) => content,
         Err(message) => return invalid_argument(message),
     };
-    let mut guard = match chat_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to acquire chat store lock");
-            return internal_error(&format!("Failed to access chat store: {}", e));
-        }
-    };
-    let target = guard
-        .messages
-        .iter()
-        .find_map(|(conversation_id, messages)| {
-            messages
-                .iter()
-                .position(|message| message.id == message_id)
-                .map(|index| (conversation_id.clone(), index))
-        });
-    if let Some((conversation_id, index)) = target {
-        let timestamp_ms = chat::now_ms();
-        if let Some(messages) = guard.messages.get_mut(&conversation_id) {
-            if let Some(message) = messages.get_mut(index) {
-                message.content = content.clone();
-                message.timestamp_ms = timestamp_ms;
+    with_chat_app_result(actor_id, |store| {
+        let target = store
+            .messages
+            .iter()
+            .find_map(|(conversation_id, messages)| {
+                messages
+                    .iter()
+                    .position(|message| message.id == message_id)
+                    .map(|index| (conversation_id.clone(), index))
+            });
+        if let Some((conversation_id, index)) = target {
+            let timestamp_ms = chat::now_ms();
+            if let Some(messages) = store.messages.get_mut(&conversation_id) {
+                if let Some(message) = messages.get_mut(index) {
+                    message.content = content.clone();
+                    message.timestamp_ms = timestamp_ms;
+                }
             }
+            if let Some(conversation) = store.conversations.get_mut(&conversation_id) {
+                conversation.last_message_id = Some(message_id.clone());
+                conversation.last_timestamp_ms = timestamp_ms;
+            }
+            return success_payload(
+                "chat_update_message",
+                json!({ "ok": true, "conversationId": conversation_id, "messageId": message_id }),
+            );
         }
-        if let Some(conversation) = guard.conversations.get_mut(&conversation_id) {
-            conversation.last_message_id = Some(message_id.clone());
-            conversation.last_timestamp_ms = timestamp_ms;
-        }
-        return success_payload(
-            "chat_update_message",
-            json!({ "ok": true, "conversationId": conversation_id, "messageId": message_id }),
-        );
-    }
-    AppResult::fail(ErrorCode::NotFound, "Message not found", None)
+        AppResult::fail(ErrorCode::NotFound, "Message not found", None)
+    })
 }
 
-pub fn chat_stop(input: ChatConversationInput) -> AppResult<StubPayload> {
+pub fn chat_stop(_actor_id: &str, input: ChatConversationInput) -> AppResult<StubPayload> {
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
         Err(message) => return invalid_argument(message),
@@ -577,7 +545,7 @@ pub fn chat_stop(input: ChatConversationInput) -> AppResult<StubPayload> {
     )
 }
 
-pub fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload> {
+pub fn chat_completion_once(actor_id: &str, input: ChatCompletionInput) -> AppResult<StubPayload> {
     tracing::info!(command = "chat_completion_once", session_id = %input.session_id, model = ?input.model, "Starting completion");
     let session_id = input.session_id.trim().to_string();
     if session_id.is_empty() {
@@ -638,18 +606,12 @@ pub fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload
         Ok(result) => {
             tracing::info!(command = "chat_completion_once", session_id = %session_id, model = %model_id, "Completion succeeded");
             let agent_id = chat::extract_agent_id(&session_id);
-            let mut guard = match chat_store().lock() {
-                Ok(guard) => guard,
-                Err(e) => {
-                    tracing::error!(error = %e, "Failed to acquire chat store lock");
-                    return internal_error(&format!("Failed to access chat store: {}", e));
-                }
-            };
+            with_chat_app_result(actor_id, |store| {
             let now = chat::now_ms();
-            guard.ensure_conversation(&session_id, &agent_id, now);
+            store.ensure_conversation(&session_id, &agent_id, now);
 
             let user_msg_id = chat::next_message_id(None);
-            guard
+            store
                 .messages
                 .entry(session_id.clone())
                 .or_default()
@@ -666,7 +628,7 @@ pub fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload
 
             let assistant_msg_id = chat::next_message_id(None);
             let assistant_now = chat::now_ms();
-            guard
+            store
                 .messages
                 .entry(session_id.clone())
                 .or_default()
@@ -681,7 +643,7 @@ pub fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload
                     timestamp_ms: assistant_now,
                 });
 
-            if let Some(conversation) = guard.conversations.get_mut(&session_id) {
+            if let Some(conversation) = store.conversations.get_mut(&session_id) {
                 conversation.last_message_id = Some(assistant_msg_id);
                 conversation.last_timestamp_ms = assistant_now;
                 conversation.unread_count = conversation.unread_count.saturating_add(2);
@@ -695,6 +657,7 @@ pub fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload
                     "provider_id": provider_id
                 }),
             )
+            })
         }
         Err(err) => {
             tracing::error!(command = "chat_completion_once", session_id = %session_id, model = %model_id, error = %err, "Completion failed");
@@ -707,31 +670,69 @@ pub fn chat_completion_once(input: ChatCompletionInput) -> AppResult<StubPayload
     }
 }
 
-pub fn list_conversations_by_agent(agent_name: &str) -> Vec<serde_json::Value> {
-    let guard = match chat_store().lock() {
-        Ok(guard) => guard,
+pub fn list_conversations_by_agent(actor_id: &str, agent_name: &str) -> Vec<serde_json::Value> {
+    let key = actor_bucket_id(actor_id);
+    let mut stores = match chat_stores().lock() {
+        Ok(s) => s,
         Err(e) => {
             tracing::error!(error = %e, "Failed to acquire chat store lock");
             return vec![];
         }
     };
-    let mut conversations: Vec<_> = guard.conversations.values()
+    let store = stores.buckets.entry(key).or_insert_with(ChatStore::seeded);
+    let mut conversations: Vec<_> = store
+        .conversations
+        .values()
         .filter(|c| c.agent_id == agent_name)
         .cloned()
         .collect();
     conversations.sort_by(|a, b| b.last_timestamp_ms.cmp(&a.last_timestamp_ms));
-    let result: Vec<_> = conversations.into_iter().map(|c| {
+    let result: Vec<_> = conversations
+        .into_iter()
+        .map(|c| {
         json!({
             "id": c.id,
             "key": c.id,
             "agent_name": c.agent_id,
             "title": c.title,
-            "message_count": guard.messages.get(&c.id).map(|list| list.len()).unwrap_or(0),
+            "message_count": store.messages.get(&c.id).map(|list| list.len()).unwrap_or(0),
             "model_override": c.model,
             "created_at": c.last_timestamp_ms,
             "updated_at": c.last_timestamp_ms
         })
-    }).collect();
+    })
+        .collect();
     tracing::debug!(command = "list_conversations_by_agent", agent_name = %agent_name, count = result.len(), "Agent conversations retrieved");
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chat_stores_isolate_actors() {
+        let a = "actor-chat-a";
+        let b = "actor-chat-b";
+        let send_a = ChatSendMessageInput {
+            conversation_id: "conv-a-only".to_string(),
+            content: "only-a".to_string(),
+            client_message_id: None,
+        };
+        let r = chat_send_message(a, send_a);
+        assert!(r.ok, "send a");
+        let out_b = chat_list_conversations(b);
+        assert!(out_b.ok, "list b");
+        let payload = out_b.data.expect("data");
+        let v: serde_json::Value = serde_json::from_str(&payload.status).expect("json");
+        let has_a_conv = v
+            .get("conversations")
+            .and_then(|c| c.as_array())
+            .map(|list| {
+                list.iter()
+                    .any(|row| row.get("id").and_then(|x| x.as_str()) == Some("conv-a-only"))
+            })
+            .unwrap_or(false);
+        assert!(!has_a_conv, "B must not list A's ad-hoc conversation");
+    }
 }
