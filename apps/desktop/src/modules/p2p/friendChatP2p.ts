@@ -210,7 +210,6 @@ class FriendChatP2pManager {
           // ignore; server may return 404 until first candidate exists
         }
 
-        // Reset delay when new candidates arrive; otherwise back off progressively.
         if (receivedNew) {
           delay = INITIAL_DELAY;
         } else {
@@ -268,7 +267,6 @@ class FriendChatP2pManager {
     }
   }
 
-  // Tear down every active connection; intended for component unmount cleanup.
   closeAll() {
     for (const conn of this.conns.values()) {
       conn.candidateLoopStopped = true;

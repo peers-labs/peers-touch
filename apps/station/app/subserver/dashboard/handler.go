@@ -165,7 +165,6 @@ func (h *dashboardHandler) handlers() []server.Handler {
 	}
 }
 
-// handleStorageInfo — GET /dashboard/api/storage/info
 func (h *dashboardHandler) handleStorageInfo(c context.Context, ctx *app.RequestContext) {
 	if h.requireAuth(c, ctx) == nil {
 		return
@@ -183,7 +182,6 @@ func (h *dashboardHandler) handleStorageInfo(c context.Context, ctx *app.Request
 	jsonOK(ctx, info)
 }
 
-// handleNodes — GET /dashboard/api/nodes
 func (h *dashboardHandler) handleNodes(c context.Context, ctx *app.RequestContext) {
 	if h.requireAuth(c, ctx) == nil {
 		return
