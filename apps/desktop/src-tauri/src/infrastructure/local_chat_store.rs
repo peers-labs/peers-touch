@@ -820,6 +820,38 @@ pub fn load_group_sender_chain(
     }
 }
 
+/// Highest `sender_key_id` we have ever stored for `(group, sender)`,
+/// regardless of whether we own the signing seed. Used by the
+/// rotation path to mint the *next* generation: rotation MUST pick
+/// `current + 1` so a newly-distributed SKDM cannot collide with a
+/// chain we (or a peer) may already have stored under the same id.
+/// Returns `Ok(None)` if no row exists for this pair.
+pub fn max_sender_key_id(
+    user_scope: &str,
+    group_ulid: &str,
+    sender_did: &str,
+) -> Result<Option<u32>, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    // SQLite's MAX over an empty set returns one row with a NULL
+    // value, not zero rows -- so `.optional()` would still surface
+    // a row, and a `r.get::<_, i64>(0)` on it errors with
+    // "Invalid column type Null". We therefore read the column as
+    // `Option<i64>` directly and let outer `Option` collapse the
+    // "NULL but row exists" and "no row" cases into the same None.
+    let row: Option<Option<i64>> = conn
+        .query_row(
+            "SELECT MAX(sender_key_id)
+             FROM group_sender_keys
+             WHERE group_ulid = ?1 AND sender_did = ?2",
+            params![group_ulid, sender_did],
+            |r| r.get::<_, Option<i64>>(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    Ok(row.flatten().map(|v| v as u32))
+}
+
 /// Highest `sender_key_id` for which we own the signing seed. Used
 /// by the send path: "what chain should I use to encrypt my next
 /// message?". Returns `Ok(None)` when we have never emitted to this
@@ -1062,6 +1094,39 @@ mod sender_key_tests {
         // m1 also decrypts.
         let out1 = decrypt(&recv_state2, &m1, &pre3).unwrap();
         assert_eq!(out1.plaintext, b"b");
+    }
+
+    #[test]
+    fn max_sender_key_id_drives_rotation_collision_avoidance() {
+        // Forced rotation must mint at `max + 1`. The helper has
+        // to consider EVERY row -- ours, peers', stale ones --
+        // because the rotation generation is shared globally
+        // across the (group, sender) pair. A simple "pick latest
+        // owned chain" would let a peer's higher generation
+        // collide.
+        let scope = unique_scope("rotmax");
+        let group = "g-rot";
+        let me = "did:peers:rotor";
+        // No rows yet -- caller treats None as "start at 1".
+        assert!(max_sender_key_id(&scope, group, me).unwrap().is_none());
+
+        // Three local chains at 1, 5, 3. max should be 5 regardless
+        // of insert order.
+        for kid in [1u32, 5, 3] {
+            let chain = create_local_chain(group, me, kid);
+            save_group_sender_chain(&scope, &chain).unwrap();
+        }
+        assert_eq!(max_sender_key_id(&scope, group, me).unwrap(), Some(5));
+
+        // A different (group, sender) tuple is isolated -- the
+        // rotation generation is per-pair, not per-actor.
+        let other = create_local_chain(group, "did:peers:other", 99);
+        save_group_sender_chain(&scope, &other).unwrap();
+        assert_eq!(max_sender_key_id(&scope, group, me).unwrap(), Some(5));
+        assert_eq!(
+            max_sender_key_id(&scope, group, "did:peers:other").unwrap(),
+            Some(99)
+        );
     }
 
     #[test]
