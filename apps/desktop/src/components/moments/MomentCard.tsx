@@ -19,7 +19,7 @@ import {
   type ReactionSummary,
 } from '../../gen/proto/domain/social/post_pb';
 import { ReactionBar } from './ReactionBar';
-import { ImageThumbnail } from './ImageThumbnail';
+import { ImageGrid } from './ImageGrid';
 
 const { Paragraph, Text, Link } = Typography;
 
@@ -217,17 +217,10 @@ export function MomentCard({
           )}
 
           {images.length > 0 && (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: images.length === 1 ? '1fr' : 'repeat(3, 1fr)',
-                gap: 6,
-                marginTop: 8,
-              }}
-            >
-              {images.slice(0, 9).map((im) => (
-                <ImageThumbnail key={im.id} cid={im.url || im.id} />
-              ))}
+            <div onClick={(e) => e.stopPropagation()}>
+              <ImageGrid
+                cids={images.slice(0, 9).map((im) => im.url || im.id)}
+              />
             </div>
           )}
 

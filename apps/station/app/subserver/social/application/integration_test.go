@@ -81,7 +81,10 @@ func newFixture(t *testing.T) *fixture {
 	repos := infrastructure.NewRepos(gdb, resolver.ResolveID)
 
 	reactions := NewReactionService(gdb, repos)
-	moments := NewMomentService(gdb, repos, resolver, groups, reactions)
+	// Tests use the no-op MediaResolver so existing fixtures can keep
+	// fabricating CIDs (`oss://station.local/...`); a dedicated test
+	// in `moment_service_image_test.go` covers the real resolver.
+	moments := NewMomentService(gdb, repos, resolver, groups, NewNoopMediaResolver(), reactions)
 	comments := NewCommentService(repos, moments)
 	circles := NewCircleService(repos)
 	timeline := NewTimelineService(repos, moments, resolver, groups)
