@@ -675,7 +675,7 @@ export function ChatMessageArea() {
     if (!activeUlid) return;
     let filePath: string;
     try {
-      filePath = await api.pickChatAttachment();
+      filePath = await api.ossPickAttachmentChat();
     } catch {
       return;
     }
@@ -683,7 +683,7 @@ export function ChatMessageArea() {
 
     setSending(true);
     try {
-      const uploaded = await api.chatUploadAttachment({
+      const uploaded = await api.ossUploadAttachmentChat({
         file_path: filePath,
         bucket: 'chat',
         visibility: 'chat',
