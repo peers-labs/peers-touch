@@ -61,11 +61,18 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 
 	repos := infrastructure.NewRepos(rds, resolver.ResolveID)
 
+	// MediaResolver wires the cross-subserver gate that rejects
+	// foreign-origin or fabricated `oss://...` CIDs in image / video
+	// posts. The OSS subserver lives in the same process and stores
+	// `FileMeta` in the same RDS, so the resolver runs as a single
+	// SELECT — no HTTP loopback. See `infrastructure/oss_media_resolver.go`.
+	media := infrastructure.NewOssMediaResolver(rds)
+
 	// Reaction service has no inter-service dependency; build first
 	// so the moment service can hold a pointer for hydration.
 	s.reactionSvc = application.NewReactionService(rds, repos)
 
-	s.momentSvc = application.NewMomentService(rds, repos, resolver, groups, s.reactionSvc)
+	s.momentSvc = application.NewMomentService(rds, repos, resolver, groups, media, s.reactionSvc)
 	s.commentSvc = application.NewCommentService(repos, s.momentSvc)
 	s.circleSvc = application.NewCircleService(repos)
 	s.timelineSvc = application.NewTimelineService(repos, s.momentSvc, resolver, groups)
