@@ -1,5 +1,5 @@
-use super::storage::key_provider::PlatformKeyProvider;
 use super::storage::get_database_key_version;
+use super::storage::key_provider::PlatformKeyProvider;
 use super::storage::open_database;
 use super::storage::rotate_database_key;
 use crate::domain::crypto::double_ratchet::{DrSessionState, DrSkippedMessageKey};
@@ -19,6 +19,8 @@ pub struct LocalChatRecord {
     pub message_id: String,
     pub sender_did: String,
     pub content: String,
+    pub reply_to_ulid: String,
+    pub thread_root_ulid: String,
     pub sent_at: i64,
 }
 
@@ -65,7 +67,9 @@ impl ChatConn {
     /// guard releases the lock on drop; hold it only for the
     /// duration of a single logical query/transaction.
     pub fn lock(&self) -> MutexGuard<'_, Connection> {
-        self.arc.lock().expect("local_chat_store conn pool poisoned")
+        self.arc
+            .lock()
+            .expect("local_chat_store conn pool poisoned")
     }
 }
 
@@ -102,7 +106,9 @@ fn open_connection(user_scope: &str) -> Result<ChatConn, String> {
     })?;
     let arc = Arc::new(Mutex::new(conn));
     let mut map = pool().lock().expect("local_chat_store pool poisoned");
-    let entry = map.entry(user_scope.to_string()).or_insert_with(|| arc.clone());
+    let entry = map
+        .entry(user_scope.to_string())
+        .or_insert_with(|| arc.clone());
     Ok(ChatConn { arc: entry.clone() })
 }
 
@@ -126,6 +132,21 @@ fn migrate(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
+fn ensure_column(conn: &Connection, table: &str, column: &str, ddl: &str) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        if row.map_err(|e| e.to_string())? == column {
+            return Ok(());
+        }
+    }
+    conn.execute_batch(ddl).map_err(|e| e.to_string())
+}
+
 fn migrate_schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS chat_messages (
@@ -134,6 +155,8 @@ fn migrate_schema(conn: &Connection) -> Result<(), String> {
             message_id TEXT NOT NULL PRIMARY KEY,
             sender_did TEXT NOT NULL,
             content TEXT NOT NULL,
+            reply_to_ulid TEXT NOT NULL DEFAULT '',
+            thread_root_ulid TEXT NOT NULL DEFAULT '',
             sent_at INTEGER NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_chat_messages_scope_sent ON chat_messages(scope, sent_at DESC);
@@ -238,6 +261,8 @@ fn migrate_schema(conn: &Connection) -> Result<(), String> {
             sender_did         TEXT    NOT NULL DEFAULT '',
             content            TEXT    NOT NULL DEFAULT '',
             encrypted_payload  BLOB,
+            reply_to_ulid      TEXT    NOT NULL DEFAULT '',
+            thread_root_ulid   TEXT    NOT NULL DEFAULT '',
             sent_at            INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS chat_applied_migrations (
@@ -245,7 +270,32 @@ fn migrate_schema(conn: &Connection) -> Result<(), String> {
             applied_at  INTEGER NOT NULL
         );",
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    ensure_column(
+        conn,
+        "chat_messages",
+        "reply_to_ulid",
+        "ALTER TABLE chat_messages ADD COLUMN reply_to_ulid TEXT NOT NULL DEFAULT '';",
+    )?;
+    ensure_column(
+        conn,
+        "group_messages",
+        "reply_to_ulid",
+        "ALTER TABLE group_messages ADD COLUMN reply_to_ulid TEXT NOT NULL DEFAULT '';",
+    )?;
+    ensure_column(
+        conn,
+        "chat_messages",
+        "thread_root_ulid",
+        "ALTER TABLE chat_messages ADD COLUMN thread_root_ulid TEXT NOT NULL DEFAULT '';",
+    )?;
+    ensure_column(
+        conn,
+        "group_messages",
+        "thread_root_ulid",
+        "ALTER TABLE group_messages ADD COLUMN thread_root_ulid TEXT NOT NULL DEFAULT '';",
+    )?;
+    backfill_local_thread_roots(conn)
 }
 
 fn wipe_legacy_group_plaintext_rows(conn: &Connection) -> Result<u64, String> {
@@ -348,13 +398,15 @@ pub(crate) fn test_apply_one_time_migrations(conn: &Connection) -> Result<(), St
 
 fn upsert_record(conn: &Connection, item: &LocalChatRecord) -> Result<(), String> {
     conn.execute(
-        "INSERT INTO chat_messages(scope, conversation_id, message_id, sender_did, content, sent_at)
-         VALUES(?1, ?2, ?3, ?4, ?5, ?6)
+        "INSERT INTO chat_messages(scope, conversation_id, message_id, sender_did, content, reply_to_ulid, thread_root_ulid, sent_at)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT(message_id) DO UPDATE SET
            scope=excluded.scope,
            conversation_id=excluded.conversation_id,
            sender_did=excluded.sender_did,
            content=excluded.content,
+           reply_to_ulid=excluded.reply_to_ulid,
+           thread_root_ulid=excluded.thread_root_ulid,
            sent_at=excluded.sent_at",
         params![
             item.scope,
@@ -362,18 +414,129 @@ fn upsert_record(conn: &Connection, item: &LocalChatRecord) -> Result<(), String
             item.message_id,
             item.sender_did,
             item.content,
+            item.reply_to_ulid,
+            item.thread_root_ulid,
             item.sent_at
         ],
     )
     .map_err(|e| e.to_string())?;
-    conn.execute("DELETE FROM chat_messages_fts WHERE message_id = ?1", params![item.message_id])
-        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "DELETE FROM chat_messages_fts WHERE message_id = ?1",
+        params![item.message_id],
+    )
+    .map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT INTO chat_messages_fts(message_id, scope, conversation_id, sender_did, content)
          VALUES(?1, ?2, ?3, ?4, ?5)",
-        params![item.message_id, item.scope, item.conversation_id, item.sender_did, item.content],
+        params![
+            item.message_id,
+            item.scope,
+            item.conversation_id,
+            item.sender_did,
+            item.content
+        ],
     )
     .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn json_string(value: &Value, keys: &[&str]) -> String {
+    for key in keys {
+        if let Some(s) = value.get(*key).and_then(|v| v.as_str()) {
+            return s.to_string();
+        }
+    }
+    String::new()
+}
+
+fn backfill_local_thread_roots(conn: &Connection) -> Result<(), String> {
+    #[derive(Clone)]
+    struct Row {
+        id: String,
+        reply_to_ulid: String,
+        thread_root_ulid: String,
+    }
+
+    fn resolve(
+        id: &str,
+        rows: &HashMap<String, Row>,
+        resolving: &mut HashMap<String, bool>,
+        resolved: &mut HashMap<String, String>,
+    ) -> String {
+        if let Some(cached) = resolved.get(id) {
+            return cached.clone();
+        }
+        let Some(row) = rows.get(id) else {
+            return id.to_string();
+        };
+        if !row.thread_root_ulid.is_empty() {
+            return row.thread_root_ulid.clone();
+        }
+        if row.reply_to_ulid.is_empty() || resolving.get(id).copied().unwrap_or(false) {
+            return String::new();
+        }
+        resolving.insert(id.to_string(), true);
+        let root = if rows.contains_key(&row.reply_to_ulid) {
+            let parent_root = resolve(&row.reply_to_ulid, rows, resolving, resolved);
+            if parent_root.is_empty() {
+                row.reply_to_ulid.clone()
+            } else {
+                parent_root
+            }
+        } else {
+            row.reply_to_ulid.clone()
+        };
+        resolving.insert(id.to_string(), false);
+        resolved.insert(id.to_string(), root.clone());
+        root
+    }
+
+    fn backfill_table(conn: &Connection, table: &str, id_column: &str) -> Result<(), String> {
+        let select_sql = format!(
+            "SELECT {id_column}, reply_to_ulid, thread_root_ulid
+             FROM {table}
+             WHERE reply_to_ulid != ''
+             ORDER BY sent_at ASC, {id_column} ASC"
+        );
+        let mut stmt = conn.prepare(&select_sql).map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(Row {
+                    id: row.get(0)?,
+                    reply_to_ulid: row.get(1)?,
+                    thread_root_ulid: row.get(2)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut by_id = HashMap::new();
+        for row in rows {
+            let row = row.map_err(|e| e.to_string())?;
+            by_id.insert(row.id.clone(), row);
+        }
+        if by_id.is_empty() {
+            return Ok(());
+        }
+
+        let update_sql = format!("UPDATE {table} SET thread_root_ulid = ?1 WHERE {id_column} = ?2");
+        let mut resolving = HashMap::new();
+        let mut resolved = HashMap::new();
+        for id in by_id.keys() {
+            let root = resolve(id, &by_id, &mut resolving, &mut resolved);
+            let Some(row) = by_id.get(id) else {
+                continue;
+            };
+            if root.is_empty() || root == row.thread_root_ulid {
+                continue;
+            }
+            conn.execute(&update_sql, params![root, id])
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    backfill_table(conn, "chat_messages", "message_id")?;
+    backfill_table(conn, "group_messages", "ulid")?;
     Ok(())
 }
 
@@ -384,10 +547,12 @@ pub fn ingest_friend_payload(user_scope: &str, payload: &Value) -> Result<(), St
         for m in messages {
             let record = LocalChatRecord {
                 scope: "friend".to_string(),
-                conversation_id: m.get("session_ulid").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-                message_id: m.get("ulid").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-                sender_did: m.get("sender_did").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-                content: m.get("content").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+                conversation_id: json_string(m, &["session_ulid", "sessionUlid"]),
+                message_id: json_string(m, &["ulid"]),
+                sender_did: json_string(m, &["sender_did", "senderDid"]),
+                content: json_string(m, &["content"]),
+                reply_to_ulid: json_string(m, &["reply_to_ulid", "replyToUlid"]),
+                thread_root_ulid: json_string(m, &["thread_root_ulid", "threadRootUlid"]),
                 sent_at: m.get("sent_at").and_then(|v| v.as_i64()).unwrap_or(0),
             };
             if !record.message_id.is_empty() {
@@ -396,12 +561,15 @@ pub fn ingest_friend_payload(user_scope: &str, payload: &Value) -> Result<(), St
         }
     }
     if let Some(message) = payload.get("message").and_then(|v| v.as_object()) {
+        let message_value = Value::Object(message.clone());
         let record = LocalChatRecord {
             scope: "friend".to_string(),
-            conversation_id: message.get("session_ulid").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            message_id: message.get("ulid").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            sender_did: message.get("sender_did").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            content: message.get("content").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+            conversation_id: json_string(&message_value, &["session_ulid", "sessionUlid"]),
+            message_id: json_string(&message_value, &["ulid"]),
+            sender_did: json_string(&message_value, &["sender_did", "senderDid"]),
+            content: json_string(&message_value, &["content"]),
+            reply_to_ulid: json_string(&message_value, &["reply_to_ulid", "replyToUlid"]),
+            thread_root_ulid: json_string(&message_value, &["thread_root_ulid", "threadRootUlid"]),
             sent_at: message.get("sent_at").and_then(|v| v.as_i64()).unwrap_or(0),
         };
         if !record.message_id.is_empty() {
@@ -418,10 +586,12 @@ pub fn ingest_group_payload(user_scope: &str, payload: &Value) -> Result<(), Str
         for m in messages {
             let record = LocalChatRecord {
                 scope: "group".to_string(),
-                conversation_id: m.get("group_ulid").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-                message_id: m.get("ulid").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-                sender_did: m.get("sender_did").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-                content: m.get("content").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+                conversation_id: json_string(m, &["group_ulid", "groupUlid"]),
+                message_id: json_string(m, &["ulid"]),
+                sender_did: json_string(m, &["sender_did", "senderDid"]),
+                content: json_string(m, &["content"]),
+                reply_to_ulid: json_string(m, &["reply_to_ulid", "replyToUlid"]),
+                thread_root_ulid: json_string(m, &["thread_root_ulid", "threadRootUlid"]),
                 sent_at: m.get("sent_at").and_then(|v| v.as_i64()).unwrap_or(0),
             };
             if !record.message_id.is_empty() {
@@ -430,12 +600,15 @@ pub fn ingest_group_payload(user_scope: &str, payload: &Value) -> Result<(), Str
         }
     }
     if let Some(message) = payload.get("message").and_then(|v| v.as_object()) {
+        let message_value = Value::Object(message.clone());
         let record = LocalChatRecord {
             scope: "group".to_string(),
-            conversation_id: message.get("group_ulid").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            message_id: message.get("ulid").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            sender_did: message.get("sender_did").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            content: message.get("content").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+            conversation_id: json_string(&message_value, &["group_ulid", "groupUlid"]),
+            message_id: json_string(&message_value, &["ulid"]),
+            sender_did: json_string(&message_value, &["sender_did", "senderDid"]),
+            content: json_string(&message_value, &["content"]),
+            reply_to_ulid: json_string(&message_value, &["reply_to_ulid", "replyToUlid"]),
+            thread_root_ulid: json_string(&message_value, &["thread_root_ulid", "threadRootUlid"]),
             sent_at: message.get("sent_at").and_then(|v| v.as_i64()).unwrap_or(0),
         };
         if !record.message_id.is_empty() {
@@ -445,7 +618,11 @@ pub fn ingest_group_payload(user_scope: &str, payload: &Value) -> Result<(), Str
     Ok(())
 }
 
-fn merge_desc_by_sent_at(a: Vec<LocalChatRecord>, b: Vec<LocalChatRecord>, limit: usize) -> Vec<LocalChatRecord> {
+fn merge_desc_by_sent_at(
+    a: Vec<LocalChatRecord>,
+    b: Vec<LocalChatRecord>,
+    limit: usize,
+) -> Vec<LocalChatRecord> {
     let mut out = Vec::with_capacity(limit.min(a.len() + b.len()));
     let mut i = 0usize;
     let mut j = 0usize;
@@ -478,7 +655,7 @@ fn search_local_single(
     if let Some(conv) = conversation_id.filter(|c| !c.trim().is_empty()) {
         let mut stmt = conn
             .prepare(
-                "SELECT m.scope, m.conversation_id, m.message_id, m.sender_did, m.content, m.sent_at
+                "SELECT m.scope, m.conversation_id, m.message_id, m.sender_did, m.content, m.reply_to_ulid, m.thread_root_ulid, m.sent_at
                  FROM chat_messages_fts f
                  JOIN chat_messages m ON m.message_id = f.message_id
                  WHERE f.scope = ?1 AND m.conversation_id = ?2 AND chat_messages_fts MATCH ?3
@@ -494,7 +671,9 @@ fn search_local_single(
                     message_id: row.get(2)?,
                     sender_did: row.get(3)?,
                     content: row.get(4)?,
-                    sent_at: row.get(5)?,
+                    reply_to_ulid: row.get(5)?,
+                    thread_root_ulid: row.get(6)?,
+                    sent_at: row.get(7)?,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -505,7 +684,7 @@ fn search_local_single(
     }
     let mut stmt = conn
         .prepare(
-            "SELECT m.scope, m.conversation_id, m.message_id, m.sender_did, m.content, m.sent_at
+            "SELECT m.scope, m.conversation_id, m.message_id, m.sender_did, m.content, m.reply_to_ulid, m.thread_root_ulid, m.sent_at
              FROM chat_messages_fts f
              JOIN chat_messages m ON m.message_id = f.message_id
              WHERE f.scope = ?1 AND chat_messages_fts MATCH ?2
@@ -521,7 +700,9 @@ fn search_local_single(
                 message_id: row.get(2)?,
                 sender_did: row.get(3)?,
                 content: row.get(4)?,
-                sent_at: row.get(5)?,
+                reply_to_ulid: row.get(5)?,
+                thread_root_ulid: row.get(6)?,
+                sent_at: row.get(7)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -604,7 +785,10 @@ pub fn save_crypto_session(user_scope: &str, session: &CryptoSessionState) -> Re
     Ok(())
 }
 
-pub fn load_crypto_session(user_scope: &str, session_id: &str) -> Result<Option<CryptoSessionState>, String> {
+pub fn load_crypto_session(
+    user_scope: &str,
+    session_id: &str,
+) -> Result<Option<CryptoSessionState>, String> {
     let conn = open_connection(user_scope)?;
     let conn = conn.lock();
     let mut stmt = conn
@@ -632,8 +816,16 @@ pub fn load_crypto_session(user_scope: &str, session_id: &str) -> Result<Option<
         })
         .optional()
         .map_err(|e| e.to_string())?;
-    let Some((peer_did, send_blob, send_counter, recv_blob, recv_counter, established, is_initiator, pending)) =
-        row
+    let Some((
+        peer_did,
+        send_blob,
+        send_counter,
+        recv_blob,
+        recv_counter,
+        established,
+        is_initiator,
+        pending,
+    )) = row
     else {
         return Ok(None);
     };
@@ -741,7 +933,10 @@ pub fn save_dr_session(user_scope: &str, state: &DrSessionState) -> Result<(), S
 }
 
 /// Load DR session state for `version = 1` rows only.
-pub fn load_dr_session(user_scope: &str, session_id: &str) -> Result<Option<DrSessionState>, String> {
+pub fn load_dr_session(
+    user_scope: &str,
+    session_id: &str,
+) -> Result<Option<DrSessionState>, String> {
     let conn = open_connection(user_scope)?;
     let conn = conn.lock();
     let mut stmt = conn
@@ -830,7 +1025,10 @@ pub fn load_dr_session(user_scope: &str, session_id: &str) -> Result<Option<DrSe
     }))
 }
 
-pub fn load_dr_skipped_keys(user_scope: &str, session_id: &str) -> Result<Vec<DrSkippedMessageKey>, String> {
+pub fn load_dr_skipped_keys(
+    user_scope: &str,
+    session_id: &str,
+) -> Result<Vec<DrSkippedMessageKey>, String> {
     let conn = open_connection(user_scope)?;
     let conn = conn.lock();
     let mut stmt = conn
@@ -903,7 +1101,11 @@ pub fn apply_dr_decrypt_outcome(
 }
 
 /// Store signed pre-key material for later X3DH receive paths.
-pub fn crypto_store_signed_prekey(user_scope: &str, id: i64, private_key: &[u8]) -> Result<(), String> {
+pub fn crypto_store_signed_prekey(
+    user_scope: &str,
+    id: i64,
+    private_key: &[u8],
+) -> Result<(), String> {
     let conn = open_connection(user_scope)?;
     let conn = conn.lock();
     let now = chrono_now();
@@ -945,7 +1147,7 @@ pub fn search_local_unified(
     let conn = conn.lock();
     let mut stmt = conn
         .prepare(
-            "SELECT m.scope, m.conversation_id, m.message_id, m.sender_did, m.content, m.sent_at
+            "SELECT m.scope, m.conversation_id, m.message_id, m.sender_did, m.content, m.reply_to_ulid, m.thread_root_ulid, m.sent_at
              FROM chat_messages_fts f
              JOIN chat_messages m ON m.message_id = f.message_id
              WHERE f MATCH ?1
@@ -965,7 +1167,9 @@ pub fn search_local_unified(
                     message_id: row.get(2)?,
                     sender_did: row.get(3)?,
                     content: row.get(4)?,
-                    sent_at: row.get(5)?,
+                    reply_to_ulid: row.get(5)?,
+                    thread_root_ulid: row.get(6)?,
+                    sent_at: row.get(7)?,
                 })
             },
         )
@@ -1162,7 +1366,12 @@ pub fn load_group_sender_chain(
             let counter: i64 = r.get(1)?;
             let signing_seed_blob: Option<Vec<u8>> = r.get(2)?;
             let verifying_key_blob: Vec<u8> = r.get(3)?;
-            Ok((chain_key_blob, counter as u32, signing_seed_blob, verifying_key_blob))
+            Ok((
+                chain_key_blob,
+                counter as u32,
+                signing_seed_blob,
+                verifying_key_blob,
+            ))
         })
         .optional()
         .map_err(|e| e.to_string())?;
@@ -1364,7 +1573,12 @@ pub fn apply_group_decrypt_outcome(
             "DELETE FROM group_skipped_message_keys
              WHERE group_ulid = ?1 AND sender_did = ?2
                AND sender_key_id = ?3 AND counter = ?4",
-            params![chain.group_ulid, chain.sender_did, chain.sender_key_id as i64, c as i64],
+            params![
+                chain.group_ulid,
+                chain.sender_did,
+                chain.sender_key_id as i64,
+                c as i64
+            ],
         )
         .map_err(|e| e.to_string())?;
     }
@@ -1582,7 +1796,9 @@ mod dr_persistence_tests {
         let bob = init_responder(&sid, &shared, bob_priv.to_bytes());
         save_dr_session(&scope_r, &bob).unwrap();
 
-        let loaded_bob = load_dr_session(&scope_r, &sid).unwrap().expect("bob dr state");
+        let loaded_bob = load_dr_session(&scope_r, &sid)
+            .unwrap()
+            .expect("bob dr state");
         let pre = load_dr_skipped_keys(&scope_r, &sid).unwrap();
         let out = decrypt(&loaded_bob, &wire, &pre, b"aad").unwrap();
         apply_dr_decrypt_outcome(

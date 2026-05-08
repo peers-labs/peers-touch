@@ -1,7 +1,7 @@
 /**
  * Peer-presence bridge — relays Station's `/friend-chat/presence/stream`
  * SSE updates (proxied through the Rust supervisor as the
- * `presence.peer-changed` Tauri event) into the social chat store's
+ * `presence:peer-changed` Tauri event) into the social chat store's
  * `peerOnline` map.
  *
  * # Why this is a separate bridge from `services/presence.ts`
@@ -31,7 +31,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useSocialChatStore } from '../store/socialChat';
 import { log } from '../utils/logger';
 
-const PEER_PRESENCE_EVENT = 'presence.peer-changed';
+const PEER_PRESENCE_EVENT = 'presence:peer-changed';
 
 interface PeerPresencePayload {
   did: string;

@@ -3,7 +3,7 @@
  *
  * Counterpart to `src-tauri/src/infrastructure/event_stream`. The Rust
  * supervisor owns the SSE socket, decodes / persists the cursor, and
- * forwards each frame as the `realtime.event` Tauri event. This module
+ * forwards each frame as the `realtime:event` Tauri event. This module
  * is the single subscriber: it decodes the protobuf StreamEvent and
  * fans out to typed payloads on the in-process `eventBus`.
  *
@@ -36,8 +36,8 @@ import { StreamEventSchema } from '../gen/proto/domain/realtime/event_pb';
 import { api } from './desktop_api';
 import { log } from '../utils/logger';
 
-const REALTIME_EVENT = 'realtime.event';
-const REALTIME_CONNECTION_STATE = 'realtime.connection-state';
+const REALTIME_EVENT = 'realtime:event';
+const REALTIME_CONNECTION_STATE = 'realtime:connection-state';
 
 interface RawRealtimeEnvelope {
   event_id?: string;
@@ -53,7 +53,7 @@ let unlistenRealtime: UnlistenFn | null = null;
 let unlistenConnState: UnlistenFn | null = null;
 
 /**
- * Install the Tauri listeners that translate raw `realtime.event`
+ * Install the Tauri listeners that translate raw `realtime:event`
  * frames into typed `eventBus` notifications. Must be called exactly
  * once at boot; subsequent calls are no-ops.
  */
@@ -65,7 +65,7 @@ export async function installEventStreamBridge(): Promise<void> {
       handleFrame(event.payload);
     });
   } catch (error) {
-    log.warn('eventStream', 'failed to install realtime.event listener', error);
+    log.warn('eventStream', 'failed to install realtime:event listener', error);
   }
 
   try {
@@ -80,7 +80,7 @@ export async function installEventStreamBridge(): Promise<void> {
       },
     );
   } catch (error) {
-    log.warn('eventStream', 'failed to install realtime.connection-state listener', error);
+    log.warn('eventStream', 'failed to install realtime:connection-state listener', error);
   }
 
   log.info('eventStream', 'bridge installed');

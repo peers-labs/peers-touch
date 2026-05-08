@@ -1,0 +1,469 @@
+import { fromBinary } from '@bufbuild/protobuf';
+
+import { EVENT, eventBus } from '../kernel/events';
+import type {
+  RealtimeGroupMembershipChangePayload,
+  RealtimeMessageMutationPayload,
+  RealtimeMessageReceiptPayload,
+  RealtimeMessageReceivedPayload,
+  RealtimePresenceFlipPayload,
+  RealtimeResyncPayload,
+  RealtimeTypingStatePayload,
+} from '../kernel/events/types';
+import { useMediaRuntimeStore } from './mediaRuntime';
+import { installEventStreamBridge, startEventStream, stopEventStream } from './eventStream';
+import { api, type NotificationData } from './desktop_api';
+import { FriendChatMessageSchema, type FriendChatMessage } from '../gen/proto/domain/chat/friend_chat_pb';
+import { GroupMessageSchema, type GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
+import { NotificationType } from '../gen/proto/domain/notification/notification_pb';
+import { useNotificationStore } from '../store/notification';
+import { useNavigationBadgeStore } from '../store/navigationBadges';
+import { useSessionStore } from '../store/session';
+import { useSocialChatStore } from '../store/socialChat';
+import { log } from '../utils/logger';
+
+const TYPING_TTL_MS = 6_000;
+const TYPING_SWEEP_INTERVAL_MS = 1_500;
+const COLD_SYNC_LIMIT = 50;
+const COLD_SYNC_MAX_PAGES = 2;
+const SOCIAL_RECONCILE_INTERVAL_MS = 30_000;
+const MAX_SEEN_REALTIME_MESSAGES = 500;
+const MAX_SEEN_SOCIAL_NOTIFICATIONS = 500;
+
+let teardownBridge: (() => void) | null = null;
+let typingSweepTimer: number | null = null;
+let socialReconcileTimer: number | null = null;
+let bootstrappedActorId: string | null = null;
+let bootstrapSequence = 0;
+let realtimeStreamActorId: string | null = null;
+let realtimeStreamTransition: Promise<void> = Promise.resolve();
+let socialRefreshInFlight: Promise<void> | null = null;
+const seenRealtimeMessageKeys = new Set<string>();
+const seenSocialNotificationIds = new Set<string>();
+
+function runDetached(label: string, task: () => Promise<void>): void {
+  void task().catch((error) => {
+    log.warn('socialRealtime', `${label} failed`, error);
+  });
+}
+
+async function refreshConversationDecorations(): Promise<void> {
+  const store = useSocialChatStore.getState();
+  await Promise.allSettled([
+    store.loadSessions(),
+    store.loadGroupUnreadCounts(),
+    store.loadConversationPreviews(),
+  ]);
+}
+
+function rememberBounded(set: Set<string>, key: string, maxSize: number): boolean {
+  if (!key) return true;
+  if (set.has(key)) return false;
+  set.add(key);
+  if (set.size > maxSize) {
+    const first = set.values().next().value;
+    if (first) set.delete(first);
+  }
+  return true;
+}
+
+async function refreshSocialProjection(label: string, includeNotifications = false): Promise<void> {
+  if (socialRefreshInFlight) return socialRefreshInFlight;
+
+  socialRefreshInFlight = (async () => {
+    log.info('socialRealtime', 'social projection refresh started', { label });
+
+    const chat = useSocialChatStore.getState();
+    const notifications = useNotificationStore.getState();
+    await Promise.allSettled([
+      chat.loadFriendRequests(),
+      chat.loadSessions(),
+      chat.loadGroups(),
+      notifications.refreshUnreadCounts(),
+      includeNotifications ? notifications.loadNotifications() : Promise.resolve(),
+    ]);
+
+    const refreshed = useSocialChatStore.getState();
+    await Promise.allSettled([
+      refreshed.loadGroupUnreadCounts(),
+      refreshed.loadConversationPreviews(),
+    ]);
+    useNavigationBadgeStore.getState().reconcileChatBadge();
+
+    log.info('socialRealtime', 'social projection refresh completed', { label });
+  })().finally(() => {
+    socialRefreshInFlight = null;
+  });
+
+  return socialRefreshInFlight;
+}
+
+async function bootstrapSocialProjection(actorId: string, sequence: number): Promise<void> {
+  log.info('socialRealtime', 'social projection bootstrap started', { actorId });
+
+  const chat = useSocialChatStore.getState();
+  const notifications = useNotificationStore.getState();
+
+  await Promise.allSettled([
+    chat.loadCurrentUserProfile(),
+    chat.initEncryption(),
+    chat.loadSessions(),
+    chat.loadGroups(),
+    chat.loadFriendRequests(),
+    notifications.refreshUnreadCounts(),
+  ]);
+
+  if (sequence !== bootstrapSequence) return;
+
+  const refreshed = useSocialChatStore.getState();
+  await Promise.allSettled([
+    refreshed.loadGroupUnreadCounts(),
+    refreshed.loadConversationPreviews(),
+    notifications.loadNotifications(),
+  ]);
+
+  if (sequence !== bootstrapSequence) return;
+
+  useNavigationBadgeStore.getState().reconcileChatBadge();
+  useMediaRuntimeStore.getState().prewarmMessages(refreshed.messages);
+
+  log.info('socialRealtime', 'social projection bootstrap completed', { actorId });
+}
+
+async function stopRealtimeStreamSupervisor(): Promise<void> {
+  if (!realtimeStreamActorId) return;
+  await stopEventStream();
+  realtimeStreamActorId = null;
+}
+
+async function startRealtimeStreamSupervisor(actorId: string): Promise<void> {
+  if (realtimeStreamActorId === actorId) return;
+  if (realtimeStreamActorId) {
+    await stopRealtimeStreamSupervisor();
+  }
+  await installEventStreamBridge();
+  await startEventStream();
+  realtimeStreamActorId = actorId;
+}
+
+function reconcileAuthenticatedRuntime(): void {
+  const session = useSessionStore.getState();
+  const actorId = session.authenticated ? session.currentUser?.actorId ?? null : null;
+
+  if (!actorId) {
+    realtimeStreamTransition = realtimeStreamTransition.then(stopRealtimeStreamSupervisor).catch((error) => {
+      log.warn('socialRealtime', 'realtime stream stop failed', error);
+    });
+    if (bootstrappedActorId) {
+      bootstrappedActorId = null;
+      bootstrapSequence += 1;
+    }
+    return;
+  }
+
+  realtimeStreamTransition = realtimeStreamTransition.then(() => startRealtimeStreamSupervisor(actorId)).catch((error) => {
+    log.warn('socialRealtime', 'realtime stream start failed', error);
+  });
+
+  if (bootstrappedActorId === actorId) return;
+  bootstrappedActorId = actorId;
+  const sequence = ++bootstrapSequence;
+  runDetached('social projection bootstrap', () => bootstrapSocialProjection(actorId, sequence));
+}
+
+function isVisibleConversation(
+  store: ReturnType<typeof useSocialChatStore.getState>,
+  conversationUlid: string,
+  isGroup: boolean,
+): boolean {
+  if (!useNavigationBadgeStore.getState().chatSurfaceVisible) return false;
+  return isGroup
+    ? store.activeTab === 'group' && store.activeGroupUlid === conversationUlid
+    : store.activeTab === 'friend' && store.activeSessionUlid === conversationUlid;
+}
+
+async function refreshFriendMessage(payload: RealtimeMessageReceivedPayload, shouldLoadMessages: boolean): Promise<void> {
+  const store = useSocialChatStore.getState();
+  await api.friendChatSync(payload.sessionUlid, COLD_SYNC_LIMIT, 1);
+  if (shouldLoadMessages) {
+    await store.loadMessages(payload.sessionUlid, 'friend');
+  }
+
+  await refreshConversationDecorations();
+}
+
+async function refreshGroupMessage(groupUlid: string, shouldLoadMessages: boolean): Promise<void> {
+  const store = useSocialChatStore.getState();
+  await api.groupChatSync(groupUlid, COLD_SYNC_LIMIT, 1);
+  if (shouldLoadMessages) {
+    await store.loadMessages(groupUlid, 'group');
+  }
+
+  await Promise.allSettled([
+    store.loadGroups(),
+    store.loadGroupUnreadCounts(),
+    store.loadConversationPreviews(),
+  ]);
+}
+
+type DecodedRealtimeMessage = {
+  kind: 'friend';
+  message: FriendChatMessage;
+} | {
+  kind: 'group';
+  message: GroupMessage;
+};
+
+function decodeRealtimeMessage(
+  payload: RealtimeMessageReceivedPayload,
+  isKnownGroup: boolean,
+): DecodedRealtimeMessage | null {
+  if (payload.ciphertext.byteLength === 0) return null;
+
+  if (isKnownGroup) {
+    try {
+      return { kind: 'group', message: fromBinary(GroupMessageSchema, payload.ciphertext) };
+    } catch (error) {
+      log.warn('socialRealtime', 'group realtime message decode failed', error);
+      return null;
+    }
+  }
+
+  try {
+    const friendMessage = fromBinary(FriendChatMessageSchema, payload.ciphertext);
+    if (friendMessage.receiverDid) {
+      return { kind: 'friend', message: friendMessage };
+    }
+  } catch (error) {
+    log.warn('socialRealtime', 'friend realtime message decode failed', error);
+  }
+
+  try {
+    const groupMessage = fromBinary(GroupMessageSchema, payload.ciphertext);
+    if (groupMessage.groupUlid === payload.sessionUlid) {
+      return { kind: 'group', message: groupMessage };
+    }
+  } catch (error) {
+    log.warn('socialRealtime', 'fallback group realtime message decode failed', error);
+  }
+
+  return null;
+}
+
+async function projectRealtimeMessage(
+  payload: RealtimeMessageReceivedPayload,
+  isKnownGroup: boolean,
+): Promise<'friend' | 'group' | null> {
+  const decoded = decodeRealtimeMessage(payload, isKnownGroup);
+  if (!decoded) return null;
+  await useSocialChatStore.getState().ingestRealtimeMessage(decoded.kind, payload.sessionUlid, decoded.message);
+  const messages = useSocialChatStore.getState().messages[payload.sessionUlid];
+  if (messages) {
+    useMediaRuntimeStore.getState().prewarmMessages({ [payload.sessionUlid]: messages });
+  }
+  return decoded.kind;
+}
+
+function onMessageReceived(payload: RealtimeMessageReceivedPayload): void {
+  if (!payload.sessionUlid) return;
+  const messageKey = payload.messageUlid || payload.eventId;
+  if (!rememberBounded(seenRealtimeMessageKeys, messageKey, MAX_SEEN_REALTIME_MESSAGES)) {
+    return;
+  }
+
+  const store = useSocialChatStore.getState();
+  const isKnownGroup = store.groups.some((group) => group.ulid === payload.sessionUlid);
+  const isSelfEcho = Boolean(store.currentUserDid && payload.senderActorId === store.currentUserDid);
+  const isActiveConversation = isVisibleConversation(store, payload.sessionUlid, isKnownGroup);
+
+  if (!isSelfEcho && !isActiveConversation) {
+    useNavigationBadgeStore.getState().bumpChatUnread(payload.sessionUlid);
+  } else {
+    useNavigationBadgeStore.getState().clearChatUnread(payload.sessionUlid);
+  }
+
+  runDetached('message projection and refresh', async () => {
+    const projectedKind = await projectRealtimeMessage(payload, isKnownGroup);
+    const effectiveIsGroup = projectedKind ? projectedKind === 'group' : isKnownGroup;
+    if (effectiveIsGroup) {
+      await refreshGroupMessage(payload.sessionUlid, isActiveConversation);
+      return;
+    }
+    await refreshFriendMessage(payload, isActiveConversation);
+  });
+}
+
+function onMessageReceipt(payload: RealtimeMessageReceiptPayload): void {
+  if (!payload.sessionUlid || !payload.messageUlid) return;
+
+  useSocialChatStore
+    .getState()
+    .applyMessageReceipt(payload.sessionUlid, payload.messageUlid, payload.kind);
+}
+
+function onTypingState(payload: RealtimeTypingStatePayload): void {
+  if (!payload.sessionUlid || !payload.fromActorId) return;
+
+  const store = useSocialChatStore.getState();
+  if (store.currentUserDid && payload.fromActorId === store.currentUserDid) return;
+  store.applyTypingState(payload.sessionUlid, payload.fromActorId, payload.typing);
+}
+
+function onMessageMutation(payload: RealtimeMessageMutationPayload): void {
+  if (!payload.sessionUlid || !payload.messageUlid) return;
+
+  const store = useSocialChatStore.getState();
+  store.applyMessageMutation(payload.sessionUlid, payload.messageUlid, payload.kind, {
+    newContent: payload.newContent,
+    newCiphertext: payload.newCiphertext,
+    mutatedTsUnixMs: payload.mutatedTsUnixMs,
+  });
+
+  runDetached('mutation decoration refresh', refreshConversationDecorations);
+}
+
+function onGroupMembershipChange(payload: RealtimeGroupMembershipChangePayload): void {
+  if (!payload.groupUlid) return;
+
+  runDetached('group membership refresh', async () => {
+    const store = useSocialChatStore.getState();
+    await Promise.allSettled([
+      store.loadGroups(),
+      store.loadGroupUnreadCounts(),
+      store.activeGroupUlid === payload.groupUlid
+        ? store.loadGroupMembers(payload.groupUlid)
+        : Promise.resolve(),
+    ]);
+  });
+}
+
+function isSocialNotification(notification: NotificationData): boolean {
+  return notification.type === NotificationType.FRIEND_REQUEST
+    || notification.type === NotificationType.FRIEND_ACCEPTED;
+}
+
+function onNotificationProjectionChanged(): void {
+  const notifications = useNotificationStore.getState().notifications;
+  let hasNewSocialSignal = false;
+
+  for (const item of notifications) {
+    if (!isSocialNotification(item)) continue;
+    if (!rememberBounded(seenSocialNotificationIds, item.id, MAX_SEEN_SOCIAL_NOTIFICATIONS)) continue;
+    hasNewSocialSignal = true;
+  }
+
+  if (hasNewSocialSignal) {
+    runDetached('social notification projection refresh', () => refreshSocialProjection('social notification'));
+  }
+}
+
+function onPresenceFlip(payload: RealtimePresenceFlipPayload): void {
+  if (!payload.actorId) return;
+  useSocialChatStore.getState().setPeerOnline(payload.actorId, payload.online);
+}
+
+async function syncKnownConversations(): Promise<void> {
+  const store = useSocialChatStore.getState();
+  const sessions = store.sessions.slice();
+  const groups = store.groups.slice();
+
+  for (const session of sessions) {
+    await api.friendChatSync(session.ulid, COLD_SYNC_LIMIT, COLD_SYNC_MAX_PAGES).catch((error) => {
+      log.warn('socialRealtime', 'friend cold sync failed', { sessionUlid: session.ulid, error });
+    });
+  }
+
+  for (const group of groups) {
+    await api.groupChatSync(group.ulid, COLD_SYNC_LIMIT, COLD_SYNC_MAX_PAGES).catch((error) => {
+      log.warn('socialRealtime', 'group cold sync failed', { groupUlid: group.ulid, error });
+    });
+  }
+}
+
+function onResync(payload: RealtimeResyncPayload): void {
+  runDetached('cold resync', async () => {
+    log.info('socialRealtime', 'cold resync started', payload);
+
+    const chat = useSocialChatStore.getState();
+    const notifications = useNotificationStore.getState();
+
+    await Promise.allSettled([
+      chat.loadSessions(),
+      chat.loadGroups(),
+      chat.loadFriendRequests(),
+      notifications.loadNotifications(),
+      notifications.refreshUnreadCounts(),
+    ]);
+
+    await syncKnownConversations();
+
+    const refreshed = useSocialChatStore.getState();
+    await Promise.allSettled([
+      refreshed.loadGroupUnreadCounts(),
+      refreshed.loadConversationPreviews(),
+    ]);
+    useMediaRuntimeStore.getState().prewarmMessages(refreshed.messages);
+  });
+}
+
+function startTypingSweep(): void {
+  if (typingSweepTimer) return;
+  typingSweepTimer = window.setInterval(() => {
+    useSocialChatStore.getState().sweepTypingPeers(Date.now() - TYPING_TTL_MS);
+  }, TYPING_SWEEP_INTERVAL_MS);
+}
+
+function stopTypingSweep(): void {
+  if (!typingSweepTimer) return;
+  window.clearInterval(typingSweepTimer);
+  typingSweepTimer = null;
+}
+
+function startSocialReconcile(): void {
+  if (socialReconcileTimer) return;
+  socialReconcileTimer = window.setInterval(() => {
+    runDetached('periodic social projection refresh', () => (
+      refreshSocialProjection('periodic reconcile', true)
+    ));
+  }, SOCIAL_RECONCILE_INTERVAL_MS);
+}
+
+function stopSocialReconcile(): void {
+  if (!socialReconcileTimer) return;
+  window.clearInterval(socialReconcileTimer);
+  socialReconcileTimer = null;
+}
+
+export function installSocialRealtimeBridge(): void {
+  if (teardownBridge) return;
+
+  const unsubs = [
+    useSessionStore.subscribe(reconcileAuthenticatedRuntime),
+    eventBus.subscribe(EVENT.REALTIME_MESSAGE_RECEIVED, onMessageReceived),
+    eventBus.subscribe(EVENT.REALTIME_MESSAGE_RECEIPT, onMessageReceipt),
+    eventBus.subscribe(EVENT.REALTIME_TYPING_STATE, onTypingState),
+    eventBus.subscribe(EVENT.REALTIME_MESSAGE_MUTATION, onMessageMutation),
+    eventBus.subscribe(EVENT.REALTIME_GROUP_MEMBERSHIP_CHANGE, onGroupMembershipChange),
+    eventBus.subscribe(EVENT.REALTIME_PRESENCE_FLIP, onPresenceFlip),
+    eventBus.subscribe(EVENT.REALTIME_RESYNC, onResync),
+    useNotificationStore.subscribe(onNotificationProjectionChanged),
+  ];
+
+  startTypingSweep();
+  startSocialReconcile();
+  reconcileAuthenticatedRuntime();
+
+  teardownBridge = () => {
+    unsubs.forEach((unsubscribe) => unsubscribe());
+    stopTypingSweep();
+    stopSocialReconcile();
+    teardownBridge = null;
+  };
+
+  log.info('socialRealtime', 'bridge installed');
+}
+
+export function teardownSocialRealtimeBridge(): void {
+  if (!teardownBridge) return;
+  teardownBridge();
+}

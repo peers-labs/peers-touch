@@ -33,6 +33,7 @@ func NewGroupChatSubServer(opts ...option.Option) server.Subserver {
 			settings:     map[string]map[string]groupSetting{},
 			offline:      map[string][]offlineMessage{},
 			unread:       map[string]map[string]int64{},
+			threadReads:  map[string]threadRead{},
 		},
 	}
 }
@@ -50,6 +51,7 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 		&memberModel{},
 		&messageModel{},
 		&MessageAttachmentModel{},
+		&groupThreadReadModel{},
 		&outboxModel{},
 		&invitationModel{},
 		&settingModel{},
@@ -58,6 +60,9 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 		return err
 	}
 	s.service.db = rds
+	if err := s.service.backfillThreadRootIDs(); err != nil {
+		return err
+	}
 	if err := s.service.bootstrapFromDB(); err != nil {
 		return err
 	}

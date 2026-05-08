@@ -6,6 +6,10 @@ ensure_station_ready() {
   local station_dir="$project_root/apps/station/app"
   local station_pid_file="/tmp/peers-touch-station.pid"
   local station_log_file="/tmp/peers-touch-station.log"
+  local external_station=false
+  if [[ -n "${PEERS_STATION_URL:-}" ]]; then
+    external_station=true
+  fi
   local station_target="${PEERS_STATION_URL:-http://127.0.0.1:18080}"
   local station_check_url="${STATION_HEALTHCHECK_URL:-$station_target/api/oauth/providers}"
 
@@ -16,6 +20,12 @@ ensure_station_ready() {
   if station_is_ready; then
     echo "[INFO] station is ready: $station_check_url"
     return 0
+  fi
+
+  if [[ "$external_station" == true ]]; then
+    echo "[ERROR] remote station is not ready: $station_check_url"
+    echo "[ERROR] PEERS_STATION_URL is set, so dev scripts will not start a local Station fallback."
+    exit 1
   fi
 
   if [[ ! -d "$station_dir" ]]; then

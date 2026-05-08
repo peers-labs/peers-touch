@@ -45,12 +45,12 @@ use crate::model::realtime::v1::{stream_event::Kind as StreamKind, StreamEvent};
 /// Every realtime frame the bus delivers reaches the frontend through
 /// this channel. Payload: `{ event_id, data_b64 }`. The frontend
 /// decodes `data_b64` with the generated TypeScript protobuf schema.
-pub const EVENT_REALTIME: &str = "realtime.event";
+pub const EVENT_REALTIME: &str = "realtime:event";
 
 /// Connection lifecycle hint for the UI ("Connecting…", "Online",
 /// "Offline"). Payload: `{ connected: bool, reason?: String }`.
 /// Frequency-limited — emitted only on transitions.
-pub const EVENT_CONNECTION_STATE: &str = "realtime.connection-state";
+pub const EVENT_CONNECTION_STATE: &str = "realtime:connection-state";
 
 // ---------------------------------------------------------------------
 // Per-actor supervisor registry.

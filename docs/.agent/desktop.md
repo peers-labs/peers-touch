@@ -40,6 +40,7 @@ Do **not** use this file as the place to redefine Desktop architecture, module b
 
 - [Global Context Kernel](file://docs/client/desktop/global-context-kernel.md)
 - [Provider Model Target Architecture](file://docs/client/desktop/provider-model-target-architecture.md)
+- [Desktop Runtime Projections](file://<workspace-root>/peers-chat-high-chat/docs/client/desktop/runtime-projections.md)
 
 ---
 
@@ -51,6 +52,7 @@ Do **not** use this file as the place to redefine Desktop architecture, module b
 - TypeScript uses strict typing; do not introduce `any` unless the user explicitly accepts it.
 - Rust commands return `AppResult<T>`; do not panic for normal error paths.
 - Logging must go through project loggers; do not use `console.*`, `println!`, or `eprintln!`.
+- Runtime-backed UI state must be maintained by the owning runtime/store through event consumption plus periodic reconciliation. Do not solve stale chat/contact/notification state only with component mount or tab-click refreshes; read `docs/client/desktop/runtime-projections.md` first.
 
 ---
 

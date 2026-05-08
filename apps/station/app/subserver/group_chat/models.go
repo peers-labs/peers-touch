@@ -31,14 +31,15 @@ type memberModel struct {
 func (memberModel) TableName() string { return "group_chat_members" }
 
 type messageModel struct {
-	ID               uint      `gorm:"column:id;primaryKey"`
-	ULID             string    `gorm:"column:ulid;size:64;uniqueIndex"`
-	GroupULID        string    `gorm:"column:group_ulid;size:64;index"`
-	SenderDID        string    `gorm:"column:sender_did;size:255;index"`
-	Type             int32     `gorm:"column:type"`
-	Content          string    `gorm:"column:content;type:text"`
-	EncryptedPayload []byte    `gorm:"column:encrypted_payload;type:bytea"`
-	ReplyToID        string    `gorm:"column:reply_to_id;size:64"`
+	ID               uint   `gorm:"column:id;primaryKey"`
+	ULID             string `gorm:"column:ulid;size:64;uniqueIndex"`
+	GroupULID        string `gorm:"column:group_ulid;size:64;index"`
+	SenderDID        string `gorm:"column:sender_did;size:255;index"`
+	Type             int32  `gorm:"column:type"`
+	Content          string `gorm:"column:content;type:text"`
+	EncryptedPayload []byte `gorm:"column:encrypted_payload;type:bytea"`
+	ReplyToID        string `gorm:"column:reply_to_id;size:64"`
+	ThreadRootID     string `gorm:"column:thread_root_ulid;size:64;index;default:''"`
 	// Recalled flips on recall — content + encrypted_payload are
 	// cleared at the same time. The on-disk column is still
 	// `deleted` for backward DB compat (preserves existing rows
@@ -77,6 +78,21 @@ type MessageAttachmentModel struct {
 
 func (MessageAttachmentModel) TableName() string {
 	return "group_chat_message_attachments"
+}
+
+type groupThreadReadModel struct {
+	ID           uint      `gorm:"column:id;primaryKey"`
+	GroupULID    string    `gorm:"column:group_ulid;size:64;uniqueIndex:idx_gctr_actor_thread,priority:1;index"`
+	RootULID     string    `gorm:"column:root_ulid;size:64;uniqueIndex:idx_gctr_actor_thread,priority:2;index"`
+	ActorDID     string    `gorm:"column:actor_did;size:255;uniqueIndex:idx_gctr_actor_thread,priority:3;index"`
+	LastReadULID string    `gorm:"column:last_read_ulid;size:64"`
+	LastReadAt   time.Time `gorm:"column:last_read_at;index"`
+	CreatedAt    time.Time `gorm:"column:created_at"`
+	UpdatedAt    time.Time `gorm:"column:updated_at"`
+}
+
+func (groupThreadReadModel) TableName() string {
+	return "group_chat_thread_reads"
 }
 
 type outboxModel struct {
