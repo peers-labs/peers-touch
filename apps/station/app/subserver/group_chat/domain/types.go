@@ -37,6 +37,7 @@ type Message struct {
 	Type             int32
 	Content          string
 	ReplyToID        string
+	ThreadRootID     string
 	MentionedDIDs    []string
 	MentionAll       bool
 	Attachments      []Attachment
@@ -49,6 +50,14 @@ type Message struct {
 	// ordering. Mirrors FriendChat.Message.EditedAt.
 	EditedAt time.Time
 	SentAt   time.Time
+}
+
+type ThreadCount struct {
+	RootULID        string
+	ReplyCount      int64
+	LatestReplyULID string
+	LatestReplyAt   time.Time
+	UnreadCount     int64
 }
 
 // MutationOutcome bundles the metadata that the application layer

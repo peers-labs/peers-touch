@@ -3,6 +3,8 @@ package group_chat
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
+	"strings"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -15,8 +17,79 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+type listGroupThreadMessagesRequest struct {
+	GroupUlid string `json:"group_ulid"`
+	RootUlid  string `json:"root_ulid"`
+	AfterUlid string `json:"after_ulid"`
+	Limit     int32  `json:"limit"`
+}
+
+type groupThreadCountsRequest struct {
+	GroupUlid string   `json:"group_ulid"`
+	RootUlids []string `json:"root_ulids"`
+}
+
+type groupThreadReadRequest struct {
+	GroupUlid    string `json:"group_ulid"`
+	RootUlid     string `json:"root_ulid"`
+	LastReadUlid string `json:"last_read_ulid,omitempty"`
+}
+
+type threadCountJSON struct {
+	RootUlid        string `json:"rootUlid"`
+	ReplyCount      int64  `json:"replyCount"`
+	LatestReplyUlid string `json:"latestReplyUlid"`
+	LatestReplyAt   int64  `json:"latestReplyAt"`
+	UnreadCount     int64  `json:"unreadCount"`
+}
+
+type groupThreadCountsResponse struct {
+	Counts []threadCountJSON `json:"counts"`
+}
+
+type groupThreadReadResponse struct {
+	Success bool `json:"success"`
+}
+
+type threadAttachmentJSON struct {
+	CID          string `json:"cid"`
+	Filename     string `json:"filename"`
+	MimeType     string `json:"mimeType"`
+	Size         int64  `json:"size"`
+	ThumbnailCID string `json:"thumbnailCid"`
+	Visibility   string `json:"visibility"`
+}
+
+type groupThreadMessageJSON struct {
+	Ulid             string                 `json:"ulid"`
+	GroupUlid        string                 `json:"groupUlid"`
+	GroupULID        string                 `json:"group_ulid"`
+	SenderDid        string                 `json:"senderDid"`
+	SenderDID        string                 `json:"sender_did"`
+	Type             int32                  `json:"type"`
+	Content          string                 `json:"content"`
+	Attachments      []threadAttachmentJSON `json:"attachments"`
+	ReplyToUlid      string                 `json:"replyToUlid"`
+	ReplyToULID      string                 `json:"reply_to_ulid"`
+	ThreadRootUlid   string                 `json:"threadRootUlid"`
+	ThreadRootULID   string                 `json:"thread_root_ulid"`
+	SentAt           int64                  `json:"sentAt"`
+	SentAtUnixMs     int64                  `json:"sent_at"`
+	EncryptedPayload string                 `json:"encryptedPayload"`
+	Recalled         bool                   `json:"recalled"`
+	EditedAt         int64                  `json:"editedAt"`
+}
+
+type listGroupThreadMessagesResponse struct {
+	Root       *groupThreadMessageJSON  `json:"root"`
+	Messages   []groupThreadMessageJSON `json:"messages"`
+	HasMore    bool                     `json:"hasMore"`
+	NextCursor string                   `json:"nextCursor"`
+}
 
 func (s *subServer) Handlers() []server.Handler {
 	logIDWrapper := serverwrapper.LogID()
@@ -32,6 +105,9 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("gc-remove-member", "/group-chat/member/remove", server.POST, s.handleRemoveMember, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-message-send", "/group-chat/message/send", server.POST, s.handleSendMessage, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-messages", "/group-chat/messages", server.GET, s.handleGetMessages, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("gc-thread-messages", "/group-chat/thread/messages", server.GET, s.handleListThreadMessages, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("gc-thread-counts", "/group-chat/thread/counts", server.POST, s.handleThreadCounts, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("gc-thread-read", "/group-chat/thread/read", server.POST, s.handleThreadRead, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-message-recall", "/group-chat/message/recall", server.POST, s.handleRecallMessage, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-message-edit", "/group-chat/message/edit", server.POST, s.handleEditMessage, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-message-delete", "/group-chat/message/delete", server.POST, s.handleDeleteMessage, logIDWrapper, s.jwtWrapper),
@@ -52,38 +128,40 @@ func (s *subServer) handleCreate(ctx context.Context, req *chat.CreateGroupReque
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	if req.Name == "" {
-		return nil, server.BadRequest("name is required")
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return nil, server.BadRequest("group create failed: name is required after trimming")
 	}
-	item := s.appService.CreateGroup(subject.ID, req.Name, req.Description)
-	// Honour `initial_member_dids` from the proto contract. Previously
-	// this field was silently dropped on the floor, which made the
-	// "Start Group Chat" UI look like it had failed -- the group was
-	// created but only contained the owner, so neither side saw any
-	// joinable conversation. We add members directly (as if the owner
-	// invited and they accepted in one step) because the UI semantics
-	// for `initial_member_dids` are "these people are already in the
-	// group on creation," not "send them an invite they have to
-	// accept." Self-DID is filtered out (the creator is added by
-	// CreateGroup itself), duplicates are de-duped, and we re-fetch
-	// the group at the end so the response carries the correct
-	// MemberCount instead of the stale snapshot from CreateGroup.
-	if len(req.InitialMemberDids) > 0 {
-		seen := make(map[string]struct{}, len(req.InitialMemberDids))
-		seen[subject.ID] = struct{}{}
-		for _, did := range req.InitialMemberDids {
-			if did == "" {
-				continue
-			}
-			if _, dup := seen[did]; dup {
-				continue
-			}
-			seen[did] = struct{}{}
-			s.appService.AddMember(item.ID, did, subject.ID)
+
+	initialMembers := make([]string, 0, len(req.InitialMemberDids))
+	seen := map[string]struct{}{subject.ID: {}}
+	for _, rawDID := range req.InitialMemberDids {
+		did := strings.TrimSpace(rawDID)
+		if did == "" {
+			continue
 		}
-		if refreshed, ok := s.appService.GetGroup(item.ID); ok {
-			item = *refreshed
+		if _, duplicate := seen[did]; duplicate {
+			continue
 		}
+		seen[did] = struct{}{}
+		initialMembers = append(initialMembers, did)
+	}
+	if len(initialMembers) < 2 {
+		return nil, server.BadRequest(
+			"group create failed: at least two non-self initial members are required",
+		)
+	}
+
+	item := s.appService.CreateGroup(subject.ID, name, req.Description)
+	// Honour `initial_member_dids` from the proto contract. These peers
+	// are selected as initial members by the creator, so they join in the
+	// same operation after transport validation has removed empty, self,
+	// and duplicate entries.
+	for _, did := range initialMembers {
+		s.appService.AddMember(item.ID, did, subject.ID)
+	}
+	if refreshed, ok := s.appService.GetGroup(item.ID); ok {
+		item = *refreshed
 	}
 	return &chat.CreateGroupResponse{
 		Group: &chat.Group{
@@ -183,7 +261,8 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendGroupMe
 	// `content` column stays empty (and would be rejected if a future
 	// migration removed the column entirely, per the proto's
 	// `[deprecated = true]` annotation).
-	item := s.appService.SendMessage(req.GroupUlid, subject.ID, msgType, "", req.ReplyToUlid, atts, req.GetEncryptedPayload())
+	item := s.appService.SendMessage(req.GroupUlid, subject.ID, msgType, "", req.ReplyToUlid, req.GetThreadRootUlid(), atts, req.GetEncryptedPayload())
+	publishGroupMessageToBus(item, collectGroupMemberDIDs(s, req.GroupUlid))
 	var respEnc []byte
 	if len(item.EncryptedPayload) > 0 {
 		respEnc = append([]byte(nil), item.EncryptedPayload...)
@@ -202,6 +281,7 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendGroupMe
 			// which is strictly better UX than serving stale plaintext
 			// from before the E2EE migration.
 			ReplyToUlid:      item.ReplyToID,
+			ThreadRootUlid:   item.ThreadRootID,
 			MentionedDids:    req.MentionedDids,
 			MentionAll:       req.MentionAll,
 			Attachments:      groupAttachmentsToProto(item.Attachments),
@@ -251,12 +331,103 @@ func (s *subServer) handleGetMessages(ctx context.Context, req *chat.GetGroupMes
 			// not re-emitted; the body MUST come from
 			// EncryptedPayload via the Sender Keys decrypt path.
 			ReplyToUlid:      item.ReplyToID,
+			ThreadRootUlid:   item.ThreadRootID,
 			Attachments:      groupAttachmentsToProto(item.Attachments),
 			EncryptedPayload: listEnc,
 			SentAt:           timestamppb.New(item.SentAt),
 		})
 	}
 	return &chat.GetGroupMessagesResponse{Messages: out, HasMore: hasMore, NextCursor: nextCursor}, nil
+}
+
+func (s *subServer) handleListThreadMessages(ctx context.Context, req *listGroupThreadMessagesRequest) (*listGroupThreadMessagesResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.GroupUlid == "" || req.RootUlid == "" {
+		return nil, server.BadRequest("group_ulid and root_ulid are required")
+	}
+	limit := int(req.Limit)
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	items, err := s.appService.ListThreadMessagesByActor(subject.ID, req.GroupUlid, req.RootUlid, req.AfterUlid, limit+1)
+	if err != nil {
+		if err == application_group_chat.ErrNotMember {
+			return nil, server.Forbidden(err.Error())
+		}
+		return nil, server.InternalErrorWithCause("failed to list thread messages", err)
+	}
+	if len(items) == 0 {
+		return nil, server.NotFound("thread root not found")
+	}
+	hasMore := len(items) > limit+1
+	if hasMore {
+		items = items[:limit+1]
+	}
+	nextCursor := ""
+	if hasMore && len(items) > 1 {
+		nextCursor = items[len(items)-1].ID
+	}
+	messages := make([]groupThreadMessageJSON, 0, len(items))
+	for _, item := range items {
+		messages = append(messages, groupThreadMessageToJSON(item))
+	}
+	root := messages[0]
+	return &listGroupThreadMessagesResponse{
+		Root:       &root,
+		Messages:   messages,
+		HasMore:    hasMore,
+		NextCursor: nextCursor,
+	}, nil
+}
+
+func (s *subServer) handleThreadCounts(ctx context.Context, req *groupThreadCountsRequest) (*groupThreadCountsResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.GroupUlid == "" {
+		return nil, server.BadRequest("group_ulid is required")
+	}
+	if len(req.RootUlids) == 0 {
+		return &groupThreadCountsResponse{Counts: []threadCountJSON{}}, nil
+	}
+	items, err := s.appService.ThreadCountsByActor(subject.ID, req.GroupUlid, req.RootUlids)
+	if err != nil {
+		if err == application_group_chat.ErrNotMember {
+			return nil, server.Forbidden(err.Error())
+		}
+		return nil, server.InternalErrorWithCause("failed to load thread counts", err)
+	}
+	out := make([]threadCountJSON, 0, len(items))
+	for _, item := range items {
+		out = append(out, threadCountToJSON(item))
+	}
+
+	return &groupThreadCountsResponse{Counts: out}, nil
+}
+
+func (s *subServer) handleThreadRead(ctx context.Context, req *groupThreadReadRequest) (*groupThreadReadResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.GroupUlid == "" || req.RootUlid == "" {
+		return nil, server.BadRequest("group_ulid and root_ulid are required")
+	}
+	if err := s.appService.MarkThreadReadByActor(subject.ID, req.GroupUlid, req.RootUlid, req.LastReadUlid); err != nil {
+		if err == application_group_chat.ErrNotMember {
+			return nil, server.Forbidden(err.Error())
+		}
+		if err == application_group_chat.ErrMessageNotFound {
+			return nil, server.NotFound(err.Error())
+		}
+		return nil, server.InternalErrorWithCause("failed to mark thread read", err)
+	}
+
+	return &groupThreadReadResponse{Success: true}, nil
 }
 
 func (s *subServer) handleUnreadCount(ctx context.Context, req *chat.GetUnreadCountRequest) (*chat.GetUnreadCountResponse, error) {
@@ -578,6 +749,44 @@ func publishGroupMutation(out group_chat_domain.MutationOutcome, originatorActor
 	}
 }
 
+// publishGroupMessageToBus emits a new-message frame to every current
+// group member. We reuse MessageEnvelope.session_ulid as the container
+// id, matching group mutations where the same field carries group_ulid.
+func publishGroupMessageToBus(item group_chat_domain.Message, recipientDIDs []string) {
+	bus := events.GetBus()
+	if bus == nil || len(recipientDIDs) == 0 {
+		return
+	}
+	msg := toProtoMessageFromDomain(&item)
+	cipher, err := proto.Marshal(msg)
+	if err != nil {
+		logger.DefaultHelper.Warnf("group_chat: marshal realtime message failed group=%s ulid=%s: %v",
+			item.GroupID, item.ID, err)
+		return
+	}
+	for _, did := range recipientDIDs {
+		if did == "" {
+			continue
+		}
+		ev := &realtime.StreamEvent{
+			Kind: &realtime.StreamEvent_Message{
+				Message: &realtime.MessageEnvelope{
+					SenderActorId:    item.SenderDID,
+					RecipientActorId: did,
+					SessionUlid:      item.GroupID,
+					Ulid:             item.ID,
+					Ciphertext:       append([]byte(nil), cipher...),
+					SentTsUnixMs:     item.SentAt.UnixMilli(),
+				},
+			},
+		}
+		if _, err := bus.Publish(did, ev); err != nil {
+			logger.DefaultHelper.Warnf("group_chat: realtime message publish failed group=%s ulid=%s recipient=%s: %v",
+				item.GroupID, item.ID, did, err)
+		}
+	}
+}
+
 // collectGroupMemberDIDs returns every member DID for groupUlid using
 // paginated ListMembers so large rosters fan out completely.
 func collectGroupMemberDIDs(s *subServer, groupUlid string) []string {
@@ -809,6 +1018,7 @@ func toProtoMessage(item *message) *chat.GroupMessage {
 		SenderDid:        item.SenderDID,
 		Type:             chat.GroupMessageType(item.Type),
 		ReplyToUlid:      item.ReplyToID,
+		ThreadRootUlid:   item.ThreadRootID,
 		EncryptedPayload: enc,
 		SentAt:           timestamppb.New(item.SentAt),
 		CreatedAt:        timestamppb.New(item.SentAt),
@@ -836,6 +1046,7 @@ func toProtoMessageFromDomain(item *group_chat_domain.Message) *chat.GroupMessag
 		SenderDid:        item.SenderDID,
 		Type:             chat.GroupMessageType(item.Type),
 		ReplyToUlid:      item.ReplyToID,
+		ThreadRootUlid:   item.ThreadRootID,
 		Attachments:      groupAttachmentsToProto(item.Attachments),
 		EncryptedPayload: enc,
 		SentAt:           timestamppb.New(item.SentAt),
@@ -886,6 +1097,66 @@ func groupAttachmentsToProto(in []group_chat_domain.Attachment) []*chat.GroupMes
 		})
 	}
 	return out
+}
+
+func threadCountToJSON(item group_chat_domain.ThreadCount) threadCountJSON {
+	latestAt := int64(0)
+	if !item.LatestReplyAt.IsZero() {
+		latestAt = item.LatestReplyAt.UnixMilli()
+	}
+
+	return threadCountJSON{
+		RootUlid:        item.RootULID,
+		ReplyCount:      item.ReplyCount,
+		LatestReplyUlid: item.LatestReplyULID,
+		LatestReplyAt:   latestAt,
+		UnreadCount:     item.UnreadCount,
+	}
+}
+
+func groupThreadMessageToJSON(m group_chat_domain.Message) groupThreadMessageJSON {
+	attachments := make([]threadAttachmentJSON, 0, len(m.Attachments))
+	for _, a := range m.Attachments {
+		attachments = append(attachments, threadAttachmentJSON{
+			CID:          a.CID,
+			Filename:     a.Filename,
+			MimeType:     a.MimeType,
+			Size:         a.Size,
+			ThumbnailCID: a.ThumbnailCID,
+			Visibility:   a.Visibility,
+		})
+	}
+	editedAt := int64(0)
+	if !m.EditedAt.IsZero() {
+		editedAt = m.EditedAt.UnixMilli()
+	}
+	encryptedPayload := ""
+	if len(m.EncryptedPayload) > 0 {
+		encryptedPayload = base64.StdEncoding.EncodeToString(m.EncryptedPayload)
+	}
+	sentAt := int64(0)
+	if !m.SentAt.IsZero() {
+		sentAt = m.SentAt.UnixMilli()
+	}
+	return groupThreadMessageJSON{
+		Ulid:             m.ID,
+		GroupUlid:        m.GroupID,
+		GroupULID:        m.GroupID,
+		SenderDid:        m.SenderDID,
+		SenderDID:        m.SenderDID,
+		Type:             m.Type,
+		Content:          m.Content,
+		Attachments:      attachments,
+		ReplyToUlid:      m.ReplyToID,
+		ReplyToULID:      m.ReplyToID,
+		ThreadRootUlid:   m.ThreadRootID,
+		ThreadRootULID:   m.ThreadRootID,
+		SentAt:           sentAt,
+		SentAtUnixMs:     sentAt,
+		EncryptedPayload: encryptedPayload,
+		Recalled:         m.Recalled,
+		EditedAt:         editedAt,
+	}
 }
 
 func toProtoGroupFromDomain(item *group_chat_domain.Group) *chat.Group {

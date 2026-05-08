@@ -1,7 +1,13 @@
 import { create } from 'zustand';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 
-import { api, pickLatestKeyExchangeBundle, type ChatAttachmentInput } from '../services/desktop_api';
+import {
+  api,
+  pickLatestKeyExchangeBundle,
+  type ChatAttachmentInput,
+  type ChatSearchLocalResultRow,
+  type ChatThreadCount,
+} from '../services/desktop_api';
 import { FriendMessageStatus, type FriendChatSession, type FriendChatMessage } from '../gen/proto/domain/chat/friend_chat_pb';
 import type { Group, GroupMessage, GroupMember } from '../gen/proto/domain/chat/group_chat_pb';
 import {
@@ -60,6 +66,40 @@ export interface SearchResult {
   content: string;
   sentAt: number;
   conversationName: string;
+  messageType?: number;
+  replyToUlid?: string;
+  threadRootUlid?: string;
+  attachments: SearchResultAttachment[];
+  threadReplyCount?: number;
+  hasLoadedThreadReplies: boolean;
+}
+
+export interface SearchResultAttachment {
+  filename: string;
+  mimeType: string;
+}
+
+export interface ConversationLocalState {
+  hidden?: boolean;
+  clearedAt?: number;
+}
+
+type SocialMessage = FriendChatMessage | GroupMessage;
+
+interface ThreadLoadOptions {
+  append?: boolean;
+  afterUlid?: string;
+  limit?: number;
+}
+
+interface ThreadPagePayload {
+  root?: unknown | null;
+  replies?: unknown[];
+  messages?: unknown[];
+  hasMore?: boolean;
+  has_more?: boolean;
+  nextCursor?: string;
+  next_cursor?: string;
 }
 
 interface SocialChatState {
@@ -68,7 +108,14 @@ interface SocialChatState {
   activeTab: 'friend' | 'group';
   activeSessionUlid: string | null;
   activeGroupUlid: string | null;
-  messages: Record<string, (FriendChatMessage | GroupMessage)[]>;
+  messages: Record<string, SocialMessage[]>;
+  threadMessages: Record<string, SocialMessage[]>;
+  threadCounts: Record<string, ChatThreadCount>;
+  threadLoading: Record<string, boolean>;
+  threadLoadingMore: Record<string, boolean>;
+  threadError: Record<string, string | null>;
+  threadHasMore: Record<string, boolean>;
+  threadNextCursor: Record<string, string | null>;
   messageHasMore: Record<string, boolean>;
   messageLoadingMore: Record<string, boolean>;
   groupMembers: Record<string, GroupMember[]>;
@@ -80,12 +127,15 @@ interface SocialChatState {
   friendRequests: FriendRequestData[];
   groupUnreadCounts: Record<string, number>;
   lastPreviews: Record<string, MessagePreview>;
+  conversationLocalState: Record<string, ConversationLocalState>;
 
   searchQuery: string;
   searchResults: SearchResult[];
   searchLoading: boolean;
   /** After navigation from search, scroll this message into view once messages are loaded. */
   scrollToMessageUlid: string | null;
+  /** Root message ULID for the currently-open social chat thread panel. */
+  openThreadRootUlid: string | null;
 
   encryptionEnabled: boolean;
   ownFingerprint: string | null;
@@ -153,6 +203,12 @@ interface SocialChatState {
    * sender goes silent without explicitly emitting `typing=false`.
    */
   sweepTypingPeers: (staleBefore: number) => void;
+  /**
+   * Runtime-owned realtime projection entry. The event stream inserts
+   * the new fact immediately; API sync/load paths are reconcile passes,
+   * not the first visible source of the message.
+   */
+  ingestRealtimeMessage: (kind: 'friend' | 'group', conversationUlid: string, message: SocialMessage) => Promise<void>;
 
   loadSessions: () => Promise<void>;
   loadGroups: () => Promise<void>;
@@ -161,6 +217,14 @@ interface SocialChatState {
   selectGroup: (ulid: string) => void;
   loadMessages: (ulid: string, kind?: 'friend' | 'group') => Promise<void>;
   loadOlderMessages: (ulid: string, kind?: 'friend' | 'group') => Promise<void>;
+  loadThreadMessages: (
+    ulid: string,
+    rootUlid: string,
+    kind?: 'friend' | 'group',
+    options?: ThreadLoadOptions,
+  ) => Promise<void>;
+  refreshThreadCounts: (ulid: string, rootUlids: string[], kind?: 'friend' | 'group') => Promise<void>;
+  markThreadRead: (ulid: string, rootUlid: string, lastReadUlid?: string, kind?: 'friend' | 'group') => Promise<void>;
   sendFriendMessage: (
     sessionUlid: string,
     receiverDid: string,
@@ -168,6 +232,7 @@ interface SocialChatState {
     type?: number,
     replyToUlid?: string,
     attachments?: ChatAttachmentInput[],
+    threadRootUlid?: string,
   ) => Promise<void>;
   sendGroupMessage: (
     groupUlid: string,
@@ -175,6 +240,7 @@ interface SocialChatState {
     type?: number,
     replyToUlid?: string,
     attachments?: ChatAttachmentInput[],
+    threadRootUlid?: string,
   ) => Promise<void>;
   loadGroupMembers: (groupUlid: string) => Promise<void>;
   /**
@@ -270,12 +336,18 @@ interface SocialChatState {
     kind: 'DELIVERED' | 'READ',
   ) => void;
   markGroupRead: (groupUlid: string) => Promise<void>;
+  hideConversation: (kind: 'friend' | 'group', ulid: string, keepHistory: boolean) => Promise<void>;
+  restoreConversation: (kind: 'friend' | 'group', ulid: string) => void;
+  deleteFriendContact: (sessionUlid: string) => Promise<void>;
+  deleteGroupContact: (groupUlid: string) => Promise<void>;
 
   getUnifiedConversations: () => UnifiedConversation[];
 
   searchMessages: (query: string, scope?: string, conversationId?: string) => Promise<void>;
   clearSearch: () => void;
   setScrollToMessageUlid: (ulid: string | null) => void;
+  openThread: (rootUlid: string) => void;
+  closeThread: () => void;
 
   initEncryption: () => Promise<void>;
   establishSession: (sessionUlid: string, peerDid: string) => Promise<boolean>;
@@ -370,6 +442,274 @@ function createClientMessageUlid(): string {
   return `fcmc-${ts}-${rand}`;
 }
 
+function socialMessageReplyToUlid(msg: SocialMessage): string {
+  return msg.replyToUlid || '';
+}
+
+function socialMessageThreadRootUlid(msg: SocialMessage): string {
+  const threadRoot = (msg as SocialMessage & { threadRootUlid?: string }).threadRootUlid || '';
+  return threadRoot || socialMessageReplyToUlid(msg);
+}
+
+function isMessageInThread(msg: SocialMessage, rootUlid: string): boolean {
+  const threadRoot = (msg as SocialMessage & { threadRootUlid?: string }).threadRootUlid || '';
+  return threadRoot === rootUlid || (!threadRoot && socialMessageReplyToUlid(msg) === rootUlid);
+}
+
+function resolveThreadRootForReply(messages: SocialMessage[], replyToUlid?: string): string | undefined {
+  if (!replyToUlid) return undefined;
+  const parent = messages.find((msg) => msg.ulid === replyToUlid);
+  return parent ? socialMessageThreadRootUlid(parent) || replyToUlid : replyToUlid;
+}
+
+const THREAD_REPLY_PAGE_SIZE = 50;
+
+function threadPageMessages(data: ThreadPagePayload | undefined, rootUlid: string): SocialMessage[] {
+  if (!data) return [];
+  const root = data.root as SocialMessage | null | undefined;
+  const rawMessages = Array.isArray(data.messages) ? (data.messages as SocialMessage[]) : [];
+  const explicitReplies = Array.isArray(data.replies) ? (data.replies as SocialMessage[]) : [];
+  const replies = explicitReplies.length > 0
+    ? explicitReplies
+    : rawMessages.filter((msg) => msg.ulid !== rootUlid && isMessageInThread(msg, rootUlid));
+  if (root || replies.length > 0) {
+    const out: SocialMessage[] = [];
+    const seen = new Set<string>();
+    if (root?.ulid) {
+      out.push(root);
+      seen.add(root.ulid);
+    }
+    for (const reply of replies) {
+      if (!reply.ulid || seen.has(reply.ulid) || reply.ulid === rootUlid) continue;
+      out.push(reply);
+      seen.add(reply.ulid);
+    }
+    return out;
+  }
+  return rawMessages;
+}
+
+function mergeThreadMessages(existing: SocialMessage[], incoming: SocialMessage[], rootUlid: string): SocialMessage[] {
+  const out: SocialMessage[] = [];
+  const seen = new Set<string>();
+  for (const msg of [...existing, ...incoming]) {
+    if (!msg.ulid || seen.has(msg.ulid)) continue;
+    if (msg.ulid === rootUlid && seen.has(rootUlid)) continue;
+    out.push(msg);
+    seen.add(msg.ulid);
+  }
+  return out;
+}
+
+function latestThreadReplyUlid(messages: SocialMessage[], rootUlid: string): string | undefined {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const msg = messages[i];
+    if (msg?.ulid && msg.ulid !== rootUlid) return msg.ulid;
+  }
+  return undefined;
+}
+
+export function socialThreadKey(kind: 'friend' | 'group', ulid: string, rootUlid: string): string {
+  return `${kind}:${ulid}:${rootUlid}`;
+}
+
+function stringFromRecord(record: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
+function numberFromUnknown(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'bigint') return Number(value);
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function attachmentMetadataFromUnknown(value: unknown): SearchResultAttachment | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  const filename = stringFromRecord(record, 'filename', 'file_name', 'name');
+  const mimeType = stringFromRecord(record, 'mimeType', 'mime_type', 'mime');
+  if (!filename && !mimeType) return null;
+  return { filename, mimeType };
+}
+
+function searchRowAttachments(row: ChatSearchLocalResultRow): SearchResultAttachment[] {
+  const record = row as unknown as Record<string, unknown>;
+  const attachments = Array.isArray(record.attachments)
+    ? record.attachments
+        .map(attachmentMetadataFromUnknown)
+        .filter((item): item is SearchResultAttachment => item !== null)
+    : [];
+  const topLevel = attachmentMetadataFromUnknown({
+    filename: record.filename,
+    mime_type: record.mime_type,
+  });
+  return topLevel ? [topLevel, ...attachments] : attachments;
+}
+
+function dedupeSearchAttachments(items: SearchResultAttachment[]): SearchResultAttachment[] {
+  const seen = new Set<string>();
+  const out: SearchResultAttachment[] = [];
+  for (const item of items) {
+    const key = `${item.filename.toLowerCase()}|${item.mimeType.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+function loadedMessageMetadata(message: SocialMessage | undefined): {
+  attachments: SearchResultAttachment[];
+  messageType?: number;
+  replyToUlid?: string;
+  threadRootUlid?: string;
+} {
+  if (!message) return { attachments: [] };
+  return {
+    attachments: dedupeSearchAttachments(
+      (message.attachments || [])
+        .map(attachmentMetadataFromUnknown)
+        .filter((item): item is SearchResultAttachment => item !== null),
+    ),
+    messageType: numberFromUnknown(message.type),
+    replyToUlid: socialMessageReplyToUlid(message) || undefined,
+    threadRootUlid: socialMessageThreadRootUlid(message) || undefined,
+  };
+}
+
+function searchRowMessageType(row: ChatSearchLocalResultRow): number | undefined {
+  return numberFromUnknown(row.message_type) ?? numberFromUnknown(row.type);
+}
+
+function searchRowReplyToUlid(row: ChatSearchLocalResultRow): string | undefined {
+  const record = row as unknown as Record<string, unknown>;
+  return stringFromRecord(record, 'replyToUlid', 'reply_to_ulid') || undefined;
+}
+
+function searchRowThreadRootUlid(row: ChatSearchLocalResultRow): string | undefined {
+  const record = row as unknown as Record<string, unknown>;
+  return stringFromRecord(record, 'threadRootUlid', 'thread_root_ulid') || searchRowReplyToUlid(row);
+}
+
+function searchThreadMetadata(
+  state: SocialChatState,
+  scope: 'friend' | 'group',
+  conversationId: string,
+  messageId: string,
+): { threadReplyCount?: number; hasLoadedThreadReplies: boolean } {
+  const threadKey = socialThreadKey(scope, conversationId, messageId);
+  const countedReplies = numberFromUnknown(state.threadCounts[threadKey]?.replyCount);
+  const loadedReplies = (state.threadMessages[threadKey] || []).filter((msg) => msg.ulid && msg.ulid !== messageId).length;
+  return {
+    threadReplyCount: countedReplies ?? (loadedReplies > 0 ? loadedReplies : undefined),
+    hasLoadedThreadReplies: loadedReplies > 0,
+  };
+}
+
+function conversationKey(kind: 'friend' | 'group', ulid: string): string {
+  return `${kind}:${ulid}`;
+}
+
+function conversationStateStorageKey(actorDid: string | null): string {
+  return `socialChat:conversationLocalState:${actorDid || 'anonymous'}`;
+}
+
+function loadConversationLocalState(actorDid: string | null): Record<string, ConversationLocalState> {
+  if (typeof localStorage === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(conversationStateStorageKey(actorDid));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed as Record<string, ConversationLocalState>;
+  } catch {
+    return {};
+  }
+}
+
+function saveConversationLocalState(actorDid: string | null, state: Record<string, ConversationLocalState>): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(conversationStateStorageKey(actorDid), JSON.stringify(state));
+  } catch (error) {
+    log.warn('socialChat', 'save conversation local state failed', error);
+  }
+}
+
+function messageSentMs(message: SocialMessage): number {
+  const sentAt = (message as { sentAt?: unknown }).sentAt as FriendChatMessage['sentAt'] | undefined;
+  const createdAt = (message as { createdAt?: unknown }).createdAt as FriendChatMessage['createdAt'] | undefined;
+  const ts = sentAt || createdAt;
+  return ts ? timestampDate(ts).getTime() : 0;
+}
+
+function filterClearedMessages(
+  messages: SocialMessage[],
+  localState: Record<string, ConversationLocalState>,
+  kind: 'friend' | 'group',
+  ulid: string,
+): SocialMessage[] {
+  const clearedAt = localState[conversationKey(kind, ulid)]?.clearedAt ?? 0;
+  if (!clearedAt) return messages;
+  return messages.filter((message) => {
+    const sentMs = messageSentMs(message);
+    return sentMs === 0 || sentMs >= clearedAt;
+  });
+}
+
+function sortConversationMessages(messages: SocialMessage[]): SocialMessage[] {
+  return messages.slice().sort((a, b) => {
+    const sentA = messageSentMs(a);
+    const sentB = messageSentMs(b);
+    if (sentA !== sentB) return sentA - sentB;
+    return (a.ulid ?? '').localeCompare(b.ulid ?? '');
+  });
+}
+
+function mergeConversationMessages(existing: SocialMessage[], incoming: SocialMessage): SocialMessage[] {
+  const byUlid = new Map<string, SocialMessage>();
+  for (const message of existing) {
+    if (message.ulid) byUlid.set(message.ulid, message);
+  }
+  if (incoming.ulid) {
+    byUlid.set(incoming.ulid, incoming);
+  }
+  return sortConversationMessages(Array.from(byUlid.values()));
+}
+
+async function decodeRealtimeGroupMessage(groupUlid: string, message: GroupMessage): Promise<GroupMessage> {
+  if (message.recalled || !message.encryptedPayload || message.encryptedPayload.byteLength === 0) {
+    return message;
+  }
+  try {
+    const out = await decryptFromGroup(groupUlid, bytesToB64(message.encryptedPayload));
+    return { ...message, content: out.plaintext } as GroupMessage;
+  } catch (error) {
+    if (error instanceof MissingSkdmError) {
+      return { ...message, content: '[Waiting for sender key…]' } as GroupMessage;
+    }
+    log.warn('socialChat', 'realtime group decrypt failed', error);
+    return { ...message, content: '[Decrypt failed]' } as GroupMessage;
+  }
+}
+
+function previewFromMessage(message: SocialMessage): MessagePreview {
+  const attachmentName = message.attachments?.[0]?.filename ?? '';
+  return {
+    content: message.content || attachmentName,
+    type: Number(message.type ?? 1),
+    senderDid: message.senderDid ?? '',
+  };
+}
+
 const initialSocialState: Pick<
   SocialChatState,
   | 'sessions'
@@ -378,6 +718,13 @@ const initialSocialState: Pick<
   | 'activeSessionUlid'
   | 'activeGroupUlid'
   | 'messages'
+  | 'threadMessages'
+  | 'threadCounts'
+  | 'threadLoading'
+  | 'threadLoadingMore'
+  | 'threadError'
+  | 'threadHasMore'
+  | 'threadNextCursor'
   | 'messageHasMore'
   | 'messageLoadingMore'
   | 'groupMembers'
@@ -388,10 +735,12 @@ const initialSocialState: Pick<
   | 'friendRequests'
   | 'groupUnreadCounts'
   | 'lastPreviews'
+  | 'conversationLocalState'
   | 'searchQuery'
   | 'searchResults'
   | 'searchLoading'
   | 'scrollToMessageUlid'
+  | 'openThreadRootUlid'
   | 'encryptionEnabled'
   | 'ownFingerprint'
   | 'sessionEncrypted'
@@ -405,6 +754,13 @@ const initialSocialState: Pick<
   activeSessionUlid: null,
   activeGroupUlid: null,
   messages: {},
+  threadMessages: {},
+  threadCounts: {},
+  threadLoading: {},
+  threadLoadingMore: {},
+  threadError: {},
+  threadHasMore: {},
+  threadNextCursor: {},
   messageHasMore: {},
   messageLoadingMore: {},
   groupMembers: {},
@@ -415,10 +771,12 @@ const initialSocialState: Pick<
   friendRequests: [],
   groupUnreadCounts: {},
   lastPreviews: {},
+  conversationLocalState: {},
   searchQuery: '',
   searchResults: [],
   searchLoading: false,
   scrollToMessageUlid: null,
+  openThreadRootUlid: null,
 
   encryptionEnabled: false,
   ownFingerprint: null,
@@ -561,7 +919,9 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       set((state) => ({
         sessions: list,
         loading: false,
-        ...(!state.currentUserDid && derivedDid ? { currentUserDid: derivedDid } : {}),
+        ...(!state.currentUserDid && derivedDid
+          ? { currentUserDid: derivedDid, conversationLocalState: loadConversationLocalState(derivedDid) }
+          : {}),
         peerOnline: { ...presenceSeed, ...state.peerOnline },
       }));
     } catch (error) {
@@ -581,7 +941,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     }
   },
 
-  setActiveTab: (tab) => set({ activeTab: tab }),
+  setActiveTab: (tab) => set({ activeTab: tab, openThreadRootUlid: null }),
   selectSession: (ulid) => {
       const state = get();
       const did = state.currentUserDid;
@@ -589,6 +949,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       // Optimistic: clear unread badge for the selected session
       set((prev) => ({
         activeSessionUlid: ulid,
+        openThreadRootUlid: null,
         sessions: did
           ? prev.sessions.map((s) => {
               if (s.ulid !== ulid) return s;
@@ -616,6 +977,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   selectGroup: (ulid) => {
       set((prev) => ({
         activeGroupUlid: ulid,
+        openThreadRootUlid: null,
         // Optimistic: clear unread badge for the selected group
         groupUnreadCounts: { ...prev.groupUnreadCounts, [ulid]: 0 },
       }));
@@ -700,18 +1062,31 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         }
         msgs = decoded;
       }
+      const visibleMsgs = filterClearedMessages(
+        msgs as SocialMessage[],
+        get().conversationLocalState,
+        activeTab,
+        ulid,
+      );
       set((state) => ({
-        messages: { ...state.messages, [ulid]: msgs as (FriendChatMessage | GroupMessage)[] },
+        messages: { ...state.messages, [ulid]: visibleMsgs },
         messageHasMore: {
           ...state.messageHasMore,
           [ulid]: Boolean(data?.hasMore ?? data?.has_more),
         },
         loading: false,
       }));
+      const rootUlids = visibleMsgs
+        .filter((msg) => !socialMessageThreadRootUlid(msg))
+        .map((msg) => msg.ulid)
+        .filter(Boolean);
+      if (rootUlids.length > 0) {
+        get().refreshThreadCounts(ulid, rootUlids, activeTab).catch(() => {});
+      }
       // Ack unread friend messages as READ so sender sees correct read receipts
       if (activeTab === 'friend') {
         const viewerDid = get().currentUserDid;
-        const unreadUlids = (msgs as FriendChatMessage[])
+        const unreadUlids = (visibleMsgs as FriendChatMessage[])
           .filter((m) => m.senderDid !== viewerDid && m.status !== FriendMessageStatus.READ)
           .map((m) => m.ulid);
         if (unreadUlids.length > 0) {
@@ -741,7 +1116,12 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       } else {
         data = await api.groupChatListMessages(ulid, oldest, 50);
       }
-      const older = (data?.messages || []) as (FriendChatMessage | GroupMessage)[];
+      const older = filterClearedMessages(
+        (data?.messages || []) as SocialMessage[],
+        get().conversationLocalState,
+        activeKind,
+        ulid,
+      );
       const dedup = older.filter((msg) => !current.some((item) => item.ulid === msg.ulid));
       set((state) => ({
         messages: { ...state.messages, [ulid]: [...dedup, ...(state.messages[ulid] || [])] },
@@ -751,6 +1131,13 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         },
         messageLoadingMore: { ...state.messageLoadingMore, [ulid]: false },
       }));
+      const rootUlids = dedup
+        .filter((msg) => !socialMessageThreadRootUlid(msg))
+        .map((msg) => msg.ulid)
+        .filter(Boolean);
+      if (rootUlids.length > 0) {
+        get().refreshThreadCounts(ulid, rootUlids, activeKind).catch(() => {});
+      }
     } catch (error) {
       log.error('socialChat', 'loadOlderMessages failed', error);
       set((state) => ({
@@ -760,14 +1147,159 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     }
   },
 
-  sendFriendMessage: async (sessionUlid, receiverDid, content, type, replyToUlid, attachments) => {
+  loadThreadMessages: async (ulid, rootUlid, kind, options) => {
+    const activeKind = kind ?? get().activeTab;
+    const key = socialThreadKey(activeKind, ulid, rootUlid);
+    const append = options?.append === true;
+    const currentThread = get().threadMessages[key] || [];
+    const afterUlid = options?.afterUlid
+      ?? (append ? get().threadNextCursor[key] ?? latestThreadReplyUlid(currentThread, rootUlid) : undefined);
+    set((state) => ({
+      ...(append
+        ? { threadLoadingMore: { ...state.threadLoadingMore, [key]: true } }
+        : { threadLoading: { ...state.threadLoading, [key]: true } }),
+      threadError: { ...state.threadError, [key]: null },
+    }));
+    try {
+      const data = activeKind === 'friend'
+        ? await api.friendChatListThreadMessages(ulid, rootUlid, options?.limit ?? THREAD_REPLY_PAGE_SIZE, 50, afterUlid)
+        : await api.groupChatListThreadMessages(ulid, rootUlid, options?.limit ?? THREAD_REPLY_PAGE_SIZE, 50, afterUlid);
+      let loaded = threadPageMessages(data as ThreadPagePayload | undefined, rootUlid);
+      if (activeKind === 'group') {
+        const decoded: GroupMessage[] = [];
+        for (const msg of loaded as GroupMessage[]) {
+          const encryptedPayload = (msg as { encryptedPayload?: Uint8Array | string }).encryptedPayload;
+          const hasCiphertext = typeof encryptedPayload === 'string'
+            ? encryptedPayload.length > 0
+            : Boolean(encryptedPayload && encryptedPayload.byteLength > 0);
+          if (msg.recalled || !hasCiphertext) {
+            decoded.push(msg);
+            continue;
+          }
+          try {
+            const payloadB64 = typeof encryptedPayload === 'string'
+              ? encryptedPayload
+              : encryptedPayload
+                ? bytesToB64(encryptedPayload)
+                : '';
+            if (!payloadB64) {
+              decoded.push(msg);
+              continue;
+            }
+            const out = await decryptFromGroup(ulid, payloadB64);
+            decoded.push({ ...msg, content: out.plaintext } as GroupMessage);
+          } catch (error) {
+            if (error instanceof MissingSkdmError) {
+              decoded.push({ ...msg, content: '[Waiting for sender key…]' } as GroupMessage);
+            } else {
+              log.warn('socialChat', 'thread group decrypt failed', error);
+              decoded.push({ ...msg, content: '[Decrypt failed]' } as GroupMessage);
+            }
+          }
+        }
+        loaded = decoded;
+      }
+      const fallbackRoot = (get().messages[ulid] || []).find((msg) => msg.ulid === rootUlid);
+      const baseMessages = append
+        ? currentThread.length > 0
+          ? currentThread
+          : fallbackRoot
+            ? [fallbackRoot]
+            : []
+        : [];
+      const pageMessages = loaded.length > 0
+        ? loaded
+        : fallbackRoot
+          ? [fallbackRoot]
+          : [];
+      const nextMessages = append
+        ? mergeThreadMessages(baseMessages, pageMessages, rootUlid)
+        : mergeThreadMessages([], pageMessages, rootUlid);
+      const hasMore = Boolean(data?.hasMore ?? data?.has_more);
+      const nextCursor = hasMore
+        ? (data?.nextCursor ?? data?.next_cursor ?? latestThreadReplyUlid(nextMessages, rootUlid) ?? null)
+        : null;
+      set((state) => ({
+        threadMessages: { ...state.threadMessages, [key]: nextMessages },
+        threadLoading: { ...state.threadLoading, [key]: false },
+        threadLoadingMore: { ...state.threadLoadingMore, [key]: false },
+        threadError: { ...state.threadError, [key]: null },
+        threadHasMore: { ...state.threadHasMore, [key]: hasMore },
+        threadNextCursor: { ...state.threadNextCursor, [key]: nextCursor },
+      }));
+      await get().refreshThreadCounts(ulid, [rootUlid], activeKind);
+    } catch (error) {
+      log.error('socialChat', 'loadThreadMessages failed', error);
+      const fallbackRoot = (get().messages[ulid] || []).find((msg) => msg.ulid === rootUlid);
+      const fallbackThread = fallbackRoot
+        ? [
+            fallbackRoot,
+            ...(get().messages[ulid] || [])
+              .filter((msg) => msg.ulid !== rootUlid && isMessageInThread(msg, rootUlid)),
+          ]
+        : [];
+      set((state) => ({
+        threadMessages: !append && fallbackThread.length > 0
+          ? { ...state.threadMessages, [key]: mergeThreadMessages([], fallbackThread, rootUlid) }
+          : state.threadMessages,
+        threadLoading: { ...state.threadLoading, [key]: false },
+        threadLoadingMore: { ...state.threadLoadingMore, [key]: false },
+        threadError: {
+          ...state.threadError,
+          [key]: fallbackThread.length > 0 ? null : error instanceof Error ? error.message : String(error),
+        },
+      }));
+      if (fallbackThread.length > 0) return;
+      throw error;
+    }
+  },
+
+  refreshThreadCounts: async (ulid, rootUlids, kind) => {
+    const activeKind = kind ?? get().activeTab;
+    const uniqueRootUlids = Array.from(new Set(rootUlids.filter(Boolean)));
+    if (uniqueRootUlids.length === 0) return;
+    try {
+      const data = activeKind === 'friend'
+        ? await api.friendChatThreadCounts(ulid, uniqueRootUlids)
+        : await api.groupChatThreadCounts(ulid, uniqueRootUlids);
+      const counts = data?.counts || [];
+      set((state) => {
+        const next = { ...state.threadCounts };
+        for (const count of counts) {
+          next[socialThreadKey(activeKind, ulid, count.rootUlid)] = count;
+        }
+        return { threadCounts: next };
+      });
+    } catch (error) {
+      log.warn('socialChat', 'refreshThreadCounts failed', error);
+    }
+  },
+
+  markThreadRead: async (ulid, rootUlid, lastReadUlid, kind) => {
+    const activeKind = kind ?? get().activeTab;
+    if (!ulid || !rootUlid) return;
+    try {
+      if (activeKind === 'friend') {
+        await api.friendChatThreadMarkRead(ulid, rootUlid, lastReadUlid);
+      } else {
+        await api.groupChatThreadMarkRead(ulid, rootUlid, lastReadUlid);
+      }
+      await get().refreshThreadCounts(ulid, [rootUlid], activeKind);
+    } catch (error) {
+      log.warn('socialChat', 'markThreadRead failed', error);
+    }
+  },
+
+  sendFriendMessage: async (sessionUlid, receiverDid, content, type, replyToUlid, attachments, explicitThreadRootUlid) => {
     try {
       const { sessionEncrypted, encryptionEnabled } = get();
       let encryptedPayload: string | undefined;
       let sendContent = content;
       const clientUlid = createClientMessageUlid();
+      const threadRootUlid = explicitThreadRootUlid
+        ?? resolveThreadRootForReply(get().messages[sessionUlid] || [], replyToUlid);
 
-      if (encryptionEnabled && sessionEncrypted[sessionUlid]) {
+      if (content.trim() && encryptionEnabled && sessionEncrypted[sessionUlid]) {
         try {
           const enc = await api.cryptoEncryptMessage(sessionUlid, receiverDid, content);
           const envelope = JSON.stringify({
@@ -797,8 +1329,11 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         attachments,
         encryptedPayload,
         clientUlid,
+        threadRootUlid,
       );
-      await get().loadMessages(sessionUlid, 'friend');
+      await get().loadMessages(sessionUlid, 'friend').catch((error) => {
+        log.warn('socialChat', 'sendFriendMessage: post-send message refresh failed', error);
+      });
       const did = get().currentUserDid ?? '';
       set((state) => ({
         lastPreviews: {
@@ -812,7 +1347,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     }
   },
 
-  sendGroupMessage: async (groupUlid, content, type, replyToUlid, _attachments) => {
+  sendGroupMessage: async (groupUlid, content, type, replyToUlid, attachments, explicitThreadRootUlid) => {
     // Group chat is end-to-end encrypted via Sender Keys
     // (see peers-touch/docs/architecture/encryption/group-sender-keys.md).
     // The send path is:
@@ -851,7 +1386,11 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       }
       const memberDids = members.map((m) => m.actorDid).filter((d): d is string => !!d);
       await ensureSkdmDistributed(did, groupUlid, memberDids);
-      const encryptedPayloadB64 = await encryptForGroup(groupUlid, content);
+      const encryptedPayloadB64 = content.trim()
+        ? await encryptForGroup(groupUlid, content)
+        : undefined;
+      const threadRootUlid = explicitThreadRootUlid
+        ?? resolveThreadRootForReply(get().messages[groupUlid] || [], replyToUlid);
       await api.groupChatSendMessage(
         groupUlid,
         '',
@@ -859,13 +1398,18 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         replyToUlid,
         undefined,
         undefined,
+        attachments,
         encryptedPayloadB64,
+        threadRootUlid,
       );
-      await get().loadMessages(groupUlid, 'group');
+      await get().loadMessages(groupUlid, 'group').catch((error) => {
+        log.warn('socialChat', 'sendGroupMessage: post-send message refresh failed', error);
+      });
+      const previewContent = content || attachments?.[0]?.filename || '';
       set((state) => ({
         lastPreviews: {
           ...state.lastPreviews,
-          [groupUlid]: { content, type: type ?? 1, senderDid: did },
+          [groupUlid]: { content: previewContent, type: type ?? 1, senderDid: did },
         },
       }));
     } catch (error) {
@@ -973,6 +1517,8 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
 
   toggleDetail: () => set((state) => ({ showDetail: !state.showDetail })),
   setShowDetail: (show) => set({ showDetail: show }),
+  openThread: (rootUlid) => set({ openThreadRootUlid: rootUlid, showDetail: false }),
+  closeThread: () => set({ openThreadRootUlid: null }),
 
   deleteMessage: async (ulid, messageUlid, kind) => {
     const tab = kind ?? get().activeTab;
@@ -1150,6 +1696,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       set({
         currentUserProfile: profile,
         currentUserDid: did,
+        conversationLocalState: loadConversationLocalState(did),
       });
     } catch (error) {
       log.error('socialChat', 'loadCurrentUserProfile failed', error);
@@ -1199,6 +1746,18 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   acceptFriendRequest: async (requestId) => {
     try {
       const data = await api.friendChatAcceptFriendRequest(requestId);
+      const acceptedRequest = data?.request as unknown as FriendRequestData | undefined;
+      set((state) => ({
+        friendRequests: state.friendRequests.map((request) =>
+          request.id === requestId
+            ? {
+                ...request,
+                status: Number(acceptedRequest?.status ?? 2),
+                respondedAt: acceptedRequest?.respondedAt ?? request.respondedAt,
+              }
+            : request,
+        ),
+      }));
       const sessionJson = data?.session;
       if (sessionJson) {
         const s = sessionJson as unknown as FriendChatSession;
@@ -1216,7 +1775,19 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
 
   rejectFriendRequest: async (requestId) => {
     try {
-      await api.friendChatRejectFriendRequest(requestId);
+      const data = await api.friendChatRejectFriendRequest(requestId);
+      const rejectedRequest = data?.request as unknown as FriendRequestData | undefined;
+      set((state) => ({
+        friendRequests: state.friendRequests.map((request) =>
+          request.id === requestId
+            ? {
+                ...request,
+                status: Number(rejectedRequest?.status ?? 3),
+                respondedAt: rejectedRequest?.respondedAt ?? request.respondedAt,
+              }
+            : request,
+        ),
+      }));
       await get().loadFriendRequests();
     } catch (error) {
       log.error('socialChat', 'rejectFriendRequest failed', error);
@@ -1387,6 +1958,42 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     });
   },
 
+  ingestRealtimeMessage: async (kind, conversationUlid, message) => {
+    if (!conversationUlid || !message.ulid) return;
+    const projectedMessage = kind === 'group'
+      ? await decodeRealtimeGroupMessage(conversationUlid, message as GroupMessage)
+      : message;
+
+    set((state) => {
+      const visibleMessages = filterClearedMessages(
+        mergeConversationMessages(state.messages[conversationUlid] ?? [], projectedMessage),
+        state.conversationLocalState,
+        kind,
+        conversationUlid,
+      );
+      return {
+        messages: {
+          ...state.messages,
+          [conversationUlid]: visibleMessages,
+        },
+        lastPreviews: {
+          ...state.lastPreviews,
+          [conversationUlid]: previewFromMessage(projectedMessage),
+        },
+      };
+    });
+
+    if (kind === 'friend') {
+      const viewerDid = get().currentUserDid;
+      const friendMessage = projectedMessage as FriendChatMessage;
+      if (viewerDid && friendMessage.senderDid !== viewerDid && friendMessage.status !== FriendMessageStatus.READ) {
+        get().ackFriendMessages([friendMessage.ulid], FriendMessageStatus.DELIVERED).catch((error) => {
+          log.debug('socialChat', 'realtime delivered ack failed', error);
+        });
+      }
+    }
+  },
+
   markGroupRead: async (groupUlid) => {
     try {
       await api.groupChatMarkRead(groupUlid);
@@ -1399,12 +2006,117 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     }
   },
 
+  hideConversation: async (kind, ulid, keepHistory) => {
+    const key = conversationKey(kind, ulid);
+    const nextEntry: ConversationLocalState = {
+      hidden: true,
+      ...(keepHistory ? {} : { clearedAt: Date.now() }),
+    };
+    set((state) => {
+      const nextLocalState = { ...state.conversationLocalState, [key]: nextEntry };
+      saveConversationLocalState(state.currentUserDid, nextLocalState);
+      const nextMessages = { ...state.messages };
+      const nextPreviews = { ...state.lastPreviews };
+      if (!keepHistory) {
+        delete nextMessages[ulid];
+        delete nextPreviews[ulid];
+      }
+      return {
+        conversationLocalState: nextLocalState,
+        messages: nextMessages,
+        lastPreviews: nextPreviews,
+        ...(kind === 'friend' && state.activeSessionUlid === ulid ? { activeSessionUlid: null } : {}),
+        ...(kind === 'group' && state.activeGroupUlid === ulid ? { activeGroupUlid: null } : {}),
+      };
+    });
+  },
+
+  restoreConversation: (kind, ulid) => {
+    const key = conversationKey(kind, ulid);
+    set((state) => {
+      const current = state.conversationLocalState[key];
+      if (!current?.hidden) return {};
+      const nextLocalState = {
+        ...state.conversationLocalState,
+        [key]: { ...current, hidden: false },
+      };
+      saveConversationLocalState(state.currentUserDid, nextLocalState);
+      return { conversationLocalState: nextLocalState };
+    });
+  },
+
+  deleteFriendContact: async (sessionUlid) => {
+    const state = get();
+    const session = state.sessions.find((item) => item.ulid === sessionUlid);
+    const peerDid = session ? peerOfSession(session, state.currentUserDid).did : '';
+    if (!peerDid) throw new Error('Cannot delete friend without peer DID');
+
+    try {
+      await api.friendChatDeleteFriend(peerDid);
+      set((prev) => {
+        const nextLocalState = { ...prev.conversationLocalState };
+        delete nextLocalState[conversationKey('friend', sessionUlid)];
+        const nextMessages = { ...prev.messages };
+        const nextPreviews = { ...prev.lastPreviews };
+        delete nextMessages[sessionUlid];
+        delete nextPreviews[sessionUlid];
+        saveConversationLocalState(prev.currentUserDid, nextLocalState);
+        return {
+          sessions: prev.sessions.filter((item) => item.ulid !== sessionUlid),
+          friendRequests: prev.friendRequests.filter((request) => (
+            !(
+              (request.senderId === peerDid || request.receiverId === peerDid)
+              && (request.senderId === prev.currentUserDid || request.receiverId === prev.currentUserDid)
+            )
+          )),
+          conversationLocalState: nextLocalState,
+          messages: nextMessages,
+          lastPreviews: nextPreviews,
+          ...(prev.activeSessionUlid === sessionUlid ? { activeSessionUlid: null } : {}),
+        };
+      });
+      await Promise.allSettled([get().loadSessions(), get().loadFriendRequests()]);
+    } catch (error) {
+      log.error('socialChat', 'deleteFriendContact failed', error);
+      throw error;
+    }
+  },
+
+  deleteGroupContact: async (groupUlid) => {
+    try {
+      await api.groupChatLeaveGroup(groupUlid);
+      set((prev) => {
+        const nextLocalState = { ...prev.conversationLocalState };
+        delete nextLocalState[conversationKey('group', groupUlid)];
+        const nextMessages = { ...prev.messages };
+        const nextPreviews = { ...prev.lastPreviews };
+        delete nextMessages[groupUlid];
+        delete nextPreviews[groupUlid];
+        saveConversationLocalState(prev.currentUserDid, nextLocalState);
+        return {
+          groups: prev.groups.filter((group) => group.ulid !== groupUlid),
+          groupMembers: Object.fromEntries(Object.entries(prev.groupMembers).filter(([key]) => key !== groupUlid)),
+          groupUnreadCounts: Object.fromEntries(Object.entries(prev.groupUnreadCounts).filter(([key]) => key !== groupUlid)),
+          conversationLocalState: nextLocalState,
+          messages: nextMessages,
+          lastPreviews: nextPreviews,
+          ...(prev.activeGroupUlid === groupUlid ? { activeGroupUlid: null } : {}),
+        };
+      });
+      await get().loadGroups();
+    } catch (error) {
+      log.error('socialChat', 'deleteGroupContact failed', error);
+      throw error;
+    }
+  },
+
   getUnifiedConversations: () => {
     const state = get();
     const did = state.currentUserDid;
     const out: UnifiedConversation[] = [];
 
     for (const s of state.sessions) {
+      if (state.conversationLocalState[conversationKey('friend', s.ulid)]?.hidden) continue;
       const sa = s as any;
       const peerAv = did
         ? (s.participantADid === did ? sa.participantBAvatar : sa.participantAAvatar)
@@ -1426,6 +2138,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     }
 
     for (const g of state.groups) {
+      if (state.conversationLocalState[conversationKey('group', g.ulid)]?.hidden) continue;
       const loadedGroupMsgs = state.messages[g.ulid];
       const groupPreview = loadedGroupMsgs && loadedGroupMsgs.length > 0
         ? { content: loadedGroupMsgs[loadedGroupMsgs.length - 1].content ?? '', type: Number((loadedGroupMsgs[loadedGroupMsgs.length - 1] as any).type ?? 1), senderDid: loadedGroupMsgs[loadedGroupMsgs.length - 1].senderDid ?? '' }
@@ -1453,35 +2166,47 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     set({ searchLoading: true, searchQuery: query });
     try {
       const data = await api.chatSearchLocal(query, scope, conversationId);
-      const rawResults = data?.results || [];
-      const { sessions, groups, currentUserDid } = get();
+      const rawResults = (data?.results || []).filter((row) => {
+        const scope = row.scope === 'group' ? 'group' : 'friend';
+        const key = conversationKey(scope, row.conversation_id);
+        const clearedAt = get().conversationLocalState[key]?.clearedAt ?? 0;
+        return !clearedAt || Number(row.sent_at ?? 0) >= clearedAt;
+      });
+      const state = get();
+      const { sessions, groups, currentUserDid, messages } = state;
 
       const results: SearchResult[] = rawResults.map((r) => {
+        const scope = r.scope === 'group' ? 'group' : 'friend';
         let conversationName = '';
-        if (r.scope === 'friend') {
+        if (scope === 'friend') {
           const session = sessions.find((s) => s.ulid === r.conversation_id);
           if (session) {
-            if (currentUserDid) {
-              conversationName =
-                session.participantADid === currentUserDid
-                  ? session.participantBDid
-                  : session.participantADid;
-            } else {
-              conversationName = session.participantBDid || session.participantADid || '';
-            }
+            conversationName = peerDisplayName(session, currentUserDid)
+              || peerOfSession(session, currentUserDid).did;
           }
         } else {
           const group = groups.find((g) => g.ulid === r.conversation_id);
           conversationName = group?.name || '';
         }
+        const loadedMessage = messages[r.conversation_id]?.find((msg) => msg.ulid === r.message_id);
+        const loadedMetadata = loadedMessageMetadata(loadedMessage);
+        const threadMetadata = searchThreadMetadata(state, scope, r.conversation_id, r.message_id);
         return {
           messageId: r.message_id,
           conversationId: r.conversation_id,
-          scope: r.scope as 'friend' | 'group',
+          scope,
           senderDid: r.sender_did,
           content: r.content,
           sentAt: r.sent_at,
           conversationName: conversationName || r.conversation_id.slice(0, 12),
+          messageType: loadedMetadata.messageType ?? searchRowMessageType(r),
+          replyToUlid: loadedMetadata.replyToUlid ?? searchRowReplyToUlid(r),
+          threadRootUlid: loadedMetadata.threadRootUlid ?? searchRowThreadRootUlid(r),
+          attachments: dedupeSearchAttachments([
+            ...loadedMetadata.attachments,
+            ...searchRowAttachments(r),
+          ]),
+          ...threadMetadata,
         };
       });
       set({ searchResults: results, searchLoading: false });
@@ -1495,4 +2220,5 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   clearSearch: () => set({ searchQuery: '', searchResults: [], searchLoading: false }),
 
   setScrollToMessageUlid: (ulid) => set({ scrollToMessageUlid: ulid }),
+
 }));

@@ -121,6 +121,28 @@ pub struct FriendChatListMessagesInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatThreadInput {
+    pub session_ulid: String,
+    pub root_ulid: String,
+    pub after_ulid: Option<String>,
+    pub limit: Option<u32>,
+    pub max_pages: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatThreadCountsInput {
+    pub session_ulid: String,
+    pub root_ulids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatThreadReadInput {
+    pub session_ulid: String,
+    pub root_ulid: String,
+    pub last_read_ulid: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttachmentInput {
     pub cid: String,
     pub filename: String,
@@ -147,6 +169,7 @@ pub struct FriendChatSendInput {
     pub client_ulid: Option<String>,
     pub r#type: Option<i32>,
     pub reply_to_ulid: Option<String>,
+    pub thread_root_ulid: Option<String>,
     pub attachments: Option<Vec<AttachmentInput>>,
 }
 
@@ -171,6 +194,11 @@ pub struct FriendChatListFriendRequestsInput {
     pub status: Option<i32>,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatDeleteFriendInput {
+    pub peer_did: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -236,11 +264,34 @@ pub struct GroupChatListMessagesInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatThreadInput {
+    pub group_ulid: String,
+    pub root_ulid: String,
+    pub after_ulid: Option<String>,
+    pub limit: Option<u32>,
+    pub max_pages: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatThreadCountsInput {
+    pub group_ulid: String,
+    pub root_ulids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatThreadReadInput {
+    pub group_ulid: String,
+    pub root_ulid: String,
+    pub last_read_ulid: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupChatSendInput {
     pub group_ulid: String,
     pub content: String,
     pub r#type: Option<i32>,
     pub reply_to_ulid: Option<String>,
+    pub thread_root_ulid: Option<String>,
     pub mentioned_dids: Option<Vec<String>>,
     pub mention_all: Option<bool>,
     pub attachments: Option<Vec<AttachmentInput>>,
@@ -1116,6 +1167,11 @@ pub struct FriendRequestListInput {
     pub status: Option<i32>,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendRequestDeleteInput {
+    pub peer_did: String,
 }
 
 // --- Notification contracts ---

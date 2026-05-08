@@ -43,6 +43,7 @@ type Message struct {
 	// EncryptedPayload stores E2E ciphertext when the client sends encrypted_payload; otherwise nil.
 	EncryptedPayload []byte
 	ReplyToID        string
+	ThreadRootID     string
 	Status           int32
 	Attachments      []Attachment
 	// Recalled flips when the original sender invokes recall. The
@@ -54,10 +55,18 @@ type Message struct {
 	// EditedAt is the wall-clock at which the row's content was last
 	// replaced via edit. Zero-value when never edited. Display-only;
 	// clients must not use it for ordering.
-	EditedAt time.Time
-	SentAt   time.Time
+	EditedAt  time.Time
+	SentAt    time.Time
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+type ThreadCount struct {
+	RootULID        string
+	ReplyCount      int64
+	LatestReplyULID string
+	LatestReplyAt   time.Time
+	UnreadCount     int64
 }
 
 // MutationOutcome is the slice of metadata a recall / edit / delete
@@ -111,4 +120,5 @@ const (
 	FriendRequestStatusPending  = 1
 	FriendRequestStatusAccepted = 2
 	FriendRequestStatusRejected = 3
+	FriendRequestStatusRemoved  = 5
 )

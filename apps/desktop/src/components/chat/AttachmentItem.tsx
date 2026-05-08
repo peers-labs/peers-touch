@@ -5,22 +5,27 @@
 // `oss://{host}/{key}` cid carries the source-of-truth station and
 // the local file cache is the preferred backing store.
 //
-// Non-image attachments render as a clickable file pill that opens
-// the resolved URL in the system browser.
+// Image attachments render as inline thumbnails with an in-app preview.
+// Non-image attachments stay as compact cards that open the resolved URL
+// in the system browser.
 
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { theme, Typography, Tooltip } from 'antd';
-import { Globe, Lock, MessageSquare, Paperclip } from 'lucide-react';
-import { useAttachmentUrl } from './useAttachmentUrl';
+import { Image, theme, Typography, Tooltip } from 'antd';
+import { ExternalLink, FileImage, Globe, Lock, MessageSquare, Paperclip } from 'lucide-react';
+import { openMediaExternal, useMediaProjection } from '../../services/mediaRuntime';
 import type { FriendMessageAttachment } from '../../gen/proto/domain/chat/friend_chat_pb';
 import type { GroupMessageAttachment } from '../../gen/proto/domain/chat/group_chat_pb';
+import { log } from '../../utils/logger';
 
 const { Text } = Typography;
 
 type Attachment = FriendMessageAttachment | GroupMessageAttachment;
 
 export type ChatAttachmentVisibilityHint = 'public' | 'chat' | 'private';
+
+const IMAGE_FILENAME_PATTERN = /\.(apng|avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$/i;
 
 interface Props {
   attachment: Attachment;
@@ -114,78 +119,306 @@ function VisibilityBadge({ chip }: { chip: VisibilityChip }) {
   );
 }
 
-export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
-  const { t } = useTranslation();
-  const { token } = theme.useToken();
-  const src = useAttachmentUrl(attachment.cid);
-  const isImage = attachment.mimeType?.startsWith('image/');
-  const chip = visibilityChip(visibilityHint, t, isOwn, token);
-  const showHint = chip !== null;
+function isImageAttachment(attachment: Attachment): boolean {
+  const mimeType = attachment.mimeType?.toLowerCase() ?? '';
+  const filename = attachment.filename ?? '';
+  return mimeType.startsWith('image/') || IMAGE_FILENAME_PATTERN.test(filename);
+}
 
-  if (isImage) {
-    if (!src) {
-      return (
-        <Flexbox gap={2}>
-          <Flexbox
-            align="center"
-            justify="center"
+function imageThumbnailCid(attachment: Attachment): string {
+  const candidate = (attachment as Attachment & { thumbnail_cid?: string }).thumbnailCid
+    || (attachment as Attachment & { thumbnail_cid?: string }).thumbnail_cid
+    || '';
+  return candidate.trim() || attachment.cid;
+}
+
+function formatAttachmentSize(size: Attachment['size']): string {
+  const bytes = Number(size);
+  if (!Number.isFinite(bytes) || bytes < 0) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function attachmentTypeLabel(
+  attachment: Attachment,
+  isImage: boolean,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  if (isImage) return t('chat.social.messageArea.attachmentTypeImage', 'Image');
+
+  const mimeType = attachment.mimeType?.trim();
+  if (mimeType) {
+    const [, subtype] = mimeType.split('/');
+    if (subtype) return subtype.split(/[+;]/)[0].replace(/[-_.]+/g, ' ').toUpperCase();
+  }
+
+  const filename = attachment.filename ?? '';
+  const extension = filename.includes('.') ? filename.split('.').pop() : '';
+  return extension
+    ? extension.toUpperCase()
+    : t('chat.social.messageArea.attachmentTypeFile', 'File');
+}
+
+interface AttachmentDetailsProps {
+  actionLabel: string;
+  actionVisible: boolean;
+  filename: string;
+  isImage: boolean;
+  isOwn: boolean;
+  onOpen: () => void;
+  openTitle: string;
+  sizeLabel: string;
+  src: string | null;
+  token: ReturnType<typeof theme.useToken>['token'];
+  typeLabel: string;
+}
+
+function AttachmentDetails({
+  actionLabel,
+  actionVisible,
+  filename,
+  isImage,
+  isOwn,
+  onOpen,
+  openTitle,
+  sizeLabel,
+  src,
+  token,
+  typeLabel,
+}: AttachmentDetailsProps) {
+  const TypeIcon = isImage ? FileImage : Paperclip;
+  const textColor = isOwn ? '#fff' : token.colorText;
+  const secondaryColor = isOwn ? 'rgba(255,255,255,0.72)' : token.colorTextSecondary;
+
+  return (
+    <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0, width: '100%' }}>
+      <Flexbox
+        align="center"
+        justify="center"
+        style={{
+          width: 30,
+          height: 30,
+          flex: '0 0 30px',
+          borderRadius: 8,
+          background: isOwn ? 'rgba(255,255,255,0.16)' : token.colorFillSecondary,
+          color: textColor,
+        }}
+      >
+        <TypeIcon size={15} />
+      </Flexbox>
+      <Flexbox gap={1} style={{ flex: 1, minWidth: 0 }}>
+        <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0 }}>
+          <Text style={{ flex: '0 0 auto', fontSize: 10, fontWeight: 600, color: secondaryColor }}>
+            {typeLabel}
+          </Text>
+          {sizeLabel && (
+            <Text ellipsis style={{ minWidth: 0, fontSize: 10, color: secondaryColor }}>
+              {sizeLabel}
+            </Text>
+          )}
+        </Flexbox>
+        <Text ellipsis style={{ fontSize: 12, fontWeight: 500, color: textColor }}>
+          {filename}
+        </Text>
+      </Flexbox>
+      {src && (
+        <Tooltip title={openTitle}>
+          <button
+            type="button"
+            aria-label={openTitle}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              onOpen();
+            }}
             style={{
-              width: 200,
-              height: 120,
-              borderRadius: 6,
-              background: token.colorFillTertiary,
+              appearance: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '4px 7px',
+              border: `1px solid ${isOwn ? 'rgba(255,255,255,0.24)' : token.colorBorderSecondary}`,
+              borderRadius: 999,
+              background: isOwn ? 'rgba(255,255,255,0.14)' : token.colorBgContainer,
+              color: textColor,
+              cursor: 'pointer',
+              fontSize: 10,
+              lineHeight: 1,
+              opacity: actionVisible ? 1 : 0.72,
+              transition: 'opacity 120ms ease, background 120ms ease',
+              whiteSpace: 'nowrap',
             }}
           >
-            <Text type="secondary" style={{ fontSize: 11 }}>
-              {attachment.filename || 'image'}
-            </Text>
-          </Flexbox>
-          {showHint && chip && <VisibilityBadge chip={chip} />}
-        </Flexbox>
-      );
+            <ExternalLink size={11} />
+            <span>{actionLabel}</span>
+          </button>
+        </Tooltip>
+      )}
+    </Flexbox>
+  );
+}
+
+export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
+  const { t } = useTranslation('chat');
+  const { token } = theme.useToken();
+  const [hovered, setHovered] = useState(false);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const isImage = isImageAttachment(attachment);
+  const media = useMediaProjection(attachment.cid
+    ? {
+        cid: attachment.cid,
+        thumbnailCid: isImage ? imageThumbnailCid(attachment) : undefined,
+        mimeType: attachment.mimeType,
+      }
+    : null);
+  const fullSrc = media?.localOriginalSrc ?? null;
+  const thumbnailSrc = media?.localThumbnailSrc ?? fullSrc;
+  const chip = visibilityChip(visibilityHint, t, isOwn, token);
+  const showHint = chip !== null;
+  const filename = attachment.filename?.trim() || t('chat.social.messageArea.attachmentUnnamed', 'Attachment');
+  const typeLabel = attachmentTypeLabel(attachment, isImage, t);
+  const sizeLabel = formatAttachmentSize(attachment.size);
+  const actionLabel = t('chat.social.messageArea.attachmentOpen', 'Open');
+  const openTitle = t('chat.social.messageArea.attachmentOpenOrDownload', 'Open or download attachment');
+  const imageReady = Boolean(isImage && thumbnailSrc && !previewFailed);
+  const imageFailed = Boolean(isImage && (previewFailed || media?.state === 'failed'));
+  const cardBackground = isOwn
+    ? hovered
+      ? 'rgba(255,255,255,0.22)'
+      : 'rgba(255,255,255,0.15)'
+    : hovered
+      ? token.colorFillSecondary
+      : token.colorFillTertiary;
+  const cardBorder = isOwn ? 'rgba(255,255,255,0.22)' : token.colorBorderSecondary;
+
+  useEffect(() => {
+    setPreviewFailed(false);
+  }, [attachment.cid, thumbnailSrc]);
+
+  const openAttachment = () => {
+    if (!attachment.cid) return;
+    void openMediaExternal(attachment.cid).catch((error) => {
+      log.warn('chat', 'open attachment failed', error);
+    });
+  };
+
+  const handleKeyDown = (ev: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!attachment.cid) return;
+    if (ev.key === 'Enter' || ev.key === ' ') {
+      ev.preventDefault();
+      openAttachment();
     }
+  };
+
+  if (isImage) {
+    const statusText = imageFailed
+      ? t('chat.social.messageArea.imageUnavailable', 'Image unavailable')
+      : t('chat.social.messageArea.imageResolving', 'Loading image...');
+
     return (
-      <Flexbox gap={2}>
-        <img
-          src={src}
-          alt={attachment.filename}
-          style={{ maxWidth: 200, maxHeight: 200, borderRadius: 6, cursor: 'pointer' }}
-          onClick={() => window.open(src, '_blank')}
-          onError={(ev) => {
-            (ev.target as HTMLImageElement).style.display = 'none';
+      <Flexbox gap={3} style={{ maxWidth: '100%' }}>
+        <Flexbox
+          role={attachment.cid ? 'button' : undefined}
+          tabIndex={attachment.cid ? 0 : undefined}
+          onClick={imageReady ? undefined : openAttachment}
+          onKeyDown={handleKeyDown}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          style={{
+            maxWidth: 'min(260px, 100%)',
+            overflow: 'hidden',
+            border: `1px solid ${cardBorder}`,
+            borderRadius: 12,
+            background: cardBackground,
+            boxShadow: hovered ? token.boxShadowTertiary : 'none',
+            cursor: attachment.cid ? 'pointer' : 'default',
+            transition: 'background 120ms ease, box-shadow 120ms ease',
           }}
-        />
+        >
+          {imageReady ? (
+            <Image
+              src={thumbnailSrc ?? ''}
+              alt={filename}
+              preview={fullSrc ? { src: fullSrc, mask: false } : false}
+              wrapperStyle={{
+                display: 'block',
+                maxWidth: 'min(260px, 100%)',
+                lineHeight: 0,
+              }}
+              style={{
+                display: 'block',
+                maxWidth: 'min(260px, 100%)',
+                maxHeight: 260,
+                objectFit: 'contain',
+                background: token.colorFillSecondary,
+              }}
+              onError={() => setPreviewFailed(true)}
+            />
+          ) : (
+            <Flexbox
+              align="center"
+              justify="center"
+              gap={8}
+              style={{
+                width: 220,
+                minHeight: 140,
+                padding: 16,
+                color: isOwn ? 'rgba(255,255,255,0.82)' : token.colorTextSecondary,
+                background: isOwn ? 'rgba(255,255,255,0.08)' : token.colorFillSecondary,
+              }}
+            >
+              <FileImage size={24} />
+              <Text style={{ color: 'inherit', fontSize: 12, fontWeight: 500 }}>
+                {statusText}
+              </Text>
+              <Text ellipsis style={{ maxWidth: 180, color: 'inherit', fontSize: 11, opacity: 0.72 }}>
+                {filename}
+              </Text>
+            </Flexbox>
+          )}
+        </Flexbox>
         {showHint && chip && <VisibilityBadge chip={chip} />}
       </Flexbox>
     );
   }
 
   return (
-    <Flexbox gap={2} style={{ maxWidth: '100%' }}>
+    <Flexbox gap={3} style={{ maxWidth: '100%' }}>
       <Flexbox
         horizontal
         align="center"
-        gap={8}
+        role={fullSrc ? 'button' : undefined}
+        tabIndex={fullSrc ? 0 : undefined}
         style={{
-          padding: '6px 10px',
-          borderRadius: 6,
-          background: isOwn ? 'rgba(255,255,255,0.15)' : token.colorFillTertiary,
-          cursor: src ? 'pointer' : 'default',
-          opacity: src ? 1 : 0.6,
+          width: 'min(260px, 100%)',
+          maxWidth: '100%',
+          padding: '8px 9px',
+          border: `1px solid ${cardBorder}`,
+          borderRadius: 10,
+          background: cardBackground,
+          boxShadow: hovered ? token.boxShadowTertiary : 'none',
+          cursor: fullSrc ? 'pointer' : 'default',
+          opacity: fullSrc ? 1 : 0.72,
+          transition: 'background 120ms ease, box-shadow 120ms ease',
         }}
-        onClick={() => {
-          if (src) window.open(src, '_blank');
-        }}
+        onClick={openAttachment}
+        onKeyDown={handleKeyDown}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
       >
-        <Paperclip size={14} />
-        <Flexbox style={{ minWidth: 0 }}>
-          <Text ellipsis style={{ fontSize: 12, color: isOwn ? '#fff' : token.colorText }}>
-            {attachment.filename}
-          </Text>
-          <Text style={{ fontSize: 10, color: isOwn ? 'rgba(255,255,255,0.6)' : token.colorTextQuaternary }}>
-            {(Number(attachment.size) / 1024).toFixed(1)} KB
-          </Text>
-        </Flexbox>
+        <AttachmentDetails
+          actionLabel={actionLabel}
+          actionVisible={hovered}
+          filename={filename}
+          isImage={isImage}
+          isOwn={isOwn}
+          onOpen={openAttachment}
+          openTitle={openTitle}
+          sizeLabel={sizeLabel}
+          src={fullSrc}
+          token={token}
+          typeLabel={typeLabel}
+        />
       </Flexbox>
       {showHint && chip && <VisibilityBadge chip={chip} />}
     </Flexbox>

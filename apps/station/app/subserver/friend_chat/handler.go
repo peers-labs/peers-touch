@@ -2,6 +2,7 @@ package friend_chat
 
 import (
 	"context"
+	"encoding/base64"
 	"strings"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
@@ -19,6 +20,81 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+type listFriendThreadMessagesRequest struct {
+	SessionUlid string `json:"session_ulid"`
+	RootUlid    string `json:"root_ulid"`
+	AfterUlid   string `json:"after_ulid"`
+	Limit       int32  `json:"limit"`
+}
+
+type friendThreadCountsRequest struct {
+	SessionUlid string   `json:"session_ulid"`
+	RootUlids   []string `json:"root_ulids"`
+}
+
+type friendThreadReadRequest struct {
+	SessionUlid  string `json:"session_ulid"`
+	RootUlid     string `json:"root_ulid"`
+	LastReadUlid string `json:"last_read_ulid,omitempty"`
+}
+
+type threadCountJSON struct {
+	RootUlid        string `json:"rootUlid"`
+	ReplyCount      int64  `json:"replyCount"`
+	LatestReplyUlid string `json:"latestReplyUlid"`
+	LatestReplyAt   int64  `json:"latestReplyAt"`
+	UnreadCount     int64  `json:"unreadCount"`
+}
+
+type friendThreadCountsResponse struct {
+	Counts []threadCountJSON `json:"counts"`
+}
+
+type friendThreadReadResponse struct {
+	Success bool `json:"success"`
+}
+
+type threadAttachmentJSON struct {
+	CID          string `json:"cid"`
+	Filename     string `json:"filename"`
+	MimeType     string `json:"mimeType"`
+	Size         int64  `json:"size"`
+	ThumbnailCID string `json:"thumbnailCid"`
+	Visibility   string `json:"visibility"`
+}
+
+type friendThreadMessageJSON struct {
+	Ulid             string                 `json:"ulid"`
+	SessionUlid      string                 `json:"sessionUlid"`
+	SessionULID      string                 `json:"session_ulid"`
+	SenderDid        string                 `json:"senderDid"`
+	SenderDID        string                 `json:"sender_did"`
+	ReceiverDid      string                 `json:"receiverDid"`
+	ReceiverDID      string                 `json:"receiver_did"`
+	Type             int32                  `json:"type"`
+	Content          string                 `json:"content"`
+	Attachments      []threadAttachmentJSON `json:"attachments"`
+	ReplyToUlid      string                 `json:"replyToUlid"`
+	ReplyToULID      string                 `json:"reply_to_ulid"`
+	ThreadRootUlid   string                 `json:"threadRootUlid"`
+	ThreadRootULID   string                 `json:"thread_root_ulid"`
+	Status           int32                  `json:"status"`
+	SentAt           int64                  `json:"sentAt"`
+	SentAtUnixMs     int64                  `json:"sent_at"`
+	CreatedAt        int64                  `json:"createdAt"`
+	UpdatedAt        int64                  `json:"updatedAt"`
+	EncryptedPayload string                 `json:"encryptedPayload"`
+	Recalled         bool                   `json:"recalled"`
+	EditedAt         int64                  `json:"editedAt"`
+}
+
+type listFriendThreadMessagesResponse struct {
+	Root       *friendThreadMessageJSON  `json:"root"`
+	Messages   []friendThreadMessageJSON `json:"messages"`
+	HasMore    bool                      `json:"hasMore"`
+	NextCursor string                    `json:"nextCursor"`
+}
+
 func (s *subServer) Handlers() []server.Handler {
 	logIDWrapper := serverwrapper.LogID()
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
@@ -34,6 +110,9 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("fc-message-send", "/friend-chat/message/send", server.POST, s.handleSendMessage, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-message-sync", "/friend-chat/message/sync", server.POST, s.handleSyncMessages, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-messages", "/friend-chat/messages", server.GET, s.handleGetMessages, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-thread-messages", "/friend-chat/thread/messages", server.GET, s.handleListThreadMessages, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-thread-counts", "/friend-chat/thread/counts", server.POST, s.handleThreadCounts, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-thread-read", "/friend-chat/thread/read", server.POST, s.handleThreadRead, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-message-search", "/friend-chat/messages/search", server.GET, s.handleSearchMessages, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-message-ack", "/friend-chat/message/ack", server.POST, s.handleAckMessage, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-message-recall", "/friend-chat/message/recall", server.POST, s.handleRecallMessage, logIDWrapper, s.jwtWrapper),
@@ -47,6 +126,7 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("fc-friend-request-accept", "/friend-chat/friend-request/accept", server.POST, s.handleAcceptFriendRequest, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-friend-request-reject", "/friend-chat/friend-request/reject", server.POST, s.handleRejectFriendRequest, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-friend-requests", "/friend-chat/friend-requests", server.GET, s.handleListFriendRequests, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-friend-delete", "/friend-chat/friend/delete", server.POST, s.handleDeleteFriend, logIDWrapper, s.jwtWrapper),
 	}
 }
 
@@ -173,7 +253,7 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendMessage
 		msgType = 1
 	}
 	atts := friendAttachmentsFromProto(req.Attachments)
-	message, err := s.service.SendMessageByActor(subject.ID, req.SessionUlid, req.ReceiverDid, msgType, content, req.ReplyToUlid, atts, enc, req.GetClientUlid())
+	message, err := s.service.SendMessageByActor(subject.ID, req.SessionUlid, req.ReceiverDid, msgType, content, req.ReplyToUlid, req.GetThreadRootUlid(), atts, enc, req.GetClientUlid())
 	if err != nil {
 		if err == application.ErrSessionNotFound {
 			return nil, server.NotFound(err.Error())
@@ -292,6 +372,102 @@ func (s *subServer) handleGetMessages(ctx context.Context, req *chat.GetMessages
 		out = append(out, friendChatMessageFromDomain(item))
 	}
 	return &chat.GetMessagesResponse{Messages: out, HasMore: hasMore, NextCursor: nextCursor}, nil
+}
+
+func (s *subServer) handleListThreadMessages(ctx context.Context, req *listFriendThreadMessagesRequest) (*listFriendThreadMessagesResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.SessionUlid == "" || req.RootUlid == "" {
+		return nil, server.BadRequest("session_ulid and root_ulid are required")
+	}
+	limit := int(req.Limit)
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	items, err := s.service.ListThreadMessagesByActor(subject.ID, req.SessionUlid, req.RootUlid, req.AfterUlid, limit+1)
+	if err != nil {
+		if err == application.ErrSessionNotFound {
+			return nil, server.NotFound(err.Error())
+		}
+		if err == application.ErrNotParticipant {
+			return nil, server.Forbidden(err.Error())
+		}
+		return nil, server.InternalErrorWithCause("failed to list thread messages", err)
+	}
+	if len(items) == 0 {
+		return nil, server.NotFound("thread root not found")
+	}
+	hasMore := len(items) > limit+1
+	if hasMore {
+		items = items[:limit+1]
+	}
+	nextCursor := ""
+	if hasMore && len(items) > 1 {
+		nextCursor = items[len(items)-1].ID
+	}
+	messages := make([]friendThreadMessageJSON, 0, len(items))
+	for _, item := range items {
+		messages = append(messages, friendThreadMessageToJSON(item))
+	}
+	root := messages[0]
+	return &listFriendThreadMessagesResponse{
+		Root:       &root,
+		Messages:   messages,
+		HasMore:    hasMore,
+		NextCursor: nextCursor,
+	}, nil
+}
+
+func (s *subServer) handleThreadCounts(ctx context.Context, req *friendThreadCountsRequest) (*friendThreadCountsResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.SessionUlid == "" {
+		return nil, server.BadRequest("session_ulid is required")
+	}
+	if len(req.RootUlids) == 0 {
+		return &friendThreadCountsResponse{Counts: []threadCountJSON{}}, nil
+	}
+	items, err := s.service.ThreadCountsByActor(subject.ID, req.SessionUlid, req.RootUlids)
+	if err != nil {
+		if err == application.ErrSessionNotFound {
+			return nil, server.NotFound(err.Error())
+		}
+		if err == application.ErrNotParticipant {
+			return nil, server.Forbidden(err.Error())
+		}
+		return nil, server.InternalErrorWithCause("failed to load thread counts", err)
+	}
+	out := make([]threadCountJSON, 0, len(items))
+	for _, item := range items {
+		out = append(out, threadCountToJSON(item))
+	}
+
+	return &friendThreadCountsResponse{Counts: out}, nil
+}
+
+func (s *subServer) handleThreadRead(ctx context.Context, req *friendThreadReadRequest) (*friendThreadReadResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.SessionUlid == "" || req.RootUlid == "" {
+		return nil, server.BadRequest("session_ulid and root_ulid are required")
+	}
+	if err := s.service.MarkThreadReadByActor(subject.ID, req.SessionUlid, req.RootUlid, req.LastReadUlid); err != nil {
+		if err == application.ErrSessionNotFound || err == application.ErrMessageNotFound {
+			return nil, server.NotFound(err.Error())
+		}
+		if err == application.ErrNotParticipant {
+			return nil, server.Forbidden(err.Error())
+		}
+		return nil, server.InternalErrorWithCause("failed to mark thread read", err)
+	}
+
+	return &friendThreadReadResponse{Success: true}, nil
 }
 
 func (s *subServer) handleSearchMessages(ctx context.Context, req *chat.SearchFriendMessagesRequest) (*chat.SearchFriendMessagesResponse, error) {
@@ -610,11 +786,15 @@ func (s *subServer) handleSyncMessages(ctx context.Context, req *chat.SyncMessag
 			continue
 		}
 		in := domain.Message{
-			ID:          item.Ulid,
-			SessionID:   item.SessionUlid,
-			ReceiverDID: item.ReceiverDid,
-			Type:        msgType,
-			Content:     item.Content,
+			ID:               item.Ulid,
+			SessionID:        item.SessionUlid,
+			ReceiverDID:      item.ReceiverDid,
+			Type:             msgType,
+			Content:          item.Content,
+			ReplyToID:        item.GetReplyToUlid(),
+			ThreadRootID:     item.GetThreadRootUlid(),
+			Attachments:      friendAttachmentsFromProto(item.Attachments),
+			EncryptedPayload: append([]byte(nil), item.GetEncryptedPayload()...),
 		}
 		resultSynced, resultFailed := s.service.SyncMessagesByActor(subject.ID, []domain.Message{in})
 		synced += resultSynced
@@ -846,6 +1026,23 @@ func (s *subServer) handleListFriendRequests(ctx context.Context, req *chat.List
 	return &chat.ListFriendRequestsResponse{Requests: out, Total: int32(total)}, nil
 }
 
+func (s *subServer) handleDeleteFriend(ctx context.Context, req *chat.DeleteFriendRequest) (*chat.DeleteFriendResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if strings.TrimSpace(req.GetPeerDid()) == "" {
+		return nil, server.BadRequest("peer_did is required")
+	}
+	if err := s.service.DeleteFriend(subject.ID, req.GetPeerDid()); err != nil {
+		if err == application.ErrFriendNotFound {
+			return nil, server.NotFound("friend relationship not found")
+		}
+		return nil, server.InternalErrorWithCause("failed to delete friend", err)
+	}
+	return &chat.DeleteFriendResponse{Success: true}, nil
+}
+
 func collectUniqueActorIDs(items []domain.FriendRequest) []string {
 	seen := make(map[string]struct{})
 	for _, item := range items {
@@ -874,6 +1071,7 @@ func friendChatMessageFromDomain(m domain.Message) *chat.FriendChatMessage {
 		EncryptedPayload: append([]byte(nil), m.EncryptedPayload...),
 		Attachments:      friendAttachmentsToProto(m.Attachments),
 		ReplyToUlid:      m.ReplyToID,
+		ThreadRootUlid:   m.ThreadRootID,
 		Status:           chat.FriendMessageStatus(m.Status),
 		Recalled:         m.Recalled,
 		SentAt:           timestamppb.New(m.SentAt),
@@ -884,6 +1082,79 @@ func friendChatMessageFromDomain(m domain.Message) *chat.FriendChatMessage {
 		out.EditedAt = timestamppb.New(m.EditedAt)
 	}
 	return out
+}
+
+func threadCountToJSON(item domain.ThreadCount) threadCountJSON {
+	latestAt := int64(0)
+	if !item.LatestReplyAt.IsZero() {
+		latestAt = item.LatestReplyAt.UnixMilli()
+	}
+
+	return threadCountJSON{
+		RootUlid:        item.RootULID,
+		ReplyCount:      item.ReplyCount,
+		LatestReplyUlid: item.LatestReplyULID,
+		LatestReplyAt:   latestAt,
+		UnreadCount:     item.UnreadCount,
+	}
+}
+
+func friendThreadMessageToJSON(m domain.Message) friendThreadMessageJSON {
+	attachments := make([]threadAttachmentJSON, 0, len(m.Attachments))
+	for _, a := range m.Attachments {
+		attachments = append(attachments, threadAttachmentJSON{
+			CID:          a.CID,
+			Filename:     a.Filename,
+			MimeType:     a.MimeType,
+			Size:         a.Size,
+			ThumbnailCID: a.ThumbnailCID,
+			Visibility:   a.Visibility,
+		})
+	}
+	editedAt := int64(0)
+	if !m.EditedAt.IsZero() {
+		editedAt = m.EditedAt.UnixMilli()
+	}
+	encryptedPayload := ""
+	if len(m.EncryptedPayload) > 0 {
+		encryptedPayload = base64.StdEncoding.EncodeToString(m.EncryptedPayload)
+	}
+	sentAt := int64(0)
+	if !m.SentAt.IsZero() {
+		sentAt = m.SentAt.UnixMilli()
+	}
+	createdAt := int64(0)
+	if !m.CreatedAt.IsZero() {
+		createdAt = m.CreatedAt.UnixMilli()
+	}
+	updatedAt := int64(0)
+	if !m.UpdatedAt.IsZero() {
+		updatedAt = m.UpdatedAt.UnixMilli()
+	}
+	return friendThreadMessageJSON{
+		Ulid:             m.ID,
+		SessionUlid:      m.SessionID,
+		SessionULID:      m.SessionID,
+		SenderDid:        m.SenderDID,
+		SenderDID:        m.SenderDID,
+		ReceiverDid:      m.ReceiverDID,
+		ReceiverDID:      m.ReceiverDID,
+		Type:             m.Type,
+		Content:          m.Content,
+		Attachments:      attachments,
+		ReplyToUlid:      m.ReplyToID,
+		ReplyToULID:      m.ReplyToID,
+		ThreadRootUlid:   m.ThreadRootID,
+		ThreadRootULID:   m.ThreadRootID,
+		Status:           m.Status,
+		SentAt:           sentAt,
+		SentAtUnixMs:     sentAt,
+		CreatedAt:        createdAt,
+		UpdatedAt:        updatedAt,
+		EncryptedPayload: encryptedPayload,
+		Recalled:         m.Recalled,
+		EditedAt:         editedAt,
+	}
 }
 
 func friendAttachmentsFromProto(in []*chat.FriendMessageAttachment) []domain.Attachment {

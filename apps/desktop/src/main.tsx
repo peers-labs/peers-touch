@@ -83,6 +83,10 @@ async function bootstrap() {
   const path = window.location.pathname;
   const shareMatch = path.match(/^\/share\/s\/([A-Za-z0-9]+)$/);
 
+  window.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+  });
+
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <ErrorBoundary>

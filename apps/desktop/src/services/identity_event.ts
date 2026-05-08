@@ -1,5 +1,5 @@
 /**
- * Cross-window identity bridge: forward the Rust-side `auth.identity_changed`
+ * Cross-window identity bridge: forward the Rust-side `auth:identity_changed`
  * Tauri event to the in-process event bus and run the identity pipeline so
  * every window drops actor-scoped Zustand/cache state without a full reload.
  */
@@ -38,7 +38,7 @@ function presenceTriggerFor(reason: IdentityChangeReason): PresenceTrigger {
 /** sessionStorage key: set to `"1"` while this window initiates an identity mutation (see `markLocalIdentityAction`). */
 export const LOCAL_IDENTITY_FLAG = 'pt.identity.local_pipeline';
 
-const TAURI_EVENT_NAME = 'auth.identity_changed';
+const TAURI_EVENT_NAME = 'auth:identity_changed';
 
 /** Rust serializes `IdentityChangeReason` with snake_case names. */
 interface TauriIdentityPayload {
@@ -71,7 +71,7 @@ function toPipelinePayload(raw: TauriIdentityPayload | undefined): IdentityChang
 }
 
 /** Mark this window as the originator of an identity-mutating command so the
- *  resulting `auth.identity_changed` broadcast does not run the pipeline twice. */
+ *  resulting `auth:identity_changed` broadcast does not run the pipeline twice. */
 export function markLocalIdentityAction(): void {
   try {
     sessionStorage.setItem(LOCAL_IDENTITY_FLAG, '1');
@@ -93,7 +93,7 @@ export function installIdentityChangedBridge(): void {
   installed = true;
   listen<TauriIdentityPayload>(TAURI_EVENT_NAME, (event) => {
     const raw = event.payload;
-    log.info('identity', 'received auth.identity_changed', { reason: raw?.reason });
+    log.info('identity', 'received auth:identity_changed', { reason: raw?.reason });
 
     const payload = toPipelinePayload(raw);
     eventBus.publish(EVENT.AUTH_IDENTITY_CHANGED, undefined);
@@ -138,7 +138,7 @@ export function installIdentityChangedBridge(): void {
       }
     })();
   }).catch((error) => {
-    log.warn('identity', 'failed to install auth.identity_changed listener', { error: String(error) });
+    log.warn('identity', 'failed to install auth:identity_changed listener', { error: String(error) });
   });
 }
 

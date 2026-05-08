@@ -6,10 +6,7 @@ import { ResumingView } from './views/ResumingView';
 import { ReadyView } from './views/ReadyView';
 import { onSessionRevoked } from './services/desktop_api';
 import './services/identityHandlers';
-import { installIdentityChangedBridge } from './services/identity_event';
-import { installPresenceBridge, teardownPresenceBridge } from './services/presence';
-import { installPeerPresenceBridge, teardownPeerPresenceBridge } from './services/peerPresence';
-import { installEventStreamBridge, teardownEventStreamBridge } from './services/eventStream';
+import { installAppRuntime, teardownAppRuntime } from './services/appRuntime';
 import { usePresence } from './hooks/usePresence';
 import { useSessionStore } from './store/session';
 import type { AppState, AppLifecycle } from './types/navigation';
@@ -28,39 +25,14 @@ function App() {
   const lifecycle = useAppLifecycle();
   const View = APP_VIEWS[lifecycle.state];
 
-  // Install the cross-window identity bridge once at app boot.
+  // Install app-level bridge listeners once at app boot. Supervisor
+  // lifetimes still follow usePresence's authenticated actor edges.
   useEffect(() => {
-    installIdentityChangedBridge();
+    installAppRuntime();
+    return () => teardownAppRuntime();
   }, []);
 
-  // Presence supervisor: install the Tauri-side `presence.transition`
-  // listener and start emitting browser-lifecycle triggers.
-  useEffect(() => {
-    void installPresenceBridge();
-    return () => teardownPresenceBridge();
-  }, []);
   usePresence();
-
-  // Peer-presence bridge: relays Station's friend-chat presence SSE
-  // (proxied by the Rust supervisor) into the social chat store. The
-  // listener itself is just a thin router; the supervisor lifetime is
-  // managed in `SocialChatPage` so it only runs when the user is on
-  // the chat surface.
-  useEffect(() => {
-    void installPeerPresenceBridge();
-    return () => teardownPeerPresenceBridge();
-  }, []);
-
-  // Realtime event-stream bridge: decodes the unified SSE plane
-  // (messages, presence, resync, …) into typed eventBus dispatches.
-  // The Rust supervisor lifetime is owned by `usePresence` (started
-  // on the same edge as `app_launch`); here we only install the
-  // decode listener, so the bridge itself is a singleton for the
-  // life of the renderer.
-  useEffect(() => {
-    void installEventStreamBridge();
-    return () => teardownEventStreamBridge();
-  }, []);
 
   // Reset guard when user successfully returns to ready state,
   // so a future revocation can show the notification again.

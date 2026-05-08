@@ -54,9 +54,17 @@ export function useAppLifecycle(): AppLifecycle {
   useEffect(() => {
     const off = onSessionRevoked(() => {
       clearWarmResume();
-      globalContext.runPipeline('session_logout').catch(() => {});
-      setRestoredUser(null);
-      setState('onboarding');
+      void (async () => {
+        try {
+          const active = await api.accountGetActive();
+          if (active?.id) await api.accountClearSession(active.id);
+        } catch {
+          // Keep revocation handling moving even if the local account file is unavailable.
+        }
+        globalContext.runPipeline('session_logout').catch(() => {});
+        setRestoredUser(null);
+        setState('onboarding');
+      })();
     });
     const unsub = useSessionStore.subscribe((s) => {
       if (!s.authenticated) {

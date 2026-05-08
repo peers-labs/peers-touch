@@ -22,9 +22,14 @@ pub mod peers_touch {
     }
 }
 
+use interface::tauri_commands::{
+    account, actor, admin, agent_growth, agent_scheduler, agents, applets, auth, channels, chat,
+    cron, crypto, friend_chat, frontend_log, group_chat, i18n, ice, key_exchange, mcp, memory,
+    model_config, models, notebook, notification, oauth2, oss, presence, profile, provider,
+    realtime, search, settings, skills, skills_market, social, system, tools, tts,
+};
 use std::sync::Arc;
 use tauri::Manager;
-use interface::tauri_commands::{account, actor, admin, agent_growth, agent_scheduler, agents, applets, auth, channels, chat, cron, crypto, friend_chat, frontend_log, group_chat, ice, i18n, key_exchange, mcp, memory, model_config, models, notebook, notification, oauth2, oss, presence, profile, provider, realtime, search, settings, skills, skills_market, social, system, tools, tts};
 
 fn main() {
     let ctx = bootstrap::run();
@@ -51,10 +56,10 @@ fn main() {
                 tracing::error!(error = %e, "Failed to deploy built-in i18n packs");
             }
 
-            // Allow the asset:// protocol to read locally cached avatar files.
+            // Allow the asset:// protocol to read locally cached media files.
             // Tauri 2 disables asset:// by default; the static scope in
-            // capabilities/default.json grants the permission, this call
-            // restricts the readable filesystem area to just the avatar cache.
+            // capabilities/default.json grants the permission, these calls
+            // restrict the readable filesystem area to app-owned caches.
             match infrastructure::avatar_cache::avatars_dir() {
                 Ok(dir) => {
                     if let Err(e) = std::fs::create_dir_all(&dir) {
@@ -67,6 +72,20 @@ fn main() {
                 }
                 Err(e) => {
                     tracing::error!(error = %e, "Failed to resolve avatar cache dir at startup");
+                }
+            }
+            match infrastructure::oss_cache::attachments_dir() {
+                Ok(dir) => {
+                    if let Err(e) = std::fs::create_dir_all(&dir) {
+                        tracing::warn!(error = %e, dir = %dir.display(), "Failed to pre-create attachment cache dir");
+                    }
+                    let scope = app.asset_protocol_scope();
+                    if let Err(e) = scope.allow_directory(&dir, true) {
+                        tracing::error!(error = %e, dir = %dir.display(), "Failed to allow attachment cache dir on asset scope");
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to resolve attachment cache dir at startup");
                 }
             }
             if let Err(e) = infrastructure::session_store::migrate_legacy() {
@@ -310,6 +329,9 @@ fn main() {
             friend_chat::friend_chat_list_sessions,
             friend_chat::friend_chat_create_session,
             friend_chat::friend_chat_list_messages,
+            friend_chat::friend_chat_list_thread_messages,
+            friend_chat::friend_chat_thread_counts,
+            friend_chat::friend_chat_thread_mark_read,
             friend_chat::friend_chat_send_message,
             friend_chat::friend_chat_ack_messages,
             friend_chat::friend_chat_recall_message,
@@ -349,8 +371,12 @@ fn main() {
             friend_chat::friend_chat_accept_friend_request,
             friend_chat::friend_chat_reject_friend_request,
             friend_chat::friend_chat_list_friend_requests,
+            friend_chat::friend_chat_delete_friend,
             group_chat::group_chat_list_groups,
             group_chat::group_chat_list_messages,
+            group_chat::group_chat_list_thread_messages,
+            group_chat::group_chat_thread_counts,
+            group_chat::group_chat_thread_mark_read,
             group_chat::group_chat_send_message,
             group_chat::group_chat_unread_count,
             group_chat::group_chat_mark_read,

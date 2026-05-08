@@ -7,8 +7,8 @@
 //! switch / app shutdown.
 //!
 //! While the supervisor is running, the frontend receives:
-//!   * `realtime.event` — every business / heartbeat / resync frame
-//!   * `realtime.connection-state` — connection lifecycle hints
+//!   * `realtime:event` — every business / heartbeat / resync frame
+//!   * `realtime:connection-state` — connection lifecycle hints
 //!
 //! The supervisor is internally idempotent (re-calling start with
 //! the same actor cancels and replaces the existing supervisor), so
@@ -203,14 +203,14 @@ pub fn realtime_typing_send(
         "session_ulid":       input.session_ulid,
         "typing":             input.typing,
     });
-    let resp = match station_client::request_json(
+    let resp = match station_client::request_json_auth(
         Method::POST,
         "/realtime/typing",
         &token,
         None,
-        Some(body),
+        Some(&body),
     ) {
-        Ok(v) => v,
+        Ok(_) => json!({ "accepted": true }),
         Err(reason) => {
             // Typing failures are not user-visible — silently surface
             // them via tracing and a structured error so a debug
