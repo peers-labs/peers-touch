@@ -74,7 +74,7 @@ func newHandlerFixture(t *testing.T) *handlerFixture {
 	repos := infrastructure.NewRepos(gdb, resolver.ResolveID)
 
 	reactionSvc := application.NewReactionService(gdb, repos)
-	momentSvc := application.NewMomentService(gdb, repos, resolver, groups, reactionSvc)
+	momentSvc := application.NewMomentService(gdb, repos, resolver, groups, application.NewNoopMediaResolver(), reactionSvc)
 	commentSvc := application.NewCommentService(repos, momentSvc)
 	circleSvc := application.NewCircleService(repos)
 	timelineSvc := application.NewTimelineService(repos, momentSvc, resolver, groups)
