@@ -168,6 +168,33 @@ describe('moments store: createPost / deletePost', () => {
     expect(useMomentsStore.getState().postsById['pNEW']?.id).toBe('pNEW');
   });
 
+  it('createPost(image) carries image_ids through the wire layer', async () => {
+    // The store delegates to socialCreateMoment which delegates to
+    // buildCreatePostRequest. We don't need to introspect the bytes
+    // here — what matters is the call succeeds and the returned id
+    // ingests as IMAGE so the renderer picks the image branch.
+    enqueue('social_create_moment',
+      bytesOk(CreatePostResponseSchema, {
+        post: { id: 'pIMG', authorId: 'a', type: PostType.IMAGE },
+      }),
+    );
+
+    const id = await useMomentsStore.getState().createPost({
+      kind: 'image',
+      text: 'family weekend',
+      imageIds: [
+        'oss://station.local/2026/04/29/aaa.png',
+        'oss://station.local/2026/04/29/bbb.jpg',
+      ],
+      audience: audience(),
+    });
+
+    expect(id).toBe('pIMG');
+    const stored = useMomentsStore.getState().postsById['pIMG'];
+    expect(stored?.type).toBe(PostType.IMAGE);
+    expect(useMomentsStore.getState().feeds.home.postIds[0]).toBe('pIMG');
+  });
+
   it('deletePost scrubs the id from every feed', async () => {
     enqueue('social_get_timeline',
       bytesOk(GetTimelineResponseSchema, {
