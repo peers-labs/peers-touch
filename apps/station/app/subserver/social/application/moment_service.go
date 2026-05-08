@@ -33,12 +33,19 @@ import (
 // happens here too — converters return Posts with empty `Author /
 // Reactions / Interaction` and the application service fills those
 // in via batch lookups so the converter stays storage-agnostic.
+// maxImagesPerPost caps the number of image CIDs a single Moment can
+// carry. Mirrors the desktop composer's 3x3 grid limit (D4 in
+// `.dev-workflow/20260429-094000/plan.md`). Enforced server-side so a
+// hand-rolled client cannot bypass the UI cap.
+const maxImagesPerPost = 9
+
 type MomentService struct {
 	db        *gorm.DB
 	repos     *infrastructure.Repos
 	conv      *domain.PostConverter
 	resolver  domain.ActorResolver
 	groups    domain.GroupMembershipChecker
+	media     domain.MediaResolver
 	reactions *ReactionService
 }
 
@@ -53,14 +60,22 @@ func NewMomentService(
 	repos *infrastructure.Repos,
 	resolver domain.ActorResolver,
 	groups domain.GroupMembershipChecker,
+	media domain.MediaResolver,
 	reactions *ReactionService,
 ) *MomentService {
+	if media == nil {
+		// Defensive: callers should always supply a resolver, but
+		// preserve the P1 behavior (accept everything) rather than
+		// panic if the wiring forgets to plumb it through.
+		media = NewNoopMediaResolver()
+	}
 	return &MomentService{
 		db:        gdb,
 		repos:     repos,
 		conv:      domain.NewPostConverter(),
 		resolver:  resolver,
 		groups:    groups,
+		media:     media,
 		reactions: reactions,
 	}
 }
@@ -118,6 +133,10 @@ func (s *MomentService) CreateMoment(ctx context.Context, req *model.CreatePostR
 		return nil, err
 	}
 
+	if err := s.validateAttachmentCIDs(ctx, req); err != nil {
+		return nil, err
+	}
+
 	// Repost gate: the caller must be able to READ the original post
 	// before they're allowed to wrap it in a public REPOST envelope.
 	// Without this check, anyone holding a private post id could turn
@@ -164,6 +183,51 @@ func (s *MomentService) CreateMoment(ctx context.Context, req *model.CreatePostR
 		"audience_kind", req.Audience.Kind.String(),
 		"is_public", domainPost.IsPublic())
 	return out, nil
+}
+
+// validateAttachmentCIDs runs the per-content-type cap + MediaResolver
+// gate before we start converting to domain.Post. The gate exists so
+// the timeline never references foreign-origin or fabricated keys —
+// see `domain.MediaResolver` for the full threat model.
+//
+// Counts only — actual byte-level validation (dimensions, EXIF, etc.)
+// happens at upload time inside the OSS subserver. The social
+// subserver trusts that anything in `oss_files` is well-formed.
+func (s *MomentService) validateAttachmentCIDs(ctx context.Context, req *model.CreatePostRequest) error {
+	switch req.Type {
+	case model.PostType_IMAGE:
+		img := req.GetImage()
+		if img == nil {
+			return fmt.Errorf("IMAGE post requires CreateImagePostRequest content")
+		}
+		if n := len(img.ImageIds); n == 0 {
+			return fmt.Errorf("IMAGE post requires at least one image_id")
+		} else if n > maxImagesPerPost {
+			return fmt.Errorf("IMAGE post supports at most %d images, got %d", maxImagesPerPost, n)
+		}
+		return s.media.ValidateCIDs(ctx, img.ImageIds)
+
+	case model.PostType_VIDEO:
+		// Video is deferred to a later iteration (see plan D3) but the
+		// gate is wired now so a stray client request can't smuggle
+		// arbitrary CIDs in via the video path.
+		vid := req.GetVideo()
+		if vid == nil || vid.VideoId == "" {
+			return nil
+		}
+		return s.media.ValidateCIDs(ctx, []string{vid.VideoId})
+
+	case model.PostType_LOCATION:
+		loc := req.GetLocation()
+		if loc == nil || len(loc.ImageIds) == 0 {
+			return nil
+		}
+		if n := len(loc.ImageIds); n > maxImagesPerPost {
+			return fmt.Errorf("LOCATION post supports at most %d images, got %d", maxImagesPerPost, n)
+		}
+		return s.media.ValidateCIDs(ctx, loc.ImageIds)
+	}
+	return nil
 }
 
 // assertAudienceTargetReachable enforces the cross-subserver pre-flight

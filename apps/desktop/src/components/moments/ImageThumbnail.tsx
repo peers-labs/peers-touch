@@ -1,53 +1,54 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Image, theme } from 'antd';
 import { ImageIcon } from 'lucide-react';
+import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 
 // ImageThumbnail — displays a Moments image attachment.
 //
-// What's special:
-//   - The CID convention is `oss://origin/key`. In P2 we don't have
-//     OSS upload wired into the composer (deferred), but the
-//     backend Mirror'd the CID into `ImageAttachment.url` during
-//     P1 closure so reposts / pre-existing images can still render.
-//   - The desktop already has an OSS resolver (`resolveOssCid`) that
-//     turns `oss://...` into either a local file URL (when cached)
-//     or a fetch URL. We call it lazily so the thumbnail doesn't
-//     block the feed render.
+// Resolution strategy (P3, 2026-04-29):
+//   1. http(s) URLs render directly so reposts / external link
+//      previews keep working without a Tauri round-trip.
+//   2. `oss://origin/key` (and bare keys) go through
+//      `useOssAttachmentUrl` which calls oss_resolve_url and prefers
+//      the local-cached file:// path when available.
+//   3. Anything that fails resolution falls back to the placeholder
+//      icon so the feed never shows a broken-image glyph.
+//
+// Lightbox behaviour is owned by AntD's Image component; pass
+// `preview={false}` from the parent grid when rendering inside a
+// custom lightbox container.
 
 interface ImageThumbnailProps {
   cid: string;
   /** Optional fallback alt text for accessibility. */
   alt?: string;
+  /** Disable AntD's built-in preview (parent owns lightbox). */
+  disablePreview?: boolean;
+  /** Optional click handler — used by ImageGrid to open lightbox. */
+  onClick?: () => void;
+  /** Optional aspect ratio override (default 1/1). */
+  aspectRatio?: string;
 }
 
-export function ImageThumbnail({ cid, alt }: ImageThumbnailProps) {
+export function ImageThumbnail({
+  cid,
+  alt,
+  disablePreview = false,
+  onClick,
+  aspectRatio = '1 / 1',
+}: ImageThumbnailProps) {
   const { token } = theme.useToken();
-  const [src, setSrc] = useState<string | undefined>(undefined);
   const [err, setErr] = useState<boolean>(false);
 
-  useEffect(() => {
-    if (!cid) {
-      setSrc(undefined);
-      return;
-    }
-    // For P2 we render the CID directly; if it's already a fetchable
-    // http(s) URL the <Image> tag will load it. The OSS resolver
-    // hookup lands when the upload path lands — at that point we
-    // swap this for an `await resolveOssCid(cid)` call.
-    if (cid.startsWith('http://') || cid.startsWith('https://')) {
-      setSrc(cid);
-      return;
-    }
-    // `oss://` and other custom-scheme CIDs render as a placeholder
-    // until the OSS resolver hookup lands.
-    setSrc(undefined);
-  }, [cid]);
+  const isHttp = cid.startsWith('http://') || cid.startsWith('https://');
+  const resolved = useOssAttachmentUrl(isHttp ? null : cid);
+  const src = isHttp ? cid : resolved;
 
   if (!src || err) {
     return (
       <div
         style={{
-          aspectRatio: '1 / 1',
+          aspectRatio,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -61,13 +62,35 @@ export function ImageThumbnail({ cid, alt }: ImageThumbnailProps) {
     );
   }
 
+  if (onClick || disablePreview) {
+    // Custom click target / no built-in preview — render a plain
+    // <img> so the parent (e.g. lightbox grid) owns the interaction.
+    return (
+      <img
+        src={src}
+        alt={alt || cid}
+        onClick={onClick}
+        onError={() => setErr(true)}
+        style={{
+          objectFit: 'cover',
+          aspectRatio,
+          width: '100%',
+          height: '100%',
+          borderRadius: 6,
+          cursor: onClick ? 'pointer' : 'default',
+          display: 'block',
+        }}
+      />
+    );
+  }
+
   return (
     <Image
       src={src}
       alt={alt || cid}
       style={{
         objectFit: 'cover',
-        aspectRatio: '1 / 1',
+        aspectRatio,
         width: '100%',
         borderRadius: 6,
       }}
