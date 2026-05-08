@@ -1,5 +1,5 @@
 /**
- * Presence bridge — listens to the Rust `presence.transition` Tauri event
+ * Presence bridge — listens to the Rust `presence:transition` Tauri event
  * and refreshes the relevant frontend stores.
  *
  * # Why a bridge module
@@ -22,7 +22,7 @@ import { useSocialChatStore } from '../store/socialChat';
 import type { PresenceTransitionEvent } from './desktop_api';
 import { log } from '../utils/logger';
 
-const PRESENCE_TRANSITION_EVENT = 'presence.transition';
+const PRESENCE_TRANSITION_EVENT = 'presence:transition';
 
 let unlisten: UnlistenFn | null = null;
 

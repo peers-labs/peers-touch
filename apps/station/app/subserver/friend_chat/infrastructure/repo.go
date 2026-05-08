@@ -7,9 +7,36 @@ import (
 	"strings"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/domain"
 	"gorm.io/gorm"
 )
+
+// ErrMessageNotFound is returned by mutation methods when no row
+// matches the (sessionULID, messageULID) tuple. The handler maps it
+// to HTTP 404.
+var ErrMessageNotFound = errors.New("friend message not found")
+
+// ErrPermissionDenied is returned by mutation methods when the row
+// exists but the caller is not its sender. The handler maps it to
+// HTTP 404 (we deliberately collapse perm-denied + not-found at the
+// HTTP boundary so a non-owner cannot enumerate other actors' ulids;
+// see the handler for the exact mapping).
+var ErrPermissionDenied = errors.New("not message owner")
+
+// ErrMutationWindowClosed is returned when the mutation arrives
+// after the operator-tunable recall / edit window has elapsed. The
+// handler maps it to HTTP 422 (Unprocessable Entity) so the client
+// can show "this message is too old to recall".
+var ErrMutationWindowClosed = errors.New("mutation window closed")
+
+// ErrAlreadyRecalled is returned by edit when the target row has
+// already been recalled (an edit on a tombstone makes no sense).
+var ErrAlreadyRecalled = errors.New("message already recalled")
+
+// ErrFriendRelationNotFound is returned when a relationship-level delete
+// targets a pair that is not currently accepted friends.
+var ErrFriendRelationNotFound = errors.New("friend relationship not found")
 
 type SessionModel struct {
 	ID              uint      `gorm:"column:id;primaryKey"`
@@ -28,25 +55,40 @@ type SessionModel struct {
 func (*SessionModel) TableName() string { return "friend_chat_sessions" }
 
 type MessageModel struct {
-	ID          uint      `gorm:"column:id;primaryKey"`
-	ULID        string    `gorm:"column:ulid;size:64;uniqueIndex"`
-	SessionULID string    `gorm:"column:session_ulid;size:64;index"`
-	SenderDID   string    `gorm:"column:sender_did;size:255;index"`
-	ReceiverDID string    `gorm:"column:receiver_did;size:255;index"`
-	Type        int32     `gorm:"column:type"`
-	Content     string    `gorm:"column:content;type:text"`
+	ID          uint   `gorm:"column:id;primaryKey"`
+	ULID        string `gorm:"column:ulid;size:64;uniqueIndex"`
+	SessionULID string `gorm:"column:session_ulid;size:64;index"`
+	SenderDID   string `gorm:"column:sender_did;size:255;index"`
+	ReceiverDID string `gorm:"column:receiver_did;size:255;index"`
+	Type        int32  `gorm:"column:type"`
+	Content     string `gorm:"column:content;type:text"`
 	// EncryptedPayload is optional E2E ciphertext (PostgreSQL bytea).
-	EncryptedPayload []byte    `gorm:"column:encrypted_payload;type:bytea"`
-	ReplyToULID      string    `gorm:"column:reply_to_ulid;size:64"`
-	Status           int32     `gorm:"column:status"`
-	SentAt           time.Time `gorm:"column:sent_at;index"`
-	CreatedAt        time.Time `gorm:"column:created_at"`
-	UpdatedAt        time.Time `gorm:"column:updated_at"`
+	EncryptedPayload []byte `gorm:"column:encrypted_payload;type:bytea"`
+	ReplyToULID      string `gorm:"column:reply_to_ulid;size:64"`
+	ThreadRootULID   string `gorm:"column:thread_root_ulid;size:64;index;default:''"`
+	Status           int32  `gorm:"column:status"`
+	// Recalled is set by recall — content + encrypted_payload are
+	// cleared at the same time. Once true it never flips back.
+	Recalled bool `gorm:"column:recalled"`
+	// EditedAt is non-null when the row has been mutated via edit.
+	// We use a pointer here so GORM can leave the column NULL on
+	// fresh inserts; readers translate nil → zero-value time.Time
+	// in toDomainMessage.
+	EditedAt  *time.Time `gorm:"column:edited_at"`
+	SentAt    time.Time  `gorm:"column:sent_at;index"`
+	CreatedAt time.Time  `gorm:"column:created_at"`
+	UpdatedAt time.Time  `gorm:"column:updated_at"`
 }
 
 func (*MessageModel) TableName() string { return "friend_chat_messages" }
 
 // MessageAttachmentModel stores per-message attachment metadata (blobs addressed by CID).
+//
+// Visibility mirrors the OSS subserver's `oss_files.visibility`
+// (the values are kept in lock-step on purpose). It is recorded
+// here at write time so the receiver does not have to call back
+// to the OSS subserver just to render a tiny chip on the bubble.
+// Empty string is the legacy / "not declared" sentinel.
 type MessageAttachmentModel struct {
 	ID           uint   `gorm:"column:id;primaryKey"`
 	MessageULID  string `gorm:"column:message_ulid;size:64;index"`
@@ -55,10 +97,26 @@ type MessageAttachmentModel struct {
 	MimeType     string `gorm:"column:mime_type;size:128"`
 	Size         int64  `gorm:"column:size"`
 	ThumbnailCID string `gorm:"column:thumbnail_cid;size:255"`
+	Visibility   string `gorm:"column:visibility;size:16"`
 }
 
 func (MessageAttachmentModel) TableName() string {
 	return "friend_chat_message_attachments"
+}
+
+type ThreadReadModel struct {
+	ID           uint      `gorm:"column:id;primaryKey"`
+	SessionULID  string    `gorm:"column:session_ulid;size:64;uniqueIndex:idx_fctr_actor_thread,priority:1;index"`
+	RootULID     string    `gorm:"column:root_ulid;size:64;uniqueIndex:idx_fctr_actor_thread,priority:2;index"`
+	ActorDID     string    `gorm:"column:actor_did;size:255;uniqueIndex:idx_fctr_actor_thread,priority:3;index"`
+	LastReadULID string    `gorm:"column:last_read_ulid;size:64"`
+	LastReadAt   time.Time `gorm:"column:last_read_at;index"`
+	CreatedAt    time.Time `gorm:"column:created_at"`
+	UpdatedAt    time.Time `gorm:"column:updated_at"`
+}
+
+func (ThreadReadModel) TableName() string {
+	return "friend_chat_thread_reads"
 }
 
 type FriendRequestModel struct {
@@ -97,7 +155,10 @@ func NewGormRepo(db *gorm.DB) *GormRepo {
 }
 
 func (r *GormRepo) AutoMigrate() error {
-	return r.db.AutoMigrate(&SessionModel{}, &MessageModel{}, &MessageAttachmentModel{}, &OutboxModel{}, &FriendRequestModel{})
+	if err := r.db.AutoMigrate(&SessionModel{}, &MessageModel{}, &MessageAttachmentModel{}, &ThreadReadModel{}, &OutboxModel{}, &FriendRequestModel{}); err != nil {
+		return err
+	}
+	return r.backfillThreadRootULIDs()
 }
 
 func pairKey(a, b string) string {
@@ -121,6 +182,10 @@ func toDomainSession(item SessionModel) domain.Session {
 }
 
 func toDomainMessage(item MessageModel) domain.Message {
+	var editedAt time.Time
+	if item.EditedAt != nil {
+		editedAt = *item.EditedAt
+	}
 	return domain.Message{
 		ID:               item.ULID,
 		SessionID:        item.SessionULID,
@@ -130,7 +195,10 @@ func toDomainMessage(item MessageModel) domain.Message {
 		Content:          item.Content,
 		EncryptedPayload: append([]byte(nil), item.EncryptedPayload...),
 		ReplyToID:        item.ReplyToULID,
+		ThreadRootID:     item.ThreadRootULID,
 		Status:           item.Status,
+		Recalled:         item.Recalled,
+		EditedAt:         editedAt,
 		SentAt:           item.SentAt,
 		CreatedAt:        item.CreatedAt,
 		UpdatedAt:        item.UpdatedAt,
@@ -144,7 +212,92 @@ func attachmentRowToDomain(m MessageAttachmentModel) domain.Attachment {
 		MimeType:     m.MimeType,
 		Size:         m.Size,
 		ThumbnailCID: m.ThumbnailCID,
+		Visibility:   m.Visibility,
 	}
+}
+
+func (r *GormRepo) resolveThreadRootULID(db *gorm.DB, sessionID, replyToULID, explicitRootULID string) (string, error) {
+	if explicitRootULID != "" {
+		return explicitRootULID, nil
+	}
+	if replyToULID == "" {
+		return "", nil
+	}
+	var parent MessageModel
+	if err := db.Where("session_ulid = ? AND ulid = ?", sessionID, replyToULID).First(&parent).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return replyToULID, nil
+		}
+		return "", err
+	}
+	if parent.ThreadRootULID != "" {
+		return parent.ThreadRootULID, nil
+	}
+	return parent.ULID, nil
+}
+
+func (r *GormRepo) threadRepliesQuery(db *gorm.DB, sessionID, rootULID string) *gorm.DB {
+	return db.Where(
+		"session_ulid = ? AND (thread_root_ulid = ? OR (COALESCE(thread_root_ulid, '') = '' AND reply_to_ulid = ?))",
+		sessionID,
+		rootULID,
+		rootULID,
+	)
+}
+
+func (r *GormRepo) backfillThreadRootULIDs() error {
+	var rows []MessageModel
+	if err := r.db.
+		Where("reply_to_ulid <> ''").
+		Order("sent_at ASC, ulid ASC").
+		Find(&rows).Error; err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+
+	byULID := make(map[string]MessageModel, len(rows))
+	for _, row := range rows {
+		byULID[row.ULID] = row
+	}
+	resolving := make(map[string]bool, len(rows))
+	resolved := make(map[string]string, len(rows))
+	var resolve func(MessageModel) string
+	resolve = func(row MessageModel) string {
+		if row.ThreadRootULID != "" {
+			return row.ThreadRootULID
+		}
+		if cached, ok := resolved[row.ULID]; ok {
+			return cached
+		}
+		if row.ReplyToULID == "" || resolving[row.ULID] {
+			return ""
+		}
+		resolving[row.ULID] = true
+		root := row.ReplyToULID
+		if parent, ok := byULID[row.ReplyToULID]; ok {
+			if parentRoot := resolve(parent); parentRoot != "" {
+				root = parentRoot
+			}
+		}
+		resolving[row.ULID] = false
+		resolved[row.ULID] = root
+		return root
+	}
+
+	for _, row := range rows {
+		root := resolve(row)
+		if root == "" || root == row.ThreadRootULID {
+			continue
+		}
+		if err := r.db.Model(&MessageModel{}).
+			Where("id = ?", row.ID).
+			Update("thread_root_ulid", root).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // LoadAttachments returns stored attachments for one message (optional granular load; list APIs batch-load instead).
@@ -269,6 +422,10 @@ func (r *GormRepo) AppendMessage(message domain.Message) (domain.Message, error)
 			return domain.Message{}, err
 		}
 	}
+	threadRootULID, err := r.resolveThreadRootULID(r.db, message.SessionID, message.ReplyToID, message.ThreadRootID)
+	if err != nil {
+		return domain.Message{}, err
+	}
 	record := MessageModel{
 		ULID:             messageULID,
 		SessionULID:      message.SessionID,
@@ -278,10 +435,11 @@ func (r *GormRepo) AppendMessage(message domain.Message) (domain.Message, error)
 		Content:          message.Content,
 		EncryptedPayload: append([]byte(nil), message.EncryptedPayload...),
 		ReplyToULID:      message.ReplyToID,
+		ThreadRootULID:   threadRootULID,
 		Status:           message.Status,
 		SentAt:           now,
 	}
-	err := r.db.Transaction(func(tx *gorm.DB) error {
+	err = r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&record).Error; err != nil {
 			return err
 		}
@@ -293,6 +451,7 @@ func (r *GormRepo) AppendMessage(message domain.Message) (domain.Message, error)
 				MimeType:     a.MimeType,
 				Size:         a.Size,
 				ThumbnailCID: a.ThumbnailCID,
+				Visibility:   a.Visibility,
 			}
 			if err := tx.Create(&row).Error; err != nil {
 				return err
@@ -414,33 +573,252 @@ func (r *GormRepo) ListMessages(sessionID, beforeUlid string, limit int) ([]doma
 	return out, nil
 }
 
-func (r *GormRepo) MarkRead(actorDID string, messageIDs []string, status int32) error {
+func (r *GormRepo) ListThreadMessages(sessionID, rootUlid, afterUlid string, limit int) ([]domain.Message, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var root MessageModel
+	if err := r.db.Where("session_ulid = ? AND ulid = ?", sessionID, rootUlid).First(&root).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return []domain.Message{}, nil
+		}
+		return nil, err
+	}
+
+	var replies []MessageModel
+	query := r.threadRepliesQuery(r.db, sessionID, rootUlid)
+	if afterUlid != "" && afterUlid != rootUlid {
+		var cursor MessageModel
+		err := r.threadRepliesQuery(r.db, sessionID, rootUlid).
+			Where("ulid = ?", afterUlid).
+			First(&cursor).Error
+		if err == nil {
+			query = query.Where("(sent_at > ? OR (sent_at = ? AND ulid > ?))", cursor.SentAt, cursor.SentAt, cursor.ULID)
+		} else if errors.Is(err, gorm.ErrRecordNotFound) {
+			query = query.Where("1 = 0")
+		} else {
+			return nil, err
+		}
+	}
+	if err := query.
+		Order("sent_at ASC, ulid ASC").
+		Limit(limit).
+		Find(&replies).Error; err != nil {
+		return nil, err
+	}
+
+	out := make([]domain.Message, 0, 1+len(replies))
+	out = append(out, toDomainMessage(root))
+	for _, item := range replies {
+		out = append(out, toDomainMessage(item))
+	}
+	if err := r.mergeAttachmentsIntoMessages(out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *GormRepo) ThreadCounts(sessionID, actorDID string, rootULIDs []string) ([]domain.ThreadCount, error) {
+	out := make([]domain.ThreadCount, 0, len(rootULIDs))
+	if len(rootULIDs) == 0 {
+		return out, nil
+	}
+
+	readRows := make([]ThreadReadModel, 0, len(rootULIDs))
+	if err := r.db.
+		Where("session_ulid = ? AND actor_did = ? AND root_ulid IN ?", sessionID, actorDID, rootULIDs).
+		Find(&readRows).Error; err != nil {
+		return nil, err
+	}
+	readByRoot := make(map[string]ThreadReadModel, len(readRows))
+	for _, row := range readRows {
+		readByRoot[row.RootULID] = row
+	}
+
+	for _, rootULID := range rootULIDs {
+		item := domain.ThreadCount{RootULID: rootULID}
+		if err := r.threadRepliesQuery(r.db.Model(&MessageModel{}), sessionID, rootULID).
+			Count(&item.ReplyCount).Error; err != nil {
+			return nil, err
+		}
+
+		var latest MessageModel
+		if err := r.threadRepliesQuery(r.db, sessionID, rootULID).
+			Order("sent_at DESC, ulid DESC").
+			First(&latest).Error; err == nil {
+			item.LatestReplyULID = latest.ULID
+			item.LatestReplyAt = latest.SentAt
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+
+		readAt := time.Time{}
+		if read, ok := readByRoot[rootULID]; ok {
+			readAt = read.LastReadAt
+		}
+		if err := r.threadRepliesQuery(r.db.Model(&MessageModel{}), sessionID, rootULID).
+			Where("sent_at > ? AND sender_did <> ?", readAt, actorDID).
+			Count(&item.UnreadCount).Error; err != nil {
+			return nil, err
+		}
+
+		out = append(out, item)
+	}
+
+	return out, nil
+}
+
+func (r *GormRepo) MarkThreadRead(actorDID, sessionID, rootULID, lastReadULID string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&MessageModel{}).Where("ulid IN ?", messageIDs).Updates(map[string]interface{}{
-			"status":     status,
-			"updated_at": time.Now(),
-		}).Error; err != nil {
+		var root MessageModel
+		if err := tx.Where("session_ulid = ? AND ulid = ?", sessionID, rootULID).First(&root).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrMessageNotFound
+			}
 			return err
 		}
 
-		// Scope unread reset to only sessions that contain the acked messages
-		var sessionULIDs []string
+		cursorULID := root.ULID
+		cursorAt := root.SentAt
+		if lastReadULID != "" {
+			var provided MessageModel
+			err := tx.
+				Where("session_ulid = ? AND ulid = ? AND (ulid = ? OR thread_root_ulid = ? OR (COALESCE(thread_root_ulid, '') = '' AND reply_to_ulid = ?))", sessionID, lastReadULID, rootULID, rootULID, rootULID).
+				First(&provided).Error
+			if err == nil {
+				cursorULID = provided.ULID
+				cursorAt = provided.SentAt
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			} else if latestULID, latestAt, ok, latestErr := latestFriendThreadCursor(tx, sessionID, rootULID); latestErr != nil {
+				return latestErr
+			} else if ok {
+				cursorULID = latestULID
+				cursorAt = latestAt
+			}
+		} else if latestULID, latestAt, ok, err := latestFriendThreadCursor(tx, sessionID, rootULID); err != nil {
+			return err
+		} else if ok {
+			cursorULID = latestULID
+			cursorAt = latestAt
+		}
+
+		now := time.Now()
+		var read ThreadReadModel
+		return tx.
+			Where("session_ulid = ? AND root_ulid = ? AND actor_did = ?", sessionID, rootULID, actorDID).
+			Assign(ThreadReadModel{
+				LastReadULID: cursorULID,
+				LastReadAt:   cursorAt,
+				UpdatedAt:    now,
+			}).
+			FirstOrCreate(&read, ThreadReadModel{
+				SessionULID: sessionID,
+				RootULID:    rootULID,
+				ActorDID:    actorDID,
+				CreatedAt:   now,
+			}).Error
+	})
+}
+
+func latestFriendThreadCursor(tx *gorm.DB, sessionID, rootULID string) (string, time.Time, bool, error) {
+	var latest MessageModel
+	if err := (&GormRepo{}).threadRepliesQuery(tx, sessionID, rootULID).
+		Order("sent_at DESC, ulid DESC").
+		First(&latest).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", time.Time{}, false, nil
+		}
+		return "", time.Time{}, false, err
+	}
+
+	return latest.ULID, latest.SentAt, true, nil
+}
+
+// MarkRead persists a status flip (DELIVERED/READ/FAILED…) on a batch
+// of message ulids and returns one AckedMessage per row that was
+// actually updated. The caller (application.Service) uses that slice
+// to fan out realtime MessageReceipt events to each original sender.
+//
+// Why we resolve the message rows *inside* the transaction rather
+// than letting the caller pre-look-up the senders:
+//
+//  1. We need to ignore ulids the receiver doesn't own — both for
+//     security (don't leak that some unrelated ulid exists) and to
+//     avoid publishing receipts for messages the receiver never
+//     legitimately received. The cheapest filter is "must appear in
+//     `(ulid IN ?, receiver_did = actor)`" right next to the UPDATE.
+//  2. Doing the lookup in the same tx as the UPDATE means the
+//     returned slice is exactly the slice of rows that were flipped,
+//     even if a concurrent ack races us — the receipt fan-out and
+//     the persistence stay consistent.
+func (r *GormRepo) MarkRead(actorDID string, messageIDs []string, status int32) ([]domain.AckedMessage, error) {
+	var acked []domain.AckedMessage
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		// Resolve the rows the receiver actually owns. We pluck
+		// (ulid, sender_did, session_ulid) so the realtime publisher
+		// has all three without a second round-trip. The
+		// `receiver_did = actorDID` clause is the security gate.
+		type ackRow struct {
+			ULID        string
+			SenderDID   string
+			SessionULID string
+		}
+		var rows []ackRow
 		if err := tx.Model(&MessageModel{}).
-			Where("ulid IN ?", messageIDs).
-			Distinct("session_ulid").
-			Pluck("session_ulid", &sessionULIDs).Error; err != nil {
+			Where("ulid IN ? AND receiver_did = ?", messageIDs, actorDID).
+			Select("ulid", "sender_did", "session_ulid").
+			Scan(&rows).Error; err != nil {
 			return err
 		}
-		if len(sessionULIDs) > 0 {
-			if err := tx.Model(&SessionModel{}).
-				Where("ulid IN ? AND participant_a_did = ?", sessionULIDs, actorDID).
-				Update("unread_count_a", 0).Error; err != nil {
-				return err
+		if len(rows) == 0 {
+			return nil
+		}
+		legitULIDs := make([]string, 0, len(rows))
+		for _, row := range rows {
+			legitULIDs = append(legitULIDs, row.ULID)
+		}
+
+		// Only forward-flips: never downgrade an already-READ row to
+		// DELIVERED when a stale ack arrives out of order. Status
+		// progression follows FriendMessageStatus enum ordering
+		// (SENT=2 < DELIVERED=3 < READ=4) so a strict-greater filter
+		// is correct. UNSPECIFIED(0) and SENDING(1) won't appear on
+		// already-persisted server rows.
+		if err := tx.Model(&MessageModel{}).
+			Where("ulid IN ? AND status < ?", legitULIDs, status).
+			Updates(map[string]interface{}{
+				"status":     status,
+				"updated_at": time.Now(),
+			}).Error; err != nil {
+			return err
+		}
+
+		// Scope unread reset to only sessions that contain the acked
+		// messages, and only when this ack is at-least READ.
+		// Otherwise a DELIVERED ack would zero the receiver's unread
+		// counter prematurely.
+		if status >= 4 { // FriendMessageStatus.READ
+			sessionULIDs := make([]string, 0, len(rows))
+			seen := map[string]struct{}{}
+			for _, row := range rows {
+				if _, ok := seen[row.SessionULID]; ok {
+					continue
+				}
+				seen[row.SessionULID] = struct{}{}
+				sessionULIDs = append(sessionULIDs, row.SessionULID)
 			}
-			if err := tx.Model(&SessionModel{}).
-				Where("ulid IN ? AND participant_b_did = ?", sessionULIDs, actorDID).
-				Update("unread_count_b", 0).Error; err != nil {
-				return err
+			if len(sessionULIDs) > 0 {
+				if err := tx.Model(&SessionModel{}).
+					Where("ulid IN ? AND participant_a_did = ?", sessionULIDs, actorDID).
+					Update("unread_count_a", 0).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&SessionModel{}).
+					Where("ulid IN ? AND participant_b_did = ?", sessionULIDs, actorDID).
+					Update("unread_count_b", 0).Error; err != nil {
+					return err
+				}
 			}
 		}
 
@@ -448,11 +826,234 @@ func (r *GormRepo) MarkRead(actorDID string, messageIDs []string, status int32) 
 			EventID:   fmt.Sprintf("fce-%d", time.Now().UnixNano()),
 			EventType: "friend.message.acked",
 			TargetID:  actorDID,
-			Payload:   fmt.Sprintf(`{"count":%d,"status":%d}`, len(messageIDs), status),
+			Payload:   fmt.Sprintf(`{"count":%d,"status":%d}`, len(rows), status),
 			Status:    "pending",
 		}
-		return tx.Create(&outbox).Error
+		if err := tx.Create(&outbox).Error; err != nil {
+			return err
+		}
+		acked = make([]domain.AckedMessage, len(rows))
+		for i, row := range rows {
+			acked[i] = domain.AckedMessage{
+				Ulid:        row.ULID,
+				SenderDID:   row.SenderDID,
+				SessionULID: row.SessionULID,
+			}
+		}
+		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return acked, nil
+}
+
+// ============================================================================
+// Message Mutations: recall / edit / delete
+// ============================================================================
+//
+// All three share the same authorization gate: only the row's
+// `sender_did` may invoke the mutation, and we resolve that gate
+// inside the repo so application/service does not have to hand-craft
+// a second SELECT. Each mutation also returns a `MutationOutcome`
+// the handler uses to fan-out a realtime MessageMutation event so
+// peers learn about the change in real time.
+
+// RecallMessage clears the content + encrypted_payload of one message
+// and flips `recalled = true`. Returns ErrPermissionDenied when the
+// caller is not the sender, ErrMessageNotFound when no row matches,
+// or the underlying error from the DB. Idempotent: a recall on an
+// already-recalled message is a no-op (no event re-published).
+//
+// `recallWindow` is the operator-tunable time-after-send during
+// which a recall is permitted. Pass 0 to disable the window check
+// (only the sender-ownership rule applies).
+func (r *GormRepo) RecallMessage(actorDID, sessionULID, messageULID string, recallWindow time.Duration) (domain.MutationOutcome, error) {
+	var out domain.MutationOutcome
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var row MessageModel
+		if err := tx.Where("ulid = ? AND session_ulid = ?", messageULID, sessionULID).First(&row).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrMessageNotFound
+			}
+			return err
+		}
+		if row.SenderDID != actorDID {
+			// Surfacing ErrPermissionDenied (rather than NotFound)
+			// to the sender's own UI is fine — they already know the
+			// row exists; what we are denying is the *action*. To a
+			// non-owner we still want NotFound for opacity, which
+			// the handler maps from this same error.
+			return ErrPermissionDenied
+		}
+		if recallWindow > 0 && time.Since(row.SentAt) > recallWindow {
+			return ErrMutationWindowClosed
+		}
+		if row.Recalled {
+			// Idempotent: still return the row's metadata so the
+			// caller can decide whether to skip the event publish.
+			out = mutationOutcomeFrom(row, int32(realtimeKindRecall), nil, "")
+			return nil
+		}
+		now := time.Now()
+		if err := tx.Model(&row).Updates(map[string]interface{}{
+			"content":           "",
+			"encrypted_payload": nil,
+			"recalled":          true,
+			"updated_at":        now,
+		}).Error; err != nil {
+			return err
+		}
+		row.Content = ""
+		row.EncryptedPayload = nil
+		row.Recalled = true
+		row.UpdatedAt = now
+		out = mutationOutcomeFrom(row, int32(realtimeKindRecall), nil, "")
+		return nil
+	})
+	if err != nil {
+		return domain.MutationOutcome{}, err
+	}
+	return out, nil
+}
+
+// EditMessage replaces a message's body. Both `newContent` and
+// `newCiphertext` may be set; for E2EE chats the ciphertext is the
+// authoritative replacement and `newContent` is typically a
+// non-secret placeholder. We persist whatever the caller sends so
+// catch-up clients (cold sync) see the post-edit state without
+// needing a separate edit-history query.
+//
+// Edits on a recalled row are rejected: the recall is the terminal
+// state for a kept-but-cleared message. The caller surfaces this as
+// ErrMessageNotFound to mask the existence of the row from a
+// non-owner observer; the owner gets ErrAlreadyRecalled.
+func (r *GormRepo) EditMessage(actorDID, sessionULID, messageULID string, newContent string, newCiphertext []byte, editWindow time.Duration) (domain.MutationOutcome, error) {
+	var out domain.MutationOutcome
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var row MessageModel
+		if err := tx.Where("ulid = ? AND session_ulid = ?", messageULID, sessionULID).First(&row).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrMessageNotFound
+			}
+			return err
+		}
+		if row.SenderDID != actorDID {
+			return ErrPermissionDenied
+		}
+		if row.Recalled {
+			return ErrAlreadyRecalled
+		}
+		if editWindow > 0 && time.Since(row.SentAt) > editWindow {
+			return ErrMutationWindowClosed
+		}
+		now := time.Now()
+		updates := map[string]interface{}{
+			"content":           newContent,
+			"encrypted_payload": append([]byte(nil), newCiphertext...),
+			"edited_at":         &now,
+			"updated_at":        now,
+		}
+		if err := tx.Model(&row).Updates(updates).Error; err != nil {
+			return err
+		}
+		row.Content = newContent
+		row.EncryptedPayload = append([]byte(nil), newCiphertext...)
+		row.EditedAt = &now
+		row.UpdatedAt = now
+		out = mutationOutcomeFrom(row, int32(realtimeKindEdit), append([]byte(nil), newCiphertext...), newContent)
+		return nil
+	})
+	if err != nil {
+		return domain.MutationOutcome{}, err
+	}
+	return out, nil
+}
+
+// DeleteMessage hard-deletes the row plus its attachment rows in a
+// single transaction. We also clear the parent session's
+// `last_message_*` pointer when it referred to the deleted ulid, so
+// the conversation list does not display a deleted snippet on its
+// next refresh.
+//
+// We deliberately do not decrement unread_count_*: the receiver may
+// have already counted (and displayed) this message, and a delete
+// from the sender side should not retroactively change the
+// receiver's unread tally. The receiver's UI will re-read the
+// session next time and naturally drop the slot.
+func (r *GormRepo) DeleteMessage(actorDID, sessionULID, messageULID string) (domain.MutationOutcome, error) {
+	var out domain.MutationOutcome
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var row MessageModel
+		if err := tx.Where("ulid = ? AND session_ulid = ?", messageULID, sessionULID).First(&row).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrMessageNotFound
+			}
+			return err
+		}
+		if row.SenderDID != actorDID {
+			return ErrPermissionDenied
+		}
+		// Capture the outcome metadata BEFORE the delete so the
+		// caller still has SenderDID / SessionULID for the realtime
+		// fan-out, even though the row is about to vanish.
+		out = mutationOutcomeFrom(row, int32(realtimeKindDelete), nil, "")
+		if err := tx.Where("message_ulid = ?", messageULID).Delete(&MessageAttachmentModel{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Delete(&row).Error; err != nil {
+			return err
+		}
+		var session SessionModel
+		if err := tx.Where("ulid = ?", sessionULID).First(&session).Error; err == nil {
+			if session.LastMessageULID == messageULID {
+				// Best-effort: pick the next-newest message in the
+				// session, or zero out the pointer if this was the
+				// only message. We do not block on this — the
+				// previous_at/ulid recovery is a UI nicety.
+				var prev MessageModel
+				err := tx.Where("session_ulid = ?", sessionULID).Order("sent_at DESC").First(&prev).Error
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					session.LastMessageULID = ""
+					session.LastMessageAt = time.Time{}
+				} else if err == nil {
+					session.LastMessageULID = prev.ULID
+					session.LastMessageAt = prev.SentAt
+				}
+				session.UpdatedAt = time.Now()
+				_ = tx.Save(&session).Error
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return domain.MutationOutcome{}, err
+	}
+	return out, nil
+}
+
+// realtimeKind* mirror the realtime.MessageMutation_Kind enum on the
+// wire. We can't import the realtime proto from the repo package
+// without taking a heavier dependency, and these three values are
+// stable per the proto contract — adding a new kind requires
+// growing the enum and this list together.
+const (
+	realtimeKindRecall = 1
+	realtimeKindEdit   = 2
+	realtimeKindDelete = 3
+)
+
+func mutationOutcomeFrom(row MessageModel, kind int32, ciphertext []byte, content string) domain.MutationOutcome {
+	return domain.MutationOutcome{
+		Ulid:          row.ULID,
+		SessionULID:   row.SessionULID,
+		SenderDID:     row.SenderDID,
+		ReceiverDID:   row.ReceiverDID,
+		Kind:          kind,
+		NewContent:    content,
+		NewCiphertext: ciphertext,
+		MutatedAt:     time.Now(),
+	}
 }
 
 // ============================================================================
@@ -596,17 +1197,65 @@ func (r *GormRepo) ListFriendRequests(actorDID string, status int32, limit, offs
 	return out, int(total), nil
 }
 
-// ActorSummary holds the minimal profile fields needed for enrichment.
-type ActorSummary struct {
-	ID          uint64
-	DisplayName string
-	Avatar      string
+func (r *GormRepo) DeleteFriend(actorDID, peerDID string) error {
+	key := pairKey(actorDID, peerDID)
+
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var relationCount int64
+		if err := tx.Model(&FriendRequestModel{}).
+			Where("pair_key = ? AND status = ?", key, domain.FriendRequestStatusAccepted).
+			Count(&relationCount).Error; err != nil {
+			return err
+		}
+		if relationCount == 0 {
+			return ErrFriendRelationNotFound
+		}
+
+		if err := tx.
+			Where("pair_key = ? AND status IN ?", key, []int32{
+				domain.FriendRequestStatusPending,
+				domain.FriendRequestStatusAccepted,
+				domain.FriendRequestStatusRejected,
+				domain.FriendRequestStatusRemoved,
+			}).
+			Delete(&FriendRequestModel{}).Error; err != nil {
+			return err
+		}
+
+		var session SessionModel
+		err := tx.Where("pair_key = ?", key).First(&session).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		var messageULIDs []string
+		if err := tx.Model(&MessageModel{}).
+			Where("session_ulid = ?", session.ULID).
+			Pluck("ulid", &messageULIDs).Error; err != nil {
+			return err
+		}
+		if len(messageULIDs) > 0 {
+			if err := tx.Where("message_ulid IN ?", messageULIDs).Delete(&MessageAttachmentModel{}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Where("session_ulid = ?", session.ULID).Delete(&ThreadReadModel{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("session_ulid = ?", session.ULID).Delete(&MessageModel{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&session).Error
+	})
 }
 
 // BatchLoadActorSummaries looks up display name + avatar for a set of actor IDs.
 // IDs are numeric strings (strconv'd actor primary keys).
-func (r *GormRepo) BatchLoadActorSummaries(ids []string) map[string]ActorSummary {
-	result := make(map[string]ActorSummary, len(ids))
+func (r *GormRepo) BatchLoadActorSummaries(ids []string) map[string]application.ActorSummary {
+	result := make(map[string]application.ActorSummary, len(ids))
 	if len(ids) == 0 {
 		return result
 	}
@@ -618,8 +1267,7 @@ func (r *GormRepo) BatchLoadActorSummaries(ids []string) map[string]ActorSummary
 	var rows []row
 	r.db.Table("touch_actor").Select("id, name, icon").Where("id IN ?", ids).Find(&rows)
 	for _, r := range rows {
-		result[fmt.Sprintf("%d", r.ID)] = ActorSummary{
-			ID:          r.ID,
+		result[fmt.Sprintf("%d", r.ID)] = application.ActorSummary{
 			DisplayName: r.Name,
 			Avatar:      r.Icon,
 		}

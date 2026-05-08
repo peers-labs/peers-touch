@@ -1,4 +1,4 @@
-import desktopLogo from '../src-tauri/icons/icon.png';
+import desktopLogo from '../src-tauri/icon-source.png';
 
 /**
  * 品牌资源统一配置

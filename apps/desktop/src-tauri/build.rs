@@ -17,6 +17,7 @@ fn compile_protos() {
 
     let proto_files: Vec<PathBuf> = [
         "domain/chat/chat.proto",
+        "domain/chat/key_exchange.proto",
         "domain/chat/friend_chat.proto",
         "domain/chat/group_chat.proto",
         "domain/chat/announcement.proto",
@@ -57,6 +58,7 @@ fn compile_protos() {
         "domain/agent/skill.proto",
         "domain/agent/memory.proto",
         "domain/key_exchange/key_exchange.proto",
+        "domain/realtime/event.proto",
     ]
     .iter()
     .map(|p| proto_root.join(p))

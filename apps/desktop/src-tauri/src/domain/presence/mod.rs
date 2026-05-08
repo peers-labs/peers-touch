@@ -22,7 +22,7 @@
 //!
 //! ```text
 //!     AppLaunch / IdentityRestored / IdentitySwitched
-//!     NetworkOnline / AppForeground / Heartbeat
+//!     NetworkOnline / AppForeground / AppBackground / Heartbeat
 //!         │
 //!         ▼
 //!   ┌──────────┐  reconcile() ok   ┌──────────┐
@@ -77,11 +77,12 @@ pub enum PresenceTrigger {
     /// Frontend collapses `visibilitychange`, `focus`, and `pageshow` into
     /// this single trigger.
     AppForeground,
-    /// App went to background / minimised / lost focus. Used to drive
-    /// `/offline` so station stops queuing for us.
+    /// App went to background / minimised / lost focus. On desktop this is
+    /// still reachable for chat, so it does not drive `/offline`; the variant
+    /// remains for older frontends and telemetry.
     AppBackground,
-    /// App is shutting down (window close / process quit). Same effect
-    /// as `AppBackground` but expresses intent.
+    /// App is shutting down (window close / process quit). This is a real
+    /// offline edge and tells Station to queue future messages.
     AppShutdown,
 
     /// Auth `restoreSession` succeeded for an existing actor (no new
@@ -134,6 +135,7 @@ impl PresenceTrigger {
     pub fn target_state(self) -> PresenceState {
         match self {
             PresenceTrigger::AppLaunch
+            | PresenceTrigger::AppBackground
             | PresenceTrigger::AppForeground
             | PresenceTrigger::IdentityRestored
             | PresenceTrigger::IdentitySwitched
@@ -141,8 +143,7 @@ impl PresenceTrigger {
             | PresenceTrigger::Heartbeat
             | PresenceTrigger::Manual => PresenceState::Online,
 
-            PresenceTrigger::AppBackground
-            | PresenceTrigger::AppShutdown
+            PresenceTrigger::AppShutdown
             | PresenceTrigger::IdentityLoggedOut
             | PresenceTrigger::NetworkOffline => PresenceState::Offline,
         }
@@ -211,6 +212,7 @@ mod tests {
     #[test]
     fn target_state_partitions_triggers() {
         assert_eq!(PresenceTrigger::AppForeground.target_state(), PresenceState::Online);
+        assert_eq!(PresenceTrigger::AppBackground.target_state(), PresenceState::Online);
         assert_eq!(PresenceTrigger::IdentitySwitched.target_state(), PresenceState::Online);
         assert_eq!(PresenceTrigger::AppShutdown.target_state(), PresenceState::Offline);
         assert_eq!(PresenceTrigger::IdentityLoggedOut.target_state(), PresenceState::Offline);

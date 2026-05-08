@@ -121,12 +121,41 @@ pub struct FriendChatListMessagesInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatThreadInput {
+    pub session_ulid: String,
+    pub root_ulid: String,
+    pub after_ulid: Option<String>,
+    pub limit: Option<u32>,
+    pub max_pages: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatThreadCountsInput {
+    pub session_ulid: String,
+    pub root_ulids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatThreadReadInput {
+    pub session_ulid: String,
+    pub root_ulid: String,
+    pub last_read_ulid: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttachmentInput {
     pub cid: String,
     pub filename: String,
     pub mime_type: String,
     pub size: i64,
     pub thumbnail_cid: Option<String>,
+    /// Sender-authoritative visibility ("public" / "chat" / "private").
+    /// Plumbed through to the proto FriendMessageAttachment.visibility
+    /// so the receiver can render the badge that matches the OSS file
+    /// row. Optional so older callers stay source-compatible; missing
+    /// value is treated as "unknown" downstream.
+    #[serde(default)]
+    pub visibility: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -140,6 +169,7 @@ pub struct FriendChatSendInput {
     pub client_ulid: Option<String>,
     pub r#type: Option<i32>,
     pub reply_to_ulid: Option<String>,
+    pub thread_root_ulid: Option<String>,
     pub attachments: Option<Vec<AttachmentInput>>,
 }
 
@@ -167,6 +197,11 @@ pub struct FriendChatListFriendRequestsInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatDeleteFriendInput {
+    pub peer_did: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyExchangeUploadInput {
     pub ik_pub: String,
     pub spk_id: i32,
@@ -179,12 +214,40 @@ pub struct KeyExchangeUploadInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyExchangeFetchInput {
     pub did: String,
+    pub device_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendChatAckInput {
     pub ulids: Vec<String>,
     pub status: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatRecallInput {
+    pub session_ulid: String,
+    pub message_ulid: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatEditInput {
+    pub session_ulid: String,
+    pub message_ulid: String,
+    /// Plaintext replacement body. Mutually optional with
+    /// `new_encrypted_payload`; at least one must be non-empty.
+    /// Both can be set at once when the chat upgrades to E2EE
+    /// mid-edit and the client wants to keep the legacy index
+    /// hot.
+    pub new_content: Option<String>,
+    /// E2EE replacement body. The TS layer decodes from base64
+    /// before reaching this contract — we accept raw bytes here.
+    pub new_encrypted_payload: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatDeleteInput {
+    pub session_ulid: String,
+    pub message_ulid: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -201,11 +264,34 @@ pub struct GroupChatListMessagesInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatThreadInput {
+    pub group_ulid: String,
+    pub root_ulid: String,
+    pub after_ulid: Option<String>,
+    pub limit: Option<u32>,
+    pub max_pages: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatThreadCountsInput {
+    pub group_ulid: String,
+    pub root_ulids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatThreadReadInput {
+    pub group_ulid: String,
+    pub root_ulid: String,
+    pub last_read_ulid: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupChatSendInput {
     pub group_ulid: String,
     pub content: String,
     pub r#type: Option<i32>,
     pub reply_to_ulid: Option<String>,
+    pub thread_root_ulid: Option<String>,
     pub mentioned_dids: Option<Vec<String>>,
     pub mention_all: Option<bool>,
     pub attachments: Option<Vec<AttachmentInput>>,
@@ -956,6 +1042,18 @@ pub struct GroupMessageActionInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatEditInput {
+    pub group_ulid: String,
+    pub message_ulid: String,
+    /// Plaintext replacement body. Mutually optional with
+    /// `new_encrypted_payload`; at least one must be non-empty.
+    pub new_content: Option<String>,
+    /// E2EE replacement body. Decoded from base64 by the TS layer
+    /// before reaching this contract.
+    pub new_encrypted_payload: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupSearchMessagesInput {
     pub group_ulid: String,
     pub query: String,
@@ -1069,6 +1167,11 @@ pub struct FriendRequestListInput {
     pub status: Option<i32>,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendRequestDeleteInput {
+    pub peer_did: String,
 }
 
 // --- Notification contracts ---
