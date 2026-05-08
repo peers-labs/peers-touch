@@ -16,6 +16,22 @@ import (
 
 // Fetch uses POST /key-exchange/keys/bundle/fetch (proto body) because upload already uses POST /key-exchange/keys/bundle; the mux cannot register two POST handlers on the same path.
 
+func normalizeDeviceID(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "legacy"
+	}
+	return s
+}
+
+// protoDeviceID turns a DB device key into the wire form (legacy -> "").
+func protoDeviceID(stored string) string {
+	if stored == "legacy" {
+		return ""
+	}
+	return stored
+}
+
 func (s *subServer) Handlers() []server.Handler {
 	logIDWrapper := serverwrapper.LogID()
 	return []server.Handler{
@@ -56,7 +72,8 @@ func (s *subServer) handleUploadKeyBundle(ctx context.Context, req *kemodel.Uplo
 		}
 		opks = append(opks, domain.OneTimePreKey{ID: opkIDs[i], PublicKey: pk, Consumed: false})
 	}
-	if err := s.service.UploadKeyBundle(subject.ID, ikPub, req.GetSpkId(), spkPub, spkSig, opks); err != nil {
+	devID := normalizeDeviceID(req.GetDeviceId())
+	if err := s.service.UploadKeyBundle(subject.ID, devID, ikPub, req.GetSpkId(), spkPub, spkSig, opks); err != nil {
 		return nil, server.InternalErrorWithCause("failed to upload key bundle", err)
 	}
 	return &kemodel.UploadKeyBundleResponse{}, nil
@@ -69,27 +86,41 @@ func (s *subServer) handleFetchKeyBundle(ctx context.Context, req *kemodel.Fetch
 	if req.GetDid() == "" {
 		return nil, server.BadRequest("did is required")
 	}
-	bundle, err := s.service.FetchKeyBundle(req.GetDid())
+
+	filter := ""
+	if strings.TrimSpace(req.GetDeviceId()) != "" {
+		filter = normalizeDeviceID(req.GetDeviceId())
+	}
+
+	bundles, err := s.service.FetchKeyBundles(req.GetDid(), filter)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, server.NotFound("key bundle not found or no prekeys available")
+			return nil, server.NotFound("key bundle not found or no identity for that device filter")
 		}
 		return nil, server.InternalErrorWithCause("failed to fetch key bundle", err)
 	}
-	if len(bundle.OneTimePreKeys) == 0 {
-		return nil, server.NotFound("no one-time prekey available")
+	if len(bundles) == 0 {
+		return nil, server.NotFound("key bundle not found")
 	}
-	opk := bundle.OneTimePreKeys[0]
-	return &kemodel.FetchKeyBundleResponse{
-		ActorDid:    bundle.ActorDID,
-		IkPub:       base64.StdEncoding.EncodeToString(bundle.IdentityKeyPub),
-		Fingerprint: bundle.KeyFingerprint,
-		SpkId:       bundle.SignedPreKey.ID,
-		SpkPub:      base64.StdEncoding.EncodeToString(bundle.SignedPreKey.PublicKey),
-		SpkSig:      base64.StdEncoding.EncodeToString(bundle.SignedPreKey.Signature),
-		OpkId:       opk.ID,
-		OpkPub:      base64.StdEncoding.EncodeToString(opk.PublicKey),
-	}, nil
+
+	out := make([]*kemodel.KeyBundle, 0, len(bundles))
+	for _, b := range bundles {
+		opkStrs := make([]string, 0, len(b.OneTimePreKeys))
+		for _, opk := range b.OneTimePreKeys {
+			opkStrs = append(opkStrs, base64.StdEncoding.EncodeToString(opk.PublicKey))
+		}
+		out = append(out, &kemodel.KeyBundle{
+			Did:                 b.ActorDID,
+			DeviceId:            protoDeviceID(b.DeviceID),
+			IkPub:               base64.StdEncoding.EncodeToString(b.IdentityKeyPub),
+			SpkPub:              base64.StdEncoding.EncodeToString(b.SignedPreKey.PublicKey),
+			SpkSig:              base64.StdEncoding.EncodeToString(b.SignedPreKey.Signature),
+			Opks:                opkStrs,
+			PublishedAtUnixMs:   b.PublishedAtUnixMs,
+		})
+	}
+
+	return &kemodel.FetchKeyBundleResponse{Bundles: out}, nil
 }
 
 func (s *subServer) handleReplenishOPKs(ctx context.Context, req *kemodel.ReplenishOpksRequest) (*kemodel.ReplenishOpksResponse, error) {
@@ -110,18 +141,20 @@ func (s *subServer) handleReplenishOPKs(ctx context.Context, req *kemodel.Replen
 		}
 		opks = append(opks, domain.OneTimePreKey{ID: opkIDs[i], PublicKey: pk, Consumed: false})
 	}
-	if err := s.service.ReplenishOPKs(subject.ID, opks); err != nil {
+	devID := normalizeDeviceID(req.GetDeviceId())
+	if err := s.service.ReplenishOPKs(subject.ID, devID, opks); err != nil {
 		return nil, server.InternalErrorWithCause("failed to replenish one-time prekeys", err)
 	}
 	return &kemodel.ReplenishOpksResponse{}, nil
 }
 
-func (s *subServer) handleOPKCount(ctx context.Context, _ *kemodel.OpkCountRequest) (*kemodel.OpkCountResponse, error) {
+func (s *subServer) handleOPKCount(ctx context.Context, req *kemodel.OpkCountRequest) (*kemodel.OpkCountResponse, error) {
 	subject := auth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	n, err := s.service.CountOPKs(subject.ID)
+	devID := normalizeDeviceID(req.GetDeviceId())
+	n, err := s.service.CountOPKs(subject.ID, devID)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to count one-time prekeys", err)
 	}

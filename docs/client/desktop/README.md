@@ -14,6 +14,7 @@
 
 - [global-context-kernel.md](./global-context-kernel.md)
 - [provider-model-target-architecture.md](./provider-model-target-architecture.md)
+- [runtime-projections.md](./runtime-projections.md)
 - [execution-plans/global-context-kernel-migration.md](./execution-plans/global-context-kernel-migration.md)
 
 如果你要看 Desktop Web <-> Desktop Rust 的服务调用约束，请看规范层文档：

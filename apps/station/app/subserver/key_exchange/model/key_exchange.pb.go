@@ -23,13 +23,15 @@ const (
 
 // X3DH key bundle upload — base64-encoded public keys.
 type UploadKeyBundleRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	IkPub         string                 `protobuf:"bytes,1,opt,name=ik_pub,json=ikPub,proto3" json:"ik_pub,omitempty"`
-	SpkId         int32                  `protobuf:"varint,2,opt,name=spk_id,json=spkId,proto3" json:"spk_id,omitempty"`
-	SpkPub        string                 `protobuf:"bytes,3,opt,name=spk_pub,json=spkPub,proto3" json:"spk_pub,omitempty"`
-	SpkSig        string                 `protobuf:"bytes,4,opt,name=spk_sig,json=spkSig,proto3" json:"spk_sig,omitempty"`
-	OpkIds        []int32                `protobuf:"varint,5,rep,packed,name=opk_ids,json=opkIds,proto3" json:"opk_ids,omitempty"`
-	OpkPubs       []string               `protobuf:"bytes,6,rep,name=opk_pubs,json=opkPubs,proto3" json:"opk_pubs,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	IkPub   string                 `protobuf:"bytes,1,opt,name=ik_pub,json=ikPub,proto3" json:"ik_pub,omitempty"`
+	SpkId   int32                  `protobuf:"varint,2,opt,name=spk_id,json=spkId,proto3" json:"spk_id,omitempty"`
+	SpkPub  string                 `protobuf:"bytes,3,opt,name=spk_pub,json=spkPub,proto3" json:"spk_pub,omitempty"`
+	SpkSig  string                 `protobuf:"bytes,4,opt,name=spk_sig,json=spkSig,proto3" json:"spk_sig,omitempty"`
+	OpkIds  []int32                `protobuf:"varint,5,rep,packed,name=opk_ids,json=opkIds,proto3" json:"opk_ids,omitempty"`
+	OpkPubs []string               `protobuf:"bytes,6,rep,name=opk_pubs,json=opkPubs,proto3" json:"opk_pubs,omitempty"`
+	// Opaque per-install identifier. Empty => server stores as "legacy".
+	DeviceId      string `protobuf:"bytes,7,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -106,6 +108,13 @@ func (x *UploadKeyBundleRequest) GetOpkPubs() []string {
 	return nil
 }
 
+func (x *UploadKeyBundleRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
 type UploadKeyBundleResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -142,17 +151,116 @@ func (*UploadKeyBundleResponse) Descriptor() ([]byte, []int) {
 	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{1}
 }
 
-// Fetch another actor's key bundle by DID.
+// One logical device publish for a DID (may share the DID across installs).
+type KeyBundle struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Did   string                 `protobuf:"bytes,1,opt,name=did,proto3" json:"did,omitempty"`
+	// Stable per-install id from the publisher; empty string means legacy row
+	// (server key "legacy" is mapped to "").
+	DeviceId string `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	IkPub    string `protobuf:"bytes,3,opt,name=ik_pub,json=ikPub,proto3" json:"ik_pub,omitempty"` // Ed25519 public, base64
+	SpkPub   string `protobuf:"bytes,4,opt,name=spk_pub,json=spkPub,proto3" json:"spk_pub,omitempty"`
+	SpkSig   string `protobuf:"bytes,5,opt,name=spk_sig,json=spkSig,proto3" json:"spk_sig,omitempty"`
+	// One-time prekey pubs consumed for this fetch (base64), newest policy via server.
+	Opks              []string `protobuf:"bytes,6,rep,name=opks,proto3" json:"opks,omitempty"`
+	PublishedAtUnixMs int64    `protobuf:"varint,7,opt,name=published_at_unix_ms,json=publishedAtUnixMs,proto3" json:"published_at_unix_ms,omitempty"` // server stamp (identity upsert time)
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *KeyBundle) Reset() {
+	*x = KeyBundle{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KeyBundle) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KeyBundle) ProtoMessage() {}
+
+func (x *KeyBundle) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KeyBundle.ProtoReflect.Descriptor instead.
+func (*KeyBundle) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *KeyBundle) GetDid() string {
+	if x != nil {
+		return x.Did
+	}
+	return ""
+}
+
+func (x *KeyBundle) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *KeyBundle) GetIkPub() string {
+	if x != nil {
+		return x.IkPub
+	}
+	return ""
+}
+
+func (x *KeyBundle) GetSpkPub() string {
+	if x != nil {
+		return x.SpkPub
+	}
+	return ""
+}
+
+func (x *KeyBundle) GetSpkSig() string {
+	if x != nil {
+		return x.SpkSig
+	}
+	return ""
+}
+
+func (x *KeyBundle) GetOpks() []string {
+	if x != nil {
+		return x.Opks
+	}
+	return nil
+}
+
+func (x *KeyBundle) GetPublishedAtUnixMs() int64 {
+	if x != nil {
+		return x.PublishedAtUnixMs
+	}
+	return 0
+}
+
+// Fetch another actor's key bundles by DID.
 type FetchKeyBundleRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Did           string                 `protobuf:"bytes,1,opt,name=did,proto3" json:"did,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Did   string                 `protobuf:"bytes,1,opt,name=did,proto3" json:"did,omitempty"`
+	// When empty, return all bundles for the DID. When set, only that device_id
+	// (after server-side normalization matching upload).
+	DeviceId      string `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *FetchKeyBundleRequest) Reset() {
 	*x = FetchKeyBundleRequest{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[2]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -164,7 +272,7 @@ func (x *FetchKeyBundleRequest) String() string {
 func (*FetchKeyBundleRequest) ProtoMessage() {}
 
 func (x *FetchKeyBundleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[2]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -177,7 +285,7 @@ func (x *FetchKeyBundleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchKeyBundleRequest.ProtoReflect.Descriptor instead.
 func (*FetchKeyBundleRequest) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{2}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *FetchKeyBundleRequest) GetDid() string {
@@ -187,23 +295,23 @@ func (x *FetchKeyBundleRequest) GetDid() string {
 	return ""
 }
 
+func (x *FetchKeyBundleRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
 type FetchKeyBundleResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorDid      string                 `protobuf:"bytes,1,opt,name=actor_did,json=actorDid,proto3" json:"actor_did,omitempty"`
-	IkPub         string                 `protobuf:"bytes,2,opt,name=ik_pub,json=ikPub,proto3" json:"ik_pub,omitempty"`
-	Fingerprint   string                 `protobuf:"bytes,3,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
-	SpkId         int32                  `protobuf:"varint,4,opt,name=spk_id,json=spkId,proto3" json:"spk_id,omitempty"`
-	SpkPub        string                 `protobuf:"bytes,5,opt,name=spk_pub,json=spkPub,proto3" json:"spk_pub,omitempty"`
-	SpkSig        string                 `protobuf:"bytes,6,opt,name=spk_sig,json=spkSig,proto3" json:"spk_sig,omitempty"`
-	OpkId         int32                  `protobuf:"varint,7,opt,name=opk_id,json=opkId,proto3" json:"opk_id,omitempty"`
-	OpkPub        string                 `protobuf:"bytes,8,opt,name=opk_pub,json=opkPub,proto3" json:"opk_pub,omitempty"`
+	Bundles       []*KeyBundle           `protobuf:"bytes,1,rep,name=bundles,proto3" json:"bundles,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *FetchKeyBundleResponse) Reset() {
 	*x = FetchKeyBundleResponse{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[3]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -215,7 +323,7 @@ func (x *FetchKeyBundleResponse) String() string {
 func (*FetchKeyBundleResponse) ProtoMessage() {}
 
 func (x *FetchKeyBundleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[3]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -228,77 +336,30 @@ func (x *FetchKeyBundleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchKeyBundleResponse.ProtoReflect.Descriptor instead.
 func (*FetchKeyBundleResponse) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{3}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *FetchKeyBundleResponse) GetActorDid() string {
+func (x *FetchKeyBundleResponse) GetBundles() []*KeyBundle {
 	if x != nil {
-		return x.ActorDid
+		return x.Bundles
 	}
-	return ""
-}
-
-func (x *FetchKeyBundleResponse) GetIkPub() string {
-	if x != nil {
-		return x.IkPub
-	}
-	return ""
-}
-
-func (x *FetchKeyBundleResponse) GetFingerprint() string {
-	if x != nil {
-		return x.Fingerprint
-	}
-	return ""
-}
-
-func (x *FetchKeyBundleResponse) GetSpkId() int32 {
-	if x != nil {
-		return x.SpkId
-	}
-	return 0
-}
-
-func (x *FetchKeyBundleResponse) GetSpkPub() string {
-	if x != nil {
-		return x.SpkPub
-	}
-	return ""
-}
-
-func (x *FetchKeyBundleResponse) GetSpkSig() string {
-	if x != nil {
-		return x.SpkSig
-	}
-	return ""
-}
-
-func (x *FetchKeyBundleResponse) GetOpkId() int32 {
-	if x != nil {
-		return x.OpkId
-	}
-	return 0
-}
-
-func (x *FetchKeyBundleResponse) GetOpkPub() string {
-	if x != nil {
-		return x.OpkPub
-	}
-	return ""
+	return nil
 }
 
 // Replenish one-time prekeys.
 type ReplenishOpksRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	OpkIds        []int32                `protobuf:"varint,1,rep,packed,name=opk_ids,json=opkIds,proto3" json:"opk_ids,omitempty"`
-	OpkPubs       []string               `protobuf:"bytes,2,rep,name=opk_pubs,json=opkPubs,proto3" json:"opk_pubs,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	OpkIds  []int32                `protobuf:"varint,1,rep,packed,name=opk_ids,json=opkIds,proto3" json:"opk_ids,omitempty"`
+	OpkPubs []string               `protobuf:"bytes,2,rep,name=opk_pubs,json=opkPubs,proto3" json:"opk_pubs,omitempty"`
+	// Targets the same device row as uploads; empty => legacy.
+	DeviceId      string `protobuf:"bytes,3,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ReplenishOpksRequest) Reset() {
 	*x = ReplenishOpksRequest{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[4]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -310,7 +371,7 @@ func (x *ReplenishOpksRequest) String() string {
 func (*ReplenishOpksRequest) ProtoMessage() {}
 
 func (x *ReplenishOpksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[4]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -323,7 +384,7 @@ func (x *ReplenishOpksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplenishOpksRequest.ProtoReflect.Descriptor instead.
 func (*ReplenishOpksRequest) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{4}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ReplenishOpksRequest) GetOpkIds() []int32 {
@@ -340,6 +401,13 @@ func (x *ReplenishOpksRequest) GetOpkPubs() []string {
 	return nil
 }
 
+func (x *ReplenishOpksRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
 type ReplenishOpksResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -348,7 +416,7 @@ type ReplenishOpksResponse struct {
 
 func (x *ReplenishOpksResponse) Reset() {
 	*x = ReplenishOpksResponse{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[5]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -360,7 +428,7 @@ func (x *ReplenishOpksResponse) String() string {
 func (*ReplenishOpksResponse) ProtoMessage() {}
 
 func (x *ReplenishOpksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[5]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -373,19 +441,20 @@ func (x *ReplenishOpksResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplenishOpksResponse.ProtoReflect.Descriptor instead.
 func (*ReplenishOpksResponse) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{5}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{6}
 }
 
 // Count remaining one-time prekeys.
 type OpkCountRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	DeviceId      string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"` // empty => legacy bucket for this DID.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *OpkCountRequest) Reset() {
 	*x = OpkCountRequest{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[6]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -397,7 +466,7 @@ func (x *OpkCountRequest) String() string {
 func (*OpkCountRequest) ProtoMessage() {}
 
 func (x *OpkCountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[6]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -410,7 +479,14 @@ func (x *OpkCountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpkCountRequest.ProtoReflect.Descriptor instead.
 func (*OpkCountRequest) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{6}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *OpkCountRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
 }
 
 type OpkCountResponse struct {
@@ -422,7 +498,7 @@ type OpkCountResponse struct {
 
 func (x *OpkCountResponse) Reset() {
 	*x = OpkCountResponse{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[7]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -434,7 +510,7 @@ func (x *OpkCountResponse) String() string {
 func (*OpkCountResponse) ProtoMessage() {}
 
 func (x *OpkCountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[7]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -447,7 +523,7 @@ func (x *OpkCountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpkCountResponse.ProtoReflect.Descriptor instead.
 func (*OpkCountResponse) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{7}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *OpkCountResponse) GetCount() int64 {
@@ -461,31 +537,36 @@ var File_domain_key_exchange_key_exchange_proto protoreflect.FileDescriptor
 
 const file_domain_key_exchange_key_exchange_proto_rawDesc = "" +
 	"\n" +
-	"&domain/key_exchange/key_exchange.proto\x12!peers_touch.model.key_exchange.v1\"\xac\x01\n" +
+	"&domain/key_exchange/key_exchange.proto\x12!peers_touch.model.key_exchange.v1\"\xc9\x01\n" +
 	"\x16UploadKeyBundleRequest\x12\x15\n" +
 	"\x06ik_pub\x18\x01 \x01(\tR\x05ikPub\x12\x15\n" +
 	"\x06spk_id\x18\x02 \x01(\x05R\x05spkId\x12\x17\n" +
 	"\aspk_pub\x18\x03 \x01(\tR\x06spkPub\x12\x17\n" +
 	"\aspk_sig\x18\x04 \x01(\tR\x06spkSig\x12\x17\n" +
 	"\aopk_ids\x18\x05 \x03(\x05R\x06opkIds\x12\x19\n" +
-	"\bopk_pubs\x18\x06 \x03(\tR\aopkPubs\"\x19\n" +
-	"\x17UploadKeyBundleResponse\")\n" +
+	"\bopk_pubs\x18\x06 \x03(\tR\aopkPubs\x12\x1b\n" +
+	"\tdevice_id\x18\a \x01(\tR\bdeviceId\"\x19\n" +
+	"\x17UploadKeyBundleResponse\"\xc8\x01\n" +
+	"\tKeyBundle\x12\x10\n" +
+	"\x03did\x18\x01 \x01(\tR\x03did\x12\x1b\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x15\n" +
+	"\x06ik_pub\x18\x03 \x01(\tR\x05ikPub\x12\x17\n" +
+	"\aspk_pub\x18\x04 \x01(\tR\x06spkPub\x12\x17\n" +
+	"\aspk_sig\x18\x05 \x01(\tR\x06spkSig\x12\x12\n" +
+	"\x04opks\x18\x06 \x03(\tR\x04opks\x12/\n" +
+	"\x14published_at_unix_ms\x18\a \x01(\x03R\x11publishedAtUnixMs\"F\n" +
 	"\x15FetchKeyBundleRequest\x12\x10\n" +
-	"\x03did\x18\x01 \x01(\tR\x03did\"\xe7\x01\n" +
-	"\x16FetchKeyBundleResponse\x12\x1b\n" +
-	"\tactor_did\x18\x01 \x01(\tR\bactorDid\x12\x15\n" +
-	"\x06ik_pub\x18\x02 \x01(\tR\x05ikPub\x12 \n" +
-	"\vfingerprint\x18\x03 \x01(\tR\vfingerprint\x12\x15\n" +
-	"\x06spk_id\x18\x04 \x01(\x05R\x05spkId\x12\x17\n" +
-	"\aspk_pub\x18\x05 \x01(\tR\x06spkPub\x12\x17\n" +
-	"\aspk_sig\x18\x06 \x01(\tR\x06spkSig\x12\x15\n" +
-	"\x06opk_id\x18\a \x01(\x05R\x05opkId\x12\x17\n" +
-	"\aopk_pub\x18\b \x01(\tR\x06opkPub\"J\n" +
+	"\x03did\x18\x01 \x01(\tR\x03did\x12\x1b\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\"`\n" +
+	"\x16FetchKeyBundleResponse\x12F\n" +
+	"\abundles\x18\x01 \x03(\v2,.peers_touch.model.key_exchange.v1.KeyBundleR\abundles\"g\n" +
 	"\x14ReplenishOpksRequest\x12\x17\n" +
 	"\aopk_ids\x18\x01 \x03(\x05R\x06opkIds\x12\x19\n" +
-	"\bopk_pubs\x18\x02 \x03(\tR\aopkPubs\"\x17\n" +
-	"\x15ReplenishOpksResponse\"\x11\n" +
-	"\x0fOpkCountRequest\"(\n" +
+	"\bopk_pubs\x18\x02 \x03(\tR\aopkPubs\x12\x1b\n" +
+	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\"\x17\n" +
+	"\x15ReplenishOpksResponse\".\n" +
+	"\x0fOpkCountRequest\x12\x1b\n" +
+	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\"(\n" +
 	"\x10OpkCountResponse\x12\x14\n" +
 	"\x05count\x18\x01 \x01(\x03R\x05countBRZPgithub.com/peers-labs/peers-touch/station/app/subserver/key_exchange/model;modelb\x06proto3"
 
@@ -501,23 +582,25 @@ func file_domain_key_exchange_key_exchange_proto_rawDescGZIP() []byte {
 	return file_domain_key_exchange_key_exchange_proto_rawDescData
 }
 
-var file_domain_key_exchange_key_exchange_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_domain_key_exchange_key_exchange_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_domain_key_exchange_key_exchange_proto_goTypes = []any{
 	(*UploadKeyBundleRequest)(nil),  // 0: peers_touch.model.key_exchange.v1.UploadKeyBundleRequest
 	(*UploadKeyBundleResponse)(nil), // 1: peers_touch.model.key_exchange.v1.UploadKeyBundleResponse
-	(*FetchKeyBundleRequest)(nil),   // 2: peers_touch.model.key_exchange.v1.FetchKeyBundleRequest
-	(*FetchKeyBundleResponse)(nil),  // 3: peers_touch.model.key_exchange.v1.FetchKeyBundleResponse
-	(*ReplenishOpksRequest)(nil),    // 4: peers_touch.model.key_exchange.v1.ReplenishOpksRequest
-	(*ReplenishOpksResponse)(nil),   // 5: peers_touch.model.key_exchange.v1.ReplenishOpksResponse
-	(*OpkCountRequest)(nil),         // 6: peers_touch.model.key_exchange.v1.OpkCountRequest
-	(*OpkCountResponse)(nil),        // 7: peers_touch.model.key_exchange.v1.OpkCountResponse
+	(*KeyBundle)(nil),               // 2: peers_touch.model.key_exchange.v1.KeyBundle
+	(*FetchKeyBundleRequest)(nil),   // 3: peers_touch.model.key_exchange.v1.FetchKeyBundleRequest
+	(*FetchKeyBundleResponse)(nil),  // 4: peers_touch.model.key_exchange.v1.FetchKeyBundleResponse
+	(*ReplenishOpksRequest)(nil),    // 5: peers_touch.model.key_exchange.v1.ReplenishOpksRequest
+	(*ReplenishOpksResponse)(nil),   // 6: peers_touch.model.key_exchange.v1.ReplenishOpksResponse
+	(*OpkCountRequest)(nil),         // 7: peers_touch.model.key_exchange.v1.OpkCountRequest
+	(*OpkCountResponse)(nil),        // 8: peers_touch.model.key_exchange.v1.OpkCountResponse
 }
 var file_domain_key_exchange_key_exchange_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	2, // 0: peers_touch.model.key_exchange.v1.FetchKeyBundleResponse.bundles:type_name -> peers_touch.model.key_exchange.v1.KeyBundle
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_domain_key_exchange_key_exchange_proto_init() }
@@ -531,7 +614,7 @@ func file_domain_key_exchange_key_exchange_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_key_exchange_key_exchange_proto_rawDesc), len(file_domain_key_exchange_key_exchange_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
