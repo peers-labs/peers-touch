@@ -119,6 +119,14 @@ export interface RustCommandResult<T = Record<string, any>> {
   error?: RustCommandError;
 }
 
+export interface ChatThreadCount {
+  rootUlid: string;
+  replyCount: number;
+  latestReplyUlid: string;
+  latestReplyAt: number;
+  unreadCount: number;
+}
+
 // Always-quiet (regardless of mode): commands that fire many times per
 // second and would drown out everything else.
 const ALWAYS_QUIET_COMMANDS = new Set([
@@ -346,7 +354,7 @@ export type PresenceTrigger =
   | 'heartbeat'
   | 'manual';
 
-/** Payload emitted by Rust on `presence.transition` Tauri events. */
+/** Payload emitted by Rust on `presence:transition` Tauri events. */
 export interface PresenceTransitionEvent {
   actor_id: string;
   from: 'offline' | 'online';
@@ -1995,6 +2003,15 @@ export interface ChatSearchLocalResultRow {
   sender_did: string;
   content: string;
   sent_at: number;
+  message_type?: number;
+  type?: number;
+  reply_to_ulid?: string;
+  replyToUlid?: string;
+  thread_root_ulid?: string;
+  threadRootUlid?: string;
+  attachments?: unknown[];
+  filename?: string;
+  mime_type?: string;
 }
 
 export interface GroupChatSyncInput {
@@ -3133,6 +3150,53 @@ export const api = {
   friendChatListMessages: (sessionUlid: string, beforeUlid?: string, limit?: number) =>
     invokeRustProto('friend_chat_list_messages', GetMessagesResponseSchema, { session_ulid: sessionUlid, before_ulid: beforeUlid, limit }),
 
+  friendChatListThreadMessages: (
+    sessionUlid: string,
+    rootUlid: string,
+    limit?: number,
+    maxPages?: number,
+    afterUlid?: string,
+  ) =>
+    invokeRustDataFromStatus<
+      { session_ulid: string; root_ulid: string; limit?: number; max_pages?: number; after_ulid?: string },
+      {
+        root?: unknown | null;
+        replies?: unknown[];
+        messages?: unknown[];
+        replyCount?: number;
+        hitPageCap?: boolean;
+        hasMore?: boolean;
+        has_more?: boolean;
+        nextCursor?: string;
+        next_cursor?: string;
+      }
+    >('friend_chat_list_thread_messages', {
+      session_ulid: sessionUlid,
+      root_ulid: rootUlid,
+      limit,
+      max_pages: maxPages,
+      after_ulid: afterUlid,
+    }),
+
+  friendChatThreadCounts: (sessionUlid: string, rootUlids: string[]) =>
+    invokeRustDataFromStatus<
+      { session_ulid: string; root_ulids: string[] },
+      { counts: ChatThreadCount[] }
+    >('friend_chat_thread_counts', {
+      session_ulid: sessionUlid,
+      root_ulids: rootUlids,
+    }),
+
+  friendChatThreadMarkRead: (sessionUlid: string, rootUlid: string, lastReadUlid?: string) =>
+    invokeRustDataFromStatus<
+      { session_ulid: string; root_ulid: string; last_read_ulid?: string },
+      { success: boolean }
+    >('friend_chat_thread_mark_read', {
+      session_ulid: sessionUlid,
+      root_ulid: rootUlid,
+      last_read_ulid: lastReadUlid,
+    }),
+
   friendChatSendMessage: (
     sessionUlid: string,
     receiverDid: string,
@@ -3142,6 +3206,7 @@ export const api = {
     attachments?: ChatAttachmentInput[],
     encryptedPayload?: string,
     clientUlid?: string,
+    threadRootUlid?: string,
   ) =>
     invokeRustProto('friend_chat_send_message', SendMessageResponseSchema, {
       session_ulid: sessionUlid,
@@ -3149,6 +3214,7 @@ export const api = {
       content,
       type,
       reply_to_ulid: replyToUlid,
+      thread_root_ulid: threadRootUlid,
       attachments,
       ...(encryptedPayload != null && encryptedPayload !== ''
         ? { encrypted_payload: encryptedPayload }
@@ -3280,7 +3346,7 @@ export const api = {
    * Start the long-lived presence SSE supervisor for the current
    * window's actor. Idempotent; the Rust side replaces any in-flight
    * supervisor for the same actor. While running, station emits
-   * `presence.peer-changed` Tauri events for every online/offline flip.
+   * `presence:peer-changed` Tauri events for every online/offline flip.
    */
   friendChatPresenceStart: () =>
     invokeRustDataFromStatus<void, { actor_id: string }>('friend_chat_presence_start'),
@@ -3293,8 +3359,8 @@ export const api = {
    * Start the unified realtime SSE consumer for the current actor.
    * Idempotent — the Rust side replaces any in-flight supervisor for
    * the same actor. While running, the supervisor emits
-   * `realtime.event` Tauri events for every business / heartbeat /
-   * resync frame and `realtime.connection-state` on connect/disconnect.
+   * `realtime:event` Tauri events for every business / heartbeat /
+   * resync frame and `realtime:connection-state` on connect/disconnect.
    * See docs/architecture/realtime/event-stream.md for the wire
    * contract and the per-window device id semantics.
    */
@@ -3326,21 +3392,17 @@ export const api = {
   ) =>
     invokeRustDataFromStatus<
       {
-        input: {
-          recipient_actor_id: string;
-          session_ulid: string;
-          kind: string;
-          payload_b64: string;
-        };
+        recipient_actor_id: string;
+        session_ulid: string;
+        kind: string;
+        payload_b64: string;
       },
       Record<string, unknown>
     >('realtime_signal_send', {
-      input: {
-        recipient_actor_id: recipientActorId,
-        session_ulid: sessionUlid,
-        kind,
-        payload_b64: payloadB64,
-      },
+      recipient_actor_id: recipientActorId,
+      session_ulid: sessionUlid,
+      kind,
+      payload_b64: payloadB64,
     }),
 
   /**
@@ -3362,19 +3424,15 @@ export const api = {
   ) =>
     invokeRustDataFromStatus<
       {
-        input: {
-          recipient_actor_id: string;
-          session_ulid: string;
-          typing: boolean;
-        };
+        recipient_actor_id: string;
+        session_ulid: string;
+        typing: boolean;
       },
       Record<string, unknown>
     >('realtime_typing_send', {
-      input: {
-        recipient_actor_id: recipientActorId,
-        session_ulid: sessionUlid,
-        typing,
-      },
+      recipient_actor_id: recipientActorId,
+      session_ulid: sessionUlid,
+      typing,
     }),
 
   /**
@@ -3434,6 +3492,53 @@ export const api = {
   groupChatListMessages: (groupUlid: string, beforeUlid?: string, limit?: number) =>
     invokeRustProto('group_chat_list_messages', GetGroupMessagesResponseSchema, { group_ulid: groupUlid, before_ulid: beforeUlid, limit }),
 
+  groupChatListThreadMessages: (
+    groupUlid: string,
+    rootUlid: string,
+    limit?: number,
+    maxPages?: number,
+    afterUlid?: string,
+  ) =>
+    invokeRustDataFromStatus<
+      { group_ulid: string; root_ulid: string; limit?: number; max_pages?: number; after_ulid?: string },
+      {
+        root?: unknown | null;
+        replies?: unknown[];
+        messages?: unknown[];
+        replyCount?: number;
+        hitPageCap?: boolean;
+        hasMore?: boolean;
+        has_more?: boolean;
+        nextCursor?: string;
+        next_cursor?: string;
+      }
+    >('group_chat_list_thread_messages', {
+      group_ulid: groupUlid,
+      root_ulid: rootUlid,
+      limit,
+      max_pages: maxPages,
+      after_ulid: afterUlid,
+    }),
+
+  groupChatThreadCounts: (groupUlid: string, rootUlids: string[]) =>
+    invokeRustDataFromStatus<
+      { group_ulid: string; root_ulids: string[] },
+      { counts: ChatThreadCount[] }
+    >('group_chat_thread_counts', {
+      group_ulid: groupUlid,
+      root_ulids: rootUlids,
+    }),
+
+  groupChatThreadMarkRead: (groupUlid: string, rootUlid: string, lastReadUlid?: string) =>
+    invokeRustDataFromStatus<
+      { group_ulid: string; root_ulid: string; last_read_ulid?: string },
+      { success: boolean }
+    >('group_chat_thread_mark_read', {
+      group_ulid: groupUlid,
+      root_ulid: rootUlid,
+      last_read_ulid: lastReadUlid,
+    }),
+
   // Group chat sends MUST carry `encryptedPayload` (the base64
   // bytes of a `GroupCiphertext` produced by `cryptoGroupEncrypt`).
   // The Rust layer pins `content` to "" regardless of what the JS
@@ -3448,15 +3553,19 @@ export const api = {
     replyToUlid?: string,
     mentionedDids?: string[],
     mentionAll?: boolean,
+    attachments?: ChatAttachmentInput[],
     encryptedPayload?: string,
+    threadRootUlid?: string,
   ) =>
     invokeRustProto('group_chat_send_message', SendGroupMessageResponseSchema, {
       group_ulid: groupUlid,
       content,
       type,
       reply_to_ulid: replyToUlid,
+      thread_root_ulid: threadRootUlid,
       mentioned_dids: mentionedDids,
       mention_all: mentionAll,
+      attachments,
       ...(encryptedPayload != null && encryptedPayload !== ''
         ? { encrypted_payload: encryptedPayload }
         : {}),
@@ -3721,6 +3830,12 @@ export const api = {
   friendChatListFriendRequests: (status?: number, limit?: number, offset?: number) =>
     invokeRustProto('friend_chat_list_friend_requests', ListFriendRequestsResponseSchema, { status, limit, offset }),
 
+  friendChatDeleteFriend: (peerDid: string) =>
+    invokeRustDataFromStatus<{ peer_did: string }, { success: boolean }>(
+      'friend_chat_delete_friend',
+      { peer_did: peerDid },
+    ),
+
   // ── Notification ──
 
   notificationList: (category?: number, status?: number, cursor?: string, limit?: number) =>
@@ -3793,6 +3908,7 @@ export type ChatAttachmentInput = {
   mime_type: string;
   size: number;
   thumbnail_cid?: string;
+  visibility?: string;
 };
 
 export interface CryptoKeyBundlePayload {

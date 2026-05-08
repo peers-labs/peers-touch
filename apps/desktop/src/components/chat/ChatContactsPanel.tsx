@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Tag } from '@lobehub/ui';
-import { Collapse, Empty, Tabs, theme, Typography } from 'antd';
-import { UserPlus, Users, Contact, ChevronRight, Check, X } from 'lucide-react';
+import { Button, toast } from '@lobehub/ui';
+import { Collapse, Empty, Modal, Tabs, theme, Typography } from 'antd';
+import { UserPlus, Users, Contact, Check, X, Trash2 } from 'lucide-react';
 import { peerOfSession, useSocialChatStore } from '../../store/socialChat';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { log } from '../../utils/logger';
@@ -11,34 +11,38 @@ import { log } from '../../utils/logger';
 const { Text } = Typography;
 
 const PANEL_WIDTH = 240;
+const PENDING_STATUS = 1;
+const ACCEPTED_STATUS = 2;
+const REJECTED_STATUS = 3;
 
 export function ChatContactsPanel() {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const {
-    sessions,
-    groups,
-    friendRequests,
-    currentUserDid,
-    loadSessions,
-    loadGroups,
-    loadFriendRequests,
-    loadCurrentUserProfile,
-    selectSession,
-    selectGroup,
-    setActiveTab,
-    acceptFriendRequest,
-    rejectFriendRequest,
-  } = useSocialChatStore();
+  const sessions = useSocialChatStore((s) => s.sessions);
+  const groups = useSocialChatStore((s) => s.groups);
+  const friendRequests = useSocialChatStore((s) => s.friendRequests);
+  const currentUserDid = useSocialChatStore((s) => s.currentUserDid);
+  const activeTab = useSocialChatStore((s) => s.activeTab);
+  const activeSessionUlid = useSocialChatStore((s) => s.activeSessionUlid);
+  const activeGroupUlid = useSocialChatStore((s) => s.activeGroupUlid);
+  const loadFriendRequests = useSocialChatStore((s) => s.loadFriendRequests);
+  const selectSession = useSocialChatStore((s) => s.selectSession);
+  const selectGroup = useSocialChatStore((s) => s.selectGroup);
+  const setActiveTab = useSocialChatStore((s) => s.setActiveTab);
+  const restoreConversation = useSocialChatStore((s) => s.restoreConversation);
+  const deleteFriendContact = useSocialChatStore((s) => s.deleteFriendContact);
+  const deleteGroupContact = useSocialChatStore((s) => s.deleteGroupContact);
+  const acceptFriendRequest = useSocialChatStore((s) => s.acceptFriendRequest);
+  const rejectFriendRequest = useSocialChatStore((s) => s.rejectFriendRequest);
 
   const [busyAction, setBusyAction] = useState<{ id: string; kind: 'accept' | 'reject' } | null>(null);
 
   useEffect(() => {
-    void loadCurrentUserProfile().catch(() => {});
-    void loadFriendRequests().catch(() => {});
-    void loadGroups().catch(() => {});
-    void loadSessions().catch(() => {});
-  }, [loadCurrentUserProfile, loadFriendRequests, loadGroups, loadSessions]);
+    const frame = requestAnimationFrame(() => {
+      void loadFriendRequests().catch(() => {});
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [loadFriendRequests]);
 
   const receivedRequests = useMemo(() => {
     if (!currentUserDid) return [];
@@ -51,30 +55,144 @@ export function ChatContactsPanel() {
   }, [friendRequests, currentUserDid]);
 
   const pendingIncomingCount = useMemo(
-    () => receivedRequests.filter((r) => r.status === 1).length,
+    () => receivedRequests.filter((r) => r.status === PENDING_STATUS).length,
     [receivedRequests],
   );
 
-  const requestCardStyle: CSSProperties = {
-    padding: '10px 12px',
-    borderRadius: 10,
-    border: `1px solid ${token.colorBorderSecondary}`,
+  const avatarSize = 36;
+  const selectedRowStyle: CSSProperties = {
     background: token.colorFillQuaternary,
   };
 
-  const avatarSize = 36;
+  const rowBaseStyle: CSSProperties = {
+    padding: '9px 10px',
+    borderRadius: 10,
+    boxSizing: 'border-box',
+    maxWidth: '100%',
+    overflow: 'hidden',
+    cursor: 'pointer',
+    transition: 'background 0.15s, color 0.15s, box-shadow 0.15s',
+  };
+
+  const rowListStyle: CSSProperties = {
+    padding: '2px 0 4px',
+    minWidth: 0,
+    maxWidth: '100%',
+  };
 
   function statusTag(status: number) {
-    if (status === 1) {
-      return <Tag color="blue">{t('chat.social.contacts.status.pending')}</Tag>;
+    if (status === PENDING_STATUS) {
+      return <Text style={{ fontSize: 11, color: token.colorInfoText, flexShrink: 0 }}>{t('chat.social.contacts.status.pending')}</Text>;
     }
-    if (status === 2) {
-      return <Tag color="green">{t('chat.social.contacts.status.accepted')}</Tag>;
+    if (status === ACCEPTED_STATUS) {
+      return <Text style={{ fontSize: 11, color: token.colorSuccessText, flexShrink: 0 }}>{t('chat.social.contacts.status.accepted')}</Text>;
     }
-    if (status === 3) {
-      return <Tag>{t('chat.social.contacts.status.rejected')}</Tag>;
+    if (status === REJECTED_STATUS) {
+      return <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>{t('chat.social.contacts.status.rejected')}</Text>;
     }
     return null;
+  }
+
+  function confirmDeleteContact(kind: 'friend' | 'group', id: string, name: string) {
+    Modal.confirm({
+      title: kind === 'friend'
+        ? t('chat.social.contacts.deleteFriendTitle', 'Delete contact?')
+        : t('chat.social.contacts.deleteGroupTitle', 'Leave group?'),
+      content: kind === 'friend'
+        ? t('chat.social.contacts.deleteFriendDescription', 'This removes the contact and direct-chat history for both sides.')
+        : t('chat.social.contacts.deleteGroupDescription', 'This leaves the group and removes it from your contacts.'),
+      okText: t('chat.social.contacts.deleteConfirm', 'Delete'),
+      cancelText: t('chat.social.createGroup.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          if (kind === 'friend') {
+            await deleteFriendContact(id);
+          } else {
+            await deleteGroupContact(id);
+          }
+          toast.success(t('chat.social.contacts.deleteSuccess', '{{name}} deleted', { name }));
+        } catch (error) {
+          log.error('contacts', 'delete contact failed', error);
+          toast.error(t('chat.social.contacts.deleteFailed', 'Delete failed'));
+          throw error;
+        }
+      },
+    });
+  }
+
+  function renderFriendRequestRow(req: typeof friendRequests[number], direction: 'received' | 'sent') {
+    const peerLabel = direction === 'received'
+      ? req.senderDisplayName || req.senderId
+      : req.receiverDisplayName || req.receiverId;
+    const peerAvatar = direction === 'received' ? req.senderAvatar : req.receiverAvatar;
+    const isIncomingPending = direction === 'received' && req.status === PENDING_STATUS;
+
+    return (
+      <Flexbox
+        key={req.id}
+        horizontal
+        align="flex-start"
+        gap={9}
+        style={{ ...rowBaseStyle, cursor: 'default' }}
+      >
+        <UserSquareAvatar remoteUrl={peerAvatar} name={peerLabel} size={avatarSize} />
+        <Flexbox flex={1} style={{ minWidth: 0, maxWidth: '100%' }} gap={5}>
+          <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0, maxWidth: '100%' }}>
+            <Text strong ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>
+              {peerLabel}
+            </Text>
+            {statusTag(req.status)}
+          </Flexbox>
+          {req.message ? (
+            <Text type="secondary" ellipsis style={{ fontSize: 12, maxWidth: '100%' }}>
+              {req.message}
+            </Text>
+          ) : null}
+          {isIncomingPending ? (
+            <Flexbox horizontal gap={6} style={{ marginTop: 2, minWidth: 0, maxWidth: '100%' }}>
+              <Button
+                size="small"
+                type="primary"
+                icon={<Check size={12} />}
+                loading={busyAction?.id === req.id && busyAction?.kind === 'accept'}
+                onClick={async () => {
+                  setBusyAction({ id: req.id, kind: 'accept' });
+                  try {
+                    await acceptFriendRequest(req.id);
+                  } catch (e) {
+                    log.error('contacts', 'acceptFriendRequest failed', e);
+                  } finally {
+                    setBusyAction(null);
+                  }
+                }}
+                style={{ flex: 1, minWidth: 0 }}
+              >
+                {t('chat.social.contacts.accept')}
+              </Button>
+              <Button
+                size="small"
+                icon={<X size={12} />}
+                loading={busyAction?.id === req.id && busyAction?.kind === 'reject'}
+                onClick={async () => {
+                  setBusyAction({ id: req.id, kind: 'reject' });
+                  try {
+                    await rejectFriendRequest(req.id);
+                  } catch (e) {
+                    log.error('contacts', 'rejectFriendRequest failed', e);
+                  } finally {
+                    setBusyAction(null);
+                  }
+                }}
+                style={{ flex: 1, minWidth: 0 }}
+              >
+                {t('chat.social.contacts.reject')}
+              </Button>
+            </Flexbox>
+          ) : null}
+        </Flexbox>
+      </Flexbox>
+    );
   }
 
   const newFriendsContent = (
@@ -92,69 +210,8 @@ export function ChatContactsPanel() {
                 description={t('chat.social.contacts.noReceivedRequests')}
               />
             ) : (
-              <Flexbox gap={8}>
-                {receivedRequests.map((req) => {
-                  const peerLabel = req.senderDisplayName || req.senderId;
-                  const peerAvatar = req.senderAvatar;
-                  const isPending = req.status === 1;
-                  return (
-                    <Flexbox key={req.id} horizontal align="flex-start" gap={10} style={requestCardStyle}>
-                      <UserSquareAvatar remoteUrl={peerAvatar} name={peerLabel} size={avatarSize} />
-                      <Flexbox flex={1} style={{ minWidth: 0 }} gap={6}>
-                        <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0 }}>
-                          <Text strong ellipsis style={{ fontSize: 13 }}>
-                            {peerLabel}
-                          </Text>
-                          {statusTag(req.status)}
-                        </Flexbox>
-                        {req.message ? (
-                          <Text type="secondary" ellipsis style={{ fontSize: 12 }}>
-                            {req.message}
-                          </Text>
-                        ) : null}
-                        {isPending ? (
-                          <Flexbox horizontal gap={8} style={{ marginTop: 4 }}>
-                            <Button
-                              size="small"
-                              type="primary"
-                              icon={<Check size={12} />}
-                              loading={busyAction?.id === req.id && busyAction?.kind === 'accept'}
-                              onClick={async () => {
-                                setBusyAction({ id: req.id, kind: 'accept' });
-                                try {
-                                  await acceptFriendRequest(req.id);
-                                } catch (e) {
-                                  log.error('contacts', 'acceptFriendRequest failed', e);
-                                } finally {
-                                  setBusyAction(null);
-                                }
-                              }}
-                            >
-                              {t('chat.social.contacts.accept')}
-                            </Button>
-                            <Button
-                              size="small"
-                              icon={<X size={12} />}
-                              loading={busyAction?.id === req.id && busyAction?.kind === 'reject'}
-                              onClick={async () => {
-                                setBusyAction({ id: req.id, kind: 'reject' });
-                                try {
-                                  await rejectFriendRequest(req.id);
-                                } catch (e) {
-                                  log.error('contacts', 'rejectFriendRequest failed', e);
-                                } finally {
-                                  setBusyAction(null);
-                                }
-                              }}
-                            >
-                              {t('chat.social.contacts.reject')}
-                            </Button>
-                          </Flexbox>
-                        ) : null}
-                      </Flexbox>
-                    </Flexbox>
-                  );
-                })}
+              <Flexbox gap={2} style={rowListStyle}>
+                {receivedRequests.map((req) => renderFriendRequestRow(req, 'received'))}
               </Flexbox>
             ),
         },
@@ -165,29 +222,8 @@ export function ChatContactsPanel() {
             sentRequests.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.contacts.noSentRequests')} />
             ) : (
-              <Flexbox gap={8}>
-                {sentRequests.map((req) => {
-                  const peerLabel = req.receiverDisplayName || req.receiverId;
-                  const peerAvatar = req.receiverAvatar;
-                  return (
-                    <Flexbox key={req.id} horizontal align="flex-start" gap={10} style={requestCardStyle}>
-                      <UserSquareAvatar remoteUrl={peerAvatar} name={peerLabel} size={avatarSize} />
-                      <Flexbox flex={1} style={{ minWidth: 0 }} gap={6}>
-                        <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0 }}>
-                          <Text strong ellipsis style={{ fontSize: 13 }}>
-                            {peerLabel}
-                          </Text>
-                          {statusTag(req.status)}
-                        </Flexbox>
-                        {req.message ? (
-                          <Text type="secondary" ellipsis style={{ fontSize: 12 }}>
-                            {req.message}
-                          </Text>
-                        ) : null}
-                      </Flexbox>
-                    </Flexbox>
-                  );
-                })}
+              <Flexbox gap={2} style={rowListStyle}>
+                {sentRequests.map((req) => renderFriendRequestRow(req, 'sent'))}
               </Flexbox>
             ),
         },
@@ -220,46 +256,72 @@ export function ChatContactsPanel() {
       ),
       children:
         groups.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.contacts.noGroups')} />
+          <Flexbox align="center" justify="center" style={{ padding: '14px 8px' }}>
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.contacts.noGroups')} />
+          </Flexbox>
         ) : (
-          <Flexbox gap={2}>
-            {groups.map((g) => (
-              <Flexbox
-                key={g.ulid}
-                horizontal
-                align="center"
-                gap={8}
-                onClick={() => {
-                  selectGroup(g.ulid);
-                  setActiveTab('group');
-                }}
-                style={{
-                  padding: '8px 10px',
-                  borderRadius: 8,
-                  cursor: 'pointer',
-                  transition: 'background 0.15s',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = token.colorFillQuaternary;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                }}
-              >
-                <Flexbox align="center" justify="center" style={{ width: avatarSize, height: avatarSize, borderRadius: Math.max(8, Math.floor(avatarSize * 0.25)), background: token.colorFillSecondary, color: token.colorTextSecondary, fontSize: 14, fontWeight: 600, flexShrink: 0 }}>
-                  {(g.name || '?').charAt(0).toUpperCase()}
+          <Flexbox gap={3} style={rowListStyle}>
+            {groups.map((g) => {
+              const isSelected = activeTab === 'group' && g.ulid === activeGroupUlid;
+              return (
+                <Flexbox
+                  key={g.ulid}
+                  horizontal
+                  align="center"
+                  gap={9}
+                  onClick={() => {
+                    restoreConversation('group', g.ulid);
+                    selectGroup(g.ulid);
+                    setActiveTab('group');
+                  }}
+                  style={{
+                    ...rowBaseStyle,
+                    ...(isSelected ? selectedRowStyle : {}),
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) e.currentTarget.style.background = token.colorFillQuaternary;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = isSelected ? token.colorPrimaryBg : 'transparent';
+                  }}
+                >
+                  <Flexbox
+                    align="center"
+                    justify="center"
+                    style={{
+                      width: avatarSize,
+                      height: avatarSize,
+                      borderRadius: Math.max(8, Math.floor(avatarSize * 0.25)),
+                      background: isSelected ? token.colorPrimaryBgHover : token.colorFillSecondary,
+                      color: isSelected ? token.colorPrimary : token.colorTextSecondary,
+                      fontSize: 14,
+                      fontWeight: 600,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {(g.name || '?').charAt(0).toUpperCase()}
+                  </Flexbox>
+                  <Flexbox flex={1} style={{ minWidth: 0 }}>
+                    <Text strong ellipsis style={{ fontSize: 13, color: isSelected ? token.colorPrimary : undefined }}>
+                      {g.name || t('chat.social.sessionList.unnamedGroup')}
+                    </Text>
+                    <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
+                      {t('chat.social.detail.membersCount', { count: g.memberCount ?? 0 })}
+                    </Text>
+                  </Flexbox>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<Trash2 size={13} />}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      confirmDeleteContact('group', g.ulid, g.name || t('chat.social.sessionList.unnamedGroup'));
+                    }}
+                    style={{ color: token.colorTextTertiary, flexShrink: 0 }}
+                  />
                 </Flexbox>
-                <Flexbox flex={1} style={{ minWidth: 0 }}>
-                  <Text strong ellipsis style={{ fontSize: 13 }}>
-                    {g.name || t('chat.social.sessionList.unnamedGroup')}
-                  </Text>
-                  <Text type="secondary" style={{ fontSize: 11 }}>
-                    {t('chat.social.detail.membersCount', { count: g.memberCount ?? 0 })}
-                  </Text>
-                </Flexbox>
-                <ChevronRight size={14} style={{ color: token.colorTextQuaternary, flexShrink: 0 }} />
-              </Flexbox>
-            ))}
+              );
+            })}
           </Flexbox>
         ),
     },
@@ -275,42 +337,58 @@ export function ChatContactsPanel() {
       ),
       children:
         sessions.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.contacts.noFriends')} />
+          <Flexbox align="center" justify="center" style={{ padding: '14px 8px' }}>
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.contacts.noFriends')} />
+          </Flexbox>
         ) : (
-          <Flexbox gap={2}>
+          <Flexbox gap={3} style={rowListStyle}>
             {sessions.map((s) => {
               const peer = peerOfSession(s, currentUserDid);
               const label = peer.name || t('chat.social.sessionList.unknown');
+              const isSelected = activeTab === 'friend' && s.ulid === activeSessionUlid;
               return (
                 <Flexbox
                   key={s.ulid}
                   horizontal
                   align="center"
-                  gap={8}
+                  gap={9}
                   onClick={() => {
+                    restoreConversation('friend', s.ulid);
                     selectSession(s.ulid);
                     setActiveTab('friend');
                   }}
                   style={{
-                    padding: '8px 10px',
-                    borderRadius: 8,
-                    cursor: 'pointer',
-                    transition: 'background 0.15s',
+                    ...rowBaseStyle,
+                    ...(isSelected ? selectedRowStyle : {}),
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = token.colorFillQuaternary;
+                    if (!isSelected) e.currentTarget.style.background = token.colorFillQuaternary;
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'transparent';
+                    e.currentTarget.style.background = isSelected ? token.colorPrimaryBg : 'transparent';
                   }}
                 >
                   <UserSquareAvatar remoteUrl={peer.avatar} name={label} size={avatarSize} />
                   <Flexbox flex={1} style={{ minWidth: 0 }}>
-                    <Text strong ellipsis style={{ fontSize: 13 }}>
+                    <Text strong ellipsis style={{ fontSize: 13, color: isSelected ? token.colorPrimary : undefined }}>
                       {label}
                     </Text>
+                    {peer.did ? (
+                      <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
+                        {peer.did}
+                      </Text>
+                    ) : null}
                   </Flexbox>
-                  <ChevronRight size={14} style={{ color: token.colorTextQuaternary, flexShrink: 0 }} />
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<Trash2 size={13} />}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      confirmDeleteContact('friend', s.ulid, label);
+                    }}
+                    style={{ color: token.colorTextTertiary, flexShrink: 0 }}
+                  />
                 </Flexbox>
               );
             })}
@@ -330,11 +408,11 @@ export function ChatContactsPanel() {
         overflow: 'hidden',
       }}
     >
-      <Flexbox flex={1} style={{ overflow: 'auto', padding: 4 }}>
+      <Flexbox flex={1} style={{ overflow: 'auto', padding: '8px 6px' }}>
         <Collapse
           bordered={false}
-          defaultActiveKey={[]}
-          style={{ background: 'transparent' }}
+          defaultActiveKey={['saved-groups', 'friends']}
+          style={{ background: 'transparent', width: '100%' }}
           items={collapseItems}
         />
       </Flexbox>

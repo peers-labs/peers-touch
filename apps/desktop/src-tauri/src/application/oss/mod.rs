@@ -250,7 +250,7 @@ pub fn upload_attachment(
     })
 }
 
-pub fn oss_resolve_url(input: &str) -> AppResult<StubPayload> {
+pub fn oss_resolve_url(input: &str, token: Option<&str>) -> AppResult<StubPayload> {
     let uri = match OssUri::parse(input) {
         Ok(u) => u,
         Err(e) => {
@@ -297,7 +297,7 @@ pub fn oss_resolve_url(input: &str) -> AppResult<StubPayload> {
 
     // Best-effort cache to disk. Errors do not break the response —
     // the renderer can still show the file via the absolute URL.
-    let local_path = match oss_cache::attachment_ensure(&uri, None) {
+    let local_path = match oss_cache::attachment_ensure_with_bearer(&uri, None, token) {
         Ok(p) => Some(p.to_string_lossy().to_string()),
         Err(err) => {
             tracing::warn!(error = %err, uri = %input, "OSS attachment cache miss");

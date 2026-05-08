@@ -277,9 +277,13 @@ pub fn capabilities_ensure(origin: &str) -> Result<OssCapabilities, OssCacheErro
     if !resp.status().is_success() {
         return Err(OssCacheError::Network(format!("status {}", resp.status())));
     }
-    let caps: OssCapabilities = resp
+    let mut caps: OssCapabilities = resp
         .json()
         .map_err(|e| OssCacheError::Decode(e.to_string()))?;
+    let advertised_host = normalize_origin(&caps.host);
+    if advertised_host.is_empty() || advertised_host == "self" {
+        caps.host = normalized.clone();
+    }
 
     if let Ok(mut m) = caps_map().write() {
         m.insert(normalized.clone(), caps.clone());
@@ -363,6 +367,18 @@ pub fn attachment_ensure(
     uri: &OssUri,
     signed_query: Option<&str>,
 ) -> Result<PathBuf, OssCacheError> {
+    attachment_ensure_with_bearer(uri, signed_query, None)
+}
+
+/// Resolve the attachment for `uri` to a local file while optionally
+/// authenticating the fetch against the source Station. Chat-scoped
+/// attachments are not public URLs; without the bearer token the Station
+/// correctly returns 403 and the renderer can only fall back to a file card.
+pub fn attachment_ensure_with_bearer(
+    uri: &OssUri,
+    signed_query: Option<&str>,
+    bearer_token: Option<&str>,
+) -> Result<PathBuf, OssCacheError> {
     if let Some(path) = attachment_lookup(uri) {
         return Ok(path);
     }
@@ -373,10 +389,15 @@ pub fn attachment_ensure(
         ));
     }
 
+    let file_endpoint = if caps.file_endpoint.is_empty() {
+        "/sub-oss/file"
+    } else {
+        caps.file_endpoint.as_str()
+    };
     let mut url = format!(
         "{}{}?key={}",
-        caps.host,
-        caps.file_endpoint,
+        caps.host.trim_end_matches('/'),
+        file_endpoint,
         urlencode(&uri.key)
     );
     if let Some(q) = signed_query {
@@ -391,7 +412,14 @@ pub fn attachment_ensure(
         fs::create_dir_all(parent).map_err(|e| OssCacheError::Io(e.to_string()))?;
     }
 
-    let resp = reqwest::blocking::get(&url).map_err(|e| OssCacheError::Network(e.to_string()))?;
+    let client = reqwest::blocking::Client::new();
+    let mut req = client.get(&url);
+    if let Some(token) = bearer_token.map(str::trim).filter(|t| !t.is_empty()) {
+        req = req.bearer_auth(token);
+    }
+    let resp = req
+        .send()
+        .map_err(|e| OssCacheError::Network(e.to_string()))?;
     if !resp.status().is_success() {
         return Err(OssCacheError::Network(format!("status {}", resp.status())));
     }

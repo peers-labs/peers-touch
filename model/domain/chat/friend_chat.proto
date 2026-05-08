@@ -40,6 +40,10 @@ message FriendChatMessage {
   repeated FriendMessageAttachment attachments = 7;
   
   string reply_to_ulid = 8;
+  // Root message of the thread this message belongs to. Empty means
+  // the message is not part of a thread. Unlike reply_to_ulid, this
+  // remains stable when replying to a reply inside the same thread.
+  string thread_root_ulid = 18;
   
   FriendMessageStatus status = 9;
   google.protobuf.Timestamp sent_at = 10;
@@ -149,6 +153,9 @@ message SendMessageRequest {
   // Client-generated ULID for idempotency across direct + relay paths.
   // When set, Station should persist this ULID instead of generating a new one.
   string client_ulid = 8;
+  // Optional explicit thread root. If omitted and reply_to_ulid is
+  // present, Station resolves it from the replied message.
+  string thread_root_ulid = 9;
 }
 
 message SendMessageResponse {
@@ -230,6 +237,7 @@ message SyncMessageItem {
   bytes encrypted_payload = 7;
   repeated FriendMessageAttachment attachments = 8;
   string reply_to_ulid = 9;
+  string thread_root_ulid = 10;
 }
 
 message SyncMessagesRequest {
@@ -327,6 +335,17 @@ message ListFriendRequestsRequest {
 message ListFriendRequestsResponse {
   repeated FriendRequest requests = 1;
   int32 total = 2;
+}
+
+// Delete an accepted friendship with a peer. This is a relationship-level
+// deletion, not just a recent-conversation hide. The server removes the
+// accepted relationship and its direct-chat session history for both actors.
+message DeleteFriendRequest {
+  string peer_did = 1;
+}
+
+message DeleteFriendResponse {
+  bool success = 1;
 }
 
 // ============================================================================

@@ -200,6 +200,7 @@
 - 再按主题看：
   - `client/desktop/global-context-kernel.md`
   - `client/desktop/provider-model-target-architecture.md`
+  - `client/desktop/runtime-projections.md`
 
 ### 我想看 Station 与 Desktop 谁负责什么
 

@@ -616,14 +616,19 @@ type GroupMessage struct {
 	// to "removed (reserved field number)" in a future proto rev.
 	//
 	// Deprecated: Marked as deprecated in domain/chat/group_chat.proto.
-	Content       string                    `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`
-	Attachments   []*GroupMessageAttachment `protobuf:"bytes,6,rep,name=attachments,proto3" json:"attachments,omitempty"`
-	ReplyToUlid   string                    `protobuf:"bytes,7,opt,name=reply_to_ulid,json=replyToUlid,proto3" json:"reply_to_ulid,omitempty"`     // 回复的消息ID
-	MentionedDids []string                  `protobuf:"bytes,8,rep,name=mentioned_dids,json=mentionedDids,proto3" json:"mentioned_dids,omitempty"` // @的成员
-	MentionAll    bool                      `protobuf:"varint,9,opt,name=mention_all,json=mentionAll,proto3" json:"mention_all,omitempty"`         // @全体成员
-	SentAt        *timestamppb.Timestamp    `protobuf:"bytes,10,opt,name=sent_at,json=sentAt,proto3" json:"sent_at,omitempty"`
-	CreatedAt     *timestamppb.Timestamp    `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp    `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Content     string                    `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`
+	Attachments []*GroupMessageAttachment `protobuf:"bytes,6,rep,name=attachments,proto3" json:"attachments,omitempty"`
+	ReplyToUlid string                    `protobuf:"bytes,7,opt,name=reply_to_ulid,json=replyToUlid,proto3" json:"reply_to_ulid,omitempty"` // 回复的消息ID
+	// Root message of the thread this message belongs to. Empty means
+	// the message is not part of a thread. This is distinct from
+	// reply_to_ulid so clients can reply to a reply while preserving
+	// the thread root.
+	ThreadRootUlid string                 `protobuf:"bytes,16,opt,name=thread_root_ulid,json=threadRootUlid,proto3" json:"thread_root_ulid,omitempty"`
+	MentionedDids  []string               `protobuf:"bytes,8,rep,name=mentioned_dids,json=mentionedDids,proto3" json:"mentioned_dids,omitempty"` // @的成员
+	MentionAll     bool                   `protobuf:"varint,9,opt,name=mention_all,json=mentionAll,proto3" json:"mention_all,omitempty"`         // @全体成员
+	SentAt         *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=sent_at,json=sentAt,proto3" json:"sent_at,omitempty"`
+	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt      *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	// recalled flips when the original sender recalls the message.
 	// The row is preserved (so threading & search snippets stay
 	// coherent) but encrypted_payload is cleared and the client
@@ -721,6 +726,13 @@ func (x *GroupMessage) GetAttachments() []*GroupMessageAttachment {
 func (x *GroupMessage) GetReplyToUlid() string {
 	if x != nil {
 		return x.ReplyToUlid
+	}
+	return ""
+}
+
+func (x *GroupMessage) GetThreadRootUlid() string {
+	if x != nil {
+		return x.ThreadRootUlid
 	}
 	return ""
 }
@@ -2278,8 +2290,11 @@ type SendGroupMessageRequest struct {
 	MentionedDids    []string                  `protobuf:"bytes,6,rep,name=mentioned_dids,json=mentionedDids,proto3" json:"mentioned_dids,omitempty"`
 	MentionAll       bool                      `protobuf:"varint,7,opt,name=mention_all,json=mentionAll,proto3" json:"mention_all,omitempty"`
 	EncryptedPayload []byte                    `protobuf:"bytes,8,opt,name=encrypted_payload,json=encryptedPayload,proto3" json:"encrypted_payload,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Optional explicit thread root. If omitted and reply_to_ulid is
+	// present, Station resolves it from the replied message.
+	ThreadRootUlid string `protobuf:"bytes,9,opt,name=thread_root_ulid,json=threadRootUlid,proto3" json:"thread_root_ulid,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SendGroupMessageRequest) Reset() {
@@ -2367,6 +2382,13 @@ func (x *SendGroupMessageRequest) GetEncryptedPayload() []byte {
 		return x.EncryptedPayload
 	}
 	return nil
+}
+
+func (x *SendGroupMessageRequest) GetThreadRootUlid() string {
+	if x != nil {
+		return x.ThreadRootUlid
+	}
+	return ""
 }
 
 type SendGroupMessageResponse struct {
@@ -3897,7 +3919,7 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"mutedUntil\x127\n" +
 	"\tjoined_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\bjoinedAt\x12\x1d\n" +
 	"\n" +
-	"invited_by\x18\b \x01(\tR\tinvitedBy\"\xad\x05\n" +
+	"invited_by\x18\b \x01(\tR\tinvitedBy\"\xd7\x05\n" +
 	"\fGroupMessage\x12\x12\n" +
 	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12\x1d\n" +
 	"\n" +
@@ -3907,7 +3929,8 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"\x04type\x18\x04 \x01(\x0e2+.peers_touch.model.chat.v1.GroupMessageTypeR\x04type\x12\x1c\n" +
 	"\acontent\x18\x05 \x01(\tB\x02\x18\x01R\acontent\x12S\n" +
 	"\vattachments\x18\x06 \x03(\v21.peers_touch.model.chat.v1.GroupMessageAttachmentR\vattachments\x12\"\n" +
-	"\rreply_to_ulid\x18\a \x01(\tR\vreplyToUlid\x12%\n" +
+	"\rreply_to_ulid\x18\a \x01(\tR\vreplyToUlid\x12(\n" +
+	"\x10thread_root_ulid\x18\x10 \x01(\tR\x0ethreadRootUlid\x12%\n" +
 	"\x0ementioned_dids\x18\b \x03(\tR\rmentionedDids\x12\x1f\n" +
 	"\vmention_all\x18\t \x01(\bR\n" +
 	"mentionAll\x123\n" +
@@ -4047,7 +4070,7 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12\x1b\n" +
 	"\tactor_did\x18\x02 \x01(\tR\bactorDid\"0\n" +
 	"\x14RemoveMemberResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x85\x03\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\xaf\x03\n" +
 	"\x17SendGroupMessageRequest\x12\x1d\n" +
 	"\n" +
 	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12?\n" +
@@ -4058,7 +4081,8 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"\x0ementioned_dids\x18\x06 \x03(\tR\rmentionedDids\x12\x1f\n" +
 	"\vmention_all\x18\a \x01(\bR\n" +
 	"mentionAll\x12+\n" +
-	"\x11encrypted_payload\x18\b \x01(\fR\x10encryptedPayload\"]\n" +
+	"\x11encrypted_payload\x18\b \x01(\fR\x10encryptedPayload\x12(\n" +
+	"\x10thread_root_ulid\x18\t \x01(\tR\x0ethreadRootUlid\"]\n" +
 	"\x18SendGroupMessageResponse\x12A\n" +
 	"\amessage\x18\x01 \x01(\v2'.peers_touch.model.chat.v1.GroupMessageR\amessage\"o\n" +
 	"\x17GetGroupMessagesRequest\x12\x1d\n" +

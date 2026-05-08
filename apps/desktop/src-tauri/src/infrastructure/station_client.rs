@@ -548,14 +548,28 @@ pub(crate) fn request_json(
     let status = resp.status();
     let elapsed = start.elapsed().as_millis();
 
+    let bytes = resp.bytes().map_err(|e| {
+        tracing::error!(path = %path, error = %e, "← station READ_ERROR");
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("read body failed: {}", e),
+            None,
+        )
+    })?;
+
     if !status.is_success() {
         let code = status.as_u16();
-        let text = resp.text().unwrap_or_default();
+        let text = String::from_utf8_lossy(&bytes).to_string();
         tracing::warn!(path = %path, status = code, elapsed_ms = elapsed, body = %text, "← station FAIL");
         return Err(build_error_for_status(code, path, &text));
     }
 
-    let result: Value = resp.json().map_err(|e| {
+    if bytes.is_empty() {
+        tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json, empty)");
+        return Ok(Value::Null);
+    }
+
+    let result: Value = serde_json::from_slice(&bytes).map_err(|e| {
         tracing::error!(path = %path, error = %e, "← station JSON_ERROR");
         StationClientError::new(
             StationClientErrorKind::Decode,
@@ -706,7 +720,11 @@ pub(crate) fn request_json_auth(
 
     let bytes = resp.bytes().map_err(|e| {
         tracing::error!(path = %path, error = %e, "← station READ_ERROR (json-auth)");
-        StationClientError::new(StationClientErrorKind::Decode, format!("read body failed: {}", e), None)
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("read body failed: {}", e),
+            None,
+        )
     })?;
 
     if !status.is_success() {
@@ -731,7 +749,11 @@ pub(crate) fn request_json_auth(
 
     let result: Value = serde_json::from_slice(&bytes).map_err(|e| {
         tracing::error!(path = %path, error = %e, "← station JSON_ERROR (json-auth)");
-        StationClientError::new(StationClientErrorKind::Decode, format!("decode json response failed: {}", e), None)
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("decode json response failed: {}", e),
+            None,
+        )
     })?;
     tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json-auth)");
     Ok(result)

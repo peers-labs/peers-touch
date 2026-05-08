@@ -46,9 +46,9 @@ const (
 // (which an operator might run while debugging) without losing the
 // migration history.
 type Meta struct {
-	Key       string    `json:"key"        gorm:"primaryKey;type:varchar(64)"`
-	Value     string    `json:"value"      gorm:"type:varchar(500)"`
-	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	Key       string    `json:"key"        gorm:"column:key;primaryKey;type:varchar(64)"`
+	Value     string    `json:"value"      gorm:"column:value;type:varchar(500)"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"column:updated_at;autoUpdateTime"`
 }
 
 // TableName binds Meta to `oss_meta`.

@@ -8,6 +8,7 @@ import { NotesPage } from '../pages/NotesPage';
 import { AgentProfilePage } from '../pages/AgentProfilePage';
 import { AppletRuntimePage } from '../pages/AppletRuntimePage';
 import { getModule } from '../modules/registry';
+import { useNavigationBadgeStore } from '../store/navigationBadges';
 import type { Page, Navigation, AppletPins, HashRouter } from '../types/navigation';
 
 interface PageRouterProps {
@@ -22,6 +23,7 @@ interface PageRouterProps {
 const KEEP_ALIVE_PAGES = new Set<string>(['chat', 'agent']);
 
 export function PageRouter({ page, router, navigation, appletPins }: PageRouterProps) {
+  const setChatSurfaceVisible = useNavigationBadgeStore((state) => state.setChatSurfaceVisible);
   const [mounted, setMounted] = useState<Set<string>>(() => {
     const initial = new Set<string>();
     if (KEEP_ALIVE_PAGES.has(page)) initial.add(page);
@@ -34,6 +36,10 @@ export function PageRouter({ page, router, navigation, appletPins }: PageRouterP
       setMounted((prev) => new Set(prev).add(page));
     }
   }, [page]);
+
+  useEffect(() => {
+    setChatSurfaceVisible(page === 'chat');
+  }, [page, setChatSurfaceVisible]);
 
   return (
     <>

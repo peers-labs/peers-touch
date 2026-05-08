@@ -710,6 +710,7 @@ pub struct AttachmentInput {
     pub mime_type: String,
     pub size: i64,
     pub thumbnail_cid: Option<String>,
+    pub visibility: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -720,6 +721,7 @@ pub struct FriendChatSendInput {
     pub encrypted_payload: Option<String>,
     pub r#type: Option<i32>,
     pub reply_to_ulid: Option<String>,
+    pub thread_root_ulid: Option<String>,
     pub attachments: Option<Vec<AttachmentInput>>,
 }
 
@@ -776,6 +778,7 @@ pub struct GroupChatSendInput {
     pub content: String,
     pub r#type: Option<i32>,
     pub reply_to_ulid: Option<String>,
+    pub thread_root_ulid: Option<String>,
     pub mentioned_dids: Option<Vec<String>>,
     pub mention_all: Option<bool>,
     pub attachments: Option<Vec<AttachmentInput>>,
