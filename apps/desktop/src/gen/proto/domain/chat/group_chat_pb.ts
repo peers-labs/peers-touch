@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/chat/group_chat.proto.
  */
 export const file_domain_chat_group_chat: GenFile = /*@__PURE__*/
-  fileDesc("Chxkb21haW4vY2hhdC9ncm91cF9jaGF0LnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxIuADCgVHcm91cBIMCgR1bGlkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSEgoKYXZhdGFyX2NpZBgEIAEoCRIRCglvd25lcl9kaWQYBSABKAkSMgoEdHlwZRgGIAEoDjIkLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuR3JvdXBUeXBlEj4KCnZpc2liaWxpdHkYByABKA4yKi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwVmlzaWJpbGl0eRIUCgxtZW1iZXJfY291bnQYCCABKAUSEwoLbWF4X21lbWJlcnMYCSABKAUSDQoFbXV0ZWQYCiABKAgSQAoIc2V0dGluZ3MYCyADKAsyLi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwLlNldHRpbmdzRW50cnkSLgoKY3JlYXRlZF9hdBgMIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAaLwoNU2V0dGluZ3NFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIv0BCgtHcm91cE1lbWJlchISCgpncm91cF91bGlkGAEgASgJEhEKCWFjdG9yX2RpZBgCIAEoCRIyCgRyb2xlGAMgASgOMiQucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cFJvbGUSEAoIbmlja25hbWUYBCABKAkSDQoFbXV0ZWQYBSABKAgSLwoLbXV0ZWRfdW50aWwYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi0KCWpvaW5lZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKaW52aXRlZF9ieRgIIAEoCSLVAwoMR3JvdXBNZXNzYWdlEgwKBHVsaWQYASABKAkSEgoKZ3JvdXBfdWxpZBgCIAEoCRISCgpzZW5kZXJfZGlkGAMgASgJEjkKBHR5cGUYBCABKA4yKy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwTWVzc2FnZVR5cGUSDwoHY29udGVudBgFIAEoCRJGCgthdHRhY2htZW50cxgGIAMoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuR3JvdXBNZXNzYWdlQXR0YWNobWVudBIVCg1yZXBseV90b191bGlkGAcgASgJEhYKDm1lbnRpb25lZF9kaWRzGAggAygJEhMKC21lbnRpb25fYWxsGAkgASgIEisKB3NlbnRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmNyZWF0ZWRfYXQYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYDCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg8KB2RlbGV0ZWQYDSABKAgSGQoRZW5jcnlwdGVkX3BheWxvYWQYDiABKAwibwoWR3JvdXBNZXNzYWdlQXR0YWNobWVudBILCgNjaWQYASABKAkSEAoIZmlsZW5hbWUYAiABKAkSEQoJbWltZV90eXBlGAMgASgJEgwKBHNpemUYBCABKAMSFQoNdGh1bWJuYWlsX2NpZBgFIAEoCSL+AQoPR3JvdXBJbnZpdGF0aW9uEgwKBHVsaWQYASABKAkSEgoKZ3JvdXBfdWxpZBgCIAEoCRITCgtpbnZpdGVyX2RpZBgDIAEoCRITCgtpbnZpdGVlX2RpZBgEIAEoCRJACgZzdGF0dXMYBSABKA4yMC5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwSW52aXRhdGlvblN0YXR1cxItCglleHBpcmVfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmNyZWF0ZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIsgBChJDcmVhdGVHcm91cFJlcXVlc3QSDAoEbmFtZRgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRIyCgR0eXBlGAMgASgOMiQucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cFR5cGUSPgoKdmlzaWJpbGl0eRgEIAEoDjIqLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuR3JvdXBWaXNpYmlsaXR5EhsKE2luaXRpYWxfbWVtYmVyX2RpZHMYBSADKAkiRgoTQ3JlYXRlR3JvdXBSZXNwb25zZRIvCgVncm91cBgBIAEoCzIgLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuR3JvdXAiMgoRTGlzdEdyb3Vwc1JlcXVlc3QSDQoFbGltaXQYASABKAUSDgoGb2Zmc2V0GAIgASgFIlUKEkxpc3RHcm91cHNSZXNwb25zZRIwCgZncm91cHMYASADKAsyIC5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwEg0KBXRvdGFsGAIgASgFIiUKD0dldEdyb3VwUmVxdWVzdBISCgpncm91cF91bGlkGAEgASgJIoIBChBHZXRHcm91cFJlc3BvbnNlEi8KBWdyb3VwGAEgASgLMiAucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cBI9Cg1teV9tZW1iZXJzaGlwGAIgASgLMiYucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cE1lbWJlciLKAgoSVXBkYXRlR3JvdXBSZXF1ZXN0EhIKCmdyb3VwX3VsaWQYASABKAkSEQoEbmFtZRgCIAEoCUgAiAEBEhgKC2Rlc2NyaXB0aW9uGAMgASgJSAGIAQESFwoKYXZhdGFyX2NpZBgEIAEoCUgCiAEBEjcKBHR5cGUYBSABKA4yJC5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwVHlwZUgDiAEBEkMKCnZpc2liaWxpdHkYBiABKA4yKi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwVmlzaWJpbGl0eUgEiAEBEhIKBW11dGVkGAcgASgISAWIAQFCBwoFX25hbWVCDgoMX2Rlc2NyaXB0aW9uQg0KC19hdmF0YXJfY2lkQgcKBV90eXBlQg0KC192aXNpYmlsaXR5QggKBl9tdXRlZCJGChNVcGRhdGVHcm91cFJlc3BvbnNlEi8KBWdyb3VwGAEgASgLMiAucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cCJAChRJbnZpdGVUb0dyb3VwUmVxdWVzdBISCgpncm91cF91bGlkGAEgASgJEhQKDGludml0ZWVfZGlkcxgCIAMoCSJYChVJbnZpdGVUb0dyb3VwUmVzcG9uc2USPwoLaW52aXRhdGlvbnMYASADKAsyKi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwSW52aXRhdGlvbiI/ChBKb2luR3JvdXBSZXF1ZXN0EhIKCmdyb3VwX3VsaWQYASABKAkSFwoPaW52aXRhdGlvbl91bGlkGAIgASgJIk8KEUpvaW5Hcm91cFJlc3BvbnNlEjoKCm1lbWJlcnNoaXAYASABKAsyJi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwTWVtYmVyIicKEUxlYXZlR3JvdXBSZXF1ZXN0EhIKCmdyb3VwX3VsaWQYASABKAkiJQoSTGVhdmVHcm91cFJlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiSwoWR2V0R3JvdXBNZW1iZXJzUmVxdWVzdBISCgpncm91cF91bGlkGAEgASgJEg0KBWxpbWl0GAIgASgFEg4KBm9mZnNldBgDIAEoBSJhChdHZXRHcm91cE1lbWJlcnNSZXNwb25zZRI3CgdtZW1iZXJzGAEgAygLMiYucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cE1lbWJlchINCgV0b3RhbBgCIAEoBSLiAQoTVXBkYXRlTWVtYmVyUmVxdWVzdBISCgpncm91cF91bGlkGAEgASgJEhEKCWFjdG9yX2RpZBgCIAEoCRI3CgRyb2xlGAMgASgOMiQucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cFJvbGVIAIgBARISCgVtdXRlZBgEIAEoCEgBiAEBEjQKC211dGVkX3VudGlsGAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEgCiAEBQgcKBV9yb2xlQggKBl9tdXRlZEIOCgxfbXV0ZWRfdW50aWwiTgoUVXBkYXRlTWVtYmVyUmVzcG9uc2USNgoGbWVtYmVyGAEgASgLMiYucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cE1lbWJlciI8ChNSZW1vdmVNZW1iZXJSZXF1ZXN0EhIKCmdyb3VwX3VsaWQYASABKAkSEQoJYWN0b3JfZGlkGAIgASgJIicKFFJlbW92ZU1lbWJlclJlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgioAIKF1NlbmRHcm91cE1lc3NhZ2VSZXF1ZXN0EhIKCmdyb3VwX3VsaWQYASABKAkSOQoEdHlwZRgCIAEoDjIrLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuR3JvdXBNZXNzYWdlVHlwZRIPCgdjb250ZW50GAMgASgJEkYKC2F0dGFjaG1lbnRzGAQgAygLMjEucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cE1lc3NhZ2VBdHRhY2htZW50EhUKDXJlcGx5X3RvX3VsaWQYBSABKAkSFgoObWVudGlvbmVkX2RpZHMYBiADKAkSEwoLbWVudGlvbl9hbGwYByABKAgSGQoRZW5jcnlwdGVkX3BheWxvYWQYCCABKAwiVAoYU2VuZEdyb3VwTWVzc2FnZVJlc3BvbnNlEjgKB21lc3NhZ2UYASABKAsyJy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwTWVzc2FnZSJRChdHZXRHcm91cE1lc3NhZ2VzUmVxdWVzdBISCgpncm91cF91bGlkGAEgASgJEhMKC2JlZm9yZV91bGlkGAIgASgJEg0KBWxpbWl0GAMgASgFInwKGEdldEdyb3VwTWVzc2FnZXNSZXNwb25zZRI5CghtZXNzYWdlcxgBIAMoCzInLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuR3JvdXBNZXNzYWdlEhAKCGhhc19tb3JlGAIgASgIEhMKC25leHRfY3Vyc29yGAMgASgJIkUKGVJlY2FsbEdyb3VwTWVzc2FnZVJlcXVlc3QSEgoKZ3JvdXBfdWxpZBgBIAEoCRIUCgxtZXNzYWdlX3VsaWQYAiABKAkiLQoaUmVjYWxsR3JvdXBNZXNzYWdlUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCK6AgoTR3JvdXBPZmZsaW5lTWVzc2FnZRIMCgR1bGlkGAEgASgJEhIKCmdyb3VwX3VsaWQYAiABKAkSFAoMcmVjZWl2ZXJfZGlkGAMgASgJEhQKDG1lc3NhZ2VfdWxpZBgEIAEoCRJECgZzdGF0dXMYBSABKA4yNC5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwT2ZmbGluZU1lc3NhZ2VTdGF0dXMSLQoJZXhwaXJlX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxkZWxpdmVyZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmNyZWF0ZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIj8KF1VwZGF0ZU15Tmlja25hbWVSZXF1ZXN0EhIKCmdyb3VwX3VsaWQYASABKAkSEAoIbmlja25hbWUYAiABKAkiUgoYVXBkYXRlTXlOaWNrbmFtZVJlc3BvbnNlEjYKBm1lbWJlchgBIAEoCzImLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuR3JvdXBNZW1iZXIiYwoaU2VhcmNoR3JvdXBNZXNzYWdlc1JlcXVlc3QSEgoKZ3JvdXBfdWxpZBgBIAEoCRINCgVxdWVyeRgCIAEoCRINCgVsaW1pdBgDIAEoBRITCgtiZWZvcmVfdWxpZBgEIAEoCSJqChtTZWFyY2hHcm91cE1lc3NhZ2VzUmVzcG9uc2USOQoIbWVzc2FnZXMYASADKAsyJy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwTWVzc2FnZRIQCghoYXNfbW9yZRgCIAEoCCItChdHZXRHcm91cFNldHRpbmdzUmVxdWVzdBISCgpncm91cF91bGlkGAEgASgJInIKGEdldEdyb3VwU2V0dGluZ3NSZXNwb25zZRIQCghpc19tdXRlZBgBIAEoCBIRCglpc19waW5uZWQYAiABKAgSEwoLbXlfbmlja25hbWUYAyABKAkSHAoUc2hvd19tZW1iZXJfbmlja25hbWUYBCABKAgitgEKGlVwZGF0ZUdyb3VwU2V0dGluZ3NSZXF1ZXN0EhIKCmdyb3VwX3VsaWQYASABKAkSFQoIaXNfbXV0ZWQYAiABKAhIAIgBARIWCglpc19waW5uZWQYAyABKAhIAYgBARIhChRzaG93X21lbWJlcl9uaWNrbmFtZRgEIAEoCEgCiAEBQgsKCV9pc19tdXRlZEIMCgpfaXNfcGlubmVkQhcKFV9zaG93X21lbWJlcl9uaWNrbmFtZSIuChtVcGRhdGVHcm91cFNldHRpbmdzUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCJFChlEZWxldGVHcm91cE1lc3NhZ2VSZXF1ZXN0EhIKCmdyb3VwX3VsaWQYASABKAkSFAoMbWVzc2FnZV91bGlkGAIgASgJIi0KGkRlbGV0ZUdyb3VwTWVzc2FnZVJlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiKgoZR2V0T2ZmbGluZU1lc3NhZ2VzUmVxdWVzdBINCgVsaW1pdBgBIAEoBSJeChpHZXRPZmZsaW5lTWVzc2FnZXNSZXNwb25zZRJACghtZXNzYWdlcxgBIAMoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuR3JvdXBPZmZsaW5lTWVzc2FnZSIqChlBY2tPZmZsaW5lTWVzc2FnZXNSZXF1ZXN0Eg0KBXVsaWRzGAEgAygJIi0KGkFja09mZmxpbmVNZXNzYWdlc1Jlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiKwoVR2V0VW5yZWFkQ291bnRSZXF1ZXN0EhIKCmdyb3VwX3VsaWQYASABKAkiLgoWR2V0VW5yZWFkQ291bnRSZXNwb25zZRIUCgx1bnJlYWRfY291bnQYASABKAMiPgoUTWFya0dyb3VwUmVhZFJlcXVlc3QSEgoKZ3JvdXBfdWxpZBgBIAEoCRISCgp1cF90b191bGlkGAIgASgJIigKFU1hcmtHcm91cFJlYWRSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIIhYKFEdldEdyb3VwU3RhdHNSZXF1ZXN0InMKFUdldEdyb3VwU3RhdHNSZXNwb25zZRIUCgx0b3RhbF9ncm91cHMYASABKAMSFQoNdG90YWxfbWVtYmVycxgCIAEoAxIWCg50b3RhbF9tZXNzYWdlcxgDIAEoAxIVCg1hY3RpdmVfZ3JvdXBzGAQgASgDKnYKCUdyb3VwVHlwZRIaChZHUk9VUF9UWVBFX1VOU1BFQ0lGSUVEEAASFQoRR1JPVVBfVFlQRV9OT1JNQUwQARIbChdHUk9VUF9UWVBFX0FOTk9VTkNFTUVOVBACEhkKFUdST1VQX1RZUEVfRElTQ1VTU0lPThADKm4KD0dyb3VwVmlzaWJpbGl0eRIgChxHUk9VUF9WSVNJQklMSVRZX1VOU1BFQ0lGSUVEEAASGwoXR1JPVVBfVklTSUJJTElUWV9QVUJMSUMQARIcChhHUk9VUF9WSVNJQklMSVRZX1BSSVZBVEUQAipqCglHcm91cFJvbGUSGgoWR1JPVVBfUk9MRV9VTlNQRUNJRklFRBAAEhUKEUdST1VQX1JPTEVfTUVNQkVSEAESFAoQR1JPVVBfUk9MRV9BRE1JThACEhQKEEdST1VQX1JPTEVfT1dORVIQAyrpAQoQR3JvdXBNZXNzYWdlVHlwZRIiCh5HUk9VUF9NRVNTQUdFX1RZUEVfVU5TUEVDSUZJRUQQABIbChdHUk9VUF9NRVNTQUdFX1RZUEVfVEVYVBABEhwKGEdST1VQX01FU1NBR0VfVFlQRV9JTUFHRRACEhsKF0dST1VQX01FU1NBR0VfVFlQRV9GSUxFEAMSHAoYR1JPVVBfTUVTU0FHRV9UWVBFX0FVRElPEAQSHAoYR1JPVVBfTUVTU0FHRV9UWVBFX1ZJREVPEAUSHQoZR1JPVVBfTUVTU0FHRV9UWVBFX1NZU1RFTRAKKtYBChVHcm91cEludml0YXRpb25TdGF0dXMSJwojR1JPVVBfSU5WSVRBVElPTl9TVEFUVVNfVU5TUEVDSUZJRUQQABIjCh9HUk9VUF9JTlZJVEFUSU9OX1NUQVRVU19QRU5ESU5HEAESJAogR1JPVVBfSU5WSVRBVElPTl9TVEFUVVNfQUNDRVBURUQQAhIkCiBHUk9VUF9JTlZJVEFUSU9OX1NUQVRVU19SRUpFQ1RFRBADEiMKH0dST1VQX0lOVklUQVRJT05fU1RBVFVTX0VYUElSRUQQBCrJAQoZR3JvdXBPZmZsaW5lTWVzc2FnZVN0YXR1cxIsCihHUk9VUF9PRkZMSU5FX01FU1NBR0VfU1RBVFVTX1VOU1BFQ0lGSUVEEAASKAokR1JPVVBfT0ZGTElORV9NRVNTQUdFX1NUQVRVU19QRU5ESU5HEAESKgomR1JPVVBfT0ZGTElORV9NRVNTQUdFX1NUQVRVU19ERUxJVkVSRUQQAhIoCiRHUk9VUF9PRkZMSU5FX01FU1NBR0VfU1RBVFVTX0VYUElSRUQQA0JHWkVnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbC9jaGF0O2NoYXRiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("Chxkb21haW4vY2hhdC9ncm91cF9jaGF0LnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxIuADCgVHcm91cBIMCgR1bGlkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSEgoKYXZhdGFyX2NpZBgEIAEoCRIRCglvd25lcl9kaWQYBSABKAkSMgoEdHlwZRgGIAEoDjIkLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuR3JvdXBUeXBlEj4KCnZpc2liaWxpdHkYByABKA4yKi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwVmlzaWJpbGl0eRIUCgxtZW1iZXJfY291bnQYCCABKAUSEwoLbWF4X21lbWJlcnMYCSABKAUSDQoFbXV0ZWQYCiABKAgSQAoIc2V0dGluZ3MYCyADKAsyLi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwLlNldHRpbmdzRW50cnkSLgoKY3JlYXRlZF9hdBgMIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAaLwoNU2V0dGluZ3NFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIv0BCgtHcm91cE1lbWJlchISCgpncm91cF91bGlkGAEgASgJEhEKCWFjdG9yX2RpZBgCIAEoCRIyCgRyb2xlGAMgASgOMiQucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cFJvbGUSEAoIbmlja25hbWUYBCABKAkSDQoFbXV0ZWQYBSABKAgSLwoLbXV0ZWRfdW50aWwYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi0KCWpvaW5lZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKaW52aXRlZF9ieRgIIAEoCSKjBAoMR3JvdXBNZXNzYWdlEgwKBHVsaWQYASABKAkSEgoKZ3JvdXBfdWxpZBgCIAEoCRISCgpzZW5kZXJfZGlkGAMgASgJEjkKBHR5cGUYBCABKA4yKy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwTWVzc2FnZVR5cGUSEwoHY29udGVudBgFIAEoCUICGAESRgoLYXR0YWNobWVudHMYBiADKAsyMS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwTWVzc2FnZUF0dGFjaG1lbnQSFQoNcmVwbHlfdG9fdWxpZBgHIAEoCRIYChB0aHJlYWRfcm9vdF91bGlkGBAgASgJEhYKDm1lbnRpb25lZF9kaWRzGAggAygJEhMKC21lbnRpb25fYWxsGAkgASgIEisKB3NlbnRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmNyZWF0ZWRfYXQYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYDCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCHJlY2FsbGVkGA0gASgIEhkKEWVuY3J5cHRlZF9wYXlsb2FkGA4gASgMEi0KCWVkaXRlZF9hdBgPIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAihQEKD0dyb3VwQ2lwaGVydGV4dBIPCgd2ZXJzaW9uGAEgASgNEhIKCnNlbmRlcl9kaWQYAiABKAkSFQoNc2VuZGVyX2tleV9pZBgDIAEoDRIPCgdjb3VudGVyGAQgASgNEhIKCmNpcGhlcnRleHQYBSABKAwSEQoJc2lnbmF0dXJlGAYgASgMIpkBChxTZW5kZXJLZXlEaXN0cmlidXRpb25NZXNzYWdlEhIKCmdyb3VwX3VsaWQYASABKAkSEgoKc2VuZGVyX2RpZBgCIAEoCRIVCg1zZW5kZXJfa2V5X2lkGAMgASgNEhEKCWNoYWluX2tleRgEIAEoDBIPCgdjb3VudGVyGAUgASgNEhYKDnNlbmRlcl9zaWdfcHViGAYgASgMIoMBChZHcm91cE1lc3NhZ2VBdHRhY2htZW50EgsKA2NpZBgBIAEoCRIQCghmaWxlbmFtZRgCIAEoCRIRCgltaW1lX3R5cGUYAyABKAkSDAoEc2l6ZRgEIAEoAxIVCg10aHVtYm5haWxfY2lkGAUgASgJEhIKCnZpc2liaWxpdHkYBiABKAki/gEKD0dyb3VwSW52aXRhdGlvbhIMCgR1bGlkGAEgASgJEhIKCmdyb3VwX3VsaWQYAiABKAkSEwoLaW52aXRlcl9kaWQYAyABKAkSEwoLaW52aXRlZV9kaWQYBCABKAkSQAoGc3RhdHVzGAUgASgOMjAucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cEludml0YXRpb25TdGF0dXMSLQoJZXhwaXJlX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpjcmVhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLIAQoSQ3JlYXRlR3JvdXBSZXF1ZXN0EgwKBG5hbWUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSMgoEdHlwZRgDIAEoDjIkLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuR3JvdXBUeXBlEj4KCnZpc2liaWxpdHkYBCABKA4yKi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwVmlzaWJpbGl0eRIbChNpbml0aWFsX21lbWJlcl9kaWRzGAUgAygJIkYKE0NyZWF0ZUdyb3VwUmVzcG9uc2USLwoFZ3JvdXAYASABKAsyIC5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwIjIKEUxpc3RHcm91cHNSZXF1ZXN0Eg0KBWxpbWl0GAEgASgFEg4KBm9mZnNldBgCIAEoBSJVChJMaXN0R3JvdXBzUmVzcG9uc2USMAoGZ3JvdXBzGAEgAygLMiAucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cBINCgV0b3RhbBgCIAEoBSIlCg9HZXRHcm91cFJlcXVlc3QSEgoKZ3JvdXBfdWxpZBgBIAEoCSKCAQoQR2V0R3JvdXBSZXNwb25zZRIvCgVncm91cBgBIAEoCzIgLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuR3JvdXASPQoNbXlfbWVtYmVyc2hpcBgCIAEoCzImLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuR3JvdXBNZW1iZXIiygIKElVwZGF0ZUdyb3VwUmVxdWVzdBISCgpncm91cF91bGlkGAEgASgJEhEKBG5hbWUYAiABKAlIAIgBARIYCgtkZXNjcmlwdGlvbhgDIAEoCUgBiAEBEhcKCmF2YXRhcl9jaWQYBCABKAlIAogBARI3CgR0eXBlGAUgASgOMiQucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cFR5cGVIA4gBARJDCgp2aXNpYmlsaXR5GAYgASgOMioucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cFZpc2liaWxpdHlIBIgBARISCgVtdXRlZBgHIAEoCEgFiAEBQgcKBV9uYW1lQg4KDF9kZXNjcmlwdGlvbkINCgtfYXZhdGFyX2NpZEIHCgVfdHlwZUINCgtfdmlzaWJpbGl0eUIICgZfbXV0ZWQiRgoTVXBkYXRlR3JvdXBSZXNwb25zZRIvCgVncm91cBgBIAEoCzIgLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuR3JvdXAiQAoUSW52aXRlVG9Hcm91cFJlcXVlc3QSEgoKZ3JvdXBfdWxpZBgBIAEoCRIUCgxpbnZpdGVlX2RpZHMYAiADKAkiWAoVSW52aXRlVG9Hcm91cFJlc3BvbnNlEj8KC2ludml0YXRpb25zGAEgAygLMioucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cEludml0YXRpb24iPwoQSm9pbkdyb3VwUmVxdWVzdBISCgpncm91cF91bGlkGAEgASgJEhcKD2ludml0YXRpb25fdWxpZBgCIAEoCSJPChFKb2luR3JvdXBSZXNwb25zZRI6CgptZW1iZXJzaGlwGAEgASgLMiYucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cE1lbWJlciInChFMZWF2ZUdyb3VwUmVxdWVzdBISCgpncm91cF91bGlkGAEgASgJIiUKEkxlYXZlR3JvdXBSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIIksKFkdldEdyb3VwTWVtYmVyc1JlcXVlc3QSEgoKZ3JvdXBfdWxpZBgBIAEoCRINCgVsaW1pdBgCIAEoBRIOCgZvZmZzZXQYAyABKAUiYQoXR2V0R3JvdXBNZW1iZXJzUmVzcG9uc2USNwoHbWVtYmVycxgBIAMoCzImLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuR3JvdXBNZW1iZXISDQoFdG90YWwYAiABKAUi4gEKE1VwZGF0ZU1lbWJlclJlcXVlc3QSEgoKZ3JvdXBfdWxpZBgBIAEoCRIRCglhY3Rvcl9kaWQYAiABKAkSNwoEcm9sZRgDIAEoDjIkLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuR3JvdXBSb2xlSACIAQESEgoFbXV0ZWQYBCABKAhIAYgBARI0CgttdXRlZF91bnRpbBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBIAogBAUIHCgVfcm9sZUIICgZfbXV0ZWRCDgoMX211dGVkX3VudGlsIk4KFFVwZGF0ZU1lbWJlclJlc3BvbnNlEjYKBm1lbWJlchgBIAEoCzImLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuR3JvdXBNZW1iZXIiPAoTUmVtb3ZlTWVtYmVyUmVxdWVzdBISCgpncm91cF91bGlkGAEgASgJEhEKCWFjdG9yX2RpZBgCIAEoCSInChRSZW1vdmVNZW1iZXJSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIIr4CChdTZW5kR3JvdXBNZXNzYWdlUmVxdWVzdBISCgpncm91cF91bGlkGAEgASgJEjkKBHR5cGUYAiABKA4yKy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwTWVzc2FnZVR5cGUSEwoHY29udGVudBgDIAEoCUICGAESRgoLYXR0YWNobWVudHMYBCADKAsyMS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwTWVzc2FnZUF0dGFjaG1lbnQSFQoNcmVwbHlfdG9fdWxpZBgFIAEoCRIWCg5tZW50aW9uZWRfZGlkcxgGIAMoCRITCgttZW50aW9uX2FsbBgHIAEoCBIZChFlbmNyeXB0ZWRfcGF5bG9hZBgIIAEoDBIYChB0aHJlYWRfcm9vdF91bGlkGAkgASgJIlQKGFNlbmRHcm91cE1lc3NhZ2VSZXNwb25zZRI4CgdtZXNzYWdlGAEgASgLMicucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cE1lc3NhZ2UiUQoXR2V0R3JvdXBNZXNzYWdlc1JlcXVlc3QSEgoKZ3JvdXBfdWxpZBgBIAEoCRITCgtiZWZvcmVfdWxpZBgCIAEoCRINCgVsaW1pdBgDIAEoBSJ8ChhHZXRHcm91cE1lc3NhZ2VzUmVzcG9uc2USOQoIbWVzc2FnZXMYASADKAsyJy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwTWVzc2FnZRIQCghoYXNfbW9yZRgCIAEoCBITCgtuZXh0X2N1cnNvchgDIAEoCSJFChlSZWNhbGxHcm91cE1lc3NhZ2VSZXF1ZXN0EhIKCmdyb3VwX3VsaWQYASABKAkSFAoMbWVzc2FnZV91bGlkGAIgASgJIi0KGlJlY2FsbEdyb3VwTWVzc2FnZVJlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiugIKE0dyb3VwT2ZmbGluZU1lc3NhZ2USDAoEdWxpZBgBIAEoCRISCgpncm91cF91bGlkGAIgASgJEhQKDHJlY2VpdmVyX2RpZBgDIAEoCRIUCgxtZXNzYWdlX3VsaWQYBCABKAkSRAoGc3RhdHVzGAUgASgOMjQucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cE9mZmxpbmVNZXNzYWdlU3RhdHVzEi0KCWV4cGlyZV9hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMZGVsaXZlcmVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpjcmVhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI/ChdVcGRhdGVNeU5pY2tuYW1lUmVxdWVzdBISCgpncm91cF91bGlkGAEgASgJEhAKCG5pY2tuYW1lGAIgASgJIlIKGFVwZGF0ZU15Tmlja25hbWVSZXNwb25zZRI2CgZtZW1iZXIYASABKAsyJi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwTWVtYmVyImMKGlNlYXJjaEdyb3VwTWVzc2FnZXNSZXF1ZXN0EhIKCmdyb3VwX3VsaWQYASABKAkSDQoFcXVlcnkYAiABKAkSDQoFbGltaXQYAyABKAUSEwoLYmVmb3JlX3VsaWQYBCABKAkiagobU2VhcmNoR3JvdXBNZXNzYWdlc1Jlc3BvbnNlEjkKCG1lc3NhZ2VzGAEgAygLMicucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cE1lc3NhZ2USEAoIaGFzX21vcmUYAiABKAgiLQoXR2V0R3JvdXBTZXR0aW5nc1JlcXVlc3QSEgoKZ3JvdXBfdWxpZBgBIAEoCSJyChhHZXRHcm91cFNldHRpbmdzUmVzcG9uc2USEAoIaXNfbXV0ZWQYASABKAgSEQoJaXNfcGlubmVkGAIgASgIEhMKC215X25pY2tuYW1lGAMgASgJEhwKFHNob3dfbWVtYmVyX25pY2tuYW1lGAQgASgIIrYBChpVcGRhdGVHcm91cFNldHRpbmdzUmVxdWVzdBISCgpncm91cF91bGlkGAEgASgJEhUKCGlzX211dGVkGAIgASgISACIAQESFgoJaXNfcGlubmVkGAMgASgISAGIAQESIQoUc2hvd19tZW1iZXJfbmlja25hbWUYBCABKAhIAogBAUILCglfaXNfbXV0ZWRCDAoKX2lzX3Bpbm5lZEIXChVfc2hvd19tZW1iZXJfbmlja25hbWUiLgobVXBkYXRlR3JvdXBTZXR0aW5nc1Jlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiRQoZRGVsZXRlR3JvdXBNZXNzYWdlUmVxdWVzdBISCgpncm91cF91bGlkGAEgASgJEhQKDG1lc3NhZ2VfdWxpZBgCIAEoCSItChpEZWxldGVHcm91cE1lc3NhZ2VSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIIncKF0VkaXRHcm91cE1lc3NhZ2VSZXF1ZXN0EhIKCmdyb3VwX3VsaWQYASABKAkSFAoMbWVzc2FnZV91bGlkGAIgASgJEhMKC25ld19jb250ZW50GAMgASgJEh0KFW5ld19lbmNyeXB0ZWRfcGF5bG9hZBgEIAEoDCIrChhFZGl0R3JvdXBNZXNzYWdlUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCIqChlHZXRPZmZsaW5lTWVzc2FnZXNSZXF1ZXN0Eg0KBWxpbWl0GAEgASgFIl4KGkdldE9mZmxpbmVNZXNzYWdlc1Jlc3BvbnNlEkAKCG1lc3NhZ2VzGAEgAygLMi4ucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cE9mZmxpbmVNZXNzYWdlIioKGUFja09mZmxpbmVNZXNzYWdlc1JlcXVlc3QSDQoFdWxpZHMYASADKAkiLQoaQWNrT2ZmbGluZU1lc3NhZ2VzUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCIrChVHZXRVbnJlYWRDb3VudFJlcXVlc3QSEgoKZ3JvdXBfdWxpZBgBIAEoCSIuChZHZXRVbnJlYWRDb3VudFJlc3BvbnNlEhQKDHVucmVhZF9jb3VudBgBIAEoAyI+ChRNYXJrR3JvdXBSZWFkUmVxdWVzdBISCgpncm91cF91bGlkGAEgASgJEhIKCnVwX3RvX3VsaWQYAiABKAkiKAoVTWFya0dyb3VwUmVhZFJlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiFgoUR2V0R3JvdXBTdGF0c1JlcXVlc3QicwoVR2V0R3JvdXBTdGF0c1Jlc3BvbnNlEhQKDHRvdGFsX2dyb3VwcxgBIAEoAxIVCg10b3RhbF9tZW1iZXJzGAIgASgDEhYKDnRvdGFsX21lc3NhZ2VzGAMgASgDEhUKDWFjdGl2ZV9ncm91cHMYBCABKAMqdgoJR3JvdXBUeXBlEhoKFkdST1VQX1RZUEVfVU5TUEVDSUZJRUQQABIVChFHUk9VUF9UWVBFX05PUk1BTBABEhsKF0dST1VQX1RZUEVfQU5OT1VOQ0VNRU5UEAISGQoVR1JPVVBfVFlQRV9ESVNDVVNTSU9OEAMqbgoPR3JvdXBWaXNpYmlsaXR5EiAKHEdST1VQX1ZJU0lCSUxJVFlfVU5TUEVDSUZJRUQQABIbChdHUk9VUF9WSVNJQklMSVRZX1BVQkxJQxABEhwKGEdST1VQX1ZJU0lCSUxJVFlfUFJJVkFURRACKmoKCUdyb3VwUm9sZRIaChZHUk9VUF9ST0xFX1VOU1BFQ0lGSUVEEAASFQoRR1JPVVBfUk9MRV9NRU1CRVIQARIUChBHUk9VUF9ST0xFX0FETUlOEAISFAoQR1JPVVBfUk9MRV9PV05FUhADKukBChBHcm91cE1lc3NhZ2VUeXBlEiIKHkdST1VQX01FU1NBR0VfVFlQRV9VTlNQRUNJRklFRBAAEhsKF0dST1VQX01FU1NBR0VfVFlQRV9URVhUEAESHAoYR1JPVVBfTUVTU0FHRV9UWVBFX0lNQUdFEAISGwoXR1JPVVBfTUVTU0FHRV9UWVBFX0ZJTEUQAxIcChhHUk9VUF9NRVNTQUdFX1RZUEVfQVVESU8QBBIcChhHUk9VUF9NRVNTQUdFX1RZUEVfVklERU8QBRIdChlHUk9VUF9NRVNTQUdFX1RZUEVfU1lTVEVNEAoq1gEKFUdyb3VwSW52aXRhdGlvblN0YXR1cxInCiNHUk9VUF9JTlZJVEFUSU9OX1NUQVRVU19VTlNQRUNJRklFRBAAEiMKH0dST1VQX0lOVklUQVRJT05fU1RBVFVTX1BFTkRJTkcQARIkCiBHUk9VUF9JTlZJVEFUSU9OX1NUQVRVU19BQ0NFUFRFRBACEiQKIEdST1VQX0lOVklUQVRJT05fU1RBVFVTX1JFSkVDVEVEEAMSIwofR1JPVVBfSU5WSVRBVElPTl9TVEFUVVNfRVhQSVJFRBAEKskBChlHcm91cE9mZmxpbmVNZXNzYWdlU3RhdHVzEiwKKEdST1VQX09GRkxJTkVfTUVTU0FHRV9TVEFUVVNfVU5TUEVDSUZJRUQQABIoCiRHUk9VUF9PRkZMSU5FX01FU1NBR0VfU1RBVFVTX1BFTkRJTkcQARIqCiZHUk9VUF9PRkZMSU5FX01FU1NBR0VfU1RBVFVTX0RFTElWRVJFRBACEigKJEdST1VQX09GRkxJTkVfTUVTU0FHRV9TVEFUVVNfRVhQSVJFRBADQkdaRWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsL2NoYXQ7Y2hhdGIGcHJvdG8z", [file_google_protobuf_timestamp]);
 
 /**
  * 群组
@@ -182,6 +182,19 @@ export const GroupMemberSchema: GenMessage<GroupMember> = /*@__PURE__*/
 /**
  * 群消息
  *
+ * Group chat is end-to-end encrypted under the Sender Keys protocol
+ * (see peers-touch/docs/architecture/encryption/group-sender-keys.md).
+ * `encrypted_payload` carries the wire-encoded `GroupCiphertext`
+ * (defined below) and is the ONLY source of message body for new
+ * messages. Station treats it as opaque bytes -- it does not, and
+ * cannot, decode it.
+ *
+ * `content` is preserved on the wire ONLY so historical recall /
+ * edit / delete code paths and existing local indexes do not panic
+ * on the field's disappearance. It MUST be empty for any message
+ * produced by a Sender-Keys-capable client. Station rejects send
+ * requests that populate it (see `SendGroupMessageRequest`).
+ *
  * @generated from message peers_touch.model.chat.v1.GroupMessage
  */
 export type GroupMessage = Message<"peers_touch.model.chat.v1.GroupMessage"> & {
@@ -206,7 +219,15 @@ export type GroupMessage = Message<"peers_touch.model.chat.v1.GroupMessage"> & {
   type: GroupMessageType;
 
   /**
-   * @generated from field: string content = 5;
+   * DEPRECATED: always empty for new messages. Plaintext bodies were
+   * dropped when group chat moved to Sender Keys. Kept around so old
+   * rows in already-shipped local SQLCipher caches still parse; new
+   * senders MUST encode the body inside `encrypted_payload` as a
+   * `GroupCiphertext`. Will be promoted from "deprecated and empty"
+   * to "removed (reserved field number)" in a future proto rev.
+   *
+   * @generated from field: string content = 5 [deprecated = true];
+   * @deprecated
    */
   content: string;
 
@@ -221,6 +242,16 @@ export type GroupMessage = Message<"peers_touch.model.chat.v1.GroupMessage"> & {
    * @generated from field: string reply_to_ulid = 7;
    */
   replyToUlid: string;
+
+  /**
+   * Root message of the thread this message belongs to. Empty means
+   * the message is not part of a thread. This is distinct from
+   * reply_to_ulid so clients can reply to a reply while preserving
+   * the thread root.
+   *
+   * @generated from field: string thread_root_ulid = 16;
+   */
+  threadRootUlid: string;
 
   /**
    * @的成员
@@ -252,16 +283,36 @@ export type GroupMessage = Message<"peers_touch.model.chat.v1.GroupMessage"> & {
   updatedAt?: Timestamp | undefined;
 
   /**
-   * 是否被撤回
+   * recalled flips when the original sender recalls the message.
+   * The row is preserved (so threading & search snippets stay
+   * coherent) but encrypted_payload is cleared and the client
+   * renders a tombstone in place of the bubble. Field number 13
+   * was previously named `deleted`; renamed for parity with friend
+   * chat and the realtime MessageMutation contract. Wire compat is
+   * preserved (same field number / type / GORM column mapping).
    *
-   * @generated from field: bool deleted = 13;
+   * @generated from field: bool recalled = 13;
    */
-  deleted: boolean;
+  recalled: boolean;
 
   /**
+   * Wire form is `GroupCiphertext` (see below) encoded as proto
+   * bytes. Required for Sender-Keys-capable senders.
+   *
    * @generated from field: bytes encrypted_payload = 14;
    */
   encryptedPayload: Uint8Array;
+
+  /**
+   * edited_at is set when the message body has been replaced via
+   * an edit. Display-only — clients MUST NOT use it for ordering.
+   * Mirrors FriendChatMessage.edited_at semantics. Edits also
+   * produce a fresh GroupCiphertext at the sender's current chain
+   * counter (the original chain key is already gone).
+   *
+   * @generated from field: google.protobuf.Timestamp edited_at = 15;
+   */
+  editedAt?: Timestamp | undefined;
 };
 
 /**
@@ -270,6 +321,148 @@ export type GroupMessage = Message<"peers_touch.model.chat.v1.GroupMessage"> & {
  */
 export const GroupMessageSchema: GenMessage<GroupMessage> = /*@__PURE__*/
   messageDesc(file_domain_chat_group_chat, 2);
+
+/**
+ * GroupCiphertext is the wire form of a single Sender-Keys-encrypted
+ * group message body. It is encoded into bytes and stored as the
+ * content of `GroupMessage.encrypted_payload`. Station NEVER decodes
+ * this -- it is passed through opaquely and the AAD bind below
+ * guarantees ciphertext from one (group, sender, key_id) cannot be
+ * replayed under another.
+ *
+ * AAD layout (bound via AES-GCM associated data):
+ *   group_ulid || 0x1F || sender_did || 0x1F
+ *     || sender_key_id (4B big-endian) || 0x1F
+ *     || counter      (4B big-endian)
+ *
+ * `signature` covers the SHA-256 of the same bytes that go into
+ * AAD, concatenated with the ciphertext, and is verified against
+ * `sender_sig_pub` carried in the SenderKeyDistributionMessage that
+ * originally introduced this `(sender_did, sender_key_id)` to the
+ * receiver. Verification failure MUST surface a "possibly forged"
+ * warning and MUST NOT silently fall back to plaintext.
+ *
+ * @generated from message peers_touch.model.chat.v1.GroupCiphertext
+ */
+export type GroupCiphertext = Message<"peers_touch.model.chat.v1.GroupCiphertext"> & {
+  /**
+   * Wire-format version. Currently always 1. A non-1 value MUST be
+   * surfaced as a fatal "unknown ciphertext format" error -- there
+   * is no graceful fallback. Bumped if the AAD layout, the chain
+   * KDF labels, or the signature cover-bytes ever change.
+   *
+   * @generated from field: uint32 version = 1;
+   */
+  version: number;
+
+  /**
+   * Owner of the sender chain that produced this message. Always
+   * equal to `GroupMessage.sender_did`; stored here too because
+   * `GroupCiphertext` decodes in isolation inside crypto code paths
+   * that do not have the surrounding GroupMessage on hand.
+   *
+   * @generated from field: string sender_did = 2;
+   */
+  senderDid: string;
+
+  /**
+   * Sender-key id. Bumps on every forced rotation (member add /
+   * remove / user-triggered "Reset group encryption"). Pair
+   * (sender_did, sender_key_id) uniquely identifies a chain.
+   *
+   * @generated from field: uint32 sender_key_id = 3;
+   */
+  senderKeyId: number;
+
+  /**
+   * Strictly increasing within (sender_did, sender_key_id). Used
+   * by receivers to fast-forward the chain and by the AAD bind to
+   * prevent replay across counters.
+   *
+   * @generated from field: uint32 counter = 4;
+   */
+  counter: number;
+
+  /**
+   * @generated from field: bytes ciphertext = 5;
+   */
+  ciphertext: Uint8Array;
+
+  /**
+   * Ed25519(sender_sig_priv, sha256(AAD || ciphertext)). 64 bytes.
+   *
+   * @generated from field: bytes signature = 6;
+   */
+  signature: Uint8Array;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.GroupCiphertext.
+ * Use `create(GroupCiphertextSchema)` to create a new message.
+ */
+export const GroupCiphertextSchema: GenMessage<GroupCiphertext> = /*@__PURE__*/
+  messageDesc(file_domain_chat_group_chat, 3);
+
+/**
+ * SenderKeyDistributionMessage seeds a receiver's view of the
+ * sender's chain. Delivered as the body of a friend-chat message
+ * with type FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION (see
+ * friend_chat.proto), which gives it the friend-session's E2EE
+ * envelope + identity authentication for free. Station never sees
+ * the chain key.
+ *
+ * @generated from message peers_touch.model.chat.v1.SenderKeyDistributionMessage
+ */
+export type SenderKeyDistributionMessage = Message<"peers_touch.model.chat.v1.SenderKeyDistributionMessage"> & {
+  /**
+   * @generated from field: string group_ulid = 1;
+   */
+  groupUlid: string;
+
+  /**
+   * @generated from field: string sender_did = 2;
+   */
+  senderDid: string;
+
+  /**
+   * @generated from field: uint32 sender_key_id = 3;
+   */
+  senderKeyId: number;
+
+  /**
+   * 32-byte chain key, the seed of the receiving hash chain.
+   *
+   * @generated from field: bytes chain_key = 4;
+   */
+  chainKey: Uint8Array;
+
+  /**
+   * Counter at which the sender's chain currently sits. Usually 0
+   * for a fresh chain; non-zero when an existing member redistributes
+   * a partially-advanced chain to a newcomer (rare; ratchet-resume
+   * semantics).
+   *
+   * @generated from field: uint32 counter = 5;
+   */
+  counter: number;
+
+  /**
+   * Ed25519 public key (32 B). Recipients use this to verify every
+   * GroupCiphertext.signature attributed to this (sender_did,
+   * sender_key_id) pair. The matching private key never leaves the
+   * sender's device.
+   *
+   * @generated from field: bytes sender_sig_pub = 6;
+   */
+  senderSigPub: Uint8Array;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.SenderKeyDistributionMessage.
+ * Use `create(SenderKeyDistributionMessageSchema)` to create a new message.
+ */
+export const SenderKeyDistributionMessageSchema: GenMessage<SenderKeyDistributionMessage> = /*@__PURE__*/
+  messageDesc(file_domain_chat_group_chat, 4);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GroupMessageAttachment
@@ -299,6 +492,20 @@ export type GroupMessageAttachment = Message<"peers_touch.model.chat.v1.GroupMes
    * @generated from field: string thumbnail_cid = 5;
    */
   thumbnailCid: string;
+
+  /**
+   * visibility echoes the OSS subserver's `oss_files.visibility`
+   * for this attachment ("public" / "chat" / "private"). The
+   * sender is authoritative — the receiver UI surfaces it as a
+   * badge so the user can tell at a glance whether the file
+   * they are looking at is reach-restricted to this group or
+   * has been published to a wider audience. Empty string is
+   * treated as "unknown" by older clients and rendered without
+   * a badge; new servers SHOULD always populate it.
+   *
+   * @generated from field: string visibility = 6;
+   */
+  visibility: string;
 };
 
 /**
@@ -306,7 +513,7 @@ export type GroupMessageAttachment = Message<"peers_touch.model.chat.v1.GroupMes
  * Use `create(GroupMessageAttachmentSchema)` to create a new message.
  */
 export const GroupMessageAttachmentSchema: GenMessage<GroupMessageAttachment> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 3);
+  messageDesc(file_domain_chat_group_chat, 5);
 
 /**
  * 群邀请
@@ -355,7 +562,7 @@ export type GroupInvitation = Message<"peers_touch.model.chat.v1.GroupInvitation
  * Use `create(GroupInvitationSchema)` to create a new message.
  */
 export const GroupInvitationSchema: GenMessage<GroupInvitation> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 4);
+  messageDesc(file_domain_chat_group_chat, 6);
 
 /**
  * 创建群组
@@ -396,7 +603,7 @@ export type CreateGroupRequest = Message<"peers_touch.model.chat.v1.CreateGroupR
  * Use `create(CreateGroupRequestSchema)` to create a new message.
  */
 export const CreateGroupRequestSchema: GenMessage<CreateGroupRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 5);
+  messageDesc(file_domain_chat_group_chat, 7);
 
 /**
  * @generated from message peers_touch.model.chat.v1.CreateGroupResponse
@@ -413,7 +620,7 @@ export type CreateGroupResponse = Message<"peers_touch.model.chat.v1.CreateGroup
  * Use `create(CreateGroupResponseSchema)` to create a new message.
  */
 export const CreateGroupResponseSchema: GenMessage<CreateGroupResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 6);
+  messageDesc(file_domain_chat_group_chat, 8);
 
 /**
  * 获取群组列表
@@ -437,7 +644,7 @@ export type ListGroupsRequest = Message<"peers_touch.model.chat.v1.ListGroupsReq
  * Use `create(ListGroupsRequestSchema)` to create a new message.
  */
 export const ListGroupsRequestSchema: GenMessage<ListGroupsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 7);
+  messageDesc(file_domain_chat_group_chat, 9);
 
 /**
  * @generated from message peers_touch.model.chat.v1.ListGroupsResponse
@@ -459,7 +666,7 @@ export type ListGroupsResponse = Message<"peers_touch.model.chat.v1.ListGroupsRe
  * Use `create(ListGroupsResponseSchema)` to create a new message.
  */
 export const ListGroupsResponseSchema: GenMessage<ListGroupsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 8);
+  messageDesc(file_domain_chat_group_chat, 10);
 
 /**
  * 获取群组信息
@@ -478,7 +685,7 @@ export type GetGroupRequest = Message<"peers_touch.model.chat.v1.GetGroupRequest
  * Use `create(GetGroupRequestSchema)` to create a new message.
  */
 export const GetGroupRequestSchema: GenMessage<GetGroupRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 9);
+  messageDesc(file_domain_chat_group_chat, 11);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GetGroupResponse
@@ -502,7 +709,7 @@ export type GetGroupResponse = Message<"peers_touch.model.chat.v1.GetGroupRespon
  * Use `create(GetGroupResponseSchema)` to create a new message.
  */
 export const GetGroupResponseSchema: GenMessage<GetGroupResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 10);
+  messageDesc(file_domain_chat_group_chat, 12);
 
 /**
  * 更新群组信息
@@ -551,7 +758,7 @@ export type UpdateGroupRequest = Message<"peers_touch.model.chat.v1.UpdateGroupR
  * Use `create(UpdateGroupRequestSchema)` to create a new message.
  */
 export const UpdateGroupRequestSchema: GenMessage<UpdateGroupRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 11);
+  messageDesc(file_domain_chat_group_chat, 13);
 
 /**
  * @generated from message peers_touch.model.chat.v1.UpdateGroupResponse
@@ -568,7 +775,7 @@ export type UpdateGroupResponse = Message<"peers_touch.model.chat.v1.UpdateGroup
  * Use `create(UpdateGroupResponseSchema)` to create a new message.
  */
 export const UpdateGroupResponseSchema: GenMessage<UpdateGroupResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 12);
+  messageDesc(file_domain_chat_group_chat, 14);
 
 /**
  * 邀请加入群组
@@ -592,7 +799,7 @@ export type InviteToGroupRequest = Message<"peers_touch.model.chat.v1.InviteToGr
  * Use `create(InviteToGroupRequestSchema)` to create a new message.
  */
 export const InviteToGroupRequestSchema: GenMessage<InviteToGroupRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 13);
+  messageDesc(file_domain_chat_group_chat, 15);
 
 /**
  * @generated from message peers_touch.model.chat.v1.InviteToGroupResponse
@@ -609,7 +816,7 @@ export type InviteToGroupResponse = Message<"peers_touch.model.chat.v1.InviteToG
  * Use `create(InviteToGroupResponseSchema)` to create a new message.
  */
 export const InviteToGroupResponseSchema: GenMessage<InviteToGroupResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 14);
+  messageDesc(file_domain_chat_group_chat, 16);
 
 /**
  * 加入群组
@@ -635,7 +842,7 @@ export type JoinGroupRequest = Message<"peers_touch.model.chat.v1.JoinGroupReque
  * Use `create(JoinGroupRequestSchema)` to create a new message.
  */
 export const JoinGroupRequestSchema: GenMessage<JoinGroupRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 15);
+  messageDesc(file_domain_chat_group_chat, 17);
 
 /**
  * @generated from message peers_touch.model.chat.v1.JoinGroupResponse
@@ -652,7 +859,7 @@ export type JoinGroupResponse = Message<"peers_touch.model.chat.v1.JoinGroupResp
  * Use `create(JoinGroupResponseSchema)` to create a new message.
  */
 export const JoinGroupResponseSchema: GenMessage<JoinGroupResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 16);
+  messageDesc(file_domain_chat_group_chat, 18);
 
 /**
  * 离开群组
@@ -671,7 +878,7 @@ export type LeaveGroupRequest = Message<"peers_touch.model.chat.v1.LeaveGroupReq
  * Use `create(LeaveGroupRequestSchema)` to create a new message.
  */
 export const LeaveGroupRequestSchema: GenMessage<LeaveGroupRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 17);
+  messageDesc(file_domain_chat_group_chat, 19);
 
 /**
  * @generated from message peers_touch.model.chat.v1.LeaveGroupResponse
@@ -688,7 +895,7 @@ export type LeaveGroupResponse = Message<"peers_touch.model.chat.v1.LeaveGroupRe
  * Use `create(LeaveGroupResponseSchema)` to create a new message.
  */
 export const LeaveGroupResponseSchema: GenMessage<LeaveGroupResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 18);
+  messageDesc(file_domain_chat_group_chat, 20);
 
 /**
  * 获取群成员列表
@@ -717,7 +924,7 @@ export type GetGroupMembersRequest = Message<"peers_touch.model.chat.v1.GetGroup
  * Use `create(GetGroupMembersRequestSchema)` to create a new message.
  */
 export const GetGroupMembersRequestSchema: GenMessage<GetGroupMembersRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 19);
+  messageDesc(file_domain_chat_group_chat, 21);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GetGroupMembersResponse
@@ -739,7 +946,7 @@ export type GetGroupMembersResponse = Message<"peers_touch.model.chat.v1.GetGrou
  * Use `create(GetGroupMembersResponseSchema)` to create a new message.
  */
 export const GetGroupMembersResponseSchema: GenMessage<GetGroupMembersResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 20);
+  messageDesc(file_domain_chat_group_chat, 22);
 
 /**
  * 更新成员信息（管理员操作）
@@ -778,7 +985,7 @@ export type UpdateMemberRequest = Message<"peers_touch.model.chat.v1.UpdateMembe
  * Use `create(UpdateMemberRequestSchema)` to create a new message.
  */
 export const UpdateMemberRequestSchema: GenMessage<UpdateMemberRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 21);
+  messageDesc(file_domain_chat_group_chat, 23);
 
 /**
  * @generated from message peers_touch.model.chat.v1.UpdateMemberResponse
@@ -795,7 +1002,7 @@ export type UpdateMemberResponse = Message<"peers_touch.model.chat.v1.UpdateMemb
  * Use `create(UpdateMemberResponseSchema)` to create a new message.
  */
 export const UpdateMemberResponseSchema: GenMessage<UpdateMemberResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 22);
+  messageDesc(file_domain_chat_group_chat, 24);
 
 /**
  * 移除成员
@@ -819,7 +1026,7 @@ export type RemoveMemberRequest = Message<"peers_touch.model.chat.v1.RemoveMembe
  * Use `create(RemoveMemberRequestSchema)` to create a new message.
  */
 export const RemoveMemberRequestSchema: GenMessage<RemoveMemberRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 23);
+  messageDesc(file_domain_chat_group_chat, 25);
 
 /**
  * @generated from message peers_touch.model.chat.v1.RemoveMemberResponse
@@ -836,10 +1043,17 @@ export type RemoveMemberResponse = Message<"peers_touch.model.chat.v1.RemoveMemb
  * Use `create(RemoveMemberResponseSchema)` to create a new message.
  */
 export const RemoveMemberResponseSchema: GenMessage<RemoveMemberResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 24);
+  messageDesc(file_domain_chat_group_chat, 26);
 
 /**
  * 发送群消息
+ *
+ * `encrypted_payload` carries the wire-encoded `GroupCiphertext`
+ * (see GroupMessage doc). Required: Station rejects requests whose
+ * encrypted_payload is empty, AND requests that populate `content`
+ * (the latter would silently leak the body to Station). Attachments
+ * stay outside the ciphertext envelope -- attachment encryption is
+ * tracked separately in oss-encryption.md.
  *
  * @generated from message peers_touch.model.chat.v1.SendGroupMessageRequest
  */
@@ -855,7 +1069,10 @@ export type SendGroupMessageRequest = Message<"peers_touch.model.chat.v1.SendGro
   type: GroupMessageType;
 
   /**
-   * @generated from field: string content = 3;
+   * DEPRECATED: must be empty for new sends. See GroupMessage.content.
+   *
+   * @generated from field: string content = 3 [deprecated = true];
+   * @deprecated
    */
   content: string;
 
@@ -883,6 +1100,14 @@ export type SendGroupMessageRequest = Message<"peers_touch.model.chat.v1.SendGro
    * @generated from field: bytes encrypted_payload = 8;
    */
   encryptedPayload: Uint8Array;
+
+  /**
+   * Optional explicit thread root. If omitted and reply_to_ulid is
+   * present, Station resolves it from the replied message.
+   *
+   * @generated from field: string thread_root_ulid = 9;
+   */
+  threadRootUlid: string;
 };
 
 /**
@@ -890,7 +1115,7 @@ export type SendGroupMessageRequest = Message<"peers_touch.model.chat.v1.SendGro
  * Use `create(SendGroupMessageRequestSchema)` to create a new message.
  */
 export const SendGroupMessageRequestSchema: GenMessage<SendGroupMessageRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 25);
+  messageDesc(file_domain_chat_group_chat, 27);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SendGroupMessageResponse
@@ -907,7 +1132,7 @@ export type SendGroupMessageResponse = Message<"peers_touch.model.chat.v1.SendGr
  * Use `create(SendGroupMessageResponseSchema)` to create a new message.
  */
 export const SendGroupMessageResponseSchema: GenMessage<SendGroupMessageResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 26);
+  messageDesc(file_domain_chat_group_chat, 28);
 
 /**
  * 获取群消息
@@ -936,7 +1161,7 @@ export type GetGroupMessagesRequest = Message<"peers_touch.model.chat.v1.GetGrou
  * Use `create(GetGroupMessagesRequestSchema)` to create a new message.
  */
 export const GetGroupMessagesRequestSchema: GenMessage<GetGroupMessagesRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 27);
+  messageDesc(file_domain_chat_group_chat, 29);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GetGroupMessagesResponse
@@ -963,7 +1188,7 @@ export type GetGroupMessagesResponse = Message<"peers_touch.model.chat.v1.GetGro
  * Use `create(GetGroupMessagesResponseSchema)` to create a new message.
  */
 export const GetGroupMessagesResponseSchema: GenMessage<GetGroupMessagesResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 28);
+  messageDesc(file_domain_chat_group_chat, 30);
 
 /**
  * 撤回消息
@@ -987,7 +1212,7 @@ export type RecallGroupMessageRequest = Message<"peers_touch.model.chat.v1.Recal
  * Use `create(RecallGroupMessageRequestSchema)` to create a new message.
  */
 export const RecallGroupMessageRequestSchema: GenMessage<RecallGroupMessageRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 29);
+  messageDesc(file_domain_chat_group_chat, 31);
 
 /**
  * @generated from message peers_touch.model.chat.v1.RecallGroupMessageResponse
@@ -1004,7 +1229,7 @@ export type RecallGroupMessageResponse = Message<"peers_touch.model.chat.v1.Reca
  * Use `create(RecallGroupMessageResponseSchema)` to create a new message.
  */
 export const RecallGroupMessageResponseSchema: GenMessage<RecallGroupMessageResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 30);
+  messageDesc(file_domain_chat_group_chat, 32);
 
 /**
  * 离线消息
@@ -1058,7 +1283,7 @@ export type GroupOfflineMessage = Message<"peers_touch.model.chat.v1.GroupOfflin
  * Use `create(GroupOfflineMessageSchema)` to create a new message.
  */
 export const GroupOfflineMessageSchema: GenMessage<GroupOfflineMessage> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 31);
+  messageDesc(file_domain_chat_group_chat, 33);
 
 /**
  * 更新我的群昵称
@@ -1082,7 +1307,7 @@ export type UpdateMyNicknameRequest = Message<"peers_touch.model.chat.v1.UpdateM
  * Use `create(UpdateMyNicknameRequestSchema)` to create a new message.
  */
 export const UpdateMyNicknameRequestSchema: GenMessage<UpdateMyNicknameRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 32);
+  messageDesc(file_domain_chat_group_chat, 34);
 
 /**
  * @generated from message peers_touch.model.chat.v1.UpdateMyNicknameResponse
@@ -1099,7 +1324,7 @@ export type UpdateMyNicknameResponse = Message<"peers_touch.model.chat.v1.Update
  * Use `create(UpdateMyNicknameResponseSchema)` to create a new message.
  */
 export const UpdateMyNicknameResponseSchema: GenMessage<UpdateMyNicknameResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 33);
+  messageDesc(file_domain_chat_group_chat, 35);
 
 /**
  * 搜索群消息
@@ -1137,7 +1362,7 @@ export type SearchGroupMessagesRequest = Message<"peers_touch.model.chat.v1.Sear
  * Use `create(SearchGroupMessagesRequestSchema)` to create a new message.
  */
 export const SearchGroupMessagesRequestSchema: GenMessage<SearchGroupMessagesRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 34);
+  messageDesc(file_domain_chat_group_chat, 36);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SearchGroupMessagesResponse
@@ -1159,7 +1384,7 @@ export type SearchGroupMessagesResponse = Message<"peers_touch.model.chat.v1.Sea
  * Use `create(SearchGroupMessagesResponseSchema)` to create a new message.
  */
 export const SearchGroupMessagesResponseSchema: GenMessage<SearchGroupMessagesResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 35);
+  messageDesc(file_domain_chat_group_chat, 37);
 
 /**
  * 获取群设置（用户个人设置）
@@ -1178,7 +1403,7 @@ export type GetGroupSettingsRequest = Message<"peers_touch.model.chat.v1.GetGrou
  * Use `create(GetGroupSettingsRequestSchema)` to create a new message.
  */
 export const GetGroupSettingsRequestSchema: GenMessage<GetGroupSettingsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 36);
+  messageDesc(file_domain_chat_group_chat, 38);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GetGroupSettingsResponse
@@ -1218,7 +1443,7 @@ export type GetGroupSettingsResponse = Message<"peers_touch.model.chat.v1.GetGro
  * Use `create(GetGroupSettingsResponseSchema)` to create a new message.
  */
 export const GetGroupSettingsResponseSchema: GenMessage<GetGroupSettingsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 37);
+  messageDesc(file_domain_chat_group_chat, 39);
 
 /**
  * 更新群设置（用户个人设置）
@@ -1252,7 +1477,7 @@ export type UpdateGroupSettingsRequest = Message<"peers_touch.model.chat.v1.Upda
  * Use `create(UpdateGroupSettingsRequestSchema)` to create a new message.
  */
 export const UpdateGroupSettingsRequestSchema: GenMessage<UpdateGroupSettingsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 38);
+  messageDesc(file_domain_chat_group_chat, 40);
 
 /**
  * @generated from message peers_touch.model.chat.v1.UpdateGroupSettingsResponse
@@ -1269,7 +1494,7 @@ export type UpdateGroupSettingsResponse = Message<"peers_touch.model.chat.v1.Upd
  * Use `create(UpdateGroupSettingsResponseSchema)` to create a new message.
  */
 export const UpdateGroupSettingsResponseSchema: GenMessage<UpdateGroupSettingsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 39);
+  messageDesc(file_domain_chat_group_chat, 41);
 
 /**
  * 删除消息
@@ -1293,7 +1518,7 @@ export type DeleteGroupMessageRequest = Message<"peers_touch.model.chat.v1.Delet
  * Use `create(DeleteGroupMessageRequestSchema)` to create a new message.
  */
 export const DeleteGroupMessageRequestSchema: GenMessage<DeleteGroupMessageRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 40);
+  messageDesc(file_domain_chat_group_chat, 42);
 
 /**
  * @generated from message peers_touch.model.chat.v1.DeleteGroupMessageResponse
@@ -1310,7 +1535,60 @@ export type DeleteGroupMessageResponse = Message<"peers_touch.model.chat.v1.Dele
  * Use `create(DeleteGroupMessageResponseSchema)` to create a new message.
  */
 export const DeleteGroupMessageResponseSchema: GenMessage<DeleteGroupMessageResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 41);
+  messageDesc(file_domain_chat_group_chat, 43);
+
+/**
+ * 编辑消息 — Mirrors EditFriendMessageRequest. At least one of
+ * new_content / new_encrypted_payload must be non-empty; both
+ * may be set when an E2EE chat also keeps a plaintext index.
+ *
+ * @generated from message peers_touch.model.chat.v1.EditGroupMessageRequest
+ */
+export type EditGroupMessageRequest = Message<"peers_touch.model.chat.v1.EditGroupMessageRequest"> & {
+  /**
+   * @generated from field: string group_ulid = 1;
+   */
+  groupUlid: string;
+
+  /**
+   * @generated from field: string message_ulid = 2;
+   */
+  messageUlid: string;
+
+  /**
+   * @generated from field: string new_content = 3;
+   */
+  newContent: string;
+
+  /**
+   * @generated from field: bytes new_encrypted_payload = 4;
+   */
+  newEncryptedPayload: Uint8Array;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.EditGroupMessageRequest.
+ * Use `create(EditGroupMessageRequestSchema)` to create a new message.
+ */
+export const EditGroupMessageRequestSchema: GenMessage<EditGroupMessageRequest> = /*@__PURE__*/
+  messageDesc(file_domain_chat_group_chat, 44);
+
+/**
+ * @generated from message peers_touch.model.chat.v1.EditGroupMessageResponse
+ */
+export type EditGroupMessageResponse = Message<"peers_touch.model.chat.v1.EditGroupMessageResponse"> & {
+  /**
+   * @generated from field: bool success = 1;
+   */
+  success: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.EditGroupMessageResponse.
+ * Use `create(EditGroupMessageResponseSchema)` to create a new message.
+ */
+export const EditGroupMessageResponseSchema: GenMessage<EditGroupMessageResponse> = /*@__PURE__*/
+  messageDesc(file_domain_chat_group_chat, 45);
 
 /**
  * 获取离线消息
@@ -1329,7 +1607,7 @@ export type GetOfflineMessagesRequest = Message<"peers_touch.model.chat.v1.GetOf
  * Use `create(GetOfflineMessagesRequestSchema)` to create a new message.
  */
 export const GetOfflineMessagesRequestSchema: GenMessage<GetOfflineMessagesRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 42);
+  messageDesc(file_domain_chat_group_chat, 46);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GetOfflineMessagesResponse
@@ -1346,7 +1624,7 @@ export type GetOfflineMessagesResponse = Message<"peers_touch.model.chat.v1.GetO
  * Use `create(GetOfflineMessagesResponseSchema)` to create a new message.
  */
 export const GetOfflineMessagesResponseSchema: GenMessage<GetOfflineMessagesResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 43);
+  messageDesc(file_domain_chat_group_chat, 47);
 
 /**
  * 确认离线消息
@@ -1365,7 +1643,7 @@ export type AckOfflineMessagesRequest = Message<"peers_touch.model.chat.v1.AckOf
  * Use `create(AckOfflineMessagesRequestSchema)` to create a new message.
  */
 export const AckOfflineMessagesRequestSchema: GenMessage<AckOfflineMessagesRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 44);
+  messageDesc(file_domain_chat_group_chat, 48);
 
 /**
  * @generated from message peers_touch.model.chat.v1.AckOfflineMessagesResponse
@@ -1382,7 +1660,7 @@ export type AckOfflineMessagesResponse = Message<"peers_touch.model.chat.v1.AckO
  * Use `create(AckOfflineMessagesResponseSchema)` to create a new message.
  */
 export const AckOfflineMessagesResponseSchema: GenMessage<AckOfflineMessagesResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 45);
+  messageDesc(file_domain_chat_group_chat, 49);
 
 /**
  * 获取未读数
@@ -1401,7 +1679,7 @@ export type GetUnreadCountRequest = Message<"peers_touch.model.chat.v1.GetUnread
  * Use `create(GetUnreadCountRequestSchema)` to create a new message.
  */
 export const GetUnreadCountRequestSchema: GenMessage<GetUnreadCountRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 46);
+  messageDesc(file_domain_chat_group_chat, 50);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GetUnreadCountResponse
@@ -1418,7 +1696,7 @@ export type GetUnreadCountResponse = Message<"peers_touch.model.chat.v1.GetUnrea
  * Use `create(GetUnreadCountResponseSchema)` to create a new message.
  */
 export const GetUnreadCountResponseSchema: GenMessage<GetUnreadCountResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 47);
+  messageDesc(file_domain_chat_group_chat, 51);
 
 /**
  * 标记群消息已读
@@ -1444,7 +1722,7 @@ export type MarkGroupReadRequest = Message<"peers_touch.model.chat.v1.MarkGroupR
  * Use `create(MarkGroupReadRequestSchema)` to create a new message.
  */
 export const MarkGroupReadRequestSchema: GenMessage<MarkGroupReadRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 48);
+  messageDesc(file_domain_chat_group_chat, 52);
 
 /**
  * @generated from message peers_touch.model.chat.v1.MarkGroupReadResponse
@@ -1461,7 +1739,7 @@ export type MarkGroupReadResponse = Message<"peers_touch.model.chat.v1.MarkGroup
  * Use `create(MarkGroupReadResponseSchema)` to create a new message.
  */
 export const MarkGroupReadResponseSchema: GenMessage<MarkGroupReadResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 49);
+  messageDesc(file_domain_chat_group_chat, 53);
 
 /**
  * 统计信息
@@ -1478,7 +1756,7 @@ export type GetGroupStatsRequest = Message<"peers_touch.model.chat.v1.GetGroupSt
  * Use `create(GetGroupStatsRequestSchema)` to create a new message.
  */
 export const GetGroupStatsRequestSchema: GenMessage<GetGroupStatsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 50);
+  messageDesc(file_domain_chat_group_chat, 54);
 
 /**
  * @generated from message peers_touch.model.chat.v1.GetGroupStatsResponse
@@ -1510,7 +1788,7 @@ export type GetGroupStatsResponse = Message<"peers_touch.model.chat.v1.GetGroupS
  * Use `create(GetGroupStatsResponseSchema)` to create a new message.
  */
 export const GetGroupStatsResponseSchema: GenMessage<GetGroupStatsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_group_chat, 51);
+  messageDesc(file_domain_chat_group_chat, 55);
 
 /**
  * 群组类型

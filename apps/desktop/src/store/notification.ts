@@ -133,6 +133,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     get().refreshUnreadCounts();
 
     const timer = setInterval(() => {
+      get().loadNotifications();
       get().refreshUnreadCounts();
     }, POLL_INTERVAL);
     set({ pollTimer: timer });

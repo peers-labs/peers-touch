@@ -31,25 +31,36 @@ const (
 	FriendMessageType_FRIEND_MESSAGE_TYPE_FILE        FriendMessageType = 3
 	FriendMessageType_FRIEND_MESSAGE_TYPE_AUDIO       FriendMessageType = 4
 	FriendMessageType_FRIEND_MESSAGE_TYPE_VIDEO       FriendMessageType = 5
+	// Control type. The friend session is being used as a transport
+	// for a SenderKeyDistributionMessage (see group_chat.proto). The
+	// recipient MUST route the body to the group sender-key store and
+	// MUST NOT render the message in the visible chat history. The
+	// body lives in `encrypted_payload` (still under the friend chat
+	// E2EE envelope) and decodes as `peers_touch.model.chat.v1.SenderKeyDistributionMessage`.
+	// Numbered well above the user-visible types to leave room for
+	// future user-facing types without colliding with control types.
+	FriendMessageType_FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION FriendMessageType = 50
 )
 
 // Enum value maps for FriendMessageType.
 var (
 	FriendMessageType_name = map[int32]string{
-		0: "FRIEND_MESSAGE_TYPE_UNSPECIFIED",
-		1: "FRIEND_MESSAGE_TYPE_TEXT",
-		2: "FRIEND_MESSAGE_TYPE_IMAGE",
-		3: "FRIEND_MESSAGE_TYPE_FILE",
-		4: "FRIEND_MESSAGE_TYPE_AUDIO",
-		5: "FRIEND_MESSAGE_TYPE_VIDEO",
+		0:  "FRIEND_MESSAGE_TYPE_UNSPECIFIED",
+		1:  "FRIEND_MESSAGE_TYPE_TEXT",
+		2:  "FRIEND_MESSAGE_TYPE_IMAGE",
+		3:  "FRIEND_MESSAGE_TYPE_FILE",
+		4:  "FRIEND_MESSAGE_TYPE_AUDIO",
+		5:  "FRIEND_MESSAGE_TYPE_VIDEO",
+		50: "FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION",
 	}
 	FriendMessageType_value = map[string]int32{
-		"FRIEND_MESSAGE_TYPE_UNSPECIFIED": 0,
-		"FRIEND_MESSAGE_TYPE_TEXT":        1,
-		"FRIEND_MESSAGE_TYPE_IMAGE":       2,
-		"FRIEND_MESSAGE_TYPE_FILE":        3,
-		"FRIEND_MESSAGE_TYPE_AUDIO":       4,
-		"FRIEND_MESSAGE_TYPE_VIDEO":       5,
+		"FRIEND_MESSAGE_TYPE_UNSPECIFIED":             0,
+		"FRIEND_MESSAGE_TYPE_TEXT":                    1,
+		"FRIEND_MESSAGE_TYPE_IMAGE":                   2,
+		"FRIEND_MESSAGE_TYPE_FILE":                    3,
+		"FRIEND_MESSAGE_TYPE_AUDIO":                   4,
+		"FRIEND_MESSAGE_TYPE_VIDEO":                   5,
+		"FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION": 50,
 	}
 )
 
@@ -360,16 +371,29 @@ type FriendChatMessage struct {
 	Content     string                     `protobuf:"bytes,6,opt,name=content,proto3" json:"content,omitempty"`
 	Attachments []*FriendMessageAttachment `protobuf:"bytes,7,rep,name=attachments,proto3" json:"attachments,omitempty"`
 	ReplyToUlid string                     `protobuf:"bytes,8,opt,name=reply_to_ulid,json=replyToUlid,proto3" json:"reply_to_ulid,omitempty"`
-	Status      FriendMessageStatus        `protobuf:"varint,9,opt,name=status,proto3,enum=peers_touch.model.chat.v1.FriendMessageStatus" json:"status,omitempty"`
-	SentAt      *timestamppb.Timestamp     `protobuf:"bytes,10,opt,name=sent_at,json=sentAt,proto3" json:"sent_at,omitempty"`
-	DeliveredAt *timestamppb.Timestamp     `protobuf:"bytes,11,opt,name=delivered_at,json=deliveredAt,proto3" json:"delivered_at,omitempty"`
-	ReadAt      *timestamppb.Timestamp     `protobuf:"bytes,12,opt,name=read_at,json=readAt,proto3" json:"read_at,omitempty"`
-	CreatedAt   *timestamppb.Timestamp     `protobuf:"bytes,13,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt   *timestamppb.Timestamp     `protobuf:"bytes,14,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// Root message of the thread this message belongs to. Empty means
+	// the message is not part of a thread. Unlike reply_to_ulid, this
+	// remains stable when replying to a reply inside the same thread.
+	ThreadRootUlid string                 `protobuf:"bytes,18,opt,name=thread_root_ulid,json=threadRootUlid,proto3" json:"thread_root_ulid,omitempty"`
+	Status         FriendMessageStatus    `protobuf:"varint,9,opt,name=status,proto3,enum=peers_touch.model.chat.v1.FriendMessageStatus" json:"status,omitempty"`
+	SentAt         *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=sent_at,json=sentAt,proto3" json:"sent_at,omitempty"`
+	DeliveredAt    *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=delivered_at,json=deliveredAt,proto3" json:"delivered_at,omitempty"`
+	ReadAt         *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=read_at,json=readAt,proto3" json:"read_at,omitempty"`
+	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt      *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	// E2E ciphertext; when set, content may be empty or a non-secret placeholder.
 	EncryptedPayload []byte `protobuf:"bytes,15,opt,name=encrypted_payload,json=encryptedPayload,proto3" json:"encrypted_payload,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Mutation flags. A mutated message keeps its row (so threading,
+	// replies, and search snippets stay coherent) but its content is
+	// either cleared (`recalled = true`) or replaced (`edited_at`
+	// non-null). `recalled` and `edited_at` are mutually exclusive: a
+	// recalled message cannot subsequently be edited; an edited message
+	// can still be recalled. The wire-level deletion path removes the
+	// row entirely and does not surface here.
+	Recalled      bool                   `protobuf:"varint,16,opt,name=recalled,proto3" json:"recalled,omitempty"`
+	EditedAt      *timestamppb.Timestamp `protobuf:"bytes,17,opt,name=edited_at,json=editedAt,proto3" json:"edited_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *FriendChatMessage) Reset() {
@@ -458,6 +482,13 @@ func (x *FriendChatMessage) GetReplyToUlid() string {
 	return ""
 }
 
+func (x *FriendChatMessage) GetThreadRootUlid() string {
+	if x != nil {
+		return x.ThreadRootUlid
+	}
+	return ""
+}
+
 func (x *FriendChatMessage) GetStatus() FriendMessageStatus {
 	if x != nil {
 		return x.Status
@@ -507,13 +538,36 @@ func (x *FriendChatMessage) GetEncryptedPayload() []byte {
 	return nil
 }
 
+func (x *FriendChatMessage) GetRecalled() bool {
+	if x != nil {
+		return x.Recalled
+	}
+	return false
+}
+
+func (x *FriendChatMessage) GetEditedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EditedAt
+	}
+	return nil
+}
+
 type FriendMessageAttachment struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Cid           string                 `protobuf:"bytes,1,opt,name=cid,proto3" json:"cid,omitempty"`
-	Filename      string                 `protobuf:"bytes,2,opt,name=filename,proto3" json:"filename,omitempty"`
-	MimeType      string                 `protobuf:"bytes,3,opt,name=mime_type,json=mimeType,proto3" json:"mime_type,omitempty"`
-	Size          int64                  `protobuf:"varint,4,opt,name=size,proto3" json:"size,omitempty"`
-	ThumbnailCid  string                 `protobuf:"bytes,5,opt,name=thumbnail_cid,json=thumbnailCid,proto3" json:"thumbnail_cid,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Cid          string                 `protobuf:"bytes,1,opt,name=cid,proto3" json:"cid,omitempty"`
+	Filename     string                 `protobuf:"bytes,2,opt,name=filename,proto3" json:"filename,omitempty"`
+	MimeType     string                 `protobuf:"bytes,3,opt,name=mime_type,json=mimeType,proto3" json:"mime_type,omitempty"`
+	Size         int64                  `protobuf:"varint,4,opt,name=size,proto3" json:"size,omitempty"`
+	ThumbnailCid string                 `protobuf:"bytes,5,opt,name=thumbnail_cid,json=thumbnailCid,proto3" json:"thumbnail_cid,omitempty"`
+	// visibility echoes the OSS subserver's `oss_files.visibility`
+	// for this attachment ("public" / "chat" / "private"). The
+	// sender is authoritative — the receiver UI surfaces it as a
+	// badge so the user can tell at a glance whether the file
+	// they are looking at is reach-restricted to this chat session
+	// or has been published to a wider audience. Empty string is
+	// treated as "unknown" by older clients and rendered without
+	// a badge; new servers SHOULD always populate it.
+	Visibility    string `protobuf:"bytes,6,opt,name=visibility,proto3" json:"visibility,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -579,6 +633,13 @@ func (x *FriendMessageAttachment) GetSize() int64 {
 func (x *FriendMessageAttachment) GetThumbnailCid() string {
 	if x != nil {
 		return x.ThumbnailCid
+	}
+	return ""
+}
+
+func (x *FriendMessageAttachment) GetVisibility() string {
+	if x != nil {
+		return x.Visibility
 	}
 	return ""
 }
@@ -802,9 +863,12 @@ type SendMessageRequest struct {
 	EncryptedPayload []byte                     `protobuf:"bytes,7,opt,name=encrypted_payload,json=encryptedPayload,proto3" json:"encrypted_payload,omitempty"`
 	// Client-generated ULID for idempotency across direct + relay paths.
 	// When set, Station should persist this ULID instead of generating a new one.
-	ClientUlid    string `protobuf:"bytes,8,opt,name=client_ulid,json=clientUlid,proto3" json:"client_ulid,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ClientUlid string `protobuf:"bytes,8,opt,name=client_ulid,json=clientUlid,proto3" json:"client_ulid,omitempty"`
+	// Optional explicit thread root. If omitted and reply_to_ulid is
+	// present, Station resolves it from the replied message.
+	ThreadRootUlid string `protobuf:"bytes,9,opt,name=thread_root_ulid,json=threadRootUlid,proto3" json:"thread_root_ulid,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SendMessageRequest) Reset() {
@@ -889,6 +953,13 @@ func (x *SendMessageRequest) GetEncryptedPayload() []byte {
 func (x *SendMessageRequest) GetClientUlid() string {
 	if x != nil {
 		return x.ClientUlid
+	}
+	return ""
+}
+
+func (x *SendMessageRequest) GetThreadRootUlid() string {
+	if x != nil {
+		return x.ThreadRootUlid
 	}
 	return ""
 }
@@ -1598,6 +1669,7 @@ type SyncMessageItem struct {
 	EncryptedPayload []byte                     `protobuf:"bytes,7,opt,name=encrypted_payload,json=encryptedPayload,proto3" json:"encrypted_payload,omitempty"`
 	Attachments      []*FriendMessageAttachment `protobuf:"bytes,8,rep,name=attachments,proto3" json:"attachments,omitempty"`
 	ReplyToUlid      string                     `protobuf:"bytes,9,opt,name=reply_to_ulid,json=replyToUlid,proto3" json:"reply_to_ulid,omitempty"`
+	ThreadRootUlid   string                     `protobuf:"bytes,10,opt,name=thread_root_ulid,json=threadRootUlid,proto3" json:"thread_root_ulid,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -1691,6 +1763,13 @@ func (x *SyncMessageItem) GetAttachments() []*FriendMessageAttachment {
 func (x *SyncMessageItem) GetReplyToUlid() string {
 	if x != nil {
 		return x.ReplyToUlid
+	}
+	return ""
+}
+
+func (x *SyncMessageItem) GetThreadRootUlid() string {
+	if x != nil {
+		return x.ThreadRootUlid
 	}
 	return ""
 }
@@ -2623,6 +2702,470 @@ func (x *ListFriendRequestsResponse) GetTotal() int32 {
 	return 0
 }
 
+// Delete an accepted friendship with a peer. This is a relationship-level
+// deletion, not just a recent-conversation hide. The server removes the
+// accepted relationship and its direct-chat session history for both actors.
+type DeleteFriendRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PeerDid       string                 `protobuf:"bytes,1,opt,name=peer_did,json=peerDid,proto3" json:"peer_did,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteFriendRequest) Reset() {
+	*x = DeleteFriendRequest{}
+	mi := &file_domain_chat_friend_chat_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteFriendRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteFriendRequest) ProtoMessage() {}
+
+func (x *DeleteFriendRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_friend_chat_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteFriendRequest.ProtoReflect.Descriptor instead.
+func (*DeleteFriendRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_friend_chat_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *DeleteFriendRequest) GetPeerDid() string {
+	if x != nil {
+		return x.PeerDid
+	}
+	return ""
+}
+
+type DeleteFriendResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteFriendResponse) Reset() {
+	*x = DeleteFriendResponse{}
+	mi := &file_domain_chat_friend_chat_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteFriendResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteFriendResponse) ProtoMessage() {}
+
+func (x *DeleteFriendResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_friend_chat_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteFriendResponse.ProtoReflect.Descriptor instead.
+func (*DeleteFriendResponse) Descriptor() ([]byte, []int) {
+	return file_domain_chat_friend_chat_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *DeleteFriendResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+type RecallFriendMessageRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionUlid   string                 `protobuf:"bytes,1,opt,name=session_ulid,json=sessionUlid,proto3" json:"session_ulid,omitempty"`
+	MessageUlid   string                 `protobuf:"bytes,2,opt,name=message_ulid,json=messageUlid,proto3" json:"message_ulid,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecallFriendMessageRequest) Reset() {
+	*x = RecallFriendMessageRequest{}
+	mi := &file_domain_chat_friend_chat_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecallFriendMessageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecallFriendMessageRequest) ProtoMessage() {}
+
+func (x *RecallFriendMessageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_friend_chat_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecallFriendMessageRequest.ProtoReflect.Descriptor instead.
+func (*RecallFriendMessageRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_friend_chat_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *RecallFriendMessageRequest) GetSessionUlid() string {
+	if x != nil {
+		return x.SessionUlid
+	}
+	return ""
+}
+
+func (x *RecallFriendMessageRequest) GetMessageUlid() string {
+	if x != nil {
+		return x.MessageUlid
+	}
+	return ""
+}
+
+type RecallFriendMessageResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecallFriendMessageResponse) Reset() {
+	*x = RecallFriendMessageResponse{}
+	mi := &file_domain_chat_friend_chat_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecallFriendMessageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecallFriendMessageResponse) ProtoMessage() {}
+
+func (x *RecallFriendMessageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_friend_chat_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecallFriendMessageResponse.ProtoReflect.Descriptor instead.
+func (*RecallFriendMessageResponse) Descriptor() ([]byte, []int) {
+	return file_domain_chat_friend_chat_proto_rawDescGZIP(), []int{42}
+}
+
+type EditFriendMessageRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	SessionUlid string                 `protobuf:"bytes,1,opt,name=session_ulid,json=sessionUlid,proto3" json:"session_ulid,omitempty"`
+	MessageUlid string                 `protobuf:"bytes,2,opt,name=message_ulid,json=messageUlid,proto3" json:"message_ulid,omitempty"`
+	// Plaintext replacement body. For E2EE chats, callers MUST also
+	// provide `new_encrypted_payload`; Station never inspects either
+	// field beyond a length sanity-check, but it persists both so
+	// catch-up clients (cold sync) see the post-edit state. When E2EE
+	// is in use, `new_content` SHOULD be either empty or a non-secret
+	// placeholder, mirroring the SendMessage convention.
+	NewContent          string `protobuf:"bytes,3,opt,name=new_content,json=newContent,proto3" json:"new_content,omitempty"`
+	NewEncryptedPayload []byte `protobuf:"bytes,4,opt,name=new_encrypted_payload,json=newEncryptedPayload,proto3" json:"new_encrypted_payload,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *EditFriendMessageRequest) Reset() {
+	*x = EditFriendMessageRequest{}
+	mi := &file_domain_chat_friend_chat_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EditFriendMessageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EditFriendMessageRequest) ProtoMessage() {}
+
+func (x *EditFriendMessageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_friend_chat_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EditFriendMessageRequest.ProtoReflect.Descriptor instead.
+func (*EditFriendMessageRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_friend_chat_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *EditFriendMessageRequest) GetSessionUlid() string {
+	if x != nil {
+		return x.SessionUlid
+	}
+	return ""
+}
+
+func (x *EditFriendMessageRequest) GetMessageUlid() string {
+	if x != nil {
+		return x.MessageUlid
+	}
+	return ""
+}
+
+func (x *EditFriendMessageRequest) GetNewContent() string {
+	if x != nil {
+		return x.NewContent
+	}
+	return ""
+}
+
+func (x *EditFriendMessageRequest) GetNewEncryptedPayload() []byte {
+	if x != nil {
+		return x.NewEncryptedPayload
+	}
+	return nil
+}
+
+type EditFriendMessageResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EditFriendMessageResponse) Reset() {
+	*x = EditFriendMessageResponse{}
+	mi := &file_domain_chat_friend_chat_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EditFriendMessageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EditFriendMessageResponse) ProtoMessage() {}
+
+func (x *EditFriendMessageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_friend_chat_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EditFriendMessageResponse.ProtoReflect.Descriptor instead.
+func (*EditFriendMessageResponse) Descriptor() ([]byte, []int) {
+	return file_domain_chat_friend_chat_proto_rawDescGZIP(), []int{44}
+}
+
+type DeleteFriendMessageRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionUlid   string                 `protobuf:"bytes,1,opt,name=session_ulid,json=sessionUlid,proto3" json:"session_ulid,omitempty"`
+	MessageUlid   string                 `protobuf:"bytes,2,opt,name=message_ulid,json=messageUlid,proto3" json:"message_ulid,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteFriendMessageRequest) Reset() {
+	*x = DeleteFriendMessageRequest{}
+	mi := &file_domain_chat_friend_chat_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteFriendMessageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteFriendMessageRequest) ProtoMessage() {}
+
+func (x *DeleteFriendMessageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_friend_chat_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteFriendMessageRequest.ProtoReflect.Descriptor instead.
+func (*DeleteFriendMessageRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_friend_chat_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *DeleteFriendMessageRequest) GetSessionUlid() string {
+	if x != nil {
+		return x.SessionUlid
+	}
+	return ""
+}
+
+func (x *DeleteFriendMessageRequest) GetMessageUlid() string {
+	if x != nil {
+		return x.MessageUlid
+	}
+	return ""
+}
+
+type DeleteFriendMessageResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteFriendMessageResponse) Reset() {
+	*x = DeleteFriendMessageResponse{}
+	mi := &file_domain_chat_friend_chat_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteFriendMessageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteFriendMessageResponse) ProtoMessage() {}
+
+func (x *DeleteFriendMessageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_friend_chat_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteFriendMessageResponse.ProtoReflect.Descriptor instead.
+func (*DeleteFriendMessageResponse) Descriptor() ([]byte, []int) {
+	return file_domain_chat_friend_chat_proto_rawDescGZIP(), []int{46}
+}
+
+// Friend-chat E2EE ciphertext frame (serialized inside `encrypted_payload`).
+// Field numbers follow docs/architecture/encryption/chat-ratchet-upgrade.md §4.2.
+type EncryptedMessage struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Ciphertext   []byte                 `protobuf:"bytes,1,opt,name=ciphertext,proto3" json:"ciphertext,omitempty"`
+	Counter      uint32                 `protobuf:"varint,2,opt,name=counter,proto3" json:"counter,omitempty"`
+	EphemeralKey []byte                 `protobuf:"bytes,3,opt,name=ephemeral_key,json=ephemeralKey,proto3" json:"ephemeral_key,omitempty"`
+	RatchetPub   []byte                 `protobuf:"bytes,4,opt,name=ratchet_pub,json=ratchetPub,proto3" json:"ratchet_pub,omitempty"`
+	PrevCounter  uint32                 `protobuf:"varint,5,opt,name=prev_counter,json=prevCounter,proto3" json:"prev_counter,omitempty"`
+	// 0 = legacy chain-only ratchet, 1 = Double Ratchet (see design doc §5).
+	Version       uint32 `protobuf:"varint,6,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EncryptedMessage) Reset() {
+	*x = EncryptedMessage{}
+	mi := &file_domain_chat_friend_chat_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EncryptedMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EncryptedMessage) ProtoMessage() {}
+
+func (x *EncryptedMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_friend_chat_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EncryptedMessage.ProtoReflect.Descriptor instead.
+func (*EncryptedMessage) Descriptor() ([]byte, []int) {
+	return file_domain_chat_friend_chat_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *EncryptedMessage) GetCiphertext() []byte {
+	if x != nil {
+		return x.Ciphertext
+	}
+	return nil
+}
+
+func (x *EncryptedMessage) GetCounter() uint32 {
+	if x != nil {
+		return x.Counter
+	}
+	return 0
+}
+
+func (x *EncryptedMessage) GetEphemeralKey() []byte {
+	if x != nil {
+		return x.EphemeralKey
+	}
+	return nil
+}
+
+func (x *EncryptedMessage) GetRatchetPub() []byte {
+	if x != nil {
+		return x.RatchetPub
+	}
+	return nil
+}
+
+func (x *EncryptedMessage) GetPrevCounter() uint32 {
+	if x != nil {
+		return x.PrevCounter
+	}
+	return 0
+}
+
+func (x *EncryptedMessage) GetVersion() uint32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
 var File_domain_chat_friend_chat_proto protoreflect.FileDescriptor
 
 const file_domain_chat_friend_chat_proto_rawDesc = "" +
@@ -2646,7 +3189,7 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\x1aparticipant_b_display_name\x18\f \x01(\tR\x17participantBDisplayName\x120\n" +
 	"\x14participant_b_avatar\x18\r \x01(\tR\x12participantBAvatar\x120\n" +
 	"\x14participant_a_online\x18\x0e \x01(\bR\x12participantAOnline\x120\n" +
-	"\x14participant_b_online\x18\x0f \x01(\bR\x12participantBOnline\"\xf6\x05\n" +
+	"\x14participant_b_online\x18\x0f \x01(\bR\x12participantBOnline\"\xf5\x06\n" +
 	"\x11FriendChatMessage\x12\x12\n" +
 	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12!\n" +
 	"\fsession_ulid\x18\x02 \x01(\tR\vsessionUlid\x12\x1d\n" +
@@ -2656,7 +3199,8 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\x04type\x18\x05 \x01(\x0e2,.peers_touch.model.chat.v1.FriendMessageTypeR\x04type\x12\x18\n" +
 	"\acontent\x18\x06 \x01(\tR\acontent\x12T\n" +
 	"\vattachments\x18\a \x03(\v22.peers_touch.model.chat.v1.FriendMessageAttachmentR\vattachments\x12\"\n" +
-	"\rreply_to_ulid\x18\b \x01(\tR\vreplyToUlid\x12F\n" +
+	"\rreply_to_ulid\x18\b \x01(\tR\vreplyToUlid\x12(\n" +
+	"\x10thread_root_ulid\x18\x12 \x01(\tR\x0ethreadRootUlid\x12F\n" +
 	"\x06status\x18\t \x01(\x0e2..peers_touch.model.chat.v1.FriendMessageStatusR\x06status\x123\n" +
 	"\asent_at\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x12=\n" +
@@ -2666,13 +3210,18 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"created_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12+\n" +
-	"\x11encrypted_payload\x18\x0f \x01(\fR\x10encryptedPayload\"\x9d\x01\n" +
+	"\x11encrypted_payload\x18\x0f \x01(\fR\x10encryptedPayload\x12\x1a\n" +
+	"\brecalled\x18\x10 \x01(\bR\brecalled\x127\n" +
+	"\tedited_at\x18\x11 \x01(\v2\x1a.google.protobuf.TimestampR\beditedAt\"\xbd\x01\n" +
 	"\x17FriendMessageAttachment\x12\x10\n" +
 	"\x03cid\x18\x01 \x01(\tR\x03cid\x12\x1a\n" +
 	"\bfilename\x18\x02 \x01(\tR\bfilename\x12\x1b\n" +
 	"\tmime_type\x18\x03 \x01(\tR\bmimeType\x12\x12\n" +
 	"\x04size\x18\x04 \x01(\x03R\x04size\x12#\n" +
-	"\rthumbnail_cid\x18\x05 \x01(\tR\fthumbnailCid\"\x82\x02\n" +
+	"\rthumbnail_cid\x18\x05 \x01(\tR\fthumbnailCid\x12\x1e\n" +
+	"\n" +
+	"visibility\x18\x06 \x01(\tR\n" +
+	"visibility\"\x82\x02\n" +
 	"\x0fMessageEnvelope\x12!\n" +
 	"\fmessage_ulid\x18\x01 \x01(\tR\vmessageUlid\x12\x1d\n" +
 	"\n" +
@@ -2696,7 +3245,7 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xfe\x02\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xa8\x03\n" +
 	"\x12SendMessageRequest\x12!\n" +
 	"\fsession_ulid\x18\x01 \x01(\tR\vsessionUlid\x12!\n" +
 	"\freceiver_did\x18\x02 \x01(\tR\vreceiverDid\x12@\n" +
@@ -2706,7 +3255,8 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\rreply_to_ulid\x18\x06 \x01(\tR\vreplyToUlid\x12+\n" +
 	"\x11encrypted_payload\x18\a \x01(\fR\x10encryptedPayload\x12\x1f\n" +
 	"\vclient_ulid\x18\b \x01(\tR\n" +
-	"clientUlid\"\x80\x01\n" +
+	"clientUlid\x12(\n" +
+	"\x10thread_root_ulid\x18\t \x01(\tR\x0ethreadRootUlid\"\x80\x01\n" +
 	"\x13SendMessageResponse\x12F\n" +
 	"\amessage\x18\x01 \x01(\v2,.peers_touch.model.chat.v1.FriendChatMessageR\amessage\x12!\n" +
 	"\frelay_status\x18\x02 \x01(\tR\vrelayStatus\"n\n" +
@@ -2749,7 +3299,7 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\x14RelayMessageResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12=\n" +
 	"\fdelivered_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\vdeliveredAt\x12!\n" +
-	"\fforwarded_to\x18\x03 \x01(\tR\vforwardedTo\"\xa3\x03\n" +
+	"\fforwarded_to\x18\x03 \x01(\tR\vforwardedTo\"\xcd\x03\n" +
 	"\x0fSyncMessageItem\x12\x12\n" +
 	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12!\n" +
 	"\fsession_ulid\x18\x02 \x01(\tR\vsessionUlid\x12!\n" +
@@ -2759,7 +3309,9 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\asent_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x12+\n" +
 	"\x11encrypted_payload\x18\a \x01(\fR\x10encryptedPayload\x12T\n" +
 	"\vattachments\x18\b \x03(\v22.peers_touch.model.chat.v1.FriendMessageAttachmentR\vattachments\x12\"\n" +
-	"\rreply_to_ulid\x18\t \x01(\tR\vreplyToUlid\"]\n" +
+	"\rreply_to_ulid\x18\t \x01(\tR\vreplyToUlid\x12(\n" +
+	"\x10thread_root_ulid\x18\n" +
+	" \x01(\tR\x0ethreadRootUlid\"]\n" +
 	"\x13SyncMessagesRequest\x12F\n" +
 	"\bmessages\x18\x01 \x03(\v2*.peers_touch.model.chat.v1.SyncMessageItemR\bmessages\"F\n" +
 	"\x14SyncMessagesResponse\x12\x16\n" +
@@ -2812,14 +3364,44 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\x06offset\x18\x03 \x01(\x05R\x06offset\"x\n" +
 	"\x1aListFriendRequestsResponse\x12D\n" +
 	"\brequests\x18\x01 \x03(\v2(.peers_touch.model.chat.v1.FriendRequestR\brequests\x12\x14\n" +
-	"\x05total\x18\x02 \x01(\x05R\x05total*\xd1\x01\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\"0\n" +
+	"\x13DeleteFriendRequest\x12\x19\n" +
+	"\bpeer_did\x18\x01 \x01(\tR\apeerDid\"0\n" +
+	"\x14DeleteFriendResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"b\n" +
+	"\x1aRecallFriendMessageRequest\x12!\n" +
+	"\fsession_ulid\x18\x01 \x01(\tR\vsessionUlid\x12!\n" +
+	"\fmessage_ulid\x18\x02 \x01(\tR\vmessageUlid\"\x1d\n" +
+	"\x1bRecallFriendMessageResponse\"\xb5\x01\n" +
+	"\x18EditFriendMessageRequest\x12!\n" +
+	"\fsession_ulid\x18\x01 \x01(\tR\vsessionUlid\x12!\n" +
+	"\fmessage_ulid\x18\x02 \x01(\tR\vmessageUlid\x12\x1f\n" +
+	"\vnew_content\x18\x03 \x01(\tR\n" +
+	"newContent\x122\n" +
+	"\x15new_encrypted_payload\x18\x04 \x01(\fR\x13newEncryptedPayload\"\x1b\n" +
+	"\x19EditFriendMessageResponse\"b\n" +
+	"\x1aDeleteFriendMessageRequest\x12!\n" +
+	"\fsession_ulid\x18\x01 \x01(\tR\vsessionUlid\x12!\n" +
+	"\fmessage_ulid\x18\x02 \x01(\tR\vmessageUlid\"\x1d\n" +
+	"\x1bDeleteFriendMessageResponse\"\xcf\x01\n" +
+	"\x10EncryptedMessage\x12\x1e\n" +
+	"\n" +
+	"ciphertext\x18\x01 \x01(\fR\n" +
+	"ciphertext\x12\x18\n" +
+	"\acounter\x18\x02 \x01(\rR\acounter\x12#\n" +
+	"\rephemeral_key\x18\x03 \x01(\fR\fephemeralKey\x12\x1f\n" +
+	"\vratchet_pub\x18\x04 \x01(\fR\n" +
+	"ratchetPub\x12!\n" +
+	"\fprev_counter\x18\x05 \x01(\rR\vprevCounter\x12\x18\n" +
+	"\aversion\x18\x06 \x01(\rR\aversion*\x82\x02\n" +
 	"\x11FriendMessageType\x12#\n" +
 	"\x1fFRIEND_MESSAGE_TYPE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18FRIEND_MESSAGE_TYPE_TEXT\x10\x01\x12\x1d\n" +
 	"\x19FRIEND_MESSAGE_TYPE_IMAGE\x10\x02\x12\x1c\n" +
 	"\x18FRIEND_MESSAGE_TYPE_FILE\x10\x03\x12\x1d\n" +
 	"\x19FRIEND_MESSAGE_TYPE_AUDIO\x10\x04\x12\x1d\n" +
-	"\x19FRIEND_MESSAGE_TYPE_VIDEO\x10\x05*\xe6\x01\n" +
+	"\x19FRIEND_MESSAGE_TYPE_VIDEO\x10\x05\x12/\n" +
+	"+FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION\x102*\xe6\x01\n" +
 	"\x13FriendMessageStatus\x12%\n" +
 	"!FRIEND_MESSAGE_STATUS_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dFRIEND_MESSAGE_STATUS_SENDING\x10\x01\x12\x1e\n" +
@@ -2846,7 +3428,7 @@ func file_domain_chat_friend_chat_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_chat_friend_chat_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_domain_chat_friend_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
+var file_domain_chat_friend_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
 var file_domain_chat_friend_chat_proto_goTypes = []any{
 	(FriendMessageType)(0),               // 0: peers_touch.model.chat.v1.FriendMessageType
 	(FriendMessageStatus)(0),             // 1: peers_touch.model.chat.v1.FriendMessageStatus
@@ -2890,52 +3472,62 @@ var file_domain_chat_friend_chat_proto_goTypes = []any{
 	(*RejectFriendRequestResponse)(nil),  // 39: peers_touch.model.chat.v1.RejectFriendRequestResponse
 	(*ListFriendRequestsRequest)(nil),    // 40: peers_touch.model.chat.v1.ListFriendRequestsRequest
 	(*ListFriendRequestsResponse)(nil),   // 41: peers_touch.model.chat.v1.ListFriendRequestsResponse
-	(*timestamppb.Timestamp)(nil),        // 42: google.protobuf.Timestamp
-	(*FriendRequest)(nil),                // 43: peers_touch.model.chat.v1.FriendRequest
-	(FriendRequestStatus)(0),             // 44: peers_touch.model.chat.v1.FriendRequestStatus
+	(*DeleteFriendRequest)(nil),          // 42: peers_touch.model.chat.v1.DeleteFriendRequest
+	(*DeleteFriendResponse)(nil),         // 43: peers_touch.model.chat.v1.DeleteFriendResponse
+	(*RecallFriendMessageRequest)(nil),   // 44: peers_touch.model.chat.v1.RecallFriendMessageRequest
+	(*RecallFriendMessageResponse)(nil),  // 45: peers_touch.model.chat.v1.RecallFriendMessageResponse
+	(*EditFriendMessageRequest)(nil),     // 46: peers_touch.model.chat.v1.EditFriendMessageRequest
+	(*EditFriendMessageResponse)(nil),    // 47: peers_touch.model.chat.v1.EditFriendMessageResponse
+	(*DeleteFriendMessageRequest)(nil),   // 48: peers_touch.model.chat.v1.DeleteFriendMessageRequest
+	(*DeleteFriendMessageResponse)(nil),  // 49: peers_touch.model.chat.v1.DeleteFriendMessageResponse
+	(*EncryptedMessage)(nil),             // 50: peers_touch.model.chat.v1.EncryptedMessage
+	(*timestamppb.Timestamp)(nil),        // 51: google.protobuf.Timestamp
+	(*FriendRequest)(nil),                // 52: peers_touch.model.chat.v1.FriendRequest
+	(FriendRequestStatus)(0),             // 53: peers_touch.model.chat.v1.FriendRequestStatus
 }
 var file_domain_chat_friend_chat_proto_depIdxs = []int32{
-	42, // 0: peers_touch.model.chat.v1.FriendChatSession.last_message_at:type_name -> google.protobuf.Timestamp
-	42, // 1: peers_touch.model.chat.v1.FriendChatSession.created_at:type_name -> google.protobuf.Timestamp
-	42, // 2: peers_touch.model.chat.v1.FriendChatSession.updated_at:type_name -> google.protobuf.Timestamp
+	51, // 0: peers_touch.model.chat.v1.FriendChatSession.last_message_at:type_name -> google.protobuf.Timestamp
+	51, // 1: peers_touch.model.chat.v1.FriendChatSession.created_at:type_name -> google.protobuf.Timestamp
+	51, // 2: peers_touch.model.chat.v1.FriendChatSession.updated_at:type_name -> google.protobuf.Timestamp
 	0,  // 3: peers_touch.model.chat.v1.FriendChatMessage.type:type_name -> peers_touch.model.chat.v1.FriendMessageType
 	5,  // 4: peers_touch.model.chat.v1.FriendChatMessage.attachments:type_name -> peers_touch.model.chat.v1.FriendMessageAttachment
 	1,  // 5: peers_touch.model.chat.v1.FriendChatMessage.status:type_name -> peers_touch.model.chat.v1.FriendMessageStatus
-	42, // 6: peers_touch.model.chat.v1.FriendChatMessage.sent_at:type_name -> google.protobuf.Timestamp
-	42, // 7: peers_touch.model.chat.v1.FriendChatMessage.delivered_at:type_name -> google.protobuf.Timestamp
-	42, // 8: peers_touch.model.chat.v1.FriendChatMessage.read_at:type_name -> google.protobuf.Timestamp
-	42, // 9: peers_touch.model.chat.v1.FriendChatMessage.created_at:type_name -> google.protobuf.Timestamp
-	42, // 10: peers_touch.model.chat.v1.FriendChatMessage.updated_at:type_name -> google.protobuf.Timestamp
-	2,  // 11: peers_touch.model.chat.v1.OfflineMessage.status:type_name -> peers_touch.model.chat.v1.OfflineMessageStatus
-	42, // 12: peers_touch.model.chat.v1.OfflineMessage.expire_at:type_name -> google.protobuf.Timestamp
-	42, // 13: peers_touch.model.chat.v1.OfflineMessage.delivered_at:type_name -> google.protobuf.Timestamp
-	42, // 14: peers_touch.model.chat.v1.OfflineMessage.created_at:type_name -> google.protobuf.Timestamp
-	42, // 15: peers_touch.model.chat.v1.OfflineMessage.updated_at:type_name -> google.protobuf.Timestamp
-	0,  // 16: peers_touch.model.chat.v1.SendMessageRequest.type:type_name -> peers_touch.model.chat.v1.FriendMessageType
-	5,  // 17: peers_touch.model.chat.v1.SendMessageRequest.attachments:type_name -> peers_touch.model.chat.v1.FriendMessageAttachment
-	4,  // 18: peers_touch.model.chat.v1.SendMessageResponse.message:type_name -> peers_touch.model.chat.v1.FriendChatMessage
-	4,  // 19: peers_touch.model.chat.v1.GetMessagesResponse.messages:type_name -> peers_touch.model.chat.v1.FriendChatMessage
-	4,  // 20: peers_touch.model.chat.v1.SearchFriendMessagesResponse.messages:type_name -> peers_touch.model.chat.v1.FriendChatMessage
-	3,  // 21: peers_touch.model.chat.v1.CreateSessionResponse.session:type_name -> peers_touch.model.chat.v1.FriendChatSession
-	3,  // 22: peers_touch.model.chat.v1.GetSessionsResponse.sessions:type_name -> peers_touch.model.chat.v1.FriendChatSession
-	6,  // 23: peers_touch.model.chat.v1.RelayMessageRequest.envelope:type_name -> peers_touch.model.chat.v1.MessageEnvelope
-	42, // 24: peers_touch.model.chat.v1.RelayMessageResponse.delivered_at:type_name -> google.protobuf.Timestamp
-	0,  // 25: peers_touch.model.chat.v1.SyncMessageItem.type:type_name -> peers_touch.model.chat.v1.FriendMessageType
-	42, // 26: peers_touch.model.chat.v1.SyncMessageItem.sent_at:type_name -> google.protobuf.Timestamp
-	5,  // 27: peers_touch.model.chat.v1.SyncMessageItem.attachments:type_name -> peers_touch.model.chat.v1.FriendMessageAttachment
-	22, // 28: peers_touch.model.chat.v1.SyncMessagesRequest.messages:type_name -> peers_touch.model.chat.v1.SyncMessageItem
-	30, // 29: peers_touch.model.chat.v1.GetPendingResponse.messages:type_name -> peers_touch.model.chat.v1.PendingMessageInfo
-	43, // 30: peers_touch.model.chat.v1.SendFriendRequestResponse.request:type_name -> peers_touch.model.chat.v1.FriendRequest
-	43, // 31: peers_touch.model.chat.v1.AcceptFriendRequestResponse.request:type_name -> peers_touch.model.chat.v1.FriendRequest
-	3,  // 32: peers_touch.model.chat.v1.AcceptFriendRequestResponse.session:type_name -> peers_touch.model.chat.v1.FriendChatSession
-	43, // 33: peers_touch.model.chat.v1.RejectFriendRequestResponse.request:type_name -> peers_touch.model.chat.v1.FriendRequest
-	44, // 34: peers_touch.model.chat.v1.ListFriendRequestsRequest.status:type_name -> peers_touch.model.chat.v1.FriendRequestStatus
-	43, // 35: peers_touch.model.chat.v1.ListFriendRequestsResponse.requests:type_name -> peers_touch.model.chat.v1.FriendRequest
-	36, // [36:36] is the sub-list for method output_type
-	36, // [36:36] is the sub-list for method input_type
-	36, // [36:36] is the sub-list for extension type_name
-	36, // [36:36] is the sub-list for extension extendee
-	0,  // [0:36] is the sub-list for field type_name
+	51, // 6: peers_touch.model.chat.v1.FriendChatMessage.sent_at:type_name -> google.protobuf.Timestamp
+	51, // 7: peers_touch.model.chat.v1.FriendChatMessage.delivered_at:type_name -> google.protobuf.Timestamp
+	51, // 8: peers_touch.model.chat.v1.FriendChatMessage.read_at:type_name -> google.protobuf.Timestamp
+	51, // 9: peers_touch.model.chat.v1.FriendChatMessage.created_at:type_name -> google.protobuf.Timestamp
+	51, // 10: peers_touch.model.chat.v1.FriendChatMessage.updated_at:type_name -> google.protobuf.Timestamp
+	51, // 11: peers_touch.model.chat.v1.FriendChatMessage.edited_at:type_name -> google.protobuf.Timestamp
+	2,  // 12: peers_touch.model.chat.v1.OfflineMessage.status:type_name -> peers_touch.model.chat.v1.OfflineMessageStatus
+	51, // 13: peers_touch.model.chat.v1.OfflineMessage.expire_at:type_name -> google.protobuf.Timestamp
+	51, // 14: peers_touch.model.chat.v1.OfflineMessage.delivered_at:type_name -> google.protobuf.Timestamp
+	51, // 15: peers_touch.model.chat.v1.OfflineMessage.created_at:type_name -> google.protobuf.Timestamp
+	51, // 16: peers_touch.model.chat.v1.OfflineMessage.updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 17: peers_touch.model.chat.v1.SendMessageRequest.type:type_name -> peers_touch.model.chat.v1.FriendMessageType
+	5,  // 18: peers_touch.model.chat.v1.SendMessageRequest.attachments:type_name -> peers_touch.model.chat.v1.FriendMessageAttachment
+	4,  // 19: peers_touch.model.chat.v1.SendMessageResponse.message:type_name -> peers_touch.model.chat.v1.FriendChatMessage
+	4,  // 20: peers_touch.model.chat.v1.GetMessagesResponse.messages:type_name -> peers_touch.model.chat.v1.FriendChatMessage
+	4,  // 21: peers_touch.model.chat.v1.SearchFriendMessagesResponse.messages:type_name -> peers_touch.model.chat.v1.FriendChatMessage
+	3,  // 22: peers_touch.model.chat.v1.CreateSessionResponse.session:type_name -> peers_touch.model.chat.v1.FriendChatSession
+	3,  // 23: peers_touch.model.chat.v1.GetSessionsResponse.sessions:type_name -> peers_touch.model.chat.v1.FriendChatSession
+	6,  // 24: peers_touch.model.chat.v1.RelayMessageRequest.envelope:type_name -> peers_touch.model.chat.v1.MessageEnvelope
+	51, // 25: peers_touch.model.chat.v1.RelayMessageResponse.delivered_at:type_name -> google.protobuf.Timestamp
+	0,  // 26: peers_touch.model.chat.v1.SyncMessageItem.type:type_name -> peers_touch.model.chat.v1.FriendMessageType
+	51, // 27: peers_touch.model.chat.v1.SyncMessageItem.sent_at:type_name -> google.protobuf.Timestamp
+	5,  // 28: peers_touch.model.chat.v1.SyncMessageItem.attachments:type_name -> peers_touch.model.chat.v1.FriendMessageAttachment
+	22, // 29: peers_touch.model.chat.v1.SyncMessagesRequest.messages:type_name -> peers_touch.model.chat.v1.SyncMessageItem
+	30, // 30: peers_touch.model.chat.v1.GetPendingResponse.messages:type_name -> peers_touch.model.chat.v1.PendingMessageInfo
+	52, // 31: peers_touch.model.chat.v1.SendFriendRequestResponse.request:type_name -> peers_touch.model.chat.v1.FriendRequest
+	52, // 32: peers_touch.model.chat.v1.AcceptFriendRequestResponse.request:type_name -> peers_touch.model.chat.v1.FriendRequest
+	3,  // 33: peers_touch.model.chat.v1.AcceptFriendRequestResponse.session:type_name -> peers_touch.model.chat.v1.FriendChatSession
+	52, // 34: peers_touch.model.chat.v1.RejectFriendRequestResponse.request:type_name -> peers_touch.model.chat.v1.FriendRequest
+	53, // 35: peers_touch.model.chat.v1.ListFriendRequestsRequest.status:type_name -> peers_touch.model.chat.v1.FriendRequestStatus
+	52, // 36: peers_touch.model.chat.v1.ListFriendRequestsResponse.requests:type_name -> peers_touch.model.chat.v1.FriendRequest
+	37, // [37:37] is the sub-list for method output_type
+	37, // [37:37] is the sub-list for method input_type
+	37, // [37:37] is the sub-list for extension type_name
+	37, // [37:37] is the sub-list for extension extendee
+	0,  // [0:37] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_friend_chat_proto_init() }
@@ -2950,7 +3542,7 @@ func file_domain_chat_friend_chat_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_chat_friend_chat_proto_rawDesc), len(file_domain_chat_friend_chat_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   39,
+			NumMessages:   48,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

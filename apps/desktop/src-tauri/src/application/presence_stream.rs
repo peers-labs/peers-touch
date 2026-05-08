@@ -55,7 +55,7 @@ fn registry() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
 /// ```json
 /// { "did": "...", "online": true, "at": 1761501234 }
 /// ```
-pub const PRESENCE_PEER_EVENT: &str = "presence.peer-changed";
+pub const PRESENCE_PEER_EVENT: &str = "presence:peer-changed";
 
 #[derive(Debug, Deserialize)]
 struct PresenceFrame {

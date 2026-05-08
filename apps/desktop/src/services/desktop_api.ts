@@ -5,13 +5,16 @@ import type { GenMessage } from '@bufbuild/protobuf/codegenv2';
 import { log } from '../utils/logger';
 import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
-import type { SessionRevokedPayload } from '../kernel/events/types';
+import type { SessionRevokedPayload, RealtimeCallSignalKind } from '../kernel/events/types';
 import {
   GetSessionsResponseSchema,
   CreateSessionResponseSchema,
   GetMessagesResponseSchema,
   SendMessageResponseSchema,
   MessageAckResponseSchema,
+  RecallFriendMessageResponseSchema,
+  EditFriendMessageResponseSchema,
+  DeleteFriendMessageResponseSchema,
   SyncMessagesResponseSchema,
   OnlineResponseSchema,
   GetPendingResponseSchema,
@@ -36,6 +39,7 @@ import {
   GetGroupMembersResponseSchema,
   RemoveMemberResponseSchema,
   RecallGroupMessageResponseSchema,
+  EditGroupMessageResponseSchema,
   DeleteGroupMessageResponseSchema,
   SearchGroupMessagesResponseSchema,
   UpdateMyNicknameResponseSchema,
@@ -113,6 +117,14 @@ export interface RustCommandResult<T = Record<string, any>> {
   ok: boolean;
   data?: T;
   error?: RustCommandError;
+}
+
+export interface ChatThreadCount {
+  rootUlid: string;
+  replyCount: number;
+  latestReplyUlid: string;
+  latestReplyAt: number;
+  unreadCount: number;
 }
 
 // Always-quiet (regardless of mode): commands that fire many times per
@@ -342,7 +354,7 @@ export type PresenceTrigger =
   | 'heartbeat'
   | 'manual';
 
-/** Payload emitted by Rust on `presence.transition` Tauri events. */
+/** Payload emitted by Rust on `presence:transition` Tauri events. */
 export interface PresenceTransitionEvent {
   actor_id: string;
   from: 'offline' | 'online';
@@ -350,6 +362,20 @@ export interface PresenceTransitionEvent {
   trigger: PresenceTrigger;
   reconciled_count: number;
   affected_sessions: string[];
+}
+
+/**
+ * Input for `oss_upload_attachment_chat` (field names match the Rust
+ * `OssUploadAttachmentInput`). Chat uploads always carry a `bucket`
+ * and `visibility`; `chat_session_id` is required when
+ * `visibility === 'chat'` and ignored otherwise.
+ */
+export interface ChatUploadAttachmentInput {
+  file_path: string;
+  bucket: string;
+  visibility: 'public' | 'chat' | 'private';
+  /** Required when `visibility` is `chat`. */
+  chat_session_id?: string | null;
 }
 
 /**
@@ -377,6 +403,8 @@ export interface OssAttachmentUploaded {
    * the sender claimed it was — meaningful end-to-end integrity
    * once federation lands. */
   sha256?: string;
+  /** Echoed or inferred OSS visibility: `public` | `chat` | `private`. */
+  visibility?: string;
 }
 
 /**
@@ -414,6 +442,107 @@ export interface OssResolved {
   url: string;
   host: string;
   key: string;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// OSS — owner-side lifecycle (S16). All endpoints below operate on
+// the caller's own files; cross-actor mutation lives behind the
+// dashboard admin surface.
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * Visibility tiers exposed by the OSS subserver. Mirrors the Go-side
+ * whitelist in `service.PatchRequest`. Use the union type so callers
+ * cannot accidentally PATCH an unknown value.
+ */
+export type OssVisibility = 'public' | 'chat' | 'private';
+
+/** Filter envelope for `api.ossListMyFiles`. All fields optional. */
+export interface OssListMyFilesQuery {
+  bucket?: string;
+  visibility?: OssVisibility | string;
+  /**
+   * Server `LIKE '<prefix>%'` over `oss_files.mime`. Pass plain
+   * prefixes like `image/`; the server escapes LIKE metacharacters.
+   */
+  mime?: string;
+  include_deleted?: boolean;
+  page?: number;
+  page_size?: number;
+}
+
+/**
+ * Mirrors `oss_files` row shape verbatim. We expose the columns the
+ * MyFiles UI needs; richer fields (e.g. `Sha256`) are still present
+ * in the underlying response but are typed as `unknown` here so the
+ * UI layer treats them as opaque metadata.
+ */
+export interface OssFileMeta {
+  id: string;
+  key: string;
+  name: string;
+  size: number;
+  mime: string;
+  backend: string;
+  bucket_id: string;
+  owner_actor_id: string;
+  visibility: OssVisibility | string;
+  chat_session_id?: string;
+  expires_at?: string | null;
+  deleted_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  sha256?: string;
+}
+
+export interface OssMyFilesResponse {
+  files: OssFileMeta[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface OssDeleteResponse {
+  key: string;
+  deleted_at: string | null;
+  already_deleted: boolean;
+}
+
+export interface OssRestoreResponse {
+  key: string;
+  deleted_at: string | null;
+  expires_at: string | null;
+  updated_at: string;
+}
+
+/**
+ * PATCH body. `clear_expires_at` is the explicit "set the column to
+ * NULL" intent — distinct from omitting `expires_at` (leave alone)
+ * or sending a stamp (set to value). The server accepts at most one
+ * of the two; we collapse the precedence in the Rust adapter.
+ */
+export interface OssPatchFileBody {
+  visibility?: OssVisibility | string;
+  chat_session_id?: string;
+  bucket?: string;
+  filename?: string;
+  /** RFC3339 stamp; omit to leave column unchanged. */
+  expires_at?: string;
+  /** When true, force the column to NULL regardless of `expires_at`. */
+  clear_expires_at?: boolean;
+}
+
+export interface OssPatchResponse {
+  key: string;
+  visibility: OssVisibility | string;
+  chat_session_id?: string;
+  bucket_id: string;
+  filename: string;
+  expires_at?: string | null;
+  updated_at: string;
+  fields_changed: string[];
+  /** Present only when the patch tightened visibility. */
+  capability_version?: string;
 }
 
 export interface Session {
@@ -1874,6 +2003,15 @@ export interface ChatSearchLocalResultRow {
   sender_did: string;
   content: string;
   sent_at: number;
+  message_type?: number;
+  type?: number;
+  reply_to_ulid?: string;
+  replyToUlid?: string;
+  thread_root_ulid?: string;
+  threadRootUlid?: string;
+  attachments?: unknown[];
+  filename?: string;
+  mime_type?: string;
 }
 
 export interface GroupChatSyncInput {
@@ -2013,15 +2151,18 @@ export const api = {
   },
 
   /**
-   * Chat consumer — upload a local file and return the canonical
-   * attachment payload (`cid`, `key`, `host`, etc.). The wire is
-   * identical to the social variant; the dedicated command lets us
-   * evolve quotas / log labels per consumer without coupling.
+   * Chat consumer — push the local file to the bound Station's OSS
+   * subserver and return the canonical attachment payload (`cid`,
+   * `key`, `host`, …). Chat uploads carry the full chat-scope params
+   * (`bucket`, `visibility`, `chat_session_id`) so the server can
+   * apply per-conversation quotas / ACLs. See
+   * `application/oss/mod.rs::ChatAttachmentUploaded` for the
+   * authoritative shape.
    */
-  ossUploadAttachmentChat: (filePath: string) =>
-    invokeRustDataFromStatus<{ file_path: string }, OssAttachmentUploaded>(
+  ossUploadAttachmentChat: (input: ChatUploadAttachmentInput) =>
+    invokeRustDataFromStatus<ChatUploadAttachmentInput, OssAttachmentUploaded>(
       'oss_upload_attachment_chat',
-      { file_path: filePath },
+      input,
     ),
 
   /**
@@ -2071,6 +2212,45 @@ export const api = {
    */
   ossResolveUrl: (uri: string) =>
     invokeRustDataFromStatus<{ uri: string }, OssResolved>('oss_resolve_url', { uri }),
+
+  // ── OSS owner-side lifecycle (S16) ──
+  //
+  // Each mutation transparently invalidates the local oss_cache
+  // copy on the Rust side, so callers do NOT need to call
+  // `ossInvalidateCache` after a successful patch / delete /
+  // restore. The standalone helper exists for the rare cases
+  // where the renderer learns about an out-of-band change
+  // (e.g. a dashboard force-delete announced via SSE).
+
+  ossListMyFiles: (query?: OssListMyFilesQuery) =>
+    invokeRustDataFromStatus<OssListMyFilesQuery, OssMyFilesResponse>(
+      'oss_list_my_files',
+      query ?? {},
+    ),
+
+  ossDeleteFile: (key: string) =>
+    invokeRustDataFromStatus<{ key: string }, OssDeleteResponse>(
+      'oss_delete_file',
+      { key },
+    ),
+
+  ossRestoreFile: (key: string) =>
+    invokeRustDataFromStatus<{ key: string }, OssRestoreResponse>(
+      'oss_restore_file',
+      { key },
+    ),
+
+  ossPatchFile: (key: string, body: OssPatchFileBody) =>
+    invokeRustDataFromStatus<OssPatchFileBody & { key: string }, OssPatchResponse>(
+      'oss_patch_file',
+      { key, ...body },
+    ),
+
+  ossInvalidateCache: (uri: string) =>
+    invokeRustDataFromStatus<{ uri: string }, { ok: boolean; uri: string }>(
+      'oss_invalidate_cache',
+      { uri },
+    ),
 
   accountSyncAvatar: (avatarUrl: string) =>
     invokeRustCommand<{ avatar_url: string }, TauriStubPayload>('account_sync_avatar', { avatar_url: avatarUrl }),
@@ -2400,6 +2580,17 @@ export const api = {
   // Remove PIN protection from account — reuses AccountSetPinInput (same shape: account_id + pin)
   accountRemovePin: (accountId: string, pin: string) =>
     invokeRustDataFromStatus<AccountSetPinInput, { ok: boolean }>('account_remove_pin', {
+      account_id: accountId,
+      pin,
+    }),
+
+  // Re-link an existing PIN to the freshly issued session token. Used after a
+  // password / OAuth login on an account whose PIN protection survived but
+  // whose encrypted_session was wiped — the user enters the same PIN they
+  // already configured and the backend re-encrypts the new token under it.
+  // Errors map to UNAUTHORIZED (wrong PIN) / FORBIDDEN (locked out).
+  accountRelinkPin: (accountId: string, pin: string) =>
+    invokeRustDataFromStatus<AccountUnlockInput, { ok: boolean; account_id: string }>('account_relink_pin', {
       account_id: accountId,
       pin,
     }),
@@ -2959,6 +3150,53 @@ export const api = {
   friendChatListMessages: (sessionUlid: string, beforeUlid?: string, limit?: number) =>
     invokeRustProto('friend_chat_list_messages', GetMessagesResponseSchema, { session_ulid: sessionUlid, before_ulid: beforeUlid, limit }),
 
+  friendChatListThreadMessages: (
+    sessionUlid: string,
+    rootUlid: string,
+    limit?: number,
+    maxPages?: number,
+    afterUlid?: string,
+  ) =>
+    invokeRustDataFromStatus<
+      { session_ulid: string; root_ulid: string; limit?: number; max_pages?: number; after_ulid?: string },
+      {
+        root?: unknown | null;
+        replies?: unknown[];
+        messages?: unknown[];
+        replyCount?: number;
+        hitPageCap?: boolean;
+        hasMore?: boolean;
+        has_more?: boolean;
+        nextCursor?: string;
+        next_cursor?: string;
+      }
+    >('friend_chat_list_thread_messages', {
+      session_ulid: sessionUlid,
+      root_ulid: rootUlid,
+      limit,
+      max_pages: maxPages,
+      after_ulid: afterUlid,
+    }),
+
+  friendChatThreadCounts: (sessionUlid: string, rootUlids: string[]) =>
+    invokeRustDataFromStatus<
+      { session_ulid: string; root_ulids: string[] },
+      { counts: ChatThreadCount[] }
+    >('friend_chat_thread_counts', {
+      session_ulid: sessionUlid,
+      root_ulids: rootUlids,
+    }),
+
+  friendChatThreadMarkRead: (sessionUlid: string, rootUlid: string, lastReadUlid?: string) =>
+    invokeRustDataFromStatus<
+      { session_ulid: string; root_ulid: string; last_read_ulid?: string },
+      { success: boolean }
+    >('friend_chat_thread_mark_read', {
+      session_ulid: sessionUlid,
+      root_ulid: rootUlid,
+      last_read_ulid: lastReadUlid,
+    }),
+
   friendChatSendMessage: (
     sessionUlid: string,
     receiverDid: string,
@@ -2968,6 +3206,7 @@ export const api = {
     attachments?: ChatAttachmentInput[],
     encryptedPayload?: string,
     clientUlid?: string,
+    threadRootUlid?: string,
   ) =>
     invokeRustProto('friend_chat_send_message', SendMessageResponseSchema, {
       session_ulid: sessionUlid,
@@ -2975,6 +3214,7 @@ export const api = {
       content,
       type,
       reply_to_ulid: replyToUlid,
+      thread_root_ulid: threadRootUlid,
       attachments,
       ...(encryptedPayload != null && encryptedPayload !== ''
         ? { encrypted_payload: encryptedPayload }
@@ -2986,6 +3226,64 @@ export const api = {
 
   friendChatAckMessages: (ulids: string[], status: number) =>
     invokeRustProto('friend_chat_ack_messages', MessageAckResponseSchema, { ulids, status }),
+
+  /**
+   * Recall a previously-sent friend chat message. Server enforces
+   * sender ownership and the recall window (currently 5 minutes —
+   * see `application.DefaultMutationWindow`). On success Station
+   * pushes a `MessageMutation` event over SSE so peers update in
+   * realtime; this call's response is empty.
+   */
+  friendChatRecallMessage: (sessionUlid: string, messageUlid: string) =>
+    invokeRustProto(
+      'friend_chat_recall_message',
+      RecallFriendMessageResponseSchema,
+      {
+        session_ulid: sessionUlid,
+        message_ulid: messageUlid,
+      },
+    ),
+
+  /**
+   * Edit a previously-sent friend chat message. At least one of
+   * `newContent` or `newEncryptedPayload` must be non-empty; both
+   * may be provided when an E2EE chat still keeps a plaintext
+   * search index. Subject to the same window as recall.
+   */
+  friendChatEditMessage: (
+    sessionUlid: string,
+    messageUlid: string,
+    newContent?: string,
+    newEncryptedPayload?: Uint8Array,
+  ) =>
+    invokeRustProto(
+      'friend_chat_edit_message',
+      EditFriendMessageResponseSchema,
+      {
+        session_ulid: sessionUlid,
+        message_ulid: messageUlid,
+        ...(newContent != null && newContent !== '' ? { new_content: newContent } : {}),
+        ...(newEncryptedPayload != null && newEncryptedPayload.byteLength > 0
+          ? { new_encrypted_payload: Array.from(newEncryptedPayload) }
+          : {}),
+      },
+    ),
+
+  /**
+   * Hard-delete a friend chat message. Unlike recall this removes
+   * the row entirely (and its attachment metadata). Server-side
+   * the parent session's last_message_* pointer is repaired when
+   * the deleted ulid was the head.
+   */
+  friendChatDeleteMessage: (sessionUlid: string, messageUlid: string) =>
+    invokeRustProto(
+      'friend_chat_delete_message',
+      DeleteFriendMessageResponseSchema,
+      {
+        session_ulid: sessionUlid,
+        message_ulid: messageUlid,
+      },
+    ),
 
   /**
    * Fire a presence trigger to the Rust supervisor. Always resolves; the
@@ -3048,7 +3346,7 @@ export const api = {
    * Start the long-lived presence SSE supervisor for the current
    * window's actor. Idempotent; the Rust side replaces any in-flight
    * supervisor for the same actor. While running, station emits
-   * `presence.peer-changed` Tauri events for every online/offline flip.
+   * `presence:peer-changed` Tauri events for every online/offline flip.
    */
   friendChatPresenceStart: () =>
     invokeRustDataFromStatus<void, { actor_id: string }>('friend_chat_presence_start'),
@@ -3056,6 +3354,131 @@ export const api = {
   /** Cancel the presence supervisor for the current actor. */
   friendChatPresenceStop: () =>
     invokeRustDataFromStatus<void, { actor_id: string | null }>('friend_chat_presence_stop'),
+
+  /**
+   * Start the unified realtime SSE consumer for the current actor.
+   * Idempotent — the Rust side replaces any in-flight supervisor for
+   * the same actor. While running, the supervisor emits
+   * `realtime:event` Tauri events for every business / heartbeat /
+   * resync frame and `realtime:connection-state` on connect/disconnect.
+   * See docs/architecture/realtime/event-stream.md for the wire
+   * contract and the per-window device id semantics.
+   */
+  realtimeStreamStart: () =>
+    invokeRustDataFromStatus<void, { actor_id: string; device_id: string }>(
+      'realtime_stream_start',
+    ),
+
+  /** Cancel the realtime SSE consumer for the current actor. */
+  realtimeStreamStop: () =>
+    invokeRustDataFromStatus<void, { actor_id: string | null }>('realtime_stream_stop'),
+
+  /**
+   * Publish one WebRTC signaling event onto the recipient's realtime
+   * SSE stream via Station's `POST /realtime/signal` ingress
+   * (contract §2.7.1). `payloadB64` is the caller-side ciphertext
+   * envelope produced by the **standalone signaling envelope** (§2.7.2 —
+   * X25519 + HKDF-SHA256 + AES-256-GCM with random nonce + AAD bound to
+   * `session_ulid` and `kind`). It is intentionally NOT the chat
+   * ratchet ciphertext: the chat ratchet requires strict in-order
+   * delivery, which would stall on out-of-order ICE candidates.
+   * Station never decrypts the payload.
+   */
+  realtimeSignalSend: (
+    recipientActorId: string,
+    sessionUlid: string,
+    kind: RealtimeCallSignalKind,
+    payloadB64: string,
+  ) =>
+    invokeRustDataFromStatus<
+      {
+        recipient_actor_id: string;
+        session_ulid: string;
+        kind: string;
+        payload_b64: string;
+      },
+      Record<string, unknown>
+    >('realtime_signal_send', {
+      recipient_actor_id: recipientActorId,
+      session_ulid: sessionUlid,
+      kind,
+      payload_b64: payloadB64,
+    }),
+
+  /**
+   * Publish a typing-state pulse onto the recipient's realtime SSE
+   * stream via Station's `POST /realtime/typing` ingress.
+   *
+   * Typing is purely advisory metadata — there is no payload, no
+   * encryption, no persistence. Senders should debounce locally
+   * (fire `typing=true` at most every ~3s while the user is typing,
+   * and fire `typing=false` after ~4s of inactivity / on send / on
+   * blur). Station fan-outs the pulse to the recipient only — no
+   * multi-device sender echo, since typing is about the actor's own
+   * activity that their other devices already know about.
+   */
+  realtimeTypingSend: (
+    recipientActorId: string,
+    sessionUlid: string,
+    typing: boolean,
+  ) =>
+    invokeRustDataFromStatus<
+      {
+        recipient_actor_id: string;
+        session_ulid: string;
+        typing: boolean;
+      },
+      Record<string, unknown>
+    >('realtime_typing_send', {
+      recipient_actor_id: recipientActorId,
+      session_ulid: sessionUlid,
+      typing,
+    }),
+
+  /**
+   * Seal a WebRTC signaling plaintext (canonical JSON for SDP /
+   * candidate / hangup) into the standalone signaling envelope
+   * defined in `docs/architecture/realtime/event-stream.md` §2.7.2.
+   * Returns base64 of the wire bytes
+   * `eph_pub(32B) || nonce(12B) || ciphertext || tag(16B)`.
+   *
+   * `peerIkPubB64` is the recipient's long-term Ed25519 identity
+   * public key (32 raw bytes, base64). The Rust side internally
+   * converts it to its Curve25519/X25519 image (Edwards → Montgomery)
+   * before performing the two ECDHs (ephemeral×peer and self×peer).
+   */
+  signalingEnvelopeSeal: (
+    peerIkPubB64: string,
+    sessionUlid: string,
+    kind: RealtimeCallSignalKind,
+    plaintext: string,
+  ) =>
+    invokeAppResultStub<{ payload_b64: string }>('signaling_envelope_seal', {
+      peerIkPub: peerIkPubB64,
+      sessionUlid,
+      kind,
+      plaintext,
+    }),
+
+  /**
+   * Open an incoming signaling envelope, returning the canonical
+   * plaintext JSON. The AAD is `session_ulid || 0x1F || kind`, so a
+   * mismatch between the wire `kind` and the SSE-delivered metadata
+   * (or the wrong session) MUST surface as an authentication failure
+   * rather than producing wrong cleartext.
+   */
+  signalingEnvelopeOpen: (
+    senderIkPubB64: string,
+    sessionUlid: string,
+    kind: RealtimeCallSignalKind,
+    payloadB64: string,
+  ) =>
+    invokeAppResultStub<{ plaintext: string }>('signaling_envelope_open', {
+      senderIkPub: senderIkPubB64,
+      sessionUlid,
+      kind,
+      payloadB64,
+    }),
 
   friendChatGetPending: (limit?: number) =>
     invokeRustProto('friend_chat_get_pending', GetPendingResponseSchema, { limit }),
@@ -3069,8 +3492,84 @@ export const api = {
   groupChatListMessages: (groupUlid: string, beforeUlid?: string, limit?: number) =>
     invokeRustProto('group_chat_list_messages', GetGroupMessagesResponseSchema, { group_ulid: groupUlid, before_ulid: beforeUlid, limit }),
 
-  groupChatSendMessage: (groupUlid: string, content: string, type?: number, replyToUlid?: string, mentionedDids?: string[], mentionAll?: boolean) =>
-    invokeRustProto('group_chat_send_message', SendGroupMessageResponseSchema, { group_ulid: groupUlid, content, type, reply_to_ulid: replyToUlid, mentioned_dids: mentionedDids, mention_all: mentionAll }),
+  groupChatListThreadMessages: (
+    groupUlid: string,
+    rootUlid: string,
+    limit?: number,
+    maxPages?: number,
+    afterUlid?: string,
+  ) =>
+    invokeRustDataFromStatus<
+      { group_ulid: string; root_ulid: string; limit?: number; max_pages?: number; after_ulid?: string },
+      {
+        root?: unknown | null;
+        replies?: unknown[];
+        messages?: unknown[];
+        replyCount?: number;
+        hitPageCap?: boolean;
+        hasMore?: boolean;
+        has_more?: boolean;
+        nextCursor?: string;
+        next_cursor?: string;
+      }
+    >('group_chat_list_thread_messages', {
+      group_ulid: groupUlid,
+      root_ulid: rootUlid,
+      limit,
+      max_pages: maxPages,
+      after_ulid: afterUlid,
+    }),
+
+  groupChatThreadCounts: (groupUlid: string, rootUlids: string[]) =>
+    invokeRustDataFromStatus<
+      { group_ulid: string; root_ulids: string[] },
+      { counts: ChatThreadCount[] }
+    >('group_chat_thread_counts', {
+      group_ulid: groupUlid,
+      root_ulids: rootUlids,
+    }),
+
+  groupChatThreadMarkRead: (groupUlid: string, rootUlid: string, lastReadUlid?: string) =>
+    invokeRustDataFromStatus<
+      { group_ulid: string; root_ulid: string; last_read_ulid?: string },
+      { success: boolean }
+    >('group_chat_thread_mark_read', {
+      group_ulid: groupUlid,
+      root_ulid: rootUlid,
+      last_read_ulid: lastReadUlid,
+    }),
+
+  // Group chat sends MUST carry `encryptedPayload` (the base64
+  // bytes of a `GroupCiphertext` produced by `cryptoGroupEncrypt`).
+  // The Rust layer pins `content` to "" regardless of what the JS
+  // layer passes; it is kept in the signature for source compat
+  // with old callers but a non-empty value is silently dropped.
+  // See `modules/identity/groupSenderKeys.ts` for the only correct
+  // entry point.
+  groupChatSendMessage: (
+    groupUlid: string,
+    content: string,
+    type?: number,
+    replyToUlid?: string,
+    mentionedDids?: string[],
+    mentionAll?: boolean,
+    attachments?: ChatAttachmentInput[],
+    encryptedPayload?: string,
+    threadRootUlid?: string,
+  ) =>
+    invokeRustProto('group_chat_send_message', SendGroupMessageResponseSchema, {
+      group_ulid: groupUlid,
+      content,
+      type,
+      reply_to_ulid: replyToUlid,
+      thread_root_ulid: threadRootUlid,
+      mentioned_dids: mentionedDids,
+      mention_all: mentionAll,
+      attachments,
+      ...(encryptedPayload != null && encryptedPayload !== ''
+        ? { encrypted_payload: encryptedPayload }
+        : {}),
+    }),
 
   groupChatUnreadCount: (groupUlid?: string) =>
     invokeRustProto('group_chat_unread_count', GetUnreadCountResponseSchema, { group_ulid: groupUlid }),
@@ -3115,6 +3614,21 @@ export const api = {
   groupChatRecallMessage: (groupUlid: string, messageUlid: string) =>
     invokeRustProto('group_chat_recall_message', RecallGroupMessageResponseSchema, { group_ulid: groupUlid, message_ulid: messageUlid }),
 
+  groupChatEditMessage: (
+    groupUlid: string,
+    messageUlid: string,
+    newContent?: string,
+    newEncryptedPayload?: Uint8Array,
+  ) =>
+    invokeRustProto('group_chat_edit_message', EditGroupMessageResponseSchema, {
+      group_ulid: groupUlid,
+      message_ulid: messageUlid,
+      ...(newContent != null && newContent !== '' ? { new_content: newContent } : {}),
+      ...(newEncryptedPayload != null && newEncryptedPayload.byteLength > 0
+        ? { new_encrypted_payload: Array.from(newEncryptedPayload) }
+        : {}),
+    }),
+
   groupChatDeleteMessage: (groupUlid: string, messageUlid: string) =>
     invokeRustProto('group_chat_delete_message', DeleteGroupMessageResponseSchema, { group_ulid: groupUlid, message_ulid: messageUlid }),
 
@@ -3146,6 +3660,13 @@ export const api = {
 
   cryptoGetFingerprint: () =>
     invokeAppResultStub<{ fingerprint: string }>('crypto_get_fingerprint'),
+
+  cryptoRatchetTelemetrySnapshot: () =>
+    invokeAppResultStub<{
+      legacy_decrypts: number;
+      dr_decrypts: number;
+      since_unix_ms: number;
+    }>('crypto_ratchet_telemetry_snapshot'),
 
   cryptoGetKeyBundle: () =>
     invokeAppResultStub<CryptoKeyBundlePayload>('crypto_get_key_bundle'),
@@ -3189,23 +3710,81 @@ export const api = {
       ...(ephemeralKey != null && ephemeralKey !== '' ? { ephemeral_key: ephemeralKey } : {}),
     }),
 
-  cryptoGroupEncrypt: (groupId: string, plaintext: string) =>
-    invokeAppResultStub<{ ciphertext: string; epoch: number; counter: number }>('crypto_group_encrypt', {
-      group_id: groupId,
-      plaintext,
+  // ── Group chat E2EE: Sender Keys ──
+  //
+  // Four primitives:
+  //   * cryptoGroupSkEmitSkdm    -> get the SKDM bytes to ship to a
+  //                                 single peer over friend chat.
+  //                                 Idempotent on the server side
+  //                                 (returns the same chain key /
+  //                                 counter until the next rotation).
+  //   * cryptoGroupSkConsumeSkdm -> install a chain we received as a
+  //                                 friend-chat type=50 control body.
+  //                                 `claimedSenderDid` MUST equal the
+  //                                 friend-chat envelope sender DID
+  //                                 -- guards against A re-distributing
+  //                                 B's chain as their own.
+  //   * cryptoGroupEncrypt       -> wrap a plaintext for
+  //                                 SendGroupMessageRequest
+  //                                 .encrypted_payload. Plaintext is
+  //                                 base64 so binary content (image /
+  //                                 file body) round-trips losslessly.
+  //   * cryptoGroupDecrypt       -> reverse direction. Returns
+  //                                 base64; caller decodes to UTF-8
+  //                                 if it knows the body is text.
+  //
+  // See peers-touch/docs/architecture/encryption/group-sender-keys.md
+  // for the protocol and `crypto/sender_keys.rs` for the primitive.
+
+  cryptoGroupSkEmitSkdm: (groupUlid: string) =>
+    invokeAppResultStub<{
+      group_ulid: string;
+      sender_did: string;
+      sender_key_id: number;
+      skdm_b64: string;
+    }>('crypto_group_sk_emit_skdm', { group_ulid: groupUlid }),
+
+  cryptoGroupSkConsumeSkdm: (claimedSenderDid: string, skdmB64: string) =>
+    invokeAppResultStub<{
+      group_ulid: string;
+      sender_did: string;
+      sender_key_id: number;
+    }>('crypto_group_sk_consume_skdm', {
+      claimed_sender_did: claimedSenderDid,
+      skdm_b64: skdmB64,
     }),
 
-  cryptoGroupDecrypt: (groupId: string, ciphertext: string, epoch: number, counter: number) =>
-    invokeAppResultStub<{ plaintext: string }>('crypto_group_decrypt', {
-      group_id: groupId,
-      ciphertext,
-      epoch,
-      counter,
+  // Force-rotate the local sender chain for `groupUlid`. After this
+  // returns the caller MUST call `resetSkdmDistribution` and a fresh
+  // `ensureSkdmDistributed` so the new chain reaches every member;
+  // otherwise the dedupe set will suppress redistribution and peers
+  // will silently fail to decrypt post-rotation messages.
+  cryptoGroupSkRotate: (groupUlid: string) =>
+    invokeAppResultStub<{
+      group_ulid: string;
+      sender_did: string;
+      sender_key_id: number;
+    }>('crypto_group_sk_rotate', { group_ulid: groupUlid }),
+
+  cryptoGroupEncrypt: (groupUlid: string, plaintextB64: string) =>
+    invokeAppResultStub<{
+      encrypted_payload_b64: string;
+      sender_key_id: number;
+      counter: number;
+    }>('crypto_group_encrypt', {
+      group_ulid: groupUlid,
+      plaintext_b64: plaintextB64,
     }),
 
-  cryptoGroupRotateKey: (groupId: string) =>
-    invokeAppResultStub<{ epoch: number }>('crypto_group_rotate_key', {
-      group_id: groupId,
+  cryptoGroupDecrypt: (groupUlid: string, encryptedPayloadB64: string) =>
+    invokeAppResultStub<{
+      plaintext_b64: string;
+      sender_did: string;
+      sender_key_id: number;
+      counter: number;
+    }>('crypto_group_decrypt', {
+      group_ulid: groupUlid,
+      encrypted_payload_b64: encryptedPayloadB64,
     }),
 
   keyExchangeUploadBundle: (bundle: CryptoKeyBundlePayload) =>
@@ -3214,66 +3793,28 @@ export const api = {
       bundle,
     ),
 
-  keyExchangeFetchBundle: (did: string) =>
-    invokeRustDataFromStatus<{ did: string }, KeyExchangeBundleResponse>(
+  keyExchangeFetchBundle: (did: string, deviceId?: string) =>
+    invokeRustDataFromStatus<{ did: string; device_id?: string }, KeyExchangeFetchBundlesResponse>(
       'key_exchange_fetch_bundle',
-      { did },
+      { did, ...(deviceId != null && deviceId !== '' ? { device_id: deviceId } : {}) },
     ),
 
-  // ── ICE / Signaling (WebRTC) ──
+  accountGetDeviceId: () =>
+    invokeRustDataFromStatus<void, { device_id: string }>('account_get_device_id'),
+
+  // ── ICE / TURN ──
+  //
+  // Anything resembling an ICE *session* (offer/answer/candidate exchange)
+  // moved to the unified realtime SSE plane in Phase 8 — see
+  // `realtimeSignalSend` / `signalingEnvelopeSeal` / `signalingEnvelopeOpen`
+  // above and docs/architecture/realtime/event-stream.md §2.7. The role-
+  // hint publisher (`ice_peer_register`) was retired in 8.3c — peer
+  // online/offline liveness is now carried by PresenceFlip events on the
+  // canonical realtime stream. What remains here is just the TURN
+  // credentials fetch (media plane).
 
   iceGetServers: () =>
     invokeRustDataFromStatus<void, IceServersResponse>('ice_get_servers'),
-
-  icePeerRegister: (id: string, role?: string, addrs?: string[]) =>
-    invokeRustDataFromStatus<{ id: string; role?: string; addrs?: string[] }, IcePeerInfo>(
-      'ice_peer_register', { id, role, addrs },
-    ),
-
-  icePeerUnregister: (id: string) =>
-    invokeRustDataFromStatus<{ id: string }, Record<string, unknown>>(
-      'ice_peer_unregister', { id },
-    ),
-
-  iceSessionNew: (a: string, b: string) =>
-    invokeRustDataFromStatus<{ a: string; b: string }, IceSession>(
-      'ice_session_new', { a, b },
-    ),
-
-  iceSessionGet: (id: string) =>
-    invokeRustDataFromStatus<{ id: string }, IceSession>(
-      'ice_session_get', { id },
-    ),
-
-  iceSessionOfferPost: (id: string, sdp: string) =>
-    invokeRustDataFromStatus<{ id: string; sdp: string }, Record<string, unknown>>(
-      'ice_session_offer_post', { id, sdp },
-    ),
-
-  iceSessionOfferGet: (id: string) =>
-    invokeRustDataFromStatus<{ id: string }, { sdp?: string }>(
-      'ice_session_offer_get', { id },
-    ),
-
-  iceSessionAnswerPost: (id: string, sdp: string) =>
-    invokeRustDataFromStatus<{ id: string; sdp: string }, Record<string, unknown>>(
-      'ice_session_answer_post', { id, sdp },
-    ),
-
-  iceSessionAnswerGet: (id: string) =>
-    invokeRustDataFromStatus<{ id: string }, { sdp?: string }>(
-      'ice_session_answer_get', { id },
-    ),
-
-  iceSessionCandidatePost: (id: string, candidate: string, mid?: string, mline?: number, from?: string) =>
-    invokeRustDataFromStatus<{ id: string; candidate: string; mid?: string; mline?: number; from?: string }, Record<string, unknown>>(
-      'ice_session_candidate_post', { id, candidate, mid, mline, from },
-    ),
-
-  iceSessionCandidatesGet: (id: string) =>
-    invokeRustDataFromStatus<{ id: string }, { candidates?: Array<{ candidate: string; mid?: string; mline?: number; from?: string }> }>(
-      'ice_session_candidates_get', { id },
-    ),
 
   // ── Friend Request ──
 
@@ -3288,6 +3829,12 @@ export const api = {
 
   friendChatListFriendRequests: (status?: number, limit?: number, offset?: number) =>
     invokeRustProto('friend_chat_list_friend_requests', ListFriendRequestsResponseSchema, { status, limit, offset }),
+
+  friendChatDeleteFriend: (peerDid: string) =>
+    invokeRustDataFromStatus<{ peer_did: string }, { success: boolean }>(
+      'friend_chat_delete_friend',
+      { peer_did: peerDid },
+    ),
 
   // ── Notification ──
 
@@ -3354,20 +3901,6 @@ export interface IceServersResponse {
   ttl?: number;
 }
 
-export interface IcePeerInfo {
-  id: string;
-  role?: string;
-  addrs?: string[];
-  updated_at?: number;
-}
-
-export interface IceSession {
-  id: string;
-  a: string;
-  b: string;
-  created_at?: number;
-}
-
 /** Payload for friend/group chat send; field names match Station JSON and Rust `AttachmentInput`. */
 export type ChatAttachmentInput = {
   cid: string;
@@ -3375,6 +3908,7 @@ export type ChatAttachmentInput = {
   mime_type: string;
   size: number;
   thumbnail_cid?: string;
+  visibility?: string;
 };
 
 export interface CryptoKeyBundlePayload {
@@ -3386,15 +3920,29 @@ export interface CryptoKeyBundlePayload {
   opk_pubs: string[];
 }
 
-export interface KeyExchangeBundleResponse {
-  actor_did: string;
+/** One device-published bundle from Station (`FetchKeyBundleResponse.bundles`). */
+export interface KeyExchangeWireBundle {
+  did: string;
+  device_id: string;
   ik_pub: string;
-  fingerprint: string;
-  spk_id: number;
+  /** SHA-256 hex over raw IK bytes; added by the desktop stub (not on wire proto). */
+  fingerprint?: string;
   spk_pub: string;
   spk_sig: string;
-  opk_id?: number;
-  opk_pub?: string;
+  opks: string[];
+  published_at_unix_ms: number;
+}
+
+export interface KeyExchangeFetchBundlesResponse {
+  bundles: KeyExchangeWireBundle[];
+}
+
+/** Most recently published bundle for a DID (server returns `published_at` desc). */
+export function pickLatestKeyExchangeBundle(
+  res: KeyExchangeFetchBundlesResponse | null | undefined,
+): KeyExchangeWireBundle | undefined {
+  const first = res?.bundles?.[0];
+  return first;
 }
 
 export interface FriendRequestData {

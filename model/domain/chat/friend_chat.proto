@@ -40,6 +40,10 @@ message FriendChatMessage {
   repeated FriendMessageAttachment attachments = 7;
   
   string reply_to_ulid = 8;
+  // Root message of the thread this message belongs to. Empty means
+  // the message is not part of a thread. Unlike reply_to_ulid, this
+  // remains stable when replying to a reply inside the same thread.
+  string thread_root_ulid = 18;
   
   FriendMessageStatus status = 9;
   google.protobuf.Timestamp sent_at = 10;
@@ -51,6 +55,16 @@ message FriendChatMessage {
 
   // E2E ciphertext; when set, content may be empty or a non-secret placeholder.
   bytes encrypted_payload = 15;
+
+  // Mutation flags. A mutated message keeps its row (so threading,
+  // replies, and search snippets stay coherent) but its content is
+  // either cleared (`recalled = true`) or replaced (`edited_at`
+  // non-null). `recalled` and `edited_at` are mutually exclusive: a
+  // recalled message cannot subsequently be edited; an edited message
+  // can still be recalled. The wire-level deletion path removes the
+  // row entirely and does not surface here.
+  bool recalled = 16;
+  google.protobuf.Timestamp edited_at = 17;
 }
 
 enum FriendMessageType {
@@ -60,6 +74,16 @@ enum FriendMessageType {
   FRIEND_MESSAGE_TYPE_FILE = 3;
   FRIEND_MESSAGE_TYPE_AUDIO = 4;
   FRIEND_MESSAGE_TYPE_VIDEO = 5;
+
+  // Control type. The friend session is being used as a transport
+  // for a SenderKeyDistributionMessage (see group_chat.proto). The
+  // recipient MUST route the body to the group sender-key store and
+  // MUST NOT render the message in the visible chat history. The
+  // body lives in `encrypted_payload` (still under the friend chat
+  // E2EE envelope) and decodes as `peers_touch.model.chat.v1.SenderKeyDistributionMessage`.
+  // Numbered well above the user-visible types to leave room for
+  // future user-facing types without colliding with control types.
+  FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION = 50;
 }
 
 enum FriendMessageStatus {
@@ -77,6 +101,15 @@ message FriendMessageAttachment {
   string mime_type = 3;
   int64 size = 4;
   string thumbnail_cid = 5;
+  // visibility echoes the OSS subserver's `oss_files.visibility`
+  // for this attachment ("public" / "chat" / "private"). The
+  // sender is authoritative — the receiver UI surfaces it as a
+  // badge so the user can tell at a glance whether the file
+  // they are looking at is reach-restricted to this chat session
+  // or has been published to a wider audience. Empty string is
+  // treated as "unknown" by older clients and rendered without
+  // a badge; new servers SHOULD always populate it.
+  string visibility = 6;
 }
 
 message MessageEnvelope {
@@ -120,6 +153,9 @@ message SendMessageRequest {
   // Client-generated ULID for idempotency across direct + relay paths.
   // When set, Station should persist this ULID instead of generating a new one.
   string client_ulid = 8;
+  // Optional explicit thread root. If omitted and reply_to_ulid is
+  // present, Station resolves it from the replied message.
+  string thread_root_ulid = 9;
 }
 
 message SendMessageResponse {
@@ -201,6 +237,7 @@ message SyncMessageItem {
   bytes encrypted_payload = 7;
   repeated FriendMessageAttachment attachments = 8;
   string reply_to_ulid = 9;
+  string thread_root_ulid = 10;
 }
 
 message SyncMessagesRequest {
@@ -298,4 +335,76 @@ message ListFriendRequestsRequest {
 message ListFriendRequestsResponse {
   repeated FriendRequest requests = 1;
   int32 total = 2;
+}
+
+// Delete an accepted friendship with a peer. This is a relationship-level
+// deletion, not just a recent-conversation hide. The server removes the
+// accepted relationship and its direct-chat session history for both actors.
+message DeleteFriendRequest {
+  string peer_did = 1;
+}
+
+message DeleteFriendResponse {
+  bool success = 1;
+}
+
+// ============================================================================
+// Friend Message Mutations: recall / edit / delete
+// ============================================================================
+//
+// These three operations all share the same authorization rule: only
+// the message's original sender may invoke them, and only within
+// FRIEND_CHAT_MUTATION_WINDOW (operator-tunable; see the friend_chat
+// subserver's options). Each mutation publishes a realtime
+// MessageMutation StreamEvent onto the recipient's (and the sender's
+// other devices') unified event stream so peers learn about the
+// change without polling. See docs/architecture/realtime/event-stream.md
+// §2.7 (MessageMutation).
+
+message RecallFriendMessageRequest {
+  string session_ulid = 1;
+  string message_ulid = 2;
+}
+
+message RecallFriendMessageResponse {
+  // Empty success response. The mutation lands on the realtime
+  // stream with kind=RECALL; clients reconcile the local store from
+  // there. The HTTP success only confirms the row was found,
+  // owned, and within the recall window.
+}
+
+message EditFriendMessageRequest {
+  string session_ulid = 1;
+  string message_ulid = 2;
+  // Plaintext replacement body. For E2EE chats, callers MUST also
+  // provide `new_encrypted_payload`; Station never inspects either
+  // field beyond a length sanity-check, but it persists both so
+  // catch-up clients (cold sync) see the post-edit state. When E2EE
+  // is in use, `new_content` SHOULD be either empty or a non-secret
+  // placeholder, mirroring the SendMessage convention.
+  string new_content = 3;
+  bytes new_encrypted_payload = 4;
+}
+
+message EditFriendMessageResponse {
+}
+
+message DeleteFriendMessageRequest {
+  string session_ulid = 1;
+  string message_ulid = 2;
+}
+
+message DeleteFriendMessageResponse {
+}
+
+// Friend-chat E2EE ciphertext frame (serialized inside `encrypted_payload`).
+// Field numbers follow docs/architecture/encryption/chat-ratchet-upgrade.md §4.2.
+message EncryptedMessage {
+  bytes ciphertext = 1;
+  uint32 counter = 2;
+  bytes ephemeral_key = 3;
+  bytes ratchet_pub = 4;
+  uint32 prev_counter = 5;
+  // 0 = legacy chain-only ratchet, 1 = Double Ratchet (see design doc §5).
+  uint32 version = 6;
 }

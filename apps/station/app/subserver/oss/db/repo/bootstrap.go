@@ -102,7 +102,7 @@ func Bootstrap(ctx context.Context, deps BootstrapDeps) (*BootstrapResult, error
 		"federation_kid_prev",
 		"federation_rotated_at",
 	} {
-		if err := db.Where("`key` = ?", key).Delete(&ossmodel.Meta{}).Error; err != nil {
+		if err := db.Where("key = ?", key).Delete(&ossmodel.Meta{}).Error; err != nil {
 			return nil, err
 		}
 	}

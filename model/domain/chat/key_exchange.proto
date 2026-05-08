@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+// X3DH public key bundle surface plus Double Ratchet wire-version negotiation.
+// M1 publishes supported_versions = [0] only; M2 expands when both peers ship DR.
+message KeyBundle {
+  repeated int32 supported_versions = 99;
+}

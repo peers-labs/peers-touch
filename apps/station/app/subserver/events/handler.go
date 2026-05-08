@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -10,52 +11,83 @@ import (
 	"github.com/cloudwego/hertz/pkg/network"
 	"github.com/cloudwego/hertz/pkg/protocol"
 	"github.com/cloudwego/hertz/pkg/protocol/http1/resp"
-	"github.com/peers-labs/peers-touch/station/frame/core/auth"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
-	"github.com/peers-labs/peers-touch/station/frame/core/broker"
-	"github.com/peers-labs/peers-touch/station/frame/core/event"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
-	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
-	eventsmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/events"
-	"google.golang.org/protobuf/types/known/timestamppb"
+	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
+	"google.golang.org/protobuf/proto"
 )
 
-// newSSEWriter creates an SSE-compatible chunked body writer
+// signalIngressMaxPayloadBytes is the cap on the decoded ciphertext
+// of a single signaling event. SDP offers/answers in our codec set
+// run ~3-5 KiB; ICE candidates ~200 B; the encryption envelope adds
+// ~50 B overhead. 64 KiB is a generous ceiling that still bounds
+// memory pressure if a misbehaving peer floods us with garbage.
+const signalIngressMaxPayloadBytes = 64 * 1024
+
+// signalKindMap converts the wire string form of a signaling kind
+// (the JSON sent by the client) into the protobuf enum that rides
+// on the EventBus. Mirroring the proto enum here, rather than
+// reflecting it, keeps the JSON contract stable across proto-gen
+// tweaks.
+var signalKindMap = map[string]realtime.CallSignal_Kind{
+	"OFFER":        realtime.CallSignal_OFFER,
+	"ANSWER":       realtime.CallSignal_ANSWER,
+	"CANDIDATE":    realtime.CallSignal_CANDIDATE,
+	"HANGUP":       realtime.CallSignal_HANGUP,
+	"CALL_REQUEST": realtime.CallSignal_CALL_REQUEST,
+	"CALL_ACCEPT":  realtime.CallSignal_CALL_ACCEPT,
+	"CALL_REJECT":  realtime.CallSignal_CALL_REJECT,
+	"CALL_END":     realtime.CallSignal_CALL_END,
+}
+
+// Heartbeat cadence; see contract §2.4.
+const heartbeatInterval = 15 * time.Second
+
 func newSSEWriter(response *protocol.Response, writer network.Writer) network.ExtWriter {
 	return resp.NewChunkedBodyWriter(response, writer)
 }
 
 func (s *eventsSubServer) Handlers() []server.Handler {
-	logIDWrapper := serverwrapper.LogID()
-
-	// JWT wrapper for authenticated endpoints
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	jwtWrapper := serverwrapper.JWT(provider)
-
-	// Hertz JWT wrapper for SSE endpoint
 	hertzJWTWrapper := hertzadapter.RequireJWT(provider)
 
 	return []server.Handler{
-		// SSE stream endpoint - uses Hertz native handler for proper SSE streaming
-		server.NewHertzHandler("events-stream", "/events/stream", server.GET, s.handleSSEStreamHertz, hertzJWTWrapper),
+		// Single canonical realtime egress endpoint. Per contract §1.2
+		// there are no per-feature SSE endpoints; every kind of
+		// realtime event multiplexes through this one stream.
+		server.NewHertzHandler("events-stream", "/events/stream", server.GET, s.handleStream, hertzJWTWrapper),
 
-		// Pull endpoint for missed events - TypedHandler with Proto
-		server.NewTypedHandler("events-pull", "/events/pull", server.POST, s.handlePull, logIDWrapper, jwtWrapper),
+		// Signaling ingress (contract §2.7.1). WebRTC offer / answer /
+		// ICE candidate / hangup arrive here as opaque ciphertext
+		// (contract §2.7.2 — encrypted with the chat session ratchet)
+		// and Station fan-outs them onto the recipient's SSE stream
+		// plus the sender's stream for multi-device echo. Station
+		// never inspects the payload.
+		server.NewHertzHandler("realtime-signal", "/realtime/signal", server.POST, s.handlePostSignal, hertzJWTWrapper),
 
-		// ACK endpoint for confirming event receipt - TypedHandler with Proto
-		server.NewTypedHandler("events-ack", "/events/ack", server.POST, s.handleAck, logIDWrapper, jwtWrapper),
-
-		// Stats endpoint (for debugging) - TypedHandler with Proto
-		server.NewTypedHandler("events-stats", "/events/stats", server.GET, s.handleStats, logIDWrapper),
+		// Typing-state ingress. The sender publishes a typing=true
+		// pulse on input and a typing=false on idle / blur / send;
+		// Station fan-outs it onto the recipient's SSE stream so the
+		// receiver's UI can show "X is typing…" in real time. Typing
+		// is ephemeral — Station never persists it — so this endpoint
+		// is best-effort: bus errors are logged but the caller still
+		// receives a 204 because there is nothing useful for the
+		// caller to do about a typing-frame that didn't land.
+		server.NewHertzHandler("realtime-typing", "/realtime/typing", server.POST, s.handlePostTyping, hertzJWTWrapper),
 	}
 }
 
-// handleSSEStreamHertz handles SSE stream connections using Hertz native streaming
-// GET /events/stream
-func (s *eventsSubServer) handleSSEStreamHertz(ctx context.Context, c *app.RequestContext) {
-	// Get authenticated user from Hertz context
+// handleStream serves the single SSE stream per device-window.
+//
+// Wire format per contract §2.3:
+//
+//	event: stream
+//	id:    <event_id>
+//	data:  <base64(protobuf StreamEvent)>
+//	\n
+func (s *eventsSubServer) handleStream(ctx context.Context, c *app.RequestContext) {
 	subject := hertzadapter.GetSubject(c)
 	if subject == nil {
 		c.JSON(401, map[string]string{"error": "unauthorized"})
@@ -63,240 +95,281 @@ func (s *eventsSubServer) handleSSEStreamHertz(ctx context.Context, c *app.Reque
 	}
 	actorID := subject.ID
 
-	es := event.GetGlobalEventSystem()
-	if es == nil {
-		c.JSON(503, map[string]string{"error": "event system not initialized"})
+	bus := GetBus()
+	if bus == nil {
+		c.JSON(503, map[string]string{"error": "event bus not initialized"})
 		return
 	}
 
-	lastEventID := string(c.GetHeader("Last-Event-ID"))
-	if lastEventID == "" {
-		lastEventID = c.Query("lastEventId")
+	cursor := string(c.GetHeader("Last-Event-ID"))
+	deviceID := string(c.GetHeader("X-Device-ID"))
+	if deviceID == "" {
+		deviceID = fmt.Sprintf("anon-%d", time.Now().UnixNano())
 	}
 
-	// Set SSE headers BEFORE hijacking the writer
+	// SSE response headers must be set before we hijack the writer.
 	c.Response.Header.Set("Content-Type", "text/event-stream")
 	c.Response.Header.Set("Cache-Control", "no-cache")
 	c.Response.Header.Set("Connection", "keep-alive")
-	c.Response.Header.Set("X-Accel-Buffering", "no") // Disable nginx buffering
+	c.Response.Header.Set("X-Accel-Buffering", "no") // disable nginx buffering
 	c.Response.Header.Set("Transfer-Encoding", "chunked")
 	c.SetStatusCode(200)
-
-	// Hijack the response writer for streaming (chunked transfer)
-	// This enables immediate flushing of data to the client
 	c.Response.HijackWriter(newSSEWriter(&c.Response, c.GetWriter()))
 
-	// Create connection context
 	connCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Create event channel for this connection
-	eventChan := make(chan *event.Event, 256)
-	connID := fmt.Sprintf("sse-%s-%d", actorID, time.Now().UnixNano())
+	sub, unsub, err := bus.Subscribe(connCtx, actorID, deviceID, cursor)
+	if err != nil {
+		logger.DefaultHelper.Warnf("events: subscribe failed actor=%s err=%v", actorID, err)
+		// Best-effort write; if it fails the connection is already gone.
+		_, _ = c.Write([]byte(fmt.Sprintf(": error %s\n\n", err.Error())))
+		_ = c.Flush()
+		return
+	}
+	defer unsub()
 
-	// Create wrapper connection for the hub
-	conn := &event.SSEConnection{
-		ID:          connID,
-		ActorID:     actorID,
-		Context:     connCtx,
-		Cancel:      cancel,
-		LastEventID: lastEventID,
-		ConnectedAt: time.Now(),
-		EventChan:   eventChan,
-		Subscribed:  make(map[event.EventType]bool),
+	logger.DefaultHelper.Infof("events: subscriber connected actor=%s device=%s cursor=%q", actorID, deviceID, cursor)
+
+	// Emit a comment frame so intermediaries flush the response head.
+	if _, err := c.Write([]byte(": connected\n\n")); err != nil {
+		return
+	}
+	if err := c.Flush(); err != nil {
+		return
 	}
 
-	// Register connection
-	es.Hub.RegisterSSE(conn)
-	defer es.Hub.Unregister(conn)
-
-	// Subscribe actor to receive all their events
-	es.Hub.GetRegistry().SubscribeActor(actorID, nil)
-
-	logger.DefaultHelper.Infof("SSE connection established for actor %s (Hertz streaming)", actorID)
-
-	// Send initial connection message - this must flush immediately
-	c.Write([]byte(": connected\n\n"))
-	c.Flush()
-
-	// If lastEventID provided, send missed events
-	if lastEventID != "" {
-		s.sendMissedEventsToHertz(c, actorID, lastEventID, es)
-	}
-
-	// Heartbeat ticker
-	heartbeat := time.NewTicker(30 * time.Second)
+	heartbeat := time.NewTicker(heartbeatInterval)
 	defer heartbeat.Stop()
 
-	// Main event loop
+	// Track the newest event_id we've sent on this connection so
+	// Heartbeat carries an accurate floor_event_id (contract §2.4).
+	var floorID string
+
 	for {
 		select {
 		case <-ctx.Done():
-			logger.DefaultHelper.Infof("SSE connection %s closed by client", connID)
 			return
 
 		case <-connCtx.Done():
-			logger.DefaultHelper.Infof("SSE connection %s closed by server", connID)
 			return
 
-		case evt, ok := <-eventChan:
+		case ev, ok := <-sub.Events:
 			if !ok {
+				logger.DefaultHelper.Infof("events: subscription closed actor=%s device=%s", actorID, deviceID)
 				return
 			}
-			data, err := json.Marshal(evt)
-			if err != nil {
-				logger.DefaultHelper.Errorf("Failed to marshal event: %v", err)
-				continue
-			}
-
-			// Write SSE formatted message
-			sseMsg := fmt.Sprintf("id: %s\nevent: %s\ndata: %s\n\n", evt.ID, evt.Type, string(data))
-			c.Write([]byte(sseMsg))
-			if err := c.Flush(); err != nil {
-				logger.DefaultHelper.Warnf("Failed to flush SSE: %v", err)
+			if err := writeFrame(c, ev); err != nil {
+				logger.DefaultHelper.Warnf("events: write failed actor=%s err=%v", actorID, err)
 				return
 			}
+			floorID = ev.GetEventId()
 
 		case <-heartbeat.C:
-			// Send heartbeat comment
-			c.Write([]byte(": heartbeat\n\n"))
-			if err := c.Flush(); err != nil {
-				logger.DefaultHelper.Warnf("Failed to flush heartbeat: %v", err)
+			hb := &realtime.StreamEvent{
+				// Heartbeat doesn't go through the bus and so doesn't
+				// participate in resume — by design (contract §2.4
+				// allows heartbeats to be best-effort). We still stamp
+				// a per-connection event_id so the client's
+				// Last-Event-ID never regresses.
+				EventId:  floorID,
+				TsUnixMs: time.Now().UTC().UnixMilli(),
+				Kind: &realtime.StreamEvent_Hb{
+					Hb: &realtime.Heartbeat{FloorEventId: floorID},
+				},
+			}
+			if err := writeFrame(c, hb); err != nil {
 				return
 			}
 		}
 	}
 }
 
-// sendMissedEventsToHertz sends missed events directly to Hertz context
-func (s *eventsSubServer) sendMissedEventsToHertz(c *app.RequestContext, actorID, lastEventID string, es *event.EventSystem) {
-	if es.Broker == nil {
-		return
-	}
-
-	topic := "events:" + actorID
-	messages, err := es.Broker.Pull(context.Background(), topic, lastEventID, 100, broker.PullOptions{})
+// writeFrame encodes ev as a single SSE frame per contract §2.3 and
+// flushes the underlying TCP socket.
+func writeFrame(c *app.RequestContext, ev *realtime.StreamEvent) error {
+	bytes, err := proto.Marshal(ev)
 	if err != nil {
-		logger.DefaultHelper.Warnf("Failed to pull missed events: %v", err)
-		return
+		return fmt.Errorf("marshal stream event: %w", err)
 	}
+	encoded := base64.StdEncoding.EncodeToString(bytes)
 
-	for _, msg := range messages {
-		var evt event.Event
-		if err := json.Unmarshal(msg.Payload, &evt); err != nil {
-			continue
+	// id: only present when we have one — heartbeats early in a
+	// connection may not yet have a floor.
+	if id := ev.GetEventId(); id != "" {
+		if _, err := c.Write([]byte("id: " + id + "\n")); err != nil {
+			return err
 		}
-		data, _ := json.Marshal(&evt)
-		fmt.Fprintf(c, "id: %s\n", evt.ID)
-		fmt.Fprintf(c, "event: %s\n", evt.Type)
-		fmt.Fprintf(c, "data: %s\n\n", string(data))
 	}
-	c.Flush()
-
-	logger.DefaultHelper.Infof("Sent %d missed events to actor %s", len(messages), actorID)
+	if _, err := c.Write([]byte("event: stream\ndata: " + encoded + "\n\n")); err != nil {
+		return err
+	}
+	return c.Flush()
 }
 
-// sendMissedEvents sends events that were missed while the client was offline
-func (s *eventsSubServer) sendMissedEvents(conn *event.SSEConnection, lastEventID string, es *event.EventSystem) {
-	if es.Broker == nil {
-		return
-	}
-
-	topic := "events:" + conn.ActorID
-	messages, err := es.Broker.Pull(conn.Context, topic, lastEventID, 100, broker.PullOptions{})
-	if err != nil {
-		logger.DefaultHelper.Warnf("Failed to pull missed events: %v", err)
-		return
-	}
-
-	for _, msg := range messages {
-		var evt event.Event
-		if err := json.Unmarshal(msg.Payload, &evt); err != nil {
-			continue
-		}
-		conn.Send(&evt)
-	}
-
-	logger.DefaultHelper.Infof("Sent %d missed events to actor %s", len(messages), conn.ActorID)
+// signalIngressRequest is the JSON body of POST /realtime/signal.
+//
+// `payload_b64` is the base64-encoded ciphertext produced by the
+// client per contract §2.7.2. Station treats it as opaque bytes —
+// it never decodes / decrypts / parses the JSON inside.
+type signalIngressRequest struct {
+	RecipientActorID string `json:"recipient_actor_id"`
+	SessionULID      string `json:"session_ulid"`
+	Kind             string `json:"kind"`
+	PayloadB64       string `json:"payload_b64"`
 }
 
-func (s *eventsSubServer) handlePull(ctx context.Context, req *eventsmodel.PullEventsRequest) (*eventsmodel.PullEventsResponse, error) {
-	subject := auth.GetSubject(ctx)
+// handlePostSignal ingests a single WebRTC signaling event from the
+// caller, validates the routing metadata, and fan-outs a CallSignal
+// frame onto the recipient's (and, when distinct, the sender's) SSE
+// stream. See contract §2.7.1 for the wire shape.
+func (s *eventsSubServer) handlePostSignal(ctx context.Context, c *app.RequestContext) {
+	subject := hertzadapter.GetSubject(c)
 	if subject == nil {
-		return nil, server.Unauthorized("authentication required")
+		c.JSON(401, map[string]string{"error": "unauthorized"})
+		return
 	}
-	actorID := subject.ID
+	senderActorID := subject.ID
 
-	limit := int(req.Limit)
-	if limit <= 0 || limit > 100 {
-		limit = 50
-	}
-
-	es := event.GetGlobalEventSystem()
-	if es == nil || es.Broker == nil {
-		return nil, server.InternalError("event system not available")
+	var req signalIngressRequest
+	if err := json.Unmarshal(c.Request.Body(), &req); err != nil {
+		c.JSON(400, map[string]string{"error": "invalid json: " + err.Error()})
+		return
 	}
 
-	sinceID := ""
-	if req.SinceTs > 0 {
-		sinceID = fmt.Sprintf("%d", req.SinceTs)
+	if req.RecipientActorID == "" || req.SessionULID == "" || req.Kind == "" {
+		c.JSON(400, map[string]string{"error": "recipient_actor_id, session_ulid, kind are required"})
+		return
 	}
 
-	topic := "events:" + actorID
-	messages, err := es.Broker.Pull(ctx, topic, sinceID, limit, broker.PullOptions{})
+	kind, ok := signalKindMap[req.Kind]
+	if !ok {
+		c.JSON(400, map[string]string{"error": "unknown kind: " + req.Kind})
+		return
+	}
+
+	// Decode payload purely to length-check it. We never inspect the
+	// plaintext — that is the chat session's per-message ciphertext.
+	payload, err := base64.StdEncoding.DecodeString(req.PayloadB64)
 	if err != nil {
-		logger.Error(ctx, "Failed to pull events", "error", err)
-		return nil, server.InternalErrorWithCause("failed to pull events", err)
+		c.JSON(400, map[string]string{"error": "payload_b64 is not valid base64"})
+		return
 	}
-
-	events := make([]*eventsmodel.Event, 0, len(messages))
-	for _, msg := range messages {
-		var evt event.Event
-		if err := json.Unmarshal(msg.Payload, &evt); err != nil {
-			continue
-		}
-		events = append(events, &eventsmodel.Event{
-			Id:        evt.ID,
-			Type:      string(evt.Type),
-			Payload:   evt.Payload,
-			CreatedAt: timestamppb.New(evt.Timestamp),
+	if len(payload) > signalIngressMaxPayloadBytes {
+		c.JSON(413, map[string]string{
+			"error": fmt.Sprintf("payload too large: %d > %d", len(payload), signalIngressMaxPayloadBytes),
 		})
+		return
 	}
 
-	return &eventsmodel.PullEventsResponse{
-		Events: events,
-	}, nil
+	bus := GetBus()
+	if bus == nil {
+		// EventBus down means the realtime plane is unreachable;
+		// reject the publish so the client can surface the error
+		// rather than silently dropping the signal. (Unlike the
+		// chat path, signaling has no durable persistence layer
+		// behind it — the EventBus IS the delivery contract.)
+		c.JSON(503, map[string]string{"error": "event bus not initialized"})
+		return
+	}
+
+	ev := &realtime.StreamEvent{
+		Kind: &realtime.StreamEvent_Signaling{
+			Signaling: &realtime.CallSignal{
+				SessionUlid: req.SessionULID,
+				FromActorId: senderActorID,
+				Kind:        kind,
+				Payload:     payload,
+			},
+		},
+	}
+
+	if _, err := bus.Publish(req.RecipientActorID, ev); err != nil {
+		// Publish errors are operational, not policy. Log and bail
+		// with 502 so the caller knows the routing failed.
+		logger.DefaultHelper.Warnf("events: signal publish to recipient failed actor=%s: %v", req.RecipientActorID, err)
+		c.JSON(502, map[string]string{"error": "publish failed: " + err.Error()})
+		return
+	}
+
+	// Multi-device sender echo: a caller running two clients of the
+	// same actor needs the second client to learn the call was
+	// initiated. When sender == recipient (self-call, which is
+	// nonsense for voice/video but legal for protocol completeness),
+	// we skip the echo to avoid a duplicate frame.
+	if senderActorID != req.RecipientActorID {
+		if _, err := bus.Publish(senderActorID, ev); err != nil {
+			// Sender echo is best-effort — the caller's primary
+			// device already knows it sent the signal because it
+			// got a 204 from us. Don't fail the request.
+			logger.DefaultHelper.Warnf("events: signal echo to sender failed actor=%s: %v", senderActorID, err)
+		}
+	}
+
+	c.SetStatusCode(204)
 }
 
-func (s *eventsSubServer) handleAck(ctx context.Context, req *eventsmodel.AckEventsRequest) (*eventsmodel.AckEventsResponse, error) {
-	subject := auth.GetSubject(ctx)
+// typingIngressRequest is the JSON body of POST /realtime/typing.
+//
+// Typing is purely advisory metadata — there is no payload, no
+// encryption, no persistence. Misrouting it is a privacy issue (a
+// peer would learn that the actor is talking to someone) but not a
+// confidentiality one (no message content leaks).
+type typingIngressRequest struct {
+	RecipientActorID string `json:"recipient_actor_id"`
+	SessionULID      string `json:"session_ulid"`
+	Typing           bool   `json:"typing"`
+}
+
+// handlePostTyping ingests a single typing-state update from the
+// caller and fan-outs a TypingState frame onto the recipient's SSE
+// stream. Unlike signaling, we do NOT echo to other sender devices —
+// only the peer needs to know the actor is typing.
+//
+// Bus errors are logged at warn level but the caller still receives
+// a 204; typing frames are ephemeral and the next frame (e.g. the
+// auto-fire typing=false on send) will heal the state regardless.
+func (s *eventsSubServer) handlePostTyping(ctx context.Context, c *app.RequestContext) {
+	subject := hertzadapter.GetSubject(c)
 	if subject == nil {
-		return nil, server.Unauthorized("authentication required")
+		c.JSON(401, map[string]string{"error": "unauthorized"})
+		return
 	}
-	actorID := subject.ID
+	senderActorID := subject.ID
 
-	if len(req.EventIds) == 0 {
-		return nil, server.BadRequest("event_ids is required")
-	}
-
-	logger.Info(ctx, "Actor acknowledged events", "actorID", actorID, "count", len(req.EventIds))
-
-	return &eventsmodel.AckEventsResponse{
-		AckedCount: int32(len(req.EventIds)),
-	}, nil
-}
-
-func (s *eventsSubServer) handleStats(ctx context.Context, req *eventsmodel.GetEventsStatsRequest) (*eventsmodel.GetEventsStatsResponse, error) {
-	es := event.GetGlobalEventSystem()
-	if es == nil {
-		return nil, server.InternalError("event system not initialized")
+	var req typingIngressRequest
+	if err := json.Unmarshal(c.Request.Body(), &req); err != nil {
+		c.JSON(400, map[string]string{"error": "invalid json: " + err.Error()})
+		return
 	}
 
-	hubStats := es.Hub.Stats()
+	if req.RecipientActorID == "" || req.SessionULID == "" {
+		c.JSON(400, map[string]string{"error": "recipient_actor_id, session_ulid are required"})
+		return
+	}
 
-	return &eventsmodel.GetEventsStatsResponse{
-		PendingCount:  int64(hubStats["connections"].(int)),
-		TotalDelivered: 0,
-		ActiveStreams: int64(hubStats["connections"].(int)),
-	}, nil
+	bus := GetBus()
+	if bus == nil {
+		// Typing without a bus is a no-op, but the *caller* still
+		// did its job. Return 204 so the client doesn't retry.
+		logger.DefaultHelper.Warnf("events: typing ingress dropped (bus down) actor=%s", senderActorID)
+		c.SetStatusCode(204)
+		return
+	}
+
+	ev := &realtime.StreamEvent{
+		Kind: &realtime.StreamEvent_Typing{
+			Typing: &realtime.TypingState{
+				SessionUlid: req.SessionULID,
+				FromActorId: senderActorID,
+				Typing:      req.Typing,
+			},
+		},
+	}
+
+	if _, err := bus.Publish(req.RecipientActorID, ev); err != nil {
+		logger.DefaultHelper.Warnf("events: typing publish to recipient failed actor=%s: %v", req.RecipientActorID, err)
+	}
+
+	c.SetStatusCode(204)
 }

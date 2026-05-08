@@ -4,24 +4,11 @@ import { Flexbox } from 'react-layout-kit';
 import { Button } from '@lobehub/ui';
 import { Badge, Collapse, theme, Typography, Empty } from 'antd';
 import { UserPlus, Users, Contact, ChevronRight, Check, X } from 'lucide-react';
-import { useSocialChatStore } from '../store/socialChat';
-import type { FriendChatSession } from '../gen/proto/domain/chat/friend_chat_pb';
+import { peerOfSession, useSocialChatStore } from '../store/socialChat';
+import { UserSquareAvatar } from '../components/common/UserSquareAvatar';
 import { log } from '../utils/logger';
 
 const { Text } = Typography;
-
-function getInitial(label: string): string {
-  if (!label) return '?';
-  return label.charAt(0).toUpperCase();
-}
-
-function peerDid(s: FriendChatSession, viewerDid: string | null): string {
-  if (viewerDid) {
-    if (s.participantADid === viewerDid) return s.participantBDid || '';
-    if (s.participantBDid === viewerDid) return s.participantADid || '';
-  }
-  return s.participantBDid || s.participantADid || '';
-}
 
 function goToChat() {
   window.location.hash = '#/chat';
@@ -93,22 +80,7 @@ export function ContactsPage() {
                   background: token.colorFillQuaternary,
                 }}
               >
-                <Flexbox
-                  align="center"
-                  justify="center"
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 20,
-                    background: token.colorFillSecondary,
-                    color: token.colorTextSecondary,
-                    fontSize: 15,
-                    fontWeight: 600,
-                    flexShrink: 0,
-                  }}
-                >
-                  {getInitial(req.senderId)}
-                </Flexbox>
+                <UserSquareAvatar name={req.senderId} size={40} />
                 <Flexbox flex={1} style={{ minWidth: 0 }} gap={6}>
                   <Text strong ellipsis style={{ fontSize: 13 }}>
                     {req.senderId}
@@ -198,22 +170,7 @@ export function ContactsPage() {
                   e.currentTarget.style.background = 'transparent';
                 }}
               >
-                <Flexbox
-                  align="center"
-                  justify="center"
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 20,
-                    background: token.colorFillSecondary,
-                    color: token.colorTextSecondary,
-                    fontSize: 15,
-                    fontWeight: 600,
-                    flexShrink: 0,
-                  }}
-                >
-                  {getInitial(g.name || '?')}
-                </Flexbox>
+                <UserSquareAvatar name={g.name || '?'} size={40} />
                 <Flexbox flex={1} style={{ minWidth: 0 }}>
                   <Text strong ellipsis style={{ fontSize: 14 }}>
                     {g.name || t('chat.social.sessionList.unnamedGroup')}
@@ -242,8 +199,8 @@ export function ContactsPage() {
         ) : (
           <Flexbox gap={2}>
             {sessions.map((s) => {
-              const did = peerDid(s, currentUserDid);
-              const label = did || t('chat.social.sessionList.unknown');
+              const peer = peerOfSession(s, currentUserDid);
+              const label = peer.name || t('chat.social.sessionList.unknown');
               return (
                 <Flexbox
                   key={s.ulid}
@@ -268,22 +225,7 @@ export function ContactsPage() {
                     e.currentTarget.style.background = 'transparent';
                   }}
                 >
-                  <Flexbox
-                    align="center"
-                    justify="center"
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 20,
-                      background: token.colorFillSecondary,
-                      color: token.colorTextSecondary,
-                      fontSize: 15,
-                      fontWeight: 600,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {getInitial(label)}
-                  </Flexbox>
+                  <UserSquareAvatar remoteUrl={peer.avatar} name={label} size={40} />
                   <Flexbox flex={1} style={{ minWidth: 0 }}>
                     <Text strong ellipsis style={{ fontSize: 14 }}>
                       {label}

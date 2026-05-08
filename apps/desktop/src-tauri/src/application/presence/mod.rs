@@ -47,7 +47,7 @@ const COOLDOWN: Duration = Duration::from_secs(3);
 /// Tauri event name carrying [`PresenceTransition`]. Frontend listens on
 /// this to refresh affected sessions; tests listen to assert reconcile
 /// happened.
-pub const PRESENCE_TRANSITION_EVENT: &str = "presence.transition";
+pub const PRESENCE_TRANSITION_EVENT: &str = "presence:transition";
 
 /// Per-actor mutable state held inside the supervisor.
 #[derive(Debug, Default, Clone)]

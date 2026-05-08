@@ -277,9 +277,13 @@ pub fn capabilities_ensure(origin: &str) -> Result<OssCapabilities, OssCacheErro
     if !resp.status().is_success() {
         return Err(OssCacheError::Network(format!("status {}", resp.status())));
     }
-    let caps: OssCapabilities = resp
+    let mut caps: OssCapabilities = resp
         .json()
         .map_err(|e| OssCacheError::Decode(e.to_string()))?;
+    let advertised_host = normalize_origin(&caps.host);
+    if advertised_host.is_empty() || advertised_host == "self" {
+        caps.host = normalized.clone();
+    }
 
     if let Ok(mut m) = caps_map().write() {
         m.insert(normalized.clone(), caps.clone());
@@ -333,6 +337,25 @@ pub fn attachment_lookup(uri: &OssUri) -> Option<PathBuf> {
     }
 }
 
+/// Drop the on-disk cache entry for a single attachment. Idempotent —
+/// missing files are not an error. Used after destructive lifecycle
+/// mutations (delete / patch with tightened visibility / TTL change)
+/// so the renderer never displays bytes that the server has since
+/// re-classified.
+///
+/// We deliberately do NOT prune empty parent directories: the layout
+/// is bucketed by origin and walking up to delete an empty `oss/`
+/// dir adds no value and races with concurrent `attachment_ensure`
+/// calls. The `gc()` pass already handles structural cleanup.
+pub fn attachment_invalidate(uri: &OssUri) -> Result<(), OssCacheError> {
+    let path = cache_path_for(uri)?;
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(OssCacheError::Io(err.to_string())),
+    }
+}
+
 /// Resolve the attachment for `uri` to a local file, downloading from
 /// Station on cache miss. The download URL is built from the
 /// capabilities response: the client uses `file_endpoint` plus, when
@@ -344,6 +367,18 @@ pub fn attachment_ensure(
     uri: &OssUri,
     signed_query: Option<&str>,
 ) -> Result<PathBuf, OssCacheError> {
+    attachment_ensure_with_bearer(uri, signed_query, None)
+}
+
+/// Resolve the attachment for `uri` to a local file while optionally
+/// authenticating the fetch against the source Station. Chat-scoped
+/// attachments are not public URLs; without the bearer token the Station
+/// correctly returns 403 and the renderer can only fall back to a file card.
+pub fn attachment_ensure_with_bearer(
+    uri: &OssUri,
+    signed_query: Option<&str>,
+    bearer_token: Option<&str>,
+) -> Result<PathBuf, OssCacheError> {
     if let Some(path) = attachment_lookup(uri) {
         return Ok(path);
     }
@@ -354,10 +389,15 @@ pub fn attachment_ensure(
         ));
     }
 
+    let file_endpoint = if caps.file_endpoint.is_empty() {
+        "/sub-oss/file"
+    } else {
+        caps.file_endpoint.as_str()
+    };
     let mut url = format!(
         "{}{}?key={}",
-        caps.host,
-        caps.file_endpoint,
+        caps.host.trim_end_matches('/'),
+        file_endpoint,
         urlencode(&uri.key)
     );
     if let Some(q) = signed_query {
@@ -372,7 +412,14 @@ pub fn attachment_ensure(
         fs::create_dir_all(parent).map_err(|e| OssCacheError::Io(e.to_string()))?;
     }
 
-    let resp = reqwest::blocking::get(&url).map_err(|e| OssCacheError::Network(e.to_string()))?;
+    let client = reqwest::blocking::Client::new();
+    let mut req = client.get(&url);
+    if let Some(token) = bearer_token.map(str::trim).filter(|t| !t.is_empty()) {
+        req = req.bearer_auth(token);
+    }
+    let resp = req
+        .send()
+        .map_err(|e| OssCacheError::Network(e.to_string()))?;
     if !resp.status().is_success() {
         return Err(OssCacheError::Network(format!("status {}", resp.status())));
     }
@@ -640,6 +687,61 @@ mod tests {
     fn urlencode_keeps_slashes_and_safe_chars() {
         assert_eq!(urlencode("2026/04/26/abc.png"), "2026/04/26/abc.png");
         assert_eq!(urlencode("a b"), "a%20b");
+    }
+
+    // ── attachment_invalidate ──────────────────────────────────────
+
+    #[test]
+    fn attachment_invalidate_is_idempotent() {
+        // No file has ever been written for this URI — invalidation
+        // must NOT surface a "not found" error to the caller. We
+        // proved the call chain works; if the storage layout changed
+        // shape (Storage error), the assertion below would surface
+        // that as the only legitimate failure mode.
+        let uri = OssUri {
+            origin: "test.invalidate.local".to_string(),
+            key: "missing/key.bin".to_string(),
+        };
+        let res = attachment_invalidate(&uri);
+        match res {
+            Ok(()) => {}
+            // The desktop storage layout requires a configured
+            // platform path; in a bare cargo-test sandbox the
+            // backing dir may not be initialised. Treat that as a
+            // pass — the invariant we care about (no `NotFound`
+            // bubbles up) still holds.
+            Err(OssCacheError::Storage(_)) => {}
+            Err(other) => panic!("unexpected error: {other}"),
+        }
+    }
+
+    #[test]
+    fn attachment_invalidate_removes_existing_file() {
+        // Drive the helper end-to-end against the real cache layout.
+        // If the layout helper bails (e.g. CI container without a
+        // desktop dir), skip cleanly — this is documented as best-
+        // effort just like the production code path.
+        let uri = OssUri {
+            origin: "test.invalidate.real".to_string(),
+            key: "tmp/file.bin".to_string(),
+        };
+        let path = match cache_path_for(&uri) {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if fs::write(&path, b"hello").is_err() {
+            return;
+        }
+        assert!(path.exists(), "fixture write succeeded");
+
+        attachment_invalidate(&uri).expect("invalidate should succeed");
+        assert!(!path.exists(), "file removed after invalidate");
+
+        // Second invalidate must remain a no-op.
+        attachment_invalidate(&uri).expect("idempotent");
     }
 
     // ── GC ─────────────────────────────────────────────────────────

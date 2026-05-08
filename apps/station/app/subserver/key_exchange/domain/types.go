@@ -2,14 +2,17 @@ package domain
 
 import "time"
 
+// KeyBundle is one device-scoped publish for a DID.
 type KeyBundle struct {
-	ActorDID       string
-	IdentityKeyPub []byte // Ed25519 public key (32 bytes)
-	KeyFingerprint string // hex-encoded fingerprint
-	SignedPreKey   SignedPreKey
-	OneTimePreKeys []OneTimePreKey
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ActorDID          string
+	DeviceID          string // storage key ("legacy" denotes empty client device_id)
+	IdentityKeyPub    []byte // Ed25519 public key (32 bytes)
+	KeyFingerprint    string // hex-encoded fingerprint
+	SignedPreKey      SignedPreKey
+	OneTimePreKeys    []OneTimePreKey
+	PublishedAtUnixMs int64
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 type SignedPreKey struct {
