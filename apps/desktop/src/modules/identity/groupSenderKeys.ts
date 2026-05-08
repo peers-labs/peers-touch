@@ -402,8 +402,6 @@ export async function ensureSkdmDistributed(
     }
   }
 
-  if (work.length === 0) return;
-
   let skdmBytesB64: string;
   try {
     const r = await api.cryptoGroupSkEmitSkdm(groupUlid);
@@ -412,6 +410,8 @@ export async function ensureSkdmDistributed(
     log.error('groupSenderKeys', 'cryptoGroupSkEmitSkdm failed', err);
     throw err;
   }
+
+  if (work.length === 0) return;
 
   for (const w of work) {
     const ok = await dispatchSkdmToPeerIk(actorId, w.peerDid, w.ikPub, skdmBytesB64);

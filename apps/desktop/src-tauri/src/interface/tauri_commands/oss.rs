@@ -283,8 +283,13 @@ pub fn oss_upload_attachment_social(
 // ── Generic ────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn oss_resolve_url(input: OssResolveUrlInput) -> AppResult<StubPayload> {
-    application_oss::oss_resolve_url(&input.uri)
+pub fn oss_resolve_url(
+    input: OssResolveUrlInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window);
+    application_oss::oss_resolve_url(&input.uri, token.as_deref())
 }
 
 #[tauri::command]

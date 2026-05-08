@@ -11,8 +11,11 @@ import (
 type Repository interface {
 	CreateGroup(ownerDID, name, description string) domain.Group
 	ListGroups() []domain.Group
-	SendMessage(groupID, senderDID string, messageType int32, content, replyToID string, attachments []domain.Attachment, encryptedPayload []byte) domain.Message
+	SendMessage(groupID, senderDID string, messageType int32, content, replyToID, threadRootID string, attachments []domain.Attachment, encryptedPayload []byte) domain.Message
 	ListMessages(groupID, beforeUlid string, limit int) ([]domain.Message, error)
+	ListThreadMessages(groupID, rootUlid, afterUlid string, limit int) ([]domain.Message, error)
+	ThreadCounts(groupID, actorDID string, rootULIDs []string) ([]domain.ThreadCount, error)
+	MarkThreadRead(actorDID, groupID, rootULID, lastReadULID string) error
 	UnreadCount(actorDID, groupID string) int64
 	MarkRead(actorDID, groupID string) (int64, int64)
 	GetGroup(groupID string) (*domain.Group, bool)
@@ -85,12 +88,35 @@ func (s *Service) ListGroups() []domain.Group {
 	return s.repo.ListGroups()
 }
 
-func (s *Service) SendMessage(groupID, senderDID string, messageType int32, content, replyToID string, attachments []domain.Attachment, encryptedPayload []byte) domain.Message {
-	return s.repo.SendMessage(groupID, senderDID, messageType, content, replyToID, attachments, encryptedPayload)
+func (s *Service) SendMessage(groupID, senderDID string, messageType int32, content, replyToID, threadRootID string, attachments []domain.Attachment, encryptedPayload []byte) domain.Message {
+	return s.repo.SendMessage(groupID, senderDID, messageType, content, replyToID, threadRootID, attachments, encryptedPayload)
 }
 
 func (s *Service) ListMessages(groupID, beforeUlid string, limit int) ([]domain.Message, error) {
 	return s.repo.ListMessages(groupID, beforeUlid, limit)
+}
+
+func (s *Service) ListThreadMessages(groupID, rootUlid, afterUlid string, limit int) ([]domain.Message, error) {
+	return s.repo.ListThreadMessages(groupID, rootUlid, afterUlid, limit)
+}
+
+func (s *Service) ThreadCountsByActor(actorDID, groupID string, rootULIDs []string) ([]domain.ThreadCount, error) {
+	if _, ok := s.repo.GetMember(groupID, actorDID); !ok {
+		return nil, ErrNotMember
+	}
+
+	return s.repo.ThreadCounts(groupID, actorDID, rootULIDs)
+}
+
+func (s *Service) MarkThreadReadByActor(actorDID, groupID, rootULID, lastReadULID string) error {
+	if _, ok := s.repo.GetMember(groupID, actorDID); !ok {
+		return ErrNotMember
+	}
+	if err := s.repo.MarkThreadRead(actorDID, groupID, rootULID, lastReadULID); err != nil {
+		return mapMutationError(err)
+	}
+
+	return nil
 }
 
 func (s *Service) UnreadCount(actorDID, groupID string) int64 {
@@ -339,4 +365,11 @@ func (s *Service) SearchMessagesByActor(actorDID, groupID, query string, limit i
 		return nil, ErrNotMember
 	}
 	return s.repo.SearchMessages(groupID, query, limit)
+}
+
+func (s *Service) ListThreadMessagesByActor(actorDID, groupID, rootUlid, afterUlid string, limit int) ([]domain.Message, error) {
+	if _, ok := s.repo.GetMember(groupID, actorDID); !ok {
+		return nil, ErrNotMember
+	}
+	return s.repo.ListThreadMessages(groupID, rootUlid, afterUlid, limit)
 }

@@ -92,6 +92,11 @@ message GroupMessage {
   string content = 5 [deprecated = true];
   repeated GroupMessageAttachment attachments = 6;
   string reply_to_ulid = 7;                  // 回复的消息ID
+  // Root message of the thread this message belongs to. Empty means
+  // the message is not part of a thread. This is distinct from
+  // reply_to_ulid so clients can reply to a reply while preserving
+  // the thread root.
+  string thread_root_ulid = 16;
   repeated string mentioned_dids = 8;        // @的成员
   bool mention_all = 9;                      // @全体成员
   google.protobuf.Timestamp sent_at = 10;
@@ -365,6 +370,9 @@ message SendGroupMessageRequest {
   repeated string mentioned_dids = 6;
   bool mention_all = 7;
   bytes encrypted_payload = 8;
+  // Optional explicit thread root. If omitted and reply_to_ulid is
+  // present, Station resolves it from the replied message.
+  string thread_root_ulid = 9;
 }
 
 message SendGroupMessageResponse {

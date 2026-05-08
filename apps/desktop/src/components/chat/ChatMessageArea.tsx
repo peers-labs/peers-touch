@@ -1,19 +1,21 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, TextArea, Tooltip, EmojiPicker } from '@lobehub/ui';
+import { Button, Tooltip } from '@lobehub/ui';
 import { Spin, theme, Typography, Empty } from 'antd';
 import {
-  Send, Inbox, Phone, Video, Search, Info,
-  Paperclip, Check, CheckCheck,
-  Reply, Trash2, Lock, RotateCcw, Pencil, X as XIcon,
+  Inbox, Phone, Video, Search, Info,
+  Check, CheckCheck,
+  Reply, Trash2, Lock, RotateCcw, Pencil, X as XIcon, MessageCircle,
 } from 'lucide-react';
-import { useSocialChatStore } from '../../store/socialChat';
+import { socialThreadKey, useSocialChatStore } from '../../store/socialChat';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { SearchMessagesModal } from './SearchMessagesModal';
 import { AttachmentItem, type ChatAttachmentVisibilityHint } from './AttachmentItem';
+import { ChatComposer } from './ChatComposer';
 import { friendChatP2p } from '../../modules/p2p/friendChatP2p';
 import { api } from '../../services/desktop_api';
+import { seedLocalMediaProjection } from '../../services/mediaRuntime';
 import { log } from '../../utils/logger';
 import { toast } from '@lobehub/ui';
 import type { FriendChatMessage, FriendMessageStatus } from '../../gen/proto/domain/chat/friend_chat_pb';
@@ -26,6 +28,15 @@ const { Text } = Typography;
 
 function isFriendMsg(msg: FriendChatMessage | GroupMessage): msg is FriendChatMessage {
   return 'sessionUlid' in msg;
+}
+
+function getReplyToUlid(msg: FriendChatMessage | GroupMessage): string {
+  return isFriendMsg(msg) ? msg.replyToUlid : msg.replyToUlid;
+}
+
+function getThreadRootUlid(msg: FriendChatMessage | GroupMessage): string {
+  const threadRoot = (msg as (FriendChatMessage | GroupMessage) & { threadRootUlid?: string }).threadRootUlid || '';
+  return threadRoot || getReplyToUlid(msg);
 }
 
 /**
@@ -45,10 +56,66 @@ function normalizeVisibilityHint(v: string | undefined): ChatAttachmentVisibilit
   }
 }
 
+const IMAGE_ATTACHMENT_FILENAME_PATTERN = /\.(apng|avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$/i;
+
+function isImageMessageAttachment(att: FriendChatMessage['attachments'][number] | GroupMessage['attachments'][number]): boolean {
+  const mimeType = att.mimeType?.toLowerCase() ?? '';
+  const filename = att.filename ?? '';
+  return mimeType.startsWith('image/') || IMAGE_ATTACHMENT_FILENAME_PATTERN.test(filename);
+}
+
+function isUploadedImage(filename: string | undefined, mimeType: string | undefined): boolean {
+  const normalizedMime = mimeType?.toLowerCase() ?? '';
+  return normalizedMime.startsWith('image/') || IMAGE_ATTACHMENT_FILENAME_PATTERN.test(filename ?? '');
+}
+
 function formatMsgTime(ts: Timestamp | undefined): string {
   if (!ts) return '';
   const d = timestampDate(ts);
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function getMessageTimestampDate(msg: FriendChatMessage | GroupMessage): Date | null {
+  const ts = msg.createdAt ?? msg.sentAt;
+  return ts ? timestampDate(ts) : null;
+}
+
+function getCalendarDayKey(d: Date): string {
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function isSameCalendarDay(a: Date, b: Date): boolean {
+  return getCalendarDayKey(a) === getCalendarDayKey(b);
+}
+
+function shouldShowDateSeparator(
+  msg: FriendChatMessage | GroupMessage,
+  previousMsg: FriendChatMessage | GroupMessage | undefined,
+): boolean {
+  const currentDate = getMessageTimestampDate(msg);
+  if (!currentDate) return false;
+  const previousDate = previousMsg ? getMessageTimestampDate(previousMsg) : null;
+  return !previousDate || !isSameCalendarDay(currentDate, previousDate);
+}
+
+const MESSAGE_TIME_GROUP_GAP_MS = 10 * 60 * 1000;
+
+function hasTimelineGap(
+  msg: FriendChatMessage | GroupMessage,
+  previousMsg: FriendChatMessage | GroupMessage | undefined,
+): boolean {
+  const currentDate = getMessageTimestampDate(msg);
+  const previousDate = previousMsg ? getMessageTimestampDate(previousMsg) : null;
+  if (!currentDate || !previousDate || !isSameCalendarDay(currentDate, previousDate)) return false;
+  return currentDate.getTime() - previousDate.getTime() > MESSAGE_TIME_GROUP_GAP_MS;
+}
+
+function formatDateSeparator(d: Date): string {
+  const now = new Date();
+  const options: Intl.DateTimeFormatOptions = d.getFullYear() === now.getFullYear()
+    ? { month: 'short', day: 'numeric' }
+    : { year: 'numeric', month: 'short', day: 'numeric' };
+  return d.toLocaleDateString([], options);
 }
 
 function ReadReceipt({ status }: { status: FriendMessageStatus }) {
@@ -65,6 +132,40 @@ function ReadReceipt({ status }: { status: FriendMessageStatus }) {
   return null;
 }
 
+function DateSeparator({ date }: { date: Date }) {
+  const { token } = theme.useToken();
+  return (
+    <Flexbox
+      horizontal
+      align="center"
+      gap={10}
+      style={{
+        alignSelf: 'stretch',
+        margin: '8px 0 6px',
+        padding: '0 4px',
+      }}
+    >
+      <span style={{ flex: 1, height: 1, background: token.colorBorderSecondary }} />
+      <Text
+        type="secondary"
+        style={{
+          padding: '3px 10px',
+          borderRadius: 999,
+          background: token.colorFillQuaternary,
+          border: `1px solid ${token.colorBorderSecondary}`,
+          color: token.colorTextTertiary,
+          fontSize: 11,
+          fontWeight: 500,
+          letterSpacing: 0.2,
+        }}
+      >
+        {formatDateSeparator(date)}
+      </Text>
+      <span style={{ flex: 1, height: 1, background: token.colorBorderSecondary }} />
+    </Flexbox>
+  );
+}
+
 interface HoverActionsProps {
   isOwn: boolean;
   /** Whether the [Recall] button should be shown. Recall is gated
@@ -76,41 +177,58 @@ interface HoverActionsProps {
   /** Whether the [Edit] button should be shown. Same gating as
    *  recall (ownership + friend chat + window) plus "not recalled". */
   canEdit: boolean;
+  onOpenThread: () => void;
   onReply: () => void;
   onDelete: () => void;
   onRecall: () => void;
   onEdit: () => void;
 }
 
-function HoverActions({ isOwn, canRecall, canEdit, onReply, onDelete, onRecall, onEdit }: HoverActionsProps) {
+function HoverActions({ isOwn, canRecall, canEdit, onOpenThread, onReply, onDelete, onRecall, onEdit }: HoverActionsProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
+  const actionButtonStyle: CSSProperties = {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+  };
   return (
     <Flexbox
       horizontal
-      gap={2}
+      gap={3}
       style={{
         position: 'absolute',
-        top: -4,
-        [isOwn ? 'left' : 'right']: -4,
+        top: 0,
+        [isOwn ? 'left' : 'right']: -8,
         transform: isOwn ? 'translateX(-100%)' : 'translateX(100%)',
         opacity: 0,
-        transition: 'opacity 0.15s ease',
+        transition: 'opacity 0.15s ease, transform 0.15s ease',
         pointerEvents: 'none',
         background: token.colorBgElevated,
-        borderRadius: 6,
-        padding: 2,
-        boxShadow: token.boxShadowTertiary,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        borderRadius: 10,
+        padding: 3,
+        boxShadow: token.boxShadowSecondary,
+        zIndex: 2,
       }}
       className="msg-hover-actions"
     >
+      <Tooltip title={t('chat.social.thread.open', 'Open thread')}>
+        <Button
+          type="text"
+          size="small"
+          icon={<MessageCircle size={14} />}
+          onClick={onOpenThread}
+          style={actionButtonStyle}
+        />
+      </Tooltip>
       <Tooltip title={t('chat.social.messageArea.actionReply', 'Reply')}>
         <Button
           type="text"
           size="small"
           icon={<Reply size={14} />}
           onClick={onReply}
-          style={{ width: 26, height: 26 }}
+          style={actionButtonStyle}
         />
       </Tooltip>
       {canEdit && (
@@ -120,7 +238,7 @@ function HoverActions({ isOwn, canRecall, canEdit, onReply, onDelete, onRecall, 
             size="small"
             icon={<Pencil size={14} />}
             onClick={onEdit}
-            style={{ width: 26, height: 26 }}
+            style={actionButtonStyle}
           />
         </Tooltip>
       )}
@@ -131,7 +249,7 @@ function HoverActions({ isOwn, canRecall, canEdit, onReply, onDelete, onRecall, 
             size="small"
             icon={<RotateCcw size={14} />}
             onClick={onRecall}
-            style={{ width: 26, height: 26 }}
+            style={actionButtonStyle}
           />
         </Tooltip>
       )}
@@ -141,7 +259,7 @@ function HoverActions({ isOwn, canRecall, canEdit, onReply, onDelete, onRecall, 
           size="small"
           icon={<Trash2 size={14} />}
           onClick={onDelete}
-          style={{ width: 26, height: 26, color: token.colorError }}
+          style={{ ...actionButtonStyle, color: token.colorError }}
         />
       </Tooltip>
     </Flexbox>
@@ -158,6 +276,11 @@ function HoverActions({ isOwn, canRecall, canEdit, onReply, onDelete, onRecall, 
  * borderline click cannot 422 the user.
  */
 const FRIEND_RECALL_WINDOW_MS = 4 * 60 * 1000 + 30 * 1000;
+const EMPTY_MESSAGES: (FriendChatMessage | GroupMessage)[] = [];
+
+function isWithinMutationWindow(sentMs: number): boolean {
+  return sentMs > 0 && (Date.now() - sentMs) < FRIEND_RECALL_WINDOW_MS;
+}
 
 function ReplyBlock({ replyToUlid, messages, isOwn }: { replyToUlid: string; messages: (FriendChatMessage | GroupMessage)[]; isOwn: boolean }) {
   const { token } = theme.useToken();
@@ -166,11 +289,11 @@ function ReplyBlock({ replyToUlid, messages, isOwn }: { replyToUlid: string; mes
   return (
     <Flexbox
       style={{
-        padding: '4px 8px',
-        marginBottom: 4,
-        borderLeft: `2px solid ${isOwn ? 'rgba(255,255,255,0.4)' : token.colorPrimary}`,
-        borderRadius: 4,
-        background: isOwn ? 'rgba(255,255,255,0.1)' : token.colorFillTertiary,
+        padding: '6px 9px',
+        marginBottom: 8,
+        borderLeft: `3px solid ${isOwn ? 'rgba(255,255,255,0.55)' : token.colorPrimary}`,
+        borderRadius: 8,
+        background: isOwn ? 'rgba(255,255,255,0.14)' : token.colorFillTertiary,
         fontSize: 11,
         color: isOwn ? 'rgba(255,255,255,0.8)' : token.colorTextSecondary,
         maxWidth: '100%',
@@ -193,12 +316,24 @@ function ReplyBlock({ replyToUlid, messages, isOwn }: { replyToUlid: string; mes
 export function ChatMessageArea() {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const {
-    activeTab, activeSessionUlid, activeGroupUlid, messages, loading,
-    sessions, groups, loadMessages, loadOlderMessages, sendFriendMessage, sendGroupMessage, toggleDetail,
-    deleteMessage, recallFriendMessage, editFriendMessage,
-    recallGroupMessage, editGroupMessage,
-  } = useSocialChatStore();
+  const activeTab = useSocialChatStore((s) => s.activeTab);
+  const activeSessionUlid = useSocialChatStore((s) => s.activeSessionUlid);
+  const activeGroupUlid = useSocialChatStore((s) => s.activeGroupUlid);
+  const messages = useSocialChatStore((s) => s.messages);
+  const loading = useSocialChatStore((s) => s.loading);
+  const sessions = useSocialChatStore((s) => s.sessions);
+  const groups = useSocialChatStore((s) => s.groups);
+  const loadMessages = useSocialChatStore((s) => s.loadMessages);
+  const loadOlderMessages = useSocialChatStore((s) => s.loadOlderMessages);
+  const sendFriendMessage = useSocialChatStore((s) => s.sendFriendMessage);
+  const sendGroupMessage = useSocialChatStore((s) => s.sendGroupMessage);
+  const toggleDetail = useSocialChatStore((s) => s.toggleDetail);
+  const deleteMessage = useSocialChatStore((s) => s.deleteMessage);
+  const recallFriendMessage = useSocialChatStore((s) => s.recallFriendMessage);
+  const editFriendMessage = useSocialChatStore((s) => s.editFriendMessage);
+  const recallGroupMessage = useSocialChatStore((s) => s.recallGroupMessage);
+  const editGroupMessage = useSocialChatStore((s) => s.editGroupMessage);
+  const openThread = useSocialChatStore((s) => s.openThread);
   const messageHasMore = useSocialChatStore((s) => s.messageHasMore);
   const messageLoadingMore = useSocialChatStore((s) => s.messageLoadingMore);
   const currentUserDid = useSocialChatStore((s) => s.currentUserDid);
@@ -208,10 +343,14 @@ export function ChatMessageArea() {
   const friendP2pStatus = useSocialChatStore((s) => s.friendP2pStatus);
   const peerOnline = useSocialChatStore((s) => s.peerOnline);
   const typingPeers = useSocialChatStore((s) => s.typingPeers);
+  const threadCounts = useSocialChatStore((s) => s.threadCounts);
   const [inputValue, setInputValue] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [sending, setSending] = useState(false);
-  const [replyToUlid, setReplyToUlid] = useState<string | null>(null);
+  const [replyDraft, setReplyDraft] = useState<{ conversationUlid: string | null; ulid: string | null }>({
+    conversationUlid: null,
+    ulid: null,
+  });
   // When set, the input field operates in "edit" mode: pressing
   // Send dispatches `editFriendMessage(activeUlid, editingUlid, …)`
   // instead of creating a new message. The banner above the input
@@ -222,7 +361,20 @@ export function ChatMessageArea() {
   const prependRestoreRef = useRef<{ previousHeight: number } | null>(null);
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
-  const currentMessages = activeUlid ? (messages[activeUlid] || []) : [];
+  const replyToUlid = replyDraft.conversationUlid === activeUlid ? replyDraft.ulid : null;
+  const setReplyToUlidForActive = (ulid: string | null) => {
+    setReplyDraft({ conversationUlid: activeUlid, ulid });
+  };
+  const currentMessages = activeUlid ? (messages[activeUlid] || EMPTY_MESSAGES) : EMPTY_MESSAGES;
+  const threadReplyCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const msg of currentMessages) {
+      const rootUlid = getThreadRootUlid(msg);
+      if (!rootUlid) continue;
+      counts.set(rootUlid, (counts.get(rootUlid) ?? 0) + 1);
+    }
+    return counts;
+  }, [currentMessages]);
 
   const currentName = (() => {
     if (activeTab === 'friend') {
@@ -230,11 +382,11 @@ export function ChatMessageArea() {
       if (!s) return '';
       if (currentUserDid) {
         if (s.participantADid === currentUserDid)
-          return (s as any).participantBDisplayName || s.participantBDid || '';
+          return s.participantBDisplayName || s.participantBDid || '';
         if (s.participantBDid === currentUserDid)
-          return (s as any).participantADisplayName || s.participantADid || '';
+          return s.participantADisplayName || s.participantADid || '';
       }
-      return (s as any).participantBDisplayName || s.participantBDid || '';
+      return s.participantBDisplayName || s.participantBDid || '';
     }
     const g = groups.find((grp) => grp.ulid === activeUlid);
     return g?.name || '';
@@ -246,11 +398,11 @@ export function ChatMessageArea() {
       if (!s) return '';
       if (currentUserDid) {
         if (s.participantADid === currentUserDid)
-          return (s as any).participantBAvatar || '';
+          return s.participantBAvatar || '';
         if (s.participantBDid === currentUserDid)
-          return (s as any).participantAAvatar || '';
+          return s.participantAAvatar || '';
       }
-      return (s as any).participantBAvatar || '';
+      return s.participantBAvatar || '';
     }
     return '';
   })();
@@ -368,10 +520,13 @@ export function ChatMessageArea() {
   })();
 
   useEffect(() => {
-    if (activeUlid) {
-      loadMessages(activeUlid);
-    }
-  }, [activeUlid, loadMessages]);
+    if (!activeUlid) return;
+    const kind = activeTab === 'friend' ? 'friend' : 'group';
+    const frame = requestAnimationFrame(() => {
+      void loadMessages(activeUlid, kind);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeUlid, activeTab, loadMessages]);
 
   useEffect(() => {
     if (prependRestoreRef.current && scrollContainerRef.current) {
@@ -383,10 +538,6 @@ export function ChatMessageArea() {
     }
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [currentMessages.length]);
-
-  useEffect(() => {
-    setReplyToUlid(null);
-  }, [activeUlid]);
 
   // ---- Typing-state outbound pulses --------------------------------
   //
@@ -469,6 +620,7 @@ export function ChatMessageArea() {
   // already changed.
   const lastTypingTargetRef = useRef<{ sessionUlid: string; peerActorId: string } | null>(null);
   useEffect(() => {
+    const typingState = typingThrottleRef.current;
     if (activeUlid && peerActorIdForTyping) {
       lastTypingTargetRef.current = {
         sessionUlid: activeUlid,
@@ -478,17 +630,16 @@ export function ChatMessageArea() {
       lastTypingTargetRef.current = null;
     }
     return () => {
-      const ref = typingThrottleRef.current;
-      if (ref.idleTimer != null) {
-        window.clearTimeout(ref.idleTimer);
-        ref.idleTimer = null;
+      if (typingState.idleTimer != null) {
+        window.clearTimeout(typingState.idleTimer);
+        typingState.idleTimer = null;
       }
-      if (ref.lastTrueAt > 0 && lastTypingTargetRef.current) {
+      if (typingState.lastTrueAt > 0 && lastTypingTargetRef.current) {
         const target = lastTypingTargetRef.current;
         api
           .realtimeTypingSend(target.peerActorId, target.sessionUlid, false)
           .catch(() => {});
-        ref.lastTrueAt = 0;
+        typingState.lastTrueAt = 0;
       }
     };
   }, [activeUlid, peerActorIdForTyping]);
@@ -502,12 +653,14 @@ export function ChatMessageArea() {
     const map = typingPeers[activeUlid];
     if (!map) return false;
     if (activeTab === 'friend') {
-      if (!peerActorIdForTyping) return false;
-      const e = map[peerActorIdForTyping];
-      return Boolean(e?.typing);
+      return Object.entries(map).some(([actorId, entry]) => (
+        actorId !== currentUserDid && entry.typing
+      ));
     }
     // For groups, "any peer typing" until the per-member panel lands.
-    return Object.values(map).some((e) => e.typing);
+    return Object.entries(map).some(([actorId, entry]) => (
+      actorId !== currentUserDid && entry.typing
+    ));
   })();
 
   useEffect(() => {
@@ -541,7 +694,7 @@ export function ChatMessageArea() {
     const replyRef = replyToUlid || undefined;
     const editTarget = editingUlid;
     setInputValue('');
-    setReplyToUlid(null);
+    setReplyToUlidForActive(null);
     setEditingUlid(null);
     setSending(true);
     // Sending implies "stopped composing" — flip the bubble for the
@@ -587,6 +740,11 @@ export function ChatMessageArea() {
       } else {
         await sendGroupMessage(activeUlid, content, undefined, replyRef);
       }
+    } catch (err) {
+      log.error('chat', 'send message failed', err);
+      setInputValue(content);
+      setReplyToUlidForActive(replyRef ?? null);
+      toast.error(t('chat.social.messageArea.sendFailed', 'Message failed to send'));
     } finally {
       setSending(false);
     }
@@ -651,7 +809,7 @@ export function ChatMessageArea() {
     // the Edit button in `canEdit` rather than half-supporting it.
     setEditingUlid(msg.ulid);
     setInputValue(msg.content);
-    setReplyToUlid(null);
+    setReplyToUlidForActive(null);
   };
 
   const cancelEdit = () => {
@@ -693,8 +851,16 @@ export function ChatMessageArea() {
         toast.error(t('chat.social.messageArea.uploadFailed'));
         return;
       }
-      const isImage = uploaded.mime_type?.startsWith('image/');
+      const isImage = isUploadedImage(uploaded.filename, uploaded.mime_type);
       const msgType = isImage ? 2 : 3;
+      const messageContent = isImage ? '' : uploaded.filename;
+      if (isImage) {
+        seedLocalMediaProjection({
+          cid: uploaded.cid,
+          filePath,
+          mimeType: uploaded.mime_type,
+        });
+      }
       const attachment = {
         cid: uploaded.cid,
         filename: uploaded.filename,
@@ -714,9 +880,9 @@ export function ChatMessageArea() {
             ? session.participantBDid
             : session.participantADid
           : '';
-        await sendFriendMessage(activeUlid, receiverDid, uploaded.filename, msgType, undefined, [attachment]);
+        await sendFriendMessage(activeUlid, receiverDid, messageContent, msgType, undefined, [attachment]);
       } else {
-        await sendGroupMessage(activeUlid, uploaded.filename, msgType, undefined, [attachment]);
+        await sendGroupMessage(activeUlid, messageContent, msgType, undefined, [attachment]);
       }
     } catch (err) {
       log.error('chat', 'file upload failed', err);
@@ -727,6 +893,7 @@ export function ChatMessageArea() {
   };
 
   const replyingMsg = replyToUlid ? currentMessages.find((m) => m.ulid === replyToUlid) : null;
+  const canSend = inputValue.trim().length > 0 && !sending;
 
   if (!activeUlid) {
     return (
@@ -738,9 +905,16 @@ export function ChatMessageArea() {
   }
 
   const hoverStyle = `
-    .msg-row:hover .msg-hover-actions {
+    .msg-row:hover .msg-hover-actions,
+    .msg-row:focus-within .msg-hover-actions {
       opacity: 1 !important;
       pointer-events: auto !important;
+    }
+    .chat-composer-input,
+    .chat-composer-input textarea {
+      background: transparent !important;
+      border: 0 !important;
+      box-shadow: none !important;
     }
     .typing-dots {
       display: inline-flex;
@@ -765,7 +939,7 @@ export function ChatMessageArea() {
   `;
 
   return (
-    <Flexbox flex={1} gap={0} style={{ height: '100%', background: token.colorBgContainer }}>
+    <Flexbox flex={1} gap={0} style={{ height: '100%', minHeight: 0, background: token.colorBgLayout }}>
       <style>{hoverStyle}</style>
       <SearchMessagesModal
         open={showSearch}
@@ -779,8 +953,9 @@ export function ChatMessageArea() {
         align="center"
         justify="space-between"
         style={{
-          padding: '10px 16px',
+          padding: '12px 18px',
           borderBottom: `1px solid ${token.colorBorderSecondary}`,
+          background: token.colorBgContainer,
           flexShrink: 0,
         }}
       >
@@ -854,8 +1029,13 @@ export function ChatMessageArea() {
         flex={1}
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        style={{ overflow: 'auto', padding: '16px 20px' }}
-        gap={12}
+        style={{
+          minHeight: 0,
+          overflow: 'auto',
+          padding: '18px 28px 20px',
+          background: `linear-gradient(180deg, ${token.colorBgLayout} 0%, ${token.colorBgContainer} 100%)`,
+        }}
+        gap={10}
       >
         {activeUlid && messageLoadingMore[activeUlid] && (
           <Flexbox align="center" justify="center" style={{ paddingBottom: 8 }}>
@@ -871,11 +1051,27 @@ export function ChatMessageArea() {
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.messageArea.noMessages')} />
           </Flexbox>
         ) : (
-          currentMessages.map((msg) => {
+          currentMessages.map((msg, index) => {
+            const previousMsg = currentMessages[index - 1];
+            const messageDate = getMessageTimestampDate(msg);
+            const showDateSeparator = shouldShowDateSeparator(msg, previousMsg);
+            const timelineGap = hasTimelineGap(msg, previousMsg);
             const isOwn = currentUserDid ? msg.senderDid === currentUserDid : false;
             const isGroup = !isFriendMsg(msg);
-            const hasReply = (isFriendMsg(msg) ? msg.replyToUlid : (msg as GroupMessage).replyToUlid) || '';
+            const hasReply = getReplyToUlid(msg) || '';
+            const threadKey = activeUlid ? socialThreadKey(activeTab, activeUlid, msg.ulid) : '';
+            const loadedReplyCount = threadReplyCounts.get(msg.ulid) ?? 0;
+            const threadSummary = threadKey ? threadCounts[threadKey] : undefined;
+            const threadReplyCount = threadSummary?.replyCount ?? loadedReplyCount;
+            const threadUnreadCount = threadSummary?.unreadCount ?? 0;
             const isEncryptedPlaceholder = msg.content === '[Encrypted Message]';
+            const attachments = msg.attachments || [];
+            const imageOnlyAttachments = attachments.length > 0 && attachments.every(isImageMessageAttachment);
+            const contentText = msg.content?.trim() ?? '';
+            const contentIsImageFilename = imageOnlyAttachments
+              && attachments.some((att) => att.filename?.trim() === contentText);
+            const visibleContent = contentIsImageFilename ? '' : msg.content;
+            const mediaOnlyBubble = imageOnlyAttachments && !visibleContent && !isEncryptedPlaceholder;
             // Both FriendChatMessage and GroupMessage carry
             // `recalled` + `editedAt` as of the unified
             // MessageMutation contract. The UI no longer needs to
@@ -886,76 +1082,91 @@ export function ChatMessageArea() {
             // ownership rules; the UI hides buttons that are
             // guaranteed to fail so we don't 422 the user.
             const sentMs = msg.sentAt ? timestampDate(msg.sentAt).getTime() : (msg.createdAt ? timestampDate(msg.createdAt).getTime() : 0);
-            const withinWindow = sentMs > 0 && (Date.now() - sentMs) < FRIEND_RECALL_WINDOW_MS;
+            const withinWindow = isWithinMutationWindow(sentMs);
             const canRecall = isOwn && !isRecalled && withinWindow;
             const canEdit = isOwn && !isRecalled && withinWindow && !isEncryptedPlaceholder;
 
-            const bubbleBg = isOwn ? token.colorPrimary : token.colorFillSecondary;
+            const bubbleBg = isOwn ? token.colorPrimary : token.colorBgContainer;
             const bubbleColor = isOwn ? '#fff' : token.colorText;
             const bubbleRadius: CSSProperties['borderRadius'] = isOwn
-              ? '12px 12px 4px 12px'
-              : '12px 12px 12px 4px';
+              ? '16px 16px 6px 16px'
+              : '16px 16px 16px 6px';
+            const bubbleBorder = isOwn
+              ? '1px solid transparent'
+              : `1px solid ${token.colorBorderSecondary}`;
 
             return (
-              <Flexbox
-                key={msg.ulid}
-                data-message-ulid={msg.ulid}
-                className="msg-row"
-                horizontal={isOwn}
-                style={{
-                  alignSelf: isOwn ? 'flex-end' : 'flex-start',
-                  maxWidth: '70%',
-                  position: 'relative',
-                }}
-                gap={6}
-              >
-                {!isOwn && isGroup && (
-                  <UserSquareAvatar name={msg.senderDid} size={28} style={{ alignSelf: 'flex-end' }} />
-                )}
-
-                <Flexbox style={{ position: 'relative', minWidth: 0 }}>
-                  <HoverActions
-                    isOwn={isOwn}
-                    canRecall={canRecall}
-                    canEdit={canEdit}
-                    onReply={() => setReplyToUlid(msg.ulid)}
-                    onDelete={async () => {
-                      if (!activeUlid) return;
-                      const kind = activeTab === 'friend' ? 'friend' : 'group';
-                      try {
-                        await deleteMessage(activeUlid, msg.ulid, kind);
-                      } catch (e) {
-                        log.error('chat', 'deleteMessage failed', e);
-                        toast.error(t('chat.social.messageArea.deleteFailed'));
-                      }
-                    }}
-                    onRecall={() => {
-                      const target = findActiveMsg(msg.ulid);
-                      if (target) handleRecall(target);
-                    }}
-                    onEdit={() => {
-                      const target = findActiveMsg(msg.ulid);
-                      if (target) handleStartEdit(target);
-                    }}
-                  />
-
+              <Fragment key={msg.ulid}>
+                {showDateSeparator && messageDate && <DateSeparator date={messageDate} />}
+                <Flexbox
+                  data-message-ulid={msg.ulid}
+                  className="msg-row"
+                  horizontal
+                  align="flex-end"
+                  style={{
+                    alignSelf: isOwn ? 'flex-end' : 'flex-start',
+                    maxWidth: !isOwn && isGroup ? 'min(82%, 800px)' : 'min(74%, 740px)',
+                    position: 'relative',
+                    marginTop: timelineGap ? 8 : 0,
+                  }}
+                  gap={8}
+                >
                   {!isOwn && isGroup && (
-                    <Text
-                      type="secondary"
-                      style={{ fontSize: 11, marginBottom: 2, paddingLeft: 2 }}
-                    >
-                      {msg.senderDid}
-                    </Text>
+                    <UserSquareAvatar name={msg.senderDid} size={30} style={{ flexShrink: 0 }} />
                   )}
+
+                  <Flexbox style={{ position: 'relative', minWidth: 0, maxWidth: '100%' }}>
+                    <HoverActions
+                      isOwn={isOwn}
+                      canRecall={canRecall}
+                      canEdit={canEdit}
+                      onOpenThread={() => openThread(msg.ulid)}
+                      onReply={() => setReplyToUlidForActive(msg.ulid)}
+                      onDelete={async () => {
+                        if (!activeUlid) return;
+                        const kind = activeTab === 'friend' ? 'friend' : 'group';
+                        try {
+                          await deleteMessage(activeUlid, msg.ulid, kind);
+                        } catch (e) {
+                          log.error('chat', 'deleteMessage failed', e);
+                          toast.error(t('chat.social.messageArea.deleteFailed'));
+                        }
+                      }}
+                      onRecall={() => {
+                        const target = findActiveMsg(msg.ulid);
+                        if (target) handleRecall(target);
+                      }}
+                      onEdit={() => {
+                        const target = findActiveMsg(msg.ulid);
+                        if (target) handleStartEdit(target);
+                      }}
+                    />
+
+                    {!isOwn && isGroup && (
+                      <Text
+                        type="secondary"
+                        style={{
+                          fontSize: 11,
+                          marginBottom: 4,
+                          paddingLeft: 4,
+                          color: token.colorTextTertiary,
+                          fontWeight: 500,
+                        }}
+                      >
+                        {msg.senderDid}
+                      </Text>
+                    )}
 
                   <Flexbox
                     style={{
-                      padding: '8px 12px',
+                      padding: mediaOnlyBubble ? 0 : '9px 13px',
                       borderRadius: bubbleRadius,
                       // Recalled bubbles use the muted "fill quaternary" surface
                       // regardless of ownership so the tombstone reads as a
                       // neutral system-style note rather than an actor message.
-                      background: isRecalled ? token.colorFillQuaternary : bubbleBg,
+                      background: mediaOnlyBubble ? 'transparent' : isRecalled ? token.colorFillQuaternary : bubbleBg,
+                      border: mediaOnlyBubble ? '1px solid transparent' : isRecalled ? `1px solid ${token.colorBorderSecondary}` : bubbleBorder,
+                      boxShadow: mediaOnlyBubble ? 'none' : isOwn ? token.boxShadowTertiary : token.boxShadowSecondary,
                       color: isRecalled ? token.colorTextSecondary : bubbleColor,
                       fontSize: 13,
                       lineHeight: 1.5,
@@ -987,11 +1198,11 @@ export function ChatMessageArea() {
                         </Text>
                       </Flexbox>
                     ) : (
-                      msg.content
+                      visibleContent
                     )}
-                    {!isRecalled && msg.attachments && msg.attachments.length > 0 && (
-                      <Flexbox gap={4} style={{ marginTop: msg.content ? 4 : 0 }}>
-                        {msg.attachments.map((att, idx) => (
+                    {!isRecalled && attachments.length > 0 && (
+                      <Flexbox gap={6} style={{ marginTop: visibleContent ? 8 : 0 }}>
+                        {attachments.map((att, idx) => (
                           <AttachmentItem
                             key={idx}
                             attachment={att}
@@ -1015,20 +1226,45 @@ export function ChatMessageArea() {
                     )}
                   </Flexbox>
 
+                  {threadReplyCount > 0 && !isRecalled && (
+                    <Flexbox horizontal justify={isOwn ? 'flex-end' : 'flex-start'} style={{ marginTop: 6 }}>
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<MessageCircle size={12} />}
+                        onClick={() => openThread(msg.ulid)}
+                        style={{
+                          height: 26,
+                          padding: '0 8px',
+                          borderRadius: 999,
+                          fontSize: 11,
+                          fontWeight: 500,
+                          color: threadUnreadCount > 0 ? token.colorError : token.colorPrimary,
+                          background: threadUnreadCount > 0 ? token.colorErrorBg : token.colorPrimaryBg,
+                        }}
+                      >
+                        {threadUnreadCount > 0
+                          ? t('chat.social.thread.summaryUnread', { count: threadReplyCount, unread: threadUnreadCount })
+                          : t('chat.social.thread.summary', { count: threadReplyCount })}
+                      </Button>
+                    </Flexbox>
+                  )}
+
                   <Flexbox
                     horizontal
                     align="center"
                     justify={isOwn ? 'flex-end' : 'flex-start'}
-                    gap={4}
-                    style={{ marginTop: 2, paddingLeft: 2, paddingRight: 2 }}
+                    gap={5}
+                    style={{ marginTop: 5, paddingLeft: 4, paddingRight: 4 }}
                   >
                     <Text
                       style={{
-                        fontSize: 10,
-                        color: token.colorTextQuaternary,
+                        fontSize: 11,
+                        color: token.colorTextTertiary,
+                        lineHeight: 1.2,
                       }}
                     >
-                      {formatMsgTime(msg.createdAt)}
+                      {formatMsgTime(msg.createdAt ?? msg.sentAt)}
                     </Text>
                     {editedAt && !isRecalled && (
                       <Tooltip title={
@@ -1039,9 +1275,10 @@ export function ChatMessageArea() {
                       }>
                         <Text
                           style={{
-                            fontSize: 10,
-                            color: token.colorTextQuaternary,
+                            fontSize: 11,
+                            color: token.colorTextTertiary,
                             fontStyle: 'italic',
+                            lineHeight: 1.2,
                           }}
                         >
                           {t('chat.social.messageArea.editedTag', '(edited)')}
@@ -1053,59 +1290,23 @@ export function ChatMessageArea() {
                     )}
                   </Flexbox>
                 </Flexbox>
-              </Flexbox>
+                </Flexbox>
+              </Fragment>
             );
           })
-        )}
-        {peerIsTyping && (
-          // Receiver-side typing indicator. The bubble is laid out
-          // exactly like an incoming peer message so it doesn't shift
-          // the message list when it appears/disappears (avoiding a
-          // layout thrash). The dots are pure CSS animation; we
-          // intentionally don't use a spinner so it's distinguishable
-          // from "still loading messages".
-          <Flexbox
-            horizontal={false}
-            style={{
-              alignSelf: 'flex-start',
-              maxWidth: '70%',
-            }}
-          >
-            <Flexbox
-              horizontal
-              align="center"
-              gap={4}
-              style={{
-                padding: '8px 12px',
-                borderRadius: '12px 12px 12px 4px',
-                background: token.colorFillSecondary,
-                color: token.colorTextSecondary,
-                fontSize: 13,
-                lineHeight: 1.5,
-              }}
-              aria-label={t('chat.social.messageArea.typing', 'is typing…')}
-            >
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {t('chat.social.messageArea.typing', 'is typing…')}
-              </Text>
-              <span className="typing-dots" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </span>
-            </Flexbox>
-          </Flexbox>
         )}
         <div ref={bottomRef} />
       </Flexbox>
 
       <Flexbox
         style={{
-          padding: '10px 16px 12px',
+          padding: '12px 18px 14px',
           borderTop: `1px solid ${token.colorBorderSecondary}`,
+          background: token.colorBgContainer,
+          boxShadow: '0 -8px 24px rgba(0,0,0,0.03)',
           flexShrink: 0,
         }}
-        gap={8}
+        gap={10}
       >
         {editingUlid && (
           // Edit-mode banner. Mutually exclusive with the reply
@@ -1116,10 +1317,11 @@ export function ChatMessageArea() {
             align="center"
             justify="space-between"
             style={{
-              padding: '6px 10px',
-              borderRadius: 6,
+              padding: '8px 12px',
+              borderRadius: 10,
               background: token.colorWarningBg,
               borderLeft: `3px solid ${token.colorWarning}`,
+              boxShadow: token.boxShadowTertiary,
             }}
           >
             <Flexbox style={{ minWidth: 0, flex: 1 }}>
@@ -1148,10 +1350,11 @@ export function ChatMessageArea() {
             align="center"
             justify="space-between"
             style={{
-              padding: '6px 10px',
-              borderRadius: 6,
+              padding: '8px 12px',
+              borderRadius: 10,
               background: token.colorFillTertiary,
               borderLeft: `3px solid ${token.colorPrimary}`,
+              boxShadow: token.boxShadowTertiary,
             }}
           >
             <Flexbox style={{ minWidth: 0, flex: 1 }}>
@@ -1165,7 +1368,7 @@ export function ChatMessageArea() {
             <Button
               type="text"
               size="small"
-              onClick={() => setReplyToUlid(null)}
+              onClick={() => setReplyToUlidForActive(null)}
               style={{ fontSize: 12, color: token.colorTextSecondary }}
             >
               {t('chat.social.messageArea.cancel')}
@@ -1173,54 +1376,66 @@ export function ChatMessageArea() {
           </Flexbox>
         )}
 
-        <Flexbox horizontal align="flex-end" gap={8}>
-          {/* Native file picker via Tauri — bypasses the WKWebView
-             input quirks and lets us upload through station_client
-             which already handles JWT auth. */}
-          <Button
-            type="text"
-            icon={<Paperclip size={18} />}
-            style={{ width: 36, height: 36, flexShrink: 0 }}
-            onClick={handleAttachClick}
-            disabled={sending}
-          />
-          <EmojiPicker
-            size={36}
-            onChange={(emoji) => setInputValue((prev) => prev + emoji)}
-          />
-          <TextArea
-            value={inputValue}
-            onChange={(e) => handleInputChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onBlur={() => {
-              // Blurring the textarea is the user's "I'm stepping
-              // away" signal. Cancel the idle timer and emit one
-              // final `typing=false` so the peer's bubble clears
-              // without waiting on the GC TTL.
-              const ref = typingThrottleRef.current;
-              if (ref.idleTimer != null) {
-                window.clearTimeout(ref.idleTimer);
-                ref.idleTimer = null;
-              }
-              if (ref.lastTrueAt > 0) {
-                fireTyping(false);
-                ref.lastTrueAt = 0;
-              }
+        {peerIsTyping && (
+          <Flexbox
+            horizontal
+            align="center"
+            gap={6}
+            style={{
+              width: 'fit-content',
+              padding: '4px 10px',
+              borderRadius: 999,
+              color: token.colorPrimary,
+              background: token.colorPrimaryBg,
+              fontSize: 12,
+              fontWeight: 500,
+              lineHeight: 1,
             }}
-            placeholder={t('chat.social.messageArea.placeholder')}
-            autoSize={{ minRows: 1, maxRows: 4 }}
-            style={{ flex: 1 }}
-            disabled={sending}
-          />
-          <Button
-            type="primary"
-            icon={<Send size={16} />}
-            onClick={handleSend}
-            loading={sending}
-            disabled={!inputValue.trim()}
-            style={{ width: 36, height: 36, flexShrink: 0 }}
-          />
-        </Flexbox>
+            aria-label={t('chat.social.messageArea.typing', 'is typing…')}
+          >
+            <Text style={{ color: 'inherit', fontSize: 12 }}>
+              {t('chat.social.messageArea.typing', 'is typing…')}
+            </Text>
+            <span className="typing-dots" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
+          </Flexbox>
+        )}
+
+        <ChatComposer
+          value={inputValue}
+          onChange={handleInputChange}
+          onKeyDown={handleKeyDown}
+          onBlur={() => {
+            // Blurring the textarea is the user's "I'm stepping
+            // away" signal. Cancel the idle timer and emit one
+            // final `typing=false` so the peer's bubble clears
+            // without waiting on the GC TTL.
+            const ref = typingThrottleRef.current;
+            if (ref.idleTimer != null) {
+              window.clearTimeout(ref.idleTimer);
+              ref.idleTimer = null;
+            }
+            if (ref.lastTrueAt > 0) {
+              fireTyping(false);
+              ref.lastTrueAt = 0;
+            }
+          }}
+          onSend={handleSend}
+          onAttach={handleAttachClick}
+          canSend={canSend}
+          disabled={sending}
+          sending={sending}
+          attachDisabled={sending}
+          layout="inline"
+          placeholder={t('chat.social.messageArea.placeholder')}
+          attachTitle={t('chat.social.messageArea.attach', 'Attach file')}
+          emojiTitle={t('chat.social.messageArea.emoji', 'Emoji')}
+          sendTitle={t('chat.social.messageArea.send', 'Send')}
+          enterMessageTitle={t('chat.social.messageArea.enterMessage', 'Enter a message')}
+        />
       </Flexbox>
     </Flexbox>
   );

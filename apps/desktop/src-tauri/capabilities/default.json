@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capabilities granted to the main desktop window. Asset:// protocol is enabled via the `protocol-asset` cargo feature + `app.security.assetProtocol.enable=true`; its filesystem scope is allow-listed at runtime in setup() to the user's avatar cache directory only.",
+  "description": "Capabilities granted to the main desktop window. Asset:// protocol is enabled via the `protocol-asset` cargo feature + `app.security.assetProtocol.enable=true`; its filesystem scope is allow-listed at runtime in setup() to app-owned avatar and attachment cache directories only.",
   "windows": ["*"],
   "permissions": [
     "core:default",

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/domain"
 	"gorm.io/gorm"
 )
@@ -33,6 +34,10 @@ var ErrMutationWindowClosed = errors.New("mutation window closed")
 // already been recalled (an edit on a tombstone makes no sense).
 var ErrAlreadyRecalled = errors.New("message already recalled")
 
+// ErrFriendRelationNotFound is returned when a relationship-level delete
+// targets a pair that is not currently accepted friends.
+var ErrFriendRelationNotFound = errors.New("friend relationship not found")
+
 type SessionModel struct {
 	ID              uint      `gorm:"column:id;primaryKey"`
 	ULID            string    `gorm:"column:ulid;size:64;uniqueIndex"`
@@ -50,17 +55,18 @@ type SessionModel struct {
 func (*SessionModel) TableName() string { return "friend_chat_sessions" }
 
 type MessageModel struct {
-	ID          uint      `gorm:"column:id;primaryKey"`
-	ULID        string    `gorm:"column:ulid;size:64;uniqueIndex"`
-	SessionULID string    `gorm:"column:session_ulid;size:64;index"`
-	SenderDID   string    `gorm:"column:sender_did;size:255;index"`
-	ReceiverDID string    `gorm:"column:receiver_did;size:255;index"`
-	Type        int32     `gorm:"column:type"`
-	Content     string    `gorm:"column:content;type:text"`
+	ID          uint   `gorm:"column:id;primaryKey"`
+	ULID        string `gorm:"column:ulid;size:64;uniqueIndex"`
+	SessionULID string `gorm:"column:session_ulid;size:64;index"`
+	SenderDID   string `gorm:"column:sender_did;size:255;index"`
+	ReceiverDID string `gorm:"column:receiver_did;size:255;index"`
+	Type        int32  `gorm:"column:type"`
+	Content     string `gorm:"column:content;type:text"`
 	// EncryptedPayload is optional E2E ciphertext (PostgreSQL bytea).
-	EncryptedPayload []byte    `gorm:"column:encrypted_payload;type:bytea"`
-	ReplyToULID      string    `gorm:"column:reply_to_ulid;size:64"`
-	Status           int32     `gorm:"column:status"`
+	EncryptedPayload []byte `gorm:"column:encrypted_payload;type:bytea"`
+	ReplyToULID      string `gorm:"column:reply_to_ulid;size:64"`
+	ThreadRootULID   string `gorm:"column:thread_root_ulid;size:64;index;default:''"`
+	Status           int32  `gorm:"column:status"`
 	// Recalled is set by recall — content + encrypted_payload are
 	// cleared at the same time. Once true it never flips back.
 	Recalled bool `gorm:"column:recalled"`
@@ -96,6 +102,21 @@ type MessageAttachmentModel struct {
 
 func (MessageAttachmentModel) TableName() string {
 	return "friend_chat_message_attachments"
+}
+
+type ThreadReadModel struct {
+	ID           uint      `gorm:"column:id;primaryKey"`
+	SessionULID  string    `gorm:"column:session_ulid;size:64;uniqueIndex:idx_fctr_actor_thread,priority:1;index"`
+	RootULID     string    `gorm:"column:root_ulid;size:64;uniqueIndex:idx_fctr_actor_thread,priority:2;index"`
+	ActorDID     string    `gorm:"column:actor_did;size:255;uniqueIndex:idx_fctr_actor_thread,priority:3;index"`
+	LastReadULID string    `gorm:"column:last_read_ulid;size:64"`
+	LastReadAt   time.Time `gorm:"column:last_read_at;index"`
+	CreatedAt    time.Time `gorm:"column:created_at"`
+	UpdatedAt    time.Time `gorm:"column:updated_at"`
+}
+
+func (ThreadReadModel) TableName() string {
+	return "friend_chat_thread_reads"
 }
 
 type FriendRequestModel struct {
@@ -134,7 +155,10 @@ func NewGormRepo(db *gorm.DB) *GormRepo {
 }
 
 func (r *GormRepo) AutoMigrate() error {
-	return r.db.AutoMigrate(&SessionModel{}, &MessageModel{}, &MessageAttachmentModel{}, &OutboxModel{}, &FriendRequestModel{})
+	if err := r.db.AutoMigrate(&SessionModel{}, &MessageModel{}, &MessageAttachmentModel{}, &ThreadReadModel{}, &OutboxModel{}, &FriendRequestModel{}); err != nil {
+		return err
+	}
+	return r.backfillThreadRootULIDs()
 }
 
 func pairKey(a, b string) string {
@@ -171,6 +195,7 @@ func toDomainMessage(item MessageModel) domain.Message {
 		Content:          item.Content,
 		EncryptedPayload: append([]byte(nil), item.EncryptedPayload...),
 		ReplyToID:        item.ReplyToULID,
+		ThreadRootID:     item.ThreadRootULID,
 		Status:           item.Status,
 		Recalled:         item.Recalled,
 		EditedAt:         editedAt,
@@ -189,6 +214,90 @@ func attachmentRowToDomain(m MessageAttachmentModel) domain.Attachment {
 		ThumbnailCID: m.ThumbnailCID,
 		Visibility:   m.Visibility,
 	}
+}
+
+func (r *GormRepo) resolveThreadRootULID(db *gorm.DB, sessionID, replyToULID, explicitRootULID string) (string, error) {
+	if explicitRootULID != "" {
+		return explicitRootULID, nil
+	}
+	if replyToULID == "" {
+		return "", nil
+	}
+	var parent MessageModel
+	if err := db.Where("session_ulid = ? AND ulid = ?", sessionID, replyToULID).First(&parent).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return replyToULID, nil
+		}
+		return "", err
+	}
+	if parent.ThreadRootULID != "" {
+		return parent.ThreadRootULID, nil
+	}
+	return parent.ULID, nil
+}
+
+func (r *GormRepo) threadRepliesQuery(db *gorm.DB, sessionID, rootULID string) *gorm.DB {
+	return db.Where(
+		"session_ulid = ? AND (thread_root_ulid = ? OR (COALESCE(thread_root_ulid, '') = '' AND reply_to_ulid = ?))",
+		sessionID,
+		rootULID,
+		rootULID,
+	)
+}
+
+func (r *GormRepo) backfillThreadRootULIDs() error {
+	var rows []MessageModel
+	if err := r.db.
+		Where("reply_to_ulid <> ''").
+		Order("sent_at ASC, ulid ASC").
+		Find(&rows).Error; err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+
+	byULID := make(map[string]MessageModel, len(rows))
+	for _, row := range rows {
+		byULID[row.ULID] = row
+	}
+	resolving := make(map[string]bool, len(rows))
+	resolved := make(map[string]string, len(rows))
+	var resolve func(MessageModel) string
+	resolve = func(row MessageModel) string {
+		if row.ThreadRootULID != "" {
+			return row.ThreadRootULID
+		}
+		if cached, ok := resolved[row.ULID]; ok {
+			return cached
+		}
+		if row.ReplyToULID == "" || resolving[row.ULID] {
+			return ""
+		}
+		resolving[row.ULID] = true
+		root := row.ReplyToULID
+		if parent, ok := byULID[row.ReplyToULID]; ok {
+			if parentRoot := resolve(parent); parentRoot != "" {
+				root = parentRoot
+			}
+		}
+		resolving[row.ULID] = false
+		resolved[row.ULID] = root
+		return root
+	}
+
+	for _, row := range rows {
+		root := resolve(row)
+		if root == "" || root == row.ThreadRootULID {
+			continue
+		}
+		if err := r.db.Model(&MessageModel{}).
+			Where("id = ?", row.ID).
+			Update("thread_root_ulid", root).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // LoadAttachments returns stored attachments for one message (optional granular load; list APIs batch-load instead).
@@ -313,6 +422,10 @@ func (r *GormRepo) AppendMessage(message domain.Message) (domain.Message, error)
 			return domain.Message{}, err
 		}
 	}
+	threadRootULID, err := r.resolveThreadRootULID(r.db, message.SessionID, message.ReplyToID, message.ThreadRootID)
+	if err != nil {
+		return domain.Message{}, err
+	}
 	record := MessageModel{
 		ULID:             messageULID,
 		SessionULID:      message.SessionID,
@@ -322,10 +435,11 @@ func (r *GormRepo) AppendMessage(message domain.Message) (domain.Message, error)
 		Content:          message.Content,
 		EncryptedPayload: append([]byte(nil), message.EncryptedPayload...),
 		ReplyToULID:      message.ReplyToID,
+		ThreadRootULID:   threadRootULID,
 		Status:           message.Status,
 		SentAt:           now,
 	}
-	err := r.db.Transaction(func(tx *gorm.DB) error {
+	err = r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&record).Error; err != nil {
 			return err
 		}
@@ -457,6 +571,168 @@ func (r *GormRepo) ListMessages(sessionID, beforeUlid string, limit int) ([]doma
 		return nil, err
 	}
 	return out, nil
+}
+
+func (r *GormRepo) ListThreadMessages(sessionID, rootUlid, afterUlid string, limit int) ([]domain.Message, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var root MessageModel
+	if err := r.db.Where("session_ulid = ? AND ulid = ?", sessionID, rootUlid).First(&root).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return []domain.Message{}, nil
+		}
+		return nil, err
+	}
+
+	var replies []MessageModel
+	query := r.threadRepliesQuery(r.db, sessionID, rootUlid)
+	if afterUlid != "" && afterUlid != rootUlid {
+		var cursor MessageModel
+		err := r.threadRepliesQuery(r.db, sessionID, rootUlid).
+			Where("ulid = ?", afterUlid).
+			First(&cursor).Error
+		if err == nil {
+			query = query.Where("(sent_at > ? OR (sent_at = ? AND ulid > ?))", cursor.SentAt, cursor.SentAt, cursor.ULID)
+		} else if errors.Is(err, gorm.ErrRecordNotFound) {
+			query = query.Where("1 = 0")
+		} else {
+			return nil, err
+		}
+	}
+	if err := query.
+		Order("sent_at ASC, ulid ASC").
+		Limit(limit).
+		Find(&replies).Error; err != nil {
+		return nil, err
+	}
+
+	out := make([]domain.Message, 0, 1+len(replies))
+	out = append(out, toDomainMessage(root))
+	for _, item := range replies {
+		out = append(out, toDomainMessage(item))
+	}
+	if err := r.mergeAttachmentsIntoMessages(out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *GormRepo) ThreadCounts(sessionID, actorDID string, rootULIDs []string) ([]domain.ThreadCount, error) {
+	out := make([]domain.ThreadCount, 0, len(rootULIDs))
+	if len(rootULIDs) == 0 {
+		return out, nil
+	}
+
+	readRows := make([]ThreadReadModel, 0, len(rootULIDs))
+	if err := r.db.
+		Where("session_ulid = ? AND actor_did = ? AND root_ulid IN ?", sessionID, actorDID, rootULIDs).
+		Find(&readRows).Error; err != nil {
+		return nil, err
+	}
+	readByRoot := make(map[string]ThreadReadModel, len(readRows))
+	for _, row := range readRows {
+		readByRoot[row.RootULID] = row
+	}
+
+	for _, rootULID := range rootULIDs {
+		item := domain.ThreadCount{RootULID: rootULID}
+		if err := r.threadRepliesQuery(r.db.Model(&MessageModel{}), sessionID, rootULID).
+			Count(&item.ReplyCount).Error; err != nil {
+			return nil, err
+		}
+
+		var latest MessageModel
+		if err := r.threadRepliesQuery(r.db, sessionID, rootULID).
+			Order("sent_at DESC, ulid DESC").
+			First(&latest).Error; err == nil {
+			item.LatestReplyULID = latest.ULID
+			item.LatestReplyAt = latest.SentAt
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+
+		readAt := time.Time{}
+		if read, ok := readByRoot[rootULID]; ok {
+			readAt = read.LastReadAt
+		}
+		if err := r.threadRepliesQuery(r.db.Model(&MessageModel{}), sessionID, rootULID).
+			Where("sent_at > ? AND sender_did <> ?", readAt, actorDID).
+			Count(&item.UnreadCount).Error; err != nil {
+			return nil, err
+		}
+
+		out = append(out, item)
+	}
+
+	return out, nil
+}
+
+func (r *GormRepo) MarkThreadRead(actorDID, sessionID, rootULID, lastReadULID string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var root MessageModel
+		if err := tx.Where("session_ulid = ? AND ulid = ?", sessionID, rootULID).First(&root).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrMessageNotFound
+			}
+			return err
+		}
+
+		cursorULID := root.ULID
+		cursorAt := root.SentAt
+		if lastReadULID != "" {
+			var provided MessageModel
+			err := tx.
+				Where("session_ulid = ? AND ulid = ? AND (ulid = ? OR thread_root_ulid = ? OR (COALESCE(thread_root_ulid, '') = '' AND reply_to_ulid = ?))", sessionID, lastReadULID, rootULID, rootULID, rootULID).
+				First(&provided).Error
+			if err == nil {
+				cursorULID = provided.ULID
+				cursorAt = provided.SentAt
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			} else if latestULID, latestAt, ok, latestErr := latestFriendThreadCursor(tx, sessionID, rootULID); latestErr != nil {
+				return latestErr
+			} else if ok {
+				cursorULID = latestULID
+				cursorAt = latestAt
+			}
+		} else if latestULID, latestAt, ok, err := latestFriendThreadCursor(tx, sessionID, rootULID); err != nil {
+			return err
+		} else if ok {
+			cursorULID = latestULID
+			cursorAt = latestAt
+		}
+
+		now := time.Now()
+		var read ThreadReadModel
+		return tx.
+			Where("session_ulid = ? AND root_ulid = ? AND actor_did = ?", sessionID, rootULID, actorDID).
+			Assign(ThreadReadModel{
+				LastReadULID: cursorULID,
+				LastReadAt:   cursorAt,
+				UpdatedAt:    now,
+			}).
+			FirstOrCreate(&read, ThreadReadModel{
+				SessionULID: sessionID,
+				RootULID:    rootULID,
+				ActorDID:    actorDID,
+				CreatedAt:   now,
+			}).Error
+	})
+}
+
+func latestFriendThreadCursor(tx *gorm.DB, sessionID, rootULID string) (string, time.Time, bool, error) {
+	var latest MessageModel
+	if err := (&GormRepo{}).threadRepliesQuery(tx, sessionID, rootULID).
+		Order("sent_at DESC, ulid DESC").
+		First(&latest).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", time.Time{}, false, nil
+		}
+		return "", time.Time{}, false, err
+	}
+
+	return latest.ULID, latest.SentAt, true, nil
 }
 
 // MarkRead persists a status flip (DELIVERED/READ/FAILED…) on a batch
@@ -921,17 +1197,65 @@ func (r *GormRepo) ListFriendRequests(actorDID string, status int32, limit, offs
 	return out, int(total), nil
 }
 
-// ActorSummary holds the minimal profile fields needed for enrichment.
-type ActorSummary struct {
-	ID          uint64
-	DisplayName string
-	Avatar      string
+func (r *GormRepo) DeleteFriend(actorDID, peerDID string) error {
+	key := pairKey(actorDID, peerDID)
+
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var relationCount int64
+		if err := tx.Model(&FriendRequestModel{}).
+			Where("pair_key = ? AND status = ?", key, domain.FriendRequestStatusAccepted).
+			Count(&relationCount).Error; err != nil {
+			return err
+		}
+		if relationCount == 0 {
+			return ErrFriendRelationNotFound
+		}
+
+		if err := tx.
+			Where("pair_key = ? AND status IN ?", key, []int32{
+				domain.FriendRequestStatusPending,
+				domain.FriendRequestStatusAccepted,
+				domain.FriendRequestStatusRejected,
+				domain.FriendRequestStatusRemoved,
+			}).
+			Delete(&FriendRequestModel{}).Error; err != nil {
+			return err
+		}
+
+		var session SessionModel
+		err := tx.Where("pair_key = ?", key).First(&session).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		var messageULIDs []string
+		if err := tx.Model(&MessageModel{}).
+			Where("session_ulid = ?", session.ULID).
+			Pluck("ulid", &messageULIDs).Error; err != nil {
+			return err
+		}
+		if len(messageULIDs) > 0 {
+			if err := tx.Where("message_ulid IN ?", messageULIDs).Delete(&MessageAttachmentModel{}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Where("session_ulid = ?", session.ULID).Delete(&ThreadReadModel{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("session_ulid = ?", session.ULID).Delete(&MessageModel{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&session).Error
+	})
 }
 
 // BatchLoadActorSummaries looks up display name + avatar for a set of actor IDs.
 // IDs are numeric strings (strconv'd actor primary keys).
-func (r *GormRepo) BatchLoadActorSummaries(ids []string) map[string]ActorSummary {
-	result := make(map[string]ActorSummary, len(ids))
+func (r *GormRepo) BatchLoadActorSummaries(ids []string) map[string]application.ActorSummary {
+	result := make(map[string]application.ActorSummary, len(ids))
 	if len(ids) == 0 {
 		return result
 	}
@@ -943,8 +1267,7 @@ func (r *GormRepo) BatchLoadActorSummaries(ids []string) map[string]ActorSummary
 	var rows []row
 	r.db.Table("touch_actor").Select("id, name, icon").Where("id IN ?", ids).Find(&rows)
 	for _, r := range rows {
-		result[fmt.Sprintf("%d", r.ID)] = ActorSummary{
-			ID:          r.ID,
+		result[fmt.Sprintf("%d", r.ID)] = application.ActorSummary{
 			DisplayName: r.Name,
 			Avatar:      r.Icon,
 		}

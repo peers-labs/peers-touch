@@ -803,7 +803,22 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                       </span>
                     )}
                     {account.hasPin && (
-                      <ShieldCheck size={14} style={{ color: token.colorSuccess, flexShrink: 0 }} />
+                      <span
+                        title={account.hasSession
+                          ? t('auth.accountPicker.pinProtected', { defaultValue: 'PIN protected' })
+                          : t('auth.accountPicker.pinConfiguredSignInRequired', {
+                            defaultValue: 'PIN configured, sign in required',
+                          })}
+                        style={{ display: 'inline-flex', flexShrink: 0 }}
+                      >
+                        <ShieldCheck
+                          size={14}
+                          style={{
+                            color: account.hasSession ? token.colorSuccess : token.colorWarningText,
+                            flexShrink: 0,
+                          }}
+                        />
+                      </span>
                     )}
                     <ChevronRight size={14} style={{ color: token.colorTextTertiary, flexShrink: 0 }} />
                   </Flexbox>
