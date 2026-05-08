@@ -353,15 +353,16 @@ export interface PresenceTransitionEvent {
 }
 
 /**
- * Payload returned by `chat_upload_attachment`.
+ * Payload returned by `oss_upload_attachment_chat` /
+ * `oss_upload_attachment_social`.
  *
- * `cid` is the federated URI (`oss://{host}/{key}`) the message must
- * carry. `preview_url` is a convenience absolute URL for the renderer
- * to display the file *immediately* without going through
- * `oss_resolve_url`; it is `null` for backends that require signed
- * URLs.
+ * `cid` is the federated URI (`oss://{host}/{key}`) the message /
+ * Moments post must carry. `preview_url` is a convenience absolute URL
+ * for the renderer to display the file *immediately* without going
+ * through `oss_resolve_url`; it is `null` for backends that require
+ * signed URLs.
  */
-export interface ChatAttachmentUploaded {
+export interface OssAttachmentUploaded {
   cid: string;
   key: string;
   host: string;
@@ -376,6 +377,30 @@ export interface ChatAttachmentUploaded {
    * the sender claimed it was — meaningful end-to-end integrity
    * once federation lands. */
   sha256?: string;
+}
+
+/**
+ * @deprecated Use `OssAttachmentUploaded`. Kept as alias for
+ * downstream callers that have not migrated yet.
+ */
+export type ChatAttachmentUploaded = OssAttachmentUploaded;
+
+/**
+ * Capabilities reported by the OSS subserver at `/sub-oss/capabilities`.
+ * Cached on the Tauri side; the frontend uses `max_file_size` to
+ * pre-validate uploads instead of waiting for a server-side rejection.
+ */
+export interface OssCapabilities {
+  version: number;
+  host: string;
+  path_base: string;
+  backend: string;
+  max_file_size: number;
+  max_files_per_message: number;
+  signed_url: boolean;
+  upload_endpoint: string;
+  file_endpoint: string;
+  meta_endpoint: string;
 }
 
 /**
@@ -1964,32 +1989,86 @@ export const api = {
     throw new Error(response.error?.message || 'pick_image_file failed');
   },
 
-  // ── Chat OSS attachments ───────────────────────────────────────
-  // Pick an arbitrary file via the native dialog and return its
-  // absolute path. Resolves with the path on success, rejects when
-  // the user cancels.
-  pickChatAttachment: async (): Promise<string> => {
-    const response = await invokeRustCommand<void, TauriStubPayload>('pick_chat_attachment');
+  // ── OSS attachments (主模块=oss / 消费方=chat|social) ──────────
+  //
+  // Naming convention `oss<Verb><Consumer>` mirrors the Rust-side
+  // `oss_<verb>_<consumer>` Tauri command names so the call site reads
+  // as one unit. Generic helpers (no consumer-specific behavior) drop
+  // the suffix.
+
+  /**
+   * Chat consumer — open the native picker (any MIME) and return the
+   * absolute path of the selected file. Rejects when the user cancels.
+   */
+  ossPickAttachmentChat: async (): Promise<string> => {
+    const response = await invokeRustCommand<void, TauriStubPayload>(
+      'oss_pick_attachment_chat',
+    );
     if (response.ok && response.data?.status) {
       return response.data.status;
     }
-    throw new Error(response.error?.message || 'pick_chat_attachment failed');
+    throw new Error(
+      response.error?.message || 'oss_pick_attachment_chat failed',
+    );
   },
 
-  // Push the local file to the bound Station's OSS subserver and
-  // return the federated `oss://{host}/{key}` URI plus enough
-  // metadata to embed in `MessageAttachment`. See
-  // `application/oss/mod.rs::ChatAttachmentUploaded` for the
-  // authoritative shape.
-  chatUploadAttachment: (filePath: string) =>
-    invokeRustDataFromStatus<{ file_path: string }, ChatAttachmentUploaded>(
-      'chat_upload_attachment',
+  /**
+   * Chat consumer — upload a local file and return the canonical
+   * attachment payload (`cid`, `key`, `host`, etc.). The wire is
+   * identical to the social variant; the dedicated command lets us
+   * evolve quotas / log labels per consumer without coupling.
+   */
+  ossUploadAttachmentChat: (filePath: string) =>
+    invokeRustDataFromStatus<{ file_path: string }, OssAttachmentUploaded>(
+      'oss_upload_attachment_chat',
       { file_path: filePath },
     ),
 
-  // Resolve an `oss://` URI (or bare key) to a local cached path
-  // and an absolute URL. Renderer should prefer `local_path` when
-  // present and fall back to `url`.
+  /**
+   * Social/Moments consumer — open a multi-select picker scoped to
+   * image MIME types. The `maxCount` cap is enforced at the Tauri
+   * layer (silent truncation) so the renderer never has to defend
+   * against it. Resolves with the picked absolute paths in sorted
+   * order; rejects when the user cancels.
+   */
+  ossPickImageSocial: async (maxCount: number): Promise<string[]> => {
+    const response = await invokeRustCommand<
+      { max_count: number },
+      TauriStubPayload
+    >('oss_pick_image_social', { max_count: maxCount });
+    if (response.ok && response.data?.status) {
+      try {
+        const parsed = JSON.parse(response.data.status) as unknown;
+        if (Array.isArray(parsed)) {
+          return parsed.filter((p): p is string => typeof p === 'string');
+        }
+        return [];
+      } catch {
+        return [];
+      }
+    }
+    throw new Error(
+      response.error?.message || 'oss_pick_image_social failed',
+    );
+  },
+
+  /**
+   * Social/Moments consumer — upload a single image and return the
+   * canonical attachment payload. Composer calls this once per picked
+   * image (sequential to bound peak memory on the Rust side).
+   */
+  ossUploadAttachmentSocial: (filePath: string) =>
+    invokeRustDataFromStatus<{ file_path: string }, OssAttachmentUploaded>(
+      'oss_upload_attachment_social',
+      { file_path: filePath },
+    ),
+
+  /**
+   * Generic — resolve an `oss://` URI (or bare key) to a local cached
+   * path and an absolute URL. Renderer should prefer `local_path`
+   * when present and fall back to `url`. No consumer suffix: the
+   * resolution logic is identical across modules.
+   */
   ossResolveUrl: (uri: string) =>
     invokeRustDataFromStatus<{ uri: string }, OssResolved>('oss_resolve_url', { uri }),
 

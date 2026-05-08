@@ -56,3 +56,37 @@ type GroupMembershipChecker interface {
 	IsMember(ctx context.Context, groupID, actorID uint64) (bool, error)
 	MembershipsForViewer(ctx context.Context, viewerID uint64) ([]uint64, error)
 }
+
+// MediaResolver bridges to the OSS subserver. Moments image / video
+// posts carry a list of `oss://{origin}/{key}` CIDs in their write
+// requests; without server-side validation a malicious client could
+// embed:
+//
+//   - foreign-origin CIDs (`oss://attacker.example/leak.png`) that
+//     point to bytes this station has no control over — leaking
+//     viewer IPs, enabling click-tracking, or hot-linking content
+//     that can be swapped out post-publish.
+//
+//   - made-up keys for our own origin (`oss://self/does-not-exist`)
+//     that render as broken images and pollute the timeline.
+//
+// `ValidateCIDs` answers the question "are these CIDs all references
+// to real bytes that LIVE on THIS station?" — implementations MUST
+// reject any CID that fails either invariant. The default no-op (used
+// in P1 integration tests that pre-date this hardening) accepts
+// everything and logs a WARN at startup so operators understand the
+// risk.
+//
+// The resolver is intentionally side-effect-free: it does NOT bind the
+// CID to the author or perform OSS-side bookkeeping. That's a P3.5
+// hardening once peers-oss exposes per-actor uploader records (current
+// in-tree OSS subserver does not record `UploaderDid` on upload).
+type MediaResolver interface {
+	// ValidateCIDs returns nil iff every CID in the slice is well-
+	// formed and references an object known to the local OSS
+	// subserver. On any failure, the returned error names the first
+	// offending CID; the caller surfaces this as `InvalidArgument`.
+	// An empty slice is always valid (text-only / link / poll posts
+	// reuse the same write path).
+	ValidateCIDs(ctx context.Context, cids []string) error
+}
