@@ -1,4 +1,16 @@
 //! E2E crypto: Ed25519 identity, X25519 X3DH, AES-256-GCM, and symmetric ratchet chains.
+//!
+//! The signaling-only authenticated sealed-box envelope used by the
+//! realtime plane lives in the sibling `signaling_envelope` module —
+//! it is deliberately a separate primitive from the chat ratchet so
+//! ICE candidate loss / reorder cannot stall text messages. See
+//! `docs/architecture/realtime/event-stream.md` §2.7.2 for the
+//! contract.
+
+pub mod signaling_envelope;
+pub mod sender_keys;
+pub mod double_ratchet;
+pub mod telemetry;
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -7,7 +19,6 @@ use ed25519_dalek::{Signature, SigningKey, Verifier, VerifyingKey};
 use hkdf::Hkdf;
 use keyring::Entry;
 use rand::rngs::OsRng;
-use rand::RngCore;
 use sha2::Digest;
 use sha2::Sha256;
 use x25519_dalek::{PublicKey, StaticSecret};
@@ -112,6 +123,15 @@ pub struct X3DHResult {
 
 fn dh(secret: &StaticSecret, peer: &PublicKey) -> [u8; 32] {
     secret.diffie_hellman(peer).to_bytes()
+}
+
+/// Public wrapper around the package-private `dh` for the
+/// `signaling_envelope` sibling. Kept narrow on purpose: the
+/// signaling envelope is the only caller outside this module that
+/// needs raw ECDH access, and we don't want to widen `dh`'s
+/// visibility for general use.
+pub fn dh_for_signaling(secret: &StaticSecret, peer: &PublicKey) -> [u8; 32] {
+    dh(secret, peer)
 }
 
 /// Sender X3DH: verifies SPK signature, performs DH1..DH4, derives 32-byte secret.
@@ -311,12 +331,14 @@ impl CryptoSession {
             ));
         }
         let mk = self.recv_ratchet.next_message_keys();
-        aes_gcm_decrypt(
+        let plain = aes_gcm_decrypt(
             &mk.encryption_key,
             &mk.nonce,
             msg.ciphertext.as_slice(),
             b"",
-        )
+        )?;
+        telemetry::record_legacy_decrypt();
+        Ok(plain)
     }
 }
 
@@ -426,69 +448,18 @@ pub fn identity_fingerprint_hex(verifying_key: &VerifyingKey) -> String {
     hex::encode(digest)
 }
 
-// --- Group symmetric key (simplified shared group key, local persistence) -----
-
-/// Serialized wire form for one encrypted group message (AES-GCM ciphertext only; epoch/counter in AAD).
-#[derive(Clone, Debug)]
-pub struct GroupEncryptedMessage {
-    pub ciphertext: Vec<u8>,
-    pub epoch: u32,
-    pub counter: u32,
-}
-
-/// Local group encryption state: one 32-byte key per group, epoch bumps on rotation.
-pub struct GroupKeyState {
-    pub group_id: String,
-    pub key: [u8; 32],
-    pub epoch: u32,
-    pub counter: u32,
-}
-
-impl GroupKeyState {
-    pub fn generate(group_id: &str) -> Self {
-        let mut key = [0u8; 32];
-        OsRng.fill_bytes(&mut key);
-        GroupKeyState {
-            group_id: group_id.to_string(),
-            key,
-            epoch: 1,
-            counter: 0,
-        }
-    }
-
-    pub fn encrypt(&mut self, plaintext: &[u8]) -> Result<GroupEncryptedMessage, String> {
-        self.counter += 1;
-        let mut nonce_bytes = [0u8; 12];
-        nonce_bytes[0..4].copy_from_slice(&self.epoch.to_be_bytes());
-        nonce_bytes[4..8].copy_from_slice(&self.counter.to_be_bytes());
-
-        let aad = format!(
-            "group:{}:{}:{}",
-            self.group_id, self.epoch, self.counter
-        );
-        let ciphertext = aes_gcm_encrypt(&self.key, &nonce_bytes, plaintext, aad.as_bytes())?;
-
-        Ok(GroupEncryptedMessage {
-            ciphertext,
-            epoch: self.epoch,
-            counter: self.counter,
-        })
-    }
-
-    pub fn decrypt(&self, msg: &GroupEncryptedMessage) -> Result<Vec<u8>, String> {
-        let mut nonce_bytes = [0u8; 12];
-        nonce_bytes[0..4].copy_from_slice(&msg.epoch.to_be_bytes());
-        nonce_bytes[4..8].copy_from_slice(&msg.counter.to_be_bytes());
-
-        let aad = format!("group:{}:{}:{}", self.group_id, msg.epoch, msg.counter);
-        aes_gcm_decrypt(&self.key, &nonce_bytes, &msg.ciphertext, aad.as_bytes())
-    }
-
-    pub fn rotate(&mut self) {
-        let mut new_key = [0u8; 32];
-        OsRng.fill_bytes(&mut new_key);
-        self.key = new_key;
-        self.epoch += 1;
-        self.counter = 0;
-    }
-}
+// Group symmetric key primitives intentionally removed.
+//
+// The previous GroupKeyState / GroupEncryptedMessage primitives
+// implemented a single shared symmetric key per group with no
+// distribution mechanism -- GroupKeyState::generate() simply minted a
+// fresh OsRng key per device, so two members would never agree on a
+// key for the same group. The Tauri commands wrapping these
+// primitives (crypto_group_encrypt / crypto_group_decrypt /
+// crypto_group_rotate_key) were never registered in the
+// invoke_handler and had zero JS callers, so removing them is purely
+// dead-code cleanup with no behavioral change.
+//
+// The replacement is the Sender Keys protocol designed in
+// peers-touch/docs/architecture/encryption/group-sender-keys.md;
+// implementation lands per the G0..G5 phase plan in that doc.

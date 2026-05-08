@@ -1,6 +1,7 @@
 pub mod actor_bucket;
 pub mod auth_identity;
 pub mod avatar_cache;
+pub mod event_stream;
 pub mod oss_cache;
 pub mod session_store;
 pub mod i18n;

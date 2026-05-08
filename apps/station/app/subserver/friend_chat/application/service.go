@@ -3,9 +3,18 @@ package application
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/domain"
 )
+
+// ActorSummary is the profile projection friend-chat needs when producing
+// user-facing side effects such as notifications. The application layer owns
+// this shape so notification wording never falls back to raw actor IDs.
+type ActorSummary struct {
+	DisplayName string
+	Avatar      string
+}
 
 type Repository interface {
 	GetSession(sessionID string) (*domain.Session, error)
@@ -13,30 +22,55 @@ type Repository interface {
 	ListSessions(actorDID string, limit, offset int) ([]domain.Session, int, error)
 	AppendMessage(message domain.Message) (domain.Message, error)
 	ListMessages(sessionID, beforeUlid string, limit int) ([]domain.Message, error)
+	ListThreadMessages(sessionID, rootUlid, afterUlid string, limit int) ([]domain.Message, error)
+	ThreadCounts(sessionID, actorDID string, rootULIDs []string) ([]domain.ThreadCount, error)
+	MarkThreadRead(actorDID, sessionID, rootULID, lastReadULID string) error
 	SearchMessages(actorDID, query, sessionUlid string, limit, offset int) ([]domain.Message, int, error)
 	LoadAttachments(messageULID string) ([]domain.Attachment, error)
-	MarkRead(actorDID string, messageIDs []string, status int32) error
+	MarkRead(actorDID string, messageIDs []string, status int32) ([]domain.AckedMessage, error)
+	RecallMessage(actorDID, sessionULID, messageULID string, recallWindow time.Duration) (domain.MutationOutcome, error)
+	EditMessage(actorDID, sessionULID, messageULID, newContent string, newCiphertext []byte, editWindow time.Duration) (domain.MutationOutcome, error)
+	DeleteMessage(actorDID, sessionULID, messageULID string) (domain.MutationOutcome, error)
 	CreateFriendRequest(senderDID, receiverDID, message string) (domain.FriendRequest, error)
 	GetFriendRequest(requestID string) (*domain.FriendRequest, error)
 	AcceptFriendRequest(requestID string) (*domain.FriendRequest, *domain.Session, error)
 	RejectFriendRequest(requestID string) (*domain.FriendRequest, error)
 	ListFriendRequests(actorDID string, status int32, limit, offset int) ([]domain.FriendRequest, int, error)
+	DeleteFriend(actorDID, peerDID string) error
+	BatchLoadActorSummaries(ids []string) map[string]ActorSummary
 }
 
 type Service struct {
-	repo     Repository
-	notifier NotificationProducer
+	repo           Repository
+	notifier       NotificationProducer
+	mutationWindow time.Duration
 }
 
 var (
-	ErrSessionNotFound  = errors.New("session not found")
-	ErrNotParticipant   = errors.New("actor not in session")
-	ErrInvalidReceiver  = errors.New("invalid receiver")
-	ErrPermissionDenied = errors.New("permission denied")
-	ErrAlreadyFriends   = errors.New("already friends")
-	ErrRequestNotFound  = errors.New("friend request not found")
-	ErrNotRequestTarget = errors.New("only the receiver can accept or reject a friend request")
+	ErrSessionNotFound      = errors.New("session not found")
+	ErrNotParticipant       = errors.New("actor not in session")
+	ErrInvalidReceiver      = errors.New("invalid receiver")
+	ErrPermissionDenied     = errors.New("permission denied")
+	ErrMessageNotFound      = errors.New("message not found")
+	ErrMutationWindowClosed = errors.New("mutation window closed")
+	ErrAlreadyRecalled      = errors.New("message already recalled")
+	ErrEmptyEdit            = errors.New("edit must include new_content or new_encrypted_payload")
+	ErrAlreadyFriends       = errors.New("already friends")
+	ErrRequestNotFound      = errors.New("friend request not found")
+	ErrNotRequestTarget     = errors.New("only the receiver can accept or reject a friend request")
+	ErrFriendNotFound       = errors.New("friend relationship not found")
 )
+
+// MutationWindow is the operator-tunable maximum age (since
+// `sent_at`) at which a friend message is still recall- / edit-able.
+// We keep it in the application layer rather than the infrastructure
+// layer because this is a product-policy knob, not a storage knob,
+// and the handler / service decide whether to enforce it (e.g.
+// future "moderation override" paths might bypass it). 5 minutes
+// matches WeChat / Telegram-style "recall within a few minutes"
+// semantics; if your product wants longer or shorter, set it via
+// `(*Service).SetMutationWindow` at boot.
+const DefaultMutationWindow = 5 * time.Minute
 
 // NotificationProducer decouples notification creation from the notification SubServer.
 // Avoids import cycle: friend_chat → notification.
@@ -45,11 +79,30 @@ type NotificationProducer interface {
 }
 
 func NewService(repo Repository) *Service {
-	return &Service{repo: repo, notifier: nil}
+	return &Service{repo: repo, notifier: nil, mutationWindow: DefaultMutationWindow}
 }
 
 func (s *Service) SetNotifier(n NotificationProducer) {
 	s.notifier = n
+}
+
+func (s *Service) actorDisplayName(actorDID string) string {
+	if actorDID == "" {
+		return ""
+	}
+	profiles := s.repo.BatchLoadActorSummaries([]string{actorDID})
+	profile, ok := profiles[actorDID]
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(profile.DisplayName)
+}
+
+// SetMutationWindow lets the bootstrap layer override the default
+// recall / edit window. A zero or negative value disables the
+// window check entirely (only sender-ownership applies).
+func (s *Service) SetMutationWindow(window time.Duration) {
+	s.mutationWindow = window
 }
 
 func (s *Service) GetOrCreateSession(actorDID, participantDID string) (*domain.Session, bool, error) {
@@ -60,7 +113,7 @@ func (s *Service) ListSessions(actorDID string, limit, offset int) ([]domain.Ses
 	return s.repo.ListSessions(actorDID, limit, offset)
 }
 
-func (s *Service) SendMessage(sessionID, senderDID, receiverDID string, messageType int32, content, replyToID string, attachments []domain.Attachment, encryptedPayload []byte, clientULID string) (domain.Message, error) {
+func (s *Service) SendMessage(sessionID, senderDID, receiverDID string, messageType int32, content, replyToID, threadRootID string, attachments []domain.Attachment, encryptedPayload []byte, clientULID string) (domain.Message, error) {
 	return s.repo.AppendMessage(domain.Message{
 		ID:               clientULID,
 		SessionID:        sessionID,
@@ -70,6 +123,7 @@ func (s *Service) SendMessage(sessionID, senderDID, receiverDID string, messageT
 		Content:          content,
 		EncryptedPayload: append([]byte(nil), encryptedPayload...),
 		ReplyToID:        replyToID,
+		ThreadRootID:     threadRootID,
 		Status:           2,
 		Attachments:      attachments,
 	})
@@ -79,11 +133,133 @@ func (s *Service) ListMessages(sessionID, beforeUlid string, limit int) ([]domai
 	return s.repo.ListMessages(sessionID, beforeUlid, limit)
 }
 
-func (s *Service) AckMessages(actorDID string, messageIDs []string, status int32) error {
+func (s *Service) ListThreadMessages(sessionID, rootUlid, afterUlid string, limit int) ([]domain.Message, error) {
+	return s.repo.ListThreadMessages(sessionID, rootUlid, afterUlid, limit)
+}
+
+func (s *Service) ThreadCountsByActor(actorDID, sessionID string, rootULIDs []string) ([]domain.ThreadCount, error) {
+	session, err := s.repo.GetSession(sessionID)
+	if err != nil || session == nil {
+		return nil, ErrSessionNotFound
+	}
+	if actorDID != session.ParticipantADID && actorDID != session.ParticipantBDID {
+		return nil, ErrNotParticipant
+	}
+
+	return s.repo.ThreadCounts(sessionID, actorDID, rootULIDs)
+}
+
+func (s *Service) MarkThreadReadByActor(actorDID, sessionID, rootULID, lastReadULID string) error {
+	session, err := s.repo.GetSession(sessionID)
+	if err != nil || session == nil {
+		return ErrSessionNotFound
+	}
+	if actorDID != session.ParticipantADID && actorDID != session.ParticipantBDID {
+		return ErrNotParticipant
+	}
+	if err := s.repo.MarkThreadRead(actorDID, sessionID, rootULID, lastReadULID); err != nil {
+		return mapMutationError(err)
+	}
+
+	return nil
+}
+
+// AckMessages flips the status flag on a batch of messages owned by
+// actorDID and returns the per-message metadata the handler uses to
+// fan out realtime MessageReceipt events.
+//
+// The slice is exactly the rows the receiver legitimately owned and
+// whose status was strictly forward-progressed (see repo.MarkRead);
+// the handler can publish without re-validating ownership.
+func (s *Service) AckMessages(actorDID string, messageIDs []string, status int32) ([]domain.AckedMessage, error) {
 	return s.repo.MarkRead(actorDID, messageIDs, status)
 }
 
-func (s *Service) SendMessageByActor(actorDID, sessionID, receiverDID string, messageType int32, content, replyToID string, attachments []domain.Attachment, encryptedPayload []byte, clientULID string) (domain.Message, error) {
+// RecallMessageByActor enforces the session-membership gate (the
+// repo enforces the per-message sender-ownership gate) and then
+// delegates to the repository. Errors are translated from the repo's
+// sentinel set into the service-level sentinels so the HTTP handler
+// has a stable error contract.
+func (s *Service) RecallMessageByActor(actorDID, sessionID, messageULID string) (domain.MutationOutcome, error) {
+	session, err := s.repo.GetSession(sessionID)
+	if err != nil || session == nil {
+		return domain.MutationOutcome{}, ErrSessionNotFound
+	}
+	if actorDID != session.ParticipantADID && actorDID != session.ParticipantBDID {
+		return domain.MutationOutcome{}, ErrNotParticipant
+	}
+	out, err := s.repo.RecallMessage(actorDID, sessionID, messageULID, s.mutationWindow)
+	if err != nil {
+		return domain.MutationOutcome{}, mapMutationError(err)
+	}
+	return out, nil
+}
+
+// EditMessageByActor accepts both the plaintext replacement and the
+// encrypted payload — the repo persists whichever is provided, and
+// the realtime fan-out forwards both, since Station can't know which
+// one the receiver will need (the chat may not yet be E2EE-keyed).
+//
+// At least one of `newContent` or `newCiphertext` MUST be non-empty;
+// an "edit to nothing" path must use Recall instead.
+func (s *Service) EditMessageByActor(actorDID, sessionID, messageULID, newContent string, newCiphertext []byte) (domain.MutationOutcome, error) {
+	session, err := s.repo.GetSession(sessionID)
+	if err != nil || session == nil {
+		return domain.MutationOutcome{}, ErrSessionNotFound
+	}
+	if actorDID != session.ParticipantADID && actorDID != session.ParticipantBDID {
+		return domain.MutationOutcome{}, ErrNotParticipant
+	}
+	if strings.TrimSpace(newContent) == "" && len(newCiphertext) == 0 {
+		return domain.MutationOutcome{}, ErrEmptyEdit
+	}
+	out, err := s.repo.EditMessage(actorDID, sessionID, messageULID, newContent, newCiphertext, s.mutationWindow)
+	if err != nil {
+		return domain.MutationOutcome{}, mapMutationError(err)
+	}
+	return out, nil
+}
+
+// DeleteMessageByActor enforces the same membership + ownership gate
+// as recall; the repo also clears the parent session's
+// last_message_* pointer when the deleted ulid was the head.
+func (s *Service) DeleteMessageByActor(actorDID, sessionID, messageULID string) (domain.MutationOutcome, error) {
+	session, err := s.repo.GetSession(sessionID)
+	if err != nil || session == nil {
+		return domain.MutationOutcome{}, ErrSessionNotFound
+	}
+	if actorDID != session.ParticipantADID && actorDID != session.ParticipantBDID {
+		return domain.MutationOutcome{}, ErrNotParticipant
+	}
+	out, err := s.repo.DeleteMessage(actorDID, sessionID, messageULID)
+	if err != nil {
+		return domain.MutationOutcome{}, mapMutationError(err)
+	}
+	return out, nil
+}
+
+// mapMutationError translates the repo's exported error sentinels
+// onto the service-level sentinels. We keep the indirection so the
+// repo can grow new internal errors (e.g. transient DB failures)
+// without leaking them through the service contract.
+func mapMutationError(err error) error {
+	switch err.Error() {
+	case "friend message not found":
+		return ErrMessageNotFound
+	case "not message owner":
+		// Map to NotFound at the boundary — see the repo's
+		// ErrPermissionDenied doc-comment for the rationale.
+		return ErrMessageNotFound
+	case "mutation window closed":
+		return ErrMutationWindowClosed
+	case "message already recalled":
+		return ErrAlreadyRecalled
+	default:
+		return err
+	}
+}
+
+func (s *Service) SendMessageByActor(actorDID, sessionID, receiverDID string, messageType int32, content, replyToID, threadRootID string, attachments []domain.Attachment, encryptedPayload []byte, clientULID string) (domain.Message, error) {
 	session, err := s.repo.GetSession(sessionID)
 	if err != nil || session == nil {
 		return domain.Message{}, ErrSessionNotFound
@@ -98,7 +274,7 @@ func (s *Service) SendMessageByActor(actorDID, sessionID, receiverDID string, me
 	if receiverDID != expectedReceiver {
 		return domain.Message{}, ErrInvalidReceiver
 	}
-	return s.SendMessage(sessionID, actorDID, receiverDID, messageType, content, replyToID, attachments, encryptedPayload, clientULID)
+	return s.SendMessage(sessionID, actorDID, receiverDID, messageType, content, replyToID, threadRootID, attachments, encryptedPayload, clientULID)
 }
 
 func (s *Service) ListMessagesByActor(actorDID, sessionID, beforeUlid string, limit int) ([]domain.Message, error) {
@@ -110,6 +286,17 @@ func (s *Service) ListMessagesByActor(actorDID, sessionID, beforeUlid string, li
 		return nil, ErrNotParticipant
 	}
 	return s.ListMessages(sessionID, beforeUlid, limit)
+}
+
+func (s *Service) ListThreadMessagesByActor(actorDID, sessionID, rootUlid, afterUlid string, limit int) ([]domain.Message, error) {
+	session, err := s.repo.GetSession(sessionID)
+	if err != nil || session == nil {
+		return nil, ErrSessionNotFound
+	}
+	if actorDID != session.ParticipantADID && actorDID != session.ParticipantBDID {
+		return nil, ErrNotParticipant
+	}
+	return s.ListThreadMessages(sessionID, rootUlid, afterUlid, limit)
 }
 
 func (s *Service) SearchMessagesByActor(actorDID, query, sessionUlid string, limit, offset int) ([]domain.Message, int, error) {
@@ -132,7 +319,7 @@ func (s *Service) SyncMessagesByActor(actorDID string, messages []domain.Message
 	synced := int32(0)
 	failed := make([]string, 0)
 	for _, item := range messages {
-		_, err := s.SendMessageByActor(actorDID, item.SessionID, item.ReceiverDID, item.Type, item.Content, item.ReplyToID, item.Attachments, item.EncryptedPayload, item.ID)
+		_, err := s.SendMessageByActor(actorDID, item.SessionID, item.ReceiverDID, item.Type, item.Content, item.ReplyToID, item.ThreadRootID, item.Attachments, item.EncryptedPayload, item.ID)
 		if err != nil {
 			failed = append(failed, item.ID)
 			continue
@@ -161,13 +348,25 @@ func (s *Service) SendFriendRequest(senderDID, receiverDID, message string) (dom
 
 	// Produce notification: FRIEND_REQUEST (type=200, category=CHAT=2)
 	if s.notifier != nil {
+		senderName := s.actorDisplayName(senderDID)
+		body := strings.TrimSpace(message)
+		if body == "" && senderName != "" {
+			body = senderName + " sent you a friend request"
+		}
+		if body == "" {
+			body = "You received a friend request"
+		}
+		metadata := map[string]string{"request_id": fr.ID}
+		if senderName != "" {
+			metadata["actor_display_name"] = senderName
+		}
 		_ = s.notifier.Produce(
 			receiverDID, senderDID,
 			200, 2,
 			"friend_request", fr.ID,
-			"Friend Request", message,
+			"Friend Request", body,
 			"friend_request:"+senderDID,
-			map[string]string{"request_id": fr.ID},
+			metadata,
 		)
 	}
 
@@ -190,13 +389,22 @@ func (s *Service) AcceptFriendRequest(actorDID, requestID string) (*domain.Frien
 
 	// Produce notification: FRIEND_ACCEPTED (type=201, category=CHAT=2)
 	if s.notifier != nil {
+		actorName := s.actorDisplayName(actorDID)
+		body := "Your friend accepted your friend request"
+		if actorName != "" {
+			body = actorName + " accepted your friend request"
+		}
+		metadata := map[string]string{"request_id": fr.ID, "session_id": session.ID}
+		if actorName != "" {
+			metadata["actor_display_name"] = actorName
+		}
 		_ = s.notifier.Produce(
 			fr.SenderDID, actorDID,
 			201, 2,
 			"friend_request", fr.ID,
-			"Friend Request Accepted", actorDID+" accepted your friend request",
+			"Friend Request Accepted", body,
 			"friend_accepted:"+actorDID,
-			map[string]string{"request_id": fr.ID, "session_id": session.ID},
+			metadata,
 		)
 	}
 
@@ -216,4 +424,20 @@ func (s *Service) RejectFriendRequest(actorDID, requestID string) (*domain.Frien
 
 func (s *Service) ListFriendRequests(actorDID string, status int32, limit, offset int) ([]domain.FriendRequest, int, error) {
 	return s.repo.ListFriendRequests(actorDID, status, limit, offset)
+}
+
+func (s *Service) DeleteFriend(actorDID, peerDID string) error {
+	if strings.TrimSpace(actorDID) == "" || strings.TrimSpace(peerDID) == "" {
+		return ErrFriendNotFound
+	}
+	if actorDID == peerDID {
+		return ErrFriendNotFound
+	}
+	if err := s.repo.DeleteFriend(actorDID, peerDID); err != nil {
+		if err.Error() == "friend relationship not found" {
+			return ErrFriendNotFound
+		}
+		return err
+	}
+	return nil
 }

@@ -21,7 +21,9 @@ fn invalid_response_err(message: impl Into<String>) -> station_client::StationCl
 
 fn ts_millis(ts: &Option<prost_types::Timestamp>) -> serde_json::Value {
     match ts {
-        Some(t) => serde_json::Value::Number((t.seconds * 1000 + (t.nanos as i64) / 1_000_000).into()),
+        Some(t) => {
+            serde_json::Value::Number((t.seconds * 1000 + (t.nanos as i64) / 1_000_000).into())
+        }
         None => serde_json::Value::Null,
     }
 }
@@ -67,7 +69,9 @@ fn millis_to_timestamp(ms: i64) -> prost_types::Timestamp {
 }
 
 fn json_to_optional_timestamp(v: &Value, keys: &[&str]) -> Option<prost_types::Timestamp> {
-    let ms = keys.iter().find_map(|k| v.get(*k).and_then(|x| x.as_i64()))?;
+    let ms = keys
+        .iter()
+        .find_map(|k| v.get(*k).and_then(|x| x.as_i64()))?;
     Some(millis_to_timestamp(ms))
 }
 
@@ -78,6 +82,7 @@ fn friend_attachment_to_json(a: &model::chat::FriendMessageAttachment) -> Value 
         "mimeType": a.mime_type,
         "size": a.size,
         "thumbnailCid": a.thumbnail_cid,
+        "visibility": a.visibility,
     })
 }
 
@@ -93,6 +98,7 @@ fn friend_chat_message_to_json(m: &model::chat::FriendChatMessage) -> Value {
         "content": m.content,
         "attachments": m.attachments.iter().map(friend_attachment_to_json).collect::<Vec<_>>(),
         "replyToUlid": m.reply_to_ulid,
+        "threadRootUlid": m.thread_root_ulid,
         "status": m.status,
         "sentAt": ts_millis(&m.sent_at),
         "deliveredAt": ts_millis(&m.delivered_at),
@@ -102,6 +108,8 @@ fn friend_chat_message_to_json(m: &model::chat::FriendChatMessage) -> Value {
         "encryptedPayload": bytes_to_b64(&m.encrypted_payload),
         "session_ulid": m.session_ulid,
         "sender_did": m.sender_did,
+        "reply_to_ulid": m.reply_to_ulid,
+        "thread_root_ulid": m.thread_root_ulid,
         "sent_at": sent_ms,
     })
 }
@@ -197,6 +205,7 @@ fn group_attachment_to_json(a: &model::chat::GroupMessageAttachment) -> Value {
         "mimeType": a.mime_type,
         "size": a.size,
         "thumbnailCid": a.thumbnail_cid,
+        "visibility": a.visibility,
     })
 }
 
@@ -211,15 +220,19 @@ fn group_message_to_json(m: &model::chat::GroupMessage) -> Value {
         "content": m.content,
         "attachments": m.attachments.iter().map(group_attachment_to_json).collect::<Vec<_>>(),
         "replyToUlid": m.reply_to_ulid,
+        "threadRootUlid": m.thread_root_ulid,
         "mentionedDids": m.mentioned_dids,
         "mentionAll": m.mention_all,
         "sentAt": ts_millis(&m.sent_at),
         "createdAt": ts_millis(&m.created_at),
         "updatedAt": ts_millis(&m.updated_at),
-        "deleted": m.deleted,
+        "recalled": m.recalled,
+        "editedAt": ts_millis(&m.edited_at),
         "encryptedPayload": bytes_to_b64(&m.encrypted_payload),
         "group_ulid": m.group_ulid,
         "sender_did": m.sender_did,
+        "reply_to_ulid": m.reply_to_ulid,
+        "thread_root_ulid": m.thread_root_ulid,
         "sent_at": sent_ms,
     })
 }
@@ -350,7 +363,9 @@ fn delete_group_message_response_to_value(resp: &model::chat::DeleteGroupMessage
     json!({ "success": resp.success })
 }
 
-fn search_group_messages_response_to_value(resp: &model::chat::SearchGroupMessagesResponse) -> Value {
+fn search_group_messages_response_to_value(
+    resp: &model::chat::SearchGroupMessagesResponse,
+) -> Value {
     json!({
         "messages": resp.messages.iter().map(group_message_to_json).collect::<Vec<_>>(),
         "hasMore": resp.has_more,
@@ -372,7 +387,9 @@ fn get_group_settings_response_to_value(resp: &model::chat::GetGroupSettingsResp
     })
 }
 
-fn update_group_settings_response_to_value(resp: &model::chat::UpdateGroupSettingsResponse) -> Value {
+fn update_group_settings_response_to_value(
+    resp: &model::chat::UpdateGroupSettingsResponse,
+) -> Value {
     json!({ "success": resp.success })
 }
 
@@ -403,7 +420,10 @@ fn get_group_stats_response_to_value(resp: &model::chat::GetGroupStatsResponse) 
     })
 }
 
-fn sync_message_item_from_value(v: &Value, default_session_ulid: &str) -> Result<model::chat::SyncMessageItem, String> {
+fn sync_message_item_from_value(
+    v: &Value,
+    default_session_ulid: &str,
+) -> Result<model::chat::SyncMessageItem, String> {
     let ulid = json_str(v, &["ulid"]).ok_or_else(|| "sync item: ulid required".to_string())?;
     let session_ulid = json_str(v, &["sessionUlid", "session_ulid"])
         .filter(|s| !s.trim().is_empty())
@@ -420,7 +440,8 @@ fn sync_message_item_from_value(v: &Value, default_session_ulid: &str) -> Result
         sent_at: json_to_optional_timestamp(v, &["sentAt", "sent_at"]),
         encrypted_payload: Vec::new(),
         attachments: Vec::new(),
-        reply_to_ulid: String::new(),
+        reply_to_ulid: json_str(v, &["replyToUlid", "reply_to_ulid"]).unwrap_or_default(),
+        thread_root_ulid: json_str(v, &["threadRootUlid", "thread_root_ulid"]).unwrap_or_default(),
     })
 }
 
@@ -476,11 +497,19 @@ pub fn ingest_group_messages(user_scope: &str, payload: &Value) -> Result<(), St
     local_chat_store::ingest_group_payload(user_scope, payload)
 }
 
-pub fn search_friend_messages(user_scope: &str, query: &str, limit: usize) -> Result<Vec<LocalChatRecord>, String> {
+pub fn search_friend_messages(
+    user_scope: &str,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<LocalChatRecord>, String> {
     local_chat_store::search_local(user_scope, Some("friend"), None, query, limit)
 }
 
-pub fn search_group_messages(user_scope: &str, query: &str, limit: usize) -> Result<Vec<LocalChatRecord>, String> {
+pub fn search_group_messages(
+    user_scope: &str,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<LocalChatRecord>, String> {
     local_chat_store::search_local(user_scope, Some("group"), None, query, limit)
 }
 
@@ -511,10 +540,7 @@ pub fn rotate_chat_key(user_scope: &str, next_version: i32) -> Result<i32, Strin
 }
 
 pub fn list_friend_sessions(token: &str, limit: u32, offset: u32) -> StationResult<Value> {
-    let query = vec![
-        ("limit", limit.to_string()),
-        ("offset", offset.to_string()),
-    ];
+    let query = vec![("limit", limit.to_string()), ("offset", offset.to_string())];
     let resp = station_client::request_proto::<(), model::chat::GetSessionsResponse>(
         Method::GET,
         "/friend-chat/sessions",
@@ -529,7 +555,10 @@ pub fn create_friend_session(token: &str, participant_did: &str) -> StationResul
     let req = model::chat::CreateSessionRequest {
         participant_did: participant_did.to_string(),
     };
-    let resp = station_client::request_proto::<model::chat::CreateSessionRequest, model::chat::CreateSessionResponse>(
+    let resp = station_client::request_proto::<
+        model::chat::CreateSessionRequest,
+        model::chat::CreateSessionResponse,
+    >(
         Method::POST,
         "/friend-chat/session/create",
         token,
@@ -539,7 +568,12 @@ pub fn create_friend_session(token: &str, participant_did: &str) -> StationResul
     Ok(create_session_response_to_value(&resp))
 }
 
-pub fn list_friend_messages(token: &str, session_ulid: &str, limit: u32, before_ulid: Option<&str>) -> StationResult<Value> {
+pub fn list_friend_messages(
+    token: &str,
+    session_ulid: &str,
+    limit: u32,
+    before_ulid: Option<&str>,
+) -> StationResult<Value> {
     let mut query = vec![
         ("session_ulid", session_ulid.to_string()),
         ("limit", limit.to_string()),
@@ -557,7 +591,145 @@ pub fn list_friend_messages(token: &str, session_ulid: &str, limit: u32, before_
     Ok(get_messages_response_to_value(&resp))
 }
 
-pub fn send_friend_message(token: &str, session_ulid: &str, receiver_did: &str, content: &str, msg_type: i32, reply_to_ulid: &str) -> StationResult<Value> {
+fn message_ulid(value: &Value) -> &str {
+    value
+        .get("ulid")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+}
+
+fn message_reply_to_ulid(value: &Value) -> &str {
+    value
+        .get("replyToUlid")
+        .or_else(|| value.get("reply_to_ulid"))
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+}
+
+fn message_thread_root_ulid(value: &Value) -> &str {
+    value
+        .get("threadRootUlid")
+        .or_else(|| value.get("thread_root_ulid"))
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+}
+
+fn sent_at_millis(value: &Value) -> i64 {
+    value
+        .get("sent_at")
+        .or_else(|| value.get("sentAt"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0)
+}
+
+fn thread_payload(root_ulid: &str, mut collected: Vec<Value>, hit_page_cap: bool) -> Value {
+    let root = collected
+        .iter()
+        .find(|item| message_ulid(item) == root_ulid)
+        .cloned();
+    let mut replies: Vec<Value> = collected
+        .drain(..)
+        .filter(|item| {
+            message_thread_root_ulid(item) == root_ulid
+                || (message_thread_root_ulid(item).is_empty()
+                    && message_reply_to_ulid(item) == root_ulid)
+        })
+        .collect();
+    replies.sort_by(|a, b| {
+        let by_time = sent_at_millis(a).cmp(&sent_at_millis(b));
+        if by_time == std::cmp::Ordering::Equal {
+            message_ulid(a).cmp(message_ulid(b))
+        } else {
+            by_time
+        }
+    });
+    let mut messages = Vec::with_capacity(replies.len() + 1);
+    if let Some(root_msg) = root.clone() {
+        messages.push(root_msg);
+    }
+    messages.extend(replies.iter().cloned());
+    let reply_count = replies.len();
+    json!({
+        "root": root,
+        "replies": replies,
+        "messages": messages,
+        "replyCount": reply_count,
+        "hitPageCap": hit_page_cap,
+    })
+}
+
+pub fn list_friend_thread_messages(
+    token: &str,
+    session_ulid: &str,
+    root_ulid: &str,
+    page_limit: u32,
+    after_ulid: Option<&str>,
+    _max_pages: u32,
+) -> StationResult<Value> {
+    let limit = page_limit.clamp(1, 100);
+    let mut query = vec![
+        ("session_ulid", session_ulid.to_string()),
+        ("root_ulid", root_ulid.to_string()),
+        ("limit", limit.to_string()),
+    ];
+    if let Some(after) = after_ulid {
+        if !after.is_empty() {
+            query.push(("after_ulid", after.to_string()));
+        }
+    }
+    station_client::request_json(
+        Method::GET,
+        "/friend-chat/thread/messages",
+        token,
+        Some(&query),
+        None,
+    )
+}
+
+pub fn friend_thread_counts(
+    token: &str,
+    session_ulid: &str,
+    root_ulids: &[String],
+) -> StationResult<Value> {
+    station_client::request_json(
+        Method::POST,
+        "/friend-chat/thread/counts",
+        token,
+        None,
+        Some(json!({
+            "session_ulid": session_ulid,
+            "root_ulids": root_ulids,
+        })),
+    )
+}
+
+pub fn mark_friend_thread_read(
+    token: &str,
+    session_ulid: &str,
+    root_ulid: &str,
+    last_read_ulid: Option<&str>,
+) -> StationResult<Value> {
+    station_client::request_json(
+        Method::POST,
+        "/friend-chat/thread/read",
+        token,
+        None,
+        Some(json!({
+            "session_ulid": session_ulid,
+            "root_ulid": root_ulid,
+            "last_read_ulid": last_read_ulid.unwrap_or_default(),
+        })),
+    )
+}
+
+pub fn send_friend_message(
+    token: &str,
+    session_ulid: &str,
+    receiver_did: &str,
+    content: &str,
+    msg_type: i32,
+    reply_to_ulid: &str,
+) -> StationResult<Value> {
     let req = model::chat::SendMessageRequest {
         session_ulid: session_ulid.to_string(),
         receiver_did: receiver_did.to_string(),
@@ -565,10 +737,14 @@ pub fn send_friend_message(token: &str, session_ulid: &str, receiver_did: &str, 
         content: content.to_string(),
         attachments: Vec::new(),
         reply_to_ulid: reply_to_ulid.to_string(),
+        thread_root_ulid: String::new(),
         encrypted_payload: Vec::new(),
         client_ulid: String::new(),
     };
-    let resp = station_client::request_proto::<model::chat::SendMessageRequest, model::chat::SendMessageResponse>(
+    let resp = station_client::request_proto::<
+        model::chat::SendMessageRequest,
+        model::chat::SendMessageResponse,
+    >(
         Method::POST,
         "/friend-chat/message/send",
         token,
@@ -583,7 +759,10 @@ pub fn ack_friend_messages(token: &str, ulids: &[String], status: i32) -> Statio
         ulids: ulids.to_vec(),
         status,
     };
-    let _resp = station_client::request_proto::<model::chat::MessageAckRequest, model::chat::MessageAckResponse>(
+    let _resp = station_client::request_proto::<
+        model::chat::MessageAckRequest,
+        model::chat::MessageAckResponse,
+    >(
         Method::POST,
         "/friend-chat/message/ack",
         token,
@@ -594,10 +773,7 @@ pub fn ack_friend_messages(token: &str, ulids: &[String], status: i32) -> Statio
 }
 
 pub fn list_groups(token: &str, limit: u32, offset: u32) -> StationResult<Value> {
-    let query = vec![
-        ("limit", limit.to_string()),
-        ("offset", offset.to_string()),
-    ];
+    let query = vec![("limit", limit.to_string()), ("offset", offset.to_string())];
     let resp = station_client::request_proto::<(), model::chat::ListGroupsResponse>(
         Method::GET,
         "/group-chat/list",
@@ -608,7 +784,12 @@ pub fn list_groups(token: &str, limit: u32, offset: u32) -> StationResult<Value>
     Ok(list_groups_response_to_value(&resp))
 }
 
-pub fn list_group_messages(token: &str, group_ulid: &str, limit: u32, before_ulid: Option<&str>) -> StationResult<Value> {
+pub fn list_group_messages(
+    token: &str,
+    group_ulid: &str,
+    limit: u32,
+    before_ulid: Option<&str>,
+) -> StationResult<Value> {
     let mut query = vec![
         ("group_ulid", group_ulid.to_string()),
         ("limit", limit.to_string()),
@@ -626,18 +807,94 @@ pub fn list_group_messages(token: &str, group_ulid: &str, limit: u32, before_uli
     Ok(get_group_messages_response_to_value(&resp))
 }
 
-pub fn send_group_message(token: &str, group_ulid: &str, content: &str, msg_type: i32, reply_to_ulid: &str, mentioned_dids: &[String], mention_all: bool) -> StationResult<Value> {
+pub fn list_group_thread_messages(
+    token: &str,
+    group_ulid: &str,
+    root_ulid: &str,
+    page_limit: u32,
+    after_ulid: Option<&str>,
+    _max_pages: u32,
+) -> StationResult<Value> {
+    let limit = page_limit.clamp(1, 100);
+    let mut query = vec![
+        ("group_ulid", group_ulid.to_string()),
+        ("root_ulid", root_ulid.to_string()),
+        ("limit", limit.to_string()),
+    ];
+    if let Some(after) = after_ulid {
+        if !after.is_empty() {
+            query.push(("after_ulid", after.to_string()));
+        }
+    }
+    station_client::request_json(
+        Method::GET,
+        "/group-chat/thread/messages",
+        token,
+        Some(&query),
+        None,
+    )
+}
+
+pub fn group_thread_counts(
+    token: &str,
+    group_ulid: &str,
+    root_ulids: &[String],
+) -> StationResult<Value> {
+    station_client::request_json(
+        Method::POST,
+        "/group-chat/thread/counts",
+        token,
+        None,
+        Some(json!({
+            "group_ulid": group_ulid,
+            "root_ulids": root_ulids,
+        })),
+    )
+}
+
+pub fn mark_group_thread_read(
+    token: &str,
+    group_ulid: &str,
+    root_ulid: &str,
+    last_read_ulid: Option<&str>,
+) -> StationResult<Value> {
+    station_client::request_json(
+        Method::POST,
+        "/group-chat/thread/read",
+        token,
+        None,
+        Some(json!({
+            "group_ulid": group_ulid,
+            "root_ulid": root_ulid,
+            "last_read_ulid": last_read_ulid.unwrap_or_default(),
+        })),
+    )
+}
+
+pub fn send_group_message(
+    token: &str,
+    group_ulid: &str,
+    content: &str,
+    msg_type: i32,
+    reply_to_ulid: &str,
+    mentioned_dids: &[String],
+    mention_all: bool,
+) -> StationResult<Value> {
     let req = model::chat::SendGroupMessageRequest {
         group_ulid: group_ulid.to_string(),
         r#type: msg_type,
         content: content.to_string(),
         attachments: Vec::new(),
         reply_to_ulid: reply_to_ulid.to_string(),
+        thread_root_ulid: String::new(),
         mentioned_dids: mentioned_dids.to_vec(),
         mention_all,
         encrypted_payload: Vec::new(),
     };
-    let resp = station_client::request_proto::<model::chat::SendGroupMessageRequest, model::chat::SendGroupMessageResponse>(
+    let resp = station_client::request_proto::<
+        model::chat::SendGroupMessageRequest,
+        model::chat::SendGroupMessageResponse,
+    >(
         Method::POST,
         "/group-chat/message/send",
         token,
@@ -656,7 +913,11 @@ pub fn group_unread_count(token: &str, group_ulid: Option<&str>) -> StationResul
         Method::GET,
         "/group-chat/unread-count",
         token,
-        if query.is_empty() { None } else { Some(query.as_slice()) },
+        if query.is_empty() {
+            None
+        } else {
+            Some(query.as_slice())
+        },
         None::<&()>,
     )?;
     Ok(get_unread_count_response_to_value(&resp))
@@ -667,7 +928,10 @@ pub fn group_mark_read(token: &str, group_ulid: &str) -> StationResult<Value> {
         group_ulid: group_ulid.to_string(),
         up_to_ulid: String::new(),
     };
-    let resp = station_client::request_proto::<model::chat::MarkGroupReadRequest, model::chat::MarkGroupReadResponse>(
+    let resp = station_client::request_proto::<
+        model::chat::MarkGroupReadRequest,
+        model::chat::MarkGroupReadResponse,
+    >(
         Method::POST,
         "/group-chat/mark-read",
         token,
@@ -689,7 +953,10 @@ pub fn extract_latest_ulid(payload: &Value) -> Option<String> {
     None
 }
 
-pub fn filter_incremental_messages(payload: &Value, cursor: Option<&str>) -> (Value, usize, Option<String>) {
+pub fn filter_incremental_messages(
+    payload: &Value,
+    cursor: Option<&str>,
+) -> (Value, usize, Option<String>) {
     let mut filtered_payload = payload.clone();
     let mut synced_count = 0usize;
     let mut latest: Option<String> = None;
@@ -710,7 +977,11 @@ pub fn filter_incremental_messages(payload: &Value, cursor: Option<&str>) -> (Va
             };
             if should_keep {
                 synced_count += 1;
-                if latest.as_ref().map(|v| ulid.as_str() > v.as_str()).unwrap_or(true) {
+                if latest
+                    .as_ref()
+                    .map(|v| ulid.as_str() > v.as_str())
+                    .unwrap_or(true)
+                {
                     latest = Some(ulid.clone());
                 }
                 out.push(item.clone());
@@ -723,7 +994,13 @@ pub fn filter_incremental_messages(payload: &Value, cursor: Option<&str>) -> (Va
     (filtered_payload, synced_count, latest)
 }
 
-pub fn sync_friend_from_station(token: &str, user_scope: &str, session_ulid: &str, page_limit: u32, max_pages: u32) -> StationResult<SyncResult> {
+pub fn sync_friend_from_station(
+    token: &str,
+    user_scope: &str,
+    session_ulid: &str,
+    page_limit: u32,
+    max_pages: u32,
+) -> StationResult<SyncResult> {
     let scope_key = format!("friend:{session_ulid}");
     let cursor = get_scope_cursor(user_scope, &scope_key).map_err(invalid_response_err)?;
     let mut current_cursor = cursor.clone();
@@ -736,7 +1013,8 @@ pub fn sync_friend_from_station(token: &str, user_scope: &str, session_ulid: &st
             .map(|c| format!("since:{c}"));
         let data = list_friend_messages(token, session_ulid, page_limit, before.as_deref())?;
         pages_fetched += 1;
-        let (payload, count, latest) = filter_incremental_messages(&data, current_cursor.as_deref());
+        let (payload, count, latest) =
+            filter_incremental_messages(&data, current_cursor.as_deref());
         let _ = ingest_friend_messages(user_scope, &payload);
         total_synced += count;
         let server_cursor = data
@@ -744,12 +1022,17 @@ pub fn sync_friend_from_station(token: &str, user_scope: &str, session_ulid: &st
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
-        let next = server_cursor.or(latest).or_else(|| extract_latest_ulid(&data));
+        let next = server_cursor
+            .or(latest)
+            .or_else(|| extract_latest_ulid(&data));
         if let Some(ref nc) = next {
             let _ = set_scope_cursor(user_scope, &scope_key, nc);
             current_cursor = Some(nc.clone());
         }
-        let has_more = data.get("hasMore").and_then(|v| v.as_bool()).unwrap_or(false);
+        let has_more = data
+            .get("hasMore")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         if !has_more {
             break;
         }
@@ -762,7 +1045,11 @@ pub fn sync_friend_from_station(token: &str, user_scope: &str, session_ulid: &st
     })
 }
 
-pub fn sync_friend_messages(token: &str, session_ulid: &str, messages_json: &str) -> StationResult<Value> {
+pub fn sync_friend_messages(
+    token: &str,
+    session_ulid: &str,
+    messages_json: &str,
+) -> StationResult<Value> {
     let body: Value = serde_json::from_str(messages_json)
         .map_err(|e| invalid_response_err(format!("invalid json: {e}")))?;
     let items_val = if let Some(a) = body.as_array() {
@@ -770,17 +1057,19 @@ pub fn sync_friend_messages(token: &str, session_ulid: &str, messages_json: &str
     } else if let Some(a) = body.get("messages").and_then(|v| v.as_array()) {
         a.clone()
     } else {
-        return Err(invalid_response_err("expected JSON array of messages or { \"messages\": [...] }"));
+        return Err(invalid_response_err(
+            "expected JSON array of messages or { \"messages\": [...] }",
+        ));
     };
     let mut items = Vec::with_capacity(items_val.len());
     for v in &items_val {
-        items.push(
-            sync_message_item_from_value(v, session_ulid)
-                .map_err(invalid_response_err)?,
-        );
+        items.push(sync_message_item_from_value(v, session_ulid).map_err(invalid_response_err)?);
     }
     let req = model::chat::SyncMessagesRequest { messages: items };
-    let resp = station_client::request_proto::<model::chat::SyncMessagesRequest, model::chat::SyncMessagesResponse>(
+    let resp = station_client::request_proto::<
+        model::chat::SyncMessagesRequest,
+        model::chat::SyncMessagesResponse,
+    >(
         Method::POST,
         "/friend-chat/message/sync",
         token,
@@ -791,30 +1080,24 @@ pub fn sync_friend_messages(token: &str, session_ulid: &str, messages_json: &str
 }
 
 pub fn friend_chat_online(token: &str) -> StationResult<Value> {
-    let req = model::chat::OnlineRequest {
-        did: String::new(),
-    };
-    let resp = station_client::request_proto::<model::chat::OnlineRequest, model::chat::OnlineResponse>(
-        Method::POST,
-        "/friend-chat/online",
-        token,
-        None,
-        Some(&req),
-    )?;
+    let req = model::chat::OnlineRequest { did: String::new() };
+    let resp = station_client::request_proto::<
+        model::chat::OnlineRequest,
+        model::chat::OnlineResponse,
+    >(Method::POST, "/friend-chat/online", token, None, Some(&req))?;
     Ok(online_response_to_value(&resp))
 }
 
 pub fn friend_chat_offline(token: &str) -> StationResult<Value> {
-    let req = model::chat::OnlineRequest {
-        did: String::new(),
-    };
-    let resp = station_client::request_proto::<model::chat::OnlineRequest, model::chat::OnlineResponse>(
-        Method::POST,
-        "/friend-chat/offline",
-        token,
-        None,
-        Some(&req),
-    )?;
+    let req = model::chat::OnlineRequest { did: String::new() };
+    let resp =
+        station_client::request_proto::<model::chat::OnlineRequest, model::chat::OnlineResponse>(
+            Method::POST,
+            "/friend-chat/offline",
+            token,
+            None,
+            Some(&req),
+        )?;
     Ok(online_response_to_value(&resp))
 }
 
@@ -841,20 +1124,22 @@ pub fn friend_chat_stats(token: &str) -> StationResult<Value> {
     Ok(get_stats_response_to_value(&resp))
 }
 
-pub fn create_group(token: &str, name: &str, description: &str, member_dids: &[String]) -> StationResult<Value> {
+pub fn create_group(
+    token: &str,
+    name: &str,
+    description: &str,
+    member_dids: &[String],
+) -> StationResult<Value> {
     let req = model::chat::CreateGroupRequest {
         name: name.to_string(),
         description: description.to_string(),
         initial_member_dids: member_dids.to_vec(),
         ..Default::default()
     };
-    let resp = station_client::request_proto::<model::chat::CreateGroupRequest, model::chat::CreateGroupResponse>(
-        Method::POST,
-        "/group-chat/create",
-        token,
-        None,
-        Some(&req),
-    )?;
+    let resp = station_client::request_proto::<
+        model::chat::CreateGroupRequest,
+        model::chat::CreateGroupResponse,
+    >(Method::POST, "/group-chat/create", token, None, Some(&req))?;
     Ok(json!({
         "group": resp.group.as_ref().map(group_to_json),
     }))
@@ -872,20 +1157,22 @@ pub fn group_info(token: &str, group_ulid: &str) -> StationResult<Value> {
     Ok(get_group_response_to_value(&resp))
 }
 
-pub fn update_group(token: &str, group_ulid: &str, name: &str, description: &str) -> StationResult<Value> {
+pub fn update_group(
+    token: &str,
+    group_ulid: &str,
+    name: &str,
+    description: &str,
+) -> StationResult<Value> {
     let req = model::chat::UpdateGroupRequest {
         group_ulid: group_ulid.to_string(),
         name: Some(name.to_string()),
         description: Some(description.to_string()),
         ..Default::default()
     };
-    let resp = station_client::request_proto::<model::chat::UpdateGroupRequest, model::chat::UpdateGroupResponse>(
-        Method::PUT,
-        "/group-chat/update",
-        token,
-        None,
-        Some(&req),
-    )?;
+    let resp = station_client::request_proto::<
+        model::chat::UpdateGroupRequest,
+        model::chat::UpdateGroupResponse,
+    >(Method::PUT, "/group-chat/update", token, None, Some(&req))?;
     Ok(update_group_response_to_value(&resp))
 }
 
@@ -894,13 +1181,10 @@ pub fn group_invite(token: &str, group_ulid: &str, member_dids: &[String]) -> St
         group_ulid: group_ulid.to_string(),
         invitee_dids: member_dids.to_vec(),
     };
-    let resp = station_client::request_proto::<model::chat::InviteToGroupRequest, model::chat::InviteToGroupResponse>(
-        Method::POST,
-        "/group-chat/invite",
-        token,
-        None,
-        Some(&req),
-    )?;
+    let resp = station_client::request_proto::<
+        model::chat::InviteToGroupRequest,
+        model::chat::InviteToGroupResponse,
+    >(Method::POST, "/group-chat/invite", token, None, Some(&req))?;
     Ok(invite_to_group_response_to_value(&resp))
 }
 
@@ -909,13 +1193,10 @@ pub fn group_join(token: &str, group_ulid: &str) -> StationResult<Value> {
         group_ulid: group_ulid.to_string(),
         invitation_ulid: String::new(),
     };
-    let resp = station_client::request_proto::<model::chat::JoinGroupRequest, model::chat::JoinGroupResponse>(
-        Method::POST,
-        "/group-chat/join",
-        token,
-        None,
-        Some(&req),
-    )?;
+    let resp = station_client::request_proto::<
+        model::chat::JoinGroupRequest,
+        model::chat::JoinGroupResponse,
+    >(Method::POST, "/group-chat/join", token, None, Some(&req))?;
     Ok(join_group_response_to_value(&resp))
 }
 
@@ -923,13 +1204,10 @@ pub fn group_leave(token: &str, group_ulid: &str) -> StationResult<Value> {
     let req = model::chat::LeaveGroupRequest {
         group_ulid: group_ulid.to_string(),
     };
-    let resp = station_client::request_proto::<model::chat::LeaveGroupRequest, model::chat::LeaveGroupResponse>(
-        Method::POST,
-        "/group-chat/leave",
-        token,
-        None,
-        Some(&req),
-    )?;
+    let resp = station_client::request_proto::<
+        model::chat::LeaveGroupRequest,
+        model::chat::LeaveGroupResponse,
+    >(Method::POST, "/group-chat/leave", token, None, Some(&req))?;
     Ok(leave_group_response_to_value(&resp))
 }
 
@@ -945,12 +1223,19 @@ pub fn group_members(token: &str, group_ulid: &str) -> StationResult<Value> {
     Ok(get_group_members_response_to_value(&resp))
 }
 
-pub fn group_remove_member(token: &str, group_ulid: &str, member_did: &str) -> StationResult<Value> {
+pub fn group_remove_member(
+    token: &str,
+    group_ulid: &str,
+    member_did: &str,
+) -> StationResult<Value> {
     let req = model::chat::RemoveMemberRequest {
         group_ulid: group_ulid.to_string(),
         actor_did: member_did.to_string(),
     };
-    let resp = station_client::request_proto::<model::chat::RemoveMemberRequest, model::chat::RemoveMemberResponse>(
+    let resp = station_client::request_proto::<
+        model::chat::RemoveMemberRequest,
+        model::chat::RemoveMemberResponse,
+    >(
         Method::POST,
         "/group-chat/member/remove",
         token,
@@ -960,12 +1245,19 @@ pub fn group_remove_member(token: &str, group_ulid: &str, member_did: &str) -> S
     Ok(remove_member_response_to_value(&resp))
 }
 
-pub fn group_recall_message(token: &str, group_ulid: &str, message_ulid: &str) -> StationResult<Value> {
+pub fn group_recall_message(
+    token: &str,
+    group_ulid: &str,
+    message_ulid: &str,
+) -> StationResult<Value> {
     let req = model::chat::RecallGroupMessageRequest {
         group_ulid: group_ulid.to_string(),
         message_ulid: message_ulid.to_string(),
     };
-    let resp = station_client::request_proto::<model::chat::RecallGroupMessageRequest, model::chat::RecallGroupMessageResponse>(
+    let resp = station_client::request_proto::<
+        model::chat::RecallGroupMessageRequest,
+        model::chat::RecallGroupMessageResponse,
+    >(
         Method::POST,
         "/group-chat/message/recall",
         token,
@@ -975,12 +1267,19 @@ pub fn group_recall_message(token: &str, group_ulid: &str, message_ulid: &str) -
     Ok(recall_group_message_response_to_value(&resp))
 }
 
-pub fn group_delete_message(token: &str, group_ulid: &str, message_ulid: &str) -> StationResult<Value> {
+pub fn group_delete_message(
+    token: &str,
+    group_ulid: &str,
+    message_ulid: &str,
+) -> StationResult<Value> {
     let req = model::chat::DeleteGroupMessageRequest {
         group_ulid: group_ulid.to_string(),
         message_ulid: message_ulid.to_string(),
     };
-    let resp = station_client::request_proto::<model::chat::DeleteGroupMessageRequest, model::chat::DeleteGroupMessageResponse>(
+    let resp = station_client::request_proto::<
+        model::chat::DeleteGroupMessageRequest,
+        model::chat::DeleteGroupMessageResponse,
+    >(
         Method::POST,
         "/group-chat/message/delete",
         token,
@@ -990,7 +1289,12 @@ pub fn group_delete_message(token: &str, group_ulid: &str, message_ulid: &str) -
     Ok(delete_group_message_response_to_value(&resp))
 }
 
-pub fn group_search_messages(token: &str, group_ulid: &str, query: &str, limit: u32) -> StationResult<Value> {
+pub fn group_search_messages(
+    token: &str,
+    group_ulid: &str,
+    query: &str,
+    limit: u32,
+) -> StationResult<Value> {
     let q = vec![
         ("group_ulid", group_ulid.to_string()),
         ("query", query.to_string()),
@@ -1006,12 +1310,19 @@ pub fn group_search_messages(token: &str, group_ulid: &str, query: &str, limit: 
     Ok(search_group_messages_response_to_value(&resp))
 }
 
-pub fn group_update_nickname(token: &str, group_ulid: &str, nickname: &str) -> StationResult<Value> {
+pub fn group_update_nickname(
+    token: &str,
+    group_ulid: &str,
+    nickname: &str,
+) -> StationResult<Value> {
     let req = model::chat::UpdateMyNicknameRequest {
         group_ulid: group_ulid.to_string(),
         nickname: nickname.to_string(),
     };
-    let resp = station_client::request_proto::<model::chat::UpdateMyNicknameRequest, model::chat::UpdateMyNicknameResponse>(
+    let resp = station_client::request_proto::<
+        model::chat::UpdateMyNicknameRequest,
+        model::chat::UpdateMyNicknameResponse,
+    >(
         Method::PUT,
         "/group-chat/member/nickname",
         token,
@@ -1033,12 +1344,18 @@ pub fn group_get_my_settings(token: &str, group_ulid: &str) -> StationResult<Val
     Ok(get_group_settings_response_to_value(&resp))
 }
 
-pub fn group_update_my_settings(token: &str, group_ulid: &str, settings_json: &str) -> StationResult<Value> {
+pub fn group_update_my_settings(
+    token: &str,
+    group_ulid: &str,
+    settings_json: &str,
+) -> StationResult<Value> {
     let settings: Value = serde_json::from_str(settings_json)
         .map_err(|e| invalid_response_err(format!("invalid json: {e}")))?;
-    let req = settings_to_update_request(group_ulid, &settings)
-        .map_err(invalid_response_err)?;
-    let resp = station_client::request_proto::<model::chat::UpdateGroupSettingsRequest, model::chat::UpdateGroupSettingsResponse>(
+    let req = settings_to_update_request(group_ulid, &settings).map_err(invalid_response_err)?;
+    let resp = station_client::request_proto::<
+        model::chat::UpdateGroupSettingsRequest,
+        model::chat::UpdateGroupSettingsResponse,
+    >(
         Method::PUT,
         "/group-chat/my-settings",
         token,
@@ -1060,11 +1377,18 @@ pub fn group_offline_messages(token: &str, group_ulid: &str) -> StationResult<Va
     Ok(get_offline_messages_response_to_value(&resp))
 }
 
-pub fn group_ack_offline(token: &str, _group_ulid: &str, message_ulids: &[String]) -> StationResult<Value> {
+pub fn group_ack_offline(
+    token: &str,
+    _group_ulid: &str,
+    message_ulids: &[String],
+) -> StationResult<Value> {
     let req = model::chat::AckOfflineMessagesRequest {
         ulids: message_ulids.to_vec(),
     };
-    let resp = station_client::request_proto::<model::chat::AckOfflineMessagesRequest, model::chat::AckOfflineMessagesResponse>(
+    let resp = station_client::request_proto::<
+        model::chat::AckOfflineMessagesRequest,
+        model::chat::AckOfflineMessagesResponse,
+    >(
         Method::POST,
         "/group-chat/offline-messages/ack",
         token,
@@ -1085,7 +1409,13 @@ pub fn group_stats(token: &str) -> StationResult<Value> {
     Ok(get_group_stats_response_to_value(&resp))
 }
 
-pub fn sync_group_from_station(token: &str, user_scope: &str, group_ulid: &str, page_limit: u32, max_pages: u32) -> StationResult<SyncResult> {
+pub fn sync_group_from_station(
+    token: &str,
+    user_scope: &str,
+    group_ulid: &str,
+    page_limit: u32,
+    max_pages: u32,
+) -> StationResult<SyncResult> {
     let scope_key = format!("group:{group_ulid}");
     let cursor = get_scope_cursor(user_scope, &scope_key).map_err(invalid_response_err)?;
     let mut current_cursor = cursor.clone();
@@ -1098,7 +1428,8 @@ pub fn sync_group_from_station(token: &str, user_scope: &str, group_ulid: &str, 
             .map(|c| format!("since:{c}"));
         let data = list_group_messages(token, group_ulid, page_limit, before.as_deref())?;
         pages_fetched += 1;
-        let (payload, count, latest) = filter_incremental_messages(&data, current_cursor.as_deref());
+        let (payload, count, latest) =
+            filter_incremental_messages(&data, current_cursor.as_deref());
         let _ = ingest_group_messages(user_scope, &payload);
         total_synced += count;
         let server_cursor = data
@@ -1106,12 +1437,17 @@ pub fn sync_group_from_station(token: &str, user_scope: &str, group_ulid: &str, 
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
-        let next = server_cursor.or(latest).or_else(|| extract_latest_ulid(&data));
+        let next = server_cursor
+            .or(latest)
+            .or_else(|| extract_latest_ulid(&data));
         if let Some(ref nc) = next {
             let _ = set_scope_cursor(user_scope, &scope_key, nc);
             current_cursor = Some(nc.clone());
         }
-        let has_more = data.get("hasMore").and_then(|v| v.as_bool()).unwrap_or(false);
+        let has_more = data
+            .get("hasMore")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         if !has_more {
             break;
         }

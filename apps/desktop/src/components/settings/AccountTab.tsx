@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Tooltip, toast } from '@lobehub/ui';
 import { useSessionStore } from '../../store/session';
@@ -8,14 +8,12 @@ import {
   AutoComplete,
   Select,
   Spin,
-  Tag,
   Typography,
   theme,
 } from 'antd';
 import {
   Camera,
   Clock3,
-  Copy,
   Hash,
   Link2,
   MapPin,
@@ -26,11 +24,12 @@ import {
 import { Button } from '@lobehub/ui';
 import { api, type AccountProfile, type AccountProfileLink } from '../../services/desktop_api';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
+import { PublicProfileCard } from '../profile/PublicProfileCard';
 import { useAccountIdentityStore } from '../../store/accountIdentity';
 import { useTranslation } from 'react-i18next';
 import { SettingsContainer, SettingsSection } from './SettingsLayout';
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 const { TextArea } = Input;
 
 const COMMON_TIMEZONES = [
@@ -90,17 +89,6 @@ function buildTimezoneOptions(t: (key: string) => string): { label: string; valu
   }));
 }
 
-function formatDate(date?: string) {
-  if (!date) return '—';
-  const value = new Date(date);
-  if (Number.isNaN(value.getTime())) return '—';
-  return value.toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
 function normalizeProfile(profile: AccountProfile): AccountProfile {
   return {
     ...profile,
@@ -121,11 +109,8 @@ function createEmptyLink(): AccountProfileLink {
   return { label: '', url: '' };
 }
 
-function copyToClipboard(text: string, t: (key: string, opts?: Record<string, unknown>) => string) {
-  navigator.clipboard.writeText(text).then(
-    () => toast.success(t('provider.account.identity.copied')),
-    () => toast.error(t('provider.account.identity.copyFailed')),
-  );
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }
 
 async function pickImageFile(): Promise<string | null> {
@@ -281,79 +266,6 @@ function EditableHeaderBanner({
   );
 }
 
-function IdentityField({
-  label,
-  value,
-  prefix,
-  copiable,
-  t,
-}: {
-  label: string;
-  value: string;
-  prefix?: string;
-  copiable?: boolean;
-  t: (key: string, opts?: Record<string, unknown>) => string;
-}) {
-  const { token } = theme.useToken();
-  return (
-    <Flexbox gap={4} style={{ flex: '1 1 240px', minWidth: 200 }}>
-      <Text type="secondary" style={{ fontSize: 12 }}>
-        {label}
-      </Text>
-      <Flexbox
-        horizontal
-        align="center"
-        gap={8}
-        style={{
-          padding: '6px 12px',
-          borderRadius: 8,
-          background: token.colorFillQuaternary,
-          minHeight: 36,
-        }}
-      >
-        <Text
-          style={{ fontSize: 13, flex: 1, wordBreak: 'break-all' }}
-          ellipsis={{ tooltip: value }}
-        >
-          {prefix}
-          {value || '—'}
-        </Text>
-        {copiable && value ? (
-          <Tooltip title={t('common.action.copy', { ns: 'common' })}>
-            <Copy
-              size={14}
-              style={{ color: token.colorTextTertiary, cursor: 'pointer', flexShrink: 0 }}
-              onClick={() => copyToClipboard(value, t)}
-            />
-          </Tooltip>
-        ) : null}
-      </Flexbox>
-    </Flexbox>
-  );
-}
-
-function StatChip({ label, value }: { label: string; value: number }) {
-  const { token } = theme.useToken();
-  return (
-    <Flexbox
-      align="center"
-      gap={2}
-      style={{
-        padding: '4px 12px',
-        borderRadius: 8,
-        background: token.colorFillQuaternary,
-      }}
-    >
-      <Text strong style={{ fontSize: 16, lineHeight: 1.2 }}>
-        {value}
-      </Text>
-      <Text type="secondary" style={{ fontSize: 11 }}>
-        {label}
-      </Text>
-    </Flexbox>
-  );
-}
-
 const AUTO_SAVE_DELAY = 800;
 
 export function AccountTab() {
@@ -368,7 +280,7 @@ export function AccountTab() {
 
   const timezoneOptions = useMemo(() => buildTimezoneOptions(t), [t]);
 
-  const loadProfile = async (silent = false) => {
+  const loadProfile = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
       const next = normalizeProfile(await api.profileGet());
@@ -385,19 +297,22 @@ export function AccountTab() {
         useAccountIdentityStore.getState().load();
         useSessionStore.getState().updateAvatar(next.avatar);
       }
-    } catch (error: any) {
-      if (!silent) toast.error(error?.message || t('provider.account.failedToLoad'));
+    } catch (error: unknown) {
+      if (!silent) toast.error(errorMessage(error, t('provider.account.failedToLoad')));
     } finally {
       if (!silent) setLoading(false);
     }
-  };
+  }, [t]);
 
   useEffect(() => {
-    loadProfile(false);
+    const frame = requestAnimationFrame(() => {
+      void loadProfile(false);
+    });
     return () => {
+      cancelAnimationFrame(frame);
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, []);
+  }, [loadProfile]);
 
   const autoSave = (nextProfile: AccountProfile) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -417,8 +332,8 @@ export function AccountTab() {
         // Do not setProfile here — local state is already up-to-date.
         // Overwriting with the server response causes controlled inputs
         // to re-render and lose cursor position / focus (the "flicker" bug).
-      } catch (error: any) {
-        toast.error(error?.message || t('provider.account.failedToUpdate'));
+      } catch (error: unknown) {
+        toast.error(errorMessage(error, t('provider.account.failedToUpdate')));
       } finally {
         setSaving(false);
       }
@@ -480,16 +395,16 @@ export function AccountTab() {
           if (result?.avatar_url) {
             useSessionStore.getState().updateAvatar(result.avatar_url);
           }
-        }).catch((error: any) => {
-          toast.error(error?.message || t('provider.account.avatarHeader.failedToUploadAvatar'));
+        }).catch((error: unknown) => {
+          toast.error(errorMessage(error, t('provider.account.avatarHeader.failedToUploadAvatar')));
         });
         useAccountIdentityStore.getState().load();
         useSessionStore.getState().updateAvatar(next.avatar);
       }
 
       toast.success(t('provider.account.avatarHeader.avatarUpdated'));
-    } catch (error: any) {
-      toast.error(error?.message || t('provider.account.avatarHeader.failedToUploadAvatar'));
+    } catch (error: unknown) {
+      toast.error(errorMessage(error, t('provider.account.avatarHeader.failedToUploadAvatar')));
     } finally {
       setUploadingAvatar(false);
     }
@@ -505,8 +420,8 @@ export function AccountTab() {
       const next = normalizeProfile(await api.profileUploadHeaderOss({ file_path: path }));
       setProfile(next);
       toast.success(t('provider.account.avatarHeader.headerUpdated'));
-    } catch (error: any) {
-      toast.error(error?.message || t('provider.account.avatarHeader.failedToUploadHeader'));
+    } catch (error: unknown) {
+      toast.error(errorMessage(error, t('provider.account.avatarHeader.failedToUploadHeader')));
     } finally {
       setUploadingHeader(false);
     }
@@ -540,50 +455,44 @@ export function AccountTab() {
         title={t('provider.account.identity.title')}
         subtitle={t('provider.account.identity.subtitle')}
       >
-
-        <EditableHeaderBanner
-          src={profile.header || undefined}
-          uploading={uploadingHeader}
-          onUpload={handleUploadHeader}
-          t={t}
-        />
-
-        <Flexbox horizontal gap={20} align="flex-start" style={{ flexWrap: 'wrap', marginTop: -40 }}>
-          <div style={{ marginLeft: 16 }}>
+        <PublicProfileCard
+          profile={{
+            displayName: profile.display_name || profile.username,
+            username: profile.username,
+            avatar: profile.avatar,
+            header: profile.header,
+            bio: profile.note,
+            did: profile.peers_touch.network_id,
+            createdAt: profile.created_at,
+            region: profile.region,
+            tags: profile.tags,
+            links: profile.links,
+            relationLabel: t('provider.account.identity.self', { defaultValue: 'You' }),
+            relationTone: 'processing',
+            stats: [
+              { label: t('provider.account.identity.posts'), value: profile.statuses_count },
+              { label: t('provider.account.identity.following'), value: profile.following_count },
+              { label: t('provider.account.identity.followers'), value: profile.followers_count },
+            ],
+          }}
+          headerNode={(
+            <EditableHeaderBanner
+              src={profile.header || undefined}
+              uploading={uploadingHeader}
+              onUpload={handleUploadHeader}
+              t={t}
+            />
+          )}
+          avatarNode={(
             <EditableAvatar
               src={profile.avatar || undefined}
               fallbackText={profile.display_name || profile.username}
-              size={80}
+              size={88}
               uploading={uploadingAvatar}
               onUpload={handleUploadAvatar}
             />
-          </div>
-
-          <Flexbox gap={8} style={{ flex: 1, minWidth: 0, paddingTop: 44 }}>
-            <Flexbox horizontal align="center" gap={10} style={{ flexWrap: 'wrap' }}>
-              <Title level={4} style={{ margin: 0 }}>
-                {profile.display_name || profile.username}
-              </Title>
-              <Tag color="processing" style={{ margin: 0 }}>
-                @{profile.username}
-              </Tag>
-            </Flexbox>
-
-            <Flexbox horizontal gap={16} style={{ flexWrap: 'wrap' }}>
-              <StatChip label={t('provider.account.identity.posts')} value={profile.statuses_count} />
-              <StatChip label={t('provider.account.identity.following')} value={profile.following_count} />
-              <StatChip label={t('provider.account.identity.followers')} value={profile.followers_count} />
-              <Text type="secondary" style={{ fontSize: 12, alignSelf: 'center' }}>
-                {t('provider.account.identity.created', { date: formatDate(profile.created_at) })}
-              </Text>
-            </Flexbox>
-          </Flexbox>
-        </Flexbox>
-
-        <Flexbox horizontal gap={16} style={{ flexWrap: 'wrap' }}>
-          <IdentityField label={t('provider.account.identity.preferredUsername')} value={profile.username} prefix="@" copiable t={t} />
-          <IdentityField label={t('provider.account.identity.ptid')} value={profile.peers_touch.network_id} copiable t={t} />
-        </Flexbox>
+          )}
+        />
       </SettingsSection>
       {/* ── Section 2: Public Profile (editable, auto-save) ── */}
       <SettingsSection

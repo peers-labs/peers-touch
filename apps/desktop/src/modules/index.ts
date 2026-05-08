@@ -11,6 +11,7 @@ import './mcp';
 import './channels';
 import './cron';
 import './memory';
+import './oss';
 import './moments';
 import './applets';
 import './logs';

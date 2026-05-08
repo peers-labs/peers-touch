@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActionIcon, DraggablePanel, SideNav } from '@lobehub/ui';
+import { Badge } from 'antd';
 import {
   Bot,
   MessageCircle,
@@ -17,6 +18,7 @@ import { UserSquareAvatar } from './common/UserSquareAvatar';
 import AppletManager from '../applet/AppletManager';
 import { getModulesWithSidebar } from '../modules/registry';
 import type { Agent } from '../services/desktop_api';
+import { useNavigationBadgeStore } from '../store/navigationBadges';
 import type { Page, Navigation, AppletPins, HashRouter } from '../types/navigation';
 
 interface AppSideNavProps {
@@ -30,6 +32,7 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
   const userAvatar = useUserAvatar();
   const appletManager = AppletManager.getInstance();
   const { t } = useTranslation('layout');
+  const chatBadge = useNavigationBadgeStore((state) => state.badges.chat);
 
   const [sidebarExpand, setSidebarExpand] = useState(true);
   const [agentDrawerOpen, setAgentDrawerOpen] = useState(false);
@@ -69,13 +72,21 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
               onClick={() => navigation.navigateTo('search')}
               title={t('layout.nav.search')}
             />
-            <ActionIcon
-              icon={MessageCircle}
-              size="large"
-              active={page === 'chat'}
-              onClick={() => navigation.navigateTo('chat')}
-              title={t('layout.nav.chat')}
-            />
+            <Badge
+              count={chatBadge.count}
+              dot={!chatBadge.count && chatBadge.dot}
+              size="small"
+              offset={[-2, 2]}
+              overflowCount={99}
+            >
+              <ActionIcon
+                icon={MessageCircle}
+                size="large"
+                active={page === 'chat'}
+                onClick={() => navigation.navigateTo('chat')}
+                title={t('layout.nav.chat')}
+              />
+            </Badge>
             <ActionIcon
               icon={Bot}
               size="large"

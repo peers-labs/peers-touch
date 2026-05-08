@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { api, AuthCommandException, type AuthSessionResponse } from '../services/desktop_api';
 import { markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
+import { log } from '../utils/logger';
 
 // ── Types ──
 
@@ -106,15 +107,17 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   logout: async () => {
     markLocalIdentityAction();
-    // Stop the peer-presence SSE supervisor before tearing down auth state,
-    // otherwise the Rust thread would keep retrying with a stale token in
-    // an exponential-backoff loop until process exit. Best-effort: a
-    // failure here just leaves the supervisor running, which is annoying
-    // but not user-facing.
-    try {
-      await api.friendChatPresenceStop();
-    } catch {
-      // noop
+    // Stop actor-scoped SSE supervisors before tearing down auth state,
+    // otherwise Rust would keep retrying with a stale token until the
+    // presence hook observes the logout edge.
+    const stopResults = await Promise.allSettled([
+      api.friendChatPresenceStop(),
+      api.realtimeStreamStop(),
+    ]);
+    for (const result of stopResults) {
+      if (result.status === 'rejected') {
+        log.warn('session', 'logout supervisor stop failed', result.reason);
+      }
     }
     try {
       await api.authLogout();

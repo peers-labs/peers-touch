@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use crate::error::AppResult;
+use crate::error::{AppResult, ErrorCode};
 use crate::contracts::{
     AccountIdInput, AccountSetPinInput, AccountUnlockInput, AccountRemovePinInput,
     AccountUpsertOAuthInput, StubPayload,
@@ -12,6 +12,8 @@ use tauri::{AppHandle, State, Window};
 
 use crate::application::account as application_account;
 use crate::application::auth::service as auth_service;
+use crate::application::key_exchange::device_install;
+use crate::application::session_resolver;
 
 #[tauri::command]
 pub fn account_list() -> AppResult<StubPayload> {
@@ -21,6 +23,31 @@ pub fn account_list() -> AppResult<StubPayload> {
 #[tauri::command]
 pub fn account_get_active() -> AppResult<StubPayload> {
     application_account::account_get_active()
+}
+
+#[tauri::command]
+pub fn account_get_device_id(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+    let actor_id = match session_resolver::actor_id_for_window(state.inner(), &window) {
+        Some(id) if !id.trim().is_empty() => id,
+        _ => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "Authentication required — please log in",
+                None,
+            );
+        }
+    };
+    match device_install::get_or_create_device_id(actor_id.as_str()) {
+        Ok(device_id) => AppResult::success(StubPayload {
+            command: "account_get_device_id".to_string(),
+            status: serde_json::json!({ "device_id": device_id }).to_string(),
+        }),
+        Err(e) => AppResult::fail(
+            ErrorCode::InternalError,
+            format!("device_id: {e}"),
+            None,
+        ),
+    }
 }
 
 #[tauri::command]

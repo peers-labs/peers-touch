@@ -43,9 +43,21 @@ use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
 use crate::state::AppState;
 
+/// Wire shape shared by both the chat and social upload commands.
+///
+/// `bucket` / `visibility` are optional so the Moments variant — which
+/// only sends `{file_path}` — deserializes cleanly. The chat handler
+/// validates that they are present and well-formed; the social handler
+/// applies its own defaults (`bucket="moments"`, `visibility="public"`).
 #[derive(Debug, Deserialize)]
 pub struct OssUploadAttachmentInput {
     pub file_path: String,
+    #[serde(default)]
+    pub bucket: String,
+    #[serde(default)]
+    pub visibility: String,
+    #[serde(default)]
+    pub chat_session_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -63,10 +75,50 @@ pub struct OssResolveUrlInput {
     pub uri: String,
 }
 
-fn require_token(
-    state: &Arc<AppState>,
-    window: &Window,
-) -> Result<String, AppResult<StubPayload>> {
+#[derive(Debug, Deserialize)]
+pub struct OssListMyFilesInput {
+    #[serde(default)]
+    pub bucket: Option<String>,
+    #[serde(default)]
+    pub visibility: Option<String>,
+    #[serde(default)]
+    pub mime: Option<String>,
+    #[serde(default)]
+    pub include_deleted: bool,
+    #[serde(default)]
+    pub page: Option<i32>,
+    #[serde(default)]
+    pub page_size: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OssKeyInput {
+    pub key: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OssPatchFileInput {
+    pub key: String,
+    #[serde(default)]
+    pub visibility: Option<String>,
+    #[serde(default)]
+    pub chat_session_id: Option<String>,
+    #[serde(default)]
+    pub bucket: Option<String>,
+    #[serde(default)]
+    pub filename: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<String>,
+    #[serde(default)]
+    pub clear_expires_at: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OssInvalidateCacheInput {
+    pub uri: String,
+}
+
+fn require_token(state: &Arc<AppState>, window: &Window) -> Result<String, AppResult<StubPayload>> {
     let token = session_resolver::token_for_window(state, window).unwrap_or_default();
     if token.trim().is_empty() {
         return Err(AppResult::fail(
@@ -111,7 +163,40 @@ pub fn oss_upload_attachment_chat(
         Ok(t) => t,
         Err(e) => return e,
     };
-    application_oss::upload_attachment(&input.file_path, &token, "chat")
+    if input.file_path.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "file_path is required", None);
+    }
+    if input.bucket.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "bucket is required", None);
+    }
+    let vis = input.visibility.trim().to_ascii_lowercase();
+    if vis != "public" && vis != "chat" && vis != "private" {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "visibility must be one of: public, chat, private",
+            None,
+        );
+    }
+    let chat_sid = input
+        .chat_session_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    if vis == "chat" && chat_sid.is_none() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "chat_session_id is required when visibility is chat",
+            None,
+        );
+    }
+    application_oss::upload_attachment(
+        &input.file_path,
+        &token,
+        "chat",
+        input.bucket.trim(),
+        vis.as_str(),
+        if vis == "chat" { chat_sid } else { None },
+    )
 }
 
 // ── Social consumer (Moments) ──────────────────────────────────────
@@ -171,12 +256,111 @@ pub fn oss_upload_attachment_social(
         Ok(t) => t,
         Err(e) => return e,
     };
-    application_oss::upload_attachment(&input.file_path, &token, "social")
+    if input.file_path.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "file_path is required", None);
+    }
+    // Moments uploads are public-readable images, never chat-scoped.
+    // Bucket override from the renderer is honoured for forward-compat
+    // (e.g. future "drafts" bucket); falls back to the canonical
+    // "moments" bucket so the OSS subserver applies the right quota
+    // class. `visibility` is fixed to "public" — Moments posts are by
+    // definition shareable links.
+    let bucket = if input.bucket.trim().is_empty() {
+        "moments"
+    } else {
+        input.bucket.trim()
+    };
+    application_oss::upload_attachment(
+        &input.file_path,
+        &token,
+        "social",
+        bucket,
+        "public",
+        None,
+    )
 }
 
 // ── Generic ────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn oss_resolve_url(input: OssResolveUrlInput) -> AppResult<StubPayload> {
-    application_oss::oss_resolve_url(&input.uri)
+pub fn oss_resolve_url(
+    input: OssResolveUrlInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window);
+    application_oss::oss_resolve_url(&input.uri, token.as_deref())
+}
+
+#[tauri::command]
+pub fn oss_list_my_files(
+    input: OssListMyFilesInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match require_token(state.inner(), &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let query = application_oss::ListMyFilesQuery {
+        bucket: input.bucket,
+        visibility: input.visibility,
+        mime: input.mime,
+        include_deleted: input.include_deleted,
+        page: input.page,
+        page_size: input.page_size,
+    };
+    application_oss::oss_list_my_files(&token, &query)
+}
+
+#[tauri::command]
+pub fn oss_delete_file(
+    input: OssKeyInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match require_token(state.inner(), &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    application_oss::oss_delete_file(&token, &input.key)
+}
+
+#[tauri::command]
+pub fn oss_restore_file(
+    input: OssKeyInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match require_token(state.inner(), &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    application_oss::oss_restore_file(&token, &input.key)
+}
+
+#[tauri::command]
+pub fn oss_patch_file(
+    input: OssPatchFileInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match require_token(state.inner(), &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let body = application_oss::PatchFileBody {
+        visibility: input.visibility,
+        chat_session_id: input.chat_session_id,
+        bucket: input.bucket,
+        filename: input.filename,
+        expires_at: input.expires_at,
+        clear_expires_at: input.clear_expires_at,
+    };
+    application_oss::oss_patch_file(&token, &input.key, &body)
+}
+
+#[tauri::command]
+pub fn oss_invalidate_cache(input: OssInvalidateCacheInput) -> AppResult<StubPayload> {
+    application_oss::oss_invalidate_cache(&input.uri)
 }

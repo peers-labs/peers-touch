@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/key_exchange/key_exchange.proto.
  */
 export const file_domain_key_exchange_key_exchange: GenFile = /*@__PURE__*/
-  fileDesc("CiZkb21haW4va2V5X2V4Y2hhbmdlL2tleV9leGNoYW5nZS5wcm90bxIhcGVlcnNfdG91Y2gubW9kZWwua2V5X2V4Y2hhbmdlLnYxIn0KFlVwbG9hZEtleUJ1bmRsZVJlcXVlc3QSDgoGaWtfcHViGAEgASgJEg4KBnNwa19pZBgCIAEoBRIPCgdzcGtfcHViGAMgASgJEg8KB3Nwa19zaWcYBCABKAkSDwoHb3BrX2lkcxgFIAMoBRIQCghvcGtfcHVicxgGIAMoCSIZChdVcGxvYWRLZXlCdW5kbGVSZXNwb25zZSIkChVGZXRjaEtleUJ1bmRsZVJlcXVlc3QSCwoDZGlkGAEgASgJIqMBChZGZXRjaEtleUJ1bmRsZVJlc3BvbnNlEhEKCWFjdG9yX2RpZBgBIAEoCRIOCgZpa19wdWIYAiABKAkSEwoLZmluZ2VycHJpbnQYAyABKAkSDgoGc3BrX2lkGAQgASgFEg8KB3Nwa19wdWIYBSABKAkSDwoHc3BrX3NpZxgGIAEoCRIOCgZvcGtfaWQYByABKAUSDwoHb3BrX3B1YhgIIAEoCSI5ChRSZXBsZW5pc2hPcGtzUmVxdWVzdBIPCgdvcGtfaWRzGAEgAygFEhAKCG9wa19wdWJzGAIgAygJIhcKFVJlcGxlbmlzaE9wa3NSZXNwb25zZSIRCg9PcGtDb3VudFJlcXVlc3QiIQoQT3BrQ291bnRSZXNwb25zZRINCgVjb3VudBgBIAEoA0JSWlBnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9hcHAvc3Vic2VydmVyL2tleV9leGNoYW5nZS9tb2RlbDttb2RlbGIGcHJvdG8z");
+  fileDesc("CiZkb21haW4va2V5X2V4Y2hhbmdlL2tleV9leGNoYW5nZS5wcm90bxIhcGVlcnNfdG91Y2gubW9kZWwua2V5X2V4Y2hhbmdlLnYxIpABChZVcGxvYWRLZXlCdW5kbGVSZXF1ZXN0Eg4KBmlrX3B1YhgBIAEoCRIOCgZzcGtfaWQYAiABKAUSDwoHc3BrX3B1YhgDIAEoCRIPCgdzcGtfc2lnGAQgASgJEg8KB29wa19pZHMYBSADKAUSEAoIb3BrX3B1YnMYBiADKAkSEQoJZGV2aWNlX2lkGAcgASgJIhkKF1VwbG9hZEtleUJ1bmRsZVJlc3BvbnNlIokBCglLZXlCdW5kbGUSCwoDZGlkGAEgASgJEhEKCWRldmljZV9pZBgCIAEoCRIOCgZpa19wdWIYAyABKAkSDwoHc3BrX3B1YhgEIAEoCRIPCgdzcGtfc2lnGAUgASgJEgwKBG9wa3MYBiADKAkSHAoUcHVibGlzaGVkX2F0X3VuaXhfbXMYByABKAMiNwoVRmV0Y2hLZXlCdW5kbGVSZXF1ZXN0EgsKA2RpZBgBIAEoCRIRCglkZXZpY2VfaWQYAiABKAkiVwoWRmV0Y2hLZXlCdW5kbGVSZXNwb25zZRI9CgdidW5kbGVzGAEgAygLMiwucGVlcnNfdG91Y2gubW9kZWwua2V5X2V4Y2hhbmdlLnYxLktleUJ1bmRsZSJMChRSZXBsZW5pc2hPcGtzUmVxdWVzdBIPCgdvcGtfaWRzGAEgAygFEhAKCG9wa19wdWJzGAIgAygJEhEKCWRldmljZV9pZBgDIAEoCSIXChVSZXBsZW5pc2hPcGtzUmVzcG9uc2UiJAoPT3BrQ291bnRSZXF1ZXN0EhEKCWRldmljZV9pZBgBIAEoCSIhChBPcGtDb3VudFJlc3BvbnNlEg0KBWNvdW50GAEgASgDQlJaUGdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2FwcC9zdWJzZXJ2ZXIva2V5X2V4Y2hhbmdlL21vZGVsO21vZGVsYgZwcm90bzM");
 
 /**
  * X3DH key bundle upload — base64-encoded public keys.
@@ -47,6 +47,13 @@ export type UploadKeyBundleRequest = Message<"peers_touch.model.key_exchange.v1.
    * @generated from field: repeated string opk_pubs = 6;
    */
   opkPubs: string[];
+
+  /**
+   * Opaque per-install identifier. Empty => server stores as "legacy".
+   *
+   * @generated from field: string device_id = 7;
+   */
+  deviceId: string;
 };
 
 /**
@@ -70,7 +77,65 @@ export const UploadKeyBundleResponseSchema: GenMessage<UploadKeyBundleResponse> 
   messageDesc(file_domain_key_exchange_key_exchange, 1);
 
 /**
- * Fetch another actor's key bundle by DID.
+ * One logical device publish for a DID (may share the DID across installs).
+ *
+ * @generated from message peers_touch.model.key_exchange.v1.KeyBundle
+ */
+export type KeyBundle = Message<"peers_touch.model.key_exchange.v1.KeyBundle"> & {
+  /**
+   * @generated from field: string did = 1;
+   */
+  did: string;
+
+  /**
+   * Stable per-install id from the publisher; empty string means legacy row
+   * (server key "legacy" is mapped to "").
+   *
+   * @generated from field: string device_id = 2;
+   */
+  deviceId: string;
+
+  /**
+   * Ed25519 public, base64
+   *
+   * @generated from field: string ik_pub = 3;
+   */
+  ikPub: string;
+
+  /**
+   * @generated from field: string spk_pub = 4;
+   */
+  spkPub: string;
+
+  /**
+   * @generated from field: string spk_sig = 5;
+   */
+  spkSig: string;
+
+  /**
+   * One-time prekey pubs consumed for this fetch (base64), newest policy via server.
+   *
+   * @generated from field: repeated string opks = 6;
+   */
+  opks: string[];
+
+  /**
+   * server stamp (identity upsert time)
+   *
+   * @generated from field: int64 published_at_unix_ms = 7;
+   */
+  publishedAtUnixMs: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.key_exchange.v1.KeyBundle.
+ * Use `create(KeyBundleSchema)` to create a new message.
+ */
+export const KeyBundleSchema: GenMessage<KeyBundle> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 2);
+
+/**
+ * Fetch another actor's key bundles by DID.
  *
  * @generated from message peers_touch.model.key_exchange.v1.FetchKeyBundleRequest
  */
@@ -79,6 +144,14 @@ export type FetchKeyBundleRequest = Message<"peers_touch.model.key_exchange.v1.F
    * @generated from field: string did = 1;
    */
   did: string;
+
+  /**
+   * When empty, return all bundles for the DID. When set, only that device_id
+   * (after server-side normalization matching upload).
+   *
+   * @generated from field: string device_id = 2;
+   */
+  deviceId: string;
 };
 
 /**
@@ -86,51 +159,16 @@ export type FetchKeyBundleRequest = Message<"peers_touch.model.key_exchange.v1.F
  * Use `create(FetchKeyBundleRequestSchema)` to create a new message.
  */
 export const FetchKeyBundleRequestSchema: GenMessage<FetchKeyBundleRequest> = /*@__PURE__*/
-  messageDesc(file_domain_key_exchange_key_exchange, 2);
+  messageDesc(file_domain_key_exchange_key_exchange, 3);
 
 /**
  * @generated from message peers_touch.model.key_exchange.v1.FetchKeyBundleResponse
  */
 export type FetchKeyBundleResponse = Message<"peers_touch.model.key_exchange.v1.FetchKeyBundleResponse"> & {
   /**
-   * @generated from field: string actor_did = 1;
+   * @generated from field: repeated peers_touch.model.key_exchange.v1.KeyBundle bundles = 1;
    */
-  actorDid: string;
-
-  /**
-   * @generated from field: string ik_pub = 2;
-   */
-  ikPub: string;
-
-  /**
-   * @generated from field: string fingerprint = 3;
-   */
-  fingerprint: string;
-
-  /**
-   * @generated from field: int32 spk_id = 4;
-   */
-  spkId: number;
-
-  /**
-   * @generated from field: string spk_pub = 5;
-   */
-  spkPub: string;
-
-  /**
-   * @generated from field: string spk_sig = 6;
-   */
-  spkSig: string;
-
-  /**
-   * @generated from field: int32 opk_id = 7;
-   */
-  opkId: number;
-
-  /**
-   * @generated from field: string opk_pub = 8;
-   */
-  opkPub: string;
+  bundles: KeyBundle[];
 };
 
 /**
@@ -138,7 +176,7 @@ export type FetchKeyBundleResponse = Message<"peers_touch.model.key_exchange.v1.
  * Use `create(FetchKeyBundleResponseSchema)` to create a new message.
  */
 export const FetchKeyBundleResponseSchema: GenMessage<FetchKeyBundleResponse> = /*@__PURE__*/
-  messageDesc(file_domain_key_exchange_key_exchange, 3);
+  messageDesc(file_domain_key_exchange_key_exchange, 4);
 
 /**
  * Replenish one-time prekeys.
@@ -155,6 +193,13 @@ export type ReplenishOpksRequest = Message<"peers_touch.model.key_exchange.v1.Re
    * @generated from field: repeated string opk_pubs = 2;
    */
   opkPubs: string[];
+
+  /**
+   * Targets the same device row as uploads; empty => legacy.
+   *
+   * @generated from field: string device_id = 3;
+   */
+  deviceId: string;
 };
 
 /**
@@ -162,7 +207,7 @@ export type ReplenishOpksRequest = Message<"peers_touch.model.key_exchange.v1.Re
  * Use `create(ReplenishOpksRequestSchema)` to create a new message.
  */
 export const ReplenishOpksRequestSchema: GenMessage<ReplenishOpksRequest> = /*@__PURE__*/
-  messageDesc(file_domain_key_exchange_key_exchange, 4);
+  messageDesc(file_domain_key_exchange_key_exchange, 5);
 
 /**
  * @generated from message peers_touch.model.key_exchange.v1.ReplenishOpksResponse
@@ -175,7 +220,7 @@ export type ReplenishOpksResponse = Message<"peers_touch.model.key_exchange.v1.R
  * Use `create(ReplenishOpksResponseSchema)` to create a new message.
  */
 export const ReplenishOpksResponseSchema: GenMessage<ReplenishOpksResponse> = /*@__PURE__*/
-  messageDesc(file_domain_key_exchange_key_exchange, 5);
+  messageDesc(file_domain_key_exchange_key_exchange, 6);
 
 /**
  * Count remaining one-time prekeys.
@@ -183,6 +228,12 @@ export const ReplenishOpksResponseSchema: GenMessage<ReplenishOpksResponse> = /*
  * @generated from message peers_touch.model.key_exchange.v1.OpkCountRequest
  */
 export type OpkCountRequest = Message<"peers_touch.model.key_exchange.v1.OpkCountRequest"> & {
+  /**
+   * empty => legacy bucket for this DID.
+   *
+   * @generated from field: string device_id = 1;
+   */
+  deviceId: string;
 };
 
 /**
@@ -190,7 +241,7 @@ export type OpkCountRequest = Message<"peers_touch.model.key_exchange.v1.OpkCoun
  * Use `create(OpkCountRequestSchema)` to create a new message.
  */
 export const OpkCountRequestSchema: GenMessage<OpkCountRequest> = /*@__PURE__*/
-  messageDesc(file_domain_key_exchange_key_exchange, 6);
+  messageDesc(file_domain_key_exchange_key_exchange, 7);
 
 /**
  * @generated from message peers_touch.model.key_exchange.v1.OpkCountResponse
@@ -207,5 +258,5 @@ export type OpkCountResponse = Message<"peers_touch.model.key_exchange.v1.OpkCou
  * Use `create(OpkCountResponseSchema)` to create a new message.
  */
 export const OpkCountResponseSchema: GenMessage<OpkCountResponse> = /*@__PURE__*/
-  messageDesc(file_domain_key_exchange_key_exchange, 7);
+  messageDesc(file_domain_key_exchange_key_exchange, 8);
 

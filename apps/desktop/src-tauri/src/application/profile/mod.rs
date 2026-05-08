@@ -79,7 +79,14 @@ fn upload_and_set_profile_image(token: &str, file_path: &str, field: &str) -> Ap
 
     // Step 1: Upload to OSS
     tracing::info!(file_path = %file_path, "Uploading image to OSS");
-    let oss_resp = match station_client::upload_multipart("/sub-oss/upload", token, file_path) {
+    let oss_resp = match station_client::upload_multipart(
+        "/sub-oss/upload",
+        token,
+        file_path,
+        "avatar",
+        "public",
+        None,
+    ) {
         Ok(v) => {
             tracing::info!("OSS upload succeeded");
             v
