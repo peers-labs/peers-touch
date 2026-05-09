@@ -810,6 +810,20 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 None,
             )),
         },
+        "peer_profile_get" => {
+            let input = match parse_args::<PeerProfileGetInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_bearer_token(state) {
+                Some(t) => to_json(app_profile::peer_profile_get(&t, &input.did)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
         "profile_update" => {
             let input = match parse_args::<ProfileUpdateInput>(args) {
                 Ok(v) => v,

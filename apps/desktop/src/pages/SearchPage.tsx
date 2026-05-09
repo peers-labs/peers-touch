@@ -116,10 +116,14 @@ function SearchTabLabel({ icon, label, count, loading, active }: SearchTabLabelP
 // ── Main Component ───────────────────────────────────────────────────
 
 export function SearchPage({ onNavigate }: { onNavigate?: (url: string) => void }) {
+  // Search source list is owned by `runtimes/searchRuntime.ts` (app-scope),
+  // bootstrapped at boot and kept fresh there. `reset()` is intentionally
+  // never called from page lifecycle: the user expects their query and
+  // results to persist when they switch tabs and come back.
   const {
     query, activeSource, sources, sourceResults, loadingPerSource,
     aiAnswer, aiSources, aiLoading,
-    setActiveSource, loadSources, searchAll, search, aiSearch, reset,
+    setActiveSource, searchAll, search, aiSearch, reset,
   } = useSearchStore();
 
   const [inputValue, setInputValue] = useState(query);
@@ -148,11 +152,6 @@ export function SearchPage({ onNavigate }: { onNavigate?: (url: string) => void 
   const hasSearched = allGroups.length > 0
     || Object.values(sourceResults).some(r => r && r.length > 0)
     || !!aiAnswer;
-
-  useEffect(() => {
-    loadSources();
-    return () => reset();
-  }, [loadSources, reset]);
 
   useEffect(() => {
     if (!SOURCE_TABS_ENABLED && activeSource !== 'all' && activeSource !== 'ai') {
