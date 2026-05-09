@@ -160,6 +160,8 @@
 ### 4.2 平台层真源
 
 - Desktop 平台总纲：`client/desktop/base.md`
+- Desktop 页面 / 运行时 / 启动契约：`client/desktop/runtime-projections.md`
+- Desktop GlobalContext 内核：`client/desktop/global-context-kernel.md`
 - Mobile 平台总纲：`client/mobile/base.md`
 - Station 平台总纲：`station/base.md`
 
@@ -196,11 +198,15 @@
 ### 我想看 Desktop
 
 - 先看 `client/desktop/base.md`
-- 再看 `architecture/runtime/desktop-runtime-architecture.md`
+- 再看 `architecture/runtime/desktop-runtime-architecture.md`（跨进程边界）
+- 再看 `client/desktop/runtime-projections.md`（desktop-web 内部 Page / Runtime / Boot 契约）
 - 再按主题看：
   - `client/desktop/global-context-kernel.md`
   - `client/desktop/provider-model-target-architecture.md`
-  - `client/desktop/runtime-projections.md`
+- 写代码前的规范层：
+  - `global/coding-guide/desktop/page-component.md`
+  - `global/coding-guide/desktop/store.md`
+  - `global/coding-guide/desktop/kernel-events.md`
 
 ### 我想看 Station 与 Desktop 谁负责什么
 

@@ -7,8 +7,8 @@
 use std::sync::Arc;
 use crate::error::{AppResult, ErrorCode};
 use crate::contracts::{
-    AccountSyncAvatarInput, AvatarResolveLocalInput, FileUploadInput, ProfilePrivacyInput,
-    ProfileUpdateInput, StubPayload,
+    AccountSyncAvatarInput, AvatarResolveLocalInput, FileUploadInput, PeerProfileGetInput,
+    ProfilePrivacyInput, ProfileUpdateInput, StubPayload,
 };
 use crate::application::profile as application_profile;
 use crate::application::session_resolver;
@@ -37,6 +37,21 @@ pub fn profile_get(state: State<'_, Arc<AppState>>, window: Window) -> AppResult
         Err(e) => return e,
     };
     application_profile::profile_get(&token)
+}
+
+/// Fetch a peer actor's public profile by DID. Used by Contacts and Chat
+/// detail panels to render the peer's public information consistently.
+#[tauri::command]
+pub fn peer_profile_get(
+    state: State<'_, Arc<AppState>>,
+    input: PeerProfileGetInput,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match require_token(state.inner(), &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    application_profile::peer_profile_get(&token, &input.did)
 }
 
 #[tauri::command]
