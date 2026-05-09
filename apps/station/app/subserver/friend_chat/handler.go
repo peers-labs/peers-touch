@@ -126,7 +126,7 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("fc-friend-request-accept", "/friend-chat/friend-request/accept", server.POST, s.handleAcceptFriendRequest, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-friend-request-reject", "/friend-chat/friend-request/reject", server.POST, s.handleRejectFriendRequest, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-friend-requests", "/friend-chat/friend-requests", server.GET, s.handleListFriendRequests, logIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("fc-friend-delete", "/friend-chat/friend/delete", server.POST, s.handleDeleteFriend, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-block-user", "/friend-chat/block", server.POST, s.handleBlockUser, logIDWrapper, s.jwtWrapper),
 	}
 }
 
@@ -140,6 +140,9 @@ func (s *subServer) handleCreateSession(ctx context.Context, req *chat.CreateSes
 	}
 	session, created, err := s.service.GetOrCreateSession(subject.ID, req.ParticipantDid)
 	if err != nil {
+		if err == application.ErrBlocked {
+			return nil, server.Forbidden("friendship blocked")
+		}
 		return nil, server.InternalErrorWithCause("failed to get or create session", err)
 	}
 	return &chat.CreateSessionResponse{
@@ -258,7 +261,7 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendMessage
 		if err == application.ErrSessionNotFound {
 			return nil, server.NotFound(err.Error())
 		}
-		if err == application.ErrNotParticipant || err == application.ErrInvalidReceiver {
+		if err == application.ErrNotParticipant || err == application.ErrInvalidReceiver || err == application.ErrBlocked {
 			return nil, server.Forbidden(err.Error())
 		}
 		return nil, server.InternalErrorWithCause("failed to send message", err)
@@ -304,6 +307,28 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendMessage
 	return &chat.SendMessageResponse{
 		Message:     friendChatMessageFromDomain(message),
 		RelayStatus: relayStatus,
+	}, nil
+}
+
+func (s *subServer) handleBlockUser(ctx context.Context, req *chat.BlockUserRequest) (*chat.BlockUserResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	target := strings.TrimSpace(req.TargetDid)
+	if target == "" {
+		return nil, server.BadRequest("target_did is required")
+	}
+	friendship, err := s.service.BlockUser(subject.ID, target)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("failed to block user", err)
+	}
+	return &chat.BlockUserResponse{
+		Friend: &chat.Friend{
+			ActorId:             friendship.PeerDID,
+			Status:              chat.FriendshipStatus_FRIENDSHIP_STATUS_BLOCKED,
+			FriendshipCreatedAt: timestamppb.New(friendship.CreatedAt),
+		},
 	}, nil
 }
 
@@ -912,6 +937,9 @@ func (s *subServer) handleSendFriendRequest(ctx context.Context, req *chat.SendF
 		if err == application.ErrAlreadyFriends {
 			return nil, server.BadRequest(err.Error())
 		}
+		if err == application.ErrBlocked {
+			return nil, server.Forbidden(err.Error())
+		}
 		return nil, server.InternalErrorWithCause("failed to send friend request", err)
 	}
 	profiles := s.repo.BatchLoadActorSummaries([]string{fr.SenderDID, fr.ReceiverDID})
@@ -944,6 +972,9 @@ func (s *subServer) handleAcceptFriendRequest(ctx context.Context, req *chat.Acc
 			return nil, server.NotFound(err.Error())
 		}
 		if err == application.ErrNotRequestTarget {
+			return nil, server.Forbidden(err.Error())
+		}
+		if err == application.ErrBlocked {
 			return nil, server.Forbidden(err.Error())
 		}
 		return nil, server.InternalErrorWithCause("failed to accept friend request", err)
@@ -1024,23 +1055,6 @@ func (s *subServer) handleListFriendRequests(ctx context.Context, req *chat.List
 		out = append(out, fr)
 	}
 	return &chat.ListFriendRequestsResponse{Requests: out, Total: int32(total)}, nil
-}
-
-func (s *subServer) handleDeleteFriend(ctx context.Context, req *chat.DeleteFriendRequest) (*chat.DeleteFriendResponse, error) {
-	subject := auth.GetSubject(ctx)
-	if subject == nil {
-		return nil, server.Unauthorized("authentication required")
-	}
-	if strings.TrimSpace(req.GetPeerDid()) == "" {
-		return nil, server.BadRequest("peer_did is required")
-	}
-	if err := s.service.DeleteFriend(subject.ID, req.GetPeerDid()); err != nil {
-		if err == application.ErrFriendNotFound {
-			return nil, server.NotFound("friend relationship not found")
-		}
-		return nil, server.InternalErrorWithCause("failed to delete friend", err)
-	}
-	return &chat.DeleteFriendResponse{Success: true}, nil
 }
 
 func collectUniqueActorIDs(items []domain.FriendRequest) []string {

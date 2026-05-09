@@ -13,7 +13,7 @@ cp tooling/docker/.env.example tooling/docker/.env
 make docker-station
 
 # 3. Deploy Relay Station to remote dev-box
-make docker-relay REMOTE=dev-box
+make docker-relay REMOTE=1
 ```
 
 ## Commands
@@ -27,7 +27,7 @@ make docker-relay REMOTE=dev-box
 | `make docker-logs` | Tail logs from all services |
 | `make docker-ps` | Show running containers |
 
-Add `REMOTE=dev-box` to any command to deploy via the `dev-box` Docker context (SSH to `10.37.246.80`).
+Add `REMOTE=1` to any command to deploy via the `dev-box` Docker context (SSH to `10.37.118.48`).
 
 ## Files
 

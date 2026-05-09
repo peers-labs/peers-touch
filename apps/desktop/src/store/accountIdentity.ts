@@ -28,13 +28,7 @@ let loadPromise: Promise<void> | null = null;
 function accountsEqual(a: AccountIdentity[], b: AccountIdentity[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
-    if (
-      a[i].id !== b[i].id
-      || a[i].name !== b[i].name
-      || a[i].avatar_url !== b[i].avatar_url
-      || a[i].has_pin !== b[i].has_pin
-      || a[i].has_session !== b[i].has_session
-    ) return false;
+    if (a[i].id !== b[i].id || a[i].name !== b[i].name || a[i].avatar_url !== b[i].avatar_url) return false;
   }
   return true;
 }

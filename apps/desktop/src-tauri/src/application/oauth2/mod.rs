@@ -1,14 +1,15 @@
-use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::auth_identity;
-use crate::infrastructure::session_store::{self, SessionSource};
-use crate::infrastructure::station_client;
-use crate::infrastructure::storage::{self, StorageKind};
-use crate::model::oauth::{OAuthBridgeRequest, OAuthBridgeResponse};
 use crate::contracts::{
     OAuthAuthorizeInput, OAuthCallbackInput, OAuthIdInput, OAuthLoopbackPollInput,
     OAuthLoopbackStartInput, OAuthResourceInput, OAuthSetCredentialsInput, StubPayload,
 };
+use crate::error::{AppResult, ErrorCode};
+use crate::infrastructure::auth_identity;
 use crate::infrastructure::i18n::I18nService;
+use crate::infrastructure::session_store::SessionSource;
+use crate::infrastructure::session_vault;
+use crate::infrastructure::station_client;
+use crate::infrastructure::storage::{self, StorageKind};
+use crate::model::oauth::{OAuthBridgeRequest, OAuthBridgeResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -115,13 +116,21 @@ fn parse_query_params(raw_path: &str) -> HashMap<String, String> {
     params
 }
 
-fn save_oauth_callback(input: OAuthCallbackInput, ts: Option<String>, sig: Option<String>) -> CmdResult<()> {
+fn save_oauth_callback(
+    input: OAuthCallbackInput,
+    ts: Option<String>,
+    sig: Option<String>,
+) -> CmdResult<()> {
     let provider_id = input.provider.trim();
     if provider_id.is_empty() {
         return Err(invalid_argument("provider is required"));
     }
     if get_provider(provider_id).is_none() {
-        return Err(AppResult::fail(ErrorCode::NotFound, "error.oauth2.providerNotFound", None));
+        return Err(AppResult::fail(
+            ErrorCode::NotFound,
+            "error.oauth2.providerNotFound",
+            None,
+        ));
     }
     if input.provider_user_id.trim().is_empty() {
         return Err(invalid_argument("provider_user_id is required"));
@@ -165,7 +174,7 @@ fn save_oauth_callback(input: OAuthCallbackInput, ts: Option<String>, sig: Optio
         },
     );
     write_connections(&map)?;
-    auth_identity::upsert_oauth(
+    let account_id = auth_identity::upsert_oauth(
         provider_id,
         provider_user_id.as_str(),
         user_name.as_str(),
@@ -195,7 +204,8 @@ fn save_oauth_callback(input: OAuthCallbackInput, ts: Option<String>, sig: Optio
     ) {
         Ok(bridge) => {
             if !bridge.access_token.is_empty() {
-                let _ = session_store::save(
+                let _ = session_vault::persist_raw_session_for_account(
+                    &account_id,
                     &bridge.actor_id,
                     &bridge.access_token,
                     SessionSource::OauthBridge,
@@ -235,16 +245,19 @@ pub fn try_bridge_from_connections() -> Option<(String, String)> {
         sig: String::new(),
     };
 
-    let bridge = station_client::post_peers_proto_no_auth::<OAuthBridgeRequest, OAuthBridgeResponse>(
-        "/actor/oauth-bridge",
-        &bridge_req,
-    )
-    .ok()?;
+    let bridge =
+        station_client::post_peers_proto_no_auth::<OAuthBridgeRequest, OAuthBridgeResponse>(
+            "/actor/oauth-bridge",
+            &bridge_req,
+        )
+        .ok()?;
     if bridge.access_token.is_empty() {
         return None;
     }
 
-    let _ = session_store::save(
+    let account_id = format!("{}:{}", conn.provider_id, conn.user_id);
+    let _ = session_vault::persist_raw_session_for_account(
+        &account_id,
         &bridge.actor_id,
         &bridge.access_token,
         SessionSource::OauthBridge,
@@ -617,7 +630,10 @@ pub fn oauth2_authorize(input: OAuthAuthorizeInput) -> AppResult<StubPayload> {
     )
 }
 
-pub fn oauth2_start_loopback(input: OAuthLoopbackStartInput, i18n: I18nService) -> AppResult<StubPayload> {
+pub fn oauth2_start_loopback(
+    input: OAuthLoopbackStartInput,
+    i18n: I18nService,
+) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
@@ -702,21 +718,25 @@ pub fn oauth2_start_loopback(input: OAuthLoopbackStartInput, i18n: I18nService) 
                 );
                 message = i18n.resolve_key(&lang, "oauth", "oauth.callback.providerMismatch");
             } else {
-                match save_oauth_callback(OAuthCallbackInput {
-                    provider,
-                    provider_user_id,
-                    username: params.get("username").cloned(),
-                    display_name: params.get("display_name").cloned(),
-                    created_at: params
-                        .get("created_at")
-                        .cloned()
-                        .or_else(|| params.get("createdAt").cloned())
-                        .or_else(|| params.get("register_time").cloned()),
-                    email: params.get("email").cloned(),
-                    avatar_url: params.get("avatar_url").cloned(),
-                    profile_url: params.get("profile_url").cloned(),
-                    expires_at: params.get("expires_at").cloned(),
-                }, params.get("ts").cloned(), params.get("sig").cloned()) {
+                match save_oauth_callback(
+                    OAuthCallbackInput {
+                        provider,
+                        provider_user_id,
+                        username: params.get("username").cloned(),
+                        display_name: params.get("display_name").cloned(),
+                        created_at: params
+                            .get("created_at")
+                            .cloned()
+                            .or_else(|| params.get("createdAt").cloned())
+                            .or_else(|| params.get("register_time").cloned()),
+                        email: params.get("email").cloned(),
+                        avatar_url: params.get("avatar_url").cloned(),
+                        profile_url: params.get("profile_url").cloned(),
+                        expires_at: params.get("expires_at").cloned(),
+                    },
+                    params.get("ts").cloned(),
+                    params.get("sig").cloned(),
+                ) {
                     Ok(_) => {
                         update_loopback_session(
                             &session_id_for_thread,

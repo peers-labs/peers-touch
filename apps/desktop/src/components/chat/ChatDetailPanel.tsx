@@ -73,6 +73,34 @@ const VIDEO_FILENAME_PATTERN = /\.(avi|m4v|mkv|mov|mp4|mpeg|mpg|webm)$/i;
 const RECENT_MEDIA_LIMIT = 6;
 const RECENT_FILE_LIMIT = 4;
 
+type DetailActionRowProps = {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  soonLabel?: string;
+  disabled?: boolean;
+  danger?: boolean;
+  onClick?: () => void;
+};
+
+type SocialMessage = FriendChatMessage | GroupMessage;
+type DetailAttachment = FriendMessageAttachment | GroupMessageAttachment;
+type DetailAttachmentKind = 'media' | 'file';
+
+interface DetailAttachmentItem {
+  id: string;
+  attachment: DetailAttachment;
+  kind: DetailAttachmentKind;
+  isImage: boolean;
+  isVideo: boolean;
+  timestampMs: number;
+}
+
+const IMAGE_FILENAME_PATTERN = /\.(apng|avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$/i;
+const VIDEO_FILENAME_PATTERN = /\.(avi|m4v|mkv|mov|mp4|mpeg|mpg|webm)$/i;
+const RECENT_MEDIA_LIMIT = 6;
+const RECENT_FILE_LIMIT = 4;
+
 function getInitial(name: string): string {
   if (!name) return '?';
   return name.charAt(0).toUpperCase();

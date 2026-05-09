@@ -1,21 +1,25 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Tooltip } from '@lobehub/ui';
+import { Button, TextArea, Tooltip, EmojiPicker } from '@lobehub/ui';
 import { Spin, theme, Typography, Empty } from 'antd';
 import {
-  Inbox, Phone, Video, Search, Info,
-  Check, CheckCheck,
+  Send, Inbox, Phone, Video, Search, Info,
+  Paperclip, Check, CheckCheck,
   Reply, Trash2, Lock, RotateCcw, Pencil, X as XIcon, MessageCircle,
 } from 'lucide-react';
-import { socialThreadKey, useSocialChatStore } from '../../store/socialChat';
+import {
+  actorProfileFromSessions,
+  groupAvatarRemoteUrl,
+  peerOfSession,
+  socialThreadKey,
+  useSocialChatStore,
+} from '../../store/socialChat';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { SearchMessagesModal } from './SearchMessagesModal';
 import { AttachmentItem, type ChatAttachmentVisibilityHint } from './AttachmentItem';
-import { ChatComposer } from './ChatComposer';
 import { friendChatP2p } from '../../modules/p2p/friendChatP2p';
 import { api } from '../../services/desktop_api';
-import { seedLocalMediaProjection } from '../../services/mediaRuntime';
 import { log } from '../../utils/logger';
 import { toast } from '@lobehub/ui';
 import type { FriendChatMessage, FriendMessageStatus } from '../../gen/proto/domain/chat/friend_chat_pb';
@@ -54,19 +58,6 @@ function normalizeVisibilityHint(v: string | undefined): ChatAttachmentVisibilit
     default:
       return undefined;
   }
-}
-
-const IMAGE_ATTACHMENT_FILENAME_PATTERN = /\.(apng|avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$/i;
-
-function isImageMessageAttachment(att: FriendChatMessage['attachments'][number] | GroupMessage['attachments'][number]): boolean {
-  const mimeType = att.mimeType?.toLowerCase() ?? '';
-  const filename = att.filename ?? '';
-  return mimeType.startsWith('image/') || IMAGE_ATTACHMENT_FILENAME_PATTERN.test(filename);
-}
-
-function isUploadedImage(filename: string | undefined, mimeType: string | undefined): boolean {
-  const normalizedMime = mimeType?.toLowerCase() ?? '';
-  return normalizedMime.startsWith('image/') || IMAGE_ATTACHMENT_FILENAME_PATTERN.test(filename ?? '');
 }
 
 function formatMsgTime(ts: Timestamp | undefined): string {
@@ -276,11 +267,6 @@ function HoverActions({ isOwn, canRecall, canEdit, onOpenThread, onReply, onDele
  * borderline click cannot 422 the user.
  */
 const FRIEND_RECALL_WINDOW_MS = 4 * 60 * 1000 + 30 * 1000;
-const EMPTY_MESSAGES: (FriendChatMessage | GroupMessage)[] = [];
-
-function isWithinMutationWindow(sentMs: number): boolean {
-  return sentMs > 0 && (Date.now() - sentMs) < FRIEND_RECALL_WINDOW_MS;
-}
 
 function ReplyBlock({ replyToUlid, messages, isOwn }: { replyToUlid: string; messages: (FriendChatMessage | GroupMessage)[]; isOwn: boolean }) {
   const { token } = theme.useToken();
@@ -316,27 +302,16 @@ function ReplyBlock({ replyToUlid, messages, isOwn }: { replyToUlid: string; mes
 export function ChatMessageArea() {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const activeTab = useSocialChatStore((s) => s.activeTab);
-  const activeSessionUlid = useSocialChatStore((s) => s.activeSessionUlid);
-  const activeGroupUlid = useSocialChatStore((s) => s.activeGroupUlid);
-  const messages = useSocialChatStore((s) => s.messages);
-  const loading = useSocialChatStore((s) => s.loading);
-  const sessions = useSocialChatStore((s) => s.sessions);
-  const groups = useSocialChatStore((s) => s.groups);
-  const loadMessages = useSocialChatStore((s) => s.loadMessages);
-  const loadOlderMessages = useSocialChatStore((s) => s.loadOlderMessages);
-  const sendFriendMessage = useSocialChatStore((s) => s.sendFriendMessage);
-  const sendGroupMessage = useSocialChatStore((s) => s.sendGroupMessage);
-  const toggleDetail = useSocialChatStore((s) => s.toggleDetail);
-  const deleteMessage = useSocialChatStore((s) => s.deleteMessage);
-  const recallFriendMessage = useSocialChatStore((s) => s.recallFriendMessage);
-  const editFriendMessage = useSocialChatStore((s) => s.editFriendMessage);
-  const recallGroupMessage = useSocialChatStore((s) => s.recallGroupMessage);
-  const editGroupMessage = useSocialChatStore((s) => s.editGroupMessage);
-  const openThread = useSocialChatStore((s) => s.openThread);
+  const {
+    activeTab, activeSessionUlid, activeGroupUlid, messages, loading,
+    sessions, groups, loadMessages, loadOlderMessages, sendFriendMessage, sendGroupMessage, toggleDetail,
+    deleteMessage, recallFriendMessage, editFriendMessage,
+    recallGroupMessage, editGroupMessage, openThread,
+  } = useSocialChatStore();
   const messageHasMore = useSocialChatStore((s) => s.messageHasMore);
   const messageLoadingMore = useSocialChatStore((s) => s.messageLoadingMore);
   const currentUserDid = useSocialChatStore((s) => s.currentUserDid);
+  const currentUserProfile = useSocialChatStore((s) => s.currentUserProfile);
   const scrollToMessageUlid = useSocialChatStore((s) => s.scrollToMessageUlid);
   const setScrollToMessageUlid = useSocialChatStore((s) => s.setScrollToMessageUlid);
   const encryptionEnabled = useSocialChatStore((s) => s.encryptionEnabled);
@@ -347,10 +322,7 @@ export function ChatMessageArea() {
   const [inputValue, setInputValue] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [sending, setSending] = useState(false);
-  const [replyDraft, setReplyDraft] = useState<{ conversationUlid: string | null; ulid: string | null }>({
-    conversationUlid: null,
-    ulid: null,
-  });
+  const [replyToUlid, setReplyToUlid] = useState<string | null>(null);
   // When set, the input field operates in "edit" mode: pressing
   // Send dispatches `editFriendMessage(activeUlid, editingUlid, …)`
   // instead of creating a new message. The banner above the input
@@ -361,32 +333,18 @@ export function ChatMessageArea() {
   const prependRestoreRef = useRef<{ previousHeight: number } | null>(null);
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
-  const replyToUlid = replyDraft.conversationUlid === activeUlid ? replyDraft.ulid : null;
-  const setReplyToUlidForActive = (ulid: string | null) => {
-    setReplyDraft({ conversationUlid: activeUlid, ulid });
-  };
-  const currentMessages = activeUlid ? (messages[activeUlid] || EMPTY_MESSAGES) : EMPTY_MESSAGES;
-  const threadReplyCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const msg of currentMessages) {
-      const rootUlid = getThreadRootUlid(msg);
-      if (!rootUlid) continue;
-      counts.set(rootUlid, (counts.get(rootUlid) ?? 0) + 1);
-    }
-    return counts;
-  }, [currentMessages]);
+  const currentMessages = activeUlid ? (messages[activeUlid] || []) : [];
+
+  const activeFriendPeer = (() => {
+    if (activeTab !== 'friend' || !activeUlid) return null;
+    const s = sessions.find((sess) => sess.ulid === activeUlid);
+    if (!s) return null;
+    return peerOfSession(s, currentUserDid);
+  })();
 
   const currentName = (() => {
     if (activeTab === 'friend') {
-      const s = sessions.find((sess) => sess.ulid === activeUlid);
-      if (!s) return '';
-      if (currentUserDid) {
-        if (s.participantADid === currentUserDid)
-          return s.participantBDisplayName || s.participantBDid || '';
-        if (s.participantBDid === currentUserDid)
-          return s.participantADisplayName || s.participantADid || '';
-      }
-      return s.participantBDisplayName || s.participantBDid || '';
+      return activeFriendPeer?.name || '';
     }
     const g = groups.find((grp) => grp.ulid === activeUlid);
     return g?.name || '';
@@ -394,17 +352,10 @@ export function ChatMessageArea() {
 
   const currentAvatar = (() => {
     if (activeTab === 'friend') {
-      const s = sessions.find((sess) => sess.ulid === activeUlid);
-      if (!s) return '';
-      if (currentUserDid) {
-        if (s.participantADid === currentUserDid)
-          return s.participantBAvatar || '';
-        if (s.participantBDid === currentUserDid)
-          return s.participantAAvatar || '';
-      }
-      return s.participantBAvatar || '';
+      return activeFriendPeer?.avatar || '';
     }
-    return '';
+    const g = groups.find((grp) => grp.ulid === activeUlid);
+    return groupAvatarRemoteUrl(g);
   })();
 
   const subtitle = (() => {
@@ -416,74 +367,7 @@ export function ChatMessageArea() {
   // Resolve the active peer DID for friend conversations. Used by the
   // header presence dot to decide whether the friend is reachable on
   // station, separate from whether our P2P channel happens to be up.
-  const activePeerDid = (() => {
-    if (activeTab !== 'friend' || !activeUlid) return null;
-    const s = sessions.find((sess) => sess.ulid === activeUlid);
-    if (!s) return null;
-    if (currentUserDid) {
-      if (s.participantADid === currentUserDid) return s.participantBDid;
-      if (s.participantBDid === currentUserDid) return s.participantADid;
-    }
-    return s.participantBDid || s.participantADid || null;
-  })();
-
-  // Render the WebRTC transport badge.
-  //
-  // Real-time delivery is *only* via WebRTC DataChannel — there is no
-  // SSE / business-layer relay for chat messages. This badge reflects
-  // the *transport* used for live message delivery, NOT whether the
-  // peer is online. The two are independent: a peer can be online on
-  // station yet still be mid-ICE (DataChannel not open), and a peer
-  // can be offline yet leave a stale "connected" badge for a few
-  // seconds until WebRTC notices the disconnect.
-  //
-  // Labels:
-  //   - "Direct"     : ICE settled on host/srflx/prflx (P2P)
-  //   - "Relay"      : ICE settled on a TURN allocation (still real-time,
-  //                    just routed through station's TURN server)
-  //   - "Connecting" : DataChannel not open yet, transport unknown
-  //   - "P2P down"   : connection failed/closed; messages still flow via
-  //                    station's pending queue + 60 s safety-net poll
-  //
-  // The previous "Offline" label was the source of confusion that
-  // prompted this refactor — users read "Offline" as "the peer is
-  // offline", which is a different (and now separately rendered)
-  // concept. "P2P down" makes the scope explicit.
-  const p2pBadge = (() => {
-    if (activeTab !== 'friend' || !activeUlid) return null;
-    const s = friendP2pStatus[activeUlid];
-    if (!s) return null;
-    let label = '';
-    let color = token.colorTextQuaternary;
-    if (s.state === 'connected') {
-      if (s.transport === 'relay') {
-        label = 'Relay';
-        color = token.colorWarning;
-      } else if (s.transport === 'direct') {
-        label = 'Direct';
-        color = token.colorSuccess;
-      } else {
-        label = 'Connecting';
-        color = token.colorWarning;
-      }
-    } else if (s.state === 'connecting') {
-      label = 'Connecting';
-      color = token.colorWarning;
-    } else if (s.state === 'failed' || s.state === 'closed') {
-      label = 'P2P down';
-      color = token.colorTextQuaternary;
-    } else {
-      return null;
-    }
-    const tip = s.detail ? `${label}: ${s.detail}` : label;
-    return (
-      <Tooltip title={tip}>
-        <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 6, background: token.colorFillTertiary, color }}>
-          {label}
-        </span>
-      </Tooltip>
-    );
-  })();
+  const activePeerDid = activeTab === 'friend' ? activeFriendPeer?.did || null : null;
 
   // Peer-presence indicator. Truth source: Station's
   // `/friend-chat/presence/stream` SSE, mirrored into `peerOnline` by
@@ -520,13 +404,10 @@ export function ChatMessageArea() {
   })();
 
   useEffect(() => {
-    if (!activeUlid) return;
-    const kind = activeTab === 'friend' ? 'friend' : 'group';
-    const frame = requestAnimationFrame(() => {
-      void loadMessages(activeUlid, kind);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [activeUlid, activeTab, loadMessages]);
+    if (activeUlid) {
+      loadMessages(activeUlid);
+    }
+  }, [activeUlid, loadMessages]);
 
   useEffect(() => {
     if (prependRestoreRef.current && scrollContainerRef.current) {
@@ -538,6 +419,10 @@ export function ChatMessageArea() {
     }
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [currentMessages.length]);
+
+  useEffect(() => {
+    setReplyToUlid(null);
+  }, [activeUlid]);
 
   // ---- Typing-state outbound pulses --------------------------------
   //
@@ -620,7 +505,6 @@ export function ChatMessageArea() {
   // already changed.
   const lastTypingTargetRef = useRef<{ sessionUlid: string; peerActorId: string } | null>(null);
   useEffect(() => {
-    const typingState = typingThrottleRef.current;
     if (activeUlid && peerActorIdForTyping) {
       lastTypingTargetRef.current = {
         sessionUlid: activeUlid,
@@ -630,16 +514,17 @@ export function ChatMessageArea() {
       lastTypingTargetRef.current = null;
     }
     return () => {
-      if (typingState.idleTimer != null) {
-        window.clearTimeout(typingState.idleTimer);
-        typingState.idleTimer = null;
+      const ref = typingThrottleRef.current;
+      if (ref.idleTimer != null) {
+        window.clearTimeout(ref.idleTimer);
+        ref.idleTimer = null;
       }
-      if (typingState.lastTrueAt > 0 && lastTypingTargetRef.current) {
+      if (ref.lastTrueAt > 0 && lastTypingTargetRef.current) {
         const target = lastTypingTargetRef.current;
         api
           .realtimeTypingSend(target.peerActorId, target.sessionUlid, false)
           .catch(() => {});
-        typingState.lastTrueAt = 0;
+        ref.lastTrueAt = 0;
       }
     };
   }, [activeUlid, peerActorIdForTyping]);
@@ -653,14 +538,12 @@ export function ChatMessageArea() {
     const map = typingPeers[activeUlid];
     if (!map) return false;
     if (activeTab === 'friend') {
-      return Object.entries(map).some(([actorId, entry]) => (
-        actorId !== currentUserDid && entry.typing
-      ));
+      if (!peerActorIdForTyping) return false;
+      const e = map[peerActorIdForTyping];
+      return Boolean(e?.typing);
     }
     // For groups, "any peer typing" until the per-member panel lands.
-    return Object.entries(map).some(([actorId, entry]) => (
-      actorId !== currentUserDid && entry.typing
-    ));
+    return Object.values(map).some((e) => e.typing);
   })();
 
   useEffect(() => {
@@ -694,7 +577,7 @@ export function ChatMessageArea() {
     const replyRef = replyToUlid || undefined;
     const editTarget = editingUlid;
     setInputValue('');
-    setReplyToUlidForActive(null);
+    setReplyToUlid(null);
     setEditingUlid(null);
     setSending(true);
     // Sending implies "stopped composing" — flip the bubble for the
@@ -740,11 +623,6 @@ export function ChatMessageArea() {
       } else {
         await sendGroupMessage(activeUlid, content, undefined, replyRef);
       }
-    } catch (err) {
-      log.error('chat', 'send message failed', err);
-      setInputValue(content);
-      setReplyToUlidForActive(replyRef ?? null);
-      toast.error(t('chat.social.messageArea.sendFailed', 'Message failed to send'));
     } finally {
       setSending(false);
     }
@@ -762,10 +640,8 @@ export function ChatMessageArea() {
   };
 
   /** Voice / video calls are only meaningful for friend chats with
-   *  an active RTCPeerConnection — the call piggy-backs onto the
-   *  same PC used for chat hints. Group calls and "cold" calls
-   *  (where no PC is open yet) are explicitly out of scope until
-   *  SFU support lands. */
+   *  an active RTCPeerConnection. Text chat uses the realtime SSE
+   *  stream; WebRTC readiness gates calls only. */
   const callsAvailable = (() => {
     if (activeTab !== 'friend' || !activeUlid || !currentUserDid) return false;
     const s = friendP2pStatus[activeUlid];
@@ -809,7 +685,7 @@ export function ChatMessageArea() {
     // the Edit button in `canEdit` rather than half-supporting it.
     setEditingUlid(msg.ulid);
     setInputValue(msg.content);
-    setReplyToUlidForActive(null);
+    setReplyToUlid(null);
   };
 
   const cancelEdit = () => {
@@ -851,16 +727,8 @@ export function ChatMessageArea() {
         toast.error(t('chat.social.messageArea.uploadFailed'));
         return;
       }
-      const isImage = isUploadedImage(uploaded.filename, uploaded.mime_type);
+      const isImage = uploaded.mime_type?.startsWith('image/');
       const msgType = isImage ? 2 : 3;
-      const messageContent = isImage ? '' : uploaded.filename;
-      if (isImage) {
-        seedLocalMediaProjection({
-          cid: uploaded.cid,
-          filePath,
-          mimeType: uploaded.mime_type,
-        });
-      }
       const attachment = {
         cid: uploaded.cid,
         filename: uploaded.filename,
@@ -880,9 +748,9 @@ export function ChatMessageArea() {
             ? session.participantBDid
             : session.participantADid
           : '';
-        await sendFriendMessage(activeUlid, receiverDid, messageContent, msgType, undefined, [attachment]);
+        await sendFriendMessage(activeUlid, receiverDid, uploaded.filename, msgType, undefined, [attachment]);
       } else {
-        await sendGroupMessage(activeUlid, messageContent, msgType, undefined, [attachment]);
+        await sendGroupMessage(activeUlid, uploaded.filename, msgType, undefined, [attachment]);
       }
     } catch (err) {
       log.error('chat', 'file upload failed', err);
@@ -939,7 +807,7 @@ export function ChatMessageArea() {
   `;
 
   return (
-    <Flexbox flex={1} gap={0} style={{ height: '100%', minHeight: 0, background: token.colorBgLayout }}>
+    <Flexbox flex={1} gap={0} style={{ height: '100%', background: token.colorBgLayout }}>
       <style>{hoverStyle}</style>
       <SearchMessagesModal
         open={showSearch}
@@ -969,7 +837,6 @@ export function ChatMessageArea() {
               </Flexbox>
               <Text type="secondary" style={{ fontSize: 12 }}>{subtitle}</Text>
             </Flexbox>
-            {p2pBadge}
             {encryptionEnabled && (
               <Tooltip title={t('chat.social.encryption.enabled')}>
                 <Lock size={14} style={{ color: token.colorSuccess, marginLeft: 4 }} />
@@ -979,10 +846,9 @@ export function ChatMessageArea() {
         </Flexbox>
         <Flexbox horizontal align="center" gap={4}>
           {/* Voice / video calls. Only meaningful for friend chats
-              that already have an established P2P connection — the
-              call rides on the same RTCPeerConnection used for chat
-              hints. Group calls and "cold" calls (where no PC is
-              open yet) are deferred until SFU support lands. */}
+              that already have an established WebRTC connection.
+              Group calls and "cold" calls (where no PC is open yet)
+              are deferred until SFU support lands. */}
           <Tooltip
             title={
               callsAvailable
@@ -1030,7 +896,6 @@ export function ChatMessageArea() {
         ref={scrollContainerRef}
         onScroll={handleScroll}
         style={{
-          minHeight: 0,
           overflow: 'auto',
           padding: '18px 28px 20px',
           background: `linear-gradient(180deg, ${token.colorBgLayout} 0%, ${token.colorBgContainer} 100%)`,
@@ -1058,20 +923,21 @@ export function ChatMessageArea() {
             const timelineGap = hasTimelineGap(msg, previousMsg);
             const isOwn = currentUserDid ? msg.senderDid === currentUserDid : false;
             const isGroup = !isFriendMsg(msg);
+            const senderProfile = isGroup
+              ? actorProfileFromSessions(
+                sessions,
+                currentUserDid,
+                msg.senderDid,
+                currentUserProfile,
+              )
+              : null;
             const hasReply = getReplyToUlid(msg) || '';
             const threadKey = activeUlid ? socialThreadKey(activeTab, activeUlid, msg.ulid) : '';
-            const loadedReplyCount = threadReplyCounts.get(msg.ulid) ?? 0;
+            const loadedReplyCount = currentMessages.filter((item) => getThreadRootUlid(item) === msg.ulid).length;
             const threadSummary = threadKey ? threadCounts[threadKey] : undefined;
             const threadReplyCount = threadSummary?.replyCount ?? loadedReplyCount;
             const threadUnreadCount = threadSummary?.unreadCount ?? 0;
             const isEncryptedPlaceholder = msg.content === '[Encrypted Message]';
-            const attachments = msg.attachments || [];
-            const imageOnlyAttachments = attachments.length > 0 && attachments.every(isImageMessageAttachment);
-            const contentText = msg.content?.trim() ?? '';
-            const contentIsImageFilename = imageOnlyAttachments
-              && attachments.some((att) => att.filename?.trim() === contentText);
-            const visibleContent = contentIsImageFilename ? '' : msg.content;
-            const mediaOnlyBubble = imageOnlyAttachments && !visibleContent && !isEncryptedPlaceholder;
             // Both FriendChatMessage and GroupMessage carry
             // `recalled` + `editedAt` as of the unified
             // MessageMutation contract. The UI no longer needs to
@@ -1082,7 +948,7 @@ export function ChatMessageArea() {
             // ownership rules; the UI hides buttons that are
             // guaranteed to fail so we don't 422 the user.
             const sentMs = msg.sentAt ? timestampDate(msg.sentAt).getTime() : (msg.createdAt ? timestampDate(msg.createdAt).getTime() : 0);
-            const withinWindow = isWithinMutationWindow(sentMs);
+            const withinWindow = sentMs > 0 && (Date.now() - sentMs) < FRIEND_RECALL_WINDOW_MS;
             const canRecall = isOwn && !isRecalled && withinWindow;
             const canEdit = isOwn && !isRecalled && withinWindow && !isEncryptedPlaceholder;
 
@@ -1112,7 +978,12 @@ export function ChatMessageArea() {
                   gap={8}
                 >
                   {!isOwn && isGroup && (
-                    <UserSquareAvatar name={msg.senderDid} size={30} style={{ flexShrink: 0 }} />
+                    <UserSquareAvatar
+                      remoteUrl={senderProfile?.avatar}
+                      name={senderProfile?.name || msg.senderDid}
+                      size={30}
+                      style={{ flexShrink: 0 }}
+                    />
                   )}
 
                   <Flexbox style={{ position: 'relative', minWidth: 0, maxWidth: '100%' }}>
@@ -1121,7 +992,7 @@ export function ChatMessageArea() {
                       canRecall={canRecall}
                       canEdit={canEdit}
                       onOpenThread={() => openThread(msg.ulid)}
-                      onReply={() => setReplyToUlidForActive(msg.ulid)}
+                      onReply={() => setReplyToUlid(msg.ulid)}
                       onDelete={async () => {
                         if (!activeUlid) return;
                         const kind = activeTab === 'friend' ? 'friend' : 'group';
@@ -1153,20 +1024,20 @@ export function ChatMessageArea() {
                           fontWeight: 500,
                         }}
                       >
-                        {msg.senderDid}
+                        {senderProfile?.name || msg.senderDid}
                       </Text>
                     )}
 
                   <Flexbox
                     style={{
-                      padding: mediaOnlyBubble ? 0 : '9px 13px',
+                      padding: '9px 13px',
                       borderRadius: bubbleRadius,
                       // Recalled bubbles use the muted "fill quaternary" surface
                       // regardless of ownership so the tombstone reads as a
                       // neutral system-style note rather than an actor message.
-                      background: mediaOnlyBubble ? 'transparent' : isRecalled ? token.colorFillQuaternary : bubbleBg,
-                      border: mediaOnlyBubble ? '1px solid transparent' : isRecalled ? `1px solid ${token.colorBorderSecondary}` : bubbleBorder,
-                      boxShadow: mediaOnlyBubble ? 'none' : isOwn ? token.boxShadowTertiary : token.boxShadowSecondary,
+                      background: isRecalled ? token.colorFillQuaternary : bubbleBg,
+                      border: isRecalled ? `1px solid ${token.colorBorderSecondary}` : bubbleBorder,
+                      boxShadow: isOwn ? token.boxShadowTertiary : token.boxShadowSecondary,
                       color: isRecalled ? token.colorTextSecondary : bubbleColor,
                       fontSize: 13,
                       lineHeight: 1.5,
@@ -1198,11 +1069,11 @@ export function ChatMessageArea() {
                         </Text>
                       </Flexbox>
                     ) : (
-                      visibleContent
+                      msg.content
                     )}
-                    {!isRecalled && attachments.length > 0 && (
-                      <Flexbox gap={6} style={{ marginTop: visibleContent ? 8 : 0 }}>
-                        {attachments.map((att, idx) => (
+                    {!isRecalled && msg.attachments && msg.attachments.length > 0 && (
+                      <Flexbox gap={6} style={{ marginTop: msg.content ? 8 : 0 }}>
+                        {msg.attachments.map((att, idx) => (
                           <AttachmentItem
                             key={idx}
                             attachment={att}
@@ -1295,6 +1166,47 @@ export function ChatMessageArea() {
             );
           })
         )}
+        {peerIsTyping && (
+          // Receiver-side typing indicator. The bubble is laid out
+          // exactly like an incoming peer message so it doesn't shift
+          // the message list when it appears/disappears (avoiding a
+          // layout thrash). The dots are pure CSS animation; we
+          // intentionally don't use a spinner so it's distinguishable
+          // from "still loading messages".
+          <Flexbox
+            horizontal={false}
+            style={{
+              alignSelf: 'flex-start',
+              maxWidth: 'min(74%, 740px)',
+            }}
+          >
+            <Flexbox
+              horizontal
+              align="center"
+              gap={6}
+              style={{
+                padding: '9px 13px',
+                borderRadius: '16px 16px 16px 6px',
+                background: token.colorBgContainer,
+                border: `1px solid ${token.colorBorderSecondary}`,
+                boxShadow: token.boxShadowSecondary,
+                color: token.colorTextSecondary,
+                fontSize: 13,
+                lineHeight: 1.5,
+              }}
+              aria-label={t('chat.social.messageArea.typing', 'is typing…')}
+            >
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {t('chat.social.messageArea.typing', 'is typing…')}
+              </Text>
+              <span className="typing-dots" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+            </Flexbox>
+          </Flexbox>
+        )}
         <div ref={bottomRef} />
       </Flexbox>
 
@@ -1368,7 +1280,7 @@ export function ChatMessageArea() {
             <Button
               type="text"
               size="small"
-              onClick={() => setReplyToUlidForActive(null)}
+              onClick={() => setReplyToUlid(null)}
               style={{ fontSize: 12, color: token.colorTextSecondary }}
             >
               {t('chat.social.messageArea.cancel')}
@@ -1376,66 +1288,101 @@ export function ChatMessageArea() {
           </Flexbox>
         )}
 
-        {peerIsTyping && (
+        <Flexbox
+          horizontal
+          align="flex-end"
+          gap={10}
+          style={{
+            padding: 8,
+            borderRadius: 16,
+            border: `1px solid ${token.colorBorderSecondary}`,
+            background: token.colorBgElevated,
+            boxShadow: token.boxShadowTertiary,
+          }}
+        >
+          {/* Native file picker via Tauri — bypasses the WKWebView
+             input quirks and lets us upload through station_client
+             which already handles JWT auth. */}
           <Flexbox
             horizontal
             align="center"
-            gap={6}
+            gap={4}
             style={{
-              width: 'fit-content',
-              padding: '4px 10px',
-              borderRadius: 999,
-              color: token.colorPrimary,
-              background: token.colorPrimaryBg,
-              fontSize: 12,
-              fontWeight: 500,
-              lineHeight: 1,
+              padding: 2,
+              borderRadius: 12,
+              background: token.colorFillQuaternary,
+              flexShrink: 0,
             }}
-            aria-label={t('chat.social.messageArea.typing', 'is typing…')}
           >
-            <Text style={{ color: 'inherit', fontSize: 12 }}>
-              {t('chat.social.messageArea.typing', 'is typing…')}
-            </Text>
-            <span className="typing-dots" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
+            <Tooltip title={t('chat.social.messageArea.attach', 'Attach file')}>
+              <Button
+                type="text"
+                icon={<Paperclip size={18} />}
+                aria-label={t('chat.social.messageArea.attach', 'Attach file')}
+                style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0 }}
+                onClick={handleAttachClick}
+                disabled={sending}
+              />
+            </Tooltip>
+            <Tooltip title={t('chat.social.messageArea.emoji', 'Emoji')}>
+              <span style={{ display: 'inline-flex', width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
+                <EmojiPicker
+                  size={36}
+                  onChange={(emoji) => setInputValue((prev) => prev + emoji)}
+                />
+              </span>
+            </Tooltip>
           </Flexbox>
-        )}
-
-        <ChatComposer
-          value={inputValue}
-          onChange={handleInputChange}
-          onKeyDown={handleKeyDown}
-          onBlur={() => {
-            // Blurring the textarea is the user's "I'm stepping
-            // away" signal. Cancel the idle timer and emit one
-            // final `typing=false` so the peer's bubble clears
-            // without waiting on the GC TTL.
-            const ref = typingThrottleRef.current;
-            if (ref.idleTimer != null) {
-              window.clearTimeout(ref.idleTimer);
-              ref.idleTimer = null;
-            }
-            if (ref.lastTrueAt > 0) {
-              fireTyping(false);
-              ref.lastTrueAt = 0;
-            }
-          }}
-          onSend={handleSend}
-          onAttach={handleAttachClick}
-          canSend={canSend}
-          disabled={sending}
-          sending={sending}
-          attachDisabled={sending}
-          layout="inline"
-          placeholder={t('chat.social.messageArea.placeholder')}
-          attachTitle={t('chat.social.messageArea.attach', 'Attach file')}
-          emojiTitle={t('chat.social.messageArea.emoji', 'Emoji')}
-          sendTitle={t('chat.social.messageArea.send', 'Send')}
-          enterMessageTitle={t('chat.social.messageArea.enterMessage', 'Enter a message')}
-        />
+          <TextArea
+            className="chat-composer-input"
+            value={inputValue}
+            onChange={(e) => handleInputChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={() => {
+              // Blurring the textarea is the user's "I'm stepping
+              // away" signal. Cancel the idle timer and emit one
+              // final `typing=false` so the peer's bubble clears
+              // without waiting on the GC TTL.
+              const ref = typingThrottleRef.current;
+              if (ref.idleTimer != null) {
+                window.clearTimeout(ref.idleTimer);
+                ref.idleTimer = null;
+              }
+              if (ref.lastTrueAt > 0) {
+                fireTyping(false);
+                ref.lastTrueAt = 0;
+              }
+            }}
+            placeholder={t('chat.social.messageArea.placeholder')}
+            autoSize={{ minRows: 1, maxRows: 4 }}
+            style={{
+              flex: 1,
+              minHeight: 38,
+              padding: '8px 2px',
+              background: 'transparent',
+              border: 0,
+              boxShadow: 'none',
+            }}
+            disabled={sending}
+          />
+          <Tooltip title={canSend ? t('chat.social.messageArea.send', 'Send') : t('chat.social.messageArea.enterMessage', 'Enter a message')}>
+            <Button
+              type="primary"
+              icon={<Send size={16} />}
+              aria-label={t('chat.social.messageArea.send', 'Send')}
+              onClick={handleSend}
+              loading={sending}
+              disabled={!canSend}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 12,
+                flexShrink: 0,
+                boxShadow: canSend ? token.boxShadowSecondary : 'none',
+              }}
+            />
+          </Tooltip>
+        </Flexbox>
       </Flexbox>
     </Flexbox>
   );

@@ -1,10 +1,13 @@
 // prompt_assembly_service.go — System Prompt 8-layer assembly service.
 // Created: 2026-04-11 — initial implementation of the 6-layer prompt assembly pipeline.
 // 2026-04-11 — Phase 6: added InjectedTokens and CacheBreakpoints to
-//   PromptAssemblyResult per architecture spec §3.2.
+//
+//	PromptAssemblyResult per architecture spec §3.2.
+//
 // 2026-04-11 — Phase 7: added L6 Context Files (.hermes.md / AGENTS.md / etc.)
-//   and L8 Platform Hints. Renumbered old L6 Timestamp to L7. Assembly now
-//   composes eight ordered layers per architecture spec §3.2.
+//
+//	and L8 Platform Hints. Renumbered old L6 Timestamp to L7. Assembly now
+//	composes eight ordered layers per architecture spec §3.2.
 package service
 
 import (
@@ -91,6 +94,7 @@ func (s *PromptAssemblyService) Assemble(
 	platform string,
 	availableTools []string,
 	workspaceRoot string,
+	userInput string,
 ) (*PromptAssemblyResult, error) {
 
 	var layers []string
@@ -104,7 +108,7 @@ func (s *PromptAssemblyService) Assemble(
 	}
 
 	// L3 — Memory Snapshot
-	snapshot, err := s.memoryService.BuildSnapshot(ctx, agentID)
+	snapshot, err := s.memoryService.BuildRelevantSnapshot(ctx, agentID, userInput)
 	if err != nil {
 		logger.Errorf(ctx, "prompt assembly: failed to build memory snapshot for agent %s: %v", agentID, err)
 		return nil, fmt.Errorf("build memory snapshot: %w", err)
@@ -194,8 +198,16 @@ func formatMemorySnapshot(snap *domain.MemorySnapshot) string {
 	if userContent == "" {
 		userContent = "(empty)"
 	}
+	personaContent := snap.PersonaContent
+	if personaContent == "" {
+		personaContent = "(empty)"
+	}
 
 	return fmt.Sprintf(`<memory_snapshot>
+PERSONA
+===
+%s
+
 MEMORY (your personal notes) [%d%% — %d/%d chars]
 ===
 %s
@@ -204,6 +216,7 @@ USER PROFILE (who the user is) [%d%% — %d/%d chars]
 ===
 %s
 </memory_snapshot>`,
+		personaContent,
 		memPercent, memUsed, memLimit, memContent,
 		userPercent, userUsed, userLimit, userContent,
 	)

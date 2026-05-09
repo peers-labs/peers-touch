@@ -1,5 +1,5 @@
 /**
- * Cross-window identity bridge: forward the Rust-side `auth:identity_changed`
+ * Cross-window identity bridge: forward the Rust-side `auth:identity-changed`
  * Tauri event to the in-process event bus and run the identity pipeline so
  * every window drops actor-scoped Zustand/cache state without a full reload.
  */
@@ -9,6 +9,7 @@ import { log } from '../utils/logger';
 import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
 import { api, type PresenceTrigger } from './desktop_api';
+import { useSessionStore } from '../store/session';
 import {
   runIdentityPipeline,
   type IdentityChangePayload,
@@ -38,7 +39,7 @@ function presenceTriggerFor(reason: IdentityChangeReason): PresenceTrigger {
 /** sessionStorage key: set to `"1"` while this window initiates an identity mutation (see `markLocalIdentityAction`). */
 export const LOCAL_IDENTITY_FLAG = 'pt.identity.local_pipeline';
 
-const TAURI_EVENT_NAME = 'auth:identity_changed';
+const TAURI_EVENT_NAME = 'auth:identity-changed';
 
 /** Rust serializes `IdentityChangeReason` with snake_case names. */
 interface TauriIdentityPayload {
@@ -70,8 +71,12 @@ function toPipelinePayload(raw: TauriIdentityPayload | undefined): IdentityChang
   };
 }
 
+function isLoginLike(reason: IdentityChangeReason): boolean {
+  return reason === 'login' || reason === 'switch' || reason === 'oauth_bridge';
+}
+
 /** Mark this window as the originator of an identity-mutating command so the
- *  resulting `auth:identity_changed` broadcast does not run the pipeline twice. */
+ *  resulting `auth:identity-changed` broadcast does not run the pipeline twice. */
 export function markLocalIdentityAction(): void {
   try {
     sessionStorage.setItem(LOCAL_IDENTITY_FLAG, '1');
@@ -93,7 +98,7 @@ export function installIdentityChangedBridge(): void {
   installed = true;
   listen<TauriIdentityPayload>(TAURI_EVENT_NAME, (event) => {
     const raw = event.payload;
-    log.info('identity', 'received auth:identity_changed', { reason: raw?.reason });
+    log.info('identity', 'received auth:identity-changed', { reason: raw?.reason });
 
     const payload = toPipelinePayload(raw);
     eventBus.publish(EVENT.AUTH_IDENTITY_CHANGED, undefined);
@@ -110,6 +115,28 @@ export function installIdentityChangedBridge(): void {
     if (skipPipeline) {
       log.info('identity', 'skipping pipeline: local-originated change');
       return;
+    }
+
+    // A login in another window must not hydrate this renderer into the
+    // same newly-issued Station session. If this window is already the
+    // same actor, its older token has just been revoked by Station's
+    // CreateWithKick policy, so route it through the normal kicked flow.
+    if (isLoginLike(payload.reason)) {
+      const current = useSessionStore.getState().currentUser;
+      if (current?.actorId && current.actorId === payload.actorId) {
+        log.warn('identity', 'same actor logged in elsewhere; ending this session', {
+          actorId: current.actorId,
+        });
+        eventBus.publish(EVENT.AUTH_SESSION_REVOKED, { reason: 'kicked' });
+        return;
+      }
+      if (current?.actorId) {
+        log.info('identity', 'ignoring remote login for different actor', {
+          currentActorId: current.actorId,
+          incomingActorId: payload.actorId,
+        });
+        return;
+      }
     }
 
     if (DEBUG_FORCE_RELOAD) {
@@ -138,7 +165,7 @@ export function installIdentityChangedBridge(): void {
       }
     })();
   }).catch((error) => {
-    log.warn('identity', 'failed to install auth:identity_changed listener', { error: String(error) });
+    log.warn('identity', 'failed to install auth:identity-changed listener', { error: String(error) });
   });
 }
 

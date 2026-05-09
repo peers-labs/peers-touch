@@ -33,28 +33,56 @@ pub struct KeyProviderError {
 
 impl fmt::Display for KeyProviderError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{}] ref={} {}", self.code, self.key_ref_hash, self.message)
+        write!(
+            f,
+            "[{}] ref={} {}",
+            self.code, self.key_ref_hash, self.message
+        )
     }
 }
 
 impl KeyProviderError {
     pub fn not_found(key_ref: &str, message: impl Into<String>) -> Self {
-        Self { code: KeyErrorCode::NotFound, key_ref_hash: sanitize_key_ref(key_ref), message: message.into() }
+        Self {
+            code: KeyErrorCode::NotFound,
+            key_ref_hash: sanitize_key_ref(key_ref),
+            message: message.into(),
+        }
     }
     pub fn permission_denied(key_ref: &str, message: impl Into<String>) -> Self {
-        Self { code: KeyErrorCode::PermissionDenied, key_ref_hash: sanitize_key_ref(key_ref), message: message.into() }
+        Self {
+            code: KeyErrorCode::PermissionDenied,
+            key_ref_hash: sanitize_key_ref(key_ref),
+            message: message.into(),
+        }
     }
     pub fn backend_locked(key_ref: &str, message: impl Into<String>) -> Self {
-        Self { code: KeyErrorCode::BackendLocked, key_ref_hash: sanitize_key_ref(key_ref), message: message.into() }
+        Self {
+            code: KeyErrorCode::BackendLocked,
+            key_ref_hash: sanitize_key_ref(key_ref),
+            message: message.into(),
+        }
     }
     pub fn io_failure(key_ref: &str, message: impl Into<String>) -> Self {
-        Self { code: KeyErrorCode::IoFailure, key_ref_hash: sanitize_key_ref(key_ref), message: message.into() }
+        Self {
+            code: KeyErrorCode::IoFailure,
+            key_ref_hash: sanitize_key_ref(key_ref),
+            message: message.into(),
+        }
     }
     pub fn version_conflict(key_ref: &str, message: impl Into<String>) -> Self {
-        Self { code: KeyErrorCode::VersionConflict, key_ref_hash: sanitize_key_ref(key_ref), message: message.into() }
+        Self {
+            code: KeyErrorCode::VersionConflict,
+            key_ref_hash: sanitize_key_ref(key_ref),
+            message: message.into(),
+        }
     }
     pub fn internal(key_ref: &str, message: impl Into<String>) -> Self {
-        Self { code: KeyErrorCode::Internal, key_ref_hash: sanitize_key_ref(key_ref), message: message.into() }
+        Self {
+            code: KeyErrorCode::Internal,
+            key_ref_hash: sanitize_key_ref(key_ref),
+            message: message.into(),
+        }
     }
 }
 
@@ -75,5 +103,6 @@ pub struct KeyMaterial {
 
 pub trait KeyProvider: Send + Sync {
     fn get_or_create_key(&self, key_ref: &str) -> Result<KeyMaterial, KeyProviderError>;
-    fn rotate_key(&self, key_ref: &str, next_version: i32) -> Result<KeyMaterial, KeyProviderError>;
+    fn rotate_key(&self, key_ref: &str, next_version: i32)
+        -> Result<KeyMaterial, KeyProviderError>;
 }

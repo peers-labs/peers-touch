@@ -22,7 +22,9 @@ pub struct WindowSessionRegistry {
 
 impl WindowSessionRegistry {
     pub fn new() -> Self {
-        Self { inner: RwLock::new(HashMap::new()) }
+        Self {
+            inner: RwLock::new(HashMap::new()),
+        }
     }
 
     /// Bind (or replace) the session for `window_label`. Returns the previous
@@ -34,6 +36,36 @@ impl WindowSessionRegistry {
             .expect("WindowSessionRegistry write lock poisoned");
         let label = session.window_label.clone();
         map.insert(label, session)
+    }
+
+    /// Bind a session and remove any other window already bound to the same
+    /// Station actor. Returns the removed sessions so callers can notify those
+    /// windows that a newer local login won.
+    pub fn bind_exclusive(&self, session: ActiveSession) -> Vec<ActiveSession> {
+        let mut map = self
+            .inner
+            .write()
+            .expect("WindowSessionRegistry write lock poisoned");
+        let label = session.window_label.clone();
+        let actor_id = session.actor.actor_id.clone();
+        let kicked_labels: Vec<String> = map
+            .iter()
+            .filter_map(|(existing_label, existing)| {
+                if *existing_label != label && existing.actor.actor_id == actor_id {
+                    Some(existing_label.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let mut kicked = Vec::with_capacity(kicked_labels.len());
+        for kicked_label in kicked_labels {
+            if let Some(prev) = map.remove(&kicked_label) {
+                kicked.push(prev);
+            }
+        }
+        map.insert(label, session);
+        kicked
     }
 
     /// Remove the session bound to `window_label`. Returns the removed
@@ -125,5 +157,20 @@ mod tests {
         assert_eq!(removed.actor.actor_id, "1");
         assert!(reg.get("main").is_none());
         assert!(reg.get("second").is_some());
+    }
+
+    #[test]
+    fn exclusive_bind_kicks_same_actor_in_other_window() {
+        let reg = WindowSessionRegistry::new();
+        reg.bind(sample("main", "password:1", "1"));
+        reg.bind(sample("second", "password:2", "2"));
+
+        let kicked = reg.bind_exclusive(sample("third", "password:1", "1"));
+
+        assert_eq!(kicked.len(), 1);
+        assert_eq!(kicked[0].window_label, "main");
+        assert!(reg.get("main").is_none());
+        assert!(reg.get("second").is_some());
+        assert!(reg.get("third").is_some());
     }
 }

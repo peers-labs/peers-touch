@@ -1,62 +1,146 @@
-use crate::error::AppResult;
 use crate::contracts::{
     MemoryEventsInput, MemoryExportInput, MemoryIdInput, MemoryImportInput, MemoryListInput,
     MemoryPersonaInput, MemorySearchInput, StubPayload,
 };
+use crate::error::AppResult;
+use crate::state::AppState;
 
 use crate::application::memory as application_memory;
 
-#[tauri::command]
-pub fn memory_list(input: MemoryListInput) -> AppResult<StubPayload> {
-    application_memory::memory_list(input)
+fn token_from_state(state: &tauri::State<AppState>) -> Result<String, AppResult<StubPayload>> {
+    match state.session.lock() {
+        Ok(guard) => match guard.token.clone().filter(|t| !t.trim().is_empty()) {
+            Some(token) => Ok(token),
+            None => Err(AppResult::fail(
+                crate::error::ErrorCode::Unauthorized,
+                "authentication required",
+                None,
+            )),
+        },
+        Err(_) => Err(AppResult::fail(
+            crate::error::ErrorCode::InternalError,
+            "failed to access session state",
+            None,
+        )),
+    }
 }
 
 #[tauri::command]
-pub fn memory_get(input: MemoryIdInput) -> AppResult<StubPayload> {
-    application_memory::memory_get(input)
+pub fn memory_list(
+    state: tauri::State<AppState>,
+    input: MemoryListInput,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(token) => token,
+        Err(err) => return err,
+    };
+    application_memory::memory_list(input, &token)
 }
 
 #[tauri::command]
-pub fn memory_delete(input: MemoryIdInput) -> AppResult<StubPayload> {
-    application_memory::memory_delete(input)
+pub fn memory_get(state: tauri::State<AppState>, input: MemoryIdInput) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(token) => token,
+        Err(err) => return err,
+    };
+    application_memory::memory_get(input, &token)
 }
 
 #[tauri::command]
-pub fn memory_search(input: MemorySearchInput) -> AppResult<StubPayload> {
-    application_memory::memory_search(input)
+pub fn memory_delete(
+    state: tauri::State<AppState>,
+    input: MemoryIdInput,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(token) => token,
+        Err(err) => return err,
+    };
+    application_memory::memory_delete(input, &token)
 }
 
 #[tauri::command]
-pub fn memory_persona(input: MemoryPersonaInput) -> AppResult<StubPayload> {
-    application_memory::memory_persona(input)
+pub fn memory_search(
+    state: tauri::State<AppState>,
+    input: MemorySearchInput,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(token) => token,
+        Err(err) => return err,
+    };
+    application_memory::memory_search(input, &token)
 }
 
 #[tauri::command]
-pub fn memory_stats() -> AppResult<StubPayload> {
-    application_memory::memory_stats()
+pub fn memory_persona(
+    state: tauri::State<AppState>,
+    input: MemoryPersonaInput,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(token) => token,
+        Err(err) => return err,
+    };
+    application_memory::memory_persona(input, &token)
 }
 
 #[tauri::command]
-pub fn memory_events(input: MemoryEventsInput) -> AppResult<StubPayload> {
-    application_memory::memory_events(input)
+pub fn memory_stats(state: tauri::State<AppState>) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(token) => token,
+        Err(err) => return err,
+    };
+    application_memory::memory_stats(&token)
 }
 
 #[tauri::command]
-pub fn memory_export(input: MemoryExportInput) -> AppResult<StubPayload> {
-    application_memory::memory_export(input)
+pub fn memory_events(
+    state: tauri::State<AppState>,
+    input: MemoryEventsInput,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(token) => token,
+        Err(err) => return err,
+    };
+    application_memory::memory_events(input, &token)
 }
 
 #[tauri::command]
-pub fn memory_import(input: MemoryImportInput) -> AppResult<StubPayload> {
-    application_memory::memory_import(input)
+pub fn memory_export(
+    state: tauri::State<AppState>,
+    input: MemoryExportInput,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(token) => token,
+        Err(err) => return err,
+    };
+    application_memory::memory_export(input, &token)
 }
 
 #[tauri::command]
-pub fn memory_embedding_status() -> AppResult<StubPayload> {
-    application_memory::memory_embedding_status()
+pub fn memory_import(
+    state: tauri::State<AppState>,
+    input: MemoryImportInput,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(token) => token,
+        Err(err) => return err,
+    };
+    application_memory::memory_import(input, &token)
 }
 
 #[tauri::command]
-pub fn memory_reembed() -> AppResult<StubPayload> {
-    application_memory::memory_reembed()
+pub fn memory_embedding_status(state: tauri::State<AppState>) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(token) => token,
+        Err(err) => return err,
+    };
+    application_memory::memory_embedding_status(&token)
+}
+
+#[tauri::command]
+pub fn memory_reembed(state: tauri::State<AppState>) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(token) => token,
+        Err(err) => return err,
+    };
+    application_memory::memory_reembed(&token)
 }

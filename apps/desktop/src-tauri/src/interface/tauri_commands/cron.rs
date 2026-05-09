@@ -1,8 +1,8 @@
-use crate::error::AppResult;
 use crate::contracts::{
     CronCreateInput, CronIdInput, CronParseScheduleInput, CronRunsInput, CronToggleInput,
     CronUpdateInput, StubPayload,
 };
+use crate::error::AppResult;
 
 use crate::application::cron as application_cron;
 
