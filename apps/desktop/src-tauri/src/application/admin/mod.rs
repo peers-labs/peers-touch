@@ -1,9 +1,9 @@
+use crate::contracts::{AdminExecuteActionInput, AdminNetworkProbeInput, StubPayload};
 use crate::domain::admin::{
     authorize, build_request_id, emit_audit, validate_action, validate_probe_target, AccessContext,
     AdminCapability,
 };
 use crate::error::{AppResult, ErrorCode};
-use crate::contracts::{AdminExecuteActionInput, AdminNetworkProbeInput, StubPayload};
 
 fn ensure_admin(
     context: &AccessContext,

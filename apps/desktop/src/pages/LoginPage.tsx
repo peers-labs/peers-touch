@@ -6,7 +6,7 @@ import { AlertTriangle, Github, Mail, Eye, EyeOff, ArrowRight, RefreshCw, Lock, 
 import { useOAuth2Store } from '../store/oauth2';
 import { useSessionStore } from '../store/session';
 import { api, AuthCommandException } from '../services/desktop_api';
-import type { OAuth2ProviderSummary } from '../services/desktop_api';
+import type { AccountIdentity, OAuth2ProviderSummary } from '../services/desktop_api';
 import { useAccountIdentityStore } from '../store/accountIdentity';
 import { UserSquareAvatar } from '../components/common/UserSquareAvatar';
 import { PlatformLogo } from '../components/common/PlatformLogo';
@@ -15,7 +15,7 @@ import type { SessionUser } from '../types/navigation';
 
 const { Text } = Typography;
 
-type LoginState = 'logged_out' | 'welcome_back' | 'account_picker' | 'pin_entry' | 'set_pin';
+type LoginState = 'logged_out' | 'welcome_back' | 'account_picker' | 'pin_entry' | 'relink_pin' | 'set_pin';
 type LoginTab = 'quick' | 'email';
 type AuthState = 'idle' | 'waiting' | 'success' | 'error';
 
@@ -32,6 +32,23 @@ const PANEL_WIDTH = 250;
 const ARROW_SIZE = 8;
 const PANEL_GAP = 8;
 const PIN_LENGTH = 6;
+const PIN_SUBMIT_DELAY_MS = 140;
+
+function accountIdentityToSessionUser(account: AccountIdentity): SessionUser {
+  return {
+    name: account.name || account.provider_user_id || 'User',
+    email: account.email || '',
+    avatar: account.avatar_url || undefined,
+    accountId: account.id,
+    hasPin: account.has_pin,
+    hasSession: account.has_session,
+    provider: account.provider,
+  };
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
 
 export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedded }: Props) {
   const { token } = theme.useToken();
@@ -73,6 +90,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
   const [pinError, setPinError] = useState('');
   const [pinLoading, setPinLoading] = useState(false);
   const pinInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [sessionlessAccountIds, setSessionlessAccountIds] = useState<Set<string>>(() => new Set());
 
   // Expired-session re-auth state. Set when an account's stored session can
   // no longer be revived (server-side revoke, expired, kicked, or simply not
@@ -97,8 +115,15 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
   const [confirmPinDigits, setConfirmPinDigits] = useState<string[]>(Array(PIN_LENGTH).fill(''));
   const [pinSetStep, setPinSetStep] = useState<'create' | 'confirm'>('create');
   const [pinSetError, setPinSetError] = useState('');
+  const [pinSetLoading, setPinSetLoading] = useState(false);
   const newPinInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const confirmPinInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  // Re-link an existing PIN after a fresh password/OAuth login.
+  const [relinkPinDigits, setRelinkPinDigits] = useState<string[]>(Array(PIN_LENGTH).fill(''));
+  const [relinkPinError, setRelinkPinError] = useState('');
+  const [relinkPinLoading, setRelinkPinLoading] = useState(false);
+  const relinkPinInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
     loadAll();
@@ -119,6 +144,35 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     [providers],
   );
 
+  const markAccountSessionless = useCallback((accountId?: string) => {
+    if (!accountId) return;
+    setSessionlessAccountIds(prev => {
+      if (prev.has(accountId)) return prev;
+      const next = new Set(prev);
+      next.add(accountId);
+      return next;
+    });
+  }, []);
+
+  const clearAccountSessionless = useCallback((accountId?: string) => {
+    if (!accountId) return;
+    setSessionlessAccountIds(prev => {
+      if (!prev.has(accountId)) return prev;
+      const next = new Set(prev);
+      next.delete(accountId);
+      return next;
+    });
+  }, []);
+
+  const visibleAccounts = useMemo(
+    () => knownAccounts.map(account => (
+      account.accountId && sessionlessAccountIds.has(account.accountId)
+        ? { ...account, hasSession: false }
+        : account
+    )),
+    [knownAccounts, sessionlessAccountIds],
+  );
+
   // When the user picks an account from the picker, show that account's info
   // instead of the auto-restored session user (which may be a different account).
   const welcomeUser: SessionUser = useMemo(() => {
@@ -127,25 +181,43 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     return { name: '', email: '' };
   }, [selectedAccount, restoredUser]);
 
+  const continueAfterFreshAuth = useCallback(async () => {
+    try {
+      const active = await api.accountGetActive();
+      if (active?.id) {
+        clearAccountSessionless(active.id);
+        const user = accountIdentityToSessionUser(active);
+        setSelectedAccount(user);
+
+        if (active.has_pin) {
+          setRelinkPinDigits(Array(PIN_LENGTH).fill(''));
+          setRelinkPinError('');
+          setRelinkPinLoading(false);
+          setLoginState('relink_pin');
+          setTimeout(() => relinkPinInputRefs.current[0]?.focus(), 50);
+          return;
+        }
+      }
+    } catch {
+      // Fall through to the first-time PIN prompt when the active identity is unavailable.
+    }
+
+    setLoginState('set_pin');
+  }, [clearAccountSessionless]);
+
   const handleEmailLogin = useCallback(async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!email.trim() || !password.trim()) return;
     setLoading(true);
     try {
       await loginWithPassword(email.trim(), password);
-      // Skip PIN setup if the account already has a PIN configured
-      const active = await api.accountGetActive();
-      if (active?.has_pin) {
-        onComplete();
-      } else {
-        setLoginState('set_pin');
-      }
-    } catch (err: any) {
-      message.error(err.message || t('auth.login.failed'));
+      await continueAfterFreshAuth();
+    } catch (err: unknown) {
+      message.error(errorMessage(err, t('auth.login.failed')));
     } finally {
       setLoading(false);
     }
-  }, [email, password, loginWithPassword]);
+  }, [email, password, loginWithPassword, continueAfterFreshAuth, t]);
 
   const handleOAuthConnect = useCallback((provider: OAuth2ProviderSummary) => {
     const btn = buttonRefs.current[provider.id];
@@ -191,18 +263,8 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
   const handleAuthDone = useCallback(async () => {
     setConnectProvider(null);
     setAuthState('idle');
-    // Skip PIN setup if the account already has a PIN configured
-    try {
-      const active = await api.accountGetActive();
-      if (active?.has_pin) {
-        onComplete();
-        return;
-      }
-    } catch {
-      // Fall through to set_pin on error
-    }
-    setLoginState('set_pin');
-  }, [onComplete]);
+    await continueAfterFreshAuth();
+  }, [continueAfterFreshAuth]);
 
   const handleSwitchAccount = useCallback(() => {
     setConnectProvider(null);
@@ -254,6 +316,9 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
    */
   const routeToProviderLogin = useCallback((account: SessionUser, expired: boolean) => {
     setSelectedAccount(account);
+    if (expired) {
+      markAccountSessionless(account.accountId);
+    }
     // Always surface account context (avatar/name/email) on the login form
     // when re-auth is needed — that's what makes this feel like "welcome
     // back" instead of a cold-blank login screen. Only the wording changes:
@@ -276,7 +341,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
       setTab('quick');
     }
     setLoginState('logged_out');
-  }, []);
+  }, [markAccountSessionless]);
 
   const handleSelectAccount = useCallback(async (account: SessionUser) => {
     setSelectedAccount(account);
@@ -314,6 +379,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
         // through PIN next time, and route to the matching login form.
         if (account.accountId) {
           try { await api.accountClearSession(account.accountId); } catch { /* noop */ }
+          markAccountSessionless(account.accountId);
         }
         routeToProviderLogin(account, true);
       }
@@ -323,7 +389,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     // No saved session — go straight to the right login form for this
     // account's provider. This is the normal "stale picker entry" path.
     routeToProviderLogin(account, false);
-  }, [switchAccount, routeToProviderLogin]);
+  }, [switchAccount, routeToProviderLogin, markAccountSessionless]);
 
   // ── PIN Entry ──
 
@@ -377,6 +443,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
       if (isRevoked) {
         if (selectedAccount?.accountId) {
           try { await api.accountClearSession(selectedAccount.accountId); } catch { /* noop */ }
+          markAccountSessionless(selectedAccount.accountId);
         }
         setPinRevoked(true);
         // Persistent corner notification — ~6s, dismissible. Used in
@@ -412,14 +479,72 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     } finally {
       setPinLoading(false);
     }
-  }, [selectedAccount, pinDigits, onComplete, t, unlockWithPin, routeToProviderLogin]);
+  }, [selectedAccount, pinDigits, onComplete, t, unlockWithPin, routeToProviderLogin, markAccountSessionless]);
 
   // Auto-submit PIN when all digits are entered
   useEffect(() => {
     if (loginState === 'pin_entry' && pinDigits.every(d => d !== '') && !pinLoading) {
-      handlePinSubmit();
+      const timer = window.setTimeout(() => {
+        handlePinSubmit();
+      }, PIN_SUBMIT_DELAY_MS);
+      return () => window.clearTimeout(timer);
     }
   }, [pinDigits, loginState, pinLoading, handlePinSubmit]);
+
+  // ── Re-link existing PIN after fresh login ──
+
+  const handleRelinkPinChange = useCallback((index: number, value: string) => {
+    if (!/^\d*$/.test(value)) return;
+    const digit = value.slice(-1);
+    setRelinkPinDigits(prev => {
+      const next = [...prev];
+      next[index] = digit;
+      return next;
+    });
+    if (digit && index < PIN_LENGTH - 1) {
+      relinkPinInputRefs.current[index + 1]?.focus();
+    }
+  }, []);
+
+  const handleRelinkPinKeyDown = useCallback((index: number, e: React.KeyboardEvent) => {
+    if (e.key === 'Backspace' && !relinkPinDigits[index] && index > 0) {
+      relinkPinInputRefs.current[index - 1]?.focus();
+      setRelinkPinDigits(prev => {
+        const next = [...prev];
+        next[index - 1] = '';
+        return next;
+      });
+    }
+  }, [relinkPinDigits]);
+
+  const handleRelinkPinSubmit = useCallback(async () => {
+    if (!selectedAccount?.accountId) return;
+    const pin = relinkPinDigits.join('');
+    if (pin.length !== PIN_LENGTH) return;
+
+    setRelinkPinLoading(true);
+    setRelinkPinError('');
+    try {
+      await api.accountRelinkPin(selectedAccount.accountId, pin);
+      clearAccountSessionless(selectedAccount.accountId);
+      onComplete();
+    } catch (err: unknown) {
+      setRelinkPinError(errorMessage(err, t('auth.pin.error', { defaultValue: 'PIN verification failed' })));
+      setRelinkPinDigits(Array(PIN_LENGTH).fill(''));
+      setTimeout(() => relinkPinInputRefs.current[0]?.focus(), 50);
+    } finally {
+      setRelinkPinLoading(false);
+    }
+  }, [selectedAccount, relinkPinDigits, clearAccountSessionless, onComplete, t]);
+
+  useEffect(() => {
+    if (loginState === 'relink_pin' && relinkPinDigits.every(d => d !== '') && !relinkPinLoading) {
+      const timer = window.setTimeout(() => {
+        handleRelinkPinSubmit();
+      }, PIN_SUBMIT_DELAY_MS);
+      return () => window.clearTimeout(timer);
+    }
+  }, [relinkPinDigits, loginState, relinkPinLoading, handleRelinkPinSubmit]);
 
   // ── Set PIN (after first login) ──
 
@@ -461,49 +586,66 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
 
   // Auto-advance from create to confirm
   useEffect(() => {
-    if (pinSetStep === 'create' && newPinDigits.every(d => d !== '')) {
-      setPinSetStep('confirm');
-      setConfirmPinDigits(Array(PIN_LENGTH).fill(''));
-      setPinSetError('');
-      setTimeout(() => confirmPinInputRefs.current[0]?.focus(), 50);
+    if (pinSetStep === 'create' && newPinDigits.every(d => d !== '') && !pinSetLoading) {
+      const timer = window.setTimeout(() => {
+        setPinSetStep('confirm');
+        setConfirmPinDigits(Array(PIN_LENGTH).fill(''));
+        setPinSetError('');
+        setTimeout(() => confirmPinInputRefs.current[0]?.focus(), 50);
+      }, PIN_SUBMIT_DELAY_MS);
+      return () => window.clearTimeout(timer);
     }
-  }, [newPinDigits, pinSetStep]);
+  }, [newPinDigits, pinSetStep, pinSetLoading]);
 
   // Auto-submit confirm
   useEffect(() => {
-    if (pinSetStep === 'confirm' && confirmPinDigits.every(d => d !== '')) {
+    if (pinSetStep === 'confirm' && confirmPinDigits.every(d => d !== '') && !pinSetLoading) {
       const pin = newPinDigits.join('');
       const confirm = confirmPinDigits.join('');
-      if (pin !== confirm) {
-        setPinSetError(t('auth.pin.mismatch', { defaultValue: 'PINs do not match. Try again.' }));
-        setPinSetStep('create');
-        setNewPinDigits(Array(PIN_LENGTH).fill(''));
-        setConfirmPinDigits(Array(PIN_LENGTH).fill(''));
-        setTimeout(() => newPinInputRefs.current[0]?.focus(), 50);
-        return;
-      }
-
-      (async () => {
-        try {
-          const activeAccount = await api.accountGetActive();
-          const accountId = activeAccount?.id;
-          if (accountId) {
-            await api.accountSetPin(accountId, pin);
-          }
-          onComplete();
-        } catch (err: any) {
-          setPinSetError(err.message || 'Failed to set PIN');
+      const timer = window.setTimeout(() => {
+        if (pin !== confirm) {
+          setPinSetError(t('auth.pin.mismatch', { defaultValue: 'PINs do not match. Try again.' }));
           setPinSetStep('create');
           setNewPinDigits(Array(PIN_LENGTH).fill(''));
+          setConfirmPinDigits(Array(PIN_LENGTH).fill(''));
           setTimeout(() => newPinInputRefs.current[0]?.focus(), 50);
+          return;
         }
-      })();
+
+        setPinSetLoading(true);
+        void (async () => {
+          try {
+            const activeAccount = await api.accountGetActive();
+            const accountId = activeAccount?.id;
+            if (accountId) {
+              await api.accountSetPin(accountId, pin);
+              clearAccountSessionless(accountId);
+            }
+            onComplete();
+          } catch (err: unknown) {
+            setPinSetError(errorMessage(err, 'Failed to set PIN'));
+            setPinSetStep('create');
+            setNewPinDigits(Array(PIN_LENGTH).fill(''));
+            setConfirmPinDigits(Array(PIN_LENGTH).fill(''));
+            setTimeout(() => newPinInputRefs.current[0]?.focus(), 50);
+          } finally {
+            setPinSetLoading(false);
+          }
+        })();
+      }, PIN_SUBMIT_DELAY_MS);
+      return () => window.clearTimeout(timer);
     }
-  }, [confirmPinDigits, pinSetStep, newPinDigits, onComplete]);
+  }, [confirmPinDigits, pinSetStep, newPinDigits, pinSetLoading, clearAccountSessionless, onComplete, t]);
 
   const handleSkipPin = useCallback(() => {
+    if (selectedAccount?.hasPin) {
+      setRelinkPinError(t('auth.pin.required', { defaultValue: 'PIN is required for this account.' }));
+      setLoginState('relink_pin');
+      setTimeout(() => relinkPinInputRefs.current[0]?.focus(), 50);
+      return;
+    }
     onComplete();
-  }, [onComplete]);
+  }, [onComplete, selectedAccount, t]);
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
     flex: 1,
@@ -736,7 +878,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
             overflowX: 'hidden',
           }}>
             <Flexbox gap={6}>
-              {knownAccounts.map(account => (
+              {visibleAccounts.map(account => (
                 <button
                   key={account.accountId}
                   onClick={() => handleSelectAccount(account)}
@@ -803,22 +945,13 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                       </span>
                     )}
                     {account.hasPin && (
-                      <span
-                        title={account.hasSession
-                          ? t('auth.accountPicker.pinProtected', { defaultValue: 'PIN protected' })
-                          : t('auth.accountPicker.pinConfiguredSignInRequired', {
-                            defaultValue: 'PIN configured, sign in required',
-                          })}
-                        style={{ display: 'inline-flex', flexShrink: 0 }}
-                      >
-                        <ShieldCheck
-                          size={14}
-                          style={{
-                            color: account.hasSession ? token.colorSuccess : token.colorWarningText,
-                            flexShrink: 0,
-                          }}
-                        />
-                      </span>
+                      <ShieldCheck
+                        size={14}
+                        style={{
+                          color: account.hasSession ? token.colorSuccess : token.colorTextTertiary,
+                          flexShrink: 0,
+                        }}
+                      />
                     )}
                     <ChevronRight size={14} style={{ color: token.colorTextTertiary, flexShrink: 0 }} />
                   </Flexbox>
@@ -926,6 +1059,51 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
       );
     }
 
+    // Re-link existing PIN after fresh login. This keeps the already-created
+    // PIN without asking the user to create and confirm a brand-new one.
+    if (loginState === 'relink_pin' && selectedAccount) {
+      return (
+        <>
+          <div style={{
+            width: 52, height: 52, borderRadius: 14,
+            background: `${token.colorPrimary}12`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            marginBottom: 16,
+          }}>
+            <ShieldCheck size={26} color={token.colorPrimary} />
+          </div>
+
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: token.colorText, margin: '0 0 4px' }}>
+            {t('auth.pin.relinkTitle', { defaultValue: 'Enter PIN' })}
+          </h2>
+          <Text type="secondary" style={{ fontSize: 13, marginBottom: 24, textAlign: 'center' }}>
+            {t('auth.pin.relinkSubtitle', {
+              defaultValue: 'Use your existing PIN to keep quick login enabled.',
+            })}
+          </Text>
+
+          {renderPinInputRow(
+            relinkPinDigits,
+            relinkPinInputRefs,
+            handleRelinkPinChange,
+            handleRelinkPinKeyDown,
+            relinkPinLoading,
+          )}
+
+          {relinkPinError && (
+            <Text type="danger" style={{ fontSize: 12, marginTop: 10, textAlign: 'center' }}>
+              {relinkPinError}
+            </Text>
+          )}
+
+          {relinkPinLoading && (
+            <Spin size="small" style={{ marginTop: 12 }} />
+          )}
+
+        </>
+      );
+    }
+
     // Set PIN (after first login)
     if (loginState === 'set_pin') {
       return (
@@ -953,8 +1131,8 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
           </Text>
 
           {pinSetStep === 'create'
-            ? renderPinInputRow(newPinDigits, newPinInputRefs, handleNewPinChange, handleNewPinKeyDown)
-            : renderPinInputRow(confirmPinDigits, confirmPinInputRefs, handleNewPinChange, handleNewPinKeyDown)
+            ? renderPinInputRow(newPinDigits, newPinInputRefs, handleNewPinChange, handleNewPinKeyDown, pinSetLoading)
+            : renderPinInputRow(confirmPinDigits, confirmPinInputRefs, handleNewPinChange, handleNewPinKeyDown, pinSetLoading)
           }
 
           {pinSetError && (
@@ -963,14 +1141,21 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
             </Text>
           )}
 
-          <Button
-            type="link"
-            size="small"
-            onClick={handleSkipPin}
-            style={{ marginTop: 20, fontSize: 12, color: token.colorTextTertiary }}
-          >
-            {t('auth.pin.skipForNow', { defaultValue: 'Skip for now' })}
-          </Button>
+          {pinSetLoading && (
+            <Spin size="small" style={{ marginTop: 12 }} />
+          )}
+
+          {!selectedAccount?.hasPin && (
+            <Button
+              type="link"
+              size="small"
+              onClick={handleSkipPin}
+              disabled={pinSetLoading}
+              style={{ marginTop: 20, fontSize: 12, color: token.colorTextTertiary }}
+            >
+              {t('auth.pin.skipForNow', { defaultValue: 'Skip for now' })}
+            </Button>
+          )}
         </>
       );
     }
@@ -1040,11 +1225,15 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
               icon={<ArrowRight size={16} />}
               iconPosition="end"
               onClick={async () => {
-                // Skip PIN setup if the account already has a PIN configured
                 try {
                   const active = await api.accountGetActive();
                   if (active?.has_pin) {
-                    onComplete();
+                    const user = accountIdentityToSessionUser(active);
+                    setSelectedAccount(user);
+                    setPinDigits(Array(PIN_LENGTH).fill(''));
+                    setPinError('');
+                    setLoginState('pin_entry');
+                    setTimeout(() => pinInputRefs.current[0]?.focus(), 50);
                     return;
                   }
                 } catch {

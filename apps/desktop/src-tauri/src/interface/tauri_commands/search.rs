@@ -1,5 +1,5 @@
-use crate::error::AppResult;
 use crate::contracts::{AiSearchInput, SearchQueryInput, StubPayload};
+use crate::error::AppResult;
 
 use crate::application::search as application_search;
 

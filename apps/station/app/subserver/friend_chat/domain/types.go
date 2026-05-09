@@ -116,9 +116,20 @@ type FriendRequest struct {
 	UpdatedAt   time.Time
 }
 
+type Friendship struct {
+	ActorDID  string
+	PeerDID   string
+	Status    int32
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 const (
 	FriendRequestStatusPending  = 1
 	FriendRequestStatusAccepted = 2
 	FriendRequestStatusRejected = 3
-	FriendRequestStatusRemoved  = 5
+)
+
+const (
+	FriendshipStatusBlocked = 3
 )

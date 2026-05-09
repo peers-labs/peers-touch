@@ -131,7 +131,7 @@ The historical `Type` column (ActivityPub literal, e.g. `"Person"`) remains as l
 |---|---|---|
 | `services/identityPipeline` | `services/identityPipeline.ts` | Ordered, idempotent identity-change pipeline; sole entry for state-mutating reactions to identity changes. |
 | `services/identityHandlers` | `services/identityHandlers.ts` | Default handlers, registered at boot: `clear-zustand-stores`, `clear-localstorage-caches`, `refresh-current-session`. |
-| `services/identity_event` | `services/identity_event.ts` | Tauri-side `auth:identity_changed` bridge; deduplicates the originator window via `LOCAL_IDENTITY_FLAG`. |
+| `services/identity_event` | `services/identity_event.ts` | Tauri-side `auth.identity_changed` bridge; deduplicates the originator window via `LOCAL_IDENTITY_FLAG`. |
 | `store/*` | `store` | Each top-level Zustand store implements `reset()`; identity-aware stores also implement `hydrate(actorId)`. |
 | `services/desktop_api` | `services/desktop_api.ts` | Sole binding to Tauri commands. `AccountIdentity` is the canonical TS Actor handle. |
 
@@ -194,13 +194,13 @@ This rule applies to:
 
 New modules introducing in-memory caches MUST follow the same pattern.
 
-### C-5 · Identity-mutating commands emit `auth:identity_changed`
+### C-5 · Identity-mutating commands emit `auth.identity_changed`
 
 Every command that successfully mutates the active identity (`auth_login`, `auth_logout`, `account_switch`, `account_unlock`, `ensure_station_session`, `save_oauth_callback`) MUST:
 
 1. Update the bound `ActiveSession` (bind / unbind in `WindowSessionRegistry`).
 2. Persist via `session_store::save / delete`.
-3. Emit `auth:identity_changed` with `IdentityChangedPayload { reason, actor_id, login_method }`.
+3. Emit `auth.identity_changed` with `IdentityChangedPayload { reason, actor_id, login_method }`.
 
 The originating window's frontend MUST set `LOCAL_IDENTITY_FLAG = '1'` in `sessionStorage` before invoking the command, so the listener path skips a duplicate pipeline run in the originating window.
 
@@ -235,7 +235,7 @@ All proto changes are additive. Servers MUST continue to populate legacy fields 
   ③ runIdentityPipeline({ reason:'login', actorId, … })    — C-6 originator
 
 [other windows]
-  ④ Tauri event auth:identity_changed
+  ④ Tauri event auth.identity_changed
      ↳ identity_event bridge sees no flag
      ↳ runIdentityPipeline(...)                            — C-6 listener
 ```

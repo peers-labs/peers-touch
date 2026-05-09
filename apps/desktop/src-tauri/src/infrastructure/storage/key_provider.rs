@@ -1,4 +1,6 @@
-use crate::domain::storage::key_management::{KeyErrorCode, KeyMaterial, KeyProvider, KeyProviderError};
+use crate::domain::storage::key_management::{
+    KeyErrorCode, KeyMaterial, KeyProvider, KeyProviderError,
+};
 use keyring::Entry;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -114,9 +116,15 @@ impl PlatformKeyProvider {
 
     fn classify_keyring_error(key_ref: &str, err: &keyring::Error) -> KeyProviderError {
         match err {
-            keyring::Error::NoEntry => KeyProviderError::not_found(key_ref, "no entry in os keystore"),
-            keyring::Error::Ambiguous(_) => KeyProviderError::internal(key_ref, "ambiguous keystore entry"),
-            keyring::Error::NoStorageAccess(_) => KeyProviderError::permission_denied(key_ref, "os keystore access denied"),
+            keyring::Error::NoEntry => {
+                KeyProviderError::not_found(key_ref, "no entry in os keystore")
+            }
+            keyring::Error::Ambiguous(_) => {
+                KeyProviderError::internal(key_ref, "ambiguous keystore entry")
+            }
+            keyring::Error::NoStorageAccess(_) => {
+                KeyProviderError::permission_denied(key_ref, "os keystore access denied")
+            }
             _ => {
                 let msg = format!("os keystore error: {err}");
                 if msg.contains("locked") || msg.contains("Locked") {
@@ -129,8 +137,11 @@ impl PlatformKeyProvider {
     }
 
     fn read_from_os_store(key_ref: &str) -> Result<Option<KeyMaterial>, KeyProviderError> {
-        let entry = Entry::new(Self::service_name(), Self::username_for_ref(key_ref).as_str())
-            .map_err(|e| Self::classify_keyring_error(key_ref, &e))?;
+        let entry = Entry::new(
+            Self::service_name(),
+            Self::username_for_ref(key_ref).as_str(),
+        )
+        .map_err(|e| Self::classify_keyring_error(key_ref, &e))?;
         match entry.get_password() {
             Ok(payload) => Ok(Self::decode_material(payload.as_str())),
             Err(keyring::Error::NoEntry) => Ok(None),
@@ -139,8 +150,11 @@ impl PlatformKeyProvider {
     }
 
     fn write_to_os_store(key_ref: &str, item: &KeyMaterial) -> Result<(), KeyProviderError> {
-        let entry = Entry::new(Self::service_name(), Self::username_for_ref(item.key_id.as_str()).as_str())
-            .map_err(|e| Self::classify_keyring_error(key_ref, &e))?;
+        let entry = Entry::new(
+            Self::service_name(),
+            Self::username_for_ref(item.key_id.as_str()).as_str(),
+        )
+        .map_err(|e| Self::classify_keyring_error(key_ref, &e))?;
         entry
             .set_password(Self::encode_material(item).as_str())
             .map_err(|e| Self::classify_keyring_error(key_ref, &e))
@@ -151,10 +165,9 @@ impl KeyProvider for PlatformKeyProvider {
     fn get_or_create_key(&self, key_ref: &str) -> Result<KeyMaterial, KeyProviderError> {
         // 1. Hot path: in-memory cache.
         {
-            let guard = self
-                .store
-                .lock()
-                .map_err(|_| KeyProviderError::internal(key_ref, "key provider state lock poisoned"))?;
+            let guard = self.store.lock().map_err(|_| {
+                KeyProviderError::internal(key_ref, "key provider state lock poisoned")
+            })?;
             if let Some(item) = guard.get(key_ref) {
                 return Ok(item.clone());
             }
@@ -186,12 +199,19 @@ impl KeyProvider for PlatformKeyProvider {
         Ok(created)
     }
 
-    fn rotate_key(&self, key_ref: &str, next_version: i32) -> Result<KeyMaterial, KeyProviderError> {
+    fn rotate_key(
+        &self,
+        key_ref: &str,
+        next_version: i32,
+    ) -> Result<KeyMaterial, KeyProviderError> {
         let prev = self.get_or_create_key(key_ref)?;
         if next_version <= prev.key_version {
             return Err(KeyProviderError::version_conflict(
                 key_ref,
-                format!("next_version({next_version}) <= current({})", prev.key_version),
+                format!(
+                    "next_version({next_version}) <= current({})",
+                    prev.key_version
+                ),
             ));
         }
         let mut guard = self

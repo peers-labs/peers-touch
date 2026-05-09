@@ -74,9 +74,9 @@ impl I18nService {
         {
             let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
             let project_root = manifest_dir
-                .parent()    // desktop
-                .and_then(|p| p.parent())    // apps
-                .and_then(|p| p.parent());   // project_root
+                .parent() // desktop
+                .and_then(|p| p.parent()) // apps
+                .and_then(|p| p.parent()); // project_root
 
             if let Some(root) = project_root {
                 let dev_locales = root.join("packages").join("locales");
@@ -186,8 +186,8 @@ impl I18nService {
         let mut languages = Vec::new();
         let mut resources: HashMap<String, HashMap<String, serde_json::Value>> = HashMap::new();
 
-        let entries = fs::read_dir(root_dir)
-            .map_err(|e| format!("Failed to read i18n directory: {e}"))?;
+        let entries =
+            fs::read_dir(root_dir).map_err(|e| format!("Failed to read i18n directory: {e}"))?;
 
         for entry in entries.flatten() {
             let path = entry.path();
@@ -280,7 +280,9 @@ Community packs are **never touched** by the app.
     fn read_metadata_version(path: &Path) -> Option<String> {
         let content = fs::read_to_string(path).ok()?;
         let obj: serde_json::Value = serde_json::from_str(&content).ok()?;
-        obj.get("version").and_then(|v| v.as_str()).map(String::from)
+        obj.get("version")
+            .and_then(|v| v.as_str())
+            .map(String::from)
     }
 
     /// Resolve the source directory containing built-in locale files.
@@ -297,9 +299,9 @@ Community packs are **never touched** by the app.
         // src-tauri -> desktop -> apps -> project_root -> packages/locales
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let project_root = manifest_dir
-            .parent()   // desktop
-            .and_then(|p| p.parent())   // apps
-            .and_then(|p| p.parent());  // project_root
+            .parent() // desktop
+            .and_then(|p| p.parent()) // apps
+            .and_then(|p| p.parent()); // project_root
 
         if let Some(root) = project_root {
             let dev_locales = root.join("packages").join("locales");

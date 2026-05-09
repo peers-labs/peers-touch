@@ -1,6 +1,6 @@
 // PR-1 stop-bleeding: broadcast identity changes so every window in the
 // process (and every dev-server tab driven by the same backend) refreshes
-// its in-memory caches. The frontend listens for `auth:identity_changed`
+// its in-memory caches. The frontend listens for `auth:identity-changed`
 // and triggers a reload pipeline.
 //
 // This module is intentionally tiny — the long-term plan (M3/PR-3) is a
@@ -11,7 +11,7 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-pub const IDENTITY_CHANGED_EVENT: &str = "auth:identity_changed";
+pub const IDENTITY_CHANGED_EVENT: &str = "auth:identity-changed";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]

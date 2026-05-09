@@ -31,17 +31,12 @@ pub fn agent_execute_turn(input: AgentExecuteTurnInput, token: &str) -> AppResul
         "max_retries": input.max_retries.unwrap_or(3),
     });
 
-    match station_client::request_json(
-        Method::POST,
-        "/agent/turn/execute",
-        token,
-        None,
-        Some(body),
-    ) {
+    match station_client::request_json(Method::POST, "/agent/turn/execute", token, None, Some(body))
+    {
         Ok(result) => {
             tracing::info!(command = "agent_execute_turn", "Turn execution succeeded");
-            let status = serde_json::to_string(&result)
-                .unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
+            let status =
+                serde_json::to_string(&result).unwrap_or_else(|_| r#"{"status":"ok"}"#.to_string());
             AppResult::success(StubPayload {
                 command: "agent_execute_turn".to_string(),
                 status,

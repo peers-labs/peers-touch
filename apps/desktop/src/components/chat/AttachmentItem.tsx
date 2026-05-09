@@ -5,19 +5,17 @@
 // `oss://{host}/{key}` cid carries the source-of-truth station and
 // the local file cache is the preferred backing store.
 //
-// Image attachments render as inline thumbnails with an in-app preview.
-// Non-image attachments stay as compact cards that open the resolved URL
-// in the system browser.
+// Attachments render as compact cards that open the resolved URL in
+// the system browser.
 
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Image, theme, Typography, Tooltip } from 'antd';
+import { theme, Typography, Tooltip } from 'antd';
 import { ExternalLink, FileImage, Globe, Lock, MessageSquare, Paperclip } from 'lucide-react';
-import { openMediaExternal, useMediaProjection } from '../../services/mediaRuntime';
+import { useAttachmentUrl } from './useAttachmentUrl';
 import type { FriendMessageAttachment } from '../../gen/proto/domain/chat/friend_chat_pb';
 import type { GroupMessageAttachment } from '../../gen/proto/domain/chat/group_chat_pb';
-import { log } from '../../utils/logger';
 
 const { Text } = Typography;
 
@@ -123,13 +121,6 @@ function isImageAttachment(attachment: Attachment): boolean {
   const mimeType = attachment.mimeType?.toLowerCase() ?? '';
   const filename = attachment.filename ?? '';
   return mimeType.startsWith('image/') || IMAGE_FILENAME_PATTERN.test(filename);
-}
-
-function imageThumbnailCid(attachment: Attachment): string {
-  const candidate = (attachment as Attachment & { thumbnail_cid?: string }).thumbnailCid
-    || (attachment as Attachment & { thumbnail_cid?: string }).thumbnail_cid
-    || '';
-  return candidate.trim() || attachment.cid;
 }
 
 function formatAttachmentSize(size: Attachment['size']): string {
@@ -263,16 +254,8 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
   const { token } = theme.useToken();
   const [hovered, setHovered] = useState(false);
   const [previewFailed, setPreviewFailed] = useState(false);
+  const src = useAttachmentUrl(attachment.cid);
   const isImage = isImageAttachment(attachment);
-  const media = useMediaProjection(attachment.cid
-    ? {
-        cid: attachment.cid,
-        thumbnailCid: isImage ? imageThumbnailCid(attachment) : undefined,
-        mimeType: attachment.mimeType,
-      }
-    : null);
-  const fullSrc = media?.localOriginalSrc ?? null;
-  const thumbnailSrc = media?.localThumbnailSrc ?? fullSrc;
   const chip = visibilityChip(visibilityHint, t, isOwn, token);
   const showHint = chip !== null;
   const filename = attachment.filename?.trim() || t('chat.social.messageArea.attachmentUnnamed', 'Attachment');
@@ -280,8 +263,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
   const sizeLabel = formatAttachmentSize(attachment.size);
   const actionLabel = t('chat.social.messageArea.attachmentOpen', 'Open');
   const openTitle = t('chat.social.messageArea.attachmentOpenOrDownload', 'Open or download attachment');
-  const imageReady = Boolean(isImage && thumbnailSrc && !previewFailed);
-  const imageFailed = Boolean(isImage && (previewFailed || media?.state === 'failed'));
+  const canPreviewImage = isImage && src && !previewFailed;
   const cardBackground = isOwn
     ? hovered
       ? 'rgba(255,255,255,0.22)'
@@ -293,89 +275,69 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
 
   useEffect(() => {
     setPreviewFailed(false);
-  }, [attachment.cid, thumbnailSrc]);
+  }, [attachment.cid, src]);
 
   const openAttachment = () => {
-    if (!attachment.cid) return;
-    void openMediaExternal(attachment.cid).catch((error) => {
-      log.warn('chat', 'open attachment failed', error);
-    });
+    if (src) window.open(src, '_blank');
   };
 
   const handleKeyDown = (ev: React.KeyboardEvent<HTMLDivElement>) => {
-    if (!attachment.cid) return;
+    if (!src) return;
     if (ev.key === 'Enter' || ev.key === ' ') {
       ev.preventDefault();
       openAttachment();
     }
   };
 
-  if (isImage) {
-    const statusText = imageFailed
-      ? t('chat.social.messageArea.imageUnavailable', 'Image unavailable')
-      : t('chat.social.messageArea.imageResolving', 'Loading image...');
-
+  if (canPreviewImage) {
     return (
       <Flexbox gap={3} style={{ maxWidth: '100%' }}>
         <Flexbox
-          role={attachment.cid ? 'button' : undefined}
-          tabIndex={attachment.cid ? 0 : undefined}
-          onClick={imageReady ? undefined : openAttachment}
+          role="button"
+          tabIndex={0}
+          onClick={openAttachment}
           onKeyDown={handleKeyDown}
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
           style={{
-            maxWidth: 'min(260px, 100%)',
+            width: 'min(220px, 100%)',
+            maxWidth: '100%',
             overflow: 'hidden',
             border: `1px solid ${cardBorder}`,
-            borderRadius: 12,
+            borderRadius: 10,
             background: cardBackground,
             boxShadow: hovered ? token.boxShadowTertiary : 'none',
-            cursor: attachment.cid ? 'pointer' : 'default',
+            cursor: 'pointer',
             transition: 'background 120ms ease, box-shadow 120ms ease',
           }}
         >
-          {imageReady ? (
-            <Image
-              src={thumbnailSrc ?? ''}
-              alt={filename}
-              preview={fullSrc ? { src: fullSrc, mask: false } : false}
-              wrapperStyle={{
-                display: 'block',
-                maxWidth: 'min(260px, 100%)',
-                lineHeight: 0,
-              }}
-              style={{
-                display: 'block',
-                maxWidth: 'min(260px, 100%)',
-                maxHeight: 260,
-                objectFit: 'contain',
-                background: token.colorFillSecondary,
-              }}
-              onError={() => setPreviewFailed(true)}
+          <img
+            src={src}
+            alt={filename}
+            style={{
+              display: 'block',
+              width: '100%',
+              height: 124,
+              objectFit: 'cover',
+              background: token.colorFillSecondary,
+            }}
+            onError={() => setPreviewFailed(true)}
+          />
+          <Flexbox style={{ padding: '7px 8px' }}>
+            <AttachmentDetails
+              actionLabel={actionLabel}
+              actionVisible={hovered}
+              filename={filename}
+              isImage={isImage}
+              isOwn={isOwn}
+              onOpen={openAttachment}
+              openTitle={openTitle}
+              sizeLabel={sizeLabel}
+              src={src}
+              token={token}
+              typeLabel={typeLabel}
             />
-          ) : (
-            <Flexbox
-              align="center"
-              justify="center"
-              gap={8}
-              style={{
-                width: 220,
-                minHeight: 140,
-                padding: 16,
-                color: isOwn ? 'rgba(255,255,255,0.82)' : token.colorTextSecondary,
-                background: isOwn ? 'rgba(255,255,255,0.08)' : token.colorFillSecondary,
-              }}
-            >
-              <FileImage size={24} />
-              <Text style={{ color: 'inherit', fontSize: 12, fontWeight: 500 }}>
-                {statusText}
-              </Text>
-              <Text ellipsis style={{ maxWidth: 180, color: 'inherit', fontSize: 11, opacity: 0.72 }}>
-                {filename}
-              </Text>
-            </Flexbox>
-          )}
+          </Flexbox>
         </Flexbox>
         {showHint && chip && <VisibilityBadge chip={chip} />}
       </Flexbox>
@@ -387,8 +349,8 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
       <Flexbox
         horizontal
         align="center"
-        role={fullSrc ? 'button' : undefined}
-        tabIndex={fullSrc ? 0 : undefined}
+        role={src ? 'button' : undefined}
+        tabIndex={src ? 0 : undefined}
         style={{
           width: 'min(260px, 100%)',
           maxWidth: '100%',
@@ -397,8 +359,8 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
           borderRadius: 10,
           background: cardBackground,
           boxShadow: hovered ? token.boxShadowTertiary : 'none',
-          cursor: fullSrc ? 'pointer' : 'default',
-          opacity: fullSrc ? 1 : 0.72,
+          cursor: src ? 'pointer' : 'default',
+          opacity: src ? 1 : 0.72,
           transition: 'background 120ms ease, box-shadow 120ms ease',
         }}
         onClick={openAttachment}
@@ -415,7 +377,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
           onOpen={openAttachment}
           openTitle={openTitle}
           sizeLabel={sizeLabel}
-          src={fullSrc}
+          src={src}
           token={token}
           typeLabel={typeLabel}
         />

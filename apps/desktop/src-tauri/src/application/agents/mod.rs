@@ -1,8 +1,8 @@
-use crate::error::{AppResult, ErrorCode};
 use crate::contracts::{
     AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentSearchInput, AgentUpdateInput,
     StubPayload,
 };
+use crate::error::{AppResult, ErrorCode};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -45,9 +45,11 @@ struct AgentStores {
 static AGENT_STORES: OnceLock<Mutex<AgentStores>> = OnceLock::new();
 
 fn agent_stores() -> &'static Mutex<AgentStores> {
-    AGENT_STORES.get_or_init(|| Mutex::new(AgentStores {
-        buckets: HashMap::new(),
-    }))
+    AGENT_STORES.get_or_init(|| {
+        Mutex::new(AgentStores {
+            buckets: HashMap::new(),
+        })
+    })
 }
 
 fn with_agent_app_result<F>(actor_id: &str, f: F) -> AppResult<StubPayload>
@@ -90,7 +92,11 @@ pub fn agents_list(actor_id: &str) -> AppResult<StubPayload> {
             .iter()
             .map(|item| item.data.clone())
             .collect::<Vec<_>>();
-        tracing::info!(command = "agents_list", count = agents.len(), "Agents listed");
+        tracing::info!(
+            command = "agents_list",
+            count = agents.len(),
+            "Agents listed"
+        );
         success_payload("agents_list", json!({ "agents": agents }))
     })
 }

@@ -22,7 +22,7 @@
 //!
 //! ```text
 //!     AppLaunch / IdentityRestored / IdentitySwitched
-//!     NetworkOnline / AppForeground / AppBackground / Heartbeat
+//!     NetworkOnline / AppForeground / Heartbeat
 //!         │
 //!         ▼
 //!   ┌──────────┐  reconcile() ok   ┌──────────┐
@@ -77,12 +77,11 @@ pub enum PresenceTrigger {
     /// Frontend collapses `visibilitychange`, `focus`, and `pageshow` into
     /// this single trigger.
     AppForeground,
-    /// App went to background / minimised / lost focus. On desktop this is
-    /// still reachable for chat, so it does not drive `/offline`; the variant
-    /// remains for older frontends and telemetry.
+    /// App went to background / minimised / lost focus. Used to drive
+    /// `/offline` so station stops queuing for us.
     AppBackground,
-    /// App is shutting down (window close / process quit). This is a real
-    /// offline edge and tells Station to queue future messages.
+    /// App is shutting down (window close / process quit). Same effect
+    /// as `AppBackground` but expresses intent.
     AppShutdown,
 
     /// Auth `restoreSession` succeeded for an existing actor (no new
@@ -135,7 +134,6 @@ impl PresenceTrigger {
     pub fn target_state(self) -> PresenceState {
         match self {
             PresenceTrigger::AppLaunch
-            | PresenceTrigger::AppBackground
             | PresenceTrigger::AppForeground
             | PresenceTrigger::IdentityRestored
             | PresenceTrigger::IdentitySwitched
@@ -143,7 +141,8 @@ impl PresenceTrigger {
             | PresenceTrigger::Heartbeat
             | PresenceTrigger::Manual => PresenceState::Online,
 
-            PresenceTrigger::AppShutdown
+            PresenceTrigger::AppBackground
+            | PresenceTrigger::AppShutdown
             | PresenceTrigger::IdentityLoggedOut
             | PresenceTrigger::NetworkOffline => PresenceState::Offline,
         }
@@ -205,18 +204,36 @@ mod tests {
             let wire = serde_json::to_string(&t).unwrap();
             // Strip the JSON quotes added by serde for enum strings.
             let bare = wire.trim_matches('"');
-            assert_eq!(PresenceTrigger::from_wire(bare), Some(t), "round-trip {bare}");
+            assert_eq!(
+                PresenceTrigger::from_wire(bare),
+                Some(t),
+                "round-trip {bare}"
+            );
         }
     }
 
     #[test]
     fn target_state_partitions_triggers() {
-        assert_eq!(PresenceTrigger::AppForeground.target_state(), PresenceState::Online);
-        assert_eq!(PresenceTrigger::AppBackground.target_state(), PresenceState::Online);
-        assert_eq!(PresenceTrigger::IdentitySwitched.target_state(), PresenceState::Online);
-        assert_eq!(PresenceTrigger::AppShutdown.target_state(), PresenceState::Offline);
-        assert_eq!(PresenceTrigger::IdentityLoggedOut.target_state(), PresenceState::Offline);
-        assert_eq!(PresenceTrigger::NetworkOffline.target_state(), PresenceState::Offline);
+        assert_eq!(
+            PresenceTrigger::AppForeground.target_state(),
+            PresenceState::Online
+        );
+        assert_eq!(
+            PresenceTrigger::IdentitySwitched.target_state(),
+            PresenceState::Online
+        );
+        assert_eq!(
+            PresenceTrigger::AppShutdown.target_state(),
+            PresenceState::Offline
+        );
+        assert_eq!(
+            PresenceTrigger::IdentityLoggedOut.target_state(),
+            PresenceState::Offline
+        );
+        assert_eq!(
+            PresenceTrigger::NetworkOffline.target_state(),
+            PresenceState::Offline
+        );
     }
 
     #[test]

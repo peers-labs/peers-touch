@@ -516,13 +516,13 @@ particular:
 - On `Resync`, calls into a registered "cold catch-up" function (which
   the chat layer provides) before resuming live event dispatch.
 - Decodes each event, emits via Tauri custom event
-  `realtime:event` carrying the protobuf-encoded payload as bytes.
+  `realtime.event` carrying the protobuf-encoded payload as bytes.
 
 ### 4.2 Frontend dispatch (TypeScript)
 
 `apps/desktop/src/services/eventStream.ts`:
 
-- Single Tauri listener for `realtime:event`.
+- Single Tauri listener for `realtime.event`.
 - Decodes protobuf with the generated Schema.
 - Dispatches into `eventBus` (existing) under typed event names:
   `realtime.message`, `realtime.receipt`, `realtime.typing`,

@@ -1,11 +1,73 @@
-use crate::domain::auth::session::{from_station_response, validate_login_input, validate_token, AuthDomainError, AuthSession};
+use crate::contracts::{AuthLoginInput, AuthSessionPayload, AuthValidateTokenInput};
+use crate::domain::auth::session::{
+    from_station_response, validate_login_input, validate_token, AuthDomainError, AuthSession,
+};
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::session_store::{self, SessionSource};
+use crate::infrastructure::session_store::{PersistedSession, SessionSource};
+use crate::infrastructure::session_vault::{self, SessionVaultError};
 use crate::infrastructure::station_client;
 use crate::model::actor::ActorProfile;
-use crate::contracts::{AuthLoginInput, AuthSessionPayload, AuthValidateTokenInput};
 use crate::state::{AppState, SessionState};
 use serde_json::json;
+
+pub(crate) fn takeover_station_session_token(
+    token: &str,
+) -> Result<String, station_client::StationClientError> {
+    let body = json!({ "device_type": "desktop" });
+    let resp = station_client::request_json_auth(
+        reqwest::Method::POST,
+        "/actor/session/takeover",
+        token,
+        None,
+        Some(&body),
+    )?;
+    let access_token = resp
+        .get("data")
+        .and_then(|data| data.pointer("/tokens/access_token"))
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string();
+    if access_token.is_empty() {
+        return Err(station_client::StationClientError::new(
+            station_client::StationClientErrorKind::InvalidResponse,
+            "session takeover response missing access token",
+            Some(resp),
+        ));
+    }
+    Ok(access_token)
+}
+
+pub(crate) fn session_takeover_failed<T: serde::Serialize>(
+    error: station_client::StationClientError,
+    account_id: Option<&str>,
+    provider: Option<&str>,
+) -> AppResult<T> {
+    AppResult::fail(
+        ErrorCode::Unauthorized,
+        "session revoked",
+        Some(json!({
+            "code": "session_revoked",
+            "reason": "takeover_failed",
+            "account_id": account_id,
+            "provider": provider,
+            "raw": error.message,
+        })),
+    )
+}
+
+fn persist_session_if_unprotected(
+    account_id: &str,
+    session: &AuthSession,
+    source: SessionSource,
+) -> Result<(), AppResult<AuthSessionPayload>> {
+    session_vault::persist_raw_session_for_account(
+        account_id,
+        &session.actor_id,
+        &session.token,
+        source,
+    )
+    .map_err(session_vault_to_app)
+}
 
 pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSessionPayload> {
     if let Err(error) = validate_login_input(&input.account, &input.password) {
@@ -15,12 +77,24 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
     let body = json!({ "email": input.account, "password": input.password });
     let resp = match station_client::post_json_no_auth("/actor/login", body) {
         Ok(r) => r,
-        Err(e) => return AppResult::fail(ErrorCode::Unauthorized, format!("Login failed: {}", e), None),
+        Err(e) => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                format!("Login failed: {}", e),
+                None,
+            )
+        }
     };
 
     let data = match resp.get("data") {
         Some(d) => d,
-        None => return AppResult::fail(ErrorCode::Unauthorized, "Login failed: unexpected response from station", None),
+        None => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "Login failed: unexpected response from station",
+                None,
+            )
+        }
     };
 
     let token = data
@@ -29,7 +103,11 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
         .unwrap_or_default()
         .to_string();
     if token.is_empty() {
-        return AppResult::fail(ErrorCode::Unauthorized, "Login failed: no token in response", None);
+        return AppResult::fail(
+            ErrorCode::Unauthorized,
+            "Login failed: no token in response",
+            None,
+        );
     }
 
     // Extract actor identity from the station response
@@ -87,18 +165,23 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
     if let Err(error) = write_session(state, &session) {
         return error;
     }
-    if let Err(error) = session_store::save(&session.actor_id, &session.token, SessionSource::Password)
-        .map_err(session_store_to_app)
-    {
-        return error;
-    }
 
-    let _ = crate::infrastructure::auth_identity::upsert_password(
+    let account_id = crate::infrastructure::auth_identity::upsert_password(
         &actor_id,
         &name,
         &email_str,
-        if avatar.is_empty() { None } else { Some(avatar.as_str()) },
-    );
+        if avatar.is_empty() {
+            None
+        } else {
+            Some(avatar.as_str())
+        },
+    )
+    .unwrap_or_else(|_| format!("password:{}", actor_id));
+    if let Err(error) =
+        persist_session_if_unprotected(&account_id, &session, SessionSource::Password)
+    {
+        return error;
+    }
 
     // Download avatar to local cache immediately so the account picker shows
     // the correct image on next app start without waiting for sync_user_profile.
@@ -111,7 +194,7 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
     };
 
     // Mark session as restorable (will be encrypted once PIN is set)
-    mark_account_has_session(&format!("password:{}", actor_id), &session.token);
+    mark_account_has_session(&account_id, &session.token);
 
     AppResult::success(AuthSessionPayload {
         command: "auth_login".to_string(),
@@ -134,18 +217,11 @@ pub fn auth_logout(state: &AppState) -> AppResult<AuthSessionPayload> {
         let _ = crate::infrastructure::auth_identity::clear_account_session(account_id);
     }
 
-    let bound_actor = state
-        .session
-        .lock()
-        .ok()
-        .and_then(|g| g.actor_id.clone());
+    let bound_actor = state.session.lock().ok().and_then(|g| g.actor_id.clone());
     if let Some(ref aid) = bound_actor {
-        let _ = session_store::delete(aid);
+        session_vault::purge_raw_session_for_actor(aid);
     } else if let Some(ref acc) = active_account_id {
-        let id = actor_id_from_account_id(acc);
-        if !id.is_empty() {
-            let _ = session_store::delete(&id);
-        }
+        session_vault::purge_raw_session_for_account(acc);
     }
 
     if let Err(error) = clear_session(state) {
@@ -168,11 +244,26 @@ pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
         Ok(snapshot) => snapshot,
         Err(error) => return error,
     };
+    let mut loaded_from_persistent_store = false;
     if snapshot.token.is_none() {
-        let active_actor = crate::infrastructure::auth_identity::read_state()
-            .ok()
-            .and_then(|s| s.active_account_id)
-            .map(|acc| actor_id_from_account_id(&acc))
+        let active_account = session_vault::active_account_id();
+        if active_account
+            .as_deref()
+            .map(session_vault::account_requires_pin)
+            .unwrap_or(false)
+        {
+            if let Some(account_id) = active_account.as_deref() {
+                session_vault::purge_raw_session_for_account(account_id);
+            }
+            return unauthorized(
+                "pin required",
+                json!({ "command": "auth_restore_session", "reason": "pin_required" }),
+            );
+        }
+
+        let active_actor = active_account
+            .as_deref()
+            .map(session_vault::actor_id_from_account_id)
             .filter(|id| !id.is_empty());
 
         if let Some(ref active) = active_actor {
@@ -183,17 +274,27 @@ pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
                         active_actor = %active,
                         "auth_restore_session: ignoring per-account disk session; active account does not match in-memory binding"
                     );
-                } else if let Some(blob) = session_store::load(active) {
+                } else if let Some(blob) =
+                    match load_raw_session_for_account(&active_account, active) {
+                        Ok(blob) => blob,
+                        Err(error) => return error,
+                    }
+                {
                     snapshot = SessionState {
                         actor_id: Some(blob.actor_id),
                         token: Some(blob.token),
                     };
+                    loaded_from_persistent_store = true;
                 }
-            } else if let Some(blob) = session_store::load(active) {
+            } else if let Some(blob) = match load_raw_session_for_account(&active_account, active) {
+                Ok(blob) => blob,
+                Err(error) => return error,
+            } {
                 snapshot = SessionState {
                     actor_id: Some(blob.actor_id),
                     token: Some(blob.token),
                 };
+                loaded_from_persistent_store = true;
             }
         }
     }
@@ -208,18 +309,43 @@ pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
             )
         }
     };
-    let session = match validate_token(&token) {
+    let initial_session = match validate_token(&token) {
         Ok(session) => session,
         Err(error) => {
             let _ = clear_session(state);
             return map_domain_error(error);
         }
     };
+    if let Err(error) = verify_session_with_station(&token) {
+        let _ = clear_session(state);
+        return error;
+    }
+    let token = if loaded_from_persistent_store {
+        match takeover_station_session_token(&token) {
+            Ok(token) => token,
+            Err(error) => {
+                let _ = clear_session(state);
+                session_vault::purge_raw_session_for_actor(&initial_session.actor_id);
+                return session_takeover_failed(error, None, None);
+            }
+        }
+    } else {
+        token
+    };
+    let session = match validate_token(&token) {
+        Ok(session) => session,
+        Err(error) => {
+            let _ = clear_session(state);
+            session_vault::purge_raw_session_for_actor(&initial_session.actor_id);
+            return map_domain_error(error);
+        }
+    };
     if let Err(error) = write_session(state, &session) {
         return error;
     }
-    if let Err(error) = session_store::save(&session.actor_id, &session.token, SessionSource::Password)
-        .map_err(session_store_to_app)
+    let account_id = session_vault::active_account_id().unwrap_or_else(|| session.actor_id.clone());
+    if let Err(error) =
+        persist_session_if_unprotected(&account_id, &session, SessionSource::Password)
     {
         return error;
     }
@@ -275,11 +401,16 @@ pub fn auth_validate_token(
             return map_domain_error(error);
         }
     };
+    if let Err(error) = verify_session_with_station(&token) {
+        let _ = clear_session(state);
+        return error;
+    }
     if let Err(error) = write_session(state, &session) {
         return error;
     }
-    if let Err(error) = session_store::save(&session.actor_id, &session.token, SessionSource::Password)
-        .map_err(session_store_to_app)
+    let account_id = session_vault::active_account_id().unwrap_or_else(|| session.actor_id.clone());
+    if let Err(error) =
+        persist_session_if_unprotected(&account_id, &session, SessionSource::Password)
     {
         return error;
     }
@@ -338,7 +469,7 @@ fn clear_session(state: &AppState) -> Result<(), AppResult<AuthSessionPayload>> 
     Ok(())
 }
 
-fn session_store_to_app(e: session_store::SessionStoreError) -> AppResult<AuthSessionPayload> {
+fn session_vault_to_app(e: SessionVaultError) -> AppResult<AuthSessionPayload> {
     AppResult::fail(
         ErrorCode::InternalError,
         format!("Session persistence error: {e}"),
@@ -346,12 +477,24 @@ fn session_store_to_app(e: session_store::SessionStoreError) -> AppResult<AuthSe
     )
 }
 
-/// Local station `actor_id` part from an `account_id` like `password:123` or bare `123`.
-fn actor_id_from_account_id(account_id: &str) -> String {
-    account_id
-        .split_once(':')
-        .map(|(_, id)| id.to_string())
-        .unwrap_or_else(|| account_id.to_string())
+fn load_raw_session_for_account(
+    active_account: &Option<String>,
+    active_actor: &str,
+) -> Result<Option<PersistedSession>, AppResult<AuthSessionPayload>> {
+    let Some(account_id) = active_account.as_deref() else {
+        return Ok(None);
+    };
+    let blob =
+        session_vault::load_raw_session_for_account(account_id, None).map_err(
+            |error| match error {
+                SessionVaultError::PinRequired { .. } => unauthorized(
+                    "pin required",
+                    json!({ "command": "auth_restore_session", "reason": "pin_required" }),
+                ),
+                other => session_vault_to_app(other),
+            },
+        )?;
+    Ok(blob.filter(|blob| blob.actor_id == active_actor))
 }
 
 fn map_domain_error(error: AuthDomainError) -> AppResult<AuthSessionPayload> {
@@ -368,7 +511,10 @@ fn map_domain_error(error: AuthDomainError) -> AppResult<AuthSessionPayload> {
     }
 }
 
-fn unauthorized(message: impl Into<String>, details: serde_json::Value) -> AppResult<AuthSessionPayload> {
+fn unauthorized(
+    message: impl Into<String>,
+    details: serde_json::Value,
+) -> AppResult<AuthSessionPayload> {
     AppResult::fail(ErrorCode::Unauthorized, message, Some(details))
 }
 
@@ -381,6 +527,10 @@ fn unauthorized(message: impl Into<String>, details: serde_json::Value) -> AppRe
 /// scenario (foreground PIN account, background OAuth account) doesn't trample
 /// the legacy shared `session.json`.
 ///
+/// PIN handling: keep existing PIN protection intact even when the encrypted
+/// session blob was cleared after token expiry. The post-login UI can ask for
+/// the existing PIN once and re-encrypt the fresh token; dropping the PIN here
+/// would force the user through the heavier create+confirm PIN flow again.
 fn mark_account_has_session(account_id: &str, _token: &str) {
     if let Ok(mut state) = crate::infrastructure::auth_identity::read_state() {
         for account in &mut state.accounts {
@@ -391,9 +541,6 @@ fn mark_account_has_session(account_id: &str, _token: &str) {
 
         if let Some(account) = state.accounts.iter_mut().find(|a| a.id == account_id) {
             account.has_session = true;
-            // Keep PIN configuration independent from session availability.
-            // A revoked session clears only `encrypted_session`; the next
-            // login should not force the user through PIN setup again.
         }
 
         let _ = crate::infrastructure::auth_identity::write_state(&state);
@@ -403,10 +550,24 @@ fn mark_account_has_session(account_id: &str, _token: &str) {
 /// Load a Station JWT persisted for the **active** account (OAuth bridge) and
 /// mirror it into `AppState` for the BFF.
 pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload> {
-    let active_actor = crate::infrastructure::auth_identity::read_state()
-        .ok()
-        .and_then(|s| s.active_account_id)
-        .map(|acc| actor_id_from_account_id(&acc))
+    let active_account = session_vault::active_account_id();
+    if active_account
+        .as_deref()
+        .map(session_vault::account_requires_pin)
+        .unwrap_or(false)
+    {
+        if let Some(account_id) = active_account.as_deref() {
+            session_vault::purge_raw_session_for_account(account_id);
+        }
+        return unauthorized(
+            "pin required",
+            json!({ "command": "ensure_station_session", "reason": "pin_required" }),
+        );
+    }
+
+    let active_actor = active_account
+        .as_deref()
+        .map(session_vault::actor_id_from_account_id)
         .filter(|id| !id.is_empty());
 
     let Some(active) = active_actor else {
@@ -414,18 +575,29 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
             ErrorCode::NotFound,
             "No station session found to restore",
             None,
-        )
+        );
     };
 
-    let blob = match session_store::load(&active) {
-        Some(b) if b.source == SessionSource::OauthBridge => b,
-        Some(_) | None => {
+    let account_id = active_account.as_deref().unwrap_or(&active);
+    let blob = match session_vault::load_raw_session_for_account(
+        account_id,
+        Some(SessionSource::OauthBridge),
+    ) {
+        Ok(Some(b)) => b,
+        Ok(None) => {
             return AppResult::fail(
                 ErrorCode::NotFound,
                 "No station session found to restore",
                 None,
             )
         }
+        Err(SessionVaultError::PinRequired { .. }) => {
+            return unauthorized(
+                "pin required",
+                json!({ "command": "ensure_station_session", "reason": "pin_required" }),
+            )
+        }
+        Err(error) => return session_vault_to_app(error),
     };
 
     if blob.actor_id != active {
@@ -438,12 +610,17 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
 
     let actor_id = blob.actor_id;
     let token = blob.token;
+    if let Err(error) = verify_session_with_station(&token) {
+        let _ = clear_session(state);
+        return error;
+    }
     let session = from_station_response(actor_id.clone(), token);
     if let Err(error) = write_session(state, &session) {
         return error;
     }
-    if let Err(error) = session_store::save(&session.actor_id, &session.token, SessionSource::OauthBridge)
-        .map_err(session_store_to_app)
+    let account_id = session_vault::active_account_id().unwrap_or_else(|| session.actor_id.clone());
+    if let Err(error) =
+        persist_session_if_unprotected(&account_id, &session, SessionSource::OauthBridge)
     {
         return error;
     }
@@ -475,4 +652,15 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
         avatar_local_path: p_local_avatar,
         login_method: Some("oauth".to_string()),
     })
+}
+
+fn verify_session_with_station(token: &str) -> Result<(), AppResult<AuthSessionPayload>> {
+    station_client::request_peers_proto_no_body::<ActorProfile>(
+        reqwest::Method::GET,
+        "/actor/profile",
+        token,
+        None,
+    )
+    .map(|_| ())
+    .map_err(|error| error.into_app_result("Session validation failed"))
 }

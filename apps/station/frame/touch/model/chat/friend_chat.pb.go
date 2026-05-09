@@ -2702,30 +2702,27 @@ func (x *ListFriendRequestsResponse) GetTotal() int32 {
 	return 0
 }
 
-// Delete an accepted friendship with a peer. This is a relationship-level
-// deletion, not just a recent-conversation hide. The server removes the
-// accepted relationship and its direct-chat session history for both actors.
-type DeleteFriendRequest struct {
+type BlockUserRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	PeerDid       string                 `protobuf:"bytes,1,opt,name=peer_did,json=peerDid,proto3" json:"peer_did,omitempty"`
+	TargetDid     string                 `protobuf:"bytes,1,opt,name=target_did,json=targetDid,proto3" json:"target_did,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DeleteFriendRequest) Reset() {
-	*x = DeleteFriendRequest{}
+func (x *BlockUserRequest) Reset() {
+	*x = BlockUserRequest{}
 	mi := &file_domain_chat_friend_chat_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DeleteFriendRequest) String() string {
+func (x *BlockUserRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DeleteFriendRequest) ProtoMessage() {}
+func (*BlockUserRequest) ProtoMessage() {}
 
-func (x *DeleteFriendRequest) ProtoReflect() protoreflect.Message {
+func (x *BlockUserRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_domain_chat_friend_chat_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2737,39 +2734,39 @@ func (x *DeleteFriendRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DeleteFriendRequest.ProtoReflect.Descriptor instead.
-func (*DeleteFriendRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use BlockUserRequest.ProtoReflect.Descriptor instead.
+func (*BlockUserRequest) Descriptor() ([]byte, []int) {
 	return file_domain_chat_friend_chat_proto_rawDescGZIP(), []int{39}
 }
 
-func (x *DeleteFriendRequest) GetPeerDid() string {
+func (x *BlockUserRequest) GetTargetDid() string {
 	if x != nil {
-		return x.PeerDid
+		return x.TargetDid
 	}
 	return ""
 }
 
-type DeleteFriendResponse struct {
+type BlockUserResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Friend        *Friend                `protobuf:"bytes,1,opt,name=friend,proto3" json:"friend,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DeleteFriendResponse) Reset() {
-	*x = DeleteFriendResponse{}
+func (x *BlockUserResponse) Reset() {
+	*x = BlockUserResponse{}
 	mi := &file_domain_chat_friend_chat_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DeleteFriendResponse) String() string {
+func (x *BlockUserResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DeleteFriendResponse) ProtoMessage() {}
+func (*BlockUserResponse) ProtoMessage() {}
 
-func (x *DeleteFriendResponse) ProtoReflect() protoreflect.Message {
+func (x *BlockUserResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_domain_chat_friend_chat_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2781,16 +2778,16 @@ func (x *DeleteFriendResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DeleteFriendResponse.ProtoReflect.Descriptor instead.
-func (*DeleteFriendResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use BlockUserResponse.ProtoReflect.Descriptor instead.
+func (*BlockUserResponse) Descriptor() ([]byte, []int) {
 	return file_domain_chat_friend_chat_proto_rawDescGZIP(), []int{40}
 }
 
-func (x *DeleteFriendResponse) GetSuccess() bool {
+func (x *BlockUserResponse) GetFriend() *Friend {
 	if x != nil {
-		return x.Success
+		return x.Friend
 	}
-	return false
+	return nil
 }
 
 type RecallFriendMessageRequest struct {
@@ -3364,11 +3361,12 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\x06offset\x18\x03 \x01(\x05R\x06offset\"x\n" +
 	"\x1aListFriendRequestsResponse\x12D\n" +
 	"\brequests\x18\x01 \x03(\v2(.peers_touch.model.chat.v1.FriendRequestR\brequests\x12\x14\n" +
-	"\x05total\x18\x02 \x01(\x05R\x05total\"0\n" +
-	"\x13DeleteFriendRequest\x12\x19\n" +
-	"\bpeer_did\x18\x01 \x01(\tR\apeerDid\"0\n" +
-	"\x14DeleteFriendResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"b\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\"1\n" +
+	"\x10BlockUserRequest\x12\x1d\n" +
+	"\n" +
+	"target_did\x18\x01 \x01(\tR\ttargetDid\"N\n" +
+	"\x11BlockUserResponse\x129\n" +
+	"\x06friend\x18\x01 \x01(\v2!.peers_touch.model.chat.v1.FriendR\x06friend\"b\n" +
 	"\x1aRecallFriendMessageRequest\x12!\n" +
 	"\fsession_ulid\x18\x01 \x01(\tR\vsessionUlid\x12!\n" +
 	"\fmessage_ulid\x18\x02 \x01(\tR\vmessageUlid\"\x1d\n" +
@@ -3472,8 +3470,8 @@ var file_domain_chat_friend_chat_proto_goTypes = []any{
 	(*RejectFriendRequestResponse)(nil),  // 39: peers_touch.model.chat.v1.RejectFriendRequestResponse
 	(*ListFriendRequestsRequest)(nil),    // 40: peers_touch.model.chat.v1.ListFriendRequestsRequest
 	(*ListFriendRequestsResponse)(nil),   // 41: peers_touch.model.chat.v1.ListFriendRequestsResponse
-	(*DeleteFriendRequest)(nil),          // 42: peers_touch.model.chat.v1.DeleteFriendRequest
-	(*DeleteFriendResponse)(nil),         // 43: peers_touch.model.chat.v1.DeleteFriendResponse
+	(*BlockUserRequest)(nil),             // 42: peers_touch.model.chat.v1.BlockUserRequest
+	(*BlockUserResponse)(nil),            // 43: peers_touch.model.chat.v1.BlockUserResponse
 	(*RecallFriendMessageRequest)(nil),   // 44: peers_touch.model.chat.v1.RecallFriendMessageRequest
 	(*RecallFriendMessageResponse)(nil),  // 45: peers_touch.model.chat.v1.RecallFriendMessageResponse
 	(*EditFriendMessageRequest)(nil),     // 46: peers_touch.model.chat.v1.EditFriendMessageRequest
@@ -3484,6 +3482,7 @@ var file_domain_chat_friend_chat_proto_goTypes = []any{
 	(*timestamppb.Timestamp)(nil),        // 51: google.protobuf.Timestamp
 	(*FriendRequest)(nil),                // 52: peers_touch.model.chat.v1.FriendRequest
 	(FriendRequestStatus)(0),             // 53: peers_touch.model.chat.v1.FriendRequestStatus
+	(*Friend)(nil),                       // 54: peers_touch.model.chat.v1.Friend
 }
 var file_domain_chat_friend_chat_proto_depIdxs = []int32{
 	51, // 0: peers_touch.model.chat.v1.FriendChatSession.last_message_at:type_name -> google.protobuf.Timestamp
@@ -3523,11 +3522,12 @@ var file_domain_chat_friend_chat_proto_depIdxs = []int32{
 	52, // 34: peers_touch.model.chat.v1.RejectFriendRequestResponse.request:type_name -> peers_touch.model.chat.v1.FriendRequest
 	53, // 35: peers_touch.model.chat.v1.ListFriendRequestsRequest.status:type_name -> peers_touch.model.chat.v1.FriendRequestStatus
 	52, // 36: peers_touch.model.chat.v1.ListFriendRequestsResponse.requests:type_name -> peers_touch.model.chat.v1.FriendRequest
-	37, // [37:37] is the sub-list for method output_type
-	37, // [37:37] is the sub-list for method input_type
-	37, // [37:37] is the sub-list for extension type_name
-	37, // [37:37] is the sub-list for extension extendee
-	0,  // [0:37] is the sub-list for field type_name
+	54, // 37: peers_touch.model.chat.v1.BlockUserResponse.friend:type_name -> peers_touch.model.chat.v1.Friend
+	38, // [38:38] is the sub-list for method output_type
+	38, // [38:38] is the sub-list for method input_type
+	38, // [38:38] is the sub-list for extension type_name
+	38, // [38:38] is the sub-list for extension extendee
+	0,  // [0:38] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_friend_chat_proto_init() }

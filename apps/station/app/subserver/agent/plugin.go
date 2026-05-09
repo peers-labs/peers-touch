@@ -14,6 +14,13 @@ var agentOptions struct {
 				Subserver struct {
 					Agent struct {
 						Enabled bool `pconf:"enabled"`
+						Memory  struct {
+							Embedding struct {
+								ProviderID string `pconf:"provider_id"`
+								Model      string `pconf:"model"`
+								Dimensions int    `pconf:"dimensions"`
+							} `pconf:"embedding"`
+						} `pconf:"memory"`
 					} `pconf:"agent"`
 				} `pconf:"subserver"`
 			} `pconf:"server"`

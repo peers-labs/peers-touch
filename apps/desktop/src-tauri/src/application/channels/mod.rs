@@ -1,8 +1,8 @@
-use crate::error::{AppResult, ErrorCode};
 use crate::contracts::{
     ChannelCreateInput, ChannelEventsInput, ChannelIdInput, ChannelSendMessageInput,
     ChannelUpdateInput, StubPayload,
 };
+use crate::error::{AppResult, ErrorCode};
 use serde_json::{json, Value};
 use std::sync::{Mutex, OnceLock};
 

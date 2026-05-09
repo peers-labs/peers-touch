@@ -70,6 +70,7 @@ const (
 const (
 	SystemBucketAvatar   = "avatar"
 	SystemBucketChat     = "chat"
+	SystemBucketMoments  = "moments"
 	SystemBucketPersonal = "personal"
 )
 
@@ -185,6 +186,15 @@ var SystemBucketSpecs = []SystemBucketSpec{
 		QuotaBytes:        5 * 1024 * 1024 * 1024,
 		TTLDays:           90,
 		Description:       "Attachments shared in chats; visible to chat audience members.",
+	},
+	{
+		Name:              SystemBucketMoments,
+		SystemKey:         SystemBucketMoments,
+		Kind:              BucketKindSystem,
+		DefaultVisibility: VisibilityPublic,
+		QuotaBytes:        5 * 1024 * 1024 * 1024,
+		TTLDays:           0,
+		Description:       "Images attached to Moments posts; public-readable and retained with the post.",
 	},
 	{
 		Name:              SystemBucketPersonal,
