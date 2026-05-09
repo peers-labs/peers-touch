@@ -72,8 +72,12 @@ fn sessions_dir() -> Result<PathBuf, SessionStoreError> {
 /// Returns the on-disk path for a given `actor_id` (filename is sanitized).
 fn session_file_path(actor_id: &str) -> Result<PathBuf, SessionStoreError> {
     let file_name = format!("{}.json", storage::resolve_user_scope(Some(actor_id)));
-    storage::app_file_path("desktop", StorageKind::Data, &["auth", "sessions", &file_name])
-        .map_err(SessionStoreError::from)
+    storage::app_file_path(
+        "desktop",
+        StorageKind::Data,
+        &["auth", "sessions", &file_name],
+    )
+    .map_err(SessionStoreError::from)
 }
 
 /// Persists a token for `actor_id`, replacing any previous blob for that actor.
@@ -156,7 +160,8 @@ struct LegacyPasswordSession {
 pub fn migrate_legacy() -> Result<usize, SessionStoreError> {
     let mut migrated: usize = 0;
 
-    let legacy_password = storage::app_file_path("desktop", StorageKind::Data, &["auth", "session.json"])?;
+    let legacy_password =
+        storage::app_file_path("desktop", StorageKind::Data, &["auth", "session.json"])?;
     if legacy_password.exists() {
         match fs::read_to_string(&legacy_password) {
             Ok(raw) => match serde_json::from_str::<LegacyPasswordSession>(&raw) {
@@ -188,22 +193,24 @@ pub fn migrate_legacy() -> Result<usize, SessionStoreError> {
         }
     }
 
-    let legacy_station = storage::app_file_path("desktop", StorageKind::Data, &["auth", "station_session.json"])?;
+    let legacy_station = storage::app_file_path(
+        "desktop",
+        StorageKind::Data,
+        &["auth", "station_session.json"],
+    )?;
     if legacy_station.exists() {
         match fs::read_to_string(&legacy_station) {
             Ok(raw) => {
                 // Legacy shape: { "actor_id", "token" } (no saved_at / source)
                 let parsed: Result<serde_json::Value, _> = serde_json::from_str(&raw);
-                match parsed
-                    .ok()
-                    .and_then(|v| {
-                        let actor_id = v.get("actor_id")?.as_str()?.to_string();
-                        let token = v.get("token")?.as_str()?.to_string();
-                        if actor_id.is_empty() || token.is_empty() {
-                            return None;
-                        }
-                        Some((actor_id, token))
-                    }) {
+                match parsed.ok().and_then(|v| {
+                    let actor_id = v.get("actor_id")?.as_str()?.to_string();
+                    let token = v.get("token")?.as_str()?.to_string();
+                    if actor_id.is_empty() || token.is_empty() {
+                        return None;
+                    }
+                    Some((actor_id, token))
+                }) {
                     Some((actor_id, token)) => {
                         save(&actor_id, &token, SessionSource::OauthBridge)?;
                         migrated += 1;
@@ -279,14 +286,12 @@ mod tests {
     #[test]
     fn migrate_legacy_password_file() {
         with_temp_storage_root(|| {
-            let legacy = storage::app_file_path("desktop", StorageKind::Data, &["auth", "session.json"])
-                .expect("path");
+            let legacy =
+                storage::app_file_path("desktop", StorageKind::Data, &["auth", "session.json"])
+                    .expect("path");
             fs::create_dir_all(legacy.parent().unwrap()).expect("mkdir auth");
-            fs::write(
-                &legacy,
-                r#"{"actor_id":"legacy-a","token":"legacy-tok"}"#,
-            )
-            .expect("write legacy");
+            fs::write(&legacy, r#"{"actor_id":"legacy-a","token":"legacy-tok"}"#)
+                .expect("write legacy");
             let n = migrate_legacy().expect("migrate");
             assert_eq!(n, 1);
             assert!(!legacy.exists());

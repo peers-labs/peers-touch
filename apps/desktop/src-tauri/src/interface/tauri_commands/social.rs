@@ -21,20 +21,19 @@
 
 use std::sync::Arc;
 
+use crate::application::session_resolver;
+use crate::contracts::{
+    SocialCircleAddMembersInput, SocialCircleCreateInput, SocialCircleDeleteInput,
+    SocialCircleListMembersInput, SocialCircleRemoveMembersInput, SocialCircleRenameInput,
+    SocialCreateCommentInput, SocialCreateMomentInput, SocialDeleteCommentInput,
+    SocialDeleteMomentInput, SocialFollowInput, SocialGetCommentsInput, SocialGetFollowersInput,
+    SocialGetFollowingInput, SocialGetMomentInput, SocialGetRelationshipInput,
+    SocialGetTimelineInput, SocialListByAuthorInput, SocialReactInput, SocialUnreactInput,
+};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
 use crate::model;
 use crate::state::AppState;
-use crate::application::session_resolver;
-use crate::contracts::{
-    SocialCreateMomentInput, SocialDeleteMomentInput, SocialGetCommentsInput,
-    SocialCreateCommentInput, SocialDeleteCommentInput, SocialReactInput,
-    SocialUnreactInput, SocialGetMomentInput, SocialListByAuthorInput,
-    SocialGetTimelineInput, SocialFollowInput, SocialGetFollowersInput,
-    SocialGetFollowingInput, SocialGetRelationshipInput, SocialCircleCreateInput,
-    SocialCircleRenameInput, SocialCircleDeleteInput, SocialCircleAddMembersInput,
-    SocialCircleRemoveMembersInput, SocialCircleListMembersInput,
-};
 
 use prost::Message;
 use reqwest::Method;
@@ -442,7 +441,11 @@ pub fn social_follow(
         Err(e) => return e,
     };
     if input.target_user_id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "target_user_id is required", None);
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "target_user_id is required",
+            None,
+        );
     }
     let req = model::social::FollowRequest {
         target_actor_id: input.target_user_id,
@@ -466,7 +469,11 @@ pub fn social_unfollow(
         Err(e) => return e,
     };
     if input.target_user_id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "target_user_id is required", None);
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "target_user_id is required",
+            None,
+        );
     }
     let req = model::social::UnfollowRequest {
         target_actor_id: input.target_user_id,
@@ -503,11 +510,14 @@ pub fn social_get_followers(
     if let Some(l) = input.limit {
         query.push(("limit", l.to_string()));
     }
-    let resp: model::social::GetFollowersResponse =
-        match get_proto("/api/v1/social/relationships/followers", &token, Some(&query)) {
-            Ok(r) => r,
-            Err(e) => return station_error_proto(e, "get followers failed"),
-        };
+    let resp: model::social::GetFollowersResponse = match get_proto(
+        "/api/v1/social/relationships/followers",
+        &token,
+        Some(&query),
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "get followers failed"),
+    };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -535,11 +545,14 @@ pub fn social_get_following(
     if let Some(l) = input.limit {
         query.push(("limit", l.to_string()));
     }
-    let resp: model::social::GetFollowingResponse =
-        match get_proto("/api/v1/social/relationships/following", &token, Some(&query)) {
-            Ok(r) => r,
-            Err(e) => return station_error_proto(e, "get following failed"),
-        };
+    let resp: model::social::GetFollowingResponse = match get_proto(
+        "/api/v1/social/relationships/following",
+        &token,
+        Some(&query),
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "get following failed"),
+    };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -554,7 +567,11 @@ pub fn social_get_relationship(
         Err(e) => return e,
     };
     if input.target_user_id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "target_user_id is required", None);
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "target_user_id is required",
+            None,
+        );
     }
     let query = vec![("target_user_id", input.target_user_id)];
     let resp: model::social::GetRelationshipResponse =
@@ -746,10 +763,7 @@ pub fn social_circle_remove_members(
 /// enough to fetch on every Moments-tab open; the station computes
 /// each counter live with simple SQL aggregates.
 #[tauri::command]
-pub fn social_get_my_stats(
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Vec<u8>> {
+pub fn social_get_my_stats(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<Vec<u8>> {
     let token = match token_from_state_proto(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
@@ -776,10 +790,9 @@ pub fn social_circle_list_members(
         return AppResult::fail(ErrorCode::InvalidArgument, "circle_id is required", None);
     }
     let path = format!("/api/v1/social/circles/{}/members", input.circle_id);
-    let resp: model::social::ListCircleMembersResponse =
-        match get_proto(&path, &token, None) {
-            Ok(r) => r,
-            Err(e) => return station_error_proto(e, "list circle members failed"),
-        };
+    let resp: model::social::ListCircleMembersResponse = match get_proto(&path, &token, None) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "list circle members failed"),
+    };
     AppResult::success(resp.encode_to_vec())
 }

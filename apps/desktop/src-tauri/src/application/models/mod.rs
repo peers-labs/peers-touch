@@ -1,9 +1,9 @@
-use crate::error::{AppResult, ErrorCode};
+use crate::application::provider::{remote as provider_remote, state as provider_state};
 use crate::contracts::{
     ProviderModelAddInput, ProviderModelDeleteInput, ProviderModelFetchInput,
     ProviderModelToggleAllInput, ProviderModelToggleInput, ProviderModelUpdateInput, StubPayload,
 };
-use crate::application::provider::{remote as provider_remote, state as provider_state};
+use crate::error::{AppResult, ErrorCode};
 use provider_state::{persist_provider_store, with_provider_store, ModelRecord};
 use serde_json::json;
 
@@ -122,8 +122,8 @@ fn apply_model_update(model: &mut ModelRecord, data: &serde_json::Value) {
         model.video = get_json_bool_field(data, "video", model.video);
     }
     if data.get("protocol_override").is_some() {
-        model.protocol_override = get_json_string_field(data, "protocol_override")
-            .filter(|v| !v.trim().is_empty());
+        model.protocol_override =
+            get_json_string_field(data, "protocol_override").filter(|v| !v.trim().is_empty());
     }
 }
 
@@ -181,13 +181,18 @@ pub fn model_add(scope: Option<&str>, input: ProviderModelAddInput) -> AppResult
             }
             success_payload("model_add", json!({ "ok": true, "model_id": model_id }))
         }
-        Ok(Err(ErrorCode::Conflict)) => AppResult::fail(ErrorCode::Conflict, "Model already exists", None),
+        Ok(Err(ErrorCode::Conflict)) => {
+            AppResult::fail(ErrorCode::Conflict, "Model already exists", None)
+        }
         Ok(Err(_)) => AppResult::fail(ErrorCode::NotFound, "Provider not found", None),
         Err(_) => internal_error(),
     }
 }
 
-pub fn model_update(scope: Option<&str>, input: ProviderModelUpdateInput) -> AppResult<StubPayload> {
+pub fn model_update(
+    scope: Option<&str>,
+    input: ProviderModelUpdateInput,
+) -> AppResult<StubPayload> {
     let provider_id = input.provider_id.trim();
     let model_id = input.model_id.trim();
     if provider_id.is_empty() || model_id.is_empty() {
@@ -201,7 +206,11 @@ pub fn model_update(scope: Option<&str>, input: ProviderModelUpdateInput) -> App
         else {
             return Err("provider");
         };
-        let Some(model) = provider.models.iter_mut().find(|model| model.id == model_id) else {
+        let Some(model) = provider
+            .models
+            .iter_mut()
+            .find(|model| model.id == model_id)
+        else {
             return Err("model");
         };
         apply_model_update(model, &input.data);
@@ -220,7 +229,10 @@ pub fn model_update(scope: Option<&str>, input: ProviderModelUpdateInput) -> App
     }
 }
 
-pub fn model_delete(scope: Option<&str>, input: ProviderModelDeleteInput) -> AppResult<StubPayload> {
+pub fn model_delete(
+    scope: Option<&str>,
+    input: ProviderModelDeleteInput,
+) -> AppResult<StubPayload> {
     let provider_id = input.provider_id.trim();
     let model_id = input.model_id.trim();
     if provider_id.is_empty() || model_id.is_empty() {
@@ -261,7 +273,10 @@ pub fn model_delete(scope: Option<&str>, input: ProviderModelDeleteInput) -> App
     }
 }
 
-pub fn model_fetch_remote(scope: Option<&str>, input: ProviderModelFetchInput) -> AppResult<StubPayload> {
+pub fn model_fetch_remote(
+    scope: Option<&str>,
+    input: ProviderModelFetchInput,
+) -> AppResult<StubPayload> {
     let provider_id = input.provider_id.trim();
     if provider_id.is_empty() {
         return invalid_argument("provider_id is required");
@@ -311,7 +326,10 @@ pub fn model_fetch_remote(scope: Option<&str>, input: ProviderModelFetchInput) -
         );
     }
     match provider_remote::fetch_models(&base_url, &api_key, protocol.as_deref()) {
-        Ok(models) => success_payload("model_fetch_remote", json!({ "ok": true, "models": models })),
+        Ok(models) => success_payload(
+            "model_fetch_remote",
+            json!({ "ok": true, "models": models }),
+        ),
         Err(err) => success_payload(
             "model_fetch_remote",
             json!({ "ok": false, "error": err, "models": [] }),
@@ -319,7 +337,10 @@ pub fn model_fetch_remote(scope: Option<&str>, input: ProviderModelFetchInput) -
     }
 }
 
-pub fn model_toggle(scope: Option<&str>, input: ProviderModelToggleInput) -> AppResult<StubPayload> {
+pub fn model_toggle(
+    scope: Option<&str>,
+    input: ProviderModelToggleInput,
+) -> AppResult<StubPayload> {
     let provider_id = input.provider_id.trim();
     let model_id = input.model_id.trim();
     if provider_id.is_empty() || model_id.is_empty() {
@@ -333,7 +354,11 @@ pub fn model_toggle(scope: Option<&str>, input: ProviderModelToggleInput) -> App
         else {
             return Err("provider");
         };
-        let Some(model) = provider.models.iter_mut().find(|model| model.id == model_id) else {
+        let Some(model) = provider
+            .models
+            .iter_mut()
+            .find(|model| model.id == model_id)
+        else {
             return Err("model");
         };
         model.enabled = input.enabled;
@@ -352,7 +377,10 @@ pub fn model_toggle(scope: Option<&str>, input: ProviderModelToggleInput) -> App
     }
 }
 
-pub fn model_toggle_all(scope: Option<&str>, input: ProviderModelToggleAllInput) -> AppResult<StubPayload> {
+pub fn model_toggle_all(
+    scope: Option<&str>,
+    input: ProviderModelToggleAllInput,
+) -> AppResult<StubPayload> {
     let provider_id = input.provider_id.trim();
     if provider_id.is_empty() {
         return invalid_argument("provider_id is required");
@@ -430,21 +458,27 @@ mod tests {
     fn model_add_toggle_delete_should_update_shared_provider_state() {
         let provider_id = "provider-test-model-lifecycle";
         ensure_provider(provider_id);
-        let add_result = model_add(TEST_SCOPE, ProviderModelAddInput {
-            provider_id: provider_id.to_string(),
-            data: json!({
-                "id": "m-test-1",
-                "display_name": "m-test-1",
-                "type": "chat",
-                "enabled": true
-            }),
-        });
+        let add_result = model_add(
+            TEST_SCOPE,
+            ProviderModelAddInput {
+                provider_id: provider_id.to_string(),
+                data: json!({
+                    "id": "m-test-1",
+                    "display_name": "m-test-1",
+                    "type": "chat",
+                    "enabled": true
+                }),
+            },
+        );
         assert!(add_result.ok);
-        let toggle_result = model_toggle(TEST_SCOPE, ProviderModelToggleInput {
-            provider_id: provider_id.to_string(),
-            model_id: "m-test-1".to_string(),
-            enabled: false,
-        });
+        let toggle_result = model_toggle(
+            TEST_SCOPE,
+            ProviderModelToggleInput {
+                provider_id: provider_id.to_string(),
+                model_id: "m-test-1".to_string(),
+                enabled: false,
+            },
+        );
         assert!(toggle_result.ok);
         {
             let enabled = with_provider_store(TEST_SCOPE, |store| {
@@ -459,10 +493,13 @@ mod tests {
             .expect("store lock should work");
             assert!(!enabled);
         }
-        let delete_result = model_delete(TEST_SCOPE, ProviderModelDeleteInput {
-            provider_id: provider_id.to_string(),
-            model_id: "m-test-1".to_string(),
-        });
+        let delete_result = model_delete(
+            TEST_SCOPE,
+            ProviderModelDeleteInput {
+                provider_id: provider_id.to_string(),
+                model_id: "m-test-1".to_string(),
+            },
+        );
         assert!(delete_result.ok);
         {
             let exists = with_provider_store(TEST_SCOPE, |store| {
@@ -493,10 +530,13 @@ mod tests {
             })
             .expect("store lock should work");
         }
-        let result = model_fetch_remote(TEST_SCOPE, ProviderModelFetchInput {
-            provider_id: provider_id.to_string(),
-            data: None,
-        });
+        let result = model_fetch_remote(
+            TEST_SCOPE,
+            ProviderModelFetchInput {
+                provider_id: provider_id.to_string(),
+                data: None,
+            },
+        );
         assert!(result.ok);
         let payload = result.data.expect("payload should exist");
         let status = parse_status(&payload);

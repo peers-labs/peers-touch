@@ -1,8 +1,8 @@
-use crate::error::AppResult;
 use crate::contracts::{
     BuiltinSkillIdInput, SkillCreateInput, SkillIdInput, SkillToggleInput, SkillUpdateInput,
     SkillsListInput, SkillsSearchInput, StubPayload,
 };
+use crate::error::AppResult;
 
 use crate::application::skills as application_skills;
 

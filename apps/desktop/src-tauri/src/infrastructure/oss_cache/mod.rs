@@ -52,6 +52,9 @@ use crate::infrastructure::storage::{self, StorageKind};
 ///   - `2`: presigned upload — adds `presigned_upload`,
 ///     `presigned_threshold`, `presigned_endpoints`. Older clients keep
 ///     working because they ignore unknown fields.
+///   - `3`: federation + lifecycle capabilities and the
+///     `capability_version` cache-bust handle. Older stations returning
+///     v1/v2 parse cleanly because every newer field is `#[serde(default)]`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OssCapabilities {
     pub version: i32,
@@ -94,11 +97,26 @@ pub struct OssCapabilities {
     /// disables the fast lane regardless of `presigned_upload`.
     #[serde(default)]
     pub presigned_threshold: i64,
-    /// Endpoint paths for the presigned upload session. Sent only
+    /// Endpoint paths for the presigned upload data flow. Sent only
     /// when `presigned_upload` is true; otherwise `None` and the
     /// client must not attempt the path.
     #[serde(default)]
     pub presigned_endpoints: Option<PresignedEndpoints>,
+
+    // ── v3 fields ────────────────────────────────────────────────
+    /// Opaque ULID re-rolled on every policy change (visibility
+    /// tightening, federation key rotation, …). Empty for pre-v3
+    /// stations; non-empty values let us evict the per-origin
+    /// capabilities cache when the upstream signals a refresh.
+    #[serde(default)]
+    pub capability_version: String,
+
+    /// v3 federation block — `None` on a pre-v3 station OR when the
+    /// station has federation explicitly disabled (no key cache /
+    /// missing local station id). The renderer treats both cases the
+    /// same: foreign-origin GETs degrade to "broken link".
+    #[serde(default)]
+    pub federation: Option<OssFederationCapabilities>,
 }
 
 /// Path pair for the presigned upload data flow. Both paths are
@@ -109,6 +127,29 @@ pub struct PresignedEndpoints {
     pub presign: String,
     #[serde(default)]
     pub complete: String,
+}
+
+/// `capabilities.federation` shape. Mirrors the Go side's `federation`
+/// map exactly so we never silently drop a field in a future schema
+/// drift.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OssFederationCapabilities {
+    /// True when this station can mint peer tokens. False means the
+    /// station has the v3 schema but is missing wiring (no
+    /// LocalStationID, no federation key cache).
+    #[serde(default)]
+    pub outbound: bool,
+    /// Hard upper bound for token TTL the receiving side will
+    /// honour. Mostly informational for the desktop client — we let
+    /// the station clamp on mint.
+    #[serde(default)]
+    pub max_ttl_seconds: i64,
+    #[serde(default)]
+    pub token_type: String,
+    #[serde(default)]
+    pub local_station_id: String,
+    #[serde(default)]
+    pub mint_endpoint: String,
 }
 
 impl OssCapabilities {
@@ -144,6 +185,19 @@ pub enum OssCacheError {
     Decode(String),
     Io(String),
     Storage(String),
+    /// The bound station refused to mint a federation token (403 from
+    /// `POST /sub-oss/federation/token`). Distinct from `Network`
+    /// because the renderer maps it to a "permission denied" UI
+    /// rather than a "retry later" toast.
+    FederationDenied(String),
+    /// The bound station does not advertise outbound federation
+    /// (pre-v3 capabilities, or `federation.outbound = false`). The
+    /// renderer falls back to a broken-link state without retries.
+    FederationDisabled(String),
+    /// Caller invoked a federated path without supplying an auth
+    /// token. The mint endpoint demands JWT auth, so we surface this
+    /// as a typed error rather than a generic 401.
+    FederationAuthRequired,
 }
 
 impl std::fmt::Display for OssCacheError {
@@ -154,6 +208,11 @@ impl std::fmt::Display for OssCacheError {
             Self::Decode(m) => write!(f, "oss decode error: {m}"),
             Self::Io(m) => write!(f, "oss io error: {m}"),
             Self::Storage(m) => write!(f, "oss storage error: {m}"),
+            Self::FederationDenied(m) => write!(f, "oss federation denied: {m}"),
+            Self::FederationDisabled(m) => write!(f, "oss federation disabled: {m}"),
+            Self::FederationAuthRequired => {
+                write!(f, "oss federation requires authenticated session")
+            }
         }
     }
 }
@@ -277,13 +336,9 @@ pub fn capabilities_ensure(origin: &str) -> Result<OssCapabilities, OssCacheErro
     if !resp.status().is_success() {
         return Err(OssCacheError::Network(format!("status {}", resp.status())));
     }
-    let mut caps: OssCapabilities = resp
+    let caps: OssCapabilities = resp
         .json()
         .map_err(|e| OssCacheError::Decode(e.to_string()))?;
-    let advertised_host = normalize_origin(&caps.host);
-    if advertised_host.is_empty() || advertised_host == "self" {
-        caps.host = normalized.clone();
-    }
 
     if let Ok(mut m) = caps_map().write() {
         m.insert(normalized.clone(), caps.clone());
@@ -363,21 +418,13 @@ pub fn attachment_invalidate(uri: &OssUri) -> Result<(), OssCacheError> {
 /// rely on the caller to pre-sign or on `signed_url == false` (home
 /// deployments). When the backend requires a signed URL the caller
 /// should supply `signed_query`.
+///
+/// Bound-station origin only (i.e. the URI was minted by the same
+/// station this client is talking to). For the federated path
+/// (URI's origin ≠ bound station), use `attachment_ensure_federated`.
 pub fn attachment_ensure(
     uri: &OssUri,
     signed_query: Option<&str>,
-) -> Result<PathBuf, OssCacheError> {
-    attachment_ensure_with_bearer(uri, signed_query, None)
-}
-
-/// Resolve the attachment for `uri` to a local file while optionally
-/// authenticating the fetch against the source Station. Chat-scoped
-/// attachments are not public URLs; without the bearer token the Station
-/// correctly returns 403 and the renderer can only fall back to a file card.
-pub fn attachment_ensure_with_bearer(
-    uri: &OssUri,
-    signed_query: Option<&str>,
-    bearer_token: Option<&str>,
 ) -> Result<PathBuf, OssCacheError> {
     if let Some(path) = attachment_lookup(uri) {
         return Ok(path);
@@ -389,15 +436,10 @@ pub fn attachment_ensure_with_bearer(
         ));
     }
 
-    let file_endpoint = if caps.file_endpoint.is_empty() {
-        "/sub-oss/file"
-    } else {
-        caps.file_endpoint.as_str()
-    };
     let mut url = format!(
         "{}{}?key={}",
-        caps.host.trim_end_matches('/'),
-        file_endpoint,
+        caps.host,
+        caps.file_endpoint,
         urlencode(&uri.key)
     );
     if let Some(q) = signed_query {
@@ -407,30 +449,188 @@ pub fn attachment_ensure_with_bearer(
         }
     }
 
+    let bytes = http_get_bytes(&url, None)?;
+    write_to_cache(uri, &bytes)
+}
+
+/// Federation-aware download. Used when the OSS URI's origin is a
+/// *foreign* station (not the one the desktop client is bound to).
+///
+/// Flow:
+///   1. Mint a peer JWT at the bound station via
+///      `POST /sub-oss/federation/token` with the foreign
+///      `target_origin` and the file `oss_key`. The bound station
+///      re-applies the same visibility check the foreign station
+///      would, so a Forbidden here is the truthful answer (no
+///      "try the foreign side anyway" leak).
+///   2. Resolve the foreign station's capabilities so we know its
+///      `host` + `file_endpoint`.
+///   3. GET the bytes from `<foreign>/sub-oss/file?key=…&owner=…`
+///      with `Authorization: Bearer <peer-jwt>`. The `owner` query
+///      lets the foreign side resolve the right per-actor file row
+///      (without it, the read falls back to "any public row by key"
+///      which is not what we want for federated chat attachments).
+///   4. Cache the result keyed by `(target_origin, key)` — same
+///      layout as the non-federated path so subsequent renders
+///      hit `attachment_lookup` and skip the round-trip.
+///
+/// `home_token` is the desktop user's HS256 JWT for the bound
+/// station; `home_actor_did` is the same caller's DID, embedded in
+/// the foreign GET as `&owner=…`. Both are required.
+pub fn attachment_ensure_federated(
+    uri: &OssUri,
+    home_token: &str,
+    home_actor_did: &str,
+) -> Result<PathBuf, OssCacheError> {
+    if home_token.trim().is_empty() {
+        return Err(OssCacheError::FederationAuthRequired);
+    }
+    if let Some(path) = attachment_lookup(uri) {
+        return Ok(path);
+    }
+
+    let target_origin = normalize_origin(&uri.origin);
+    if target_origin.is_empty() {
+        return Err(OssCacheError::InvalidUri("empty origin".into()));
+    }
+
+    // Step 1 — mint at home. The mint endpoint is advertised by the
+    // BOUND station's capabilities, never by the foreign one (the
+    // foreign side has no business telling us where to mint).
+    let home_caps = capabilities_ensure(&station_client::station_base_url())?;
+    let federation = home_caps.federation.clone().ok_or_else(|| {
+        OssCacheError::FederationDisabled("bound station has no federation block".into())
+    })?;
+    if !federation.outbound {
+        return Err(OssCacheError::FederationDisabled(
+            "bound station: federation.outbound = false".into(),
+        ));
+    }
+    let mint_path = if federation.mint_endpoint.is_empty() {
+        "/sub-oss/federation/token".to_string()
+    } else {
+        federation.mint_endpoint.clone()
+    };
+    let mint_body = serde_json::json!({
+        "target_origin": target_origin,
+        "oss_key": uri.key,
+    });
+    let mint_resp = match station_client::post_json_with_auth(&mint_path, home_token, mint_body) {
+        Ok(v) => v,
+        Err(err) => {
+            return Err(map_mint_error(err));
+        }
+    };
+    let token = mint_resp
+        .get("token")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+    if token.is_empty() {
+        return Err(OssCacheError::FederationDenied(
+            "mint succeeded but token field empty".into(),
+        ));
+    }
+
+    // Step 2 — resolve foreign capabilities so we know its
+    // `file_endpoint`. Failures here are *network* failures (the
+    // foreign station is unreachable), distinct from the
+    // federation-denied path above.
+    let foreign_caps = capabilities_ensure(&target_origin)?;
+    let file_endpoint = if foreign_caps.file_endpoint.is_empty() {
+        "/sub-oss/file".to_string()
+    } else {
+        foreign_caps.file_endpoint.clone()
+    };
+
+    // Step 3 — fetch bytes with the peer JWT. We append `&owner=…`
+    // so the foreign FileMeta resolution lands on the right row;
+    // `lookupFileMeta` honours this query param when present.
+    let url = format!(
+        "{}{}?key={}&owner={}",
+        foreign_caps.host.trim_end_matches('/'),
+        file_endpoint,
+        urlencode(&uri.key),
+        urlencode(home_actor_did),
+    );
+    let bytes = http_get_bytes(&url, Some(token.as_str()))?;
+
+    // Step 4 — write through the same cache layout as the
+    // non-federated path. The renderer cannot distinguish federated
+    // from local cache hits, by design.
+    write_to_cache(uri, &bytes)
+}
+
+fn map_mint_error(err: station_client::StationClientError) -> OssCacheError {
+    use station_client::StationClientErrorKind;
+    match err.kind {
+        StationClientErrorKind::HttpStatus(code) => match code {
+            401 | 403 => OssCacheError::FederationDenied(err.message),
+            501 => OssCacheError::FederationDisabled(err.message),
+            _ => OssCacheError::Network(format!("mint http {}: {}", code, err.message)),
+        },
+        StationClientErrorKind::SessionRevoked => OssCacheError::FederationAuthRequired,
+        _ => OssCacheError::Network(err.message),
+    }
+}
+
+/// HTTP GET → bytes helper. Wraps `reqwest::blocking::get` with a
+/// uniform error mapping so the federated and non-federated paths
+/// share one network surface.
+fn http_get_bytes(url: &str, bearer: Option<&str>) -> Result<Vec<u8>, OssCacheError> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| OssCacheError::Network(format!("http client: {e}")))?;
+    let mut req = client.get(url);
+    if let Some(t) = bearer {
+        if !t.is_empty() {
+            req = req.bearer_auth(t);
+        }
+    }
+    let resp = req.send().map_err(|e| OssCacheError::Network(e.to_string()))?;
+    let status = resp.status();
+    if !status.is_success() {
+        // 403 from a federated GET should bubble as a federation
+        // denial — the foreign station is enforcing its own
+        // visibility policy on top of our peer JWT. 401 only
+        // happens when our peer JWT is malformed / expired (we
+        // just minted it, so this is a real issue).
+        let msg = format!("status {status}");
+        if status.as_u16() == 403 {
+            return Err(OssCacheError::FederationDenied(msg));
+        }
+        return Err(OssCacheError::Network(msg));
+    }
+    let body = resp
+        .bytes()
+        .map_err(|e| OssCacheError::Network(e.to_string()))?;
+    if body.is_empty() {
+        return Err(OssCacheError::Network("empty body".into()));
+    }
+    Ok(body.to_vec())
+}
+
+/// Persist `bytes` to the per-`uri` cache slot and return the path.
+fn write_to_cache(uri: &OssUri, bytes: &[u8]) -> Result<PathBuf, OssCacheError> {
     let dest = cache_path_for(uri)?;
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent).map_err(|e| OssCacheError::Io(e.to_string()))?;
     }
-
-    let client = reqwest::blocking::Client::new();
-    let mut req = client.get(&url);
-    if let Some(token) = bearer_token.map(str::trim).filter(|t| !t.is_empty()) {
-        req = req.bearer_auth(token);
-    }
-    let resp = req
-        .send()
-        .map_err(|e| OssCacheError::Network(e.to_string()))?;
-    if !resp.status().is_success() {
-        return Err(OssCacheError::Network(format!("status {}", resp.status())));
-    }
-    let bytes = resp
-        .bytes()
-        .map_err(|e| OssCacheError::Network(e.to_string()))?;
-    if bytes.is_empty() {
-        return Err(OssCacheError::Network("empty body".into()));
-    }
-    fs::write(&dest, &bytes).map_err(|e| OssCacheError::Io(e.to_string()))?;
+    fs::write(&dest, bytes).map_err(|e| OssCacheError::Io(e.to_string()))?;
     Ok(dest)
+}
+
+/// Returns true when `origin` matches the bound Station after
+/// trailing-slash normalisation. Used by `oss_resolve_url` to
+/// decide between the local and federated download paths.
+pub fn is_bound_station(origin: &str) -> bool {
+    let local = normalize_origin(&station_client::station_base_url());
+    let candidate = normalize_origin(origin);
+    if candidate.is_empty() || candidate == "self" {
+        return true;
+    }
+    candidate == local
 }
 
 // ── garbage collection ──────────────────────────────────────────────
@@ -825,5 +1025,156 @@ mod tests {
         assert!(dir.join("c.bin").exists());
         assert!(after <= budget);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // ── v3 federation parsing ─────────────────────────────────────
+    //
+    // The capabilities document evolved from v1 → v2 → v3 without
+    // bumping major versions; clients must keep parsing the older
+    // shapes. These tests pin both:
+    //   - a v2 document (no `federation`, no `capability_version`)
+    //     deserialises with sensible defaults;
+    //   - a v3 document round-trips the federation block intact.
+
+    #[test]
+    fn capabilities_parse_pre_v3_no_federation() {
+        let json = r#"{
+            "version": 2,
+            "host": "https://files.example.com",
+            "path_base": "/sub-oss",
+            "backend": "local",
+            "max_file_size": 16777216,
+            "max_files_per_message": 9,
+            "signed_url": false,
+            "upload_endpoint": "/sub-oss/upload",
+            "file_endpoint": "/sub-oss/file",
+            "meta_endpoint": "/sub-oss/meta"
+        }"#;
+        let caps: OssCapabilities = serde_json::from_str(json).expect("parse pre-v3 caps");
+        assert_eq!(caps.version, 2);
+        assert!(caps.federation.is_none(), "pre-v3 has no federation block");
+        assert_eq!(caps.capability_version, "");
+    }
+
+    #[test]
+    fn capabilities_parse_v3_federation_block() {
+        let json = r#"{
+            "version": 3,
+            "host": "https://files.example.com",
+            "path_base": "/sub-oss",
+            "backend": "local",
+            "signed_url": false,
+            "file_endpoint": "/sub-oss/file",
+            "capability_version": "01HXY8VRQ5...ULID",
+            "lifecycle_endpoints": {
+                "delete": "/sub-oss/file",
+                "patch": "/sub-oss/file",
+                "restore": "/sub-oss/file/restore",
+                "my_files": "/sub-oss/my-files"
+            },
+            "federation": {
+                "outbound": true,
+                "max_ttl_seconds": 60,
+                "token_type": "peer+jwt",
+                "local_station_id": "did:station:alice",
+                "mint_endpoint": "/sub-oss/federation/token"
+            }
+        }"#;
+        let caps: OssCapabilities = serde_json::from_str(json).expect("parse v3 caps");
+        assert_eq!(caps.version, 3);
+        assert_eq!(caps.capability_version, "01HXY8VRQ5...ULID");
+        let fed = caps.federation.expect("federation block present");
+        assert!(fed.outbound);
+        assert_eq!(fed.max_ttl_seconds, 60);
+        assert_eq!(fed.token_type, "peer+jwt");
+        assert_eq!(fed.local_station_id, "did:station:alice");
+        assert_eq!(fed.mint_endpoint, "/sub-oss/federation/token");
+    }
+
+    // ── is_bound_station decision tree ─────────────────────────────
+
+    #[test]
+    fn bound_station_matches_local_after_normalisation() {
+        // PEERS_STATION_URL defaults to http://127.0.0.1:18080 when unset.
+        // We cannot mutate process-wide env safely under cargo's parallel
+        // test runner, so run the assertion against the actual default.
+        let local = station_client::station_base_url();
+        assert!(is_bound_station(&local));
+        assert!(is_bound_station(&format!("{}/", local)));
+        assert!(is_bound_station(""));
+        assert!(is_bound_station("self"));
+    }
+
+    #[test]
+    fn bound_station_rejects_foreign_origins() {
+        // Pick a literally-impossible origin so we never collide with
+        // a misconfigured PEERS_STATION_URL.
+        assert!(!is_bound_station("https://this-is-foreign.example.invalid"));
+    }
+
+    // ── error mapping ─────────────────────────────────────────────
+
+    #[test]
+    fn map_mint_error_translates_403_to_federation_denied() {
+        use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
+        let err = StationClientError::new(
+            StationClientErrorKind::HttpStatus(403),
+            "denied by policy",
+            None,
+        );
+        match map_mint_error(err) {
+            OssCacheError::FederationDenied(_) => {}
+            other => panic!("expected FederationDenied, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_mint_error_translates_501_to_federation_disabled() {
+        use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
+        let err = StationClientError::new(
+            StationClientErrorKind::HttpStatus(501),
+            "federation disabled",
+            None,
+        );
+        match map_mint_error(err) {
+            OssCacheError::FederationDisabled(_) => {}
+            other => panic!("expected FederationDisabled, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_mint_error_translates_session_revoked_to_auth_required() {
+        use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
+        let err = StationClientError::new(
+            StationClientErrorKind::SessionRevoked,
+            "session revoked",
+            None,
+        );
+        match map_mint_error(err) {
+            OssCacheError::FederationAuthRequired => {}
+            other => panic!("expected FederationAuthRequired, got {other:?}"),
+        }
+    }
+
+    // ── attachment_ensure_federated guard rails ───────────────────
+    //
+    // We cannot exercise the happy path without spinning up a fake
+    // station, but we *can* pin the early-validation gates: empty
+    // token / empty origin must fail fast without making a network
+    // call. The HTTP layer is exercised in the broader integration
+    // suite (S18 in the plan).
+
+    #[test]
+    fn attachment_ensure_federated_rejects_empty_token() {
+        let uri = OssUri {
+            origin: "https://foreign.example".into(),
+            key: "cas/aa/abc".into(),
+        };
+        let err = attachment_ensure_federated(&uri, "", "did:peer:alice")
+            .expect_err("empty token must fail");
+        match err {
+            OssCacheError::FederationAuthRequired => {}
+            other => panic!("expected FederationAuthRequired, got {other:?}"),
+        }
     }
 }

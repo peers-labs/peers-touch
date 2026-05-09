@@ -10,6 +10,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/network"
 	"github.com/cloudwego/hertz/pkg/protocol"
 	"github.com/cloudwego/hertz/pkg/protocol/http1/resp"
+	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 )
@@ -108,6 +109,11 @@ func (s *subServer) handlePresenceStream(ctx context.Context, c *app.RequestCont
 				return
 			}
 		case <-heartbeat.C:
+			if valid, reason := coreauth.CheckSubjectSessionValid(ctx, subject); !valid {
+				logger.DefaultHelper.Infof("presence sse: closing revoked stream actor=%s session=%s reason=%s", selfDID, subject.SessionID, reason)
+				return
+			}
+
 			if _, err := c.Write([]byte(": ping\n\n")); err != nil {
 				return
 			}

@@ -1,5 +1,5 @@
 use reqwest::blocking::Client;
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::time::Duration;
@@ -34,10 +34,7 @@ fn build_openai_candidate_endpoints(base_url: &str) -> Vec<String> {
     let normalized = normalize_base_url(base_url);
     let mut endpoints = vec![format!("{}/models", normalized)];
     if normalized.ends_with("/v1") {
-        endpoints.push(format!(
-            "{}/api/tags",
-            normalized.trim_end_matches("/v1")
-        ));
+        endpoints.push(format!("{}/api/tags", normalized.trim_end_matches("/v1")));
     } else {
         endpoints.push(format!("{}/v1/models", normalized));
         endpoints.push(format!("{}/api/tags", normalized));
@@ -90,7 +87,9 @@ fn extract_openai_models(payload: &Value) -> Vec<String> {
 }
 
 fn request_json(client: &Client, endpoint: &str, headers: &HeaderMap) -> Result<Value, String> {
-    let mut request = client.get(endpoint).header(CONTENT_TYPE, "application/json");
+    let mut request = client
+        .get(endpoint)
+        .header(CONTENT_TYPE, "application/json");
     request = request.headers(headers.clone());
     let response = request
         .send()
@@ -136,7 +135,11 @@ fn google_headers() -> HeaderMap {
     HeaderMap::new()
 }
 
-fn request_openai_models(client: &Client, base_url: &str, api_key: &str) -> Result<ProbeResult, String> {
+fn request_openai_models(
+    client: &Client,
+    base_url: &str,
+    api_key: &str,
+) -> Result<ProbeResult, String> {
     let headers = openai_headers(api_key);
     let mut last_error = String::from("no endpoint available");
     for endpoint in build_openai_candidate_endpoints(base_url) {
@@ -151,7 +154,11 @@ fn request_openai_models(client: &Client, base_url: &str, api_key: &str) -> Resu
     Err(last_error)
 }
 
-fn request_anthropic_models(client: &Client, base_url: &str, api_key: &str) -> Result<ProbeResult, String> {
+fn request_anthropic_models(
+    client: &Client,
+    base_url: &str,
+    api_key: &str,
+) -> Result<ProbeResult, String> {
     let headers = anthropic_headers(api_key);
     let base = normalize_base_url(base_url);
     let mut endpoints = vec![format!("{}/v1/models", base), format!("{}/models", base)];
@@ -193,11 +200,7 @@ fn extract_gemini_models(payload: &Value) -> Vec<String> {
             items
                 .iter()
                 .filter_map(|item| item.get("name").and_then(Value::as_str))
-                .map(|name| {
-                    name.trim()
-                        .trim_start_matches("models/")
-                        .to_string()
-                })
+                .map(|name| name.trim().trim_start_matches("models/").to_string())
                 .filter(|name| !name.is_empty())
                 .collect::<Vec<_>>()
         })
@@ -211,7 +214,11 @@ fn request_ollama_models(client: &Client, base_url: &str) -> Result<ProbeResult,
     Ok(ProbeResult { endpoint, models })
 }
 
-fn request_gemini_models(client: &Client, base_url: &str, api_key: &str) -> Result<ProbeResult, String> {
+fn request_gemini_models(
+    client: &Client,
+    base_url: &str,
+    api_key: &str,
+) -> Result<ProbeResult, String> {
     let base = normalize_base_url(base_url);
     if base.contains("/openai") {
         return request_openai_models(client, &base, api_key);
@@ -353,7 +360,12 @@ pub(crate) fn chat_completion(
     }
 }
 
-fn post_json(client: &Client, url: &str, headers: &HeaderMap, body: &Value) -> Result<Value, String> {
+fn post_json(
+    client: &Client,
+    url: &str,
+    headers: &HeaderMap,
+    body: &Value,
+) -> Result<Value, String> {
     tracing::debug!(url = %redact_url(url), "POST request");
     let response = client
         .post(url)
@@ -370,16 +382,29 @@ fn post_json(client: &Client, url: &str, headers: &HeaderMap, body: &Value) -> R
         let body_text = response.text().unwrap_or_default();
         let detail = serde_json::from_str::<Value>(&body_text)
             .ok()
-            .and_then(|v| v.get("error").and_then(|e| e.get("message")).and_then(Value::as_str).map(String::from))
+            .and_then(|v| {
+                v.get("error")
+                    .and_then(|e| e.get("message"))
+                    .and_then(Value::as_str)
+                    .map(String::from)
+            })
             .unwrap_or(body_text);
         tracing::error!(url = %redact_url(url), status = %status, "HTTP request returned error status");
         return Err(format!("{} {}", status, detail));
     }
     tracing::info!(url = %redact_url(url), status = %status, "HTTP request succeeded");
-    response.json().map_err(|e| format!("parse response failed: {}", e))
+    response
+        .json()
+        .map_err(|e| format!("parse response failed: {}", e))
 }
 
-fn completion_openai(client: &Client, base_url: &str, api_key: &str, model: &str, message: &str) -> Result<CompletionResult, String> {
+fn completion_openai(
+    client: &Client,
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    message: &str,
+) -> Result<CompletionResult, String> {
     let base = normalize_base_url(base_url);
     let url = format!("{}/chat/completions", base);
     let body = serde_json::json!({
@@ -397,11 +422,24 @@ fn completion_openai(client: &Client, base_url: &str, api_key: &str, model: &str
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    let used_model = payload.get("model").and_then(Value::as_str).unwrap_or(model).to_string();
-    Ok(CompletionResult { text, model: used_model })
+    let used_model = payload
+        .get("model")
+        .and_then(Value::as_str)
+        .unwrap_or(model)
+        .to_string();
+    Ok(CompletionResult {
+        text,
+        model: used_model,
+    })
 }
 
-fn completion_anthropic(client: &Client, base_url: &str, api_key: &str, model: &str, message: &str) -> Result<CompletionResult, String> {
+fn completion_anthropic(
+    client: &Client,
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    message: &str,
+) -> Result<CompletionResult, String> {
     let base = normalize_base_url(base_url);
     let url = format!("{}/v1/messages", base);
     let body = serde_json::json!({
@@ -413,16 +451,33 @@ fn completion_anthropic(client: &Client, base_url: &str, api_key: &str, model: &
     let text = payload
         .get("content")
         .and_then(Value::as_array)
-        .and_then(|blocks| blocks.iter().find(|b| b.get("type").and_then(Value::as_str) == Some("text")))
+        .and_then(|blocks| {
+            blocks
+                .iter()
+                .find(|b| b.get("type").and_then(Value::as_str) == Some("text"))
+        })
         .and_then(|b| b.get("text"))
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    let used_model = payload.get("model").and_then(Value::as_str).unwrap_or(model).to_string();
-    Ok(CompletionResult { text, model: used_model })
+    let used_model = payload
+        .get("model")
+        .and_then(Value::as_str)
+        .unwrap_or(model)
+        .to_string();
+    Ok(CompletionResult {
+        text,
+        model: used_model,
+    })
 }
 
-fn completion_gemini(client: &Client, base_url: &str, api_key: &str, model: &str, message: &str) -> Result<CompletionResult, String> {
+fn completion_gemini(
+    client: &Client,
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    message: &str,
+) -> Result<CompletionResult, String> {
     let base = normalize_base_url(base_url);
     if base.contains("/openai") {
         return completion_openai(client, &base, api_key, model, message);
@@ -430,7 +485,12 @@ fn completion_gemini(client: &Client, base_url: &str, api_key: &str, model: &str
     let url = if api_key.trim().is_empty() {
         format!("{}/models/{}:generateContent", base, model)
     } else {
-        format!("{}/models/{}:generateContent?key={}", base, model, api_key.trim())
+        format!(
+            "{}/models/{}:generateContent?key={}",
+            base,
+            model,
+            api_key.trim()
+        )
     };
     let body = serde_json::json!({
         "contents": [{"parts": [{"text": message}]}]
@@ -448,10 +508,18 @@ fn completion_gemini(client: &Client, base_url: &str, api_key: &str, model: &str
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    Ok(CompletionResult { text, model: model.to_string() })
+    Ok(CompletionResult {
+        text,
+        model: model.to_string(),
+    })
 }
 
-fn completion_ollama(client: &Client, base_url: &str, model: &str, message: &str) -> Result<CompletionResult, String> {
+fn completion_ollama(
+    client: &Client,
+    base_url: &str,
+    model: &str,
+    message: &str,
+) -> Result<CompletionResult, String> {
     let base = normalize_base_url(base_url);
     let url = format!("{}/api/chat", base);
     let body = serde_json::json!({
@@ -466,8 +534,15 @@ fn completion_ollama(client: &Client, base_url: &str, model: &str, message: &str
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    let used_model = payload.get("model").and_then(Value::as_str).unwrap_or(model).to_string();
-    Ok(CompletionResult { text, model: used_model })
+    let used_model = payload
+        .get("model")
+        .and_then(Value::as_str)
+        .unwrap_or(model)
+        .to_string();
+    Ok(CompletionResult {
+        text,
+        model: used_model,
+    })
 }
 
 #[cfg(test)]
@@ -499,10 +574,7 @@ mod tests {
 
     #[test]
     fn model_protocol_falls_back_to_provider_when_none() {
-        assert_eq!(
-            resolve_model_protocol(None, Some("gemini")),
-            "gemini"
-        );
+        assert_eq!(resolve_model_protocol(None, Some("gemini")), "gemini");
     }
 
     #[test]
@@ -515,10 +587,7 @@ mod tests {
 
     #[test]
     fn model_protocol_falls_back_to_system_default_when_both_none() {
-        assert_eq!(
-            resolve_model_protocol(None, None),
-            "openai-compatible"
-        );
+        assert_eq!(resolve_model_protocol(None, None), "openai-compatible");
     }
 
     #[test]
@@ -602,7 +671,10 @@ mod tests {
             ]
         });
         let models = extract_gemini_models(&payload);
-        assert_eq!(models, vec!["gemini-2.0-flash", "gemini-1.5-pro", "gemini-nano"]);
+        assert_eq!(
+            models,
+            vec!["gemini-2.0-flash", "gemini-1.5-pro", "gemini-nano"]
+        );
     }
 
     #[test]
@@ -635,7 +707,9 @@ mod tests {
     #[test]
     fn openai_headers_include_bearer_token() {
         let headers = openai_headers("sk-test-key");
-        let auth = headers.get(AUTHORIZATION).expect("should have Authorization");
+        let auth = headers
+            .get(AUTHORIZATION)
+            .expect("should have Authorization");
         assert_eq!(auth.to_str().unwrap(), "Bearer sk-test-key");
     }
 
@@ -650,7 +724,9 @@ mod tests {
         let headers = anthropic_headers("ant-key");
         let api_key = headers.get("x-api-key").expect("should have x-api-key");
         assert_eq!(api_key.to_str().unwrap(), "ant-key");
-        let version = headers.get("anthropic-version").expect("should have anthropic-version");
+        let version = headers
+            .get("anthropic-version")
+            .expect("should have anthropic-version");
         assert_eq!(version.to_str().unwrap(), "2023-06-01");
     }
 
@@ -678,6 +754,9 @@ mod tests {
 
     #[test]
     fn normalize_base_url_trims_and_strips_slash() {
-        assert_eq!(normalize_base_url("  https://api.example.com/v1/  "), "https://api.example.com/v1");
+        assert_eq!(
+            normalize_base_url("  https://api.example.com/v1/  "),
+            "https://api.example.com/v1"
+        );
     }
 }

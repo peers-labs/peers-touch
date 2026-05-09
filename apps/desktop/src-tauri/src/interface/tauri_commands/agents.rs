@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use crate::error::AppResult;
 use crate::contracts::{
     AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentSearchInput, AgentUpdateInput,
     StubPayload,
 };
+use crate::error::AppResult;
 
 use crate::application::agents as application_agents;
 use crate::application::session_resolver;
@@ -16,10 +16,7 @@ fn actor_id_for_cmd(state: &State<'_, Arc<AppState>>, window: &Window) -> String
 }
 
 #[tauri::command]
-pub fn agents_list(
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
+pub fn agents_list(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
     let actor_id = actor_id_for_cmd(&state, &window);
     application_agents::agents_list(&actor_id)
 }

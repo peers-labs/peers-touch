@@ -3,17 +3,21 @@
 // 2026-04-09: Rewritten to support Station OSS upload, expanded profile fields,
 //             and dual-path (Station API + local store) architecture.
 
-use crate::domain::profile::{ProfileError, UploadKind};
-use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::{avatar_cache, profile_store, station_client};
 use crate::contracts::{
     AccountSyncAvatarInput, FileUploadInput, ProfilePrivacyInput, ProfileUpdateInput, StubPayload,
 };
+use crate::domain::profile::{ProfileError, UploadKind};
+use crate::error::{AppResult, ErrorCode};
+use crate::infrastructure::{avatar_cache, profile_store, station_client};
 use crate::model::actor::{ActorProfile, UpdateProfileRequest, UserLink};
 use reqwest::Method;
 use serde_json::{json, Value};
 
-fn map_station_error(command: &str, verb: &str, err: station_client::StationClientError) -> AppResult<StubPayload> {
+fn map_station_error(
+    command: &str,
+    verb: &str,
+    err: station_client::StationClientError,
+) -> AppResult<StubPayload> {
     err.into_app_result(format!("{} failed to {}", command, verb))
 }
 
@@ -102,7 +106,11 @@ pub fn profile_upload_header_oss(input: FileUploadInput, token: &str) -> AppResu
     upload_and_set_profile_image(token, &input.file_path, "header")
 }
 
-fn upload_and_set_profile_image(token: &str, file_path: &str, field: &str) -> AppResult<StubPayload> {
+fn upload_and_set_profile_image(
+    token: &str,
+    file_path: &str,
+    field: &str,
+) -> AppResult<StubPayload> {
     tracing::info!(file_path = %file_path, field = %field, "Starting profile image upload");
 
     // Step 1: Upload to OSS
@@ -125,7 +133,11 @@ fn upload_and_set_profile_image(token: &str, file_path: &str, field: &str) -> Ap
         }
     };
 
-    let url = oss_resp.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let url = oss_resp
+        .get("url")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     if url.is_empty() {
         tracing::error!(oss_response = ?oss_resp, "OSS returned empty URL");
         return AppResult::fail(
@@ -194,19 +206,46 @@ fn upload_and_set_profile_image(token: &str, file_path: &str, field: &str) -> Ap
 
 // ── Local profile fallbacks (kept for backward compat) ──
 
-pub fn profile_upload_avatar(actor_id: &str, input: FileUploadInput, token: &str) -> AppResult<StubPayload> {
-    map_upload("profile_upload_avatar", UploadKind::Avatar, input, token, actor_id)
+pub fn profile_upload_avatar(
+    actor_id: &str,
+    input: FileUploadInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    map_upload(
+        "profile_upload_avatar",
+        UploadKind::Avatar,
+        input,
+        token,
+        actor_id,
+    )
 }
 
-pub fn profile_upload_header(actor_id: &str, input: FileUploadInput, token: &str) -> AppResult<StubPayload> {
-    map_upload("profile_upload_header", UploadKind::Header, input, token, actor_id)
+pub fn profile_upload_header(
+    actor_id: &str,
+    input: FileUploadInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    map_upload(
+        "profile_upload_header",
+        UploadKind::Header,
+        input,
+        token,
+        actor_id,
+    )
 }
 
-pub fn profile_update_privacy(actor_id: &str, _token: &str, input: ProfilePrivacyInput) -> AppResult<StubPayload> {
+pub fn profile_update_privacy(
+    actor_id: &str,
+    _token: &str,
+    input: ProfilePrivacyInput,
+) -> AppResult<StubPayload> {
     match profile_store::update_privacy(actor_id, input.visibility, input.allow_direct_message) {
         Ok(snapshot) => AppResult::success(StubPayload {
             command: "profile_update_privacy".to_string(),
-            status: format!("privacy:{} dm:{}", snapshot.visibility, snapshot.allow_direct_message),
+            status: format!(
+                "privacy:{} dm:{}",
+                snapshot.visibility, snapshot.allow_direct_message
+            ),
         }),
         Err(error) => map_error("profile_update_privacy", error),
     }
@@ -337,7 +376,11 @@ fn map_error(command: &str, error: ProfileError) -> AppResult<StubPayload> {
     match error {
         ProfileError::InvalidArgument(msg) => {
             tracing::error!(command = %command, error = %msg, "Invalid profile argument");
-            AppResult::fail(ErrorCode::InvalidArgument, format!("Invalid argument: {}", msg), None)
+            AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("Invalid argument: {}", msg),
+                None,
+            )
         }
         ProfileError::Conflict(msg) => {
             tracing::error!(command = %command, error = %msg, "Profile conflict");
@@ -345,7 +388,11 @@ fn map_error(command: &str, error: ProfileError) -> AppResult<StubPayload> {
         }
         ProfileError::Internal(msg) => {
             tracing::error!(command = %command, error = %msg, "Profile internal error");
-            AppResult::fail(ErrorCode::InternalError, format!("Internal error: {}", msg), None)
+            AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Internal error: {}", msg),
+                None,
+            )
         }
     }
 }
@@ -413,28 +460,37 @@ pub fn sync_user_profile(token: &str, actor_id: &str) -> AppResult<StubPayload> 
     // Pick the LocalAccount whose `provider_user_id` matches `actor_id`. This
     // is the only correct destination — `active_account_id` is a UI/router
     // hint and is not authoritative for token-bound writes.
-    let account_id = match crate::infrastructure::auth_identity::find_account_id_by_actor_id(actor_id) {
-        Some(id) => id,
-        None => {
-            tracing::error!(
-                actor_id = %actor_id,
-                "sync_user_profile: no LocalAccount matches caller actor_id; refusing to write"
-            );
-            return AppResult::fail(
-                ErrorCode::NotFound,
-                "sync_user_profile: caller actor has no local account record",
-                None,
-            );
-        }
-    };
+    let account_id =
+        match crate::infrastructure::auth_identity::find_account_id_by_actor_id(actor_id) {
+            Some(id) => id,
+            None => {
+                tracing::error!(
+                    actor_id = %actor_id,
+                    "sync_user_profile: no LocalAccount matches caller actor_id; refusing to write"
+                );
+                return AppResult::fail(
+                    ErrorCode::NotFound,
+                    "sync_user_profile: caller actor has no local account record",
+                    None,
+                );
+            }
+        };
 
     // Sync all profile data + download avatar to local cache.
     let avatar_local = crate::infrastructure::auth_identity::sync_profile_locally(
         &account_id,
         Some(&profile.display_name),
         None, // email is not in ActorProfile
-        if avatar_url.is_empty() { None } else { Some(&avatar_url) },
-        if profile.url.is_empty() { None } else { Some(&profile.url) },
+        if avatar_url.is_empty() {
+            None
+        } else {
+            Some(&avatar_url)
+        },
+        if profile.url.is_empty() {
+            None
+        } else {
+            Some(&profile.url)
+        },
     );
 
     let local_path = match avatar_local {

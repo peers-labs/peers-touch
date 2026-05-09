@@ -171,7 +171,11 @@ pub fn upload_attachment(
         file_path,
         bucket,
         visibility,
-        if visibility == "chat" { chat_session_id } else { None },
+        if visibility == "chat" {
+            chat_session_id
+        } else {
+            None
+        },
     ) {
         Ok(v) => v,
         Err(e) => {
@@ -250,7 +254,37 @@ pub fn upload_attachment(
     })
 }
 
-pub fn oss_resolve_url(input: &str, token: Option<&str>) -> AppResult<StubPayload> {
+/// Resolve an OSS URI into renderer-displayable form.
+///
+/// Decision tree:
+///
+/// ```text
+///   uri.origin == bound_station OR origin in {"", "self"}
+///       → local flow (existing capabilities + bound-station fetch)
+///
+///   uri.origin != bound_station
+///       AND home token + actor DID supplied
+///       → federation flow:
+///           1. mint peer JWT at bound station
+///           2. GET bytes from foreign station with that JWT
+///           3. cache by (foreign_origin, key)
+///       Failure (denied / disabled) → renderer sees broken-link
+///       state via FederationDenied / FederationDisabled.
+///
+///   uri.origin != bound_station AND no token
+///       → return absolute URL only; cache lookup may still succeed
+///         from a previous federated fetch.
+/// ```
+///
+/// `home_token` is the desktop user's HS256 session JWT for the
+/// bound station; `home_actor_did` is the same caller's DID. Both
+/// are required for federation; either being empty downgrades the
+/// resolve to a no-token best-effort.
+pub fn oss_resolve_url(
+    input: &str,
+    home_token: &str,
+    home_actor_did: &str,
+) -> AppResult<StubPayload> {
     let uri = match OssUri::parse(input) {
         Ok(u) => u,
         Err(e) => {
@@ -262,6 +296,7 @@ pub fn oss_resolve_url(input: &str, token: Option<&str>) -> AppResult<StubPayloa
         }
     };
 
+    let bound_station = oss_cache::is_bound_station(&uri.origin);
     let caps = match oss_cache::capabilities_ensure(&uri.origin) {
         Ok(c) => c,
         Err(e) => return resolve_error(e),
@@ -297,12 +332,31 @@ pub fn oss_resolve_url(input: &str, token: Option<&str>) -> AppResult<StubPayloa
 
     // Best-effort cache to disk. Errors do not break the response —
     // the renderer can still show the file via the absolute URL.
-    let local_path = match oss_cache::attachment_ensure_with_bearer(&uri, None, token) {
-        Ok(p) => Some(p.to_string_lossy().to_string()),
-        Err(err) => {
-            tracing::warn!(error = %err, uri = %input, "OSS attachment cache miss");
-            None
+    // Federation failures are mapped explicitly so the UI can
+    // distinguish "couldn't reach the network" from "denied by
+    // policy" (the badge component renders different states).
+    let local_path = if bound_station {
+        match oss_cache::attachment_ensure(&uri, None) {
+            Ok(p) => Some(p.to_string_lossy().to_string()),
+            Err(err) => {
+                tracing::warn!(error = %err, uri = %input, "OSS attachment cache miss (local)");
+                None
+            }
         }
+    } else if !home_token.trim().is_empty() && !home_actor_did.trim().is_empty() {
+        match oss_cache::attachment_ensure_federated(&uri, home_token, home_actor_did) {
+            Ok(p) => Some(p.to_string_lossy().to_string()),
+            Err(err) => {
+                tracing::warn!(error = %err, uri = %input, "OSS attachment cache miss (federated)");
+                None
+            }
+        }
+    } else {
+        // Foreign origin without auth — we cannot mint, so don't
+        // attempt the foreign GET (which would 401 anyway). Surface
+        // the cache lookup so a previously-federated file still
+        // renders without re-minting.
+        oss_cache::attachment_lookup(&uri).map(|p| p.to_string_lossy().to_string())
     };
 
     success(OssResolved {
@@ -322,11 +376,16 @@ fn success(payload: OssResolved) -> AppResult<StubPayload> {
 }
 
 fn resolve_error(err: OssCacheError) -> AppResult<StubPayload> {
-    AppResult::fail(
-        ErrorCode::InternalError,
-        format!("oss resolve failed: {err}"),
-        None,
-    )
+    let (code, prefix) = match &err {
+        OssCacheError::FederationDenied(_) => (ErrorCode::Forbidden, "oss federation denied"),
+        OssCacheError::FederationDisabled(_) => {
+            (ErrorCode::NotImplemented, "oss federation disabled")
+        }
+        OssCacheError::FederationAuthRequired => (ErrorCode::Unauthorized, "oss federation auth"),
+        OssCacheError::InvalidUri(_) => (ErrorCode::InvalidArgument, "oss invalid uri"),
+        _ => (ErrorCode::InternalError, "oss resolve failed"),
+    };
+    AppResult::fail(code, format!("{prefix}: {err}"), None)
 }
 
 /// Drive the three-step presigned upload data path:
@@ -762,11 +821,7 @@ pub fn oss_restore_file(token: &str, key: &str) -> AppResult<StubPayload> {
     }
 }
 
-pub fn oss_patch_file(
-    token: &str,
-    key: &str,
-    body: &PatchFileBody,
-) -> AppResult<StubPayload> {
+pub fn oss_patch_file(token: &str, key: &str, body: &PatchFileBody) -> AppResult<StubPayload> {
     if key.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "key is required", None);
     }
@@ -796,10 +851,16 @@ pub fn oss_patch_file(
 
     let mut payload = serde_json::Map::<String, Value>::new();
     if let Some(v) = body.visibility.as_ref() {
-        payload.insert("visibility".to_string(), Value::String(v.trim().to_string()));
+        payload.insert(
+            "visibility".to_string(),
+            Value::String(v.trim().to_string()),
+        );
     }
     if let Some(v) = body.chat_session_id.as_ref() {
-        payload.insert("chat_session_id".to_string(), Value::String(v.trim().to_string()));
+        payload.insert(
+            "chat_session_id".to_string(),
+            Value::String(v.trim().to_string()),
+        );
     }
     if let Some(v) = body.bucket.as_ref() {
         payload.insert("bucket".to_string(), Value::String(v.trim().to_string()));
@@ -814,7 +875,10 @@ pub fn oss_patch_file(
     if body.clear_expires_at {
         payload.insert("expires_at".to_string(), Value::Null);
     } else if let Some(v) = body.expires_at.as_ref() {
-        payload.insert("expires_at".to_string(), Value::String(v.trim().to_string()));
+        payload.insert(
+            "expires_at".to_string(),
+            Value::String(v.trim().to_string()),
+        );
     }
     let body_json: Value = Value::Object(payload);
 

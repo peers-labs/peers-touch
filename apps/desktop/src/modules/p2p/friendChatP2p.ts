@@ -73,10 +73,9 @@ export type FriendChatP2pState = 'idle' | 'connecting' | 'connected' | 'failed' 
  *   - `direct` = host / srflx / prflx — UDP/TCP path between the two peers
  *   - `relay`  = both sides talk through a TURN allocation
  *
- * The UI surfaces this so users can tell "real-time over P2P" from
- * "real-time over TURN relay" — both are equally responsive, but TURN
- * costs station bandwidth and has implications for privacy. **There is no
- * SSE / business-layer relay; the entire real-time path is WebRTC.**
+ * Calls use this to distinguish direct media from TURN relay. Text
+ * messages are delivered by the canonical realtime SSE stream; WebRTC
+ * here is only the call/signaling transport surface.
  */
 export type FriendChatP2pTransport = 'direct' | 'relay' | null;
 
@@ -237,8 +236,7 @@ interface Conn {
   /** Current call ringing / media state for this peer connection.
    *  Voice and video calls reuse the existing RTCPeerConnection
    *  (same ICE pair, same envelope crypto) and bolt media tracks
-   *  on top of the data-channel connection that was already
-   *  open for chat-message hints. */
+   *  on top of the data-channel connection kept for call readiness. */
   call: CallSnapshot;
   /** RTP receivers we've added an `ontrack` listener to, keyed
    *  by `RTCRtpReceiver.track.id`, so we don't double-attach
@@ -883,9 +881,8 @@ class FriendChatP2pManager {
 
   /** Stop the local stream and reset the call snapshot. Used by
    *  every terminal path (CALL_END/CALL_REJECT, errors, manual
-   *  hangup). The PC itself stays alive — the chat data channel
-   *  is unaffected so we can ring again later without reopening
-   *  the entire connection. */
+   *  hangup). The PC itself stays alive so we can ring again later
+   *  without reopening the entire connection. */
   private teardownCallLocal(conn: Conn, _reason: string): void {
     if (conn.call.localStream) {
       for (const t of conn.call.localStream.getTracks()) {

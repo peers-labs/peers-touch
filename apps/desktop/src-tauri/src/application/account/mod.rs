@@ -1,7 +1,11 @@
+use crate::contracts::{
+    AccountIdInput, AccountRemovePinInput, AccountSetPinInput, AccountUnlockInput,
+    AccountUpsertOAuthInput, StubPayload,
+};
+use crate::domain::pin_lock::PinVerifyError;
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::auth_identity;
-use crate::contracts::{AccountIdInput, AccountSetPinInput, AccountUnlockInput, AccountRemovePinInput, AccountUpsertOAuthInput, StubPayload};
-use crate::domain::pin_lock::PinVerifyError;
+use crate::infrastructure::session_vault;
 use serde_json::json;
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
@@ -38,11 +42,7 @@ fn to_json(account: &auth_identity::AccountIdentity) -> serde_json::Value {
     // "no encrypted session" dead-end the user can never escape from the
     // picker. Non-PIN accounts keep the raw flag because their token lives
     // in the per-actor session_store, not on the AccountIdentity row.
-    let has_session = if account.pin_protection.is_some() {
-        account.has_session && account.encrypted_session.is_some()
-    } else {
-        account.has_session
-    };
+    let has_session = session_vault::account_has_restorable_session(account);
     json!({
         "id": account.id,
         "provider": account.provider,
@@ -61,6 +61,7 @@ fn to_json(account: &auth_identity::AccountIdentity) -> serde_json::Value {
 
 pub fn account_list() -> AppResult<StubPayload> {
     let mut state = try_cmd!(auth_identity::read_state().map_err(internal_error));
+    session_vault::purge_raw_sessions_for_pin_accounts(&state.accounts);
     state
         .accounts
         .sort_by(|a, b| b.last_login_at.cmp(&a.last_login_at));
@@ -75,6 +76,7 @@ pub fn account_list() -> AppResult<StubPayload> {
 
 pub fn account_get_active() -> AppResult<StubPayload> {
     let state = try_cmd!(auth_identity::read_state().map_err(internal_error));
+    session_vault::purge_raw_sessions_for_pin_accounts(&state.accounts);
     let active = match state.active_account_id {
         Some(active_id) => state.accounts.into_iter().find(|item| item.id == active_id),
         None => None,
@@ -134,7 +136,10 @@ pub fn account_upsert_oauth(input: AccountUpsertOAuthInput) -> AppResult<StubPay
 // ---------------------------------------------------------------------------
 
 /// Set or update a PIN for the given account. Encrypts the current session token.
-pub fn account_set_pin(input: AccountSetPinInput, current_token: Option<&str>) -> AppResult<StubPayload> {
+pub fn account_set_pin(
+    input: AccountSetPinInput,
+    current_token: Option<&str>,
+) -> AppResult<StubPayload> {
     if input.account_id.trim().is_empty() {
         return invalid_argument("account_id is required");
     }
@@ -182,9 +187,66 @@ pub fn account_unlock(input: AccountUnlockInput) -> AppResult<StubPayload> {
     }
 }
 
+/// Re-encrypt the current authenticated session with an already-configured PIN.
+pub fn account_relink_pin(
+    input: AccountUnlockInput,
+    current_token: Option<&str>,
+) -> AppResult<StubPayload> {
+    if input.account_id.trim().is_empty() {
+        return invalid_argument("account_id is required");
+    }
+    if input.pin.trim().is_empty() {
+        return invalid_argument("pin is required");
+    }
+    let Some(token) = current_token.filter(|t| !t.trim().is_empty()) else {
+        return AppResult::fail(
+            ErrorCode::Unauthorized,
+            "active session is required to re-link PIN",
+            Some(json!({ "command": "account_relink_pin", "reason": "session_missing" })),
+        );
+    };
+
+    match auth_identity::verify_account_pin(&input.account_id, &input.pin) {
+        Ok(()) => {}
+        Err(PinVerifyError::WrongPin { attempts_remaining }) => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                format!(
+                    "Incorrect PIN entered ({} attempt(s) remaining)",
+                    attempts_remaining
+                ),
+                Some(json!({ "attempts_remaining": attempts_remaining })),
+            )
+        }
+        Err(PinVerifyError::LockedOut { remaining_secs }) => {
+            return AppResult::fail(
+                ErrorCode::Forbidden,
+                format!(
+                    "Account locked: too many failed PIN attempts (try again in {} seconds)",
+                    remaining_secs
+                ),
+                Some(json!({ "remaining_secs": remaining_secs })),
+            )
+        }
+        Err(PinVerifyError::Internal(msg)) => return internal_error(msg),
+    }
+
+    try_cmd!(session_vault::save_encrypted_session_and_purge_raw(
+        &input.account_id,
+        &input.pin,
+        token
+    )
+    .map_err(internal_error));
+    success_payload(
+        "account_relink_pin",
+        json!({ "ok": true, "account_id": input.account_id }),
+    )
+}
+
 /// List accounts that have restorable sessions (for the login account picker).
 pub fn account_list_restorable() -> AppResult<StubPayload> {
     let accounts = try_cmd!(auth_identity::list_restorable_accounts().map_err(internal_error));
+    session_vault::purge_raw_sessions_for_pin_accounts(&accounts);
     success_payload(
         "account_list_restorable",
         json!({
@@ -202,8 +264,7 @@ pub fn account_remove_pin(input: AccountRemovePinInput) -> AppResult<StubPayload
         return invalid_argument("pin is required");
     }
     try_cmd!(
-        auth_identity::remove_account_pin(&input.account_id, &input.pin)
-            .map_err(internal_error)
+        auth_identity::remove_account_pin(&input.account_id, &input.pin).map_err(internal_error)
     );
     success_payload("account_remove_pin", json!({ "ok": true }))
 }

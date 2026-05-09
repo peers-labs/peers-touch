@@ -23,8 +23,7 @@ WEB_GATEWAY_PORT=3031
 WEB_VITE_PORT=3211
 
 STATION_PORT="${STATION_PORT:-18080}"
-STATION_URL="${PEERS_STATION_URL:-http://localhost:${STATION_PORT}}"
-DASHBOARD_URL="${STATION_URL%/}/dashboard/"
+DASHBOARD_URL="http://localhost:${STATION_PORT}/dashboard/"
 
 source "$SCRIPT_DIR/_ensure-station.sh"
 
@@ -68,7 +67,7 @@ echo "  Peers Touch Desktop — Dual Mode"
 echo "  ─────────────────────────────────────────────────"
 echo "  App       : Tauri window,  Vite :$APP_VITE_PORT,  Gateway :$APP_GATEWAY_PORT"
 echo "  Web       : Browser,       Vite :$WEB_VITE_PORT,  Gateway :$WEB_GATEWAY_PORT"
-echo "  Station   : $STATION_URL (shared)"
+echo "  Station   : :$STATION_PORT (shared)"
 echo "  Dashboard : $DASHBOARD_URL"
 echo ""
 echo "  Starting services…"

@@ -65,3 +65,6 @@ apps/station/frame/example/**/server
 external
 release-to-dev-box.sh
 apps/mobile/android/gradle/wrapper/gradle-wrapper.jar
+
+# Deprecated Flutter app — local build artifacts only.
+apps/mobile/flutter/

@@ -14,6 +14,17 @@ message MemoryItem {
   string source_turn_id = 5;
   google.protobuf.Timestamp created_at = 6;
   google.protobuf.Timestamp updated_at = 7;
+  string layer = 8;
+  string session_id = 9;
+  string source = 10;
+  string summary = 11;
+  double relevance = 12;
+  int32 access_count = 13;
+  google.protobuf.Timestamp last_accessed_at = 14;
+  double trust_score = 15;
+  int32 helpful_count = 16;
+  int32 harmful_count = 17;
+  bool is_frozen = 18;
 }
 
 message MemorySnapshot {
@@ -21,15 +32,25 @@ message MemorySnapshot {
   string memory_content = 2;
   string user_content = 3;
   google.protobuf.Timestamp captured_at = 4;
+  string persona_content = 5;
+  repeated MemoryItem relevant_items = 6;
 }
 
 message ListMemoriesRequest {
   string agent_id = 1;
   string target = 2;
+  string layer = 3;
+  int32 page = 4;
+  int32 page_size = 5;
+  string order_by = 6;
+  string since = 7;
+  string until = 8;
+  string period = 9;
 }
 
 message ListMemoriesResponse {
   repeated MemoryItem items = 1;
+  int32 total = 2;
 }
 
 message GetMemorySnapshotRequest {
@@ -47,10 +68,164 @@ message WriteMemoryRequest {
   string content = 4;
   string old_content = 5;
   string source_turn_id = 6;
+  string layer = 7;
+  string session_id = 8;
+  string summary = 9;
 }
 
 message WriteMemoryResponse {
   MemoryItem item = 1;
   bool success = 2;
   string message = 3;
+}
+
+message MemoryScoreExplain {
+  double vector_score = 1;
+  double keyword_score = 2;
+  double weighted_score = 3;
+  double decay_factor = 4;
+  double after_decay = 5;
+  double after_rerank = 6;
+  double final_score = 7;
+  double trust_factor = 8;
+}
+
+message ScoredMemory {
+  MemoryItem memory = 1;
+  double score = 2;
+  MemoryScoreExplain explain = 3;
+}
+
+message SearchMemoriesRequest {
+  string query = 1;
+  repeated string layers = 2;
+  int32 limit = 3;
+  string agent_id = 4;
+  string since = 5;
+  string until = 6;
+  string period = 7;
+  string effort = 8;
+}
+
+message SearchMemoriesResponse {
+  repeated ScoredMemory results = 1;
+}
+
+message MemoryPersona {
+  string tagline = 1;
+  string narrative = 2;
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+message GetMemoryPersonaRequest {
+  string agent_id = 1;
+}
+
+message GetMemoryPersonaResponse {
+  MemoryPersona persona = 1;
+}
+
+message GetMemoryStatsRequest {
+  string agent_id = 1;
+}
+
+message GetMemoryStatsResponse {
+  int32 total = 1;
+  map<string, int32> by_layer = 2;
+  int64 storage_bytes = 3;
+}
+
+message MemoryEvent {
+  string id = 1;
+  string type = 2;
+  string memory_id = 3;
+  string session_id = 4;
+  string agent_id = 5;
+  string layer = 6;
+  string detail_json = 7;
+  int64 latency_ms = 8;
+  google.protobuf.Timestamp timestamp = 9;
+}
+
+message ListMemoryEventsRequest {
+  string type = 1;
+  string agent_id = 2;
+  int32 limit = 3;
+  int32 offset = 4;
+  string since = 5;
+  string until = 6;
+  string period = 7;
+}
+
+message ListMemoryEventsResponse {
+  repeated MemoryEvent events = 1;
+}
+
+message DeleteMemoryRequest {
+  string id = 1;
+  string agent_id = 2;
+}
+
+message DeleteMemoryResponse {
+  bool ok = 1;
+}
+
+message GetMemoryRequest {
+  string id = 1;
+}
+
+message GetMemoryResponse {
+  MemoryItem item = 1;
+}
+
+message ExportMemoriesRequest {
+  string agent_id = 1;
+  string layer = 2;
+}
+
+message ExportMemoriesResponse {
+  string version = 1;
+  string exported_at = 2;
+  repeated MemoryItem memories = 3;
+  MemoryPersona persona = 4;
+}
+
+message ImportMemoriesRequest {
+  ExportMemoriesResponse data = 1;
+  bool skip_duplicates = 2;
+}
+
+message ImportMemoriesResponse {
+  int32 imported = 1;
+  int32 skipped = 2;
+  int32 failed = 3;
+  int32 total = 4;
+}
+
+message EmbeddingStatusRequest {}
+
+message EmbeddingStatusResponse {
+  string provider = 1;
+  string model = 2;
+  int32 dimensions = 3;
+  int32 vector_count = 4;
+}
+
+message ReEmbedRequest {}
+
+message ReEmbedResponse {
+  bool ok = 1;
+  int32 reembedded_count = 2;
+}
+
+message MemoryFeedbackRequest {
+  string memory_id = 1;
+  bool helpful = 2;
+  string reason = 3;
+}
+
+message MemoryFeedbackResponse {
+  string memory_id = 1;
+  double trust_score = 2;
+  bool helpful = 3;
 }

@@ -1,7 +1,7 @@
-use crate::error::AppResult;
 use crate::contracts::{
     NotebookCreateInput, NotebookIdInput, NotebookUpdateInput, StubPayload, TopicIdInput,
 };
+use crate::error::AppResult;
 
 use crate::application::notebook as application_notebook;
 

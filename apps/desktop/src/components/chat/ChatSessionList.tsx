@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Dropdown, Input } from '@lobehub/ui';
-import { Badge, Empty, Modal, Spin, theme, Typography } from 'antd';
-import { Users, Search, Plus, UserPlus, UsersRound, MoreHorizontal, Trash2 } from 'lucide-react';
+import { Badge, Empty, Spin, theme, Typography } from 'antd';
+import { Users, Search, Plus, UserPlus, UsersRound } from 'lucide-react';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { useSocialChatStore } from '../../store/socialChat';
 import type { UnifiedConversation } from '../../store/socialChat';
@@ -33,55 +33,35 @@ function relativeTime(d: Date, t: (key: string, opts?: Record<string, unknown>) 
 export function ChatSessionList() {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const sessions = useSocialChatStore((s) => s.sessions);
-  const groups = useSocialChatStore((s) => s.groups);
-  const groupUnreadCounts = useSocialChatStore((s) => s.groupUnreadCounts);
-  const lastPreviews = useSocialChatStore((s) => s.lastPreviews);
-  const messagesByConversation = useSocialChatStore((s) => s.messages);
-  const conversationLocalState = useSocialChatStore((s) => s.conversationLocalState);
-  const currentUserDid = useSocialChatStore((s) => s.currentUserDid);
-  const activeTab = useSocialChatStore((s) => s.activeTab);
-  const activeSessionUlid = useSocialChatStore((s) => s.activeSessionUlid);
-  const activeGroupUlid = useSocialChatStore((s) => s.activeGroupUlid);
-  const loading = useSocialChatStore((s) => s.loading);
-  const setActiveTab = useSocialChatStore((s) => s.setActiveTab);
-  const selectSession = useSocialChatStore((s) => s.selectSession);
-  const selectGroup = useSocialChatStore((s) => s.selectGroup);
-  const getUnifiedConversations = useSocialChatStore((s) => s.getUnifiedConversations);
-  const hideConversation = useSocialChatStore((s) => s.hideConversation);
+  const {
+    sessions,
+    groups,
+    groupUnreadCounts,
+    lastPreviews,
+    currentUserDid,
+    activeTab,
+    activeSessionUlid,
+    activeGroupUlid,
+    loading,
+    setActiveTab,
+    selectSession,
+    selectGroup,
+    getUnifiedConversations,
+  } = useSocialChatStore();
 
   const [searchText, setSearchText] = useState('');
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showFindPeople, setShowFindPeople] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<UnifiedConversation | null>(null);
 
   // NOTE: Initial data loading (sessions, groups, previews) is owned by
   // `SocialChatPage`'s `tick()` effect — see comment there. We deliberately
   // do NOT re-fire those calls here, otherwise the cold path runs every
   // fetch twice in parallel and the spinner blocks longer than necessary.
 
-  const conversations = useMemo(() => {
-    // `getUnifiedConversations` reads the store imperatively; these
-    // selected slices are the invalidation keys that keep this derived
-    // list fresh without subscribing the component to the whole store.
-    void sessions;
-    void groups;
-    void groupUnreadCounts;
-    void lastPreviews;
-    void messagesByConversation;
-    void conversationLocalState;
-    void currentUserDid;
-    return getUnifiedConversations();
-  }, [
-    getUnifiedConversations,
-    sessions,
-    groups,
-    groupUnreadCounts,
-    lastPreviews,
-    messagesByConversation,
-    conversationLocalState,
-    currentUserDid,
-  ]);
+  const conversations = useMemo(
+    () => getUnifiedConversations(),
+    [getUnifiedConversations, sessions, groups, groupUnreadCounts, lastPreviews, currentUserDid],
+  );
 
   const filteredItems = useMemo(() => {
     if (!searchText.trim()) return conversations;
@@ -119,14 +99,6 @@ export function ChatSessionList() {
       return activeTab === 'friend' && c.ulid === activeSessionUlid;
     }
     return activeTab === 'group' && c.ulid === activeGroupUlid;
-  };
-
-  const closeDeleteModal = () => setDeleteTarget(null);
-
-  const confirmDeleteConversation = async (keepHistory: boolean) => {
-    if (!deleteTarget) return;
-    await hideConversation(deleteTarget.type, deleteTarget.ulid, keepHistory);
-    closeDeleteModal();
   };
 
   return (
@@ -254,37 +226,6 @@ export function ChatSessionList() {
                       )}
                     </Flexbox>
                   </Flexbox>
-                  <Dropdown
-                    trigger={['click']}
-                    placement="bottomRight"
-                    menu={{
-                      items: [
-                        {
-                          key: 'delete',
-                          danger: true,
-                          icon: <Trash2 size={14} />,
-                          label: t('chat.social.sessionList.deleteConversation', 'Delete'),
-                          onClick: ({ domEvent }) => {
-                            domEvent.stopPropagation();
-                            setDeleteTarget(c);
-                          },
-                        },
-                      ],
-                    }}
-                  >
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<MoreHorizontal size={15} />}
-                      onClick={(event) => event.stopPropagation()}
-                      style={{
-                        width: 24,
-                        height: 24,
-                        color: token.colorTextTertiary,
-                        flexShrink: 0,
-                      }}
-                    />
-                  </Dropdown>
                 </Flexbox>
               );
             })
@@ -294,29 +235,6 @@ export function ChatSessionList() {
 
       <CreateGroupModal open={showCreateGroup} onClose={() => setShowCreateGroup(false)} />
       <FindPeopleModal open={showFindPeople} onClose={() => setShowFindPeople(false)} />
-      <Modal
-        title={t('chat.social.sessionList.deleteTitle', 'Delete conversation?')}
-        open={Boolean(deleteTarget)}
-        onCancel={closeDeleteModal}
-        footer={[
-          <Button key="cancel" onClick={closeDeleteModal}>
-            {t('chat.social.createGroup.cancel')}
-          </Button>,
-          <Button key="clear" onClick={() => confirmDeleteConversation(false)}>
-            {t('chat.social.sessionList.deleteWithoutHistory', 'Delete history')}
-          </Button>,
-          <Button key="keep" type="primary" onClick={() => confirmDeleteConversation(true)}>
-            {t('chat.social.sessionList.deleteKeepHistory', 'Keep history')}
-          </Button>,
-        ]}
-      >
-        <Text type="secondary">
-          {t(
-            'chat.social.sessionList.deleteDescription',
-            'Remove this conversation from Chats. You can find it again from Contacts.',
-          )}
-        </Text>
-      </Modal>
     </>
   );
 }

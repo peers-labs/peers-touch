@@ -4,12 +4,12 @@ use crate::application::session_resolver;
 use crate::contracts::{
     AttachmentInput, ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput,
     ChatScopeCursorSetInput, FriendChatAcceptFriendRequestInput, FriendChatAckInput,
-    FriendChatCreateSessionInput, FriendChatDeleteFriendInput, FriendChatDeleteInput, FriendChatEditInput,
-    FriendChatListFriendRequestsInput, FriendChatListInput, FriendChatListMessagesInput,
-    FriendChatOnlineInput, FriendChatPendingInput, FriendChatRecallInput,
-    FriendChatRejectFriendRequestInput, FriendChatSendFriendRequestInput, FriendChatSendInput,
-    FriendChatSyncInput, FriendChatSyncMessagesInput, FriendChatThreadCountsInput,
-    FriendChatThreadInput, FriendChatThreadReadInput, StubPayload,
+    FriendChatBlockUserInput, FriendChatCreateSessionInput, FriendChatDeleteInput,
+    FriendChatEditInput, FriendChatListFriendRequestsInput, FriendChatListInput,
+    FriendChatListMessagesInput, FriendChatOnlineInput, FriendChatPendingInput,
+    FriendChatRecallInput, FriendChatRejectFriendRequestInput, FriendChatSendFriendRequestInput,
+    FriendChatSendInput, FriendChatSyncInput, FriendChatSyncMessagesInput,
+    FriendChatThreadCountsInput, FriendChatThreadInput, FriendChatThreadReadInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -1094,35 +1094,30 @@ pub fn friend_chat_list_friend_requests(
 }
 
 #[tauri::command]
-pub fn friend_chat_delete_friend(
-    input: FriendChatDeleteFriendInput,
+pub fn friend_chat_block_user(
+    input: FriendChatBlockUserInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
-) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state, &window) {
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
         Ok(token) => token,
         Err(error) => return error,
     };
-    if input.peer_did.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "peer_did is required", None);
+    if input.target_did.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "target_did is required", None);
     }
-    let req = model::chat::DeleteFriendRequest {
-        peer_did: input.peer_did,
+    let req = model::chat::BlockUserRequest {
+        target_did: input.target_did,
     };
     let resp = match station_client::request_proto::<
-        model::chat::DeleteFriendRequest,
-        model::chat::DeleteFriendResponse,
-    >(
-        Method::POST,
-        "/friend-chat/friend/delete",
-        &token,
-        None,
-        Some(&req),
-    ) {
+        model::chat::BlockUserRequest,
+        model::chat::BlockUserResponse,
+    >(Method::POST, "/friend-chat/block", &token, None, Some(&req))
+    {
         Ok(resp) => resp,
-        Err(error) => return error.into_app_result("station request failed"),
+        Err(error) => return station_error_proto(error, "station request failed"),
     };
-    to_stub("friend_chat_delete_friend", json!({ "success": resp.success }))
+    AppResult::success(resp.encode_to_vec())
 }
 
 // ---------------------------------------------------------------

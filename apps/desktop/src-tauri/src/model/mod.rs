@@ -13,7 +13,10 @@ pub mod chat {
 
 pub mod notification {
     pub mod v1 {
-        include!(concat!(env!("OUT_DIR"), "/peers_touch.model.notification.v1.rs"));
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/peers_touch.model.notification.v1.rs"
+        ));
     }
     pub use v1::*;
 }
@@ -62,7 +65,10 @@ pub mod error {
 
 pub mod realtime {
     pub mod v1 {
-        include!(concat!(env!("OUT_DIR"), "/peers_touch.model.realtime.v1.rs"));
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/peers_touch.model.realtime.v1.rs"
+        ));
     }
     pub use v1::*;
 }
@@ -76,7 +82,10 @@ pub mod social {
 
 pub mod activity {
     pub mod v1 {
-        include!(concat!(env!("OUT_DIR"), "/peers_touch.model.activity.v1.rs"));
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/peers_touch.model.activity.v1.rs"
+        ));
     }
     pub use v1::*;
 }
@@ -125,7 +134,10 @@ pub mod agent {
 
 pub mod key_exchange {
     pub mod v1 {
-        include!(concat!(env!("OUT_DIR"), "/peers_touch.model.key_exchange.v1.rs"));
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/peers_touch.model.key_exchange.v1.rs"
+        ));
     }
     pub use v1::*;
 }

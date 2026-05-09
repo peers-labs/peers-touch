@@ -73,6 +73,13 @@ pub struct OssResolveUrlInput {
     /// Either a full `oss://{host}/{key}` URI or a bare key for the
     /// caller's bound station.
     pub uri: String,
+    /// The DID of the caller as known to the BOUND station. Used to
+    /// stamp `&owner=…` on the foreign GET so the receiving station
+    /// resolves the correct per-actor FileMeta row. Optional —
+    /// renderers calling for purely-public local files may omit
+    /// it; foreign-origin URIs need it for federation to succeed.
+    #[serde(default)]
+    pub actor_did: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -207,11 +214,18 @@ pub async fn oss_pick_image_social(
     window: Window,
 ) -> AppResult<StubPayload> {
     let _ = window;
-    let max_count = if input.max_count == 0 { 1 } else { input.max_count } as usize;
+    let max_count = if input.max_count == 0 {
+        1
+    } else {
+        input.max_count
+    } as usize;
     tracing::info!(max_count, "Opening image picker dialog for Moments");
     let dialog = rfd::AsyncFileDialog::new()
         .set_title("Select Images")
-        .add_filter("Images", &["jpg", "jpeg", "png", "gif", "webp", "bmp", "heic"]);
+        .add_filter(
+            "Images",
+            &["jpg", "jpeg", "png", "gif", "webp", "bmp", "heic"],
+        );
 
     let picked = if max_count > 1 {
         dialog.pick_files().await
@@ -270,14 +284,7 @@ pub fn oss_upload_attachment_social(
     } else {
         input.bucket.trim()
     };
-    application_oss::upload_attachment(
-        &input.file_path,
-        &token,
-        "social",
-        bucket,
-        "public",
-        None,
-    )
+    application_oss::upload_attachment(&input.file_path, &token, "social", bucket, "public", None)
 }
 
 // ── Generic ────────────────────────────────────────────────────────
@@ -288,8 +295,12 @@ pub fn oss_resolve_url(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let token = session_resolver::token_for_window(state.inner(), &window);
-    application_oss::oss_resolve_url(&input.uri, token.as_deref())
+    // Token is optional for the local public-file case but required
+    // for federated GETs against foreign origins. We resolve it
+    // best-effort and let the application layer decide whether the
+    // current request actually needs it.
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    application_oss::oss_resolve_url(&input.uri, &token, &input.actor_did)
 }
 
 #[tauri::command]

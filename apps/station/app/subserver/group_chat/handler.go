@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"strings"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -128,40 +127,38 @@ func (s *subServer) handleCreate(ctx context.Context, req *chat.CreateGroupReque
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		return nil, server.BadRequest("group create failed: name is required after trimming")
+	if req.Name == "" {
+		return nil, server.BadRequest("name is required")
 	}
-
-	initialMembers := make([]string, 0, len(req.InitialMemberDids))
-	seen := map[string]struct{}{subject.ID: {}}
-	for _, rawDID := range req.InitialMemberDids {
-		did := strings.TrimSpace(rawDID)
-		if did == "" {
-			continue
+	item := s.appService.CreateGroup(subject.ID, req.Name, req.Description)
+	// Honour `initial_member_dids` from the proto contract. Previously
+	// this field was silently dropped on the floor, which made the
+	// "Start Group Chat" UI look like it had failed -- the group was
+	// created but only contained the owner, so neither side saw any
+	// joinable conversation. We add members directly (as if the owner
+	// invited and they accepted in one step) because the UI semantics
+	// for `initial_member_dids` are "these people are already in the
+	// group on creation," not "send them an invite they have to
+	// accept." Self-DID is filtered out (the creator is added by
+	// CreateGroup itself), duplicates are de-duped, and we re-fetch
+	// the group at the end so the response carries the correct
+	// MemberCount instead of the stale snapshot from CreateGroup.
+	if len(req.InitialMemberDids) > 0 {
+		seen := make(map[string]struct{}, len(req.InitialMemberDids))
+		seen[subject.ID] = struct{}{}
+		for _, did := range req.InitialMemberDids {
+			if did == "" {
+				continue
+			}
+			if _, dup := seen[did]; dup {
+				continue
+			}
+			seen[did] = struct{}{}
+			s.appService.AddMember(item.ID, did, subject.ID)
 		}
-		if _, duplicate := seen[did]; duplicate {
-			continue
+		if refreshed, ok := s.appService.GetGroup(item.ID); ok {
+			item = *refreshed
 		}
-		seen[did] = struct{}{}
-		initialMembers = append(initialMembers, did)
-	}
-	if len(initialMembers) < 2 {
-		return nil, server.BadRequest(
-			"group create failed: at least two non-self initial members are required",
-		)
-	}
-
-	item := s.appService.CreateGroup(subject.ID, name, req.Description)
-	// Honour `initial_member_dids` from the proto contract. These peers
-	// are selected as initial members by the creator, so they join in the
-	// same operation after transport validation has removed empty, self,
-	// and duplicate entries.
-	for _, did := range initialMembers {
-		s.appService.AddMember(item.ID, did, subject.ID)
-	}
-	if refreshed, ok := s.appService.GetGroup(item.ID); ok {
-		item = *refreshed
 	}
 	return &chat.CreateGroupResponse{
 		Group: &chat.Group{

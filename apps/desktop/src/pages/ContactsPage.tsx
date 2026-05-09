@@ -4,7 +4,7 @@ import { Flexbox } from 'react-layout-kit';
 import { Button } from '@lobehub/ui';
 import { Badge, Collapse, theme, Typography, Empty } from 'antd';
 import { UserPlus, Users, Contact, ChevronRight, Check, X } from 'lucide-react';
-import { peerOfSession, useSocialChatStore } from '../store/socialChat';
+import { groupAvatarRemoteUrl, peerOfSession, useSocialChatStore } from '../store/socialChat';
 import { UserSquareAvatar } from '../components/common/UserSquareAvatar';
 import { log } from '../utils/logger';
 
@@ -67,24 +67,26 @@ export function ContactsPage() {
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.contacts.noPendingRequests')} />
         ) : (
           <Flexbox gap={8}>
-            {pendingRequests.map((req) => (
-              <Flexbox
-                key={req.id}
-                horizontal
-                align="flex-start"
-                gap={10}
-                style={{
-                  padding: '10px 12px',
-                  borderRadius: 8,
-                  border: `1px solid ${token.colorBorderSecondary}`,
-                  background: token.colorFillQuaternary,
-                }}
-              >
-                <UserSquareAvatar name={req.senderId} size={40} />
-                <Flexbox flex={1} style={{ minWidth: 0 }} gap={6}>
-                  <Text strong ellipsis style={{ fontSize: 13 }}>
-                    {req.senderId}
-                  </Text>
+            {pendingRequests.map((req) => {
+              const peerLabel = req.senderDisplayName || req.senderId;
+              return (
+                <Flexbox
+                  key={req.id}
+                  horizontal
+                  align="flex-start"
+                  gap={10}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 8,
+                    border: `1px solid ${token.colorBorderSecondary}`,
+                    background: token.colorFillQuaternary,
+                  }}
+                >
+                  <UserSquareAvatar remoteUrl={req.senderAvatar} name={peerLabel} size={40} />
+                  <Flexbox flex={1} style={{ minWidth: 0 }} gap={6}>
+                    <Text strong ellipsis style={{ fontSize: 13 }}>
+                      {peerLabel}
+                    </Text>
                   {req.message ? (
                     <Text type="secondary" ellipsis style={{ fontSize: 12 }}>
                       {req.message}
@@ -127,9 +129,10 @@ export function ContactsPage() {
                       {t('chat.social.contacts.reject')}
                     </Button>
                   </Flexbox>
+                  </Flexbox>
                 </Flexbox>
-              </Flexbox>
-            ))}
+              );
+            })}
           </Flexbox>
         ),
     },
@@ -170,7 +173,11 @@ export function ContactsPage() {
                   e.currentTarget.style.background = 'transparent';
                 }}
               >
-                <UserSquareAvatar name={g.name || '?'} size={40} />
+                <UserSquareAvatar
+                  remoteUrl={groupAvatarRemoteUrl(g)}
+                  name={g.name || t('chat.social.sessionList.unnamedGroup')}
+                  size={40}
+                />
                 <Flexbox flex={1} style={{ minWidth: 0 }}>
                   <Text strong ellipsis style={{ fontSize: 14 }}>
                     {g.name || t('chat.social.sessionList.unnamedGroup')}

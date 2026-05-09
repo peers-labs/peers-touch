@@ -28,6 +28,10 @@ const (
 	// RouterURLActorLogout Client logout: invalidate session
 	RouterURLActorLogout RouterPath = "/logout"
 
+	// RouterURLActorSessionTakeover Client session rotation: use a valid
+	// persisted session to become this Station's sole active login.
+	RouterURLActorSessionTakeover RouterPath = "/session/takeover"
+
 	// RouterURLActorChangePassword Client change password
 	RouterURLActorChangePassword RouterPath = "/change-password"
 

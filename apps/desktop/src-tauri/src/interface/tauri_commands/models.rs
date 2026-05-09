@@ -1,15 +1,18 @@
-use std::sync::Arc;
-use crate::error::AppResult;
+use crate::application::models as application_models;
+use crate::application::session_resolver;
 use crate::contracts::{
     ProviderModelAddInput, ProviderModelDeleteInput, ProviderModelFetchInput,
     ProviderModelToggleAllInput, ProviderModelToggleInput, ProviderModelUpdateInput, StubPayload,
 };
-use crate::application::models as application_models;
-use crate::application::session_resolver;
+use crate::error::AppResult;
 use crate::state::AppState;
+use std::sync::Arc;
 use tauri::{State, Window};
 
-fn resolve_scope_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Result<Option<String>, AppResult<StubPayload>> {
+fn resolve_scope_from_state(
+    state: &State<'_, Arc<AppState>>,
+    window: &Window,
+) -> Result<Option<String>, AppResult<StubPayload>> {
     let scope = session_resolver::actor_id_for_window(state.inner(), window).unwrap_or_default();
     let scope = scope.trim();
     if scope.is_empty() {
@@ -18,32 +21,54 @@ fn resolve_scope_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -
     Ok(Some(scope.to_string()))
 }
 
-fn model_add_for_scope(scope: Option<&str>, input: ProviderModelAddInput) -> AppResult<StubPayload> {
+fn model_add_for_scope(
+    scope: Option<&str>,
+    input: ProviderModelAddInput,
+) -> AppResult<StubPayload> {
     application_models::model_add(scope, input)
 }
 
-fn model_update_for_scope(scope: Option<&str>, input: ProviderModelUpdateInput) -> AppResult<StubPayload> {
+fn model_update_for_scope(
+    scope: Option<&str>,
+    input: ProviderModelUpdateInput,
+) -> AppResult<StubPayload> {
     application_models::model_update(scope, input)
 }
 
-fn model_delete_for_scope(scope: Option<&str>, input: ProviderModelDeleteInput) -> AppResult<StubPayload> {
+fn model_delete_for_scope(
+    scope: Option<&str>,
+    input: ProviderModelDeleteInput,
+) -> AppResult<StubPayload> {
     application_models::model_delete(scope, input)
 }
 
-fn model_fetch_remote_for_scope(scope: Option<&str>, input: ProviderModelFetchInput) -> AppResult<StubPayload> {
+fn model_fetch_remote_for_scope(
+    scope: Option<&str>,
+    input: ProviderModelFetchInput,
+) -> AppResult<StubPayload> {
     application_models::model_fetch_remote(scope, input)
 }
 
-fn model_toggle_for_scope(scope: Option<&str>, input: ProviderModelToggleInput) -> AppResult<StubPayload> {
+fn model_toggle_for_scope(
+    scope: Option<&str>,
+    input: ProviderModelToggleInput,
+) -> AppResult<StubPayload> {
     application_models::model_toggle(scope, input)
 }
 
-fn model_toggle_all_for_scope(scope: Option<&str>, input: ProviderModelToggleAllInput) -> AppResult<StubPayload> {
+fn model_toggle_all_for_scope(
+    scope: Option<&str>,
+    input: ProviderModelToggleAllInput,
+) -> AppResult<StubPayload> {
     application_models::model_toggle_all(scope, input)
 }
 
 #[tauri::command]
-pub fn model_add(input: ProviderModelAddInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn model_add(
+    input: ProviderModelAddInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -52,7 +77,11 @@ pub fn model_add(input: ProviderModelAddInput, state: State<'_, Arc<AppState>>, 
 }
 
 #[tauri::command]
-pub fn model_update(input: ProviderModelUpdateInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn model_update(
+    input: ProviderModelUpdateInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -61,7 +90,11 @@ pub fn model_update(input: ProviderModelUpdateInput, state: State<'_, Arc<AppSta
 }
 
 #[tauri::command]
-pub fn model_delete(input: ProviderModelDeleteInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn model_delete(
+    input: ProviderModelDeleteInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -70,7 +103,11 @@ pub fn model_delete(input: ProviderModelDeleteInput, state: State<'_, Arc<AppSta
 }
 
 #[tauri::command]
-pub fn model_fetch_remote(input: ProviderModelFetchInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn model_fetch_remote(
+    input: ProviderModelFetchInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -79,7 +116,11 @@ pub fn model_fetch_remote(input: ProviderModelFetchInput, state: State<'_, Arc<A
 }
 
 #[tauri::command]
-pub fn model_toggle(input: ProviderModelToggleInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn model_toggle(
+    input: ProviderModelToggleInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -88,7 +129,11 @@ pub fn model_toggle(input: ProviderModelToggleInput, state: State<'_, Arc<AppSta
 }
 
 #[tauri::command]
-pub fn model_toggle_all(input: ProviderModelToggleAllInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn model_toggle_all(
+    input: ProviderModelToggleAllInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -108,13 +153,16 @@ mod tests {
     }
 
     fn prepare_provider(scope: Option<&str>) -> String {
-        let create_result = application_provider::provider_create(scope, ProviderCreateInput {
-            name: "Command Models Provider".to_string(),
-            description: "for model command tests".to_string(),
-            logo: "".to_string(),
-            key_vaults: "{\"api_key\":\"k\"}".to_string(),
-            config_json: "{\"base_url\":\"https://api.openai.com/v1\"}".to_string(),
-        });
+        let create_result = application_provider::provider_create(
+            scope,
+            ProviderCreateInput {
+                name: "Command Models Provider".to_string(),
+                description: "for model command tests".to_string(),
+                logo: "".to_string(),
+                key_vaults: "{\"api_key\":\"k\"}".to_string(),
+                config_json: "{\"base_url\":\"https://api.openai.com/v1\"}".to_string(),
+            },
+        );
         assert!(create_result.ok);
         let payload = create_result.data.expect("payload should exist");
         let status = parse_status(&payload);
@@ -129,39 +177,51 @@ mod tests {
     #[test]
     fn command_model_add_toggle_delete_should_work() {
         let provider_id = prepare_provider(TEST_SCOPE);
-        let add_result = model_add_for_scope(TEST_SCOPE, ProviderModelAddInput {
-            provider_id: provider_id.clone(),
-            data: serde_json::json!({
-                "id": "m-command-1",
-                "display_name": "m-command-1",
-                "type": "chat",
-                "enabled": true
-            }),
-        });
+        let add_result = model_add_for_scope(
+            TEST_SCOPE,
+            ProviderModelAddInput {
+                provider_id: provider_id.clone(),
+                data: serde_json::json!({
+                    "id": "m-command-1",
+                    "display_name": "m-command-1",
+                    "type": "chat",
+                    "enabled": true
+                }),
+            },
+        );
         assert!(add_result.ok);
-        let toggle_result = model_toggle_for_scope(TEST_SCOPE, ProviderModelToggleInput {
-            provider_id: provider_id.clone(),
-            model_id: "m-command-1".to_string(),
-            enabled: false,
-        });
+        let toggle_result = model_toggle_for_scope(
+            TEST_SCOPE,
+            ProviderModelToggleInput {
+                provider_id: provider_id.clone(),
+                model_id: "m-command-1".to_string(),
+                enabled: false,
+            },
+        );
         assert!(toggle_result.ok);
-        let delete_result = model_delete_for_scope(TEST_SCOPE, ProviderModelDeleteInput {
-            provider_id,
-            model_id: "m-command-1".to_string(),
-        });
+        let delete_result = model_delete_for_scope(
+            TEST_SCOPE,
+            ProviderModelDeleteInput {
+                provider_id,
+                model_id: "m-command-1".to_string(),
+            },
+        );
         assert!(delete_result.ok);
     }
 
     #[test]
     fn command_model_fetch_remote_should_fail_without_base_url() {
         let provider_id = prepare_provider(TEST_SCOPE);
-        let result = model_fetch_remote_for_scope(TEST_SCOPE, ProviderModelFetchInput {
-            provider_id,
-            data: Some(serde_json::json!({
-                "base_url": "",
-                "api_key": "k"
-            })),
-        });
+        let result = model_fetch_remote_for_scope(
+            TEST_SCOPE,
+            ProviderModelFetchInput {
+                provider_id,
+                data: Some(serde_json::json!({
+                    "base_url": "",
+                    "api_key": "k"
+                })),
+            },
+        );
         assert!(result.ok);
         let payload = result.data.expect("payload should exist");
         let status = parse_status(&payload);
@@ -173,15 +233,18 @@ mod tests {
         let scope_a = Some("user-model-a");
         let scope_b = Some("user-model-b");
         let provider_id = prepare_provider(scope_a);
-        let add_result = model_add_for_scope(scope_a, ProviderModelAddInput {
-            provider_id: provider_id.clone(),
-            data: serde_json::json!({
-                "id": "m-scope-a",
-                "display_name": "m-scope-a",
-                "type": "chat",
-                "enabled": true
-            }),
-        });
+        let add_result = model_add_for_scope(
+            scope_a,
+            ProviderModelAddInput {
+                provider_id: provider_id.clone(),
+                data: serde_json::json!({
+                    "id": "m-scope-a",
+                    "display_name": "m-scope-a",
+                    "type": "chat",
+                    "enabled": true
+                }),
+            },
+        );
         assert!(add_result.ok);
         let list_a = application_provider::provider_get(
             scope_a,

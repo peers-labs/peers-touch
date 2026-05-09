@@ -1,11 +1,11 @@
-use crate::error::AppResult;
 use crate::contracts::{
-    ContextActionDispatchInput, ContextSnapshotGetInput,
     ConfigFieldResetInput, ConfigPostgresTestInput, ConfigSectionInput, ConfigSectionSetInput,
-    ExternalUrlInput, LogsTailInput, OAuthCreateBotSessionInput, OAuthSessionInput, OAuthSimulateStartInput,
-    OnboardingSetInput, PreferencesSetInput, ShareIdInput, ShareSessionInput, StubPayload,
-    WizardExecuteApiInput, WizardStepInput,
+    ContextActionDispatchInput, ContextSnapshotGetInput, ExternalUrlInput, LogsTailInput,
+    OAuthCreateBotSessionInput, OAuthSessionInput, OAuthSimulateStartInput, OnboardingSetInput,
+    PreferencesSetInput, ShareIdInput, ShareSessionInput, StubPayload, WizardExecuteApiInput,
+    WizardStepInput,
 };
+use crate::error::AppResult;
 
 use crate::application::system as application_system;
 

@@ -1,8 +1,8 @@
-use crate::error::AppResult;
 use crate::contracts::{
     ChannelCreateInput, ChannelEventsInput, ChannelIdInput, ChannelSendMessageInput,
     ChannelUpdateInput, StubPayload,
 };
+use crate::error::AppResult;
 
 use crate::application::channels as application_channels;
 

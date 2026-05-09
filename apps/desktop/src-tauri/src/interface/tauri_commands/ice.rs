@@ -49,7 +49,10 @@ use tauri::{State, Window};
 // the SSE call-signal stream.
 // ---------------------------------------------------------------------
 
-fn token_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Result<String, AppResult<StubPayload>> {
+fn token_from_state(
+    state: &State<'_, Arc<AppState>>,
+    window: &Window,
+) -> Result<String, AppResult<StubPayload>> {
     let token = session_resolver::token_for_window(state.inner(), window).unwrap_or_default();
     if token.trim().is_empty() {
         return Err(AppResult::fail(
@@ -90,7 +93,13 @@ pub fn ice_get_servers(state: State<'_, Arc<AppState>>, window: Window) -> AppRe
         Err(e) => return e,
     };
 
-    let resp = match station_client::request_json(Method::GET, "/api/v1/turn/ice-servers", &token, None, None) {
+    let resp = match station_client::request_json(
+        Method::GET,
+        "/api/v1/turn/ice-servers",
+        &token,
+        None,
+        None,
+    ) {
         Ok(v) => v,
         Err(e) => return fail_station_request(e),
     };

@@ -23,6 +23,7 @@ import {
   AcceptFriendRequestResponseSchema,
   RejectFriendRequestResponseSchema,
   ListFriendRequestsResponseSchema,
+  BlockUserResponseSchema,
 } from '../gen/proto/domain/chat/friend_chat_pb';
 import {
   ListGroupsResponseSchema,
@@ -1311,7 +1312,7 @@ export interface Memory {
   layer: 'identity' | 'context' | 'experience' | 'preference' | 'activity';
   agent_id: string;
   session_id: string;
-  source: 'extraction' | 'agent_tool';
+  source: 'turn' | 'review' | 'flush' | 'manual' | 'extraction' | 'agent_tool';
   content: Record<string, any>;
   summary: string;
   relevance: number;
@@ -3835,11 +3836,8 @@ export const api = {
   friendChatListFriendRequests: (status?: number, limit?: number, offset?: number) =>
     invokeRustProto('friend_chat_list_friend_requests', ListFriendRequestsResponseSchema, { status, limit, offset }),
 
-  friendChatDeleteFriend: (peerDid: string) =>
-    invokeRustDataFromStatus<{ peer_did: string }, { success: boolean }>(
-      'friend_chat_delete_friend',
-      { peer_did: peerDid },
-    ),
+  friendChatBlockUser: (targetDid: string) =>
+    invokeRustProto('friend_chat_block_user', BlockUserResponseSchema, { target_did: targetDid }),
 
   // ── Notification ──
 

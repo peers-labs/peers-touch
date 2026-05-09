@@ -1,8 +1,9 @@
 import { useTranslation } from 'react-i18next';
-import { Avatar, Skeleton, Space, Typography, theme } from 'antd';
+import { Skeleton, Space, Typography, theme } from 'antd';
 import type { Follower, Following } from '../../gen/proto/domain/social/relationship_pb';
 import type { PostAuthor } from '../../gen/proto/domain/social/post_pb';
 import { FollowButton } from './FollowButton';
+import { UserSquareAvatar } from '../common/UserSquareAvatar';
 
 const { Title, Text } = Typography;
 
@@ -87,9 +88,12 @@ export function UserProfileHeader({
         borderBottom: inline ? undefined : `1px solid ${token.colorBorderSecondary}`,
       }}
     >
-      <Avatar size={inline ? 36 : 64} src={avatar}>
-        {display.slice(0, 1).toUpperCase()}
-      </Avatar>
+      <UserSquareAvatar
+        remoteUrl={avatar}
+        name={display}
+        size={inline ? 36 : 64}
+        radius={inline ? 9 : 16}
+      />
       <div style={{ flex: 1, minWidth: 0 }}>
         {inline ? (
           <Space direction="vertical" size={0}>
