@@ -213,4 +213,3 @@ func asTime(n *jwt.NumericDate) time.Time {
 	}
 	return n.Time
 }
-

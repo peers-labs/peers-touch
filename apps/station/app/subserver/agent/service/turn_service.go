@@ -210,6 +210,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		config.Platform,
 		config.AvailableTools,
 		config.WorkspaceRoot,
+		processedInput,
 	)
 	if err != nil {
 		_ = s.failTurn(ctx, config.AgentID, turnID, "prompt assembly failed")
@@ -344,6 +345,8 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		s.growthMetrics.RecordEvent(ctx, config.AgentID, EventTurnCompleted, CategoryTurn, turnID, fmt.Sprintf("iterations=%d", toolIterations), "success")
 	}
 
+	go s.memoryService.ExtractFromTurn(context.Background(), config.AgentID, config.ConversationID, turnID, userInput, assistantResponse)
+
 	// Update skill usage stats for skills loaded during this turn.
 	if len(trace.SkillsLoaded) > 0 && s.skillService != nil {
 		s.skillService.RecordSkillUsage(ctx, config.AgentID, trace.SkillsLoaded, true)
@@ -429,6 +432,7 @@ func (s *TurnService) runCompression(
 		config.Platform,
 		config.AvailableTools,
 		config.WorkspaceRoot,
+		messages[len(messages)-1].Content,
 	)
 	if freshErr != nil {
 		logger.Warnf(ctx, "post-compression prompt reassembly failed: turn_id=%s err=%v", turnID, freshErr)
@@ -763,32 +767,32 @@ func (s *TurnService) processToolCalls(
 				logger.Warnf(ctx, "tool call failed: turn_id=%s tool=%s err=%v", turnID, tc.ToolName, toolErr)
 			}
 
-		// Track skills loaded for growth attribution.
-		if tc.ToolName == "skill_view" && toolErr == nil {
-			var viewArgs struct {
-				Name string `json:"name"`
-			}
-			if json.Unmarshal([]byte(tc.Arguments), &viewArgs) == nil && viewArgs.Name != "" {
-				alreadyTracked := false
-				for _, s := range trace.SkillsLoaded {
-					if s == viewArgs.Name {
-						alreadyTracked = true
-						break
+			// Track skills loaded for growth attribution.
+			if tc.ToolName == "skill_view" && toolErr == nil {
+				var viewArgs struct {
+					Name string `json:"name"`
+				}
+				if json.Unmarshal([]byte(tc.Arguments), &viewArgs) == nil && viewArgs.Name != "" {
+					alreadyTracked := false
+					for _, s := range trace.SkillsLoaded {
+						if s == viewArgs.Name {
+							alreadyTracked = true
+							break
+						}
+					}
+					if !alreadyTracked {
+						trace.SkillsLoaded = append(trace.SkillsLoaded, viewArgs.Name)
 					}
 				}
-				if !alreadyTracked {
-					trace.SkillsLoaded = append(trace.SkillsLoaded, viewArgs.Name)
-				}
 			}
-		}
 
-		// Record the tool call in trace.
-		trace.ToolCalls = append(trace.ToolCalls, domain.ToolCallRecord{
-			ToolName:  tc.ToolName,
-			Arguments: tc.Arguments,
-			Result:    resultContent,
-			Duration:  callDuration,
-		})
+			// Record the tool call in trace.
+			trace.ToolCalls = append(trace.ToolCalls, domain.ToolCallRecord{
+				ToolName:  tc.ToolName,
+				Arguments: tc.Arguments,
+				Result:    resultContent,
+				Duration:  callDuration,
+			})
 
 			// Persist tool result as a tool-role message.
 			toolMsg := fmt.Sprintf("[%s] %s", tc.ToolName, resultContent)

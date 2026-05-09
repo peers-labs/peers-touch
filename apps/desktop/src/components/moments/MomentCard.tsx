@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Avatar, Button, Card, Space, Tag, Typography, theme, message } from 'antd';
+import { Button, Card, Space, Tag, Typography, theme, message } from 'antd';
 import {
   Globe,
   Lock,
@@ -20,6 +20,7 @@ import {
 } from '../../gen/proto/domain/social/post_pb';
 import { ReactionBar } from './ReactionBar';
 import { ImageGrid } from './ImageGrid';
+import { UserSquareAvatar } from '../common/UserSquareAvatar';
 
 const { Paragraph, Text, Link } = Typography;
 
@@ -159,17 +160,19 @@ export function MomentCard({
       onClick={() => onOpen?.(post.id)}
     >
       <div style={{ display: 'flex', gap: 12 }}>
-        <Avatar
-          size={40}
-          src={author?.avatarUrl || undefined}
+        <div
           onClick={(e) => {
             e?.stopPropagation();
             if (author?.id) onAuthorClick?.(author.id);
           }}
           style={{ cursor: author?.id ? 'pointer' : 'default', flexShrink: 0 }}
         >
-          {(author?.displayName || author?.username || '?').slice(0, 1).toUpperCase()}
-        </Avatar>
+          <UserSquareAvatar
+            remoteUrl={author?.avatarUrl || undefined}
+            name={author?.displayName || author?.username || t('moments.author.unknown')}
+            size={40}
+          />
+        </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <Space size={8} align="center" wrap>
             <Text
@@ -235,9 +238,12 @@ export function MomentCard({
               bodyStyle={{ padding: 12 }}
             >
               <Space size={6}>
-                <Avatar size={20} src={original.author?.avatarUrl || undefined}>
-                  {(original.author?.displayName || '?').slice(0, 1)}
-                </Avatar>
+                <UserSquareAvatar
+                  remoteUrl={original.author?.avatarUrl || undefined}
+                  name={original.author?.displayName || original.author?.username || t('moments.author.unknown')}
+                  size={20}
+                  radius={5}
+                />
                 <Text strong style={{ fontSize: 13 }}>
                   {original.author?.displayName || original.author?.username || t('moments.author.unknown')}
                 </Text>

@@ -38,6 +38,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
 
+use crate::infrastructure::session_revocation;
 use crate::infrastructure::station_client::station_base_url;
 
 /// Per-actor cancel flags so a logout / actor switch can shut down
@@ -82,7 +83,9 @@ pub fn start(app: AppHandle, actor_id: String, token: String) {
     }
     let cancel = Arc::new(AtomicBool::new(false));
     {
-        let mut map = registry().lock().expect("presence_stream registry poisoned");
+        let mut map = registry()
+            .lock()
+            .expect("presence_stream registry poisoned");
         if let Some(prev) = map.insert(actor_id.clone(), cancel.clone()) {
             prev.store(true, Ordering::Relaxed);
         }
@@ -98,7 +101,9 @@ pub fn start(app: AppHandle, actor_id: String, token: String) {
             run_supervisor(app, token, cancel_for_thread);
             // Best-effort cleanup if the supervisor exits naturally
             // (e.g. on cancellation).
-            let mut map = registry().lock().expect("presence_stream registry poisoned");
+            let mut map = registry()
+                .lock()
+                .expect("presence_stream registry poisoned");
             // Only remove if the entry is still ours — otherwise
             // someone called start() again and replaced us.
             if let Some(existing) = map.get(&actor_for_thread) {
@@ -113,7 +118,9 @@ pub fn start(app: AppHandle, actor_id: String, token: String) {
 /// Stop the presence-stream supervisor for an actor (idempotent).
 /// Used on logout, account switch, and app shutdown.
 pub fn stop(actor_id: &str) {
-    let mut map = registry().lock().expect("presence_stream registry poisoned");
+    let mut map = registry()
+        .lock()
+        .expect("presence_stream registry poisoned");
     if let Some(flag) = map.remove(actor_id) {
         flag.store(true, Ordering::Relaxed);
     }
@@ -130,10 +137,7 @@ fn run_supervisor(app: AppHandle, token: String, cancel: Arc<AtomicBool>) {
         }
 
         match run_once(&app, &token, &cancel) {
-            Ok(()) => {
-                // run_once returns Ok only on cancellation; loop will exit.
-                backoff_ms = 500;
-            }
+            Ok(()) => return,
             Err(err) => {
                 tracing::warn!(error = %err, "presence_stream: connection error, will retry");
             }
@@ -153,11 +157,7 @@ fn run_supervisor(app: AppHandle, token: String, cancel: Arc<AtomicBool>) {
     }
 }
 
-fn run_once(
-    app: &AppHandle,
-    token: &str,
-    cancel: &Arc<AtomicBool>,
-) -> Result<(), String> {
+fn run_once(app: &AppHandle, token: &str, cancel: &Arc<AtomicBool>) -> Result<(), String> {
     let url = format!("{}/friend-chat/presence/stream", station_base_url());
     tracing::info!(url = %url, "presence_stream: connecting");
 
@@ -183,6 +183,9 @@ fn run_once(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().unwrap_or_default();
+        if session_revocation::emit_if_session_revoked(app, status.as_u16(), &body) {
+            return Ok(());
+        }
         return Err(format!("station returned {}: {}", status, body));
     }
 

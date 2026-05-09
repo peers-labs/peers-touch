@@ -203,14 +203,14 @@ pub fn realtime_typing_send(
         "session_ulid":       input.session_ulid,
         "typing":             input.typing,
     });
-    let resp = match station_client::request_json_auth(
+    let resp = match station_client::request_json(
         Method::POST,
         "/realtime/typing",
         &token,
         None,
-        Some(&body),
+        Some(body),
     ) {
-        Ok(_) => json!({ "accepted": true }),
+        Ok(v) => v,
         Err(reason) => {
             // Typing failures are not user-visible — silently surface
             // them via tracing and a structured error so a debug

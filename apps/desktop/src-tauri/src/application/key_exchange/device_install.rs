@@ -4,7 +4,11 @@ use ulid::Ulid;
 /// Returns `auth/sessions/<sanitized_actor>/device_id` under app data.
 fn device_id_path(actor_id: &str) -> Result<std::path::PathBuf, StorageError> {
     let scope = storage::resolve_user_scope(Some(actor_id));
-    storage::app_file_path("desktop", StorageKind::Data, &["auth", "sessions", &scope, "device_id"])
+    storage::app_file_path(
+        "desktop",
+        StorageKind::Data,
+        &["auth", "sessions", &scope, "device_id"],
+    )
 }
 
 /// Stable per-install opaque id (ULID), minted once per actor scope.

@@ -1,10 +1,10 @@
+use crate::contracts::{
+    AppletActionInput, AppletConfigSetInput, AppletIdInput, AppletInvokeInput, StubPayload,
+};
 use crate::domain::applets::{
     authorize, build_request_id, emit_audit, normalize_capability, AccessContext,
 };
 use crate::error::{AppResult, ErrorCode};
-use crate::contracts::{
-    AppletActionInput, AppletConfigSetInput, AppletIdInput, AppletInvokeInput, StubPayload,
-};
 use serde_json::{json, Value};
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
@@ -199,10 +199,7 @@ pub fn applets_set_config(
     )
 }
 
-pub fn applets_action(
-    context: AccessContext,
-    input: AppletActionInput,
-) -> AppResult<StubPayload> {
+pub fn applets_action(context: AccessContext, input: AppletActionInput) -> AppResult<StubPayload> {
     let request_id = build_request_id();
     if input.id.trim().is_empty() {
         return invalid_argument("id is required", &request_id);
@@ -220,10 +217,7 @@ pub fn applets_action(
     )
 }
 
-pub fn applets_invoke(
-    context: AccessContext,
-    input: AppletInvokeInput,
-) -> AppResult<StubPayload> {
+pub fn applets_invoke(context: AccessContext, input: AppletInvokeInput) -> AppResult<StubPayload> {
     let request_id = build_request_id();
     if input.id.trim().is_empty() {
         return invalid_argument("id is required", &request_id);

@@ -1,7 +1,7 @@
-use std::sync::Mutex;
 use crate::infrastructure::i18n::I18nService;
 use crate::infrastructure::storage::StorageLayout;
 use crate::infrastructure::window_session_registry::WindowSessionRegistry;
+use std::sync::Mutex;
 
 #[derive(Default, Clone)]
 pub struct SessionState {

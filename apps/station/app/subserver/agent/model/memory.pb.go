@@ -23,16 +23,27 @@ const (
 )
 
 type MemoryItem struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	MemoryId      string                 `protobuf:"bytes,1,opt,name=memory_id,json=memoryId,proto3" json:"memory_id,omitempty"`
-	AgentId       string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	Target        string                 `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
-	Content       string                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
-	SourceTurnId  string                 `protobuf:"bytes,5,opt,name=source_turn_id,json=sourceTurnId,proto3" json:"source_turn_id,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	MemoryId       string                 `protobuf:"bytes,1,opt,name=memory_id,json=memoryId,proto3" json:"memory_id,omitempty"`
+	AgentId        string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	Target         string                 `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
+	Content        string                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
+	SourceTurnId   string                 `protobuf:"bytes,5,opt,name=source_turn_id,json=sourceTurnId,proto3" json:"source_turn_id,omitempty"`
+	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt      *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Layer          string                 `protobuf:"bytes,8,opt,name=layer,proto3" json:"layer,omitempty"`
+	SessionId      string                 `protobuf:"bytes,9,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Source         string                 `protobuf:"bytes,10,opt,name=source,proto3" json:"source,omitempty"`
+	Summary        string                 `protobuf:"bytes,11,opt,name=summary,proto3" json:"summary,omitempty"`
+	Relevance      float64                `protobuf:"fixed64,12,opt,name=relevance,proto3" json:"relevance,omitempty"`
+	AccessCount    int32                  `protobuf:"varint,13,opt,name=access_count,json=accessCount,proto3" json:"access_count,omitempty"`
+	LastAccessedAt *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=last_accessed_at,json=lastAccessedAt,proto3" json:"last_accessed_at,omitempty"`
+	TrustScore     float64                `protobuf:"fixed64,15,opt,name=trust_score,json=trustScore,proto3" json:"trust_score,omitempty"`
+	HelpfulCount   int32                  `protobuf:"varint,16,opt,name=helpful_count,json=helpfulCount,proto3" json:"helpful_count,omitempty"`
+	HarmfulCount   int32                  `protobuf:"varint,17,opt,name=harmful_count,json=harmfulCount,proto3" json:"harmful_count,omitempty"`
+	IsFrozen       bool                   `protobuf:"varint,18,opt,name=is_frozen,json=isFrozen,proto3" json:"is_frozen,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *MemoryItem) Reset() {
@@ -114,14 +125,93 @@ func (x *MemoryItem) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *MemoryItem) GetLayer() string {
+	if x != nil {
+		return x.Layer
+	}
+	return ""
+}
+
+func (x *MemoryItem) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *MemoryItem) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *MemoryItem) GetSummary() string {
+	if x != nil {
+		return x.Summary
+	}
+	return ""
+}
+
+func (x *MemoryItem) GetRelevance() float64 {
+	if x != nil {
+		return x.Relevance
+	}
+	return 0
+}
+
+func (x *MemoryItem) GetAccessCount() int32 {
+	if x != nil {
+		return x.AccessCount
+	}
+	return 0
+}
+
+func (x *MemoryItem) GetLastAccessedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastAccessedAt
+	}
+	return nil
+}
+
+func (x *MemoryItem) GetTrustScore() float64 {
+	if x != nil {
+		return x.TrustScore
+	}
+	return 0
+}
+
+func (x *MemoryItem) GetHelpfulCount() int32 {
+	if x != nil {
+		return x.HelpfulCount
+	}
+	return 0
+}
+
+func (x *MemoryItem) GetHarmfulCount() int32 {
+	if x != nil {
+		return x.HarmfulCount
+	}
+	return 0
+}
+
+func (x *MemoryItem) GetIsFrozen() bool {
+	if x != nil {
+		return x.IsFrozen
+	}
+	return false
+}
+
 type MemorySnapshot struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	MemoryContent string                 `protobuf:"bytes,2,opt,name=memory_content,json=memoryContent,proto3" json:"memory_content,omitempty"`
-	UserContent   string                 `protobuf:"bytes,3,opt,name=user_content,json=userContent,proto3" json:"user_content,omitempty"`
-	CapturedAt    *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=captured_at,json=capturedAt,proto3" json:"captured_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	AgentId        string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	MemoryContent  string                 `protobuf:"bytes,2,opt,name=memory_content,json=memoryContent,proto3" json:"memory_content,omitempty"`
+	UserContent    string                 `protobuf:"bytes,3,opt,name=user_content,json=userContent,proto3" json:"user_content,omitempty"`
+	CapturedAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=captured_at,json=capturedAt,proto3" json:"captured_at,omitempty"`
+	PersonaContent string                 `protobuf:"bytes,5,opt,name=persona_content,json=personaContent,proto3" json:"persona_content,omitempty"`
+	RelevantItems  []*MemoryItem          `protobuf:"bytes,6,rep,name=relevant_items,json=relevantItems,proto3" json:"relevant_items,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *MemorySnapshot) Reset() {
@@ -182,10 +272,31 @@ func (x *MemorySnapshot) GetCapturedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *MemorySnapshot) GetPersonaContent() string {
+	if x != nil {
+		return x.PersonaContent
+	}
+	return ""
+}
+
+func (x *MemorySnapshot) GetRelevantItems() []*MemoryItem {
+	if x != nil {
+		return x.RelevantItems
+	}
+	return nil
+}
+
 type ListMemoriesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	Target        string                 `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
+	Layer         string                 `protobuf:"bytes,3,opt,name=layer,proto3" json:"layer,omitempty"`
+	Page          int32                  `protobuf:"varint,4,opt,name=page,proto3" json:"page,omitempty"`
+	PageSize      int32                  `protobuf:"varint,5,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	OrderBy       string                 `protobuf:"bytes,6,opt,name=order_by,json=orderBy,proto3" json:"order_by,omitempty"`
+	Since         string                 `protobuf:"bytes,7,opt,name=since,proto3" json:"since,omitempty"`
+	Until         string                 `protobuf:"bytes,8,opt,name=until,proto3" json:"until,omitempty"`
+	Period        string                 `protobuf:"bytes,9,opt,name=period,proto3" json:"period,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -234,9 +345,59 @@ func (x *ListMemoriesRequest) GetTarget() string {
 	return ""
 }
 
+func (x *ListMemoriesRequest) GetLayer() string {
+	if x != nil {
+		return x.Layer
+	}
+	return ""
+}
+
+func (x *ListMemoriesRequest) GetPage() int32 {
+	if x != nil {
+		return x.Page
+	}
+	return 0
+}
+
+func (x *ListMemoriesRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListMemoriesRequest) GetOrderBy() string {
+	if x != nil {
+		return x.OrderBy
+	}
+	return ""
+}
+
+func (x *ListMemoriesRequest) GetSince() string {
+	if x != nil {
+		return x.Since
+	}
+	return ""
+}
+
+func (x *ListMemoriesRequest) GetUntil() string {
+	if x != nil {
+		return x.Until
+	}
+	return ""
+}
+
+func (x *ListMemoriesRequest) GetPeriod() string {
+	if x != nil {
+		return x.Period
+	}
+	return ""
+}
+
 type ListMemoriesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Items         []*MemoryItem          `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	Total         int32                  `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -276,6 +437,13 @@ func (x *ListMemoriesResponse) GetItems() []*MemoryItem {
 		return x.Items
 	}
 	return nil
+}
+
+func (x *ListMemoriesResponse) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
 }
 
 type GetMemorySnapshotRequest struct {
@@ -374,6 +542,9 @@ type WriteMemoryRequest struct {
 	Content       string                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
 	OldContent    string                 `protobuf:"bytes,5,opt,name=old_content,json=oldContent,proto3" json:"old_content,omitempty"`
 	SourceTurnId  string                 `protobuf:"bytes,6,opt,name=source_turn_id,json=sourceTurnId,proto3" json:"source_turn_id,omitempty"`
+	Layer         string                 `protobuf:"bytes,7,opt,name=layer,proto3" json:"layer,omitempty"`
+	SessionId     string                 `protobuf:"bytes,8,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Summary       string                 `protobuf:"bytes,9,opt,name=summary,proto3" json:"summary,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -450,6 +621,27 @@ func (x *WriteMemoryRequest) GetSourceTurnId() string {
 	return ""
 }
 
+func (x *WriteMemoryRequest) GetLayer() string {
+	if x != nil {
+		return x.Layer
+	}
+	return ""
+}
+
+func (x *WriteMemoryRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *WriteMemoryRequest) GetSummary() string {
+	if x != nil {
+		return x.Summary
+	}
+	return ""
+}
+
 type WriteMemoryResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Item          *MemoryItem            `protobuf:"bytes,1,opt,name=item,proto3" json:"item,omitempty"`
@@ -510,11 +702,1547 @@ func (x *WriteMemoryResponse) GetMessage() string {
 	return ""
 }
 
+type MemoryScoreExplain struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	VectorScore   float64                `protobuf:"fixed64,1,opt,name=vector_score,json=vectorScore,proto3" json:"vector_score,omitempty"`
+	KeywordScore  float64                `protobuf:"fixed64,2,opt,name=keyword_score,json=keywordScore,proto3" json:"keyword_score,omitempty"`
+	WeightedScore float64                `protobuf:"fixed64,3,opt,name=weighted_score,json=weightedScore,proto3" json:"weighted_score,omitempty"`
+	DecayFactor   float64                `protobuf:"fixed64,4,opt,name=decay_factor,json=decayFactor,proto3" json:"decay_factor,omitempty"`
+	AfterDecay    float64                `protobuf:"fixed64,5,opt,name=after_decay,json=afterDecay,proto3" json:"after_decay,omitempty"`
+	AfterRerank   float64                `protobuf:"fixed64,6,opt,name=after_rerank,json=afterRerank,proto3" json:"after_rerank,omitempty"`
+	FinalScore    float64                `protobuf:"fixed64,7,opt,name=final_score,json=finalScore,proto3" json:"final_score,omitempty"`
+	TrustFactor   float64                `protobuf:"fixed64,8,opt,name=trust_factor,json=trustFactor,proto3" json:"trust_factor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MemoryScoreExplain) Reset() {
+	*x = MemoryScoreExplain{}
+	mi := &file_domain_agent_memory_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MemoryScoreExplain) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MemoryScoreExplain) ProtoMessage() {}
+
+func (x *MemoryScoreExplain) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MemoryScoreExplain.ProtoReflect.Descriptor instead.
+func (*MemoryScoreExplain) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *MemoryScoreExplain) GetVectorScore() float64 {
+	if x != nil {
+		return x.VectorScore
+	}
+	return 0
+}
+
+func (x *MemoryScoreExplain) GetKeywordScore() float64 {
+	if x != nil {
+		return x.KeywordScore
+	}
+	return 0
+}
+
+func (x *MemoryScoreExplain) GetWeightedScore() float64 {
+	if x != nil {
+		return x.WeightedScore
+	}
+	return 0
+}
+
+func (x *MemoryScoreExplain) GetDecayFactor() float64 {
+	if x != nil {
+		return x.DecayFactor
+	}
+	return 0
+}
+
+func (x *MemoryScoreExplain) GetAfterDecay() float64 {
+	if x != nil {
+		return x.AfterDecay
+	}
+	return 0
+}
+
+func (x *MemoryScoreExplain) GetAfterRerank() float64 {
+	if x != nil {
+		return x.AfterRerank
+	}
+	return 0
+}
+
+func (x *MemoryScoreExplain) GetFinalScore() float64 {
+	if x != nil {
+		return x.FinalScore
+	}
+	return 0
+}
+
+func (x *MemoryScoreExplain) GetTrustFactor() float64 {
+	if x != nil {
+		return x.TrustFactor
+	}
+	return 0
+}
+
+type ScoredMemory struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Memory        *MemoryItem            `protobuf:"bytes,1,opt,name=memory,proto3" json:"memory,omitempty"`
+	Score         float64                `protobuf:"fixed64,2,opt,name=score,proto3" json:"score,omitempty"`
+	Explain       *MemoryScoreExplain    `protobuf:"bytes,3,opt,name=explain,proto3" json:"explain,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScoredMemory) Reset() {
+	*x = ScoredMemory{}
+	mi := &file_domain_agent_memory_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScoredMemory) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScoredMemory) ProtoMessage() {}
+
+func (x *ScoredMemory) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScoredMemory.ProtoReflect.Descriptor instead.
+func (*ScoredMemory) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ScoredMemory) GetMemory() *MemoryItem {
+	if x != nil {
+		return x.Memory
+	}
+	return nil
+}
+
+func (x *ScoredMemory) GetScore() float64 {
+	if x != nil {
+		return x.Score
+	}
+	return 0
+}
+
+func (x *ScoredMemory) GetExplain() *MemoryScoreExplain {
+	if x != nil {
+		return x.Explain
+	}
+	return nil
+}
+
+type SearchMemoriesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Query         string                 `protobuf:"bytes,1,opt,name=query,proto3" json:"query,omitempty"`
+	Layers        []string               `protobuf:"bytes,2,rep,name=layers,proto3" json:"layers,omitempty"`
+	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	AgentId       string                 `protobuf:"bytes,4,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	Since         string                 `protobuf:"bytes,5,opt,name=since,proto3" json:"since,omitempty"`
+	Until         string                 `protobuf:"bytes,6,opt,name=until,proto3" json:"until,omitempty"`
+	Period        string                 `protobuf:"bytes,7,opt,name=period,proto3" json:"period,omitempty"`
+	Effort        string                 `protobuf:"bytes,8,opt,name=effort,proto3" json:"effort,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchMemoriesRequest) Reset() {
+	*x = SearchMemoriesRequest{}
+	mi := &file_domain_agent_memory_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchMemoriesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchMemoriesRequest) ProtoMessage() {}
+
+func (x *SearchMemoriesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchMemoriesRequest.ProtoReflect.Descriptor instead.
+func (*SearchMemoriesRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *SearchMemoriesRequest) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
+}
+
+func (x *SearchMemoriesRequest) GetLayers() []string {
+	if x != nil {
+		return x.Layers
+	}
+	return nil
+}
+
+func (x *SearchMemoriesRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *SearchMemoriesRequest) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *SearchMemoriesRequest) GetSince() string {
+	if x != nil {
+		return x.Since
+	}
+	return ""
+}
+
+func (x *SearchMemoriesRequest) GetUntil() string {
+	if x != nil {
+		return x.Until
+	}
+	return ""
+}
+
+func (x *SearchMemoriesRequest) GetPeriod() string {
+	if x != nil {
+		return x.Period
+	}
+	return ""
+}
+
+func (x *SearchMemoriesRequest) GetEffort() string {
+	if x != nil {
+		return x.Effort
+	}
+	return ""
+}
+
+type SearchMemoriesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Results       []*ScoredMemory        `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchMemoriesResponse) Reset() {
+	*x = SearchMemoriesResponse{}
+	mi := &file_domain_agent_memory_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchMemoriesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchMemoriesResponse) ProtoMessage() {}
+
+func (x *SearchMemoriesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchMemoriesResponse.ProtoReflect.Descriptor instead.
+func (*SearchMemoriesResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *SearchMemoriesResponse) GetResults() []*ScoredMemory {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
+type MemoryPersona struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Tagline       string                 `protobuf:"bytes,1,opt,name=tagline,proto3" json:"tagline,omitempty"`
+	Narrative     string                 `protobuf:"bytes,2,opt,name=narrative,proto3" json:"narrative,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MemoryPersona) Reset() {
+	*x = MemoryPersona{}
+	mi := &file_domain_agent_memory_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MemoryPersona) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MemoryPersona) ProtoMessage() {}
+
+func (x *MemoryPersona) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MemoryPersona.ProtoReflect.Descriptor instead.
+func (*MemoryPersona) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *MemoryPersona) GetTagline() string {
+	if x != nil {
+		return x.Tagline
+	}
+	return ""
+}
+
+func (x *MemoryPersona) GetNarrative() string {
+	if x != nil {
+		return x.Narrative
+	}
+	return ""
+}
+
+func (x *MemoryPersona) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+type GetMemoryPersonaRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetMemoryPersonaRequest) Reset() {
+	*x = GetMemoryPersonaRequest{}
+	mi := &file_domain_agent_memory_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMemoryPersonaRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMemoryPersonaRequest) ProtoMessage() {}
+
+func (x *GetMemoryPersonaRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMemoryPersonaRequest.ProtoReflect.Descriptor instead.
+func (*GetMemoryPersonaRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *GetMemoryPersonaRequest) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+type GetMemoryPersonaResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Persona       *MemoryPersona         `protobuf:"bytes,1,opt,name=persona,proto3" json:"persona,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetMemoryPersonaResponse) Reset() {
+	*x = GetMemoryPersonaResponse{}
+	mi := &file_domain_agent_memory_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMemoryPersonaResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMemoryPersonaResponse) ProtoMessage() {}
+
+func (x *GetMemoryPersonaResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMemoryPersonaResponse.ProtoReflect.Descriptor instead.
+func (*GetMemoryPersonaResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GetMemoryPersonaResponse) GetPersona() *MemoryPersona {
+	if x != nil {
+		return x.Persona
+	}
+	return nil
+}
+
+type GetMemoryStatsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetMemoryStatsRequest) Reset() {
+	*x = GetMemoryStatsRequest{}
+	mi := &file_domain_agent_memory_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMemoryStatsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMemoryStatsRequest) ProtoMessage() {}
+
+func (x *GetMemoryStatsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMemoryStatsRequest.ProtoReflect.Descriptor instead.
+func (*GetMemoryStatsRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *GetMemoryStatsRequest) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+type GetMemoryStatsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Total         int32                  `protobuf:"varint,1,opt,name=total,proto3" json:"total,omitempty"`
+	ByLayer       map[string]int32       `protobuf:"bytes,2,rep,name=by_layer,json=byLayer,proto3" json:"by_layer,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	StorageBytes  int64                  `protobuf:"varint,3,opt,name=storage_bytes,json=storageBytes,proto3" json:"storage_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetMemoryStatsResponse) Reset() {
+	*x = GetMemoryStatsResponse{}
+	mi := &file_domain_agent_memory_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMemoryStatsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMemoryStatsResponse) ProtoMessage() {}
+
+func (x *GetMemoryStatsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMemoryStatsResponse.ProtoReflect.Descriptor instead.
+func (*GetMemoryStatsResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *GetMemoryStatsResponse) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *GetMemoryStatsResponse) GetByLayer() map[string]int32 {
+	if x != nil {
+		return x.ByLayer
+	}
+	return nil
+}
+
+func (x *GetMemoryStatsResponse) GetStorageBytes() int64 {
+	if x != nil {
+		return x.StorageBytes
+	}
+	return 0
+}
+
+type MemoryEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	MemoryId      string                 `protobuf:"bytes,3,opt,name=memory_id,json=memoryId,proto3" json:"memory_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,4,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	AgentId       string                 `protobuf:"bytes,5,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	Layer         string                 `protobuf:"bytes,6,opt,name=layer,proto3" json:"layer,omitempty"`
+	DetailJson    string                 `protobuf:"bytes,7,opt,name=detail_json,json=detailJson,proto3" json:"detail_json,omitempty"`
+	LatencyMs     int64                  `protobuf:"varint,8,opt,name=latency_ms,json=latencyMs,proto3" json:"latency_ms,omitempty"`
+	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MemoryEvent) Reset() {
+	*x = MemoryEvent{}
+	mi := &file_domain_agent_memory_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MemoryEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MemoryEvent) ProtoMessage() {}
+
+func (x *MemoryEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MemoryEvent.ProtoReflect.Descriptor instead.
+func (*MemoryEvent) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *MemoryEvent) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *MemoryEvent) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *MemoryEvent) GetMemoryId() string {
+	if x != nil {
+		return x.MemoryId
+	}
+	return ""
+}
+
+func (x *MemoryEvent) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *MemoryEvent) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *MemoryEvent) GetLayer() string {
+	if x != nil {
+		return x.Layer
+	}
+	return ""
+}
+
+func (x *MemoryEvent) GetDetailJson() string {
+	if x != nil {
+		return x.DetailJson
+	}
+	return ""
+}
+
+func (x *MemoryEvent) GetLatencyMs() int64 {
+	if x != nil {
+		return x.LatencyMs
+	}
+	return 0
+}
+
+func (x *MemoryEvent) GetTimestamp() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Timestamp
+	}
+	return nil
+}
+
+type ListMemoryEventsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	AgentId       string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	Offset        int32                  `protobuf:"varint,4,opt,name=offset,proto3" json:"offset,omitempty"`
+	Since         string                 `protobuf:"bytes,5,opt,name=since,proto3" json:"since,omitempty"`
+	Until         string                 `protobuf:"bytes,6,opt,name=until,proto3" json:"until,omitempty"`
+	Period        string                 `protobuf:"bytes,7,opt,name=period,proto3" json:"period,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMemoryEventsRequest) Reset() {
+	*x = ListMemoryEventsRequest{}
+	mi := &file_domain_agent_memory_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMemoryEventsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMemoryEventsRequest) ProtoMessage() {}
+
+func (x *ListMemoryEventsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMemoryEventsRequest.ProtoReflect.Descriptor instead.
+func (*ListMemoryEventsRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ListMemoryEventsRequest) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *ListMemoryEventsRequest) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *ListMemoryEventsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *ListMemoryEventsRequest) GetOffset() int32 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+func (x *ListMemoryEventsRequest) GetSince() string {
+	if x != nil {
+		return x.Since
+	}
+	return ""
+}
+
+func (x *ListMemoryEventsRequest) GetUntil() string {
+	if x != nil {
+		return x.Until
+	}
+	return ""
+}
+
+func (x *ListMemoryEventsRequest) GetPeriod() string {
+	if x != nil {
+		return x.Period
+	}
+	return ""
+}
+
+type ListMemoryEventsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Events        []*MemoryEvent         `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMemoryEventsResponse) Reset() {
+	*x = ListMemoryEventsResponse{}
+	mi := &file_domain_agent_memory_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMemoryEventsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMemoryEventsResponse) ProtoMessage() {}
+
+func (x *ListMemoryEventsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMemoryEventsResponse.ProtoReflect.Descriptor instead.
+func (*ListMemoryEventsResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ListMemoryEventsResponse) GetEvents() []*MemoryEvent {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+type DeleteMemoryRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	AgentId       string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteMemoryRequest) Reset() {
+	*x = DeleteMemoryRequest{}
+	mi := &file_domain_agent_memory_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteMemoryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteMemoryRequest) ProtoMessage() {}
+
+func (x *DeleteMemoryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteMemoryRequest.ProtoReflect.Descriptor instead.
+func (*DeleteMemoryRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *DeleteMemoryRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *DeleteMemoryRequest) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+type DeleteMemoryResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteMemoryResponse) Reset() {
+	*x = DeleteMemoryResponse{}
+	mi := &file_domain_agent_memory_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteMemoryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteMemoryResponse) ProtoMessage() {}
+
+func (x *DeleteMemoryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteMemoryResponse.ProtoReflect.Descriptor instead.
+func (*DeleteMemoryResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *DeleteMemoryResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+type GetMemoryRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetMemoryRequest) Reset() {
+	*x = GetMemoryRequest{}
+	mi := &file_domain_agent_memory_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMemoryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMemoryRequest) ProtoMessage() {}
+
+func (x *GetMemoryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMemoryRequest.ProtoReflect.Descriptor instead.
+func (*GetMemoryRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *GetMemoryRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type GetMemoryResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Item          *MemoryItem            `protobuf:"bytes,1,opt,name=item,proto3" json:"item,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetMemoryResponse) Reset() {
+	*x = GetMemoryResponse{}
+	mi := &file_domain_agent_memory_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMemoryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMemoryResponse) ProtoMessage() {}
+
+func (x *GetMemoryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMemoryResponse.ProtoReflect.Descriptor instead.
+func (*GetMemoryResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *GetMemoryResponse) GetItem() *MemoryItem {
+	if x != nil {
+		return x.Item
+	}
+	return nil
+}
+
+type ExportMemoriesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	Layer         string                 `protobuf:"bytes,2,opt,name=layer,proto3" json:"layer,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExportMemoriesRequest) Reset() {
+	*x = ExportMemoriesRequest{}
+	mi := &file_domain_agent_memory_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExportMemoriesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExportMemoriesRequest) ProtoMessage() {}
+
+func (x *ExportMemoriesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExportMemoriesRequest.ProtoReflect.Descriptor instead.
+func (*ExportMemoriesRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ExportMemoriesRequest) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *ExportMemoriesRequest) GetLayer() string {
+	if x != nil {
+		return x.Layer
+	}
+	return ""
+}
+
+type ExportMemoriesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	ExportedAt    string                 `protobuf:"bytes,2,opt,name=exported_at,json=exportedAt,proto3" json:"exported_at,omitempty"`
+	Memories      []*MemoryItem          `protobuf:"bytes,3,rep,name=memories,proto3" json:"memories,omitempty"`
+	Persona       *MemoryPersona         `protobuf:"bytes,4,opt,name=persona,proto3" json:"persona,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExportMemoriesResponse) Reset() {
+	*x = ExportMemoriesResponse{}
+	mi := &file_domain_agent_memory_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExportMemoriesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExportMemoriesResponse) ProtoMessage() {}
+
+func (x *ExportMemoriesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExportMemoriesResponse.ProtoReflect.Descriptor instead.
+func (*ExportMemoriesResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ExportMemoriesResponse) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *ExportMemoriesResponse) GetExportedAt() string {
+	if x != nil {
+		return x.ExportedAt
+	}
+	return ""
+}
+
+func (x *ExportMemoriesResponse) GetMemories() []*MemoryItem {
+	if x != nil {
+		return x.Memories
+	}
+	return nil
+}
+
+func (x *ExportMemoriesResponse) GetPersona() *MemoryPersona {
+	if x != nil {
+		return x.Persona
+	}
+	return nil
+}
+
+type ImportMemoriesRequest struct {
+	state          protoimpl.MessageState  `protogen:"open.v1"`
+	Data           *ExportMemoriesResponse `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	SkipDuplicates bool                    `protobuf:"varint,2,opt,name=skip_duplicates,json=skipDuplicates,proto3" json:"skip_duplicates,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ImportMemoriesRequest) Reset() {
+	*x = ImportMemoriesRequest{}
+	mi := &file_domain_agent_memory_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportMemoriesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportMemoriesRequest) ProtoMessage() {}
+
+func (x *ImportMemoriesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportMemoriesRequest.ProtoReflect.Descriptor instead.
+func (*ImportMemoriesRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ImportMemoriesRequest) GetData() *ExportMemoriesResponse {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *ImportMemoriesRequest) GetSkipDuplicates() bool {
+	if x != nil {
+		return x.SkipDuplicates
+	}
+	return false
+}
+
+type ImportMemoriesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Imported      int32                  `protobuf:"varint,1,opt,name=imported,proto3" json:"imported,omitempty"`
+	Skipped       int32                  `protobuf:"varint,2,opt,name=skipped,proto3" json:"skipped,omitempty"`
+	Failed        int32                  `protobuf:"varint,3,opt,name=failed,proto3" json:"failed,omitempty"`
+	Total         int32                  `protobuf:"varint,4,opt,name=total,proto3" json:"total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImportMemoriesResponse) Reset() {
+	*x = ImportMemoriesResponse{}
+	mi := &file_domain_agent_memory_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportMemoriesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportMemoriesResponse) ProtoMessage() {}
+
+func (x *ImportMemoriesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportMemoriesResponse.ProtoReflect.Descriptor instead.
+func (*ImportMemoriesResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *ImportMemoriesResponse) GetImported() int32 {
+	if x != nil {
+		return x.Imported
+	}
+	return 0
+}
+
+func (x *ImportMemoriesResponse) GetSkipped() int32 {
+	if x != nil {
+		return x.Skipped
+	}
+	return 0
+}
+
+func (x *ImportMemoriesResponse) GetFailed() int32 {
+	if x != nil {
+		return x.Failed
+	}
+	return 0
+}
+
+func (x *ImportMemoriesResponse) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+type EmbeddingStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EmbeddingStatusRequest) Reset() {
+	*x = EmbeddingStatusRequest{}
+	mi := &file_domain_agent_memory_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EmbeddingStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EmbeddingStatusRequest) ProtoMessage() {}
+
+func (x *EmbeddingStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EmbeddingStatusRequest.ProtoReflect.Descriptor instead.
+func (*EmbeddingStatusRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{28}
+}
+
+type EmbeddingStatusResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Provider      string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	Model         string                 `protobuf:"bytes,2,opt,name=model,proto3" json:"model,omitempty"`
+	Dimensions    int32                  `protobuf:"varint,3,opt,name=dimensions,proto3" json:"dimensions,omitempty"`
+	VectorCount   int32                  `protobuf:"varint,4,opt,name=vector_count,json=vectorCount,proto3" json:"vector_count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EmbeddingStatusResponse) Reset() {
+	*x = EmbeddingStatusResponse{}
+	mi := &file_domain_agent_memory_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EmbeddingStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EmbeddingStatusResponse) ProtoMessage() {}
+
+func (x *EmbeddingStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EmbeddingStatusResponse.ProtoReflect.Descriptor instead.
+func (*EmbeddingStatusResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *EmbeddingStatusResponse) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *EmbeddingStatusResponse) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
+func (x *EmbeddingStatusResponse) GetDimensions() int32 {
+	if x != nil {
+		return x.Dimensions
+	}
+	return 0
+}
+
+func (x *EmbeddingStatusResponse) GetVectorCount() int32 {
+	if x != nil {
+		return x.VectorCount
+	}
+	return 0
+}
+
+type ReEmbedRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReEmbedRequest) Reset() {
+	*x = ReEmbedRequest{}
+	mi := &file_domain_agent_memory_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReEmbedRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReEmbedRequest) ProtoMessage() {}
+
+func (x *ReEmbedRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReEmbedRequest.ProtoReflect.Descriptor instead.
+func (*ReEmbedRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{30}
+}
+
+type ReEmbedResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Ok              bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	ReembeddedCount int32                  `protobuf:"varint,2,opt,name=reembedded_count,json=reembeddedCount,proto3" json:"reembedded_count,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ReEmbedResponse) Reset() {
+	*x = ReEmbedResponse{}
+	mi := &file_domain_agent_memory_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReEmbedResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReEmbedResponse) ProtoMessage() {}
+
+func (x *ReEmbedResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReEmbedResponse.ProtoReflect.Descriptor instead.
+func (*ReEmbedResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *ReEmbedResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *ReEmbedResponse) GetReembeddedCount() int32 {
+	if x != nil {
+		return x.ReembeddedCount
+	}
+	return 0
+}
+
+type MemoryFeedbackRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MemoryId      string                 `protobuf:"bytes,1,opt,name=memory_id,json=memoryId,proto3" json:"memory_id,omitempty"`
+	Helpful       bool                   `protobuf:"varint,2,opt,name=helpful,proto3" json:"helpful,omitempty"`
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MemoryFeedbackRequest) Reset() {
+	*x = MemoryFeedbackRequest{}
+	mi := &file_domain_agent_memory_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MemoryFeedbackRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MemoryFeedbackRequest) ProtoMessage() {}
+
+func (x *MemoryFeedbackRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MemoryFeedbackRequest.ProtoReflect.Descriptor instead.
+func (*MemoryFeedbackRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *MemoryFeedbackRequest) GetMemoryId() string {
+	if x != nil {
+		return x.MemoryId
+	}
+	return ""
+}
+
+func (x *MemoryFeedbackRequest) GetHelpful() bool {
+	if x != nil {
+		return x.Helpful
+	}
+	return false
+}
+
+func (x *MemoryFeedbackRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type MemoryFeedbackResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MemoryId      string                 `protobuf:"bytes,1,opt,name=memory_id,json=memoryId,proto3" json:"memory_id,omitempty"`
+	TrustScore    float64                `protobuf:"fixed64,2,opt,name=trust_score,json=trustScore,proto3" json:"trust_score,omitempty"`
+	Helpful       bool                   `protobuf:"varint,3,opt,name=helpful,proto3" json:"helpful,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MemoryFeedbackResponse) Reset() {
+	*x = MemoryFeedbackResponse{}
+	mi := &file_domain_agent_memory_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MemoryFeedbackResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MemoryFeedbackResponse) ProtoMessage() {}
+
+func (x *MemoryFeedbackResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MemoryFeedbackResponse.ProtoReflect.Descriptor instead.
+func (*MemoryFeedbackResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *MemoryFeedbackResponse) GetMemoryId() string {
+	if x != nil {
+		return x.MemoryId
+	}
+	return ""
+}
+
+func (x *MemoryFeedbackResponse) GetTrustScore() float64 {
+	if x != nil {
+		return x.TrustScore
+	}
+	return 0
+}
+
+func (x *MemoryFeedbackResponse) GetHelpful() bool {
+	if x != nil {
+		return x.Helpful
+	}
+	return false
+}
+
 var File_domain_agent_memory_proto protoreflect.FileDescriptor
 
 const file_domain_agent_memory_proto_rawDesc = "" +
 	"\n" +
-	"\x19domain/agent/memory.proto\x12\x1apeers_touch.model.agent.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x92\x02\n" +
+	"\x19domain/agent/memory.proto\x12\x1apeers_touch.model.agent.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x88\x05\n" +
 	"\n" +
 	"MemoryItem\x12\x1b\n" +
 	"\tmemory_id\x18\x01 \x01(\tR\bmemoryId\x12\x19\n" +
@@ -525,22 +2253,46 @@ const file_domain_agent_memory_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xb2\x01\n" +
+	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x14\n" +
+	"\x05layer\x18\b \x01(\tR\x05layer\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\t \x01(\tR\tsessionId\x12\x16\n" +
+	"\x06source\x18\n" +
+	" \x01(\tR\x06source\x12\x18\n" +
+	"\asummary\x18\v \x01(\tR\asummary\x12\x1c\n" +
+	"\trelevance\x18\f \x01(\x01R\trelevance\x12!\n" +
+	"\faccess_count\x18\r \x01(\x05R\vaccessCount\x12D\n" +
+	"\x10last_accessed_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\x0elastAccessedAt\x12\x1f\n" +
+	"\vtrust_score\x18\x0f \x01(\x01R\n" +
+	"trustScore\x12#\n" +
+	"\rhelpful_count\x18\x10 \x01(\x05R\fhelpfulCount\x12#\n" +
+	"\rharmful_count\x18\x11 \x01(\x05R\fharmfulCount\x12\x1b\n" +
+	"\tis_frozen\x18\x12 \x01(\bR\bisFrozen\"\xaa\x02\n" +
 	"\x0eMemorySnapshot\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12%\n" +
 	"\x0ememory_content\x18\x02 \x01(\tR\rmemoryContent\x12!\n" +
 	"\fuser_content\x18\x03 \x01(\tR\vuserContent\x12;\n" +
 	"\vcaptured_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"capturedAt\"H\n" +
+	"capturedAt\x12'\n" +
+	"\x0fpersona_content\x18\x05 \x01(\tR\x0epersonaContent\x12M\n" +
+	"\x0erelevant_items\x18\x06 \x03(\v2&.peers_touch.model.agent.v1.MemoryItemR\rrelevantItems\"\xee\x01\n" +
 	"\x13ListMemoriesRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x16\n" +
-	"\x06target\x18\x02 \x01(\tR\x06target\"T\n" +
+	"\x06target\x18\x02 \x01(\tR\x06target\x12\x14\n" +
+	"\x05layer\x18\x03 \x01(\tR\x05layer\x12\x12\n" +
+	"\x04page\x18\x04 \x01(\x05R\x04page\x12\x1b\n" +
+	"\tpage_size\x18\x05 \x01(\x05R\bpageSize\x12\x19\n" +
+	"\border_by\x18\x06 \x01(\tR\aorderBy\x12\x14\n" +
+	"\x05since\x18\a \x01(\tR\x05since\x12\x14\n" +
+	"\x05until\x18\b \x01(\tR\x05until\x12\x16\n" +
+	"\x06period\x18\t \x01(\tR\x06period\"j\n" +
 	"\x14ListMemoriesResponse\x12<\n" +
-	"\x05items\x18\x01 \x03(\v2&.peers_touch.model.agent.v1.MemoryItemR\x05items\"5\n" +
+	"\x05items\x18\x01 \x03(\v2&.peers_touch.model.agent.v1.MemoryItemR\x05items\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\"5\n" +
 	"\x18GetMemorySnapshotRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\"c\n" +
 	"\x19GetMemorySnapshotResponse\x12F\n" +
-	"\bsnapshot\x18\x01 \x01(\v2*.peers_touch.model.agent.v1.MemorySnapshotR\bsnapshot\"\xc0\x01\n" +
+	"\bsnapshot\x18\x01 \x01(\v2*.peers_touch.model.agent.v1.MemorySnapshotR\bsnapshot\"\x8f\x02\n" +
 	"\x12WriteMemoryRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\tR\x06target\x12\x16\n" +
@@ -548,11 +2300,129 @@ const file_domain_agent_memory_proto_rawDesc = "" +
 	"\acontent\x18\x04 \x01(\tR\acontent\x12\x1f\n" +
 	"\vold_content\x18\x05 \x01(\tR\n" +
 	"oldContent\x12$\n" +
-	"\x0esource_turn_id\x18\x06 \x01(\tR\fsourceTurnId\"\x85\x01\n" +
+	"\x0esource_turn_id\x18\x06 \x01(\tR\fsourceTurnId\x12\x14\n" +
+	"\x05layer\x18\a \x01(\tR\x05layer\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\b \x01(\tR\tsessionId\x12\x18\n" +
+	"\asummary\x18\t \x01(\tR\asummary\"\x85\x01\n" +
 	"\x13WriteMemoryResponse\x12:\n" +
 	"\x04item\x18\x01 \x01(\v2&.peers_touch.model.agent.v1.MemoryItemR\x04item\x12\x18\n" +
 	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessageBKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
+	"\amessage\x18\x03 \x01(\tR\amessage\"\xae\x02\n" +
+	"\x12MemoryScoreExplain\x12!\n" +
+	"\fvector_score\x18\x01 \x01(\x01R\vvectorScore\x12#\n" +
+	"\rkeyword_score\x18\x02 \x01(\x01R\fkeywordScore\x12%\n" +
+	"\x0eweighted_score\x18\x03 \x01(\x01R\rweightedScore\x12!\n" +
+	"\fdecay_factor\x18\x04 \x01(\x01R\vdecayFactor\x12\x1f\n" +
+	"\vafter_decay\x18\x05 \x01(\x01R\n" +
+	"afterDecay\x12!\n" +
+	"\fafter_rerank\x18\x06 \x01(\x01R\vafterRerank\x12\x1f\n" +
+	"\vfinal_score\x18\a \x01(\x01R\n" +
+	"finalScore\x12!\n" +
+	"\ftrust_factor\x18\b \x01(\x01R\vtrustFactor\"\xae\x01\n" +
+	"\fScoredMemory\x12>\n" +
+	"\x06memory\x18\x01 \x01(\v2&.peers_touch.model.agent.v1.MemoryItemR\x06memory\x12\x14\n" +
+	"\x05score\x18\x02 \x01(\x01R\x05score\x12H\n" +
+	"\aexplain\x18\x03 \x01(\v2..peers_touch.model.agent.v1.MemoryScoreExplainR\aexplain\"\xd2\x01\n" +
+	"\x15SearchMemoriesRequest\x12\x14\n" +
+	"\x05query\x18\x01 \x01(\tR\x05query\x12\x16\n" +
+	"\x06layers\x18\x02 \x03(\tR\x06layers\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x19\n" +
+	"\bagent_id\x18\x04 \x01(\tR\aagentId\x12\x14\n" +
+	"\x05since\x18\x05 \x01(\tR\x05since\x12\x14\n" +
+	"\x05until\x18\x06 \x01(\tR\x05until\x12\x16\n" +
+	"\x06period\x18\a \x01(\tR\x06period\x12\x16\n" +
+	"\x06effort\x18\b \x01(\tR\x06effort\"\\\n" +
+	"\x16SearchMemoriesResponse\x12B\n" +
+	"\aresults\x18\x01 \x03(\v2(.peers_touch.model.agent.v1.ScoredMemoryR\aresults\"\x82\x01\n" +
+	"\rMemoryPersona\x12\x18\n" +
+	"\atagline\x18\x01 \x01(\tR\atagline\x12\x1c\n" +
+	"\tnarrative\x18\x02 \x01(\tR\tnarrative\x129\n" +
+	"\n" +
+	"updated_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"4\n" +
+	"\x17GetMemoryPersonaRequest\x12\x19\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\"_\n" +
+	"\x18GetMemoryPersonaResponse\x12C\n" +
+	"\apersona\x18\x01 \x01(\v2).peers_touch.model.agent.v1.MemoryPersonaR\apersona\"2\n" +
+	"\x15GetMemoryStatsRequest\x12\x19\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\"\xeb\x01\n" +
+	"\x16GetMemoryStatsResponse\x12\x14\n" +
+	"\x05total\x18\x01 \x01(\x05R\x05total\x12Z\n" +
+	"\bby_layer\x18\x02 \x03(\v2?.peers_touch.model.agent.v1.GetMemoryStatsResponse.ByLayerEntryR\abyLayer\x12#\n" +
+	"\rstorage_bytes\x18\x03 \x01(\x03R\fstorageBytes\x1a:\n" +
+	"\fByLayerEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\"\x98\x02\n" +
+	"\vMemoryEvent\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x12\x1b\n" +
+	"\tmemory_id\x18\x03 \x01(\tR\bmemoryId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x04 \x01(\tR\tsessionId\x12\x19\n" +
+	"\bagent_id\x18\x05 \x01(\tR\aagentId\x12\x14\n" +
+	"\x05layer\x18\x06 \x01(\tR\x05layer\x12\x1f\n" +
+	"\vdetail_json\x18\a \x01(\tR\n" +
+	"detailJson\x12\x1d\n" +
+	"\n" +
+	"latency_ms\x18\b \x01(\x03R\tlatencyMs\x128\n" +
+	"\ttimestamp\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"\xba\x01\n" +
+	"\x17ListMemoryEventsRequest\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12\x19\n" +
+	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x16\n" +
+	"\x06offset\x18\x04 \x01(\x05R\x06offset\x12\x14\n" +
+	"\x05since\x18\x05 \x01(\tR\x05since\x12\x14\n" +
+	"\x05until\x18\x06 \x01(\tR\x05until\x12\x16\n" +
+	"\x06period\x18\a \x01(\tR\x06period\"[\n" +
+	"\x18ListMemoryEventsResponse\x12?\n" +
+	"\x06events\x18\x01 \x03(\v2'.peers_touch.model.agent.v1.MemoryEventR\x06events\"@\n" +
+	"\x13DeleteMemoryRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
+	"\bagent_id\x18\x02 \x01(\tR\aagentId\"&\n" +
+	"\x14DeleteMemoryResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"\"\n" +
+	"\x10GetMemoryRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"O\n" +
+	"\x11GetMemoryResponse\x12:\n" +
+	"\x04item\x18\x01 \x01(\v2&.peers_touch.model.agent.v1.MemoryItemR\x04item\"H\n" +
+	"\x15ExportMemoriesRequest\x12\x19\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x14\n" +
+	"\x05layer\x18\x02 \x01(\tR\x05layer\"\xdc\x01\n" +
+	"\x16ExportMemoriesResponse\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\tR\aversion\x12\x1f\n" +
+	"\vexported_at\x18\x02 \x01(\tR\n" +
+	"exportedAt\x12B\n" +
+	"\bmemories\x18\x03 \x03(\v2&.peers_touch.model.agent.v1.MemoryItemR\bmemories\x12C\n" +
+	"\apersona\x18\x04 \x01(\v2).peers_touch.model.agent.v1.MemoryPersonaR\apersona\"\x88\x01\n" +
+	"\x15ImportMemoriesRequest\x12F\n" +
+	"\x04data\x18\x01 \x01(\v22.peers_touch.model.agent.v1.ExportMemoriesResponseR\x04data\x12'\n" +
+	"\x0fskip_duplicates\x18\x02 \x01(\bR\x0eskipDuplicates\"|\n" +
+	"\x16ImportMemoriesResponse\x12\x1a\n" +
+	"\bimported\x18\x01 \x01(\x05R\bimported\x12\x18\n" +
+	"\askipped\x18\x02 \x01(\x05R\askipped\x12\x16\n" +
+	"\x06failed\x18\x03 \x01(\x05R\x06failed\x12\x14\n" +
+	"\x05total\x18\x04 \x01(\x05R\x05total\"\x18\n" +
+	"\x16EmbeddingStatusRequest\"\x8e\x01\n" +
+	"\x17EmbeddingStatusResponse\x12\x1a\n" +
+	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x14\n" +
+	"\x05model\x18\x02 \x01(\tR\x05model\x12\x1e\n" +
+	"\n" +
+	"dimensions\x18\x03 \x01(\x05R\n" +
+	"dimensions\x12!\n" +
+	"\fvector_count\x18\x04 \x01(\x05R\vvectorCount\"\x10\n" +
+	"\x0eReEmbedRequest\"L\n" +
+	"\x0fReEmbedResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12)\n" +
+	"\x10reembedded_count\x18\x02 \x01(\x05R\x0freembeddedCount\"f\n" +
+	"\x15MemoryFeedbackRequest\x12\x1b\n" +
+	"\tmemory_id\x18\x01 \x01(\tR\bmemoryId\x12\x18\n" +
+	"\ahelpful\x18\x02 \x01(\bR\ahelpful\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"p\n" +
+	"\x16MemoryFeedbackResponse\x12\x1b\n" +
+	"\tmemory_id\x18\x01 \x01(\tR\bmemoryId\x12\x1f\n" +
+	"\vtrust_score\x18\x02 \x01(\x01R\n" +
+	"trustScore\x12\x18\n" +
+	"\ahelpful\x18\x03 \x01(\bR\ahelpfulBKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
 
 var (
 	file_domain_agent_memory_proto_rawDescOnce sync.Once
@@ -566,7 +2436,7 @@ func file_domain_agent_memory_proto_rawDescGZIP() []byte {
 	return file_domain_agent_memory_proto_rawDescData
 }
 
-var file_domain_agent_memory_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_domain_agent_memory_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
 var file_domain_agent_memory_proto_goTypes = []any{
 	(*MemoryItem)(nil),                // 0: peers_touch.model.agent.v1.MemoryItem
 	(*MemorySnapshot)(nil),            // 1: peers_touch.model.agent.v1.MemorySnapshot
@@ -576,20 +2446,61 @@ var file_domain_agent_memory_proto_goTypes = []any{
 	(*GetMemorySnapshotResponse)(nil), // 5: peers_touch.model.agent.v1.GetMemorySnapshotResponse
 	(*WriteMemoryRequest)(nil),        // 6: peers_touch.model.agent.v1.WriteMemoryRequest
 	(*WriteMemoryResponse)(nil),       // 7: peers_touch.model.agent.v1.WriteMemoryResponse
-	(*timestamppb.Timestamp)(nil),     // 8: google.protobuf.Timestamp
+	(*MemoryScoreExplain)(nil),        // 8: peers_touch.model.agent.v1.MemoryScoreExplain
+	(*ScoredMemory)(nil),              // 9: peers_touch.model.agent.v1.ScoredMemory
+	(*SearchMemoriesRequest)(nil),     // 10: peers_touch.model.agent.v1.SearchMemoriesRequest
+	(*SearchMemoriesResponse)(nil),    // 11: peers_touch.model.agent.v1.SearchMemoriesResponse
+	(*MemoryPersona)(nil),             // 12: peers_touch.model.agent.v1.MemoryPersona
+	(*GetMemoryPersonaRequest)(nil),   // 13: peers_touch.model.agent.v1.GetMemoryPersonaRequest
+	(*GetMemoryPersonaResponse)(nil),  // 14: peers_touch.model.agent.v1.GetMemoryPersonaResponse
+	(*GetMemoryStatsRequest)(nil),     // 15: peers_touch.model.agent.v1.GetMemoryStatsRequest
+	(*GetMemoryStatsResponse)(nil),    // 16: peers_touch.model.agent.v1.GetMemoryStatsResponse
+	(*MemoryEvent)(nil),               // 17: peers_touch.model.agent.v1.MemoryEvent
+	(*ListMemoryEventsRequest)(nil),   // 18: peers_touch.model.agent.v1.ListMemoryEventsRequest
+	(*ListMemoryEventsResponse)(nil),  // 19: peers_touch.model.agent.v1.ListMemoryEventsResponse
+	(*DeleteMemoryRequest)(nil),       // 20: peers_touch.model.agent.v1.DeleteMemoryRequest
+	(*DeleteMemoryResponse)(nil),      // 21: peers_touch.model.agent.v1.DeleteMemoryResponse
+	(*GetMemoryRequest)(nil),          // 22: peers_touch.model.agent.v1.GetMemoryRequest
+	(*GetMemoryResponse)(nil),         // 23: peers_touch.model.agent.v1.GetMemoryResponse
+	(*ExportMemoriesRequest)(nil),     // 24: peers_touch.model.agent.v1.ExportMemoriesRequest
+	(*ExportMemoriesResponse)(nil),    // 25: peers_touch.model.agent.v1.ExportMemoriesResponse
+	(*ImportMemoriesRequest)(nil),     // 26: peers_touch.model.agent.v1.ImportMemoriesRequest
+	(*ImportMemoriesResponse)(nil),    // 27: peers_touch.model.agent.v1.ImportMemoriesResponse
+	(*EmbeddingStatusRequest)(nil),    // 28: peers_touch.model.agent.v1.EmbeddingStatusRequest
+	(*EmbeddingStatusResponse)(nil),   // 29: peers_touch.model.agent.v1.EmbeddingStatusResponse
+	(*ReEmbedRequest)(nil),            // 30: peers_touch.model.agent.v1.ReEmbedRequest
+	(*ReEmbedResponse)(nil),           // 31: peers_touch.model.agent.v1.ReEmbedResponse
+	(*MemoryFeedbackRequest)(nil),     // 32: peers_touch.model.agent.v1.MemoryFeedbackRequest
+	(*MemoryFeedbackResponse)(nil),    // 33: peers_touch.model.agent.v1.MemoryFeedbackResponse
+	nil,                               // 34: peers_touch.model.agent.v1.GetMemoryStatsResponse.ByLayerEntry
+	(*timestamppb.Timestamp)(nil),     // 35: google.protobuf.Timestamp
 }
 var file_domain_agent_memory_proto_depIdxs = []int32{
-	8, // 0: peers_touch.model.agent.v1.MemoryItem.created_at:type_name -> google.protobuf.Timestamp
-	8, // 1: peers_touch.model.agent.v1.MemoryItem.updated_at:type_name -> google.protobuf.Timestamp
-	8, // 2: peers_touch.model.agent.v1.MemorySnapshot.captured_at:type_name -> google.protobuf.Timestamp
-	0, // 3: peers_touch.model.agent.v1.ListMemoriesResponse.items:type_name -> peers_touch.model.agent.v1.MemoryItem
-	1, // 4: peers_touch.model.agent.v1.GetMemorySnapshotResponse.snapshot:type_name -> peers_touch.model.agent.v1.MemorySnapshot
-	0, // 5: peers_touch.model.agent.v1.WriteMemoryResponse.item:type_name -> peers_touch.model.agent.v1.MemoryItem
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	35, // 0: peers_touch.model.agent.v1.MemoryItem.created_at:type_name -> google.protobuf.Timestamp
+	35, // 1: peers_touch.model.agent.v1.MemoryItem.updated_at:type_name -> google.protobuf.Timestamp
+	35, // 2: peers_touch.model.agent.v1.MemoryItem.last_accessed_at:type_name -> google.protobuf.Timestamp
+	35, // 3: peers_touch.model.agent.v1.MemorySnapshot.captured_at:type_name -> google.protobuf.Timestamp
+	0,  // 4: peers_touch.model.agent.v1.MemorySnapshot.relevant_items:type_name -> peers_touch.model.agent.v1.MemoryItem
+	0,  // 5: peers_touch.model.agent.v1.ListMemoriesResponse.items:type_name -> peers_touch.model.agent.v1.MemoryItem
+	1,  // 6: peers_touch.model.agent.v1.GetMemorySnapshotResponse.snapshot:type_name -> peers_touch.model.agent.v1.MemorySnapshot
+	0,  // 7: peers_touch.model.agent.v1.WriteMemoryResponse.item:type_name -> peers_touch.model.agent.v1.MemoryItem
+	0,  // 8: peers_touch.model.agent.v1.ScoredMemory.memory:type_name -> peers_touch.model.agent.v1.MemoryItem
+	8,  // 9: peers_touch.model.agent.v1.ScoredMemory.explain:type_name -> peers_touch.model.agent.v1.MemoryScoreExplain
+	9,  // 10: peers_touch.model.agent.v1.SearchMemoriesResponse.results:type_name -> peers_touch.model.agent.v1.ScoredMemory
+	35, // 11: peers_touch.model.agent.v1.MemoryPersona.updated_at:type_name -> google.protobuf.Timestamp
+	12, // 12: peers_touch.model.agent.v1.GetMemoryPersonaResponse.persona:type_name -> peers_touch.model.agent.v1.MemoryPersona
+	34, // 13: peers_touch.model.agent.v1.GetMemoryStatsResponse.by_layer:type_name -> peers_touch.model.agent.v1.GetMemoryStatsResponse.ByLayerEntry
+	35, // 14: peers_touch.model.agent.v1.MemoryEvent.timestamp:type_name -> google.protobuf.Timestamp
+	17, // 15: peers_touch.model.agent.v1.ListMemoryEventsResponse.events:type_name -> peers_touch.model.agent.v1.MemoryEvent
+	0,  // 16: peers_touch.model.agent.v1.GetMemoryResponse.item:type_name -> peers_touch.model.agent.v1.MemoryItem
+	0,  // 17: peers_touch.model.agent.v1.ExportMemoriesResponse.memories:type_name -> peers_touch.model.agent.v1.MemoryItem
+	12, // 18: peers_touch.model.agent.v1.ExportMemoriesResponse.persona:type_name -> peers_touch.model.agent.v1.MemoryPersona
+	25, // 19: peers_touch.model.agent.v1.ImportMemoriesRequest.data:type_name -> peers_touch.model.agent.v1.ExportMemoriesResponse
+	20, // [20:20] is the sub-list for method output_type
+	20, // [20:20] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_memory_proto_init() }
@@ -603,7 +2514,7 @@ func file_domain_agent_memory_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_agent_memory_proto_rawDesc), len(file_domain_agent_memory_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   35,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

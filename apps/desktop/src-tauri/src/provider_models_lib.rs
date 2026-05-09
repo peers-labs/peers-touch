@@ -18,10 +18,10 @@ pub(crate) use interface::contracts;
 pub mod infrastructure {
     #[path = "i18n/mod.rs"]
     pub mod i18n;
-    #[path = "storage/mod.rs"]
-    pub mod storage;
     #[path = "station_client.rs"]
     pub(crate) mod station_client;
+    #[path = "storage/mod.rs"]
+    pub mod storage;
     // Mirrors the bin crate so `state::AppState` can build under `cargo test
     // --lib`. PR-3 will cull the lib crate down once the registry is wired
     // through every command path.
@@ -45,18 +45,18 @@ pub mod interface {
     pub mod contracts;
 
     pub mod tauri_commands {
-        #[path = "provider.rs"]
-        pub mod provider;
         #[path = "models.rs"]
         pub mod models;
+        #[path = "provider.rs"]
+        pub mod provider;
     }
 }
 
 pub mod application {
-    #[path = "session_resolver/mod.rs"]
-    pub mod session_resolver;
-    #[path = "provider/mod.rs"]
-    pub mod provider;
     #[path = "models/mod.rs"]
     pub mod models;
+    #[path = "provider/mod.rs"]
+    pub mod provider;
+    #[path = "session_resolver/mod.rs"]
+    pub mod session_resolver;
 }

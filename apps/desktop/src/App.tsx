@@ -70,6 +70,25 @@ function App() {
 
   usePresence();
 
+  // Realtime event-stream bridge: decodes the unified SSE plane
+  // (messages, presence, resync, …) into typed eventBus dispatches.
+  // The Rust supervisor lifetime is owned by `usePresence` (started
+  // on the same edge as `app_launch`); here we only install the
+  // decode listener, so the bridge itself is a singleton for the
+  // life of the renderer.
+  useEffect(() => {
+    void installEventStreamBridge();
+    return () => teardownEventStreamBridge();
+  }, []);
+
+  // Friend-chat realtime ingestion must not depend on the chat page
+  // being mounted; the global stream can deliver messages while the
+  // user is on Search, Settings, or an applet.
+  useEffect(() => {
+    installSocialChatRealtimeBridge();
+    return () => teardownSocialChatRealtimeBridge();
+  }, []);
+
   // Reset guard when user successfully returns to ready state,
   // so a future revocation can show the notification again.
   const sessionEndedRef = useRef(false);

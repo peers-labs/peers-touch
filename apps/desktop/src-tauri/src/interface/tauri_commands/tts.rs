@@ -1,5 +1,5 @@
-use crate::error::AppResult;
 use crate::contracts::{StubPayload, TtsInput};
+use crate::error::AppResult;
 
 use crate::application::tts as application_tts;
 

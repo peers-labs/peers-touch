@@ -68,7 +68,15 @@ pub fn avatar_local_filename(remote_url: &str) -> String {
         .and_then(|e| e.to_str())
         .unwrap_or("img");
     // Clean extension: only keep alphanumeric chars, max 4 chars.
-    let clean_ext: String = ext.chars().filter(|c| c.is_ascii_alphanumeric()).take(4).collect();
-    let ext_final = if clean_ext.is_empty() { "img" } else { &clean_ext };
+    let clean_ext: String = ext
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(4)
+        .collect();
+    let ext_final = if clean_ext.is_empty() {
+        "img"
+    } else {
+        &clean_ext
+    };
     format!("{}.{}", &hash[..16], ext_final)
 }

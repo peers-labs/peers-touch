@@ -18,20 +18,20 @@ const (
 
 // SessionRecord is the database model for persistent sessions
 type SessionRecord struct {
-	ID           uint64     `gorm:"primaryKey;autoIncrement"`
-	SessionID    string     `gorm:"uniqueIndex;size:100;not null"`
-	UserID       uint64     `gorm:"index;not null"`
-	Email        string     `gorm:"size:255"`
-	DeviceType   DeviceType `gorm:"size:20;not null;index:idx_user_device"`
-	TokenHash    string     `gorm:"size:100"` // Hash of the JWT token for verification
-	IPAddress    string     `gorm:"size:50"`
-	UserAgent    string     `gorm:"size:500"`
-	CreatedAt    time.Time  `gorm:"not null"`
-	ExpiresAt    time.Time  `gorm:"not null"`
-	LastActiveAt time.Time  `gorm:"not null"`
-	Revoked      bool       `gorm:"default:false;index:idx_user_device"`
-	RevokedAt    *time.Time
-	RevokedReason string    `gorm:"size:50"` // "kicked" | "logout" | "expired"
+	ID            uint64     `gorm:"primaryKey;autoIncrement"`
+	SessionID     string     `gorm:"uniqueIndex;size:100;not null"`
+	UserID        uint64     `gorm:"index;not null"`
+	Email         string     `gorm:"size:255"`
+	DeviceType    DeviceType `gorm:"size:20;not null;index:idx_user_device"`
+	TokenHash     string     `gorm:"size:100"` // Hash of the JWT token for verification
+	IPAddress     string     `gorm:"size:50"`
+	UserAgent     string     `gorm:"size:500"`
+	CreatedAt     time.Time  `gorm:"not null"`
+	ExpiresAt     time.Time  `gorm:"not null"`
+	LastActiveAt  time.Time  `gorm:"not null"`
+	Revoked       bool       `gorm:"default:false;index:idx_user_device"`
+	RevokedAt     *time.Time
+	RevokedReason string `gorm:"size:50"` // "kicked" | "logout" | "expired"
 }
 
 func (SessionRecord) TableName() string {
@@ -87,12 +87,19 @@ func (s *DBStore) Set(ctx context.Context, sessionID string, sess *Session) erro
 		return err
 	}
 
+	record := newSessionRecord(sessionID, sess)
+
+	// Use upsert logic
+	return db.WithContext(ctx).Save(record).Error
+}
+
+func newSessionRecord(sessionID string, sess *Session) *SessionRecord {
 	deviceType := DeviceTypeDesktop
 	if dt, ok := sess.Data["device_type"].(string); ok {
 		deviceType = DeviceType(dt)
 	}
 
-	record := &SessionRecord{
+	return &SessionRecord{
 		SessionID:    sessionID,
 		UserID:       sess.UserID,
 		Email:        sess.Email,
@@ -104,9 +111,6 @@ func (s *DBStore) Set(ctx context.Context, sessionID string, sess *Session) erro
 		LastActiveAt: sess.LastSeen,
 		Revoked:      false,
 	}
-
-	// Use upsert logic
-	return db.Save(record).Error
 }
 
 // Get retrieves a session by ID
@@ -178,6 +182,27 @@ func (s *DBStore) RevokeByUserAndDevice(ctx context.Context, userID uint64, devi
 	return result.RowsAffected, result.Error
 }
 
+// RevokeByUser revokes every active session for a user on this Station.
+// A Station owns its own actor_sessions table, so user_id is the correct
+// boundary for the "one account, one active login per Station" invariant.
+func (s *DBStore) RevokeByUser(ctx context.Context, userID uint64, reason string) (int64, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	now := time.Now()
+	result := db.WithContext(ctx).Model(&SessionRecord{}).
+		Where("user_id = ? AND revoked = ?", userID, false).
+		Updates(map[string]interface{}{
+			"revoked":        true,
+			"revoked_at":     now,
+			"revoked_reason": reason,
+		})
+
+	return result.RowsAffected, result.Error
+}
+
 // GetActiveSessionByUserAndDevice returns the active session for a user on a device type
 func (s *DBStore) GetActiveSessionByUserAndDevice(ctx context.Context, userID uint64, deviceType DeviceType) (*SessionRecord, error) {
 	db, err := s.getDB(ctx)
@@ -200,22 +225,39 @@ func (s *DBStore) GetActiveSessionByUserAndDevice(ctx context.Context, userID ui
 	return &record, nil
 }
 
-// CreateWithKick creates a new session and revokes any existing session for the same user+device
+// CreateWithKick creates a new session and revokes any existing session for the same user.
+// This is the central Station-side takeover policy: a single Station may have
+// only one active login for a given actor, regardless of desktop/mobile/web
+// device labels.
 func (s *DBStore) CreateWithKick(ctx context.Context, sess *Session, deviceType DeviceType) (*Session, int64, error) {
-	// First, revoke existing sessions for this user+device
-	kicked, err := s.RevokeByUserAndDevice(ctx, sess.UserID, deviceType, "kicked")
-	if err != nil {
-		return nil, 0, err
-	}
-
-	// Store device type in session data
 	if sess.Data == nil {
 		sess.Data = make(map[string]interface{})
 	}
 	sess.Data["device_type"] = string(deviceType)
 
-	// Create new session
-	if err := s.Set(ctx, sess.ID, sess); err != nil {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var kicked int64
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		result := tx.Model(&SessionRecord{}).
+			Where("user_id = ? AND revoked = ?", sess.UserID, false).
+			Updates(map[string]interface{}{
+				"revoked":        true,
+				"revoked_at":     now,
+				"revoked_reason": "kicked",
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		kicked = result.RowsAffected
+
+		return tx.Create(newSessionRecord(sess.ID, sess)).Error
+	})
+	if err != nil {
 		return nil, kicked, err
 	}
 

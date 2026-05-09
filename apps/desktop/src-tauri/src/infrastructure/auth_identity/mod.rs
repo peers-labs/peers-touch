@@ -39,8 +39,12 @@ pub struct AccountIdentity {
 }
 
 pub fn account_identity_path() -> Result<PathBuf, String> {
-    storage::app_file_path("desktop", StorageKind::Data, &["account", "identities.json"])
-        .map_err(|err| format!("failed to resolve account identity path: {err:?}"))
+    storage::app_file_path(
+        "desktop",
+        StorageKind::Data,
+        &["account", "identities.json"],
+    )
+    .map_err(|err| format!("failed to resolve account identity path: {err:?}"))
 }
 
 pub fn read_state() -> Result<AccountIdentityState, String> {
@@ -48,7 +52,8 @@ pub fn read_state() -> Result<AccountIdentityState, String> {
     if !path.exists() {
         return Ok(AccountIdentityState::default());
     }
-    let text = fs::read_to_string(&path).map_err(|err| format!("failed to read account state: {err}"))?;
+    let text =
+        fs::read_to_string(&path).map_err(|err| format!("failed to read account state: {err}"))?;
     if text.trim().is_empty() {
         return Ok(AccountIdentityState::default());
     }
@@ -286,6 +291,28 @@ pub fn save_encrypted_session(account_id: &str, pin: &str, token: &str) -> Resul
     account.encrypted_session = Some(encrypted);
     account.has_session = true;
     write_state(&state)
+}
+
+/// Verify an account PIN without requiring an existing encrypted session.
+/// Used after a fresh password/OAuth login to re-encrypt the new token under
+/// the user's already-configured PIN.
+pub fn verify_account_pin(account_id: &str, pin: &str) -> Result<(), pin_lock::PinVerifyError> {
+    let mut state = read_state().map_err(pin_lock::PinVerifyError::Internal)?;
+    let account = state
+        .accounts
+        .iter_mut()
+        .find(|a| a.id == account_id)
+        .ok_or_else(|| {
+            pin_lock::PinVerifyError::Internal(format!("account not found: {account_id}"))
+        })?;
+
+    let protection = account
+        .pin_protection
+        .as_mut()
+        .ok_or_else(|| pin_lock::PinVerifyError::Internal("no PIN set".to_string()))?;
+
+    pin_lock::verify_pin(pin, protection)?;
+    write_state(&state).map_err(pin_lock::PinVerifyError::Internal)
 }
 
 /// Verify PIN and decrypt the stored session token for an account.

@@ -14,8 +14,7 @@
  *
  *  - `app_launch`        — fired once after `dataReady && authenticated`
  *  - `app_foreground`    — `visibilitychange` (visible) + `focus`
- *  - background / blur   — ignored for reachability; desktop windows can
- *                          lose focus while the actor remains online
+ *  - `app_background`    — `visibilitychange` (hidden) + `blur`
  *  - `network_online`    — `window.online`
  *  - `network_offline`   — `window.offline`
  *  - `heartbeat`         — every `HEARTBEAT_INTERVAL` while visible
@@ -38,6 +37,7 @@ import { log } from '../utils/logger';
  * loose enough to be a true backstop rather than a poller.
  */
 const HEARTBEAT_INTERVAL = 5 * 60 * 1000;
+const SESSION_VALIDATION_INTERVAL = 5 * 1000;
 
 /**
  * Coalesce burst-y DOM events: foreground/background often fire twice
@@ -49,9 +49,7 @@ const DEBOUNCE_MS = 250;
 
 export function usePresence(): void {
   const lastTriggerRef = useRef<{ trigger: PresenceTrigger; at: number } | null>(null);
-  const launchedRef = useRef(false);
-  const activeActorRef = useRef<string | null>(null);
-  const lifecycleTransitionRef = useRef<Promise<void>>(Promise.resolve());
+  const startedActorRef = useRef<string | null>(null);
 
   useEffect(() => {
     const fire = (trigger: PresenceTrigger): void => {
@@ -64,79 +62,56 @@ export function usePresence(): void {
       void api.presenceNotify(trigger);
     };
 
-    // ---- Launch / shutdown trigger --------------------------------------
-    // Fire `app_launch` for every authenticated actor edge, and stop
-    // the presence supervisor when the actor changes or disappears.
-    // The IM realtime event stream is owned by `socialRealtime`; this
-    // hook only forwards presence lifecycle triggers.
-    const stopPresenceSupervisor = async (): Promise<void> => {
-      const results = await Promise.allSettled([
-        api.friendChatPresenceStop(),
-      ]);
-      for (const result of results) {
-        if (result.status === 'rejected') {
-          log.warn('presence', 'presence supervisor stop failed', result.reason);
-        }
-      }
-      launchedRef.current = false;
-      activeActorRef.current = null;
-    };
-
-    const startPresenceSupervisor = async (actorId: string): Promise<void> => {
-      fire('app_launch');
-      const results = await Promise.allSettled([
-        api.friendChatPresenceStart(),
-      ]);
-      for (const result of results) {
-        if (result.status === 'rejected') {
-          log.warn('presence', 'presence supervisor start failed', result.reason);
-        }
-      }
-      launchedRef.current = true;
-      activeActorRef.current = actorId;
-    };
-
-    const reconcileActorLifecycle = (): void => {
-      const { authenticated, currentUser } = useSessionStore.getState();
-      const nextActorId = authenticated ? currentUser?.actorId ?? null : null;
-      if (nextActorId && launchedRef.current && activeActorRef.current === nextActorId) {
-        return;
-      }
-      if (!nextActorId && !launchedRef.current && !activeActorRef.current) {
-        return;
-      }
-
-      lifecycleTransitionRef.current = lifecycleTransitionRef.current.then(async () => {
-        const latest = useSessionStore.getState();
-        const latestActorId = latest.authenticated ? latest.currentUser?.actorId ?? null : null;
-        const previousActorId = activeActorRef.current;
-
-        if (!latestActorId) {
-          if (previousActorId || launchedRef.current) {
-            await stopPresenceSupervisor();
-          }
-          return;
-        }
-
-        if (previousActorId && previousActorId !== latestActorId) {
-          await stopPresenceSupervisor();
-        }
-
-        if (!launchedRef.current || activeActorRef.current !== latestActorId) {
-          await startPresenceSupervisor(latestActorId);
-        }
-      }).catch((error) => {
-        log.warn('presence', 'actor lifecycle reconciliation failed', error);
+    const validateActiveSession = (): void => {
+      const { authenticated } = useSessionStore.getState();
+      if (!authenticated) return;
+      if (document.visibilityState !== 'visible') return;
+      void api.authValidateToken({}).catch((error) => {
+        // Session-revoked responses publish AUTH_SESSION_REVOKED inside
+        // desktop_api; this catch only prevents the liveness probe from
+        // surfacing as an unhandled promise rejection.
+        log.debug('presence', 'session liveness probe failed', { error: String(error) });
       });
     };
 
-    reconcileActorLifecycle();
-    const unsubSession = useSessionStore.subscribe(() => reconcileActorLifecycle());
+    // ---- Launch trigger -------------------------------------------------
+    // Fire `app_launch` once for each authenticated actor in this
+    // renderer lifetime. Login / unlock can happen without a full
+    // WebView reload, so a single boolean would leave the realtime
+    // streams bound to the previous actor.
+    const tryFireLaunch = (): void => {
+      const { authenticated, currentUser } = useSessionStore.getState();
+      const actorId = authenticated ? currentUser?.actorId || null : null;
+      if (!actorId) {
+        startedActorRef.current = null;
+        return;
+      }
+      if (startedActorRef.current === actorId) return;
+      startedActorRef.current = actorId;
+      fire('app_launch');
+      // Start the peer-presence SSE supervisor on the same edge as
+      // `app_launch`. The Rust side is idempotent: a duplicate `start`
+      // cancels the previous supervisor and replaces it.
+      void api.friendChatPresenceStart().catch((error) => {
+        log.warn('presence', 'friendChatPresenceStart failed', error);
+      });
+
+      // Open the unified realtime SSE stream on the same edge. This
+      // is global chat infrastructure, not page-owned state.
+      void api.realtimeStreamStart().catch((error) => {
+        log.warn('presence', 'realtimeStreamStart failed', error);
+      });
+    };
+    tryFireLaunch();
+    const unsubSession = useSessionStore.subscribe(() => tryFireLaunch());
 
     // ---- Visibility -----------------------------------------------------
     const onVisibility = (): void => {
       if (document.visibilityState === 'visible') {
         fire('app_foreground');
+        validateActiveSession();
+      } else {
+        fire('app_background');
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
@@ -144,10 +119,14 @@ export function usePresence(): void {
     // ---- Focus / blur ---------------------------------------------------
     // `focus` doesn't always trigger `visibilitychange` (e.g. clicking
     // outside the window then back), so we add it as a separate hint.
-    // Blur is intentionally ignored: on desktop, losing foreground does not
-    // mean the authenticated actor is unreachable for chat.
-    const onFocus = (): void => fire('app_foreground');
+    // The Rust cooldown collapses the duplicate.
+    const onFocus = (): void => {
+      fire('app_foreground');
+      validateActiveSession();
+    };
+    const onBlur = (): void => fire('app_background');
     window.addEventListener('focus', onFocus);
+    window.addEventListener('blur', onBlur);
 
     // ---- Network --------------------------------------------------------
     const onOnline = (): void => fire('network_online');
@@ -162,16 +141,22 @@ export function usePresence(): void {
       }
     }, HEARTBEAT_INTERVAL);
 
+    const sessionValidation = window.setInterval(
+      validateActiveSession,
+      SESSION_VALIDATION_INTERVAL,
+    );
+
     log.debug('presence', 'usePresence wired');
 
     return () => {
       unsubSession();
-      void stopPresenceSupervisor();
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener('blur', onBlur);
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
       window.clearInterval(heartbeat);
+      window.clearInterval(sessionValidation);
     };
   }, []);
 }

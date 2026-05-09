@@ -1,10 +1,10 @@
+use crate::contracts::{SettingsGetInput, SettingsSetInput, StubPayload};
 use crate::domain::settings::{
     default_settings, default_value, key_name, parse_key, side_effect, validate_value, SettingKey,
     SettingSideEffect,
 };
-use crate::infrastructure::storage::{load_settings, save_settings, StorageError};
 use crate::error::{AppResult, ErrorCode};
-use crate::contracts::{SettingsGetInput, SettingsSetInput, StubPayload};
+use crate::infrastructure::storage::{load_settings, save_settings, StorageError};
 use crate::state::AppState;
 use serde_json::{json, Value};
 use std::collections::HashMap;

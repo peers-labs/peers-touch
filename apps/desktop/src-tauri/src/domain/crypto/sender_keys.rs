@@ -97,9 +97,8 @@ const SIG_LEN: usize = 64;
 /// `sha256(aad || ciphertext)`; we want one source of truth.
 fn aad_for(group_ulid: &str, sender_did: &str, sender_key_id: u32, counter: u32) -> Vec<u8> {
     const SEP: u8 = 0x1F;
-    let mut buf = Vec::with_capacity(
-        24 + 1 + group_ulid.len() + 1 + sender_did.len() + 1 + 4 + 1 + 4,
-    );
+    let mut buf =
+        Vec::with_capacity(24 + 1 + group_ulid.len() + 1 + sender_did.len() + 1 + 4 + 1 + 4);
     buf.extend_from_slice(b"peers-touch:group-sk:v1");
     buf.push(SEP);
     buf.extend_from_slice(group_ulid.as_bytes());
@@ -385,11 +384,16 @@ pub fn encrypt(
     let signing = SigningKey::from_bytes(&seed);
 
     let counter = chain.counter;
-    let aad = aad_for(&chain.group_ulid, &chain.sender_did, chain.sender_key_id, counter);
+    let aad = aad_for(
+        &chain.group_ulid,
+        &chain.sender_did,
+        chain.sender_key_id,
+        counter,
+    );
     let (key, nonce) = message_keys(&chain.chain_key);
 
-    let cipher = Aes256Gcm::new_from_slice(&key)
-        .map_err(|e| SenderKeyError::Aead(e.to_string()))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(&key).map_err(|e| SenderKeyError::Aead(e.to_string()))?;
     let n = Nonce::from_slice(&nonce);
     let ciphertext = cipher
         .encrypt(
@@ -489,10 +493,12 @@ pub fn decrypt(
     // Either it's a stored skipped key (legitimate OOO catch-up)
     // or it's a replay attempt (no matching skipped row).
     if wire.counter < chain.counter {
-        let stored = pre_skipped.get(&wire.counter).ok_or(SenderKeyError::CounterRegression {
-            have: chain.counter,
-            got: wire.counter,
-        })?;
+        let stored = pre_skipped
+            .get(&wire.counter)
+            .ok_or(SenderKeyError::CounterRegression {
+                have: chain.counter,
+                got: wire.counter,
+            })?;
         let cipher = Aes256Gcm::new_from_slice(&stored.key)
             .map_err(|e| SenderKeyError::Aead(e.to_string()))?;
         let n = Nonce::from_slice(&stored.nonce);
@@ -542,8 +548,8 @@ pub fn decrypt(
     }
 
     let (key, nonce) = message_keys(&work_chain);
-    let cipher = Aes256Gcm::new_from_slice(&key)
-        .map_err(|e| SenderKeyError::Aead(e.to_string()))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(&key).map_err(|e| SenderKeyError::Aead(e.to_string()))?;
     let n = Nonce::from_slice(&nonce);
     let plaintext = cipher
         .decrypt(

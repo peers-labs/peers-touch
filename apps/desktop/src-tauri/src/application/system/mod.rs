@@ -1,13 +1,13 @@
+use crate::contracts::{
+    ConfigFieldResetInput, ConfigPostgresTestInput, ConfigSectionInput, ConfigSectionSetInput,
+    ContextActionDispatchInput, ContextSnapshotGetInput, ExternalUrlInput, LogsTailInput,
+    OAuthCreateBotSessionInput, OAuthSessionInput, OAuthSimulateStartInput, OnboardingSetInput,
+    PreferencesSetInput, ShareIdInput, ShareSessionInput, StubPayload, WizardExecuteApiInput,
+    WizardStepInput,
+};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::auth_identity;
 use crate::infrastructure::storage::{self, StorageKind};
-use crate::contracts::{
-    ContextActionDispatchInput, ContextSnapshotGetInput,
-    ConfigFieldResetInput, ConfigPostgresTestInput, ConfigSectionInput, ConfigSectionSetInput,
-    ExternalUrlInput, LogsTailInput, OAuthCreateBotSessionInput, OAuthSessionInput, OAuthSimulateStartInput,
-    OnboardingSetInput, PreferencesSetInput, ShareIdInput, ShareSessionInput, StubPayload,
-    WizardExecuteApiInput, WizardStepInput,
-};
 use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
@@ -28,8 +28,12 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
 }
 
 fn context_storage_path() -> Result<PathBuf, String> {
-    storage::app_file_path("desktop", StorageKind::Data, &["system", "global_context.json"])
-        .map_err(|err| format!("failed to resolve global context path: {err:?}"))
+    storage::app_file_path(
+        "desktop",
+        StorageKind::Data,
+        &["system", "global_context.json"],
+    )
+    .map_err(|err| format!("failed to resolve global context path: {err:?}"))
 }
 
 fn default_global_context_snapshot() -> serde_json::Value {
@@ -105,7 +109,8 @@ fn load_global_context_state() -> serde_json::Value {
     if text.trim().is_empty() {
         return default_global_context_snapshot();
     }
-    serde_json::from_str::<serde_json::Value>(&text).unwrap_or_else(|_| default_global_context_snapshot())
+    serde_json::from_str::<serde_json::Value>(&text)
+        .unwrap_or_else(|_| default_global_context_snapshot())
 }
 
 fn persist_global_context_state(state: &serde_json::Value) -> Result<(), String> {
@@ -167,7 +172,10 @@ pub fn open_external_url(input: ExternalUrlInput) -> AppResult<StubPayload> {
 }
 
 pub fn onboarding_get() -> AppResult<StubPayload> {
-    success_payload("onboarding_get", json!({"completed": false, "step": "welcome"}))
+    success_payload(
+        "onboarding_get",
+        json!({"completed": false, "step": "welcome"}),
+    )
 }
 
 pub fn onboarding_set(_input: OnboardingSetInput) -> AppResult<StubPayload> {
@@ -175,19 +183,25 @@ pub fn onboarding_set(_input: OnboardingSetInput) -> AppResult<StubPayload> {
 }
 
 pub fn wizard_get() -> AppResult<StubPayload> {
-    success_payload("wizard_get", json!({
-        "steps": [],
-        "current_step": null,
-        "completed": false
-    }))
+    success_payload(
+        "wizard_get",
+        json!({
+            "steps": [],
+            "current_step": null,
+            "completed": false
+        }),
+    )
 }
 
 pub fn wizard_state_get() -> AppResult<StubPayload> {
-    success_payload("wizard_state_get", json!({
-        "current_step": null,
-        "completed_steps": [],
-        "data": {}
-    }))
+    success_payload(
+        "wizard_state_get",
+        json!({
+            "current_step": null,
+            "completed_steps": [],
+            "data": {}
+        }),
+    )
 }
 
 pub fn wizard_step_save(_input: WizardStepInput) -> AppResult<StubPayload> {
@@ -241,8 +255,9 @@ pub fn onboarding_reset() -> AppResult<StubPayload> {
         if let Ok(path) = conn_path {
             if path.exists() {
                 if let Ok(text) = fs::read_to_string(&path) {
-                    if let Ok(mut map) =
-                        serde_json::from_str::<std::collections::HashMap<String, serde_json::Value>>(&text)
+                    if let Ok(mut map) = serde_json::from_str::<
+                        std::collections::HashMap<String, serde_json::Value>,
+                    >(&text)
                     {
                         map.remove(&active_provider);
                         if let Ok(json) = serde_json::to_string_pretty(&map) {
@@ -338,29 +353,51 @@ pub fn logs_tail(input: LogsTailInput) -> AppResult<StubPayload> {
             name.ends_with(".log") || name.ends_with(".jsonl") || name.starts_with("app.log.")
         })
         .collect();
-    log_files.sort_by_key(|e| std::cmp::Reverse(e.metadata().and_then(|m| m.modified()).unwrap_or(std::time::SystemTime::UNIX_EPOCH)));
+    log_files.sort_by_key(|e| {
+        std::cmp::Reverse(
+            e.metadata()
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH),
+        )
+    });
 
-    let file_name = log_files.first()
+    let file_name = log_files
+        .first()
         .map(|f| f.file_name().to_string_lossy().to_string())
         .unwrap_or_else(|| "app.log".to_string());
 
     let file_path = log_dir.join(&file_name);
     if !file_path.exists() {
-        return success_payload("logs_tail", json!({
-            "file": file_name, "cursor": input.cursor, "size": 0,
-            "lines": [], "truncated": false, "reset": false,
-            "limit": limit, "max_bytes": max_bytes
-        }));
+        return success_payload(
+            "logs_tail",
+            json!({
+                "file": file_name, "cursor": input.cursor, "size": 0,
+                "lines": [], "truncated": false, "reset": false,
+                "limit": limit, "max_bytes": max_bytes
+            }),
+        );
     }
 
     let content = fs::read_to_string(&file_path).unwrap_or_default();
     let file_size = content.len();
-    let cursor = if input.cursor < 0 { 0 } else { (input.cursor as usize).min(file_size) };
+    let cursor = if input.cursor < 0 {
+        0
+    } else {
+        (input.cursor as usize).min(file_size)
+    };
 
     let reset = input.cursor > 0 && (input.cursor as usize) > file_size;
-    let effective = if cursor < file_size { &content[cursor..] } else { "" };
+    let effective = if cursor < file_size {
+        &content[cursor..]
+    } else {
+        ""
+    };
     let truncated = effective.len() > max_bytes;
-    let byte_limited = if truncated { &effective[..max_bytes] } else { effective };
+    let byte_limited = if truncated {
+        &effective[..max_bytes]
+    } else {
+        effective
+    };
 
     let lines: Vec<&str> = byte_limited.lines().collect();
     let output_lines: Vec<&str> = if lines.len() > limit {
@@ -368,14 +405,21 @@ pub fn logs_tail(input: LogsTailInput) -> AppResult<StubPayload> {
     } else {
         lines
     };
-    let new_cursor = if truncated { cursor + max_bytes } else { file_size };
+    let new_cursor = if truncated {
+        cursor + max_bytes
+    } else {
+        file_size
+    };
 
-    success_payload("logs_tail", json!({
-        "file": file_name, "cursor": new_cursor, "size": file_size,
-        "lines": output_lines, "truncated": truncated,
-        "reset": reset,
-        "limit": limit, "max_bytes": max_bytes
-    }))
+    success_payload(
+        "logs_tail",
+        json!({
+            "file": file_name, "cursor": new_cursor, "size": file_size,
+            "lines": output_lines, "truncated": truncated,
+            "reset": reset,
+            "limit": limit, "max_bytes": max_bytes
+        }),
+    )
 }
 
 pub fn oauth_simulate_lark_start(input: OAuthSimulateStartInput) -> AppResult<StubPayload> {
@@ -486,7 +530,10 @@ pub fn context_snapshot_get(input: Option<ContextSnapshotGetInput>) -> AppResult
     };
     if let Ok(account_state) = auth_identity::read_state() {
         let active = match account_state.active_account_id {
-            Some(ref active_id) => account_state.accounts.iter().find(|item| item.id == *active_id),
+            Some(ref active_id) => account_state
+                .accounts
+                .iter()
+                .find(|item| item.id == *active_id),
             None => account_state.accounts.first(),
         };
         if let Some(account) = active {
@@ -496,13 +543,11 @@ pub fn context_snapshot_get(input: Option<ContextSnapshotGetInput>) -> AppResult
             snapshot["identity"]["email"] = json!(account.email);
             snapshot["identity"]["avatarUrl"] = json!(account.avatar_url);
             snapshot["identity"]["profileUrl"] = json!(account.profile_url);
-            snapshot["identity"]["registerTime"] = json!(
-                if account.created_at.is_empty() {
-                    account.last_login_at.clone()
-                } else {
-                    account.created_at.clone()
-                }
-            );
+            snapshot["identity"]["registerTime"] = json!(if account.created_at.is_empty() {
+                account.last_login_at.clone()
+            } else {
+                account.created_at.clone()
+            });
             snapshot["identity"]["lastLoginAt"] = json!(account.last_login_at);
             snapshot["session"]["loginStatus"] = json!("authenticated");
             snapshot["session"]["authenticated"] = json!(true);
@@ -546,11 +591,17 @@ pub fn context_action_dispatch(input: ContextActionDispatchInput) -> AppResult<S
     };
     let payload = input.payload.unwrap_or_else(|| json!({}));
     if input.action == "set_runtime_state" {
-        if let Some(app_state) = payload.get("appState").and_then(|v: &serde_json::Value| v.as_str()) {
+        if let Some(app_state) = payload
+            .get("appState")
+            .and_then(|v: &serde_json::Value| v.as_str())
+        {
             state["runtime"]["appState"] = json!(app_state);
         }
     } else if input.action == "set_network_mode" {
-        if let Some(online) = payload.get("online").and_then(|v: &serde_json::Value| v.as_bool()) {
+        if let Some(online) = payload
+            .get("online")
+            .and_then(|v: &serde_json::Value| v.as_bool())
+        {
             state["runtime"]["online"] = json!(online);
             state["runtime"]["networkMode"] = json!(if online { "online" } else { "offline" });
             state["network"]["online"] = json!(online);
@@ -567,7 +618,11 @@ pub fn context_action_dispatch(input: ContextActionDispatchInput) -> AppResult<S
             }
         }
     } else {
-        return AppResult::fail(ErrorCode::InvalidArgument, "Unsupported system action", None);
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "Unsupported system action",
+            None,
+        );
     }
     state["meta"]["updatedAt"] = json!(now_ms());
     if let Err(err) = persist_global_context_state(&state) {
@@ -623,7 +678,8 @@ pub fn context_health() -> AppResult<StubPayload> {
     };
     let app_state = state["runtime"]["appState"].as_str().unwrap_or("unknown");
     let network_online = state["network"]["online"].as_bool().unwrap_or(true);
-    let degraded = state["network"]["degraded"].as_bool().unwrap_or(false) || app_state == "degraded";
+    let degraded =
+        state["network"]["degraded"].as_bool().unwrap_or(false) || app_state == "degraded";
     let status = if degraded {
         "degraded"
     } else if app_state == "booting" {

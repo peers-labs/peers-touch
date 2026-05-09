@@ -1,8 +1,8 @@
-use crate::error::AppResult;
 use crate::contracts::{
     SkillImportAddressInput, SkillImportGitHubInput, SkillMarketAddInput, SkillMarketDetailInput,
     SkillMarketIdInput, SkillMarketListInput, SkillMarketSyncInput, StubPayload,
 };
+use crate::error::AppResult;
 
 use crate::application::skills_market as application_skills_market;
 
