@@ -99,6 +99,12 @@ func GetActorHandlers() []ActorHandlerInfo {
 			Wrappers:  []server.Wrapper{commonWrapper}, // Public access - for Avatar component
 		},
 		{
+			RouterURL: RouterURLActorPublicProfileByID,
+			Handler:   GetActorPublicProfileByID,
+			Method:    server.GET,
+			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
+		},
+		{
 			RouterURL: RouterURLActorProfile,
 			Handler:   UpdateActorProfile,
 			Method:    server.POST,
@@ -319,6 +325,41 @@ func GetActorProfile(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 	SuccessResponse(c, ctx, "Actor profile retrieved", actor.WebProfileToActorProfileProto(resp))
+}
+
+// GetActorPublicProfileByID returns the rich public profile of any actor by
+// numeric actor ID. Used by chat detail / contacts detail to render peer
+// profile cards that mirror the structure of the user's own profile view.
+//
+// Returned `ActorProfile` carries only fields intended for public exposure;
+// sensitive data (email, password hash, raw keys, session metadata, ...) is
+// never serialized into `ActorProfile`. Auth is enforced to prevent the
+// endpoint becoming an open enumeration surface.
+func GetActorPublicProfileByID(c context.Context, ctx *app.RequestContext) {
+	idStr := ctx.Param("id")
+	if idStr == "" {
+		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "actor id is required"})
+		return
+	}
+
+	actorID, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid actor id"})
+		return
+	}
+
+	baseURL := baseURLFrom(ctx)
+	resp, err := actor.GetWebProfileByID(c, actorID, baseURL)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, map[string]string{"error": "actor not found"})
+			return
+		}
+		log.Warnf(c, "Get peer profile failed: id=%s err=%v", idStr, err)
+		FailedResponse(c, ctx, err)
+		return
+	}
+	SuccessResponse(c, ctx, "Peer profile retrieved", actor.WebProfileToActorProfileProto(resp))
 }
 
 func PublicProfile(c context.Context, ctx *app.RequestContext) {

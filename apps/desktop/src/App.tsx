@@ -9,7 +9,21 @@ import './services/identityHandlers';
 import { installAppRuntime, teardownAppRuntime } from './services/appRuntime';
 import { usePresence } from './hooks/usePresence';
 import { useSessionStore } from './store/session';
+import {
+  installIdleRuntimes,
+  markPhaseEnd,
+  markPhaseStart,
+  scheduleIdle,
+} from './kernel/boot';
 import type { AppState, AppLifecycle } from './types/navigation';
+
+// Critical session-scope runtimes installed during `runtime:critical`.
+// `social` is currently the only kernel-managed runtime; everything else
+// is still driven by `installAppRuntime` (legacy bridges) until those
+// are wrapped in `RuntimeDescriptor`s. Adding a new id here is the
+// supported way to mark a session-scope runtime as critical for first
+// paint.
+const CRITICAL_SESSION_RUNTIMES: ReadonlyArray<string> = [];
 
 interface ViewProps {
   lifecycle: AppLifecycle;
@@ -27,10 +41,32 @@ function App() {
 
   // Install app-level bridge listeners once at app boot. Supervisor
   // lifetimes still follow usePresence's authenticated actor edges.
+  // `installAppRuntime` covers both legacy (presence, eventStream, ...)
+  // and kernel-managed (`social` via `runtimes/socialRuntime.ts`)
+  // runtimes; the kernel `runtime:critical` phase is observed here for
+  // boot-trace symmetry.
   useEffect(() => {
+    markPhaseStart('runtime:critical');
     installAppRuntime();
+    markPhaseEnd('runtime:critical', { critical: CRITICAL_SESSION_RUNTIMES });
     return () => teardownAppRuntime();
   }, []);
+
+  // Schedule idle-scope runtime install once we hit `ready`. The
+  // pipeline only activates the slot when an actor is known; otherwise
+  // it's a no-op. This is a forward-compatible hook: as additional
+  // runtimes are wrapped into `RuntimeDescriptor`s with `scope: 'session'`,
+  // they will start appearing in the `runtime:idle` log line without any
+  // change here.
+  useEffect(() => {
+    if (lifecycle.state !== 'ready') return;
+    const session = useSessionStore.getState();
+    const actorId = session.authenticated ? session.currentUser?.actorId ?? null : null;
+    if (!actorId) return;
+    return scheduleIdle(() => {
+      void installIdleRuntimes(actorId, CRITICAL_SESSION_RUNTIMES);
+    });
+  }, [lifecycle.state]);
 
   usePresence();
 

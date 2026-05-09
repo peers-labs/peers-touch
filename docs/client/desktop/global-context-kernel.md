@@ -11,6 +11,19 @@
 - 不在本阶段重写全部业务模块。
 - 不在本阶段替换现有所有 store；允许渐进接入。
 - 不修改 Station 业务语义，只定义 Desktop 内核与 Station 交互契约。
+- 不定义页面挂载与启动管线。"页面如何挂载、运行时如何拥有投影、Boot 阶段怎么排"是一组独立契约，单点真源在 [`runtime-projections.md`](./runtime-projections.md)。
+
+### 1.3 与 Page/Runtime/Boot 契约的边界
+
+`apps/desktop/src/kernel/` 下存在两组同名空间但语义独立的内核子系统，**不要混用**：
+
+| 子系统 | 文件入口 | 职责 | 真源文档 |
+|---|---|---|---|
+| GlobalContext Kernel | `kernel/global-context/` | 全局快照、Pipeline 编排、跨域 facade | 本文 |
+| Page / Runtime / Boot Kernel | `kernel/runtime.ts` / `page.ts` / `boot.ts` / `PageHost.tsx` / `usePrefetch.ts` | 单页面渲染契约、长生命周期投影 Owner、启动阶段编排 | [`runtime-projections.md`](./runtime-projections.md) |
+| Event Bus | `kernel/events/` | 类型安全事件总线 | `global/coding-guide/desktop/kernel-events.md` |
+
+GlobalContext 关心“**跨域汇聚**”；Page/Runtime/Boot 关心“**单域投影 Owner 与挂载时机**”；EventBus 是它们共同使用的传输层。本文不重复定义后两者。
 
 ---
 

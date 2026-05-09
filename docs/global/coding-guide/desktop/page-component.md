@@ -2,6 +2,12 @@
 
 本文档基于 Desktop 应用实际代码，系统性介绍应用入口、状态机驱动的视图切换、模块注册系统、以及页面和组件的编写规范。
 
+> **真源边界 (2026-05)**：本文是规范层，**只规定如何写**。
+>
+> - 页面如何挂载、何时预热、谁拥有运行时投影、Boot 阶段如何编排，单点真源在 [`client/desktop/runtime-projections.md`](../../../client/desktop/runtime-projections.md)。
+> - 模块注册（侧边栏入口、设置 Tab 入口）≠ 页面注册（PageDescriptor）。前者是导航装配，后者是渲染契约。两者并存，互不替代。
+> - 凡涉及 `useEffect(load, [load])` 这种页面内首次挂载拉数据，**必须**先回到 `runtime-projections.md` 看是否应该改用 Runtime 或 `usePrefetch`。
+
 ---
 
 ## 目录
@@ -71,17 +77,19 @@ createRoot(document.getElementById('root')!).render(
 - `import './kernel/events/global-error'` — 注册全局 `error` 和 `unhandledrejection` 监听
 - `import './modules'` — 触发所有模块的自注册
 
+> `main.tsx` 同时是 Boot Pipeline 的 `shell` 阶段起点，会调用 `markPhaseStart/End('shell')`。其它阶段（`identity` / `runtime:critical` / `firstPaint` / `runtime:idle` / `pages:prewarm` / `steady`）的归属与可观测性详见 [`runtime-projections.md` §6.3](../../../client/desktop/runtime-projections.md)。
+
 ---
 
 ## 状态机驱动的应用架构 (App.tsx)
 
-`App.tsx` 采用状态机模式，根据应用当前状态渲染不同视图:
+`App.tsx` 采用状态机模式，根据应用当前状态渲染不同视图。它同时承担 BootPipeline 中 `runtime:critical` 与 `runtime:idle` 阶段的安装责任（详见 [`runtime-projections.md` §6.3](../../../client/desktop/runtime-projections.md)）。
 
 ```tsx
 import type { ComponentType } from 'react';
 import { useAppLifecycle } from './hooks/useAppLifecycle';
-import { LoadingView } from './views/LoadingView';
-import { LoginView } from './views/LoginView';
+import { OnboardingView } from './views/OnboardingView';
+import { ResumingView } from './views/ResumingView';
 import { ReadyView } from './views/ReadyView';
 import type { AppState, AppLifecycle } from './types/navigation';
 
@@ -90,8 +98,8 @@ interface ViewProps {
 }
 
 const APP_VIEWS: Record<AppState, ComponentType<ViewProps>> = {
-  loading: LoadingView,
-  login: LoginView,
+  onboarding: OnboardingView,
+  resuming: ResumingView,
   ready: ReadyView,
 };
 
@@ -107,33 +115,31 @@ export default App;
 三个状态及其对应视图:
 
 ```
-loading ──(数据就绪 + 开屏动画完成)──> login ──(completeLogin)──> ready
+onboarding ──(restore session 成功)──> resuming ──(completeLogin)──> ready
+        └──(无可恢复会话 → 用户登录)──> ready
 ```
 
 | 状态 | 视图 | 说明 |
 |------|------|------|
-| `loading` | `LoadingView` | 初始化阶段，执行 bootstrap、加载数据、播放开屏动画 |
-| `login` | `LoginView` | 展示登录界面或恢复会话 |
-| `ready` | `ReadyView` | 主应用界面，包含侧边栏、页面路由等 |
+| `onboarding` | `OnboardingView` | 账号选择 / 登录 / OAuth 流程；首启动也走这里 |
+| `resuming` | `ResumingView` | 已选定账号、正在恢复加密会话与首屏数据 |
+| `ready` | `ReadyView` | 主应用界面，承载 `<PageHost />` 与 `<PageRouter />` 兜底 |
 
-每个视图都接收 `lifecycle: AppLifecycle` prop:
+每个视图都接收 `lifecycle: AppLifecycle` prop（最小契约见 `apps/desktop/src/types/navigation.ts`，以代码为准）：
 
 ```typescript
-type AppState = 'loading' | 'login' | 'ready';
+type AppState = 'onboarding' | 'resuming' | 'ready';
 
 interface AppLifecycle {
   state: AppState;
   restoredUser: SessionUser | null;
+  knownAccounts: SessionUser[];
+  dataReady: boolean;
   completeLogin: () => void;
-  onSplashFinished: () => void;
-}
-
-interface SessionUser {
-  name: string;
-  email: string;
-  avatar?: string;
 }
 ```
+
+> **不要在本文重新定义 `AppLifecycle` 字段**。字段集合随 onboarding / 多账号能力演进，单点真源是 `apps/desktop/src/types/navigation.ts`。
 
 ---
 
@@ -141,9 +147,9 @@ interface SessionUser {
 
 Views 是 App 直接渲染的顶层组件，位于 `views/` 目录:
 
-- `LoadingView` — 开屏动画，动画结束后调用 `lifecycle.onSplashFinished()`
-- `LoginView` — 登录界面，登录成功后调用 `lifecycle.completeLogin()`
-- `ReadyView` — 主应用框架，包含侧边栏导航和页面内容区
+- `OnboardingView` — 账号选择 / 登录 / OAuth；登录成功后过渡到 `resuming`
+- `ResumingView` — 已选账号，正在恢复加密会话、加载关键数据；完成后调用 `lifecycle.completeLogin()`
+- `ReadyView` — 主应用框架，承载侧边栏、`<PageHost />`（kernel 注册的页面）与 `<PageRouter fallback />`（未迁移的页面），并标记 `firstPaint` boot 阶段
 
 视图组件签名统一为:
 
@@ -152,124 +158,33 @@ interface ViewProps {
   lifecycle: AppLifecycle;
 }
 
-export function LoadingView({ lifecycle }: ViewProps) {
-  // 开屏动画逻辑
-  // 动画结束时调用 lifecycle.onSplashFinished()
+export function OnboardingView({ lifecycle }: ViewProps) {
+  // 登录 / 账号选择 / OAuth；不在此挂载业务运行时
 }
 
-export function LoginView({ lifecycle }: ViewProps) {
-  // 登录流程
-  // 成功后调用 lifecycle.completeLogin()
+export function ResumingView({ lifecycle }: ViewProps) {
+  // 恢复会话与解密；完成时 lifecycle.completeLogin()
 }
 
 export function ReadyView({ lifecycle }: ViewProps) {
-  // 主应用 UI，包含路由、侧边栏、页面内容等
+  // markPhaseEnd('firstPaint'); 内部走 PageHost + PageRouter 兜底
 }
 ```
+
+> 视图不直接拉业务投影。业务投影由 Runtime 拥有，详见 [`runtime-projections.md` §2/§4](../../../client/desktop/runtime-projections.md)。
 
 ---
 
 ## 应用生命周期 Hook (useAppLifecycle)
 
-`hooks/useAppLifecycle.ts` 管理整个应用的启动流程:
+`hooks/useAppLifecycle.ts` 管理整个应用的启动流程：恢复账号、解密 session、维护 `restoredUser` / `knownAccounts` / `dataReady`，并在登录完成时切换到 `ready`。
 
-```typescript
-export function useAppLifecycle(): AppLifecycle {
-  const [state, setState] = useState<AppState>('loading');
-  const [restoredUser, setRestoredUser] = useState<SessionUser | null>(null);
-
-  const dataReady = useRef(false);
-  const splashDone = useRef(false);
-
-  const tryTransition = useCallback(() => {
-    if (dataReady.current && splashDone.current) {
-      setState('login');
-    }
-  }, []);
-
-  // 启动 GlobalContext bootstrap
-  useEffect(() => {
-    globalContext.bootstrap().catch(() => {});
-  }, []);
-
-  // 同步运行时状态到 GlobalContext
-  useEffect(() => {
-    if (state === 'loading') globalContext.setRuntimeAppState('booting');
-    else if (state === 'ready') globalContext.setRuntimeAppState('ready');
-    else globalContext.setRuntimeAppState('degraded');
-  }, [state]);
-
-  // 并行加载数据
-  useEffect(() => {
-    const store = useOAuth2Store.getState();
-    Promise.all([
-      store.restoreSession().catch(() => {}),
-      store.loadAll().catch(() => {}),
-    ]).then(() => {
-      // 尝试恢复已有用户
-      const { authenticated, connections } = useOAuth2Store.getState();
-      if (authenticated) {
-        const active = connections.find(
-          (c) => c.status === 'active' && c.user_id && c.user_id !== 'unknown',
-        );
-        if (active) {
-          restoredUserRef.current = {
-            name: active.user_name || active.user_id || 'User',
-            email: active.email || '',
-            avatar: active.avatar_url,
-          };
-        }
-      }
-      dataReady.current = true;
-      tryTransition();
-    });
-  }, [tryTransition]);
-
-  // 开屏动画完成回调
-  const onSplashFinished = useCallback(() => {
-    splashDone.current = true;
-    tryTransition();
-  }, [tryTransition]);
-
-  // 登录完成回调
-  const completeLogin = useCallback(() => {
-    useOAuth2Store.getState().loadAll();
-    setState('ready');
-  }, []);
-
-  return { state, restoredUser, completeLogin, onSplashFinished };
-}
-```
-
-状态转换的双条件门控:
-
-```
-              ┌─────────────┐
-              │   loading    │
-              └──────┬───────┘
-                     │
-         ┌───────────┼───────────┐
-         │                       │
-   dataReady=true         splashDone=true
-         │                       │
-         └───────────┬───────────┘
-                     │
-              tryTransition()
-                     │
-              ┌──────▼───────┐
-              │    login     │
-              └──────┬───────┘
-                     │
-              completeLogin()
-                     │
-              ┌──────▼───────┐
-              │    ready     │
-              └──────────────┘
-```
-
-`loading` -> `login` 需要两个条件同时满足:
-1. 数据加载完毕（`dataReady`）
-2. 开屏动画播放完毕（`splashDone`）
+> **本文不再贴完整实现**。它会随多账号 / OAuth / PIN / 远端 station session 演进；以代码为准。本文只规定接口与边界：
+>
+> - 输入边界：登录视图通过 `lifecycle.completeLogin()` 通知 lifecycle 进入 `ready`。
+> - 输出边界：`AppLifecycle.state ∈ { 'onboarding', 'resuming', 'ready' }`，`AppState` 定义在 `apps/desktop/src/types/navigation.ts`。
+> - 责任边界：`useAppLifecycle` 不安装业务运行时（Social / Search / Settings 等）。运行时由 `App.tsx` 在 `runtime:critical` / `runtime:idle` 阶段安装，详见 [`runtime-projections.md` §6.3](../../../client/desktop/runtime-projections.md)。
+> - 同步 GlobalContext appState 是它的副作用职责（`onboarding | resuming → 'booting'`，`ready → 'ready'`）。
 
 ---
 
@@ -593,45 +508,92 @@ interface HashRouter {
 
 ## 页面编写规范
 
+> **核心规则**：页面是渲染器，不是数据所有者。
+> 数据由 Runtime 投影 / `usePrefetch` / Store 拥有，单点真源 [`runtime-projections.md`](../../../client/desktop/runtime-projections.md)。
+
 ### 页面存放位置
 
-独立页面组件放在 `pages/` 目录:
+独立页面组件放在 `pages/` 目录；如果该页面接入 kernel，则同时存在描述符：
 
 ```
 src/
   pages/
-    ChannelsPage.tsx
-    MemoryPage.tsx
+    SocialChatPage.tsx                # 渲染体
+    SocialChatPage.descriptor.tsx     # PageDescriptor 注册（可选 Container）
     SettingsPage.tsx
+    SettingsPage.descriptor.tsx
+    SettingsPageContainer.tsx
+    SearchPage.tsx
+    SearchPage.descriptor.tsx
+    SearchPageContainer.tsx
+    registry.ts                       # registerKernelPages()
     ...
 ```
 
-### 页面组件签名
-
-页面组件是无 prop 或接收最少 prop 的 React 组件:
+### 页面组件签名（kernel 注册的高频页面）
 
 ```tsx
+// 1. 渲染体只读 Store / Runtime；不在 mount 触发首次加载
 export function MemoryPage() {
-  // 从 store 获取数据
   const items = useMemoryStore((s) => s.items);
   const loading = useMemoryStore((s) => s.loading);
-  const load = useMemoryStore((s) => s.load);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
   return (
     <Flexbox style={{ height: '100%', padding: 16 }}>
-      {/* 页面内容 */}
+      {/* 内容 */}
     </Flexbox>
   );
 }
 ```
 
+```tsx
+// 2. 描述符申报 preload / keepAlive / runtimes
+import { registerPage } from '../kernel/page';
+import { MemoryPage } from './MemoryPage';
+registerPage({
+  id: 'memory',
+  factory: () => <MemoryPage />,
+  preload: 'idle',
+  keepAlive: 'forever',
+  runtimes: ['memory'],
+});
+```
+
+```tsx
+// 3. 真正"长生命周期、跨页面有效"的数据由 Runtime 拥有
+//    apps/desktop/src/runtimes/memoryRuntime.ts
+export const memoryRuntime: RuntimeDescriptor = {
+  id: 'memory',
+  scope: 'session',
+  install() { /* subscribe events / timers */ },
+  teardown() { /* reverse install */ },
+  async bootstrap() { await useMemoryStore.getState().load(); },
+  async reconcile() { await useMemoryStore.getState().load(); },
+};
+```
+
+### 反模式（必须改写）
+
+```tsx
+// ❌ 在页面 mount 时拉数据：每次进入都跑一遍，且无人负责事件 / 重连刷新
+export function MemoryPage() {
+  const load = useMemoryStore((s) => s.load);
+  useEffect(() => { load(); }, [load]);
+  return /* ... */;
+}
+
+// ✅ 改写一：迁移成 PageDescriptor + Runtime（高频 / 长生命周期）
+// ✅ 改写二：使用 usePrefetch（一次性、页面局部、不需事件驱动失效）
+import { usePrefetch } from '../kernel/usePrefetch';
+const items = usePrefetch('memory.list', () => api.listMemory()).data;
+```
+
+### 未接入 kernel 的低频页面
+
+如果页面是低频、一次性、且没有 reconcile 需求，仍可保留传统写法，但需在 PR 中给出"为什么不进 kernel"的明确理由（参考 [`runtime-projections.md` §7](../../../client/desktop/runtime-projections.md)）。
+
 ### 设置面板组件签名
 
-设置面板组件通常铺满分配给它的容器:
+设置面板组件通常铺满分配给它的容器，**也不应在 mount 时直接拉数据**——若需要预热数据，使用 `usePrefetch`，详见 [`runtime-projections.md` §6.4](../../../client/desktop/runtime-projections.md)：
 
 ```tsx
 export function MemorySettingsTab() {

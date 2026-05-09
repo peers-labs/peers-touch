@@ -2,6 +2,16 @@
 
 本文档基于 Desktop 应用实际代码，系统性介绍 AppEventBus 的实现原理、事件目录、类型安全机制、浏览器事件封装、调试支持，以及在 Store 和 Hook 中的集成模式。
 
+> **命名空间澄清**：`apps/desktop/src/kernel/` 下并存多组子系统，**语义独立**：
+>
+> | 子系统 | 入口 | 真源文档 |
+> |---|---|---|
+> | Event Bus（本文）| `kernel/events/` | 本文 |
+> | Page / Runtime / Boot | `kernel/runtime.ts` / `page.ts` / `boot.ts` / `PageHost.tsx` / `usePrefetch.ts` | [`client/desktop/runtime-projections.md`](../../../client/desktop/runtime-projections.md) |
+> | GlobalContext | `kernel/global-context/` | `client/desktop/global-context-kernel.md` |
+>
+> EventBus 是底层传输；Page/Runtime/Boot 与 GlobalContext 都消费它，但都不重定义它。
+
 ---
 
 ## 目录

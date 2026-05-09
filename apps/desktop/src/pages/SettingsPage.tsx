@@ -25,6 +25,7 @@ import { PageHeader } from '../components/PageHeader';
 import { LanguageSwitcher } from '../components/common/LanguageSwitcher';
 import { log } from '../utils/logger';
 import { SettingsContainer, SettingsSection, SettingsItemCard } from '../components/settings/SettingsLayout';
+import { usePrefetch } from '../kernel/usePrefetch';
 
 const { Text } = Typography;
 
@@ -729,13 +730,19 @@ function RankList({
 /* ─── Statistics Tab ─────────────────────────────────────────────────── */
 
 function StatisticsTab() {
-  const [data, setData] = useState<StatisticsData | null>(null);
   const { token } = theme.useToken();
   const { t } = useTranslation('settings');
+  // Statistics is per-page heavy data: prefetched onto the idle window
+  // by `kernel/usePrefetch` so the first click on the Statistics
+  // section paints immediately if the cache is already warm.
+  const { value: data, error } = usePrefetch<StatisticsData>(
+    'settings.statistics',
+    () => api.getStatistics(),
+  );
 
   useEffect(() => {
-    api.getStatistics().then(setData).catch((e) => log.error('settings', 'Failed to load statistics', e));
-  }, []);
+    if (error) log.error('settings', 'Failed to load statistics', error);
+  }, [error]);
 
   if (!data) {
     return (
@@ -861,9 +868,16 @@ const PIN_LENGTH = 6;
 function SecuritySection() {
   const { token } = theme.useToken();
   const { t } = useTranslation('settings');
-  const [hasPin, setHasPin] = useState(false);
-  const [accountId, setAccountId] = useState('');
-  const [loading, setLoading] = useState(true);
+  // Active account snapshot is owned by `runtimes/settingsRuntime.ts`;
+  // reading from the store keeps this section synchronous and lets the
+  // first paint of Settings happen without an extra `accountGetActive`
+  // round-trip. PIN edits push canonical state through the runtime via
+  // `refreshActiveAccount`.
+  const activeAccount = useSettingsStore((s) => s.activeAccount);
+  const refreshActiveAccount = useSettingsStore((s) => s.refreshActiveAccount);
+  const hasPin = !!activeAccount?.has_pin;
+  const accountId = activeAccount?.id ?? '';
+  const loading = activeAccount === null;
 
   // Modal workflow states
   const [modalMode, setModalMode] = useState<'set' | 'change' | 'remove' | null>(null);
@@ -873,24 +887,6 @@ function SecuritySection() {
   const [saving, setSaving] = useState(false);
   const [verifiedPin, setVerifiedPin] = useState('');
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  const loadPinStatus = useCallback(async () => {
-    try {
-      const active = await api.accountGetActive();
-      if (active) {
-        setHasPin(!!active.has_pin);
-        setAccountId(active.id);
-      }
-    } catch {
-      // Security section degrades gracefully when account status unavailable
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadPinStatus();
-  }, [loadPinStatus]);
 
   const resetModal = useCallback(() => {
     setModalMode(null);
@@ -959,7 +955,7 @@ function SecuritySection() {
             return;
           }
           await api.accountSetPin(accountId, verifiedPin);
-          setHasPin(true);
+          await refreshActiveAccount();
           message.success(t('settings.security.pinSetSuccess', { defaultValue: 'PIN has been set successfully.' }));
           resetModal();
           return;
@@ -1007,7 +1003,7 @@ function SecuritySection() {
         // Verify current PIN then remove it
         const pin = digits.join('');
         await api.accountRemovePin(accountId, pin);
-        setHasPin(false);
+        await refreshActiveAccount();
         message.success(t('settings.security.pinRemovedSuccess', { defaultValue: 'PIN has been removed.' }));
         resetModal();
         return;
@@ -1020,7 +1016,7 @@ function SecuritySection() {
     } finally {
       setSaving(false);
     }
-  }, [modalMode, step, digits, verifiedPin, accountId, saving, resetModal, t]);
+  }, [modalMode, step, digits, verifiedPin, accountId, saving, resetModal, refreshActiveAccount, t]);
 
   // Auto-submit when all 6 digits are filled
   useEffect(() => {
@@ -1224,12 +1220,11 @@ function SecuritySection() {
 // --- General Tab ---
 
 function GeneralTab() {
-  const { agents, loadAgents } = useSettingsStore();
+  // Agents are bootstrapped + reconciled by `runtimes/settingsRuntime.ts`;
+  // the page reads them synchronously from the store. No mount-time
+  // fetch — runtime ownership is single.
+  const agents = useSettingsStore((s) => s.agents);
   const { t } = useTranslation('settings');
-
-  useEffect(() => {
-    loadAgents();
-  }, [loadAgents]);
 
   return (
     <SettingsContainer>
@@ -1260,26 +1255,35 @@ function GeneralTab() {
 }
 
 function ToolsTab() {
-  const { tools, loadTools } = useSettingsStore();
+  // Tool registry and search-provider list are read via `usePrefetch`
+  // so the loader runs during the `pages:prewarm` idle window — by the
+  // time the user clicks the Tools tab the cache is typically warm and
+  // the panel paints synchronously.
+  const tools = useSettingsStore((s) => s.tools);
+  const loadTools = useSettingsStore((s) => s.loadTools);
   const { token } = theme.useToken();
   const { t } = useTranslation('settings');
-  const [searchProviders, setSearchProviders] = useState<SearchProviderInfo[]>([]);
-  const [searchPrimary, setSearchPrimary] = useState('');
-  const [loadingSP, setLoadingSP] = useState(true);
+  const { value: toolsCache } = usePrefetch('settings.tools', () => loadTools());
+  const { value: providersResult, loading: loadingProviders, reload: reloadProviders } = usePrefetch(
+    'settings.searchProviders',
+    () => api.listSearchProviders(),
+  );
+  const searchProviders: SearchProviderInfo[] = providersResult?.providers ?? [];
+  const [primaryOverride, setPrimaryOverride] = useState<string | null>(null);
+  const searchPrimary = primaryOverride ?? providersResult?.primary ?? '';
 
-  useEffect(() => {
-    loadTools();
-    api.listSearchProviders().then((r) => {
-      setSearchProviders(r.providers || []);
-      setSearchPrimary(r.primary || '');
-    }).catch(() => {}).finally(() => setLoadingSP(false));
-  }, [loadTools]);
+  // `usePrefetch` reads loadTools()'s return value (void); the side-effect
+  // is the store update. Reference `toolsCache` so React/ESLint know we
+  // intentionally consume the entry.
+  void toolsCache;
+  const loadingSP = loadingProviders;
 
   const handleSetPrimary = async (name: string) => {
     const newPrimary = name === searchPrimary ? '' : name;
     try {
       await api.setSearchPrimary(newPrimary);
-      setSearchPrimary(newPrimary);
+      setPrimaryOverride(newPrimary);
+      reloadProviders();
       message.success(newPrimary ? t('settings.tools.setPrimarySuccess', { name: newPrimary }) : t('settings.tools.clearPrimarySuccess'));
     } catch {
       message.error(t('settings.tools.setPrimaryFailed'));

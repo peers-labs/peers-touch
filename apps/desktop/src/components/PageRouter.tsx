@@ -1,14 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useChatStore } from '../store/chat';
 import { ChatPage } from '../pages/ChatPage';
-import { SocialChatPage } from '../pages/SocialChatPage';
-import { SettingsPage } from '../pages/SettingsPage';
-import { SearchPage } from '../pages/SearchPage';
 import { NotesPage } from '../pages/NotesPage';
 import { AgentProfilePage } from '../pages/AgentProfilePage';
 import { AppletRuntimePage } from '../pages/AppletRuntimePage';
 import { getModule } from '../modules/registry';
-import { useNavigationBadgeStore } from '../store/navigationBadges';
+import { getPage } from '../kernel/page';
+import { scheduleIdle } from '../kernel/boot';
 import type { Page, Navigation, AppletPins, HashRouter } from '../types/navigation';
 
 interface PageRouterProps {
@@ -20,36 +18,61 @@ interface PageRouterProps {
 
 // Heavy pages that stay mounted once visited to avoid expensive teardown / rebuild cycles
 // (P2P connections, encryption init, waterfall API calls on every mount).
-const KEEP_ALIVE_PAGES = new Set<string>(['chat', 'agent']);
+//
+// As pages migrate to the kernel `PageDescriptor` contract they are dropped
+// from this set — `PageHost` (kernel/PageHost.tsx) owns their lifecycle now.
+// Currently kernel-owned: search, chat, settings.
+const KEEP_ALIVE_PAGES = new Set<string>(['agent']);
 
 export function PageRouter({ page, router, navigation, appletPins }: PageRouterProps) {
-  const setChatSurfaceVisible = useNavigationBadgeStore((state) => state.setChatSurfaceVisible);
   const [mounted, setMounted] = useState<Set<string>>(() => {
     const initial = new Set<string>();
     if (KEEP_ALIVE_PAGES.has(page)) initial.add(page);
     return initial;
   });
 
-  // Lazily add keep-alive pages to the mounted set on first visit
+  // Pre-warm every keep-alive page during the first idle window after the
+  // app reaches `ready`, plus the page the user just navigated to. Without
+  // this, the initial click on a keep-alive page pays the full mount cost
+  // (component construction + antd theme + useEffect waterfall) on the
+  // click frame and feels laggy. Pre-mounting off-screen
+  // (display: none) shifts that cost to idle so the click becomes a pure
+  // visibility flip.
   useEffect(() => {
-    if (KEEP_ALIVE_PAGES.has(page) && !mounted.has(page)) {
-      setMounted((prev) => new Set(prev).add(page));
-    }
+    if (!KEEP_ALIVE_PAGES.has(page)) return;
+    const handle = window.requestAnimationFrame(() => {
+      setMounted((prev) => {
+        if (prev.has(page)) return prev;
+        const next = new Set(prev);
+        next.add(page);
+        return next;
+      });
+    });
+    return () => window.cancelAnimationFrame(handle);
   }, [page]);
 
   useEffect(() => {
-    setChatSurfaceVisible(page === 'chat');
-  }, [page, setChatSurfaceVisible]);
+    return scheduleIdle(() => {
+      setMounted((prev) => {
+        let changed = false;
+        const next = new Set(prev);
+        for (const target of KEEP_ALIVE_PAGES) {
+          if (!next.has(target)) {
+            next.add(target);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    });
+  }, []);
+
+  // Pages owned by the kernel `PageDescriptor` registry are rendered by
+  // `<PageHost />`; this fallback router must avoid rendering them again.
+  const isKernelOwned = Boolean(getPage(page));
 
   return (
     <>
-      {/* Keep-alive: SocialChatPage — avoids destroying P2P connections on tab switch */}
-      {(mounted.has('chat') || page === 'chat') && (
-        <div style={{ display: page === 'chat' ? 'contents' : 'none' }}>
-          <SocialChatPage />
-        </div>
-      )}
-
       {/* Keep-alive: ChatPage (AI agent) — preserves conversation context */}
       {(mounted.has('agent') || page === 'agent') && (
         <div style={{ display: page === 'agent' ? 'contents' : 'none' }}>
@@ -68,7 +91,7 @@ export function PageRouter({ page, router, navigation, appletPins }: PageRouterP
       )}
 
       {/* Other pages: rendered conditionally (lightweight, no persistent state) */}
-      {!KEEP_ALIVE_PAGES.has(page) && (
+      {!KEEP_ALIVE_PAGES.has(page) && !isKernelOwned && (
         <EphemeralPage page={page} router={router} navigation={navigation} appletPins={appletPins} />
       )}
     </>
@@ -78,18 +101,6 @@ export function PageRouter({ page, router, navigation, appletPins }: PageRouterP
 // Non-keep-alive pages that mount/unmount on navigation
 function EphemeralPage({ page, router, navigation, appletPins }: PageRouterProps) {
   switch (page) {
-    case 'settings':
-      return (
-        <SettingsPage
-          activeTab={navigation.settingsNav.tab}
-          highlightId={navigation.settingsNav.highlightId}
-          onNavConsumed={() => {}}
-        />
-      );
-
-    case 'search':
-      return <SearchPage onNavigate={navigation.handleSearchNavigate} />;
-
     case 'notes':
       return (
         <NotesPage
