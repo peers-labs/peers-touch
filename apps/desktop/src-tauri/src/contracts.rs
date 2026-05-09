@@ -633,6 +633,13 @@ pub struct AvatarResolveLocalInput {
     pub url: Option<String>,
 }
 
+/// Input for `peer_profile_get`. `did` is the peer's numeric actor id (also
+/// referred to as DID throughout the desktop chat layer).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerProfileGetInput {
+    pub did: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountUpsertOAuthInput {
     pub provider: String,

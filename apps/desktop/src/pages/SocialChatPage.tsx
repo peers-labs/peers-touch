@@ -11,6 +11,7 @@ import { ChatDetailPanel } from '../components/chat/ChatDetailPanel';
 import { ChatThreadPanel } from '../components/chat/ChatThreadPanel';
 import { CallSurface } from '../components/chat/CallSurface';
 import { api } from '../services/desktop_api';
+import { scheduleIdle } from '../kernel/boot';
 import { useSocialChatStore } from '../store/socialChat';
 import { log } from '../utils/logger';
 import { readFeatureFlags } from '../modules/settings/featureFlags';
@@ -18,24 +19,31 @@ import { friendChatP2p } from '../modules/p2p/friendChatP2p';
 
 type ChatSubPage = 'chats' | 'contacts';
 
+// Page contract:
+//   • All projection state (sessions, groups, friend requests, conversation
+//     previews, unread counts, current user profile, encryption keys) is
+//     OWNED by `runtimes/socialRuntime.ts` (which adapts
+//     `services/socialRealtime.ts`). This page is a pure renderer over
+//     that store.
+//   • The only page-bound side-effects are P2P transport subscriptions
+//     (which depend on the active session/peer in this view) and the
+//     opt-in crypto telemetry tick. Both are explicitly view-bound, so
+//     they live here rather than in the runtime.
+//   • Mount-time data fetches are forbidden — see
+//     docs/client/desktop/runtime-projections.md.
+
 export function SocialChatPage() {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const {
     showDetail,
     openThreadRootUlid,
-    loadCurrentUserProfile,
-    initEncryption,
-    loadSessions,
     setFriendP2pStatus,
     sessions,
     activeSessionUlid,
     activeTab,
     currentUserDid,
   } = useSocialChatStore();
-  const loadConversationPreviews = useSocialChatStore((s) => s.loadConversationPreviews);
-  const loadGroups = useSocialChatStore((s) => s.loadGroups);
-  const loadGroupUnreadCounts = useSocialChatStore((s) => s.loadGroupUnreadCounts);
 
   // --- Refs for values used inside effects without re-triggering subscriptions ---
   const activeSessionRef = useRef(activeSessionUlid);
@@ -60,13 +68,16 @@ export function SocialChatPage() {
   }, [activePeerDid]);
 
   const [subPage, setSubPage] = useState<ChatSubPage>('chats');
-  // Lazy-mount contacts panel: only create on first visit, then keep alive
+  // Lazy-mount contacts panel: only create on first visit, then keep
+  // alive. Pre-warm during the first idle window so the contacts tab
+  // click is a pure visibility flip rather than a full subtree mount.
+  // (The kernel `scheduleIdle` falls back to setTimeout in WebViews
+  // without `requestIdleCallback`.)
   const [contactsMounted, setContactsMounted] = useState(false);
-
   useEffect(() => {
-    loadCurrentUserProfile().catch(() => {});
-    initEncryption().catch(() => {});
-  }, [loadCurrentUserProfile, initEncryption]);
+    if (contactsMounted) return;
+    return scheduleIdle(() => setContactsMounted(true));
+  }, [contactsMounted]);
 
   useEffect(() => {
     if (!readFeatureFlags().cryptoDrTelemetryEnabled) return;
@@ -74,50 +85,11 @@ export function SocialChatPage() {
     const tick = () =>
       api.cryptoRatchetTelemetrySnapshot().then((s) => {
         if (!cancelled) log.info('crypto', 'ratchet decrypt counts', s);
-      }).catch(() => {});
+      }).catch(() => undefined);
     tick();
     const h = window.setInterval(tick, 24 * 60 * 60 * 1000);
     return () => { cancelled = true; window.clearInterval(h); };
   }, []);
-
-  // First visible load: the page may load list data needed to render the
-  // chat surface, but app-level realtime/backfill/sync is owned by the
-  // runtime bridge so it keeps running even when this page is not mounted.
-  useEffect(() => {
-    let disposed = false;
-    const t0 = performance.now();
-    const phase = (label: string) => {
-      log.info('socialChat', `cold-load:${label}`, { ms: Math.round(performance.now() - t0) });
-    };
-
-    const yieldToPaint = () => new Promise<void>((r) => setTimeout(r, 0));
-
-    const cold = async () => {
-      phase('start');
-      await Promise.allSettled([
-        loadSessions(),
-        loadGroups(),
-      ]);
-      if (disposed) return;
-      phase('list-visible');
-
-      await yieldToPaint();
-      if (disposed) return;
-
-      void Promise.allSettled([
-        loadGroupUnreadCounts(),
-        loadConversationPreviews(),
-      ]).then(() => {
-        if (!disposed) phase('list-decorated');
-      });
-    };
-
-    cold().catch((error) => log.error('socialChat', 'cold-load failed', error));
-
-    return () => {
-      disposed = true;
-    };
-  }, [loadSessions, loadGroups, loadGroupUnreadCounts, loadConversationPreviews]);
 
   // --- P2P event registration: only re-subscribe when currentUserDid changes ---
   useEffect(() => {

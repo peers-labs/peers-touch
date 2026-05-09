@@ -25,7 +25,7 @@ import {
   X,
 } from 'lucide-react';
 import { useSocialChatStore } from '../../store/socialChat';
-import { api } from '../../services/desktop_api';
+import { api, type AccountProfile } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import type {
   FriendChatMessage,
@@ -41,7 +41,7 @@ import type {
 import { readFeatureFlags } from '../../modules/settings/featureFlags';
 import { SafetyVerificationPanel } from './SafetyVerificationPanel';
 import { useAttachmentUrl } from './useAttachmentUrl';
-import { PublicProfileCard } from '../profile/PublicProfileCard';
+import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicProfileCard';
 
 const { Text } = Typography;
 
@@ -479,6 +479,8 @@ export function ChatDetailPanel() {
   const ownFingerprint = useSocialChatStore((s) => s.ownFingerprint);
   const currentUserDid = useSocialChatStore((s) => s.currentUserDid);
   const peerOnline = useSocialChatStore((s) => s.peerOnline);
+  const peerProfiles = useSocialChatStore((s) => s.peerProfiles);
+  const loadPeerProfile = useSocialChatStore((s) => s.loadPeerProfile);
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const isGroup = activeTab === 'group';
@@ -561,6 +563,17 @@ export function ChatDetailPanel() {
     }
   }, [isGroup, activeUlid, loadGroupMembers]);
 
+  // Lazy peer profile load — same pattern as ChatContactsDetailPanel.
+  // The cache lives in socialChat (single owner) so this effect just
+  // signals the projection to fetch when a friend chat is selected.
+  useEffect(() => {
+    if (!isGroup && peerDid) {
+      void loadPeerProfile(peerDid);
+    }
+  }, [isGroup, peerDid, loadPeerProfile]);
+
+  const cachedPeerProfile = !isGroup && peerDid ? peerProfiles[peerDid] : undefined;
+
   const handleConfirmUpgrade = async () => {
     /*
      * M3 implementation: invoke api.cryptoSessionRefresh() (or equivalent) to tear down
@@ -632,31 +645,19 @@ export function ChatDetailPanel() {
       <Flexbox style={{ padding: 16 }}>
         <PublicProfileCard
           compact
-          profile={{
+          profile={buildChatDetailProfile({
+            isGroup,
             displayName,
-            avatar: isGroup ? '' : peerAvatar,
-            bio: isGroup ? activeGroup?.description : undefined,
-            did: isGroup ? activeGroup?.ulid : peerDid,
-            relationLabel: isGroup
-              ? t('chat.social.detail.membersCount', { count: groupMemberCount })
-              : peerPresenceKnown
-                ? peerIsOnline
-                  ? t('chat.social.detail.online')
-                  : t('chat.social.detail.offline')
-                : t('chat.social.detail.directMessage'),
-            relationTone: isGroup ? 'default' : peerIsOnline ? 'success' : 'default',
-            badges: [
-              {
-                label: encryptionEnabled
-                  ? t('chat.social.detail.encrypted')
-                  : t('chat.social.detail.notEncrypted'),
-                tone: encryptionEnabled ? 'success' : 'warning',
-              },
-            ],
-            stats: isGroup
-              ? [{ label: t('chat.social.detail.membersLabel', { defaultValue: 'members' }), value: groupMemberCount }]
-              : undefined,
-          }}
+            peerAvatar,
+            peerDid,
+            activeGroup,
+            groupMemberCount,
+            peerPresenceKnown,
+            peerIsOnline,
+            encryptionEnabled,
+            cachedPeerProfile,
+            t,
+          })}
           avatarNode={isGroup ? (
             <Flexbox
               align="center"
@@ -839,4 +840,107 @@ export function ChatDetailPanel() {
       )}
     </Flexbox>
   );
+}
+
+interface BuildChatDetailProfileArgs {
+  isGroup: boolean;
+  displayName: string;
+  peerAvatar: string;
+  peerDid: string;
+  activeGroup: Group | undefined;
+  groupMemberCount: number;
+  peerPresenceKnown: boolean;
+  peerIsOnline: boolean | null | undefined;
+  encryptionEnabled: boolean;
+  cachedPeerProfile: AccountProfile | null | undefined;
+  t: (key: string, opts?: Record<string, unknown>) => string;
+}
+
+// Compose the profile data shown in the chat detail card from session-derived
+// snapshots and the lazily-loaded Station profile. Station fields take
+// precedence whenever present so freshly-edited bios/regions show through;
+// the session row keeps the avatar/displayName/online state visible during
+// the brief network round-trip.
+function buildChatDetailProfile({
+  isGroup,
+  displayName,
+  peerAvatar,
+  peerDid,
+  activeGroup,
+  groupMemberCount,
+  peerPresenceKnown,
+  peerIsOnline,
+  encryptionEnabled,
+  cachedPeerProfile,
+  t,
+}: BuildChatDetailProfileArgs): PublicProfileModel {
+  const presenceLabel = isGroup
+    ? t('chat.social.detail.membersCount', { count: groupMemberCount })
+    : peerPresenceKnown
+      ? peerIsOnline
+        ? t('chat.social.detail.online')
+        : t('chat.social.detail.offline')
+      : t('chat.social.detail.directMessage');
+  const encryptionBadge = {
+    label: encryptionEnabled
+      ? t('chat.social.detail.encrypted')
+      : t('chat.social.detail.notEncrypted'),
+    tone: encryptionEnabled ? ('success' as const) : ('warning' as const),
+  };
+
+  if (isGroup) {
+    return {
+      displayName,
+      did: activeGroup?.ulid,
+      bio: activeGroup?.description,
+      relationLabel: presenceLabel,
+      relationTone: 'default',
+      badges: [encryptionBadge],
+      stats: [
+        {
+          label: t('chat.social.detail.membersLabel', { defaultValue: 'members' }),
+          value: groupMemberCount,
+        },
+      ],
+    };
+  }
+
+  const stats: { label: string; value: number }[] = [];
+  if (cachedPeerProfile) {
+    if (typeof cachedPeerProfile.statuses_count === 'number') {
+      stats.push({
+        label: t('chat.social.detail.posts', { defaultValue: 'Posts' }),
+        value: cachedPeerProfile.statuses_count,
+      });
+    }
+    if (typeof cachedPeerProfile.followers_count === 'number') {
+      stats.push({
+        label: t('chat.social.detail.followers', { defaultValue: 'Followers' }),
+        value: cachedPeerProfile.followers_count,
+      });
+    }
+    if (typeof cachedPeerProfile.following_count === 'number') {
+      stats.push({
+        label: t('chat.social.detail.following', { defaultValue: 'Following' }),
+        value: cachedPeerProfile.following_count,
+      });
+    }
+  }
+
+  return {
+    displayName: cachedPeerProfile?.display_name?.trim() || displayName,
+    avatar: cachedPeerProfile?.avatar?.trim() || peerAvatar,
+    header: cachedPeerProfile?.header?.trim() || undefined,
+    username: cachedPeerProfile?.username?.trim() || undefined,
+    bio: cachedPeerProfile?.note?.trim() || undefined,
+    did: cachedPeerProfile?.id?.trim() || peerDid,
+    createdAt: cachedPeerProfile?.created_at?.trim() || undefined,
+    region: cachedPeerProfile?.region?.trim() || undefined,
+    tags: (cachedPeerProfile?.tags ?? []).filter(Boolean),
+    links: (cachedPeerProfile?.links ?? []).filter((l) => l && (l.label || l.url)),
+    relationLabel: presenceLabel,
+    relationTone: peerIsOnline ? 'success' : 'default',
+    badges: [encryptionBadge],
+    stats: stats.length > 0 ? stats : undefined,
+  };
 }
