@@ -1,8 +1,8 @@
-use crate::error::{AppResult, ErrorCode};
 use crate::contracts::{
     BuiltinSkillIdInput, SkillCreateInput, SkillIdInput, SkillToggleInput, SkillUpdateInput,
     SkillsListInput, SkillsSearchInput, StubPayload,
 };
+use crate::error::{AppResult, ErrorCode};
 use serde_json::json;
 use std::sync::{Mutex, OnceLock};
 

@@ -8,14 +8,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/domain"
 )
 
-// ActorSummary is the profile projection friend-chat needs when producing
-// user-facing side effects such as notifications. The application layer owns
-// this shape so notification wording never falls back to raw actor IDs.
-type ActorSummary struct {
-	DisplayName string
-	Avatar      string
-}
-
 type Repository interface {
 	GetSession(sessionID string) (*domain.Session, error)
 	GetOrCreateSession(actorDID, participantDID string) (*domain.Session, bool, error)
@@ -31,13 +23,14 @@ type Repository interface {
 	RecallMessage(actorDID, sessionULID, messageULID string, recallWindow time.Duration) (domain.MutationOutcome, error)
 	EditMessage(actorDID, sessionULID, messageULID, newContent string, newCiphertext []byte, editWindow time.Duration) (domain.MutationOutcome, error)
 	DeleteMessage(actorDID, sessionULID, messageULID string) (domain.MutationOutcome, error)
+	BlockUser(actorDID, targetDID string) (domain.Friendship, error)
+	IsBlockedBetween(actorDID, peerDID string) (bool, error)
+	ActorDisplayName(actorDID string) string
 	CreateFriendRequest(senderDID, receiverDID, message string) (domain.FriendRequest, error)
 	GetFriendRequest(requestID string) (*domain.FriendRequest, error)
 	AcceptFriendRequest(requestID string) (*domain.FriendRequest, *domain.Session, error)
 	RejectFriendRequest(requestID string) (*domain.FriendRequest, error)
 	ListFriendRequests(actorDID string, status int32, limit, offset int) ([]domain.FriendRequest, int, error)
-	DeleteFriend(actorDID, peerDID string) error
-	BatchLoadActorSummaries(ids []string) map[string]ActorSummary
 }
 
 type Service struct {
@@ -58,7 +51,7 @@ var (
 	ErrAlreadyFriends       = errors.New("already friends")
 	ErrRequestNotFound      = errors.New("friend request not found")
 	ErrNotRequestTarget     = errors.New("only the receiver can accept or reject a friend request")
-	ErrFriendNotFound       = errors.New("friend relationship not found")
+	ErrBlocked              = errors.New("friendship blocked")
 )
 
 // MutationWindow is the operator-tunable maximum age (since
@@ -86,18 +79,6 @@ func (s *Service) SetNotifier(n NotificationProducer) {
 	s.notifier = n
 }
 
-func (s *Service) actorDisplayName(actorDID string) string {
-	if actorDID == "" {
-		return ""
-	}
-	profiles := s.repo.BatchLoadActorSummaries([]string{actorDID})
-	profile, ok := profiles[actorDID]
-	if !ok {
-		return ""
-	}
-	return strings.TrimSpace(profile.DisplayName)
-}
-
 // SetMutationWindow lets the bootstrap layer override the default
 // recall / edit window. A zero or negative value disables the
 // window check entirely (only sender-ownership applies).
@@ -106,6 +87,13 @@ func (s *Service) SetMutationWindow(window time.Duration) {
 }
 
 func (s *Service) GetOrCreateSession(actorDID, participantDID string) (*domain.Session, bool, error) {
+	blocked, err := s.repo.IsBlockedBetween(actorDID, participantDID)
+	if err != nil {
+		return nil, false, err
+	}
+	if blocked {
+		return nil, false, ErrBlocked
+	}
 	return s.repo.GetOrCreateSession(actorDID, participantDID)
 }
 
@@ -274,6 +262,13 @@ func (s *Service) SendMessageByActor(actorDID, sessionID, receiverDID string, me
 	if receiverDID != expectedReceiver {
 		return domain.Message{}, ErrInvalidReceiver
 	}
+	blocked, err := s.repo.IsBlockedBetween(actorDID, receiverDID)
+	if err != nil {
+		return domain.Message{}, err
+	}
+	if blocked {
+		return domain.Message{}, ErrBlocked
+	}
 	return s.SendMessage(sessionID, actorDID, receiverDID, messageType, content, replyToID, threadRootID, attachments, encryptedPayload, clientULID)
 }
 
@@ -337,6 +332,13 @@ func (s *Service) SendFriendRequest(senderDID, receiverDID, message string) (dom
 	if senderDID == receiverDID {
 		return domain.FriendRequest{}, errors.New("cannot send friend request to yourself")
 	}
+	blocked, err := s.repo.IsBlockedBetween(senderDID, receiverDID)
+	if err != nil {
+		return domain.FriendRequest{}, err
+	}
+	if blocked {
+		return domain.FriendRequest{}, ErrBlocked
+	}
 
 	fr, err := s.repo.CreateFriendRequest(senderDID, receiverDID, message)
 	if err != nil {
@@ -348,29 +350,24 @@ func (s *Service) SendFriendRequest(senderDID, receiverDID, message string) (dom
 
 	// Produce notification: FRIEND_REQUEST (type=200, category=CHAT=2)
 	if s.notifier != nil {
-		senderName := s.actorDisplayName(senderDID)
-		body := strings.TrimSpace(message)
-		if body == "" && senderName != "" {
-			body = senderName + " sent you a friend request"
-		}
-		if body == "" {
-			body = "You received a friend request"
-		}
-		metadata := map[string]string{"request_id": fr.ID}
-		if senderName != "" {
-			metadata["actor_display_name"] = senderName
-		}
 		_ = s.notifier.Produce(
 			receiverDID, senderDID,
 			200, 2,
 			"friend_request", fr.ID,
-			"Friend Request", body,
+			"Friend Request", message,
 			"friend_request:"+senderDID,
-			metadata,
+			map[string]string{"request_id": fr.ID},
 		)
 	}
 
 	return fr, nil
+}
+
+func (s *Service) BlockUser(actorDID, targetDID string) (domain.Friendship, error) {
+	if actorDID == targetDID {
+		return domain.Friendship{}, errors.New("cannot block yourself")
+	}
+	return s.repo.BlockUser(actorDID, targetDID)
 }
 
 func (s *Service) AcceptFriendRequest(actorDID, requestID string) (*domain.FriendRequest, *domain.Session, error) {
@@ -381,6 +378,13 @@ func (s *Service) AcceptFriendRequest(actorDID, requestID string) (*domain.Frien
 	if existing.ReceiverDID != actorDID {
 		return nil, nil, ErrNotRequestTarget
 	}
+	blocked, err := s.repo.IsBlockedBetween(existing.SenderDID, existing.ReceiverDID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if blocked {
+		return nil, nil, ErrBlocked
+	}
 
 	fr, session, err := s.repo.AcceptFriendRequest(requestID)
 	if err != nil {
@@ -389,22 +393,17 @@ func (s *Service) AcceptFriendRequest(actorDID, requestID string) (*domain.Frien
 
 	// Produce notification: FRIEND_ACCEPTED (type=201, category=CHAT=2)
 	if s.notifier != nil {
-		actorName := s.actorDisplayName(actorDID)
-		body := "Your friend accepted your friend request"
-		if actorName != "" {
-			body = actorName + " accepted your friend request"
-		}
-		metadata := map[string]string{"request_id": fr.ID, "session_id": session.ID}
-		if actorName != "" {
-			metadata["actor_display_name"] = actorName
+		actorName := s.repo.ActorDisplayName(actorDID)
+		if actorName == "" {
+			actorName = actorDID
 		}
 		_ = s.notifier.Produce(
 			fr.SenderDID, actorDID,
 			201, 2,
 			"friend_request", fr.ID,
-			"Friend Request Accepted", body,
+			"Friend Request Accepted", actorName+" accepted your friend request",
 			"friend_accepted:"+actorDID,
-			metadata,
+			map[string]string{"request_id": fr.ID, "session_id": session.ID, "actor_display_name": actorName},
 		)
 	}
 
@@ -424,20 +423,4 @@ func (s *Service) RejectFriendRequest(actorDID, requestID string) (*domain.Frien
 
 func (s *Service) ListFriendRequests(actorDID string, status int32, limit, offset int) ([]domain.FriendRequest, int, error) {
 	return s.repo.ListFriendRequests(actorDID, status, limit, offset)
-}
-
-func (s *Service) DeleteFriend(actorDID, peerDID string) error {
-	if strings.TrimSpace(actorDID) == "" || strings.TrimSpace(peerDID) == "" {
-		return ErrFriendNotFound
-	}
-	if actorDID == peerDID {
-		return ErrFriendNotFound
-	}
-	if err := s.repo.DeleteFriend(actorDID, peerDID); err != nil {
-		if err.Error() == "friend relationship not found" {
-			return ErrFriendNotFound
-		}
-		return err
-	}
-	return nil
 }

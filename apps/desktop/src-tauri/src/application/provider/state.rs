@@ -1,4 +1,6 @@
-use crate::infrastructure::storage::{app_file_path, resolve_user_scope, write_string_atomic, StorageKind};
+use crate::infrastructure::storage::{
+    app_file_path, resolve_user_scope, write_string_atomic, StorageKind,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -272,10 +274,7 @@ fn load_scope_store(scope: &str) -> (ProviderStore, u64) {
         &parsed.provider_overrides,
         &parsed.tombstones,
     );
-    (
-        merged,
-        parsed.revision,
-    )
+    (merged, parsed.revision)
 }
 
 fn write_scope_store(scope: &str, store: &ProviderStore, revision: u64) -> Result<(), ()> {
@@ -422,13 +421,7 @@ mod tests {
     #[test]
     fn seeded_store_should_include_extended_provider_presets() {
         let seeded = ProviderStore::seeded();
-        let required = [
-            "openrouter",
-            "mistral",
-            "groq",
-            "together",
-            "cohere",
-        ];
+        let required = ["openrouter", "mistral", "groq", "together", "cohere"];
         for provider_id in required {
             let exists = seeded
                 .providers

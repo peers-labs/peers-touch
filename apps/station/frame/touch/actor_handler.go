@@ -22,6 +22,7 @@ import (
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
@@ -71,6 +72,12 @@ func GetActorHandlers() []ActorHandlerInfo {
 		{
 			RouterURL: RouterURLActorLogout,
 			Handler:   ActorLogout,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
+		},
+		{
+			RouterURL: RouterURLActorSessionTakeover,
+			Handler:   ActorSessionTakeover,
 			Method:    server.POST,
 			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
 		},
@@ -212,8 +219,72 @@ func ActorLogin(c context.Context, ctx *app.RequestContext) {
 		}
 	}
 
+	loginResp := loginResponseFromSessionResult(result, actorIdNum)
+	if actorIdNum > 0 {
+		if act, err := actor.GetActorByID(c, actorIdNum); err == nil && act != nil {
+			loginResp.ActorRef = actor.ProtoActorRef(act, baseURLFrom(ctx))
+		}
+	}
+	SuccessResponse(c, ctx, "Login successful", loginResp)
+}
+
+func ActorSessionTakeover(c context.Context, ctx *app.RequestContext) {
+	subject := coreauth.GetSubject(c)
+	if subject == nil {
+		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	userID, err := strconv.ParseUint(subject.ID, 10, 64)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid user identity"})
+		return
+	}
+
+	var req struct {
+		DeviceType string `json:"device_type"`
+	}
+	_ = ctx.Bind(&req)
+	if req.DeviceType == "" {
+		req.DeviceType = "desktop"
+	}
+
+	rds, err := store.GetRDS(c)
+	if err != nil {
+		log.Warnf(c, "Session takeover failed to get store: %v", err)
+		FailedResponse(c, ctx, err)
+		return
+	}
+
+	var user db.Actor
+	if err := rds.WithContext(c).Where("id = ?", userID).First(&user).Error; err != nil {
+		log.Warnf(c, "Session takeover failed to load actor: %v", err)
+		FailedResponse(c, ctx, auth.ErrUserNotFound)
+		return
+	}
+
+	result, err := auth.IssueTokenAndSession(c, &user, ctx.ClientIP(), string(ctx.GetHeader("User-Agent")), req.DeviceType, map[string]interface{}{
+		"auth_method": "session_takeover",
+	})
+	if err != nil {
+		log.Warnf(c, "Session takeover failed: %v", err)
+		FailedResponse(c, ctx, err)
+		return
+	}
+
+	_ = actor.UpdateActorStatus(c, userID, db.ActorStatusOnline, string(ctx.GetHeader("User-Agent")))
+	ctx.SetCookie("session_id", result.SessionID, int(24*time.Hour.Seconds()), "/", "", protocol.CookieSameSiteDisabled, false, true)
+
+	loginResp := loginResponseFromSessionResult(result, userID)
+	if act, err := actor.GetActorByID(c, userID); err == nil && act != nil {
+		loginResp.ActorRef = actor.ProtoActorRef(act, baseURLFrom(ctx))
+	}
+	SuccessResponse(c, ctx, "Session takeover successful", loginResp)
+}
+
+func loginResponseFromSessionResult(result *auth.SessionLoginResult, actorIDNum uint64) *model.LoginResponse {
 	expiresAt := result.ExpiresAt.Format(time.RFC3339)
-	loginResp := &model.LoginResponse{
+	return &model.LoginResponse{
 		Tokens: &model.AuthTokens{
 			Token:        result.AccessToken,
 			AccessToken:  result.AccessToken,
@@ -224,18 +295,12 @@ func ActorLogin(c context.Context, ctx *app.RequestContext) {
 		SessionId: result.SessionID,
 		Actor: &model.AuthActorInfo{
 			Id:          toString(result.User["id"]),
-			ActorId:     int64(actorIdNum),
+			ActorId:     int64(actorIDNum),
 			Username:    toString(result.User["name"]),
 			DisplayName: toString(result.User["display_name"]),
 			Email:       toString(result.User["email"]),
 		},
 	}
-	if actorIdNum > 0 {
-		if act, err := actor.GetActorByID(c, actorIdNum); err == nil && act != nil {
-			loginResp.ActorRef = actor.ProtoActorRef(act, baseURLFrom(ctx))
-		}
-	}
-	SuccessResponse(c, ctx, "Login successful", loginResp)
 }
 
 func ActorLogout(c context.Context, ctx *app.RequestContext) {

@@ -69,7 +69,11 @@ pub fn presence_notify(
         // local-only side effects, but the supervisor needs one for the
         // station POSTs. Frontend should fire IdentityLoggedOut before
         // the token is invalidated; otherwise we noop here.
-        tracing::debug!(?trigger, actor = actor_id, "presence_notify: no token for window");
+        tracing::debug!(
+            ?trigger,
+            actor = actor_id,
+            "presence_notify: no token for window"
+        );
         return AppResult::success(StubPayload {
             command: "presence_notify".to_string(),
             status: "{\"accepted\":false,\"reason\":\"no_token\"}".to_string(),

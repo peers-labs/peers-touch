@@ -81,7 +81,7 @@ caller never blocks the UI:
    Failure is logged but does not roll back state — the next `/pending`
    re-serves the same messages, which is fine because step 3 is
    idempotent (cursor-aware).
-5. Emit `presence:transition` Tauri event with `reconciled_count` and
+5. Emit `presence.transition` Tauri event with `reconciled_count` and
    `affected_sessions`.
 
 `Online → Offline` is symmetric and trivial: `POST /friend-chat/offline`,
@@ -124,7 +124,7 @@ reconcile sees the new actor's bound session, not the previous one.
 
 ### 2.6 Frontend reaction
 
-The bridge in `services/presence.ts` listens for `presence:transition`
+The bridge in `services/presence.ts` listens for `presence.transition`
 and applies a **minimal fan-out** to the social-chat store:
 
 - `loadSessions()` (sidebar + unread badges)
@@ -166,7 +166,7 @@ loading path handles them when the user clicks in.
   presence-adjacent signal — but presence and transport remain
   orthogonal: a user can be `Online` over relay or direct.
 - **Per-conversation read receipts.** When the user opens a session
-  whose unread count just dropped via `presence:transition`, the existing
+  whose unread count just dropped via `presence.transition`, the existing
   read-marker flow takes over. No supervisor changes needed.
 
 ## 6. Tests

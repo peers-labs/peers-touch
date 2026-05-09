@@ -1,7 +1,5 @@
+use crate::contracts::{McpCreateInput, McpNameInput, McpToggleInput, McpUpdateInput, StubPayload};
 use crate::error::{AppResult, ErrorCode};
-use crate::contracts::{
-    McpCreateInput, McpNameInput, McpToggleInput, McpUpdateInput, StubPayload,
-};
 use serde_json::{json, Value};
 use std::sync::{Mutex, OnceLock};
 

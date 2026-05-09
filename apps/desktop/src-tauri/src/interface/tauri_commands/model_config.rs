@@ -1,7 +1,5 @@
+use crate::contracts::{ModelConfigKeyInput, ModelConfigSetInput, ProviderIdInputV2, StubPayload};
 use crate::error::AppResult;
-use crate::contracts::{
-    ModelConfigKeyInput, ModelConfigSetInput, ProviderIdInputV2, StubPayload,
-};
 
 use crate::application::model_config as application_model_config;
 

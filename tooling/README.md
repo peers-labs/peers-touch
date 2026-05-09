@@ -27,12 +27,3 @@ Bash:
 ./tooling/scripts/pt.sh test station
 ./tooling/scripts/pt.sh build desktop
 ```
-
-## Skills
-
-`tooling/skills/` is the source of truth for repository engineering skills.
-Run `make init-dev` to link these skills into the active IDE, and `make
-skill-help` to view the catalog.
-
-- `dev-runtime-handoff`: guides make-based dev startup, deployment/restart
-  decisions, and acceptance-test handoff after code changes.

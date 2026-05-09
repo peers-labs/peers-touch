@@ -1,11 +1,11 @@
 use std::sync::Arc;
 use tauri::State;
 
-use crate::error::AppResult;
 use crate::contracts::{
     OAuthAuthorizeInput, OAuthCallbackInput, OAuthIdInput, OAuthLoopbackPollInput,
     OAuthLoopbackStartInput, OAuthResourceInput, OAuthSetCredentialsInput, StubPayload,
 };
+use crate::error::AppResult;
 use crate::state::AppState;
 
 use crate::application::oauth2 as application_oauth2;

@@ -4,21 +4,18 @@
 //             and account_sync_avatar. State-dependent commands use
 //             state.inner() to bridge tauri::State -> &AppState.
 
-use std::sync::Arc;
-use crate::error::{AppResult, ErrorCode};
+use crate::application::profile as application_profile;
+use crate::application::session_resolver;
 use crate::contracts::{
     AccountSyncAvatarInput, AvatarResolveLocalInput, FileUploadInput, PeerProfileGetInput,
     ProfilePrivacyInput, ProfileUpdateInput, StubPayload,
 };
-use crate::application::profile as application_profile;
-use crate::application::session_resolver;
+use crate::error::{AppResult, ErrorCode};
 use crate::state::AppState;
+use std::sync::Arc;
 use tauri::{Manager, State, Window};
 
-fn require_token(
-    state: &Arc<AppState>,
-    window: &Window,
-) -> Result<String, AppResult<StubPayload>> {
+fn require_token(state: &Arc<AppState>, window: &Window) -> Result<String, AppResult<StubPayload>> {
     let token = session_resolver::token_for_window(state, window).unwrap_or_default();
     if token.trim().is_empty() {
         return Err(AppResult::fail(
@@ -77,7 +74,8 @@ pub fn profile_upload_avatar(
         Ok(t) => t,
         Err(e) => return e,
     };
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    let actor_id =
+        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
     application_profile::profile_upload_avatar(&actor_id, input, &token)
 }
 
@@ -91,7 +89,8 @@ pub fn profile_upload_header(
         Ok(t) => t,
         Err(e) => return e,
     };
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    let actor_id =
+        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
     application_profile::profile_upload_header(&actor_id, input, &token)
 }
 
@@ -112,16 +111,18 @@ pub async fn profile_upload_avatar_oss(
         Ok(t) => t,
         Err(e) => return e,
     };
-    tokio::task::spawn_blocking(move || application_profile::profile_upload_avatar_oss(input, &token))
-        .await
-        .unwrap_or_else(|e| {
-            tracing::error!(error = %e, "profile_upload_avatar_oss task panicked");
-            AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Avatar upload task failed: {}", e),
-                None,
-            )
-        })
+    tokio::task::spawn_blocking(move || {
+        application_profile::profile_upload_avatar_oss(input, &token)
+    })
+    .await
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "profile_upload_avatar_oss task panicked");
+        AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Avatar upload task failed: {}", e),
+            None,
+        )
+    })
 }
 
 #[tauri::command]
@@ -135,16 +136,18 @@ pub async fn profile_upload_header_oss(
         Ok(t) => t,
         Err(e) => return e,
     };
-    tokio::task::spawn_blocking(move || application_profile::profile_upload_header_oss(input, &token))
-        .await
-        .unwrap_or_else(|e| {
-            tracing::error!(error = %e, "profile_upload_header_oss task panicked");
-            AppResult::fail(
-                ErrorCode::InternalError,
-                format!("Header upload task failed: {}", e),
-                None,
-            )
-        })
+    tokio::task::spawn_blocking(move || {
+        application_profile::profile_upload_header_oss(input, &token)
+    })
+    .await
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "profile_upload_header_oss task panicked");
+        AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Header upload task failed: {}", e),
+            None,
+        )
+    })
 }
 
 #[tauri::command]
@@ -157,7 +160,8 @@ pub fn profile_update_privacy(
         Ok(t) => t,
         Err(e) => return e,
     };
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    let actor_id =
+        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
     application_profile::profile_update_privacy(&actor_id, &token, input)
 }
 
@@ -183,7 +187,11 @@ pub async fn pick_image_file(window: Window) -> AppResult<StubPayload> {
         }
         None => {
             tracing::warn!("Image file picker cancelled by user");
-            AppResult::fail(ErrorCode::InvalidArgument, "No file selected for upload", None)
+            AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "No file selected for upload",
+                None,
+            )
         }
     }
 }
@@ -209,12 +217,16 @@ pub fn account_sync_avatar(
 //             into the correct LocalAccount record and does not rely on the
 //             volatile `active_account_id` pointer.
 #[tauri::command]
-pub fn sync_user_profile(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn sync_user_profile(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let token = match require_token(state.inner(), &window) {
         Ok(t) => t,
         Err(e) => return e,
     };
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    let actor_id =
+        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
     if actor_id.is_empty() {
         return AppResult::fail(
             ErrorCode::Unauthorized,
@@ -237,12 +249,13 @@ pub async fn avatar_resolve_local(
 ) -> AppResult<StubPayload> {
     let _ = window;
     let url = input.url.unwrap_or_default();
-    let resolved = tokio::task::spawn_blocking(move || application_profile::avatar_resolve_local(&url))
-        .await
-        .unwrap_or_else(|e| {
-            tracing::error!(error = %e, "avatar_resolve_local task panicked");
-            None
-        });
+    let resolved =
+        tokio::task::spawn_blocking(move || application_profile::avatar_resolve_local(&url))
+            .await
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "avatar_resolve_local task panicked");
+                None
+            });
 
     let payload = serde_json::json!({ "local_path": resolved });
     AppResult::success(StubPayload {

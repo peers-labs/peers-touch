@@ -5,16 +5,15 @@ use crate::contracts::{
     ChatScopeCursorSetInput, GroupAckOfflineInput, GroupChatCreateGroupInput, GroupChatEditInput,
     GroupChatLeaveGroupInput, GroupChatListInput, GroupChatListMessagesInput,
     GroupChatMarkReadInput, GroupChatSendInput, GroupChatSyncInput, GroupChatThreadCountsInput,
-    GroupChatThreadInput, GroupChatThreadReadInput, GroupChatUnreadInput, GroupInviteInput,
-    GroupJoinInput, GroupMembersInput, GroupMessageActionInput, GroupOfflineMessagesInput,
-    GroupRemoveMemberInput, GroupSearchMessagesInput, GroupUlidInput, GroupUpdateInput,
-    GroupUpdateMySettingsInput, GroupUpdateNicknameInput, StubPayload,
+    GroupChatThreadInput, GroupChatThreadReadInput, GroupChatUnreadInput, GroupCreateInput,
+    GroupInviteInput, GroupJoinInput, GroupMembersInput, GroupMessageActionInput,
+    GroupOfflineMessagesInput, GroupRemoveMemberInput, GroupSearchMessagesInput, GroupUlidInput,
+    GroupUpdateInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
 use crate::model;
 use crate::state::AppState;
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use prost::Message;
 use reqwest::Method;
 use serde_json::{json, Value};
@@ -78,13 +77,6 @@ fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
     })
 }
 
-fn station_error_proto(
-    err: station_client::StationClientError,
-    context: &str,
-) -> AppResult<Vec<u8>> {
-    err.into_app_result(context)
-}
-
 fn extract_latest_ulid(payload: &Value) -> Option<String> {
     let messages = payload.get("messages")?.as_array()?;
     for item in messages {
@@ -110,23 +102,6 @@ fn attachment_inputs_to_json(inputs: Option<Vec<AttachmentInput>>) -> Vec<Value>
                 "thumbnail_cid": a.thumbnail_cid.unwrap_or_default(),
                 "visibility": a.visibility.unwrap_or_default(),
             })
-        })
-        .collect()
-}
-
-fn attachment_inputs_to_proto(
-    inputs: Option<Vec<AttachmentInput>>,
-) -> Vec<model::chat::GroupMessageAttachment> {
-    inputs
-        .unwrap_or_default()
-        .into_iter()
-        .map(|a| model::chat::GroupMessageAttachment {
-            cid: a.cid,
-            filename: a.filename,
-            mime_type: a.mime_type,
-            size: a.size,
-            thumbnail_cid: a.thumbnail_cid.unwrap_or_default(),
-            visibility: a.visibility.unwrap_or_default(),
         })
         .collect()
 }
@@ -177,8 +152,8 @@ pub fn group_chat_list_groups(
     input: GroupChatListInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
-) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
         Ok(token) => token,
         Err(error) => return error,
     };
@@ -186,17 +161,11 @@ pub fn group_chat_list_groups(
         ("limit", input.limit.unwrap_or(50).to_string()),
         ("offset", input.offset.unwrap_or(0).to_string()),
     ];
-    let resp = match station_client::request_proto::<(), model::chat::ListGroupsResponse>(
-        Method::GET,
-        "/group-chat/list",
-        &token,
-        Some(&query),
-        None::<&()>,
-    ) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "station request failed"),
+    let data = match request_json(Method::GET, "/group-chat/list", &token, Some(&query), None) {
+        Ok(data) => data,
+        Err(error) => return error,
     };
-    AppResult::success(resp.encode_to_vec())
+    to_stub("group_chat_list_groups", data)
 }
 
 #[tauri::command]
@@ -204,8 +173,8 @@ pub fn group_chat_list_messages(
     input: GroupChatListMessagesInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
-) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
         Ok(token) => token,
         Err(error) => return error,
     };
@@ -219,17 +188,19 @@ pub fn group_chat_list_messages(
     if let Some(before) = input.before_ulid {
         query.push(("before_ulid", before));
     }
-    let resp = match station_client::request_proto::<(), model::chat::GetGroupMessagesResponse>(
+    let data = match request_json(
         Method::GET,
         "/group-chat/messages",
         &token,
         Some(&query),
-        None::<&()>,
+        None,
     ) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "station request failed"),
+        Ok(data) => data,
+        Err(error) => return error,
     };
-    AppResult::success(resp.encode_to_vec())
+    let user_scope = user_scope_from_state(&state, &window);
+    let _ = chat_storage::ingest_group_messages(user_scope.as_str(), &data);
+    to_stub("group_chat_list_messages", data)
 }
 
 #[tauri::command]
@@ -321,8 +292,8 @@ pub fn group_chat_send_message(
     input: GroupChatSendInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
-) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
         Ok(token) => token,
         Err(error) => return error,
     };
@@ -336,18 +307,9 @@ pub fn group_chat_send_message(
     // invariant in G6 (it MUST reject populated `content`); the
     // desktop layer enforcing it client-side first means a buggy
     // build cannot accidentally publish plaintext history.
-    let attachments = attachment_inputs_to_proto(input.attachments);
+    let attachments = attachment_inputs_to_json(input.attachments);
     let encrypted_payload = match input.encrypted_payload.as_ref() {
-        Some(s) if !s.trim().is_empty() => match B64.decode(s.trim().as_bytes()) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                return AppResult::fail(
-                    crate::error::ErrorCode::InvalidArgument,
-                    format!("Invalid encrypted_payload: {}", e),
-                    None,
-                )
-            }
-        },
+        Some(s) if !s.trim().is_empty() => s.clone(),
         _ if attachments.is_empty() => {
             return AppResult::fail(
                 crate::error::ErrorCode::InvalidArgument,
@@ -355,33 +317,31 @@ pub fn group_chat_send_message(
                 None,
             );
         }
-        _ => Vec::new(),
+        _ => String::new(),
     };
-    let req = model::chat::SendGroupMessageRequest {
-        group_ulid: input.group_ulid,
-        r#type: input.r#type.unwrap_or(1),
-        content: String::new(),
-        attachments,
-        reply_to_ulid: input.reply_to_ulid.unwrap_or_default(),
-        thread_root_ulid: input.thread_root_ulid.unwrap_or_default(),
-        mentioned_dids: input.mentioned_dids.unwrap_or_default(),
-        mention_all: input.mention_all.unwrap_or(false),
-        encrypted_payload,
-    };
-    let resp = match station_client::request_proto::<
-        model::chat::SendGroupMessageRequest,
-        model::chat::SendGroupMessageResponse,
-    >(
+    let data = match request_json(
         Method::POST,
         "/group-chat/message/send",
         &token,
         None,
-        Some(&req),
+        Some(json!({
+            "group_ulid": input.group_ulid,
+            "content": "",
+            "type": input.r#type.unwrap_or(1),
+            "reply_to_ulid": input.reply_to_ulid.unwrap_or_default(),
+            "thread_root_ulid": input.thread_root_ulid.unwrap_or_default(),
+            "mentioned_dids": input.mentioned_dids.unwrap_or_default(),
+            "mention_all": input.mention_all.unwrap_or(false),
+            "attachments": attachments,
+            "encrypted_payload": encrypted_payload,
+        })),
     ) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "station request failed"),
+        Ok(data) => data,
+        Err(error) => return error,
     };
-    AppResult::success(resp.encode_to_vec())
+    let user_scope = user_scope_from_state(&state, &window);
+    let _ = chat_storage::ingest_group_messages(user_scope.as_str(), &data);
+    to_stub("group_chat_send_message", data)
 }
 
 #[tauri::command]
@@ -389,8 +349,8 @@ pub fn group_chat_unread_count(
     input: GroupChatUnreadInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
-) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
         Ok(token) => token,
         Err(error) => return error,
     };
@@ -398,17 +358,17 @@ pub fn group_chat_unread_count(
     if let Some(group_ulid) = input.group_ulid {
         query.push(("group_ulid", group_ulid));
     }
-    let resp = match station_client::request_proto::<(), model::chat::GetUnreadCountResponse>(
+    let data = match request_json(
         Method::GET,
         "/group-chat/unread-count",
         &token,
         Some(&query),
-        None::<&()>,
+        None,
     ) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "station request failed"),
+        Ok(data) => data,
+        Err(error) => return error,
     };
-    AppResult::success(resp.encode_to_vec())
+    to_stub("group_chat_unread_count", data)
 }
 
 #[tauri::command]
@@ -416,29 +376,22 @@ pub fn group_chat_mark_read(
     input: GroupChatMarkReadInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
-) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
         Ok(token) => token,
         Err(error) => return error,
     };
-    let req = model::chat::MarkGroupReadRequest {
-        group_ulid: input.group_ulid,
-        up_to_ulid: String::new(),
-    };
-    let resp = match station_client::request_proto::<
-        model::chat::MarkGroupReadRequest,
-        model::chat::MarkGroupReadResponse,
-    >(
+    let data = match request_json(
         Method::POST,
         "/group-chat/mark-read",
         &token,
         None,
-        Some(&req),
+        Some(json!({"group_ulid": input.group_ulid})),
     ) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "station request failed"),
+        Ok(data) => data,
+        Err(error) => return error,
     };
-    AppResult::success(resp.encode_to_vec())
+    to_stub("group_chat_mark_read", data)
 }
 
 #[tauri::command]
@@ -687,8 +640,8 @@ pub fn group_chat_create_group(
     input: GroupChatCreateGroupInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
-) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state, &window) {
         Ok(token) => token,
         Err(error) => return error,
     };
@@ -709,7 +662,18 @@ pub fn group_chat_create_group(
         Err(e) => return e.into_app_result("station request failed"),
     };
 
-    AppResult::success(resp.encode_to_vec())
+    let group_json = match resp.group {
+        Some(g) => json!({
+            "ulid": g.ulid,
+            "name": g.name,
+            "description": g.description,
+            "owner_did": g.owner_did,
+            "type": g.r#type,
+        }),
+        None => json!(null),
+    };
+
+    to_stub("group_chat_create_group", json!({ "group": group_json }))
 }
 
 #[tauri::command]

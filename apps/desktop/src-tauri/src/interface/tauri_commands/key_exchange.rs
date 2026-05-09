@@ -12,7 +12,10 @@ use crate::model::key_exchange as kemodel;
 use crate::state::AppState;
 use reqwest::Method;
 
-fn token_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Result<String, AppResult<StubPayload>> {
+fn token_from_state(
+    state: &State<'_, Arc<AppState>>,
+    window: &Window,
+) -> Result<String, AppResult<StubPayload>> {
     let token = session_resolver::token_for_window(state.inner(), window).unwrap_or_default();
     if token.trim().is_empty() {
         return Err(AppResult::fail(
@@ -58,11 +61,7 @@ pub fn key_exchange_upload_bundle(
     let device_id = match device_install::get_or_create_device_id(actor_id.as_str()) {
         Ok(s) => s,
         Err(e) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("device_id: {e}"),
-                None,
-            );
+            return AppResult::fail(ErrorCode::InternalError, format!("device_id: {e}"), None);
         }
     };
     let req = kemodel::UploadKeyBundleRequest {
@@ -74,7 +73,10 @@ pub fn key_exchange_upload_bundle(
         opk_pubs: input.opk_pubs,
         device_id,
     };
-    match station_client::request_proto::<kemodel::UploadKeyBundleRequest, kemodel::UploadKeyBundleResponse>(
+    match station_client::request_proto::<
+        kemodel::UploadKeyBundleRequest,
+        kemodel::UploadKeyBundleResponse,
+    >(
         Method::POST,
         "/key-exchange/keys/bundle",
         &token,
@@ -103,7 +105,10 @@ pub fn key_exchange_fetch_bundle(
         did: input.did,
         device_id: input.device_id.unwrap_or_default(),
     };
-    let r = match station_client::request_proto::<kemodel::FetchKeyBundleRequest, kemodel::FetchKeyBundleResponse>(
+    let r = match station_client::request_proto::<
+        kemodel::FetchKeyBundleRequest,
+        kemodel::FetchKeyBundleResponse,
+    >(
         Method::POST,
         "/key-exchange/keys/bundle/fetch",
         &token,
@@ -129,5 +134,8 @@ pub fn key_exchange_fetch_bundle(
             })
         })
         .collect();
-    to_stub("key_exchange_fetch_bundle", json!({ "bundles": bundles_json }))
+    to_stub(
+        "key_exchange_fetch_bundle",
+        json!({ "bundles": bundles_json }),
+    )
 }

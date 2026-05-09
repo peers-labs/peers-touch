@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use crate::application::applets as application_applets;
 use crate::application::session_resolver;
 use crate::contracts::{
@@ -8,6 +7,7 @@ use crate::domain::applets::AccessContext;
 use crate::error::AppResult;
 use crate::error::ErrorCode;
 use crate::state::AppState;
+use std::sync::Arc;
 use tauri::State;
 use tauri::Window;
 
@@ -17,7 +17,11 @@ fn applet_context(
 ) -> Result<AccessContext, AppResult<StubPayload>> {
     let token = session_resolver::token_for_window(state, window).unwrap_or_default();
     if token.trim().is_empty() {
-        return Err(AppResult::fail(ErrorCode::Unauthorized, "authentication required", None));
+        return Err(AppResult::fail(
+            ErrorCode::Unauthorized,
+            "authentication required",
+            None,
+        ));
     }
     let actor_id = session_resolver::actor_id_for_window(state, window);
     Ok(AccessContext { actor_id })

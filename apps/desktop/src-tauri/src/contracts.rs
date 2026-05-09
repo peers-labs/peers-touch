@@ -197,8 +197,8 @@ pub struct FriendChatListFriendRequestsInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatDeleteFriendInput {
-    pub peer_did: String,
+pub struct FriendChatBlockUserInput {
+    pub target_did: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

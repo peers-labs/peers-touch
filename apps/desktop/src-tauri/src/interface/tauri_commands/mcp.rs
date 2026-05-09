@@ -1,7 +1,5 @@
+use crate::contracts::{McpCreateInput, McpNameInput, McpToggleInput, McpUpdateInput, StubPayload};
 use crate::error::AppResult;
-use crate::contracts::{
-    McpCreateInput, McpNameInput, McpToggleInput, McpUpdateInput, StubPayload,
-};
 
 use crate::application::mcp as application_mcp;
 
