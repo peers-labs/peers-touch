@@ -67,7 +67,14 @@ function rememberBounded(set: Set<string>, key: string, maxSize: number): boolea
   return true;
 }
 
-async function refreshSocialProjection(label: string, includeNotifications = false): Promise<void> {
+/**
+ * Re-pull friend requests, sessions, groups, group unread counts, and
+ * conversation previews into the projection stores. Exported for the
+ * `socialRuntime` adapter's `reconcile` hook (see
+ * `apps/desktop/src/runtimes/socialRuntime.ts`); callers should never
+ * trigger a refresh from view-mount effects.
+ */
+export async function refreshSocialProjection(label: string, includeNotifications = false): Promise<void> {
   if (socialRefreshInFlight) return socialRefreshInFlight;
 
   socialRefreshInFlight = (async () => {

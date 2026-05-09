@@ -30,6 +30,8 @@ Do **not** use this file as the place to redefine Desktop architecture, module b
 
 - [Desktop Base](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/desktop/base.md)
 - [Desktop README](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/desktop/README.md)
+- [Desktop Runtime Projections — Page / Runtime / Boot kernel contracts (single source of truth)](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/desktop/runtime-projections.md)
+- [Desktop Global Context Kernel](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/desktop/global-context-kernel.md)
 
 ### Specification Sources
 
@@ -38,9 +40,7 @@ Do **not** use this file as the place to redefine Desktop architecture, module b
 
 ### Topic Sources
 
-- [Global Context Kernel](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/desktop/global-context-kernel.md)
 - [Provider Model Target Architecture](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/desktop/provider-model-target-architecture.md)
-- [Desktop Runtime Projections](file:///Users/bytedance/Documents/Projects/peers-touch/peers-chat-high-chat/docs/client/desktop/runtime-projections.md)
 
 ---
 
@@ -53,6 +53,7 @@ Do **not** use this file as the place to redefine Desktop architecture, module b
 - Rust commands return `AppResult<T>`; do not panic for normal error paths.
 - Logging must go through project loggers; do not use `console.*`, `println!`, or `eprintln!`.
 - Runtime-backed UI state must be maintained by the owning runtime/store through event consumption plus periodic reconciliation. Do not solve stale chat/contact/notification state only with component mount or tab-click refreshes; read `docs/client/desktop/runtime-projections.md` first.
+- New Desktop pages must be implemented as `PageDescriptor` (`apps/desktop/src/pages/<Name>.descriptor.tsx`) with explicit `preload` / `keepAlive` / `runtimes`, and registered in `pages/registry.ts`. Pages MUST be pure renderers — no mount-time data fetches; data ownership belongs to a `RuntimeDescriptor` in `apps/desktop/src/runtimes/`. One-shot section data uses `kernel/usePrefetch`. See `docs/client/desktop/runtime-projections.md §6` (Kernel Contracts) for the full Page / Runtime / Boot contract.
 
 ---
 
