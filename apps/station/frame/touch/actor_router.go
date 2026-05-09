@@ -47,6 +47,15 @@ const (
 	// Returns: displayName, avatarUrl, coverUrl (non-sensitive public info)
 	RouterURLActorBasicInfo RouterPath = "/actors/:id/basic-info"
 
+	// RouterURLActorPublicProfileByID Authenticated lookup of an actor's public
+	// profile by numeric actor ID. The desktop client uses this to render rich
+	// peer profile cards (chat detail panel, contacts detail panel) where only
+	// the peer's DID/actor-id is known. The endpoint returns the same
+	// `ActorProfile` projection as `/actor/profile`, but for the requested
+	// peer; only public fields are exposed. Auth is required to keep peer
+	// directory access bound to a logged-in actor.
+	RouterURLActorPublicProfileByID RouterPath = "/actors/:id/profile"
+
 	// RouterURLOAuthLogin OAuth login: external gateway callback for OAuth-based login/registration
 	RouterURLOAuthLogin RouterPath = "/oauth-bridge"
 )

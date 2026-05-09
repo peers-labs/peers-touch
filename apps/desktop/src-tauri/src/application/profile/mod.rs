@@ -36,6 +36,34 @@ pub fn profile_get(token: &str) -> AppResult<StubPayload> {
     }
 }
 
+/// Fetch a peer actor's public profile by numeric actor id (a.k.a. DID in the
+/// chat layer). Mirrors `profile_get` but targets `/actor/actors/:id/profile`.
+/// Token is required because the Station endpoint is JWT-protected to keep
+/// peer-directory access bound to a logged-in actor.
+pub fn peer_profile_get(token: &str, peer_did: &str) -> AppResult<StubPayload> {
+    let trimmed = peer_did.trim();
+    if trimmed.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "peer_profile_get: did is required",
+            None,
+        );
+    }
+    let path = format!("/actor/actors/{}/profile", trimmed);
+    match station_client::request_peers_proto_no_body::<ActorProfile>(
+        Method::GET,
+        &path,
+        token,
+        None,
+    ) {
+        Ok(p) => success_with_data("peer_profile_get", actor_profile_to_value(&p)),
+        Err(e) => {
+            tracing::warn!(error = %e, peer_did = %trimmed, "Failed to fetch peer profile");
+            map_station_error("peer_profile_get", "fetch peer profile", e)
+        }
+    }
+}
+
 pub fn profile_update(input: ProfileUpdateInput, token: &str) -> AppResult<StubPayload> {
     let body = profile_input_to_proto(&input);
     match station_client::request_peers_proto_no_payload(

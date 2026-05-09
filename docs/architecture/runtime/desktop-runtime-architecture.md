@@ -314,5 +314,18 @@ Tauri instance A                       Tauri instance B
 - Mobile 端运行架构。
 - Provider/Model 协议适配细节。
 - Station 内部 DDD 子服务拆分。
+- `desktop-web` 内部的页面/运行时/启动管线契约，详见 `client/desktop/runtime-projections.md`。
 
 这些内容应分别归属对应文档。
+
+## 11. 与 desktop-web 内部契约的关系
+
+本文定义的是**跨进程**运行单元边界（`station / desktop-rust / desktop-web / desktop-app`）。
+
+`desktop-web` 这一进程内部还有一层独立契约，规定：
+
+- 谁是某个业务投影（projection）的唯一 Owner（Runtime 契约）
+- 页面如何挂载与读数据（Page 契约）
+- 启动序列如何编排与可观测（Boot 契约）
+
+这部分单点真源在 `client/desktop/runtime-projections.md`，本文不重复定义；其它跨端 / 跨进程问题仍以本文为真源。

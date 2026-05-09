@@ -38,7 +38,9 @@ peers-touch/
 ├── packages/              # applet-sdk, applets, locales
 ├── tooling/
 │   ├── scripts/           # Build & dev scripts
-│   └── skills/            # Dev skills for AI agents (github-pr, github-commit, etc.)
+│   └── skills/            # Canonical agent skills (see §13). Single source of truth;
+│                          # IDE-private dirs (.cursor/, .trae/, ...) MUST NOT hold
+│                          # project skills — agents sync from here at startup.
 └── docs/
     ├── README.md          # Docs entry: how to find the right source documents
     ├── .agent/            # Agent entry docs: navigation, hard constraints, verification
@@ -86,6 +88,7 @@ Primary docs entry:
 2. **Run scripts first** — Prefer `tooling/scripts/` (`dev-desktop-app.sh`, `dev-desktop-web.sh`, `pt.sh`, etc.).
 3. **Architecture methodology** — For architecture landing / migration / domain decomposition, **MUST** use `architecture-execution-methodology` skill: `Domain Responsibility → Execution Closure → Dependency Order → Verifiable Delivery`.
 4. **Runtime projection first** — For Desktop bugs involving chat, contacts, notifications, badges, realtime, or store freshness, first identify the owning runtime and its projection contract. Do not patch stale state only with page/component refreshes; read `docs/client/desktop/runtime-projections.md`.
+5. **Page / Runtime / Boot contracts** — When adding or refactoring a Desktop page, projection owner, or startup step, conform to the Page / Runtime / Boot kernel contracts in `docs/client/desktop/runtime-projections.md §6`. Pages are pure renderers (no mount-time fetches); long-lived projections live in `RuntimeDescriptor`s; one-shot section data uses `kernel/usePrefetch`; startup is observable through `kernel/boot.ts` phases.
 
 ---
 
@@ -225,6 +228,64 @@ Error code ranges: `10000s` (business), `20000s` (protocol), `30000s` (content).
 | Station (Go) | [`docs/.agent/station.md`](docs/.agent/station.md) |
 | Desktop (TS + Rust) | [`docs/.agent/desktop.md`](docs/.agent/desktop.md) |
 | Mobile (Kotlin + Swift) | [`docs/.agent/mobile.md`](docs/.agent/mobile.md) |
+
+---
+
+## 13. Agent Skills
+
+### 13.1 Single Source
+
+The project owns its agent skills. **The only canonical location is**:
+
+```
+tooling/skills/<skill-name>/SKILL.md
+```
+
+Each skill directory contains:
+
+- `SKILL.md` — required, with frontmatter `name` + `description`, then the body.
+- Optional supporting files (templates, schemas, examples) co-located in the same directory.
+
+Current project skills:
+
+| Skill | Purpose |
+|-------|---------|
+| `dev-workflow` | Drive a complete development task from planning to PR |
+| `dev-runtime-handoff` | Choose & start the right dev runtime (make targets) for acceptance testing |
+| `architecture-execution-methodology` | Decompose architectural designs into actionable execution plans, domain ownership, and verification systems (referenced from §4.3) |
+| `desktop-runtime-projections` | Enforce Page / Runtime / Boot kernel contracts under `apps/desktop/src/{kernel,runtimes,services,store,pages,components}` |
+| `github-commit` | Conventional commit message generation with AI traceability |
+| `github-pr` | PR creation with templates, labels, and issue linking |
+| `github-release` | Semantic versioning, changelog generation, GitHub Release creation |
+| `github-review` | Structured PR code review and comment submission |
+
+### 13.2 IDE Sync (Read by Agents on Startup)
+
+IDE-specific skill/rule directories (`.cursor/rules/`, `.cursor/skills/`, `.trae/skills/`, `.windsurf/`, `.zed/`, `.vscode/skills/`, etc.) are **agent-private feature surfaces**, not project storage.
+
+Agent responsibilities at startup:
+
+1. **Discover**: read every `tooling/skills/*/SKILL.md` in the repo.
+2. **Sync**: project the discovered skills into the agent's own feature directory (e.g. Cursor places them under `.cursor/skills/` or its in-memory registry; other IDEs do the equivalent).
+3. **Resolve conflicts**: if a same-named skill already exists in the IDE-private directory, the project copy in `tooling/skills/` wins.
+4. **Never write back**: do not edit, generate, or persist project skills inside the IDE-private directory.
+
+This keeps `tooling/skills/` as the single git-tracked truth and prevents skill drift across IDE instances or contributors.
+
+### 13.3 Hard Constraints
+
+- **DO NOT** create new agent skills, rules, or behavioral guides directly inside `.cursor/rules/`, `.cursor/skills/`, `.trae/`, `.windsurf/`, `.zed/`, `.vscode/`, or any other IDE/agent-private folder.
+- **DO** create them under `tooling/skills/<skill-name>/SKILL.md`, register them in §13.1 above, and let the IDE agent sync them at startup.
+- **DO NOT** silently mirror project skills into IDE-private folders for "convenience". If the IDE needs a copy, that is the agent's runtime responsibility, not the repo's source-tree responsibility.
+- Skill content is part of the architectural contract — same governance as `docs/`. Updates follow the same review process.
+
+### 13.4 Adding a New Skill
+
+1. Create `tooling/skills/<skill-name>/SKILL.md` with `name` + `description` frontmatter.
+2. If the skill has supporting templates / schemas / examples, co-locate them in the same directory.
+3. Add the skill to the table in §13.1.
+4. If the skill enforces rules tied to a specific source-of-truth doc (e.g. `desktop-runtime-projections` ↔ `docs/client/desktop/runtime-projections.md`), reverse-link both ways.
+5. Do **not** also add the same content under `.cursor/rules/` etc. — the agent will sync it on startup per §13.2.
 
 ---
 

@@ -10,6 +10,7 @@ import App from './App';
 import SharePage from './pages/SharePage';
 import './modules';
 import './index.css';
+import { markPhaseEnd, markPhaseStart } from './kernel/boot';
 
 // ── Browser Dev Gateway ──
 // When running outside Tauri WebView (e.g. Chrome), patch
@@ -76,6 +77,8 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 }
 
 async function bootstrap() {
+  markPhaseStart('shell');
+
   window.__PT_BOOT_STATUS__?.('Loading language packs…');
   const i18n = await initI18n();
 
@@ -86,6 +89,8 @@ async function bootstrap() {
   window.addEventListener('contextmenu', (event) => {
     event.preventDefault();
   });
+
+  markPhaseEnd('shell');
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
