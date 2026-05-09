@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Avatar, Button, Input, Space, Spin, Typography, message, theme } from 'antd';
+import { Button, Input, Space, Spin, Typography, message, theme } from 'antd';
 import { Trash2 } from 'lucide-react';
 import type { Comment } from '../../gen/proto/domain/social/comment_pb';
+import { UserSquareAvatar } from '../common/UserSquareAvatar';
 
 const { Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -81,15 +82,18 @@ export function CommentList({
 
       {comments.map((c) => {
         const isMine = !!viewerActorId && c.authorId === viewerActorId;
+        const authorName = c.author?.displayName || c.author?.username || t('moments.author.unknown');
         return (
           <div key={c.id} style={{ display: 'flex', gap: 10 }}>
-            <Avatar size={28} src={c.author?.avatarUrl || undefined}>
-              {(c.author?.displayName || c.author?.username || '?').slice(0, 1)}
-            </Avatar>
+            <UserSquareAvatar
+              remoteUrl={c.author?.avatarUrl || undefined}
+              name={authorName}
+              size={28}
+            />
             <div style={{ flex: 1, minWidth: 0 }}>
               <Space size={6} align="baseline">
                 <Text strong style={{ fontSize: 13 }}>
-                  {c.author?.displayName || c.author?.username || t('moments.author.unknown')}
+                  {authorName}
                 </Text>
                 {c.replyToCommentId && (
                   <Text type="secondary" style={{ fontSize: 12 }}>

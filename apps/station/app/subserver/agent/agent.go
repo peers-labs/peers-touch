@@ -97,7 +97,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	growthMetricsSvc.SetDiagnosticService(diagnosticSvc)
 
 	// Phase 2 services.
-	memorySvc := service.NewMemoryService(growthMetricsSvc)
+	memorySvc := service.NewMemoryService(growthMetricsSvc, memoryServiceOptionsFromConfig()...)
 	skillsGuardSvc := service.NewSkillsGuardService()
 	skillSvc := service.NewSkillService(skillsGuardSvc, growthMetricsSvc)
 	errorClassifierSvc := service.NewErrorClassifierService()
@@ -163,6 +163,17 @@ func (s *agentSubServer) Handlers() []server.Handler {
 
 		// POST: protobuf body carries ListMemoriesRequest (GET + empty body leaves agent_id unset).
 		server.NewTypedHandler("agent-memory-list", "/agent/memory/list", server.POST, memoryHandlers.HandleListMemories, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-memory-get", "/agent/memory/get", server.POST, memoryHandlers.HandleGetMemory, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-memory-delete", "/agent/memory/delete", server.POST, memoryHandlers.HandleDeleteMemory, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-memory-search", "/agent/memory/search", server.POST, memoryHandlers.HandleSearchMemories, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-memory-persona", "/agent/memory/persona", server.POST, memoryHandlers.HandleGetPersona, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-memory-stats", "/agent/memory/stats", server.POST, memoryHandlers.HandleGetStats, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-memory-events", "/agent/memory/events", server.POST, memoryHandlers.HandleListEvents, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-memory-export", "/agent/memory/export", server.POST, memoryHandlers.HandleExport, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-memory-import", "/agent/memory/import", server.POST, memoryHandlers.HandleImport, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-memory-embedding-status", "/agent/memory/embedding-status", server.POST, memoryHandlers.HandleEmbeddingStatus, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-memory-reembed", "/agent/memory/reembed", server.POST, memoryHandlers.HandleReEmbed, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-memory-feedback", "/agent/memory/feedback", server.POST, memoryHandlers.HandleFeedback, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-memory-snapshot", "/agent/memory/snapshot", server.GET, memoryHandlers.HandleGetSnapshot, logIDWrapper, jwtWrapper),
 
 		server.NewTypedHandler("agent-skill-list", "/agent/skill/list", server.POST, skillHandlers.HandleListSkills, logIDWrapper, jwtWrapper),
@@ -192,6 +203,22 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-scheduler-stop", "/agent/scheduler/stop", server.POST, schedulerHandlers.HandleStop, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-scheduler-status", "/agent/scheduler/status", server.GET, schedulerHandlers.HandleStatus, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-scheduler-add-job", "/agent/scheduler/add-job", server.POST, schedulerHandlers.HandleAddJob, logIDWrapper, jwtWrapper),
+	}
+}
+
+func memoryServiceOptionsFromConfig() []service.MemoryServiceOption {
+	embedding := agentOptions.Peers.Node.Server.Subserver.Agent.Memory.Embedding
+	if embedding.ProviderID == "" {
+		return nil
+	}
+	return []service.MemoryServiceOption{
+		service.WithMemoryEmbeddingProvider(
+			service.NewProviderMemoryEmbeddingProvider(
+				embedding.ProviderID,
+				embedding.Model,
+				embedding.Dimensions,
+			),
+		),
 	}
 }
 

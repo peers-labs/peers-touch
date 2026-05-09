@@ -845,8 +845,8 @@ func (b *fakePresignBackend) Open(context.Context, string, *storage.Range) (io.R
 func (b *fakePresignBackend) Stat(context.Context, string) (*storage.StatInfo, error) {
 	return nil, errors.New("not implemented")
 }
-func (b *fakePresignBackend) Healthz(context.Context) error             { return nil }
-func (b *fakePresignBackend) Delete(context.Context, string) error      { return nil }
+func (b *fakePresignBackend) Healthz(context.Context) error        { return nil }
+func (b *fakePresignBackend) Delete(context.Context, string) error { return nil }
 
 func (b *fakePresignBackend) PresignPut(_ context.Context, key, contentType string, contentLength int64, sha256Hex string, ttl time.Duration) (storage.PresignedRequest, error) {
 	b.mu.Lock()
@@ -1103,6 +1103,35 @@ func TestSaveRandom_DatedKeys(t *testing.T) {
 	}
 	if m.Sha256 != "" {
 		t.Fatalf("random strategy must leave Sha256 empty, got %q", m.Sha256)
+	}
+}
+
+func TestSaveFile_EnsuresMomentsSystemBucket(t *testing.T) {
+	_, buckets, _, svc := newSvc(t, KeyStrategyRandom, "local")
+
+	body := []byte("moment image bytes")
+	f, h := makePart(t, "moment.png", body)
+	m, err := svc.SaveFile(context.Background(), UploadAttribution{
+		ActorID:    testActorA,
+		BucketName: ossmodel.SystemBucketMoments,
+		Visibility: ossmodel.VisibilityPublic,
+	}, f, h)
+	if err != nil {
+		t.Fatalf("SaveFile: %v", err)
+	}
+
+	b, err := buckets.FindByOwnerName(context.Background(), testActorA, ossmodel.SystemBucketMoments)
+	if err != nil {
+		t.Fatalf("moments bucket: %v", err)
+	}
+	if m.BucketID != b.ID {
+		t.Fatalf("file bucket mismatch: meta=%q bucket=%q", m.BucketID, b.ID)
+	}
+	if b.DefaultVisibility != ossmodel.VisibilityPublic {
+		t.Fatalf("moments bucket default visibility = %q", b.DefaultVisibility)
+	}
+	if b.ObjectCount != 1 || b.UsedBytes != int64(len(body)) {
+		t.Fatalf("moments usage: count=%d used=%d", b.ObjectCount, b.UsedBytes)
 	}
 }
 

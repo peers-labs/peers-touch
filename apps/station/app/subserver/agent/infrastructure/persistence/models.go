@@ -9,6 +9,7 @@ func AllModels() []interface{} {
 		&Conversation{},
 		&AgentMessage{},
 		&Memory{},
+		&MemoryEvent{},
 		&MemorySnapshot{},
 		&Skill{},
 		&SkillVersion{},

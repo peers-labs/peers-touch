@@ -18,7 +18,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// from that string breaks when the passphrase contains NULs, unescaped tokens, or bytes that
 /// confuse the SQL tokenizer—so we call `sqlite3_key_v2` directly with an explicit length.
 fn sqlcipher_passphrase_bytes(key: &KeyMaterial) -> Vec<u8> {
-    String::from_utf8_lossy(&key.key_bytes).into_owned().into_bytes()
+    String::from_utf8_lossy(&key.key_bytes)
+        .into_owned()
+        .into_bytes()
 }
 
 fn sqlcipher_errmsg(conn: &Connection) -> String {
@@ -195,7 +197,11 @@ pub fn resolve_database_path(
     actor_id: Option<&str>,
 ) -> Result<PathBuf, StorageError> {
     let user_scope = resolve_user_scope(actor_id);
-    let file_name = format!("{}.{}.db", sanitize_segment(domain), sanitize_segment(profile));
+    let file_name = format!(
+        "{}.{}.db",
+        sanitize_segment(domain),
+        sanitize_segment(profile)
+    );
     app_file_path(
         app_name,
         StorageKind::Data,
@@ -216,14 +222,17 @@ pub fn open_database(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| StorageError::WriteFailed(error.to_string()))?;
     }
-    let conn = Connection::open(path).map_err(|error| StorageError::WriteFailed(error.to_string()))?;
+    let conn =
+        Connection::open(path).map_err(|error| StorageError::WriteFailed(error.to_string()))?;
     if spec.encryption_level != EncryptionLevel::L0 {
         let key = key_provider.get_or_create_key(&spec.key_ref)?;
         apply_sqlcipher_key(&conn, &key)?;
         conn.execute_batch("SELECT count(*) FROM sqlite_master;")
-            .map_err(|_| StorageError::WriteFailed(
-                "database key verification failed: wrong key or corrupted database".to_string(),
-            ))?;
+            .map_err(|_| {
+                StorageError::WriteFailed(
+                    "database key verification failed: wrong key or corrupted database".to_string(),
+                )
+            })?;
         conn.execute(
             "CREATE TABLE IF NOT EXISTS _db_key_meta (
                 key_ref TEXT PRIMARY KEY,
@@ -275,7 +284,9 @@ pub fn rotate_database_key(
     next_version: i32,
 ) -> Result<i32, StorageError> {
     if next_version <= 0 {
-        return Err(StorageError::WriteFailed("next key version must be positive".to_string()));
+        return Err(StorageError::WriteFailed(
+            "next key version must be positive".to_string(),
+        ));
     }
     let prev_key = key_provider.get_or_create_key(&spec.key_ref)?;
     let conn = open_database(spec, key_provider)?;
@@ -422,7 +433,10 @@ fn default_platform_root() -> Result<PathBuf, StorageError> {
         if let Ok(user_profile) = std::env::var("USERPROFILE") {
             let trimmed = user_profile.trim();
             if !trimmed.is_empty() {
-                return Ok(PathBuf::from(trimmed).join("AppData").join("Local").join("peers-touch"));
+                return Ok(PathBuf::from(trimmed)
+                    .join("AppData")
+                    .join("Local")
+                    .join("peers-touch"));
             }
         }
         return Err(StorageError::ResolveFailed(

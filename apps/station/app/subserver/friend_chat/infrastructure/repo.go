@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/domain"
 	"gorm.io/gorm"
 )
@@ -33,10 +32,6 @@ var ErrMutationWindowClosed = errors.New("mutation window closed")
 // ErrAlreadyRecalled is returned by edit when the target row has
 // already been recalled (an edit on a tombstone makes no sense).
 var ErrAlreadyRecalled = errors.New("message already recalled")
-
-// ErrFriendRelationNotFound is returned when a relationship-level delete
-// targets a pair that is not currently accepted friends.
-var ErrFriendRelationNotFound = errors.New("friend relationship not found")
 
 type SessionModel struct {
 	ID              uint      `gorm:"column:id;primaryKey"`
@@ -133,6 +128,17 @@ type FriendRequestModel struct {
 
 func (*FriendRequestModel) TableName() string { return "friend_chat_friend_requests" }
 
+type FriendshipModel struct {
+	ID        uint      `gorm:"column:id;primaryKey"`
+	ActorDID  string    `gorm:"column:actor_did;size:255;uniqueIndex:idx_friendship_actor_peer;index"`
+	PeerDID   string    `gorm:"column:peer_did;size:255;uniqueIndex:idx_friendship_actor_peer;index"`
+	Status    int32     `gorm:"column:status;index"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at"`
+}
+
+func (*FriendshipModel) TableName() string { return "friend_chat_friendships" }
+
 type OutboxModel struct {
 	ID        uint      `gorm:"column:id;primaryKey"`
 	EventID   string    `gorm:"column:event_id;size:64;uniqueIndex"`
@@ -155,7 +161,7 @@ func NewGormRepo(db *gorm.DB) *GormRepo {
 }
 
 func (r *GormRepo) AutoMigrate() error {
-	if err := r.db.AutoMigrate(&SessionModel{}, &MessageModel{}, &MessageAttachmentModel{}, &ThreadReadModel{}, &OutboxModel{}, &FriendRequestModel{}); err != nil {
+	if err := r.db.AutoMigrate(&SessionModel{}, &MessageModel{}, &MessageAttachmentModel{}, &ThreadReadModel{}, &OutboxModel{}, &FriendRequestModel{}, &FriendshipModel{}); err != nil {
 		return err
 	}
 	return r.backfillThreadRootULIDs()
@@ -178,6 +184,16 @@ func toDomainSession(item SessionModel) domain.Session {
 		UnreadCountB:    item.UnreadCountB,
 		CreatedAt:       item.CreatedAt,
 		UpdatedAt:       item.UpdatedAt,
+	}
+}
+
+func toDomainFriendship(item FriendshipModel) domain.Friendship {
+	return domain.Friendship{
+		ActorDID:  item.ActorDID,
+		PeerDID:   item.PeerDID,
+		Status:    item.Status,
+		CreatedAt: item.CreatedAt,
+		UpdatedAt: item.UpdatedAt,
 	}
 }
 
@@ -349,9 +365,16 @@ func (r *GormRepo) mergeAttachmentsIntoMessages(messages []domain.Message) error
 }
 
 func (r *GormRepo) GetOrCreateSession(actorDID, participantDID string) (*domain.Session, bool, error) {
+	blocked, err := r.IsBlockedBetween(actorDID, participantDID)
+	if err != nil {
+		return nil, false, err
+	}
+	if blocked {
+		return nil, false, errors.New("friendship blocked")
+	}
 	key := pairKey(actorDID, participantDID)
 	var session SessionModel
-	err := r.db.Where("pair_key = ?", key).First(&session).Error
+	err = r.db.Where("pair_key = ?", key).First(&session).Error
 	if err == nil {
 		out := toDomainSession(session)
 		return &out, false, nil
@@ -389,8 +412,15 @@ func (r *GormRepo) GetSession(sessionID string) (*domain.Session, error) {
 }
 
 func (r *GormRepo) ListSessions(actorDID string, limit, offset int) ([]domain.Session, int, error) {
+	blockedPeers, err := r.blockedPeersFor(actorDID)
+	if err != nil {
+		return nil, 0, err
+	}
 	var total int64
 	base := r.db.Model(&SessionModel{}).Where("participant_a_did = ? OR participant_b_did = ?", actorDID, actorDID)
+	if len(blockedPeers) > 0 {
+		base = base.Where("NOT (participant_a_did IN ? OR participant_b_did IN ?)", blockedPeers, blockedPeers)
+	}
 	if err := base.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
@@ -403,6 +433,60 @@ func (r *GormRepo) ListSessions(actorDID string, limit, offset int) ([]domain.Se
 		out = append(out, toDomainSession(item))
 	}
 	return out, int(total), nil
+}
+
+func (r *GormRepo) BlockUser(actorDID, targetDID string) (domain.Friendship, error) {
+	now := time.Now()
+	var row FriendshipModel
+	err := r.db.Where("actor_did = ? AND peer_did = ?", actorDID, targetDID).First(&row).Error
+	if err == nil {
+		row.Status = domain.FriendshipStatusBlocked
+		row.UpdatedAt = now
+		if err := r.db.Save(&row).Error; err != nil {
+			return domain.Friendship{}, err
+		}
+		return toDomainFriendship(row), nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return domain.Friendship{}, err
+	}
+	row = FriendshipModel{
+		ActorDID:  actorDID,
+		PeerDID:   targetDID,
+		Status:    domain.FriendshipStatusBlocked,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := r.db.Create(&row).Error; err != nil {
+		return domain.Friendship{}, err
+	}
+	return toDomainFriendship(row), nil
+}
+
+func (r *GormRepo) IsBlockedBetween(actorDID, peerDID string) (bool, error) {
+	var count int64
+	err := r.db.Model(&FriendshipModel{}).
+		Where("status = ? AND ((actor_did = ? AND peer_did = ?) OR (actor_did = ? AND peer_did = ?))",
+			domain.FriendshipStatusBlocked,
+			actorDID,
+			peerDID,
+			peerDID,
+			actorDID,
+		).
+		Count(&count).Error
+	return count > 0, err
+}
+
+func (r *GormRepo) blockedPeersFor(actorDID string) ([]string, error) {
+	var rows []FriendshipModel
+	if err := r.db.Where("actor_did = ? AND status = ?", actorDID, domain.FriendshipStatusBlocked).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.PeerDID)
+	}
+	return out, nil
 }
 
 func (r *GormRepo) AppendMessage(message domain.Message) (domain.Message, error) {
@@ -1197,65 +1281,17 @@ func (r *GormRepo) ListFriendRequests(actorDID string, status int32, limit, offs
 	return out, int(total), nil
 }
 
-func (r *GormRepo) DeleteFriend(actorDID, peerDID string) error {
-	key := pairKey(actorDID, peerDID)
-
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		var relationCount int64
-		if err := tx.Model(&FriendRequestModel{}).
-			Where("pair_key = ? AND status = ?", key, domain.FriendRequestStatusAccepted).
-			Count(&relationCount).Error; err != nil {
-			return err
-		}
-		if relationCount == 0 {
-			return ErrFriendRelationNotFound
-		}
-
-		if err := tx.
-			Where("pair_key = ? AND status IN ?", key, []int32{
-				domain.FriendRequestStatusPending,
-				domain.FriendRequestStatusAccepted,
-				domain.FriendRequestStatusRejected,
-				domain.FriendRequestStatusRemoved,
-			}).
-			Delete(&FriendRequestModel{}).Error; err != nil {
-			return err
-		}
-
-		var session SessionModel
-		err := tx.Where("pair_key = ?", key).First(&session).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-
-		var messageULIDs []string
-		if err := tx.Model(&MessageModel{}).
-			Where("session_ulid = ?", session.ULID).
-			Pluck("ulid", &messageULIDs).Error; err != nil {
-			return err
-		}
-		if len(messageULIDs) > 0 {
-			if err := tx.Where("message_ulid IN ?", messageULIDs).Delete(&MessageAttachmentModel{}).Error; err != nil {
-				return err
-			}
-		}
-		if err := tx.Where("session_ulid = ?", session.ULID).Delete(&ThreadReadModel{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("session_ulid = ?", session.ULID).Delete(&MessageModel{}).Error; err != nil {
-			return err
-		}
-		return tx.Delete(&session).Error
-	})
+// ActorSummary holds the minimal profile fields needed for enrichment.
+type ActorSummary struct {
+	ID          uint64
+	DisplayName string
+	Avatar      string
 }
 
 // BatchLoadActorSummaries looks up display name + avatar for a set of actor IDs.
 // IDs are numeric strings (strconv'd actor primary keys).
-func (r *GormRepo) BatchLoadActorSummaries(ids []string) map[string]application.ActorSummary {
-	result := make(map[string]application.ActorSummary, len(ids))
+func (r *GormRepo) BatchLoadActorSummaries(ids []string) map[string]ActorSummary {
+	result := make(map[string]ActorSummary, len(ids))
 	if len(ids) == 0 {
 		return result
 	}
@@ -1267,12 +1303,21 @@ func (r *GormRepo) BatchLoadActorSummaries(ids []string) map[string]application.
 	var rows []row
 	r.db.Table("touch_actor").Select("id, name, icon").Where("id IN ?", ids).Find(&rows)
 	for _, r := range rows {
-		result[fmt.Sprintf("%d", r.ID)] = application.ActorSummary{
+		result[fmt.Sprintf("%d", r.ID)] = ActorSummary{
+			ID:          r.ID,
 			DisplayName: r.Name,
 			Avatar:      r.Icon,
 		}
 	}
 	return result
+}
+
+func (r *GormRepo) ActorDisplayName(actorDID string) string {
+	summaries := r.BatchLoadActorSummaries([]string{actorDID})
+	if summary, ok := summaries[actorDID]; ok {
+		return summary.DisplayName
+	}
+	return ""
 }
 
 func (r *GormRepo) DispatchOutbox(limit int) (int64, error) {

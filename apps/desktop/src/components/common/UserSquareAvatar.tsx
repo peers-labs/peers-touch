@@ -2,11 +2,8 @@
 //
 // Project rule (do NOT weaken this contract):
 //   1. Always render the locally cached image when available.
-//   2. On cache miss, ask the Rust backend to download from Station.
-//   3. While that resolve is in flight, use the remote image URL as a
-//      visual bridge so contacts do not flash to the fallback avatar.
-//   4. If local and remote image loading both fail, render the unified
-//      fallback (initial / Bot icon).
+//   2. On cache miss, ask the Rust backend to download from Station, then render.
+//   3. If steps 1 and 2 both fail, render the unified fallback (initial / Bot icon).
 //
 // Two render paths exist depending on host:
 //   * Native Tauri webview → `convertFileSrc(localPath)` produces an
@@ -28,21 +25,15 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 
-declare global {
-  interface Window {
-    __PT_GATEWAY_BASE__?: string;
-  }
-}
-
 // True when the app runs outside the Tauri webview (the dev gateway shim
 // in `main.tsx` set this flag on `window`). We resolve it once at module
 // load — the host does not change at runtime.
 const IS_BROWSER_GATEWAY = typeof window !== 'undefined'
-  && typeof window.__PT_GATEWAY_BASE__ === 'string'
-  && window.__PT_GATEWAY_BASE__.length > 0;
+  && typeof (window as any).__PT_GATEWAY_BASE__ === 'string'
+  && (window as any).__PT_GATEWAY_BASE__.length > 0;
 
 function gatewayAvatarUrl(remoteUrl: string): string {
-  const base = window.__PT_GATEWAY_BASE__ as string;
+  const base = (window as any).__PT_GATEWAY_BASE__ as string;
   return `${base}/avatar?url=${encodeURIComponent(remoteUrl)}`;
 }
 
@@ -62,7 +53,6 @@ interface UserSquareAvatarProps {
 // Process-wide cache so the same URL is resolved exactly once across all
 // avatar instances (chat list, popovers, message bubbles, ...).
 type CacheEntry = string | null;
-type ResolvedAvatar = { remoteUrl: string; path: CacheEntry };
 const resolveCache = new Map<string, CacheEntry>();
 const inflight = new Map<string, Promise<CacheEntry>>();
 
@@ -109,62 +99,56 @@ export function UserSquareAvatar({
   style,
 }: UserSquareAvatarProps) {
   const rounded = radius ?? Math.max(8, Math.floor(size * 0.25));
-  const [resolvedAvatar, setResolvedAvatar] = useState<ResolvedAvatar | null>(() =>
-    remoteUrl && resolveCache.has(remoteUrl)
-      ? { remoteUrl, path: resolveCache.get(remoteUrl) ?? null }
-      : null,
+  const [localPath, setLocalPath] = useState<string | null>(() =>
+    remoteUrl ? resolveCache.get(remoteUrl) ?? null : null,
   );
-  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const [imgError, setImgError] = useState(false);
   const requestedFor = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    if (!remoteUrl) return;
+    setImgError(false);
+    if (!remoteUrl) {
+      setLocalPath(null);
+      return;
+    }
     // Browser path: skip the Rust resolve round-trip entirely. The gateway
     // route (`GET /avatar?url=…`) handles cache lookup + Station download
     // server-side; a single fetch beats the two-step "resolve, then load
     // file" pattern that the native path uses for historical reasons.
-    if (IS_BROWSER_GATEWAY) return;
-    let cancelled = false;
-    const applyResolvedPath = (path: CacheEntry) => {
-      if (cancelled || requestedFor.current !== remoteUrl) return;
-      setResolvedAvatar({ remoteUrl, path });
-    };
+    if (IS_BROWSER_GATEWAY) {
+      setLocalPath(remoteUrl);
+      return;
+    }
     const cached = resolveCache.get(remoteUrl);
     if (cached !== undefined) {
-      requestedFor.current = remoteUrl;
-      window.queueMicrotask(() => applyResolvedPath(cached));
-      return () => {
-        cancelled = true;
-      };
+      setLocalPath(cached);
+      return;
     }
+    let cancelled = false;
     requestedFor.current = remoteUrl;
     resolveLocalPath(remoteUrl).then((path) => {
-      applyResolvedPath(path);
+      if (cancelled || requestedFor.current !== remoteUrl) return;
+      setLocalPath(path);
     });
     return () => {
       cancelled = true;
     };
   }, [remoteUrl]);
 
-  const localPath = resolvedAvatar && resolvedAvatar.remoteUrl === remoteUrl ? resolvedAvatar.path : null;
-
-  const imageSrc = (() => {
-    if (!remoteUrl) return null;
-    if (IS_BROWSER_GATEWAY) return gatewayAvatarUrl(remoteUrl);
-    if (localPath) return convertFileSrc(localPath);
-    return remoteUrl;
-  })();
-  const showImage = !!imageSrc && failedSrc !== imageSrc;
+  const showImage = !!localPath && !imgError;
 
   if (showImage) {
+    const src = IS_BROWSER_GATEWAY
+      ? gatewayAvatarUrl(remoteUrl as string)
+      : convertFileSrc(localPath as string);
     return (
       <img
-        src={imageSrc as string}
+        src={src}
         alt={name}
         onError={() => {
           // Drop the cache entry so the next mount triggers a re-download.
-          if (remoteUrl && localPath && !IS_BROWSER_GATEWAY) resolveCache.delete(remoteUrl);
-          setFailedSrc(imageSrc);
+          if (remoteUrl && !IS_BROWSER_GATEWAY) resolveCache.delete(remoteUrl);
+          setImgError(true);
         }}
         style={{
           width: size,

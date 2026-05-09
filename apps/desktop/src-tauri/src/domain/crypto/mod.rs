@@ -7,9 +7,9 @@
 //! `docs/architecture/realtime/event-stream.md` §2.7.2 for the
 //! contract.
 
-pub mod signaling_envelope;
-pub mod sender_keys;
 pub mod double_ratchet;
+pub mod sender_keys;
+pub mod signaling_envelope;
 pub mod telemetry;
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
@@ -56,7 +56,9 @@ pub fn ed25519_to_x25519(signing_key: &SigningKey) -> X25519KeyPair {
 }
 
 /// Convert Ed25519 verifying key to X25519 Montgomery public (Edwards → Montgomery).
-pub fn ed25519_verifying_to_x25519_public(verifying_key: &VerifyingKey) -> Result<PublicKey, String> {
+pub fn ed25519_verifying_to_x25519_public(
+    verifying_key: &VerifyingKey,
+) -> Result<PublicKey, String> {
     let bytes = verifying_key.to_bytes();
     let comp = CompressedEdwardsY(bytes);
     let edwards = comp
@@ -75,7 +77,13 @@ pub fn aes_gcm_encrypt(
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| e.to_string())?;
     let n = Nonce::from_slice(nonce.as_slice());
     cipher
-        .encrypt(n, Payload { msg: plaintext, aad })
+        .encrypt(
+            n,
+            Payload {
+                msg: plaintext,
+                aad,
+            },
+        )
         .map_err(|e| e.to_string())
 }
 
@@ -88,7 +96,13 @@ pub fn aes_gcm_decrypt(
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| e.to_string())?;
     let n = Nonce::from_slice(nonce.as_slice());
     cipher
-        .decrypt(n, Payload { msg: ciphertext, aad })
+        .decrypt(
+            n,
+            Payload {
+                msg: ciphertext,
+                aad,
+            },
+        )
         .map_err(|e| e.to_string())
 }
 

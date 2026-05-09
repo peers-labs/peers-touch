@@ -59,6 +59,19 @@ export interface UnifiedConversation {
   group?: Group;
 }
 
+export interface CurrentUserProfile {
+  id: string;
+  username: string;
+  displayName: string;
+  avatar?: string;
+}
+
+export interface ActorAvatarProfile {
+  did: string;
+  name: string;
+  avatar: string;
+}
+
 export interface SearchResult {
   messageId: string;
   conversationId: string;
@@ -122,7 +135,7 @@ interface SocialChatState {
   groupMembers: Record<string, GroupMember[]>;
   loading: boolean;
   showDetail: boolean;
-  currentUserProfile: { id: string; username: string; displayName: string; avatar?: string } | null;
+  currentUserProfile: CurrentUserProfile | null;
   /** Own DID for message ownership; prefer profile.id, may align with participant DIDs in sessions */
   currentUserDid: string | null;
   friendRequests: FriendRequestData[];
@@ -437,6 +450,26 @@ export function peerOfSession(
         avatar: s.participantAAvatar || '',
       };
     }
+    return { did: '', name: '', avatar: '' };
+  }
+  return {
+    did: s.participantBDid || s.participantADid || '',
+    name: s.participantBDisplayName || s.participantBDid || s.participantADid || '',
+    avatar: s.participantBAvatar || s.participantAAvatar || '',
+  };
+}
+
+function participantProfileOfSession(
+  s: FriendChatSession,
+  actorDid: string,
+): ActorAvatarProfile | null {
+  if (!actorDid) return null;
+  if (s.participantADid === actorDid) {
+    return {
+      did: s.participantADid || '',
+      name: s.participantADisplayName || s.participantADid || '',
+      avatar: s.participantAAvatar || '',
+    };
   }
   return {
     did: s.participantBDid || s.participantADid || '',
@@ -448,6 +481,41 @@ export function peerOfSession(
 function peerDisplayName(s: FriendChatSession, viewerDid: string | null): string {
   return peerOfSession(s, viewerDid).name;
 }
+
+export function actorProfileFromSessions(
+  sessions: FriendChatSession[],
+  viewerDid: string | null,
+  actorDid: string,
+  currentUserProfile?: CurrentUserProfile | null,
+): ActorAvatarProfile {
+  const did = actorDid.trim();
+  const fromSession = sessions
+    .map((s) => participantProfileOfSession(s, did))
+    .find((p): p is ActorAvatarProfile => !!p);
+
+  if (viewerDid && did === viewerDid) {
+    return {
+      did,
+      name: currentUserProfile?.displayName
+        || currentUserProfile?.username
+        || fromSession?.name
+        || did,
+      avatar: currentUserProfile?.avatar || fromSession?.avatar || '',
+    };
+  }
+
+  return fromSession ?? { did, name: did, avatar: '' };
+}
+
+export function groupAvatarRemoteUrl(group?: Pick<Group, 'avatarCid'> | null): string {
+  const raw = group?.avatarCid?.trim() ?? '';
+  if (!raw) return '';
+  if (raw.startsWith('/') || raw.startsWith('http://') || raw.startsWith('https://')) {
+    return raw;
+  }
+  return '';
+}
+
 
 /** When profile has no id yet, infer own DID as the only participant common to all sessions (needs 2+ distinct peers). */
 function deriveCurrentUserDidFromSessions(sessions: FriendChatSession[]): string | null {
@@ -825,7 +893,9 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   reset: () => set({ ...initialSocialState }),
 
   hydrate: async (actorId: string) => {
-    if (!actorId) return;
+    const did = actorId.trim();
+    if (!did) return;
+    set({ currentUserDid: did });
     const { loadCurrentUserProfile, loadSessions, loadGroups } = get();
     await loadCurrentUserProfile();
     await Promise.all([loadSessions(), loadGroups()]);
@@ -1725,8 +1795,8 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   loadCurrentUserProfile: async () => {
     try {
       const profile = await api.actorGetMyProfile();
-      const did = profile?.id?.trim() || null;
-      set({
+      const profileDid = profile?.id?.trim() || null;
+      set((state) => ({
         currentUserProfile: profile,
         currentUserDid: did,
         conversationLocalState: loadConversationLocalState(did),
@@ -2193,8 +2263,8 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       out.push({
         type: 'friend',
         ulid: s.ulid,
-        name: peerDisplayName(s, did) || 'Friend',
-        avatar: peerAv || '',
+        name: peer.name || 'Friend',
+        avatar: peer.avatar || '',
         lastActivity: activityFromSession(s),
         unread: friendUnreadForViewer(s, did),
         preview: friendPreview,
@@ -2212,7 +2282,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         type: 'group',
         ulid: g.ulid,
         name: g.name || 'Group',
-        avatar: '',
+        avatar: groupAvatarRemoteUrl(g),
         lastActivity: activityFromGroup(g),
         unread: state.groupUnreadCounts[g.ulid] ?? 0,
         preview: groupPreview,

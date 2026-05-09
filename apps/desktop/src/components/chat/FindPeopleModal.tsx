@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Input, toast } from '@lobehub/ui';
@@ -10,6 +10,14 @@ import { UserSquareAvatar } from '../common/UserSquareAvatar';
 
 const { Text } = Typography;
 
+interface ActorSearchResult {
+  id: string;
+  actorId: string;
+  username: string;
+  displayName: string;
+  avatar: string;
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -18,25 +26,14 @@ interface Props {
 export function FindPeopleModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const sendFriendRequest = useSocialChatStore((s) => s.sendFriendRequest);
-  const friendRequests = useSocialChatStore((s) => s.friendRequests);
+  const { sendFriendRequest } = useSocialChatStore();
   const currentUserDid = useSocialChatStore((s) => s.currentUserDid);
 
   const [searchText, setSearchText] = useState('');
-  const [results, setResults] = useState<{ id: string; username: string; displayName: string; avatar: string }[]>([]);
+  const [results, setResults] = useState<ActorSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [addingId, setAddingId] = useState<string | null>(null);
   const [sentIds, setSentIds] = useState<Set<string>>(() => new Set());
-
-  const pendingReceiverIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const request of friendRequests) {
-      if (request.status === 1 && request.senderId === currentUserDid && request.receiverId) {
-        ids.add(request.receiverId);
-      }
-    }
-    return ids;
-  }, [friendRequests, currentUserDid]);
 
   const handleSearch = async () => {
     if (!searchText.trim()) return;
@@ -44,10 +41,11 @@ export function FindPeopleModal({ open, onClose }: Props) {
     try {
       const resp = await api.actorSearchActors(searchText.trim());
       setResults(resp.items.map((a) => ({
-        id: a.id,
-        username: a.username,
-        displayName: a.displayName,
-        avatar: a.avatar || '',
+        id: String(a.id ?? ''),
+        actorId: String(a.actorId ?? a.actor_id ?? a.id ?? ''),
+        username: String(a.username ?? ''),
+        displayName: String(a.displayName ?? a.display_name ?? ''),
+        avatar: String(a.avatar ?? ''),
       })));
     } catch (e: any) {
       toast.error(e?.message || t('chat.social.findPeople.searchFailed'));
@@ -57,20 +55,14 @@ export function FindPeopleModal({ open, onClose }: Props) {
     }
   };
 
-  const handleSendRequest = async (did: string) => {
-    if (sentIds.has(did) || pendingReceiverIds.has(did)) {
-      toast.info(t('chat.social.findPeople.requestAlreadySent'));
-      return;
-    }
+  const handleSendRequest = async (target: ActorSearchResult) => {
     if (addingId) return;
-    setAddingId(did);
+    const receiverDid = target.actorId || target.id;
+    if (!receiverDid || receiverDid === currentUserDid) return;
+    setAddingId(receiverDid);
     try {
-      await sendFriendRequest(did, '');
-      setSentIds((prev) => {
-        const next = new Set(prev);
-        next.add(did);
-        return next;
-      });
+      await sendFriendRequest(receiverDid, '');
+      setSentIds((prev) => new Set(prev).add(receiverDid));
       toast.success(t('chat.social.findPeople.requestSent'));
     } catch (e: any) {
       toast.error(e?.message || t('chat.social.findPeople.addFailed'));
@@ -82,6 +74,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
   const handleClose = () => {
     setSearchText('');
     setResults([]);
+    setSentIds(new Set());
     onClose();
   };
 
@@ -136,40 +129,47 @@ export function FindPeopleModal({ open, onClose }: Props) {
             </Text>
           ) : (
             results.map((r) => {
-              const requestSent = sentIds.has(r.id) || pendingReceiverIds.has(r.id);
-
+              const receiverDid = r.actorId || r.id;
+              const alreadySent = sentIds.has(receiverDid);
+              const isSelf = !!currentUserDid && receiverDid === currentUserDid;
               return (
                 <Flexbox
-                  key={r.id}
-                  horizontal
-                  align="center"
-                  gap={10}
-                  style={{
-                    padding: '10px',
-                    borderRadius: 8,
+                key={receiverDid || r.id}
+                horizontal
+                align="center"
+                gap={10}
+                style={{
+                  padding: '10px',
+                  borderRadius: 8,
+                }}
+              >
+                {/* Unified rounded-square avatar for consistent visual style */}
+                <UserSquareAvatar
+                  remoteUrl={r.avatar}
+                  name={r.displayName || r.username}
+                  size={36}
+                />
+                <Flexbox flex={1} style={{ minWidth: 0 }}>
+                  <Text ellipsis style={{ fontSize: 13 }}>{r.displayName || r.username}</Text>
+                  <Text type="secondary" style={{ fontSize: 11 }}>@{r.username}</Text>
+                </Flexbox>
+                <Button
+                  type="primary"
+                  size="small"
+                  loading={addingId === receiverDid}
+                  disabled={alreadySent || isSelf}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void handleSendRequest(r);
                   }}
                 >
-                  {/* Unified rounded-square avatar for consistent visual style */}
-                  <UserSquareAvatar
-                    remoteUrl={r.avatar}
-                    name={r.displayName || r.username}
-                    size={36}
-                  />
-                  <Flexbox flex={1} style={{ minWidth: 0 }}>
-                    <Text ellipsis style={{ fontSize: 13 }}>{r.displayName || r.username}</Text>
-                    <Text type="secondary" style={{ fontSize: 11 }}>@{r.username}</Text>
-                  </Flexbox>
-                  <Button
-                    type={requestSent ? 'default' : 'primary'}
-                    size="small"
-                    loading={addingId === r.id}
-                    onClick={() => handleSendRequest(r.id)}
-                  >
-                    {requestSent
-                      ? t('chat.social.findPeople.requestSentShort')
+                  {isSelf
+                    ? t('chat.social.findPeople.self')
+                    : alreadySent
+                      ? t('chat.social.findPeople.sent')
                       : t('chat.social.findPeople.sendRequest')}
-                  </Button>
-                </Flexbox>
+                </Button>
+              </Flexbox>
               );
             })
           )}

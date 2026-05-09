@@ -1,7 +1,7 @@
-use crate::error::{AppResult, ErrorCode};
 use crate::contracts::{
     ProviderCheckInput, ProviderCreateInput, ProviderIdInput, ProviderUpdateInput, StubPayload,
 };
+use crate::error::{AppResult, ErrorCode};
 use serde_json::json;
 use state::{find_seeded_provider, persist_provider_store, with_provider_store, ProviderRecord};
 
@@ -104,7 +104,10 @@ pub fn provider_update(scope: Option<&str>, input: ProviderUpdateInput) -> AppRe
 pub fn provider_check(scope: Option<&str>, input: ProviderCheckInput) -> AppResult<StubPayload> {
     let id = input.id.trim();
     if id.is_empty() {
-        return success_payload("provider_check", json!({ "ok": false, "error": "id is required" }));
+        return success_payload(
+            "provider_check",
+            json!({ "ok": false, "error": "id is required" }),
+        );
     }
     let provider = match with_provider_store(scope, |store| {
         store
@@ -236,7 +239,10 @@ pub fn provider_delete(scope: Option<&str>, input: ProviderIdInput) -> AppResult
     success_payload("provider_delete", json!({ "success": deleted }))
 }
 
-pub fn provider_apply_preset(scope: Option<&str>, input: ProviderIdInput) -> AppResult<StubPayload> {
+pub fn provider_apply_preset(
+    scope: Option<&str>,
+    input: ProviderIdInput,
+) -> AppResult<StubPayload> {
     let id = input.id.trim();
     if id.is_empty() {
         return invalid_argument("id is required");
@@ -257,7 +263,10 @@ pub fn provider_apply_preset(scope: Option<&str>, input: ProviderIdInput) -> App
                 tracing::error!("Failed to persist provider store after apply preset");
                 return internal_error();
             }
-            success_payload("provider_apply_preset", json!({ "ok": true, "provider": provider }))
+            success_payload(
+                "provider_apply_preset",
+                json!({ "ok": true, "provider": provider }),
+            )
         }
         Err(_) => internal_error(),
     }
@@ -312,11 +321,14 @@ mod tests {
 
     #[test]
     fn provider_check_should_fail_for_empty_id() {
-        let result = provider_check(None, ProviderCheckInput {
-            id: "".to_string(),
-            key_vaults: None,
-            config_json: None,
-        });
+        let result = provider_check(
+            None,
+            ProviderCheckInput {
+                id: "".to_string(),
+                key_vaults: None,
+                config_json: None,
+            },
+        );
         assert!(result.ok);
         let payload = result.data.expect("payload should exist");
         let status = parse_status(&payload);
@@ -326,11 +338,17 @@ mod tests {
 
     #[test]
     fn provider_check_should_fail_when_api_key_missing() {
-        let result = provider_check(None, ProviderCheckInput {
-            id: "openai".to_string(),
-            key_vaults: None,
-            config_json: Some("{\"base_url\":\"https://api.openai.com/v1\",\"model\":\"gpt-4o-mini\"}".to_string()),
-        });
+        let result = provider_check(
+            None,
+            ProviderCheckInput {
+                id: "openai".to_string(),
+                key_vaults: None,
+                config_json: Some(
+                    "{\"base_url\":\"https://api.openai.com/v1\",\"model\":\"gpt-4o-mini\"}"
+                        .to_string(),
+                ),
+            },
+        );
         assert!(result.ok);
         let payload = result.data.expect("payload should exist");
         let status = parse_status(&payload);
@@ -346,10 +364,14 @@ mod tests {
                 provider.name = "Modified Name".to_string();
                 provider.enabled = false;
             }
-        }).unwrap();
-        let result = provider_apply_preset(scope, ProviderIdInput {
-            id: "openai".to_string(),
-        });
+        })
+        .unwrap();
+        let result = provider_apply_preset(
+            scope,
+            ProviderIdInput {
+                id: "openai".to_string(),
+            },
+        );
         assert!(result.ok);
         let payload = result.data.expect("payload should exist");
         let status = parse_status(&payload);
@@ -357,16 +379,24 @@ mod tests {
         assert_eq!(status["provider"]["name"], "OpenAI");
         assert_eq!(status["provider"]["enabled"], true);
         let stored = with_provider_store(scope, |store| {
-            store.providers.iter().find(|p| p.id == "openai").map(|p| p.name.clone())
-        }).unwrap();
+            store
+                .providers
+                .iter()
+                .find(|p| p.id == "openai")
+                .map(|p| p.name.clone())
+        })
+        .unwrap();
         assert_eq!(stored, Some("OpenAI".to_string()));
     }
 
     #[test]
     fn apply_preset_should_fail_for_non_seed_provider() {
-        let result = provider_apply_preset(None, ProviderIdInput {
-            id: "custom-provider-xyz".to_string(),
-        });
+        let result = provider_apply_preset(
+            None,
+            ProviderIdInput {
+                id: "custom-provider-xyz".to_string(),
+            },
+        );
         assert!(!result.ok);
     }
 }
