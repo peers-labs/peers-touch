@@ -4,6 +4,7 @@ import { timestampDate } from '@bufbuild/protobuf/wkt';
 import {
   api,
   pickLatestKeyExchangeBundle,
+  type AccountProfile,
   type ChatAttachmentInput,
   type ChatSearchLocalResultRow,
   type ChatThreadCount,
@@ -128,6 +129,24 @@ interface SocialChatState {
   groupUnreadCounts: Record<string, number>;
   lastPreviews: Record<string, MessagePreview>;
   conversationLocalState: Record<string, ConversationLocalState>;
+
+  /**
+   * In-memory peer public profile cache keyed by peer DID (numeric actor
+   * id). Populated lazily by `loadPeerProfile` whenever a UI surface
+   * (Contacts detail, Chat detail) needs the rich public profile of a
+   * non-self actor. Entries are full ActorProfile projections from
+   * Station; `null` means "fetch attempted but failed/not available" so
+   * callers can fall back to in-session display name + avatar without
+   * re-issuing the request.
+   *
+   * Lives in `socialChat` because the chat layer is the only consumer
+   * that needs to pair sessions/groups with peer identity context.
+   * Refreshes whenever a peer is selected; SSE `actor.profile.updated`
+   * (when wired in) should also invalidate the entry.
+   */
+  peerProfiles: Record<string, AccountProfile | null>;
+  /** Per-peer in-flight loader flag; prevents redundant concurrent fetches. */
+  peerProfileLoading: Record<string, boolean>;
 
   searchQuery: string;
   searchResults: SearchResult[];
@@ -311,6 +330,16 @@ interface SocialChatState {
     payload: { newContent: string; newCiphertext: Uint8Array; mutatedTsUnixMs: number },
   ) => void;
   loadCurrentUserProfile: () => Promise<void>;
+  /**
+   * Lazily load (or refresh) the public profile of `peerDid` into
+   * `peerProfiles`. Idempotent: repeated calls while a fetch is in
+   * flight no-op; subsequent calls after success refresh the cache so
+   * peers seeing a profile edit converge on the new data when they
+   * re-open the detail panel. Pass `force=true` to bypass the
+   * already-cached short-circuit (used when a profile update event is
+   * known to have invalidated the cached row).
+   */
+  loadPeerProfile: (peerDid: string, force?: boolean) => Promise<void>;
 
   loadFriendRequests: (status?: number, limit?: number, offset?: number) => Promise<void>;
   sendFriendRequest: (receiverDid: string, message?: string) => Promise<void>;
@@ -735,6 +764,8 @@ const initialSocialState: Pick<
   | 'friendRequests'
   | 'groupUnreadCounts'
   | 'lastPreviews'
+  | 'peerProfiles'
+  | 'peerProfileLoading'
   | 'conversationLocalState'
   | 'searchQuery'
   | 'searchResults'
@@ -771,6 +802,8 @@ const initialSocialState: Pick<
   friendRequests: [],
   groupUnreadCounts: {},
   lastPreviews: {},
+  peerProfiles: {},
+  peerProfileLoading: {},
   conversationLocalState: {},
   searchQuery: '',
   searchResults: [],
@@ -1701,6 +1734,38 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     } catch (error) {
       log.error('socialChat', 'loadCurrentUserProfile failed', error);
       throw error;
+    }
+  },
+
+  loadPeerProfile: async (peerDid, force = false) => {
+    const did = (peerDid || '').trim();
+    if (!did) return;
+    const state = get();
+    // Self profile is owned by `loadCurrentUserProfile`; never re-fetch it
+    // through the peer endpoint or we'd double-write the same actor through
+    // two different runtime channels.
+    if (state.currentUserDid && state.currentUserDid === did) return;
+    if (state.peerProfileLoading[did]) return;
+    if (!force && did in state.peerProfiles) return;
+
+    set((prev) => ({
+      peerProfileLoading: { ...prev.peerProfileLoading, [did]: true },
+    }));
+    try {
+      const profile = await api.peerProfileGet(did);
+      set((prev) => ({
+        peerProfiles: { ...prev.peerProfiles, [did]: profile ?? null },
+        peerProfileLoading: { ...prev.peerProfileLoading, [did]: false },
+      }));
+    } catch (error) {
+      log.warn('socialChat', 'loadPeerProfile failed', { peerDid: did, error });
+      set((prev) => ({
+        // Cache `null` so the UI stops spinning and falls back to the
+        // session-derived display name + avatar; a future force-refresh
+        // (e.g. on profile-updated event) will retry.
+        peerProfiles: { ...prev.peerProfiles, [did]: null },
+        peerProfileLoading: { ...prev.peerProfileLoading, [did]: false },
+      }));
     }
   },
 

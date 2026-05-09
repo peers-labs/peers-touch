@@ -2104,6 +2104,11 @@ export const api = {
   profileGet: () =>
     invokeRustDataFromStatus<void, AccountProfile>('profile_get'),
 
+  // Fetch a peer actor's public profile by DID (numeric actor id).
+  // Used by Contacts/Chat detail panels to render rich peer profile cards.
+  peerProfileGet: (did: string) =>
+    invokeRustDataFromStatus<{ did: string }, AccountProfile>('peer_profile_get', { did }),
+
   profileUpdate: (input: ProfileUpdateInput) =>
     invokeRustDataFromStatus<ProfileUpdateInput, AccountProfile>('profile_update', input),
 
