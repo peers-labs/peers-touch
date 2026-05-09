@@ -109,8 +109,13 @@ pub fn agent_growth_snapshot(input: AgentGrowthInput, token: &str) -> AppResult<
     match station_client::request_proto::<
         model::agent::GetGrowthSnapshotRequest,
         model::agent::GetGrowthSnapshotResponse,
-    >(Method::POST, "/agent/growth/snapshot", token, None, Some(&req))
-    {
+    >(
+        Method::POST,
+        "/agent/growth/snapshot",
+        token,
+        None,
+        Some(&req),
+    ) {
         Ok(resp) => {
             let status = serde_json::to_string(&growth_snapshot_to_json(&resp))
                 .unwrap_or_else(|_| r#"{"agentId":""}"#.to_string());
@@ -130,6 +135,13 @@ pub fn agent_memory_list(input: AgentMemoryListInput, token: &str) -> AppResult<
     let req = model::agent::ListMemoriesRequest {
         agent_id: input.agent_id,
         target: String::new(),
+        layer: String::new(),
+        page: 0,
+        page_size: 100,
+        order_by: "created_at".to_string(),
+        since: String::new(),
+        until: String::new(),
+        period: String::new(),
     };
 
     match station_client::request_proto::<
@@ -202,12 +214,17 @@ pub fn agent_submit_feedback(input: AgentFeedbackInput, token: &str) -> AppResul
     match station_client::request_proto::<
         model::agent::RecordFeedbackRequest,
         model::agent::RecordFeedbackResponse,
-    >(Method::POST, "/agent/growth/feedback", token, None, Some(&req))
-    {
+    >(
+        Method::POST,
+        "/agent/growth/feedback",
+        token,
+        None,
+        Some(&req),
+    ) {
         Ok(resp) => {
             let payload = json!({ "id": resp.id });
-            let status = serde_json::to_string(&payload)
-                .unwrap_or_else(|_| r#"{"id":""}"#.to_string());
+            let status =
+                serde_json::to_string(&payload).unwrap_or_else(|_| r#"{"id":""}"#.to_string());
             AppResult::success(StubPayload {
                 command: "agent_submit_feedback".to_string(),
                 status,

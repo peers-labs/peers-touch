@@ -1,14 +1,15 @@
-use std::sync::Arc;
-use crate::error::{AppResult, ErrorCode};
 use crate::contracts::{
-    AccountIdInput, AccountSetPinInput, AccountUnlockInput, AccountRemovePinInput,
-    AccountUpsertOAuthInput, StubPayload,
-    AuthSessionPayload,
+    AccountIdInput, AccountRemovePinInput, AccountSetPinInput, AccountUnlockInput,
+    AccountUpsertOAuthInput, AuthSessionPayload, StubPayload,
 };
 use crate::domain::identity::{ActiveSession, ActorRef};
+use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::identity_event::{self, IdentityChangeReason, IdentityChangedPayload};
+use crate::infrastructure::session_revocation::SESSION_KICKED_EVENT;
+use crate::infrastructure::session_vault;
 use crate::state::AppState;
-use tauri::{AppHandle, State, Window};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, State, Window};
 
 use crate::application::account as application_account;
 use crate::application::auth::service as auth_service;
@@ -26,7 +27,10 @@ pub fn account_get_active() -> AppResult<StubPayload> {
 }
 
 #[tauri::command]
-pub fn account_get_device_id(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn account_get_device_id(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let actor_id = match session_resolver::actor_id_for_window(state.inner(), &window) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
@@ -42,11 +46,7 @@ pub fn account_get_device_id(state: State<'_, Arc<AppState>>, window: Window) ->
             command: "account_get_device_id".to_string(),
             status: serde_json::json!({ "device_id": device_id }).to_string(),
         }),
-        Err(e) => AppResult::fail(
-            ErrorCode::InternalError,
-            format!("device_id: {e}"),
-            None,
-        ),
+        Err(e) => AppResult::fail(ErrorCode::InternalError, format!("device_id: {e}"), None),
     }
 }
 
@@ -100,7 +100,11 @@ pub(crate) fn actor_id_for_account(account_id: &str) -> Option<String> {
         .split_once(':')
         .map(|(_, id)| id.to_string())
         .unwrap_or_else(|| account_id.to_string());
-    if raw.is_empty() { None } else { Some(raw) }
+    if raw.is_empty() {
+        None
+    } else {
+        Some(raw)
+    }
 }
 
 #[tauri::command]
@@ -115,12 +119,13 @@ pub fn account_set_pin(
     input: AccountSetPinInput,
     state: State<'_, Arc<AppState>>,
 ) -> AppResult<StubPayload> {
-    let token = state
-        .session
-        .lock()
-        .ok()
-        .and_then(|g| g.token.clone());
-    application_account::account_set_pin(input, token.as_deref())
+    let token = state.session.lock().ok().and_then(|g| g.token.clone());
+    let account_id = input.account_id.clone();
+    let result = application_account::account_set_pin(input, token.as_deref());
+    if result.ok {
+        session_vault::purge_raw_session_for_account(&account_id);
+    }
+    result
 }
 
 /// Verify PIN and unlock a stored session. On success, writes the decrypted
@@ -138,8 +143,16 @@ pub fn account_unlock(
     let result = application_account::account_unlock(input);
     if !result.ok {
         return AppResult::fail(
-            result.error.as_ref().map(|e| e.code.clone()).unwrap_or(crate::error::ErrorCode::InternalError),
-            result.error.as_ref().map(|e| e.message.clone()).unwrap_or_default(),
+            result
+                .error
+                .as_ref()
+                .map(|e| e.code.clone())
+                .unwrap_or(crate::error::ErrorCode::InternalError),
+            result
+                .error
+                .as_ref()
+                .map(|e| e.message.clone())
+                .unwrap_or_default(),
             result.error.and_then(|e| e.details),
         );
     }
@@ -149,7 +162,11 @@ pub fn account_unlock(
         .data
         .as_ref()
         .and_then(|d| serde_json::from_str::<serde_json::Value>(&d.status).ok())
-        .and_then(|v| v.get("token").and_then(|t| t.as_str()).map(|s| s.to_string()));
+        .and_then(|v| {
+            v.get("token")
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string())
+        });
 
     let token = match token {
         Some(t) => t,
@@ -223,6 +240,23 @@ pub fn account_unlock(
         );
     }
 
+    let token = match auth_service::takeover_station_session_token(&token) {
+        Ok(token) => token,
+        Err(err) => {
+            let _ = crate::infrastructure::auth_identity::clear_account_session(&account_id_clone);
+            let provider = crate::infrastructure::auth_identity::read_state()
+                .ok()
+                .and_then(|s| s.accounts.into_iter().find(|a| a.id == account_id_clone))
+                .map(|a| a.provider)
+                .unwrap_or_default();
+            return auth_service::session_takeover_failed(
+                err,
+                Some(&account_id_clone),
+                Some(&provider),
+            );
+        }
+    };
+
     // Write to AppState and per-actor session store (debug gateway still uses `AppState.session`)
     let session = crate::domain::auth::session::from_station_response(
         extract_actor_id_from_account(&account_id_clone),
@@ -234,20 +268,9 @@ pub fn account_unlock(
         guard.token = Some(session.token.clone());
     }
 
-    if let Err(e) = crate::infrastructure::session_store::save(
-        &session.actor_id,
-        &session.token,
-        crate::infrastructure::session_store::SessionSource::Password,
-    ) {
-        tracing::warn!(error = %e, "account_unlock: failed to persist session store");
-    }
-
     // Re-encrypt session for next cold start
-    let _ = crate::infrastructure::auth_identity::save_encrypted_session(
-        &account_id_clone,
-        &pin_clone,
-        &token,
-    );
+    let _ =
+        session_vault::save_encrypted_session_and_purge_raw(&account_id_clone, &pin_clone, &token);
 
     // Switch the active account
     let _ = application_account::account_switch(crate::contracts::AccountIdInput {
@@ -266,16 +289,27 @@ pub fn account_unlock(
         None => (None, None, None, None, None),
     };
 
-    // Bind the unlocked session to *this* window before broadcasting so any
-    // other window picking up the identity-changed event sees a coherent
-    // registry state.
+    // Bind the unlocked session to *this* window before broadcasting. If another
+    // local window already owns this actor, the new unlock wins and the old
+    // window is routed through the same global session-revoked flow.
     let actor = ActorRef::new_person(session.actor_id.clone());
-    state.sessions.bind(ActiveSession::new(
+    let kicked = state.sessions.bind_exclusive(ActiveSession::new(
         window.label(),
         account_id_clone.clone(),
         actor,
         token.clone(),
     ));
+    for kicked_session in kicked {
+        let payload = serde_json::json!({
+            "reason": "takeover",
+            "actor_id": kicked_session.actor.actor_id,
+        });
+        if let Err(error) =
+            app.emit_to(&kicked_session.window_label, SESSION_KICKED_EVENT, &payload)
+        {
+            tracing::warn!(window = %kicked_session.window_label, error = %error, "account_unlock: failed to emit local session kick");
+        }
+    }
 
     let unlock_payload = AppResult::success(AuthSessionPayload {
         command: "account_unlock".to_string(),
@@ -298,6 +332,20 @@ pub fn account_unlock(
     );
 
     unlock_payload
+}
+
+#[tauri::command]
+pub fn account_relink_pin(
+    input: AccountUnlockInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    let token = state.session.lock().ok().and_then(|g| g.token.clone());
+    let account_id = input.account_id.clone();
+    let result = application_account::account_relink_pin(input, token.as_deref());
+    if result.ok {
+        session_vault::purge_raw_session_for_account(&account_id);
+    }
+    result
 }
 
 /// List accounts that have restorable sessions (for the login picker).

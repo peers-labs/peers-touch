@@ -46,7 +46,11 @@ fn to_stub(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
 
 /// Unified local FTS search (friend / group / both) with optional conversation filter.
 #[tauri::command]
-pub fn chat_search_local(input: ChatSearchLocalInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn chat_search_local(
+    input: ChatSearchLocalInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     if input.query.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "Search query is required", None);
     }
@@ -79,7 +83,10 @@ pub fn chat_search_local(input: ChatSearchLocalInput, state: State<'_, Arc<AppSt
 }
 
 #[tauri::command]
-pub fn crypto_generate_identity(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn crypto_generate_identity(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let actor_id = match actor_id_from_state(&state, &window) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
@@ -112,7 +119,10 @@ pub fn crypto_generate_identity(state: State<'_, Arc<AppState>>, window: Window)
 }
 
 #[tauri::command]
-pub fn crypto_get_fingerprint(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn crypto_get_fingerprint(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let actor_id = match actor_id_from_state(&state, &window) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
@@ -154,7 +164,10 @@ pub fn crypto_ratchet_telemetry_snapshot() -> AppResult<StubPayload> {
 }
 
 #[tauri::command]
-pub fn crypto_get_key_bundle(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn crypto_get_key_bundle(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let actor_id = match actor_id_from_state(&state, &window) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
@@ -249,7 +262,9 @@ pub fn crypto_get_key_bundle(state: State<'_, Arc<AppState>>, window: Window) ->
 // codebase no longer pretends otherwise.
 
 fn decode_b64_fixed<const N: usize>(label: &str, data: &str) -> Result<[u8; N], String> {
-    let raw = B64.decode(data.trim()).map_err(|e| format!("{label} base64: {e}"))?;
+    let raw = B64
+        .decode(data.trim())
+        .map_err(|e| format!("{label} base64: {e}"))?;
     if raw.len() != N {
         return Err(format!("{label}: expected {N} bytes, got {}", raw.len()));
     }
@@ -368,7 +383,9 @@ pub fn crypto_init_session(
         Some(x3.ephemeral_pub),
     );
 
-    if let Err(reason) = local_chat_store::save_crypto_session(user_scope.as_str(), &session.to_state()) {
+    if let Err(reason) =
+        local_chat_store::save_crypto_session(user_scope.as_str(), &session.to_state())
+    {
         return AppResult::fail(
             ErrorCode::InternalError,
             format!("Failed to save crypto session: {}", reason),
@@ -411,7 +428,11 @@ pub fn crypto_encrypt_message(
         return AppResult::fail(ErrorCode::NotFound, "Crypto session not found", None);
     };
     if st.peer_did != peer_did {
-        return AppResult::fail(ErrorCode::InvalidArgument, "Session peer does not match", None);
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "Session peer does not match",
+            None,
+        );
     }
     let mut session = CryptoSession::from_state(&st);
     let enc = match session.encrypt(plaintext.as_bytes()) {
@@ -472,7 +493,11 @@ pub fn crypto_decrypt_message(
         return AppResult::fail(ErrorCode::NotFound, "Crypto session not found", None);
     };
     if st.peer_did != peer_did {
-        return AppResult::fail(ErrorCode::InvalidArgument, "Session peer does not match", None);
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "Session peer does not match",
+            None,
+        );
     }
     let ct_raw = match B64.decode(ciphertext.trim()) {
         Ok(b) => b,
@@ -680,13 +705,8 @@ pub fn crypto_group_sk_emit_skdm(
             // generation-1 chain. Persist-then-distribute order
             // matters: if we crash after distribution but before
             // persistence, peers would have a key we cannot use.
-            let fresh = sender_keys::create_local_chain(
-                group_ulid.as_str(),
-                actor_id.as_str(),
-                1,
-            );
-            if let Err(reason) = local_chat_store::save_group_sender_chain(scope.as_str(), &fresh)
-            {
+            let fresh = sender_keys::create_local_chain(group_ulid.as_str(), actor_id.as_str(), 1);
+            if let Err(reason) = local_chat_store::save_group_sender_chain(scope.as_str(), &fresh) {
                 return AppResult::fail(
                     ErrorCode::InternalError,
                     format!("Failed to persist new sender chain: {}", reason),
@@ -764,11 +784,7 @@ pub fn crypto_group_sk_rotate(
             );
         }
     };
-    let fresh = sender_keys::create_local_chain(
-        group_ulid.as_str(),
-        actor_id.as_str(),
-        next_id,
-    );
+    let fresh = sender_keys::create_local_chain(group_ulid.as_str(), actor_id.as_str(), next_id);
     if let Err(reason) = local_chat_store::save_group_sender_chain(scope.as_str(), &fresh) {
         return AppResult::fail(
             ErrorCode::InternalError,
@@ -949,7 +965,9 @@ pub fn crypto_group_encrypt(
     }
     let proto = wire_to_proto_ciphertext(&wire);
     let mut buf = Vec::with_capacity(proto.encoded_len());
-    proto.encode(&mut buf).expect("prost GroupCiphertext encode");
+    proto
+        .encode(&mut buf)
+        .expect("prost GroupCiphertext encode");
     to_stub(
         "crypto_group_encrypt",
         json!({
@@ -1069,7 +1087,11 @@ pub fn crypto_group_decrypt(
         signing_seed: chain.signing_seed,
         verifying_key: chain.verifying_key,
     };
-    let consumed = if was_skipped { Some(wire.counter) } else { None };
+    let consumed = if was_skipped {
+        Some(wire.counter)
+    } else {
+        None
+    };
     if let Err(reason) = local_chat_store::apply_group_decrypt_outcome(
         scope.as_str(),
         &advanced,
@@ -1144,7 +1166,10 @@ fn local_identity_x25519(
     Ok((kp.private, kp.public))
 }
 
-fn peer_x25519_pub_from_ed25519(label: &str, ed_pub_b64: &str) -> Result<PublicKey, AppResult<StubPayload>> {
+fn peer_x25519_pub_from_ed25519(
+    label: &str,
+    ed_pub_b64: &str,
+) -> Result<PublicKey, AppResult<StubPayload>> {
     let raw = match B64.decode(ed_pub_b64.trim()) {
         Ok(b) => b,
         Err(e) => {

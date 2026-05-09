@@ -55,6 +55,22 @@ func GetGlobalSessionValidator() SessionValidator {
 	return globalSessionValidator
 }
 
+// CheckSubjectSessionValid applies the application-wide session validator to an
+// authenticated subject. Long-lived transports and request middleware both use
+// this path so revocation policy stays centralized.
+func CheckSubjectSessionValid(ctx context.Context, subject *Subject) (bool, string) {
+	if subject == nil || subject.SessionID == "" {
+		return true, ""
+	}
+
+	validator := GetGlobalSessionValidator()
+	if validator == nil {
+		return true, ""
+	}
+
+	return validator.CheckSessionValid(ctx, subject.SessionID)
+}
+
 type Token struct {
 	Value     string
 	ExpiresAt time.Time

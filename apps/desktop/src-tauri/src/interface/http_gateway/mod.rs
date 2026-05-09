@@ -2000,7 +2000,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Err(e) => return e,
             };
             let token = state.session.lock().ok().and_then(|g| g.token.clone());
-            to_json(app_account::account_set_pin(input, token.as_deref()))
+            let account_id = input.account_id.clone();
+            let result = app_account::account_set_pin(input, token.as_deref());
+            if result.ok {
+                crate::infrastructure::session_vault::purge_raw_session_for_account(&account_id);
+            }
+            to_json(result)
         }
         "account_unlock" => {
             let input = match parse_args::<AccountUnlockInput>(args) {
@@ -2021,22 +2026,35 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                         .and_then(|t| t.as_str())
                         .map(|s| s.to_string())
                 });
-            if let Some(ref t) = token {
+            if let Some(t) = token {
+                let token = match app_auth::takeover_station_session_token(&t) {
+                    Ok(token) => token,
+                    Err(err) => {
+                        let _ = crate::infrastructure::auth_identity::clear_account_session(
+                            &input.account_id,
+                        );
+                        return to_json(app_auth::session_takeover_failed::<
+                            crate::contracts::AuthSessionPayload,
+                        >(
+                            err, Some(&input.account_id), None
+                        ));
+                    }
+                };
                 let actor_id = input
                     .account_id
                     .split_once(':')
                     .map(|(_, id)| id.to_string())
                     .unwrap_or_else(|| input.account_id.clone());
                 let session =
-                    crate::domain::auth::session::from_station_response(actor_id, t.clone());
+                    crate::domain::auth::session::from_station_response(actor_id, token.clone());
                 if let Ok(mut guard) = state.session.lock() {
                     guard.actor_id = Some(session.actor_id.clone());
                     guard.token = Some(session.token.clone());
                 }
-                let _ = crate::infrastructure::auth_identity::save_encrypted_session(
+                let _ = crate::infrastructure::session_vault::save_encrypted_session_and_purge_raw(
                     &input.account_id,
                     &input.pin,
-                    t,
+                    &token,
                 );
                 let _ = app_account::account_switch(AccountIdInput {
                     id: input.account_id.clone(),
@@ -2067,7 +2085,37 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             }
             serde_json::to_value(&result).unwrap_or(json!({"ok": false}))
         }
+        "account_relink_pin" => {
+            let input = match parse_args::<AccountUnlockInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = state.session.lock().ok().and_then(|g| g.token.clone());
+            let account_id = input.account_id.clone();
+            let result = app_account::account_relink_pin(input, token.as_deref());
+            if result.ok {
+                crate::infrastructure::session_vault::purge_raw_session_for_account(&account_id);
+            }
+            to_json(result)
+        }
         "account_list_restorable" => to_json(app_account::account_list_restorable()),
+        "account_clear_session" => {
+            let input = match parse_args::<AccountIdInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match crate::infrastructure::auth_identity::clear_account_session(&input.id) {
+                Ok(()) => to_json(AppResult::success(StubPayload {
+                    command: "account_clear_session".to_string(),
+                    status: "ok".to_string(),
+                })),
+                Err(e) => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InternalError,
+                    format!("clear_account_session: {e}"),
+                    None,
+                )),
+            }
+        }
         "account_remove_pin" => {
             let input = match parse_args::<AccountRemovePinInput>(args) {
                 Ok(v) => v,
@@ -2077,67 +2125,60 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         }
 
         // =================================================================
-        // Memory (no state)
+        // Memory (state-dependent Station API)
         // =================================================================
         "memory_list" => {
-            let input = match parse_args::<MemoryListInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_memory::memory_list(input))
+            let input = match parse_args::<MemoryListInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            to_json(app_memory::memory_list(input, &token))
         }
         "memory_get" => {
-            let input = match parse_args::<MemoryIdInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_memory::memory_get(input))
+            let input = match parse_args::<MemoryIdInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            to_json(app_memory::memory_get(input, &token))
         }
         "memory_delete" => {
-            let input = match parse_args::<MemoryIdInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_memory::memory_delete(input))
+            let input = match parse_args::<MemoryIdInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            to_json(app_memory::memory_delete(input, &token))
         }
         "memory_search" => {
-            let input = match parse_args::<MemorySearchInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_memory::memory_search(input))
+            let input = match parse_args::<MemorySearchInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            to_json(app_memory::memory_search(input, &token))
         }
         "memory_persona" => {
-            let input = match parse_args::<MemoryPersonaInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_memory::memory_persona(input))
+            let input = match parse_args::<MemoryPersonaInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            to_json(app_memory::memory_persona(input, &token))
         }
-        "memory_stats" => to_json(app_memory::memory_stats()),
+        "memory_stats" => {
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            to_json(app_memory::memory_stats(&token))
+        }
         "memory_events" => {
-            let input = match parse_args::<MemoryEventsInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_memory::memory_events(input))
+            let input = match parse_args::<MemoryEventsInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            to_json(app_memory::memory_events(input, &token))
         }
         "memory_export" => {
-            let input = match parse_args::<MemoryExportInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_memory::memory_export(input))
+            let input = match parse_args::<MemoryExportInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            to_json(app_memory::memory_export(input, &token))
         }
         "memory_import" => {
-            let input = match parse_args::<MemoryImportInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_memory::memory_import(input))
+            let input = match parse_args::<MemoryImportInput>(args) { Ok(v) => v, Err(e) => return e };
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            to_json(app_memory::memory_import(input, &token))
         }
-        "memory_embedding_status" => to_json(app_memory::memory_embedding_status()),
-        "memory_reembed" => to_json(app_memory::memory_reembed()),
+        "memory_embedding_status" => {
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            to_json(app_memory::memory_embedding_status(&token))
+        }
+        "memory_reembed" => {
+            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            to_json(app_memory::memory_reembed(&token))
+        }
 
         // =================================================================
         // TTS (no state)
@@ -2812,33 +2853,32 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Err(e) => e,
             }
         }
-        "friend_chat_delete_friend" => {
-            let input = match parse_args::<FriendRequestDeleteInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
+        "friend_chat_block_user" => {
+            let target_did = args
+                .get("target_did")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            if target_did.trim().is_empty() {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InvalidArgument,
+                    "target_did is required",
+                    None,
+                ));
+            }
             let token = match token_from_state(state) {
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            let req = model::chat::DeleteFriendRequest {
-                peer_did: input.peer_did,
-            };
-            match station_client::request_proto::<
-                model::chat::DeleteFriendRequest,
-                model::chat::DeleteFriendResponse,
-            >(
+            match station_request_json(
                 Method::POST,
-                "/friend-chat/friend/delete",
+                "/friend-chat/block",
                 &token,
                 None,
-                Some(&req),
+                Some(json!({"target_did": target_did})),
             ) {
-                Ok(resp) => to_json(to_stub(
-                    "friend_chat_delete_friend",
-                    json!({ "success": resp.success }),
-                )),
-                Err(e) => to_json(e.into_app_result::<StubPayload>("station request failed")),
+                Ok(data) => to_json(to_stub("friend_chat_block_user", data)),
+                Err(e) => e,
             }
         }
 
@@ -3002,7 +3042,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                     "mentioned_dids": input.mentioned_dids.unwrap_or_default(),
                     "mention_all": input.mention_all.unwrap_or(false),
                     "attachments": input.attachments.unwrap_or_default(),
-                    "encrypted_payload": input.encrypted_payload.unwrap_or_default(),
                 })),
             ) {
                 Ok(d) => d,
@@ -3082,7 +3121,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                     return to_json(e.into_app_result::<StubPayload>("Station request failed"))
                 }
             };
-            to_json(AppResult::success(resp.encode_to_vec()))
+            let group_json = match resp.group {
+                Some(g) => {
+                    json!({"ulid": g.ulid, "name": g.name, "description": g.description, "owner_did": g.owner_did, "type": g.r#type})
+                }
+                None => json!(null),
+            };
+            to_json(to_stub(
+                "group_chat_create_group",
+                json!({"group": group_json}),
+            ))
         }
         "group_chat_get_group" => {
             let input = match parse_args::<GroupUlidInput>(args) {

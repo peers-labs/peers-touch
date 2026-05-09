@@ -1,7 +1,5 @@
+use crate::contracts::{ModelConfigKeyInput, ModelConfigSetInput, ProviderIdInputV2, StubPayload};
 use crate::error::{AppResult, ErrorCode};
-use crate::contracts::{
-    ModelConfigKeyInput, ModelConfigSetInput, ProviderIdInputV2, StubPayload,
-};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};

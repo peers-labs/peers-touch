@@ -166,6 +166,11 @@ func (s *eventsSubServer) handleStream(ctx context.Context, c *app.RequestContex
 			floorID = ev.GetEventId()
 
 		case <-heartbeat.C:
+			if valid, reason := coreauth.CheckSubjectSessionValid(ctx, subject); !valid {
+				logger.DefaultHelper.Infof("events: closing revoked stream actor=%s session=%s reason=%s", actorID, subject.SessionID, reason)
+				return
+			}
+
 			hb := &realtime.StreamEvent{
 				// Heartbeat doesn't go through the bus and so doesn't
 				// participate in resume — by design (contract §2.4

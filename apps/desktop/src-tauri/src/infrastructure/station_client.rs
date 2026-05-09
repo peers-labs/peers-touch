@@ -143,6 +143,66 @@ fn build_client() -> Result<Client, StationClientError> {
         })
 }
 
+/// Authenticated JSON POST — used by callers that need the v3 OSS
+/// federation mint endpoint (and any future plain-JSON API on
+/// Station). Returns the decoded response body unchanged so callers
+/// can pull whichever fields they care about; on non-2xx the error
+/// already carries the status / parsed body in `details`.
+///
+/// This is *not* a `PeersResponse` envelope — Station's
+/// `/sub-oss/federation/token` returns a flat
+/// `{token, expires_at, kid, peer_station_id}` object, mirroring
+/// the rest of the OSS subserver's plain-JSON wire shape.
+pub(crate) fn post_json_with_auth(
+    path: &str,
+    token: &str,
+    body: Value,
+) -> Result<Value, StationClientError> {
+    let url = format!("{}{}", station_base_url(), path);
+    tracing::debug!(path = %path, "→ station (json, auth)");
+
+    let start = std::time::Instant::now();
+    let client = build_client()?;
+
+    let resp = client
+        .post(&url)
+        .bearer_auth(token)
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json")
+        .json(&body)
+        .send()
+        .map_err(|e| {
+            let elapsed = start.elapsed().as_millis();
+            tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
+            StationClientError::new(
+                StationClientErrorKind::Network,
+                format!("request failed: {}", e),
+                None,
+            )
+        })?;
+
+    let status = resp.status();
+    let elapsed = start.elapsed().as_millis();
+
+    let body_text = resp.text().unwrap_or_default();
+    if !status.is_success() {
+        tracing::warn!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, body = %body_text, "← station FAIL");
+        return Err(build_error_for_status(status.as_u16(), path, &body_text));
+    }
+
+    let result: Value = serde_json::from_str(&body_text).map_err(|e| {
+        tracing::error!(path = %path, error = %e, body = %body_text, "← station JSON_ERROR");
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("decode json response failed: {}", e),
+            None,
+        )
+    })?;
+
+    tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json, auth)");
+    Ok(result)
+}
+
 // JSON POST without auth — used for login where no token exists yet.
 pub(crate) fn post_json_no_auth(path: &str, body: Value) -> Result<Value, StationClientError> {
     let url = format!("{}{}", station_base_url(), path);
@@ -548,28 +608,14 @@ pub(crate) fn request_json(
     let status = resp.status();
     let elapsed = start.elapsed().as_millis();
 
-    let bytes = resp.bytes().map_err(|e| {
-        tracing::error!(path = %path, error = %e, "← station READ_ERROR");
-        StationClientError::new(
-            StationClientErrorKind::Decode,
-            format!("read body failed: {}", e),
-            None,
-        )
-    })?;
-
     if !status.is_success() {
         let code = status.as_u16();
-        let text = String::from_utf8_lossy(&bytes).to_string();
+        let text = resp.text().unwrap_or_default();
         tracing::warn!(path = %path, status = code, elapsed_ms = elapsed, body = %text, "← station FAIL");
         return Err(build_error_for_status(code, path, &text));
     }
 
-    if bytes.is_empty() {
-        tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json, empty)");
-        return Ok(Value::Null);
-    }
-
-    let result: Value = serde_json::from_slice(&bytes).map_err(|e| {
+    let result: Value = resp.json().map_err(|e| {
         tracing::error!(path = %path, error = %e, "← station JSON_ERROR");
         StationClientError::new(
             StationClientErrorKind::Decode,

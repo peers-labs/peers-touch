@@ -36,7 +36,7 @@ use rand::RngCore;
 use x25519_dalek::{PublicKey, StaticSecret};
 use zeroize::Zeroize;
 
-use super::{aes_gcm_decrypt, aes_gcm_encrypt, hkdf_sha256, dh_for_signaling};
+use super::{aes_gcm_decrypt, aes_gcm_encrypt, dh_for_signaling, hkdf_sha256};
 
 /// Wire format constants. Changing any of these is a wire-breaking
 /// change and requires a new `info` string (i.e. `:v2`).
@@ -121,7 +121,12 @@ pub fn seal(
 
     let mut shared_eph = dh_for_signaling(&eph_priv, peer_x_pub);
     let mut shared_lt = dh_for_signaling(self_x_priv, peer_x_pub);
-    let mut key = derive_key(&shared_eph, &shared_lt, eph_pub.as_bytes(), self_x_pub.as_bytes());
+    let mut key = derive_key(
+        &shared_eph,
+        &shared_lt,
+        eph_pub.as_bytes(),
+        self_x_pub.as_bytes(),
+    );
     shared_eph.zeroize();
     shared_lt.zeroize();
 
@@ -170,7 +175,12 @@ pub fn open(
 
     let mut shared_eph = dh_for_signaling(self_x_priv, &eph_pub);
     let mut shared_lt = dh_for_signaling(self_x_priv, sender_x_pub);
-    let mut key = derive_key(&shared_eph, &shared_lt, eph_pub.as_bytes(), sender_x_pub.as_bytes());
+    let mut key = derive_key(
+        &shared_eph,
+        &shared_lt,
+        eph_pub.as_bytes(),
+        sender_x_pub.as_bytes(),
+    );
     shared_eph.zeroize();
     shared_lt.zeroize();
 
@@ -196,8 +206,15 @@ mod tests {
         let (bob_priv, bob_pub) = make_peer();
 
         let plaintext = br#"{"sdp":"v=0\r\no=- ..."}"#;
-        let sealed = seal(&alice_priv, &alice_pub, &bob_pub, "session-01HX", "OFFER", plaintext)
-            .expect("seal should succeed");
+        let sealed = seal(
+            &alice_priv,
+            &alice_pub,
+            &bob_pub,
+            "session-01HX",
+            "OFFER",
+            plaintext,
+        )
+        .expect("seal should succeed");
 
         let opened = open(&bob_priv, &alice_pub, "session-01HX", "OFFER", &sealed)
             .expect("open should succeed");
@@ -214,8 +231,24 @@ mod tests {
         let (_bob_priv, bob_pub) = make_peer();
 
         let plaintext = b"same plaintext both times";
-        let a = seal(&alice_priv, &alice_pub, &bob_pub, "session-01", "ANSWER", plaintext).unwrap();
-        let b = seal(&alice_priv, &alice_pub, &bob_pub, "session-01", "ANSWER", plaintext).unwrap();
+        let a = seal(
+            &alice_priv,
+            &alice_pub,
+            &bob_pub,
+            "session-01",
+            "ANSWER",
+            plaintext,
+        )
+        .unwrap();
+        let b = seal(
+            &alice_priv,
+            &alice_pub,
+            &bob_pub,
+            "session-01",
+            "ANSWER",
+            plaintext,
+        )
+        .unwrap();
         assert_ne!(a, b);
 
         // The 32-byte eph_pub prefix must also differ.
@@ -229,7 +262,15 @@ mod tests {
         let (alice_priv, alice_pub) = make_peer();
         let (bob_priv, bob_pub) = make_peer();
 
-        let sealed = seal(&alice_priv, &alice_pub, &bob_pub, "session-01", "CANDIDATE", b"x").unwrap();
+        let sealed = seal(
+            &alice_priv,
+            &alice_pub,
+            &bob_pub,
+            "session-01",
+            "CANDIDATE",
+            b"x",
+        )
+        .unwrap();
         let res = open(&bob_priv, &alice_pub, "session-02", "CANDIDATE", &sealed);
         assert!(res.is_err(), "cross-session decrypt must fail");
     }
@@ -241,7 +282,15 @@ mod tests {
         let (alice_priv, alice_pub) = make_peer();
         let (bob_priv, bob_pub) = make_peer();
 
-        let sealed = seal(&alice_priv, &alice_pub, &bob_pub, "session-01", "CANDIDATE", b"x").unwrap();
+        let sealed = seal(
+            &alice_priv,
+            &alice_pub,
+            &bob_pub,
+            "session-01",
+            "CANDIDATE",
+            b"x",
+        )
+        .unwrap();
         let res = open(&bob_priv, &alice_pub, "session-01", "OFFER", &sealed);
         assert!(res.is_err(), "cross-kind decrypt must fail");
     }
@@ -255,7 +304,15 @@ mod tests {
         let (bob_priv, bob_pub) = make_peer();
         let (_eve_priv, eve_pub) = make_peer();
 
-        let sealed = seal(&alice_priv, &alice_pub, &bob_pub, "session-01", "OFFER", b"hi").unwrap();
+        let sealed = seal(
+            &alice_priv,
+            &alice_pub,
+            &bob_pub,
+            "session-01",
+            "OFFER",
+            b"hi",
+        )
+        .unwrap();
         let res = open(&bob_priv, &eve_pub, "session-01", "OFFER", &sealed);
         assert!(res.is_err(), "open with wrong sender must fail");
     }

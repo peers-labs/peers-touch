@@ -206,7 +206,8 @@ fn materialize_skipped(
     if gap > MAX_SKIP {
         return Err(DrError::SkipTooFar);
     }
-    let already = new_skipped.len() as u32 + count_pre_skipped_for_session(pre_existing, session_id);
+    let already =
+        new_skipped.len() as u32 + count_pre_skipped_for_session(pre_existing, session_id);
     if already.saturating_add(gap) > MAX_SKIPPED_TOTAL {
         return Err(DrError::SkipBudgetExhausted);
     }
@@ -332,7 +333,8 @@ pub fn decrypt(
             && sk.counter == wire.n_send
         {
             let aad = build_aad(&state.session_id, wire.version, &wire.sender_dh, aad_extra);
-            let cipher = Aes256Gcm::new_from_slice(&sk.message_key).map_err(|_| DrError::AeadFailure)?;
+            let cipher =
+                Aes256Gcm::new_from_slice(&sk.message_key).map_err(|_| DrError::AeadFailure)?;
             let plain = cipher
                 .decrypt(
                     Nonce::from_slice(&wire.nonce),
@@ -355,10 +357,7 @@ pub fn decrypt(
     let mut st = state.clone();
     let mut new_skipped: Vec<DrSkippedMessageKey> = Vec::new();
 
-    let same_peer = st
-        .peer_pub
-        .map(|p| p == wire.sender_dh)
-        .unwrap_or(false);
+    let same_peer = st.peer_pub.map(|p| p == wire.sender_dh).unwrap_or(false);
 
     if !same_peer {
         if let (Some(old_peer), Some(mut recv_ck)) = (st.peer_pub, st.recv_chain_key) {
@@ -386,9 +385,7 @@ pub fn decrypt(
         st.send_chain_key = None;
     }
 
-    let mut recv_ck = st
-        .recv_chain_key
-        .ok_or(DrError::UninitializedReceive)?;
+    let mut recv_ck = st.recv_chain_key.ok_or(DrError::UninitializedReceive)?;
     let mut nr = st.n_recv;
     if same_peer && wire.n_send < nr {
         return Err(DrError::CounterRegression);
@@ -405,7 +402,8 @@ pub fn decrypt(
     st.recv_chain_key = Some(recv_ck);
     st.n_recv = nr;
 
-    let total = count_pre_skipped_for_session(pre_skipped, &st.session_id) + new_skipped.len() as u32;
+    let total =
+        count_pre_skipped_for_session(pre_skipped, &st.session_id) + new_skipped.len() as u32;
     if total > MAX_SKIPPED_TOTAL {
         return Err(DrError::SkipBudgetExhausted);
     }

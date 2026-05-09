@@ -16,7 +16,9 @@ pub fn run() -> BootstrapResult {
     let layout = init_storage();
     let log_guard = init_logger(&layout);
 
-    let log_dir = layout.dirs.get(&StorageKind::Logs)
+    let log_dir = layout
+        .dirs
+        .get(&StorageKind::Logs)
         .map(|p| p.display().to_string())
         .unwrap_or_default();
 
@@ -29,7 +31,9 @@ pub fn run() -> BootstrapResult {
 
     tracing::info!(log_dir = %log_dir, "Logger initialized");
 
-    let config_dir = layout.dirs.get(&StorageKind::Config)
+    let config_dir = layout
+        .dirs
+        .get(&StorageKind::Config)
         .cloned()
         .unwrap_or_else(|| layout.root.join("config"));
     let i18n = I18nService::new(&config_dir);
@@ -52,8 +56,9 @@ fn init_storage() -> StorageLayout {
 }
 
 fn init_logger(layout: &StorageLayout) -> WorkerGuard {
-    let logs_dir = layout.dirs.get(&StorageKind::Logs)
+    let logs_dir = layout
+        .dirs
+        .get(&StorageKind::Logs)
         .expect("[bootstrap] Logs directory not found in storage layout");
-    logger::initialize(logs_dir)
-        .expect("[bootstrap] Failed to initialize logger")
+    logger::initialize(logs_dir).expect("[bootstrap] Failed to initialize logger")
 }

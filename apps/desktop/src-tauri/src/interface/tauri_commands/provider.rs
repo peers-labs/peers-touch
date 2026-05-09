@@ -1,14 +1,17 @@
-use std::sync::Arc;
-use crate::error::AppResult;
+use crate::application::provider as application_provider;
+use crate::application::session_resolver;
 use crate::contracts::{
     ProviderCheckInput, ProviderCreateInput, ProviderIdInput, ProviderUpdateInput, StubPayload,
 };
-use crate::application::provider as application_provider;
-use crate::application::session_resolver;
+use crate::error::AppResult;
 use crate::state::AppState;
+use std::sync::Arc;
 use tauri::{State, Window};
 
-fn resolve_scope_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Result<Option<String>, AppResult<StubPayload>> {
+fn resolve_scope_from_state(
+    state: &State<'_, Arc<AppState>>,
+    window: &Window,
+) -> Result<Option<String>, AppResult<StubPayload>> {
     let scope = session_resolver::actor_id_for_window(state.inner(), window).unwrap_or_default();
     let scope = scope.trim();
     if scope.is_empty() {
@@ -25,19 +28,31 @@ fn provider_get_for_scope(scope: Option<&str>, input: ProviderIdInput) -> AppRes
     application_provider::provider_get(scope, input)
 }
 
-fn provider_update_for_scope(scope: Option<&str>, input: ProviderUpdateInput) -> AppResult<StubPayload> {
+fn provider_update_for_scope(
+    scope: Option<&str>,
+    input: ProviderUpdateInput,
+) -> AppResult<StubPayload> {
     application_provider::provider_update(scope, input)
 }
 
-fn provider_check_for_scope(scope: Option<&str>, input: ProviderCheckInput) -> AppResult<StubPayload> {
+fn provider_check_for_scope(
+    scope: Option<&str>,
+    input: ProviderCheckInput,
+) -> AppResult<StubPayload> {
     application_provider::provider_check(scope, input)
 }
 
-fn provider_create_for_scope(scope: Option<&str>, input: ProviderCreateInput) -> AppResult<StubPayload> {
+fn provider_create_for_scope(
+    scope: Option<&str>,
+    input: ProviderCreateInput,
+) -> AppResult<StubPayload> {
     application_provider::provider_create(scope, input)
 }
 
-fn provider_delete_for_scope(scope: Option<&str>, input: ProviderIdInput) -> AppResult<StubPayload> {
+fn provider_delete_for_scope(
+    scope: Option<&str>,
+    input: ProviderIdInput,
+) -> AppResult<StubPayload> {
     application_provider::provider_delete(scope, input)
 }
 
@@ -55,7 +70,11 @@ pub fn provider_list(state: State<'_, Arc<AppState>>, window: Window) -> AppResu
 }
 
 #[tauri::command]
-pub fn provider_get(input: ProviderIdInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn provider_get(
+    input: ProviderIdInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -64,7 +83,11 @@ pub fn provider_get(input: ProviderIdInput, state: State<'_, Arc<AppState>>, win
 }
 
 #[tauri::command]
-pub fn provider_update(input: ProviderUpdateInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn provider_update(
+    input: ProviderUpdateInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -73,7 +96,11 @@ pub fn provider_update(input: ProviderUpdateInput, state: State<'_, Arc<AppState
 }
 
 #[tauri::command]
-pub fn provider_check(input: ProviderCheckInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn provider_check(
+    input: ProviderCheckInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -82,7 +109,11 @@ pub fn provider_check(input: ProviderCheckInput, state: State<'_, Arc<AppState>>
 }
 
 #[tauri::command]
-pub fn provider_create(input: ProviderCreateInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn provider_create(
+    input: ProviderCreateInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -91,7 +122,11 @@ pub fn provider_create(input: ProviderCreateInput, state: State<'_, Arc<AppState
 }
 
 #[tauri::command]
-pub fn provider_delete(input: ProviderIdInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn provider_delete(
+    input: ProviderIdInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -100,7 +135,11 @@ pub fn provider_delete(input: ProviderIdInput, state: State<'_, Arc<AppState>>, 
 }
 
 #[tauri::command]
-pub fn provider_apply_preset(input: ProviderIdInput, state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn provider_apply_preset(
+    input: ProviderIdInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -109,7 +148,10 @@ pub fn provider_apply_preset(input: ProviderIdInput, state: State<'_, Arc<AppSta
 }
 
 #[tauri::command]
-pub fn provider_list_available_models(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn provider_list_available_models(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let scope = match resolve_scope_from_state(&state, &window) {
         Ok(scope) => scope,
         Err(error) => return error,
@@ -128,11 +170,14 @@ mod tests {
 
     #[test]
     fn command_provider_check_should_return_validation_error() {
-        let result = provider_check_for_scope(None, ProviderCheckInput {
-            id: "".to_string(),
-            key_vaults: None,
-            config_json: None,
-        });
+        let result = provider_check_for_scope(
+            None,
+            ProviderCheckInput {
+                id: "".to_string(),
+                key_vaults: None,
+                config_json: None,
+            },
+        );
         assert!(result.ok);
         let payload = result.data.expect("payload should exist");
         let status = parse_status(&payload);
@@ -144,13 +189,16 @@ mod tests {
 
     #[test]
     fn command_provider_create_then_get_should_work() {
-        let create_result = provider_create_for_scope(TEST_SCOPE, ProviderCreateInput {
-            name: "Command Test Provider".to_string(),
-            description: "for command layer".to_string(),
-            logo: "".to_string(),
-            key_vaults: "{\"api_key\":\"k\"}".to_string(),
-            config_json: "{\"base_url\":\"https://api.openai.com/v1\"}".to_string(),
-        });
+        let create_result = provider_create_for_scope(
+            TEST_SCOPE,
+            ProviderCreateInput {
+                name: "Command Test Provider".to_string(),
+                description: "for command layer".to_string(),
+                logo: "".to_string(),
+                key_vaults: "{\"api_key\":\"k\"}".to_string(),
+                config_json: "{\"base_url\":\"https://api.openai.com/v1\"}".to_string(),
+            },
+        );
         assert!(create_result.ok);
         let created_payload = create_result.data.expect("payload should exist");
         let created_status = parse_status(&created_payload);
@@ -169,13 +217,16 @@ mod tests {
     fn command_provider_scope_should_be_isolated() {
         let scope_a = Some("user-a");
         let scope_b = Some("user-b");
-        let create_result = provider_create_for_scope(scope_a, ProviderCreateInput {
-            name: "Provider A".to_string(),
-            description: "scope a".to_string(),
-            logo: "".to_string(),
-            key_vaults: "{\"api_key\":\"ka\"}".to_string(),
-            config_json: "{\"base_url\":\"https://api.openai.com/v1\"}".to_string(),
-        });
+        let create_result = provider_create_for_scope(
+            scope_a,
+            ProviderCreateInput {
+                name: "Provider A".to_string(),
+                description: "scope a".to_string(),
+                logo: "".to_string(),
+                key_vaults: "{\"api_key\":\"ka\"}".to_string(),
+                config_json: "{\"base_url\":\"https://api.openai.com/v1\"}".to_string(),
+            },
+        );
         assert!(create_result.ok);
         let list_a = provider_list_for_scope(scope_a);
         let list_b = provider_list_for_scope(scope_b);

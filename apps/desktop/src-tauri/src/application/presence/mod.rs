@@ -81,7 +81,10 @@ impl PresenceSupervisor {
     /// Snapshot the current state for `actor_id`. Returns `Offline` for
     /// unknown actors.
     pub fn state_of(&self, actor_id: &str) -> PresenceState {
-        let map = self.actors.lock().expect("PresenceSupervisor lock poisoned");
+        let map = self
+            .actors
+            .lock()
+            .expect("PresenceSupervisor lock poisoned");
         map.get(actor_id)
             .map(|a| a.state)
             .unwrap_or(PresenceState::Offline)
@@ -105,7 +108,11 @@ impl PresenceSupervisor {
             return None;
         }
         if token.is_empty() {
-            tracing::debug!(?trigger, actor = actor_id, "presence.notify ignored: empty token");
+            tracing::debug!(
+                ?trigger,
+                actor = actor_id,
+                "presence.notify ignored: empty token"
+            );
             return None;
         }
 
@@ -113,13 +120,20 @@ impl PresenceSupervisor {
 
         // --- Decide whether to act --------------------------------------
         let (from_state, should_run) = {
-            let mut map = self.actors.lock().expect("PresenceSupervisor lock poisoned");
+            let mut map = self
+                .actors
+                .lock()
+                .expect("PresenceSupervisor lock poisoned");
             let entry = map.entry(actor_id.to_string()).or_default();
             let from = entry.state;
 
             // Already in-flight: collapse this trigger.
             if entry.in_flight {
-                tracing::debug!(actor = actor_id, ?trigger, "presence: collapsing trigger (in-flight)");
+                tracing::debug!(
+                    actor = actor_id,
+                    ?trigger,
+                    "presence: collapsing trigger (in-flight)"
+                );
                 return None;
             }
 
@@ -154,7 +168,10 @@ impl PresenceSupervisor {
         let token_owned = token.to_string();
         let app_for_thread = app.clone();
         let handle = std::thread::Builder::new()
-            .name(format!("presence-{}", &actor_id_owned[..actor_id_owned.len().min(8)]))
+            .name(format!(
+                "presence-{}",
+                &actor_id_owned[..actor_id_owned.len().min(8)]
+            ))
             .spawn(move || {
                 let outcome = supervisor.run_reconcile(
                     &actor_id_owned,
@@ -225,7 +242,11 @@ impl PresenceSupervisor {
     ) -> ReconcileOutcome {
         let result = match chat_storage::friend_chat_offline(token) {
             Ok(_) => {
-                tracing::info!(actor = actor_id, ?trigger, "presence: marked offline at station");
+                tracing::info!(
+                    actor = actor_id,
+                    ?trigger,
+                    "presence: marked offline at station"
+                );
                 ReconcileOutcome::ok(0, Vec::new())
             }
             Err(e) => {
@@ -303,9 +324,7 @@ impl PresenceSupervisor {
         // best-effort drain, not transactional consistency.
         let user_scope = crate::infrastructure::storage::resolve_user_scope(Some(actor_id));
         for sid in &sessions {
-            if let Err(e) =
-                chat_storage::sync_friend_from_station(token, &user_scope, sid, 50, 1)
-            {
+            if let Err(e) = chat_storage::sync_friend_from_station(token, &user_scope, sid, 50, 1) {
                 tracing::warn!(
                     actor = actor_id,
                     session = sid,
@@ -338,10 +357,18 @@ struct ReconcileOutcome {
 
 impl ReconcileOutcome {
     fn ok(count: u32, sessions: Vec<String>) -> Self {
-        Self { success: true, count, sessions }
+        Self {
+            success: true,
+            count,
+            sessions,
+        }
     }
     fn failed() -> Self {
-        Self { success: false, count: 0, sessions: Vec::new() }
+        Self {
+            success: false,
+            count: 0,
+            sessions: Vec::new(),
+        }
     }
 }
 
@@ -433,11 +460,17 @@ mod tests {
             let mut map = s.actors.lock().unwrap();
             map.insert(
                 "a".to_string(),
-                ActorPresence { state: PresenceState::Online, ..Default::default() },
+                ActorPresence {
+                    state: PresenceState::Online,
+                    ..Default::default()
+                },
             );
             map.insert(
                 "b".to_string(),
-                ActorPresence { state: PresenceState::Offline, ..Default::default() },
+                ActorPresence {
+                    state: PresenceState::Offline,
+                    ..Default::default()
+                },
             );
         }
         assert_eq!(s.state_of("a"), PresenceState::Online);
