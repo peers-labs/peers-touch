@@ -23,10 +23,9 @@ import (
 //     people out every 24h forces them through the picker → PIN dance for no
 //     security gain (the PIN protects the encrypted token at rest, and the
 //     server still revokes on logout / `CreateWithKick`).
-//   - Anything below ~7 days made the dev-dual workflow unusable: two windows
-//     on the same device-type kick each other and any restart of Station
-//     erases the row, both of which surfaced as the confusing "session
-//     revoked" red banner on the PIN screen.
+//   - `CreateWithKick` is the authoritative takeover boundary: within one
+//     Station, a successful login for an actor revokes every older session for
+//     that actor, regardless of device label.
 //
 // Operators that want a shorter window can override this via a session config
 // once we wire one up; today this constant is the single source of truth.

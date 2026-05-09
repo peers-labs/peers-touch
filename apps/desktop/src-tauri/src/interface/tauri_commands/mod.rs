@@ -14,8 +14,8 @@ pub mod crypto;
 pub mod friend_chat;
 pub mod frontend_log;
 pub mod group_chat;
-pub mod ice;
 pub mod i18n;
+pub mod ice;
 pub mod key_exchange;
 pub mod mcp;
 pub mod memory;
@@ -38,9 +38,9 @@ pub mod system;
 pub mod tools;
 pub mod tts;
 
-use crate::error::{AppResult, ErrorCode};
 use crate::contracts::StubPayload;
 use crate::contracts::CONTRACT_VERSION;
+use crate::error::{AppResult, ErrorCode};
 
 pub fn not_implemented(command: &str) -> AppResult<StubPayload> {
     AppResult::fail(

@@ -24,9 +24,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -40,6 +43,11 @@ import (
 )
 
 const agentDBName = "agent"
+
+const (
+	defaultMemorySearchLimit = 10
+	maxMemorySearchLimit     = 50
+)
 
 // ---------------------------------------------------------------------------
 // Security scanning — compiled at package init, zero per-call allocation.
@@ -123,12 +131,31 @@ func scanContent(content string) error {
 type MemoryService struct {
 	// Optional external memory provider for lifecycle hook notifications.
 	// At most one provider may be active at a time; nil means no provider.
-	memoryProvider domain.MemoryProvider
-	growthMetrics  *GrowthMetricsService
+	memoryProvider     domain.MemoryProvider
+	embeddingProvider  MemoryEmbeddingProvider
+	growthMetrics      *GrowthMetricsService
+	searchInfraOnce    sync.Once
+	searchInfraErr     error
+	searchInfraEnabled bool
 }
 
-func NewMemoryService(growthMetrics *GrowthMetricsService) *MemoryService {
-	return &MemoryService{growthMetrics: growthMetrics}
+type MemoryServiceOption func(*MemoryService)
+
+func WithMemoryEmbeddingProvider(provider MemoryEmbeddingProvider) MemoryServiceOption {
+	return func(s *MemoryService) {
+		s.SetMemoryEmbeddingProvider(provider)
+	}
+}
+
+func NewMemoryService(growthMetrics *GrowthMetricsService, opts ...MemoryServiceOption) *MemoryService {
+	svc := &MemoryService{
+		growthMetrics:     growthMetrics,
+		embeddingProvider: NewHashMemoryEmbeddingProvider(defaultMemoryEmbeddingDims),
+	}
+	for _, opt := range opts {
+		opt(svc)
+	}
+	return svc
 }
 
 // SetMemoryProvider attaches an external memory provider. Pass nil to detach.
@@ -139,6 +166,23 @@ func (s *MemoryService) SetMemoryProvider(provider domain.MemoryProvider) {
 // GetMemoryProvider returns the currently attached external memory provider, or nil.
 func (s *MemoryService) GetMemoryProvider() domain.MemoryProvider {
 	return s.memoryProvider
+}
+
+func (s *MemoryService) SetMemoryEmbeddingProvider(provider MemoryEmbeddingProvider) {
+	if provider == nil {
+		provider = NewHashMemoryEmbeddingProvider(defaultMemoryEmbeddingDims)
+	}
+	s.embeddingProvider = provider
+	s.searchInfraOnce = sync.Once{}
+	s.searchInfraErr = nil
+	s.searchInfraEnabled = false
+}
+
+func (s *MemoryService) MemoryEmbeddingProvider() MemoryEmbeddingProvider {
+	if s.embeddingProvider == nil {
+		s.SetMemoryEmbeddingProvider(nil)
+	}
+	return s.embeddingProvider
 }
 
 // notifyProvider delivers a MemoryWriteEvent to the attached provider.
@@ -182,6 +226,66 @@ func (s *MemoryService) getDB(ctx context.Context) (*gorm.DB, error) {
 	return db, nil
 }
 
+func (s *MemoryService) ensureSearchInfrastructure(ctx context.Context, db *gorm.DB) bool {
+	if db == nil || db.Dialector.Name() != "postgres" {
+		return false
+	}
+	dimensions := s.MemoryEmbeddingProvider().Dimensions()
+	if dimensions <= 0 {
+		logger.Warnf(ctx, "memory search infrastructure unavailable: embedding provider returned invalid dimensions")
+		return false
+	}
+	s.searchInfraOnce.Do(func() {
+		statements := []string{
+			`CREATE EXTENSION IF NOT EXISTS vector`,
+			fmt.Sprintf(`ALTER TABLE agent_memories ADD COLUMN IF NOT EXISTS embedding vector(%d)`, dimensions),
+			`CREATE INDEX IF NOT EXISTS idx_agent_memories_fts ON agent_memories USING GIN (to_tsvector('simple', coalesce(summary, '') || ' ' || coalesce(content, '')))`,
+			`CREATE INDEX IF NOT EXISTS idx_agent_memories_embedding ON agent_memories USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)`,
+		}
+		for _, stmt := range statements {
+			if err := db.Exec(stmt).Error; err != nil {
+				s.searchInfraErr = err
+				logger.Warnf(ctx, "memory search infrastructure unavailable: %v", err)
+				return
+			}
+		}
+		s.searchInfraEnabled = true
+	})
+	return s.searchInfraEnabled && s.searchInfraErr == nil
+}
+
+func (s *MemoryService) memoryEmbeddingLiteral(ctx context.Context, text string) (string, bool) {
+	provider := s.MemoryEmbeddingProvider()
+	vector, err := provider.Embed(ctx, text)
+	if err != nil {
+		logger.Warnf(ctx, "memory embedding provider failed: provider=%s model=%s err=%v", provider.Name(), provider.Model(), err)
+		return "", false
+	}
+	if len(vector) != provider.Dimensions() {
+		logger.Warnf(ctx, "memory embedding dimension mismatch: provider=%s model=%s got=%d want=%d",
+			provider.Name(), provider.Model(), len(vector), provider.Dimensions())
+		return "", false
+	}
+	return embeddingVectorLiteral(vector), true
+}
+
+func (s *MemoryService) updateMemoryEmbedding(ctx context.Context, db *gorm.DB, memoryID, summary, content string) {
+	if !s.ensureSearchInfrastructure(ctx, db) {
+		return
+	}
+	text := strings.TrimSpace(summary + " " + content)
+	if text == "" {
+		return
+	}
+	vector, ok := s.memoryEmbeddingLiteral(ctx, text)
+	if !ok {
+		return
+	}
+	if err := db.Exec(`UPDATE agent_memories SET embedding = ?::vector WHERE id = ?`, vector, memoryID).Error; err != nil {
+		logger.Warnf(ctx, "memory embedding update failed: memory=%s err=%v", memoryID, err)
+	}
+}
+
 // charLimitForTarget returns the maximum character budget for the given target.
 func charLimitForTarget(target string) int {
 	switch target {
@@ -207,6 +311,180 @@ func validateTarget(target string) error {
 	return nil
 }
 
+func validateOptionalTarget(target string) error {
+	if target == "" {
+		return nil
+	}
+	return validateTarget(target)
+}
+
+func normalizeMemoryLayer(layer domain.MemoryLayer, target, content string) domain.MemoryLayer {
+	switch layer {
+	case domain.MemoryLayerIdentity,
+		domain.MemoryLayerContext,
+		domain.MemoryLayerExperience,
+		domain.MemoryLayerPreference,
+		domain.MemoryLayerActivity:
+		return layer
+	}
+	return inferMemoryLayer(target, content)
+}
+
+func inferMemoryLayer(target, content string) domain.MemoryLayer {
+	lower := strings.ToLower(content)
+	if target == domain.MemoryTargetUser {
+		if strings.Contains(lower, "prefer") ||
+			strings.Contains(lower, "like") ||
+			strings.Contains(lower, "style") ||
+			strings.Contains(lower, "偏好") ||
+			strings.Contains(lower, "喜欢") {
+			return domain.MemoryLayerPreference
+		}
+		return domain.MemoryLayerIdentity
+	}
+	if strings.Contains(lower, "project") ||
+		strings.Contains(lower, "task") ||
+		strings.Contains(lower, "正在") ||
+		strings.Contains(lower, "当前") {
+		return domain.MemoryLayerContext
+	}
+	if strings.Contains(lower, "learned") ||
+		strings.Contains(lower, "lesson") ||
+		strings.Contains(lower, "worked") ||
+		strings.Contains(lower, "经验") {
+		return domain.MemoryLayerExperience
+	}
+	if strings.Contains(lower, "today") ||
+		strings.Contains(lower, "now") ||
+		strings.Contains(lower, "just") ||
+		strings.Contains(lower, "刚刚") {
+		return domain.MemoryLayerActivity
+	}
+	return domain.MemoryLayerPreference
+}
+
+func targetForLayer(layer domain.MemoryLayer) string {
+	switch layer {
+	case domain.MemoryLayerIdentity, domain.MemoryLayerPreference, domain.MemoryLayerActivity:
+		return domain.MemoryTargetUser
+	default:
+		return domain.MemoryTargetMemory
+	}
+}
+
+func summarizeMemoryContent(content string) string {
+	trimmed := strings.TrimSpace(strings.ReplaceAll(content, "\n", " "))
+	if len([]rune(trimmed)) <= 180 {
+		return trimmed
+	}
+	runes := []rune(trimmed)
+	return string(runes[:180]) + "..."
+}
+
+func parseMemoryTime(value string) (*time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	layouts := []string{time.RFC3339, "2006-01-02", "2006-01-02 15:04:05"}
+	for _, layout := range layouts {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return &parsed, nil
+		}
+	}
+	return nil, fmt.Errorf("invalid time %q", value)
+}
+
+func resolveMemoryPeriod(period string) (*time.Time, error) {
+	switch strings.TrimSpace(period) {
+	case "":
+		return nil, nil
+	case "24h":
+		t := time.Now().Add(-24 * time.Hour)
+		return &t, nil
+	case "7d":
+		t := time.Now().AddDate(0, 0, -7)
+		return &t, nil
+	case "30d":
+		t := time.Now().AddDate(0, 0, -30)
+		return &t, nil
+	case "90d":
+		t := time.Now().AddDate(0, 0, -90)
+		return &t, nil
+	default:
+		return nil, fmt.Errorf("invalid period %q", period)
+	}
+}
+
+func clampMemoryLimit(limit int) int {
+	if limit <= 0 {
+		return defaultMemorySearchLimit
+	}
+	if limit > maxMemorySearchLimit {
+		return maxMemorySearchLimit
+	}
+	return limit
+}
+
+func memoryRowToDomain(r persistence.Memory) domain.MemoryItem {
+	turnID := ""
+	if r.SourceTurnID != nil {
+		turnID = *r.SourceTurnID
+	}
+	return domain.MemoryItem{
+		MemoryID:       r.ID,
+		AgentID:        r.AgentID,
+		Target:         r.Target,
+		Layer:          domain.MemoryLayer(r.Layer),
+		SessionID:      r.SessionID,
+		Content:        r.Content,
+		SourceTurnID:   turnID,
+		Source:         r.Source,
+		Summary:        r.Summary,
+		Relevance:      r.Relevance,
+		IsFrozen:       r.IsFrozen,
+		TrustScore:     r.TrustScore,
+		RetrievalCount: r.RetrievalCount,
+		LastAccessedAt: r.LastAccessedAt,
+		HelpfulCount:   r.HelpfulCount,
+		HarmfulCount:   r.HarmfulCount,
+		CreatedAt:      r.CreatedAt,
+		UpdatedAt:      r.UpdatedAt,
+	}
+}
+
+func applyMemoryFilters(query *gorm.DB, opts domain.MemoryListOptions) *gorm.DB {
+	if opts.AgentID != "" {
+		query = query.Where("agent_id = ?", opts.AgentID)
+	}
+	if opts.Target != "" {
+		query = query.Where("target = ?", opts.Target)
+	}
+	if opts.Layer != "" {
+		query = query.Where("layer = ?", string(opts.Layer))
+	}
+	if opts.Since != nil {
+		query = query.Where("created_at >= ?", *opts.Since)
+	}
+	if opts.Until != nil {
+		query = query.Where("created_at <= ?", *opts.Until)
+	}
+	return query
+}
+
+func orderByMemory(orderBy string) string {
+	switch orderBy {
+	case "relevance":
+		return "relevance DESC, updated_at DESC"
+	case "last_accessed_at":
+		return "last_accessed_at DESC, updated_at DESC"
+	case "created_at":
+		return "created_at DESC"
+	default:
+		return "created_at ASC"
+	}
+}
+
 // currentUsage calculates the total character count of existing entries joined
 // by the domain separator.
 func currentUsage(entries []persistence.Memory) int {
@@ -228,18 +506,41 @@ func currentUsage(entries []persistence.Memory) int {
 // ---------------------------------------------------------------------------
 
 func (s *MemoryService) Add(ctx context.Context, agentID, target, content, turnID string) error {
+	_, err := s.AddMemory(ctx, domain.MemoryItem{
+		AgentID:      agentID,
+		Target:       target,
+		Content:      content,
+		SourceTurnID: turnID,
+		Source:       domain.MemorySourceTurn,
+	})
+	return err
+}
+
+func (s *MemoryService) AddMemory(ctx context.Context, item domain.MemoryItem) (*domain.MemoryItem, error) {
+	agentID := strings.TrimSpace(item.AgentID)
+	if agentID == "" {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "agent_id is required", nil)
+	}
+	target := strings.TrimSpace(item.Target)
+	if target == "" {
+		target = targetForLayer(item.Layer)
+	}
 	if err := validateTarget(target); err != nil {
-		return err
+		return nil, err
 	}
 
+	content := strings.TrimSpace(item.Content)
+	if content == "" {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "content is required", nil)
+	}
 	if err := scanContent(content); err != nil {
-		logger.Warnf(ctx, "memory add rejected for agent %s: %v", agentID, err)
-		return err
+		logger.Warnf(ctx, "memory add rejected for agent %s: %v", item.AgentID, err)
+		return nil, err
 	}
 
 	db, err := s.getDB(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Take a snapshot of current state before mutation (fire-and-forget).
@@ -248,7 +549,7 @@ func (s *MemoryService) Add(ctx context.Context, agentID, target, content, turnI
 	var existing []persistence.Memory
 	if err := db.Where("agent_id = ? AND target = ?", agentID, target).
 		Order("created_at asc").Find(&existing).Error; err != nil {
-		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"failed to query existing memories", err)
 	}
 
@@ -262,7 +563,7 @@ func (s *MemoryService) Add(ctx context.Context, agentID, target, content, turnI
 	}
 
 	if used+sepCost+newChars > limit {
-		return errcode.New(
+		return nil, errcode.New(
 			errcode.AgentInvalidRequest, http.StatusBadRequest,
 			fmt.Sprintf("char limit exceeded for target %q: used %d + new %d (+sep %d) > limit %d",
 				target, used, newChars, sepCost, limit),
@@ -271,24 +572,41 @@ func (s *MemoryService) Add(ctx context.Context, agentID, target, content, turnI
 	}
 
 	now := time.Now()
+	source := strings.TrimSpace(item.Source)
+	if source == "" {
+		source = domain.MemorySourceTurn
+	}
+	summary := strings.TrimSpace(item.Summary)
+	if summary == "" {
+		summary = summarizeMemoryContent(content)
+	}
 	record := persistence.Memory{
 		ID:         generateID("mem"),
 		AgentID:    agentID,
 		Target:     target,
+		Layer:      string(normalizeMemoryLayer(item.Layer, target, content)),
+		SessionID:  strings.TrimSpace(item.SessionID),
 		Content:    content,
-		Source:     domain.MemorySourceTurn,
+		Summary:    summary,
+		Relevance:  item.Relevance,
+		Source:     source,
 		TrustScore: domain.MemoryDefaultTrustScore,
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
-	if turnID != "" {
+	if item.TrustScore > 0 {
+		record.TrustScore = item.TrustScore
+	}
+	if item.SourceTurnID != "" {
+		turnID := item.SourceTurnID
 		record.SourceTurnID = &turnID
 	}
 
 	if err := db.Create(&record).Error; err != nil {
-		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"failed to create memory entry", err)
 	}
+	s.updateMemoryEmbedding(ctx, db, record.ID, record.Summary, record.Content)
 
 	logger.Infof(ctx, "memory added for agent %s target %s, id=%s, chars=%d",
 		agentID, target, record.ID, newChars)
@@ -300,8 +618,16 @@ func (s *MemoryService) Add(ctx context.Context, agentID, target, content, turnI
 	})
 
 	s.recordGrowthEvent(ctx, agentID, EventMemoryCreated, target, record.ID)
+	s.emitMemoryEvent(ctx, domain.MemoryEvent{
+		Type:     domain.MemoryEventExtraction,
+		MemoryID: record.ID,
+		AgentID:  agentID,
+		Layer:    domain.MemoryLayer(record.Layer),
+		Detail:   fmt.Sprintf(`{"source":%q}`, record.Source),
+	})
 
-	return nil
+	out := memoryRowToDomain(record)
+	return &out, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -371,11 +697,13 @@ func (s *MemoryService) Replace(ctx context.Context, agentID, target, oldText, n
 	now := time.Now()
 	if err := db.Model(matched).Updates(map[string]interface{}{
 		"content":    newContent,
+		"summary":    summarizeMemoryContent(newContent),
 		"updated_at": now,
 	}).Error; err != nil {
 		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"failed to update memory entry", err)
 	}
+	s.updateMemoryEmbedding(ctx, db, matched.ID, summarizeMemoryContent(newContent), newContent)
 
 	logger.Infof(ctx, "memory replaced for agent %s target %s, id=%s",
 		agentID, target, matched.ID)
@@ -388,6 +716,13 @@ func (s *MemoryService) Replace(ctx context.Context, agentID, target, oldText, n
 	})
 
 	s.recordGrowthEvent(ctx, agentID, EventMemoryReplaced, target, matched.ID)
+	s.emitMemoryEvent(ctx, domain.MemoryEvent{
+		Type:     domain.MemoryEventExtraction,
+		MemoryID: matched.ID,
+		AgentID:  agentID,
+		Layer:    domain.MemoryLayer(matched.Layer),
+		Detail:   `{"action":"replace"}`,
+	})
 
 	return nil
 }
@@ -452,6 +787,13 @@ func (s *MemoryService) Remove(ctx context.Context, agentID, target, oldText str
 	})
 
 	s.recordGrowthEvent(ctx, agentID, EventMemoryRemoved, target, matched.ID)
+	s.emitMemoryEvent(ctx, domain.MemoryEvent{
+		Type:     domain.MemoryEventDeletion,
+		MemoryID: matched.ID,
+		AgentID:  agentID,
+		Layer:    domain.MemoryLayer(matched.Layer),
+		Detail:   `{"action":"remove"}`,
+	})
 
 	return nil
 }
@@ -461,41 +803,814 @@ func (s *MemoryService) Remove(ctx context.Context, agentID, target, oldText str
 // ---------------------------------------------------------------------------
 
 func (s *MemoryService) List(ctx context.Context, agentID, target string) ([]domain.MemoryItem, error) {
-	if err := validateTarget(target); err != nil {
+	items, _, err := s.ListWithOptions(ctx, domain.MemoryListOptions{
+		AgentID: agentID,
+		Target:  target,
+	})
+	return items, err
+}
+
+func (s *MemoryService) ListWithOptions(ctx context.Context, opts domain.MemoryListOptions) ([]domain.MemoryItem, int, error) {
+	if err := validateOptionalTarget(opts.Target); err != nil {
+		return nil, 0, err
+	}
+
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	base := applyMemoryFilters(db.Model(&persistence.Memory{}), opts)
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return nil, 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to count memories", err)
+	}
+
+	pageSize := opts.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	page := opts.Page
+	if page < 0 {
+		page = 0
+	}
+	offset := page * pageSize
+
+	var rows []persistence.Memory
+	if err := applyMemoryFilters(db.Model(&persistence.Memory{}), opts).
+		Order(orderByMemory(opts.OrderBy)).
+		Limit(pageSize).
+		Offset(offset).
+		Find(&rows).Error; err != nil {
+		return nil, 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to list memories", err)
+	}
+
+	items := make([]domain.MemoryItem, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, memoryRowToDomain(r))
+	}
+
+	return items, int(total), nil
+}
+
+func (s *MemoryService) GetMemory(ctx context.Context, id string) (*domain.MemoryItem, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
 		return nil, err
+	}
+	var row persistence.Memory
+	if err := db.Where("id = ?", id).First(&row).Error; err != nil {
+		return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound,
+			fmt.Sprintf("memory not found: %s", id), err)
+	}
+	item := memoryRowToDomain(row)
+	return &item, nil
+}
+
+func (s *MemoryService) Search(ctx context.Context, opts domain.MemorySearchOptions) ([]domain.ScoredMemory, error) {
+	start := time.Now()
+	query := strings.TrimSpace(opts.Query)
+	if query == "" {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "query is required", nil)
 	}
 
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	var rows []persistence.Memory
-	if err := db.Where("agent_id = ? AND target = ?", agentID, target).
-		Order("created_at asc").Find(&rows).Error; err != nil {
-		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-			"failed to list memories", err)
+	if s.ensureSearchInfrastructure(ctx, db) {
+		if results, searchErr := s.searchPostgresHybrid(ctx, db, opts, query, start); searchErr == nil {
+			return results, nil
+		} else {
+			logger.Warnf(ctx, "memory postgres hybrid search failed, falling back to in-process search: %v", searchErr)
+		}
 	}
 
-	items := make([]domain.MemoryItem, 0, len(rows))
-	for _, r := range rows {
-		turnID := ""
-		if r.SourceTurnID != nil {
-			turnID = *r.SourceTurnID
+	listOpts := domain.MemoryListOptions{
+		AgentID: opts.AgentID,
+		Since:   opts.Since,
+		Until:   opts.Until,
+	}
+	dbQuery := applyMemoryFilters(db.Model(&persistence.Memory{}), listOpts)
+	if len(opts.Layers) > 0 {
+		layers := make([]string, 0, len(opts.Layers))
+		for _, layer := range opts.Layers {
+			if layer != "" {
+				layers = append(layers, string(layer))
+			}
 		}
-		items = append(items, domain.MemoryItem{
-			MemoryID:     r.ID,
-			AgentID:      r.AgentID,
-			Target:       r.Target,
-			Content:      r.Content,
-			SourceTurnID: turnID,
-			IsFrozen:     r.IsFrozen,
-			CreatedAt:    r.CreatedAt,
-			UpdatedAt:    r.UpdatedAt,
+		if len(layers) > 0 {
+			dbQuery = dbQuery.Where("layer IN ?", layers)
+		}
+	}
+
+	var rows []persistence.Memory
+	if err := dbQuery.Order("updated_at DESC").Limit(500).Find(&rows).Error; err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to search memories", err)
+	}
+
+	terms := strings.Fields(strings.ToLower(query))
+	results := make([]domain.ScoredMemory, 0, len(rows))
+	now := time.Now()
+	for _, row := range rows {
+		keywordScore := keywordMemoryScore(row, terms)
+		if keywordScore <= 0 {
+			continue
+		}
+		decay := memoryDecayFactor(row, now)
+		trust := row.TrustScore
+		if trust <= 0 {
+			trust = domain.MemoryDefaultTrustScore
+		}
+		trustFactor := 0.5 + trust*0.5
+		weighted := keywordScore
+		afterDecay := weighted * decay
+		final := afterDecay * trustFactor
+		item := memoryRowToDomain(row)
+		results = append(results, domain.ScoredMemory{
+			Memory: item,
+			Score:  final,
+			Explain: domain.MemoryScoreExplain{
+				KeywordScore:  keywordScore,
+				WeightedScore: weighted,
+				DecayFactor:   decay,
+				AfterDecay:    afterDecay,
+				AfterRerank:   afterDecay,
+				FinalScore:    final,
+				TrustFactor:   trustFactor,
+			},
 		})
 	}
 
-	return items, nil
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+	results = governMemoryResults(results, opts.Effort, clampMemoryLimit(opts.Limit))
+	s.recordMemoryAccess(ctx, results)
+	s.emitMemoryEvent(ctx, domain.MemoryEvent{
+		Type:      domain.MemoryEventRetrieval,
+		AgentID:   opts.AgentID,
+		Detail:    fmt.Sprintf(`{"query":%q,"result_count":%d}`, query, len(results)),
+		LatencyMs: time.Since(start).Milliseconds(),
+	})
+	return results, nil
+}
+
+type memoryHybridHit struct {
+	ID           string
+	KeywordScore float64
+	VectorScore  float64
+}
+
+func (s *MemoryService) searchPostgresHybrid(ctx context.Context, db *gorm.DB, opts domain.MemorySearchOptions, query string, start time.Time) ([]domain.ScoredMemory, error) {
+	vector, ok := s.memoryEmbeddingLiteral(ctx, query)
+	if !ok {
+		return nil, fmt.Errorf("embedding provider unavailable")
+	}
+	whereParts := []string{"1=1"}
+	args := []any{}
+	if opts.AgentID != "" {
+		whereParts = append(whereParts, "agent_id = ?")
+		args = append(args, opts.AgentID)
+	}
+	if opts.Since != nil {
+		whereParts = append(whereParts, "created_at >= ?")
+		args = append(args, *opts.Since)
+	}
+	if opts.Until != nil {
+		whereParts = append(whereParts, "created_at <= ?")
+		args = append(args, *opts.Until)
+	}
+	if len(opts.Layers) > 0 {
+		layers := make([]string, 0, len(opts.Layers))
+		for _, layer := range opts.Layers {
+			if layer != "" {
+				layers = append(layers, string(layer))
+			}
+		}
+		if len(layers) > 0 {
+			whereParts = append(whereParts, "layer IN ?")
+			args = append(args, layers)
+		}
+	}
+	like := "%" + query + "%"
+	args = append([]any{query, vector}, append(args, query, like, like)...)
+	raw := fmt.Sprintf(`
+		SELECT id,
+			ts_rank_cd(to_tsvector('simple', coalesce(summary, '') || ' ' || coalesce(content, '')), plainto_tsquery('simple', ?)) AS keyword_score,
+			CASE WHEN embedding IS NULL THEN 0 ELSE GREATEST(0, 1 - (embedding <=> ?::vector)) END AS vector_score
+		FROM agent_memories
+		WHERE %s
+			AND (
+				to_tsvector('simple', coalesce(summary, '') || ' ' || coalesce(content, '')) @@ plainto_tsquery('simple', ?)
+				OR summary ILIKE ?
+				OR content ILIKE ?
+				OR embedding IS NOT NULL
+			)
+		ORDER BY (
+			0.45 * ts_rank_cd(to_tsvector('simple', coalesce(summary, '') || ' ' || coalesce(content, '')), plainto_tsquery('simple', ?))
+			+ 0.55 * CASE WHEN embedding IS NULL THEN 0 ELSE GREATEST(0, 1 - (embedding <=> ?::vector)) END
+		) DESC
+		LIMIT 500
+	`, strings.Join(whereParts, " AND "))
+	args = append(args, query, vector)
+
+	var hits []memoryHybridHit
+	if err := db.Raw(raw, args...).Scan(&hits).Error; err != nil {
+		return nil, err
+	}
+	if len(hits) == 0 {
+		return nil, nil
+	}
+
+	ids := make([]string, 0, len(hits))
+	scoreByID := make(map[string]memoryHybridHit, len(hits))
+	for _, hit := range hits {
+		ids = append(ids, hit.ID)
+		scoreByID[hit.ID] = hit
+	}
+	var rows []persistence.Memory
+	if err := db.Where("id IN ?", ids).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	rowByID := make(map[string]persistence.Memory, len(rows))
+	for _, row := range rows {
+		rowByID[row.ID] = row
+	}
+
+	now := time.Now()
+	results := make([]domain.ScoredMemory, 0, len(hits))
+	for _, id := range ids {
+		row, ok := rowByID[id]
+		if !ok {
+			continue
+		}
+		hit := scoreByID[id]
+		weighted := 0.45*hit.KeywordScore + 0.55*hit.VectorScore
+		if weighted <= 0 {
+			continue
+		}
+		decay := memoryDecayFactor(row, now)
+		trust := row.TrustScore
+		if trust <= 0 {
+			trust = domain.MemoryDefaultTrustScore
+		}
+		trustFactor := 0.5 + trust*0.5
+		afterDecay := weighted * decay
+		final := afterDecay * trustFactor
+		results = append(results, domain.ScoredMemory{
+			Memory: memoryRowToDomain(row),
+			Score:  final,
+			Explain: domain.MemoryScoreExplain{
+				VectorScore:   hit.VectorScore,
+				KeywordScore:  hit.KeywordScore,
+				WeightedScore: weighted,
+				DecayFactor:   decay,
+				AfterDecay:    afterDecay,
+				AfterRerank:   afterDecay,
+				FinalScore:    final,
+				TrustFactor:   trustFactor,
+			},
+		})
+	}
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+	results = governMemoryResults(results, opts.Effort, clampMemoryLimit(opts.Limit))
+	s.recordMemoryAccess(ctx, results)
+	s.emitMemoryEvent(ctx, domain.MemoryEvent{
+		Type:      domain.MemoryEventRetrieval,
+		AgentID:   opts.AgentID,
+		Detail:    fmt.Sprintf(`{"query":%q,"mode":"postgres_hybrid","result_count":%d}`, query, len(results)),
+		LatencyMs: time.Since(start).Milliseconds(),
+	})
+	return results, nil
+}
+
+func keywordMemoryScore(row persistence.Memory, terms []string) float64 {
+	haystack := strings.ToLower(strings.Join([]string{
+		row.Summary,
+		row.Content,
+		row.Layer,
+		row.Target,
+	}, " "))
+	if len(terms) == 0 {
+		return 0
+	}
+	matches := 0
+	for _, term := range terms {
+		if strings.Contains(haystack, term) {
+			matches++
+		}
+	}
+	if matches == 0 {
+		return 0
+	}
+	score := float64(matches) / float64(len(terms))
+	if strings.Contains(strings.ToLower(row.Summary), strings.Join(terms, " ")) {
+		score += 0.25
+	}
+	if score > 1 {
+		score = 1
+	}
+	return score
+}
+
+func memoryDecayFactor(row persistence.Memory, now time.Time) float64 {
+	effective := row.CreatedAt
+	if row.LastAccessedAt != nil && row.LastAccessedAt.After(effective) {
+		effective = *row.LastAccessedAt
+	}
+	ageDays := now.Sub(effective).Hours() / 24
+	lambda := 0.01
+	switch domain.MemoryLayer(row.Layer) {
+	case domain.MemoryLayerIdentity, domain.MemoryLayerPreference:
+		lambda = 0.001
+	case domain.MemoryLayerContext:
+		lambda = 0.006
+	case domain.MemoryLayerExperience:
+		lambda = 0.004
+	case domain.MemoryLayerActivity:
+		lambda = 0.02
+	}
+	accessBoost := 1 + math.Log2(1+float64(row.RetrievalCount))
+	score := math.Exp(-(lambda / accessBoost) * ageDays)
+	if score < 0.05 {
+		return 0.05
+	}
+	if score > 1 {
+		return 1
+	}
+	return score
+}
+
+func governMemoryResults(results []domain.ScoredMemory, effort string, limit int) []domain.ScoredMemory {
+	layerLimits := map[domain.MemoryLayer]int{
+		domain.MemoryLayerIdentity:   2,
+		domain.MemoryLayerContext:    1,
+		domain.MemoryLayerExperience: 1,
+		domain.MemoryLayerPreference: 3,
+		domain.MemoryLayerActivity:   3,
+	}
+	switch effort {
+	case "low":
+		layerLimits = map[domain.MemoryLayer]int{
+			domain.MemoryLayerIdentity:   1,
+			domain.MemoryLayerPreference: 2,
+			domain.MemoryLayerActivity:   2,
+		}
+	case "high":
+		layerLimits = map[domain.MemoryLayer]int{
+			domain.MemoryLayerIdentity:   3,
+			domain.MemoryLayerContext:    3,
+			domain.MemoryLayerExperience: 3,
+			domain.MemoryLayerPreference: 5,
+			domain.MemoryLayerActivity:   6,
+		}
+	}
+	counts := make(map[domain.MemoryLayer]int)
+	out := make([]domain.ScoredMemory, 0, len(results))
+	for _, result := range results {
+		layer := result.Memory.Layer
+		layerLimit := layerLimits[layer]
+		if layerLimit <= 0 {
+			continue
+		}
+		if counts[layer] >= layerLimit {
+			continue
+		}
+		out = append(out, result)
+		counts[layer]++
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func (s *MemoryService) recordMemoryAccess(ctx context.Context, results []domain.ScoredMemory) {
+	if len(results) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(results))
+	for _, result := range results {
+		if result.Memory.MemoryID != "" {
+			ids = append(ids, result.Memory.MemoryID)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return
+	}
+	now := time.Now()
+	if err := db.Model(&persistence.Memory{}).
+		Where("id IN ?", ids).
+		Updates(map[string]interface{}{
+			"retrieval_count":  gorm.Expr("retrieval_count + ?", 1),
+			"last_accessed_at": now,
+		}).Error; err != nil {
+		logger.Warnf(ctx, "memory access update failed: %v", err)
+		return
+	}
+	s.emitMemoryEvent(ctx, domain.MemoryEvent{
+		Type:   domain.MemoryEventAccess,
+		Detail: fmt.Sprintf(`{"count":%d}`, len(ids)),
+	})
+}
+
+func (s *MemoryService) Stats(ctx context.Context, agentID string) (*domain.MemoryStats, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	query := db.Model(&persistence.Memory{})
+	if agentID != "" {
+		query = query.Where("agent_id = ?", agentID)
+	}
+	var rows []persistence.Memory
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to load memory stats", err)
+	}
+	stats := &domain.MemoryStats{ByLayer: make(map[domain.MemoryLayer]int)}
+	for _, row := range rows {
+		stats.Total++
+		stats.ByLayer[domain.MemoryLayer(row.Layer)]++
+		stats.StorageBytes += int64(len(row.Content) + len(row.Summary))
+	}
+	return stats, nil
+}
+
+func (s *MemoryService) GetPersona(ctx context.Context, agentID string) (*domain.MemoryPersona, error) {
+	items, _, err := s.ListWithOptions(ctx, domain.MemoryListOptions{
+		AgentID:  agentID,
+		PageSize: 100,
+		OrderBy:  "created_at",
+	})
+	if err != nil {
+		return nil, err
+	}
+	return buildMemoryPersona(items), nil
+}
+
+func buildMemoryPersona(items []domain.MemoryItem) *domain.MemoryPersona {
+	var identities, preferences, activities []string
+	updatedAt := time.Time{}
+	for _, item := range items {
+		summary := strings.TrimSpace(item.Summary)
+		if summary == "" {
+			summary = summarizeMemoryContent(item.Content)
+		}
+		if summary == "" {
+			continue
+		}
+		switch item.Layer {
+		case domain.MemoryLayerIdentity:
+			identities = append(identities, summary)
+		case domain.MemoryLayerPreference:
+			preferences = append(preferences, summary)
+		case domain.MemoryLayerActivity:
+			activities = append(activities, summary)
+		}
+		if item.UpdatedAt.After(updatedAt) {
+			updatedAt = item.UpdatedAt
+		}
+	}
+	if updatedAt.IsZero() {
+		updatedAt = time.Now()
+	}
+	tagline := "No durable persona yet"
+	if len(identities) > 0 {
+		tagline = identities[0]
+	} else if len(preferences) > 0 {
+		tagline = preferences[0]
+	}
+	sections := make([]string, 0, 3)
+	if len(identities) > 0 {
+		sections = append(sections, "Identity: "+strings.Join(identities, "; "))
+	}
+	if len(preferences) > 0 {
+		sections = append(sections, "Preferences: "+strings.Join(preferences, "; "))
+	}
+	if len(activities) > 0 {
+		sections = append(sections, "Recent activity: "+strings.Join(activities, "; "))
+	}
+	narrative := strings.Join(sections, "\n")
+	return &domain.MemoryPersona{Tagline: tagline, Narrative: narrative, UpdatedAt: updatedAt}
+}
+
+func (s *MemoryService) BuildRelevantSnapshot(ctx context.Context, agentID, query string) (*domain.MemorySnapshot, error) {
+	searchResults, err := s.Search(ctx, domain.MemorySearchOptions{
+		AgentID: agentID,
+		Query:   query,
+		Limit:   10,
+		Effort:  "medium",
+	})
+	if err != nil {
+		return s.BuildSnapshot(ctx, agentID)
+	}
+	persona, _ := s.GetPersona(ctx, agentID)
+	relevant := make([]domain.MemoryItem, 0, len(searchResults))
+	memoryParts := make([]string, 0)
+	userParts := make([]string, 0)
+	for _, result := range searchResults {
+		item := result.Memory
+		relevant = append(relevant, item)
+		line := fmt.Sprintf("- [%s] %s", item.Layer, firstNonEmpty(item.Summary, item.Content))
+		if item.Target == domain.MemoryTargetUser {
+			userParts = append(userParts, line)
+		} else {
+			memoryParts = append(memoryParts, line)
+		}
+	}
+	personaContent := ""
+	if persona != nil && persona.Narrative != "" {
+		personaContent = persona.Narrative
+	}
+	return &domain.MemorySnapshot{
+		AgentID:        agentID,
+		MemoryContent:  strings.Join(memoryParts, "\n"),
+		UserContent:    strings.Join(userParts, "\n"),
+		PersonaContent: personaContent,
+		RelevantItems:  relevant,
+		CapturedAt:     time.Now(),
+	}, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func (s *MemoryService) emitMemoryEvent(ctx context.Context, event domain.MemoryEvent) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		logger.Warnf(ctx, "memory event skipped: %v", err)
+		return
+	}
+	if event.ID == "" {
+		event.ID = generateID("mev")
+	}
+	if event.Timestamp.IsZero() {
+		event.Timestamp = time.Now()
+	}
+	row := persistence.MemoryEvent{
+		ID:        event.ID,
+		Type:      string(event.Type),
+		MemoryID:  event.MemoryID,
+		SessionID: event.SessionID,
+		AgentID:   event.AgentID,
+		Layer:     string(event.Layer),
+		Detail:    event.Detail,
+		LatencyMs: event.LatencyMs,
+		CreatedAt: event.Timestamp,
+	}
+	if err := db.Create(&row).Error; err != nil {
+		logger.Warnf(ctx, "memory event write failed: %v", err)
+	}
+}
+
+func (s *MemoryService) QueryEvents(ctx context.Context, opts domain.MemoryEventQueryOptions) ([]domain.MemoryEvent, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	query := db.Model(&persistence.MemoryEvent{})
+	if opts.Type != "" {
+		query = query.Where("type = ?", string(opts.Type))
+	}
+	if opts.AgentID != "" {
+		query = query.Where("agent_id = ?", opts.AgentID)
+	}
+	if opts.Since != nil {
+		query = query.Where("created_at >= ?", *opts.Since)
+	}
+	if opts.Until != nil {
+		query = query.Where("created_at <= ?", *opts.Until)
+	}
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	var rows []persistence.MemoryEvent
+	if err := query.Order("created_at DESC").Limit(limit).Offset(opts.Offset).Find(&rows).Error; err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to query memory events", err)
+	}
+	events := make([]domain.MemoryEvent, 0, len(rows))
+	for _, row := range rows {
+		events = append(events, domain.MemoryEvent{
+			ID:        row.ID,
+			Type:      domain.MemoryEventType(row.Type),
+			MemoryID:  row.MemoryID,
+			SessionID: row.SessionID,
+			AgentID:   row.AgentID,
+			Layer:     domain.MemoryLayer(row.Layer),
+			Detail:    row.Detail,
+			LatencyMs: row.LatencyMs,
+			Timestamp: row.CreatedAt,
+		})
+	}
+	return events, nil
+}
+
+func (s *MemoryService) Export(ctx context.Context, agentID string, layer domain.MemoryLayer) ([]domain.MemoryItem, *domain.MemoryPersona, error) {
+	items, _, err := s.ListWithOptions(ctx, domain.MemoryListOptions{
+		AgentID:  agentID,
+		Layer:    layer,
+		PageSize: 100,
+		OrderBy:  "created_at",
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	persona, _ := s.GetPersona(ctx, agentID)
+	return items, persona, nil
+}
+
+func (s *MemoryService) Import(ctx context.Context, items []domain.MemoryItem, skipDuplicates bool) (imported, skipped, failed int) {
+	for _, item := range items {
+		if skipDuplicates && s.hasDuplicateMemory(ctx, item.AgentID, item.Layer, item.Summary, item.Content) {
+			skipped++
+			continue
+		}
+		if _, err := s.AddMemory(ctx, item); err != nil {
+			failed++
+			continue
+		}
+		imported++
+	}
+	return imported, skipped, failed
+}
+
+func (s *MemoryService) hasDuplicateMemory(ctx context.Context, agentID string, layer domain.MemoryLayer, summary, content string) bool {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return false
+	}
+	query := db.Model(&persistence.Memory{}).Where("agent_id = ? AND layer = ?", agentID, string(layer))
+	if strings.TrimSpace(summary) != "" {
+		query = query.Where("summary = ?", summary)
+	} else {
+		query = query.Where("content = ?", content)
+	}
+	var count int64
+	_ = query.Count(&count).Error
+	return count > 0
+}
+
+func (s *MemoryService) RecordFeedback(ctx context.Context, memoryID string, helpful bool, reason string) (*domain.MemoryItem, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var row persistence.Memory
+	if err := db.Where("id = ?", memoryID).First(&row).Error; err != nil {
+		return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "memory not found", err)
+	}
+	trust := row.TrustScore
+	if helpful {
+		trust += domain.TrustScorePositiveDelta
+		row.HelpfulCount++
+	} else {
+		trust -= domain.TrustScoreNegativeDelta
+		row.HarmfulCount++
+	}
+	if trust > 1 {
+		trust = 1
+	}
+	if trust < 0.01 {
+		trust = 0.01
+	}
+	row.TrustScore = trust
+	row.UpdatedAt = time.Now()
+	if err := db.Save(&row).Error; err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to save memory feedback", err)
+	}
+	s.emitMemoryEvent(ctx, domain.MemoryEvent{
+		Type:     domain.MemoryEventFeedback,
+		MemoryID: row.ID,
+		AgentID:  row.AgentID,
+		Layer:    domain.MemoryLayer(row.Layer),
+		Detail:   fmt.Sprintf(`{"helpful":%t,"reason":%q}`, helpful, reason),
+	})
+	item := memoryRowToDomain(row)
+	return &item, nil
+}
+
+func (s *MemoryService) ExtractFromTurn(ctx context.Context, agentID, conversationID, turnID, userInput, assistantResponse string) {
+	candidates := extractMemoryCandidates(userInput, assistantResponse)
+	if len(candidates) == 0 {
+		return
+	}
+	for _, candidate := range candidates {
+		candidate.AgentID = agentID
+		candidate.SessionID = conversationID
+		candidate.SourceTurnID = turnID
+		candidate.Source = domain.MemorySourceReview
+		if s.hasDuplicateMemory(ctx, candidate.AgentID, candidate.Layer, candidate.Summary, candidate.Content) {
+			s.emitMemoryEvent(ctx, domain.MemoryEvent{
+				Type:    domain.MemoryEventDedupSkip,
+				AgentID: agentID,
+				Layer:   candidate.Layer,
+				Detail:  fmt.Sprintf(`{"summary":%q}`, candidate.Summary),
+			})
+			continue
+		}
+		if _, err := s.AddMemory(ctx, candidate); err != nil {
+			logger.Warnf(ctx, "memory extraction save failed: agent=%s err=%v", agentID, err)
+		}
+	}
+}
+
+func extractMemoryCandidates(userInput, assistantResponse string) []domain.MemoryItem {
+	var out []domain.MemoryItem
+	text := strings.TrimSpace(userInput)
+	lower := strings.ToLower(text)
+	if text == "" {
+		return out
+	}
+	add := func(layer domain.MemoryLayer, target string, content string) {
+		out = append(out, domain.MemoryItem{
+			Target:  target,
+			Layer:   layer,
+			Content: content,
+			Summary: summarizeMemoryContent(content),
+		})
+	}
+	if strings.Contains(lower, "remember") || strings.Contains(lower, "记住") || strings.Contains(lower, "记得") {
+		add(inferMemoryLayer(domain.MemoryTargetUser, text), domain.MemoryTargetUser, text)
+	}
+	if strings.Contains(lower, "i prefer") ||
+		strings.Contains(lower, "please use") ||
+		strings.Contains(lower, "以后") ||
+		strings.Contains(lower, "偏好") ||
+		strings.Contains(lower, "喜欢") {
+		add(domain.MemoryLayerPreference, domain.MemoryTargetUser, text)
+	}
+	if strings.Contains(lower, "my name is") ||
+		strings.Contains(lower, "i am ") ||
+		strings.Contains(lower, "我是") {
+		add(domain.MemoryLayerIdentity, domain.MemoryTargetUser, text)
+	}
+	if strings.Contains(lower, "project") ||
+		strings.Contains(lower, "workspace") ||
+		strings.Contains(lower, "项目") {
+		add(domain.MemoryLayerContext, domain.MemoryTargetMemory, text)
+	}
+	if strings.Contains(strings.ToLower(assistantResponse), "lesson") {
+		add(domain.MemoryLayerExperience, domain.MemoryTargetMemory, summarizeMemoryContent(assistantResponse))
+	}
+	return out
+}
+
+func (s *MemoryService) EmbeddingStatus(ctx context.Context) (provider, model string, dimensions, vectorCount int) {
+	db, err := s.getDB(ctx)
+	if err == nil && s.ensureSearchInfrastructure(ctx, db) {
+		var count int64
+		if countErr := db.Raw(`SELECT COUNT(*) FROM agent_memories WHERE embedding IS NOT NULL`).Scan(&count).Error; countErr == nil {
+			provider := s.MemoryEmbeddingProvider()
+			return provider.Name(), provider.Model(), provider.Dimensions(), int(count)
+		}
+	}
+	stats, statErr := s.Stats(ctx, "")
+	if statErr == nil && stats != nil {
+		vectorCount = stats.Total
+	}
+	return "none", "fts-lite", 0, vectorCount
+}
+
+func (s *MemoryService) ReEmbed(ctx context.Context) (int, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var rows []persistence.Memory
+	if err := db.Find(&rows).Error; err != nil {
+		return 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to load memories for re-embed", err)
+	}
+	if !s.ensureSearchInfrastructure(ctx, db) {
+		return len(rows), nil
+	}
+	count := 0
+	for _, row := range rows {
+		s.updateMemoryEmbedding(ctx, db, row.ID, row.Summary, row.Content)
+		count++
+	}
+	return count, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -556,6 +1671,9 @@ func (s *MemoryService) BuildSnapshot(ctx context.Context, agentID string) (*dom
 		UserContent:   userContent,
 		CapturedAt:    time.Now(),
 	}
+	if persona, personaErr := s.GetPersona(ctx, agentID); personaErr == nil && persona != nil {
+		snapshot.PersonaContent = persona.Narrative
+	}
 
 	logger.Infof(ctx, "memory snapshot built for agent %s", agentID)
 	return snapshot, nil
@@ -590,8 +1708,9 @@ const (
 // method returns nil after logging so that compression can proceed.
 //
 // 2026-04-11 — Fix: accept providerType parameter instead of hardcoding
-//   "openai". This allows flush to work with any configured provider
-//   (Anthropic, Ollama, etc.).
+//
+//	"openai". This allows flush to work with any configured provider
+//	(Anthropic, Ollama, etc.).
 func (s *MemoryService) FlushMemories(
 	ctx context.Context,
 	agentID string,
@@ -858,6 +1977,9 @@ func (s *MemoryService) DeleteMemoryByID(ctx context.Context, agentID, memoryID 
 	// Take snapshot before deletion.
 	s.takeSnapshotQuiet(ctx, agentID, "manual_delete", nil)
 
+	var row persistence.Memory
+	_ = db.Where("id = ? AND agent_id = ?", memoryID, agentID).First(&row).Error
+
 	result := db.Where("id = ? AND agent_id = ?", memoryID, agentID).Delete(&persistence.Memory{})
 	if result.Error != nil {
 		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
@@ -869,6 +1991,13 @@ func (s *MemoryService) DeleteMemoryByID(ctx context.Context, agentID, memoryID 
 	}
 
 	logger.Infof(ctx, "memory deleted by admin: agent=%s memory=%s", agentID, memoryID)
+	s.emitMemoryEvent(ctx, domain.MemoryEvent{
+		Type:     domain.MemoryEventDeletion,
+		MemoryID: memoryID,
+		AgentID:  agentID,
+		Layer:    domain.MemoryLayer(row.Layer),
+		Detail:   `{"action":"manual_delete"}`,
+	})
 	return nil
 }
 

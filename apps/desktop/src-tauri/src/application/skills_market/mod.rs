@@ -1,8 +1,8 @@
-use crate::error::{AppResult, ErrorCode};
 use crate::contracts::{
     SkillImportAddressInput, SkillImportGitHubInput, SkillMarketAddInput, SkillMarketDetailInput,
     SkillMarketIdInput, SkillMarketListInput, SkillMarketSyncInput, StubPayload,
 };
+use crate::error::{AppResult, ErrorCode};
 use serde_json::json;
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {

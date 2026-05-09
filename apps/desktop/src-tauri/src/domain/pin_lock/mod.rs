@@ -8,8 +8,8 @@
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
+use argon2::password_hash::{rand_core::OsRng, PasswordHash, SaltString};
 use argon2::{Argon2, PasswordHasher, PasswordVerifier};
-use argon2::password_hash::{rand_core::OsRng, SaltString, PasswordHash};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -87,7 +87,9 @@ pub fn verify_pin(pin: &str, protection: &mut PinProtection) -> Result<(), PinVe
         let elapsed = now.saturating_sub(protection.last_failed_at);
         if elapsed < LOCKOUT_DURATION_SECS {
             let remaining = LOCKOUT_DURATION_SECS - elapsed;
-            return Err(PinVerifyError::LockedOut { remaining_secs: remaining });
+            return Err(PinVerifyError::LockedOut {
+                remaining_secs: remaining,
+            });
         }
         protection.failed_attempts = 0;
     }
@@ -96,7 +98,10 @@ pub fn verify_pin(pin: &str, protection: &mut PinProtection) -> Result<(), PinVe
         .map_err(|e| PinVerifyError::Internal(format!("corrupt verify hash: {e}")))?;
 
     let argon2 = Argon2::default();
-    if argon2.verify_password(pin.as_bytes(), &parsed_hash).is_err() {
+    if argon2
+        .verify_password(pin.as_bytes(), &parsed_hash)
+        .is_err()
+    {
         protection.failed_attempts += 1;
         protection.last_failed_at = now_epoch();
         return Err(PinVerifyError::WrongPin {
@@ -150,10 +155,9 @@ pub fn decrypt_session(
 ) -> Result<String, String> {
     let mut key = derive_encryption_key(pin, enc_salt)?;
 
-    let ciphertext = hex::decode(&encrypted.ciphertext)
-        .map_err(|e| format!("bad ciphertext hex: {e}"))?;
-    let nonce_bytes = hex::decode(&encrypted.nonce)
-        .map_err(|e| format!("bad nonce hex: {e}"))?;
+    let ciphertext =
+        hex::decode(&encrypted.ciphertext).map_err(|e| format!("bad ciphertext hex: {e}"))?;
+    let nonce_bytes = hex::decode(&encrypted.nonce).map_err(|e| format!("bad nonce hex: {e}"))?;
     if nonce_bytes.len() != 12 {
         return Err("nonce must be 12 bytes".to_string());
     }

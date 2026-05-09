@@ -337,15 +337,16 @@ message ListFriendRequestsResponse {
   int32 total = 2;
 }
 
-// Delete an accepted friendship with a peer. This is a relationship-level
-// deletion, not just a recent-conversation hide. The server removes the
-// accepted relationship and its direct-chat session history for both actors.
-message DeleteFriendRequest {
-  string peer_did = 1;
+// ============================================================================
+// Friendship Controls
+// ============================================================================
+
+message BlockUserRequest {
+  string target_did = 1;
 }
 
-message DeleteFriendResponse {
-  bool success = 1;
+message BlockUserResponse {
+  Friend friend = 1;
 }
 
 // ============================================================================

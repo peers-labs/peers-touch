@@ -30,7 +30,9 @@ pub enum ActorKind {
 }
 
 impl Default for ActorKind {
-    fn default() -> Self { ActorKind::Unspecified }
+    fn default() -> Self {
+        ActorKind::Unspecified
+    }
 }
 
 impl ActorKind {
@@ -42,7 +44,7 @@ impl ActorKind {
             'o' => ActorKind::Organization,
             's' => ActorKind::Service,
             'a' => ActorKind::Application,
-            _   => ActorKind::Unspecified,
+            _ => ActorKind::Unspecified,
         }
     }
 }
@@ -110,7 +112,12 @@ pub struct ActiveSession {
 }
 
 impl ActiveSession {
-    pub fn new(window_label: impl Into<String>, account_id: impl Into<String>, actor: ActorRef, jwt: impl Into<String>) -> Self {
+    pub fn new(
+        window_label: impl Into<String>,
+        account_id: impl Into<String>,
+        actor: ActorRef,
+        jwt: impl Into<String>,
+    ) -> Self {
         Self {
             window_label: window_label.into(),
             account_id: account_id.into(),

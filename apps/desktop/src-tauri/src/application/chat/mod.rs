@@ -1,10 +1,10 @@
-use crate::error::{AppResult, ErrorCode};
+use crate::application::provider::{remote as provider_remote, state as provider_state};
 use crate::contracts::{
     ChatCompletionInput, ChatConversationInput, ChatListMessagesInput, ChatMarkReadInput,
     ChatMessageInput, ChatRenameConversationInput, ChatSendMessageInput,
     ChatSetConversationModelInput, ChatUpdateMessageInput, StubPayload,
 };
-use crate::application::provider::{remote as provider_remote, state as provider_state};
+use crate::error::{AppResult, ErrorCode};
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -83,9 +83,11 @@ struct ChatStores {
 static CHAT_STORES: OnceLock<Mutex<ChatStores>> = OnceLock::new();
 
 fn chat_stores() -> &'static Mutex<ChatStores> {
-    CHAT_STORES.get_or_init(|| Mutex::new(ChatStores {
-        buckets: HashMap::new(),
-    }))
+    CHAT_STORES.get_or_init(|| {
+        Mutex::new(ChatStores {
+            buckets: HashMap::new(),
+        })
+    })
 }
 
 fn with_chat_app_result<F>(actor_id: &str, f: F) -> AppResult<StubPayload>
@@ -140,7 +142,11 @@ pub fn chat_list_conversations(actor_id: &str) -> AppResult<StubPayload> {
                 })
             })
             .collect::<Vec<_>>();
-        tracing::info!(command = "chat_list_conversations", count = data.len(), "Conversations listed");
+        tracing::info!(
+            command = "chat_list_conversations",
+            count = data.len(),
+            "Conversations listed"
+        );
         realtime::publish_chat_event("chat_list_conversations", "all", None);
         success_payload(
             "chat_list_conversations",
@@ -263,11 +269,7 @@ pub fn chat_send_message(actor_id: &str, input: ChatSendMessageInput) -> AppResu
                 timestamp_ms,
             });
 
-        realtime::publish_chat_event(
-            "chat_send_message",
-            &conversation_id,
-            Some(&message_id),
-        );
+        realtime::publish_chat_event("chat_send_message", &conversation_id, Some(&message_id));
         success_payload(
             "chat_send_message",
             json!({
@@ -309,11 +311,7 @@ pub fn chat_mark_read(actor_id: &str, input: ChatMarkReadInput) -> AppResult<Stu
             conversation.unread_count = unread_count;
             conversation.last_timestamp_ms = chat::now_ms();
         }
-        realtime::publish_chat_event(
-            "chat_mark_read",
-            &conversation_id,
-            Some(&message_id),
-        );
+        realtime::publish_chat_event("chat_mark_read", &conversation_id, Some(&message_id));
         success_payload(
             "chat_mark_read",
             json!({
@@ -325,7 +323,10 @@ pub fn chat_mark_read(actor_id: &str, input: ChatMarkReadInput) -> AppResult<Stu
     })
 }
 
-pub fn chat_delete_conversation(actor_id: &str, input: ChatConversationInput) -> AppResult<StubPayload> {
+pub fn chat_delete_conversation(
+    actor_id: &str,
+    input: ChatConversationInput,
+) -> AppResult<StubPayload> {
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
         Err(message) => return invalid_argument(message),
@@ -340,7 +341,10 @@ pub fn chat_delete_conversation(actor_id: &str, input: ChatConversationInput) ->
     })
 }
 
-pub fn chat_rename_conversation(actor_id: &str, input: ChatRenameConversationInput) -> AppResult<StubPayload> {
+pub fn chat_rename_conversation(
+    actor_id: &str,
+    input: ChatRenameConversationInput,
+) -> AppResult<StubPayload> {
     tracing::info!(command = "chat_rename_conversation", conversation_id = %input.conversation_id, title = %input.title, "Renaming conversation");
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
@@ -363,7 +367,10 @@ pub fn chat_rename_conversation(actor_id: &str, input: ChatRenameConversationInp
     })
 }
 
-pub fn chat_duplicate_conversation(actor_id: &str, input: ChatConversationInput) -> AppResult<StubPayload> {
+pub fn chat_duplicate_conversation(
+    actor_id: &str,
+    input: ChatConversationInput,
+) -> AppResult<StubPayload> {
     let source_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
         Err(message) => return invalid_argument(message),
@@ -404,7 +411,10 @@ pub fn chat_duplicate_conversation(actor_id: &str, input: ChatConversationInput)
     })
 }
 
-pub fn chat_smart_rename_conversation(actor_id: &str, input: ChatConversationInput) -> AppResult<StubPayload> {
+pub fn chat_smart_rename_conversation(
+    actor_id: &str,
+    input: ChatConversationInput,
+) -> AppResult<StubPayload> {
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
         Err(message) => return invalid_argument(message),
@@ -436,7 +446,10 @@ pub fn chat_smart_rename_conversation(actor_id: &str, input: ChatConversationInp
     })
 }
 
-pub fn chat_set_conversation_model(actor_id: &str, input: ChatSetConversationModelInput) -> AppResult<StubPayload> {
+pub fn chat_set_conversation_model(
+    actor_id: &str,
+    input: ChatSetConversationModelInput,
+) -> AppResult<StubPayload> {
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
         Err(message) => return invalid_argument(message),
@@ -494,7 +507,10 @@ pub fn chat_delete_message(actor_id: &str, input: ChatMessageInput) -> AppResult
     })
 }
 
-pub fn chat_update_message(actor_id: &str, input: ChatUpdateMessageInput) -> AppResult<StubPayload> {
+pub fn chat_update_message(
+    actor_id: &str,
+    input: ChatUpdateMessageInput,
+) -> AppResult<StubPayload> {
     let message_id = input.message_id.trim().to_string();
     if message_id.is_empty() {
         return invalid_argument("message_id is required".to_string());
@@ -555,14 +571,28 @@ pub fn chat_completion_once(actor_id: &str, input: ChatCompletionInput) -> AppRe
         Ok(content) => content,
         Err(message) => return invalid_argument(message),
     };
-    let provider_id = input.provider_id.as_deref().unwrap_or("").trim().to_string();
+    let provider_id = input
+        .provider_id
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_string();
     let model_hint = input.model.as_deref().unwrap_or("").trim().to_string();
     let provider_id = if provider_id.is_empty() && !model_hint.is_empty() {
         provider_state::with_provider_store(None, |store| {
-            store.providers.iter()
-                .find(|p| p.enabled && (p.check_model == model_hint || p.models.iter().any(|m| m.id == model_hint)))
+            store
+                .providers
+                .iter()
+                .find(|p| {
+                    p.enabled
+                        && (p.check_model == model_hint
+                            || p.models.iter().any(|m| m.id == model_hint))
+                })
                 .map(|p| p.id.clone())
-        }).ok().flatten().unwrap_or_default()
+        })
+        .ok()
+        .flatten()
+        .unwrap_or_default()
     } else {
         provider_id
     };
@@ -570,7 +600,11 @@ pub fn chat_completion_once(actor_id: &str, input: ChatCompletionInput) -> AppRe
         return AppResult::fail(ErrorCode::InvalidArgument, "Provider ID is required", None);
     }
     let provider_data = match provider_state::with_provider_store(None, |store| {
-        store.providers.iter().find(|p| p.id == provider_id).cloned()
+        store
+            .providers
+            .iter()
+            .find(|p| p.id == provider_id)
+            .cloned()
     }) {
         Ok(Some(provider)) => provider,
         _ => return AppResult::fail(ErrorCode::NotFound, "Provider not found", None),
@@ -582,12 +616,24 @@ pub fn chat_completion_once(actor_id: &str, input: ChatCompletionInput) -> AppRe
         .ok()
         .and_then(|v| v.get("api_key").and_then(|k| k.as_str()).map(String::from))
         .unwrap_or_default();
-    let config: serde_json::Value = serde_json::from_str(&provider_data.config_json).unwrap_or_default();
-    let base_url = config.get("base_url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let config: serde_json::Value =
+        serde_json::from_str(&provider_data.config_json).unwrap_or_default();
+    let base_url = config
+        .get("base_url")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     if base_url.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "Provider base URL is required", None);
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "Provider base URL is required",
+            None,
+        );
     }
-    let provider_protocol = config.get("protocol").and_then(|v| v.as_str()).map(String::from);
+    let provider_protocol = config
+        .get("protocol")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let model_id = input.model.as_deref().unwrap_or("").trim().to_string();
     let model_id = if model_id.is_empty() {
         provider_data.check_model.clone()
@@ -602,61 +648,67 @@ pub fn chat_completion_once(actor_id: &str, input: ChatCompletionInput) -> AppRe
         model_record.and_then(|m| m.protocol_override.as_deref()),
         provider_protocol.as_deref(),
     );
-    match provider_remote::chat_completion(&base_url, &api_key, &model_id, Some(effective_protocol), &content) {
+    match provider_remote::chat_completion(
+        &base_url,
+        &api_key,
+        &model_id,
+        Some(effective_protocol),
+        &content,
+    ) {
         Ok(result) => {
             tracing::info!(command = "chat_completion_once", session_id = %session_id, model = %model_id, "Completion succeeded");
             let agent_id = chat::extract_agent_id(&session_id);
             with_chat_app_result(actor_id, |store| {
-            let now = chat::now_ms();
-            store.ensure_conversation(&session_id, &agent_id, now);
+                let now = chat::now_ms();
+                store.ensure_conversation(&session_id, &agent_id, now);
 
-            let user_msg_id = chat::next_message_id(None);
-            store
-                .messages
-                .entry(session_id.clone())
-                .or_default()
-                .push(Message {
-                    id: user_msg_id.clone(),
-                    conversation_id: session_id.clone(),
-                    content: content.clone(),
-                    role: "user".to_string(),
-                    read: false,
-                    via: DeliveryVia::Relay,
-                    retry_count: 0,
-                    timestamp_ms: now,
-                });
+                let user_msg_id = chat::next_message_id(None);
+                store
+                    .messages
+                    .entry(session_id.clone())
+                    .or_default()
+                    .push(Message {
+                        id: user_msg_id.clone(),
+                        conversation_id: session_id.clone(),
+                        content: content.clone(),
+                        role: "user".to_string(),
+                        read: false,
+                        via: DeliveryVia::Relay,
+                        retry_count: 0,
+                        timestamp_ms: now,
+                    });
 
-            let assistant_msg_id = chat::next_message_id(None);
-            let assistant_now = chat::now_ms();
-            store
-                .messages
-                .entry(session_id.clone())
-                .or_default()
-                .push(Message {
-                    id: assistant_msg_id.clone(),
-                    conversation_id: session_id.clone(),
-                    content: result.text.clone(),
-                    role: "assistant".to_string(),
-                    read: false,
-                    via: DeliveryVia::Relay,
-                    retry_count: 0,
-                    timestamp_ms: assistant_now,
-                });
+                let assistant_msg_id = chat::next_message_id(None);
+                let assistant_now = chat::now_ms();
+                store
+                    .messages
+                    .entry(session_id.clone())
+                    .or_default()
+                    .push(Message {
+                        id: assistant_msg_id.clone(),
+                        conversation_id: session_id.clone(),
+                        content: result.text.clone(),
+                        role: "assistant".to_string(),
+                        read: false,
+                        via: DeliveryVia::Relay,
+                        retry_count: 0,
+                        timestamp_ms: assistant_now,
+                    });
 
-            if let Some(conversation) = store.conversations.get_mut(&session_id) {
-                conversation.last_message_id = Some(assistant_msg_id);
-                conversation.last_timestamp_ms = assistant_now;
-                conversation.unread_count = conversation.unread_count.saturating_add(2);
-            }
+                if let Some(conversation) = store.conversations.get_mut(&session_id) {
+                    conversation.last_message_id = Some(assistant_msg_id);
+                    conversation.last_timestamp_ms = assistant_now;
+                    conversation.unread_count = conversation.unread_count.saturating_add(2);
+                }
 
-            success_payload(
-                "chat_completion_once",
-                json!({
-                    "text": result.text,
-                    "model": result.model,
-                    "provider_id": provider_id
-                }),
-            )
+                success_payload(
+                    "chat_completion_once",
+                    json!({
+                        "text": result.text,
+                        "model": result.model,
+                        "provider_id": provider_id
+                    }),
+                )
             })
         }
         Err(err) => {
@@ -690,17 +742,17 @@ pub fn list_conversations_by_agent(actor_id: &str, agent_name: &str) -> Vec<serd
     let result: Vec<_> = conversations
         .into_iter()
         .map(|c| {
-        json!({
-            "id": c.id,
-            "key": c.id,
-            "agent_name": c.agent_id,
-            "title": c.title,
-            "message_count": store.messages.get(&c.id).map(|list| list.len()).unwrap_or(0),
-            "model_override": c.model,
-            "created_at": c.last_timestamp_ms,
-            "updated_at": c.last_timestamp_ms
+            json!({
+                "id": c.id,
+                "key": c.id,
+                "agent_name": c.agent_id,
+                "title": c.title,
+                "message_count": store.messages.get(&c.id).map(|list| list.len()).unwrap_or(0),
+                "model_override": c.model,
+                "created_at": c.last_timestamp_ms,
+                "updated_at": c.last_timestamp_ms
+            })
         })
-    })
         .collect();
     tracing::debug!(command = "list_conversations_by_agent", agent_name = %agent_name, count = result.len(), "Agent conversations retrieved");
     result

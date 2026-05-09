@@ -41,9 +41,11 @@ struct ProfileStores {
 static PROFILE_STORES: OnceLock<Mutex<ProfileStores>> = OnceLock::new();
 
 fn profile_stores() -> &'static Mutex<ProfileStores> {
-    PROFILE_STORES.get_or_init(|| Mutex::new(ProfileStores {
-        buckets: HashMap::new(),
-    }))
+    PROFILE_STORES.get_or_init(|| {
+        Mutex::new(ProfileStores {
+            buckets: HashMap::new(),
+        })
+    })
 }
 
 fn with_profile_store_mut<T, F>(actor_id: &str, f: F) -> Result<T, ProfileError>
@@ -69,18 +71,18 @@ pub fn update(
     location: Option<String>,
 ) -> Result<ProfileSnapshot, ProfileError> {
     with_profile_store_mut(actor_id, |store| {
-    if let Some(value) = display_name {
-        store.display_name = validate_display_name(&value)?;
-    }
-    if let Some(value) = bio {
-        validate_bio(&value)?;
-        store.bio = value;
-    }
-    if let Some(value) = location {
-        validate_location(&value)?;
-        store.location = value;
-    }
-    Ok(snapshot_from(store))
+        if let Some(value) = display_name {
+            store.display_name = validate_display_name(&value)?;
+        }
+        if let Some(value) = bio {
+            validate_bio(&value)?;
+            store.bio = value;
+        }
+        if let Some(value) = location {
+            validate_location(&value)?;
+            store.location = value;
+        }
+        Ok(snapshot_from(store))
     })
 }
 
@@ -104,39 +106,39 @@ pub fn upload(
 ) -> Result<UploadOutcome, ProfileError> {
     let path = validate_file_path(file_path)?;
     with_profile_store_mut(actor_id, |store| {
-    let (field, old_value) = match kind {
-        UploadKind::Avatar => ("avatar", store.avatar_url.clone()),
-        UploadKind::Header => ("header", store.header_url.clone()),
-    };
-    let optimistic_value = format!("file://{}", path.replace('\\', "/"));
-    match kind {
-        UploadKind::Avatar => {
-            store.avatar_url = optimistic_value.clone();
-        }
-        UploadKind::Header => {
-            store.header_url = optimistic_value.clone();
-        }
-    }
-    if should_fail(&path) {
+        let (field, old_value) = match kind {
+            UploadKind::Avatar => ("avatar", store.avatar_url.clone()),
+            UploadKind::Header => ("header", store.header_url.clone()),
+        };
+        let optimistic_value = format!("file://{}", path.replace('\\', "/"));
         match kind {
             UploadKind::Avatar => {
-                store.avatar_url = old_value;
+                store.avatar_url = optimistic_value.clone();
             }
             UploadKind::Header => {
-                store.header_url = old_value;
+                store.header_url = optimistic_value.clone();
             }
         }
-        return Ok(UploadOutcome {
+        if should_fail(&path) {
+            match kind {
+                UploadKind::Avatar => {
+                    store.avatar_url = old_value;
+                }
+                UploadKind::Header => {
+                    store.header_url = old_value;
+                }
+            }
+            return Ok(UploadOutcome {
+                field: field.to_string(),
+                value: "rolled_back".to_string(),
+                rolled_back: true,
+            });
+        }
+        Ok(UploadOutcome {
             field: field.to_string(),
-            value: "rolled_back".to_string(),
-            rolled_back: true,
-        });
-    }
-    Ok(UploadOutcome {
-        field: field.to_string(),
-        value: optimistic_value,
-        rolled_back: false,
-    })
+            value: optimistic_value,
+            rolled_back: false,
+        })
     })
 }
 
@@ -171,13 +173,7 @@ mod tests {
     fn profile_stores_isolate_actors() {
         let a = "actor-profile-a";
         let b = "actor-profile-b";
-        update(
-            a,
-            Some("Name A".to_string()),
-            None,
-            None,
-        )
-        .expect("update a");
+        update(a, Some("Name A".to_string()), None, None).expect("update a");
         let snap_b_before = get(b).expect("b default");
         assert_ne!(snap_b_before.display_name, "Name A");
         let snap_a = get(a).expect("a");

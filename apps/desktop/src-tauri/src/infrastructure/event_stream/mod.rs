@@ -31,6 +31,7 @@ use prost::Message;
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
 
+use crate::infrastructure::session_revocation;
 use crate::infrastructure::station_client::station_base_url;
 use crate::infrastructure::storage::{self, StorageKind};
 use crate::model::realtime::v1::{stream_event::Kind as StreamKind, StreamEvent};
@@ -97,7 +98,13 @@ pub fn start(app: AppHandle, actor_id: String, token: String, device_id: String)
             &actor_id[..actor_id.len().min(8)]
         ))
         .spawn(move || {
-            run_supervisor(app, actor_for_thread.clone(), token, device_id, cancel_for_thread);
+            run_supervisor(
+                app,
+                actor_for_thread.clone(),
+                token,
+                device_id,
+                cancel_for_thread,
+            );
             // Best-effort cleanup if the supervisor exits naturally.
             let mut map = registry().lock().expect("event_stream registry poisoned");
             if let Some(existing) = map.get(&actor_for_thread) {
@@ -134,7 +141,12 @@ pub fn is_running(actor_id: &str) -> bool {
 fn cursor_path(actor_id: &str) -> Option<PathBuf> {
     let scope = storage::resolve_user_scope(Some(actor_id));
     let name = format!("{scope}.txt");
-    storage::app_file_path("desktop", StorageKind::Data, &["auth", "event_cursors", &name]).ok()
+    storage::app_file_path(
+        "desktop",
+        StorageKind::Data,
+        &["auth", "event_cursors", &name],
+    )
+    .ok()
 }
 
 fn load_cursor(actor_id: &str) -> String {
@@ -259,6 +271,9 @@ fn run_once(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().unwrap_or_default();
+        if session_revocation::emit_if_session_revoked(app, status.as_u16(), &body) {
+            return Ok(());
+        }
         return Err(format!("station returned {status}: {body}"));
     }
 
@@ -290,7 +305,13 @@ fn run_once(
         // SSE frame terminator: empty line dispatches the buffered event.
         if trimmed.is_empty() {
             if !data_buf.is_empty() {
-                dispatch(app, actor_id, current_event.as_deref(), current_id.as_deref(), &data_buf);
+                dispatch(
+                    app,
+                    actor_id,
+                    current_event.as_deref(),
+                    current_id.as_deref(),
+                    &data_buf,
+                );
                 data_buf.clear();
                 current_event = None;
                 current_id = None;
@@ -385,12 +406,7 @@ fn dispatch(
     }
 }
 
-fn emit_state(
-    app: &AppHandle,
-    last: &mut Option<bool>,
-    connected: bool,
-    reason: &str,
-) {
+fn emit_state(app: &AppHandle, last: &mut Option<bool>, connected: bool, reason: &str) {
     if *last == Some(connected) {
         return;
     }

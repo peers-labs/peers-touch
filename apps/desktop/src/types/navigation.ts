@@ -6,6 +6,7 @@ const CORE_PAGES = ['chat', 'agent', 'settings', 'search', 'notes', 'agent-profi
 
 export type CorePage = (typeof CORE_PAGES)[number];
 export type Page = CorePage | `applet:${string}` | (string & {});
+export const DEFAULT_READY_PAGE: Page = 'search';
 
 export function isCorePageOrKnown(segment: string): segment is Page {
   if ((CORE_PAGES as readonly string[]).includes(segment)) return true;
@@ -50,6 +51,7 @@ export interface AppLifecycle {
 export interface HashRouter {
   page: Page;
   setPage: (page: Page) => void;
+  resetToDefaultPage: () => void;
   profileAgentName: string;
   setProfileAgentName: (name: string) => void;
   getDocIdFromHash: () => string | undefined;

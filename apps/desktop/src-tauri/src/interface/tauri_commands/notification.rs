@@ -13,7 +13,10 @@ use reqwest::Method;
 use serde_json::{json, Map, Value};
 use tauri::{State, Window};
 
-fn token_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Result<String, AppResult<StubPayload>> {
+fn token_from_state(
+    state: &State<'_, Arc<AppState>>,
+    window: &Window,
+) -> Result<String, AppResult<StubPayload>> {
     let token = session_resolver::token_for_window(state.inner(), window).unwrap_or_default();
     if token.trim().is_empty() {
         return Err(AppResult::fail(
@@ -34,9 +37,9 @@ fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
 
 fn ts_millis(ts: &Option<prost_types::Timestamp>) -> serde_json::Value {
     match ts {
-        Some(t) => serde_json::Value::Number(
-            (t.seconds * 1000 + (t.nanos as i64) / 1_000_000).into(),
-        ),
+        Some(t) => {
+            serde_json::Value::Number((t.seconds * 1000 + (t.nanos as i64) / 1_000_000).into())
+        }
         None => serde_json::Value::Null,
     }
 }
@@ -100,18 +103,23 @@ pub fn notification_list(
     let limit = input.limit.unwrap_or(20);
     query.push(("limit", limit.to_string()));
 
-    let resp = match station_client::request_proto::<(), model::notification::ListNotificationsResponse>(
-        Method::GET,
-        "/notification/list",
-        &token,
-        Some(&query),
-        None::<&()>,
-    ) {
-        Ok(r) => r,
-        Err(e) => return e.into_app_result("Failed to list notifications"),
-    };
+    let resp =
+        match station_client::request_proto::<(), model::notification::ListNotificationsResponse>(
+            Method::GET,
+            "/notification/list",
+            &token,
+            Some(&query),
+            None::<&()>,
+        ) {
+            Ok(r) => r,
+            Err(e) => return e.into_app_result("Failed to list notifications"),
+        };
 
-    let notifications: Vec<Value> = resp.notifications.iter().map(notification_to_value).collect();
+    let notifications: Vec<Value> = resp
+        .notifications
+        .iter()
+        .map(notification_to_value)
+        .collect();
     to_stub(
         "notification_list",
         json!({
@@ -124,7 +132,10 @@ pub fn notification_list(
 }
 
 #[tauri::command]
-pub fn notification_unread_counts(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn notification_unread_counts(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let token = match token_from_state(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
@@ -173,8 +184,13 @@ pub fn notification_mark_read(
     let resp = match station_client::request_proto::<
         model::notification::MarkNotificationsReadRequest,
         model::notification::MarkNotificationsReadResponse,
-    >(Method::POST, "/notification/mark-read", &token, None, Some(&body))
-    {
+    >(
+        Method::POST,
+        "/notification/mark-read",
+        &token,
+        None,
+        Some(&body),
+    ) {
         Ok(r) => r,
         Err(e) => return e.into_app_result("Failed to mark notifications as read"),
     };
@@ -203,8 +219,13 @@ pub fn notification_mark_all_read(
     let resp = match station_client::request_proto::<
         model::notification::MarkAllNotificationsReadRequest,
         model::notification::MarkAllNotificationsReadResponse,
-    >(Method::POST, "/notification/mark-all-read", &token, None, Some(&body))
-    {
+    >(
+        Method::POST,
+        "/notification/mark-all-read",
+        &token,
+        None,
+        Some(&body),
+    ) {
         Ok(r) => r,
         Err(e) => return e.into_app_result("Failed to mark all notifications as read"),
     };
@@ -233,8 +254,13 @@ pub fn notification_delete(
     let resp = match station_client::request_proto::<
         model::notification::DeleteNotificationsRequest,
         model::notification::DeleteNotificationsResponse,
-    >(Method::POST, "/notification/delete", &token, None, Some(&body))
-    {
+    >(
+        Method::POST,
+        "/notification/delete",
+        &token,
+        None,
+        Some(&body),
+    ) {
         Ok(r) => r,
         Err(e) => return e.into_app_result("Failed to delete notifications"),
     };
@@ -246,13 +272,19 @@ pub fn notification_delete(
 }
 
 #[tauri::command]
-pub fn notification_preferences(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
+pub fn notification_preferences(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
     let token = match token_from_state(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
     };
 
-    let resp = match station_client::request_proto::<(), model::notification::GetNotificationPreferencesResponse>(
+    let resp = match station_client::request_proto::<
+        (),
+        model::notification::GetNotificationPreferencesResponse,
+    >(
         Method::GET,
         "/notification/preferences",
         &token,
@@ -296,8 +328,13 @@ pub fn notification_preferences_update(
     let resp = match station_client::request_proto::<
         model::notification::UpdateNotificationPreferenceRequest,
         model::notification::UpdateNotificationPreferenceResponse,
-    >(Method::POST, "/notification/preferences/update", &token, None, Some(&body))
-    {
+    >(
+        Method::POST,
+        "/notification/preferences/update",
+        &token,
+        None,
+        Some(&body),
+    ) {
         Ok(r) => r,
         Err(e) => return e.into_app_result("Failed to update notification preferences"),
     };

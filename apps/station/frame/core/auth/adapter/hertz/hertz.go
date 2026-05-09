@@ -49,21 +49,28 @@ func RequireJWT(p coreauth.Provider, sv ...coreauth.SessionValidator) func(conte
 		if sessValidator != nil && subject.SessionID != "" {
 			valid, reason := sessValidator.CheckSessionValid(c, subject.SessionID)
 			if !valid {
-				logger.Warnf(c, "[RequireJWT] Session %s rejected: %s (user=%s)", subject.SessionID, reason, subject.ID)
-				ctx.SetStatusCode(401)
-				ctx.JSON(401, map[string]interface{}{
-					"error": "Session has been revoked",
-					"code":  "session_revoked",
-					"reason": reason,
-				})
-				ctx.Abort()
+				writeSessionRevoked(c, ctx, subject, reason)
 				return
 			}
+		} else if valid, reason := coreauth.CheckSubjectSessionValid(c, subject); !valid {
+			writeSessionRevoked(c, ctx, subject, reason)
+			return
 		}
 
 		logger.Infof(c, "[RequireJWT] Token valid, subject: %s, session: %s", subject.ID, subject.SessionID)
 		ctx.Set(string(SubjectContextKey), subject)
 	}
+}
+
+func writeSessionRevoked(c context.Context, ctx *app.RequestContext, subject *coreauth.Subject, reason string) {
+	logger.Warnf(c, "[RequireJWT] Session %s rejected: %s (user=%s)", subject.SessionID, reason, subject.ID)
+	ctx.SetStatusCode(401)
+	ctx.JSON(401, map[string]interface{}{
+		"error":  "Session has been revoked",
+		"code":   "session_revoked",
+		"reason": reason,
+	})
+	ctx.Abort()
 }
 
 func GetSubject(ctx *app.RequestContext) *coreauth.Subject {

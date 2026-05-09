@@ -48,12 +48,16 @@ pub fn from_station_response(actor_id: String, token: String) -> AuthSession {
 pub fn validate_token(token: &str) -> Result<AuthSession, AuthDomainError> {
     let token = token.trim();
     if token.is_empty() {
-        return Err(AuthDomainError::Unauthorized("Token is missing".to_string()));
+        return Err(AuthDomainError::Unauthorized(
+            "Token is missing".to_string(),
+        ));
     }
 
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 || !token.starts_with("eyJ") {
-        return Err(AuthDomainError::Unauthorized("Token is invalid or expired".to_string()));
+        return Err(AuthDomainError::Unauthorized(
+            "Token is invalid or expired".to_string(),
+        ));
     }
 
     // Best-effort local validation:
@@ -63,14 +67,17 @@ pub fn validate_token(token: &str) -> Result<AuthSession, AuthDomainError> {
     if let Some(exp) = decode_jwt_exp(parts[1]) {
         let now = now_epoch_seconds();
         if exp <= now {
-            return Err(AuthDomainError::Unauthorized("Token is invalid or expired".to_string()));
+            return Err(AuthDomainError::Unauthorized(
+                "Token is invalid or expired".to_string(),
+            ));
         }
     }
 
     Ok(AuthSession {
         actor_id,
         token: token.to_string(),
-        expires_at: decode_jwt_exp(parts[1]).unwrap_or_else(|| now_epoch_seconds() + TOKEN_TTL_SECONDS),
+        expires_at: decode_jwt_exp(parts[1])
+            .unwrap_or_else(|| now_epoch_seconds() + TOKEN_TTL_SECONDS),
     })
 }
 
@@ -135,7 +142,6 @@ fn now_epoch_seconds() -> u64 {
         .map(|duration| duration.as_secs())
         .unwrap_or_default()
 }
-
 
 #[cfg(test)]
 mod tests {

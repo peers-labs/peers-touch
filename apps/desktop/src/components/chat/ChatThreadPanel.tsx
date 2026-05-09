@@ -1,25 +1,22 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, toast } from '@lobehub/ui';
+import { Button, TextArea, Tooltip, toast } from '@lobehub/ui';
 import { Alert, Empty, Spin, theme, Typography } from 'antd';
-import { LocateFixed, Lock, MessageCircle, Paperclip, Reply, X } from 'lucide-react';
+import { LocateFixed, Lock, MessageCircle, Paperclip, Reply, Send, X } from 'lucide-react';
 import { timestampDate, type Timestamp } from '@bufbuild/protobuf/wkt';
 
 import { useSocialChatStore, peerOfSession, socialThreadKey } from '../../store/socialChat';
 import { api, type ChatAttachmentInput } from '../../services/desktop_api';
-import { seedLocalMediaProjection } from '../../services/mediaRuntime';
 import { log } from '../../utils/logger';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { AttachmentItem, type ChatAttachmentVisibilityHint } from './AttachmentItem';
-import { ChatComposer } from './ChatComposer';
 import type { FriendChatMessage } from '../../gen/proto/domain/chat/friend_chat_pb';
 import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 
 const { Text } = Typography;
 
 type SocialMessage = FriendChatMessage | GroupMessage;
-const IMAGE_ATTACHMENT_FILENAME_PATTERN = /\.(apng|avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$/i;
 
 function isFriendMessage(msg: SocialMessage): msg is FriendChatMessage {
   return 'sessionUlid' in msg;
@@ -43,11 +40,6 @@ function normalizeVisibilityHint(v: string | undefined): ChatAttachmentVisibilit
     default:
       return undefined;
   }
-}
-
-function isUploadedImage(filename: string | undefined, mimeType: string | undefined): boolean {
-  const normalizedMime = mimeType?.toLowerCase() ?? '';
-  return normalizedMime.startsWith('image/') || IMAGE_ATTACHMENT_FILENAME_PATTERN.test(filename ?? '');
 }
 
 function formatThreadTime(msg: SocialMessage): string {
@@ -274,7 +266,6 @@ export function ChatThreadPanel() {
     try {
       const attachmentType = attachment?.mime_type?.startsWith('image/') ? 2 : attachment ? 3 : undefined;
       const replyToUlid = replyTarget?.ulid || rootMessage.ulid;
-      const rootUlid = rootMessage.ulid;
       if (activeTab === 'friend') {
         const session = sessions.find((s) => s.ulid === activeUlid);
         const receiverDid = session ? peerOfSession(session, currentUserDid).did : '';
@@ -285,7 +276,7 @@ export function ChatThreadPanel() {
           attachmentType,
           replyToUlid,
           attachment ? [attachment] : undefined,
-          rootUlid,
+          rootMessage.ulid,
         );
       } else {
         await sendGroupMessage(
@@ -294,29 +285,19 @@ export function ChatThreadPanel() {
           attachmentType,
           replyToUlid,
           attachment ? [attachment] : undefined,
-          rootUlid,
+          rootMessage.ulid,
         );
       }
+      await loadThreadMessages(activeUlid, rootMessage.ulid, activeKind);
+      const refreshedThread = useSocialChatStore.getState().threadMessages[threadKey] || [];
+      const lastReadUlid = refreshedThread.length > 0
+        ? refreshedThread[refreshedThread.length - 1].ulid
+        : rootMessage.ulid;
+      await markThreadRead(activeUlid, rootMessage.ulid, lastReadUlid, activeKind);
+      await refreshThreadCounts(activeUlid, [rootMessage.ulid], activeKind);
       setInputValue('');
       setPendingAttachment(null);
       setReplyTarget(null);
-      void (async () => {
-        try {
-          await loadThreadMessages(activeUlid, rootUlid, activeKind);
-        } catch (error) {
-          log.warn('socialChat', 'thread refresh after send failed', error);
-        }
-        const refreshedThread = useSocialChatStore.getState().threadMessages[threadKey] || [];
-        const lastReadUlid = refreshedThread.length > 0
-          ? refreshedThread[refreshedThread.length - 1].ulid
-          : rootUlid;
-        await markThreadRead(activeUlid, rootUlid, lastReadUlid, activeKind).catch((error) => {
-          log.warn('socialChat', 'thread mark read after send failed', error);
-        });
-        await refreshThreadCounts(activeUlid, [rootUlid], activeKind).catch((error) => {
-          log.warn('socialChat', 'thread count refresh after send failed', error);
-        });
-      })();
     } catch (error) {
       log.error('socialChat', 'thread reply send failed', error);
       toast.error(t('chat.social.thread.sendFailed'));
@@ -338,6 +319,7 @@ export function ChatThreadPanel() {
     const rootUlid = rootMessage?.ulid || openThreadRootUlid;
     if (!rootUlid) return;
     setScrollToMessageUlid(rootUlid);
+    closeThread();
   };
 
   const handleAttachClick = async () => {
@@ -361,13 +343,6 @@ export function ChatThreadPanel() {
       if (!uploaded) {
         toast.error(t('chat.social.thread.attachmentUploadFailed'));
         return;
-      }
-      if (isUploadedImage(uploaded.filename, uploaded.mime_type)) {
-        seedLocalMediaProjection({
-          cid: uploaded.cid,
-          filePath,
-          mimeType: uploaded.mime_type,
-        });
       }
       setPendingAttachment({
         cid: uploaded.cid,
@@ -397,72 +372,6 @@ export function ChatThreadPanel() {
   const canSend = (inputValue.trim().length > 0 || pendingAttachment !== null) && !sending && !uploadingAttachment;
   const attachmentButtonDisabled = sending || uploadingAttachment;
   const attachmentButtonTitle = t('chat.social.thread.attach');
-  const composerAccessory = (
-    <>
-      {pendingAttachment && (
-        <Flexbox
-          horizontal
-          align="center"
-          justify="space-between"
-          gap={8}
-          style={{
-            padding: '7px 9px',
-            borderRadius: 8,
-            background: token.colorFillQuaternary,
-            border: `1px solid ${token.colorBorderSecondary}`,
-          }}
-        >
-          <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0, flex: 1 }}>
-            <Paperclip size={13} style={{ color: token.colorTextTertiary, flexShrink: 0 }} />
-            <Text ellipsis style={{ fontSize: 12 }}>
-              {pendingAttachment.filename || t('chat.social.thread.attachment')}
-            </Text>
-          </Flexbox>
-          <Button
-            type="text"
-            size="small"
-            icon={<X size={13} />}
-            aria-label={t('chat.social.thread.removeAttachment')}
-            onClick={() => setPendingAttachment(null)}
-            disabled={sending}
-            style={{ width: 24, height: 24, flexShrink: 0 }}
-          />
-        </Flexbox>
-      )}
-      {replyTarget && (
-        <Flexbox
-          horizontal
-          align="center"
-          justify="space-between"
-          gap={8}
-          style={{
-            padding: '7px 9px',
-            borderRadius: 8,
-            background: token.colorPrimaryBg,
-            border: `1px solid ${token.colorPrimaryBorder}`,
-          }}
-        >
-          <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0, flex: 1 }}>
-            <Reply size={13} style={{ color: token.colorPrimary, flexShrink: 0 }} />
-            <Text ellipsis style={{ fontSize: 12 }}>
-              {t('chat.social.thread.replyingTo', 'Replying to {{name}}', {
-                name: resolveSender(replyTarget).name || replyTarget.senderDid,
-              })}
-            </Text>
-          </Flexbox>
-          <Button
-            type="text"
-            size="small"
-            icon={<X size={13} />}
-            aria-label={t('chat.social.thread.cancelReply', 'Cancel reply target')}
-            onClick={() => setReplyTarget(null)}
-            disabled={sending}
-            style={{ width: 24, height: 24, flexShrink: 0 }}
-          />
-        </Flexbox>
-      )}
-    </>
-  );
 
   return (
     <Flexbox
@@ -480,8 +389,6 @@ export function ChatThreadPanel() {
         justify="space-between"
         style={{
           padding: '12px 16px',
-          minHeight: 61,
-          boxSizing: 'border-box',
           borderBottom: `1px solid ${token.colorBorderSecondary}`,
           flexShrink: 0,
         }}
@@ -593,35 +500,107 @@ export function ChatThreadPanel() {
           </Flexbox>
 
           <Flexbox
+            gap={8}
             style={{
               padding: '10px 12px 12px',
               borderTop: `1px solid ${token.colorBorderSecondary}`,
-              background: token.colorBgContainer,
-              boxShadow: '0 -8px 24px rgba(0,0,0,0.03)',
               flexShrink: 0,
             }}
           >
-            <ChatComposer
+            {pendingAttachment && (
+              <Flexbox
+                horizontal
+                align="center"
+                justify="space-between"
+                gap={8}
+                style={{
+                  padding: '7px 9px',
+                  borderRadius: 8,
+                  background: token.colorFillQuaternary,
+                  border: `1px solid ${token.colorBorderSecondary}`,
+                }}
+              >
+                <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0, flex: 1 }}>
+                  <Paperclip size={13} style={{ color: token.colorTextTertiary, flexShrink: 0 }} />
+                  <Text ellipsis style={{ fontSize: 12 }}>
+                    {pendingAttachment.filename || t('chat.social.thread.attachment')}
+                  </Text>
+                </Flexbox>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<X size={13} />}
+                  aria-label={t('chat.social.thread.removeAttachment')}
+                  onClick={() => setPendingAttachment(null)}
+                  disabled={sending}
+                  style={{ width: 24, height: 24, flexShrink: 0 }}
+                />
+              </Flexbox>
+            )}
+            {replyTarget && (
+              <Flexbox
+                horizontal
+                align="center"
+                justify="space-between"
+                gap={8}
+                style={{
+                  padding: '7px 9px',
+                  borderRadius: 8,
+                  background: token.colorPrimaryBg,
+                  border: `1px solid ${token.colorPrimaryBorder}`,
+                }}
+              >
+                <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0, flex: 1 }}>
+                  <Reply size={13} style={{ color: token.colorPrimary, flexShrink: 0 }} />
+                  <Text ellipsis style={{ fontSize: 12 }}>
+                    {t('chat.social.thread.replyingTo', 'Replying to {{name}}', {
+                      name: resolveSender(replyTarget).name || replyTarget.senderDid,
+                    })}
+                  </Text>
+                </Flexbox>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<X size={13} />}
+                  aria-label={t('chat.social.thread.cancelReply', 'Cancel reply target')}
+                  onClick={() => setReplyTarget(null)}
+                  disabled={sending}
+                  style={{ width: 24, height: 24, flexShrink: 0 }}
+                />
+              </Flexbox>
+            )}
+            <TextArea
               value={inputValue}
-              onChange={setInputValue}
+              onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              onSend={handleSend}
-              onAttach={handleAttachClick}
-              canSend={canSend}
-              disabled={sending || uploadingAttachment}
-              sending={sending}
-              attachDisabled={attachmentButtonDisabled}
-              attachLoading={uploadingAttachment}
-              layout="stacked"
               placeholder={t('chat.social.thread.placeholder')}
-              attachTitle={attachmentButtonTitle}
-              emojiTitle={t('chat.social.messageArea.emoji', 'Emoji')}
-              sendTitle={t('chat.social.thread.send')}
-              enterMessageTitle={t('chat.social.messageArea.enterMessage', 'Enter a message')}
-              accessory={composerAccessory}
-              minRows={2}
-              maxRows={5}
+              autoSize={{ minRows: 2, maxRows: 5 }}
+              disabled={sending || uploadingAttachment}
             />
+            <Flexbox horizontal justify="space-between" align="center">
+              <Tooltip title={attachmentButtonTitle}>
+                <span style={{ display: 'inline-flex' }}>
+                  <Button
+                    type="text"
+                    icon={<Paperclip size={14} />}
+                    aria-label={attachmentButtonTitle}
+                    onClick={handleAttachClick}
+                    loading={uploadingAttachment}
+                    disabled={attachmentButtonDisabled}
+                    style={{ width: 32, height: 32 }}
+                  />
+                </span>
+              </Tooltip>
+              <Button
+                type="primary"
+                icon={<Send size={14} />}
+                onClick={handleSend}
+                loading={sending}
+                disabled={!canSend}
+              >
+                {t('chat.social.thread.send')}
+              </Button>
+            </Flexbox>
           </Flexbox>
         </>
       )}

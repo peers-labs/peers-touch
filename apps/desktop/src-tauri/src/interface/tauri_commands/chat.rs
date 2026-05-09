@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use crate::error::AppResult;
 use crate::contracts::{
     ChatCompletionInput, ChatConversationInput, ChatListMessagesInput, ChatMarkReadInput,
     ChatMessageInput, ChatRenameConversationInput, ChatSendMessageInput,
     ChatSetConversationModelInput, ChatUpdateMessageInput, StubPayload,
 };
+use crate::error::AppResult;
 
 use crate::application::chat as application_chat;
 use crate::application::session_resolver;
@@ -17,7 +17,8 @@ pub fn chat_list_conversations(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    let actor_id =
+        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
     application_chat::chat_list_conversations(&actor_id)
 }
 
@@ -27,7 +28,8 @@ pub fn chat_list_messages(
     window: Window,
     _input: ChatListMessagesInput,
 ) -> AppResult<StubPayload> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    let actor_id =
+        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
     application_chat::chat_list_messages(&actor_id, _input)
 }
 
@@ -37,7 +39,8 @@ pub fn chat_send_message(
     window: Window,
     _input: ChatSendMessageInput,
 ) -> AppResult<StubPayload> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    let actor_id =
+        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
     application_chat::chat_send_message(&actor_id, _input)
 }
 
@@ -47,7 +50,8 @@ pub fn chat_mark_read(
     window: Window,
     _input: ChatMarkReadInput,
 ) -> AppResult<StubPayload> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    let actor_id =
+        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
     application_chat::chat_mark_read(&actor_id, _input)
 }
 
@@ -57,7 +61,8 @@ pub fn chat_delete_conversation(
     window: Window,
     input: ChatConversationInput,
 ) -> AppResult<StubPayload> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    let actor_id =
+        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
     application_chat::chat_delete_conversation(&actor_id, input)
 }
 
@@ -67,7 +72,8 @@ pub fn chat_rename_conversation(
     window: Window,
     input: ChatRenameConversationInput,
 ) -> AppResult<StubPayload> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    let actor_id =
+        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
     application_chat::chat_rename_conversation(&actor_id, input)
 }
 
@@ -77,7 +83,8 @@ pub fn chat_duplicate_conversation(
     window: Window,
     input: ChatConversationInput,
 ) -> AppResult<StubPayload> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    let actor_id =
+        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
     application_chat::chat_duplicate_conversation(&actor_id, input)
 }
 
@@ -87,7 +94,8 @@ pub fn chat_smart_rename_conversation(
     window: Window,
     input: ChatConversationInput,
 ) -> AppResult<StubPayload> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    let actor_id =
+        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
     application_chat::chat_smart_rename_conversation(&actor_id, input)
 }
 
@@ -97,7 +105,8 @@ pub fn chat_set_conversation_model(
     window: Window,
     input: ChatSetConversationModelInput,
 ) -> AppResult<StubPayload> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    let actor_id =
+        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
     application_chat::chat_set_conversation_model(&actor_id, input)
 }
 
@@ -107,7 +116,8 @@ pub fn chat_delete_message(
     window: Window,
     input: ChatMessageInput,
 ) -> AppResult<StubPayload> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    let actor_id =
+        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
     application_chat::chat_delete_message(&actor_id, input)
 }
 
@@ -117,7 +127,8 @@ pub fn chat_update_message(
     window: Window,
     input: ChatUpdateMessageInput,
 ) -> AppResult<StubPayload> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    let actor_id =
+        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
     application_chat::chat_update_message(&actor_id, input)
 }
 
@@ -127,7 +138,8 @@ pub fn chat_stop(
     window: Window,
     input: ChatConversationInput,
 ) -> AppResult<StubPayload> {
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    let actor_id =
+        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
     application_chat::chat_stop(&actor_id, input)
 }
 
