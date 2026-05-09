@@ -2,6 +2,12 @@
 
 本文档基于 Desktop 应用实际代码，系统性介绍 Zustand Store 的设计模式、API 集成方式、EventBus 联动、去重加载、以及 GlobalContext 编排层。
 
+> **真源边界**：Store 是数据的 *容器*。"谁有权写它、何时刷新、如何 reconcile" 由 **Runtime 契约**决定，不在本文定义；单点真源 [`client/desktop/runtime-projections.md`](../../../client/desktop/runtime-projections.md)。
+>
+> - Runtime 拥有的 Store（如 `socialChat`、`useSettingsStore.activeAccount`、`useSearchStore.sources`）：Store 内只暴露纯写入 action，外部不应跨页面手动调度它们的 `load*`；这部分调度由 `runtimes/*Runtime.ts` 负责。
+> - 页面局部、一次性的预热数据：用 `kernel/usePrefetch.ts`，不要硬塞进 Store。
+> - 真正的全局 Store（OAuth 连接、accountIdentity、globalContext）保留 `loadPromise` 去重模式。
+
 ---
 
 ## 目录
@@ -730,3 +736,28 @@ await useOAuth2Store.getState().loadAll();
 ```
 
 这种模式用于编排层，普通 Store 之间应尽量避免直接互调，而是通过 EventBus 解耦。
+
+### 7. 长生命周期投影：用 Runtime，不要在 Store 自己 setInterval
+
+```typescript
+// ❌ 在 Store 内部启 setInterval / EventBus 订阅
+export const useFooStore = create<FooState>((set) => ({
+  // ...
+  startPolling: () => {
+    setInterval(() => useFooStore.getState().load(), 30_000);
+  },
+}));
+
+// ✅ Store 只暴露 load / set；长生命周期由 RuntimeDescriptor 拥有
+//    apps/desktop/src/runtimes/fooRuntime.ts
+export const fooRuntime: RuntimeDescriptor = {
+  id: 'foo',
+  scope: 'session',
+  install() { this._timer = setInterval(reconcile, 30_000); },
+  teardown() { clearInterval(this._timer); },
+  async bootstrap() { await useFooStore.getState().load(); },
+  async reconcile() { await useFooStore.getState().load(); },
+};
+```
+
+完整契约（`install`/`teardown`/`bootstrap`/`reconcile` 语义、`scope` 取值、注册方式）见 [`runtime-projections.md` §6.1](../../../client/desktop/runtime-projections.md)。

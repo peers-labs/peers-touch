@@ -144,6 +144,7 @@ fn main() {
             social::social_circle_list_members,
             social::social_get_my_stats,
             profile::profile_get,
+            profile::peer_profile_get,
             profile::profile_update,
             profile::profile_upload_avatar,
             profile::profile_upload_header,

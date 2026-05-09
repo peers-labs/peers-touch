@@ -34,10 +34,21 @@ Current stack:
 ```
 apps/desktop/
 ├── src/
-│   ├── pages/
+│   ├── kernel/                # Page / Runtime / Boot contracts (see runtime-projections.md)
+│   │   ├── runtime.ts         # RuntimeDescriptor + registry
+│   │   ├── page.ts            # PageDescriptor + registry
+│   │   ├── boot.ts            # BootPipeline phases + scheduleIdle
+│   │   ├── PageHost.tsx       # Mounts pages from descriptors
+│   │   ├── usePrefetch.ts     # One-shot page-local prefetch
+│   │   └── events/            # AppEventBus (catalog / bus / browser)
+│   ├── runtimes/              # Long-lived projection owners (RuntimeDescriptor impls)
+│   ├── pages/                 # Page modules + <Name>.descriptor.tsx
 │   ├── components/
-│   ├── store/
-│   └── services/desktop_api.ts
+│   ├── store/                 # Zustand stores (read by runtimes / pages)
+│   └── services/
+│       ├── desktop_api.ts     # Single API surface
+│       ├── appRuntime.ts      # Boot orchestration: registers + installs runtimes
+│       └── socialRealtime.ts  # Social runtime impl (consumed by socialRuntime.ts)
 └── src-tauri/src/
     ├── interface/contracts/
     ├── interface/tauri_commands/
@@ -45,6 +56,8 @@ apps/desktop/
     ├── domain/
     └── infrastructure/
 ```
+
+> **Loading Foundation contracts**: `kernel/`, `runtimes/`, `pages/<Name>.descriptor.tsx`, and the boot pipeline are defined in [`runtime-projections.md`](./runtime-projections.md). New pages and projection owners must conform to those contracts; do not redefine them here.
 
 ## Delivery Checklist
 
