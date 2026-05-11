@@ -28,7 +28,8 @@ use crate::contracts::{
     SocialCreateCommentInput, SocialCreateMomentInput, SocialDeleteCommentInput,
     SocialDeleteMomentInput, SocialFollowInput, SocialGetCommentsInput, SocialGetFollowersInput,
     SocialGetFollowingInput, SocialGetMomentInput, SocialGetRelationshipInput,
-    SocialGetTimelineInput, SocialListByAuthorInput, SocialReactInput, SocialUnreactInput,
+    SocialGetTimelineInput, SocialListByAuthorInput, SocialReactInput,
+    SocialSyncMomentsProjectionInput, SocialUnreactInput,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -243,6 +244,32 @@ pub fn social_get_timeline(
         match get_proto("/api/v1/social/timeline", &token, Some(&query)) {
             Ok(r) => r,
             Err(e) => return station_error_proto(e, "get timeline failed"),
+        };
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn social_sync_moments_projection(
+    input: SocialSyncMomentsProjectionInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+
+    let req = model::social::SyncMomentsProjectionRequest {
+        home_cursor: input.home_cursor.unwrap_or_default(),
+        public_cursor: input.public_cursor.unwrap_or_default(),
+        limit: input.limit.unwrap_or(20),
+        public_sort: input.public_sort.unwrap_or(0),
+        reason: input.reason.unwrap_or_default(),
+    };
+    let resp: model::social::SyncMomentsProjectionResponse =
+        match post_proto("/api/v1/social/moments/sync", &token, &req) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "sync moments projection failed"),
         };
     AppResult::success(resp.encode_to_vec())
 }

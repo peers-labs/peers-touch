@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Button,
@@ -44,30 +44,14 @@ export function CircleManageView() {
   const circles = useMomentsStore((s) => s.circles);
   const circlesLoading = useMomentsStore((s) => s.circlesLoading);
   const circleMembers = useMomentsStore((s) => s.circleMembers);
-  const listMyCircles = useMomentsStore((s) => s.listMyCircles);
   const createCircle = useMomentsStore((s) => s.createCircle);
   const renameCircle = useMomentsStore((s) => s.renameCircle);
   const deleteCircle = useMomentsStore((s) => s.deleteCircle);
-  const loadCircleMembers = useMomentsStore((s) => s.loadCircleMembers);
   const addCircleMember = useMomentsStore((s) => s.addCircleMember);
   const removeCircleMember = useMomentsStore((s) => s.removeCircleMember);
 
   const [editing, setEditing] = useState<CircleEditState | null>(null);
   const [memberInput, setMemberInput] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    listMyCircles().catch(() => {});
-  }, [listMyCircles]);
-
-  // Pre-load member lists so the inline preview shows without a
-  // round-trip per row.
-  useEffect(() => {
-    for (const c of circles) {
-      const id = String(c.id ?? '');
-      if (!id || circleMembers[id]) continue;
-      loadCircleMembers(id).catch(() => {});
-    }
-  }, [circles, circleMembers, loadCircleMembers]);
 
   const handleSave = async () => {
     if (!editing) return;

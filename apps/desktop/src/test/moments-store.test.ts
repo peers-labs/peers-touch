@@ -27,6 +27,7 @@ import {
   GetPostResponseSchema,
   GetTimelineResponseSchema,
   ImageAttachmentSchema,
+  SyncMomentsProjectionResponseSchema,
   ListPostsResponseSchema,
   ReactToPostResponseSchema,
   PostType,
@@ -163,6 +164,37 @@ describe('moments store: loadFeed', () => {
     await useMomentsStore.getState().loadFeed('home', { refresh: true });
 
     expect(useMomentsStore.getState().feeds.home.postIds).toEqual(['p9']);
+  });
+});
+
+describe('moments store: syncProjection', () => {
+  it('replaces HOME and Explore from the projection sync snapshot', async () => {
+    enqueue('social_sync_moments_projection',
+      bytesOk(SyncMomentsProjectionResponseSchema, {
+        homeTimeline: {
+          posts: [{ id: 'home-new', authorId: 'a', type: PostType.TEXT }],
+          nextCursor: 'home-cur',
+          hasMore: true,
+        },
+        publicTimeline: {
+          posts: [{ id: 'pub-new', authorId: 'b', type: PostType.TEXT }],
+          nextCursor: 'pub-cur',
+          hasMore: false,
+        },
+        syncToken: 'home-cur:pub-cur',
+      }),
+    );
+
+    await useMomentsStore.getState().syncProjection('test');
+
+    const state = useMomentsStore.getState();
+    expect(state.feeds.home.postIds).toEqual(['home-new']);
+    expect(state.feeds.home.nextCursor).toBe('home-cur');
+    expect(state.feeds.home.hasMore).toBe(true);
+    expect(state.feeds.explore.postIds).toEqual(['pub-new']);
+    expect(state.feeds.explore.nextCursor).toBe('pub-cur');
+    expect(state.postsById['home-new']?.id).toBe('home-new');
+    expect(state.postsById['pub-new']?.id).toBe('pub-new');
   });
 });
 

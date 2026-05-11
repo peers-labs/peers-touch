@@ -1,11 +1,8 @@
-import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Empty, Spin, Typography } from 'antd';
 import { useMomentsStore } from '../../store/moments';
 import { MomentCard } from '../../components/moments/MomentCard';
+import { MomentListState } from '../../components/moments/MomentListState';
 import type { ReactionKind } from '../../gen/proto/domain/social/post_pb';
-
-const { Text } = Typography;
 
 // MomentsFeedView — the HOME timeline (followed actors + own posts).
 //
@@ -24,19 +21,11 @@ export function MomentsFeedView({ viewerActorId: _viewerActorId, onOpenPost, onA
   const { t } = useTranslation('moments');
   const feed = useMomentsStore((s) => s.feeds.home);
   const postsById = useMomentsStore((s) => s.postsById);
+  const comments = useMomentsStore((s) => s.comments);
   const reactions = useMomentsStore((s) => s.reactions);
   const loadFeed = useMomentsStore((s) => s.loadFeed);
   const reactToPost = useMomentsStore((s) => s.reactToPost);
   const unreactToPost = useMomentsStore((s) => s.unreactToPost);
-
-  useEffect(() => {
-    // First-mount fetch: refresh=true so we don't pick up a stale
-    // cursor from a prior session (the store survives across page
-    // navigations within the app shell).
-    if (!feed.loadedAt) {
-      loadFeed('home', { refresh: true }).catch(() => {});
-    }
-  }, [feed.loadedAt, loadFeed]);
 
   const posts = feed.postIds.map((id) => postsById[id]).filter(Boolean);
 
@@ -49,27 +38,18 @@ export function MomentsFeedView({ viewerActorId: _viewerActorId, onOpenPost, onA
 
   return (
     <div>
-      {feed.loading && posts.length === 0 && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-          <Spin />
-        </div>
-      )}
-
-      {!feed.loading && posts.length === 0 && (
-        <Empty
-          description={
-            <div>
-              <Text>{t('moments.placeholder.feedEmpty')}</Text>
-            </div>
-          }
-        />
-      )}
+      <MomentListState
+        loading={feed.loading}
+        empty={posts.length === 0}
+        emptyText={t('moments.placeholder.feedEmpty')}
+      />
 
       {posts.map((p) => (
         <MomentCard
           key={p.id}
           post={p}
           reactions={reactions[p.id]}
+          commentPreview={comments[p.id]}
           onOpen={onOpenPost}
           onOpenComments={onOpenPost}
           onAuthorClick={onAuthorClick}
@@ -78,16 +58,14 @@ export function MomentsFeedView({ viewerActorId: _viewerActorId, onOpenPost, onA
         />
       ))}
 
-      {feed.hasMore && (
-        <div style={{ textAlign: 'center', marginTop: 12 }}>
-          <Button
-            onClick={() => loadFeed('home').catch(() => {})}
-            loading={feed.loading}
-          >
-            {t('moments.action.loadMore')}
-          </Button>
-        </div>
-      )}
+      <MomentListState
+        loading={feed.loading}
+        empty={false}
+        emptyText={t('moments.placeholder.feedEmpty')}
+        loadMoreText={t('moments.action.loadMore')}
+        hasMore={feed.hasMore}
+        onLoadMore={() => loadFeed('home').catch(() => {})}
+      />
     </div>
   );
 }
