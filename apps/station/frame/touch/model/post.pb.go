@@ -410,7 +410,7 @@ func (x Audience_Kind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Audience_Kind.Descriptor instead.
 func (Audience_Kind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_social_post_proto_rawDescGZIP(), []int{40, 0}
+	return file_domain_social_post_proto_rawDescGZIP(), []int{43, 0}
 }
 
 type Post struct {
@@ -3122,6 +3122,248 @@ func (x *GetTimelineResponse) GetHasMore() bool {
 	return false
 }
 
+// MomentDelivery is the durable viewer-scoped inbox entry for HOME
+// timeline projection. PUBLIC Moments are intentionally excluded from
+// delivery rows and remain served by the public feed path.
+type MomentDelivery struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ViewerId      string                 `protobuf:"bytes,2,opt,name=viewer_id,json=viewerId,proto3" json:"viewer_id,omitempty"`
+	PostId        string                 `protobuf:"bytes,3,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
+	AuthorId      string                 `protobuf:"bytes,4,opt,name=author_id,json=authorId,proto3" json:"author_id,omitempty"`
+	AudienceKind  Audience_Kind          `protobuf:"varint,5,opt,name=audience_kind,json=audienceKind,proto3,enum=peers_touch.model.social.v1.Audience_Kind" json:"audience_kind,omitempty"`
+	DeliveredAt   *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=delivered_at,json=deliveredAt,proto3" json:"delivered_at,omitempty"`
+	RevokedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MomentDelivery) Reset() {
+	*x = MomentDelivery{}
+	mi := &file_domain_social_post_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MomentDelivery) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MomentDelivery) ProtoMessage() {}
+
+func (x *MomentDelivery) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_post_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MomentDelivery.ProtoReflect.Descriptor instead.
+func (*MomentDelivery) Descriptor() ([]byte, []int) {
+	return file_domain_social_post_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *MomentDelivery) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *MomentDelivery) GetViewerId() string {
+	if x != nil {
+		return x.ViewerId
+	}
+	return ""
+}
+
+func (x *MomentDelivery) GetPostId() string {
+	if x != nil {
+		return x.PostId
+	}
+	return ""
+}
+
+func (x *MomentDelivery) GetAuthorId() string {
+	if x != nil {
+		return x.AuthorId
+	}
+	return ""
+}
+
+func (x *MomentDelivery) GetAudienceKind() Audience_Kind {
+	if x != nil {
+		return x.AudienceKind
+	}
+	return Audience_KIND_UNSPECIFIED
+}
+
+func (x *MomentDelivery) GetDeliveredAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DeliveredAt
+	}
+	return nil
+}
+
+func (x *MomentDelivery) GetRevokedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RevokedAt
+	}
+	return nil
+}
+
+// SyncMomentsProjectionRequest is the runtime reconcile entrypoint.
+// Cursors are optional; an empty cursor asks Station for a fresh
+// authoritative snapshot of the viewer-owned projections.
+type SyncMomentsProjectionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	HomeCursor    string                 `protobuf:"bytes,1,opt,name=home_cursor,json=homeCursor,proto3" json:"home_cursor,omitempty"`
+	PublicCursor  string                 `protobuf:"bytes,2,opt,name=public_cursor,json=publicCursor,proto3" json:"public_cursor,omitempty"`
+	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	PublicSort    TimelineSort           `protobuf:"varint,4,opt,name=public_sort,json=publicSort,proto3,enum=peers_touch.model.social.v1.TimelineSort" json:"public_sort,omitempty"`
+	Reason        string                 `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SyncMomentsProjectionRequest) Reset() {
+	*x = SyncMomentsProjectionRequest{}
+	mi := &file_domain_social_post_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SyncMomentsProjectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SyncMomentsProjectionRequest) ProtoMessage() {}
+
+func (x *SyncMomentsProjectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_post_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SyncMomentsProjectionRequest.ProtoReflect.Descriptor instead.
+func (*SyncMomentsProjectionRequest) Descriptor() ([]byte, []int) {
+	return file_domain_social_post_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *SyncMomentsProjectionRequest) GetHomeCursor() string {
+	if x != nil {
+		return x.HomeCursor
+	}
+	return ""
+}
+
+func (x *SyncMomentsProjectionRequest) GetPublicCursor() string {
+	if x != nil {
+		return x.PublicCursor
+	}
+	return ""
+}
+
+func (x *SyncMomentsProjectionRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *SyncMomentsProjectionRequest) GetPublicSort() TimelineSort {
+	if x != nil {
+		return x.PublicSort
+	}
+	return TimelineSort_TIMELINE_SORT_RECENT
+}
+
+func (x *SyncMomentsProjectionRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type SyncMomentsProjectionResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	HomeTimeline   *GetTimelineResponse   `protobuf:"bytes,1,opt,name=home_timeline,json=homeTimeline,proto3" json:"home_timeline,omitempty"`
+	PublicTimeline *GetTimelineResponse   `protobuf:"bytes,2,opt,name=public_timeline,json=publicTimeline,proto3" json:"public_timeline,omitempty"`
+	SyncToken      string                 `protobuf:"bytes,3,opt,name=sync_token,json=syncToken,proto3" json:"sync_token,omitempty"`
+	SyncedAt       *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=synced_at,json=syncedAt,proto3" json:"synced_at,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SyncMomentsProjectionResponse) Reset() {
+	*x = SyncMomentsProjectionResponse{}
+	mi := &file_domain_social_post_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SyncMomentsProjectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SyncMomentsProjectionResponse) ProtoMessage() {}
+
+func (x *SyncMomentsProjectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_post_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SyncMomentsProjectionResponse.ProtoReflect.Descriptor instead.
+func (*SyncMomentsProjectionResponse) Descriptor() ([]byte, []int) {
+	return file_domain_social_post_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *SyncMomentsProjectionResponse) GetHomeTimeline() *GetTimelineResponse {
+	if x != nil {
+		return x.HomeTimeline
+	}
+	return nil
+}
+
+func (x *SyncMomentsProjectionResponse) GetPublicTimeline() *GetTimelineResponse {
+	if x != nil {
+		return x.PublicTimeline
+	}
+	return nil
+}
+
+func (x *SyncMomentsProjectionResponse) GetSyncToken() string {
+	if x != nil {
+		return x.SyncToken
+	}
+	return ""
+}
+
+func (x *SyncMomentsProjectionResponse) GetSyncedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.SyncedAt
+	}
+	return nil
+}
+
 // GetMyMomentsStats returns aggregate counters for the calling user's
 // Moments surface — the data that powers the user-side dashboard
 // panel. All values are computed live (no caching layer in P2).
@@ -3133,7 +3375,7 @@ type GetMyMomentsStatsRequest struct {
 
 func (x *GetMyMomentsStatsRequest) Reset() {
 	*x = GetMyMomentsStatsRequest{}
-	mi := &file_domain_social_post_proto_msgTypes[36]
+	mi := &file_domain_social_post_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3145,7 +3387,7 @@ func (x *GetMyMomentsStatsRequest) String() string {
 func (*GetMyMomentsStatsRequest) ProtoMessage() {}
 
 func (x *GetMyMomentsStatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_post_proto_msgTypes[36]
+	mi := &file_domain_social_post_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3158,7 +3400,7 @@ func (x *GetMyMomentsStatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMyMomentsStatsRequest.ProtoReflect.Descriptor instead.
 func (*GetMyMomentsStatsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_social_post_proto_rawDescGZIP(), []int{36}
+	return file_domain_social_post_proto_rawDescGZIP(), []int{39}
 }
 
 type GetMyMomentsStatsResponse struct {
@@ -3191,7 +3433,7 @@ type GetMyMomentsStatsResponse struct {
 
 func (x *GetMyMomentsStatsResponse) Reset() {
 	*x = GetMyMomentsStatsResponse{}
-	mi := &file_domain_social_post_proto_msgTypes[37]
+	mi := &file_domain_social_post_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3203,7 +3445,7 @@ func (x *GetMyMomentsStatsResponse) String() string {
 func (*GetMyMomentsStatsResponse) ProtoMessage() {}
 
 func (x *GetMyMomentsStatsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_post_proto_msgTypes[37]
+	mi := &file_domain_social_post_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3216,7 +3458,7 @@ func (x *GetMyMomentsStatsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMyMomentsStatsResponse.ProtoReflect.Descriptor instead.
 func (*GetMyMomentsStatsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_social_post_proto_rawDescGZIP(), []int{37}
+	return file_domain_social_post_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *GetMyMomentsStatsResponse) GetPostsCount() int64 {
@@ -3285,7 +3527,7 @@ type RepostRequest struct {
 
 func (x *RepostRequest) Reset() {
 	*x = RepostRequest{}
-	mi := &file_domain_social_post_proto_msgTypes[38]
+	mi := &file_domain_social_post_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3297,7 +3539,7 @@ func (x *RepostRequest) String() string {
 func (*RepostRequest) ProtoMessage() {}
 
 func (x *RepostRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_post_proto_msgTypes[38]
+	mi := &file_domain_social_post_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3310,7 +3552,7 @@ func (x *RepostRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RepostRequest.ProtoReflect.Descriptor instead.
 func (*RepostRequest) Descriptor() ([]byte, []int) {
-	return file_domain_social_post_proto_rawDescGZIP(), []int{38}
+	return file_domain_social_post_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *RepostRequest) GetPostId() string {
@@ -3336,7 +3578,7 @@ type RepostResponse struct {
 
 func (x *RepostResponse) Reset() {
 	*x = RepostResponse{}
-	mi := &file_domain_social_post_proto_msgTypes[39]
+	mi := &file_domain_social_post_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3348,7 +3590,7 @@ func (x *RepostResponse) String() string {
 func (*RepostResponse) ProtoMessage() {}
 
 func (x *RepostResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_post_proto_msgTypes[39]
+	mi := &file_domain_social_post_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3361,7 +3603,7 @@ func (x *RepostResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RepostResponse.ProtoReflect.Descriptor instead.
 func (*RepostResponse) Descriptor() ([]byte, []int) {
-	return file_domain_social_post_proto_rawDescGZIP(), []int{39}
+	return file_domain_social_post_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *RepostResponse) GetRepost() *Post {
@@ -3414,7 +3656,7 @@ type Audience struct {
 
 func (x *Audience) Reset() {
 	*x = Audience{}
-	mi := &file_domain_social_post_proto_msgTypes[40]
+	mi := &file_domain_social_post_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3426,7 +3668,7 @@ func (x *Audience) String() string {
 func (*Audience) ProtoMessage() {}
 
 func (x *Audience) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_post_proto_msgTypes[40]
+	mi := &file_domain_social_post_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3439,7 +3681,7 @@ func (x *Audience) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Audience.ProtoReflect.Descriptor instead.
 func (*Audience) Descriptor() ([]byte, []int) {
-	return file_domain_social_post_proto_rawDescGZIP(), []int{40}
+	return file_domain_social_post_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *Audience) GetKind() Audience_Kind {
@@ -3490,7 +3732,7 @@ type ReactionSummary struct {
 
 func (x *ReactionSummary) Reset() {
 	*x = ReactionSummary{}
-	mi := &file_domain_social_post_proto_msgTypes[41]
+	mi := &file_domain_social_post_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3502,7 +3744,7 @@ func (x *ReactionSummary) String() string {
 func (*ReactionSummary) ProtoMessage() {}
 
 func (x *ReactionSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_post_proto_msgTypes[41]
+	mi := &file_domain_social_post_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3515,7 +3757,7 @@ func (x *ReactionSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReactionSummary.ProtoReflect.Descriptor instead.
 func (*ReactionSummary) Descriptor() ([]byte, []int) {
-	return file_domain_social_post_proto_rawDescGZIP(), []int{41}
+	return file_domain_social_post_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *ReactionSummary) GetKind() ReactionKind {
@@ -3554,7 +3796,7 @@ type Mention struct {
 
 func (x *Mention) Reset() {
 	*x = Mention{}
-	mi := &file_domain_social_post_proto_msgTypes[42]
+	mi := &file_domain_social_post_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3566,7 +3808,7 @@ func (x *Mention) String() string {
 func (*Mention) ProtoMessage() {}
 
 func (x *Mention) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_post_proto_msgTypes[42]
+	mi := &file_domain_social_post_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3579,7 +3821,7 @@ func (x *Mention) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Mention.ProtoReflect.Descriptor instead.
 func (*Mention) Descriptor() ([]byte, []int) {
-	return file_domain_social_post_proto_rawDescGZIP(), []int{42}
+	return file_domain_social_post_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *Mention) GetActorId() string {
@@ -3620,7 +3862,7 @@ type ReactToPostRequest struct {
 
 func (x *ReactToPostRequest) Reset() {
 	*x = ReactToPostRequest{}
-	mi := &file_domain_social_post_proto_msgTypes[43]
+	mi := &file_domain_social_post_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3632,7 +3874,7 @@ func (x *ReactToPostRequest) String() string {
 func (*ReactToPostRequest) ProtoMessage() {}
 
 func (x *ReactToPostRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_post_proto_msgTypes[43]
+	mi := &file_domain_social_post_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3645,7 +3887,7 @@ func (x *ReactToPostRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReactToPostRequest.ProtoReflect.Descriptor instead.
 func (*ReactToPostRequest) Descriptor() ([]byte, []int) {
-	return file_domain_social_post_proto_rawDescGZIP(), []int{43}
+	return file_domain_social_post_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *ReactToPostRequest) GetPostId() string {
@@ -3674,7 +3916,7 @@ type ReactToPostResponse struct {
 
 func (x *ReactToPostResponse) Reset() {
 	*x = ReactToPostResponse{}
-	mi := &file_domain_social_post_proto_msgTypes[44]
+	mi := &file_domain_social_post_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3686,7 +3928,7 @@ func (x *ReactToPostResponse) String() string {
 func (*ReactToPostResponse) ProtoMessage() {}
 
 func (x *ReactToPostResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_post_proto_msgTypes[44]
+	mi := &file_domain_social_post_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3699,7 +3941,7 @@ func (x *ReactToPostResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReactToPostResponse.ProtoReflect.Descriptor instead.
 func (*ReactToPostResponse) Descriptor() ([]byte, []int) {
-	return file_domain_social_post_proto_rawDescGZIP(), []int{44}
+	return file_domain_social_post_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *ReactToPostResponse) GetSuccess() bool {
@@ -3726,7 +3968,7 @@ type UnreactToPostRequest struct {
 
 func (x *UnreactToPostRequest) Reset() {
 	*x = UnreactToPostRequest{}
-	mi := &file_domain_social_post_proto_msgTypes[45]
+	mi := &file_domain_social_post_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3738,7 +3980,7 @@ func (x *UnreactToPostRequest) String() string {
 func (*UnreactToPostRequest) ProtoMessage() {}
 
 func (x *UnreactToPostRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_post_proto_msgTypes[45]
+	mi := &file_domain_social_post_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3751,7 +3993,7 @@ func (x *UnreactToPostRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnreactToPostRequest.ProtoReflect.Descriptor instead.
 func (*UnreactToPostRequest) Descriptor() ([]byte, []int) {
-	return file_domain_social_post_proto_rawDescGZIP(), []int{45}
+	return file_domain_social_post_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *UnreactToPostRequest) GetPostId() string {
@@ -3778,7 +4020,7 @@ type UnreactToPostResponse struct {
 
 func (x *UnreactToPostResponse) Reset() {
 	*x = UnreactToPostResponse{}
-	mi := &file_domain_social_post_proto_msgTypes[46]
+	mi := &file_domain_social_post_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3790,7 +4032,7 @@ func (x *UnreactToPostResponse) String() string {
 func (*UnreactToPostResponse) ProtoMessage() {}
 
 func (x *UnreactToPostResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_post_proto_msgTypes[46]
+	mi := &file_domain_social_post_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3803,7 +4045,7 @@ func (x *UnreactToPostResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnreactToPostResponse.ProtoReflect.Descriptor instead.
 func (*UnreactToPostResponse) Descriptor() ([]byte, []int) {
-	return file_domain_social_post_proto_rawDescGZIP(), []int{46}
+	return file_domain_social_post_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *UnreactToPostResponse) GetSuccess() bool {
@@ -3833,7 +4075,7 @@ type ListReactionsRequest struct {
 
 func (x *ListReactionsRequest) Reset() {
 	*x = ListReactionsRequest{}
-	mi := &file_domain_social_post_proto_msgTypes[47]
+	mi := &file_domain_social_post_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3845,7 +4087,7 @@ func (x *ListReactionsRequest) String() string {
 func (*ListReactionsRequest) ProtoMessage() {}
 
 func (x *ListReactionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_post_proto_msgTypes[47]
+	mi := &file_domain_social_post_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3858,7 +4100,7 @@ func (x *ListReactionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListReactionsRequest.ProtoReflect.Descriptor instead.
 func (*ListReactionsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_social_post_proto_rawDescGZIP(), []int{47}
+	return file_domain_social_post_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ListReactionsRequest) GetPostId() string {
@@ -3900,7 +4142,7 @@ type ListReactionsResponse struct {
 
 func (x *ListReactionsResponse) Reset() {
 	*x = ListReactionsResponse{}
-	mi := &file_domain_social_post_proto_msgTypes[48]
+	mi := &file_domain_social_post_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3912,7 +4154,7 @@ func (x *ListReactionsResponse) String() string {
 func (*ListReactionsResponse) ProtoMessage() {}
 
 func (x *ListReactionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_post_proto_msgTypes[48]
+	mi := &file_domain_social_post_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3925,7 +4167,7 @@ func (x *ListReactionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListReactionsResponse.ProtoReflect.Descriptor instead.
 func (*ListReactionsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_social_post_proto_rawDescGZIP(), []int{48}
+	return file_domain_social_post_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *ListReactionsResponse) GetEntries() []*ListReactionsResponse_Entry {
@@ -3960,7 +4202,7 @@ type ListReactionsResponse_Entry struct {
 
 func (x *ListReactionsResponse_Entry) Reset() {
 	*x = ListReactionsResponse_Entry{}
-	mi := &file_domain_social_post_proto_msgTypes[49]
+	mi := &file_domain_social_post_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3972,7 +4214,7 @@ func (x *ListReactionsResponse_Entry) String() string {
 func (*ListReactionsResponse_Entry) ProtoMessage() {}
 
 func (x *ListReactionsResponse_Entry) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_post_proto_msgTypes[49]
+	mi := &file_domain_social_post_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3985,7 +4227,7 @@ func (x *ListReactionsResponse_Entry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListReactionsResponse_Entry.ProtoReflect.Descriptor instead.
 func (*ListReactionsResponse_Entry) Descriptor() ([]byte, []int) {
-	return file_domain_social_post_proto_rawDescGZIP(), []int{48, 0}
+	return file_domain_social_post_proto_rawDescGZIP(), []int{51, 0}
 }
 
 func (x *ListReactionsResponse_Entry) GetReactor() *PostAuthor {
@@ -4238,7 +4480,30 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\x05posts\x18\x01 \x03(\v2!.peers_touch.model.social.v1.PostR\x05posts\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
 	"nextCursor\x12\x19\n" +
-	"\bhas_more\x18\x03 \x01(\bR\ahasMore\"\x1a\n" +
+	"\bhas_more\x18\x03 \x01(\bR\ahasMore\"\xbe\x02\n" +
+	"\x0eMomentDelivery\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
+	"\tviewer_id\x18\x02 \x01(\tR\bviewerId\x12\x17\n" +
+	"\apost_id\x18\x03 \x01(\tR\x06postId\x12\x1b\n" +
+	"\tauthor_id\x18\x04 \x01(\tR\bauthorId\x12O\n" +
+	"\raudience_kind\x18\x05 \x01(\x0e2*.peers_touch.model.social.v1.Audience.KindR\faudienceKind\x12=\n" +
+	"\fdelivered_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\vdeliveredAt\x129\n" +
+	"\n" +
+	"revoked_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\trevokedAt\"\xde\x01\n" +
+	"\x1cSyncMomentsProjectionRequest\x12\x1f\n" +
+	"\vhome_cursor\x18\x01 \x01(\tR\n" +
+	"homeCursor\x12#\n" +
+	"\rpublic_cursor\x18\x02 \x01(\tR\fpublicCursor\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12J\n" +
+	"\vpublic_sort\x18\x04 \x01(\x0e2).peers_touch.model.social.v1.TimelineSortR\n" +
+	"publicSort\x12\x16\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"\xa9\x02\n" +
+	"\x1dSyncMomentsProjectionResponse\x12U\n" +
+	"\rhome_timeline\x18\x01 \x01(\v20.peers_touch.model.social.v1.GetTimelineResponseR\fhomeTimeline\x12Y\n" +
+	"\x0fpublic_timeline\x18\x02 \x01(\v20.peers_touch.model.social.v1.GetTimelineResponseR\x0epublicTimeline\x12\x1d\n" +
+	"\n" +
+	"sync_token\x18\x03 \x01(\tR\tsyncToken\x127\n" +
+	"\tsynced_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\bsyncedAt\"\x1a\n" +
 	"\x18GetMyMomentsStatsRequest\"\x80\x03\n" +
 	"\x19GetMyMomentsStatsResponse\x12\x1f\n" +
 	"\vposts_count\x18\x01 \x01(\x03R\n" +
@@ -4360,7 +4625,7 @@ func file_domain_social_post_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_social_post_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_domain_social_post_proto_msgTypes = make([]protoimpl.MessageInfo, 50)
+var file_domain_social_post_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
 var file_domain_social_post_proto_goTypes = []any{
 	(PostType)(0),                          // 0: peers_touch.model.social.v1.PostType
 	(PostVisibility)(0),                    // 1: peers_touch.model.social.v1.PostVisibility
@@ -4405,30 +4670,33 @@ var file_domain_social_post_proto_goTypes = []any{
 	(*PostFilter)(nil),                     // 40: peers_touch.model.social.v1.PostFilter
 	(*GetTimelineRequest)(nil),             // 41: peers_touch.model.social.v1.GetTimelineRequest
 	(*GetTimelineResponse)(nil),            // 42: peers_touch.model.social.v1.GetTimelineResponse
-	(*GetMyMomentsStatsRequest)(nil),       // 43: peers_touch.model.social.v1.GetMyMomentsStatsRequest
-	(*GetMyMomentsStatsResponse)(nil),      // 44: peers_touch.model.social.v1.GetMyMomentsStatsResponse
-	(*RepostRequest)(nil),                  // 45: peers_touch.model.social.v1.RepostRequest
-	(*RepostResponse)(nil),                 // 46: peers_touch.model.social.v1.RepostResponse
-	(*Audience)(nil),                       // 47: peers_touch.model.social.v1.Audience
-	(*ReactionSummary)(nil),                // 48: peers_touch.model.social.v1.ReactionSummary
-	(*Mention)(nil),                        // 49: peers_touch.model.social.v1.Mention
-	(*ReactToPostRequest)(nil),             // 50: peers_touch.model.social.v1.ReactToPostRequest
-	(*ReactToPostResponse)(nil),            // 51: peers_touch.model.social.v1.ReactToPostResponse
-	(*UnreactToPostRequest)(nil),           // 52: peers_touch.model.social.v1.UnreactToPostRequest
-	(*UnreactToPostResponse)(nil),          // 53: peers_touch.model.social.v1.UnreactToPostResponse
-	(*ListReactionsRequest)(nil),           // 54: peers_touch.model.social.v1.ListReactionsRequest
-	(*ListReactionsResponse)(nil),          // 55: peers_touch.model.social.v1.ListReactionsResponse
-	(*ListReactionsResponse_Entry)(nil),    // 56: peers_touch.model.social.v1.ListReactionsResponse.Entry
-	(*timestamppb.Timestamp)(nil),          // 57: google.protobuf.Timestamp
-	(*Poll)(nil),                           // 58: peers_touch.model.activity.v1.Poll
-	(*types.EncryptedMediaDescriptor)(nil), // 59: peers_touch.model.common.v1.EncryptedMediaDescriptor
-	(*AudienceKeyEnvelope)(nil),            // 60: peers_touch.model.social.v1.AudienceKeyEnvelope
+	(*MomentDelivery)(nil),                 // 43: peers_touch.model.social.v1.MomentDelivery
+	(*SyncMomentsProjectionRequest)(nil),   // 44: peers_touch.model.social.v1.SyncMomentsProjectionRequest
+	(*SyncMomentsProjectionResponse)(nil),  // 45: peers_touch.model.social.v1.SyncMomentsProjectionResponse
+	(*GetMyMomentsStatsRequest)(nil),       // 46: peers_touch.model.social.v1.GetMyMomentsStatsRequest
+	(*GetMyMomentsStatsResponse)(nil),      // 47: peers_touch.model.social.v1.GetMyMomentsStatsResponse
+	(*RepostRequest)(nil),                  // 48: peers_touch.model.social.v1.RepostRequest
+	(*RepostResponse)(nil),                 // 49: peers_touch.model.social.v1.RepostResponse
+	(*Audience)(nil),                       // 50: peers_touch.model.social.v1.Audience
+	(*ReactionSummary)(nil),                // 51: peers_touch.model.social.v1.ReactionSummary
+	(*Mention)(nil),                        // 52: peers_touch.model.social.v1.Mention
+	(*ReactToPostRequest)(nil),             // 53: peers_touch.model.social.v1.ReactToPostRequest
+	(*ReactToPostResponse)(nil),            // 54: peers_touch.model.social.v1.ReactToPostResponse
+	(*UnreactToPostRequest)(nil),           // 55: peers_touch.model.social.v1.UnreactToPostRequest
+	(*UnreactToPostResponse)(nil),          // 56: peers_touch.model.social.v1.UnreactToPostResponse
+	(*ListReactionsRequest)(nil),           // 57: peers_touch.model.social.v1.ListReactionsRequest
+	(*ListReactionsResponse)(nil),          // 58: peers_touch.model.social.v1.ListReactionsResponse
+	(*ListReactionsResponse_Entry)(nil),    // 59: peers_touch.model.social.v1.ListReactionsResponse.Entry
+	(*timestamppb.Timestamp)(nil),          // 60: google.protobuf.Timestamp
+	(*Poll)(nil),                           // 61: peers_touch.model.activity.v1.Poll
+	(*types.EncryptedMediaDescriptor)(nil), // 62: peers_touch.model.common.v1.EncryptedMediaDescriptor
+	(*AudienceKeyEnvelope)(nil),            // 63: peers_touch.model.social.v1.AudienceKeyEnvelope
 }
 var file_domain_social_post_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.social.v1.Post.type:type_name -> peers_touch.model.social.v1.PostType
 	1,  // 1: peers_touch.model.social.v1.Post.visibility:type_name -> peers_touch.model.social.v1.PostVisibility
-	57, // 2: peers_touch.model.social.v1.Post.created_at:type_name -> google.protobuf.Timestamp
-	57, // 3: peers_touch.model.social.v1.Post.updated_at:type_name -> google.protobuf.Timestamp
+	60, // 2: peers_touch.model.social.v1.Post.created_at:type_name -> google.protobuf.Timestamp
+	60, // 3: peers_touch.model.social.v1.Post.updated_at:type_name -> google.protobuf.Timestamp
 	8,  // 4: peers_touch.model.social.v1.Post.stats:type_name -> peers_touch.model.social.v1.PostStats
 	9,  // 5: peers_touch.model.social.v1.Post.author:type_name -> peers_touch.model.social.v1.PostAuthor
 	10, // 6: peers_touch.model.social.v1.Post.interaction:type_name -> peers_touch.model.social.v1.PostInteraction
@@ -4439,23 +4707,23 @@ var file_domain_social_post_proto_depIdxs = []int32{
 	15, // 11: peers_touch.model.social.v1.Post.poll_post:type_name -> peers_touch.model.social.v1.PollPost
 	16, // 12: peers_touch.model.social.v1.Post.repost_post:type_name -> peers_touch.model.social.v1.RepostPost
 	17, // 13: peers_touch.model.social.v1.Post.location_post:type_name -> peers_touch.model.social.v1.LocationPost
-	47, // 14: peers_touch.model.social.v1.Post.audience:type_name -> peers_touch.model.social.v1.Audience
-	48, // 15: peers_touch.model.social.v1.Post.reactions:type_name -> peers_touch.model.social.v1.ReactionSummary
-	49, // 16: peers_touch.model.social.v1.Post.typed_mentions:type_name -> peers_touch.model.social.v1.Mention
+	50, // 14: peers_touch.model.social.v1.Post.audience:type_name -> peers_touch.model.social.v1.Audience
+	51, // 15: peers_touch.model.social.v1.Post.reactions:type_name -> peers_touch.model.social.v1.ReactionSummary
+	52, // 16: peers_touch.model.social.v1.Post.typed_mentions:type_name -> peers_touch.model.social.v1.Mention
 	18, // 17: peers_touch.model.social.v1.ImagePost.images:type_name -> peers_touch.model.social.v1.ImageAttachment
 	19, // 18: peers_touch.model.social.v1.VideoPost.video:type_name -> peers_touch.model.social.v1.VideoAttachment
 	21, // 19: peers_touch.model.social.v1.LinkPost.link:type_name -> peers_touch.model.social.v1.LinkPreview
-	58, // 20: peers_touch.model.social.v1.PollPost.poll:type_name -> peers_touch.model.activity.v1.Poll
+	61, // 20: peers_touch.model.social.v1.PollPost.poll:type_name -> peers_touch.model.activity.v1.Poll
 	7,  // 21: peers_touch.model.social.v1.RepostPost.original_post:type_name -> peers_touch.model.social.v1.Post
 	22, // 22: peers_touch.model.social.v1.LocationPost.location:type_name -> peers_touch.model.social.v1.Location
 	18, // 23: peers_touch.model.social.v1.LocationPost.images:type_name -> peers_touch.model.social.v1.ImageAttachment
-	59, // 24: peers_touch.model.social.v1.ImageAttachment.media_encryption:type_name -> peers_touch.model.common.v1.EncryptedMediaDescriptor
+	62, // 24: peers_touch.model.social.v1.ImageAttachment.media_encryption:type_name -> peers_touch.model.common.v1.EncryptedMediaDescriptor
 	2,  // 25: peers_touch.model.social.v1.VideoAttachment.quality:type_name -> peers_touch.model.social.v1.VideoQuality
 	20, // 26: peers_touch.model.social.v1.VideoAttachment.variants:type_name -> peers_touch.model.social.v1.VideoVariant
-	59, // 27: peers_touch.model.social.v1.VideoAttachment.media_encryption:type_name -> peers_touch.model.common.v1.EncryptedMediaDescriptor
+	62, // 27: peers_touch.model.social.v1.VideoAttachment.media_encryption:type_name -> peers_touch.model.common.v1.EncryptedMediaDescriptor
 	0,  // 28: peers_touch.model.social.v1.CreatePostRequest.type:type_name -> peers_touch.model.social.v1.PostType
 	1,  // 29: peers_touch.model.social.v1.CreatePostRequest.visibility:type_name -> peers_touch.model.social.v1.PostVisibility
-	47, // 30: peers_touch.model.social.v1.CreatePostRequest.audience:type_name -> peers_touch.model.social.v1.Audience
+	50, // 30: peers_touch.model.social.v1.CreatePostRequest.audience:type_name -> peers_touch.model.social.v1.Audience
 	24, // 31: peers_touch.model.social.v1.CreatePostRequest.text:type_name -> peers_touch.model.social.v1.CreateTextPostRequest
 	25, // 32: peers_touch.model.social.v1.CreatePostRequest.image:type_name -> peers_touch.model.social.v1.CreateImagePostRequest
 	26, // 33: peers_touch.model.social.v1.CreatePostRequest.video:type_name -> peers_touch.model.social.v1.CreateVideoPostRequest
@@ -4475,25 +4743,32 @@ var file_domain_social_post_proto_depIdxs = []int32{
 	3,  // 47: peers_touch.model.social.v1.GetTimelineRequest.type:type_name -> peers_touch.model.social.v1.TimelineType
 	4,  // 48: peers_touch.model.social.v1.GetTimelineRequest.sort:type_name -> peers_touch.model.social.v1.TimelineSort
 	7,  // 49: peers_touch.model.social.v1.GetTimelineResponse.posts:type_name -> peers_touch.model.social.v1.Post
-	7,  // 50: peers_touch.model.social.v1.RepostResponse.repost:type_name -> peers_touch.model.social.v1.Post
-	6,  // 51: peers_touch.model.social.v1.Audience.kind:type_name -> peers_touch.model.social.v1.Audience.Kind
-	6,  // 52: peers_touch.model.social.v1.Audience.base_kind:type_name -> peers_touch.model.social.v1.Audience.Kind
-	60, // 53: peers_touch.model.social.v1.Audience.key_envelopes:type_name -> peers_touch.model.social.v1.AudienceKeyEnvelope
-	5,  // 54: peers_touch.model.social.v1.ReactionSummary.kind:type_name -> peers_touch.model.social.v1.ReactionKind
-	5,  // 55: peers_touch.model.social.v1.ReactToPostRequest.kind:type_name -> peers_touch.model.social.v1.ReactionKind
-	48, // 56: peers_touch.model.social.v1.ReactToPostResponse.reactions:type_name -> peers_touch.model.social.v1.ReactionSummary
-	5,  // 57: peers_touch.model.social.v1.UnreactToPostRequest.kind:type_name -> peers_touch.model.social.v1.ReactionKind
-	48, // 58: peers_touch.model.social.v1.UnreactToPostResponse.reactions:type_name -> peers_touch.model.social.v1.ReactionSummary
-	5,  // 59: peers_touch.model.social.v1.ListReactionsRequest.kind:type_name -> peers_touch.model.social.v1.ReactionKind
-	56, // 60: peers_touch.model.social.v1.ListReactionsResponse.entries:type_name -> peers_touch.model.social.v1.ListReactionsResponse.Entry
-	9,  // 61: peers_touch.model.social.v1.ListReactionsResponse.Entry.reactor:type_name -> peers_touch.model.social.v1.PostAuthor
-	5,  // 62: peers_touch.model.social.v1.ListReactionsResponse.Entry.kind:type_name -> peers_touch.model.social.v1.ReactionKind
-	57, // 63: peers_touch.model.social.v1.ListReactionsResponse.Entry.reacted_at:type_name -> google.protobuf.Timestamp
-	64, // [64:64] is the sub-list for method output_type
-	64, // [64:64] is the sub-list for method input_type
-	64, // [64:64] is the sub-list for extension type_name
-	64, // [64:64] is the sub-list for extension extendee
-	0,  // [0:64] is the sub-list for field type_name
+	6,  // 50: peers_touch.model.social.v1.MomentDelivery.audience_kind:type_name -> peers_touch.model.social.v1.Audience.Kind
+	60, // 51: peers_touch.model.social.v1.MomentDelivery.delivered_at:type_name -> google.protobuf.Timestamp
+	60, // 52: peers_touch.model.social.v1.MomentDelivery.revoked_at:type_name -> google.protobuf.Timestamp
+	4,  // 53: peers_touch.model.social.v1.SyncMomentsProjectionRequest.public_sort:type_name -> peers_touch.model.social.v1.TimelineSort
+	42, // 54: peers_touch.model.social.v1.SyncMomentsProjectionResponse.home_timeline:type_name -> peers_touch.model.social.v1.GetTimelineResponse
+	42, // 55: peers_touch.model.social.v1.SyncMomentsProjectionResponse.public_timeline:type_name -> peers_touch.model.social.v1.GetTimelineResponse
+	60, // 56: peers_touch.model.social.v1.SyncMomentsProjectionResponse.synced_at:type_name -> google.protobuf.Timestamp
+	7,  // 57: peers_touch.model.social.v1.RepostResponse.repost:type_name -> peers_touch.model.social.v1.Post
+	6,  // 58: peers_touch.model.social.v1.Audience.kind:type_name -> peers_touch.model.social.v1.Audience.Kind
+	6,  // 59: peers_touch.model.social.v1.Audience.base_kind:type_name -> peers_touch.model.social.v1.Audience.Kind
+	63, // 60: peers_touch.model.social.v1.Audience.key_envelopes:type_name -> peers_touch.model.social.v1.AudienceKeyEnvelope
+	5,  // 61: peers_touch.model.social.v1.ReactionSummary.kind:type_name -> peers_touch.model.social.v1.ReactionKind
+	5,  // 62: peers_touch.model.social.v1.ReactToPostRequest.kind:type_name -> peers_touch.model.social.v1.ReactionKind
+	51, // 63: peers_touch.model.social.v1.ReactToPostResponse.reactions:type_name -> peers_touch.model.social.v1.ReactionSummary
+	5,  // 64: peers_touch.model.social.v1.UnreactToPostRequest.kind:type_name -> peers_touch.model.social.v1.ReactionKind
+	51, // 65: peers_touch.model.social.v1.UnreactToPostResponse.reactions:type_name -> peers_touch.model.social.v1.ReactionSummary
+	5,  // 66: peers_touch.model.social.v1.ListReactionsRequest.kind:type_name -> peers_touch.model.social.v1.ReactionKind
+	59, // 67: peers_touch.model.social.v1.ListReactionsResponse.entries:type_name -> peers_touch.model.social.v1.ListReactionsResponse.Entry
+	9,  // 68: peers_touch.model.social.v1.ListReactionsResponse.Entry.reactor:type_name -> peers_touch.model.social.v1.PostAuthor
+	5,  // 69: peers_touch.model.social.v1.ListReactionsResponse.Entry.kind:type_name -> peers_touch.model.social.v1.ReactionKind
+	60, // 70: peers_touch.model.social.v1.ListReactionsResponse.Entry.reacted_at:type_name -> google.protobuf.Timestamp
+	71, // [71:71] is the sub-list for method output_type
+	71, // [71:71] is the sub-list for method input_type
+	71, // [71:71] is the sub-list for extension type_name
+	71, // [71:71] is the sub-list for extension extendee
+	0,  // [0:71] is the sub-list for field type_name
 }
 
 func init() { file_domain_social_post_proto_init() }
@@ -4522,14 +4797,14 @@ func file_domain_social_post_proto_init() {
 		(*CreatePostRequest_Location)(nil),
 	}
 	file_domain_social_post_proto_msgTypes[25].OneofWrappers = []any{}
-	file_domain_social_post_proto_msgTypes[38].OneofWrappers = []any{}
+	file_domain_social_post_proto_msgTypes[41].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_social_post_proto_rawDesc), len(file_domain_social_post_proto_rawDesc)),
 			NumEnums:      7,
-			NumMessages:   50,
+			NumMessages:   53,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

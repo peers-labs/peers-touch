@@ -366,6 +366,37 @@ message GetTimelineResponse {
   bool has_more = 3;
 }
 
+// MomentDelivery is the durable viewer-scoped inbox entry for HOME
+// timeline projection. PUBLIC Moments are intentionally excluded from
+// delivery rows and remain served by the public feed path.
+message MomentDelivery {
+  string id = 1;
+  string viewer_id = 2;
+  string post_id = 3;
+  string author_id = 4;
+  Audience.Kind audience_kind = 5;
+  google.protobuf.Timestamp delivered_at = 6;
+  google.protobuf.Timestamp revoked_at = 7;
+}
+
+// SyncMomentsProjectionRequest is the runtime reconcile entrypoint.
+// Cursors are optional; an empty cursor asks Station for a fresh
+// authoritative snapshot of the viewer-owned projections.
+message SyncMomentsProjectionRequest {
+  string home_cursor = 1;
+  string public_cursor = 2;
+  int32 limit = 3;
+  TimelineSort public_sort = 4;
+  string reason = 5;
+}
+
+message SyncMomentsProjectionResponse {
+  GetTimelineResponse home_timeline = 1;
+  GetTimelineResponse public_timeline = 2;
+  string sync_token = 3;
+  google.protobuf.Timestamp synced_at = 4;
+}
+
 enum TimelineType {
   TIMELINE_HOME = 0;
   TIMELINE_USER = 1;
