@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Space, Tag, Typography, theme, message } from 'antd';
+import { Button, Card, Space, Typography, theme, message } from 'antd';
 import {
   Globe,
   Lock,
   MessageCircle,
-  MoreHorizontal,
   UserCheck,
   UsersRound,
   Users,
@@ -19,6 +18,7 @@ import {
   type ReactionSummary,
   type ImageAttachment,
 } from '../../gen/proto/domain/social/post_pb';
+import type { Comment } from '../../gen/proto/domain/social/comment_pb';
 import { ReactionBar } from './ReactionBar';
 import { ImageGrid } from './ImageGrid';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
@@ -57,26 +57,27 @@ interface MomentCardProps {
   onReact?: (postId: string, kind: ReactionKind) => Promise<void>;
   onUnreact?: (postId: string, kind?: ReactionKind) => Promise<void>;
   onAuthorClick?: (actorId: string) => void;
+  commentPreview?: Comment[];
 }
 
 function audienceBadge(kind: Audience_Kind, t: (k: string) => string) {
   switch (kind) {
     case Audience_Kind.PUBLIC:
-      return { Icon: Globe, label: t('moments.audience.public'), color: 'green' };
+      return { Icon: Globe, label: t('moments.audience.public') };
     case Audience_Kind.FOLLOWERS:
-      return { Icon: UserCheck, label: t('moments.audience.followers'), color: 'blue' };
+      return { Icon: UserCheck, label: t('moments.audience.followers') };
     case Audience_Kind.SELF:
-      return { Icon: Lock, label: t('moments.audience.self'), color: 'default' };
+      return { Icon: Lock, label: t('moments.audience.self') };
     case Audience_Kind.CIRCLE:
-      return { Icon: UsersRound, label: t('moments.audience.circle'), color: 'purple' };
+      return { Icon: UsersRound, label: t('moments.audience.circle') };
     case Audience_Kind.GROUP:
-      return { Icon: Users, label: t('moments.audience.group'), color: 'cyan' };
+      return { Icon: Users, label: t('moments.audience.group') };
     case Audience_Kind.CUSTOM_ALLOW:
-      return { Icon: Eye, label: t('moments.audience.customAllow'), color: 'gold' };
+      return { Icon: Eye, label: t('moments.audience.customAllow') };
     case Audience_Kind.CUSTOM_DENY:
-      return { Icon: Eye, label: t('moments.audience.customDeny'), color: 'orange' };
+      return { Icon: Eye, label: t('moments.audience.customDeny') };
     default:
-      return { Icon: Globe, label: t('moments.audience.public'), color: 'default' };
+      return { Icon: Globe, label: t('moments.audience.public') };
   }
 }
 
@@ -96,8 +97,8 @@ function relativeTime(seconds: bigint | undefined): string {
 }
 
 function getBodyText(post: Post): string {
-  const c = post.content as any;
-  if (!c || !c.case) return '';
+  const c = post.content;
+  if (!c.case) return '';
   switch (c.case) {
     case 'textPost':
     case 'imagePost':
@@ -124,7 +125,7 @@ function getImages(post: Post): ImageAttachment[] {
 
 function getRepostOriginal(post: Post): Post | undefined {
   if (post.type !== PostType.REPOST) return undefined;
-  const c = post.content as any;
+  const c = post.content;
   if (c?.case === 'repostPost') {
     return c.value?.originalPost as Post | undefined;
   }
@@ -139,6 +140,7 @@ export function MomentCard({
   onReact,
   onUnreact,
   onAuthorClick,
+  commentPreview,
 }: MomentCardProps) {
   const { t } = useTranslation('moments');
   const { token } = theme.useToken();
@@ -152,11 +154,17 @@ export function MomentCard({
   const original = getRepostOriginal(post);
   const longBody = body.length > 320;
   const visibleBody = expanded || !longBody ? body : `${body.slice(0, 320)}…`;
+  const commentsCount = Number(post.stats?.commentsCount ?? 0n);
+  const visibleComments = (commentPreview ?? []).slice(0, 2);
 
   return (
     <Card
-      style={{ marginBottom: 12 }}
-      bodyStyle={{ padding: 16 }}
+      style={{
+        marginBottom: 10,
+        borderColor: token.colorBorderSecondary,
+        boxShadow: 'none',
+      }}
+      bodyStyle={{ padding: '14px 16px' }}
       hoverable={!!onOpen}
       onClick={() => onOpen?.(post.id)}
     >
@@ -175,10 +183,10 @@ export function MomentCard({
           />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Space size={8} align="center" wrap>
+          <Space size={6} align="center" wrap>
             <Text
               strong
-              style={{ cursor: author?.id ? 'pointer' : 'default' }}
+              style={{ cursor: author?.id ? 'pointer' : 'default', fontSize: 14 }}
               onClick={(e) => {
                 e.stopPropagation();
                 if (author?.id) onAuthorClick?.(author.id);
@@ -194,19 +202,26 @@ export function MomentCard({
               />
             )}
             <Text type="secondary" style={{ fontSize: 12 }}>
-              · {relativeTime(post.createdAt?.seconds as any)}
+              · {relativeTime(post.createdAt?.seconds)}
             </Text>
-            <Tag
-              color={badge.color}
-              icon={<badge.Icon size={11} style={{ marginRight: 2 }} />}
-              style={{ marginLeft: 4 }}
+            <Text
+              type="secondary"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 12 }}
             >
+              <badge.Icon size={11} />
               {badge.label}
-            </Tag>
+            </Text>
           </Space>
 
           {body && (
-            <Paragraph style={{ marginTop: 8, marginBottom: 0, whiteSpace: 'pre-wrap' }}>
+            <Paragraph
+              style={{
+                marginTop: 8,
+                marginBottom: 0,
+                whiteSpace: 'pre-wrap',
+                lineHeight: 1.65,
+              }}
+            >
               {visibleBody}
               {longBody && !expanded && (
                 <Link
@@ -262,12 +277,45 @@ export function MomentCard({
             </Card>
           )}
 
+          {(visibleComments.length > 0 || commentsCount > 0) && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: '8px 10px',
+                borderRadius: token.borderRadius,
+                background: token.colorFillQuaternary,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {visibleComments.map((comment) => (
+                <div key={comment.id} style={{ fontSize: 13, lineHeight: 1.6 }}>
+                  <Text strong style={{ fontSize: 13 }}>
+                    {comment.author?.displayName ||
+                      comment.author?.username ||
+                      t('moments.author.unknown')}
+                  </Text>
+                  <Text style={{ fontSize: 13 }}> {comment.content}</Text>
+                </div>
+              ))}
+              <Button
+                type="link"
+                size="small"
+                onClick={() => onOpenComments?.(post.id)}
+                style={{ padding: 0, height: 22, fontSize: 12 }}
+              >
+                {commentsCount > visibleComments.length
+                  ? `${t('moments.comment.viewAll', { defaultValue: 'View comments' })} (${commentsCount})`
+                  : t('moments.comment.viewAll', { defaultValue: 'View comments' })}
+              </Button>
+            </div>
+          )}
+
           <div
             style={{
               marginTop: 12,
               display: 'flex',
               alignItems: 'center',
-              gap: 12,
+              gap: 8,
               flexWrap: 'wrap',
             }}
             onClick={(e) => e.stopPropagation()}
@@ -294,16 +342,10 @@ export function MomentCard({
               size="small"
               icon={<MessageCircle size={14} />}
               onClick={() => onOpenComments?.(post.id)}
+              style={{ color: token.colorTextSecondary }}
             >
               {String(post.stats?.commentsCount ?? 0n)}
             </Button>
-            <span style={{ flex: 1 }} />
-            <Button
-              type="text"
-              size="small"
-              icon={<MoreHorizontal size={14} />}
-              aria-label={t('moments.action.more')}
-            />
           </div>
         </div>
       </div>
