@@ -18,6 +18,11 @@ export const EVENT = {
   REALTIME_MESSAGE_MUTATION: 'realtime.message_mutation',
   REALTIME_GROUP_MEMBERSHIP_CHANGE: 'realtime.group_membership_change',
   REALTIME_CONVERSATION_SETTINGS_CHANGED: 'realtime.conversation_settings_changed',
+  MOMENT_CREATED: 'moment.created',
+  MOMENT_DELETED: 'moment.deleted',
+  MOMENT_COMMENTED: 'moment.commented',
+  MOMENT_REACTED: 'moment.reacted',
+  MOMENT_RESYNC_REQUESTED: 'moment.resync_requested',
   // Fired by handleInboundSkdm after a peer's Sender Keys
   // distribution message has been successfully consumed and
   // persisted. Subscribers (socialChat) use this to re-attempt

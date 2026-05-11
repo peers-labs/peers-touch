@@ -1,12 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Empty, Segmented, Spin, Typography } from 'antd';
+import { Segmented } from 'antd';
 import { useMomentsStore } from '../../store/moments';
 import { MomentCard } from '../../components/moments/MomentCard';
+import { MomentListState } from '../../components/moments/MomentListState';
 import type { ReactionKind } from '../../gen/proto/domain/social/post_pb';
 import type { TimelineSort } from '../../services/social_api';
-
-const { Text } = Typography;
 
 // MomentsExploreView — the PUBLIC timeline.
 //
@@ -29,6 +28,7 @@ export function MomentsExploreView({ viewerActorId: _viewerActorId, onOpenPost, 
   const { t } = useTranslation('moments');
   const feed = useMomentsStore((s) => s.feeds.explore);
   const postsById = useMomentsStore((s) => s.postsById);
+  const comments = useMomentsStore((s) => s.comments);
   const reactions = useMomentsStore((s) => s.reactions);
   const loadFeed = useMomentsStore((s) => s.loadFeed);
   const reactToPost = useMomentsStore((s) => s.reactToPost);
@@ -36,11 +36,12 @@ export function MomentsExploreView({ viewerActorId: _viewerActorId, onOpenPost, 
 
   const [sort, setSort] = useState<TimelineSort>(feed.sort ?? 'recent');
 
-  useEffect(() => {
-    loadFeed('explore', { refresh: true, sort }).catch(() => {});
-  }, [sort, loadFeed]);
-
   const posts = feed.postIds.map((id) => postsById[id]).filter(Boolean);
+
+  const handleSortChange = (nextSort: TimelineSort) => {
+    setSort(nextSort);
+    loadFeed('explore', { refresh: true, sort: nextSort }).catch(() => {});
+  };
 
   const handleReact = async (postId: string, kind: ReactionKind) => {
     await reactToPost(postId, kind);
@@ -54,7 +55,7 @@ export function MomentsExploreView({ viewerActorId: _viewerActorId, onOpenPost, 
       <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
         <Segmented
           value={sort}
-          onChange={(v) => setSort(v as TimelineSort)}
+          onChange={(v) => handleSortChange(v as TimelineSort)}
           options={[
             { value: 'recent', label: t('moments.tab.recent') },
             { value: 'hot', label: t('moments.tab.hot') },
@@ -63,21 +64,18 @@ export function MomentsExploreView({ viewerActorId: _viewerActorId, onOpenPost, 
         />
       </div>
 
-      {feed.loading && posts.length === 0 && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-          <Spin />
-        </div>
-      )}
-
-      {!feed.loading && posts.length === 0 && (
-        <Empty description={<Text>{t('moments.placeholder.exploreEmpty')}</Text>} />
-      )}
+      <MomentListState
+        loading={feed.loading}
+        empty={posts.length === 0}
+        emptyText={t('moments.placeholder.exploreEmpty')}
+      />
 
       {posts.map((p) => (
         <MomentCard
           key={p.id}
           post={p}
           reactions={reactions[p.id]}
+          commentPreview={comments[p.id]}
           onOpen={onOpenPost}
           onOpenComments={onOpenPost}
           onAuthorClick={onAuthorClick}
@@ -86,13 +84,14 @@ export function MomentsExploreView({ viewerActorId: _viewerActorId, onOpenPost, 
         />
       ))}
 
-      {feed.hasMore && (
-        <div style={{ textAlign: 'center', marginTop: 12 }}>
-          <Button onClick={() => loadFeed('explore', { sort }).catch(() => {})} loading={feed.loading}>
-            {t('moments.action.loadMore')}
-          </Button>
-        </div>
-      )}
+      <MomentListState
+        loading={feed.loading}
+        empty={false}
+        emptyText={t('moments.placeholder.exploreEmpty')}
+        loadMoreText={t('moments.action.loadMore')}
+        hasMore={feed.hasMore}
+        onLoadMore={() => loadFeed('explore', { sort }).catch(() => {})}
+      />
     </div>
   );
 }

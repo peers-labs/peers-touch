@@ -15,6 +15,7 @@ import {
   socialGetComments,
   socialGetMoment,
   socialGetTimeline,
+  socialSyncMomentsProjection,
   socialListByAuthor,
   socialReact,
   socialUnreact,
@@ -114,6 +115,7 @@ interface MomentsState {
     kind: MomentFeedKind,
     options?: { refresh?: boolean; sort?: TimelineSort },
   ) => Promise<void>;
+  syncProjection: (reason: string) => Promise<void>;
   loadCircleFeed: (circleId: string, refresh?: boolean) => Promise<void>;
   loadUserFeed: (actorId: string, refresh?: boolean) => Promise<void>;
 
@@ -256,6 +258,49 @@ export const useMomentsStore = create<MomentsState>((set, get) => ({
       set((s) => ({
         feeds: { ...s.feeds, [kind]: { ...s.feeds[kind], loading: false } },
       }));
+      throw err;
+    }
+  },
+
+  syncProjection: async (reason) => {
+    const currentExploreSort = get().feeds.explore.sort ?? 'recent';
+    try {
+      const resp = await socialSyncMomentsProjection({
+        limit: 20,
+        publicSort: currentExploreSort,
+        reason,
+      });
+      set((s) => {
+        const home = resp.homeTimeline;
+        const explore = resp.publicTimeline;
+        const mergedHome = ingestPosts(s, home?.posts ?? []);
+        const mergedExplore = ingestPosts(mergedHome, explore?.posts ?? []);
+        return {
+          postsById: mergedExplore.postsById,
+          authorsById: mergedExplore.authorsById,
+          reactions: mergedExplore.reactions,
+          feeds: {
+            home: {
+              postIds: mergedHome.ids,
+              nextCursor: home?.nextCursor ?? '',
+              hasMore: home?.hasMore ?? false,
+              loading: false,
+              loadedAt: Date.now(),
+              sort: 'recent',
+            },
+            explore: {
+              postIds: mergedExplore.ids,
+              nextCursor: explore?.nextCursor ?? '',
+              hasMore: explore?.hasMore ?? false,
+              loading: false,
+              loadedAt: Date.now(),
+              sort: currentExploreSort,
+            },
+          },
+        };
+      });
+    } catch (err) {
+      log.warn(TAG, 'syncProjection failed', { reason, err: String(err) });
       throw err;
     }
   },
