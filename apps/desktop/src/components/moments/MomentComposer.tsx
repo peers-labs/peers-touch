@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Input, Modal, Space, Tooltip, message, theme } from 'antd';
+import { Button, Input, Modal, Space, Tooltip, Typography, message, theme } from 'antd';
 import { ImagePlus, X, RotateCcw } from 'lucide-react';
 import { create } from '@bufbuild/protobuf';
 import { convertFileSrc } from '@tauri-apps/api/core';
@@ -18,6 +18,7 @@ import { api, type SocialEncryptedMediaDescriptorWire } from '../../services/des
 import { log } from '../../utils/logger';
 
 const { TextArea } = Input;
+const { Text } = Typography;
 
 const TAG = 'moment-composer';
 
@@ -273,14 +274,13 @@ export function MomentComposer({ open, onClose, initialAudience, onPublished }: 
       width={560}
       destroyOnHidden
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <TextArea
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder={t('moments.compose.placeholder')}
           autoSize={{ minRows: 4, maxRows: 12 }}
           maxLength={5000}
-          showCount
         />
 
         {pending.length > 0 && (
@@ -303,7 +303,7 @@ export function MomentComposer({ open, onClose, initialAudience, onPublished }: 
           </div>
         )}
 
-        <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+        <Space style={{ justifyContent: 'space-between', width: '100%' }} align="center">
           <Space size={8}>
             <Tooltip
               title={
@@ -321,25 +321,19 @@ export function MomentComposer({ open, onClose, initialAudience, onPublished }: 
                 onClick={handlePickImages}
                 disabled={slotsLeft <= 0 || submitting}
               >
-                {t('moments.compose.attachImage')}
-                {pending.length > 0
-                  ? ` (${pending.length}/${MAX_IMAGES_PER_POST})`
-                  : ''}
+                {pending.length > 0 ? `${pending.length}/${MAX_IMAGES_PER_POST}` : null}
               </Button>
             </Tooltip>
             {uploadingCount > 0 && (
-              <span style={{ color: token.colorTextTertiary, fontSize: 12 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
                 {t('moments.compose.imageUploadingProgress', {
                   uploading: uploadingCount,
                   total: pending.length,
                 })}
-              </span>
+              </Text>
             )}
           </Space>
           <Space size={8}>
-            <span style={{ color: token.colorTextSecondary, fontSize: 12 }}>
-              {t('moments.compose.audienceLabel')}
-            </span>
             <AudiencePicker value={audience} onChange={setAudience} disabled={submitting} />
           </Space>
         </Space>

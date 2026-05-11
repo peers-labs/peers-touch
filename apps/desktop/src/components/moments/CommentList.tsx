@@ -73,22 +73,24 @@ export function CommentList({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {comments.length === 0 && !loading && (
-        <Text type="secondary" style={{ fontSize: 13 }}>
-          {t('moments.comment.empty')}
-        </Text>
+        <div style={{ padding: '8px 0' }}>
+          <Text type="secondary" style={{ fontSize: 13 }}>
+            {t('moments.comment.empty')}
+          </Text>
+        </div>
       )}
 
       {comments.map((c) => {
         const isMine = !!viewerActorId && c.authorId === viewerActorId;
         const authorName = c.author?.displayName || c.author?.username || t('moments.author.unknown');
         return (
-          <div key={c.id} style={{ display: 'flex', gap: 10 }}>
+          <div key={c.id} style={{ display: 'flex', gap: 10, padding: '2px 0' }}>
             <UserSquareAvatar
               remoteUrl={c.author?.avatarUrl || undefined}
               name={authorName}
-              size={28}
+              size={26}
             />
             <div style={{ flex: 1, minWidth: 0 }}>
               <Space size={6} align="baseline">
@@ -146,7 +148,7 @@ export function CommentList({
       )}
 
       {hasMore && !loading && (
-        <Button block type="link" onClick={onLoadMore}>
+        <Button block type="text" size="small" onClick={onLoadMore}>
           {t('moments.action.loadMore')}
         </Button>
       )}
@@ -154,7 +156,7 @@ export function CommentList({
       <div
         style={{
           borderTop: `1px solid ${token.colorBorderSecondary}`,
-          paddingTop: 12,
+          paddingTop: 10,
           display: 'flex',
           flexDirection: 'column',
           gap: 6,
@@ -185,6 +187,7 @@ export function CommentList({
           onChange={(e) => setText(e.target.value)}
           placeholder={t('moments.comment.placeholder')}
           autoSize={{ minRows: 1, maxRows: 4 }}
+          style={{ borderRadius: token.borderRadius }}
           onPressEnter={(e) => {
             if (!e.shiftKey) {
               e.preventDefault();
