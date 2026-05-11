@@ -42,7 +42,8 @@ const (
 	routeSocialComment = "/api/v1/social/comments/:commentId"
 
 	// Timeline
-	routeSocialTimeline = "/api/v1/social/timeline"
+	routeSocialTimeline    = "/api/v1/social/timeline"
+	routeSocialMomentsSync = "/api/v1/social/moments/sync"
 
 	// Relationships
 	routeSocialFollow       = "/api/v1/social/relationships/follow"
@@ -81,6 +82,7 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("social-get-post", routeSocialPost, server.GET, s.handleGetPost, cw),
 		server.NewTypedHandler("social-get-moment", routeSocialMoment, server.GET, s.handleGetPost, cw),
 		server.NewTypedHandler("social-get-timeline", routeSocialTimeline, server.GET, s.handleGetTimeline, cw, jw),
+		server.NewTypedHandler("social-sync-moments-projection", routeSocialMomentsSync, server.POST, s.handleSyncMomentsProjection, cw, jw),
 		server.NewTypedHandler("social-get-user-posts", routeSocialUserPosts, server.GET, s.handleGetUserPosts, cw, jw),
 
 		// Reactions
@@ -345,10 +347,7 @@ func (s *subServer) handleGetPostComments(ctx context.Context, req *model.GetCom
 	if id, ok := getUserID(ctx); ok {
 		viewerID = id
 	}
-	if err := s.assertReadable(ctx, req.PostId, viewerID); err != nil {
-		return nil, err
-	}
-	resp, err := s.commentSvc.ListByPost(ctx, postID, req.Cursor, int(req.Limit))
+	resp, err := s.commentSvc.ListByPost(ctx, postID, viewerID, req.Cursor, int(req.Limit))
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to list comments", err)
 	}
@@ -404,6 +403,48 @@ func (s *subServer) handleGetTimeline(ctx context.Context, req *model.GetTimelin
 		return nil, server.InternalErrorWithCause("failed to get timeline", err)
 	}
 	return resp, nil
+}
+
+func (s *subServer) handleSyncMomentsProjection(ctx context.Context, req *model.SyncMomentsProjectionRequest) (*model.SyncMomentsProjectionResponse, error) {
+	viewerID, ok := getUserID(ctx)
+	if !ok {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req == nil {
+		req = &model.SyncMomentsProjectionRequest{}
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	home, err := s.timelineSvc.GetTimeline(ctx, &model.GetTimelineRequest{
+		Type:   model.TimelineType_TIMELINE_HOME,
+		Cursor: req.HomeCursor,
+		Limit:  limit,
+	}, viewerID)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("failed to sync home moments projection", err)
+	}
+
+	public, err := s.timelineSvc.GetTimeline(ctx, &model.GetTimelineRequest{
+		Type:   model.TimelineType_TIMELINE_PUBLIC,
+		Cursor: req.PublicCursor,
+		Limit:  limit,
+		Sort:   req.PublicSort,
+	}, viewerID)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("failed to sync public moments projection", err)
+	}
+
+	return &model.SyncMomentsProjectionResponse{
+		HomeTimeline:   home,
+		PublicTimeline: public,
+		SyncToken:      fmt.Sprintf("%s:%s", home.GetNextCursor(), public.GetNextCursor()),
+	}, nil
 }
 
 // --- Relationship handlers ----------------------------------------------------
