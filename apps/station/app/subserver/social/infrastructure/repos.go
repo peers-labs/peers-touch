@@ -15,6 +15,7 @@ import (
 type Repos struct {
 	PublicPosts   domain.PublicPostRepository
 	PrivatePosts  domain.PrivatePostRepository
+	Deliveries    domain.MomentDeliveryRepository
 	AudienceGrant domain.AudienceGrantRepository
 	Comments      domain.CommentRepository
 	Reactions     domain.ReactionRepository
@@ -37,6 +38,7 @@ func NewRepos(gdb *gorm.DB, resolveDID func(context.Context, uint64) (string, er
 	return &Repos{
 		PublicPosts:   NewPublicPostRepository(gdb),
 		PrivatePosts:  NewPrivatePostRepository(gdb, grants, resolveDID),
+		Deliveries:    NewMomentDeliveryRepository(gdb),
 		AudienceGrant: grants,
 		Comments:      NewCommentRepository(gdb),
 		Reactions:     NewReactionRepository(gdb),
