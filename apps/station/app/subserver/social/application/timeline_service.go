@@ -155,6 +155,111 @@ func (s *TimelineService) getPublicHotTimeline(ctx context.Context, cursor strin
 // dispatch them to the public timeline instead; we keep the empty
 // behaviour here so a misrouted call doesn't 500.
 func (s *TimelineService) getHomeTimeline(ctx context.Context, cursor string, limit int, viewerID uint64) (*model.GetTimelineResponse, error) {
+	if s.repos.Deliveries == nil {
+		return s.getLegacyHomeTimeline(ctx, cursor, limit, viewerID)
+	}
+	return s.getDeliveryHomeTimeline(ctx, cursor, limit, viewerID)
+}
+
+func (s *TimelineService) getDeliveryHomeTimeline(ctx context.Context, cursor string, limit int, viewerID uint64) (*model.GetTimelineResponse, error) {
+	if viewerID == 0 {
+		return &model.GetTimelineResponse{}, nil
+	}
+
+	mc, err := domain.DecodeMultiSourceCursor(cursor)
+	if err != nil {
+		single, sErr := domain.DecodeCursor(cursor)
+		if sErr != nil {
+			return nil, fmt.Errorf("invalid cursor: %w", err)
+		}
+		mc.SetSource("delivery", &single)
+		mc.SetSource("self_public", &single)
+		mc.SetSource("followed_public", &single)
+	}
+
+	viewer, err := buildViewer(ctx, viewerID, s.repos, s.resolver.ResolveID, s.groups)
+	if err != nil {
+		return nil, fmt.Errorf("build viewer: %w", err)
+	}
+	followingIDs := make([]uint64, 0, len(viewer.Following))
+	for id := range viewer.Following {
+		followingIDs = append(followingIDs, id)
+	}
+
+	pageBudget := limit + 1
+	deliveries, err := s.repos.Deliveries.ListInbox(ctx, viewerID, mc.Source("delivery"), pageBudget)
+	if err != nil {
+		return nil, err
+	}
+	selfPublic, _ := s.repos.PublicPosts.ListByAuthor(ctx, viewerID, mc.Source("self_public"), pageBudget)
+	followedPublic, _ := s.repos.PublicPosts.ListPublicByAuthors(ctx, followingIDs, mc.Source("followed_public"), pageBudget)
+
+	items := make([]timelineItem, 0, len(deliveries)+len(selfPublic)+len(followedPublic))
+	for i := range deliveries {
+		d := deliveries[i]
+		post, err := s.moments.GetMoment(ctx, fmt.Sprintf("%d", d.PostID), viewerID)
+		if err != nil {
+			return nil, err
+		}
+		if post == nil {
+			continue
+		}
+		domainPost := &domain.Post{ID: d.PostID, AuthorID: d.AuthorID, CreatedAt: d.DeliveredAt}
+		items = append(items, timelineItem{source: "delivery", delivery: &d, post: domainPost, wire: post})
+	}
+	for _, p := range selfPublic {
+		items = append(items, timelineItem{source: "self_public", post: p})
+	}
+	for _, p := range followedPublic {
+		items = append(items, timelineItem{source: "followed_public", post: p})
+	}
+
+	sortTimelineItems(items)
+	if len(items) > pageBudget {
+		items = items[:pageBudget]
+	}
+	hasMore := len(items) > limit
+	if hasMore {
+		items = items[:limit]
+	}
+
+	posts := make([]*model.Post, 0, len(items))
+	srcLastSeen := make(map[string]timelineItem)
+	for _, item := range items {
+		if item.wire != nil {
+			posts = append(posts, item.wire)
+		} else if item.post != nil {
+			got := s.moments.hydratePosts(ctx, []*domain.Post{item.post}, viewerID)
+			if len(got) > 0 {
+				posts = append(posts, got[0])
+			}
+		}
+		srcLastSeen[item.source] = item
+	}
+
+	if !hasMore {
+		return &model.GetTimelineResponse{Posts: posts}, nil
+	}
+	nextMC := domain.MultiSourceCursor{}
+	for _, name := range []string{"delivery", "self_public", "followed_public"} {
+		item, ok := srcLastSeen[name]
+		if !ok {
+			continue
+		}
+		if name == "delivery" && item.delivery != nil {
+			cur := domain.Cursor{LastID: item.delivery.ID, CreatedAt: item.delivery.DeliveredAt}
+			nextMC.SetSource(name, &cur)
+			continue
+		}
+		if item.post != nil {
+			cur := domain.Cursor{LastID: item.post.ID, CreatedAt: item.post.CreatedAt}
+			nextMC.SetSource(name, &cur)
+		}
+	}
+	return &model.GetTimelineResponse{Posts: posts, NextCursor: nextMC.Encode(), HasMore: true}, nil
+}
+
+func (s *TimelineService) getLegacyHomeTimeline(ctx context.Context, cursor string, limit int, viewerID uint64) (*model.GetTimelineResponse, error) {
 	if viewerID == 0 {
 		return &model.GetTimelineResponse{}, nil
 	}
@@ -282,4 +387,37 @@ func sortPostsByCreatedAtDesc(posts []*domain.Post) {
 			j--
 		}
 	}
+}
+
+type timelineItem struct {
+	source   string
+	post     *domain.Post
+	wire     *model.Post
+	delivery *domain.MomentDelivery
+}
+
+func sortTimelineItems(items []timelineItem) {
+	for i := 1; i < len(items); i++ {
+		j := i
+		for j > 0 && timelineItemNewer(items[j], items[j-1]) {
+			items[j], items[j-1] = items[j-1], items[j]
+			j--
+		}
+	}
+}
+
+func timelineItemNewer(a, b timelineItem) bool {
+	if a.post == nil {
+		return false
+	}
+	if b.post == nil {
+		return true
+	}
+	if a.post.CreatedAt.After(b.post.CreatedAt) {
+		return true
+	}
+	if a.post.CreatedAt.Equal(b.post.CreatedAt) {
+		return a.post.ID > b.post.ID
+	}
+	return false
 }

@@ -67,13 +67,14 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	// `FileMeta` in the same RDS, so the resolver runs as a single
 	// SELECT — no HTTP loopback. See `infrastructure/oss_media_resolver.go`.
 	media := infrastructure.NewOssMediaResolver(rds)
+	momentEvents := application.NewMomentEventPublisher()
 
 	// Reaction service has no inter-service dependency; build first
 	// so the moment service can hold a pointer for hydration.
-	s.reactionSvc = application.NewReactionService(rds, repos)
+	s.reactionSvc = application.NewReactionService(rds, repos, momentEvents)
 
-	s.momentSvc = application.NewMomentService(rds, repos, resolver, groups, media, s.reactionSvc)
-	s.commentSvc = application.NewCommentService(repos, s.momentSvc)
+	s.momentSvc = application.NewMomentService(rds, repos, resolver, groups, media, s.reactionSvc, momentEvents)
+	s.commentSvc = application.NewCommentService(repos, s.momentSvc, momentEvents)
 	s.circleSvc = application.NewCircleService(repos)
 	s.timelineSvc = application.NewTimelineService(repos, s.momentSvc, resolver, groups)
 	s.relationshipSvc = application.NewRelationshipService(repos.Follows, repos.Blocks)

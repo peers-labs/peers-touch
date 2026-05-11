@@ -59,6 +59,7 @@ func newHandlerFixture(t *testing.T) *handlerFixture {
 	if err := gdb.AutoMigrate(
 		&db.SocialPublicPost{},
 		&db.SocialPrivatePost{},
+		&db.SocialMomentDelivery{},
 		&db.SocialPrivateAudienceGrant{},
 		&db.SocialComment{},
 		&db.SocialReaction{},
