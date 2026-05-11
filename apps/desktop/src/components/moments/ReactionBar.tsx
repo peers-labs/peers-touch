@@ -99,23 +99,27 @@ export function ReactionBar({ reactions, loading, onReact, onUnreact }: Reaction
   );
 
   return (
-    <Space size={4} wrap>
+    <Space size={2} wrap>
       {summary.map((r) => {
         const meta = kindMeta(r.kind, token);
         return (
           <Tooltip key={r.kind} title={t(meta.i18nKey)}>
             <Button
               size="small"
-              type={r.reactedByViewer ? 'primary' : 'default'}
+              type="text"
               icon={
                 <meta.Icon
                   size={14}
-                  color={r.reactedByViewer ? '#fff' : meta.hue}
+                  color={meta.hue}
                 />
               }
               onClick={() => (r.reactedByViewer ? onUnreact(r.kind) : onReact(r.kind))}
               disabled={loading}
-              style={{ paddingInline: 8 }}
+              style={{
+                paddingInline: 6,
+                color: r.reactedByViewer ? token.colorPrimary : token.colorTextSecondary,
+                background: 'transparent',
+              }}
             >
               <span style={{ fontVariantNumeric: 'tabular-nums' }}>
                 {String(r.count ?? 0n)}
@@ -133,8 +137,14 @@ export function ReactionBar({ reactions, loading, onReact, onUnreact }: Reaction
         // adjacent chips.
         arrow={false}
       >
-        <Button size="small" type="text" disabled={loading}>
-          + {t('moments.reaction.add')}
+        <Button
+          size="small"
+          type="text"
+          disabled={loading}
+          icon={<ThumbsUp size={14} />}
+          style={{ color: token.colorTextSecondary, paddingInline: 6 }}
+        >
+          {summary.length === 0 ? t('moments.reaction.add') : null}
         </Button>
       </Popover>
     </Space>
