@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Segmented, Space, theme } from 'antd';
+import { Button, Segmented, theme } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import { Plus, Search, Sparkles, UsersRound } from 'lucide-react';
 import { PageHeader } from '../../components/PageHeader';
 import { MomentComposer } from '../../components/moments/MomentComposer';
-import { MomentsStatsPanel } from '../../components/moments/MomentsStatsPanel';
 import { MomentsFeedView } from './MomentsFeedPage';
 import { MomentsExploreView } from './MomentsExplorePage';
 import { MomentDetailView } from './MomentDetailPage';
@@ -13,6 +12,10 @@ import { MomentsUserView } from './MomentsUserPage';
 import { UserSearchView } from './UserSearchPage';
 import { CircleManageView } from './CircleManagePage';
 import { useDiscoveryStore } from '../../store/discovery';
+import {
+  ensureMomentDetailProjection,
+  ensureUserMomentsProjection,
+} from '../../runtimes/momentsRuntime';
 
 // MomentsApp — the single page registered in the module registry.
 //
@@ -44,19 +47,9 @@ export function MomentsApp() {
   const { token } = theme.useToken();
   const [view, setView] = useState<MomentsView>({ kind: 'tab', tab: 'feed' });
   const [composerOpen, setComposerOpen] = useState(false);
-  // statsKey is bumped after a successful compose so the
-  // MomentsStatsPanel re-fetches fresh counters without
-  // requiring a global refresh.
-  const [statsKey, setStatsKey] = useState(0);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
 
   const me = useDiscoveryStore((s) => s.me);
-  const loadMe = useDiscoveryStore((s) => s.loadMe);
-
-  // Cheap-cached identity fetch — required by FollowButton self-hide
-  // and by user-page "is this me?" checks. Failure is non-fatal.
-  useEffect(() => {
-    if (!me) loadMe().catch(() => {});
-  }, [me, loadMe]);
 
   const activeTab: MainTab =
     view.kind === 'tab' ? view.tab : view.from;
@@ -66,22 +59,26 @@ export function MomentsApp() {
   }, []);
 
   const goDetail = useCallback(
-    (postId: string) =>
+    (postId: string) => {
+      void ensureMomentDetailProjection(postId);
       setView((prev) => ({
         kind: 'detail',
         postId,
         from: prev.kind === 'tab' ? prev.tab : prev.from,
-      })),
+      }));
+    },
     [],
   );
 
   const goUser = useCallback(
-    (actorId: string) =>
+    (actorId: string) => {
+      void ensureUserMomentsProjection(actorId);
       setView((prev) => ({
         kind: 'user',
         actorId,
         from: prev.kind === 'tab' ? prev.tab : prev.from,
-      })),
+      }));
+    },
     [],
   );
 
@@ -93,15 +90,13 @@ export function MomentsApp() {
 
   const headerActions = useMemo(
     () => (
-      <Space>
-        <Button
-          type="primary"
-          icon={<Plus size={14} />}
-          onClick={() => setComposerOpen(true)}
-        >
-          {t('moments.action.compose')}
-        </Button>
-      </Space>
+      <Button
+        type="primary"
+        icon={<Plus size={14} />}
+        onClick={() => setComposerOpen(true)}
+      >
+        {t('moments.action.compose')}
+      </Button>
     ),
     [t],
   );
@@ -192,18 +187,15 @@ export function MomentsApp() {
         extra={tabBar}
       />
       <div
+        ref={scrollerRef}
         style={{
           flex: 1,
           overflowY: 'auto',
-          padding: '16px 24px',
+          padding: '12px 24px 24px',
           minHeight: 0,
         }}
       >
         <div style={{ maxWidth: 720, margin: '0 auto' }}>
-          {/* Stats panel is hidden on push-views (detail / user) so
-              the user's attention stays on the focused content; it
-              reappears the moment they navigate back to a tab. */}
-          {view.kind === 'tab' && <MomentsStatsPanel refreshKey={statsKey} />}
           {content}
         </div>
       </div>
@@ -211,8 +203,8 @@ export function MomentsApp() {
         open={composerOpen}
         onClose={() => setComposerOpen(false)}
         onPublished={() => {
-          setStatsKey((k) => k + 1);
           goTab('feed');
+          scrollerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
         }}
       />
     </Flexbox>

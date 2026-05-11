@@ -13,6 +13,7 @@ import { registerSocialChatPage } from './SocialChatPage.descriptor';
 import { registerSettingsPage } from './SettingsPage.descriptor';
 import { registerAppletsPage } from './AppletsPage.descriptor';
 import { registerAppletRuntimePage } from './AppletRuntimePage.descriptor';
+import { registerMomentsPage } from './moments/MomentsApp.descriptor';
 
 let registered = false;
 
@@ -25,4 +26,5 @@ export function registerKernelPages(): void {
   registerSettingsPage();
   registerAppletsPage();
   registerAppletRuntimePage();
+  registerMomentsPage();
 }

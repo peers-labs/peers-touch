@@ -10,6 +10,7 @@ import { settingsRuntime } from '../runtimes/settingsRuntime';
 import { socialRuntime } from '../runtimes/socialRuntime';
 import { federationRuntime } from '../runtimes/federationRuntime';
 import { appletsRuntime } from '../runtimes/appletsRuntime';
+import { momentsRuntime } from '../runtimes/momentsRuntime';
 import { log } from '../utils/logger';
 
 // Register kernel-managed runtimes once. The legacy bridges
@@ -26,6 +27,7 @@ function registerKernelRuntimes(): void {
   registerRuntime(settingsRuntime);
   registerRuntime(federationRuntime);
   registerRuntime(appletsRuntime);
+  registerRuntime(momentsRuntime);
 }
 
 let installed = false;
@@ -55,6 +57,9 @@ export function installAppRuntime(): void {
   installRuntime(appletsRuntime.id);
   void bootstrapRuntime(appletsRuntime.id, null);
 
+  installRuntime(momentsRuntime.id);
+  void bootstrapRuntime(momentsRuntime.id, null);
+
   installMediaRuntime();
 
   void installPresenceBridge();
@@ -73,6 +78,7 @@ export function teardownAppRuntime(): void {
   teardownRuntime(settingsRuntime.id);
   teardownRuntime(federationRuntime.id);
   teardownRuntime(appletsRuntime.id);
+  teardownRuntime(momentsRuntime.id);
   teardownMediaRuntime();
   teardownNavigationBadgeProjection();
   teardownEventStreamBridge();

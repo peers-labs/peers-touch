@@ -31,6 +31,7 @@ import {
   DeletePostResponseSchema,
   ListPostsResponseSchema,
   GetTimelineResponseSchema,
+  SyncMomentsProjectionResponseSchema,
   GetMyMomentsStatsResponseSchema,
   ReactToPostResponseSchema,
   UnreactToPostResponseSchema,
@@ -45,6 +46,7 @@ import {
   type DeletePostResponse,
   type ListPostsResponse,
   type GetTimelineResponse,
+  type SyncMomentsProjectionResponse,
   type GetMyMomentsStatsResponse,
   type Post,
   type ReactToPostResponse,
@@ -255,6 +257,31 @@ export async function socialGetTimeline(
     cursor,
     limit,
     sort: sortWire,
+  });
+}
+
+export async function socialSyncMomentsProjection(options?: {
+  homeCursor?: string;
+  publicCursor?: string;
+  limit?: number;
+  publicSort?: TimelineSort;
+  reason?: string;
+}): Promise<SyncMomentsProjectionResponse> {
+  return invokeRustProto<
+    {
+      home_cursor?: string;
+      public_cursor?: string;
+      limit?: number;
+      public_sort?: number;
+      reason?: string;
+    },
+    SyncMomentsProjectionResponse
+  >('social_sync_moments_projection', SyncMomentsProjectionResponseSchema, {
+    home_cursor: options?.homeCursor,
+    public_cursor: options?.publicCursor,
+    limit: options?.limit,
+    public_sort: options?.publicSort === 'hot' ? 1 : 0,
+    reason: options?.reason,
   });
 }
 

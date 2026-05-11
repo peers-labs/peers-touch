@@ -141,6 +141,7 @@ fn main() {
             social::social_delete_moment,
             social::social_list_by_author,
             social::social_get_timeline,
+            social::social_sync_moments_projection,
             social::social_react,
             social::social_unreact,
             social::social_get_comments,
