@@ -4,6 +4,8 @@ import type { Follower, Following } from '../../gen/proto/domain/social/relation
 import type { PostAuthor } from '../../gen/proto/domain/social/post_pb';
 import { FollowButton } from './FollowButton';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
+import { FederatedHandle } from '../FederatedHandle';
+import { useFederationStore } from '../../store/federation';
 
 const { Title, Text } = Typography;
 
@@ -43,6 +45,13 @@ function actorUsernameOf(a: any): string {
 function actorAvatarOf(a: any): string | undefined {
   return a?.avatarUrl || a?.avatar || undefined;
 }
+// homeStationDomain — present on both PostAuthor and Follower /
+// Following since the Tier B social-graph proto extension. Empty for
+// pre-backfill rows.
+function actorHomeOf(a: any): string | undefined {
+  const v = a?.homeStationDomain;
+  return v && String(v).length > 0 ? String(v) : undefined;
+}
 
 export function UserProfileHeader({
   actor,
@@ -77,6 +86,19 @@ export function UserProfileHeader({
   const display = actorDisplayOf(actor) || t('moments.author.unknown');
   const username = actorUsernameOf(actor);
   const avatar = actorAvatarOf(actor);
+  // Resolve `home_station_domain` for the FederatedHandle.
+  //
+  //   1. First try the actor proto itself — Tier B populates it on
+  //      PostAuthor / Follower / Following for any actor (local + remote
+  //      cached), so this single read handles every site.
+  //
+  //   2. Safety net: if the actor row pre-dates the backfill AND this
+  //      is the viewer's own profile, fall back to the federation
+  //      runtime self-view. Drops to undefined for everyone else,
+  //      which renders just "@username".
+  const federationSelf = useFederationStore((s) => s.self);
+  const isSelf = Boolean(viewerActorId && id && viewerActorId === id);
+  const home = actorHomeOf(actor) ?? (isSelf ? federationSelf?.homeStationDomain : undefined);
 
   return (
     <div
@@ -99,9 +121,11 @@ export function UserProfileHeader({
           <Space direction="vertical" size={0}>
             <Text strong>{display}</Text>
             {username && (
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                @{username}
-              </Text>
+              <FederatedHandle
+                localPart={username}
+                home={home}
+                fontSize={12}
+              />
             )}
           </Space>
         ) : (
@@ -110,9 +134,11 @@ export function UserProfileHeader({
               {display}
             </Title>
             {username && (
-              <Text type="secondary" style={{ fontSize: 13 }}>
-                @{username}
-              </Text>
+              <FederatedHandle
+                localPart={username}
+                home={home}
+                fontSize={13}
+              />
             )}
             <Space size={20} style={{ marginTop: 12 }}>
               <Text>

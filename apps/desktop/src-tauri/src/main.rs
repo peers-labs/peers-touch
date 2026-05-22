@@ -24,8 +24,8 @@ pub mod peers_touch {
 
 use interface::tauri_commands::{
     account, actor, admin, agent_growth, agent_scheduler, agents, applets, auth, channels, chat,
-    cron, crypto, friend_chat, frontend_log, group_chat, i18n, ice, key_exchange, mcp, memory,
-    model_config, models, notebook, notification, oauth2, oss, presence, profile, provider,
+    cron, crypto, federation, friend_chat, frontend_log, group_chat, i18n, ice, key_exchange, mcp,
+    memory, model_config, models, notebook, notification, oauth2, oss, presence, profile, provider,
     realtime, search, settings, skills, skills_market, social, system, tools, tts,
 };
 use std::sync::Arc;
@@ -155,6 +155,10 @@ fn main() {
             profile::account_sync_avatar,
             profile::sync_user_profile,
             profile::avatar_resolve_local,
+            federation::federation_get_self,
+            federation::federation_update_visibility,
+            federation::federation_resolve,
+            federation::federation_health,
             admin::admin_health,
             admin::admin_network_probe,
             admin::admin_execute_action,

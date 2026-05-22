@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/actor/actor.proto.
  */
 export const file_domain_actor_actor: GenFile = /*@__PURE__*/
-  fileDesc("Chhkb21haW4vYWN0b3IvYWN0b3IucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxIncKCEFjdG9yUmVmEhoKCGFjdG9yX2lkGAEgASgEUghhY3Rvcl9pZBIMCgRwdGlkGAIgASgJEgwKBGFjY3QYAyABKAkSMwoEa2luZBgEIAEoDjIlLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yS2luZCLlAgoFQWN0b3ISCgoCaWQYASABKAkSEAoIdXNlcm5hbWUYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJEg0KBWVtYWlsGAQgASgJEg0KBWluYm94GAUgASgJEg4KBm91dGJveBgGIAEoCRJDCgllbmRwb2ludHMYByADKAsyMC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3Rvci5FbmRwb2ludHNFbnRyeRIiCgxpc19mb2xsb3dpbmcYCCABKAhSDGlzX2ZvbGxvd2luZxIaCghhY3Rvcl9pZBgJIAEoBFIIYWN0b3JfaWQSDgoGYXZhdGFyGAogASgJEjMKBGtpbmQYCyABKA4yJS5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvcktpbmQaMAoORW5kcG9pbnRzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASImCghVc2VyTGluaxINCgVsYWJlbBgBIAEoCRILCgN1cmwYAiABKAkiMAoOUGVlcnNUb3VjaEluZm8SHgoKbmV0d29ya19pZBgBIAEoCVIKbmV0d29ya19pZCKTBwoMQWN0b3JQcm9maWxlEgoKAmlkGAEgASgJEiIKDGRpc3BsYXlfbmFtZRgCIAEoCVIMZGlzcGxheV9uYW1lEhAKCHVzZXJuYW1lGAMgASgJEgwKBG5vdGUYBCABKAkSDgoGYXZhdGFyGAUgASgJEg4KBmhlYWRlchgGIAEoCRIOCgZyZWdpb24YByABKAkSEAoIdGltZXpvbmUYCCABKAkSDAoEdGFncxgJIAMoCRIzCgVsaW5rcxgKIAMoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLlVzZXJMaW5rEgsKA3VybBgLIAEoCRIkCg1zZXJ2ZXJfZG9tYWluGAwgASgJUg1zZXJ2ZXJfZG9tYWluEigKD2tleV9maW5nZXJwcmludBgNIAEoCVIPa2V5X2ZpbmdlcnByaW50EhUKDXZlcmlmaWNhdGlvbnMYDiADKAkSTAoLcGVlcnNfdG91Y2gYDyABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5QZWVyc1RvdWNoSW5mb1ILcGVlcnNfdG91Y2gSDAoEYWNjdBgQIAEoCRIOCgZsb2NrZWQYESABKAgSHgoKY3JlYXRlZF9hdBgSIAEoCVIKY3JlYXRlZF9hdBIoCg9mb2xsb3dlcnNfY291bnQYEyABKANSD2ZvbGxvd2Vyc19jb3VudBIoCg9mb2xsb3dpbmdfY291bnQYFCABKANSD2ZvbGxvd2luZ19jb3VudBImCg5zdGF0dXNlc19jb3VudBgVIAEoA1IOc3RhdHVzZXNfY291bnQSIAoLc2hvd19jb3VudHMYFiABKAhSC3Nob3dfY291bnRzEg8KB21vbWVudHMYFyADKAkSLgoSZGVmYXVsdF92aXNpYmlsaXR5GBggASgJUhJkZWZhdWx0X3Zpc2liaWxpdHkSQAobbWFudWFsbHlfYXBwcm92ZXNfZm9sbG93ZXJzGBkgASgIUhttYW51YWxseV9hcHByb3Zlc19mb2xsb3dlcnMSLgoSbWVzc2FnZV9wZXJtaXNzaW9uGBogASgJUhJtZXNzYWdlX3Blcm1pc3Npb24SKgoQYXV0b19leHBpcmVfZGF5cxgbIAEoBVIQYXV0b19leHBpcmVfZGF5cxIxCgNyZWYYHCABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZiL4BAoUVXBkYXRlUHJvZmlsZVJlcXVlc3QSJwoMZGlzcGxheV9uYW1lGAEgASgJSABSDGRpc3BsYXlfbmFtZYgBARIRCgRub3RlGAIgASgJSAGIAQESEwoGYXZhdGFyGAMgASgJSAKIAQESEwoGaGVhZGVyGAQgASgJSAOIAQESEwoGcmVnaW9uGAUgASgJSASIAQESFQoIdGltZXpvbmUYBiABKAlIBYgBARIMCgR0YWdzGAcgAygJEjMKBWxpbmtzGAggAygLMiQucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuVXNlckxpbmsSMwoSZGVmYXVsdF92aXNpYmlsaXR5GAkgASgJSAZSEmRlZmF1bHRfdmlzaWJpbGl0eYgBARJFChttYW51YWxseV9hcHByb3Zlc19mb2xsb3dlcnMYCiABKAhIB1IbbWFudWFsbHlfYXBwcm92ZXNfZm9sbG93ZXJziAEBEjMKEm1lc3NhZ2VfcGVybWlzc2lvbhgLIAEoCUgIUhJtZXNzYWdlX3Blcm1pc3Npb26IAQESLwoQYXV0b19leHBpcmVfZGF5cxgMIAEoBUgJUhBhdXRvX2V4cGlyZV9kYXlziAEBQg8KDV9kaXNwbGF5X25hbWVCBwoFX25vdGVCCQoHX2F2YXRhckIJCgdfaGVhZGVyQgkKB19yZWdpb25CCwoJX3RpbWV6b25lQhUKE19kZWZhdWx0X3Zpc2liaWxpdHlCHgocX21hbnVhbGx5X2FwcHJvdmVzX2ZvbGxvd2Vyc0IVChNfbWVzc2FnZV9wZXJtaXNzaW9uQhMKEV9hdXRvX2V4cGlyZV9kYXlzIkwKCUFjdG9yTGlzdBIwCgVpdGVtcxgBIAMoCzIhLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yEg0KBXRvdGFsGAIgASgDIh8KElNlYXJjaFVzZXJzUmVxdWVzdBIJCgFxGAEgASgJIg4KDEdldE1lUmVxdWVzdCq6AQoJQWN0b3JLaW5kEhoKFkFDVE9SX0tJTkRfVU5TUEVDSUZJRUQQABIVChFBQ1RPUl9LSU5EX1BFUlNPThABEhQKEEFDVE9SX0tJTkRfR1JPVVAQAhIbChdBQ1RPUl9LSU5EX09SR0FOSVpBVElPThADEhYKEkFDVE9SX0tJTkRfU0VSVklDRRAEEhoKFkFDVE9SX0tJTkRfQVBQTElDQVRJT04QBRITCg9BQ1RPUl9LSU5EX05PREUQBkJDWkFnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbDttb2RlbGIGcHJvdG8z");
+  fileDesc("Chhkb21haW4vYWN0b3IvYWN0b3IucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxIncKCEFjdG9yUmVmEhoKCGFjdG9yX2lkGAEgASgEUghhY3Rvcl9pZBIMCgRwdGlkGAIgASgJEgwKBGFjY3QYAyABKAkSMwoEa2luZBgEIAEoDjIlLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yS2luZCLxBAoFQWN0b3ISCgoCaWQYASABKAkSEAoIdXNlcm5hbWUYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJEg0KBWVtYWlsGAQgASgJEg0KBWluYm94GAUgASgJEg4KBm91dGJveBgGIAEoCRJDCgllbmRwb2ludHMYByADKAsyMC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3Rvci5FbmRwb2ludHNFbnRyeRIiCgxpc19mb2xsb3dpbmcYCCABKAhSDGlzX2ZvbGxvd2luZxIaCghhY3Rvcl9pZBgJIAEoBFIIYWN0b3JfaWQSDgoGYXZhdGFyGAogASgJEjMKBGtpbmQYCyABKA4yJS5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvcktpbmQSKgoQZmVkZXJhdGVkX2hhbmRsZRgMIAEoCVIQZmVkZXJhdGVkX2hhbmRsZRIyChRob21lX3N0YXRpb25fcGVlcl9pZBgNIAEoCVIUaG9tZV9zdGF0aW9uX3BlZXJfaWQSMAoTaG9tZV9zdGF0aW9uX2RvbWFpbhgOIAEoCVITaG9tZV9zdGF0aW9uX2RvbWFpbhI/Cgp2aXNpYmlsaXR5GA8gASgOMisucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JWaXNpYmlsaXR5EjcKBm9yaWdpbhgQIAEoDjInLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yT3JpZ2luGjAKDkVuZHBvaW50c0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiJgoIVXNlckxpbmsSDQoFbGFiZWwYASABKAkSCwoDdXJsGAIgASgJIjAKDlBlZXJzVG91Y2hJbmZvEh4KCm5ldHdvcmtfaWQYASABKAlSCm5ldHdvcmtfaWQikwcKDEFjdG9yUHJvZmlsZRIKCgJpZBgBIAEoCRIiCgxkaXNwbGF5X25hbWUYAiABKAlSDGRpc3BsYXlfbmFtZRIQCgh1c2VybmFtZRgDIAEoCRIMCgRub3RlGAQgASgJEg4KBmF2YXRhchgFIAEoCRIOCgZoZWFkZXIYBiABKAkSDgoGcmVnaW9uGAcgASgJEhAKCHRpbWV6b25lGAggASgJEgwKBHRhZ3MYCSADKAkSMwoFbGlua3MYCiADKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5Vc2VyTGluaxILCgN1cmwYCyABKAkSJAoNc2VydmVyX2RvbWFpbhgMIAEoCVINc2VydmVyX2RvbWFpbhIoCg9rZXlfZmluZ2VycHJpbnQYDSABKAlSD2tleV9maW5nZXJwcmludBIVCg12ZXJpZmljYXRpb25zGA4gAygJEkwKC3BlZXJzX3RvdWNoGA8gASgLMioucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuUGVlcnNUb3VjaEluZm9SC3BlZXJzX3RvdWNoEgwKBGFjY3QYECABKAkSDgoGbG9ja2VkGBEgASgIEh4KCmNyZWF0ZWRfYXQYEiABKAlSCmNyZWF0ZWRfYXQSKAoPZm9sbG93ZXJzX2NvdW50GBMgASgDUg9mb2xsb3dlcnNfY291bnQSKAoPZm9sbG93aW5nX2NvdW50GBQgASgDUg9mb2xsb3dpbmdfY291bnQSJgoOc3RhdHVzZXNfY291bnQYFSABKANSDnN0YXR1c2VzX2NvdW50EiAKC3Nob3dfY291bnRzGBYgASgIUgtzaG93X2NvdW50cxIPCgdtb21lbnRzGBcgAygJEi4KEmRlZmF1bHRfdmlzaWJpbGl0eRgYIAEoCVISZGVmYXVsdF92aXNpYmlsaXR5EkAKG21hbnVhbGx5X2FwcHJvdmVzX2ZvbGxvd2VycxgZIAEoCFIbbWFudWFsbHlfYXBwcm92ZXNfZm9sbG93ZXJzEi4KEm1lc3NhZ2VfcGVybWlzc2lvbhgaIAEoCVISbWVzc2FnZV9wZXJtaXNzaW9uEioKEGF1dG9fZXhwaXJlX2RheXMYGyABKAVSEGF1dG9fZXhwaXJlX2RheXMSMQoDcmVmGBwgASgLMiQucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JSZWYi+AQKFFVwZGF0ZVByb2ZpbGVSZXF1ZXN0EicKDGRpc3BsYXlfbmFtZRgBIAEoCUgAUgxkaXNwbGF5X25hbWWIAQESEQoEbm90ZRgCIAEoCUgBiAEBEhMKBmF2YXRhchgDIAEoCUgCiAEBEhMKBmhlYWRlchgEIAEoCUgDiAEBEhMKBnJlZ2lvbhgFIAEoCUgEiAEBEhUKCHRpbWV6b25lGAYgASgJSAWIAQESDAoEdGFncxgHIAMoCRIzCgVsaW5rcxgIIAMoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLlVzZXJMaW5rEjMKEmRlZmF1bHRfdmlzaWJpbGl0eRgJIAEoCUgGUhJkZWZhdWx0X3Zpc2liaWxpdHmIAQESRQobbWFudWFsbHlfYXBwcm92ZXNfZm9sbG93ZXJzGAogASgISAdSG21hbnVhbGx5X2FwcHJvdmVzX2ZvbGxvd2Vyc4gBARIzChJtZXNzYWdlX3Blcm1pc3Npb24YCyABKAlICFISbWVzc2FnZV9wZXJtaXNzaW9uiAEBEi8KEGF1dG9fZXhwaXJlX2RheXMYDCABKAVICVIQYXV0b19leHBpcmVfZGF5c4gBAUIPCg1fZGlzcGxheV9uYW1lQgcKBV9ub3RlQgkKB19hdmF0YXJCCQoHX2hlYWRlckIJCgdfcmVnaW9uQgsKCV90aW1lem9uZUIVChNfZGVmYXVsdF92aXNpYmlsaXR5Qh4KHF9tYW51YWxseV9hcHByb3Zlc19mb2xsb3dlcnNCFQoTX21lc3NhZ2VfcGVybWlzc2lvbkITChFfYXV0b19leHBpcmVfZGF5cyJMCglBY3Rvckxpc3QSMAoFaXRlbXMYASADKAsyIS5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvchINCgV0b3RhbBgCIAEoAyIfChJTZWFyY2hVc2Vyc1JlcXVlc3QSCQoBcRgBIAEoCSIOCgxHZXRNZVJlcXVlc3QqugEKCUFjdG9yS2luZBIaChZBQ1RPUl9LSU5EX1VOU1BFQ0lGSUVEEAASFQoRQUNUT1JfS0lORF9QRVJTT04QARIUChBBQ1RPUl9LSU5EX0dST1VQEAISGwoXQUNUT1JfS0lORF9PUkdBTklaQVRJT04QAxIWChJBQ1RPUl9LSU5EX1NFUlZJQ0UQBBIaChZBQ1RPUl9LSU5EX0FQUExJQ0FUSU9OEAUSEwoPQUNUT1JfS0lORF9OT0RFEAYqYwoLQWN0b3JPcmlnaW4SHAoYQUNUT1JfT1JJR0lOX1VOU1BFQ0lGSUVEEAASFgoSQUNUT1JfT1JJR0lOX0xPQ0FMEAESHgoaQUNUT1JfT1JJR0lOX1JFTU9URV9DQUNIRUQQAiqOAQoPQWN0b3JWaXNpYmlsaXR5EiAKHEFDVE9SX1ZJU0lCSUxJVFlfVU5TUEVDSUZJRUQQABIbChdBQ1RPUl9WSVNJQklMSVRZX0hJRERFThABEh4KGkFDVE9SX1ZJU0lCSUxJVFlfQllfSEFORExFEAISHAoYQUNUT1JfVklTSUJJTElUWV9JTkRFWEVEEANCQ1pBZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWw7bW9kZWxiBnByb3RvMw");
 
 /**
  * @generated from message peers_touch.model.actor.v1.ActorRef
@@ -102,6 +102,42 @@ export type Actor = Message<"peers_touch.model.actor.v1.Actor"> & {
    * @generated from field: peers_touch.model.actor.v1.ActorKind kind = 11;
    */
   kind: ActorKind;
+
+  /**
+   * Federation extension fields. Populated for every actor row regardless of
+   * origin. For ACTOR_ORIGIN_LOCAL the home_station_* fields describe the
+   * current station; for ACTOR_ORIGIN_REMOTE_CACHED they describe the
+   * authoritative station that issued the locator record.
+   *
+   * e.g. "@alice@station-1.example"
+   *
+   * @generated from field: string federated_handle = 12 [json_name = "federated_handle"];
+   */
+  federatedHandle: string;
+
+  /**
+   * libp2p PeerID of the home station
+   *
+   * @generated from field: string home_station_peer_id = 13 [json_name = "home_station_peer_id"];
+   */
+  homeStationPeerId: string;
+
+  /**
+   * DNS-style domain of the home station
+   *
+   * @generated from field: string home_station_domain = 14 [json_name = "home_station_domain"];
+   */
+  homeStationDomain: string;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorVisibility visibility = 15;
+   */
+  visibility: ActorVisibility;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorOrigin origin = 16;
+   */
+  origin: ActorOrigin;
 };
 
 /**
@@ -475,4 +511,82 @@ export enum ActorKind {
  */
 export const ActorKindSchema: GenEnum<ActorKind> = /*@__PURE__*/
   enumDesc(file_domain_actor_actor, 0);
+
+/**
+ * ActorOrigin tells the consumer whether this actor row was authored on the
+ * local station (local) or fetched from a peer station and cached locally
+ * (remote_cached). Touch UIs use it to gate edit affordances; the locator
+ * publisher uses it to refuse publishing remote-cached rows back into the DHT.
+ *
+ * @generated from enum peers_touch.model.actor.v1.ActorOrigin
+ */
+export enum ActorOrigin {
+  /**
+   * @generated from enum value: ACTOR_ORIGIN_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ACTOR_ORIGIN_LOCAL = 1;
+   */
+  LOCAL = 1,
+
+  /**
+   * @generated from enum value: ACTOR_ORIGIN_REMOTE_CACHED = 2;
+   */
+  REMOTE_CACHED = 2,
+}
+
+/**
+ * Describes the enum peers_touch.model.actor.v1.ActorOrigin.
+ */
+export const ActorOriginSchema: GenEnum<ActorOrigin> = /*@__PURE__*/
+  enumDesc(file_domain_actor_actor, 1);
+
+/**
+ * ActorVisibility is the federation-discoverability state of an actor.
+ *
+ * ACTOR_VISIBILITY_HIDDEN     — never published to DHT, never resolvable
+ *                               by handle from other stations.
+ * ACTOR_VISIBILITY_BY_HANDLE  — published to the DHT under its federated
+ *                               handle. Other stations can resolve it iff
+ *                               they know the exact handle (no enumeration).
+ * ACTOR_VISIBILITY_INDEXED    — same as BY_HANDLE plus opt-in to a future
+ *                               directory-style index. Treated identically
+ *                               to BY_HANDLE by the DHT publisher today;
+ *                               the directory layer is Phase C.
+ *
+ * The ordering matters: hidden < by_handle < indexed. Numeric increases
+ * monotonically widen visibility; the publisher uses this to decide whether
+ * to publish or tombstone.
+ *
+ * @generated from enum peers_touch.model.actor.v1.ActorVisibility
+ */
+export enum ActorVisibility {
+  /**
+   * @generated from enum value: ACTOR_VISIBILITY_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ACTOR_VISIBILITY_HIDDEN = 1;
+   */
+  HIDDEN = 1,
+
+  /**
+   * @generated from enum value: ACTOR_VISIBILITY_BY_HANDLE = 2;
+   */
+  BY_HANDLE = 2,
+
+  /**
+   * @generated from enum value: ACTOR_VISIBILITY_INDEXED = 3;
+   */
+  INDEXED = 3,
+}
+
+/**
+ * Describes the enum peers_touch.model.actor.v1.ActorVisibility.
+ */
+export const ActorVisibilitySchema: GenEnum<ActorVisibility> = /*@__PURE__*/
+  enumDesc(file_domain_actor_actor, 2);
 

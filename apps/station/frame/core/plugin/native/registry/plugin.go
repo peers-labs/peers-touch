@@ -7,9 +7,14 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/config"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 )
 
+// configOptions binds `peers.node.registry.*` to a Go struct. The
+// `bootstrap-nodes` key has been moved up to `peers.node.federation.bootstrap-nodes`
+// — the registry now pulls its DHT seeds from federation.GetPolicy(), which
+// is the single source of truth for every libp2p host in the process.
 var configOptions struct {
 	Peers struct {
 		Service struct {
@@ -18,11 +23,10 @@ var configOptions struct {
 				Interval       string                  `pconf:"interval"`
 				Turn           registry.TURNAuthConfig `pconf:"turn"`
 				Native         struct {
-					BootstrapNodes           []string `pconf:"bootstrap-nodes"`
-					BootstrapRefreshInterval string   `pconf:"bootstrap-refresh-interval"`
-					BootstrapNodeRetryTimes  int      `pconf:"bootstrap-node-retry-times"`
-					MDNSEnable               bool     `pconf:"mdns-enable"`
-					Libp2pIdentityKeyFile    string   `pconf:"libp2p-identity-key-file"`
+					BootstrapRefreshInterval string `pconf:"bootstrap-refresh-interval"`
+					BootstrapNodeRetryTimes  int    `pconf:"bootstrap-node-retry-times"`
+					MDNSEnable               bool   `pconf:"mdns-enable"`
+					Libp2pIdentityKeyFile    string `pconf:"libp2p-identity-key-file"`
 				} `pconf:"native"`
 			} `pconf:"registry"`
 		} `pconf:"node"`
@@ -45,8 +49,15 @@ func (n *nativeRegistryPlugin) Options() []option.Option {
 		opts = append(opts, WithRunningMode(configOptions.Peers.RunMode))
 	}
 
-	if len(configOptions.Peers.Service.Registry.Native.BootstrapNodes) > 0 {
-		opts = append(opts, WithBootstrapNodes(configOptions.Peers.Service.Registry.Native.BootstrapNodes))
+	// Pull bootstrap-nodes from federation (single source of truth). The
+	// registry takes string-form multiaddrs; federation stores them parsed,
+	// so we re-stringify here to keep the registry option API stable.
+	if seeds := federation.GetPolicy().BootstrapNodes; len(seeds) > 0 {
+		seedStrs := make([]string, 0, len(seeds))
+		for _, m := range seeds {
+			seedStrs = append(seedStrs, m.String())
+		}
+		opts = append(opts, WithBootstrapNodes(seedStrs))
 	}
 
 	bootstrapNodeRetryTimes := 5

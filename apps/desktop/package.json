@@ -24,6 +24,8 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@lobehub/icons": "^5.0.1",
     "@lobehub/ui": "^5.3.0",
+    "@lynx-js/web-core": "^0.20.4",
+    "@lynx-js/web-elements": "^0.12.2",
     "@peers-touch/sdk-ts": "workspace:*",
     "@peers-touch/ui-desktop": "workspace:*",
     "@tauri-apps/api": "2.0.1",

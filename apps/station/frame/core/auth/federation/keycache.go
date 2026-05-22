@@ -173,3 +173,85 @@ func (c *KeyCache) ResetForTest() {
 	c.lastCheckedAt = time.Time{}
 	c.mu.Unlock()
 }
+
+// ─── node-level singleton ────────────────────────────────────────────
+//
+// A station hosts exactly one federation persona — there is only one
+// `auth_local_keys.current` row, only one rotation timeline, and only
+// one set of remotes that need to observe a kid flip in bounded time.
+// Constructing a fresh KeyCache per consumer (oss subserver, locator
+// publisher, profile builder) therefore creates needless fan-out:
+//
+//   • Each instance holds its own `recheckTTL` ticker, so a rotation
+//     becomes visible to consumers at staggered times (drift up to
+//     30s × N caches), widening the window in which two stations can
+//     mint with different kids for the same logical "current".
+//   • Each instance independently runs the `loadOrGenerate` once-Do
+//     gate; a freshly-bootstrapped station can race three concurrent
+//     MintLocalKey + PutCurrent calls if all three consumers Init()
+//     in parallel. The KeyStore implementation handles the conflict
+//     (last-writer-wins on `current_kid`), but it leaves orphaned
+//     LocalKey rows in the audit-history table.
+//
+// Singleton() collapses these to one cache + one rotation fan-out.
+// All production callers MUST go through the accessor; tests that
+// need isolation build a fresh KeyCache directly via NewKeyCache.
+
+var (
+	singletonMu       sync.Mutex
+	singletonInstance *KeyCache
+	singletonStore    KeyStore
+)
+
+// SetSingletonStore overrides the KeyStore the singleton wraps. Must
+// be called before the first Singleton() invocation; after that, the
+// store is locked into the constructed cache and re-setting has no
+// effect on the live instance (use ResetSingletonForTest first).
+//
+// Production code does not call this — the default
+// (NewKeyStoreGORM("")) is correct for every deployment shape we
+// ship: federation keys live on the default RDS, not on a
+// subserver-bound RDS. The hook exists so test code that already
+// owns a *gorm.DB or an in-memory KeyStore can inject it without
+// touching every consumer.
+func SetSingletonStore(store KeyStore) {
+	singletonMu.Lock()
+	defer singletonMu.Unlock()
+	singletonStore = store
+}
+
+// Singleton returns the process-wide federation KeyCache. Lazily
+// constructed on first call.
+//
+// Concurrency: serialised on `singletonMu`; the lock is held only
+// for the construction window, not for subsequent reads of the
+// returned pointer. Callers cache the *KeyCache locally — the
+// pointer is stable for the lifetime of the process.
+func Singleton() *KeyCache {
+	singletonMu.Lock()
+	defer singletonMu.Unlock()
+	if singletonInstance != nil {
+		return singletonInstance
+	}
+	store := singletonStore
+	if store == nil {
+		// Empty dbName resolves to the default RDS via store.GetRDS,
+		// which is where `auth_local_keys` lives. Subserver-bound RDS
+		// names are intentionally NOT honoured here — the federation
+		// key is a node-level identity, not subserver state.
+		store = NewKeyStoreGORM("")
+	}
+	singletonInstance = NewKeyCache(store)
+	return singletonInstance
+}
+
+// ResetSingletonForTest tears down the singleton so the next
+// Singleton() call rebuilds it (using the currently-set store, or
+// the default if none was injected). Production code MUST NOT call
+// this; the ugly name is intentional and matches KeyCache.ResetForTest.
+func ResetSingletonForTest() {
+	singletonMu.Lock()
+	defer singletonMu.Unlock()
+	singletonInstance = nil
+	singletonStore = nil
+}

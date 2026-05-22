@@ -1,17 +1,23 @@
 package com.peerstouch.mobile.core.applet
 
-data class AppletLoadConfig(
+data class PlatformLoadConfig(
     val type: String,
     val entry: String
 )
 
+data class AppletLoadMap(
+    val desktop: PlatformLoadConfig? = null,
+    val android: PlatformLoadConfig? = null,
+    val ios: PlatformLoadConfig? = null,
+    val standalone: PlatformLoadConfig? = null
+)
+
 data class AppletBridgeConfig(
-    val version: Int,
+    val version: String,
     val protocol: String
 )
 
 data class AppletManifest(
-    val manifestVersion: Int,
     val id: String,
     val name: String,
     val version: String,
@@ -22,7 +28,7 @@ data class AppletManifest(
     val capabilities: List<String> = emptyList(),
     val minPlatformVersion: String? = null,
     val targetPlatforms: List<String>? = null,
-    val load: AppletLoadConfig,
+    val load: AppletLoadMap,
     val bridge: AppletBridgeConfig
 )
 
@@ -39,22 +45,16 @@ sealed class ParseResult<out T> {
 
 object AppletManifestParser {
 
-    const val MANIFEST_VERSION_V2 = 2
-    const val BRIDGE_PROTOCOL_V2 = "peers-touch.applet.bridge.v2"
+    const val BRIDGE_PROTOCOL = "peers-touch.applet.bridge"
 
     private val SEMVER_PATTERN = Regex("""^\d+\.\d+\.\d+(?:-[0-9A-Za-z\-.]+)?(?:\+[0-9A-Za-z\-.]+)?$""")
     private val APPLET_ID_PATTERN = Regex("""^[a-z0-9][a-z0-9-]*$""")
-    private val TARGET_PLATFORMS = setOf("desktop", "mobile", "web")
-    private val LOAD_TYPES = setOf("lynx")
+    private val TARGET_PLATFORMS = setOf("desktop", "android", "ios", "standalone")
+    private val LOAD_TYPES = setOf("lynx-native", "lynx-web", "web-spa")
 
     @Suppress("UNCHECKED_CAST")
     fun parse(raw: Map<String, Any?>, source: String): ParseResult<AppletManifest> {
         val issues = mutableListOf<String>()
-
-        val manifestVersion = raw["manifestVersion"]
-        if (manifestVersion != MANIFEST_VERSION_V2) {
-            issues.add("$source.manifestVersion must equal $MANIFEST_VERSION_V2")
-        }
 
         val id = raw["id"] as? String
         if (id.isNullOrBlank()) {
@@ -107,29 +107,51 @@ object AppletManifestParser {
             }
         }
 
-        val load = raw["load"] as? Map<*, *>
-        if (load == null) {
+        // Parse load as platform map
+        val loadRaw = raw["load"] as? Map<*, *>
+        var parsedLoadMap: AppletLoadMap? = null
+        if (loadRaw == null) {
             issues.add("$source.load must be an object")
         } else {
-            val loadType = load["type"] as? String
-            if (loadType == null || loadType !in LOAD_TYPES) {
-                issues.add("$source.load.type only supports lynx")
+            val platformConfigs = mutableMapOf<String, PlatformLoadConfig>()
+            for (platform in TARGET_PLATFORMS) {
+                val platformRaw = loadRaw[platform] as? Map<*, *> ?: continue
+                val loadType = platformRaw["type"] as? String
+                if (loadType == null || loadType !in LOAD_TYPES) {
+                    issues.add("$source.load.$platform.type must be one of $LOAD_TYPES")
+                    continue
+                }
+                val loadEntry = platformRaw["entry"] as? String
+                if (loadEntry.isNullOrBlank()) {
+                    issues.add("$source.load.$platform.entry must be a non-empty string")
+                    continue
+                }
+                platformConfigs[platform] = PlatformLoadConfig(type = loadType, entry = loadEntry)
             }
-            val loadEntry = load["entry"] as? String
-            if (loadEntry.isNullOrBlank()) {
-                issues.add("$source.load.entry must be a non-empty string")
+
+            if (!platformConfigs.containsKey("android")) {
+                issues.add("$source.load must contain an \"android\" platform config")
             }
+
+            parsedLoadMap = AppletLoadMap(
+                desktop = platformConfigs["desktop"],
+                android = platformConfigs["android"],
+                ios = platformConfigs["ios"],
+                standalone = platformConfigs["standalone"]
+            )
         }
 
+        // Parse bridge
         val bridge = raw["bridge"] as? Map<*, *>
         if (bridge == null) {
             issues.add("$source.bridge must be an object")
         } else {
-            if (bridge["version"] != MANIFEST_VERSION_V2) {
-                issues.add("$source.bridge.version must equal $MANIFEST_VERSION_V2")
+            val bridgeVersion = bridge["version"] as? String
+            if (bridgeVersion == null || !SEMVER_PATTERN.matches(bridgeVersion)) {
+                issues.add("$source.bridge.version must be valid semver")
             }
-            if (bridge["protocol"] != BRIDGE_PROTOCOL_V2) {
-                issues.add("$source.bridge.protocol must equal $BRIDGE_PROTOCOL_V2")
+            if (bridge["protocol"] != BRIDGE_PROTOCOL) {
+                issues.add("$source.bridge.protocol must equal $BRIDGE_PROTOCOL")
             }
         }
 
@@ -139,7 +161,6 @@ object AppletManifestParser {
 
         return ParseResult.Success(
             AppletManifest(
-                manifestVersion = MANIFEST_VERSION_V2,
                 id = id!!,
                 name = name!!,
                 version = version!!,
@@ -150,13 +171,10 @@ object AppletManifestParser {
                 capabilities = capabilities,
                 minPlatformVersion = minPlatformVersion,
                 targetPlatforms = validTargetPlatforms,
-                load = AppletLoadConfig(
-                    type = (load!!["type"] as String),
-                    entry = (load["entry"] as String)
-                ),
+                load = parsedLoadMap!!,
                 bridge = AppletBridgeConfig(
-                    version = MANIFEST_VERSION_V2,
-                    protocol = BRIDGE_PROTOCOL_V2
+                    version = bridge!!["version"] as String,
+                    protocol = BRIDGE_PROTOCOL
                 )
             )
         )

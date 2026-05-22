@@ -31,6 +31,9 @@ pub fn is_capability_allowed(capability: &str) -> bool {
             | "applets.get_config"
             | "applets.set_config"
             | "applets.action"
+            | "storage"
+            | "network"
+            | "config"
     )
 }
 

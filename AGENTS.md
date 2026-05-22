@@ -69,6 +69,16 @@ When reading or updating docs, follow the constraint direction below:
 4. **Agent entry layer**
    - `docs/.agent/*.md` only tells agents what to read first, what is forbidden, and how to verify.
    - It is **not** the place to redefine architecture or full coding standards.
+5. **Operational knowledge layer** (NEW)
+   - `docs/knowledge/` holds horizontal, machine-readable knowledge that doesn't fit the four layers above:
+     - `invariants/` — properties that any code touching the named paths MUST respect.
+     - `pitfalls/` — bugs we already paid for, with reproduction + mitigation.
+     - `playbooks/` — the standard operating procedure for recurring task classes.
+     - `glossary.md` — project-specific terminology.
+   - Each `invariants/` / `pitfalls/` / `playbooks/` file carries YAML frontmatter with an `owns:` list of repo paths it governs.
+   - Agents MUST consult this layer before editing any path that appears in an `owns:` entry. The `read-before-edit` skill (§13) automates the lookup; AGENTS that do not load the skill must perform the same procedure manually.
+   - Knowledge files are PR'd through the same review process as code. Entries are append-only — superseded knowledge is marked `status: superseded-by:<path>`, never deleted.
+   - Entry doc: [`docs/knowledge/README.md`](docs/knowledge/README.md). Frontmatter template: [`docs/knowledge/_TEMPLATE.md`](docs/knowledge/_TEMPLATE.md).
 
 Constraint rule:
 
@@ -254,6 +264,7 @@ Current project skills:
 | `dev-runtime-handoff` | Choose & start the right dev runtime (make targets) for acceptance testing |
 | `architecture-execution-methodology` | Decompose architectural designs into actionable execution plans, domain ownership, and verification systems (referenced from §4.3) |
 | `desktop-runtime-projections` | Enforce Page / Runtime / Boot kernel contracts under `apps/desktop/src/{kernel,runtimes,services,store,pages,components}` |
+| `read-before-edit` | Consult `docs/knowledge/` invariants / pitfalls / playbooks whose `owns:` covers the path being edited (referenced from §3.5) |
 | `github-commit` | Conventional commit message generation with AI traceability |
 | `github-pr` | PR creation with templates, labels, and issue linking |
 | `github-release` | Semantic versioning, changelog generation, GitHub Release creation |

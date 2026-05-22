@@ -65,6 +65,10 @@ type UpdateProfileRequest struct {
 	AutoExpireDays            *int        `json:"auto_expire_days"`
 }
 
+// GetWebProfile resolves a LOCAL profile by preferred_username. It
+// scopes to origin='local' so Phase D remote_cached rows (which can
+// share the same local-part with a coincident local actor) cannot
+// shadow this station's own profile rendering.
 func GetWebProfile(c context.Context, username string, baseURL string) (*ProfileResponse, error) {
 	rds, err := store.GetRDS(c)
 	if err != nil {
@@ -72,7 +76,7 @@ func GetWebProfile(c context.Context, username string, baseURL string) (*Profile
 	}
 
 	var actor db.Actor
-	err = rds.Where("preferred_username = ? AND namespace = ?", username, "peers").First(&actor).Error
+	err = rds.Where("preferred_username = ? AND namespace = ? AND origin = ?", username, "peers", OriginLocal).First(&actor).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, gorm.ErrRecordNotFound
@@ -252,6 +256,16 @@ func updateProfileInternal(c context.Context, rds *gorm.DB, actor *db.Actor, req
 		if err := rds.Model(&meta).Updates(metaUpdates).Error; err != nil {
 			return err
 		}
+	}
+
+	// Tier C1 — re-publish the locator record so receivers' caches
+	// get invalidated on the next broadcast. We trigger only when at
+	// least one row actually changed; an empty PATCH is a no-op and
+	// must not generate federation traffic. publishVisibilityAsync is
+	// internally gated on Origin=local + federated_handle non-empty,
+	// so non-local / not-yet-bootstrapped actors fall through quietly.
+	if len(actorUpdates) > 0 || len(metaUpdates) > 0 {
+		publishVisibilityAsync(actor.ID)
 	}
 
 	return nil

@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package peers_touch.model.federation.v1;
+
+import "domain/actor/actor.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile/pb;pb";
+
+// ActorProfileEnvelope is the signed wire format returned by a station's
+// /actor/federation/profile endpoint. It complements ActorLocatorRecord:
+//
+//   * ActorLocatorRecord (locator.proto) is the *pointer* — it lives in the
+//     DHT under "/pst-actor/<handle>" and answers "which station is
+//     authoritative for this handle?".
+//   * ActorProfileEnvelope is the *content* — it travels point-to-point
+//     over /relay/forward and answers "what does this actor look like
+//     right now?".
+//
+// Receivers verify the envelope's `signature` against `signing_key_pem`
+// using the same canonical-deterministic-protobuf scheme as locator
+// records (see frame/touch/federation/profile/record.go). The same
+// federation Ed25519 key signs both — receivers MUST cross-check
+// `signing_key_pem` against the locator record's pinned key (TOFU) and
+// reject envelopes whose key does not match the pinned one.
+//
+// Envelopes carry an explicit expires_at so a stolen-then-replayed
+// envelope cannot pretend to be live indefinitely; the resolver layer
+// rejects expired envelopes and re-fetches.
+message ActorProfileEnvelope {
+  // Canonical federated handle this envelope describes — MUST equal the
+  // handle the caller asked for, lower-cased to match DHT keys.
+  string federated_handle = 1 [json_name = "federated_handle"];
+
+  // Authoritative home station. Mirrors the corresponding fields on the
+  // locator record so receivers can detect handle-vs-station drift in a
+  // single comparison.
+  string home_station_peer_id = 2 [json_name = "home_station_peer_id"];
+  string home_station_domain = 3 [json_name = "home_station_domain"];
+
+  // Public profile projection. Same shape as `/actor/:actor/profile` so
+  // the desktop UI can render local and remote actors with identical
+  // code paths. Sensitive fields (email, raw private keys, session
+  // metadata, ...) are NEVER populated on the federation surface.
+  peers_touch.model.actor.v1.ActorProfile profile = 4;
+
+  // Wall-clock at sign time. Receivers may reject envelopes older than a
+  // configurable freshness window (5 min in MVP) to limit replay value.
+  int64 issued_at_unix_ms = 5 [json_name = "issued_at_unix_ms"];
+
+  // Expiration time chosen by the publisher. Receivers MUST treat the
+  // envelope as expired once wall-clock crosses this point, regardless
+  // of `issued_at`. Bounded above by the freshness window so a buggy
+  // publisher cannot mint an effectively-immortal envelope.
+  int64 expires_at_unix_ms = 6 [json_name = "expires_at_unix_ms"];
+
+  // Detached Ed25519 signature over the canonical serialisation of every
+  // OTHER field in this message (i.e. all fields except `signature`).
+  bytes signature = 7;
+
+  // PEM-encoded Ed25519 public key matching the home station's
+  // federation signing key (same key used to sign locator records).
+  string signing_key_pem = 8 [json_name = "signing_key_pem"];
+
+  // SHA-256 / base32-nopad fingerprint of `signing_key_pem`. Receivers
+  // recompute this and compare; mismatch is a tampered envelope.
+  string signing_key_kid = 9 [json_name = "signing_key_kid"];
+}
