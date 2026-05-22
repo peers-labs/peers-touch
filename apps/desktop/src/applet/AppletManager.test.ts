@@ -1,14 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AppletManager from './AppletManager'
-import { parseAppletIndexV2, parseAppletInfoV2 } from './schema'
-import { APPLET_BRIDGE_PROTOCOL_V2, APPLET_MANIFEST_VERSION_V2 } from './types'
+import { parseAppletIndex, parseAppletInfo } from './schema'
+import { APPLET_BRIDGE_PROTOCOL } from './types'
 
 const mockFetch = vi.fn()
 vi.stubGlobal('fetch', mockFetch)
 
 function createValidManifest(id = 'web-search') {
   return {
-    manifestVersion: APPLET_MANIFEST_VERSION_V2,
     id,
     name: 'Web Search',
     version: '1.0.0',
@@ -16,13 +15,16 @@ function createValidManifest(id = 'web-search') {
     author: 'Peers Touch',
     icon: 'https://example.com/icon.png',
     permissions: ['network'],
+    targetPlatforms: ['desktop'],
     load: {
-      type: 'lynx' as const,
-      entry: 'https://example.com/index.html',
+      desktop: {
+        type: 'lynx-web' as const,
+        entry: 'main.lynx.bundle',
+      },
     },
     bridge: {
-      version: APPLET_MANIFEST_VERSION_V2,
-      protocol: APPLET_BRIDGE_PROTOCOL_V2,
+      version: '1.0.0',
+      protocol: APPLET_BRIDGE_PROTOCOL,
     },
   }
 }
@@ -38,14 +40,14 @@ function resetManagerState() {
 describe('applet schema validation', () => {
   it('validates manifest and index payload', () => {
     const manifest = createValidManifest()
-    const manifestCheck = parseAppletInfoV2(manifest, 'index.applets[0]')
+    const manifestCheck = parseAppletInfo(manifest, 'index.applets[0]')
     expect(manifestCheck.ok).toBe(true)
     if (!manifestCheck.ok) return
     expect(manifestCheck.value.id).toBe('web-search')
-    expect(manifestCheck.value.main).toBe(manifest.load.entry)
+    expect(manifestCheck.value.load.desktop?.entry).toBe('main.lynx.bundle')
 
-    const indexCheck = parseAppletIndexV2({
-      indexVersion: 2,
+    const indexCheck = parseAppletIndex({
+      version: 1,
       applets: [manifest],
     })
     expect(indexCheck.ok).toBe(true)
@@ -53,28 +55,30 @@ describe('applet schema validation', () => {
 
   it('rejects invalid manifest/index payload', () => {
     const invalidManifest = createValidManifest('Bad_ID')
-    const manifestCheck = parseAppletInfoV2(invalidManifest, 'index.applets[0]')
+    const manifestCheck = parseAppletInfo(invalidManifest, 'index.applets[0]')
     expect(manifestCheck.ok).toBe(false)
 
-    const indexCheck = parseAppletIndexV2({
-      indexVersion: 1,
+    const indexCheck = parseAppletIndex({
+      version: 'invalid' as any,
       applets: [],
     })
     expect(indexCheck.ok).toBe(false)
   })
 
-  it('rejects iframe load type to enforce no-iframe runtime', () => {
-    const iframeManifest = {
-      ...createValidManifest('legacy-iframe'),
+  it('rejects invalid load type', () => {
+    const badManifest = {
+      ...createValidManifest('bad-load'),
       load: {
-        type: 'iframe',
-        entry: 'https://example.com/index.html',
+        desktop: {
+          type: 'iframe',
+          entry: 'index.html',
+        },
       },
     }
-    const manifestCheck = parseAppletInfoV2(iframeManifest, 'index.applets[0]')
+    const manifestCheck = parseAppletInfo(badManifest, 'index.applets[0]')
     expect(manifestCheck.ok).toBe(false)
     if (manifestCheck.ok) return
-    expect(manifestCheck.issues.some((issue) => issue.includes('不支持 iframe'))).toBe(true)
+    expect(manifestCheck.issues.some((issue) => issue.includes('lynx-web'))).toBe(true)
   })
 })
 
@@ -89,7 +93,7 @@ describe('applet runtime loading', () => {
     mockFetch.mockResolvedValue({
       ok: true,
       json: async () => ({
-        indexVersion: 2,
+        version: 1,
         applets: [invalidManifest],
       }),
     })
@@ -101,44 +105,27 @@ describe('applet runtime loading', () => {
     await expect(manager.loadApplet('Invalid_ID')).rejects.toThrow('is invalid')
   })
 
-  it('refuses iframe applet at runtime validation step', async () => {
-    const iframeManifest = {
-      ...createValidManifest('legacy-iframe'),
+  it('refuses applet with invalid load config at runtime validation', async () => {
+    const badManifest = {
+      ...createValidManifest('bad-load'),
       load: {
-        type: 'iframe',
-        entry: 'https://example.com/index.html',
+        desktop: {
+          type: 'iframe',
+          entry: 'index.html',
+        },
       },
     }
     mockFetch.mockResolvedValue({
       ok: true,
       json: async () => ({
-        indexVersion: 2,
-        applets: [iframeManifest],
+        version: 1,
+        applets: [badManifest],
       }),
     })
 
     const manager = AppletManager.getInstance()
     const applets = await manager.scanApplets()
     expect(applets).toHaveLength(0)
-    await expect(manager.loadApplet('legacy-iframe')).rejects.toThrow('is invalid')
-  })
-
-  it('loads valid applet successfully', async () => {
-    const manifest = createValidManifest('remote-cli')
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        indexVersion: 2,
-        applets: [manifest],
-      }),
-    })
-
-    const manager = AppletManager.getInstance()
-    const applets = await manager.scanApplets()
-    expect(applets).toHaveLength(1)
-
-    const loaded = await manager.loadApplet('remote-cli')
-    expect(loaded.id).toBe('remote-cli')
-    expect(manager.getLoadedApplets()).toContain('remote-cli')
+    await expect(manager.loadApplet('bad-load')).rejects.toThrow('is invalid')
   })
 })

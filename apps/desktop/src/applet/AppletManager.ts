@@ -1,4 +1,4 @@
-import { parseAppletIndexV2, parseAppletInfoV2, type AppletDiagnostic } from './schema'
+import { parseAppletIndex, parseAppletInfo, type AppletDiagnostic } from './schema'
 import { type AppletInfo } from './types'
 import { log } from '../utils/logger'
 
@@ -32,7 +32,7 @@ class AppletManager {
       const response = await fetch(`${this.appletDir}/index.json`)
       if (response.ok) {
         const indexData = await response.json() as unknown
-        const indexCheck = parseAppletIndexV2(indexData)
+        const indexCheck = parseAppletIndex(indexData)
         if (!indexCheck.ok) {
           this.indexDiagnostics = indexCheck.issues
           this.printDiagnostics('Invalid applet index', this.indexDiagnostics)
@@ -43,7 +43,7 @@ class AppletManager {
         const normalized: AppletInfo[] = []
         indexCheck.value.applets.forEach((rawApplet, index) => {
           const source = `index.applets[${index}]`
-          const parsed = parseAppletInfoV2(rawApplet, source)
+          const parsed = parseAppletInfo(rawApplet, source)
           if (!parsed.ok) {
             const rejectedId = this.extractAppletId(rawApplet, index)
             this.rejectedDiagnostics.set(rejectedId, parsed.issues)
@@ -105,7 +105,7 @@ class AppletManager {
       throw new Error(`Applet ${appletId} not found`)
     }
 
-    const runtimeCheck = parseAppletInfoV2(appletInfo, `runtime[${appletId}]`)
+    const runtimeCheck = parseAppletInfo(appletInfo, `runtime[${appletId}]`)
     if (!runtimeCheck.ok) {
       this.printDiagnostics(`Refused to load invalid applet "${appletId}"`, runtimeCheck.issues)
       throw new Error(`Applet ${appletId} failed runtime validation:\n${runtimeCheck.issues.join('\n')}`)

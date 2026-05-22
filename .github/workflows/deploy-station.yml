@@ -1,0 +1,316 @@
+# Station image PR-gate + remote deploy.
+#
+# This workflow has two responsibilities:
+#
+#   1. PR-gate (`pr-build` job) — runs on every PR that touches station,
+#      docker tooling, or the proto model. It validates compose YAML,
+#      shellchecks the deploy scripts, and builds the station image
+#      with the GitHub Actions cache so subsequent PRs and the deploy
+#      path benefit from warm layers. NO remote deploy on PR — the
+#      live test bench is shared by all four envs and a PR-triggered
+#      deploy would race the manual + tag paths.
+#
+#   2. Deploy (`deploy` job) — runs on workflow_dispatch (operator
+#      picks an env) and on push tag v*.*.* (release rolls all four).
+#      Build still happens on the remote daemon over `docker --context`
+#      to avoid GHCR (org policy: GITHUB_TOKEN stays at contents:read).
+#      Remote builds set BUILDKIT_INLINE_CACHE=1 so successive deploys
+#      hit warm layers on each individual remote.
+#
+# Per-env secrets (PEERS_AUTH_SECRET, PEERS_DB_PASSWORD, DEPLOY_SSH_KEY)
+# live in GitHub Environments named after each env. The job synthesises
+# the .env.<name> file at runtime from these secrets — they never live
+# on disk in the repo.
+#
+# Topology and rationale: see .localenv §1 / §7.
+name: Deploy Station
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    # Path filter keeps Desktop-only / docs-only PRs from triggering
+    # the station build. The list intentionally OVER-matches (entire
+    # apps/station/ + tooling/docker/ + tooling/scripts/ + model/)
+    # rather than fine-graining — adding new station code paths is
+    # the common case and a missed trigger is worse than an extra
+    # ~3-minute build. tooling/scripts/** is included because it is
+    # the home of pt-deploy.sh and pt-bootstrap.sh which run on every
+    # remote and which the shellcheck step is meant to gate.
+    paths:
+      - 'apps/station/**'
+      - 'tooling/docker/**'
+      - 'tooling/scripts/**'
+      - 'model/**'
+      - '.github/workflows/deploy-station.yml'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Target environment"
+        required: true
+        default: pt-station-1
+        type: choice
+        options:
+          - pt-relay
+          - pt-station-1
+          - pt-station-2
+          - pt-station-relay-only
+          - all
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+# PR builds and live deploys take separate concurrency groups so they
+# never queue against each other. PR runs key on PR number with
+# cancel-in-progress (successive pushes to the same PR replace older
+# builds, saving runner minutes); deploys key on (target × ref) and do
+# NOT cancel — once a deploy is mid-flight we let it finish.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('station-pr-{0}', github.event.pull_request.number) || format('station-deploy-{0}-{1}', github.event.inputs.target || 'all', github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # ── PR-gate: build + validate, no remote ─────────────────────────
+  # Runs ONLY on pull_request. The image stays on the runner; we use
+  # the GHA cache so the next PR build skips unchanged layers. The
+  # job intentionally has zero deploy capability — see the if-guard.
+  pr-build:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      # Buildx required for cache-from/cache-to: type=gha. Without it
+      # build-push-action falls back to the legacy builder which has
+      # no GHA cache support.
+      - uses: docker/setup-buildx-action@v3
+
+      # ── Compose validation ──
+      # `config -q` resolves every variable interpolation and parses
+      # the YAML; missing required vars (e.g. PEERS_AUTH_SECRET) would
+      # cause a real deploy to fail at the same point. We feed dummy
+      # values for the required-vars so the resolver passes — we are
+      # not running anything, just checking shape.
+      - name: Validate compose schema
+        env:
+          PEERS_AUTH_SECRET: dummy-pr-validation-secret
+          PEERS_DB_PASSWORD: dummy-pr-validation-pw
+          POSTGRES_USER: peers
+          POSTGRES_DB: peers_touch
+          STATION_PORT: '18080'
+          RELAY_STATION_PORT: '18081'
+        run: |
+          docker compose \
+            -f tooling/docker/compose.yml \
+            --profile station --profile relay --profile infra \
+            config -q
+
+      # ── Shellcheck ──
+      # The deploy story is shell-heavy (entrypoint.sh, pt-deploy.sh,
+      # pt-bootstrap.sh). A shellcheck regression on any of them breaks
+      # every remote at the next deploy.
+      #
+      # Severity is `warning`, which catches the SC2*** class — the real
+      # bugs you want flagged (SC2086 word-splitting, SC2155 declare-
+      # and-assign, SC2206 unquoted array splitting). The deploy-
+      # relevant scripts under tooling/scripts/pt-* + tooling/docker
+      # currently pass cleanly at this level. The dev-only scripts
+      # (dev-*, _ensure-*, ide-setup.sh) carry pre-existing warnings
+      # that are not part of the deploy critical path; they are
+      # excluded via ignore_paths so a desktop-side cleanup PR isn't
+      # required to merge a station change. Tighten by removing entries
+      # from ignore_paths once each dev script has been audited.
+      - name: Shellcheck deploy scripts
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: ./tooling
+          severity: warning
+          ignore_paths: >-
+            tooling/scripts/dev-clean.sh
+            tooling/scripts/dev-desktop-app.sh
+            tooling/scripts/dev-desktop-dual.sh
+            tooling/scripts/dev-desktop-web.sh
+            tooling/scripts/_ensure-desktop-rust.sh
+            tooling/scripts/_ensure-desktop-vite.sh
+            tooling/scripts/_ensure-station.sh
+            tooling/scripts/_ensure-tauri-dev.sh
+            tooling/scripts/ide-setup.sh
+            tooling/scripts/preview-desktop.sh
+
+      # ── Image build with GHA cache ──
+      # Builds the station image but does NOT push (no GHCR; that's a
+      # standing constraint, see file header). Cache scope keys on the
+      # Dockerfile so unrelated workflows can't poison this cache.
+      - name: Build station image (cache-only, no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: tooling/docker/station.Dockerfile
+          push: false
+          load: false
+          tags: peers-touch-station:pr-${{ github.event.pull_request.number }}
+          cache-from: type=gha,scope=station
+          cache-to: type=gha,scope=station,mode=max
+          # mode=max persists every intermediate layer to the cache,
+          # which costs a few hundred MB but lets the next PR (or the
+          # tag deploy that lands the merge) hit warm-cache builds.
+
+  # ── Deploy: live test bench ──────────────────────────────────────
+  # Runs on workflow_dispatch and tag push. The fan-out matrix picks
+  # which envs to touch; each leg owns its docker-context + .env file
+  # synthesis. Build still runs on the remote daemon — we keep that
+  # to avoid GHCR — but with BUILDKIT_INLINE_CACHE so the second deploy
+  # to a given remote reuses layers from the first.
+  plan:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      envs: ${{ steps.pick.outputs.envs }}
+    steps:
+      - id: pick
+        run: |
+          target="${{ github.event.inputs.target }}"
+          if [ -z "$target" ] || [ "$target" = "all" ]; then
+            echo 'envs=["pt-relay","pt-station-1","pt-station-2","pt-station-relay-only"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "envs=[\"$target\"]" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        env: ${{ fromJSON(needs.plan.outputs.envs) }}
+    environment: ${{ matrix.env }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── per-env routing ─────────────────────────────────────
+      - id: route
+        name: Resolve host / port / profile
+        run: |
+          case "${{ matrix.env }}" in
+            pt-relay)
+              echo "host=10.37.118.48" >> "$GITHUB_OUTPUT"
+              echo "station_port=18080" >> "$GITHUB_OUTPUT"
+              echo "relay_port=18081"   >> "$GITHUB_OUTPUT"
+              echo "profile=relay"      >> "$GITHUB_OUTPUT"
+              echo "db_name=peers_relay" >> "$GITHUB_OUTPUT"
+              echo "direct_out=true"    >> "$GITHUB_OUTPUT"
+              echo "direct_in=true"     >> "$GITHUB_OUTPUT"
+              echo "health=http://10.37.118.48:18081/sub-oss/healthz" >> "$GITHUB_OUTPUT"
+              ;;
+            pt-station-1)
+              echo "host=10.37.246.80" >> "$GITHUB_OUTPUT"
+              echo "station_port=18080" >> "$GITHUB_OUTPUT"
+              echo "relay_port=18081"   >> "$GITHUB_OUTPUT"
+              echo "profile=station"    >> "$GITHUB_OUTPUT"
+              echo "db_name=peers_touch" >> "$GITHUB_OUTPUT"
+              echo "direct_out=true"    >> "$GITHUB_OUTPUT"
+              echo "direct_in=true"     >> "$GITHUB_OUTPUT"
+              echo "health=http://10.37.246.80:18080/sub-oss/healthz" >> "$GITHUB_OUTPUT"
+              ;;
+            pt-station-2)
+              echo "host=10.37.195.98" >> "$GITHUB_OUTPUT"
+              echo "station_port=18080" >> "$GITHUB_OUTPUT"
+              echo "relay_port=18081"   >> "$GITHUB_OUTPUT"
+              echo "profile=station"    >> "$GITHUB_OUTPUT"
+              echo "db_name=peers_touch" >> "$GITHUB_OUTPUT"
+              echo "direct_out=true"    >> "$GITHUB_OUTPUT"
+              echo "direct_in=true"     >> "$GITHUB_OUTPUT"
+              echo "health=http://10.37.195.98:18080/sub-oss/healthz" >> "$GITHUB_OUTPUT"
+              ;;
+            pt-station-relay-only)
+              echo "host=10.37.195.98" >> "$GITHUB_OUTPUT"
+              echo "station_port=18082" >> "$GITHUB_OUTPUT"
+              echo "relay_port=18081"   >> "$GITHUB_OUTPUT"
+              echo "profile=station"    >> "$GITHUB_OUTPUT"
+              echo "db_name=peers_touch" >> "$GITHUB_OUTPUT"
+              echo "direct_out=false"   >> "$GITHUB_OUTPUT"
+              echo "direct_in=false"    >> "$GITHUB_OUTPUT"
+              echo "health=http://10.37.195.98:18082/sub-oss/healthz" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      # ── SSH agent for docker-context ─────────────────────────
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Trust remote host fingerprint
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          ssh-keyscan -H ${{ steps.route.outputs.host }} >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Register docker context
+        run: |
+          docker context create ${{ matrix.env }} \
+            --docker "host=ssh://shuxian@${{ steps.route.outputs.host }}" || \
+          docker context update ${{ matrix.env }} \
+            --docker "host=ssh://shuxian@${{ steps.route.outputs.host }}"
+
+      # ── synthesise gitignored .env.<name> from environment secrets ──
+      - name: Materialise env file
+        run: |
+          mkdir -p tooling/docker
+          cat > tooling/docker/.env.${{ matrix.env }} <<EOF
+          COMPOSE_PROJECT_NAME=${{ matrix.env }}
+          PEERS_AUTH_SECRET=${{ secrets.PEERS_AUTH_SECRET }}
+          PEERS_DB_PASSWORD=${{ secrets.PEERS_DB_PASSWORD }}
+          POSTGRES_USER=peers
+          POSTGRES_DB=${{ steps.route.outputs.db_name }}
+          STATION_HOST=${{ steps.route.outputs.host }}
+          STATION_PORT=${{ steps.route.outputs.station_port }}
+          RELAY_STATION_PORT=${{ steps.route.outputs.relay_port }}
+          PEERS_FEDERATION_DIRECT_OUTBOUND=${{ steps.route.outputs.direct_out }}
+          PEERS_FEDERATION_DIRECT_INBOUND=${{ steps.route.outputs.direct_in }}
+          EOF
+
+      # ── deploy ───────────────────────────────────────────────
+      # BUILDKIT_INLINE_CACHE=1 makes `docker build` embed cache
+      # metadata into the resulting image's layer manifest. The next
+      # `up -d --build` on the same remote then sees those hints and
+      # skips rebuilding identical layers — even though we don't share
+      # cache across remotes (no GHCR), each remote's BuildKit reuses
+      # its own previous layers. Free 2-5x speedup for incremental
+      # deploys. DOCKER_BUILDKIT=1 enables BuildKit unconditionally
+      # (Docker 23+ enables it by default but older daemons may not).
+      - name: Build & deploy via remote docker context
+        env:
+          DOCKER_BUILDKIT: '1'
+          COMPOSE_DOCKER_CLI_BUILD: '1'
+          BUILDKIT_INLINE_CACHE: '1'
+        run: |
+          docker --context ${{ matrix.env }} compose \
+            -p ${{ matrix.env }} \
+            -f tooling/docker/compose.yml \
+            --env-file tooling/docker/.env.${{ matrix.env }} \
+            --profile ${{ steps.route.outputs.profile }} \
+            --profile infra \
+            up -d --build
+
+      # ── verify ───────────────────────────────────────────────
+      - name: Wait for healthz
+        run: |
+          for i in $(seq 1 24); do
+            if curl -fsS --max-time 3 "${{ steps.route.outputs.health }}" >/dev/null; then
+              echo "healthy"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Healthcheck timed out for ${{ matrix.env }} (${{ steps.route.outputs.health }})"
+          docker --context ${{ matrix.env }} compose \
+            -p ${{ matrix.env }} \
+            -f tooling/docker/compose.yml \
+            --profile ${{ steps.route.outputs.profile }} --profile infra \
+            logs --tail=120 || true
+          exit 1

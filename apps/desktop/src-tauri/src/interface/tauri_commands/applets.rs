@@ -6,6 +6,7 @@ use crate::contracts::{
 use crate::domain::applets::AccessContext;
 use crate::error::AppResult;
 use crate::error::ErrorCode;
+use crate::infrastructure::storage::StorageKind;
 use crate::state::AppState;
 use std::sync::Arc;
 use tauri::State;
@@ -124,5 +125,15 @@ pub fn applets_invoke(
         Ok(c) => c,
         Err(e) => return e,
     };
-    application_applets::applets_invoke(context, input)
+    let data_dir = match state.storage.dirs.get(&StorageKind::Data) {
+        Some(dir) => dir.clone(),
+        None => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Application data directory not configured",
+                None,
+            );
+        }
+    };
+    application_applets::applets_invoke(context, input, &data_dir)
 }

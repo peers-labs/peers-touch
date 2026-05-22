@@ -15,6 +15,8 @@ import {
   markPhaseStart,
   scheduleIdle,
 } from './kernel/boot';
+import { installEventStreamBridge, teardownEventStreamBridge } from './services/eventStream';
+import { installSocialChatRealtimeBridge, teardownSocialChatRealtimeBridge } from './services/socialChatRealtime';
 import type { AppState, AppLifecycle } from './types/navigation';
 
 // Critical session-scope runtimes installed during `runtime:critical`.

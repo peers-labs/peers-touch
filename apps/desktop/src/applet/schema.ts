@@ -1,14 +1,14 @@
 import {
-  APPLET_BRIDGE_PROTOCOL_V2,
-  APPLET_MANIFEST_VERSION_V2,
+  APPLET_BRIDGE_PROTOCOL,
   type AppletInfo,
-  type AppletLoadType,
+  type AppletLoadMap,
+  type TargetPlatform,
 } from './types'
 
-export const APPLET_INDEX_VERSION_V2 = 2 as const
+// ── Index format ──
 
-interface AppletIndexV2 {
-  indexVersion: typeof APPLET_INDEX_VERSION_V2
+export interface AppletIndex {
+  version: number
   generatedAt?: string
   applets: unknown[]
 }
@@ -18,20 +18,16 @@ export interface AppletDiagnostic {
   issues: string[]
 }
 
-type ParseSuccess<T> = {
-  ok: true
-  value: T
-}
-
-type ParseFailure = {
-  ok: false
-  issues: string[]
-}
-
+type ParseSuccess<T> = { ok: true; value: T }
+type ParseFailure = { ok: false; issues: string[] }
 type ParseResult<T> = ParseSuccess<T> | ParseFailure
 
-const TARGET_PLATFORMS = new Set(['desktop', 'mobile', 'web'])
-const LOAD_TYPES = new Set<AppletLoadType>(['lynx'])
+// ── Validation helpers ──
+
+const TARGET_PLATFORMS = new Set<TargetPlatform>(['desktop', 'android', 'ios', 'standalone'])
+const DESKTOP_LOAD_TYPES = new Set(['lynx-web'])
+const MOBILE_LOAD_TYPES = new Set(['lynx-native'])
+const STANDALONE_LOAD_TYPES = new Set(['web-spa'])
 const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/
 const APPLET_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/
 
@@ -41,45 +37,122 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function parseNonEmptyString(value: unknown, field: string): ParseResult<string> {
   if (typeof value !== 'string' || value.trim().length === 0) {
-    return { ok: false, issues: [`${field} 必须是非空字符串`] }
+    return { ok: false, issues: [`${field} must be a non-empty string`] }
   }
   return { ok: true, value: value.trim() }
 }
 
 function parseSemver(value: unknown, field: string): ParseResult<string> {
   if (typeof value !== 'string' || !SEMVER_PATTERN.test(value)) {
-    return { ok: false, issues: [`${field} 必须是合法 semver（例如 1.2.3）`] }
+    return { ok: false, issues: [`${field} must be valid semver (e.g. 1.2.3)`] }
   }
   return { ok: true, value }
 }
 
 function parseStringArray(value: unknown, field: string): ParseResult<string[]> {
   if (!Array.isArray(value)) {
-    return { ok: false, issues: [`${field} 必须是字符串数组`] }
+    return { ok: false, issues: [`${field} must be a string array`] }
   }
   const invalidIndex = value.findIndex((item) => typeof item !== 'string' || item.trim().length === 0)
   if (invalidIndex >= 0) {
-    return { ok: false, issues: [`${field}[${invalidIndex}] 必须是非空字符串`] }
+    return { ok: false, issues: [`${field}[${invalidIndex}] must be a non-empty string`] }
   }
   return { ok: true, value: value.map((item) => item.trim()) as string[] }
 }
 
-export function parseAppletInfoV2(rawManifest: unknown, source: string): ParseResult<AppletInfo> {
-  if (!isRecord(rawManifest)) {
-    return { ok: false, issues: [`${source} 不是合法 JSON 对象`] }
+// ── Platform load config validation ──
+
+function validateLoadMap(load: unknown, source: string): ParseResult<AppletLoadMap> {
+  if (!isRecord(load)) {
+    return { ok: false, issues: [`${source}.load must be an object`] }
   }
 
   const issues: string[] = []
-  const manifestVersion = rawManifest.manifestVersion
-  if (manifestVersion !== APPLET_MANIFEST_VERSION_V2) {
-    issues.push(`${source}.manifestVersion 必须等于 ${APPLET_MANIFEST_VERSION_V2}`)
+  const result: AppletLoadMap = {}
+
+  if (load.desktop !== undefined) {
+    if (!isRecord(load.desktop)) {
+      issues.push(`${source}.load.desktop must be an object`)
+    } else {
+      if (!DESKTOP_LOAD_TYPES.has(load.desktop.type as string)) {
+        issues.push(`${source}.load.desktop.type must be "lynx-web"`)
+      }
+      if (typeof load.desktop.entry !== 'string' || load.desktop.entry.trim().length === 0) {
+        issues.push(`${source}.load.desktop.entry must be a non-empty string`)
+      } else {
+        result.desktop = { type: 'lynx-web', entry: (load.desktop.entry as string).trim() }
+      }
+    }
   }
+
+  if (load.android !== undefined) {
+    if (!isRecord(load.android)) {
+      issues.push(`${source}.load.android must be an object`)
+    } else {
+      if (!MOBILE_LOAD_TYPES.has(load.android.type as string)) {
+        issues.push(`${source}.load.android.type must be "lynx-native"`)
+      }
+      if (typeof load.android.entry !== 'string' || load.android.entry.trim().length === 0) {
+        issues.push(`${source}.load.android.entry must be a non-empty string`)
+      } else {
+        result.android = { type: 'lynx-native', entry: (load.android.entry as string).trim() }
+      }
+    }
+  }
+
+  if (load.ios !== undefined) {
+    if (!isRecord(load.ios)) {
+      issues.push(`${source}.load.ios must be an object`)
+    } else {
+      if (!MOBILE_LOAD_TYPES.has(load.ios.type as string)) {
+        issues.push(`${source}.load.ios.type must be "lynx-native"`)
+      }
+      if (typeof load.ios.entry !== 'string' || load.ios.entry.trim().length === 0) {
+        issues.push(`${source}.load.ios.entry must be a non-empty string`)
+      } else {
+        result.ios = { type: 'lynx-native', entry: (load.ios.entry as string).trim() }
+      }
+    }
+  }
+
+  if (load.standalone !== undefined) {
+    if (!isRecord(load.standalone)) {
+      issues.push(`${source}.load.standalone must be an object`)
+    } else {
+      if (!STANDALONE_LOAD_TYPES.has(load.standalone.type as string)) {
+        issues.push(`${source}.load.standalone.type must be "web-spa"`)
+      }
+      if (typeof load.standalone.entry !== 'string' || load.standalone.entry.trim().length === 0) {
+        issues.push(`${source}.load.standalone.entry must be a non-empty string`)
+      } else {
+        result.standalone = { type: 'web-spa', entry: (load.standalone.entry as string).trim() }
+      }
+    }
+  }
+
+  // At least one platform must be defined
+  if (!result.desktop && !result.android && !result.ios && !result.standalone) {
+    issues.push(`${source}.load must contain at least one platform entry`)
+  }
+
+  if (issues.length > 0) return { ok: false, issues }
+  return { ok: true, value: result }
+}
+
+// ── Main manifest parser ──
+
+export function parseAppletInfo(rawManifest: unknown, source: string): ParseResult<AppletInfo> {
+  if (!isRecord(rawManifest)) {
+    return { ok: false, issues: [`${source} is not a valid JSON object`] }
+  }
+
+  const issues: string[] = []
 
   const id = parseNonEmptyString(rawManifest.id, `${source}.id`)
   if (!id.ok) {
     issues.push(...id.issues)
   } else if (!APPLET_ID_PATTERN.test(id.value)) {
-    issues.push(`${source}.id 格式非法，应匹配 ${APPLET_ID_PATTERN}`)
+    issues.push(`${source}.id format invalid, must match ${APPLET_ID_PATTERN}`)
   }
 
   const name = parseNonEmptyString(rawManifest.name, `${source}.name`)
@@ -94,66 +167,53 @@ export function parseAppletInfoV2(rawManifest: unknown, source: string): ParseRe
   const author = parseNonEmptyString(rawManifest.author, `${source}.author`)
   if (!author.ok) issues.push(...author.issues)
 
-  const icon = parseNonEmptyString(rawManifest.icon, `${source}.icon`)
-  if (!icon.ok) issues.push(...icon.issues)
+  const icon = typeof rawManifest.icon === 'string' ? rawManifest.icon.trim() : undefined
 
   const permissions = parseStringArray(rawManifest.permissions, `${source}.permissions`)
   if (!permissions.ok) issues.push(...permissions.issues)
 
   let capabilities: string[] = []
   if (rawManifest.capabilities !== undefined) {
-    const capabilitiesResult = parseStringArray(rawManifest.capabilities, `${source}.capabilities`)
-    if (!capabilitiesResult.ok) {
-      issues.push(...capabilitiesResult.issues)
-    } else {
-      capabilities = capabilitiesResult.value
-    }
+    const capResult = parseStringArray(rawManifest.capabilities, `${source}.capabilities`)
+    if (!capResult.ok) issues.push(...capResult.issues)
+    else capabilities = capResult.value
   }
 
   let minPlatformVersion: string | undefined
   if (rawManifest.minPlatformVersion !== undefined) {
-    const minVersion = parseSemver(rawManifest.minPlatformVersion, `${source}.minPlatformVersion`)
-    if (!minVersion.ok) {
-      issues.push(...minVersion.issues)
-    } else {
-      minPlatformVersion = minVersion.value
-    }
+    const minV = parseSemver(rawManifest.minPlatformVersion, `${source}.minPlatformVersion`)
+    if (!minV.ok) issues.push(...minV.issues)
+    else minPlatformVersion = minV.value
   }
 
-  let targetPlatforms: Array<'desktop' | 'mobile' | 'web'> | undefined
-  if (rawManifest.targetPlatforms !== undefined) {
-    if (!Array.isArray(rawManifest.targetPlatforms)) {
-      issues.push(`${source}.targetPlatforms 必须是数组`)
-    } else {
-      const invalidIndex = rawManifest.targetPlatforms.findIndex((platform) => !TARGET_PLATFORMS.has(String(platform)))
-      if (invalidIndex >= 0) {
-        issues.push(`${source}.targetPlatforms[${invalidIndex}] 仅支持 desktop/mobile/web`)
-      } else {
-        targetPlatforms = rawManifest.targetPlatforms as Array<'desktop' | 'mobile' | 'web'>
-      }
-    }
-  }
-
-  if (!isRecord(rawManifest.load)) {
-    issues.push(`${source}.load 必须是对象`)
-  }
-  const loadType = isRecord(rawManifest.load) ? rawManifest.load.type : undefined
-  const loadEntry = isRecord(rawManifest.load) ? rawManifest.load.entry : undefined
-  if (!LOAD_TYPES.has(loadType as AppletLoadType)) {
-    issues.push(`${source}.load.type 仅支持 lynx（不支持 iframe）`)
-  }
-  const loadEntryResult = parseNonEmptyString(loadEntry, `${source}.load.entry`)
-  if (!loadEntryResult.ok) issues.push(...loadEntryResult.issues)
-
-  if (!isRecord(rawManifest.bridge)) {
-    issues.push(`${source}.bridge 必须是对象`)
+  // targetPlatforms
+  let targetPlatforms: TargetPlatform[] = []
+  if (!Array.isArray(rawManifest.targetPlatforms)) {
+    issues.push(`${source}.targetPlatforms must be an array`)
   } else {
-    if (rawManifest.bridge.version !== APPLET_MANIFEST_VERSION_V2) {
-      issues.push(`${source}.bridge.version 必须等于 ${APPLET_MANIFEST_VERSION_V2}`)
+    const invalidIdx = rawManifest.targetPlatforms.findIndex(
+      (p: unknown) => !TARGET_PLATFORMS.has(p as TargetPlatform),
+    )
+    if (invalidIdx >= 0) {
+      issues.push(`${source}.targetPlatforms[${invalidIdx}] must be one of: desktop, android, ios, standalone`)
+    } else {
+      targetPlatforms = rawManifest.targetPlatforms as TargetPlatform[]
     }
-    if (rawManifest.bridge.protocol !== APPLET_BRIDGE_PROTOCOL_V2) {
-      issues.push(`${source}.bridge.protocol 必须等于 ${APPLET_BRIDGE_PROTOCOL_V2}`)
+  }
+
+  // load (platform map)
+  const loadResult = validateLoadMap(rawManifest.load, source)
+  if (!loadResult.ok) issues.push(...loadResult.issues)
+
+  // bridge
+  if (!isRecord(rawManifest.bridge)) {
+    issues.push(`${source}.bridge must be an object`)
+  } else {
+    if (rawManifest.bridge.protocol !== APPLET_BRIDGE_PROTOCOL) {
+      issues.push(`${source}.bridge.protocol must be "${APPLET_BRIDGE_PROTOCOL}"`)
     }
+    const bridgeVersion = parseSemver(rawManifest.bridge.version, `${source}.bridge.version`)
+    if (!bridgeVersion.ok) issues.push(...bridgeVersion.issues)
   }
 
   if (issues.length > 0) {
@@ -161,56 +221,51 @@ export function parseAppletInfoV2(rawManifest: unknown, source: string): ParseRe
   }
 
   const idValue = (id as ParseSuccess<string>).value
-  const loadEntryValue = (loadEntryResult as ParseSuccess<string>).value
   return {
     ok: true,
     value: {
-      manifestVersion: APPLET_MANIFEST_VERSION_V2,
       id: idValue,
       name: (name as ParseSuccess<string>).value,
       version: (version as ParseSuccess<string>).value,
       description: (description as ParseSuccess<string>).value,
       author: (author as ParseSuccess<string>).value,
-      icon: (icon as ParseSuccess<string>).value,
+      icon,
       permissions: (permissions as ParseSuccess<string[]>).value,
       capabilities,
       minPlatformVersion,
       targetPlatforms,
-      load: {
-        type: loadType as AppletLoadType,
-        entry: loadEntryValue,
-      },
+      load: (loadResult as ParseSuccess<AppletLoadMap>).value,
       bridge: {
-        version: APPLET_MANIFEST_VERSION_V2,
-        protocol: APPLET_BRIDGE_PROTOCOL_V2,
+        protocol: APPLET_BRIDGE_PROTOCOL,
+        version: (rawManifest.bridge as Record<string, unknown>).version as string,
       },
-      main: loadEntryValue,
       path: `/applets-dist/${idValue}`,
     },
   }
 }
 
-export function parseAppletIndexV2(rawIndex: unknown, source = '/applets-dist/index.json'): ParseResult<AppletIndexV2> {
+// ── Index parser ──
+
+export function parseAppletIndex(rawIndex: unknown, source = '/applets-dist/index.json'): ParseResult<AppletIndex> {
   if (!isRecord(rawIndex)) {
-    return { ok: false, issues: [`${source} 不是合法 JSON 对象`] }
+    return { ok: false, issues: [`${source} is not a valid JSON object`] }
   }
-  if (rawIndex.indexVersion !== APPLET_INDEX_VERSION_V2) {
-    return {
-      ok: false,
-      issues: [
-        `${source}.indexVersion 必须等于 ${APPLET_INDEX_VERSION_V2}`,
-      ],
-    }
+  if (typeof rawIndex.version !== 'number') {
+    return { ok: false, issues: [`${source}.version must be a number`] }
   }
   if (!Array.isArray(rawIndex.applets)) {
-    return { ok: false, issues: [`${source}.applets 必须是数组`] }
+    return { ok: false, issues: [`${source}.applets must be an array`] }
   }
   return {
     ok: true,
     value: {
-      indexVersion: APPLET_INDEX_VERSION_V2,
+      version: rawIndex.version as number,
       generatedAt: typeof rawIndex.generatedAt === 'string' ? rawIndex.generatedAt : undefined,
       applets: rawIndex.applets,
     },
   }
 }
+
+// ── Legacy aliases for backward compatibility during migration ──
+export const parseAppletInfoV2 = parseAppletInfo
+export const parseAppletIndexV2 = parseAppletIndex

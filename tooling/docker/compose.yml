@@ -1,67 +1,184 @@
 # Peers-Touch Docker Compose
-# Usage: make docker-station | make docker-station REMOTE=dev-box
+#
+# Driven from the Makefile via:
+#   make pt-up   ENV=<name>
+#   make pt-down ENV=<name>
+#
+# Isolation principle (see .localenv §0):
+#   - Every test node = one compose project (COMPOSE_PROJECT_NAME=pt-<name>)
+#   - Each project ships its own postgres container; never reuse a host PG.
+#   - Default network = bridge, project-scoped. `network_mode: host` is forbidden.
+#   - Postgres ports are NOT exposed to the host unless POSTGRES_PORT is set
+#     (debug-only override).
+#   - container_name is intentionally NOT pinned; compose prefixes containers
+#     with the project name, so two projects on the same host never collide.
 #
 # Profiles:
-#   station  — Station service only
-#   relay    — Relay Station service only
-#   infra    — PostgreSQL (use when remote doesn't have PG already)
-#
-# Network modes:
-#   bridge (default) — isolated network, use with infra profile
-#   host             — share host network, use when PG already runs on host
-#     Set NETWORK_MODE=host in .env.<remote> to enable
+#   station — station service + (must include `infra`)
+#   relay   — relay  service + (must include `infra`)
+#   infra   — postgres only
 
 services:
 
-  # ── PostgreSQL ──────────────────────────────────────────────
-  # Only starts with `infra` profile. Skip when remote already has PG.
+  # ── PostgreSQL (per-project, internal-only by default) ─────────
   postgres:
-    image: postgres:16-alpine
-    container_name: peers-pg
+    image: pgvector/pgvector:pg16
     profiles: [infra]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-peers}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-peers}
+      POSTGRES_PASSWORD: ${PEERS_DB_PASSWORD:?PEERS_DB_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-peers_touch}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+    # No host port mapping by default. Postgres is reachable only from
+    # within the project's bridge network via the service name `postgres`.
+    # For host-side debugging, use:
+    #   docker compose -p pt-<name> exec postgres psql -U peers peers_touch
+    # If you really need a host port, drop a docker-compose.override.yml
+    # next to this file with a `ports:` entry; the override is gitignored.
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-peers}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-peers} -d ${POSTGRES_DB:-peers_touch}"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
+    restart: unless-stopped
 
-  # ── Station (standard) ─────────────────────────────────────
+  # ── Station ────────────────────────────────────────────────────
   station:
     build:
       context: ../..
       dockerfile: tooling/docker/station.Dockerfile
-    container_name: peers-station
     profiles: [station]
-    network_mode: ${NETWORK_MODE:-bridge}
     environment:
       PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
-      PEERS_DB_DSN: ${PEERS_DB_DSN:-}
+      # DSN points at the project's bridge-internal postgres service. Never
+      # at the host. POSTGRES_DB / PEERS_DB_PASSWORD come from .env.<project>.
+      PEERS_DB_DSN: host=postgres user=${POSTGRES_USER:-peers} password=${PEERS_DB_PASSWORD} dbname=${POSTGRES_DB:-peers_touch} port=5432 sslmode=disable TimeZone=Asia/Shanghai
+      # OSS local backend store path. Lives under /app/data so it is
+      # carried by the same named volume as the libp2p identities;
+      # entrypoint.sh ensures the directory exists at startup.
+      PEERS_NODE_SERVER_SUBSERVER_OSS_STORE_PATH: /app/data/oss
+      # Node-level libp2p federation policy. entrypoint.sh projects each of
+      # these vars (when non-empty) into a single federation.docker.yml
+      # overlay under peers.node.federation.*. Both libp2p hosts in the
+      # process (bootstrap subserver + transport) consume that one location.
+      #
+      #   PEERS_BOOTSTRAP_NODES        — DHT seeds + ConnectionGater allow-list
+      #   PEERS_LIBP2P_PUBLIC_ADDRS    — multiaddrs this node announces. MUST
+      #                                  be set under Docker so DHT records
+      #                                  carry the host IP, not the bridge IP.
+      #   PEERS_FEDERATION_DIRECT_OUT  — Gater outbound rule. false ⇒ dial
+      #                                  only seeds (relay-only mode).
+      #   PEERS_FEDERATION_DIRECT_IN   — Gater inbound rule. false ⇒ accept
+      #                                  only seeds.
+      PEERS_BOOTSTRAP_NODES: ${PEERS_BOOTSTRAP_NODES:-}
+      PEERS_LIBP2P_PUBLIC_ADDRS: ${PEERS_LIBP2P_PUBLIC_ADDRS:-}
+      PEERS_FEDERATION_DIRECT_OUTBOUND: ${PEERS_FEDERATION_DIRECT_OUTBOUND:-true}
+      PEERS_FEDERATION_DIRECT_INBOUND: ${PEERS_FEDERATION_DIRECT_INBOUND:-true}
+      # Phase D / E.2 — locator republisher cadence + readiness-gate
+      # threshold. entrypoint.sh emits these into the same federation.docker.yml
+      # overlay under peers.node.federation.* when non-empty; empty means
+      # "use federation.yml defaults" (12h republish, min-dht-peers=1).
+      PEERS_FEDERATION_REPUBLISH_INTERVAL_SEC: ${PEERS_FEDERATION_REPUBLISH_INTERVAL_SEC:-}
+      PEERS_FEDERATION_REPUBLISH_DISABLED: ${PEERS_FEDERATION_REPUBLISH_DISABLED:-}
+      PEERS_FEDERATION_MIN_DHT_PEERS: ${PEERS_FEDERATION_MIN_DHT_PEERS:-}
+      # Federation-visible HTTP origin. entrypoint.sh translates this into a
+      # server_host.docker.yml overlay; the locator publisher derives its
+      # StationDomain from the URL host. Without this set, federation
+      # publishing degrades silently — set it in every .env.<environment>.
+      PEERS_NODE_SERVER_BASEURL: ${PEERS_NODE_SERVER_BASEURL:-}
+      # Relay-client (station-side mount onto the central Relay subserver).
+      # entrypoint.sh translates these into a relay_client.docker.yml overlay
+      # only when RELAY_CLIENT_ENABLED=true.
+      RELAY_CLIENT_ENABLED: ${RELAY_CLIENT_ENABLED:-false}
+      RELAY_CLIENT_RELAY_URL: ${RELAY_CLIENT_RELAY_URL:-}
+      RELAY_CLIENT_RELAY_STREAM_ADDR: ${RELAY_CLIENT_RELAY_STREAM_ADDR:-}
+      RELAY_CLIENT_INVITE_TOKEN: ${RELAY_CLIENT_INVITE_TOKEN:-}
+      RELAY_CLIENT_LABEL: ${RELAY_CLIENT_LABEL:-${COMPOSE_PROJECT_NAME:-station}}
     ports:
       - "${STATION_PORT:-18080}:18080"
+      # libp2p port for the bootstrap subserver. Same-host coexistence
+      # (Station-2 + Station-4 on 10.37.195.98) requires distinct host
+      # ports — set LIBP2P_PORT in the per-env file accordingly.
+      - "${LIBP2P_PORT:-4001}:4001"
+    volumes:
+      # Persist the libp2p identity keys (transport's libp2pIdentity.key
+      # and bootstrap subserver's bootstrap.key). Key paths are projected
+      # into /app/data via the paths.docker.yml overlay emitted by
+      # entrypoint.sh — peers.yml itself stays untouched.
+      - peers_data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--tries=1", "--timeout=3", "http://127.0.0.1:18080/sub-oss/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     restart: unless-stopped
 
-  # ── Relay Station ──────────────────────────────────────────
+  # ── Relay Station ──────────────────────────────────────────────
+  # Same image, same Dockerfile — the relay role is selected by the
+  # node's own conf (sub_relay.yml) at runtime, not by build flags.
   relay:
     build:
       context: ../..
       dockerfile: tooling/docker/station.Dockerfile
-    container_name: peers-relay
     profiles: [relay]
-    network_mode: ${NETWORK_MODE:-bridge}
     environment:
       PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
-      PEERS_DB_DSN: ${PEERS_DB_DSN:-}
+      PEERS_DB_DSN: host=postgres user=${POSTGRES_USER:-peers} password=${PEERS_DB_PASSWORD} dbname=${POSTGRES_DB:-peers_relay} port=5432 sslmode=disable TimeZone=Asia/Shanghai
+      PEERS_NODE_SERVER_SUBSERVER_OSS_STORE_PATH: /app/data/oss
+      # The Relay itself is the federation seed; it does not chase any
+      # other bootstrap node. PEERS_LIBP2P_PUBLIC_ADDRS is mandatory in
+      # production: stations dial the Relay via these advertised addrs.
+      PEERS_BOOTSTRAP_NODES: ${PEERS_BOOTSTRAP_NODES:-}
+      PEERS_LIBP2P_PUBLIC_ADDRS: ${PEERS_LIBP2P_PUBLIC_ADDRS:-}
+      # Federation-visible HTTP origin. The Relay station also publishes its
+      # own actor records (and resolves remote ones), so the same overlay
+      # rule applies here.
+      PEERS_NODE_SERVER_BASEURL: ${PEERS_NODE_SERVER_BASEURL:-}
+      # Relay subserver TCP listener — projected into a relay.docker.yml overlay
+      # by entrypoint.sh. Only the Relay node sets this; stations leave it
+      # unset so their relay subserver's listener stays dormant.
+      RELAY_STREAM_LISTEN_ADDR: ${RELAY_STREAM_LISTEN_ADDR:-:4501}
     ports:
       - "${RELAY_STATION_PORT:-18081}:18080"
+      - "${LIBP2P_PORT:-4001}:4001"
+      # Relay subserver TCP stream listener for station mounts.
+      - "${RELAY_STREAM_PORT:-4501}:4501"
+    volumes:
+      - peers_data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--tries=1", "--timeout=3", "http://127.0.0.1:18080/sub-oss/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  # ── Webhook Receiver (auto-deploy on git push) ─────────────────
+  # Always-on infrastructure service. Listens for GitHub webhooks
+  # and triggers deploy-branch.sh for the pushed branch.
+  webhook:
+    image: almir/webhook:latest
+    profiles: [webhook]
+    volumes:
+      - ./webhook.json:/etc/webhook/hooks.json:ro
+      - ./deploy-branch.sh:/opt/peers-touch/deploy-branch.sh:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/peers-touch:/opt/peers-touch
+    ports:
+      - "${WEBHOOK_PORT:-9000}:9000"
+    environment:
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-change_me_in_production}
+    command: ["-hooks", "/etc/webhook/hooks.json", "-verbose", "-hotreload"]
     restart: unless-stopped
 
 volumes:
   pg_data:
+  peers_data:

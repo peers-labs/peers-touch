@@ -476,10 +476,12 @@ func (s *MomentService) hydratePostWith(ctx context.Context, p *domain.Post, vie
 	}
 	if a != nil {
 		out.Author = &model.PostAuthor{
-			Id:          fmt.Sprintf("%d", a.ID),
-			Username:    a.PreferredUsername,
-			DisplayName: a.Name,
-			AvatarUrl:   a.Icon,
+			Id:                fmt.Sprintf("%d", a.ID),
+			Username:          a.PreferredUsername,
+			DisplayName:       a.Name,
+			AvatarUrl:         a.Icon,
+			FederatedHandle:   federatedHandleOf(a),
+			HomeStationDomain: homeStationDomainOf(a),
 		}
 	}
 

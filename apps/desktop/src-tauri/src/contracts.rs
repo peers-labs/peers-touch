@@ -1379,3 +1379,26 @@ pub struct SocialCircleRemoveMembersInput {
 pub struct SocialCircleListMembersInput {
     pub circle_id: String,
 }
+
+// Federation gateway inputs (Tier A1 — Desktop FederationRuntime).
+//
+// Two non-trivial commands take input:
+//
+//   • `federation_update_visibility`: the dropdown label the user just
+//     picked ("hidden" | "by_handle" | "indexed"). Server validates the
+//     vocabulary; we only round-trip whatever the UI sent.
+//   • `federation_resolve`: the canonical "@user@host" handle the user
+//     typed into search / add-friend.
+//
+// The remaining two (`federation_get_self`, `federation_health`) take
+// no payload and reuse `tauri::command` argument injection only.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederationVisibilityInput {
+    pub visibility: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederationResolveInput {
+    pub handle: String,
+}

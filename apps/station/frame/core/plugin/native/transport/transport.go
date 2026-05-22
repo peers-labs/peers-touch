@@ -21,6 +21,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/transport"
 )
 
@@ -141,6 +142,12 @@ func (t *libp2pTransport) Init(opts ...option.Option) error {
 			libp2pOpts = append(libp2pOpts, libp2p.Identity(key))
 		}
 	}
+
+	// Node-level libp2p policy (announced public-addrs + ConnectionGater).
+	// Same hook the bootstrap subserver host uses, so a single federation
+	// configuration governs every libp2p host in the process. See
+	// apps/station/frame/core/plugin/native/federation/host_options.go.
+	libp2pOpts = append(libp2pOpts, federation.LibP2PHostOptions()...)
 
 	h, err := libp2p.New(libp2pOpts...)
 	if err != nil {

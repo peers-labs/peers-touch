@@ -61,6 +61,21 @@ const (
 	ErrorCode_ERROR_CODE_CREATE_COMMENT_FAILED              ErrorCode = 30015
 	ErrorCode_ERROR_CODE_GET_COMMENTS_FAILED                ErrorCode = 30016
 	ErrorCode_ERROR_CODE_DELETE_COMMENT_FAILED              ErrorCode = 30017
+	// ── Federation (40000s) ───────────────────────────────────────
+	// Phase E.bridge — public federation API errors. Distinct range
+	// because these are surface-level errors the Desktop client maps
+	// 1:1 to UI states (resolve form, visibility toggle, splash
+	// banner). Resolver-internal errors (signature verify, etc.)
+	// collapse to ERROR_CODE_FEDERATION_RESOLVE_FAILED so a single
+	// client branch covers all "non-recoverable upstream" cases.
+	ErrorCode_ERROR_CODE_FEDERATION_HANDLE_REQUIRED        ErrorCode = 40001
+	ErrorCode_ERROR_CODE_FEDERATION_INVALID_VISIBILITY     ErrorCode = 40002
+	ErrorCode_ERROR_CODE_FEDERATION_TOMBSTONED             ErrorCode = 40003
+	ErrorCode_ERROR_CODE_FEDERATION_NOT_READY              ErrorCode = 40004
+	ErrorCode_ERROR_CODE_FEDERATION_NOT_LOCAL              ErrorCode = 40005
+	ErrorCode_ERROR_CODE_FEDERATION_RESOLVE_FAILED         ErrorCode = 40006
+	ErrorCode_ERROR_CODE_FEDERATION_HANDLE_NOT_FOUND       ErrorCode = 40007
+	ErrorCode_ERROR_CODE_FEDERATION_LOCAL_IDENTITY_MISSING ErrorCode = 40008
 )
 
 // Enum value maps for ErrorCode.
@@ -103,6 +118,14 @@ var (
 		30015: "ERROR_CODE_CREATE_COMMENT_FAILED",
 		30016: "ERROR_CODE_GET_COMMENTS_FAILED",
 		30017: "ERROR_CODE_DELETE_COMMENT_FAILED",
+		40001: "ERROR_CODE_FEDERATION_HANDLE_REQUIRED",
+		40002: "ERROR_CODE_FEDERATION_INVALID_VISIBILITY",
+		40003: "ERROR_CODE_FEDERATION_TOMBSTONED",
+		40004: "ERROR_CODE_FEDERATION_NOT_READY",
+		40005: "ERROR_CODE_FEDERATION_NOT_LOCAL",
+		40006: "ERROR_CODE_FEDERATION_RESOLVE_FAILED",
+		40007: "ERROR_CODE_FEDERATION_HANDLE_NOT_FOUND",
+		40008: "ERROR_CODE_FEDERATION_LOCAL_IDENTITY_MISSING",
 	}
 	ErrorCode_value = map[string]int32{
 		"ERROR_CODE_UNSPECIFIED":                        0,
@@ -142,6 +165,14 @@ var (
 		"ERROR_CODE_CREATE_COMMENT_FAILED":              30015,
 		"ERROR_CODE_GET_COMMENTS_FAILED":                30016,
 		"ERROR_CODE_DELETE_COMMENT_FAILED":              30017,
+		"ERROR_CODE_FEDERATION_HANDLE_REQUIRED":         40001,
+		"ERROR_CODE_FEDERATION_INVALID_VISIBILITY":      40002,
+		"ERROR_CODE_FEDERATION_TOMBSTONED":              40003,
+		"ERROR_CODE_FEDERATION_NOT_READY":               40004,
+		"ERROR_CODE_FEDERATION_NOT_LOCAL":               40005,
+		"ERROR_CODE_FEDERATION_RESOLVE_FAILED":          40006,
+		"ERROR_CODE_FEDERATION_HANDLE_NOT_FOUND":        40007,
+		"ERROR_CODE_FEDERATION_LOCAL_IDENTITY_MISSING":  40008,
 	}
 )
 
@@ -243,8 +274,7 @@ const file_domain_error_error_proto_rawDesc = "" +
 	"\adetails\x18\x03 \x03(\v26.peers_touch.model.error.v1.ErrorResponse.DetailsEntryR\adetails\x1a:\n" +
 	"\fDetailsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\xe1\n" +
-	"\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\xc2\r\n" +
 	"\tErrorCode\x12\x1a\n" +
 	"\x16ERROR_CODE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14ERROR_CODE_UNDEFINED\x10\x01\x122\n" +
@@ -282,7 +312,15 @@ const file_domain_error_error_proto_rawDesc = "" +
 	"\x1eERROR_CODE_COMMENT_ID_REQUIRED\x10\xbe\xea\x01\x12&\n" +
 	" ERROR_CODE_CREATE_COMMENT_FAILED\x10\xbf\xea\x01\x12$\n" +
 	"\x1eERROR_CODE_GET_COMMENTS_FAILED\x10\xc0\xea\x01\x12&\n" +
-	" ERROR_CODE_DELETE_COMMENT_FAILED\x10\xc1\xea\x01BCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
+	" ERROR_CODE_DELETE_COMMENT_FAILED\x10\xc1\xea\x01\x12+\n" +
+	"%ERROR_CODE_FEDERATION_HANDLE_REQUIRED\x10\xc1\xb8\x02\x12.\n" +
+	"(ERROR_CODE_FEDERATION_INVALID_VISIBILITY\x10¸\x02\x12&\n" +
+	" ERROR_CODE_FEDERATION_TOMBSTONED\x10ø\x02\x12%\n" +
+	"\x1fERROR_CODE_FEDERATION_NOT_READY\x10ĸ\x02\x12%\n" +
+	"\x1fERROR_CODE_FEDERATION_NOT_LOCAL\x10Ÿ\x02\x12*\n" +
+	"$ERROR_CODE_FEDERATION_RESOLVE_FAILED\x10Ƹ\x02\x12,\n" +
+	"&ERROR_CODE_FEDERATION_HANDLE_NOT_FOUND\x10Ǹ\x02\x122\n" +
+	",ERROR_CODE_FEDERATION_LOCAL_IDENTITY_MISSING\x10ȸ\x02BCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
 
 var (
 	file_domain_error_error_proto_rawDescOnce sync.Once
