@@ -1,0 +1,44 @@
+[
+  {
+    "id": "peers-touch-deploy",
+    "execute-command": "/opt/peers-touch/deploy-branch.sh",
+    "command-working-directory": "/opt/peers-touch",
+    "pass-arguments-to-command": [
+      {
+        "source": "payload",
+        "name": "ref"
+      },
+      {
+        "source": "payload",
+        "name": "repository.ssh_url"
+      }
+    ],
+    "trigger-rule": {
+      "and": [
+        {
+          "match": {
+            "type": "payload-hmac-sha256",
+            "secret": "{{WEBHOOK_SECRET}}",
+            "parameter": {
+              "source": "header",
+              "name": "X-Hub-Signature-256"
+            }
+          }
+        },
+        {
+          "match": {
+            "type": "value",
+            "value": "push",
+            "parameter": {
+              "source": "header",
+              "name": "X-GitHub-Event"
+            }
+          }
+        }
+      ]
+    },
+    "response-message": "Deployment triggered",
+    "include-command-output-in-response": true,
+    "trigger-rule-mismatch-http-response-code": 403
+  }
+]

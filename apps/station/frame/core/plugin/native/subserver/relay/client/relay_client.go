@@ -25,6 +25,17 @@ import (
 var (
 	ErrHandshakeRejected = errors.New("handshake rejected by relay")
 	ErrDialFailed        = errors.New("failed to dial relay")
+	// ErrNotConnected is returned by Publish when there is no active
+	// stream to the relay. Callers (e.g. the locator hook) should treat
+	// this as a soft failure: the next periodic republish will re-emit
+	// the visibility change and downstream caches still age out via
+	// TTL.
+	//
+	// The federation package re-exports this as
+	// federation.ErrRelayNotConnected so consumers can errors.Is
+	// without importing the subserver. The two values must remain
+	// equal — see the adapter in relay-client/subserver.go.
+	ErrNotConnected = errors.New("relay-client: not connected")
 )
 
 // Dispatcher is called for each incoming request frame from the relay.
@@ -33,6 +44,14 @@ type Dispatcher func(ctx context.Context, req *protocol.RequestFrame) (statusCod
 // TokenRefresher returns a fresh relay token when the current one is near expiry.
 type TokenRefresher func(ctx context.Context, currentToken string) (newToken string, err error)
 
+// BroadcastHandler is invoked when the relay forwards a Broadcast
+// frame to this station. `originPeerID` is the publisher's
+// authenticated peer id (relay-stamped). Implementations should
+// dispatch by topic and return promptly — the read loop is blocked
+// until this returns. Long-running work belongs in a separate
+// goroutine launched from the handler.
+type BroadcastHandler func(ctx context.Context, originPeerID, topic string, body []byte)
+
 type Config struct {
 	RelayAddr     string
 	RelayToken    string
@@ -40,6 +59,11 @@ type Config struct {
 
 	Dispatcher     Dispatcher
 	TokenRefresher TokenRefresher
+
+	// BroadcastHandler receives pub/sub events forwarded by the relay
+	// (Tier C1: federation invalidation). Optional — when nil, all
+	// inbound Broadcast frames are dropped with a warn log.
+	BroadcastHandler BroadcastHandler
 
 	InitialBackoff time.Duration
 	MaxBackoff     time.Duration
@@ -50,7 +74,7 @@ type Config struct {
 	TokenRefreshInterval time.Duration
 
 	// TLS (Block 8): if true, dial with TLS; InsecureSkipVerify is for dev only.
-	UseTLS             bool
+	UseTLS                bool
 	TLSInsecureSkipVerify bool
 }
 
@@ -101,6 +125,42 @@ func (c *Client) Stop() {
 		_ = c.conn.Close()
 	}
 	c.mu.Unlock()
+}
+
+// Publish writes a Broadcast frame on the active relay stream. The
+// `originPeerID` field is left blank — the relay will stamp it from
+// the authenticated handshake before fan-out.
+//
+// Returns ErrNotConnected if the relay stream is currently down. The
+// publish path is best-effort by design: if the relay is unreachable
+// we accept the cache-staleness window (capped by republish + TTL).
+//
+// Thread-safe — multiple goroutines can Publish concurrently. The
+// underlying writeMu serialises all writes to the conn.
+func (c *Client) Publish(ctx context.Context, topic string, body []byte) error {
+	c.mu.Lock()
+	conn := c.conn
+	c.mu.Unlock()
+	if conn == nil {
+		return ErrNotConnected
+	}
+
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	// Brief deadline so a misbehaving relay can't stall the caller
+	// (visibility flips run on the user-visible PUT path).
+	_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	err := protocol.WriteBroadcastFrame(conn, topic, "", body)
+	_ = conn.SetWriteDeadline(time.Time{})
+	if err != nil {
+		// A write failure here means the conn is broken; the read
+		// loop will detect it on the next ReadFrame and the
+		// connectLoop will re-handshake. We just propagate the error
+		// up — the publisher decides whether to retry or fall through
+		// to the slow path.
+		return fmt.Errorf("relay-client: publish topic=%s: %w", topic, err)
+	}
+	return nil
 }
 
 func (c *Client) connectLoop(ctx context.Context) {
@@ -254,6 +314,19 @@ func (c *Client) readLoop(ctx context.Context, br *bufio.Reader, conn net.Conn) 
 
 		case *protocol.PongFrame:
 			// Handled internally — ignore.
+
+		case *protocol.BroadcastFrame:
+			// Tier C1 — pub/sub. The handler is invoked off the read
+			// loop so blocking work (DB lookups, fedcache eviction)
+			// cannot stall heartbeat / response dispatch on this
+			// connection. We deliberately mirror the RequestFrame
+			// pattern above (`go c.handleRequest(...)`).
+			if c.cfg.BroadcastHandler != nil {
+				go c.cfg.BroadcastHandler(ctx, f.OriginPeerID, f.Topic, f.Body)
+			} else {
+				logger.Warnf(ctx, "[relay-client] dropped broadcast topic=%s origin=%s body_len=%d (no handler)",
+					f.Topic, f.OriginPeerID, len(f.Body))
+			}
 
 		default:
 			logger.Warnf(ctx, "[relay-client] unexpected frame type: %T", f)

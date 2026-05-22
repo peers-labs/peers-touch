@@ -1,42 +1,27 @@
 import { createElement, useEffect, useRef } from 'react'
+import type { LynxHostElement as LynxHostElementType } from './lynx-host-element'
 
 interface LynxHostProps {
   appletId: string
-  src: string
-  title?: string
+  url: string
   style?: React.CSSProperties
   onLoad?: () => void
   onError?: (error: Error) => void
 }
 
-type LynxHostElement = HTMLElement & {
-  src?: string
-  appletId?: string
-  title?: string
-}
-
-const LynxHost: React.FC<LynxHostProps> = ({
-  appletId,
-  src,
-  title,
-  style,
-  onLoad,
-  onError,
-}) => {
-  const hostRef = useRef<LynxHostElement | null>(null)
+/**
+ * React wrapper for the <lynx-host> Custom Element.
+ * Sets attributes imperatively via ref (React does not natively handle CE properties).
+ */
+const LynxHost: React.FC<LynxHostProps> = ({ appletId, url, style, onLoad, onError }) => {
+  const hostRef = useRef<LynxHostElementType | null>(null)
 
   useEffect(() => {
     const host = hostRef.current
-    if (!host) {
-      return
-    }
+    if (!host) return
 
-    host.setAttribute('src', src)
     host.setAttribute('applet-id', appletId)
-    host.setAttribute('title', title || appletId)
-    host.src = src
-    host.appletId = appletId
-    host.title = title || appletId
+    host.setAttribute('url', url)
 
     const handleLoad = () => onLoad?.()
     const handleError = (event: Event) => {
@@ -50,7 +35,7 @@ const LynxHost: React.FC<LynxHostProps> = ({
       host.removeEventListener('load', handleLoad)
       host.removeEventListener('error', handleError)
     }
-  }, [appletId, onError, onLoad, src, title])
+  }, [appletId, url, onLoad, onError])
 
   return createElement('lynx-host', { ref: hostRef, style })
 }

@@ -13,7 +13,7 @@ import {
   Code, PenTool, Clock, Shield, ShieldCheck, File,
   Edit, Package, Plus, Send, RefreshCw,
   GitBranch, Image, Trash2, Server, AlertTriangle, RotateCcw,
-  Database,
+  Database, Network,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useSettingsStore } from '../store/settings';
@@ -25,6 +25,7 @@ import { PageHeader } from '../components/PageHeader';
 import { LanguageSwitcher } from '../components/common/LanguageSwitcher';
 import { log } from '../utils/logger';
 import { SettingsContainer, SettingsSection, SettingsItemCard } from '../components/settings/SettingsLayout';
+import { FederationTab } from '../components/settings/FederationTab';
 import { usePrefetch } from '../kernel/usePrefetch';
 
 const { Text } = Typography;
@@ -79,6 +80,16 @@ function useSettingsSections(): SectionDef[] {
 
     const localSections: SectionDef[] = [
       {
+        key: 'federation',
+        label: t('settings.tab.federation', { defaultValue: 'Federation' }),
+        icon: Network,
+        // Slot between built-in `account` (registry order, 5–10) and
+        // `general` so the user sees their identity → federation
+        // → general flow naturally.
+        order: 20,
+        render: () => <FederationTab />,
+      },
+      {
         key: 'statistics',
         label: t('settings.tab.statistics'),
         icon: BarChart3,
@@ -130,7 +141,7 @@ function useTabGroups(): TabGroupDef[] {
         key: 'general',
         label: t('settings.group.general'),
         icon: Settings,
-        sectionKeys: ['account', 'general'],
+        sectionKeys: ['account', 'federation', 'general'],
       },
       {
         key: 'ai',
@@ -165,7 +176,7 @@ function useTabGroups(): TabGroupDef[] {
     ];
 
     // Only keep section keys that actually exist in the registry or local definitions
-    const knownKeys = new Set([...allSections, 'statistics', 'applets', 'general', 'tools', 'help']);
+    const knownKeys = new Set([...allSections, 'federation', 'statistics', 'applets', 'general', 'tools', 'help']);
     return groups.map((g) => ({
       ...g,
       sectionKeys: g.sectionKeys.filter((k) => knownKeys.has(k)),

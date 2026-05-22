@@ -42,9 +42,12 @@ const (
 	DefaultPasswordMaxLength = 20
 )
 
+// ActorSignParams is the legacy struct-binding shape kept for HTTP form
+// compatibility. The proto-backed ActorSignRequest is the canonical
+// signup carrier; new code should not depend on this type.
 type ActorSignParams struct {
 	Params
-	Name     string `json:"name" form:"name"` // Will be base64 encoded
+	Name     string `json:"name" form:"name"`
 	Email    string `json:"email" form:"email"`
 	Password string `json:"password" form:"password"`
 }
@@ -57,19 +60,14 @@ type ActorLoginParams struct {
 }
 
 func (actor ActorSignParams) Check() error {
-	// Validate and encode name (5-20 characters, base64 encoded)
-	encodedName, err := validator.ValidateName(actor.Name)
-	if err != nil {
+	if err := validator.ValidateName(actor.Name); err != nil {
 		return err
 	}
-	actor.Name = encodedName // Update to base64 encoded version
 
-	// Validate email format
 	if err := validator.ValidateEmail(actor.Email); err != nil {
 		return ErrActorInvalidEmail
 	}
 
-	// Validate password using default pattern
 	config := &validator.PasswordConfig{
 		Pattern:   DefaultPasswordPattern,
 		MinLength: DefaultPasswordMinLength,

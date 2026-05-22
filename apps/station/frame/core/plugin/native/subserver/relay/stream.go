@@ -39,6 +39,20 @@ var (
 // StatusCallback is invoked when a stream goes online/offline.
 type StatusCallback func(ctx context.Context, peerID string, online bool)
 
+// BroadcastCallback is invoked by the readLoop when a station
+// publishes a Broadcast frame on its stream. The relay (StreamManager)
+// uses this hook to fan the event out to all OTHER connected streams,
+// stamped with the authenticated `originPeerID`.
+//
+// The dispatcher invokes this callback in a fresh goroutine (see
+// readLoop's BroadcastFrame case), so the callback MAY perform
+// blocking work; it must NOT, however, write to the *publisher's*
+// stream (e.peerID) from inside the callback because that would
+// require the same writeMu the readLoop's pong path also uses.
+// Callbacks must also tolerate being invoked rapidly — there's no
+// rate-limiting in the codec layer.
+type BroadcastCallback func(ctx context.Context, originPeerID, topic string, body []byte)
+
 // pendingRequest is a slot in the response dispatch table.
 type pendingRequest struct {
 	ch chan *protocol.ResponseFrame
@@ -73,21 +87,27 @@ type streamEntry struct {
 	// ctx/cancel for the entry's lifetime (tied to parent context).
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// onBroadcast is the relay-side fan-out hook. Inbound Broadcast
+	// frames are dispatched here verbatim so the StreamManager can
+	// fan them out to siblings. May be nil during tests.
+	onBroadcast BroadcastCallback
 }
 
 // newStreamEntry creates and starts a stream entry. The readLoop goroutine
 // begins immediately — the entry is "live" after this call.
-func newStreamEntry(parentCtx context.Context, peerID string, conn net.Conn, maxConcurrent int) *streamEntry {
+func newStreamEntry(parentCtx context.Context, peerID string, conn net.Conn, maxConcurrent int, onBroadcast BroadcastCallback) *streamEntry {
 	ctx, cancel := context.WithCancel(parentCtx)
 	e := &streamEntry{
-		peerID:    peerID,
-		conn:      conn,
-		mountedAt: time.Now(),
-		pending:   make(map[uint32]*pendingRequest),
-		semaphore: make(chan struct{}, maxConcurrent),
-		done:      make(chan struct{}),
-		ctx:       ctx,
-		cancel:    cancel,
+		peerID:      peerID,
+		conn:        conn,
+		mountedAt:   time.Now(),
+		pending:     make(map[uint32]*pendingRequest),
+		semaphore:   make(chan struct{}, maxConcurrent),
+		done:        make(chan struct{}),
+		ctx:         ctx,
+		cancel:      cancel,
+		onBroadcast: onBroadcast,
 	}
 	e.lastPong.Store(time.Now())
 	go e.readLoop()
@@ -124,6 +144,20 @@ func (e *streamEntry) readLoop() {
 
 		case *protocol.PongFrame:
 			e.lastPong.Store(time.Now())
+
+		case *protocol.BroadcastFrame:
+			// Tier C1: fan-out is delegated to the StreamManager via
+			// onBroadcast, dispatched off the read loop so a slow
+			// sibling cannot stall this stream's heartbeat or
+			// response dispatch. We *deliberately* discard whatever
+			// origin_peer_id the publisher sent — the relay is the
+			// authority for that field — and pass our authenticated
+			// peer id into the callback instead.
+			if e.onBroadcast != nil {
+				go e.onBroadcast(e.ctx, e.peerID, f.Topic, f.Body)
+			} else {
+				logger.Warnf(e.ctx, "[stream] broadcast from %s topic=%s but no fan-out hook installed", e.peerID, f.Topic)
+			}
 
 		default:
 			logger.Warnf(e.ctx, "[stream] unexpected frame type for %s: %T", e.peerID, f)
@@ -227,6 +261,19 @@ func (e *streamEntry) WritePing(reqID uint32) error {
 	return protocol.WritePing(e.conn, reqID)
 }
 
+// WriteBroadcast sends a Broadcast frame to this station, stamping
+// `originPeerID` (the authenticated publisher) before write. The caller
+// is responsible for filtering out the publisher's own stream so we
+// don't echo events back to the source.
+func (e *streamEntry) WriteBroadcast(topic, originPeerID string, body []byte) error {
+	if e.closed.Load() {
+		return ErrStreamClosed
+	}
+	e.writeMu.Lock()
+	defer e.writeMu.Unlock()
+	return protocol.WriteBroadcastFrame(e.conn, topic, originPeerID, body)
+}
+
 // Close marks the entry as closed, cancels context, and closes the conn.
 // readLoop will exit on its own when the conn is closed.
 func (e *streamEntry) Close() {
@@ -275,8 +322,17 @@ type StreamManager struct {
 
 	maxConcurrentPerStation int
 	callback                StatusCallback
+
+	// allowedBroadcastTopics gates which Broadcast topics the relay is
+	// willing to fan out. Empty map = deny-by-default (no broadcast).
+	// Tier C1 ships only one topic; future event types must be added
+	// here to be relayed.
+	allowedBroadcastTopics map[string]struct{}
 }
 
+// NewStreamManager builds a manager with the supplied status callback
+// and concurrency budget. Broadcast topics are off by default —
+// callers wanting pub/sub must set them via SetAllowedBroadcastTopics.
 func NewStreamManager(cb StatusCallback, maxConcurrentPerStation int) *StreamManager {
 	if maxConcurrentPerStation <= 0 {
 		maxConcurrentPerStation = 64
@@ -285,14 +341,47 @@ func NewStreamManager(cb StatusCallback, maxConcurrentPerStation int) *StreamMan
 		streams:                 make(map[string]*streamEntry),
 		maxConcurrentPerStation: maxConcurrentPerStation,
 		callback:                cb,
+		allowedBroadcastTopics:  make(map[string]struct{}),
 	}
+}
+
+// SetAllowedBroadcastTopics replaces the topic allow-list. Calling
+// this with an empty list re-enables deny-by-default.
+//
+// The allow-list is the relay's only pub/sub policy gate today; we
+// keep it deliberately simple because Tier C1 has exactly one topic.
+// Per-station rate-limits / per-topic ACLs land in a later tier.
+func (sm *StreamManager) SetAllowedBroadcastTopics(topics ...string) {
+	next := make(map[string]struct{}, len(topics))
+	for _, t := range topics {
+		if t == "" {
+			continue
+		}
+		next[t] = struct{}{}
+	}
+	sm.mu.Lock()
+	sm.allowedBroadcastTopics = next
+	sm.mu.Unlock()
+}
+
+// IsBroadcastTopicAllowed reports whether the relay is configured to
+// fan out the given topic. Used by the broadcast callback to drop
+// off-policy publishes early.
+func (sm *StreamManager) IsBroadcastTopicAllowed(topic string) bool {
+	sm.mu.RLock()
+	_, ok := sm.allowedBroadcastTopics[topic]
+	sm.mu.RUnlock()
+	return ok
 }
 
 // Add registers (or replaces) a stream for the given peerID.
 // If an old stream exists it is closed first.
 // The new entry starts its readLoop immediately.
 func (sm *StreamManager) Add(ctx context.Context, peerID string, conn net.Conn) {
-	entry := newStreamEntry(ctx, peerID, conn, sm.maxConcurrentPerStation)
+	// We bind the broadcast hook here (not in NewStreamManager) so
+	// each entry's readLoop dispatches into the same fan-out path,
+	// without the entry having to know about its peers.
+	entry := newStreamEntry(ctx, peerID, conn, sm.maxConcurrentPerStation, sm.handleInboundBroadcast)
 
 	sm.mu.Lock()
 	if old, exists := sm.streams[peerID]; exists {
@@ -305,6 +394,69 @@ func (sm *StreamManager) Add(ctx context.Context, peerID string, conn net.Conn) 
 		sm.callback(ctx, peerID, true)
 	}
 	logger.Infof(ctx, "[stream] added stream for %s", peerID)
+}
+
+// handleInboundBroadcast is the readLoop callback for Broadcast
+// frames. It applies the topic allow-list, then fans the event out to
+// every registered stream EXCEPT the publisher (we don't echo).
+//
+// `originPeerID` is the authenticated publisher (set by Add via the
+// entry callback closure) — never trust whatever the publisher might
+// have placed in the inbound frame.
+func (sm *StreamManager) handleInboundBroadcast(ctx context.Context, originPeerID, topic string, body []byte) {
+	if !sm.IsBroadcastTopicAllowed(topic) {
+		// We still record the topic the publisher used — cardinality
+		// is bounded by the publisher's frame parser (max 128 bytes,
+		// see protocol.MaxBroadcastTopicLen) AND by the fact that
+		// any unknown topic is a config bug we want to surface rather
+		// than aggregate away.
+		metBroadcastReceived.Inc(topic, broadcastResultDroppedDisallowed)
+		logger.Warnf(ctx, "[stream] dropping broadcast from %s on disallowed topic %q", originPeerID, topic)
+		return
+	}
+
+	metBroadcastReceived.Inc(topic, broadcastResultAllowed)
+
+	// Snapshot the peer list under the read lock. We don't hold the
+	// lock during writes because per-entry writeMu is what serialises
+	// them, and a long broadcast must not block Add/Remove.
+	sm.mu.RLock()
+	peers := make([]*streamEntry, 0, len(sm.streams))
+	for pid, e := range sm.streams {
+		if pid == originPeerID || e.closed.Load() {
+			continue
+		}
+		peers = append(peers, e)
+	}
+	sm.mu.RUnlock()
+
+	// Fan-out cardinality at dispatch time. Recorded BEFORE the
+	// goroutines run so a per-write failure doesn't bias the
+	// histogram; the per-write outcome counter below tells you how
+	// many of those siblings actually got the frame.
+	metBroadcastFanoutSize.Observe(float64(len(peers)), topic)
+
+	// Each per-peer WriteBroadcast acquires that peer's writeMu, which
+	// can be held for several seconds by an in-flight HTTP forward.
+	// Issuing the writes in parallel goroutines means one stuck sibling
+	// cannot head-of-line-block its neighbours; logging happens
+	// per-goroutine. We bound concurrency only by the live peer count —
+	// fan-out volume is intrinsically capped by topic allow-list +
+	// 64KB body limit + publisher rate.
+	for _, e := range peers {
+		go func(target *streamEntry) {
+			if err := target.WriteBroadcast(topic, originPeerID, body); err != nil {
+				metBroadcastForwarded.Inc(topic, broadcastResultError)
+				logger.Warnf(ctx, "[stream] broadcast write to %s failed (topic=%s origin=%s): %v",
+					target.peerID, topic, originPeerID, err)
+				return
+			}
+			metBroadcastForwarded.Inc(topic, broadcastResultOK)
+		}(e)
+	}
+
+	logger.Debugf(ctx, "[stream] broadcast topic=%s origin=%s fanout_count=%d body_len=%d",
+		topic, originPeerID, len(peers), len(body))
 }
 
 // Remove closes and deletes the stream for peerID.
@@ -385,13 +537,21 @@ func (sm *StreamManager) Count() int {
 }
 
 // PingAll sends a Ping to every stream and checks liveness based on the last
-// Pong timestamp. Streams that haven't responded within timeout are removed.
-// Returns the number of cleaned streams.
+// Pong timestamp. Streams that haven't responded within `interval + timeout`
+// are removed.
+//
+// The cutoff is `interval + timeout`, NOT `timeout` alone, because a healthy
+// pong cycle looks like: at t=N we send a ping and (within timeout) record
+// lastPong; at t=N+interval we run PingAll again and lastPong is `interval`
+// old by construction. If we used `now - timeout` as the cutoff we would
+// kill every healthy stream on the very next cycle. Initial lastPong is
+// stored at stream creation, so the same `interval + timeout` budget gives
+// brand-new streams their first full cycle to handshake.
 //
 // Unlike the old implementation, this does NOT lock each entry.mu — it simply
 // writes a Ping (via writeMu inside WritePing) and checks lastPong on the
 // next round. This means PingAll does not block ongoing Forward calls.
-func (sm *StreamManager) PingAll(ctx context.Context, timeout time.Duration) int {
+func (sm *StreamManager) PingAll(ctx context.Context, interval, timeout time.Duration) int {
 	sm.mu.RLock()
 	snapshot := make([]*streamEntry, 0, len(sm.streams))
 	for _, e := range sm.streams {
@@ -400,7 +560,7 @@ func (sm *StreamManager) PingAll(ctx context.Context, timeout time.Duration) int
 	sm.mu.RUnlock()
 
 	var failed []string
-	cutoff := time.Now().Add(-timeout)
+	cutoff := time.Now().Add(-(interval + timeout))
 
 	for _, e := range snapshot {
 		if e.closed.Load() {
@@ -409,7 +569,7 @@ func (sm *StreamManager) PingAll(ctx context.Context, timeout time.Duration) int
 
 		// Check if last pong is too old (station not responding).
 		if e.LastPong().Before(cutoff) {
-			logger.Warnf(ctx, "[stream] no pong from %s for %v, removing", e.peerID, timeout)
+			logger.Warnf(ctx, "[stream] no pong from %s within %v, removing", e.peerID, interval+timeout)
 			failed = append(failed, e.peerID)
 			continue
 		}

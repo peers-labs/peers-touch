@@ -699,14 +699,19 @@ func (x *GetFollowingResponse) GetTotal() int32 {
 }
 
 type Follower struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
-	Username      string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	AvatarUrl     string                 `protobuf:"bytes,4,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
-	FollowedAt    *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=followed_at,json=followedAt,proto3" json:"followed_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ActorId     string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Username    string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
+	DisplayName string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	AvatarUrl   string                 `protobuf:"bytes,4,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
+	FollowedAt  *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=followed_at,json=followedAt,proto3" json:"followed_at,omitempty"`
+	// Federation identity (Tier B social-graph extension). See PostAuthor
+	// in post.proto for the contract — both fields are additive, empty
+	// for pre-backfill rows, and ignored by older clients.
+	FederatedHandle   string `protobuf:"bytes,6,opt,name=federated_handle,proto3" json:"federated_handle,omitempty"`
+	HomeStationDomain string `protobuf:"bytes,7,opt,name=home_station_domain,proto3" json:"home_station_domain,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Follower) Reset() {
@@ -774,15 +779,33 @@ func (x *Follower) GetFollowedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Follower) GetFederatedHandle() string {
+	if x != nil {
+		return x.FederatedHandle
+	}
+	return ""
+}
+
+func (x *Follower) GetHomeStationDomain() string {
+	if x != nil {
+		return x.HomeStationDomain
+	}
+	return ""
+}
+
 type Following struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
-	Username      string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	AvatarUrl     string                 `protobuf:"bytes,4,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
-	FollowedAt    *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=followed_at,json=followedAt,proto3" json:"followed_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ActorId     string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Username    string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
+	DisplayName string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	AvatarUrl   string                 `protobuf:"bytes,4,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
+	FollowedAt  *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=followed_at,json=followedAt,proto3" json:"followed_at,omitempty"`
+	// Federation identity (Tier B social-graph extension). See PostAuthor
+	// in post.proto for the contract.
+	FederatedHandle   string `protobuf:"bytes,6,opt,name=federated_handle,proto3" json:"federated_handle,omitempty"`
+	HomeStationDomain string `protobuf:"bytes,7,opt,name=home_station_domain,proto3" json:"home_station_domain,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Following) Reset() {
@@ -850,6 +873,20 @@ func (x *Following) GetFollowedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Following) GetFederatedHandle() string {
+	if x != nil {
+		return x.FederatedHandle
+	}
+	return ""
+}
+
+func (x *Following) GetHomeStationDomain() string {
+	if x != nil {
+		return x.HomeStationDomain
+	}
+	return ""
+}
+
 var File_domain_social_relationship_proto protoreflect.FileDescriptor
 
 const file_domain_social_relationship_proto_rawDesc = "" +
@@ -897,7 +934,7 @@ const file_domain_social_relationship_proto_rawDesc = "" +
 	"\tfollowing\x18\x01 \x03(\v2&.peers_touch.model.social.v1.FollowingR\tfollowing\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
 	"nextCursor\x12\x14\n" +
-	"\x05total\x18\x03 \x01(\x05R\x05total\"\xc0\x01\n" +
+	"\x05total\x18\x03 \x01(\x05R\x05total\"\x9e\x02\n" +
 	"\bFollower\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12!\n" +
@@ -905,7 +942,9 @@ const file_domain_social_relationship_proto_rawDesc = "" +
 	"\n" +
 	"avatar_url\x18\x04 \x01(\tR\tavatarUrl\x12;\n" +
 	"\vfollowed_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"followedAt\"\xc1\x01\n" +
+	"followedAt\x12*\n" +
+	"\x10federated_handle\x18\x06 \x01(\tR\x10federated_handle\x120\n" +
+	"\x13home_station_domain\x18\a \x01(\tR\x13home_station_domain\"\x9f\x02\n" +
 	"\tFollowing\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12!\n" +
@@ -913,7 +952,9 @@ const file_domain_social_relationship_proto_rawDesc = "" +
 	"\n" +
 	"avatar_url\x18\x04 \x01(\tR\tavatarUrl\x12;\n" +
 	"\vfollowed_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"followedAtBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
+	"followedAt\x12*\n" +
+	"\x10federated_handle\x18\x06 \x01(\tR\x10federated_handle\x120\n" +
+	"\x13home_station_domain\x18\a \x01(\tR\x13home_station_domainBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
 
 var (
 	file_domain_social_relationship_proto_rawDescOnce sync.Once

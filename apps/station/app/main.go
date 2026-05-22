@@ -24,6 +24,7 @@ import (
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay"
+	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay-client"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/turn"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/postgres"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/sqlite"

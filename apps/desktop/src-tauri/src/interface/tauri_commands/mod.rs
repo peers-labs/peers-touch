@@ -11,6 +11,7 @@ pub mod channels;
 pub mod chat;
 pub mod cron;
 pub mod crypto;
+pub mod federation;
 pub mod friend_chat;
 pub mod frontend_log;
 pub mod group_chat;

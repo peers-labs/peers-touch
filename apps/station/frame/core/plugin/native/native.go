@@ -12,6 +12,7 @@ import (
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/store"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/bootstrap"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay"
+	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay-client"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/turn"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/server/hertz"
 	_ "github.com/peers-labs/peers-touch/station/frame/touch/activitypub/identity"

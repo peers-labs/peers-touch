@@ -1,13 +1,43 @@
-# Station Dockerfile — multi-stage build
+# Station Dockerfile — multi-stage build (offline-capable)
 # Build: from project root, e.g. docker build -f tooling/docker/station.Dockerfile .
+#
+# Design: uses only locally-cached base images (ubuntu:22.04). Go SDK is
+# downloaded from CN mirror (golang.google.cn) at build time — no Docker Hub
+# dependency. After the first successful build, all layers are cached locally.
 
-FROM golang:1.24-alpine AS builder
+ARG BASE_IMAGE=ubuntu:22.04
+ARG GO_VERSION=1.24.6
 
-RUN apk add --no-cache ca-certificates
+# ─── Stage 1: Builder ─────────────────────────────────────────────────────────
+FROM ${BASE_IMAGE} AS builder
 
-# Go proxy — placed after apk add so changing it doesn't invalidate apk cache
-ARG GOPROXY=https://goproxy.cn,https://goproxy.io,direct
+ARG GO_VERSION
+
+# Switch to TUNA mirror for apt (CN network)
+RUN sed -i 's|http://ports.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list
+
+# Install build essentials + download Go from Aliyun mirror (CN accessible)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates curl gcc && \
+    rm -rf /var/lib/apt/lists/* && \
+    ARCH=$(dpkg --print-architecture) && \
+    curl -fsSL "https://mirrors.aliyun.com/golang/go${GO_VERSION}.linux-${ARCH}.tar.gz" \
+      -o /tmp/go.tar.gz && \
+    tar -C /usr/local -xzf /tmp/go.tar.gz && \
+    rm /tmp/go.tar.gz
+
+ENV PATH="/usr/local/go/bin:${PATH}"
+
+# Go proxy — goproxy.cn for CN network; direct as fallback.
+ARG GOPROXY=https://goproxy.cn,direct
 ENV GOPROXY=${GOPROXY}
+
+# Disable GOSUMDB to avoid unreachable sum.golang.org — go.sum is committed.
+# GOTOOLCHAIN=local prevents auto-downloading newer Go toolchains.
+# GONOSUMCHECK=* skips checksum verification for any module.
+ENV GOSUMDB=off
+ENV GONOSUMCHECK=*
+ENV GOTOOLCHAIN=local
 
 WORKDIR /src
 
@@ -29,15 +59,17 @@ WORKDIR /src
 COPY apps/station/app/ ./station/app/
 COPY apps/station/frame/ ./station/frame/
 
+# Build — CGO_ENABLED=0 produces a static binary; GOARCH detected automatically.
 WORKDIR /src/station/app
-RUN go mod tidy
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/peers-touch-station .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/peers-touch-station .
 
-# ---
+# ─── Stage 2: Runtime ──────────────────────────────────────────────────────────
+FROM ${BASE_IMAGE}
 
-FROM alpine:3.20
-
-RUN apk add --no-cache ca-certificates tzdata
+RUN sed -i 's|http://ports.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates tzdata wget && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -46,11 +78,17 @@ COPY --from=builder /out/peers-touch-station .
 # Default conf directory — baked in at build time
 COPY apps/station/app/conf/ ./conf/
 
-# Entrypoint script: generates store.docker.yml from PEERS_DB_DSN env var
+# Persistent state lives under /app/data so a single Docker named volume
+# (`peers_data`) covers both libp2p identity keys (transport's
+# libp2pIdentity.key and bootstrap subserver's bootstrap.key). The
+# entrypoint emits paths.docker.yml to redirect the configured paths here.
+RUN mkdir -p /app/data && chmod 0700 /app/data
+
+# Entrypoint script: emits hierarchy-merge overlays (store/paths/bootstrap).
 COPY tooling/docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 18080
+EXPOSE 18080 4001
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["./peers-touch-station", "--config", "./conf/peers.yml"]

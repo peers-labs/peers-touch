@@ -11,7 +11,7 @@ peers:
       mastodon: true
       social: true
   run-mode: 2
-  includes: store.yml, store.local.yml, sub_aichat.yml, sub_bootstrap.yml, sub_turn.yml, sub_signaling.yml, log.yml, actor.yml, server.host.local.yml, sub_oss.yml, oauth.yml, sub_relay.yml, metrics.yml, sub_dashboard.yml
+  includes: federation.yml, store.yml, store.local.yml, sub_aichat.yml, sub_bootstrap.yml, sub_turn.yml, sub_signaling.yml, log.yml, actor.yml, server.host.local.yml, sub_oss.yml, oauth.yml, sub_relay.yml, sub_relay_client.yml, metrics.yml, sub_dashboard.yml
   config:
     hierarchy-merge: true
   node:
@@ -36,5 +36,6 @@ peers:
       interval: 180s
       native:
         mdns-enable: true
-        bootstrap-nodes:
-        #    - /ip4/10.0.0.20/tcp/4001/p2p/12D3KooWKTtX66KkP4sLEYCTDvxMiaCzQc1gCsKLed91CGPsVVkQ
+        # Federation seeds (formerly registry.native.bootstrap-nodes) have
+        # moved to peers.node.federation.bootstrap-nodes — see federation.yml.
+        # The registry now reads them from there at startup.

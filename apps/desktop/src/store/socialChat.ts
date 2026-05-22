@@ -1796,10 +1796,10 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     try {
       const profile = await api.actorGetMyProfile();
       const profileDid = profile?.id?.trim() || null;
-      set((state) => ({
+      set({
         currentUserProfile: profile,
-        currentUserDid: did,
-        conversationLocalState: loadConversationLocalState(did),
+        currentUserDid: profileDid,
+        conversationLocalState: loadConversationLocalState(profileDid),
       });
     } catch (error) {
       log.error('socialChat', 'loadCurrentUserProfile failed', error);
@@ -2187,7 +2187,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     if (!peerDid) throw new Error('Cannot delete friend without peer DID');
 
     try {
-      await api.friendChatDeleteFriend(peerDid);
+      await api.friendChatBlockUser(peerDid);
       set((prev) => {
         const nextLocalState = { ...prev.conversationLocalState };
         delete nextLocalState[conversationKey('friend', sessionUlid)];
@@ -2252,10 +2252,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
 
     for (const s of state.sessions) {
       if (state.conversationLocalState[conversationKey('friend', s.ulid)]?.hidden) continue;
-      const sa = s as any;
-      const peerAv = did
-        ? (s.participantADid === did ? sa.participantBAvatar : sa.participantAAvatar)
-        : (sa.participantBAvatar || sa.participantAAvatar || '');
+      const peer = peerOfSession(s, did);
       const loadedMsgs = state.messages[s.ulid];
       const friendPreview = loadedMsgs && loadedMsgs.length > 0
         ? { content: loadedMsgs[loadedMsgs.length - 1].content ?? '', type: Number((loadedMsgs[loadedMsgs.length - 1] as any).type ?? 1), senderDid: loadedMsgs[loadedMsgs.length - 1].senderDid ?? '' }

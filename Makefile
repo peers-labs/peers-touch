@@ -4,7 +4,8 @@
        test test-docker test-docker-keep test-docker-logs test-api test-unit test-coverage clean-test \
        init-dev skill-help \
        dev-web dev-app dev-dual \
-       docker-station docker-relay docker-all docker-infra docker-up docker-down docker-logs docker-ps docker-remotes
+       docker-station docker-relay docker-all docker-infra docker-up docker-down docker-logs docker-ps docker-remotes \
+       pt-up pt-down pt-status pt-desktop pt-bootstrap pt-discover-relay pt-relay-issue-invites
 
 # ─── Help ────────────────────────────────────────────────────
 
@@ -63,6 +64,21 @@ help:
 	@echo "  docker-ps         Show running containers"
 	@echo "  docker-remotes    List available Docker contexts"
 	@echo "                    Add REMOTE=dev-box to deploy remotely"
+	@echo ""
+	@echo "Test Environments (pt-*):"
+	@echo "  pt-bootstrap          Register the four docker contexts (one-time)"
+	@echo "  pt-up      ENV=<env>  Build + deploy a single env (or ENV=all)"
+	@echo "  pt-down    ENV=<env>  Tear down — host returns to neutral state"
+	@echo "  pt-status             Health check across all five envs"
+	@echo "  pt-desktop ENV=<env>  Launch the Desktop client paired with <env>"
+	@echo "  pt-discover-relay     After Relay is up: write its multiaddr into"
+	@echo "                        each Station's PEERS_BOOTSTRAP_NODES (libp2p"
+	@echo "                        seed). Run once before \`pt-up ENV=all\`."
+	@echo "  pt-relay-issue-invites  After Relay is up: mint admin invite tokens"
+	@echo "                          and write RELAY_CLIENT_* into each Station's"
+	@echo "                          .env so the relay-client subserver can mount."
+	@echo "                        envs: pt-relay / pt-station-1 / pt-station-2 /"
+	@echo "                              pt-station-relay-only / pt-station-local"
 	@echo ""
 
 # ─── Go tooling ──────────────────────────────────────────────
@@ -326,3 +342,41 @@ docker-ps:
 docker-remotes:
 	@echo "Available Docker contexts:"
 	@docker context ls --format "table {{.Name}}\t{{.DockerEndpoint}}\t{{.Current}}"
+
+# ─── Test Environment lifecycle (pt-*) ───────────────────────
+# All routing (env → docker context → profile → env file → health URL)
+# lives in tooling/scripts/pt-deploy.sh. The Makefile is the thin facade.
+#
+# Usage:
+#   make pt-bootstrap                           one-time docker context setup
+#   make pt-up      ENV=pt-station-1            deploy a single env
+#   make pt-up      ENV=all                     deploy all five envs
+#   make pt-down    ENV=pt-station-1            tear down a single env
+#   make pt-status                              health roll-up
+#   make pt-desktop ENV=pt-station-1            launch paired Desktop client
+#   make pt-discover-relay                      one-time libp2p seed wiring
+#                                              (see .localenv §Federation)
+
+pt-bootstrap:
+	bash tooling/scripts/pt-bootstrap.sh
+
+pt-up:
+	@if [ -z "$(ENV)" ]; then echo "Usage: make pt-up ENV=<env|all>"; exit 1; fi
+	bash tooling/scripts/pt-deploy.sh up $(ENV)
+
+pt-down:
+	@if [ -z "$(ENV)" ]; then echo "Usage: make pt-down ENV=<env|all>"; exit 1; fi
+	bash tooling/scripts/pt-deploy.sh down $(ENV)
+
+pt-status:
+	bash tooling/scripts/pt-deploy.sh status
+
+pt-desktop:
+	@if [ -z "$(ENV)" ]; then echo "Usage: make pt-desktop ENV=<env>"; exit 1; fi
+	bash tooling/scripts/pt-deploy.sh desktop $(ENV)
+
+pt-discover-relay:
+	bash tooling/scripts/pt-discover-relay.sh
+
+pt-relay-issue-invites:
+	bash tooling/scripts/pt-relay-issue-invites.sh

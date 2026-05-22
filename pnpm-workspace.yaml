@@ -1,8 +1,10 @@
 packages:
   - apps/desktop
+  - apps/desktop/applets-dev/*
   - apps/station/app/subserver/dashboard/web
   - packages/model
   - packages/sdk/ts
   - packages/ui/desktop
   - packages/applet-sdk
+  - packages/applet-contract
   - packages/applets/*

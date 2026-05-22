@@ -176,11 +176,13 @@ func (s *RelationshipService) GetFollowers(ctx context.Context, actorID uint64, 
 		}
 
 		follower := &model.Follower{
-			ActorId:     fmt.Sprintf("%d", follow.Follower.ID),
-			Username:    follow.Follower.PreferredUsername,
-			DisplayName: follow.Follower.Name,
-			AvatarUrl:   getAvatarURL(follow.Follower),
-			FollowedAt:  timestamppb.New(follow.CreatedAt),
+			ActorId:           fmt.Sprintf("%d", follow.Follower.ID),
+			Username:          follow.Follower.PreferredUsername,
+			DisplayName:       follow.Follower.Name,
+			AvatarUrl:         getAvatarURL(follow.Follower),
+			FollowedAt:        timestamppb.New(follow.CreatedAt),
+			FederatedHandle:   federatedHandleOf(follow.Follower),
+			HomeStationDomain: homeStationDomainOf(follow.Follower),
 		}
 		followers = append(followers, follower)
 	}
@@ -232,11 +234,13 @@ func (s *RelationshipService) GetFollowing(ctx context.Context, actorID uint64, 
 		}
 
 		f := &model.Following{
-			ActorId:     fmt.Sprintf("%d", follow.Following.ID),
-			Username:    follow.Following.PreferredUsername,
-			DisplayName: follow.Following.Name,
-			AvatarUrl:   getAvatarURL(follow.Following),
-			FollowedAt:  timestamppb.New(follow.CreatedAt),
+			ActorId:           fmt.Sprintf("%d", follow.Following.ID),
+			Username:          follow.Following.PreferredUsername,
+			DisplayName:       follow.Following.Name,
+			AvatarUrl:         getAvatarURL(follow.Following),
+			FollowedAt:        timestamppb.New(follow.CreatedAt),
+			FederatedHandle:   federatedHandleOf(follow.Following),
+			HomeStationDomain: homeStationDomainOf(follow.Following),
 		}
 		logger.Info(ctx, "Following user", "actorId", f.ActorId, "username", f.Username, "displayName", f.DisplayName, "displayNameBytes", []byte(f.DisplayName))
 		following = append(following, f)
@@ -262,4 +266,29 @@ func (s *RelationshipService) GetFollowing(ctx context.Context, actorID uint64, 
 
 func getAvatarURL(actor *db.Actor) string {
 	return actor.Icon
+}
+
+// federatedHandleOf returns the canonical "@user@host" form for an
+// actor, falling back to the empty string when the row pre-dates the
+// federation backfill. Wire layer treats "" as "not federated yet" and
+// renders just the local "@username".
+//
+// Kept inline (not a one-line accessor) so the social-graph hydrators
+// have a single hook if/when we need to compute the handle from a
+// remote_cached row whose `federated_handle` was lost during a manual
+// migration.
+func federatedHandleOf(a *db.Actor) string {
+	if a == nil {
+		return ""
+	}
+	return a.FederatedHandle
+}
+
+// homeStationDomainOf returns the DNS-style HTTP origin (no scheme)
+// of the actor's authoritative station. Empty for legacy rows.
+func homeStationDomainOf(a *db.Actor) string {
+	if a == nil {
+		return ""
+	}
+	return a.HomeStationDomain
 }

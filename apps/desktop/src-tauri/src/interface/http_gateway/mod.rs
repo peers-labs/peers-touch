@@ -1628,7 +1628,15 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Err(e) => return e,
             };
             match http_gateway_applet_context(state) {
-                Some(ctx) => to_json(app_applets::applets_invoke(ctx, input)),
+                Some(ctx) => {
+                    let data_dir = state
+                        .storage
+                        .dirs
+                        .get(&crate::infrastructure::storage::StorageKind::Data)
+                        .cloned()
+                        .unwrap_or_else(|| std::path::PathBuf::from("."));
+                    to_json(app_applets::applets_invoke(ctx, input, &data_dir))
+                }
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
