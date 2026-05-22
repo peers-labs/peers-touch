@@ -9,6 +9,14 @@ Thumbs.db
 *.db
 .localenv
 
+# Local secrets and certificates
+*.key
+*.pem
+*.jks
+*.keystore
+*.local.yml
+*.local.yaml
+
 # Docker env files containing real secrets (PEERS_AUTH_SECRET, PEERS_DB_PASSWORD).
 # .env.example stays committed as the template; everything else is local.
 tooling/docker/.env
