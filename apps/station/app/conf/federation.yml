@@ -1,0 +1,59 @@
+# Node-level libp2p federation policy. Single source of truth for
+# every libp2p host inside the process (bootstrap subserver host AND the
+# transport host that the registry uses).
+#
+# Operators do not normally edit this file directly: in Docker deployments
+# the entrypoint generates an overlay (federation.docker.yml) from
+# environment variables PEERS_BOOTSTRAP_NODES, PEERS_LIBP2P_PUBLIC_ADDRS,
+# PEERS_FEDERATION_DIRECT_OUTBOUND, PEERS_FEDERATION_DIRECT_INBOUND and
+# the hierarchy-merge engine layers it on top of these defaults.
+
+peers:
+  node:
+    federation:
+      # Federation seed multiaddrs. MUST include a /p2p/<peer-id>
+      # component. Every kad-DHT in the process (bootstrap subserver's
+      # DHT + registry's DHT) seeds from this list, and every libp2p
+      # ConnectionGater treats these peer IDs as the gater allow-list.
+      bootstrap-nodes: []
+      #  - /ip4/10.37.118.48/tcp/4001/p2p/12D3KooW.....
+
+      # Public multiaddrs this node announces to the libp2p network.
+      # Override libp2p's default "advertise everything I see locally"
+      # behaviour, which is critical under Docker/NAT where the local
+      # bridge IP (172.x) is not externally dialable. Empty list ⇒
+      # libp2p's own discovery is used (correct on bare metal).
+      public-addrs: []
+      #  - /ip4/10.37.118.48/tcp/4001
+      #  - /ip4/10.37.118.48/tcp/4002
+
+      # ConnectionGater outbound rule.
+      # true  ⇒ permissive: this node can dial any libp2p peer.
+      # false ⇒ outbound libp2p dials are restricted to bootstrap-nodes.
+      #         Used for "relay-only" stations that simulate
+      #         NAT/firewall-restricted operation.
+      direct-outbound: true
+
+      # ConnectionGater inbound rule.
+      # true  ⇒ permissive: this node accepts inbound connections from
+      #         any libp2p peer.
+      # false ⇒ inbound libp2p connections are restricted to
+      #         bootstrap-nodes only.
+      direct-inbound: true
+
+      # Locator republisher cadence (Phase D). The locator DHT records
+      # this node owns expire after libp2p's default 24h republish
+      # interval; the local republisher re-emits every visible local
+      # actor every `republish-interval-sec` seconds (default 12h, half
+      # the DHT expiry, so every record is at most one period away
+      # from the previous publish). Values < 30 are clamped by the
+      # republisher itself.
+      republish-interval-sec: 0    # 0 ⇒ use 12h default
+      republish-disabled: false    # leave false on every production node
+
+      # Resolver readiness gate (Phase E.2). Below this DHT routing
+      # table size the resolver returns 503 instead of stalling on
+      # an empty kad-DHT GetValue. 0 ⇒ use default of 1 (any one
+      # peer in the routing table suffices). Set to a negative value
+      # to disable the gate (legacy behaviour).
+      min-dht-peers: 0

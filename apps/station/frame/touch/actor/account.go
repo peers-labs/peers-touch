@@ -86,6 +86,13 @@ func SignUp(c context.Context, req *model.ActorSignRequest, baseURL string) erro
 
 	a.PTID = createdIdentity.PTID
 
+	// Federation columns (Phase A): populated from the bootstrap-published
+	// local identity. Defaulting to ACTOR_VISIBILITY_BY_HANDLE keeps the
+	// out-of-the-box behaviour aligned with the legacy ActorTouchMeta
+	// `Discoverable=true` default — operators who want hidden-by-default
+	// flip the column post-signup.
+	fillFederationFieldsForLocalSignUp(&a)
+
 	if err = rds.Create(&a).Error; err != nil {
 		log.Warnf(c, "[SignUp] Create actor err: %v", err)
 		return err
@@ -105,9 +112,20 @@ func SignUp(c context.Context, req *model.ActorSignRequest, baseURL string) erro
 	}
 
 	log.Infof(c, "[SignUp] Actor and meta created successfully for actor %s with peers ID %s", a.PreferredUsername, a.PTID)
+
+	// Federation locator publish — best-effort, async. SignUp returns
+	// success regardless of DHT state; the publisher is bound to the
+	// actor row so a later visibility flip will retry on the next call.
+	if a.Visibility == VisibilityByHandle || a.Visibility == VisibilityIndexed {
+		publishVisibilityAsync(a.ID)
+	}
 	return nil
 }
 
+// GetActorByName looks up a LOCAL actor by preferred_username. It scopes
+// to origin='local' because Phase D introduced remote_cached rows that
+// share the same handle namespace; without the filter a peer station's
+// "alice" cached locally could shadow this station's own "alice".
 func GetActorByName(c context.Context, name string) (*db.Actor, error) {
 	rds, err := store.GetRDS(c)
 	if err != nil {
@@ -116,7 +134,7 @@ func GetActorByName(c context.Context, name string) (*db.Actor, error) {
 	}
 
 	var presentActor db.Actor
-	if err = rds.Where("preferred_username = ?", name).First(&presentActor).Error; err != nil {
+	if err = rds.Where("preferred_username = ? AND origin = ?", name, OriginLocal).First(&presentActor).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}

@@ -293,9 +293,15 @@ func NewOSSSubServer(opts ...option.Option) server.Subserver {
 	// Federation key + peer-key persistence both moved to
 	// `frame/core/auth/federation` as part of the
 	// auth-unification refactor. The OSS subserver only owns
-	// the *cache* + the per-call business glue.
+	// the per-call business glue + the peer-key namespace.
+	//
+	// The federation KeyCache is the node-level singleton — see
+	// federation.Singleton() for the rationale. Constructing a
+	// per-OSS instance (the prior pattern) duplicated rotation
+	// fan-out with the locator publisher and profile builder, and
+	// leaked OSS's subserver-bound RDS into a node-level resource.
 	s.peerKeys = federation.NewPeerKeyStoreGORM(s.dbName)
-	s.fedCache = federation.NewKeyCache(federation.NewKeyStoreGORM(s.dbName))
+	s.fedCache = federation.Singleton()
 	s.localStationID = strings.TrimSpace(o.LocalStationID)
 	s.fileService = service.NewFileService(service.Config{
 		Files:         s.fileRepo,
@@ -659,9 +665,9 @@ func (s *ossSubServer) startWorkers(ctx context.Context) error {
 	logger.Infof(ctx, "[oss] %d background worker(s) started", len(workers))
 	return nil
 }
-func (s *ossSubServer) Status() server.Status          { return s.status }
-func (s *ossSubServer) Name() string                   { return "oss" }
-func (s *ossSubServer) Type() server.SubserverType     { return server.SubserverTypeHTTP }
+func (s *ossSubServer) Status() server.Status      { return s.status }
+func (s *ossSubServer) Name() string               { return "oss" }
+func (s *ossSubServer) Type() server.SubserverType { return server.SubserverTypeHTTP }
 func (s *ossSubServer) Address() server.SubserverAddress {
 	return server.SubserverAddress{Address: s.addrs}
 }

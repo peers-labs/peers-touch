@@ -1,0 +1,47 @@
+peers:
+  node:
+    server:
+      subserver:
+        relay-client:
+          # Baseline: relay-client is OFF for stand-alone Station deployments.
+          # Test environments enable it via the docker overlay
+          # (relay_client.docker.yml) emitted by tooling/docker/entrypoint.sh
+          # when RELAY_CLIENT_ENABLED=true.
+          enabled: false
+
+          # Network endpoints (must be set when enabled=true).
+          relay-url: ""
+          relay-stream-addr: ""
+
+          # Single-use admin invite. Issued via tooling/scripts/pt-relay-issue-invites.sh
+          # and consumed by the FIRST /api/v1/relay/register call. After that
+          # the relay_token at token-store-path is the source of truth.
+          invite-token: ""
+
+          # Human-readable label echoed in /api/v1/relay/mounts. Defaults to
+          # the station's compose project name when set via the docker overlay.
+          label: ""
+
+          # Loopback HTTP target for the dispatcher. Hertz serves at :18080
+          # by default (see peers.yml: peers.node.server.address).
+          local-http-port: 18080
+          local-http-timeout-sec: 30
+
+          # We resolve our own peer_id by polling the bootstrap subserver's
+          # info endpoint. The default points at the local Hertz; override
+          # when running in a separate process.
+          bootstrap-info-url: "http://127.0.0.1:18080/sub-bootstrap/info"
+
+          # Persistent relay_token. Lives under /app/data so the docker named
+          # volume preserves it across container recreation.
+          token-store-path: "data/relay_token"
+
+          # TLS for the TCP stream connection. The relay subserver supports
+          # the matching tls-cert-file / tls-key-file options on its side.
+          use-tls: false
+          tls-insecure-skip-verify: false
+
+          # Application-level heartbeat to /api/v1/relay/heartbeat. Must be
+          # smaller than the relay's HeartbeatTimeout (default 60s) so the
+          # mount stays Online in the relay's view.
+          heartbeat-interval-sec: 30

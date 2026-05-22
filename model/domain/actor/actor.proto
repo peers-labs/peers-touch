@@ -14,6 +14,38 @@ enum ActorKind {
   ACTOR_KIND_NODE = 6;
 }
 
+// ActorOrigin tells the consumer whether this actor row was authored on the
+// local station (local) or fetched from a peer station and cached locally
+// (remote_cached). Touch UIs use it to gate edit affordances; the locator
+// publisher uses it to refuse publishing remote-cached rows back into the DHT.
+enum ActorOrigin {
+  ACTOR_ORIGIN_UNSPECIFIED = 0;
+  ACTOR_ORIGIN_LOCAL = 1;
+  ACTOR_ORIGIN_REMOTE_CACHED = 2;
+}
+
+// ActorVisibility is the federation-discoverability state of an actor.
+//
+// ACTOR_VISIBILITY_HIDDEN     — never published to DHT, never resolvable
+//                               by handle from other stations.
+// ACTOR_VISIBILITY_BY_HANDLE  — published to the DHT under its federated
+//                               handle. Other stations can resolve it iff
+//                               they know the exact handle (no enumeration).
+// ACTOR_VISIBILITY_INDEXED    — same as BY_HANDLE plus opt-in to a future
+//                               directory-style index. Treated identically
+//                               to BY_HANDLE by the DHT publisher today;
+//                               the directory layer is Phase C.
+//
+// The ordering matters: hidden < by_handle < indexed. Numeric increases
+// monotonically widen visibility; the publisher uses this to decide whether
+// to publish or tombstone.
+enum ActorVisibility {
+  ACTOR_VISIBILITY_UNSPECIFIED = 0;
+  ACTOR_VISIBILITY_HIDDEN = 1;
+  ACTOR_VISIBILITY_BY_HANDLE = 2;
+  ACTOR_VISIBILITY_INDEXED = 3;
+}
+
 message ActorRef {
   uint64 actor_id = 1 [json_name = "actor_id"];
   string ptid = 2;
@@ -33,6 +65,16 @@ message Actor {
   uint64 actor_id = 9 [json_name = "actor_id"];
   string avatar = 10;
   ActorKind kind = 11;
+
+  // Federation extension fields. Populated for every actor row regardless of
+  // origin. For ACTOR_ORIGIN_LOCAL the home_station_* fields describe the
+  // current station; for ACTOR_ORIGIN_REMOTE_CACHED they describe the
+  // authoritative station that issued the locator record.
+  string federated_handle = 12 [json_name = "federated_handle"];          // e.g. "@alice@station-1.example"
+  string home_station_peer_id = 13 [json_name = "home_station_peer_id"]; // libp2p PeerID of the home station
+  string home_station_domain = 14 [json_name = "home_station_domain"];   // DNS-style domain of the home station
+  ActorVisibility visibility = 15;
+  ActorOrigin origin = 16;
 }
 
 message UserLink {

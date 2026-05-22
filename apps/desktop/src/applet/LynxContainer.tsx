@@ -3,6 +3,7 @@ import { Alert } from '@lobehub/ui'
 import { Card, Spin } from 'antd'
 import AppletManager from './AppletManager'
 import LynxHost from './LynxHost'
+import type { AppletInfo } from './types'
 
 interface LynxContainerProps {
   appletId: string
@@ -12,6 +13,10 @@ interface LynxContainerProps {
   onError?: (error: Error) => void
 }
 
+/**
+ * High-level container that loads an applet by ID and renders it via <lynx-host>.
+ * Resolves the bundle URL from the platform-specific load config in the manifest.
+ */
 const LynxContainer: React.FC<LynxContainerProps> = ({
   appletId,
   width = '100%',
@@ -21,39 +26,36 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
 }) => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
+  const [appletInfo, setAppletInfo] = useState<AppletInfo | null>(null)
   const appletManager = AppletManager.getInstance()
 
   useEffect(() => {
-    const loadApplet = async () => {
+    const load = async () => {
       try {
         setLoading(true)
         setError(null)
 
-        // 获取Applet信息
-        const appletInfo = appletManager.getAppletInfo(appletId)
-        if (!appletInfo) {
-          throw new Error(`Applet ${appletId} not found`)
+        const info = appletManager.getAppletInfo(appletId)
+        if (!info) {
+          throw new Error(`Applet "${appletId}" not found in registry`)
         }
 
-        // 加载Applet
         await appletManager.loadApplet(appletId)
-
+        setAppletInfo(info)
         setLoading(false)
-        onLoad?.()
       } catch (err) {
-        const error = err instanceof Error ? err : new Error('Failed to load applet')
-        setError(error)
-        onError?.(error)
+        const loadError = err instanceof Error ? err : new Error('Failed to load applet')
+        setError(loadError)
+        onError?.(loadError)
         setLoading(false)
       }
     }
 
-    loadApplet()
-
+    load()
     return () => {
       appletManager.unloadApplet(appletId)
     }
-  }, [appletId, appletManager, onError, onLoad])
+  }, [appletId, appletManager, onError])
 
   if (loading) {
     return (
@@ -63,12 +65,12 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
     )
   }
 
-  if (error) {
+  if (error || !appletInfo) {
     return (
       <Card style={{ width, height }}>
         <Alert
           message="Failed to load Applet"
-          description={error.message}
+          description={error?.message || 'Unknown error'}
           type="error"
           showIcon
         />
@@ -76,15 +78,27 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
     )
   }
 
-  const appletInfo = appletManager.getAppletInfo(appletId)
-  const appletEntry = appletInfo?.load?.entry || appletInfo?.main || 'index.html'
-  const appletUrl = `${appletInfo?.path}/${appletEntry}`
+  // Resolve bundle URL from platform-specific load config
+  const desktopLoad = appletInfo.load.desktop
+  if (!desktopLoad) {
+    return (
+      <Card style={{ width, height }}>
+        <Alert
+          message="Unsupported Platform"
+          description={`Applet "${appletId}" has no desktop load configuration`}
+          type="warning"
+          showIcon
+        />
+      </Card>
+    )
+  }
+
+  const bundleUrl = `${appletInfo.path}/${desktopLoad.entry}`
 
   return (
     <LynxHost
       appletId={appletId}
-      src={appletUrl}
-      title={appletInfo?.name || appletId}
+      url={bundleUrl}
       style={{
         width,
         height,
@@ -93,14 +107,11 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
         overflow: 'hidden',
       }}
       onLoad={() => {
-        setLoading(false)
         onLoad?.()
       }}
       onError={(hostError) => {
-        const nextError = hostError instanceof Error ? hostError : new Error('Failed to load Lynx Host')
-        setError(nextError)
-        setLoading(false)
-        onError?.(nextError)
+        setError(hostError)
+        onError?.(hostError)
       }}
     />
   )

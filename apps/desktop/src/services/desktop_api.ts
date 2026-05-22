@@ -55,6 +55,29 @@ export type {
   ActorProfile,
   Actor,
 } from '../gen/proto/domain/actor/actor_pb';
+import {
+  FederationSelfViewSchema,
+} from '../gen/proto/domain/federation/federation_self_pb';
+import {
+  FederationResolveViewSchema,
+} from '../gen/proto/domain/federation/federation_resolve_pb';
+import {
+  FederationHealthViewSchema,
+} from '../gen/proto/domain/federation/federation_health_pb';
+export {
+  FederationVisibility,
+  FederationVisibilityRequestSchema,
+} from '../gen/proto/domain/federation/federation_self_pb';
+export type {
+  FederationSelfView,
+  FederationVisibilityRequest,
+} from '../gen/proto/domain/federation/federation_self_pb';
+export type {
+  FederationResolveView,
+} from '../gen/proto/domain/federation/federation_resolve_pb';
+export type {
+  FederationHealthView,
+} from '../gen/proto/domain/federation/federation_health_pb';
 export type {
   FriendChatSession,
   FriendChatMessage,
@@ -3146,6 +3169,30 @@ export const api = {
     );
     return data;
   },
+
+  // Federation API (Tier A1) — proto-first end-to-end. The Rust shim
+  // already encodes a typed FederationSelfView / FederationResolveView /
+  // FederationHealthView; `invokeRustProto` decodes the byte stream back
+  // into a typed proto-es message so callers never touch JSON.
+  federationGetSelf: () =>
+    invokeRustProto('federation_get_self', FederationSelfViewSchema),
+
+  federationUpdateVisibility: (visibility: string) =>
+    invokeRustProto(
+      'federation_update_visibility',
+      FederationSelfViewSchema,
+      { visibility },
+    ),
+
+  federationResolve: (handle: string) =>
+    invokeRustProto(
+      'federation_resolve',
+      FederationResolveViewSchema,
+      { handle },
+    ),
+
+  federationHealth: () =>
+    invokeRustProto('federation_health', FederationHealthViewSchema),
 
   friendChatListSessions: (limit?: number, offset?: number) =>
     invokeRustProto('friend_chat_list_sessions', GetSessionsResponseSchema, { limit, offset }),

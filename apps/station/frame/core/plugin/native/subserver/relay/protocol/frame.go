@@ -14,27 +14,56 @@ import (
 //   + [payloadLen bytes payload]
 //
 // Frame types:
-//   0x01 Request  — relay forwards an HTTP request into the stream
-//   0x02 Response — station sends back the HTTP response
-//   0x03 Ping     — keepalive probe (no payload)
-//   0x04 Pong     — keepalive reply (no payload)
+//   0x01 Request   — relay forwards an HTTP request into the stream
+//   0x02 Response  — station sends back the HTTP response
+//   0x03 Ping      — keepalive probe (no payload)
+//   0x04 Pong      — keepalive reply (no payload)
+//   0x05 Broadcast — pub/sub event (Tier C1)
+//
+// Broadcast (Tier C1):
+//   Bidirectional. station → relay carries "publish on topic"; relay
+//   → station carries "broadcast received on topic", with the relay
+//   stamping `origin_peer_id` into the payload so receivers cannot be
+//   spoofed by a sibling station (the relay knows who you are from
+//   the handshake).
+//
+//   Wire payload layout:
+//     [2B topicLen][topic][2B originLen][origin_peer_id][4B bodyLen][body]
+//
+//   `topic` is a short ASCII string (e.g. "fed.invalidate.v1");
+//   `origin_peer_id` is empty on the station→relay leg and stamped by
+//   the relay before fan-out;
+//   `body` is opaque to the relay — receivers know how to decode it
+//   from the topic. Today: protobuf-serialised
+//   peers_touch.model.federation.v1.FederationInvalidation.
+//
+//   RequestID is unused for Broadcast (we use 0 by convention) — pub/sub
+//   has no request/response semantics.
 
 const (
 	FrameVersion byte = 0x01
 
-	TypeRequest  byte = 0x01
-	TypeResponse byte = 0x02
-	TypePing     byte = 0x03
-	TypePong     byte = 0x04
+	TypeRequest   byte = 0x01
+	TypeResponse  byte = 0x02
+	TypePing      byte = 0x03
+	TypePong      byte = 0x04
+	TypeBroadcast byte = 0x05
 
 	HeaderLen = 10 // version(1) + type(1) + requestID(4) + payloadLen(4)
 
 	// Safety limits to prevent OOM on malicious/corrupt frames.
 	MaxMethodLen  = 16
-	MaxPathLen    = 8 * 1024          // 8 KB
-	MaxHeadersLen = 256 * 1024        // 256 KB
-	MaxBodyLen    = 32 * 1024 * 1024  // 32 MB
-	MaxPayloadLen = 64 * 1024 * 1024  // 64 MB
+	MaxPathLen    = 8 * 1024         // 8 KB
+	MaxHeadersLen = 256 * 1024       // 256 KB
+	MaxBodyLen    = 32 * 1024 * 1024 // 32 MB
+	MaxPayloadLen = 64 * 1024 * 1024 // 64 MB
+
+	// Broadcast-specific limits. Topics are short labels; bodies stay
+	// well under the generic MaxBodyLen because invalidation payloads
+	// are tiny protobufs (<256B). Keeping these tight makes amplification
+	// abuse harder if a malicious station somehow gets a relay token.
+	MaxBroadcastTopicLen = 128
+	MaxBroadcastBodyLen  = 64 * 1024 // 64 KB
 )
 
 // ---- Typed frame structs ----
@@ -60,6 +89,23 @@ type PingFrame struct {
 
 type PongFrame struct {
 	RequestID uint32
+}
+
+// BroadcastFrame carries a pub/sub event over the relay-station stream.
+//
+// Direction-dependent fields:
+//   - station → relay: `OriginPeerID` is empty; the relay fills it
+//     from the handshake before fan-out.
+//   - relay → station: `OriginPeerID` is the publishing station's peer
+//     id, stamped by the relay. Receivers MUST cross-check this
+//     against any cached state (e.g. fedcache.home_station_peer_id)
+//     before acting on the event — the relay is trusted to identify
+//     the speaker, but only the speaker's home station has authority
+//     over its own actors.
+type BroadcastFrame struct {
+	Topic        string
+	OriginPeerID string
+	Body         []byte
 }
 
 // ---- Read / Write helpers ----
@@ -102,6 +148,8 @@ func ReadFrame(r io.Reader) (interface{}, error) {
 		return &PingFrame{RequestID: reqID}, nil
 	case TypePong:
 		return &PongFrame{RequestID: reqID}, nil
+	case TypeBroadcast:
+		return parseBroadcastPayload(payload)
 	default:
 		return nil, fmt.Errorf("unknown frame type 0x%02x", typ)
 	}
@@ -131,6 +179,20 @@ func WritePing(w io.Writer, reqID uint32) error {
 
 func WritePong(w io.Writer, reqID uint32) error {
 	return writeRaw(w, TypePong, reqID, nil)
+}
+
+// WriteBroadcastFrame serialises a pub/sub event. RequestID is unused
+// for Broadcast frames; we wire 0 by convention.
+//
+// The station→relay path leaves originPeerID empty; the relay
+// rewrites it to the authenticated peer id before re-emitting. The
+// relay→station path carries the relay-stamped value verbatim.
+func WriteBroadcastFrame(w io.Writer, topic, originPeerID string, body []byte) error {
+	payload, err := buildBroadcastPayload(topic, originPeerID, body)
+	if err != nil {
+		return err
+	}
+	return writeRaw(w, TypeBroadcast, 0, payload)
 }
 
 // ---- Header marshal helpers ----
@@ -172,7 +234,8 @@ func writeRaw(w io.Writer, typ byte, reqID uint32, payload []byte) error {
 }
 
 // Request payload layout:
-//   [4B methodLen][method][4B pathLen][path][4B headersLen][headers][4B bodyLen][body]
+//
+//	[4B methodLen][method][4B pathLen][path][4B headersLen][headers][4B bodyLen][body]
 func buildRequestPayload(method, path string, headers map[string]string, body []byte) ([]byte, error) {
 	methodB := []byte(method)
 	pathB := []byte(path)
@@ -236,7 +299,8 @@ func parseRequestPayload(reqID uint32, data []byte) (*RequestFrame, error) {
 }
 
 // Response payload layout:
-//   [4B statusCode][4B headersLen][headers][4B bodyLen][body]
+//
+//	[4B statusCode][4B headersLen][headers][4B bodyLen][body]
 func buildResponsePayload(statusCode uint32, headers map[string]string, body []byte) ([]byte, error) {
 	headersB, err := MarshalHeaders(headers)
 	if err != nil {
@@ -290,6 +354,106 @@ func parseResponsePayload(reqID uint32, data []byte) (*ResponseFrame, error) {
 func appendLenPrefixed(buf, data []byte) []byte {
 	buf = binary.BigEndian.AppendUint32(buf, uint32(len(data)))
 	return append(buf, data...)
+}
+
+// Broadcast payload layout (Tier C1):
+//
+//	[2B topicLen][topic][2B originLen][origin_peer_id][4B bodyLen][body]
+//
+// We use uint16 for topic + origin lengths because both are short
+// labels (topics ≤ 128 bytes, peer IDs are base58 strings ≤ ~80
+// bytes). Body uses uint32 so an out-of-spec receiver still parses
+// the buffer correctly even when bodies grow with future event
+// types.
+func buildBroadcastPayload(topic, originPeerID string, body []byte) ([]byte, error) {
+	topicB := []byte(topic)
+	originB := []byte(originPeerID)
+
+	if len(topicB) == 0 {
+		return nil, fmt.Errorf("broadcast: empty topic")
+	}
+	if len(topicB) > MaxBroadcastTopicLen {
+		return nil, fmt.Errorf("broadcast topic too long: %d > %d", len(topicB), MaxBroadcastTopicLen)
+	}
+	// Origin can be empty on the station→relay leg; cap on the upper
+	// end mirrors the topic limit because peer IDs are smaller still.
+	if len(originB) > MaxBroadcastTopicLen {
+		return nil, fmt.Errorf("broadcast origin too long: %d > %d", len(originB), MaxBroadcastTopicLen)
+	}
+	if len(body) > MaxBroadcastBodyLen {
+		return nil, fmt.Errorf("broadcast body too long: %d > %d", len(body), MaxBroadcastBodyLen)
+	}
+
+	total := 2 + len(topicB) + 2 + len(originB) + 4 + len(body)
+	buf := make([]byte, 0, total)
+	buf = binary.BigEndian.AppendUint16(buf, uint16(len(topicB)))
+	buf = append(buf, topicB...)
+	buf = binary.BigEndian.AppendUint16(buf, uint16(len(originB)))
+	buf = append(buf, originB...)
+	buf = binary.BigEndian.AppendUint32(buf, uint32(len(body)))
+	buf = append(buf, body...)
+	return buf, nil
+}
+
+func parseBroadcastPayload(data []byte) (*BroadcastFrame, error) {
+	topic, data, err := readU16Prefixed(data, "topic", MaxBroadcastTopicLen)
+	if err != nil {
+		return nil, err
+	}
+	if len(topic) == 0 {
+		return nil, fmt.Errorf("broadcast: empty topic")
+	}
+	originB, data, err := readU16Prefixed(data, "origin_peer_id", MaxBroadcastTopicLen)
+	if err != nil {
+		return nil, err
+	}
+	body, _, err := readLenPrefixedSized(data, "body", MaxBroadcastBodyLen)
+	if err != nil {
+		return nil, err
+	}
+	return &BroadcastFrame{
+		Topic:        string(topic),
+		OriginPeerID: string(originB),
+		Body:         body,
+	}, nil
+}
+
+// readU16Prefixed pulls a uint16-length-prefixed value off the front
+// of `data`. Used for the small label fields in the broadcast
+// payload (topic, origin_peer_id) where the generic uint32 prefix
+// would waste 2 bytes per field.
+func readU16Prefixed(data []byte, field string, maxLen int) (value, rest []byte, err error) {
+	if len(data) < 2 {
+		return nil, nil, fmt.Errorf("read %s length: short buffer", field)
+	}
+	n := binary.BigEndian.Uint16(data[:2])
+	data = data[2:]
+	if int(n) > maxLen {
+		return nil, nil, fmt.Errorf("%s too long: %d > %d", field, n, maxLen)
+	}
+	if len(data) < int(n) {
+		return nil, nil, fmt.Errorf("read %s: short payload", field)
+	}
+	return data[:n], data[n:], nil
+}
+
+// readLenPrefixedSized is the uint32-length-prefixed reader with a
+// custom max. Mirrors readLenPrefixed but with a different cap
+// enforced — callers like broadcast want a tighter bound than the
+// generic MaxBodyLen.
+func readLenPrefixedSized(data []byte, field string, maxLen int) (value, rest []byte, err error) {
+	if len(data) < 4 {
+		return nil, nil, fmt.Errorf("read %s length: short buffer", field)
+	}
+	n := binary.BigEndian.Uint32(data[:4])
+	data = data[4:]
+	if int(n) > maxLen {
+		return nil, nil, fmt.Errorf("%s too long: %d > %d", field, n, maxLen)
+	}
+	if uint32(len(data)) < n {
+		return nil, nil, fmt.Errorf("read %s: short payload", field)
+	}
+	return data[:n], data[n:], nil
 }
 
 func readLenPrefixed(data []byte, field string, maxLen int) (value, rest []byte, err error) {

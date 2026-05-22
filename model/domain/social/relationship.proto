@@ -81,6 +81,12 @@ message Follower {
   string display_name = 3;
   string avatar_url = 4;
   google.protobuf.Timestamp followed_at = 5;
+
+  // Federation identity (Tier B social-graph extension). See PostAuthor
+  // in post.proto for the contract — both fields are additive, empty
+  // for pre-backfill rows, and ignored by older clients.
+  string federated_handle = 6 [json_name = "federated_handle"];
+  string home_station_domain = 7 [json_name = "home_station_domain"];
 }
 
 message Following {
@@ -89,4 +95,9 @@ message Following {
   string display_name = 3;
   string avatar_url = 4;
   google.protobuf.Timestamp followed_at = 5;
+
+  // Federation identity (Tier B social-graph extension). See PostAuthor
+  // in post.proto for the contract.
+  string federated_handle = 6 [json_name = "federated_handle"];
+  string home_station_domain = 7 [json_name = "home_station_domain"];
 }

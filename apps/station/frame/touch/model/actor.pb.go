@@ -82,6 +82,131 @@ func (ActorKind) EnumDescriptor() ([]byte, []int) {
 	return file_domain_actor_actor_proto_rawDescGZIP(), []int{0}
 }
 
+// ActorOrigin tells the consumer whether this actor row was authored on the
+// local station (local) or fetched from a peer station and cached locally
+// (remote_cached). Touch UIs use it to gate edit affordances; the locator
+// publisher uses it to refuse publishing remote-cached rows back into the DHT.
+type ActorOrigin int32
+
+const (
+	ActorOrigin_ACTOR_ORIGIN_UNSPECIFIED   ActorOrigin = 0
+	ActorOrigin_ACTOR_ORIGIN_LOCAL         ActorOrigin = 1
+	ActorOrigin_ACTOR_ORIGIN_REMOTE_CACHED ActorOrigin = 2
+)
+
+// Enum value maps for ActorOrigin.
+var (
+	ActorOrigin_name = map[int32]string{
+		0: "ACTOR_ORIGIN_UNSPECIFIED",
+		1: "ACTOR_ORIGIN_LOCAL",
+		2: "ACTOR_ORIGIN_REMOTE_CACHED",
+	}
+	ActorOrigin_value = map[string]int32{
+		"ACTOR_ORIGIN_UNSPECIFIED":   0,
+		"ACTOR_ORIGIN_LOCAL":         1,
+		"ACTOR_ORIGIN_REMOTE_CACHED": 2,
+	}
+)
+
+func (x ActorOrigin) Enum() *ActorOrigin {
+	p := new(ActorOrigin)
+	*p = x
+	return p
+}
+
+func (x ActorOrigin) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ActorOrigin) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_actor_actor_proto_enumTypes[1].Descriptor()
+}
+
+func (ActorOrigin) Type() protoreflect.EnumType {
+	return &file_domain_actor_actor_proto_enumTypes[1]
+}
+
+func (x ActorOrigin) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ActorOrigin.Descriptor instead.
+func (ActorOrigin) EnumDescriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{1}
+}
+
+// ActorVisibility is the federation-discoverability state of an actor.
+//
+// ACTOR_VISIBILITY_HIDDEN     — never published to DHT, never resolvable
+//
+//	by handle from other stations.
+//
+// ACTOR_VISIBILITY_BY_HANDLE  — published to the DHT under its federated
+//
+//	handle. Other stations can resolve it iff
+//	they know the exact handle (no enumeration).
+//
+// ACTOR_VISIBILITY_INDEXED    — same as BY_HANDLE plus opt-in to a future
+//
+//	directory-style index. Treated identically
+//	to BY_HANDLE by the DHT publisher today;
+//	the directory layer is Phase C.
+//
+// The ordering matters: hidden < by_handle < indexed. Numeric increases
+// monotonically widen visibility; the publisher uses this to decide whether
+// to publish or tombstone.
+type ActorVisibility int32
+
+const (
+	ActorVisibility_ACTOR_VISIBILITY_UNSPECIFIED ActorVisibility = 0
+	ActorVisibility_ACTOR_VISIBILITY_HIDDEN      ActorVisibility = 1
+	ActorVisibility_ACTOR_VISIBILITY_BY_HANDLE   ActorVisibility = 2
+	ActorVisibility_ACTOR_VISIBILITY_INDEXED     ActorVisibility = 3
+)
+
+// Enum value maps for ActorVisibility.
+var (
+	ActorVisibility_name = map[int32]string{
+		0: "ACTOR_VISIBILITY_UNSPECIFIED",
+		1: "ACTOR_VISIBILITY_HIDDEN",
+		2: "ACTOR_VISIBILITY_BY_HANDLE",
+		3: "ACTOR_VISIBILITY_INDEXED",
+	}
+	ActorVisibility_value = map[string]int32{
+		"ACTOR_VISIBILITY_UNSPECIFIED": 0,
+		"ACTOR_VISIBILITY_HIDDEN":      1,
+		"ACTOR_VISIBILITY_BY_HANDLE":   2,
+		"ACTOR_VISIBILITY_INDEXED":     3,
+	}
+)
+
+func (x ActorVisibility) Enum() *ActorVisibility {
+	p := new(ActorVisibility)
+	*p = x
+	return p
+}
+
+func (x ActorVisibility) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ActorVisibility) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_actor_actor_proto_enumTypes[2].Descriptor()
+}
+
+func (ActorVisibility) Type() protoreflect.EnumType {
+	return &file_domain_actor_actor_proto_enumTypes[2]
+}
+
+func (x ActorVisibility) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ActorVisibility.Descriptor instead.
+func (ActorVisibility) EnumDescriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{2}
+}
+
 type ActorRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ActorId       uint64                 `protobuf:"varint,1,opt,name=actor_id,proto3" json:"actor_id,omitempty"`
@@ -151,20 +276,29 @@ func (x *ActorRef) GetKind() ActorKind {
 }
 
 type Actor struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Username      string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	Email         string                 `protobuf:"bytes,4,opt,name=email,proto3" json:"email,omitempty"`
-	Inbox         string                 `protobuf:"bytes,5,opt,name=inbox,proto3" json:"inbox,omitempty"`
-	Outbox        string                 `protobuf:"bytes,6,opt,name=outbox,proto3" json:"outbox,omitempty"`
-	Endpoints     map[string]string      `protobuf:"bytes,7,rep,name=endpoints,proto3" json:"endpoints,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	IsFollowing   bool                   `protobuf:"varint,8,opt,name=is_following,proto3" json:"is_following,omitempty"`
-	ActorId       uint64                 `protobuf:"varint,9,opt,name=actor_id,proto3" json:"actor_id,omitempty"`
-	Avatar        string                 `protobuf:"bytes,10,opt,name=avatar,proto3" json:"avatar,omitempty"`
-	Kind          ActorKind              `protobuf:"varint,11,opt,name=kind,proto3,enum=peers_touch.model.actor.v1.ActorKind" json:"kind,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Username    string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
+	DisplayName string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Email       string                 `protobuf:"bytes,4,opt,name=email,proto3" json:"email,omitempty"`
+	Inbox       string                 `protobuf:"bytes,5,opt,name=inbox,proto3" json:"inbox,omitempty"`
+	Outbox      string                 `protobuf:"bytes,6,opt,name=outbox,proto3" json:"outbox,omitempty"`
+	Endpoints   map[string]string      `protobuf:"bytes,7,rep,name=endpoints,proto3" json:"endpoints,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	IsFollowing bool                   `protobuf:"varint,8,opt,name=is_following,proto3" json:"is_following,omitempty"`
+	ActorId     uint64                 `protobuf:"varint,9,opt,name=actor_id,proto3" json:"actor_id,omitempty"`
+	Avatar      string                 `protobuf:"bytes,10,opt,name=avatar,proto3" json:"avatar,omitempty"`
+	Kind        ActorKind              `protobuf:"varint,11,opt,name=kind,proto3,enum=peers_touch.model.actor.v1.ActorKind" json:"kind,omitempty"`
+	// Federation extension fields. Populated for every actor row regardless of
+	// origin. For ACTOR_ORIGIN_LOCAL the home_station_* fields describe the
+	// current station; for ACTOR_ORIGIN_REMOTE_CACHED they describe the
+	// authoritative station that issued the locator record.
+	FederatedHandle   string          `protobuf:"bytes,12,opt,name=federated_handle,proto3" json:"federated_handle,omitempty"`         // e.g. "@alice@station-1.example"
+	HomeStationPeerId string          `protobuf:"bytes,13,opt,name=home_station_peer_id,proto3" json:"home_station_peer_id,omitempty"` // libp2p PeerID of the home station
+	HomeStationDomain string          `protobuf:"bytes,14,opt,name=home_station_domain,proto3" json:"home_station_domain,omitempty"`   // DNS-style domain of the home station
+	Visibility        ActorVisibility `protobuf:"varint,15,opt,name=visibility,proto3,enum=peers_touch.model.actor.v1.ActorVisibility" json:"visibility,omitempty"`
+	Origin            ActorOrigin     `protobuf:"varint,16,opt,name=origin,proto3,enum=peers_touch.model.actor.v1.ActorOrigin" json:"origin,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Actor) Reset() {
@@ -272,6 +406,41 @@ func (x *Actor) GetKind() ActorKind {
 		return x.Kind
 	}
 	return ActorKind_ACTOR_KIND_UNSPECIFIED
+}
+
+func (x *Actor) GetFederatedHandle() string {
+	if x != nil {
+		return x.FederatedHandle
+	}
+	return ""
+}
+
+func (x *Actor) GetHomeStationPeerId() string {
+	if x != nil {
+		return x.HomeStationPeerId
+	}
+	return ""
+}
+
+func (x *Actor) GetHomeStationDomain() string {
+	if x != nil {
+		return x.HomeStationDomain
+	}
+	return ""
+}
+
+func (x *Actor) GetVisibility() ActorVisibility {
+	if x != nil {
+		return x.Visibility
+	}
+	return ActorVisibility_ACTOR_VISIBILITY_UNSPECIFIED
+}
+
+func (x *Actor) GetOrigin() ActorOrigin {
+	if x != nil {
+		return x.Origin
+	}
+	return ActorOrigin_ACTOR_ORIGIN_UNSPECIFIED
 }
 
 type UserLink struct {
@@ -905,7 +1074,7 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\bactor_id\x18\x01 \x01(\x04R\bactor_id\x12\x12\n" +
 	"\x04ptid\x18\x02 \x01(\tR\x04ptid\x12\x12\n" +
 	"\x04acct\x18\x03 \x01(\tR\x04acct\x129\n" +
-	"\x04kind\x18\x04 \x01(\x0e2%.peers_touch.model.actor.v1.ActorKindR\x04kind\"\xbb\x03\n" +
+	"\x04kind\x18\x04 \x01(\x0e2%.peers_touch.model.actor.v1.ActorKindR\x04kind\"\xdb\x05\n" +
 	"\x05Actor\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12!\n" +
@@ -918,7 +1087,14 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\bactor_id\x18\t \x01(\x04R\bactor_id\x12\x16\n" +
 	"\x06avatar\x18\n" +
 	" \x01(\tR\x06avatar\x129\n" +
-	"\x04kind\x18\v \x01(\x0e2%.peers_touch.model.actor.v1.ActorKindR\x04kind\x1a<\n" +
+	"\x04kind\x18\v \x01(\x0e2%.peers_touch.model.actor.v1.ActorKindR\x04kind\x12*\n" +
+	"\x10federated_handle\x18\f \x01(\tR\x10federated_handle\x122\n" +
+	"\x14home_station_peer_id\x18\r \x01(\tR\x14home_station_peer_id\x120\n" +
+	"\x13home_station_domain\x18\x0e \x01(\tR\x13home_station_domain\x12K\n" +
+	"\n" +
+	"visibility\x18\x0f \x01(\x0e2+.peers_touch.model.actor.v1.ActorVisibilityR\n" +
+	"visibility\x12?\n" +
+	"\x06origin\x18\x10 \x01(\x0e2'.peers_touch.model.actor.v1.ActorOriginR\x06origin\x1a<\n" +
 	"\x0eEndpointsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"2\n" +
@@ -998,7 +1174,16 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x17ACTOR_KIND_ORGANIZATION\x10\x03\x12\x16\n" +
 	"\x12ACTOR_KIND_SERVICE\x10\x04\x12\x1a\n" +
 	"\x16ACTOR_KIND_APPLICATION\x10\x05\x12\x13\n" +
-	"\x0fACTOR_KIND_NODE\x10\x06BCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
+	"\x0fACTOR_KIND_NODE\x10\x06*c\n" +
+	"\vActorOrigin\x12\x1c\n" +
+	"\x18ACTOR_ORIGIN_UNSPECIFIED\x10\x00\x12\x16\n" +
+	"\x12ACTOR_ORIGIN_LOCAL\x10\x01\x12\x1e\n" +
+	"\x1aACTOR_ORIGIN_REMOTE_CACHED\x10\x02*\x8e\x01\n" +
+	"\x0fActorVisibility\x12 \n" +
+	"\x1cACTOR_VISIBILITY_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17ACTOR_VISIBILITY_HIDDEN\x10\x01\x12\x1e\n" +
+	"\x1aACTOR_VISIBILITY_BY_HANDLE\x10\x02\x12\x1c\n" +
+	"\x18ACTOR_VISIBILITY_INDEXED\x10\x03BCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
 
 var (
 	file_domain_actor_actor_proto_rawDescOnce sync.Once
@@ -1012,35 +1197,39 @@ func file_domain_actor_actor_proto_rawDescGZIP() []byte {
 	return file_domain_actor_actor_proto_rawDescData
 }
 
-var file_domain_actor_actor_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_domain_actor_actor_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
 var file_domain_actor_actor_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_domain_actor_actor_proto_goTypes = []any{
 	(ActorKind)(0),               // 0: peers_touch.model.actor.v1.ActorKind
-	(*ActorRef)(nil),             // 1: peers_touch.model.actor.v1.ActorRef
-	(*Actor)(nil),                // 2: peers_touch.model.actor.v1.Actor
-	(*UserLink)(nil),             // 3: peers_touch.model.actor.v1.UserLink
-	(*PeersTouchInfo)(nil),       // 4: peers_touch.model.actor.v1.PeersTouchInfo
-	(*ActorProfile)(nil),         // 5: peers_touch.model.actor.v1.ActorProfile
-	(*UpdateProfileRequest)(nil), // 6: peers_touch.model.actor.v1.UpdateProfileRequest
-	(*ActorList)(nil),            // 7: peers_touch.model.actor.v1.ActorList
-	(*SearchUsersRequest)(nil),   // 8: peers_touch.model.actor.v1.SearchUsersRequest
-	(*GetMeRequest)(nil),         // 9: peers_touch.model.actor.v1.GetMeRequest
-	nil,                          // 10: peers_touch.model.actor.v1.Actor.EndpointsEntry
+	(ActorOrigin)(0),             // 1: peers_touch.model.actor.v1.ActorOrigin
+	(ActorVisibility)(0),         // 2: peers_touch.model.actor.v1.ActorVisibility
+	(*ActorRef)(nil),             // 3: peers_touch.model.actor.v1.ActorRef
+	(*Actor)(nil),                // 4: peers_touch.model.actor.v1.Actor
+	(*UserLink)(nil),             // 5: peers_touch.model.actor.v1.UserLink
+	(*PeersTouchInfo)(nil),       // 6: peers_touch.model.actor.v1.PeersTouchInfo
+	(*ActorProfile)(nil),         // 7: peers_touch.model.actor.v1.ActorProfile
+	(*UpdateProfileRequest)(nil), // 8: peers_touch.model.actor.v1.UpdateProfileRequest
+	(*ActorList)(nil),            // 9: peers_touch.model.actor.v1.ActorList
+	(*SearchUsersRequest)(nil),   // 10: peers_touch.model.actor.v1.SearchUsersRequest
+	(*GetMeRequest)(nil),         // 11: peers_touch.model.actor.v1.GetMeRequest
+	nil,                          // 12: peers_touch.model.actor.v1.Actor.EndpointsEntry
 }
 var file_domain_actor_actor_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.actor.v1.ActorRef.kind:type_name -> peers_touch.model.actor.v1.ActorKind
-	10, // 1: peers_touch.model.actor.v1.Actor.endpoints:type_name -> peers_touch.model.actor.v1.Actor.EndpointsEntry
+	12, // 1: peers_touch.model.actor.v1.Actor.endpoints:type_name -> peers_touch.model.actor.v1.Actor.EndpointsEntry
 	0,  // 2: peers_touch.model.actor.v1.Actor.kind:type_name -> peers_touch.model.actor.v1.ActorKind
-	3,  // 3: peers_touch.model.actor.v1.ActorProfile.links:type_name -> peers_touch.model.actor.v1.UserLink
-	4,  // 4: peers_touch.model.actor.v1.ActorProfile.peers_touch:type_name -> peers_touch.model.actor.v1.PeersTouchInfo
-	1,  // 5: peers_touch.model.actor.v1.ActorProfile.ref:type_name -> peers_touch.model.actor.v1.ActorRef
-	3,  // 6: peers_touch.model.actor.v1.UpdateProfileRequest.links:type_name -> peers_touch.model.actor.v1.UserLink
-	2,  // 7: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
-	8,  // [8:8] is the sub-list for method output_type
-	8,  // [8:8] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	2,  // 3: peers_touch.model.actor.v1.Actor.visibility:type_name -> peers_touch.model.actor.v1.ActorVisibility
+	1,  // 4: peers_touch.model.actor.v1.Actor.origin:type_name -> peers_touch.model.actor.v1.ActorOrigin
+	5,  // 5: peers_touch.model.actor.v1.ActorProfile.links:type_name -> peers_touch.model.actor.v1.UserLink
+	6,  // 6: peers_touch.model.actor.v1.ActorProfile.peers_touch:type_name -> peers_touch.model.actor.v1.PeersTouchInfo
+	3,  // 7: peers_touch.model.actor.v1.ActorProfile.ref:type_name -> peers_touch.model.actor.v1.ActorRef
+	5,  // 8: peers_touch.model.actor.v1.UpdateProfileRequest.links:type_name -> peers_touch.model.actor.v1.UserLink
+	4,  // 9: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_domain_actor_actor_proto_init() }
@@ -1054,7 +1243,7 @@ func file_domain_actor_actor_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_actor_actor_proto_rawDesc), len(file_domain_actor_actor_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      3,
 			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   0,

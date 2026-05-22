@@ -21,6 +21,7 @@ import {
 import { ReactionBar } from './ReactionBar';
 import { ImageGrid } from './ImageGrid';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
+import { FederatedHandle } from '../FederatedHandle';
 
 const { Paragraph, Text, Link } = Typography;
 
@@ -186,9 +187,11 @@ export function MomentCard({
               {author?.displayName || author?.username || t('moments.author.unknown')}
             </Text>
             {author?.username && (
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                @{author.username}
-              </Text>
+              <FederatedHandle
+                localPart={author.username}
+                home={author.homeStationDomain || undefined}
+                fontSize={12}
+              />
             )}
             <Text type="secondary" style={{ fontSize: 12 }}>
               · {relativeTime(post.createdAt?.seconds as any)}

@@ -91,12 +91,23 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 		}
 	}, s.opts.MaxConcurrentPerStation)
 
+	// Tier C1 — turn on the federation invalidation pub/sub topic.
+	// We list it explicitly here (rather than auto-allowing every
+	// topic) so adding new event types is a deliberate change with a
+	// review trail. The relay drops anything not in this list.
+	s.streams.SetAllowedBroadcastTopics(broadcastTopicFedInvalidate)
+
 	s.stopCh = make(chan struct{})
 
 	logger.Infof(ctx, "[relay] initialized, max_stations=%d, heartbeat_timeout=%ds, max_concurrent=%d",
 		s.opts.MaxStations, s.opts.HeartbeatTimeout, s.opts.MaxConcurrentPerStation)
 	return nil
 }
+
+// broadcastTopicFedInvalidate is the single relay-allowed pub/sub
+// topic for Tier C1. Stations publish FederationInvalidation events
+// here; the relay fans them out to every other connected station.
+const broadcastTopicFedInvalidate = "fed.invalidate.v1"
 
 func (s *SubServer) Start(ctx context.Context, opts ...option.Option) error {
 	s.status = server.StatusRunning
@@ -369,7 +380,7 @@ func (s *SubServer) streamPinger(ctx context.Context) {
 		case <-s.stopCh:
 			return
 		case <-ticker.C:
-			cleaned := s.streams.PingAll(ctx, timeout)
+			cleaned := s.streams.PingAll(ctx, interval, timeout)
 			if cleaned > 0 {
 				logger.Infof(ctx, "[relay] ping cleaned %d dead streams", cleaned)
 			}

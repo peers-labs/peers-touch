@@ -4,6 +4,21 @@ peers:
       subserver:
         bootstrap:
           enabled: true
-          libp2p-insecure: true
+          # libp2p security:
+          # - Default (false): use Noise/TLS via libp2p.DefaultSecurity.
+          #   Required for the registry/transport DHT (which always
+          #   negotiates secure transport) to ever connect to a bootstrap
+          #   host running with libp2p-insecure=true; otherwise we end up
+          #   with logs like
+          #   `failed to negotiate security protocol: protocols not supported`.
+          # - true: libp2p.NoSecurity, useful only for hand-rolled lab tests.
+          libp2p-insecure: false
           listen-addrs:
             - /ip4/0.0.0.0/tcp/4001
+
+          # Federation-level concerns (bootstrap-nodes, public-addrs,
+          # direct-outbound, direct-inbound) live under
+          # peers.node.federation.* — see federation.yml. Keeping them out
+          # of this file is intentional: a station has multiple libp2p
+          # hosts (this bootstrap host + the transport host used by the
+          # registry) and they share one federation policy.

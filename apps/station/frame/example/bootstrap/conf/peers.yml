@@ -36,5 +36,5 @@ peers:
       native:
         mdns-enable: true
         libp2p-identity-key-file: client.key
-        bootstrap-nodes:
-          -
+        # Federation seeds (formerly registry.native.bootstrap-nodes) live
+        # under peers.node.federation.bootstrap-nodes — see bootstrap.yml.

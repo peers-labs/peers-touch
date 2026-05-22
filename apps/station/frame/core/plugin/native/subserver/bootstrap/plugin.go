@@ -4,13 +4,17 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/multiformats/go-multiaddr"
 	"github.com/peers-labs/peers-touch/station/frame/core/config"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
+// bootstrapOptions binds `peers.node.server.subserver.bootstrap.*` to a Go
+// struct. Only per-host concerns live here. Federation-level keys
+// (bootstrap-nodes, public-addrs, direct-outbound, direct-inbound) are bound
+// by the federation package — see apps/station/frame/core/plugin/native/
+// federation/config.go.
 var bootstrapOptions struct {
 	Peers struct {
 		Node struct {
@@ -21,7 +25,6 @@ var bootstrapOptions struct {
 						EnableMDNS         bool          `pconf:"enable-mdns"`
 						IdentityKey        string        `pconf:"identity-key"`
 						ListenAddrs        []string      `pconf:"listen-addrs"`
-						BootstrapNodes     []string      `pconf:"bootstrap-nodes"`
 						DHTRefreshInterval time.Duration `pconf:"dht-refresh-interval"`
 						Libp2pInsecure     bool          `pconf:"libp2p-insecure"`
 					} `pconf:"bootstrap"`
@@ -38,43 +41,28 @@ func (p *bootstrap) Name() string {
 	return "bootstrap"
 }
 
-// Options converts configuration into subserver options.
+// Options converts configuration into subserver options. Federation-level
+// concerns are NOT translated into options here — the subserver pulls them
+// from federation.GetPolicy() at host-construction time so production code
+// and tests share one source of truth.
 func (p *bootstrap) Options() []option.Option {
 	var opts []option.Option
 
 	opts = append(opts, WithEnabled(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.Enabled))
 	opts = append(opts, WithListenAddrs(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.ListenAddrs))
-
-	// Add EnableMDNS option from configuration
 	opts = append(opts, WithMDNS(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.EnableMDNS))
 	opts = append(opts, WithLibp2pInsecure(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.Libp2pInsecure))
 
-	// Add IdentityKey option from configuration if provided
 	keyPath := bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.IdentityKey
 	if keyPath == "" {
 		keyPath = "bootstrap.key"
 	}
-
-	// Load private key from the file path
 	privKey, err := loadOrGenerateKey(keyPath)
 	if err != nil {
 		panic(fmt.Errorf("failed to load identity key from %s: %w", keyPath, err))
 	}
-	// Set both IdentityKey (for options visibility) and PrivateKey (used by host creation)
 	opts = append(opts, WithIdentityKey(privKey))
 	opts = append(opts, WithPrivateKey(privKey))
-
-	if len(bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.BootstrapNodes) != 0 {
-		nodes := bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.BootstrapNodes
-		for i := range nodes {
-			addr, err := multiaddr.NewMultiaddr(nodes[i])
-			if err != nil {
-				panic(err)
-			}
-
-			opts = append(opts, WithBootstrapNodes([]multiaddr.Multiaddr{addr}))
-		}
-	}
 
 	dhtRefreshInterval := bootstrapOptions.Peers.Node.Server.Subserver.Bootstrap.DHTRefreshInterval
 	if dhtRefreshInterval == 0 {
@@ -93,7 +81,6 @@ func (p *bootstrap) Enabled() bool {
 // New constructs a new bootstrap subserver with plugin options.
 func (p *bootstrap) New(opts ...option.Option) server.Subserver {
 	opts = append(opts, p.Options()...)
-
 	return NewBootstrapServer(opts...)
 }
 

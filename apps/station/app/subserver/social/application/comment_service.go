@@ -102,10 +102,12 @@ func (s *CommentService) CreateComment(ctx context.Context, req *model.CreateCom
 	out := s.conv.CommentToProto(d)
 	if a, err := actor.GetActorByID(ctx, authorID); err == nil && a != nil {
 		out.Author = &model.PostAuthor{
-			Id:          fmt.Sprintf("%d", a.ID),
-			Username:    a.PreferredUsername,
-			DisplayName: a.Name,
-			AvatarUrl:   a.Icon,
+			Id:                fmt.Sprintf("%d", a.ID),
+			Username:          a.PreferredUsername,
+			DisplayName:       a.Name,
+			AvatarUrl:         a.Icon,
+			FederatedHandle:   federatedHandleOf(a),
+			HomeStationDomain: homeStationDomainOf(a),
 		}
 	}
 
@@ -162,10 +164,12 @@ func (s *CommentService) ListByPost(ctx context.Context, parentPostID uint64, cu
 		out := s.conv.CommentToProto(row)
 		if a, err := actor.GetActorByID(ctx, row.AuthorID); err == nil && a != nil {
 			out.Author = &model.PostAuthor{
-				Id:          fmt.Sprintf("%d", a.ID),
-				Username:    a.PreferredUsername,
-				DisplayName: a.Name,
-				AvatarUrl:   a.Icon,
+				Id:                fmt.Sprintf("%d", a.ID),
+				Username:          a.PreferredUsername,
+				DisplayName:       a.Name,
+				AvatarUrl:         a.Icon,
+				FederatedHandle:   federatedHandleOf(a),
+				HomeStationDomain: homeStationDomainOf(a),
 			}
 		}
 		comments = append(comments, out)
