@@ -52,6 +52,14 @@ set -e
 #   /app/data/bootstrap.key      — bootstrap subserver identity (paths.docker.yml)
 mkdir -p /app/data/oss
 
+# ── Node label pattern injection ──────────────────────────────────────────────
+# Expand ${PEERS_NODE_LABEL} in actor.yml using envsubst.
+# Only PEERS_NODE_LABEL is expanded; other $-references in the file stay intact.
+if command -v envsubst >/dev/null 2>&1; then
+  envsubst '${PEERS_NODE_LABEL}' < /app/conf/actor.yml > /app/conf/actor.yml.tmp
+  mv /app/conf/actor.yml.tmp /app/conf/actor.yml
+fi
+
 OVERLAYS=""
 
 # ── store.docker.yml (PG DSN) ────────────────────────────────────────────────
