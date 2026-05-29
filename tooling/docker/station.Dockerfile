@@ -68,7 +68,7 @@ FROM ${BASE_IMAGE}
 
 RUN sed -i 's|http://ports.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list && \
     apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates tzdata wget && \
+    apt-get install -y --no-install-recommends ca-certificates tzdata wget gettext-base && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
