@@ -2,6 +2,7 @@ import { fromBinary } from '@bufbuild/protobuf';
 
 import { EVENT, eventBus } from '../kernel/events';
 import type {
+  GroupSkdmInstalledPayload,
   RealtimeGroupMembershipChangePayload,
   RealtimeMessageMutationPayload,
   RealtimeMessageReceiptPayload,
@@ -10,10 +11,15 @@ import type {
   RealtimeResyncPayload,
   RealtimeTypingStatePayload,
 } from '../kernel/events/types';
+import { retrySkdmDistributionFor, rotateGroupSenderChain } from '../modules/identity/groupSenderKeys';
 import { useMediaRuntimeStore } from './mediaRuntime';
 import { installEventStreamBridge, startEventStream, stopEventStream } from './eventStream';
 import { api, type NotificationData } from './desktop_api';
-import { FriendChatMessageSchema, type FriendChatMessage } from '../gen/proto/domain/chat/friend_chat_pb';
+import {
+  FriendChatMessageSchema,
+  FriendMessageStatus,
+  type FriendChatMessage,
+} from '../gen/proto/domain/chat/friend_chat_pb';
 import { GroupMessageSchema, type GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
 import { NotificationType } from '../gen/proto/domain/notification/notification_pb';
 import { useNotificationStore } from '../store/notification';
@@ -283,6 +289,12 @@ function onMessageReceived(payload: RealtimeMessageReceivedPayload): void {
   const isSelfEcho = Boolean(store.currentUserDid && payload.senderActorId === store.currentUserDid);
   const isActiveConversation = isVisibleConversation(store, payload.sessionUlid, isKnownGroup);
 
+  if (!isSelfEcho && !isKnownGroup && payload.messageUlid) {
+    api.friendChatAckMessages([payload.messageUlid], FriendMessageStatus.DELIVERED).catch((error) => {
+      log.warn('socialRealtime', 'auto DELIVERED ack failed', error);
+    });
+  }
+
   if (!isSelfEcho && !isActiveConversation) {
     useNavigationBadgeStore.getState().bumpChatUnread(payload.sessionUlid);
   } else {
@@ -334,10 +346,22 @@ function onGroupMembershipChange(payload: RealtimeGroupMembershipChangePayload):
 
   runDetached('group membership refresh', async () => {
     const store = useSocialChatStore.getState();
+    const did = store.currentUserDid;
+
+    if (payload.kind === 'REMOVED' || payload.kind === 'LEFT') {
+      if (did && payload.actorDid === did) {
+        store.selectGroup('');
+      } else if (did) {
+        await rotateGroupSenderChain(did, payload.groupUlid).catch((error) => {
+          log.warn('socialRealtime', 'rotateGroupSenderChain failed', error);
+        });
+      }
+    }
+
     await Promise.allSettled([
       store.loadGroups(),
       store.loadGroupUnreadCounts(),
-      store.activeGroupUlid === payload.groupUlid
+      payload.kind === 'ADDED' || store.activeGroupUlid === payload.groupUlid
         ? store.loadGroupMembers(payload.groupUlid)
         : Promise.resolve(),
     ]);
@@ -366,7 +390,21 @@ function onNotificationProjectionChanged(): void {
 
 function onPresenceFlip(payload: RealtimePresenceFlipPayload): void {
   if (!payload.actorId) return;
-  useSocialChatStore.getState().setPeerOnline(payload.actorId, payload.online);
+  const store = useSocialChatStore.getState();
+  store.setPeerOnline(payload.actorId, payload.online);
+
+  if (!payload.online) return;
+  const did = store.currentUserDid;
+  if (!did || payload.actorId === did) return;
+  retrySkdmDistributionFor(did, payload.actorId).catch((error) => {
+    log.warn('socialRealtime', 'retrySkdmDistributionFor failed', error);
+  });
+}
+
+function onGroupSkdmInstalled(payload: GroupSkdmInstalledPayload): void {
+  useSocialChatStore.getState()
+    .redecryptGroupMessages(payload.groupUlid, payload.senderDid)
+    .catch((error) => log.warn('socialRealtime', 'redecryptGroupMessages failed', error));
 }
 
 async function syncKnownConversations(): Promise<void> {
@@ -453,6 +491,7 @@ export function installSocialRealtimeBridge(): void {
     eventBus.subscribe(EVENT.REALTIME_GROUP_MEMBERSHIP_CHANGE, onGroupMembershipChange),
     eventBus.subscribe(EVENT.REALTIME_PRESENCE_FLIP, onPresenceFlip),
     eventBus.subscribe(EVENT.REALTIME_RESYNC, onResync),
+    eventBus.subscribe(EVENT.GROUP_SKDM_INSTALLED, onGroupSkdmInstalled),
     useNotificationStore.subscribe(onNotificationProjectionChanged),
   ];
 
