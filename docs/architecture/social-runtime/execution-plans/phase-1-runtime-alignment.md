@@ -32,6 +32,7 @@
 | Desktop projection 分层 | `socialChat` store 与纯 projection reducer 分离 | 已新增 `apps/desktop/src/store/socialProjection.ts`，承载 message merge、receipt、mutation、typing GC、local-clear 过滤等纯状态机 |
 | Desktop normalizer 分层 | `socialChat` store 与 Station response 兼容逻辑分离 | 已新增 `apps/desktop/src/store/socialNormalizers.ts`，先承载 friend session、friend request、presence seed 归一化 |
 | Mobile Host Adapter 入口 | Rust kernel 统一 emit native host event | 已补 `mobile_native_event_emit` command 与 `native_events` push/deep-link/notification-tap/resume 标准 payload，Web bridge 保留 deep-link `url` 字段 |
+| Mobile group domain | 独立 group API / normalizer / projection / store / runtime | 已新增 `apps/mobile/src/features/group/`，使用 generated group proto 类型，不复用 friend chat bucket |
 
 ---
 
@@ -94,9 +95,19 @@
   - `seedPresenceFromSessions`
 - 下一步继续抽 Desktop normalizer：search result、profile response 等 Station response shape 兼容逻辑不应长期留在 store action 内。
 
-### Step 4: Mobile parity backlog 锁定
+### Step 4: Mobile group domain 入口
 
-- Mobile group chat 进入独立 group projection domain。
+- Mobile group chat 已进入独立 group projection domain 起步：
+  - `groupApi.ts`：直接对接 Station `/group-chat/*` HTTP 路由；
+  - `groupNormalizers.ts`：归一化 `Group`、`GroupMember`、`GroupMessage`；
+  - `groupProjection.ts`：承载 group conversation、message merge、mutation reducer；
+  - `groupStore.ts`：承载 groups、members、messages、unread、active group projection；
+  - `groupRuntime.ts`：在 auth 边界冷启动与周期 reconcile；
+  - `useSocialRuntime.ts`：同一 session 边界同时启动 social runtime 与 group runtime。
+- 当前 group domain 是 runtime/store/API 闭环，尚未接入 UI；下一步才做 Chat/Contacts 的 group renderer。
+
+### Step 5: Mobile Host Adapter
+
 - Mobile native push/deep-link/notification tap 已具备 Rust kernel 标准 emit 入口：
   - `mobile:push`
   - `mobile:deep-link`
@@ -105,7 +116,7 @@
 - 后续 iOS/Android 插件只接系统 API，不直接写业务 projection，统一调用 kernel event outlet。
 - Mobile E2EE/offline queue 不在页面补逻辑，必须建 domain。
 
-### Step 5: 验证
+### Step 6: 验证
 
 - 文档链接有效。
 - Desktop/Mobile check 仍通过。
