@@ -11,8 +11,14 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.0.1", features = [] }
 
 [dependencies]
+aes-gcm = "0.10"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+hkdf = "0.12"
+rand = "0.8"
 serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
 tauri = { version = "2.0.1", features = [] }
+zeroize = { version = "1", features = ["derive"] }
 
 [features]
 default = ["custom-protocol"]
