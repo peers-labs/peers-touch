@@ -29,6 +29,7 @@
 | Wire 防回退 | 双端 generated proto 检查 | 已接入 `apps/desktop/scripts/check-social-wire-contract.sh` 与 `apps/mobile/scripts/check-social-wire-contract.sh`，禁止 `ProtoReader`、field-number、wire-type 手写 decode |
 | Page freshness 防回退 | 双端 runtime boundary 检查 | 已接入 `tooling/scripts/check-social-runtime-boundaries.sh`，禁止页面直接开 SSE、presence stream、runtime-level reconcile/refresh |
 | Desktop runtime 单入口 | `socialRealtime` 统一接管遗留 chat bridge | 已删除 `services/socialChatRealtime.ts` 的 App 直装入口，ACK、SKDM、group membership 副作用迁入 runtime owner |
+| Desktop projection 分层 | `socialChat` store 与纯 projection reducer 分离 | 已新增 `apps/desktop/src/store/socialProjection.ts`，承载 message merge、receipt、mutation、typing GC、local-clear 过滤等纯状态机 |
 
 ---
 
@@ -76,7 +77,15 @@
   - peer online 后 SKDM retry；
   - group membership 变更后的 sender-chain rotation、active group 清理与 roster refresh。
 - 已移除 `App.tsx` 对 `services/socialChatRealtime.ts` 的直接安装，并删除该遗留 bridge。
-- 把 Desktop normalizer/reducer 候选函数从 store/service 中列出。
+- 已把 Desktop projection reducer 候选从 `store/socialChat.ts` 初步抽出：
+  - `mergeConversationMessages`
+  - `filterClearedMessages`
+  - `applyMessageReceiptToList`
+  - `applyMessageMutationToList`
+  - `applyTypingStateToMap`
+  - `pruneTypingPeers`
+  - `previewFromMessage`
+- 下一步继续抽 Desktop normalizer：friend request、search result、profile response 等 Station response shape 兼容逻辑不应长期留在 store action 内。
 
 ### Step 4: Mobile parity backlog 锁定
 
