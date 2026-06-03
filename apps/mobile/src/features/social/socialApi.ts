@@ -1,4 +1,5 @@
 import type { MobileAuthSession } from '../auth/authSession';
+import { FriendMessageType } from '../../gen/proto/domain/chat/friend_chat_pb';
 import {
   SocialApiError,
   type ActorSearchResult,
@@ -68,6 +69,7 @@ export interface SocialApiClient {
   listMessages: (sessionUlid: string, beforeUlid?: string, limit?: number) => Promise<ListMessagesPayload>;
   searchMessages: (query: string, sessionUlid?: string, limit?: number, offset?: number) => Promise<SearchMessagesPayload>;
   sendMessage: (sessionUlid: string, receiverDid: string, content: string) => Promise<{ message?: FriendChatMessage }>;
+  sendSenderKeyDistribution: (sessionUlid: string, receiverDid: string, encryptedPayload: Uint8Array) => Promise<{ message?: FriendChatMessage }>;
   editMessage: (sessionUlid: string, messageUlid: string, newContent: string) => Promise<Record<string, unknown>>;
   recallMessage: (sessionUlid: string, messageUlid: string) => Promise<Record<string, unknown>>;
   deleteMessage: (sessionUlid: string, messageUlid: string) => Promise<Record<string, unknown>>;
@@ -172,6 +174,18 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
         method: 'POST',
         path: '/friend-chat/message/send',
         body: { session_ulid: sessionUlid, receiver_did: receiverDid, content, type: 1 },
+      }),
+    sendSenderKeyDistribution: (sessionUlid, receiverDid, encryptedPayload) =>
+      request({
+        method: 'POST',
+        path: '/friend-chat/message/send',
+        body: {
+          session_ulid: sessionUlid,
+          receiver_did: receiverDid,
+          content: '',
+          type: FriendMessageType.SENDER_KEY_DISTRIBUTION,
+          encrypted_payload: bytesToBase64(encryptedPayload),
+        },
       }),
     editMessage: (sessionUlid, messageUlid, newContent) =>
       request({
@@ -295,4 +309,12 @@ function buildApiError(method: HttpMethod, path: string, status: number, payload
     code: envelope?.code ? String(envelope.code) : undefined,
     message: String(message),
   });
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return window.btoa(binary);
 }
