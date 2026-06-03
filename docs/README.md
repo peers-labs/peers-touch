@@ -157,6 +157,7 @@
 - 通知系统架构：`architecture/notification/notification-architecture.md`
 - Applet / 小程序运行时架构：`architecture/applet-runtime/README.md`
 - A2A 协议集成：`architecture/agent/a2a/`（文档集，入口 `README.md`）
+- Federation 虚拟网络与治理账本：`architecture/federation/README.md`
 
 ### 4.2 平台层真源
 
@@ -215,8 +216,10 @@
 
 ### 我想看 Mobile
 
-- `client/mobile/base.md`
-- 再按主题看 `sync-protocol.md`、`native-dual-platform.md` 等
+- 先看当前平台真源：`client/mobile/base.md`
+- 再按主题看：`client/mobile/sync-protocol.md`、`client/mobile/native-dual-platform.md` 等
+- 如果要看 Tauri Mobile 方案形成过程，阅读：`context/mobile/tauri-mobile-capability-topology-proposal.md`（过程记录，不是当前真源）
+- 如果要看 Tauri Mobile 落地路径，阅读：`client/mobile/execution-plans/20260531-tauri-mobile-mainline-migration.md`
 
 ### 我想看 Station
 
@@ -240,6 +243,12 @@
 
 - 先看 `architecture/notification/notification-architecture.md`
 - 再看执行计划 `architecture/notification/execution-plans/`
+
+### 我想看联邦 / Federation
+
+- 先看 `architecture/federation/README.md`
+- 再看跨站用户目录 `architecture/identity/federation-catalog.md`
+- 再看 Actor 身份模型 `architecture/identity/unified-actor-system.md`
 
 ---
 

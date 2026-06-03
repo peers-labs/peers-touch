@@ -32,6 +32,15 @@ const (
 	// persisted session to become this Station's sole active login.
 	RouterURLActorSessionTakeover RouterPath = "/session/takeover"
 
+	// RouterURLAccessAttemptStart starts a Station access gate attempt.
+	RouterURLAccessAttemptStart RouterPath = "/access/start"
+
+	// RouterURLAccessGateSubmit submits an action for the current access gate.
+	RouterURLAccessGateSubmit RouterPath = "/access/submit"
+
+	// RouterURLAccessDecision returns the current access decision for an attempt.
+	RouterURLAccessDecision RouterPath = "/access/decision"
+
 	// RouterURLActorChangePassword Client change password
 	RouterURLActorChangePassword RouterPath = "/change-password"
 

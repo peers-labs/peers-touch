@@ -1,0 +1,335 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Avatar, Button, Empty, Input, List, Modal, Spin, Tag, Typography } from 'antd';
+import { Check, RefreshCw, Search, ShieldCheck, UserPlus, X } from 'lucide-react';
+
+import { useMobileI18n } from '../app/mobileI18n';
+import {
+  formatSocialError,
+  useSocialStore,
+} from '../features/social/socialStore';
+import {
+  selectOutgoingFriendRequests,
+  selectPendingInboundFriendRequests,
+  selectSocialConversations,
+} from '../features/social/socialSelectors';
+import type { ActorSearchResult, SocialConversation } from '../features/social/socialTypes';
+
+const { Text } = Typography;
+
+interface ContactsPageProps {
+  onOpenChat?: () => void;
+}
+
+export function ContactsPage({ onOpenChat }: ContactsPageProps) {
+  const { t } = useMobileI18n();
+  const [addOpen, setAddOpen] = useState(false);
+  const [contactQuery, setContactQuery] = useState('');
+  const [peopleQuery, setPeopleQuery] = useState('');
+  const [selectedContact, setSelectedContact] = useState<SocialConversation | null>(null);
+  const currentUserDid = useSocialStore((state) => state.currentUserDid);
+  const friendRequests = useSocialStore((state) => state.friendRequests);
+  const loading = useSocialStore((state) => state.loading);
+  const error = useSocialStore((state) => state.error);
+  const reconcile = useSocialStore((state) => state.reconcile);
+  const acceptFriendRequest = useSocialStore((state) => state.acceptFriendRequest);
+  const rejectFriendRequest = useSocialStore((state) => state.rejectFriendRequest);
+  const sendFriendRequest = useSocialStore((state) => state.sendFriendRequest);
+  const selectSession = useSocialStore((state) => state.selectSession);
+  const loadPeerProfile = useSocialStore((state) => state.loadPeerProfile);
+  const peerProfiles = useSocialStore((state) => state.peerProfiles);
+  const peerProfileLoading = useSocialStore((state) => state.peerProfileLoading);
+  const peerProfileErrors = useSocialStore((state) => state.peerProfileErrors);
+  const peopleResults = useSocialStore((state) => state.peopleSearchResults);
+  const peopleSearching = useSocialStore((state) => state.peopleSearchLoading);
+  const peopleError = useSocialStore((state) => state.peopleSearchError);
+  const searchPeople = useSocialStore((state) => state.searchPeople);
+  const clearPeopleSearch = useSocialStore((state) => state.clearPeopleSearch);
+  const contacts = useSocialStore(selectSocialConversations);
+  const inboundRequests = useSocialStore(selectPendingInboundFriendRequests);
+  const sentRequests = useSocialStore(selectOutgoingFriendRequests);
+  const filteredContacts = useMemo(() => {
+    const query = contactQuery.trim().toLowerCase();
+    if (!query) return contacts;
+    return contacts.filter((contact) =>
+      `${contact.peerName} ${contact.peerDid}`.toLowerCase().includes(query),
+    );
+  }, [contactQuery, contacts]);
+  const pendingTargetDids = useMemo(
+    () => new Set(friendRequests.map((request) => request.receiverDid || request.senderDid).filter(Boolean)),
+    [friendRequests],
+  );
+  const contactDids = useMemo(
+    () => new Set(contacts.map((contact) => contact.peerDid).filter(Boolean)),
+    [contacts],
+  );
+  const selectedProfile = selectedContact ? peerProfiles[selectedContact.peerDid] : null;
+  const selectedProfileLoading = selectedContact ? Boolean(peerProfileLoading[selectedContact.peerDid]) : false;
+  const selectedProfileError = selectedContact ? peerProfileErrors[selectedContact.peerDid] : null;
+
+  useEffect(() => {
+    if (selectedContact?.peerDid) void loadPeerProfile(selectedContact.peerDid);
+  }, [loadPeerProfile, selectedContact?.peerDid]);
+
+  const closeFindPeople = () => {
+    setAddOpen(false);
+    setPeopleQuery('');
+    clearPeopleSearch();
+  };
+
+  const sendRequestToResult = async (result: ActorSearchResult) => {
+    const receiverDid = result.actorId || result.id;
+    if (!receiverDid) return;
+    await sendFriendRequest(receiverDid, '');
+    await searchPeople(peopleQuery);
+  };
+
+  const openContactChat = async (contact: SocialConversation) => {
+    await selectSession(contact.session.ulid);
+    setSelectedContact(null);
+    onOpenChat?.();
+  };
+
+  return (
+    <div className="page-container">
+      <header className="page-header">
+        <h1 className="header-title">{t('mobile.contacts.title')}</h1>
+      </header>
+
+      <div className="contacts-toolbar">
+        <Input
+          className="contacts-search-input"
+          value={contactQuery}
+          onChange={(event) => setContactQuery(event.target.value)}
+          prefix={<Search size={16} />}
+          placeholder={t('mobile.contacts.searchPlaceholder')}
+          allowClear
+        />
+        <button className="contacts-add-button" type="button" onClick={() => setAddOpen(true)} aria-label={t('mobile.contacts.findPeople')}>
+          <UserPlus size={20} />
+        </button>
+      </div>
+
+      {error ? <Text type="danger" className="page-error">{formatSocialError(error)}</Text> : null}
+
+      <section className="social-list-panel">
+        <Spin spinning={loading}>
+          <SectionTitle title={t('mobile.contacts.friendRequests')} count={inboundRequests.length} />
+          {inboundRequests.length > 0 ? (
+            <List
+              dataSource={inboundRequests}
+              renderItem={(request) => (
+                <List.Item
+                  actions={[
+                    <Button
+                      key="accept"
+                      type="primary"
+                      icon={<Check size={14} />}
+                      onClick={() => acceptFriendRequest(request.requestId)}
+                    />,
+                    <Button key="reject" icon={<X size={14} />} onClick={() => rejectFriendRequest(request.requestId)} />,
+                  ]}
+                >
+                  <List.Item.Meta
+                    avatar={<Avatar src={request.senderAvatar}>{(request.senderDisplayName || request.senderDid).slice(0, 1)}</Avatar>}
+                    title={<Text strong>{request.senderDisplayName || request.senderDid}</Text>}
+                    description={request.message || t('mobile.contacts.defaultRequestMessage')}
+                  />
+                </List.Item>
+              )}
+            />
+          ) : (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.contacts.noFriendRequests')} />
+          )}
+
+          <SectionTitle title={t('mobile.contacts.friends')} count={contacts.length} />
+          {filteredContacts.length > 0 ? (
+            <List
+              dataSource={filteredContacts}
+              renderItem={(contact) => (
+                <List.Item className="contact-item" onClick={() => setSelectedContact(contact)}>
+                  <List.Item.Meta
+                    avatar={<Avatar src={contact.peerAvatar}>{contact.peerName.slice(0, 1)}</Avatar>}
+                    title={<Text strong>{contact.peerName}</Text>}
+                    description={contact.peerOnline ? t('mobile.social.online') : t('mobile.social.offline')}
+                  />
+                </List.Item>
+              )}
+            />
+          ) : contacts.length > 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.contacts.noSearchResults')} />
+          ) : (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={
+                <div className="empty-copy">
+                  <Text strong>{t('mobile.contacts.emptyTitle')}</Text>
+                  <Text type="secondary">{t('mobile.contacts.emptySubtitle')}</Text>
+                </div>
+              }
+            >
+              <Button icon={<RefreshCw size={16} />} onClick={reconcile}>
+                {t('mobile.contacts.refresh')}
+              </Button>
+            </Empty>
+          )}
+
+          {sentRequests.length > 0 ? (
+            <>
+              <SectionTitle title={t('mobile.contacts.sentRequests')} count={sentRequests.length} />
+              <List
+                dataSource={sentRequests}
+                renderItem={(request) => (
+                  <List.Item>
+                    <List.Item.Meta
+                      avatar={<Avatar src={request.receiverAvatar}>{(request.receiverDisplayName || request.receiverDid).slice(0, 1)}</Avatar>}
+                      title={<Text strong>{request.receiverDisplayName || request.receiverDid}</Text>}
+                      description={t('mobile.contacts.waitingForAccept')}
+                    />
+                  </List.Item>
+                )}
+              />
+            </>
+          ) : null}
+        </Spin>
+      </section>
+
+      <Modal
+        title={t('mobile.contacts.findPeople')}
+        open={addOpen}
+        footer={null}
+        onCancel={closeFindPeople}
+        destroyOnClose
+      >
+        <div className="find-people-modal">
+          <Input.Search
+            value={peopleQuery}
+            onChange={(event) => {
+              setPeopleQuery(event.target.value);
+              if (!event.target.value.trim()) clearPeopleSearch();
+            }}
+            onSearch={searchPeople}
+            placeholder={t('mobile.contacts.findPeoplePlaceholder')}
+            enterButton={t('mobile.contacts.search')}
+            loading={peopleSearching}
+            allowClear
+          />
+          {peopleError ? <Text type="danger" className="page-error">{formatSocialError(peopleError)}</Text> : null}
+          <Spin spinning={peopleSearching}>
+            <div className="people-result-list">
+              {peopleResults.length > 0 ? (
+                peopleResults.map((result) => {
+                  const receiverDid = result.actorId || result.id;
+                  const isSelf = !!currentUserDid && receiverDid === currentUserDid;
+                  const alreadyPending = pendingTargetDids.has(receiverDid);
+                  const alreadyFriend = contactDids.has(receiverDid);
+                  return (
+                    <div className="people-result-card" key={receiverDid || result.username}>
+                      <Avatar src={result.avatar} size={42}>
+                        {(result.displayName || result.username || receiverDid).slice(0, 1)}
+                      </Avatar>
+                      <div className="people-result-copy">
+                        <div className="people-result-title">
+                          <Text strong ellipsis>{result.displayName || result.username || receiverDid}</Text>
+                          {result.federation ? (
+                            <Tag color="success" icon={<ShieldCheck size={11} />}>
+                              {t('mobile.contacts.verified')}
+                            </Tag>
+                          ) : null}
+                        </div>
+                        <Text type="secondary" ellipsis>
+                          {result.federation?.handle || result.username || receiverDid}
+                        </Text>
+                      </div>
+                      <Button
+                        type="primary"
+                        size="small"
+                        disabled={isSelf || alreadyPending || alreadyFriend}
+                        onClick={() => sendRequestToResult(result)}
+                      >
+                        {isSelf
+                          ? t('mobile.contacts.self')
+                          : alreadyFriend
+                            ? t('mobile.contacts.alreadyFriend')
+                            : alreadyPending
+                              ? t('mobile.contacts.requestSent')
+                              : t('mobile.contacts.sendRequest')}
+                      </Button>
+                    </div>
+                  );
+                })
+              ) : (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={peopleQuery ? t('mobile.contacts.noPeopleResults') : t('mobile.contacts.findPeopleHint')}
+                />
+              )}
+            </div>
+          </Spin>
+        </div>
+      </Modal>
+
+      <Modal
+        title={t('mobile.contacts.profile')}
+        open={Boolean(selectedContact)}
+        onCancel={() => setSelectedContact(null)}
+        footer={null}
+        destroyOnClose
+      >
+        {selectedContact ? (
+          <div className="contact-profile-card">
+            <Spin spinning={selectedProfileLoading}>
+              <Avatar src={selectedProfile?.avatar || selectedContact.peerAvatar} size={64}>
+                {(selectedProfile?.displayName || selectedContact.peerName).slice(0, 1)}
+              </Avatar>
+            </Spin>
+            <div className="contact-profile-copy">
+              <Text strong className="contact-profile-name">{selectedProfile?.displayName || selectedContact.peerName}</Text>
+              {selectedProfile?.acct || selectedProfile?.username ? (
+                <Text type="secondary">{selectedProfile.acct || selectedProfile.username}</Text>
+              ) : null}
+              <Text type="secondary" copyable>{selectedContact.peerDid}</Text>
+              {selectedProfile?.note ? <Text className="contact-profile-note">{selectedProfile.note}</Text> : null}
+              <Tag color={selectedContact.peerOnline ? 'success' : 'default'}>
+                {selectedContact.peerOnline ? t('mobile.social.online') : t('mobile.social.offline')}
+              </Tag>
+            </div>
+            {selectedProfile ? (
+              <div className="contact-profile-stats">
+                <ProfileStat label={t('mobile.contacts.profilePosts')} value={selectedProfile.statusesCount} />
+                <ProfileStat label={t('mobile.contacts.profileFollowing')} value={selectedProfile.followingCount} />
+                <ProfileStat label={t('mobile.contacts.profileFollowers')} value={selectedProfile.followersCount} />
+              </div>
+            ) : null}
+            {selectedProfile?.tags.length ? (
+              <div className="contact-profile-tags">
+                {selectedProfile.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}
+              </div>
+            ) : null}
+            {selectedProfileError ? <Text type="danger">{formatSocialError(selectedProfileError)}</Text> : null}
+            <Button type="primary" block onClick={() => openContactChat(selectedContact)}>
+              {t('mobile.contacts.openChat')}
+            </Button>
+          </div>
+        ) : null}
+      </Modal>
+    </div>
+  );
+}
+
+function ProfileStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="contact-profile-stat">
+      <Text strong>{value}</Text>
+      <Text type="secondary">{label}</Text>
+    </div>
+  );
+}
+
+function SectionTitle({ title, count }: { title: string; count: number }) {
+  return (
+    <div className="social-section-title">
+      <Text strong>{title}</Text>
+      <Text type="secondary">{count}</Text>
+    </div>
+  );
+}

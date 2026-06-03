@@ -1,0 +1,41 @@
+{
+  "name": "@peers-touch/app-mobile",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "check": "pnpm run check:web && pnpm run check:rust && pnpm run check:ios-project",
+    "check:web": "tsc --noEmit -p tsconfig.json",
+    "check:rust": "cd src-tauri && cargo check --offline -q",
+    "check:ios-project": "cd src-tauri/gen/apple && xcodebuild -list -project peers-touch-mobile.xcodeproj",
+    "preview": "vite preview",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "tauri:ios:init": "tauri ios init --ci --skip-targets-install",
+    "tauri:ios:dev": "scripts/ios-dev-sim.sh",
+    "tauri:ios:build": "tauri ios build --ci --debug"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.10.2",
+    "@lobehub/ui": "^5.15.6",
+    "@tauri-apps/api": "2.0.1",
+    "antd": "^6.4.3",
+    "lucide-react": "^1.17.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-layout-kit": "^2.0.1",
+    "zustand": "^5.0.11"
+  },
+  "devDependencies": {
+    "@bufbuild/protoc-gen-es": "^2.10.2",
+    "@tauri-apps/cli": "2.0.1",
+    "@types/node": "^24.10.1",
+    "@types/react": "^18.3.28",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^5.1.1",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.1"
+  }
+}

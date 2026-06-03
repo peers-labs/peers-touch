@@ -46,6 +46,9 @@ REMOTE_BASE="~/peers-touch"
 REMOTE_REPO="~/peers-touch/repo"
 COMPOSE_FILE="~/peers-touch/repo/tooling/docker/compose.yml"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 log_section() { echo ""; echo "══════════════════════════════════════════════════════════"; echo "  $1"; echo "══════════════════════════════════════════════════════════"; }
@@ -57,7 +60,7 @@ ssh_cmd() {
   local node="$1"; shift
   local ip
   ip=$(get_ip "$node")
-  ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "${SSH_USER}@${ip}" "$@"
+  ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o IdentitiesOnly=yes "${SSH_USER}@${ip}" "$@"
 }
 
 # Node a (.156) requires sg docker wrapper because docker group was recently added
@@ -69,6 +72,45 @@ docker_cmd() {
   else
     ssh_cmd "$node" "$cmd"
   fi
+}
+
+sync_repo_to_node() {
+  local node="$1"
+  local ip
+  ip=$(get_ip "$node")
+  log_info "Syncing local repo to node ${node} (${ip})..."
+
+  ssh_cmd "$node" "mkdir -p ${REMOTE_BASE}"
+  rsync -az --delete \
+    -e "ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o IdentitiesOnly=yes" \
+    --exclude='.git/' \
+    --exclude='node_modules/' \
+    --exclude='target/' \
+    --exclude='build/' \
+    --exclude='.turbo/' \
+    --exclude='.vite/' \
+    --exclude='.DS_Store' \
+    "${REPO_ROOT}/" "${SSH_USER}@${ip}:peers-touch/repo/"
+}
+
+build_dashboard_web() {
+  local web_dir="${REPO_ROOT}/apps/station/app/subserver/dashboard/web"
+  log_step "Building Station dashboard web assets..."
+  (
+    cd "$web_dir"
+    if [ ! -d node_modules ]; then
+      npm install
+    fi
+    npm run build
+  )
+}
+
+sync_repo_all() {
+  log_section "Syncing source tree"
+  build_dashboard_web
+  for node in "${NODE_NAMES[@]}"; do
+    sync_repo_to_node "$node"
+  done
 }
 
 # ── Secret management (generate once, persist on remote) ──────────────────────
@@ -104,8 +146,8 @@ ensure_ubuntu_image_on_a() {
   has_image=$(docker_cmd "a" "docker images -q ubuntu:22.04" 2>/dev/null || echo "")
   if [[ -z "$has_image" ]]; then
     log_warn "ubuntu:22.04 missing on node a — transferring from node b..."
-    ssh "${SSH_USER}@$(get_ip b)" "docker save ubuntu:22.04" | \
-      ssh "${SSH_USER}@$(get_ip a)" 'sg docker -c "docker load"'
+    ssh -o IdentitiesOnly=yes "${SSH_USER}@$(get_ip b)" "docker save ubuntu:22.04" | \
+      ssh -o IdentitiesOnly=yes "${SSH_USER}@$(get_ip a)" 'sg docker -c "docker load"'
     log_info "Transfer complete."
   else
     log_info "ubuntu:22.04 already present on node a."
@@ -193,6 +235,7 @@ EOF
 
 deploy_relays() {
   log_section "Deploying Relays (3-node mesh)"
+  sync_repo_all
 
   # Ensure ubuntu base image on node a before building
   ensure_ubuntu_image_on_a
@@ -300,6 +343,7 @@ deploy_relays() {
 
 deploy_stations() {
   log_section "Deploying Stations (3 nodes, all relay bootstrap)"
+  sync_repo_all
 
   # Ensure ubuntu base image on node a before building
   ensure_ubuntu_image_on_a
@@ -351,7 +395,7 @@ deploy_stations() {
     ip=$(get_ip "$node")
     log_step "Deploying station on node ${node} (${ip})..."
     generate_station_env "$node" "$full_bootstrap"
-    docker_cmd "$node" "docker compose -p pt-station-${node} -f ${COMPOSE_FILE} --env-file ${REMOTE_BASE}/station.env --profile station --profile infra up -d --build"
+    docker_cmd "$node" "docker compose -p pt-station-${node} -f ${COMPOSE_FILE} --env-file ${REMOTE_BASE}/station.env --profile station --profile infra build --no-cache && docker compose -p pt-station-${node} -f ${COMPOSE_FILE} --env-file ${REMOTE_BASE}/station.env --profile station --profile infra up -d"
   done
 
   log_step "Station deployment complete."
@@ -409,7 +453,14 @@ check_status() {
 # ── Tear down ─────────────────────────────────────────────────────────────────
 
 tear_down() {
+  local remove_volumes="${1:-false}"
   log_section "Tearing down test network"
+
+  local down_flags=""
+  if [ "$remove_volumes" = "true" ]; then
+    down_flags="-v"
+    log_step "Will remove volumes (database data will be wiped)"
+  fi
 
   for node in "${NODE_NAMES[@]}"; do
     local ip
@@ -417,10 +468,10 @@ tear_down() {
     log_step "Stopping services on node ${node} (${ip})..."
 
     # Stop station
-    docker_cmd "$node" "docker compose -p pt-station-${node} -f ${COMPOSE_FILE} --env-file ${REMOTE_BASE}/station.env --profile station --profile infra down" 2>/dev/null || true
+    docker_cmd "$node" "docker compose -p pt-station-${node} -f ${COMPOSE_FILE} --env-file ${REMOTE_BASE}/station.env --profile station --profile infra down ${down_flags}" 2>/dev/null || true
 
     # Stop relay
-    docker_cmd "$node" "docker compose -p pt-relay-${node} -f ${COMPOSE_FILE} --env-file ${REMOTE_BASE}/relay.env --profile relay --profile infra down" 2>/dev/null || true
+    docker_cmd "$node" "docker compose -p pt-relay-${node} -f ${COMPOSE_FILE} --env-file ${REMOTE_BASE}/relay.env --profile relay --profile infra down ${down_flags}" 2>/dev/null || true
   done
 
   log_step "All services stopped."
@@ -429,13 +480,14 @@ tear_down() {
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 usage() {
-  echo "Usage: $0 {relay|station|all|status|down}"
+  echo "Usage: $0 {relay|station|all|status|down|clean}"
   echo ""
   echo "  relay    Deploy relays on all 3 nodes (two-pass mesh bootstrap)"
   echo "  station  Deploy stations on all 3 nodes (requires relays running)"
   echo "  all      Deploy relays then stations"
   echo "  status   Health-check all 6 services"
   echo "  down     Tear down all services on all nodes"
+  echo "  clean    Tear down all services AND remove volumes (wipes database)"
   exit 1
 }
 
@@ -459,7 +511,10 @@ case "$COMMAND" in
     check_status
     ;;
   down)
-    tear_down
+    tear_down "false"
+    ;;
+  clean)
+    tear_down "true"
     ;;
   *)
     usage

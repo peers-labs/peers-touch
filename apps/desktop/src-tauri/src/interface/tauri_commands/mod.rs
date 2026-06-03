@@ -35,6 +35,7 @@ pub mod settings;
 pub mod skills;
 pub mod skills_market;
 pub mod social;
+pub mod station;
 pub mod system;
 pub mod tools;
 pub mod tts;
