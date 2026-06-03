@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Tag } from '@lobehub/ui';
@@ -23,10 +23,6 @@ export function ChatContactsPanel() {
     activeTab,
     activeSessionUlid,
     activeGroupUlid,
-    loadSessions,
-    loadGroups,
-    loadFriendRequests,
-    loadCurrentUserProfile,
     selectSession,
     selectGroup,
     setActiveTab,
@@ -35,13 +31,6 @@ export function ChatContactsPanel() {
   } = useSocialChatStore();
 
   const [busyAction, setBusyAction] = useState<{ id: string; kind: 'accept' | 'reject' } | null>(null);
-
-  useEffect(() => {
-    void loadCurrentUserProfile().catch(() => {});
-    void loadFriendRequests().catch(() => {});
-    void loadGroups().catch(() => {});
-    void loadSessions().catch(() => {});
-  }, [loadCurrentUserProfile, loadFriendRequests, loadGroups, loadSessions]);
 
   const receivedRequests = useMemo(() => {
     if (!currentUserDid) return [];

@@ -26,8 +26,8 @@
 | 现状矩阵 | Desktop/Mobile 文件映射和能力差异矩阵 | 能看出哪些是成熟能力、哪些是分层优势、哪些未完成 |
 | Runtime 契约 | `SocialRuntimeSupervisor` 语义 | 双端都有 install/bootstrap/reconcile/teardown/external event 对应点 |
 | Host Adapter 契约 | `SocialHostEvent` 标准事件 | Desktop/Mobile 宿主事件不直接写业务 projection |
-| Wire 防回退 | 双端 generated proto 检查 | 禁止 `ProtoReader`、field-number、wire-type 手写 decode |
-| Page freshness 防回退 | 检查或 checklist | 禁止页面直接开 SSE、presence stream、长期 social timer |
+| Wire 防回退 | 双端 generated proto 检查 | 已接入 `apps/desktop/scripts/check-social-wire-contract.sh` 与 `apps/mobile/scripts/check-social-wire-contract.sh`，禁止 `ProtoReader`、field-number、wire-type 手写 decode |
+| Page freshness 防回退 | 双端 runtime boundary 检查 | 已接入 `tooling/scripts/check-social-runtime-boundaries.sh`，禁止页面直接开 SSE、presence stream、runtime-level reconcile/refresh |
 
 ---
 
@@ -58,11 +58,11 @@
 ### Step 2: 双端防回退检查
 
 - Mobile 已有 `apps/mobile/scripts/check-social-wire-contract.sh`。
-- Desktop 补同类 generated proto 防回退检查。
-- 增加 page-local freshness scan，至少覆盖：
+- Desktop 已补 `apps/desktop/scripts/check-social-wire-contract.sh`。
+- 已增加 `tooling/scripts/check-social-runtime-boundaries.sh` page-local freshness scan，覆盖：
   - `fetch('/events/stream')`
   - `fetch('/friend-chat/presence/stream')`
-  - page/component 中 social `setInterval`
+  - page/component 中直接安装/启动 social runtime bridge
   - page/component 中绕过 runtime 的 social long-lived subscription
 
 ### Step 3: Desktop boundary 清理计划

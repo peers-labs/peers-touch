@@ -71,9 +71,6 @@ export function MobileShell(props: MobileShellProps) {
 
   const switchTab = (tabId: TabId) => {
     setActiveTab(tabId);
-    if (tabId === 'contacts') {
-      void useSocialStore.getState().reconcile();
-    }
   };
 
   return (
