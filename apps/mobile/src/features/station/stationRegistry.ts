@@ -59,7 +59,7 @@ export function addStationEntry(
   status: StationStatusInput = {},
 ): { ok: true; registry: StoredStationRegistry } | { ok: false; error: string } {
   const normalized = buildStationUrl(input);
-  if (!normalized) return { ok: false, error: '请输入合法的 Station 地址，例如 station.example.com 或 192.168.1.8:18080' };
+  if (!normalized) return { ok: false, error: 'mobile.launch.validAddressHint' };
 
   const now = Date.now();
   const entries = registry.entries.filter((entry) => entry.url !== normalized);

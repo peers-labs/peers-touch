@@ -51,6 +51,7 @@
   "mobile.launch.required": "必选",
   "mobile.launch.selected": "当前",
   "mobile.launch.station": "Station",
+  "mobile.launch.protocol": "Station 协议",
   "mobile.launch.stationUnavailable": "Station 暂不可用，请检查地址和网络",
   "mobile.launch.subtitle": "选择 Station",
   "mobile.launch.targetPrefix": "目标",
