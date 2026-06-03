@@ -1,6 +1,7 @@
 import type { MobileAuthSession } from '../auth/authSession';
 import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import { consumeGroupSkdm, decryptGroupPayload, rotateGroupSenderKey } from './groupE2eeBridge';
+import { ensureMobileKeyBundlePublished, openSkdmEnvelopeFromSender } from './groupKeyExchange';
 import type { GroupState } from './groupStore';
 
 const GROUP_E2EE_REPAIR_INTERVAL_MS = 5000;
@@ -29,6 +30,9 @@ export function startGroupE2eeRuntime(
     }
   };
 
+  void ensureMobileKeyBundlePublished(session).catch((error) => {
+    getStore().setE2eeError(identityErrorKey(session), errorMessage(error));
+  });
   void repairEncryptedMessages();
   const repairTimer = window.setInterval(() => {
     void repairEncryptedMessages();
@@ -38,7 +42,11 @@ export function startGroupE2eeRuntime(
     consumeSkdmControlMessage: async (senderDid, skdmBytes) => {
       if (cancelled || !senderDid || !skdmBytes.byteLength) return false;
       try {
-        await consumeGroupSkdm(session, senderDid, skdmBytes);
+        const skdmPlaintext = await openSkdmEnvelopeFromSender(session, senderDid, skdmBytes);
+        if (!skdmPlaintext?.byteLength) {
+          throw new Error(`missing-authenticated-skdm-envelope:${senderDid}`);
+        }
+        await consumeGroupSkdm(session, senderDid, skdmPlaintext);
         getStore().setE2eeError(skdmErrorKey(senderDid), null);
         await repairEncryptedMessages();
         return true;
@@ -105,6 +113,10 @@ function shouldRepairMessage(message: GroupMessage): message is GroupMessage & {
 
 function actorDidForSession(session: MobileAuthSession): string {
   return String(session.actor?.id || session.actor?.actorId || session.actor?.actor_id || '').trim();
+}
+
+function identityErrorKey(session: MobileAuthSession): string {
+  return `identity:${actorDidForSession(session) || session.sessionId}`;
 }
 
 function skdmErrorKey(senderDid: string): string {
