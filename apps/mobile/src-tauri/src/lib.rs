@@ -1,4 +1,5 @@
 mod commands;
+pub mod domain;
 pub mod error;
 mod platform;
 
