@@ -7,7 +7,7 @@ import {
   useSocialStore,
 } from '../features/social/socialStore';
 import { timestampMillis } from '../features/social/socialNormalizers';
-import { selectUnreadSocialNotifications } from '../features/social/socialSelectors';
+import { projectUnreadNotifications } from '../features/social/socialProjection';
 import type { SocialNotification } from '../features/social/socialTypes';
 
 const { Text } = Typography;
@@ -25,7 +25,6 @@ interface MobileNotificationCenterProps {
 export function MobileNotificationCenter({ open, onClose, onOpenChat, onOpenContacts }: MobileNotificationCenterProps) {
   const { t } = useMobileI18n();
   const notifications = useSocialStore((state) => state.notifications);
-  const unread = useSocialStore(selectUnreadSocialNotifications);
   const loading = useSocialStore((state) => state.loading);
   const markNotificationRead = useSocialStore((state) => state.markNotificationRead);
   const markAllNotificationsRead = useSocialStore((state) => state.markAllNotificationsRead);
@@ -33,6 +32,7 @@ export function MobileNotificationCenter({ open, onClose, onOpenChat, onOpenCont
   const loadMoreNotifications = useSocialStore((state) => state.loadMoreNotifications);
   const notificationHasMore = useSocialStore((state) => state.notificationHasMore);
   const selectSession = useSocialStore((state) => state.selectSession);
+  const unread = useMemo(() => projectUnreadNotifications(notifications), [notifications]);
   const unreadCount = useMemo(() => unread.length, [unread]);
 
   const openNotification = async (notification: SocialNotification) => {
