@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Avatar, Badge, Button, Empty, Input, List, Popconfirm, Spin, Typography } from 'antd';
+import { Avatar, Badge, Button, Empty, Input, List, Modal, Popconfirm, Spin, Tag, Typography } from 'antd';
 import { ArrowLeft, Pencil, RotateCcw, Search, Send, Trash2, Users, X } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
@@ -45,6 +45,7 @@ export function ChatPage() {
   const [draft, setDraft] = useState('');
   const [conversationQuery, setConversationQuery] = useState('');
   const [threadSearchQuery, setThreadSearchQuery] = useState('');
+  const [groupManageOpen, setGroupManageOpen] = useState(false);
   const [editingMessage, setEditingMessage] = useState<EditingMessage | null>(null);
   const activeSessionUlid = useSocialStore((state) => state.activeSessionUlid);
   const messages = useSocialStore((state) => (activeSessionUlid ? state.messages[activeSessionUlid] ?? EMPTY_MESSAGES : EMPTY_MESSAGES));
@@ -65,9 +66,13 @@ export function ChatPage() {
   const clearMessageSearch = useSocialStore((state) => state.clearMessageSearch);
   const activeGroupUlid = useGroupStore((state) => state.activeGroupUlid);
   const groupMessages = useGroupStore((state) => (activeGroupUlid ? state.messages[activeGroupUlid] ?? EMPTY_GROUP_MESSAGES : EMPTY_GROUP_MESSAGES));
+  const groupMembers = useGroupStore((state) => (activeGroupUlid ? state.members[activeGroupUlid] ?? [] : []));
   const groupLoading = useGroupStore((state) => state.loading);
   const groupError = useGroupStore((state) => state.error);
   const selectGroup = useGroupStore((state) => state.selectGroup);
+  const inviteGroupMembers = useGroupStore((state) => state.inviteMembers);
+  const leaveGroup = useGroupStore((state) => state.leaveGroup);
+  const removeGroupMember = useGroupStore((state) => state.removeMember);
   const groupEncryptionReady = useGroupStore((state) => (activeGroupUlid ? Boolean(state.encryptionReady[activeGroupUlid]) : false));
   const groupSending = useGroupStore((state) => (activeGroupUlid ? Boolean(state.sendingGroups[activeGroupUlid]) : false));
   const sendGroupMessage = useGroupStore((state) => state.sendEncryptedMessage);
@@ -96,6 +101,13 @@ export function ChatPage() {
   const activeConversation = conversations.find((conversation) => conversation.session.ulid === activeSessionUlid);
   const activeGroupConversation = groupConversations.find((conversation) => conversation.group.ulid === activeGroupUlid);
   const peerTyping = activeConversation ? Boolean(typingPeers[activeConversation.peerDid]?.typing) : false;
+  const groupMemberDids = useMemo(() => new Set(groupMembers.map((member) => member.actorDid).filter(Boolean)), [groupMembers]);
+  const groupInviteCandidates = useMemo(
+    () => conversations.filter((conversation) => conversation.peerDid && !groupMemberDids.has(conversation.peerDid)),
+    [conversations, groupMemberDids],
+  );
+  const myGroupMember = groupMembers.find((member) => member.actorDid === currentUserDid);
+  const canManageGroupMembers = Boolean(myGroupMember && Number(myGroupMember.role) >= 2);
 
   useEffect(() => {
     return () => {
@@ -189,6 +201,22 @@ export function ChatPage() {
     await deleteGroupMessage(activeGroupUlid, message.ulid);
   };
 
+  const inviteFriendToGroup = async (peerDid: string) => {
+    if (!activeGroupUlid) return;
+    await inviteGroupMembers(activeGroupUlid, [peerDid]);
+  };
+
+  const removeMemberFromGroup = async (actorDid: string) => {
+    if (!activeGroupUlid) return;
+    await removeGroupMember(activeGroupUlid, actorDid);
+  };
+
+  const leaveActiveGroup = async () => {
+    if (!activeGroupUlid) return;
+    await leaveGroup(activeGroupUlid);
+    setGroupManageOpen(false);
+  };
+
   const openConversation = async (conversation: MobileConversation) => {
     if (conversation.kind === 'friend') {
       await selectGroup(null);
@@ -234,6 +262,16 @@ export function ChatPage() {
                   : t('mobile.social.offline')}
             </Text>
           </div>
+          {isGroupThread ? (
+            <button
+              className="header-action"
+              type="button"
+              onClick={() => setGroupManageOpen(true)}
+              aria-label={t('mobile.group.members')}
+            >
+              <Users size={20} />
+            </button>
+          ) : null}
         </header>
 
         {!isGroupThread ? (
@@ -368,6 +406,78 @@ export function ChatPage() {
             />
           </footer>
         )}
+
+        {activeGroupConversation ? (
+          <Modal
+            title={t('mobile.group.members')}
+            open={groupManageOpen}
+            onCancel={() => setGroupManageOpen(false)}
+            footer={null}
+            destroyOnClose
+          >
+            <div className="group-management-panel">
+              <SectionTitle title={t('mobile.group.members')} count={groupMembers.length} />
+              {groupMembers.length > 0 ? (
+                <List
+                  dataSource={groupMembers}
+                  renderItem={(member) => (
+                    <List.Item
+                      actions={[
+                        canManageGroupMembers && member.actorDid !== currentUserDid ? (
+                          <Button
+                            key="remove"
+                            size="small"
+                            danger
+                            onClick={() => removeMemberFromGroup(member.actorDid)}
+                          >
+                            {t('mobile.group.removeMember')}
+                          </Button>
+                        ) : null,
+                      ].filter(Boolean)}
+                    >
+                      <List.Item.Meta
+                        avatar={<Avatar>{(member.nickname || member.actorDid).slice(0, 1)}</Avatar>}
+                        title={<Text strong>{member.nickname || member.actorDid}</Text>}
+                        description={<Text type="secondary" copyable>{member.actorDid}</Text>}
+                      />
+                      <Tag>{groupRoleLabel(Number(member.role), t)}</Tag>
+                    </List.Item>
+                  )}
+                />
+              ) : (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.group.noMembers')} />
+              )}
+
+              <SectionTitle title={t('mobile.group.inviteFriends')} count={groupInviteCandidates.length} />
+              {groupInviteCandidates.length > 0 ? (
+                <List
+                  dataSource={groupInviteCandidates}
+                  renderItem={(candidate) => (
+                    <List.Item
+                      actions={[
+                        <Button key="invite" size="small" type="primary" onClick={() => inviteFriendToGroup(candidate.peerDid)}>
+                          {t('mobile.group.invite')}
+                        </Button>,
+                      ]}
+                    >
+                      <List.Item.Meta
+                        avatar={<Avatar src={candidate.peerAvatar}>{candidate.peerName.slice(0, 1)}</Avatar>}
+                        title={<Text strong>{candidate.peerName}</Text>}
+                        description={<Text type="secondary" copyable>{candidate.peerDid}</Text>}
+                      />
+                    </List.Item>
+                  )}
+                />
+              ) : (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.group.noInviteCandidates')} />
+              )}
+
+              <Button danger block onClick={leaveActiveGroup}>
+                {t('mobile.group.leaveGroup')}
+              </Button>
+            </div>
+          </Modal>
+        ) : null}
       </div>
     );
   }
@@ -509,4 +619,19 @@ function groupMessageDisplayText(display: GroupMessageDisplay, t: (key: string) 
   if (display.kind === 'recalled') return t('mobile.chat.recalledMessage');
   if (display.kind === 'encrypted') return t('mobile.group.encryptedMessage');
   return t('mobile.chat.noPreview');
+}
+
+function groupRoleLabel(role: number, t: (key: string) => string): string {
+  if (role >= 3) return t('mobile.group.roleOwner');
+  if (role >= 2) return t('mobile.group.roleAdmin');
+  return t('mobile.group.roleMember');
+}
+
+function SectionTitle({ title, count }: { title: string; count: number }) {
+  return (
+    <div className="social-section-title">
+      <Text strong>{title}</Text>
+      <Text type="secondary">{count}</Text>
+    </div>
+  );
 }
