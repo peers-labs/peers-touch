@@ -34,26 +34,19 @@ import {
   type MessagePreview,
   type SocialMessage,
 } from './socialProjection';
+import {
+  normalizeFriendChatSession,
+  normalizeFriendRequestData,
+  normalizeFriendRequests,
+  seedPresenceFromSessions,
+  type FriendRequestData,
+} from './socialNormalizers';
 
 function bytesToB64(bytes: Uint8Array): string {
   let bin = '';
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
   return btoa(bin);
 }
-interface FriendRequestData {
-  id: string;
-  senderId: string;
-  receiverId: string;
-  status: number;
-  message: string;
-  createdAt: string;
-  respondedAt: string;
-  senderDisplayName: string;
-  senderAvatar: string;
-  receiverDisplayName: string;
-  receiverAvatar: string;
-}
-
 export interface UnifiedConversation {
   type: 'friend' | 'group';
   ulid: string;
@@ -923,29 +916,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     set({ loading: true });
     try {
       const data = await api.friendChatListSessions();
-      const raw = (data?.sessions || []) as Record<string, any>[];
-      const list = raw.map((r) => {
-        const s = r as FriendChatSession;
-        if (!s.participantADisplayName && r.participant_a_display_name) {
-          (s as any).participantADisplayName = r.participant_a_display_name;
-        }
-        if (!s.participantAAvatar && r.participant_a_avatar) {
-          (s as any).participantAAvatar = r.participant_a_avatar;
-        }
-        if (!s.participantBDisplayName && r.participant_b_display_name) {
-          (s as any).participantBDisplayName = r.participant_b_display_name;
-        }
-        if (!s.participantBAvatar && r.participant_b_avatar) {
-          (s as any).participantBAvatar = r.participant_b_avatar;
-        }
-        if (!s.participantADid && r.participant_a_did) {
-          s.participantADid = r.participant_a_did;
-        }
-        if (!s.participantBDid && r.participant_b_did) {
-          s.participantBDid = r.participant_b_did;
-        }
-        return s;
-      });
+      const list = (data?.sessions || []).map(normalizeFriendChatSession);
       const derivedDid = deriveCurrentUserDidFromSessions(list);
 
       // Seed peerOnline from the snapshot embedded in this response.
@@ -954,16 +925,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       // by the response we're parsing now (the snapshot is server-side
       // serialized at request time, the SSE is live). Hence we only
       // write to keys that are currently `undefined`.
-      const presenceSeed: Record<string, boolean> = {};
-      for (const s of list) {
-        const aDid = s.participantADid;
-        const bDid = s.participantBDid;
-        const r = s as any;
-        const aOnline = Boolean(r.participantAOnline ?? r.participant_a_online);
-        const bOnline = Boolean(r.participantBOnline ?? r.participant_b_online);
-        if (aDid && presenceSeed[aDid] === undefined) presenceSeed[aDid] = aOnline;
-        if (bDid && presenceSeed[bDid] === undefined) presenceSeed[bDid] = bOnline;
-      }
+      const presenceSeed = seedPresenceFromSessions(list);
 
       set((state) => ({
         sessions: list,
@@ -1733,20 +1695,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         limit ?? 200,
         offset ?? 0,
       );
-      const raw = data?.requests || [];
-      const requests: FriendRequestData[] = raw.map((r: Record<string, any>) => ({
-        id: r.id ?? r.Id ?? '',
-        senderId: r.senderId ?? r.sender_id ?? r.senderDid ?? r.sender_did ?? '',
-        receiverId: r.receiverId ?? r.receiver_id ?? r.receiverDid ?? r.receiver_did ?? '',
-        status: r.status ?? 0,
-        message: r.message ?? '',
-        createdAt: r.createdAt ?? r.created_at ?? '',
-        respondedAt: r.respondedAt ?? r.responded_at ?? '',
-        senderDisplayName: r.senderDisplayName ?? r.sender_display_name ?? '',
-        senderAvatar: r.senderAvatar ?? r.sender_avatar ?? '',
-        receiverDisplayName: r.receiverDisplayName ?? r.receiver_display_name ?? '',
-        receiverAvatar: r.receiverAvatar ?? r.receiver_avatar ?? '',
-      }));
+      const requests = normalizeFriendRequests(data?.requests);
       set({ friendRequests: requests });
     } catch (error) {
       log.error('socialChat', 'loadFriendRequests failed', error);
@@ -1767,7 +1716,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   acceptFriendRequest: async (requestId) => {
     try {
       const data = await api.friendChatAcceptFriendRequest(requestId);
-      const acceptedRequest = data?.request as unknown as FriendRequestData | undefined;
+      const acceptedRequest = normalizeFriendRequestData(data?.request);
       set((state) => ({
         friendRequests: state.friendRequests.map((request) =>
           request.id === requestId
@@ -1797,7 +1746,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   rejectFriendRequest: async (requestId) => {
     try {
       const data = await api.friendChatRejectFriendRequest(requestId);
-      const rejectedRequest = data?.request as unknown as FriendRequestData | undefined;
+      const rejectedRequest = normalizeFriendRequestData(data?.request);
       set((state) => ({
         friendRequests: state.friendRequests.map((request) =>
           request.id === requestId
@@ -2060,7 +2009,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       const peer = peerOfSession(s, did);
       const loadedMsgs = state.messages[s.ulid];
       const friendPreview = loadedMsgs && loadedMsgs.length > 0
-        ? { content: loadedMsgs[loadedMsgs.length - 1].content ?? '', type: Number((loadedMsgs[loadedMsgs.length - 1] as any).type ?? 1), senderDid: loadedMsgs[loadedMsgs.length - 1].senderDid ?? '' }
+        ? previewFromMessage(loadedMsgs[loadedMsgs.length - 1])
         : state.lastPreviews[s.ulid];
       out.push({
         type: 'friend',
@@ -2078,7 +2027,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       if (state.conversationLocalState[conversationKey('group', g.ulid)]?.hidden) continue;
       const loadedGroupMsgs = state.messages[g.ulid];
       const groupPreview = loadedGroupMsgs && loadedGroupMsgs.length > 0
-        ? { content: loadedGroupMsgs[loadedGroupMsgs.length - 1].content ?? '', type: Number((loadedGroupMsgs[loadedGroupMsgs.length - 1] as any).type ?? 1), senderDid: loadedGroupMsgs[loadedGroupMsgs.length - 1].senderDid ?? '' }
+        ? previewFromMessage(loadedGroupMsgs[loadedGroupMsgs.length - 1])
         : state.lastPreviews[g.ulid];
       out.push({
         type: 'group',
