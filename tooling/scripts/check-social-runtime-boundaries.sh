@@ -48,6 +48,11 @@ check_pattern \
   'refreshSocialProjection|\.reconcile\(|useSocialStore\.getState\(\)\.reconcile|loadFriendRequests\(|refreshFriendRequests\(|refreshSessions\(|refreshNotifications\(' \
   "${DESKTOP_UI_DIRS[@]}" "${MOBILE_UI_DIRS[@]}"
 
+check_pattern \
+  "Social runtime boundary violation: UI pages/components must not parse or call group E2EE primitives directly." \
+  'GroupCiphertextSchema|SenderKeyDistributionMessageSchema|crypto_group|cryptoGroup|groupE2ee' \
+  "${MOBILE_UI_DIRS[@]}"
+
 if [[ "$violation" -ne 0 ]]; then
   echo "Social runtime boundary check failed. Move long-lived social freshness to runtime/store owners." >&2
   exit 1
