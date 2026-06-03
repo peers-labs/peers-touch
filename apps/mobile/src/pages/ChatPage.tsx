@@ -7,7 +7,11 @@ import logo from '../assets/logo.png';
 import { selectGroupConversations } from '../features/group/groupSelectors';
 import { timestampMillis as groupTimestampMillis } from '../features/group/groupNormalizers';
 import { useGroupStore } from '../features/group/groupStore';
-import type { GroupConversation } from '../features/group/groupProjection';
+import {
+  projectGroupMessageDisplay,
+  type GroupConversation,
+  type GroupMessageDisplay,
+} from '../features/group/groupProjection';
 import type { GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
 import {
   formatSocialError,
@@ -235,9 +239,9 @@ export function ChatPage() {
           ) : (
             threadMessages.map((message) => {
               const mine = message.senderDid === currentUserDid;
-              const content = message.recalled
-                ? t('mobile.chat.recalledMessage')
-                : message.content || (isGroupThread && message.encryptedPayload?.byteLength ? t('mobile.group.encryptedMessage') : t('mobile.chat.noPreview'));
+              const content = isGroupThread
+                ? groupMessageDisplayText(projectGroupMessageDisplay(message as GroupMessage), t)
+                : friendMessageDisplayText(message as FriendChatMessage, t);
               return (
                 <div key={message.ulid} className={`message-bubble-row ${mine ? 'mine' : 'peer'}`}>
                   <div className="message-bubble">
@@ -419,12 +423,13 @@ function conversationUnread(conversation: MobileConversation): number {
 }
 
 function conversationPreview(conversation: MobileConversation, t: (key: string) => string): string {
+  if (conversation.kind === 'group') {
+    const lastMessage = conversation.conversation.lastMessage;
+    return lastMessage ? groupMessageDisplayText(projectGroupMessageDisplay(lastMessage), t) : t('mobile.chat.noPreview');
+  }
+
   const lastMessage = conversation.conversation.lastMessage;
-  if (!lastMessage) return t('mobile.chat.noPreview');
-  if (lastMessage.recalled) return t('mobile.chat.recalledMessage');
-  if (lastMessage.content) return lastMessage.content;
-  if (conversation.kind === 'group' && lastMessage.encryptedPayload?.byteLength) return t('mobile.group.encryptedMessage');
-  return t('mobile.chat.noPreview');
+  return lastMessage ? friendMessageDisplayText(lastMessage, t) : t('mobile.chat.noPreview');
 }
 
 function conversationUpdatedAt(conversation: MobileConversation): number {
@@ -444,4 +449,16 @@ function conversationSearchText(conversation: MobileConversation): string {
 function messageTimestampMillis(message: FriendChatMessage | GroupMessage, isGroupThread: boolean): number {
   if (isGroupThread) return groupTimestampMillis((message as GroupMessage).sentAt ?? (message as GroupMessage).createdAt);
   return timestampMillis((message as FriendChatMessage).sentAt ?? (message as FriendChatMessage).createdAt);
+}
+
+function friendMessageDisplayText(message: FriendChatMessage, t: (key: string) => string): string {
+  if (message.recalled) return t('mobile.chat.recalledMessage');
+  return message.content || t('mobile.chat.noPreview');
+}
+
+function groupMessageDisplayText(display: GroupMessageDisplay, t: (key: string) => string): string {
+  if (display.kind === 'text') return display.content;
+  if (display.kind === 'recalled') return t('mobile.chat.recalledMessage');
+  if (display.kind === 'encrypted') return t('mobile.group.encryptedMessage');
+  return t('mobile.chat.noPreview');
 }

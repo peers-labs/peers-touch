@@ -33,6 +33,7 @@
 | Desktop normalizer 分层 | `socialChat` store 与 Station response 兼容逻辑分离 | 已新增 `apps/desktop/src/store/socialNormalizers.ts`，先承载 friend session、friend request、presence seed 归一化 |
 | Mobile Host Adapter 入口 | Rust kernel 统一 emit native host event | 已补 `mobile_native_event_emit` command 与 `native_events` push/deep-link/notification-tap/resume 标准 payload，Web bridge 保留 deep-link `url` 字段 |
 | Mobile group domain | 独立 group API / normalizer / projection / store / runtime / renderer | 已新增 `apps/mobile/src/features/group/`，使用 generated group proto 类型，不复用 friend chat bucket，并已接入 realtime group message / membership / mutation / resync；Chat/Contacts UI 已只读接入 group projection |
+| Mobile group E2EE domain | Sender Keys 执行计划与防回退入口 | 已新增 `20260603-mobile-group-e2ee-domain.md`，明确 Rust kernel / Web bridge / runtime / projection 分层，并把 group E2EE proto/页面边界加入 guardrail |
 
 ---
 
@@ -126,7 +127,20 @@
 - 后续 iOS/Android 插件只接系统 API，不直接写业务 projection，统一调用 kernel event outlet。
 - Mobile E2EE/offline queue 不在页面补逻辑，必须建 domain。
 
-### Step 6: 验证
+### Step 6: Mobile group E2EE domain
+
+- 已新增 Mobile group E2EE domain 执行计划：`20260603-mobile-group-e2ee-domain.md`。
+- 已按 Desktop Sender Keys 现状对齐 Mobile 目标分层：
+  - Rust capability kernel 承载 sender chain、SKDM、encrypt/decrypt、signature verify；
+  - Web bridge 只做 typed command adapter；
+  - group E2EE runtime 负责 SKDM sent/pending ledger、repair queue、rotation trigger；
+  - group projection/store 只接收 display projection，不解析或持有 crypto internals；
+  - UI 只渲染 text / encrypted / recalled / empty projection。
+- 已把第一批防回退放入检查：
+  - `check-social-wire-contract.sh` 要求 Mobile generated group proto 暴露 `GroupCiphertextSchema` 与 `SenderKeyDistributionMessageSchema`，并要求 `socialWire.ts` 使用 generated `GroupMessageSchema`；
+  - `check-social-runtime-boundaries.sh` 禁止 Mobile UI pages/components 直接引用 group E2EE proto 或 crypto command。
+
+### Step 7: 验证
 
 - 文档链接有效。
 - Desktop/Mobile check 仍通过。

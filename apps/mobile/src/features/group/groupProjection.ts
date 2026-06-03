@@ -7,6 +7,12 @@ export interface GroupConversation {
   lastMessage?: GroupMessage;
 }
 
+export type GroupMessageDisplay =
+  | { kind: 'text'; content: string }
+  | { kind: 'recalled' }
+  | { kind: 'encrypted' }
+  | { kind: 'empty' };
+
 export function projectGroupConversations(input: {
   groups: Group[];
   messages: Record<string, GroupMessage[]>;
@@ -29,6 +35,13 @@ export function mergeGroupMessages(messages: GroupMessage[], incoming: GroupMess
   });
   byUlid.set(incoming.ulid, incoming);
   return [...byUlid.values()].sort((a, b) => timestampMillis(a.sentAt ?? a.createdAt) - timestampMillis(b.sentAt ?? b.createdAt));
+}
+
+export function projectGroupMessageDisplay(message: GroupMessage): GroupMessageDisplay {
+  if (message.recalled) return { kind: 'recalled' };
+  if (message.content) return { kind: 'text', content: message.content };
+  if (message.encryptedPayload?.byteLength) return { kind: 'encrypted' };
+  return { kind: 'empty' };
 }
 
 export function applyGroupMutationToList(
