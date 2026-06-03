@@ -21,6 +21,19 @@ import {
   FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION,
 } from '../modules/identity/groupSenderKeys';
 import { log } from '../utils/logger';
+import {
+  applyMessageMutationToList,
+  applyMessageReceiptToList,
+  applyTypingStateToMap,
+  conversationKey,
+  filterClearedMessages,
+  mergeConversationMessages,
+  previewFromMessage,
+  pruneTypingPeers,
+  type ConversationLocalState,
+  type MessagePreview,
+  type SocialMessage,
+} from './socialProjection';
 
 function bytesToB64(bytes: Uint8Array): string {
   let bin = '';
@@ -39,12 +52,6 @@ interface FriendRequestData {
   senderAvatar: string;
   receiverDisplayName: string;
   receiverAvatar: string;
-}
-
-export interface MessagePreview {
-  content: string;
-  type: number;
-  senderDid: string;
 }
 
 export interface UnifiedConversation {
@@ -92,13 +99,6 @@ export interface SearchResultAttachment {
   filename: string;
   mimeType: string;
 }
-
-export interface ConversationLocalState {
-  hidden?: boolean;
-  clearedAt?: number;
-}
-
-type SocialMessage = FriendChatMessage | GroupMessage;
 
 interface ThreadLoadOptions {
   append?: boolean;
@@ -230,8 +230,8 @@ interface SocialChatState {
   applyTypingState: (sessionUlid: string, fromActorId: string, typing: boolean) => void;
   /**
    * Drop any `typing=true` entries whose last update is older than
-   * `staleBefore` ms. Called from the SocialChatPage on a 1-2s
-   * interval so phantom "is typing…" bubbles auto-clear when the
+   * `staleBefore` ms. Called from the social runtime sweep interval
+   * so phantom "is typing…" bubbles auto-clear when the
    * sender goes silent without explicitly emitting `typing=false`.
    */
   sweepTypingPeers: (staleBefore: number) => void;
@@ -711,10 +711,6 @@ function searchThreadMetadata(
   };
 }
 
-function conversationKey(kind: 'friend' | 'group', ulid: string): string {
-  return `${kind}:${ulid}`;
-}
-
 function conversationStateStorageKey(actorDid: string | null): string {
   return `socialChat:conversationLocalState:${actorDid || 'anonymous'}`;
 }
@@ -741,47 +737,6 @@ function saveConversationLocalState(actorDid: string | null, state: Record<strin
   }
 }
 
-function messageSentMs(message: SocialMessage): number {
-  const sentAt = (message as { sentAt?: unknown }).sentAt as FriendChatMessage['sentAt'] | undefined;
-  const createdAt = (message as { createdAt?: unknown }).createdAt as FriendChatMessage['createdAt'] | undefined;
-  const ts = sentAt || createdAt;
-  return ts ? timestampDate(ts).getTime() : 0;
-}
-
-function filterClearedMessages(
-  messages: SocialMessage[],
-  localState: Record<string, ConversationLocalState>,
-  kind: 'friend' | 'group',
-  ulid: string,
-): SocialMessage[] {
-  const clearedAt = localState[conversationKey(kind, ulid)]?.clearedAt ?? 0;
-  if (!clearedAt) return messages;
-  return messages.filter((message) => {
-    const sentMs = messageSentMs(message);
-    return sentMs === 0 || sentMs >= clearedAt;
-  });
-}
-
-function sortConversationMessages(messages: SocialMessage[]): SocialMessage[] {
-  return messages.slice().sort((a, b) => {
-    const sentA = messageSentMs(a);
-    const sentB = messageSentMs(b);
-    if (sentA !== sentB) return sentA - sentB;
-    return (a.ulid ?? '').localeCompare(b.ulid ?? '');
-  });
-}
-
-function mergeConversationMessages(existing: SocialMessage[], incoming: SocialMessage): SocialMessage[] {
-  const byUlid = new Map<string, SocialMessage>();
-  for (const message of existing) {
-    if (message.ulid) byUlid.set(message.ulid, message);
-  }
-  if (incoming.ulid) {
-    byUlid.set(incoming.ulid, incoming);
-  }
-  return sortConversationMessages(Array.from(byUlid.values()));
-}
-
 async function decodeRealtimeGroupMessage(groupUlid: string, message: GroupMessage): Promise<GroupMessage> {
   if (message.recalled || !message.encryptedPayload || message.encryptedPayload.byteLength === 0) {
     return message;
@@ -796,15 +751,6 @@ async function decodeRealtimeGroupMessage(groupUlid: string, message: GroupMessa
     log.warn('socialChat', 'realtime group decrypt failed', error);
     return { ...message, content: '[Decrypt failed]' } as GroupMessage;
   }
-}
-
-function previewFromMessage(message: SocialMessage): MessagePreview {
-  const attachmentName = message.attachments?.[0]?.filename ?? '';
-  return {
-    content: message.content || attachmentName,
-    type: Number(message.type ?? 1),
-    senderDid: message.senderDid ?? '',
-  };
 }
 
 const initialSocialState: Pick<
@@ -1727,68 +1673,8 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
 
   applyMessageMutation: (sessionUlid, messageUlid, kind, payload) => {
     set((state) => {
-      const msgs = state.messages[sessionUlid];
-      if (!msgs || msgs.length === 0) {
-        return {} as Partial<SocialChatState>;
-      }
-      // The container key `sessionUlid` carries either a friend
-      // session ulid OR a group ulid — same map, two arms. Both
-      // FriendChatMessage and GroupMessage carry `recalled` and
-      // `editedAt` (added in proto v?? as part of the unified
-      // MessageMutation contract), so the mutation arms can be
-      // applied uniformly without branching by chat kind.
-      //
-      // DELETE removes the row entirely. RECALL keeps it (so
-      // reply chains don't dangle) but flips `recalled=true` and
-      // clears the body — the bubble renders as a tombstone.
-      // EDIT replaces content / encryptedPayload and stamps
-      // `editedAt`.
-      let mutated = false;
-      let next: typeof msgs;
-      if (kind === 'DELETE') {
-        next = msgs.filter((m) => {
-          if (m.ulid === messageUlid) {
-            mutated = true;
-            return false;
-          }
-          return true;
-        });
-      } else {
-        next = msgs.map((m) => {
-          if (m.ulid !== messageUlid) return m;
-          if (!('recalled' in m)) return m; // safety net for legacy rows
-          if (kind === 'RECALL') {
-            if ((m as { recalled?: boolean }).recalled === true) return m; // idempotent
-            mutated = true;
-            return {
-              ...m,
-              recalled: true,
-              content: '',
-              encryptedPayload: new Uint8Array(),
-            } as FriendChatMessage | GroupMessage;
-          }
-          // kind === 'EDIT'
-          mutated = true;
-          // Build a proto-compatible Timestamp without importing
-          // the schema. Both FriendChatMessage.editedAt and
-          // GroupMessage.editedAt accept the same `{ seconds, nanos }`
-          // shape (protobuf-es plain object form).
-          const seconds = BigInt(Math.floor(payload.mutatedTsUnixMs / 1000));
-          const nanos = (payload.mutatedTsUnixMs % 1000) * 1_000_000;
-          const existingEnc = (m as { encryptedPayload?: Uint8Array }).encryptedPayload;
-          return {
-            ...m,
-            content: payload.newContent || m.content,
-            encryptedPayload:
-              payload.newCiphertext.byteLength > 0
-                ? payload.newCiphertext
-                : existingEnc ?? new Uint8Array(),
-            editedAt: { seconds, nanos } as unknown as FriendChatMessage['editedAt'],
-          } as FriendChatMessage | GroupMessage;
-        });
-      }
-      if (!mutated) return {} as Partial<SocialChatState>;
-      return { messages: { ...state.messages, [sessionUlid]: next } };
+      const next = applyMessageMutationToList(state.messages[sessionUlid], messageUlid, { kind, ...payload });
+      return next ? { messages: { ...state.messages, [sessionUlid]: next } } : {};
     });
   },
 
@@ -1991,105 +1877,24 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   },
 
   applyMessageReceipt: (sessionUlid, messageUlid, kind) => {
-    // Map realtime MessageReceipt_Kind onto FriendMessageStatus —
-    // these are intentionally distinct enums (the chat status carries
-    // SENDING/SENT/FAILED that have no realtime meaning), so the
-    // mapping is partial. See station handler.go::receiptKindFromFriendStatus
-    // for the inverse table.
-    const target =
-      kind === 'READ'
-        ? FriendMessageStatus.READ
-        : kind === 'DELIVERED'
-          ? FriendMessageStatus.DELIVERED
-          : null;
-    if (target == null) return;
-
     set((state) => {
-      const current = state.messages[sessionUlid];
-      if (!current || current.length === 0) return state;
-      let mutated = false;
-      const next = current.map((m) => {
-        const fcm = m as FriendChatMessage;
-        if (fcm.ulid !== messageUlid) return m;
-        // Forward-only: a stale DELIVERED arriving after READ is
-        // ignored, otherwise the receipt order on the wire would
-        // dictate the UI state and dropped frames could regress the
-        // tick. The persistence layer on Station applies the same
-        // strict-greater filter, so client and server agree.
-        if ((fcm.status ?? 0) >= target) return m;
-        mutated = true;
-        return { ...fcm, status: target } as FriendChatMessage;
-      });
-      if (!mutated) return state;
-      return { messages: { ...state.messages, [sessionUlid]: next } };
+      const next = applyMessageReceiptToList(state.messages[sessionUlid], messageUlid, kind);
+      return next ? { messages: { ...state.messages, [sessionUlid]: next } } : state;
     });
   },
 
   applyTypingState: (sessionUlid, fromActorId, typing) => {
     if (!sessionUlid || !fromActorId) return;
     set((state) => {
-      const sessionMap = state.typingPeers[sessionUlid] ?? {};
-      const prev = sessionMap[fromActorId];
-      // Skip the set when nothing observable changes — a `typing=false`
-      // for an actor we already had cleared is common when the sender
-      // sends in quick succession (typing=true → send → typing=false),
-      // and avoiding the no-op write keeps the UI subscriber from
-      // re-rendering the message list on every keystroke.
-      if (!typing && !prev) return state;
-      const nextEntry = { typing, lastUpdate: Date.now() };
-      if (prev && prev.typing === typing) {
-        // Same state — only bump `lastUpdate` so the GC sweep keeps
-        // the bubble alive while the sender is still composing.
-        return {
-          typingPeers: {
-            ...state.typingPeers,
-            [sessionUlid]: { ...sessionMap, [fromActorId]: nextEntry },
-          },
-        };
-      }
-      return {
-        typingPeers: {
-          ...state.typingPeers,
-          [sessionUlid]: { ...sessionMap, [fromActorId]: nextEntry },
-        },
-      };
+      const next = applyTypingStateToMap(state.typingPeers, sessionUlid, fromActorId, typing);
+      return next ? { typingPeers: next } : state;
     });
   },
 
   sweepTypingPeers: (staleBefore) => {
     set((state) => {
-      let mutated = false;
-      const nextSessions: typeof state.typingPeers = {};
-      for (const [sessionUlid, byActor] of Object.entries(state.typingPeers)) {
-        let sessionMutated = false;
-        const nextActors: Record<string, { typing: boolean; lastUpdate: number }> = {};
-        for (const [actorId, entry] of Object.entries(byActor)) {
-          if (entry.typing && entry.lastUpdate < staleBefore) {
-            // Phantom typing — sender went silent without sending the
-            // `typing=false` pulse. Clear the entry entirely (rather
-            // than rewriting `typing=false`) so the map stays small
-            // even after long-lived chats.
-            sessionMutated = true;
-            continue;
-          }
-          if (!entry.typing) {
-            // We don't need to remember a `typing=false` past its
-            // arrival — the absence of an entry is also "not typing".
-            // Drop it to keep the map small.
-            sessionMutated = true;
-            continue;
-          }
-          nextActors[actorId] = entry;
-        }
-        if (sessionMutated) mutated = true;
-        if (Object.keys(nextActors).length > 0) {
-          nextSessions[sessionUlid] = nextActors;
-        } else if (Object.keys(byActor).length > 0) {
-          mutated = true;
-        }
-      }
-      if (!mutated) return state;
-      return { typingPeers: nextSessions };
+      const next = pruneTypingPeers(state.typingPeers, staleBefore);
+      return next ? { typingPeers: next } : state;
     });
   },
 
