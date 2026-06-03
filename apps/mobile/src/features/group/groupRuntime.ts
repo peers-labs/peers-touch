@@ -1,4 +1,5 @@
 import type { MobileAuthSession } from '../auth/authSession';
+import { startGroupE2eeRuntime } from './groupE2eeRuntime';
 import type { GroupState } from './groupStore';
 
 const GROUP_RECONCILE_INTERVAL_MS = 30000;
@@ -7,17 +8,21 @@ export interface GroupRuntimeController {
   teardown: () => void;
 }
 
-export function startGroupRuntime(_session: MobileAuthSession, store: GroupState): GroupRuntimeController {
+export function startGroupRuntime(session: MobileAuthSession, getStore: () => GroupState): GroupRuntimeController {
   let cancelled = false;
 
-  store.reconcile();
+  getStore().reconcile();
+  const e2eeRuntime = startGroupE2eeRuntime(session, getStore);
   const reconcileTimer = window.setInterval(() => {
-    if (!cancelled) void store.reconcile();
+    if (!cancelled) {
+      void getStore().reconcile().then(() => e2eeRuntime.repairEncryptedMessages());
+    }
   }, GROUP_RECONCILE_INTERVAL_MS);
 
   return {
     teardown: () => {
       cancelled = true;
+      e2eeRuntime.teardown();
       window.clearInterval(reconcileTimer);
     },
   };
