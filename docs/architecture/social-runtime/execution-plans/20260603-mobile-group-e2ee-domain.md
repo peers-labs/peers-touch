@@ -87,9 +87,9 @@ Phase B: Rust kernel
 Phase C: Web/runtime
 
 - `features/group/groupE2eeBridge.ts`：typed Rust command adapter。（已落地；Web bridge 使用 generated TS proto 负责 `GroupCiphertext` / `SenderKeyDistributionMessage` bytes 编解。）
-- `features/group/groupE2eeRuntime.ts`：SKDM distribution、consume、repair、rotation。
+- `features/group/groupE2eeRuntime.ts`：SKDM distribution、consume、repair、rotation。（已落地 encrypted-payload decrypt repair owner；SKDM distribution/consume 与 rotation 继续接入 social runtime。）
 - `features/social/socialRuntime.ts`：friend type `50` control routing 与 group membership rotation hook。
-- `features/group/groupStore.ts`：接收 decrypted display projection，不保存 crypto internals。
+- `features/group/groupStore.ts`：接收 decrypted display projection，不保存 crypto internals。（已新增 decrypted message projection 与 E2EE error projection。）
 
 Phase D: UX unlock
 

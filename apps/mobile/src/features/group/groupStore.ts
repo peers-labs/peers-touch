@@ -6,6 +6,7 @@ import type { Group, GroupMember, GroupMessage } from '../../gen/proto/domain/ch
 import { createGroupApiClient, type GroupApiClient } from './groupApi';
 import { normalizeGroup, normalizeGroupMember, normalizeGroupMessage } from './groupNormalizers';
 import {
+  applyGroupDecryptedContentToList,
   applyGroupMutationToList,
   mergeGroupMessages,
   projectGroupConversations,
@@ -19,6 +20,7 @@ export interface GroupState {
   members: Record<string, GroupMember[]>;
   messages: Record<string, GroupMessage[]>;
   unreadCounts: Record<string, number>;
+  e2eeErrors: Record<string, string>;
   activeGroupUlid: string | null;
   loading: boolean;
   error: SocialApiError | null;
@@ -37,6 +39,8 @@ export interface GroupState {
     kind: 'RECALL' | 'EDIT' | 'DELETE',
     payload: { newContent?: string; newCiphertext?: Uint8Array; mutatedTsUnixMs?: number },
   ) => void;
+  applyDecryptedMessage: (groupUlid: string, messageUlid: string, plaintext: string) => void;
+  setE2eeError: (messageUlid: string, error: string | null) => void;
   markRead: (groupUlid: string, upToUlid?: string) => Promise<void>;
   clearError: () => void;
 }
@@ -48,6 +52,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   members: {},
   messages: {},
   unreadCounts: {},
+  e2eeErrors: {},
   activeGroupUlid: null,
   loading: false,
   error: null,
@@ -147,6 +152,25 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       return next ? { messages: { ...state.messages, [groupUlid]: next } } : state;
     }),
 
+  applyDecryptedMessage: (groupUlid, messageUlid, plaintext) =>
+    set((state) => {
+      const next = applyGroupDecryptedContentToList(state.messages[groupUlid], messageUlid, plaintext);
+      if (!next) return state;
+      const { [messageUlid]: _removed, ...e2eeErrors } = state.e2eeErrors;
+      return {
+        e2eeErrors,
+        messages: { ...state.messages, [groupUlid]: next },
+      };
+    }),
+
+  setE2eeError: (messageUlid, error) =>
+    set((state) => {
+      const { [messageUlid]: _removed, ...rest } = state.e2eeErrors;
+      return {
+        e2eeErrors: error ? { ...rest, [messageUlid]: error } : rest,
+      };
+    }),
+
   markRead: async (groupUlid, upToUlid) => {
     const api = requireApi(get());
     await api.markRead(groupUlid, upToUlid);
@@ -172,6 +196,7 @@ function emptyGroupState() {
     members: {},
     messages: {},
     unreadCounts: {},
+    e2eeErrors: {},
     activeGroupUlid: null,
     loading: false,
     error: null,
