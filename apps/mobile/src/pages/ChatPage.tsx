@@ -62,6 +62,9 @@ export function ChatPage() {
   const groupLoading = useGroupStore((state) => state.loading);
   const groupError = useGroupStore((state) => state.error);
   const selectGroup = useGroupStore((state) => state.selectGroup);
+  const groupEncryptionReady = useGroupStore((state) => (activeGroupUlid ? Boolean(state.encryptionReady[activeGroupUlid]) : false));
+  const groupSending = useGroupStore((state) => (activeGroupUlid ? Boolean(state.sendingGroups[activeGroupUlid]) : false));
+  const sendGroupMessage = useGroupStore((state) => state.sendEncryptedMessage);
   const lastTypingPulseRef = useRef(0);
   const typingIdleTimerRef = useRef<number | null>(null);
   const conversations = useSocialStore(selectSocialConversations);
@@ -118,6 +121,12 @@ export function ChatPage() {
   };
 
   const submitMessage = async () => {
+    if (activeGroupConversation && activeGroupUlid) {
+      const sent = await sendGroupMessage(activeGroupUlid, draft);
+      if (sent) setDraft('');
+      return;
+    }
+
     if (!activeConversation) return;
     await emitTypingState(false);
 
@@ -292,7 +301,7 @@ export function ChatPage() {
           )}
         </section>
 
-        {isGroupThread ? (
+        {isGroupThread && !groupEncryptionReady ? (
           <footer className="message-composer readonly">
             <Text type="secondary">{t('mobile.group.composerPending')}</Text>
           </footer>
@@ -311,11 +320,13 @@ export function ChatPage() {
               onChange={(event) => handleDraftChange(event.target.value)}
               onPressEnter={submitMessage}
               placeholder={t('mobile.chat.messagePlaceholder')}
+              disabled={groupSending}
             />
             <Button
               type="primary"
               icon={<Send size={16} />}
-              disabled={!draft.trim()}
+              disabled={!draft.trim() || groupSending}
+              loading={groupSending}
               onClick={submitMessage}
             />
           </footer>

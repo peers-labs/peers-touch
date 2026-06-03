@@ -21,10 +21,14 @@ export interface GroupState {
   messages: Record<string, GroupMessage[]>;
   unreadCounts: Record<string, number>;
   e2eeErrors: Record<string, string>;
+  encryptionReady: Record<string, boolean>;
+  sendingGroups: Record<string, boolean>;
   activeGroupUlid: string | null;
   loading: boolean;
   error: SocialApiError | null;
   lastReconcileAt: number | null;
+  encryptedSender: ((groupUlid: string, plaintext: string) => Promise<boolean>) | null;
+  encryptionPreparer: ((groupUlid: string) => Promise<boolean>) | null;
   bindSession: (session: MobileAuthSession | null) => void;
   reconcile: () => Promise<void>;
   refreshGroups: () => Promise<void>;
@@ -40,6 +44,11 @@ export interface GroupState {
     payload: { newContent?: string; newCiphertext?: Uint8Array; mutatedTsUnixMs?: number },
   ) => void;
   applyDecryptedMessage: (groupUlid: string, messageUlid: string, plaintext: string) => void;
+  setEncryptionReady: (groupUlid: string, ready: boolean) => void;
+  setGroupSending: (groupUlid: string, sending: boolean) => void;
+  sendEncryptedMessage: (groupUlid: string, plaintext: string) => Promise<boolean>;
+  bindEncryptedSender: (sender: ((groupUlid: string, plaintext: string) => Promise<boolean>) | null) => void;
+  bindEncryptionPreparer: (preparer: ((groupUlid: string) => Promise<boolean>) | null) => void;
   setE2eeError: (messageUlid: string, error: string | null) => void;
   markRead: (groupUlid: string, upToUlid?: string) => Promise<void>;
   clearError: () => void;
@@ -53,10 +62,14 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   messages: {},
   unreadCounts: {},
   e2eeErrors: {},
+  encryptionReady: {},
+  sendingGroups: {},
   activeGroupUlid: null,
   loading: false,
   error: null,
   lastReconcileAt: null,
+  encryptedSender: null,
+  encryptionPreparer: null,
 
   bindSession: (session) => {
     if (!session) {
@@ -104,6 +117,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     set({ activeGroupUlid: groupUlid });
     if (!groupUlid) return;
     await Promise.allSettled([get().loadMessages(groupUlid), get().loadMembers(groupUlid)]);
+    void get().encryptionPreparer?.(groupUlid);
   },
 
   loadMessages: async (groupUlid) => {
@@ -163,6 +177,34 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       };
     }),
 
+  setEncryptionReady: (groupUlid, ready) =>
+    set((state) => ({
+      encryptionReady: { ...state.encryptionReady, [groupUlid]: ready },
+    })),
+
+  setGroupSending: (groupUlid, sending) =>
+    set((state) => {
+      const { [groupUlid]: _removed, ...rest } = state.sendingGroups;
+      return { sendingGroups: sending ? { ...rest, [groupUlid]: true } : rest };
+    }),
+
+  sendEncryptedMessage: async (groupUlid, plaintext) => {
+    const sender = get().encryptedSender;
+    if (!sender) return false;
+    set((state) => ({
+      sendingGroups: { ...state.sendingGroups, [groupUlid]: true },
+    }));
+    try {
+      return await sender(groupUlid, plaintext);
+    } finally {
+      get().setGroupSending(groupUlid, false);
+    }
+  },
+
+  bindEncryptedSender: (sender) => set({ encryptedSender: sender }),
+
+  bindEncryptionPreparer: (preparer) => set({ encryptionPreparer: preparer }),
+
   setE2eeError: (messageUlid, error) =>
     set((state) => {
       const { [messageUlid]: _removed, ...rest } = state.e2eeErrors;
@@ -197,10 +239,14 @@ function emptyGroupState() {
     messages: {},
     unreadCounts: {},
     e2eeErrors: {},
+    encryptionReady: {},
+    sendingGroups: {},
     activeGroupUlid: null,
     loading: false,
     error: null,
     lastReconcileAt: null,
+    encryptedSender: null,
+    encryptionPreparer: null,
   };
 }
 
