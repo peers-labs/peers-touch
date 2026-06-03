@@ -123,6 +123,8 @@
   "mobile.group.memberCount": "{{count}} 人",
   "mobile.group.encryptedMessage": "加密群消息",
   "mobile.group.composerPending": "群消息发送将在群组端到端加密域接入后开放",
+  "mobile.group.e2eeMissingActor": "缺少当前用户身份，无法使用群组加密",
+  "mobile.group.e2eeMissingGroup": "缺少群组标识，无法使用群组加密",
   "mobile.contacts.title": "联系人",
   "mobile.contacts.add": "添加联系人",
   "mobile.contacts.searchPlaceholder": "搜索联系人",
