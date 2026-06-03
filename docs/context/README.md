@@ -13,6 +13,7 @@ docs/context/
 ├── decisions/              # Architecture Decision Records (ADRs)
 ├── implementation-reports/ # Technical implementation reports
 ├── evolution/              # Development history and daily logs
+├── mobile/                 # Mobile proposal-stage architecture notes
 └── features/               # Feature planning and archived roadmaps
 ```
 
@@ -35,6 +36,14 @@ docs/context/
 - [**ICE Capability Architecture Design**](./architecture/ice-capability-design.md)
   - 历史阶段的 ICE 能力设计提案
   - 含阶段计划和旧目录/旧技术背景，应按历史材料阅读
+
+### 📱 Mobile Proposal Notes
+
+**Location**: [`mobile/`](./mobile/)
+
+- [**Tauri Mobile Capability Topology Proposal**](./mobile/tauri-mobile-capability-topology-proposal.md)
+  - Mobile 从原生双端转向 Tauri v2 Mobile 主线的方案形成过程记录
+  - 当前平台真源见 `docs/client/mobile/base.md`；正式执行计划见 `docs/client/mobile/execution-plans/20260531-tauri-mobile-mainline-migration.md`
 
 ### 🏛️ Architecture Decision Records (ADRs)
 

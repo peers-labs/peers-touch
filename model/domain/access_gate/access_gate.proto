@@ -1,0 +1,133 @@
+syntax = "proto3";
+
+package peers_touch.model.access_gate.v1;
+
+import "google/protobuf/timestamp.proto";
+import "domain/auth/auth.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/accessgate;accessgate";
+
+enum AccessGateType {
+  ACCESS_GATE_TYPE_UNSPECIFIED = 0;
+  ACCESS_GATE_TYPE_STATION_CAPABILITY = 1;
+  ACCESS_GATE_TYPE_AUTH_LOGIN = 2;
+  ACCESS_GATE_TYPE_AUTH_SESSION_RESTORE = 3;
+  ACCESS_GATE_TYPE_INVITE_ALLOWLIST = 4;
+  ACCESS_GATE_TYPE_INVITE_CODE = 5;
+  ACCESS_GATE_TYPE_DEVICE_TRUST = 6;
+  ACCESS_GATE_TYPE_MAINTENANCE = 7;
+  ACCESS_GATE_TYPE_TERMS_ACCEPTANCE = 8;
+  ACCESS_GATE_TYPE_CUSTOM = 100;
+}
+
+enum AccessGateState {
+  ACCESS_GATE_STATE_UNSPECIFIED = 0;
+  ACCESS_GATE_STATE_PENDING = 1;
+  ACCESS_GATE_STATE_ACTION_REQUIRED = 2;
+  ACCESS_GATE_STATE_PASSED = 3;
+  ACCESS_GATE_STATE_BLOCKED = 4;
+  ACCESS_GATE_STATE_FAILED = 5;
+  ACCESS_GATE_STATE_SKIPPED = 6;
+}
+
+enum AccessDecisionState {
+  ACCESS_DECISION_STATE_UNSPECIFIED = 0;
+  ACCESS_DECISION_STATE_PENDING = 1;
+  ACCESS_DECISION_STATE_ACTION_REQUIRED = 2;
+  ACCESS_DECISION_STATE_GRANTED = 3;
+  ACCESS_DECISION_STATE_BLOCKED = 4;
+  ACCESS_DECISION_STATE_FAILED = 5;
+}
+
+enum AccessPolicyMode {
+  ACCESS_POLICY_MODE_UNSPECIFIED = 0;
+  ACCESS_POLICY_MODE_OPEN = 1;
+  ACCESS_POLICY_MODE_INVITE_ONLY = 2;
+  ACCESS_POLICY_MODE_FIXED_USERS = 3;
+  ACCESS_POLICY_MODE_CLOSED = 4;
+}
+
+message AccessGateClientInfo {
+  string platform = 1;
+  string app_version = 2;
+  string device_id = 3;
+  string locale = 4;
+}
+
+message AccessGateActorRef {
+  string id = 1;
+  int64 actor_id = 2;
+  string username = 3;
+  string email = 4;
+}
+
+message AccessGate {
+  string gate_id = 1;
+  AccessGateType type = 2;
+  AccessGateState state = 3;
+  string title = 4;
+  string description = 5;
+  string blocking_reason = 6;
+  string submit_action = 7;
+  string input_schema_json = 8;
+}
+
+message AccessDecision {
+  AccessDecisionState state = 1;
+  string attempt_id = 2;
+  string current_gate_id = 3;
+  repeated AccessGate gates = 4;
+  AccessGateActorRef actor = 5;
+  string access_grant_id = 6;
+  google.protobuf.Timestamp expires_at = 7;
+  string message = 8;
+}
+
+message StartAccessAttemptRequest {
+  string station_url = 1;
+  AccessGateClientInfo client = 2;
+  string session_id = 3;
+}
+
+message StartAccessAttemptResponse {
+  AccessDecision decision = 1;
+}
+
+message SubmitAccessGateRequest {
+  string attempt_id = 1;
+  string gate_id = 2;
+  AccessGateType type = 3;
+  peers_touch.model.auth.v1.LoginRequest login = 4;
+  string invite_code = 5;
+  string session_id = 6;
+}
+
+message SubmitAccessGateResponse {
+  AccessDecision decision = 1;
+  peers_touch.model.auth.v1.LoginResponse login_response = 2;
+}
+
+message GetAccessDecisionRequest {
+  string attempt_id = 1;
+}
+
+message GetAccessDecisionResponse {
+  AccessDecision decision = 1;
+}
+
+message AccessPolicy {
+  AccessPolicyMode mode = 1;
+  repeated string allowed_emails = 2;
+  repeated string allowed_usernames = 3;
+  repeated int64 allowed_actor_ids = 4;
+  google.protobuf.Timestamp updated_at = 5;
+  string updated_by = 6;
+}
+
+message UpdateAccessPolicyRequest {
+  AccessPolicy policy = 1;
+}
+
+message UpdateAccessPolicyResponse {
+  AccessPolicy policy = 1;
+}

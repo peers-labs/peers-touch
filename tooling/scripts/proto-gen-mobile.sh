@@ -5,11 +5,14 @@ PROJECT_ROOT=$(cd "$(dirname "$0")/../.."; pwd)
 PROTO_ROOT="$PROJECT_ROOT/model"
 ANDROID_OUT="$PROJECT_ROOT/apps/mobile/android/app/src/main/java"
 IOS_OUT="$PROJECT_ROOT/apps/mobile/ios/PeersTouch/Core/Proto"
+WEB_TS_OUT="$PROJECT_ROOT/apps/mobile/src/gen/proto"
+PROTOC_GEN_ES="$PROJECT_ROOT/apps/mobile/node_modules/.bin/protoc-gen-es"
 
 echo "=== Peers Touch Mobile Proto Generation ==="
 echo "Proto Root:    $PROTO_ROOT"
 echo "Android Out:   $ANDROID_OUT"
 echo "iOS Out:       $IOS_OUT"
+echo "Web TS Out:    $WEB_TS_OUT"
 echo ""
 
 PROTO_FILES=$(find "$PROTO_ROOT/domain" -name "*.proto")
@@ -75,6 +78,33 @@ generate_swift() {
     echo ""
 }
 
+generate_web_ts() {
+    echo "--- Generating Web TypeScript ---"
+
+    if [ ! -x "$PROTOC_GEN_ES" ]; then
+        echo "[ERROR] protoc-gen-es not found at $PROTOC_GEN_ES"
+        echo "Install deps: pnpm install"
+        return 1
+    fi
+
+    rm -rf "$WEB_TS_OUT"
+    mkdir -p "$WEB_TS_OUT"
+
+    for file in $PROTO_FILES; do
+        REL_PATH=${file#$PROTO_ROOT/}
+        echo "  $REL_PATH"
+        protoc \
+            --plugin=protoc-gen-es="$PROTOC_GEN_ES" \
+            --es_out="$WEB_TS_OUT" \
+            --es_opt=target=ts \
+            -I"$PROTO_ROOT" \
+            "$file"
+    done
+
+    echo "Web TypeScript generation complete."
+    echo ""
+}
+
 case "${1:-all}" in
     kotlin|android)
         generate_kotlin
@@ -82,12 +112,16 @@ case "${1:-all}" in
     swift|ios)
         generate_swift
         ;;
+    web|ts|typescript)
+        generate_web_ts
+        ;;
     all)
         generate_kotlin
         generate_swift
+        generate_web_ts
         ;;
     *)
-        echo "Usage: $0 [kotlin|swift|all]"
+        echo "Usage: $0 [kotlin|swift|web|all]"
         exit 1
         ;;
 esac

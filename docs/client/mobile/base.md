@@ -1,6 +1,7 @@
 # Peers Touch Mobile
 
-> Mobile platform-level source for what the native mobile clients are, what is already true today, and what remains target-direction architecture.
+> Mobile platform-level source for the current Mobile mainline, target architecture, shared constraints, and responsibility boundaries.
+> Since 2026-05-31, the Mobile mainline is **Tauri v2 Mobile + Shared Web UI + Rust Capability Kernel + Native Plugins**.
 
 ---
 
@@ -10,7 +11,7 @@
 
 - Mobile 平台的当前实现基线
 - Mobile 平台的目标架构方向
-- Android 与 iOS 的共同约束
+- Tauri Mobile 与 native plugin 的共同约束
 - Mobile 在整个系统中的职责边界
 
 本文不定义：
@@ -18,14 +19,18 @@
 - 详细同步协议
 - Applet 容器细节
 - 实施 phase 与落地进度
-- 双端每个模块的编码规范正文
+- 每个 native plugin 的实现细节
+- 每个模块的编码规范正文
 
 继续阅读请看：
 
-- `native-dual-platform.md`
+- `native-dual-platform.md`（当前作为 Native Plugin 能力层与历史原生双端参考）
+- `lifecycle.md`（Mobile 顶层生命周期：Station selection、Station/Auth gate、runtime bootstrap、foreground/background/resume）
 - `applet-container.md`
 - `sync-protocol.md`
 - `execution-plans/implementation-plan-20260403.md`
+- `execution-plans/20260531-tauri-mobile-mainline-migration.md`（Tauri Mobile 主线迁移实施计划）
+- `../../context/mobile/tauri-mobile-capability-topology-proposal.md`（设计过程记录，不是当前真源）
 - `../../architecture/boundaries/station-desktop-scope-boundary.md`
 - `../../global/coding-guide/mobile/`
 
@@ -35,19 +40,25 @@
 
 当前仓库中的 Mobile 主线是：
 
-- Android：Kotlin + Jetpack Compose
-- iOS：Swift + SwiftUI
+- Tauri v2 Mobile：移动端应用壳
+- Web UI：共享 Desktop 的 Web 技术栈与设计范式
+- Rust Capability Kernel：Tauri commands、本地状态、能力权限、插件事件桥接
+- Native Plugins：Android Kotlin / iOS Swift 系统能力接入
 - 目录位置：
-  - `apps/mobile/android/`
-  - `apps/mobile/ios/`
+  - `apps/mobile/`
+  - `apps/mobile/src/`
+  - `apps/mobile/src-tauri/`
+  - `apps/mobile/src-tauri/gen/apple/`
 
 Mobile 当前已明确成立的事实：
 
-1. 双端原生实现是主线，不走 Kotlin Multiplatform。
+1. Tauri v2 Mobile 是主 UI 与应用壳主线。
 2. 共享契约来自 `model/domain/*.proto`。
 3. 共享业务真源在 Station，不在 Mobile。
 4. Mobile 通过 Station / Relay 风格链路获取共享业务数据。
-5. Applet 方向采用 Lynx 容器，而不是 Flutter 容器。
+5. Android Kotlin / iOS Swift 用于 native plugin，不再作为主 UI 双端实现路径。
+6. Applet 方向优先验证 Tauri mobile plugin 承载 Lynx 容器。
+7. Flutter 目录仍为 deprecated，不作为当前或未来主线。
 
 ---
 
@@ -55,34 +66,38 @@ Mobile 当前已明确成立的事实：
 
 Mobile 负责：
 
-- 原生 UI 呈现
-- 手势、导航、主题、设备能力适配
-- 本地交互编排
+- 移动端 Web UI 呈现
+- 移动端布局、手势、导航、主题、输入法避让、安全区适配
+- 本地交互与 runtime projection 编排
 - 对 Station 数据的读取、展示与必要的本地缓存
+- 通过 native plugins 接入移动系统能力
 
 Mobile 不负责：
 
 - 成为跨端共享业务真源
-- 复刻 Desktop 的本地 Rust 运行时模型
+- 复刻 Desktop 专属窗口、托盘、菜单、多窗口能力
 - 承担 Desktop 专属系统能力（窗口、托盘等）
+- 让 native plugin 绕过 Station 定义私有业务协议
 
 一句话：
 
-- Mobile 是原生客户端，不是独立业务后端。
+- Mobile 是 Tauri 移动客户端，不是独立业务后端。
 
 ---
 
 ## 4. 技术栈约束
 
-| 维度 | Android | iOS |
-| --- | --- | --- |
-| 语言 | Kotlin | Swift |
-| UI 框架 | Jetpack Compose | SwiftUI |
-| 构建工具 | Gradle (Kotlin DSL) | Xcode + Swift Package Manager |
-| 架构模式 | MVVM + Repository | MVVM + Repository |
-| 异步模型 | Coroutines + Flow | async/await |
-| Proto 生成 | `proto-gen-mobile.sh kotlin` | `proto-gen-mobile.sh swift` |
-| Applet 容器方向 | Lynx | Lynx |
+| 维度 | Mobile 主线 |
+| --- | --- |
+| 应用壳 | Tauri v2 Mobile |
+| UI 框架 | Web UI（React / TypeScript，与 Desktop 范式对齐） |
+| 本地核心 | Rust Capability Kernel (`src-tauri`) |
+| Android 系统能力 | Tauri mobile plugin + Kotlin |
+| iOS 系统能力 | Tauri mobile plugin + Swift |
+| 构建工具 | Tauri CLI + pnpm + Rust toolchain + Android / Xcode toolchain |
+| 架构模式 | Web UI → shared runtime → client-api / Tauri commands → Station / native plugins |
+| Proto 生成 | 以 `model/domain/*.proto` 为真源；Mobile 生成链随 Tauri contract 方案演进 |
+| Applet 容器方向 | 优先 LynxView native plugin；失败时评估 WebView 内 applet runtime |
 
 说明：
 
@@ -93,30 +108,34 @@ Mobile 不负责：
 
 ## 5. 核心架构原则
 
-1. **双端独立，契约统一**
-   - Android 与 iOS 分别独立实现
-   - 通过 proto 契约和业务语义对齐
+1. **UI 主线统一，系统能力原生化**
+   - UI/UX 范式通过 Web UI 与 shared client layer 统一
+   - Android / iOS 差异沉入 native plugin
 2. **Station 为真源**
    - 跨端可见业务状态由 Station 持有
-3. **分层清晰**
-   - View → ViewModel → Repository → DataSource
-4. **Relay/Station 优先**
+3. **Runtime Projection 优先**
+   - 页面只读 projection，不靠页面 mount 保持业务新鲜度
+4. **Lifecycle Gate 优先**
+   - 进入 Station shell 前必须先完成 Station gate 与 Auth gate
+5. **Relay/Station 优先**
    - Mobile 不承担 P2P 主链职责
-5. **Applet 化边界明确**
-   - 某些能力以 Applet 方式承载，而不是原生模块无限膨胀
+6. **Native Plugin 边界明确**
+   - 插件只提供设备能力，不定义业务真源
+7. **Applet 化边界明确**
+   - 某些能力以 Applet 方式承载，而不是主 App 无限膨胀
 
 ---
 
 ## 6. 当前实现与目标架构的边界
 
-本文区分两个概念：
+本文区分三个概念：
 
 ### 6.1 当前实现基线
 
 指当前仓库里已经明确存在并成立的内容，例如：
 
-- Android / iOS 原生工程存在
-- 原生技术栈主线已确定
+- Mobile 主线迁移到 Tauri v2 Mobile
+- 原生 Android / iOS 工程不再作为主 UI 真源
 - Lynx 容器方向已确定
 - Station 真源原则已确定
 
@@ -124,10 +143,18 @@ Mobile 不负责：
 
 指平台期望收敛到的形态，但不等于“当前已全部落地”，例如：
 
-- 与 Desktop 的能力覆盖逐步趋同
+- 与 Desktop 的 UI/UX 范式、runtime projection、API 语义逐步趋同
 - Notebook / Cron 等能力通过 Applet 形态承载
 - 更完整的模块化结构与统一导航策略
 - 更完整的同步、事件、记忆、搜索等能力接入
+
+### 6.3 历史与迁移材料
+
+指曾经作为 Mobile 主线或探索路径存在，但不再作为当前主线的内容，例如：
+
+- Android Compose / iOS SwiftUI 主 UI 双端实现
+- Flutter / Dart 路径
+- 原生 DTO 或 JSON 过渡模型
 
 因此：
 
@@ -138,23 +165,32 @@ Mobile 不负责：
 
 ## 7. 目标结构方向
 
-### 7.1 Android
+### 7.1 Tauri Mobile Shell
 
 目标方向是：
 
-- `core/` 只承载通用能力
-- `features/` 以业务语义组织
-- 业务模块内部保持 `ui / viewmodel / repository / model` 分层
-- Applet 宿主层独立于业务模块
+- `apps/mobile/src/` 承载 mobile-web UI、routes、pages、runtime glue
+- `apps/mobile/src-tauri/` 承载 Rust capability kernel、commands、plugin registration
+- `apps/mobile/src-tauri/gen/apple/` 承载 Tauri 生成的 iOS 工程
+- 页面按 mobile-first shell 设计，不直接缩放 Desktop 页面
 
-### 7.2 iOS
+### 7.2 Shared Client Layer
 
 目标方向是：
 
-- `Core/` 只承载通用能力
-- `Features/` 以业务语义组织
-- 业务模块保持 View / ViewModel / Repository 的分层
-- Applet 宿主层独立于业务模块
+- `packages/client-ui` 承载 tokens、基础组件、响应式规则
+- `packages/client-runtime` 承载 session、sync、projection、outbox
+- `packages/client-api` 承载 Station API 与 proto contract glue
+- `packages/client-platform` 承载平台能力抽象
+
+### 7.3 Native Plugin Layer
+
+目标方向是：
+
+- Android Kotlin / iOS Swift 只承载系统能力与 Tauri plugin
+- push、secure storage、deep link、background sync、camera、share、biometric 等能力走 plugin
+- plugin 事件进入 Rust kernel 或 shared runtime，再驱动 UI projection
+- plugin 不直接拥有业务状态
 
 ---
 
@@ -189,8 +225,10 @@ Mobile 通过 Station 提供的 API、Relay、同步与事件机制工作。
 约束：
 
 - 不直接承担数据库真源职责
-- 不引入 Desktop 专属本地运行时模式
+- 不引入 Desktop 专属窗口 / 托盘 / 多窗口运行时模式
 - 共享业务状态依赖 Station
+- 前台 event stream 与恢复前台 delta sync 必须共同维护 projection 新鲜度
+- 后台 push 只用于唤醒、提示与标记 stale，不替代 authoritative sync
 
 详细协议见：
 
@@ -202,8 +240,13 @@ Mobile 通过 Station 提供的 API、Relay、同步与事件机制工作。
 
 ```text
 apps/mobile/
-├── android/
-├── ios/
+├── src/          # mobile-web UI
+├── src-tauri/    # Rust capability kernel
+├── gen/
+│   ├── android/  # Tauri generated Android project
+│   └── apple/    # Tauri generated iOS project
+├── android/      # legacy/native plugin source during migration
+├── ios/          # legacy/native plugin source during migration
 └── flutter/      # deprecated, not active implementation path
 ```
 
@@ -211,8 +254,10 @@ apps/mobile/
 
 ## 11. 继续阅读
 
-- [Native Dual Platform](./native-dual-platform.md)
+- [Native Dual Platform / Native Plugin Layer](./native-dual-platform.md)
 - [Applet Container](./applet-container.md)
 - [Sync Protocol](./sync-protocol.md)
+- [Tauri Mobile Mainline Migration Plan](./execution-plans/20260531-tauri-mobile-mainline-migration.md)
+- [Tauri Mobile Capability Topology Proposal](../../context/mobile/tauri-mobile-capability-topology-proposal.md)（设计过程记录）
 - [Station/Desktop Scope Boundary](../../architecture/boundaries/station-desktop-scope-boundary.md)
 - [Mobile Coding Guide](../../global/coding-guide/mobile)

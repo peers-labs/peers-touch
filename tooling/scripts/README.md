@@ -41,6 +41,8 @@ export VITE_PORT=3000
 | `preview-desktop.sh` | 推荐 | 本地启动 Desktop(Tauri) | 当前最稳定入口 |
 | `_ensure-station.sh` | 内部依赖 | 检查/启动 station 并做健康探测 | 由 preview 脚本调用 |
 | `dev-clean.sh` | 推荐 | 清理开发进程 | 建议重启开发环境前执行 |
+| `dev-testnet-desktops.sh` | 可用 | 启动 testnet Desktop 多实例 | 支持 macOS 默认 Bash；通常通过 `make testnet-desktop NODES="a b"` 调用 |
+| `proto-gen-mobile.sh` | 可用 | 生成 Mobile proto 产物 | 支持 `kotlin` / `swift` / `web` / `all`；`web` 输出到 `apps/mobile/src/gen/proto` |
 | `check-go-style.sh` | 可用（按参数） | Go 风格检查与 lint | 默认目录仍偏旧，建议传入明确目录 |
 | `format-go.sh` | 可用（谨慎） | Go 格式化 | 仅在目标 Go 模块目录执行 |
 | `run_all_tests.sh` | 有风险 | 历史测试聚合脚本 | 根目录推导有偏差，使用前先检查路径 |

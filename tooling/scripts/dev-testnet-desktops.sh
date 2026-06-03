@@ -19,24 +19,35 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# ── Actor definitions ─────────────────────────────────────────────────────────
-declare -A ACTOR_STATION=(
-  [a]="http://10.37.94.156:18080"
-  [b]="http://10.37.195.98:18080"
-  [c]="http://10.37.246.80:18080"
-)
-declare -A ACTOR_WEB_PORT=(
-  [a]=3210
-  [b]=3211
-  [c]=3212
-)
-declare -A ACTOR_GATEWAY_PORT=(
-  [a]=3030
-  [b]=3031
-  [c]=3032
-)
-
 ALL_ACTORS=(a b c)
+
+# Keep this script compatible with macOS /bin/bash 3.2.
+actor_station_url() {
+  case "$1" in
+    a) echo "http://10.37.94.156:18080" ;;
+    b) echo "http://10.37.195.98:18080" ;;
+    c) echo "http://10.37.246.80:18080" ;;
+    *) return 1 ;;
+  esac
+}
+
+actor_web_port() {
+  case "$1" in
+    a) echo "3210" ;;
+    b) echo "3211" ;;
+    c) echo "3212" ;;
+    *) return 1 ;;
+  esac
+}
+
+actor_gateway_port() {
+  case "$1" in
+    a) echo "3030" ;;
+    b) echo "3031" ;;
+    c) echo "3032" ;;
+    *) return 1 ;;
+  esac
+}
 
 # ── Parse args: which actors to launch ────────────────────────────────────────
 if [[ $# -gt 0 ]]; then
@@ -47,7 +58,7 @@ fi
 
 # ── Validate actors ───────────────────────────────────────────────────────────
 for actor in "${ACTORS[@]}"; do
-  if [[ -z "${ACTOR_STATION[$actor]:-}" ]]; then
+  if ! actor_station_url "$actor" >/dev/null; then
     echo "ERROR: Unknown actor '$actor'. Must be one of: a, b, c"
     exit 1
   fi
@@ -57,7 +68,7 @@ echo "════════════════════════�
 echo "  Peers Touch Testnet — Desktop Clients"
 echo ""
 for actor in "${ACTORS[@]}"; do
-  echo "  Actor ${actor}: Station=${ACTOR_STATION[$actor]}  Web=:${ACTOR_WEB_PORT[$actor]}  Gateway=:${ACTOR_GATEWAY_PORT[$actor]}"
+  echo "  Actor ${actor}: Station=$(actor_station_url "$actor")  Web=:$(actor_web_port "$actor")  Gateway=:$(actor_gateway_port "$actor")"
 done
 echo "═══════════════════════════════════════════════════════════"
 echo ""
@@ -68,10 +79,10 @@ PIDS=()
 for actor in "${ACTORS[@]}"; do
   echo "==> Starting Desktop for actor ${actor}..."
 
-  PEERS_STATION_URL="${ACTOR_STATION[$actor]}" \
+  PEERS_STATION_URL="$(actor_station_url "$actor")" \
   PT_PROFILE="testnet-${actor}" \
-  WEB_PORT="${ACTOR_WEB_PORT[$actor]}" \
-  GATEWAY_PORT="${ACTOR_GATEWAY_PORT[$actor]}" \
+  WEB_PORT="$(actor_web_port "$actor")" \
+  GATEWAY_PORT="$(actor_gateway_port "$actor")" \
   "$SCRIPT_DIR/dev-desktop-app.sh" &
 
   PIDS+=($!)

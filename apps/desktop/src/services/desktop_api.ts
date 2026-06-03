@@ -2076,6 +2076,31 @@ export interface ContextHealthOutput {
   updatedAt: number;
 }
 
+// ── Station registry types ──
+
+export interface StationEntry {
+  url: string;
+  label?: string;
+  peer_id?: string;
+  peers_count?: number;
+  last_probe?: string;
+  online: boolean;
+}
+
+export interface StationListResponse {
+  entries: StationEntry[];
+  active_url: string;
+}
+
+export interface StationProbeResult {
+  url: string;
+  online: boolean;
+  label?: string;
+  peer_id?: string;
+  peers_count?: number;
+  error?: string;
+}
+
 export const api = {
   authLogin: (input: AuthLoginInput) =>
     invokeAuthCommand<AuthLoginInput>('auth_login', input),
@@ -3922,6 +3947,23 @@ export const api = {
     invokeRustDataFromStatus<{ category: number; enabled: boolean; push_enabled: boolean; sound_enabled: boolean }, { preference: NotificationPreferenceData }>(
       'notification_preferences_update', { category, enabled, push_enabled: pushEnabled, sound_enabled: soundEnabled },
     ),
+
+  // ── Station registry (dynamic URL picker) ──
+
+  stationList: () =>
+    invokeRustDataFromStatus<void, StationListResponse>('station_list'),
+
+  stationSetActive: (url: string) =>
+    invokeRustDataFromStatus<{ url: string }, { active_url: string }>('station_set_active', { url }),
+
+  stationAdd: (url: string) =>
+    invokeRustDataFromStatus<{ url: string }, StationEntry>('station_add', { url }),
+
+  stationRemove: (url: string) =>
+    invokeRustDataFromStatus<{ url: string }, { removed: string }>('station_remove', { url }),
+
+  stationProbe: (url: string) =>
+    invokeRustDataFromStatus<{ url: string }, StationProbeResult>('station_probe', { url }),
 };
 
 export interface ConfigFieldMeta {

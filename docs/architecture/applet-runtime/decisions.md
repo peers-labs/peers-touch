@@ -88,24 +88,26 @@ Desktop `<lynx-host>` 是 Peers-Touch Host 封装，内部使用 Lynx for Web �
 
 ---
 
-## D-03: Mobile 使用原生 LynxView
+## D-03: Mobile 通过 Tauri Native Plugin 使用 LynxView
 
 **Status**: accepted
 **Date**: 2026-05-19
+**Updated**: 2026-05-31
 
 ### Context
 
-Mobile 已明确是 Android Kotlin/Compose 与 iOS Swift/SwiftUI 双原生路线，Applet 容器方向是 Lynx。
+Mobile 主线已迁移为 Tauri v2 Mobile。Android Kotlin 与 iOS Swift 不再承载主 UI 双端实现，但仍负责 native plugin 系统能力层。Applet 容器方向仍是 Lynx。
 
 ### Decision
 
-Android 使用 LynxView 嵌入 Compose / 原生 View，iOS 使用 LynxView 嵌入 SwiftUI / UIKit 桥接层。
+Android 使用 LynxView 作为 Tauri mobile native plugin 能力承载，iOS 使用 LynxView 作为 Tauri mobile native plugin 能力承载。mobile-web 通过 Tauri command / event / native route 打开和管理 Applet。
 
 ### Rationale
 
 - Mobile 对性能和启动速度要求更高，原生 LynxView 比 WebView 更合适。
 - Lynx 原生引擎提供更好的移动端渲染管线。
 - 与官方 Lynx 集成路径一致。
+- 与 Tauri Mobile 主线兼容：UI 范式归 Web，设备和容器能力归 native plugin。
 
 ### Alternatives Considered
 

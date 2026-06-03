@@ -26,7 +26,7 @@ use interface::tauri_commands::{
     account, actor, admin, agent_growth, agent_scheduler, agents, applets, auth, channels, chat,
     cron, crypto, federation, friend_chat, frontend_log, group_chat, i18n, ice, key_exchange, mcp,
     memory, model_config, models, notebook, notification, oauth2, oss, presence, profile, provider,
-    realtime, search, settings, skills, skills_market, social, system, tools, tts,
+    realtime, search, settings, skills, skills_market, social, station, system, tools, tts,
 };
 use std::sync::Arc;
 use tauri::Manager;
@@ -425,7 +425,12 @@ fn main() {
             notification::notification_mark_all_read,
             notification::notification_delete,
             notification::notification_preferences,
-            notification::notification_preferences_update
+            notification::notification_preferences_update,
+            station::station_list,
+            station::station_set_active,
+            station::station_add,
+            station::station_remove,
+            station::station_probe
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
