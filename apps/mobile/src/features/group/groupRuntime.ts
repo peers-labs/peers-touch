@@ -1,10 +1,10 @@
 import type { MobileAuthSession } from '../auth/authSession';
-import { startGroupE2eeRuntime } from './groupE2eeRuntime';
+import { startGroupE2eeRuntime, type GroupE2eeRuntimeController } from './groupE2eeRuntime';
 import type { GroupState } from './groupStore';
 
 const GROUP_RECONCILE_INTERVAL_MS = 30000;
 
-export interface GroupRuntimeController {
+export interface GroupRuntimeController extends GroupE2eeRuntimeController {
   teardown: () => void;
 }
 
@@ -20,6 +20,9 @@ export function startGroupRuntime(session: MobileAuthSession, getStore: () => Gr
   }, GROUP_RECONCILE_INTERVAL_MS);
 
   return {
+    consumeSkdmControlMessage: e2eeRuntime.consumeSkdmControlMessage,
+    repairEncryptedMessages: e2eeRuntime.repairEncryptedMessages,
+    rotateAfterMembershipChange: e2eeRuntime.rotateAfterMembershipChange,
     teardown: () => {
       cancelled = true;
       e2eeRuntime.teardown();
