@@ -44,6 +44,21 @@ export function projectGroupMessageDisplay(message: GroupMessage): GroupMessageD
   return { kind: 'empty' };
 }
 
+export function applyGroupDecryptedContentToList(
+  messages: GroupMessage[] | undefined,
+  messageUlid: string,
+  plaintext: string,
+): GroupMessage[] | null {
+  if (!messages?.length || !plaintext) return null;
+  let changed = false;
+  const next = messages.map((message) => {
+    if (message.ulid !== messageUlid || message.content === plaintext) return message;
+    changed = true;
+    return { ...message, content: plaintext } as GroupMessage;
+  });
+  return changed ? next : null;
+}
+
 export function applyGroupMutationToList(
   messages: GroupMessage[] | undefined,
   messageUlid: string,
