@@ -23,6 +23,7 @@ export function startGroupRuntime(session: MobileAuthSession, getStore: () => Gr
     consumeSkdmControlMessage: e2eeRuntime.consumeSkdmControlMessage,
     repairEncryptedMessages: e2eeRuntime.repairEncryptedMessages,
     rotateAfterMembershipChange: e2eeRuntime.rotateAfterMembershipChange,
+    sendEncryptedMessage: e2eeRuntime.sendEncryptedMessage,
     teardown: () => {
       cancelled = true;
       e2eeRuntime.teardown();
