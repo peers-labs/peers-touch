@@ -1,4 +1,5 @@
 import { timestampMillis } from './socialNormalizers';
+import { FriendMessageType } from '../../gen/proto/domain/chat/friend_chat_pb';
 import type {
   FriendChatMessage,
   FriendChatSession,
@@ -75,12 +76,25 @@ export function projectUnreadNotificationCount(input: {
 }
 
 export function mergeMessages(messages: FriendChatMessage[], incoming: FriendChatMessage): FriendChatMessage[] {
+  if (!isVisibleFriendMessage(incoming)) return messages;
   if (!incoming.ulid) return messages;
   const exists = messages.some((message) => message.ulid === incoming.ulid);
   const next = exists
     ? messages.map((message) => (message.ulid === incoming.ulid ? { ...message, ...incoming } : message))
     : [...messages, incoming];
   return next.sort((a, b) => timestampMillis(a.sentAt ?? a.createdAt) - timestampMillis(b.sentAt ?? b.createdAt));
+}
+
+export function visibleFriendMessages(messages: FriendChatMessage[]): FriendChatMessage[] {
+  return messages.filter(isVisibleFriendMessage);
+}
+
+export function isSenderKeyDistributionMessage(message: FriendChatMessage): boolean {
+  return message.type === FriendMessageType.SENDER_KEY_DISTRIBUTION;
+}
+
+export function isVisibleFriendMessage(message: FriendChatMessage): boolean {
+  return !isSenderKeyDistributionMessage(message);
 }
 
 export function mergeNotifications(current: SocialNotification[], incoming: SocialNotification[]): SocialNotification[] {
