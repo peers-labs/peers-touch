@@ -1,4 +1,5 @@
 import type { MobileAuthSession } from '../auth/authSession';
+import type { GroupState } from '../group/groupStore';
 import type { SocialState } from './socialStore';
 import { startRealtimeStream } from './socialRealtime';
 
@@ -46,7 +47,11 @@ export function dispatchSocialRuntimeExternalEvent(event: SocialRuntimeExternalE
   activeRuntime?.dispatchExternalEvent(event);
 }
 
-export function startSocialRuntime(session: MobileAuthSession, store: SocialState): SocialRuntimeController {
+export function startSocialRuntime(
+  session: MobileAuthSession,
+  store: SocialState,
+  groupStore?: GroupState,
+): SocialRuntimeController {
   let cancelled = false;
   let externalReconcileTimer: number | null = null;
   const abortController = new AbortController();
@@ -68,11 +73,24 @@ export function startSocialRuntime(session: MobileAuthSession, store: SocialStat
     onMessage: (sessionUlid, message) => {
       store.ingestRealtimeMessage(sessionUlid, message);
     },
+    onGroupMessage: (groupUlid, message) => {
+      groupStore?.ingestRealtimeMessage(groupUlid, message);
+    },
     onReceipt: store.applyMessageReceipt,
-    onMutation: store.applyMessageMutation,
+    onMutation: (sessionUlid, messageUlid, kind, payload) => {
+      store.applyMessageMutation(sessionUlid, messageUlid, kind, payload);
+      groupStore?.applyMessageMutation(sessionUlid, messageUlid, kind, payload);
+    },
     onTyping: store.applyTypingState,
     onPresence: store.setPeerOnline,
-    onResync: store.reconcile,
+    onGroupMembership: (groupUlid) => {
+      void groupStore?.refreshGroups();
+      if (groupStore?.activeGroupUlid === groupUlid) void groupStore.loadMembers(groupUlid);
+    },
+    onResync: () => {
+      void store.reconcile();
+      void groupStore?.reconcile();
+    },
   });
 
   const runtimeRef: ActiveSocialRuntime = {

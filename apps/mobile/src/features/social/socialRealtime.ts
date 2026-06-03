@@ -1,10 +1,12 @@
 import type { MobileAuthSession } from '../auth/authSession';
+import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import type { MessageMutationKind } from './socialProjection';
 import type { FriendChatMessage } from './socialTypes';
 import { decodeRealtimeSseChunk } from './socialWire';
 
 interface RealtimeHandlers {
   onMessage: (sessionUlid: string, message: FriendChatMessage) => void;
+  onGroupMessage: (groupUlid: string, message: GroupMessage) => void;
   onReceipt: (sessionUlid: string, messageUlid: string, kind: number) => void;
   onMutation: (
     sessionUlid: string,
@@ -14,6 +16,7 @@ interface RealtimeHandlers {
   ) => void;
   onTyping: (sessionUlid: string, fromActorId: string, typing: boolean) => void;
   onPresence: (actorId: string, online: boolean) => void;
+  onGroupMembership: (groupUlid: string, actorDid: string, kind: 'ADDED' | 'REMOVED' | 'LEFT') => void;
   onResync: () => void;
 }
 
@@ -57,6 +60,10 @@ function dispatchWireEvents(chunk: string, handlers: RealtimeHandlers) {
       handlers.onMessage(event.sessionUlid, event.message);
       return;
     }
+    if (event.kind === 'group-message') {
+      handlers.onGroupMessage(event.groupUlid, event.message);
+      return;
+    }
     if (event.kind === 'receipt') {
       handlers.onReceipt(event.sessionUlid, event.messageUlid, event.receiptKind);
       return;
@@ -75,6 +82,10 @@ function dispatchWireEvents(chunk: string, handlers: RealtimeHandlers) {
     }
     if (event.kind === 'presence') {
       handlers.onPresence(event.actorId, event.online);
+      return;
+    }
+    if (event.kind === 'group-membership') {
+      handlers.onGroupMembership(event.groupUlid, event.actorDid, event.membershipKind);
       return;
     }
     handlers.onResync();

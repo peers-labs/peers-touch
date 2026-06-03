@@ -1,8 +1,11 @@
 import { fromBinary } from '@bufbuild/protobuf';
 import type { Timestamp } from '@bufbuild/protobuf/wkt';
+import { GroupMessageSchema } from '../../gen/proto/domain/chat/group_chat_pb';
+import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import { FriendChatMessageSchema } from '../../gen/proto/domain/chat/friend_chat_pb';
 import type { FriendChatMessage as ProtoFriendChatMessage } from '../../gen/proto/domain/chat/friend_chat_pb';
 import {
+  GroupMembershipChange_Kind,
   MessageMutation_Kind,
   StreamEventSchema,
 } from '../../gen/proto/domain/realtime/event_pb';
@@ -11,6 +14,7 @@ import type { FriendChatMessage, SocialTimestamp } from './socialTypes';
 
 export type RealtimeWireEvent =
   | { kind: 'message'; sessionUlid: string; message: FriendChatMessage }
+  | { kind: 'group-message'; groupUlid: string; message: GroupMessage }
   | { kind: 'receipt'; sessionUlid: string; messageUlid: string; receiptKind: number }
   | {
     kind: 'mutation';
@@ -23,6 +27,7 @@ export type RealtimeWireEvent =
   }
   | { kind: 'typing'; sessionUlid: string; fromActorId: string; typing: boolean }
   | { kind: 'presence'; actorId: string; online: boolean }
+  | { kind: 'group-membership'; groupUlid: string; actorDid: string; membershipKind: 'ADDED' | 'REMOVED' | 'LEFT' }
   | { kind: 'resync' };
 
 export function decodeRealtimeSseChunk(chunk: string): RealtimeWireEvent[] {
@@ -40,8 +45,11 @@ function decodeRealtimeEvent(bytes: Uint8Array): RealtimeWireEvent | null {
   const frame = event.kind;
 
   if (frame.case === 'message') {
-    const message = decodeFriendChatMessage(frame.value.ciphertext);
-    return message ? { kind: 'message', sessionUlid: frame.value.sessionUlid, message } : null;
+    const message = decodeRealtimeMessage(frame.value.sessionUlid, frame.value.ciphertext);
+    if (!message) return null;
+    return message.kind === 'group'
+      ? { kind: 'group-message', groupUlid: message.message.groupUlid || frame.value.sessionUlid, message: message.message }
+      : { kind: 'message', sessionUlid: frame.value.sessionUlid, message: message.message };
   }
   if (frame.case === 'receipt') {
     return {
@@ -75,6 +83,16 @@ function decodeRealtimeEvent(bytes: Uint8Array): RealtimeWireEvent | null {
   if (frame.case === 'presence') {
     return { kind: 'presence', actorId: frame.value.actorId, online: frame.value.online };
   }
+  if (frame.case === 'groupMembershipChange') {
+    const membershipKind = groupMembershipKindFromEnum(frame.value.kind);
+    if (!membershipKind) return null;
+    return {
+      kind: 'group-membership',
+      groupUlid: frame.value.groupUlid,
+      actorDid: frame.value.actorDid,
+      membershipKind,
+    };
+  }
   if (frame.case === 'resync') return { kind: 'resync' };
   return null;
 }
@@ -90,8 +108,37 @@ function parseSseData(chunk: string): string[] {
 
 function decodeFriendChatMessage(bytes: Uint8Array): FriendChatMessage | null {
   const message = fromBinary(FriendChatMessageSchema, bytes);
-  if (!message.ulid) return null;
+  if (!message.ulid || !message.receiverDid) return null;
   return adaptFriendChatMessage(message);
+}
+
+function decodeRealtimeMessage(
+  sessionUlid: string,
+  bytes: Uint8Array,
+): { kind: 'friend'; message: FriendChatMessage } | { kind: 'group'; message: GroupMessage } | null {
+  try {
+    const friendMessage = decodeFriendChatMessage(bytes);
+    if (friendMessage) return { kind: 'friend', message: friendMessage };
+  } catch {
+    // Try group payload below; both arms use generated proto decoders.
+  }
+
+  try {
+    const groupMessage = fromBinary(GroupMessageSchema, bytes);
+    if (groupMessage.ulid && (groupMessage.groupUlid || sessionUlid)) {
+      return {
+        kind: 'group',
+        message: {
+          ...groupMessage,
+          groupUlid: groupMessage.groupUlid || sessionUlid,
+          encryptedPayload: copyBytes(groupMessage.encryptedPayload),
+        },
+      };
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function adaptFriendChatMessage(message: ProtoFriendChatMessage): FriendChatMessage {
@@ -128,6 +175,13 @@ function mutationKindFromEnum(value: number): MessageMutationKind | null {
   if (value === MessageMutation_Kind.RECALL) return 'RECALL';
   if (value === MessageMutation_Kind.EDIT) return 'EDIT';
   if (value === MessageMutation_Kind.DELETE) return 'DELETE';
+  return null;
+}
+
+function groupMembershipKindFromEnum(value: number): 'ADDED' | 'REMOVED' | 'LEFT' | null {
+  if (value === GroupMembershipChange_Kind.ADDED) return 'ADDED';
+  if (value === GroupMembershipChange_Kind.REMOVED) return 'REMOVED';
+  if (value === GroupMembershipChange_Kind.LEFT) return 'LEFT';
   return null;
 }
 
