@@ -32,7 +32,7 @@
 | Desktop projection 分层 | `socialChat` store 与纯 projection reducer 分离 | 已新增 `apps/desktop/src/store/socialProjection.ts`，承载 message merge、receipt、mutation、typing GC、local-clear 过滤等纯状态机 |
 | Desktop normalizer 分层 | `socialChat` store 与 Station response 兼容逻辑分离 | 已新增 `apps/desktop/src/store/socialNormalizers.ts`，先承载 friend session、friend request、presence seed 归一化 |
 | Mobile Host Adapter 入口 | Rust kernel 统一 emit native host event | 已补 `mobile_native_event_emit` command 与 `native_events` push/deep-link/notification-tap/resume 标准 payload，Web bridge 保留 deep-link `url` 字段 |
-| Mobile group domain | 独立 group API / normalizer / projection / store / runtime | 已新增 `apps/mobile/src/features/group/`，使用 generated group proto 类型，不复用 friend chat bucket，并已接入 realtime group message / membership / mutation / resync |
+| Mobile group domain | 独立 group API / normalizer / projection / store / runtime / renderer | 已新增 `apps/mobile/src/features/group/`，使用 generated group proto 类型，不复用 friend chat bucket，并已接入 realtime group message / membership / mutation / resync；Chat/Contacts UI 已只读接入 group projection |
 
 ---
 
@@ -109,7 +109,12 @@
   - `GroupMembershipChange` 进入 group projection refresh；
   - message mutation 同时投递 friend reducer 与 group reducer；
   - resync 同时触发 social/group reconcile。
-- 当前 group domain 是 runtime/store/API/realtime 闭环，尚未接入 UI；下一步才做 Chat/Contacts 的 group renderer。
+- Chat/Contacts UI 已接入 group projection renderer：
+  - 新增 `groupSelectors.ts` 作为 UI 只读 selector 入口；
+  - `ChatPage.tsx` 合并 friend/group conversation renderer，但 friend 与 group state bucket 仍独立；
+  - `ContactsPage.tsx` 增加 group section，选择群组只进入 `groupStore.selectGroup`；
+  - 页面未新增 `refreshGroups`、`loadMessages`、`reconcile` 等 freshness owner。
+- 群组发送/解密仍不在 UI/store 临时处理，下一步进入 Mobile group E2EE sender-key domain 设计与实现。
 
 ### Step 5: Mobile Host Adapter
 

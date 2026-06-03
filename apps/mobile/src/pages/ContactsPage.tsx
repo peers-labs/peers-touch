@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Avatar, Button, Empty, Input, List, Modal, Spin, Tag, Typography } from 'antd';
-import { Check, RefreshCw, Search, ShieldCheck, UserPlus, X } from 'lucide-react';
+import { Check, Search, ShieldCheck, UserPlus, Users, X } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
+import { selectGroupConversations } from '../features/group/groupSelectors';
+import { useGroupStore } from '../features/group/groupStore';
+import type { GroupConversation } from '../features/group/groupProjection';
 import {
   formatSocialError,
   useSocialStore,
@@ -30,7 +33,6 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
   const friendRequests = useSocialStore((state) => state.friendRequests);
   const loading = useSocialStore((state) => state.loading);
   const error = useSocialStore((state) => state.error);
-  const reconcile = useSocialStore((state) => state.reconcile);
   const acceptFriendRequest = useSocialStore((state) => state.acceptFriendRequest);
   const rejectFriendRequest = useSocialStore((state) => state.rejectFriendRequest);
   const sendFriendRequest = useSocialStore((state) => state.sendFriendRequest);
@@ -44,7 +46,11 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
   const peopleError = useSocialStore((state) => state.peopleSearchError);
   const searchPeople = useSocialStore((state) => state.searchPeople);
   const clearPeopleSearch = useSocialStore((state) => state.clearPeopleSearch);
+  const selectGroup = useGroupStore((state) => state.selectGroup);
+  const groupLoading = useGroupStore((state) => state.loading);
+  const groupError = useGroupStore((state) => state.error);
   const contacts = useSocialStore(selectSocialConversations);
+  const groups = useGroupStore(selectGroupConversations);
   const inboundRequests = useSocialStore(selectPendingInboundFriendRequests);
   const sentRequests = useSocialStore(selectOutgoingFriendRequests);
   const filteredContacts = useMemo(() => {
@@ -54,6 +60,13 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
       `${contact.peerName} ${contact.peerDid}`.toLowerCase().includes(query),
     );
   }, [contactQuery, contacts]);
+  const filteredGroups = useMemo(() => {
+    const query = contactQuery.trim().toLowerCase();
+    if (!query) return groups;
+    return groups.filter((group) =>
+      `${group.group.name} ${group.group.ulid} ${group.lastMessage?.content ?? ''}`.toLowerCase().includes(query),
+    );
+  }, [contactQuery, groups]);
   const pendingTargetDids = useMemo(
     () => new Set(friendRequests.map((request) => request.receiverDid || request.senderDid).filter(Boolean)),
     [friendRequests],
@@ -84,8 +97,15 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
   };
 
   const openContactChat = async (contact: SocialConversation) => {
+    await selectGroup(null);
     await selectSession(contact.session.ulid);
     setSelectedContact(null);
+    onOpenChat?.();
+  };
+
+  const openGroupChat = async (group: GroupConversation) => {
+    await selectSession(null);
+    await selectGroup(group.group.ulid);
     onOpenChat?.();
   };
 
@@ -110,9 +130,10 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
       </div>
 
       {error ? <Text type="danger" className="page-error">{formatSocialError(error)}</Text> : null}
+      {groupError ? <Text type="danger" className="page-error">{formatSocialError(groupError)}</Text> : null}
 
       <section className="social-list-panel">
-        <Spin spinning={loading}>
+        <Spin spinning={loading || groupLoading}>
           <SectionTitle title={t('mobile.contacts.friendRequests')} count={inboundRequests.length} />
           {inboundRequests.length > 0 ? (
             <List
@@ -166,11 +187,39 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
                   <Text type="secondary">{t('mobile.contacts.emptySubtitle')}</Text>
                 </div>
               }
-            >
-              <Button icon={<RefreshCw size={16} />} onClick={reconcile}>
-                {t('mobile.contacts.refresh')}
-              </Button>
-            </Empty>
+            />
+          )}
+
+          <SectionTitle title={t('mobile.group.title')} count={groups.length} />
+          {filteredGroups.length > 0 ? (
+            <List
+              dataSource={filteredGroups}
+              renderItem={(group) => (
+                <List.Item className="contact-item" onClick={() => openGroupChat(group)}>
+                  <List.Item.Meta
+                    avatar={
+                      <Avatar src={group.group.avatarCid} icon={<Users size={16} />}>
+                        {group.group.name.slice(0, 1)}
+                      </Avatar>
+                    }
+                    title={<Text strong>{group.group.name}</Text>}
+                    description={t('mobile.group.memberCount', { count: group.group.memberCount })}
+                  />
+                </List.Item>
+              )}
+            />
+          ) : groups.length > 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.group.noSearchResults')} />
+          ) : (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={
+                <div className="empty-copy">
+                  <Text strong>{t('mobile.group.emptyTitle')}</Text>
+                  <Text type="secondary">{t('mobile.group.emptySubtitle')}</Text>
+                </div>
+              }
+            />
           )}
 
           {sentRequests.length > 0 ? (
