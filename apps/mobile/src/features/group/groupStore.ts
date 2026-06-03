@@ -28,6 +28,7 @@ export interface GroupState {
   error: SocialApiError | null;
   lastReconcileAt: number | null;
   encryptedSender: ((groupUlid: string, plaintext: string) => Promise<boolean>) | null;
+  encryptedEditor: ((groupUlid: string, messageUlid: string, plaintext: string) => Promise<boolean>) | null;
   encryptionPreparer: ((groupUlid: string) => Promise<boolean>) | null;
   bindSession: (session: MobileAuthSession | null) => void;
   reconcile: () => Promise<void>;
@@ -47,7 +48,11 @@ export interface GroupState {
   setEncryptionReady: (groupUlid: string, ready: boolean) => void;
   setGroupSending: (groupUlid: string, sending: boolean) => void;
   sendEncryptedMessage: (groupUlid: string, plaintext: string) => Promise<boolean>;
+  editEncryptedMessage: (groupUlid: string, messageUlid: string, plaintext: string) => Promise<boolean>;
+  recallMessage: (groupUlid: string, messageUlid: string) => Promise<void>;
+  deleteMessage: (groupUlid: string, messageUlid: string) => Promise<void>;
   bindEncryptedSender: (sender: ((groupUlid: string, plaintext: string) => Promise<boolean>) | null) => void;
+  bindEncryptedEditor: (editor: ((groupUlid: string, messageUlid: string, plaintext: string) => Promise<boolean>) | null) => void;
   bindEncryptionPreparer: (preparer: ((groupUlid: string) => Promise<boolean>) | null) => void;
   setE2eeError: (messageUlid: string, error: string | null) => void;
   markRead: (groupUlid: string, upToUlid?: string) => Promise<void>;
@@ -69,6 +74,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   error: null,
   lastReconcileAt: null,
   encryptedSender: null,
+  encryptedEditor: null,
   encryptionPreparer: null,
 
   bindSession: (session) => {
@@ -201,7 +207,44 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
+  editEncryptedMessage: async (groupUlid, messageUlid, plaintext) => {
+    const editor = get().encryptedEditor;
+    if (!editor) return false;
+    set((state) => ({
+      sendingGroups: { ...state.sendingGroups, [groupUlid]: true },
+    }));
+    try {
+      return await editor(groupUlid, messageUlid, plaintext);
+    } finally {
+      get().setGroupSending(groupUlid, false);
+    }
+  },
+
+  recallMessage: async (groupUlid, messageUlid) => {
+    const api = requireApi(get());
+    try {
+      await api.recallMessage(groupUlid, messageUlid);
+      get().applyMessageMutation(groupUlid, messageUlid, 'RECALL', { mutatedTsUnixMs: Date.now() });
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
+    }
+  },
+
+  deleteMessage: async (groupUlid, messageUlid) => {
+    const api = requireApi(get());
+    try {
+      await api.deleteMessage(groupUlid, messageUlid);
+      get().applyMessageMutation(groupUlid, messageUlid, 'DELETE', { mutatedTsUnixMs: Date.now() });
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
+    }
+  },
+
   bindEncryptedSender: (sender) => set({ encryptedSender: sender }),
+
+  bindEncryptedEditor: (editor) => set({ encryptedEditor: editor }),
 
   bindEncryptionPreparer: (preparer) => set({ encryptionPreparer: preparer }),
 
@@ -246,6 +289,7 @@ function emptyGroupState() {
     error: null,
     lastReconcileAt: null,
     encryptedSender: null,
+    encryptedEditor: null,
     encryptionPreparer: null,
   };
 }

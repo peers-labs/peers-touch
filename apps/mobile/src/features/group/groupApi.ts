@@ -40,6 +40,9 @@ export interface GroupApiClient {
   listMessages: (groupUlid: string, beforeUlid?: string, limit?: number) => Promise<ListGroupMessagesPayload>;
   listMembers: (groupUlid: string, limit?: number, offset?: number) => Promise<ListGroupMembersPayload>;
   sendMessage: (groupUlid: string, encryptedPayload: Uint8Array) => Promise<{ message?: GroupMessage }>;
+  editMessage: (groupUlid: string, messageUlid: string, encryptedPayload: Uint8Array) => Promise<Record<string, unknown>>;
+  recallMessage: (groupUlid: string, messageUlid: string) => Promise<Record<string, unknown>>;
+  deleteMessage: (groupUlid: string, messageUlid: string) => Promise<Record<string, unknown>>;
   unreadCount: (groupUlid: string) => Promise<GroupUnreadCountPayload>;
   markRead: (groupUlid: string, upToUlid?: string) => Promise<Record<string, unknown>>;
 }
@@ -107,6 +110,29 @@ export function createGroupApiClient(session: MobileAuthSession): GroupApiClient
           type: 1,
           encrypted_payload: bytesToBase64(encryptedPayload),
         },
+      }),
+    editMessage: (groupUlid, messageUlid, encryptedPayload) =>
+      request({
+        method: 'POST',
+        path: '/group-chat/message/edit',
+        body: {
+          group_ulid: groupUlid,
+          message_ulid: messageUlid,
+          new_content: '',
+          new_encrypted_payload: bytesToBase64(encryptedPayload),
+        },
+      }),
+    recallMessage: (groupUlid, messageUlid) =>
+      request({
+        method: 'POST',
+        path: '/group-chat/message/recall',
+        body: { group_ulid: groupUlid, message_ulid: messageUlid },
+      }),
+    deleteMessage: (groupUlid, messageUlid) =>
+      request({
+        method: 'POST',
+        path: '/group-chat/message/delete',
+        body: { group_ulid: groupUlid, message_ulid: messageUlid },
       }),
     unreadCount: (groupUlid) =>
       request<GroupUnreadCountPayload>({

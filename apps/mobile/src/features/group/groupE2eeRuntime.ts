@@ -14,6 +14,7 @@ export interface GroupE2eeRuntimeController {
   repairEncryptedMessages: () => Promise<void>;
   rotateAfterMembershipChange: (groupUlid: string, affectedActorDid: string) => Promise<boolean>;
   sendEncryptedMessage: (groupUlid: string, plaintext: string) => Promise<boolean>;
+  editEncryptedMessage: (groupUlid: string, messageUlid: string, plaintext: string) => Promise<boolean>;
   teardown: () => void;
 }
 
@@ -107,6 +108,26 @@ export function startGroupE2eeRuntime(
         return true;
       } catch (error) {
         getStore().setE2eeError(sendErrorKey(groupUlid), errorMessage(error));
+        return false;
+      }
+    },
+    editEncryptedMessage: async (groupUlid, messageUlid, plaintext) => {
+      if (cancelled || !groupUlid || !messageUlid || !plaintext.trim()) return false;
+      try {
+        const store = getStore();
+        const ready = await canEncryptGroup(groupUlid);
+        if (!ready) return false;
+        const encryptedPayload = await encryptGroupPlaintext(session, groupUlid, plaintext);
+        await store.api?.editMessage(groupUlid, messageUlid, encryptedPayload);
+        store.applyMessageMutation(groupUlid, messageUlid, 'EDIT', {
+          newContent: plaintext,
+          newCiphertext: encryptedPayload,
+          mutatedTsUnixMs: Date.now(),
+        });
+        getStore().setE2eeError(editErrorKey(groupUlid), null);
+        return true;
+      } catch (error) {
+        getStore().setE2eeError(editErrorKey(groupUlid), errorMessage(error));
         return false;
       }
     },
@@ -216,6 +237,10 @@ function identityErrorKey(session: MobileAuthSession): string {
 
 function sendErrorKey(groupUlid: string): string {
   return `send:${groupUlid}`;
+}
+
+function editErrorKey(groupUlid: string): string {
+  return `edit:${groupUlid}`;
 }
 
 function skdmLedgerTarget(groupUlid: string, peerDid: string, deviceKey: string): SkdmLedgerTarget {
