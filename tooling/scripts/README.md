@@ -42,6 +42,7 @@ export VITE_PORT=3000
 | `_ensure-station.sh` | 内部依赖 | 检查/启动 station 并做健康探测 | 由 preview 脚本调用 |
 | `dev-clean.sh` | 推荐 | 清理开发进程 | 建议重启开发环境前执行 |
 | `dev-testnet-desktops.sh` | 可用 | 启动 testnet Desktop 多实例 | 支持 macOS 默认 Bash；通常通过 `make testnet-desktop NODES="a b"` 调用 |
+| `generate-mobile-brand-assets.py` | 可用 | 生成 Mobile 品牌资源 | 生成 App 内透明 wordmark、Tauri icon、iOS AppIcon 与 Android launcher icons；避免横向 logo 被当作系统图标 |
 | `proto-gen-mobile.sh` | 可用 | 生成 Mobile proto 产物 | 支持 `kotlin` / `swift` / `web` / `all`；`web` 输出到 `apps/mobile/src/gen/proto` |
 | `apps/mobile/scripts/check-social-wire-contract.sh` | 可用 | 校验 Mobile 社交实时协议契约 | 禁止回退到手写 protobuf wire decoder |
 | `check-go-style.sh` | 可用（按参数） | Go 风格检查与 lint | 默认目录仍偏旧，建议传入明确目录 |

@@ -105,13 +105,15 @@ select,
 
 .launch-logo {
   display: block;
-  width: 60px;
-  height: 60px;
+  width: min(112px, 32vw);
+  height: 38px;
   border: 0;
   border-radius: 0;
   outline: 0;
   background: transparent;
   box-shadow: none;
+  object-fit: contain;
+  object-position: left center;
 }
 
 .launch-kicker {
