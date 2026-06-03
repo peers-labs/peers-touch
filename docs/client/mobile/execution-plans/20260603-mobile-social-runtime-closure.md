@@ -261,8 +261,10 @@ Proto contract closure:
 
 Background/push closure:
 
-- Add native push/deep-link plugin event bridge.
-- Route push events into `socialRuntime` instead of mutating UI directly.
+- `mobileNativeEventBridge.ts` installs one app-level listener for native push, deep-link, resume, notification-tap, WebView visibility, focus, and network-online wakeups.
+- Native events route into `socialRuntime.dispatchSocialRuntimeExternalEvent`; pages never own wakeup refresh logic.
+- `socialRuntime` debounces external wakeups, refreshes targeted sessions/notifications when hinted, and falls back to Station-backed reconcile.
+- Remaining native work: wire platform push/deep-link plugins to emit the documented `mobile:*` events.
 
 Group-chat closure:
 
