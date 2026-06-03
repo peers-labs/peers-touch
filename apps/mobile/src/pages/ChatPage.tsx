@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar, Badge, Button, Empty, Input, List, Popconfirm, Spin, Typography } from 'antd';
-import { ArrowLeft, Pencil, RefreshCw, RotateCcw, Search, Send, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Pencil, RotateCcw, Search, Send, Trash2, Users, X } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
 import logo from '../assets/logo.png';
+import { selectGroupConversations } from '../features/group/groupSelectors';
+import { timestampMillis as groupTimestampMillis } from '../features/group/groupNormalizers';
+import { useGroupStore } from '../features/group/groupStore';
+import type { GroupConversation } from '../features/group/groupProjection';
+import type { GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
 import {
   formatSocialError,
   useSocialStore,
@@ -18,7 +23,12 @@ const TYPING_FALSE_DELAY_MS = 4000;
 const MESSAGE_STATUS_DELIVERED = 3;
 const MESSAGE_STATUS_READ = 4;
 const EMPTY_MESSAGES: FriendChatMessage[] = [];
+const EMPTY_GROUP_MESSAGES: GroupMessage[] = [];
 const EMPTY_TYPING_PEERS: Record<string, TypingEntry> = {};
+
+type MobileConversation =
+  | { kind: 'friend'; key: string; conversation: ReturnType<typeof selectSocialConversations>[number] }
+  | { kind: 'group'; key: string; conversation: GroupConversation };
 
 export function ChatPage() {
   const { t } = useMobileI18n();
@@ -35,7 +45,6 @@ export function ChatPage() {
   const messageSearchResults = useSocialStore((state) => state.messageSearchResults);
   const messageSearchLoading = useSocialStore((state) => state.messageSearchLoading);
   const messageSearchError = useSocialStore((state) => state.messageSearchError);
-  const reconcile = useSocialStore((state) => state.reconcile);
   const selectSession = useSocialStore((state) => state.selectSession);
   const sendMessage = useSocialStore((state) => state.sendMessage);
   const editMessage = useSocialStore((state) => state.editMessage);
@@ -44,18 +53,32 @@ export function ChatPage() {
   const sendTypingState = useSocialStore((state) => state.sendTypingState);
   const searchMessages = useSocialStore((state) => state.searchMessages);
   const clearMessageSearch = useSocialStore((state) => state.clearMessageSearch);
+  const activeGroupUlid = useGroupStore((state) => state.activeGroupUlid);
+  const groupMessages = useGroupStore((state) => (activeGroupUlid ? state.messages[activeGroupUlid] ?? EMPTY_GROUP_MESSAGES : EMPTY_GROUP_MESSAGES));
+  const groupLoading = useGroupStore((state) => state.loading);
+  const groupError = useGroupStore((state) => state.error);
+  const selectGroup = useGroupStore((state) => state.selectGroup);
   const lastTypingPulseRef = useRef(0);
   const typingIdleTimerRef = useRef<number | null>(null);
   const conversations = useSocialStore(selectSocialConversations);
+  const groupConversations = useGroupStore(selectGroupConversations);
+  const unifiedConversations = useMemo<MobileConversation[]>(
+    () => [
+      ...conversations.map((conversation) => ({ kind: 'friend' as const, key: `friend:${conversation.session.ulid}`, conversation })),
+      ...groupConversations.map((conversation) => ({ kind: 'group' as const, key: `group:${conversation.group.ulid}`, conversation })),
+    ].sort((a, b) => conversationUpdatedAt(b) - conversationUpdatedAt(a)),
+    [conversations, groupConversations],
+  );
   const filteredConversations = useMemo(() => {
     const query = conversationQuery.trim().toLowerCase();
-    if (!query) return conversations;
-    return conversations.filter((conversation) =>
-      `${conversation.peerName} ${conversation.peerDid} ${conversation.lastMessage?.content ?? ''}`.toLowerCase().includes(query),
+    if (!query) return unifiedConversations;
+    return unifiedConversations.filter((conversation) =>
+      conversationSearchText(conversation).toLowerCase().includes(query),
     );
-  }, [conversationQuery, conversations]);
+  }, [conversationQuery, unifiedConversations]);
 
   const activeConversation = conversations.find((conversation) => conversation.session.ulid === activeSessionUlid);
+  const activeGroupConversation = groupConversations.find((conversation) => conversation.group.ulid === activeGroupUlid);
   const peerTyping = activeConversation ? Boolean(typingPeers[activeConversation.peerDid]?.typing) : false;
 
   useEffect(() => {
@@ -67,7 +90,9 @@ export function ChatPage() {
   useEffect(() => {
     setThreadSearchQuery('');
     clearMessageSearch();
-  }, [activeSessionUlid, clearMessageSearch]);
+    setEditingMessage(null);
+    setDraft('');
+  }, [activeGroupUlid, activeSessionUlid, clearMessageSearch]);
 
   const emitTypingState = async (typing: boolean) => {
     if (!activeConversation) return;
@@ -123,40 +148,69 @@ export function ChatPage() {
     await deleteMessage(activeConversation.session.ulid, message.ulid);
   };
 
-  if (activeConversation) {
+  const openConversation = async (conversation: MobileConversation) => {
+    if (conversation.kind === 'friend') {
+      await selectGroup(null);
+      await selectSession(conversation.conversation.session.ulid);
+      return;
+    }
+
+    await selectSession(null);
+    await selectGroup(conversation.conversation.group.ulid);
+  };
+
+  if (activeConversation || activeGroupConversation) {
+    const isGroupThread = Boolean(activeGroupConversation);
+    const title = activeGroupConversation?.group.name || activeConversation?.peerName || '';
+    const avatar = activeGroupConversation?.group.avatarCid || activeConversation?.peerAvatar;
+    const avatarFallback = (title || activeGroupConversation?.group.ulid || activeConversation?.peerDid || '').slice(0, 1);
+    const threadMessages = activeGroupConversation ? groupMessages : messages;
+
     return (
       <div className="page-container chat-thread-page">
         <header className="page-header">
-          <button className="header-action" type="button" onClick={() => selectSession(null)} aria-label={t('common.action.back')}>
+          <button
+            className="header-action"
+            type="button"
+            onClick={() => {
+              void selectSession(null);
+              void selectGroup(null);
+            }}
+            aria-label={t('common.action.back')}
+          >
             <ArrowLeft size={20} />
           </button>
-          <Avatar src={activeConversation.peerAvatar}>{activeConversation.peerName.slice(0, 1)}</Avatar>
+          <Avatar src={avatar}>{avatarFallback}</Avatar>
           <div className="header-title-stack">
-            <h1 className="header-title compact">{activeConversation.peerName}</h1>
+            <h1 className="header-title compact">{title}</h1>
             <Text type="secondary">
-              {peerTyping
+              {activeGroupConversation
+                ? t('mobile.group.memberCount', { count: activeGroupConversation.group.memberCount })
+                : peerTyping
                 ? t('mobile.chat.typing')
-                : activeConversation.peerOnline
+                : activeConversation?.peerOnline
                   ? t('mobile.social.online')
                   : t('mobile.social.offline')}
             </Text>
           </div>
         </header>
 
-        <div className="chat-search-bar thread">
-          <Input.Search
-            value={threadSearchQuery}
-            onChange={(event) => {
-              setThreadSearchQuery(event.target.value);
-              if (!event.target.value.trim()) clearMessageSearch();
-            }}
-            onSearch={(value) => searchMessages(value, activeConversation.session.ulid)}
-            prefix={<Search size={16} />}
-            placeholder={t('mobile.chat.searchMessagesPlaceholder')}
-            loading={messageSearchLoading}
-            allowClear
-          />
-        </div>
+        {!isGroupThread ? (
+          <div className="chat-search-bar thread">
+            <Input.Search
+              value={threadSearchQuery}
+              onChange={(event) => {
+                setThreadSearchQuery(event.target.value);
+                if (!event.target.value.trim()) clearMessageSearch();
+              }}
+              onSearch={(value) => searchMessages(value, activeConversation?.session.ulid ?? '')}
+              prefix={<Search size={16} />}
+              placeholder={t('mobile.chat.searchMessagesPlaceholder')}
+              loading={messageSearchLoading}
+              allowClear
+            />
+          </div>
+        ) : null}
 
         {messageSearchError ? <Text type="danger" className="page-error">{formatSocialError(messageSearchError)}</Text> : null}
 
@@ -176,27 +230,30 @@ export function ChatPage() {
         ) : null}
 
         <section className="message-list">
-          {messages.length === 0 ? (
+          {threadMessages.length === 0 ? (
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.chat.emptyThread')} />
           ) : (
-            messages.map((message) => {
+            threadMessages.map((message) => {
               const mine = message.senderDid === currentUserDid;
+              const content = message.recalled
+                ? t('mobile.chat.recalledMessage')
+                : message.content || (isGroupThread && message.encryptedPayload?.byteLength ? t('mobile.group.encryptedMessage') : t('mobile.chat.noPreview'));
               return (
                 <div key={message.ulid} className={`message-bubble-row ${mine ? 'mine' : 'peer'}`}>
                   <div className="message-bubble">
-                    <Text>{message.recalled ? t('mobile.chat.recalledMessage') : message.content}</Text>
+                    <Text>{content}</Text>
                     <span className="message-meta">
                       {message.editedAt && !message.recalled ? <span>{t('mobile.chat.edited')}</span> : null}
-                      {mine && !message.recalled ? <span>{formatMessageStatus(message.status, t)}</span> : null}
-                      <span>{formatRelativeTime(timestampMillis(message.sentAt ?? message.createdAt), t)}</span>
+                      {mine && !message.recalled && !isGroupThread && 'status' in message ? <span>{formatMessageStatus(message.status, t)}</span> : null}
+                      <span>{formatRelativeTime(messageTimestampMillis(message, isGroupThread), t)}</span>
                     </span>
-                    {mine && !message.recalled ? (
+                    {mine && !message.recalled && !isGroupThread ? (
                       <span className="message-actions">
                         <button
                           type="button"
                           className="message-action-button"
                           aria-label={t('mobile.chat.edit')}
-                          onClick={() => startEditMessage(message)}
+                          onClick={() => startEditMessage(message as FriendChatMessage)}
                         >
                           <Pencil size={13} />
                         </button>
@@ -204,7 +261,7 @@ export function ChatPage() {
                           type="button"
                           className="message-action-button"
                           aria-label={t('mobile.chat.recall')}
-                          onClick={() => recallOwnMessage(message)}
+                          onClick={() => recallOwnMessage(message as FriendChatMessage)}
                         >
                           <RotateCcw size={13} />
                         </button>
@@ -212,7 +269,7 @@ export function ChatPage() {
                           title={t('mobile.chat.deleteConfirm')}
                           okText={t('common.action.delete')}
                           cancelText={t('common.action.cancel')}
-                          onConfirm={() => deleteOwnMessage(message)}
+                          onConfirm={() => deleteOwnMessage(message as FriendChatMessage)}
                         >
                           <button
                             type="button"
@@ -231,28 +288,34 @@ export function ChatPage() {
           )}
         </section>
 
-        <footer className="message-composer">
-          {editingMessage ? (
-            <div className="message-editing-banner">
-              <Text type="secondary" ellipsis>{t('mobile.chat.editing')}</Text>
-              <button type="button" className="message-action-button light" onClick={cancelEditMessage} aria-label={t('common.action.cancel')}>
-                <X size={13} />
-              </button>
-            </div>
-          ) : null}
-          <Input
-            value={draft}
-            onChange={(event) => handleDraftChange(event.target.value)}
-            onPressEnter={submitMessage}
-            placeholder={t('mobile.chat.messagePlaceholder')}
-          />
-          <Button
-            type="primary"
-            icon={<Send size={16} />}
-            disabled={!draft.trim()}
-            onClick={submitMessage}
-          />
-        </footer>
+        {isGroupThread ? (
+          <footer className="message-composer readonly">
+            <Text type="secondary">{t('mobile.group.composerPending')}</Text>
+          </footer>
+        ) : (
+          <footer className="message-composer">
+            {editingMessage ? (
+              <div className="message-editing-banner">
+                <Text type="secondary" ellipsis>{t('mobile.chat.editing')}</Text>
+                <button type="button" className="message-action-button light" onClick={cancelEditMessage} aria-label={t('common.action.cancel')}>
+                  <X size={13} />
+                </button>
+              </div>
+            ) : null}
+            <Input
+              value={draft}
+              onChange={(event) => handleDraftChange(event.target.value)}
+              onPressEnter={submitMessage}
+              placeholder={t('mobile.chat.messagePlaceholder')}
+            />
+            <Button
+              type="primary"
+              icon={<Send size={16} />}
+              disabled={!draft.trim()}
+              onClick={submitMessage}
+            />
+          </footer>
+        )}
       </div>
     );
   }
@@ -275,14 +338,15 @@ export function ChatPage() {
       </div>
 
       {error ? <Text type="danger" className="page-error">{formatSocialError(error)}</Text> : null}
+      {groupError ? <Text type="danger" className="page-error">{formatSocialError(groupError)}</Text> : null}
 
       <section className="social-list-panel">
-        <Spin spinning={loading}>
+        <Spin spinning={loading || groupLoading}>
           {filteredConversations.length === 0 ? (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               description={
-                conversations.length > 0
+                unifiedConversations.length > 0
                   ? t('mobile.chat.noSearchResults')
                   : (
                     <div className="empty-copy">
@@ -291,30 +355,29 @@ export function ChatPage() {
                     </div>
                   )
               }
-            >
-              {conversations.length === 0 ? (
-                <Button icon={<RefreshCw size={16} />} onClick={reconcile}>
-                  {t('mobile.chat.refresh')}
-                </Button>
-              ) : null}
-            </Empty>
+            />
           ) : (
             <List
               dataSource={filteredConversations}
               renderItem={(conversation) => (
-                <List.Item className="conversation-item" onClick={() => selectSession(conversation.session.ulid)}>
+                <List.Item className="conversation-item" onClick={() => openConversation(conversation)}>
                   <List.Item.Meta
                     avatar={
-                      <Badge dot={conversation.peerOnline} color="green" offset={[-2, 28]}>
-                        <Avatar src={conversation.peerAvatar}>{conversation.peerName.slice(0, 1)}</Avatar>
+                      <Badge dot={conversation.kind === 'friend' ? conversation.conversation.peerOnline : false} color="green" offset={[-2, 28]}>
+                        <Avatar src={conversationAvatar(conversation)}>{conversationTitle(conversation).slice(0, 1)}</Avatar>
                       </Badge>
                     }
-                    title={<Text strong>{conversation.peerName}</Text>}
-                    description={conversation.lastMessage?.content || t('mobile.chat.noPreview')}
+                    title={
+                      <span className="conversation-title-row">
+                        <Text strong>{conversationTitle(conversation)}</Text>
+                        {conversation.kind === 'group' ? <Users size={13} /> : null}
+                      </span>
+                    }
+                    description={conversationPreview(conversation, t)}
                   />
                   <div className="conversation-meta">
-                    <Text type="secondary">{formatRelativeTime(timestampMillis(conversation.session.lastMessageAt), t)}</Text>
-                    {conversation.unread > 0 ? <Badge count={conversation.unread} /> : null}
+                    <Text type="secondary">{formatRelativeTime(conversationUpdatedAt(conversation), t)}</Text>
+                    {conversationUnread(conversation) > 0 ? <Badge count={conversationUnread(conversation)} /> : null}
                   </div>
                 </List.Item>
               )}
@@ -341,4 +404,44 @@ function formatRelativeTime(value: number, t: (key: string, params?: Record<stri
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return t('common.time.hoursAgo', { count: hours });
   return new Date(value).toLocaleDateString();
+}
+
+function conversationTitle(conversation: MobileConversation): string {
+  return conversation.kind === 'friend' ? conversation.conversation.peerName : conversation.conversation.group.name;
+}
+
+function conversationAvatar(conversation: MobileConversation): string {
+  return conversation.kind === 'friend' ? conversation.conversation.peerAvatar : conversation.conversation.group.avatarCid;
+}
+
+function conversationUnread(conversation: MobileConversation): number {
+  return conversation.kind === 'friend' ? conversation.conversation.unread : conversation.conversation.unread;
+}
+
+function conversationPreview(conversation: MobileConversation, t: (key: string) => string): string {
+  const lastMessage = conversation.conversation.lastMessage;
+  if (!lastMessage) return t('mobile.chat.noPreview');
+  if (lastMessage.recalled) return t('mobile.chat.recalledMessage');
+  if (lastMessage.content) return lastMessage.content;
+  if (conversation.kind === 'group' && lastMessage.encryptedPayload?.byteLength) return t('mobile.group.encryptedMessage');
+  return t('mobile.chat.noPreview');
+}
+
+function conversationUpdatedAt(conversation: MobileConversation): number {
+  if (conversation.kind === 'friend') {
+    return timestampMillis(conversation.conversation.session.lastMessageAt);
+  }
+  return groupTimestampMillis(conversation.conversation.lastMessage?.sentAt ?? conversation.conversation.group.updatedAt ?? conversation.conversation.group.createdAt);
+}
+
+function conversationSearchText(conversation: MobileConversation): string {
+  if (conversation.kind === 'friend') {
+    return `${conversation.conversation.peerName} ${conversation.conversation.peerDid} ${conversation.conversation.lastMessage?.content ?? ''}`;
+  }
+  return `${conversation.conversation.group.name} ${conversation.conversation.group.ulid} ${conversation.conversation.lastMessage?.content ?? ''}`;
+}
+
+function messageTimestampMillis(message: FriendChatMessage | GroupMessage, isGroupThread: boolean): number {
+  if (isGroupThread) return groupTimestampMillis((message as GroupMessage).sentAt ?? (message as GroupMessage).createdAt);
+  return timestampMillis((message as FriendChatMessage).sentAt ?? (message as FriendChatMessage).createdAt);
 }

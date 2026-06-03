@@ -792,6 +792,18 @@ select,
   min-width: 54px;
 }
 
+.conversation-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.conversation-title-row svg {
+  flex: 0 0 auto;
+  color: rgba(0, 0, 0, 0.42);
+}
+
 .social-section-title {
   display: flex;
   align-items: center;
@@ -1094,6 +1106,13 @@ select,
   background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
+}
+
+.message-composer.readonly {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 54px;
 }
 
 .settings-profile {
