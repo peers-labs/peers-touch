@@ -3,18 +3,13 @@ import { Avatar, Button, Checkbox, Empty, Input, List, Modal, Spin, Tag, Typogra
 import { Check, Search, ShieldCheck, UserPlus, Users, X } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
-import { selectGroupConversations } from '../features/group/groupSelectors';
 import { useGroupStore } from '../features/group/groupStore';
-import type { GroupConversation } from '../features/group/groupProjection';
+import { projectGroupConversations, type GroupConversation } from '../features/group/groupProjection';
 import {
   formatSocialError,
   useSocialStore,
 } from '../features/social/socialStore';
-import {
-  selectOutgoingFriendRequests,
-  selectPendingInboundFriendRequests,
-  selectSocialConversations,
-} from '../features/social/socialSelectors';
+import { projectConversations, projectOutgoingRequests, projectPendingInboundRequests } from '../features/social/socialProjection';
 import type { ActorSearchResult, SocialConversation } from '../features/social/socialTypes';
 
 const { Text } = Typography;
@@ -54,10 +49,28 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
   const createGroup = useGroupStore((state) => state.createGroup);
   const groupLoading = useGroupStore((state) => state.loading);
   const groupError = useGroupStore((state) => state.error);
-  const contacts = useSocialStore(selectSocialConversations);
-  const groups = useGroupStore(selectGroupConversations);
-  const inboundRequests = useSocialStore(selectPendingInboundFriendRequests);
-  const sentRequests = useSocialStore(selectOutgoingFriendRequests);
+  const sessions = useSocialStore((state) => state.sessions);
+  const messages = useSocialStore((state) => state.messages);
+  const peerOnline = useSocialStore((state) => state.peerOnline);
+  const groupItems = useGroupStore((state) => state.groups);
+  const groupMessages = useGroupStore((state) => state.messages);
+  const groupUnreadCounts = useGroupStore((state) => state.unreadCounts);
+  const contacts = useMemo(
+    () => projectConversations({ sessions, messages, currentUserDid, peerOnline }),
+    [currentUserDid, messages, peerOnline, sessions],
+  );
+  const groups = useMemo(
+    () => projectGroupConversations({ groups: groupItems, messages: groupMessages, unreadCounts: groupUnreadCounts }),
+    [groupItems, groupMessages, groupUnreadCounts],
+  );
+  const inboundRequests = useMemo(
+    () => projectPendingInboundRequests(friendRequests, currentUserDid),
+    [currentUserDid, friendRequests],
+  );
+  const sentRequests = useMemo(
+    () => projectOutgoingRequests(friendRequests, currentUserDid),
+    [currentUserDid, friendRequests],
+  );
   const filteredContacts = useMemo(() => {
     const query = contactQuery.trim().toLowerCase();
     if (!query) return contacts;

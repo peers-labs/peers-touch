@@ -4,22 +4,22 @@ import { ArrowLeft, Pencil, RotateCcw, Search, Send, Trash2, Users, X } from 'lu
 
 import { useMobileI18n } from '../app/mobileI18n';
 import logo from '../assets/logo.png';
-import { selectGroupConversations } from '../features/group/groupSelectors';
 import { timestampMillis as groupTimestampMillis } from '../features/group/groupNormalizers';
 import { useGroupStore } from '../features/group/groupStore';
 import {
+  projectGroupConversations,
   projectGroupMessageDisplay,
   type GroupConversation,
   type GroupMessageDisplay,
 } from '../features/group/groupProjection';
-import type { GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
+import type { GroupMember, GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
 import {
   formatSocialError,
   useSocialStore,
 } from '../features/social/socialStore';
 import { timestampMillis } from '../features/social/socialNormalizers';
-import { selectSocialConversations } from '../features/social/socialSelectors';
-import type { FriendChatMessage, TypingEntry } from '../features/social/socialTypes';
+import { projectConversations } from '../features/social/socialProjection';
+import type { FriendChatMessage, SocialConversation, TypingEntry } from '../features/social/socialTypes';
 
 const { Text } = Typography;
 const TYPING_TRUE_INTERVAL_MS = 3000;
@@ -28,10 +28,11 @@ const MESSAGE_STATUS_DELIVERED = 3;
 const MESSAGE_STATUS_READ = 4;
 const EMPTY_MESSAGES: FriendChatMessage[] = [];
 const EMPTY_GROUP_MESSAGES: GroupMessage[] = [];
+const EMPTY_GROUP_MEMBERS: GroupMember[] = [];
 const EMPTY_TYPING_PEERS: Record<string, TypingEntry> = {};
 
 type MobileConversation =
-  | { kind: 'friend'; key: string; conversation: ReturnType<typeof selectSocialConversations>[number] }
+  | { kind: 'friend'; key: string; conversation: SocialConversation }
   | { kind: 'group'; key: string; conversation: GroupConversation };
 
 type EditingMessage = {
@@ -68,7 +69,7 @@ export function ChatPage() {
   const clearMessageSearch = useSocialStore((state) => state.clearMessageSearch);
   const activeGroupUlid = useGroupStore((state) => state.activeGroupUlid);
   const groupMessages = useGroupStore((state) => (activeGroupUlid ? state.messages[activeGroupUlid] ?? EMPTY_GROUP_MESSAGES : EMPTY_GROUP_MESSAGES));
-  const groupMembers = useGroupStore((state) => (activeGroupUlid ? state.members[activeGroupUlid] ?? [] : []));
+  const groupMembers = useGroupStore((state) => (activeGroupUlid ? state.members[activeGroupUlid] ?? EMPTY_GROUP_MEMBERS : EMPTY_GROUP_MEMBERS));
   const groupSettings = useGroupStore((state) => (activeGroupUlid ? state.settings[activeGroupUlid] : undefined));
   const groupLoading = useGroupStore((state) => state.loading);
   const groupError = useGroupStore((state) => state.error);
@@ -86,8 +87,20 @@ export function ChatPage() {
   const deleteGroupMessage = useGroupStore((state) => state.deleteMessage);
   const lastTypingPulseRef = useRef(0);
   const typingIdleTimerRef = useRef<number | null>(null);
-  const conversations = useSocialStore(selectSocialConversations);
-  const groupConversations = useGroupStore(selectGroupConversations);
+  const sessions = useSocialStore((state) => state.sessions);
+  const sessionMessages = useSocialStore((state) => state.messages);
+  const peerOnline = useSocialStore((state) => state.peerOnline);
+  const groups = useGroupStore((state) => state.groups);
+  const groupMessagesByUlid = useGroupStore((state) => state.messages);
+  const groupUnreadCounts = useGroupStore((state) => state.unreadCounts);
+  const conversations = useMemo(
+    () => projectConversations({ sessions, messages: sessionMessages, currentUserDid, peerOnline }),
+    [currentUserDid, peerOnline, sessionMessages, sessions],
+  );
+  const groupConversations = useMemo(
+    () => projectGroupConversations({ groups, messages: groupMessagesByUlid, unreadCounts: groupUnreadCounts }),
+    [groupMessagesByUlid, groupUnreadCounts, groups],
+  );
   const unifiedConversations = useMemo<MobileConversation[]>(
     () => [
       ...conversations.map((conversation) => ({ kind: 'friend' as const, key: `friend:${conversation.session.ulid}`, conversation })),
