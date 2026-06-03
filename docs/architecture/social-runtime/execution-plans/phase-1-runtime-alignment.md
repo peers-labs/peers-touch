@@ -153,6 +153,11 @@
   - Rust command 只收发 typed JSON fields，不新增 Rust protobuf decode；
   - 新增 `apps/mobile/src/features/group/groupE2eeBridge.ts`，由 Web generated TS proto 负责编解 `GroupCiphertext` / `SenderKeyDistributionMessage` bytes；
   - 已补 E2EE missing actor/group locale key。
+- 已落地 group E2EE runtime repair owner：
+  - 新增 `apps/mobile/src/features/group/groupE2eeRuntime.ts`，由 group runtime 启停；
+  - 周期扫描 group projection 中的 encrypted payload，调用 bridge decrypt，成功后写入 decrypted display projection；
+  - `groupStore` 只新增 `applyDecryptedMessage` / `e2eeErrors` projection，不持有 sender chain 或 crypto internals；
+  - 页面仍只消费 display projection，不调用 crypto bridge。
 
 ### Step 7: 验证
 
