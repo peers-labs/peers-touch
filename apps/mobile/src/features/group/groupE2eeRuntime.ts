@@ -1,7 +1,8 @@
 import type { MobileAuthSession } from '../auth/authSession';
-import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
-import { consumeGroupSkdm, decryptGroupPayload, rotateGroupSenderKey } from './groupE2eeBridge';
-import { ensureMobileKeyBundlePublished, openSkdmEnvelopeFromSender } from './groupKeyExchange';
+import { createSocialApiClient } from '../social/socialApi';
+import type { GroupMember, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
+import { consumeGroupSkdm, decryptGroupPayload, emitGroupSkdm, encryptGroupPlaintext, rotateGroupSenderKey } from './groupE2eeBridge';
+import { ensureMobileKeyBundlePublished, fetchKeyBundles, openSkdmEnvelopeFromSender, sealSkdmEnvelopeForPeer } from './groupKeyExchange';
 import type { GroupState } from './groupStore';
 
 const GROUP_E2EE_REPAIR_INTERVAL_MS = 5000;
@@ -10,6 +11,7 @@ export interface GroupE2eeRuntimeController {
   consumeSkdmControlMessage: (senderDid: string, skdmBytes: Uint8Array) => Promise<boolean>;
   repairEncryptedMessages: () => Promise<void>;
   rotateAfterMembershipChange: (groupUlid: string, affectedActorDid: string) => Promise<boolean>;
+  sendEncryptedMessage: (groupUlid: string, plaintext: string) => Promise<boolean>;
   teardown: () => void;
 }
 
@@ -19,6 +21,8 @@ export function startGroupE2eeRuntime(
 ): GroupE2eeRuntimeController {
   let cancelled = false;
   let repairing = false;
+  const sentSkdmRecipients = new Set<string>();
+  const socialApi = createSocialApiClient(session);
 
   const repairEncryptedMessages = async () => {
     if (cancelled || repairing) return;
@@ -60,10 +64,27 @@ export function startGroupE2eeRuntime(
       if (cancelled || !groupUlid || affectedActorDid === actorDidForSession(session)) return false;
       try {
         await rotateGroupSenderKey(session, groupUlid);
+        clearSentSkdmForGroup(sentSkdmRecipients, groupUlid);
         getStore().setE2eeError(rotationErrorKey(groupUlid), null);
         return true;
       } catch (error) {
         getStore().setE2eeError(rotationErrorKey(groupUlid), errorMessage(error));
+        return false;
+      }
+    },
+    sendEncryptedMessage: async (groupUlid, plaintext) => {
+      if (cancelled || !groupUlid || !plaintext.trim()) return false;
+      try {
+        const store = getStore();
+        const members = await membersForDistribution(store, groupUlid);
+        await distributeSenderKey(session, socialApi, sentSkdmRecipients, groupUlid, members);
+        const encryptedPayload = await encryptGroupPlaintext(session, groupUlid, plaintext);
+        const payload = await store.api?.sendMessage(groupUlid, encryptedPayload);
+        if (payload?.message) await store.ingestRealtimeMessage(groupUlid, payload.message);
+        getStore().setE2eeError(sendErrorKey(groupUlid), null);
+        return true;
+      } catch (error) {
+        getStore().setE2eeError(sendErrorKey(groupUlid), errorMessage(error));
         return false;
       }
     },
@@ -72,6 +93,45 @@ export function startGroupE2eeRuntime(
       window.clearInterval(repairTimer);
     },
   };
+}
+
+async function membersForDistribution(store: GroupState, groupUlid: string): Promise<GroupMember[]> {
+  if (store.members[groupUlid]?.length) return store.members[groupUlid];
+  await store.loadMembers(groupUlid);
+  return store.members[groupUlid] ?? [];
+}
+
+async function distributeSenderKey(
+  session: MobileAuthSession,
+  socialApi: ReturnType<typeof createSocialApiClient>,
+  sentSkdmRecipients: Set<string>,
+  groupUlid: string,
+  members: GroupMember[],
+) {
+  const selfDid = actorDidForSession(session);
+  const peerDids = members
+    .map((member) => member.actorDid)
+    .filter((did): did is string => Boolean(did && did !== selfDid));
+  if (!peerDids.length) return;
+
+  const skdmBytes = await emitGroupSkdm(session, groupUlid);
+  for (const peerDid of peerDids) {
+    const bundles = await fetchKeyBundles(session, peerDid).catch(() => []);
+    for (const bundle of bundles) {
+      const ikPub = String(bundle.ikPub || (bundle as Record<string, unknown>).ik_pub || '').trim();
+      if (!ikPub) continue;
+      const key = skdmRecipientKey(groupUlid, peerDid, String(bundle.deviceId || (bundle as Record<string, unknown>).device_id || ikPub));
+      if (sentSkdmRecipients.has(key)) continue;
+
+      const sealedB64 = await sealSkdmEnvelopeForPeer(session, peerDid, ikPub, skdmBytes);
+      const carrier = base64ToBytes(sealedB64);
+      const friendSession = await socialApi.createSession(peerDid);
+      const sessionUlid = friendSession.session?.ulid;
+      if (!sessionUlid) continue;
+      await socialApi.sendSenderKeyDistribution(sessionUlid, peerDid, carrier);
+      sentSkdmRecipients.add(key);
+    }
+  }
 }
 
 async function repairEncryptedGroupMessages(
@@ -119,6 +179,20 @@ function identityErrorKey(session: MobileAuthSession): string {
   return `identity:${actorDidForSession(session) || session.sessionId}`;
 }
 
+function sendErrorKey(groupUlid: string): string {
+  return `send:${groupUlid}`;
+}
+
+function skdmRecipientKey(groupUlid: string, peerDid: string, deviceKey: string): string {
+  return `${groupUlid}:${peerDid}:${deviceKey}`;
+}
+
+function clearSentSkdmForGroup(sentSkdmRecipients: Set<string>, groupUlid: string) {
+  [...sentSkdmRecipients].forEach((key) => {
+    if (key.startsWith(`${groupUlid}:`)) sentSkdmRecipients.delete(key);
+  });
+}
+
 function skdmErrorKey(senderDid: string): string {
   return `skdm:${senderDid}`;
 }
@@ -130,4 +204,11 @@ function rotationErrorKey(groupUlid: string): string {
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = window.atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
 }

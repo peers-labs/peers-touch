@@ -168,6 +168,11 @@
   - 新增 Mobile `signaling_envelope_seal/open` Rust command，与 Desktop `GROUP_SKDM` signaling envelope 语义对齐；
   - 新增 `features/group/groupKeyExchange.ts`，runtime 启动时发布 key bundle，入站 type `50` 先拉取 sender bundles 并 open envelope，再 consume SKDM；
   - 明确关闭裸 SKDM carrier 路径，后续 SKDM outbound distribution 在这个 envelope 边界上继续实现。
+- 已接入 Mobile group encrypted send command 边界：
+  - `groupApi.sendMessage` 只发送 `content=''` + `encrypted_payload`，对齐 Station group E2EE invariant；
+  - `socialApi.sendSenderKeyDistribution` 只作为 friend-chat type `50` control transport，不进入 visible friend projection；
+  - `groupE2eeRuntime.sendEncryptedMessage` 负责 SKDM fanout、group plaintext encrypt、Station send 与 projection ingest；
+  - UI composer 暂不开放，直到 durable SKDM sent/pending ledger 与 `canEncrypt` gate 完成。
 
 ### Step 7: 验证
 
