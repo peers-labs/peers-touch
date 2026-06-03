@@ -8,7 +8,7 @@ use crate::infrastructure::session_vault::{self, SessionVaultError};
 use crate::infrastructure::station_client;
 use crate::model::actor::ActorProfile;
 use crate::state::{AppState, SessionState};
-use serde_json::json;
+use serde_json::{json, Value};
 
 pub(crate) fn takeover_station_session_token(
     token: &str,
@@ -69,39 +69,157 @@ fn persist_session_if_unprotected(
     .map_err(session_vault_to_app)
 }
 
+fn value_field<'a>(value: &'a Value, snake_case: &str, camel_case: &str) -> Option<&'a Value> {
+    value.get(snake_case).or_else(|| value.get(camel_case))
+}
+
+fn string_field(value: &Value, snake_case: &str, camel_case: &str) -> String {
+    value_field(value, snake_case, camel_case)
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn start_password_access_attempt() -> Result<String, AppResult<AuthSessionPayload>> {
+    let resp = match station_client::post_json_no_auth(
+        "/actor/access/start",
+        json!({
+            "station_url": station_client::station_base_url(),
+            "client": {
+                "platform": "desktop",
+                "app_version": env!("CARGO_PKG_VERSION"),
+                "device_id": "",
+                "locale": ""
+            }
+        }),
+    ) {
+        Ok(resp) => resp,
+        Err(error) => {
+            return Err(AppResult::fail(
+                ErrorCode::Unauthorized,
+                format!("Access gate start failed: {}", error),
+                None,
+            ))
+        }
+    };
+
+    let attempt_id = resp
+        .get("data")
+        .and_then(|data| value_field(data, "decision", "decision"))
+        .map(|decision| string_field(decision, "attempt_id", "attemptId"))
+        .filter(|id: &String| !id.is_empty());
+
+    attempt_id.ok_or_else(|| {
+        AppResult::fail(
+            ErrorCode::InternalError,
+            "Access gate start failed: station did not return an attempt",
+            Some(resp),
+        )
+    })
+}
+
+fn submit_password_access_gate(
+    attempt_id: &str,
+    account: &str,
+    password: &str,
+) -> Result<Value, AppResult<AuthSessionPayload>> {
+    let resp = match station_client::post_json_no_auth(
+        "/actor/access/submit",
+        json!({
+            "attempt_id": attempt_id,
+            "gate_id": "auth.login",
+            "type": 2,
+            "login": {
+                "email": account,
+                "password": password,
+                "device_type": "desktop"
+            }
+        }),
+    ) {
+        Ok(resp) => resp,
+        Err(error) => {
+            return Err(AppResult::fail(
+                ErrorCode::Unauthorized,
+                format!("Login failed: {}", error),
+                None,
+            ))
+        }
+    };
+
+    let data = resp.get("data").ok_or_else(|| {
+        AppResult::fail(
+            ErrorCode::Unauthorized,
+            "Login failed: unexpected access gate response from station",
+            Some(resp.clone()),
+        )
+    })?;
+    let decision = value_field(data, "decision", "decision").ok_or_else(|| {
+        AppResult::fail(
+            ErrorCode::Unauthorized,
+            "Login failed: access gate response missing decision",
+            Some(resp.clone()),
+        )
+    })?;
+    let decision_state = value_field(decision, "state", "state")
+        .and_then(|v| v.as_i64())
+        .unwrap_or_default();
+    let decision_state_name = value_field(decision, "state", "state")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    if decision_state != 3 && decision_state_name != "ACCESS_DECISION_STATE_GRANTED" {
+        let message = string_field(decision, "message", "message");
+        let gate_reason = value_field(decision, "gates", "gates")
+            .and_then(|v| v.as_array())
+            .and_then(|gates| {
+                gates
+                    .iter()
+                    .filter_map(|gate| value_field(gate, "blocking_reason", "blockingReason"))
+                    .filter_map(|v| v.as_str())
+                    .find(|v| !v.trim().is_empty())
+            })
+            .unwrap_or_default()
+            .to_string();
+        let reason = if !message.is_empty() {
+            message
+        } else if !gate_reason.is_empty() {
+            gate_reason
+        } else {
+            "Station access was not granted".to_string()
+        };
+        return Err(AppResult::fail(
+            ErrorCode::Forbidden,
+            reason,
+            Some(json!({ "decision": decision })),
+        ));
+    }
+
+    value_field(data, "login_response", "loginResponse")
+        .cloned()
+        .ok_or_else(|| {
+            AppResult::fail(
+                ErrorCode::Unauthorized,
+                "Login failed: access gate response missing login session",
+                Some(resp),
+            )
+        })
+}
+
 pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSessionPayload> {
     if let Err(error) = validate_login_input(&input.account, &input.password) {
         return map_domain_error(error);
     }
 
-    let body = json!({ "email": input.account, "password": input.password });
-    let resp = match station_client::post_json_no_auth("/actor/login", body) {
-        Ok(r) => r,
-        Err(e) => {
-            return AppResult::fail(
-                ErrorCode::Unauthorized,
-                format!("Login failed: {}", e),
-                None,
-            )
-        }
+    let attempt_id = match start_password_access_attempt() {
+        Ok(attempt_id) => attempt_id,
+        Err(error) => return error,
+    };
+    let data = match submit_password_access_gate(&attempt_id, &input.account, &input.password) {
+        Ok(data) => data,
+        Err(error) => return error,
     };
 
-    let data = match resp.get("data") {
-        Some(d) => d,
-        None => {
-            return AppResult::fail(
-                ErrorCode::Unauthorized,
-                "Login failed: unexpected response from station",
-                None,
-            )
-        }
-    };
-
-    let token = data
-        .pointer("/tokens/access_token")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string();
+    let tokens = value_field(&data, "tokens", "tokens").cloned().unwrap_or(Value::Null);
+    let token = string_field(&tokens, "access_token", "accessToken");
     if token.is_empty() {
         return AppResult::fail(
             ErrorCode::Unauthorized,
@@ -111,30 +229,18 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
     }
 
     // Extract actor identity from the station response
-    let actor_id = data
-        .pointer("/actor/id")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string();
+    let actor = value_field(&data, "actor", "actor").cloned().unwrap_or(Value::Null);
+    let actor_id = string_field(&actor, "id", "id");
 
-    let name = data
-        .pointer("/actor/display_name")
-        .or_else(|| data.pointer("/actor/name"))
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string();
+    let name = string_field(&actor, "display_name", "displayName");
+    let name = if name.is_empty() {
+        string_field(&actor, "username", "username")
+    } else {
+        name
+    };
 
-    let email_str = data
-        .pointer("/actor/email")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string();
-
-    let avatar = data
-        .pointer("/actor/icon")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string();
+    let email_str = string_field(&actor, "email", "email");
+    let avatar = string_field(&actor, "icon", "icon");
 
     // Station login response may not include avatar; fetch from profile API.
     let avatar = if avatar.is_empty() && !token.is_empty() {

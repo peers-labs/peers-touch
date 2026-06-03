@@ -1415,9 +1415,19 @@ await stationApi.registerPushDevice({
 
 ### 8.4 Mobile
 
-#### iOS (Swift/SwiftUI)
+Mobile notification delivery follows the Tauri Mobile mainline:
 
-The existing `NotificationBridgeModule` is extended:
+```text
+APNs / FCM / UnifiedPush
+  -> native notification plugin
+  -> mobile-rust capability kernel
+  -> notificationRuntime projection
+  -> mobile-web UI / badge / route
+```
+
+#### iOS Native Plugin (Swift)
+
+The mobile notification plugin is extended:
 
 - System notification permission request
 - Rich notification display (image, action buttons)
@@ -1425,9 +1435,9 @@ The existing `NotificationBridgeModule` is extended:
 - Category-based notification channels
 - APNs device token registration
 
-#### Android (Kotlin/Compose)
+#### Android Native Plugin (Kotlin)
 
-The existing `NotificationBridgeModule` is extended:
+The mobile notification plugin is extended:
 
 - Notification channels per category (Social, Chat, System, Task)
 - Rich notification with `BigTextStyle` / `MessagingStyle`

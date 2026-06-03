@@ -626,7 +626,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 .map(|a| {
                     json!({
                         "id": a.id, "username": a.username, "displayName": a.display_name,
-                        "email": a.email, "actorId": a.actor_id, "avatar": a.avatar,
+						"email": a.email, "actorId": a.actor_id.to_string(), "avatar": a.avatar,
                     })
                 })
                 .collect();
@@ -3823,6 +3823,115 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             ) {
                 Ok(data) => to_json(to_stub("notification_preferences_update", data)),
                 Err(e) => e,
+            }
+        }
+
+        // =================================================================
+        // Station registry (dynamic URL picker)
+        // =================================================================
+        "station_list" => {
+            let reg = crate::infrastructure::station_client::station_registry();
+            let entries = reg.list();
+            let active = reg.active_url();
+            let payload = json!({
+                "entries": entries,
+                "active_url": active,
+            });
+            to_json(AppResult::success(StubPayload {
+                command: "station_list".into(),
+                status: serde_json::to_string(&payload).unwrap_or_default(),
+            }))
+        }
+        "station_set_active" => {
+            let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            if url.is_empty() {
+                to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InvalidArgument,
+                    "url is required",
+                    None,
+                ))
+            } else {
+                let reg = crate::infrastructure::station_client::station_registry();
+                reg.set_active(url);
+                let payload = json!({ "active_url": url });
+                to_json(AppResult::success(StubPayload {
+                    command: "station_set_active".into(),
+                    status: serde_json::to_string(&payload).unwrap_or_default(),
+                }))
+            }
+        }
+        "station_add" => {
+            let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            if url.is_empty() {
+                to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InvalidArgument,
+                    "url is required",
+                    None,
+                ))
+            } else {
+                let (online, label, peer_id, peers_count) =
+                    crate::infrastructure::station_client::probe_station(url);
+                let now = time::OffsetDateTime::now_utc()
+                    .format(&time::format_description::well_known::Rfc3339)
+                    .unwrap_or_else(|_| "unknown".to_string());
+                let entry = crate::infrastructure::station_registry::StationEntry {
+                    url: url.trim_end_matches('/').to_string(),
+                    label: label.clone(),
+                    peer_id: peer_id.clone(),
+                    peers_count,
+                    last_probe: Some(now),
+                    online,
+                };
+                let reg = crate::infrastructure::station_client::station_registry();
+                reg.add(entry.clone());
+                to_json(AppResult::success(StubPayload {
+                    command: "station_add".into(),
+                    status: serde_json::to_string(&entry).unwrap_or_default(),
+                }))
+            }
+        }
+        "station_remove" => {
+            let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            if url.is_empty() {
+                to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InvalidArgument,
+                    "url is required",
+                    None,
+                ))
+            } else {
+                let reg = crate::infrastructure::station_client::station_registry();
+                reg.remove(url);
+                let payload = json!({ "removed": url });
+                to_json(AppResult::success(StubPayload {
+                    command: "station_remove".into(),
+                    status: serde_json::to_string(&payload).unwrap_or_default(),
+                }))
+            }
+        }
+        "station_probe" => {
+            let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            if url.is_empty() {
+                to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InvalidArgument,
+                    "url is required",
+                    None,
+                ))
+            } else {
+                let (online, label, peer_id, peers_count) =
+                    crate::infrastructure::station_client::probe_station(url);
+                let reg = crate::infrastructure::station_client::station_registry();
+                reg.update_probe(url, label.clone(), peer_id.clone(), peers_count, online);
+                let payload = json!({
+                    "url": url,
+                    "online": online,
+                    "label": label,
+                    "peer_id": peer_id,
+                    "peers_count": peers_count,
+                });
+                to_json(AppResult::success(StubPayload {
+                    command: "station_probe".into(),
+                    status: serde_json::to_string(&payload).unwrap_or_default(),
+                }))
             }
         }
 

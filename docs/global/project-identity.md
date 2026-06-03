@@ -91,10 +91,11 @@ desktop-app -> hosts desktop-web and carries desktop-rust
 
 ### 5.2 Mobile
 
-Mobile is a native dual-platform client:
+Mobile is a Tauri v2 Mobile client:
 
-- Android: Kotlin + Jetpack Compose
-- iOS: Swift + SwiftUI
+- mobile-web: shared Web UI and mobile-first presentation
+- mobile-rust: Tauri Rust capability kernel
+- Android / iOS native plugins: device capability integration
 
 ### 5.3 Station
 

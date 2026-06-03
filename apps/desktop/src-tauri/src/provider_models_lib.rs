@@ -20,6 +20,8 @@ pub mod infrastructure {
     pub mod i18n;
     #[path = "station_client.rs"]
     pub(crate) mod station_client;
+    #[path = "station_registry.rs"]
+    pub(crate) mod station_registry;
     #[path = "storage/mod.rs"]
     pub mod storage;
     // Mirrors the bin crate so `state::AppState` can build under `cargo test

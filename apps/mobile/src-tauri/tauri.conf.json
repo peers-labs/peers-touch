@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Peers Touch Mobile",
+  "version": "0.1.0",
+  "identifier": "com.peers.touch.mobile",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:4210",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Peers Touch Mobile",
+        "width": 390,
+        "height": 844,
+        "minWidth": 320,
+        "minHeight": 568,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' ipc: http://ipc.localhost; connect-src 'self' ipc: http://ipc.localhost http: https: ws: wss:; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": []
+  }
+}
