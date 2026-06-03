@@ -175,6 +175,10 @@
   - `groupE2eeLedger.ts` 使用 Mobile secure storage 记录 per-recipient SKDM `pending/sent` ledger，runtime rotation 会清理 group ledger；
   - `groupE2eeRuntime.canEncryptGroup` 作为 projection-safe gate，`groupStore` 只暴露 `encryptionReady/sendingGroups` 与 encrypted send command；
   - Chat group composer 只在 gate ready 后开放，UI 不调用 SKDM、proto crypto schema 或 Tauri crypto command。
+- 已补 Mobile group message mutations：
+  - recall/delete 走独立 group API/store command，不复用 friend chat bucket；
+  - edit 由 `groupE2eeRuntime.editEncryptedMessage` 加密 plaintext draft，再调用 `/group-chat/message/edit` 写入 `new_encrypted_payload`；
+  - Chat UI 只触发 group store command，并继续消费 group projection reducer。
 
 ### Step 7: 验证
 
