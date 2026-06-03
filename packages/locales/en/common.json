@@ -51,6 +51,7 @@
   "mobile.launch.required": "Required",
   "mobile.launch.selected": "Selected",
   "mobile.launch.station": "Station",
+  "mobile.launch.protocol": "Station protocol",
   "mobile.launch.stationUnavailable": "Station is unavailable. Check the address and network",
   "mobile.launch.subtitle": "Choose Station",
   "mobile.launch.targetPrefix": "Target",

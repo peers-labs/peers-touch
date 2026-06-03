@@ -150,6 +150,22 @@ function MobileAppRoot() {
       setLaunchState('access-gate-chain');
     } catch (error) {
       const msg = error instanceof Error ? error.message : '';
+      if (session && isRevokedSessionError(msg)) {
+        await clearSession();
+        setAuthSession(null);
+        setAccessDecision(null);
+        try {
+          const decision = await startStationAccessAttempt(stationRegistry.activeUrl);
+          setAccessDecision(decision);
+          setLaunchState(isAccessGranted(decision) ? 'shell' : 'access-gate-chain');
+          return;
+        } catch (retryError) {
+          const retryMsg = retryError instanceof Error ? retryError.message : '';
+          setStationError(t(retryMsg) !== retryMsg ? t(retryMsg) : (retryMsg || t('mobile.launch.stationUnavailable')));
+          setLaunchState('station-selection');
+          return;
+        }
+      }
       setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));
       setLaunchState('station-selection');
     } finally {
@@ -214,7 +230,7 @@ function MobileAppRoot() {
         );
         if (!next.ok) {
           setStationChecking(false);
-          setStationError(next.error);
+          setStationError(t(next.error));
           return false;
         }
         setStationError(null);
@@ -266,4 +282,8 @@ export function App() {
       <MobileAppRoot />
     </AppProviders>
   );
+}
+
+function isRevokedSessionError(message: string): boolean {
+  return /session\s+(invalid|revoked|expired)|invalid\s+session|revoked/i.test(message);
 }
