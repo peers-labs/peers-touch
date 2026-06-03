@@ -80,7 +80,7 @@ Phase A: 防回退与边界
 
 Phase B: Rust kernel
 
-- `src-tauri/src/domain/crypto/sender_keys.rs`：Sender Keys primitive。
+- `src-tauri/src/domain/crypto/sender_keys.rs`：Sender Keys primitive。（已从 Desktop 纯 Rust primitive 对齐落地，作为 Mobile capability kernel domain surface。）
 - `src-tauri/src/commands/group_crypto.rs`：`crypto_group_sk_emit_skdm`、`crypto_group_sk_consume_skdm`、`crypto_group_sk_rotate`、`crypto_group_encrypt`、`crypto_group_decrypt`。
 - `src-tauri/src/platform/secure_group_store.rs`：per-user scoped sender chain/skipped-key persistence，必须使用平台安全存储或加密本地库，不落 plaintext key 文件。
 
