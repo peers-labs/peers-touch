@@ -39,6 +39,7 @@ export interface GroupApiClient {
   listGroups: (limit?: number, offset?: number) => Promise<ListGroupsPayload>;
   listMessages: (groupUlid: string, beforeUlid?: string, limit?: number) => Promise<ListGroupMessagesPayload>;
   listMembers: (groupUlid: string, limit?: number, offset?: number) => Promise<ListGroupMembersPayload>;
+  sendMessage: (groupUlid: string, encryptedPayload: Uint8Array) => Promise<{ message?: GroupMessage }>;
   unreadCount: (groupUlid: string) => Promise<GroupUnreadCountPayload>;
   markRead: (groupUlid: string, upToUlid?: string) => Promise<Record<string, unknown>>;
 }
@@ -96,6 +97,17 @@ export function createGroupApiClient(session: MobileAuthSession): GroupApiClient
         path: '/group-chat/members',
         query: { group_ulid: groupUlid, limit, offset },
       }),
+    sendMessage: (groupUlid, encryptedPayload) =>
+      request({
+        method: 'POST',
+        path: '/group-chat/message/send',
+        body: {
+          group_ulid: groupUlid,
+          content: '',
+          type: 1,
+          encrypted_payload: bytesToBase64(encryptedPayload),
+        },
+      }),
     unreadCount: (groupUlid) =>
       request<GroupUnreadCountPayload>({
         method: 'GET',
@@ -146,4 +158,12 @@ function buildApiError(method: string, path: string, status: number, payload: un
     message: envelope.msg ?? envelope.message ?? envelope.detail ?? 'group api request failed',
   };
   return new SocialApiError(context);
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return window.btoa(binary);
 }
