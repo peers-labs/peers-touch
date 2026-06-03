@@ -31,6 +31,7 @@
 | Desktop runtime 单入口 | `socialRealtime` 统一接管遗留 chat bridge | 已删除 `services/socialChatRealtime.ts` 的 App 直装入口，ACK、SKDM、group membership 副作用迁入 runtime owner |
 | Desktop projection 分层 | `socialChat` store 与纯 projection reducer 分离 | 已新增 `apps/desktop/src/store/socialProjection.ts`，承载 message merge、receipt、mutation、typing GC、local-clear 过滤等纯状态机 |
 | Desktop normalizer 分层 | `socialChat` store 与 Station response 兼容逻辑分离 | 已新增 `apps/desktop/src/store/socialNormalizers.ts`，先承载 friend session、friend request、presence seed 归一化 |
+| Mobile Host Adapter 入口 | Rust kernel 统一 emit native host event | 已补 `mobile_native_event_emit` command 与 `native_events` push/deep-link/notification-tap/resume 标准 payload，Web bridge 保留 deep-link `url` 字段 |
 
 ---
 
@@ -96,7 +97,12 @@
 ### Step 4: Mobile parity backlog 锁定
 
 - Mobile group chat 进入独立 group projection domain。
-- Mobile native push/deep-link/notification tap 插件 emit 标准 `mobile:*` event。
+- Mobile native push/deep-link/notification tap 已具备 Rust kernel 标准 emit 入口：
+  - `mobile:push`
+  - `mobile:deep-link`
+  - `mobile:notification-tap`
+  - `mobile:resume`
+- 后续 iOS/Android 插件只接系统 API，不直接写业务 projection，统一调用 kernel event outlet。
 - Mobile E2EE/offline queue 不在页面补逻辑，必须建 domain。
 
 ### Step 5: 验证

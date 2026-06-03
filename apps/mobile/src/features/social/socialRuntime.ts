@@ -31,6 +31,7 @@ export interface SocialRuntimeExternalEvent {
   target?: string;
   sessionUlid?: string;
   notificationId?: string;
+  url?: string;
   reason?: string;
 }
 
