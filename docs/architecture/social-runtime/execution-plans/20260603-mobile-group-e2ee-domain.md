@@ -92,7 +92,7 @@ Phase C: Web/runtime
 - `features/group/groupKeyExchange.ts`：key bundle publish/fetch 与 `GROUP_SKDM` signaling envelope Web adapter。（已落地；runtime consume 不再接受裸 SKDM carrier。）
 - `features/group/groupE2eeRuntime.ts` / `groupE2eeLedger.ts`：SKDM distribution、consume、repair、rotation。（已落地 encrypted-payload decrypt repair owner；已接入 type `50` sealed SKDM consume、outbound sealed SKDM fanout、encrypted group send command、membership rotation hook、secure-storage durable sent/pending ledger 与 `canEncrypt` gate。）
 - `features/social/socialRuntime.ts`：friend type `50` control routing 与 group membership rotation hook。（已接入；runtime 只路由，不写 decrypted projection。）
-- `features/group/groupStore.ts`：接收 decrypted display projection，不保存 crypto internals。（已新增 decrypted message projection、E2EE error projection、group recall/delete command 与 encrypted edit runtime command 入口。）
+- `features/group/groupStore.ts`：接收 decrypted display projection，不保存 crypto internals。（已新增 decrypted message projection、E2EE error projection、group recall/delete command、encrypted edit runtime command 入口，以及 invite/leave/remove member group management command。）
 
 Phase D: UX unlock
 
