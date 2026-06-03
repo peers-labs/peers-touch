@@ -10,6 +10,10 @@
 
 This is not a UI parity patch. The upgrade is a runtime-projection closure for Mobile social capability.
 
+Cross-end architecture source:
+
+- `docs/architecture/social-runtime/README.md` defines the Desktop/Mobile shared social runtime abstraction. This Mobile plan is a platform-layer refinement under that architecture source, not a competing boundary definition.
+
 Current problem:
 
 - Social behavior was added feature-by-feature from pages and component state.
