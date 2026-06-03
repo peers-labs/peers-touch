@@ -65,7 +65,7 @@
 - `client/desktop/`
   - Desktop 平台总纲、内核设计、Provider/Model 等
 - `client/mobile/`
-  - Mobile 平台总纲、同步、容器、原生双端等
+  - Mobile 平台总纲、同步、容器、Tauri Mobile 与 native plugin 能力层等
 - `client/common/`
   - 共享抽象与共享包说明
 

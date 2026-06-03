@@ -78,6 +78,14 @@ func SeedPresetActors(ctx context.Context, presets []PresetActorConfig) error {
 			Outbox:            fmt.Sprintf("https://station.local/activitypub/%s/outbox", p.Username),
 		}
 
+		// Fill federation fields (FederatedHandle unique index) same as normal sign-up.
+		fillFederationFieldsForLocalSignUp(&a)
+		// Fallback: if federation identity is not ready yet, use a deterministic
+		// placeholder to satisfy the unique index on FederatedHandle.
+		if a.FederatedHandle == "" {
+			a.FederatedHandle = fmt.Sprintf("@%s@station.local", p.Username)
+		}
+
 		if err := rds.Create(&a).Error; err != nil {
 			log.Warnf(ctx, "seed create actor err: %v", err)
 			continue

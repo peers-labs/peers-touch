@@ -5,7 +5,8 @@
        init-dev skill-help \
        dev-web dev-app dev-dual \
        docker-station docker-relay docker-all docker-infra docker-up docker-down docker-logs docker-ps docker-remotes \
-       pt-up pt-down pt-status pt-desktop pt-bootstrap pt-discover-relay pt-relay-issue-invites
+       pt-up pt-down pt-status pt-desktop pt-bootstrap pt-discover-relay pt-relay-issue-invites \
+       testnet-deploy testnet-deploy-relay testnet-deploy-station testnet-status testnet-down testnet-clean testnet-desktop
 
 # ─── Help ────────────────────────────────────────────────────
 
@@ -380,3 +381,36 @@ pt-discover-relay:
 
 pt-relay-issue-invites:
 	bash tooling/scripts/pt-relay-issue-invites.sh
+
+# ─── Testnet (3-node federated) ────────────────────────────────
+#   make testnet-deploy            Deploy all (relay + station) to 3 nodes
+#   make testnet-deploy-relay      Deploy only relays
+#   make testnet-deploy-station    Deploy only stations
+#   make testnet-status            Health check all nodes
+#   make testnet-down              Tear down all nodes
+#   make testnet-desktop           Launch Desktop a + b + c
+#   make testnet-desktop NODES=a   Launch only Desktop a
+#   make testnet-desktop NODES="a b" Launch Desktop a and b
+
+NODES ?= a b c
+
+testnet-deploy:
+	bash tooling/docker/deploy-testnet.sh all
+
+testnet-deploy-relay:
+	bash tooling/docker/deploy-testnet.sh relay
+
+testnet-deploy-station:
+	bash tooling/docker/deploy-testnet.sh station
+
+testnet-status:
+	bash tooling/docker/deploy-testnet.sh status
+
+testnet-down:
+	bash tooling/docker/deploy-testnet.sh down
+
+testnet-clean:
+	bash tooling/docker/deploy-testnet.sh clean
+
+testnet-desktop:
+	bash tooling/scripts/dev-testnet-desktops.sh $(NODES)

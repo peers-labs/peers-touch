@@ -1,9 +1,11 @@
 # Applet 容器设计（Mobile 端）
 
+> Mobile 主线已迁移为 Tauri v2 Mobile。本文的 Lynx / Bridge V2 / Manifest V2 语义仍然有效；Android / iOS 原生集成方式应通过 Tauri mobile native plugin 承载，而不是 Compose / SwiftUI 主 UI 直接嵌入。
+
 ## 1. 文档目标
 
 ### 1.1 目标
-- 定义 Android 与 iOS 原生端集成 Lynx 引擎、运行 Applet 的容器架构。
+- 定义 Tauri Mobile 下通过 Android / iOS native plugin 集成 Lynx 引擎、运行 Applet 的容器架构。
 - 明确 Native Bridge 在 Kotlin / Swift 各自的实现方案。
 - 说明 Applet SDK、Manifest V2、Bridge V2 协议在 Mobile 端的复用策略。
 - 与 Desktop 端的 `<lynx-host>` 方案形成对比参照。
@@ -34,7 +36,7 @@
 │  └──────────┬─────────────────────────────────────────┘         │
 │             │ Native Bridge (invoke)                             │
 │  ┌──────────┴─────────────────────────────────────────┐         │
-│  │              Host Capabilities                       │         │
+│  │              Tauri Host Capabilities                 │         │
 │  │  Storage / Network / Notification / System / Chat    │         │
 │  └─────────────────────────────────────────────────────┘         │
 │                                                                  │
@@ -60,12 +62,12 @@ dependencies {
 ```
 
 集成方式：
-- `LynxView` 作为标准 Android View 嵌入到 Compose 布局中（通过 `AndroidView` 包装）。
+- `LynxView` 由 Tauri mobile Android plugin 承载，需要时通过插件 view / native route 暴露给 mobile-web。
 - 每个 Applet 实例对应一个独立的 `LynxView`，隔离 JS 运行时上下文。
 - Lynx SDK 通过 Maven Central 或内部 Maven 仓库分发。
 
 生命周期绑定：
-- `LynxView` 的创建与销毁跟随 Compose 的 `DisposableEffect`。
+- `LynxView` 的创建与销毁跟随 Tauri plugin / native route 生命周期。
 - 当 Applet 页面离开导航栈时，`LynxView` 进入 `pause` 状态；页面销毁时执行 `destroy`。
 - Activity 级别的 `onTrimMemory` 回调中，对后台 Applet 执行内存释放。
 
@@ -78,12 +80,12 @@ pod 'LynxSDK', '~> x.y.z'
 ```
 
 集成方式：
-- `LynxView` 作为 `UIView` 子类，通过 `UIViewRepresentable` 桥接到 SwiftUI。
+- `LynxView` 作为 `UIView` 子类，由 Tauri mobile iOS plugin 承载，需要时通过插件 view / native route 暴露给 mobile-web。
 - 每个 Applet 实例对应一个独立的 `LynxView`，隔离 JS 运行时上下文。
 - Lynx SDK 通过 CocoaPods 分发（后续可迁移至 SPM）。
 
 生命周期绑定：
-- `LynxView` 的创建与销毁跟随 SwiftUI 的 `onAppear` / `onDisappear`。
+- `LynxView` 的创建与销毁跟随 Tauri plugin / native route 生命周期。
 - 当 Applet 页面不可见时，`LynxView` 进入 `pause` 状态；页面被移除时执行 `destroy`。
 - 收到 `didReceiveMemoryWarning` 时，对后台 Applet 执行内存释放。
 
