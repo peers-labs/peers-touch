@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { Avatar, Button, Drawer, Empty, List, Spin, Typography } from 'antd';
 import { Bell, Check, CheckCheck, MessageCircle, Trash2, UserCheck, UserPlus } from 'lucide-react';
 
@@ -30,16 +30,10 @@ export function MobileNotificationCenter({ open, onClose, onOpenChat, onOpenCont
   const markNotificationRead = useSocialStore((state) => state.markNotificationRead);
   const markAllNotificationsRead = useSocialStore((state) => state.markAllNotificationsRead);
   const deleteNotification = useSocialStore((state) => state.deleteNotification);
-  const refreshNotifications = useSocialStore((state) => state.refreshNotifications);
   const loadMoreNotifications = useSocialStore((state) => state.loadMoreNotifications);
   const notificationHasMore = useSocialStore((state) => state.notificationHasMore);
-  const reconcile = useSocialStore((state) => state.reconcile);
   const selectSession = useSocialStore((state) => state.selectSession);
   const unreadCount = useMemo(() => unread.length, [unread]);
-
-  useEffect(() => {
-    if (open) void refreshNotifications();
-  }, [open, refreshNotifications]);
 
   const openNotification = async (notification: SocialNotification) => {
     if (notification.status === 1) {
@@ -55,7 +49,6 @@ export function MobileNotificationCenter({ open, onClose, onOpenChat, onOpenCont
     }
 
     if (isFriendRequestNotification(notification)) {
-      await reconcile();
       onClose();
       onOpenContacts();
     }
