@@ -34,12 +34,18 @@ type MobileConversation =
   | { kind: 'friend'; key: string; conversation: ReturnType<typeof selectSocialConversations>[number] }
   | { kind: 'group'; key: string; conversation: GroupConversation };
 
+type EditingMessage = {
+  kind: 'friend' | 'group';
+  ulid: string;
+  content: string;
+};
+
 export function ChatPage() {
   const { t } = useMobileI18n();
   const [draft, setDraft] = useState('');
   const [conversationQuery, setConversationQuery] = useState('');
   const [threadSearchQuery, setThreadSearchQuery] = useState('');
-  const [editingMessage, setEditingMessage] = useState<FriendChatMessage | null>(null);
+  const [editingMessage, setEditingMessage] = useState<EditingMessage | null>(null);
   const activeSessionUlid = useSocialStore((state) => state.activeSessionUlid);
   const messages = useSocialStore((state) => (activeSessionUlid ? state.messages[activeSessionUlid] ?? EMPTY_MESSAGES : EMPTY_MESSAGES));
   const currentUserDid = useSocialStore((state) => state.currentUserDid);
@@ -65,6 +71,9 @@ export function ChatPage() {
   const groupEncryptionReady = useGroupStore((state) => (activeGroupUlid ? Boolean(state.encryptionReady[activeGroupUlid]) : false));
   const groupSending = useGroupStore((state) => (activeGroupUlid ? Boolean(state.sendingGroups[activeGroupUlid]) : false));
   const sendGroupMessage = useGroupStore((state) => state.sendEncryptedMessage);
+  const editGroupMessage = useGroupStore((state) => state.editEncryptedMessage);
+  const recallGroupMessage = useGroupStore((state) => state.recallMessage);
+  const deleteGroupMessage = useGroupStore((state) => state.deleteMessage);
   const lastTypingPulseRef = useRef(0);
   const typingIdleTimerRef = useRef<number | null>(null);
   const conversations = useSocialStore(selectSocialConversations);
@@ -122,6 +131,15 @@ export function ChatPage() {
 
   const submitMessage = async () => {
     if (activeGroupConversation && activeGroupUlid) {
+      if (editingMessage?.kind === 'group') {
+        const edited = await editGroupMessage(activeGroupUlid, editingMessage.ulid, draft);
+        if (edited) {
+          setEditingMessage(null);
+          setDraft('');
+        }
+        return;
+      }
+
       const sent = await sendGroupMessage(activeGroupUlid, draft);
       if (sent) setDraft('');
       return;
@@ -130,7 +148,7 @@ export function ChatPage() {
     if (!activeConversation) return;
     await emitTypingState(false);
 
-    if (editingMessage) {
+    if (editingMessage?.kind === 'friend') {
       await editMessage(activeConversation.session.ulid, editingMessage.ulid, draft);
       setEditingMessage(null);
       setDraft('');
@@ -141,8 +159,8 @@ export function ChatPage() {
     setDraft('');
   };
 
-  const startEditMessage = (message: FriendChatMessage) => {
-    setEditingMessage(message);
+  const startEditMessage = (kind: 'friend' | 'group', message: FriendChatMessage | GroupMessage) => {
+    setEditingMessage({ kind, ulid: message.ulid, content: message.content });
     setDraft(message.content);
   };
 
@@ -156,9 +174,19 @@ export function ChatPage() {
     await recallMessage(activeConversation.session.ulid, message.ulid);
   };
 
+  const recallOwnGroupMessage = async (message: GroupMessage) => {
+    if (!activeGroupUlid) return;
+    await recallGroupMessage(activeGroupUlid, message.ulid);
+  };
+
   const deleteOwnMessage = async (message: FriendChatMessage) => {
     if (!activeConversation) return;
     await deleteMessage(activeConversation.session.ulid, message.ulid);
+  };
+
+  const deleteOwnGroupMessage = async (message: GroupMessage) => {
+    if (!activeGroupUlid) return;
+    await deleteGroupMessage(activeGroupUlid, message.ulid);
   };
 
   const openConversation = async (conversation: MobileConversation) => {
@@ -251,6 +279,7 @@ export function ChatPage() {
               const content = isGroupThread
                 ? groupMessageDisplayText(projectGroupMessageDisplay(message as GroupMessage), t)
                 : friendMessageDisplayText(message as FriendChatMessage, t);
+              const canEditMessage = mine && !message.recalled && (!isGroupThread || Boolean((message as GroupMessage).content));
               return (
                 <div key={message.ulid} className={`message-bubble-row ${mine ? 'mine' : 'peer'}`}>
                   <div className="message-bubble">
@@ -260,21 +289,26 @@ export function ChatPage() {
                       {mine && !message.recalled && !isGroupThread && 'status' in message ? <span>{formatMessageStatus(message.status, t)}</span> : null}
                       <span>{formatRelativeTime(messageTimestampMillis(message, isGroupThread), t)}</span>
                     </span>
-                    {mine && !message.recalled && !isGroupThread ? (
+                    {mine && !message.recalled ? (
                       <span className="message-actions">
-                        <button
-                          type="button"
-                          className="message-action-button"
-                          aria-label={t('mobile.chat.edit')}
-                          onClick={() => startEditMessage(message as FriendChatMessage)}
-                        >
-                          <Pencil size={13} />
-                        </button>
+                        {canEditMessage ? (
+                          <button
+                            type="button"
+                            className="message-action-button"
+                            aria-label={t('mobile.chat.edit')}
+                            onClick={() => startEditMessage(isGroupThread ? 'group' : 'friend', message)}
+                          >
+                            <Pencil size={13} />
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           className="message-action-button"
                           aria-label={t('mobile.chat.recall')}
-                          onClick={() => recallOwnMessage(message as FriendChatMessage)}
+                          onClick={() => {
+                            if (isGroupThread) void recallOwnGroupMessage(message as GroupMessage);
+                            else void recallOwnMessage(message as FriendChatMessage);
+                          }}
                         >
                           <RotateCcw size={13} />
                         </button>
@@ -282,7 +316,10 @@ export function ChatPage() {
                           title={t('mobile.chat.deleteConfirm')}
                           okText={t('common.action.delete')}
                           cancelText={t('common.action.cancel')}
-                          onConfirm={() => deleteOwnMessage(message as FriendChatMessage)}
+                          onConfirm={() => {
+                            if (isGroupThread) void deleteOwnGroupMessage(message as GroupMessage);
+                            else void deleteOwnMessage(message as FriendChatMessage);
+                          }}
                         >
                           <button
                             type="button"

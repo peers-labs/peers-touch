@@ -14,6 +14,7 @@ export function startGroupRuntime(session: MobileAuthSession, getStore: () => Gr
   getStore().reconcile();
   const e2eeRuntime = startGroupE2eeRuntime(session, getStore);
   getStore().bindEncryptedSender(e2eeRuntime.sendEncryptedMessage);
+  getStore().bindEncryptedEditor(e2eeRuntime.editEncryptedMessage);
   getStore().bindEncryptionPreparer(e2eeRuntime.canEncryptGroup);
   const reconcileTimer = window.setInterval(() => {
     if (!cancelled) {
@@ -27,9 +28,11 @@ export function startGroupRuntime(session: MobileAuthSession, getStore: () => Gr
     repairEncryptedMessages: e2eeRuntime.repairEncryptedMessages,
     rotateAfterMembershipChange: e2eeRuntime.rotateAfterMembershipChange,
     sendEncryptedMessage: e2eeRuntime.sendEncryptedMessage,
+    editEncryptedMessage: e2eeRuntime.editEncryptedMessage,
     teardown: () => {
       cancelled = true;
       getStore().bindEncryptedSender(null);
+      getStore().bindEncryptedEditor(null);
       getStore().bindEncryptionPreparer(null);
       e2eeRuntime.teardown();
       window.clearInterval(reconcileTimer);
