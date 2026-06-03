@@ -264,7 +264,8 @@ Background/push closure:
 - `mobileNativeEventBridge.ts` installs one app-level listener for native push, deep-link, resume, notification-tap, WebView visibility, focus, and network-online wakeups.
 - Native events route into `socialRuntime.dispatchSocialRuntimeExternalEvent`; pages never own wakeup refresh logic.
 - `socialRuntime` debounces external wakeups, refreshes targeted sessions/notifications when hinted, and falls back to Station-backed reconcile.
-- Remaining native work: wire platform push/deep-link plugins to emit the documented `mobile:*` events.
+- Rust capability kernel emits `mobile:resume` from Tauri `RunEvent::Resumed` and reports native emit failures through `mobile:native-event-error`.
+- Remaining native work: wire platform push/deep-link plugins to emit the documented `mobile:push`, `mobile:deep-link`, and `mobile:notification-tap` events.
 
 Group-chat closure:
 
