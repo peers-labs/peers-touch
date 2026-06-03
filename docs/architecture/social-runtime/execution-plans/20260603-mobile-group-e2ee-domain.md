@@ -48,7 +48,7 @@ Mobile group chat 不能只做到“能看到群列表/群消息”，必须与 
 接收链路：
 
 1. Friend realtime/control message type `50` 进入 Group E2EE runtime。
-2. Runtime 调用 bridge `consumeSkdm(senderDid, sealedPayload)` 安装 sender chain。
+2. Runtime 先按 Desktop 同语义打开 `GROUP_SKDM` signaling envelope，再调用 bridge `consumeSkdm(senderDid, skdmBytes)` 安装 sender chain。
 3. Runtime 发布 projection repair signal，重新尝试 decrypt pending group messages。
 4. Group message realtime/list response 进入 group store。
 5. Group E2EE runtime 对有 `encrypted_payload` 的消息执行 decrypt，成功后向 projection 写入 decrypted display result；缺 SKDM 则进入 pending decrypt queue。
@@ -83,11 +83,14 @@ Phase B: Rust kernel
 - `src-tauri/src/domain/crypto/sender_keys.rs`：Sender Keys primitive。（已从 Desktop 纯 Rust primitive 对齐落地，作为 Mobile capability kernel domain surface。）
 - `src-tauri/src/commands/group_crypto.rs`：`crypto_group_sk_emit_skdm`、`crypto_group_sk_consume_skdm`、`crypto_group_sk_rotate`、`crypto_group_encrypt`、`crypto_group_decrypt`。（已落地 typed JSON command boundary；Rust 不新增 protobuf decode。）
 - `src-tauri/src/domain/crypto/sender_key_store.rs`：per-user scoped sender chain/skipped-key persistence，必须使用平台安全存储或加密本地库，不落 plaintext key 文件。（已落地 Keychain namespace + chain/skipped indexes；后续 command 层复用。）
+- `src-tauri/src/domain/crypto/identity_keys.rs` / `signaling_envelope.rs`：Mobile identity key、signed prekey、stateless authenticated envelope。（已落地；与 Desktop `GROUP_SKDM` envelope 语义对齐。）
+- `src-tauri/src/commands/key_exchange.rs`：identity bundle 与 signaling envelope command。（已注册 `crypto_identity_key_bundle`、`signaling_envelope_seal`、`signaling_envelope_open`。）
 
 Phase C: Web/runtime
 
 - `features/group/groupE2eeBridge.ts`：typed Rust command adapter。（已落地；Web bridge 使用 generated TS proto 负责 `GroupCiphertext` / `SenderKeyDistributionMessage` bytes 编解。）
-- `features/group/groupE2eeRuntime.ts`：SKDM distribution、consume、repair、rotation。（已落地 encrypted-payload decrypt repair owner；已接入 type `50` SKDM consume 与 membership rotation hook；SKDM distribution/sent ledger 继续闭环。）
+- `features/group/groupKeyExchange.ts`：key bundle publish/fetch 与 `GROUP_SKDM` signaling envelope Web adapter。（已落地；runtime consume 不再接受裸 SKDM carrier。）
+- `features/group/groupE2eeRuntime.ts`：SKDM distribution、consume、repair、rotation。（已落地 encrypted-payload decrypt repair owner；已接入 type `50` sealed SKDM consume 与 membership rotation hook；SKDM distribution/sent ledger 继续闭环。）
 - `features/social/socialRuntime.ts`：friend type `50` control routing 与 group membership rotation hook。（已接入；runtime 只路由，不写 decrypted projection。）
 - `features/group/groupStore.ts`：接收 decrypted display projection，不保存 crypto internals。（已新增 decrypted message projection 与 E2EE error projection。）
 
