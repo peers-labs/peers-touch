@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Badge } from 'antd';
 import { Bell, MessageCircle, Users, Settings } from 'lucide-react';
 
@@ -8,11 +8,7 @@ import { ContactsPage } from '../pages/ContactsPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { useAuthStore } from '../features/auth/authStore';
 import type { MobileAuthSession } from '../features/auth/authSession';
-import {
-  selectPendingInboundFriendRequests,
-  selectSocialConversations,
-  selectUnreadSocialNotificationCount,
-} from '../features/social/socialSelectors';
+import { projectConversations, projectPendingInboundRequests, projectUnreadNotificationCount } from '../features/social/socialProjection';
 import { useSocialStore } from '../features/social/socialStore';
 import { useSocialRuntime } from '../features/social/useSocialRuntime';
 import type { StoredStationRegistry } from '../features/station/stationRegistry';
@@ -63,9 +59,25 @@ export function MobileShell(props: MobileShellProps) {
   const [notificationOpen, setNotificationOpen] = useState(false);
   useSocialRuntime(authSession);
 
-  const conversations = useSocialStore(selectSocialConversations);
-  const inboundRequests = useSocialStore(selectPendingInboundFriendRequests);
-  const notificationBadge = useSocialStore(selectUnreadSocialNotificationCount);
+  const sessions = useSocialStore((state) => state.sessions);
+  const messages = useSocialStore((state) => state.messages);
+  const currentUserDid = useSocialStore((state) => state.currentUserDid);
+  const peerOnline = useSocialStore((state) => state.peerOnline);
+  const friendRequests = useSocialStore((state) => state.friendRequests);
+  const notifications = useSocialStore((state) => state.notifications);
+  const unreadCounts = useSocialStore((state) => state.unreadCounts);
+  const conversations = useMemo(
+    () => projectConversations({ sessions, messages, currentUserDid, peerOnline }),
+    [currentUserDid, messages, peerOnline, sessions],
+  );
+  const inboundRequests = useMemo(
+    () => projectPendingInboundRequests(friendRequests, currentUserDid),
+    [currentUserDid, friendRequests],
+  );
+  const notificationBadge = useMemo(
+    () => projectUnreadNotificationCount({ notifications, unreadTotal: unreadCounts.total }),
+    [notifications, unreadCounts.total],
+  );
   const chatBadge = conversations.reduce((total, conversation) => total + conversation.unread, 0);
   const contactBadge = inboundRequests.length;
 
