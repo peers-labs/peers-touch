@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Avatar, Button, Empty, Input, List, Modal, Spin, Tag, Typography } from 'antd';
+import { Avatar, Button, Checkbox, Empty, Input, List, Modal, Spin, Tag, Typography } from 'antd';
 import { Check, Search, ShieldCheck, UserPlus, Users, X } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
@@ -26,8 +26,12 @@ interface ContactsPageProps {
 export function ContactsPage({ onOpenChat }: ContactsPageProps) {
   const { t } = useMobileI18n();
   const [addOpen, setAddOpen] = useState(false);
+  const [createGroupOpen, setCreateGroupOpen] = useState(false);
   const [contactQuery, setContactQuery] = useState('');
   const [peopleQuery, setPeopleQuery] = useState('');
+  const [groupName, setGroupName] = useState('');
+  const [groupDescription, setGroupDescription] = useState('');
+  const [selectedGroupMemberDids, setSelectedGroupMemberDids] = useState<string[]>([]);
   const [selectedContact, setSelectedContact] = useState<SocialConversation | null>(null);
   const currentUserDid = useSocialStore((state) => state.currentUserDid);
   const friendRequests = useSocialStore((state) => state.friendRequests);
@@ -47,6 +51,7 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
   const searchPeople = useSocialStore((state) => state.searchPeople);
   const clearPeopleSearch = useSocialStore((state) => state.clearPeopleSearch);
   const selectGroup = useGroupStore((state) => state.selectGroup);
+  const createGroup = useGroupStore((state) => state.createGroup);
   const groupLoading = useGroupStore((state) => state.loading);
   const groupError = useGroupStore((state) => state.error);
   const contacts = useSocialStore(selectSocialConversations);
@@ -109,6 +114,35 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
     onOpenChat?.();
   };
 
+  const closeCreateGroup = () => {
+    setCreateGroupOpen(false);
+    setGroupName('');
+    setGroupDescription('');
+    setSelectedGroupMemberDids([]);
+  };
+
+  const toggleInitialGroupMember = (did: string, checked: boolean) => {
+    setSelectedGroupMemberDids((current) =>
+      checked ? [...new Set([...current, did])] : current.filter((item) => item !== did),
+    );
+  };
+
+  const submitCreateGroup = async () => {
+    const name = groupName.trim();
+    if (!name) return;
+    const groupUlid = await createGroup({
+      name,
+      description: groupDescription.trim(),
+      initialMemberDids: selectedGroupMemberDids,
+    });
+    closeCreateGroup();
+    if (groupUlid) {
+      await selectSession(null);
+      await selectGroup(groupUlid);
+      onOpenChat?.();
+    }
+  };
+
   return (
     <div className="page-container">
       <header className="page-header">
@@ -124,6 +158,9 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
           placeholder={t('mobile.contacts.searchPlaceholder')}
           allowClear
         />
+        <button className="contacts-add-button" type="button" onClick={() => setCreateGroupOpen(true)} aria-label={t('mobile.group.create')}>
+          <Users size={20} />
+        </button>
         <button className="contacts-add-button" type="button" onClick={() => setAddOpen(true)} aria-label={t('mobile.contacts.findPeople')}>
           <UserPlus size={20} />
         </button>
@@ -314,6 +351,52 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
               )}
             </div>
           </Spin>
+        </div>
+      </Modal>
+
+      <Modal
+        title={t('mobile.group.create')}
+        open={createGroupOpen}
+        onCancel={closeCreateGroup}
+        onOk={submitCreateGroup}
+        okText={t('mobile.group.create')}
+        cancelText={t('common.action.cancel')}
+        okButtonProps={{ disabled: !groupName.trim() }}
+        destroyOnClose
+      >
+        <div className="group-create-form">
+          <Input
+            value={groupName}
+            onChange={(event) => setGroupName(event.target.value)}
+            placeholder={t('mobile.group.namePlaceholder')}
+          />
+          <Input.TextArea
+            value={groupDescription}
+            onChange={(event) => setGroupDescription(event.target.value)}
+            placeholder={t('mobile.group.descriptionPlaceholder')}
+            autoSize={{ minRows: 2, maxRows: 4 }}
+          />
+          <SectionTitle title={t('mobile.group.initialMembers')} count={selectedGroupMemberDids.length} />
+          {contacts.length > 0 ? (
+            <List
+              dataSource={contacts}
+              renderItem={(contact) => (
+                <List.Item>
+                  <List.Item.Meta
+                    avatar={<Avatar src={contact.peerAvatar}>{contact.peerName.slice(0, 1)}</Avatar>}
+                    title={<Text strong>{contact.peerName}</Text>}
+                    description={<Text type="secondary" copyable>{contact.peerDid}</Text>}
+                  />
+                  <Checkbox
+                    checked={selectedGroupMemberDids.includes(contact.peerDid)}
+                    onChange={(event) => toggleInitialGroupMember(contact.peerDid, event.target.checked)}
+                  />
+                </List.Item>
+              )}
+            />
+          ) : (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.group.noInitialMembers')} />
+          )}
         </div>
       </Modal>
 

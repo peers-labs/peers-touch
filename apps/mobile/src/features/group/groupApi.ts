@@ -35,7 +35,34 @@ export interface GroupUnreadCountPayload {
   unread_count?: number;
 }
 
+export interface CreateGroupInput {
+  name: string;
+  description?: string;
+  initialMemberDids: string[];
+}
+
+export interface UpdateGroupInput {
+  name?: string;
+  description?: string;
+  muted?: boolean;
+}
+
+export interface GroupSettings {
+  isMuted: boolean;
+  isPinned: boolean;
+  myNickname: string;
+  showMemberNickname: boolean;
+}
+
+export interface UpdateGroupSettingsInput {
+  isMuted?: boolean;
+  isPinned?: boolean;
+  showMemberNickname?: boolean;
+}
+
 export interface GroupApiClient {
+  createGroup: (input: CreateGroupInput) => Promise<{ group?: Group }>;
+  updateGroup: (groupUlid: string, input: UpdateGroupInput) => Promise<{ group?: Group }>;
   listGroups: (limit?: number, offset?: number) => Promise<ListGroupsPayload>;
   listMessages: (groupUlid: string, beforeUlid?: string, limit?: number) => Promise<ListGroupMessagesPayload>;
   listMembers: (groupUlid: string, limit?: number, offset?: number) => Promise<ListGroupMembersPayload>;
@@ -46,6 +73,8 @@ export interface GroupApiClient {
   editMessage: (groupUlid: string, messageUlid: string, encryptedPayload: Uint8Array) => Promise<Record<string, unknown>>;
   recallMessage: (groupUlid: string, messageUlid: string) => Promise<Record<string, unknown>>;
   deleteMessage: (groupUlid: string, messageUlid: string) => Promise<Record<string, unknown>>;
+  getMySettings: (groupUlid: string) => Promise<GroupSettings>;
+  updateMySettings: (groupUlid: string, input: UpdateGroupSettingsInput) => Promise<Record<string, unknown>>;
   unreadCount: (groupUlid: string) => Promise<GroupUnreadCountPayload>;
   markRead: (groupUlid: string, upToUlid?: string) => Promise<Record<string, unknown>>;
 }
@@ -85,6 +114,29 @@ export function createGroupApiClient(session: MobileAuthSession): GroupApiClient
   }
 
   return {
+    createGroup: (input) =>
+      request({
+        method: 'POST',
+        path: '/group-chat/create',
+        body: {
+          name: input.name,
+          description: input.description ?? '',
+          type: 1,
+          visibility: 2,
+          initial_member_dids: input.initialMemberDids,
+        },
+      }),
+    updateGroup: (groupUlid, input) =>
+      request({
+        method: 'PUT',
+        path: '/group-chat/update',
+        body: {
+          group_ulid: groupUlid,
+          ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(input.description !== undefined ? { description: input.description } : {}),
+          ...(input.muted !== undefined ? { muted: input.muted } : {}),
+        },
+      }),
     listGroups: (limit = 50, offset = 0) =>
       request<ListGroupsPayload>({
         method: 'GET',
@@ -155,6 +207,23 @@ export function createGroupApiClient(session: MobileAuthSession): GroupApiClient
         path: '/group-chat/message/delete',
         body: { group_ulid: groupUlid, message_ulid: messageUlid },
       }),
+    getMySettings: (groupUlid) =>
+      request<GroupSettings>({
+        method: 'GET',
+        path: '/group-chat/my-settings',
+        query: { group_ulid: groupUlid },
+      }).then(normalizeSettings),
+    updateMySettings: (groupUlid, input) =>
+      request({
+        method: 'PUT',
+        path: '/group-chat/my-settings',
+        body: {
+          group_ulid: groupUlid,
+          ...(input.isMuted !== undefined ? { is_muted: input.isMuted } : {}),
+          ...(input.isPinned !== undefined ? { is_pinned: input.isPinned } : {}),
+          ...(input.showMemberNickname !== undefined ? { show_member_nickname: input.showMemberNickname } : {}),
+        },
+      }),
     unreadCount: (groupUlid) =>
       request<GroupUnreadCountPayload>({
         method: 'GET',
@@ -205,6 +274,16 @@ function buildApiError(method: string, path: string, status: number, payload: un
     message: envelope.msg ?? envelope.message ?? envelope.detail ?? 'group api request failed',
   };
   return new SocialApiError(context);
+}
+
+function normalizeSettings(payload: unknown): GroupSettings {
+  const record = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>;
+  return {
+    isMuted: Boolean(record.isMuted ?? record.is_muted),
+    isPinned: Boolean(record.isPinned ?? record.is_pinned),
+    myNickname: String(record.myNickname ?? record.my_nickname ?? ''),
+    showMemberNickname: Boolean(record.showMemberNickname ?? record.show_member_nickname),
+  };
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
