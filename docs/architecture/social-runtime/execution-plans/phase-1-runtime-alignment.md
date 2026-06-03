@@ -183,6 +183,10 @@
   - `groupApi` / `groupStore` 新增 invite / leave / remove member command；
   - Chat group header 提供成员管理 modal，页面只调用 group store command；
   - 成员变更仍通过 runtime membership event 触发 group projection refresh 与 E2EE rotation。
+- 已补 Mobile group create/update/settings 入口：
+  - `groupApi` / `groupStore` 新增 create / update / my-settings command；
+  - Contacts 提供创建群入口，创建成功后进入独立 group projection；
+  - Chat group management modal 支持群资料、全员禁言、个人免打扰/置顶/成员昵称显示设置。
 
 ### Step 7: 验证
 

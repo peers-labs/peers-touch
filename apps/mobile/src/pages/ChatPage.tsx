@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Avatar, Badge, Button, Empty, Input, List, Modal, Popconfirm, Spin, Tag, Typography } from 'antd';
+import { Avatar, Badge, Button, Empty, Input, List, Modal, Popconfirm, Spin, Switch, Tag, Typography } from 'antd';
 import { ArrowLeft, Pencil, RotateCcw, Search, Send, Trash2, Users, X } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
@@ -46,6 +46,8 @@ export function ChatPage() {
   const [conversationQuery, setConversationQuery] = useState('');
   const [threadSearchQuery, setThreadSearchQuery] = useState('');
   const [groupManageOpen, setGroupManageOpen] = useState(false);
+  const [groupNameDraft, setGroupNameDraft] = useState('');
+  const [groupDescriptionDraft, setGroupDescriptionDraft] = useState('');
   const [editingMessage, setEditingMessage] = useState<EditingMessage | null>(null);
   const activeSessionUlid = useSocialStore((state) => state.activeSessionUlid);
   const messages = useSocialStore((state) => (activeSessionUlid ? state.messages[activeSessionUlid] ?? EMPTY_MESSAGES : EMPTY_MESSAGES));
@@ -67,9 +69,12 @@ export function ChatPage() {
   const activeGroupUlid = useGroupStore((state) => state.activeGroupUlid);
   const groupMessages = useGroupStore((state) => (activeGroupUlid ? state.messages[activeGroupUlid] ?? EMPTY_GROUP_MESSAGES : EMPTY_GROUP_MESSAGES));
   const groupMembers = useGroupStore((state) => (activeGroupUlid ? state.members[activeGroupUlid] ?? [] : []));
+  const groupSettings = useGroupStore((state) => (activeGroupUlid ? state.settings[activeGroupUlid] : undefined));
   const groupLoading = useGroupStore((state) => state.loading);
   const groupError = useGroupStore((state) => state.error);
   const selectGroup = useGroupStore((state) => state.selectGroup);
+  const updateGroup = useGroupStore((state) => state.updateGroup);
+  const updateGroupSettings = useGroupStore((state) => state.updateMySettings);
   const inviteGroupMembers = useGroupStore((state) => state.inviteMembers);
   const leaveGroup = useGroupStore((state) => state.leaveGroup);
   const removeGroupMember = useGroupStore((state) => state.removeMember);
@@ -121,6 +126,12 @@ export function ChatPage() {
     setEditingMessage(null);
     setDraft('');
   }, [activeGroupUlid, activeSessionUlid, clearMessageSearch]);
+
+  useEffect(() => {
+    if (!activeGroupConversation) return;
+    setGroupNameDraft(activeGroupConversation.group.name);
+    setGroupDescriptionDraft(activeGroupConversation.group.description);
+  }, [activeGroupConversation]);
 
   const emitTypingState = async (typing: boolean) => {
     if (!activeConversation) return;
@@ -215,6 +226,24 @@ export function ChatPage() {
     if (!activeGroupUlid) return;
     await leaveGroup(activeGroupUlid);
     setGroupManageOpen(false);
+  };
+
+  const saveGroupProfile = async () => {
+    if (!activeGroupUlid) return;
+    await updateGroup(activeGroupUlid, {
+      name: groupNameDraft.trim(),
+      description: groupDescriptionDraft.trim(),
+    });
+  };
+
+  const toggleGroupMuted = async (muted: boolean) => {
+    if (!activeGroupUlid) return;
+    await updateGroup(activeGroupUlid, { muted });
+  };
+
+  const toggleMyGroupSetting = async (key: 'isMuted' | 'isPinned' | 'showMemberNickname', value: boolean) => {
+    if (!activeGroupUlid) return;
+    await updateGroupSettings(activeGroupUlid, { [key]: value });
   };
 
   const openConversation = async (conversation: MobileConversation) => {
@@ -416,6 +445,43 @@ export function ChatPage() {
             destroyOnClose
           >
             <div className="group-management-panel">
+              <SectionTitle title={t('mobile.group.profile')} count={activeGroupConversation.group.memberCount} />
+              <Input
+                value={groupNameDraft}
+                onChange={(event) => setGroupNameDraft(event.target.value)}
+                placeholder={t('mobile.group.namePlaceholder')}
+                disabled={!canManageGroupMembers}
+              />
+              <Input.TextArea
+                value={groupDescriptionDraft}
+                onChange={(event) => setGroupDescriptionDraft(event.target.value)}
+                placeholder={t('mobile.group.descriptionPlaceholder')}
+                autoSize={{ minRows: 2, maxRows: 4 }}
+                disabled={!canManageGroupMembers}
+              />
+              {canManageGroupMembers ? (
+                <Button type="primary" onClick={saveGroupProfile} disabled={!groupNameDraft.trim()}>
+                  {t('common.action.save')}
+                </Button>
+              ) : null}
+
+              <div className="group-setting-row">
+                <Text>{t('mobile.group.muted')}</Text>
+                <Switch checked={Boolean(activeGroupConversation.group.muted)} onChange={toggleGroupMuted} disabled={!canManageGroupMembers} />
+              </div>
+              <div className="group-setting-row">
+                <Text>{t('mobile.group.myMuted')}</Text>
+                <Switch checked={Boolean(groupSettings?.isMuted)} onChange={(value) => toggleMyGroupSetting('isMuted', value)} />
+              </div>
+              <div className="group-setting-row">
+                <Text>{t('mobile.group.pinned')}</Text>
+                <Switch checked={Boolean(groupSettings?.isPinned)} onChange={(value) => toggleMyGroupSetting('isPinned', value)} />
+              </div>
+              <div className="group-setting-row">
+                <Text>{t('mobile.group.showMemberNickname')}</Text>
+                <Switch checked={Boolean(groupSettings?.showMemberNickname)} onChange={(value) => toggleMyGroupSetting('showMemberNickname', value)} />
+              </div>
+
               <SectionTitle title={t('mobile.group.members')} count={groupMembers.length} />
               {groupMembers.length > 0 ? (
                 <List
