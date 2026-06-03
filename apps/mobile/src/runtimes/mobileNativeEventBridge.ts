@@ -90,7 +90,8 @@ function dispatchNativePayload(eventName: string, payload: NativeRuntimeEventPay
     target: payload?.target,
     sessionUlid: payload?.sessionUlid ?? payload?.session_ulid,
     notificationId: payload?.notificationId ?? payload?.notification_id,
-    reason: payload?.reason ?? payload?.url,
+    url: payload?.url,
+    reason: payload?.reason,
   });
 }
 
