@@ -24,6 +24,13 @@ export const mobileRuntimeDescriptors: RuntimeDescriptor[] = [
     responsibility: 'Owns friend chat, contacts, notifications, realtime streams, presence, typing, and reconcile projection.',
   },
   {
+    id: 'group',
+    title: 'Group Runtime',
+    status: 'ready',
+    owner: 'mobile-web runtime projection',
+    responsibility: 'Owns group list, group members, group messages, unread counts, and reconcile projection.',
+  },
+  {
     id: 'native-event-bridge',
     title: 'Native Event Bridge',
     status: 'ready',
