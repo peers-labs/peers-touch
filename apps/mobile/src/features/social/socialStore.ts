@@ -26,6 +26,7 @@ import {
   projectUnreadNotifications,
   pruneTypingPeers,
   seedPresenceFromSessions,
+  visibleFriendMessages,
 } from './socialProjection';
 import {
   SocialApiError,
@@ -345,7 +346,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     const api = requireApi(get());
     try {
       const payload = await api.listMessages(sessionUlid);
-      const messages = (payload.messages ?? []).map(normalizeMessage);
+      const messages = visibleFriendMessages((payload.messages ?? []).map(normalizeMessage));
       set((state) => ({
         messages: { ...state.messages, [sessionUlid]: messages },
       }));
@@ -563,7 +564,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     try {
       const payload = await api.searchMessages(trimmed, sessionUlid);
       set({
-        messageSearchResults: (payload.messages ?? []).map(normalizeMessage),
+        messageSearchResults: visibleFriendMessages((payload.messages ?? []).map(normalizeMessage)),
         messageSearchLoading: false,
       });
     } catch (error) {

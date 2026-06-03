@@ -1,7 +1,10 @@
 import type { MobileAuthSession } from '../auth/authSession';
+import type { GroupE2eeRuntimeController } from '../group/groupE2eeRuntime';
 import type { GroupState } from '../group/groupStore';
+import { isSenderKeyDistributionMessage } from './socialProjection';
 import type { SocialState } from './socialStore';
 import { startRealtimeStream } from './socialRealtime';
+import type { FriendChatMessage } from './socialTypes';
 
 const RECONCILE_INTERVAL_MS = 30000;
 const TYPING_TTL_MS = 6000;
@@ -51,6 +54,7 @@ export function startSocialRuntime(
   session: MobileAuthSession,
   store: SocialState,
   groupStore?: GroupState,
+  groupE2eeRuntime?: GroupE2eeRuntimeController,
 ): SocialRuntimeController {
   let cancelled = false;
   let externalReconcileTimer: number | null = null;
@@ -71,10 +75,15 @@ export function startSocialRuntime(
   });
   startRealtimeStream(session, abortController.signal, {
     onMessage: (sessionUlid, message) => {
+      if (isSenderKeyDistributionMessage(message)) {
+        void routeSkdmControlMessage(store, groupE2eeRuntime, message);
+        return;
+      }
       store.ingestRealtimeMessage(sessionUlid, message);
     },
     onGroupMessage: (groupUlid, message) => {
-      groupStore?.ingestRealtimeMessage(groupUlid, message);
+      if (!groupStore) return;
+      void groupStore.ingestRealtimeMessage(groupUlid, message).then(() => groupE2eeRuntime?.repairEncryptedMessages());
     },
     onReceipt: store.applyMessageReceipt,
     onMutation: (sessionUlid, messageUlid, kind, payload) => {
@@ -83,9 +92,8 @@ export function startSocialRuntime(
     },
     onTyping: store.applyTypingState,
     onPresence: store.setPeerOnline,
-    onGroupMembership: (groupUlid) => {
-      void groupStore?.refreshGroups();
-      if (groupStore?.activeGroupUlid === groupUlid) void groupStore.loadMembers(groupUlid);
+    onGroupMembership: (groupUlid, actorDid, kind) => {
+      void routeGroupMembershipChange(groupStore, groupE2eeRuntime, groupUlid, actorDid, kind);
     },
     onResync: () => {
       void store.reconcile();
@@ -120,6 +128,51 @@ export function startSocialRuntime(
       if (activeRuntime === runtimeRef) activeRuntime = null;
     },
   };
+}
+
+async function routeSkdmControlMessage(
+  store: SocialState,
+  groupE2eeRuntime: GroupE2eeRuntimeController | undefined,
+  message: FriendChatMessage,
+) {
+  if (!groupE2eeRuntime || message.senderDid === store.currentUserDid) return;
+  const skdmBytes = skdmPayloadBytes(message);
+  await groupE2eeRuntime.consumeSkdmControlMessage(message.senderDid, skdmBytes);
+}
+
+async function routeGroupMembershipChange(
+  groupStore: GroupState | undefined,
+  groupE2eeRuntime: GroupE2eeRuntimeController | undefined,
+  groupUlid: string,
+  actorDid: string,
+  kind: 'ADDED' | 'REMOVED' | 'LEFT',
+) {
+  try {
+    await groupStore?.refreshGroups();
+    if (groupStore?.activeGroupUlid === groupUlid) await groupStore.loadMembers(groupUlid);
+    if (kind === 'REMOVED' || kind === 'LEFT') {
+      await groupE2eeRuntime?.rotateAfterMembershipChange(groupUlid, actorDid);
+    }
+  } catch {
+    // Group store and E2EE runtime persist their own domain errors.
+  }
+}
+
+function skdmPayloadBytes(message: FriendChatMessage): Uint8Array {
+  if (message.encryptedPayload?.byteLength) return message.encryptedPayload;
+  if (message.content.trim()) return base64ToBytes(message.content.trim());
+  return new Uint8Array();
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  try {
+    const binary = window.atob(value);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return bytes;
+  } catch {
+    return new Uint8Array();
+  }
 }
 
 async function startPresenceStream(

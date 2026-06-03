@@ -57,7 +57,7 @@ export function normalizeGroupMessage(raw: Partial<GroupMessage>): GroupMessage 
     createdAt: (raw.createdAt ?? record.created_at) as Timestamp | undefined,
     updatedAt: (raw.updatedAt ?? record.updated_at) as Timestamp | undefined,
     recalled: booleanValue(raw.recalled),
-    encryptedPayload: bytesValue(raw.encryptedPayload ?? record.encrypted_payload),
+    encryptedPayload: bytesValue(raw.encryptedPayload ?? record.encryptedPayload ?? record.encrypted_payload),
     editedAt: (raw.editedAt ?? record.edited_at) as Timestamp | undefined,
   } as GroupMessage;
 }
@@ -104,7 +104,19 @@ function booleanValue(...values: unknown[]): boolean {
 function bytesValue(value: unknown): Uint8Array {
   if (value instanceof Uint8Array) return value;
   if (Array.isArray(value)) return new Uint8Array(value.map(Number));
+  if (typeof value === 'string' && value.trim()) return base64ToBytes(value.trim());
   return new Uint8Array();
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  try {
+    const binary = globalThis.atob(value);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return bytes;
+  } catch {
+    return new Uint8Array();
+  }
 }
 
 function normalizeStringMap(value: unknown): Record<string, string> {
