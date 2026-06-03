@@ -29,7 +29,7 @@ Mobile group chat 不能只做到“能看到群列表/群消息”，必须与 
 | Group Wire Contract | generated `group_chat_pb.ts` | `GroupCiphertext` / `SenderKeyDistributionMessage` 类型真源 | 手写 field-number decoder |
 | Group E2EE Kernel | `src-tauri/src/domain/crypto/` | Sender chain、SKDM consume/emit、encrypt/decrypt、signature verify、secure local persistence | UI 文案、HTTP 调用、runtime 调度 |
 | Group E2EE Bridge | `features/group/groupE2eeBridge.ts` | Web 到 Rust command 的 typed adapter，统一错误码 | 存 projection state |
-| Group E2EE Runtime | `features/group/groupE2eeRuntime.ts` | SKDM 分发、pending ledger、redecrypt queue、rotation trigger、repair scheduling | React rendering |
+| Group E2EE Runtime | `features/group/groupE2eeRuntime.ts` / `groupE2eeLedger.ts` | SKDM 分发、durable pending/sent ledger、redecrypt queue、rotation trigger、repair scheduling、`canEncrypt` gate | React rendering |
 | Group Projection | `groupProjection.ts` / `groupStore.ts` | 消息 merge、mutation、read/unread、display projection | 直接解密、直接解析密文协议 |
 | Social Runtime Integration | `socialRuntime.ts` | 将 friend control message / group realtime event 路由到 E2EE runtime | 直接写 decrypted content |
 | Host Adapter | Mobile native events | resume/push/deep-link 后触发 runtime repair | 直接改 group projection |
@@ -40,7 +40,7 @@ Mobile group chat 不能只做到“能看到群列表/群消息”，必须与 
 
 1. UI 触发 group send command，只传 `groupUlid` 与 plaintext draft 给 group command 层。
 2. Group E2EE runtime 读取 group members，调用 bridge `emitSkdm(groupUlid)` 确保本地 sender chain 存在。
-3. Runtime 通过 friend-chat control type `50` 向成员分发 sealed SKDM，记录 per member pending/sent ledger。
+3. Runtime 通过 friend-chat control type `50` 向成员分发 sealed SKDM，记录 secure-storage backed per member pending/sent ledger；任一非自身成员缺少 key bundle 或发送失败时，`canEncryptGroup` 不得开放 composer。
 4. Runtime 调用 bridge `encrypt(groupUlid, plaintext)` 得到 `GroupCiphertext` bytes。
 5. Group API 发送 `content=''` 与 `encrypted_payload`，Station 只见 opaque payload。
 6. Group store ingest Station response/realtime echo，只保存 normalized message 与 display projection。
@@ -90,13 +90,13 @@ Phase C: Web/runtime
 
 - `features/group/groupE2eeBridge.ts`：typed Rust command adapter。（已落地；Web bridge 使用 generated TS proto 负责 `GroupCiphertext` / `SenderKeyDistributionMessage` bytes 编解。）
 - `features/group/groupKeyExchange.ts`：key bundle publish/fetch 与 `GROUP_SKDM` signaling envelope Web adapter。（已落地；runtime consume 不再接受裸 SKDM carrier。）
-- `features/group/groupE2eeRuntime.ts`：SKDM distribution、consume、repair、rotation。（已落地 encrypted-payload decrypt repair owner；已接入 type `50` sealed SKDM consume、outbound sealed SKDM fanout、encrypted group send command 与 membership rotation hook；durable sent/pending ledger 继续闭环。）
+- `features/group/groupE2eeRuntime.ts` / `groupE2eeLedger.ts`：SKDM distribution、consume、repair、rotation。（已落地 encrypted-payload decrypt repair owner；已接入 type `50` sealed SKDM consume、outbound sealed SKDM fanout、encrypted group send command、membership rotation hook、secure-storage durable sent/pending ledger 与 `canEncrypt` gate。）
 - `features/social/socialRuntime.ts`：friend type `50` control routing 与 group membership rotation hook。（已接入；runtime 只路由，不写 decrypted projection。）
 - `features/group/groupStore.ts`：接收 decrypted display projection，不保存 crypto internals。（已新增 decrypted message projection 与 E2EE error projection。）
 
 Phase D: UX unlock
 
-- Group composer only enables after runtime send command is wired to UI and `groupE2eeRuntime.canEncrypt(groupUlid)` / durable SKDM ledger are closed.
+- Group composer only enables after runtime send command is wired to UI and `groupE2eeRuntime.canEncryptGroup(groupUlid)` / durable SKDM ledger mark the group ready.
 - Missing SKDM 状态显示为 localized projection state，不暴露协议细节。
 - Group send/edit/recall/delete 与 Desktop 语义对齐。
 
