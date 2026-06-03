@@ -30,6 +30,7 @@
 | Page freshness 防回退 | 双端 runtime boundary 检查 | 已接入 `tooling/scripts/check-social-runtime-boundaries.sh`，禁止页面直接开 SSE、presence stream、runtime-level reconcile/refresh |
 | Desktop runtime 单入口 | `socialRealtime` 统一接管遗留 chat bridge | 已删除 `services/socialChatRealtime.ts` 的 App 直装入口，ACK、SKDM、group membership 副作用迁入 runtime owner |
 | Desktop projection 分层 | `socialChat` store 与纯 projection reducer 分离 | 已新增 `apps/desktop/src/store/socialProjection.ts`，承载 message merge、receipt、mutation、typing GC、local-clear 过滤等纯状态机 |
+| Desktop normalizer 分层 | `socialChat` store 与 Station response 兼容逻辑分离 | 已新增 `apps/desktop/src/store/socialNormalizers.ts`，先承载 friend session、friend request、presence seed 归一化 |
 
 ---
 
@@ -85,7 +86,12 @@
   - `applyTypingStateToMap`
   - `pruneTypingPeers`
   - `previewFromMessage`
-- 下一步继续抽 Desktop normalizer：friend request、search result、profile response 等 Station response shape 兼容逻辑不应长期留在 store action 内。
+- 已把 Desktop Station response normalizer 第一批从 `store/socialChat.ts` 抽出：
+  - `normalizeFriendChatSession`
+  - `normalizeFriendRequests`
+  - `normalizeFriendRequestData`
+  - `seedPresenceFromSessions`
+- 下一步继续抽 Desktop normalizer：search result、profile response 等 Station response shape 兼容逻辑不应长期留在 store action 内。
 
 ### Step 4: Mobile parity backlog 锁定
 
