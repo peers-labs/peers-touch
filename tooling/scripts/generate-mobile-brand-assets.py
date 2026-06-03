@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -9,6 +10,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MOBILE_ROOT = PROJECT_ROOT / "apps/mobile"
+DESKTOP_ICON_SOURCE_PATH = PROJECT_ROOT / "apps/desktop/src-tauri/icon-source.png"
 WORDMARK_PATH = MOBILE_ROOT / "src/assets/logo.png"
 ICON_SOURCE_PATH = MOBILE_ROOT / "src-tauri/icon-source.png"
 IOS_APPICON_CONTENTS = (
@@ -19,8 +21,8 @@ TAURI_ICONS_DIR = MOBILE_ROOT / "src-tauri/icons"
 
 def main() -> None:
     normalize_wordmark()
-    icon = build_app_icon()
-    icon.save(ICON_SOURCE_PATH)
+    shutil.copyfile(DESKTOP_ICON_SOURCE_PATH, ICON_SOURCE_PATH)
+    icon = Image.open(DESKTOP_ICON_SOURCE_PATH).convert("RGBA")
     update_ios_app_icons(icon)
     update_tauri_png_icons(icon)
     update_android_launcher_icons(icon)

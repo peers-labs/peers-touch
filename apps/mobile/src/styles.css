@@ -382,38 +382,37 @@ select,
   border-color: #ff4d4f;
 }
 
-.station-protocol-select {
-  flex: 0 0 68px;
-  width: 68px;
-  min-width: 68px;
+.station-protocol-toggle {
+  display: grid;
+  grid-template-columns: 1fr;
+  flex: 0 0 78px;
+  width: 78px;
+  min-width: 78px;
+  height: 100%;
+  padding: 4px;
+  gap: 3px;
   background: var(--brand-muted);
 }
 
-.station-protocol-select .ant-select-selector {
-  height: 42px !important;
-  padding: 0 0 0 10px !important;
+.station-protocol-toggle button {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(0, 0, 0, 0.52);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.02em;
 }
 
-.station-protocol-select .ant-select-arrow {
-  display: none;
-}
-
-.station-protocol-select .ant-select-selection-search,
-.station-protocol-select .ant-select-selection-item {
-  line-height: 42px !important;
-}
-
-.station-protocol-select .ant-select-selection-search {
-  inset-inline-start: 10px !important;
-  inset-inline-end: 0 !important;
-}
-
-.station-protocol-select .ant-select-selection-item {
-  padding-inline: 0 !important;
-  font-size: 13px;
-  font-weight: 700;
-  text-align: left;
-  color: rgba(0, 0, 0, 0.82);
+.station-protocol-toggle button.active {
+  background: #fff;
+  color: rgba(0, 0, 0, 0.86);
+  box-shadow: 0 1px 4px rgba(27, 31, 59, 0.08);
 }
 
 .station-address-input {
