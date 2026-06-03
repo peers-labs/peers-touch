@@ -143,6 +143,11 @@
   - 新增 `apps/mobile/src-tauri/src/domain/crypto/sender_keys.rs`，对齐 Desktop Sender Keys pure primitive；
   - `domain` 作为 Mobile capability kernel 的公开 domain surface 暴露，尚未注册 crypto command，避免半闭环 API 被误用；
   - `check:rust` 已通过且无 dead-code warning。
+- 已落地 sender-key 安全持久化底座：
+  - 新增 `apps/mobile/src-tauri/src/domain/crypto/sender_key_store.rs`；
+  - 使用平台 `SecureStorage` 的 Keychain namespace 存储 chain/skipped-key record；
+  - 通过 chain/skipped index 支持 exact load、latest local chain、max sender key id、decrypt outcome apply；
+  - 不使用 localStorage，不落明文 key 文件。
 
 ### Step 7: 验证
 
