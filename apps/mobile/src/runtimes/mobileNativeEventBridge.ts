@@ -16,6 +16,11 @@ interface NativeRuntimeEventPayload {
   url?: string;
 }
 
+interface NativeRuntimeEventErrorPayload {
+  operation?: string;
+  message?: string;
+}
+
 const NATIVE_EVENT_NAMES = [
   'mobile:push',
   'mobile:deep-link',
@@ -40,6 +45,18 @@ export function installMobileNativeEventBridge(): () => void {
       })
       .catch((error) => reportBridgeError('listen-native-event', error));
   });
+
+  listen<NativeRuntimeEventErrorPayload>('mobile:native-event-error', (event) => {
+    reportBridgeError(event.payload?.operation || 'native-event', event.payload?.message || 'unknown');
+  })
+    .then((unlisten) => {
+      if (disposed) {
+        unlisten();
+        return;
+      }
+      unlisteners.push(unlisten);
+    })
+    .catch((error) => reportBridgeError('listen-native-error-event', error));
 
   const onVisibilityChange = () => {
     if (document.visibilityState === 'visible') {
