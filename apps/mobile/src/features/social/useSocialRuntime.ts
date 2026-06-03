@@ -15,7 +15,7 @@ export function useSocialRuntime(session: MobileAuthSession | null) {
     bindGroupSession(session);
     if (!session) return;
 
-    const socialController = startSocialRuntime(session, useSocialStore.getState());
+    const socialController = startSocialRuntime(session, useSocialStore.getState(), useGroupStore.getState());
     const groupController = startGroupRuntime(session, useGroupStore.getState());
 
     return () => {
