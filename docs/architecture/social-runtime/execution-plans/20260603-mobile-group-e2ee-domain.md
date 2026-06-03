@@ -81,12 +81,12 @@ Phase A: 防回退与边界
 Phase B: Rust kernel
 
 - `src-tauri/src/domain/crypto/sender_keys.rs`：Sender Keys primitive。（已从 Desktop 纯 Rust primitive 对齐落地，作为 Mobile capability kernel domain surface。）
-- `src-tauri/src/commands/group_crypto.rs`：`crypto_group_sk_emit_skdm`、`crypto_group_sk_consume_skdm`、`crypto_group_sk_rotate`、`crypto_group_encrypt`、`crypto_group_decrypt`。
+- `src-tauri/src/commands/group_crypto.rs`：`crypto_group_sk_emit_skdm`、`crypto_group_sk_consume_skdm`、`crypto_group_sk_rotate`、`crypto_group_encrypt`、`crypto_group_decrypt`。（已落地 typed JSON command boundary；Rust 不新增 protobuf decode。）
 - `src-tauri/src/domain/crypto/sender_key_store.rs`：per-user scoped sender chain/skipped-key persistence，必须使用平台安全存储或加密本地库，不落 plaintext key 文件。（已落地 Keychain namespace + chain/skipped indexes；后续 command 层复用。）
 
 Phase C: Web/runtime
 
-- `features/group/groupE2eeBridge.ts`：typed Rust command adapter。
+- `features/group/groupE2eeBridge.ts`：typed Rust command adapter。（已落地；Web bridge 使用 generated TS proto 负责 `GroupCiphertext` / `SenderKeyDistributionMessage` bytes 编解。）
 - `features/group/groupE2eeRuntime.ts`：SKDM distribution、consume、repair、rotation。
 - `features/social/socialRuntime.ts`：friend type `50` control routing 与 group membership rotation hook。
 - `features/group/groupStore.ts`：接收 decrypted display projection，不保存 crypto internals。
