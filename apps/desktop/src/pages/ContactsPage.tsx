@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button } from '@lobehub/ui';
@@ -22,9 +22,6 @@ export function ContactsPage() {
     groups,
     friendRequests,
     currentUserDid,
-    loadSessions,
-    loadGroups,
-    loadFriendRequests,
     selectSession,
     selectGroup,
     setActiveTab,
@@ -33,18 +30,6 @@ export function ContactsPage() {
   } = useSocialChatStore();
 
   const [busyAction, setBusyAction] = useState<{ id: string; kind: 'accept' | 'reject' } | null>(null);
-
-  useEffect(() => {
-    void loadFriendRequests().catch(() => {});
-  }, [loadFriendRequests]);
-
-  useEffect(() => {
-    void loadGroups().catch(() => {});
-  }, [loadGroups]);
-
-  useEffect(() => {
-    void loadSessions().catch(() => {});
-  }, [loadSessions]);
 
   const pendingRequests = friendRequests.filter((r) => r.status === 1);
 
