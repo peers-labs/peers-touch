@@ -139,6 +139,10 @@
 - 已把第一批防回退放入检查：
   - `check-social-wire-contract.sh` 要求 Mobile generated group proto 暴露 `GroupCiphertextSchema` 与 `SenderKeyDistributionMessageSchema`，并要求 `socialWire.ts` 使用 generated `GroupMessageSchema`；
   - `check-social-runtime-boundaries.sh` 禁止 Mobile UI pages/components 直接引用 group E2EE proto 或 crypto command。
+- 已落地 Rust kernel 第一块底座：
+  - 新增 `apps/mobile/src-tauri/src/domain/crypto/sender_keys.rs`，对齐 Desktop Sender Keys pure primitive；
+  - `domain` 作为 Mobile capability kernel 的公开 domain surface 暴露，尚未注册 crypto command，避免半闭环 API 被误用；
+  - `check:rust` 已通过且无 dead-code warning。
 
 ### Step 7: 验证
 
