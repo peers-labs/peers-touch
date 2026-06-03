@@ -822,6 +822,20 @@ select,
   margin: 0;
 }
 
+.group-management-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.group-management-panel .ant-list-item {
+  padding-inline: 0 !important;
+}
+
+.group-management-panel .ant-tag {
+  margin-inline-end: 0;
+}
+
 .people-result-list {
   display: flex;
   flex-direction: column;
