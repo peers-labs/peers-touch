@@ -163,6 +163,11 @@
   - friend control message type `50` 由 `socialRuntime` 路由到 `groupE2eeRuntime.consumeSkdmControlMessage`，不会进入 visible friend projection；
   - `GroupMembershipChange.REMOVED/LEFT` 由 runtime 触发 `rotateAfterMembershipChange`，避免 UI/store 直接调用 crypto；
   - friend/group normalizer 已归一化 Station JSON base64 `encryptedPayload`，list/realtime 两条路径都可承载 generated proto bytes。
+- 已补 Mobile group SKDM 的 authenticated carrier 前置能力：
+  - 新增 Mobile identity key / signed prekey secure-storage domain，并通过 `crypto_identity_key_bundle` 生成 Station key-exchange upload payload；
+  - 新增 Mobile `signaling_envelope_seal/open` Rust command，与 Desktop `GROUP_SKDM` signaling envelope 语义对齐；
+  - 新增 `features/group/groupKeyExchange.ts`，runtime 启动时发布 key bundle，入站 type `50` 先拉取 sender bundles 并 open envelope，再 consume SKDM；
+  - 明确关闭裸 SKDM carrier 路径，后续 SKDM outbound distribution 在这个 envelope 边界上继续实现。
 
 ### Step 7: 验证
 
