@@ -64,7 +64,7 @@ Mobile group chat 不能只做到“能看到群列表/群消息”，必须与 
 ## 4. 依赖顺序
 
 1. **Proto/Wire guardrail**：确认 Mobile generated proto 覆盖 `GroupCiphertext` / `SenderKeyDistributionMessage`，禁止 UI/store 手写解析。
-2. **Rust crypto kernel**：从 Desktop sender-key primitive 抽象可复用实现，Mobile 先落 `crypto_group_sk_*` command 边界和安全持久化。
+2. **Rust crypto kernel**：从 Desktop sender-key primitive 抽象可复用实现，Mobile 先落 sender-key primitive 与安全持久化，再注册 `crypto_group_sk_*` command 边界。
 3. **Web bridge**：新增 typed command adapter，所有 Rust error 转成 typed domain error，不给 UI 裸字符串。
 4. **Runtime orchestration**：新增 SKDM sent/pending ledger、consume/repair queue、rotation trigger。
 5. **Projection repair**：group store 接受 E2EE runtime 的 decrypted display projection，不直接解密。
@@ -82,7 +82,7 @@ Phase B: Rust kernel
 
 - `src-tauri/src/domain/crypto/sender_keys.rs`：Sender Keys primitive。（已从 Desktop 纯 Rust primitive 对齐落地，作为 Mobile capability kernel domain surface。）
 - `src-tauri/src/commands/group_crypto.rs`：`crypto_group_sk_emit_skdm`、`crypto_group_sk_consume_skdm`、`crypto_group_sk_rotate`、`crypto_group_encrypt`、`crypto_group_decrypt`。
-- `src-tauri/src/platform/secure_group_store.rs`：per-user scoped sender chain/skipped-key persistence，必须使用平台安全存储或加密本地库，不落 plaintext key 文件。
+- `src-tauri/src/domain/crypto/sender_key_store.rs`：per-user scoped sender chain/skipped-key persistence，必须使用平台安全存储或加密本地库，不落 plaintext key 文件。（已落地 Keychain namespace + chain/skipped indexes；后续 command 层复用。）
 
 Phase C: Web/runtime
 
