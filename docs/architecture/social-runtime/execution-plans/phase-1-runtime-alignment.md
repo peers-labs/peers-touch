@@ -148,6 +148,11 @@
   - 使用平台 `SecureStorage` 的 Keychain namespace 存储 chain/skipped-key record；
   - 通过 chain/skipped index 支持 exact load、latest local chain、max sender key id、decrypt outcome apply；
   - 不使用 localStorage，不落明文 key 文件。
+- 已落地 crypto command / Web bridge 边界：
+  - 新增 `apps/mobile/src-tauri/src/commands/group_crypto.rs`，注册 `crypto_group_sk_emit_skdm`、`crypto_group_sk_consume_skdm`、`crypto_group_sk_rotate`、`crypto_group_encrypt`、`crypto_group_decrypt`；
+  - Rust command 只收发 typed JSON fields，不新增 Rust protobuf decode；
+  - 新增 `apps/mobile/src/features/group/groupE2eeBridge.ts`，由 Web generated TS proto 负责编解 `GroupCiphertext` / `SenderKeyDistributionMessage` bytes；
+  - 已补 E2EE missing actor/group locale key。
 
 ### Step 7: 验证
 

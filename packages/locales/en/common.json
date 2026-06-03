@@ -123,6 +123,8 @@
   "mobile.group.memberCount": "{{count}} members",
   "mobile.group.encryptedMessage": "Encrypted group message",
   "mobile.group.composerPending": "Group sending opens after the group end-to-end encryption domain is connected",
+  "mobile.group.e2eeMissingActor": "Current actor identity is required for group encryption",
+  "mobile.group.e2eeMissingGroup": "Group identity is required for group encryption",
   "mobile.contacts.title": "Contacts",
   "mobile.contacts.add": "Add Contact",
   "mobile.contacts.searchPlaceholder": "Search contacts",
