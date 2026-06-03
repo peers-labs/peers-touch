@@ -37,6 +37,9 @@ export interface GroupState {
   selectGroup: (groupUlid: string | null) => Promise<void>;
   loadMessages: (groupUlid: string) => Promise<void>;
   loadMembers: (groupUlid: string) => Promise<void>;
+  inviteMembers: (groupUlid: string, inviteeDids: string[]) => Promise<void>;
+  leaveGroup: (groupUlid: string) => Promise<void>;
+  removeMember: (groupUlid: string, actorDid: string) => Promise<void>;
   ingestRealtimeMessage: (groupUlid: string, message: GroupMessage) => Promise<void>;
   applyMessageMutation: (
     groupUlid: string,
@@ -149,6 +152,55 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       set((state) => ({
         members: { ...state.members, [groupUlid]: (payload.members ?? []).map(normalizeGroupMember) },
       }));
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
+    }
+  },
+
+  inviteMembers: async (groupUlid, inviteeDids) => {
+    if (!inviteeDids.length) return;
+    const api = requireApi(get());
+    try {
+      await api.inviteMembers(groupUlid, inviteeDids);
+      await get().loadMembers(groupUlid);
+      await get().refreshGroups();
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
+    }
+  },
+
+  leaveGroup: async (groupUlid) => {
+    const api = requireApi(get());
+    try {
+      await api.leaveGroup(groupUlid);
+      set((state) => {
+        const { [groupUlid]: _members, ...members } = state.members;
+        const { [groupUlid]: _messages, ...messages } = state.messages;
+        const { [groupUlid]: _unread, ...unreadCounts } = state.unreadCounts;
+        const { [groupUlid]: _ready, ...encryptionReady } = state.encryptionReady;
+        return {
+          groups: state.groups.filter((group) => group.ulid !== groupUlid),
+          members,
+          messages,
+          unreadCounts,
+          encryptionReady,
+          activeGroupUlid: state.activeGroupUlid === groupUlid ? null : state.activeGroupUlid,
+        };
+      });
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
+    }
+  },
+
+  removeMember: async (groupUlid, actorDid) => {
+    const api = requireApi(get());
+    try {
+      await api.removeMember(groupUlid, actorDid);
+      await get().loadMembers(groupUlid);
+      await get().refreshGroups();
     } catch (error) {
       set({ error: normalizeError(error) });
       throw error;

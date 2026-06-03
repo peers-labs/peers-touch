@@ -39,6 +39,9 @@ export interface GroupApiClient {
   listGroups: (limit?: number, offset?: number) => Promise<ListGroupsPayload>;
   listMessages: (groupUlid: string, beforeUlid?: string, limit?: number) => Promise<ListGroupMessagesPayload>;
   listMembers: (groupUlid: string, limit?: number, offset?: number) => Promise<ListGroupMembersPayload>;
+  inviteMembers: (groupUlid: string, inviteeDids: string[]) => Promise<Record<string, unknown>>;
+  leaveGroup: (groupUlid: string) => Promise<Record<string, unknown>>;
+  removeMember: (groupUlid: string, actorDid: string) => Promise<Record<string, unknown>>;
   sendMessage: (groupUlid: string, encryptedPayload: Uint8Array) => Promise<{ message?: GroupMessage }>;
   editMessage: (groupUlid: string, messageUlid: string, encryptedPayload: Uint8Array) => Promise<Record<string, unknown>>;
   recallMessage: (groupUlid: string, messageUlid: string) => Promise<Record<string, unknown>>;
@@ -99,6 +102,24 @@ export function createGroupApiClient(session: MobileAuthSession): GroupApiClient
         method: 'GET',
         path: '/group-chat/members',
         query: { group_ulid: groupUlid, limit, offset },
+      }),
+    inviteMembers: (groupUlid, inviteeDids) =>
+      request({
+        method: 'POST',
+        path: '/group-chat/invite',
+        body: { group_ulid: groupUlid, invitee_dids: inviteeDids },
+      }),
+    leaveGroup: (groupUlid) =>
+      request({
+        method: 'POST',
+        path: '/group-chat/leave',
+        body: { group_ulid: groupUlid },
+      }),
+    removeMember: (groupUlid, actorDid) =>
+      request({
+        method: 'POST',
+        path: '/group-chat/member/remove',
+        body: { group_ulid: groupUlid, actor_did: actorDid },
       }),
     sendMessage: (groupUlid, encryptedPayload) =>
       request({

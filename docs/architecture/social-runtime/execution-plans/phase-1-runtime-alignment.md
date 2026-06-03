@@ -179,6 +179,10 @@
   - recall/delete 走独立 group API/store command，不复用 friend chat bucket；
   - edit 由 `groupE2eeRuntime.editEncryptedMessage` 加密 plaintext draft，再调用 `/group-chat/message/edit` 写入 `new_encrypted_payload`；
   - Chat UI 只触发 group store command，并继续消费 group projection reducer。
+- 已补 Mobile group management 入口：
+  - `groupApi` / `groupStore` 新增 invite / leave / remove member command；
+  - Chat group header 提供成员管理 modal，页面只调用 group store command；
+  - 成员变更仍通过 runtime membership event 触发 group projection refresh 与 E2EE rotation。
 
 ### Step 7: 验证
 
