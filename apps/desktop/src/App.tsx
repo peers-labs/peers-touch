@@ -16,7 +16,6 @@ import {
   scheduleIdle,
 } from './kernel/boot';
 import { installEventStreamBridge, teardownEventStreamBridge } from './services/eventStream';
-import { installSocialChatRealtimeBridge, teardownSocialChatRealtimeBridge } from './services/socialChatRealtime';
 import type { AppState, AppLifecycle } from './types/navigation';
 
 // Critical session-scope runtimes installed during `runtime:critical`.
@@ -81,14 +80,6 @@ function App() {
   useEffect(() => {
     void installEventStreamBridge();
     return () => teardownEventStreamBridge();
-  }, []);
-
-  // Friend-chat realtime ingestion must not depend on the chat page
-  // being mounted; the global stream can deliver messages while the
-  // user is on Search, Settings, or an applet.
-  useEffect(() => {
-    installSocialChatRealtimeBridge();
-    return () => teardownSocialChatRealtimeBridge();
   }, []);
 
   // Reset guard when user successfully returns to ready state,
