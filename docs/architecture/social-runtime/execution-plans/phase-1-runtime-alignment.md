@@ -172,7 +172,9 @@
   - `groupApi.sendMessage` 只发送 `content=''` + `encrypted_payload`，对齐 Station group E2EE invariant；
   - `socialApi.sendSenderKeyDistribution` 只作为 friend-chat type `50` control transport，不进入 visible friend projection；
   - `groupE2eeRuntime.sendEncryptedMessage` 负责 SKDM fanout、group plaintext encrypt、Station send 与 projection ingest；
-  - UI composer 暂不开放，直到 durable SKDM sent/pending ledger 与 `canEncrypt` gate 完成。
+  - `groupE2eeLedger.ts` 使用 Mobile secure storage 记录 per-recipient SKDM `pending/sent` ledger，runtime rotation 会清理 group ledger；
+  - `groupE2eeRuntime.canEncryptGroup` 作为 projection-safe gate，`groupStore` 只暴露 `encryptionReady/sendingGroups` 与 encrypted send command；
+  - Chat group composer 只在 gate ready 后开放，UI 不调用 SKDM、proto crypto schema 或 Tauri crypto command。
 
 ### Step 7: 验证
 
