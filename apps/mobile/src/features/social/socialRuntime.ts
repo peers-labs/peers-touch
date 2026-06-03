@@ -5,6 +5,7 @@ import { startRealtimeStream } from './socialRealtime';
 const RECONCILE_INTERVAL_MS = 30000;
 const TYPING_TTL_MS = 6000;
 const TYPING_SWEEP_INTERVAL_MS = 2000;
+const EXTERNAL_RECONCILE_DEBOUNCE_MS = 1000;
 
 interface PresenceFrame {
   actor_id?: string;
@@ -17,8 +18,36 @@ export interface SocialRuntimeController {
   teardown: () => void;
 }
 
+export type SocialRuntimeExternalEventKind =
+  | 'app-resume'
+  | 'network-online'
+  | 'push'
+  | 'deep-link'
+  | 'notification-tap'
+  | 'native-hint';
+
+export interface SocialRuntimeExternalEvent {
+  kind: SocialRuntimeExternalEventKind;
+  target?: string;
+  sessionUlid?: string;
+  notificationId?: string;
+  reason?: string;
+}
+
+interface ActiveSocialRuntime {
+  sessionKey: string | null;
+  dispatchExternalEvent: (event: SocialRuntimeExternalEvent) => void;
+}
+
+let activeRuntime: ActiveSocialRuntime | null = null;
+
+export function dispatchSocialRuntimeExternalEvent(event: SocialRuntimeExternalEvent) {
+  activeRuntime?.dispatchExternalEvent(event);
+}
+
 export function startSocialRuntime(session: MobileAuthSession, store: SocialState): SocialRuntimeController {
   let cancelled = false;
+  let externalReconcileTimer: number | null = null;
   const abortController = new AbortController();
 
   store.reconcile();
@@ -45,12 +74,31 @@ export function startSocialRuntime(session: MobileAuthSession, store: SocialStat
     onResync: store.reconcile,
   });
 
+  const runtimeRef: ActiveSocialRuntime = {
+    sessionKey: store.sessionKey,
+    dispatchExternalEvent: (event) => {
+      if (cancelled) return;
+
+      if (event.sessionUlid) void store.loadMessages(event.sessionUlid);
+      if (event.notificationId || event.target === 'notification') void store.refreshNotifications();
+
+      if (externalReconcileTimer) return;
+      externalReconcileTimer = window.setTimeout(() => {
+        externalReconcileTimer = null;
+        if (!cancelled) void store.reconcile();
+      }, EXTERNAL_RECONCILE_DEBOUNCE_MS);
+    },
+  };
+  activeRuntime = runtimeRef;
+
   return {
     teardown: () => {
       cancelled = true;
       window.clearInterval(reconcileTimer);
       window.clearInterval(typingSweepTimer);
+      if (externalReconcileTimer) window.clearTimeout(externalReconcileTimer);
       abortController.abort();
+      if (activeRuntime === runtimeRef) activeRuntime = null;
     },
   };
 }
