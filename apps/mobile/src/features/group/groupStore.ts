@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import type { MobileAuthSession } from '../auth/authSession';
 import { SocialApiError } from '../social/socialTypes';
 import type { Group, GroupMember, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
-import { createGroupApiClient, type GroupApiClient } from './groupApi';
+import { createGroupApiClient, type CreateGroupInput, type GroupApiClient, type GroupSettings, type UpdateGroupInput, type UpdateGroupSettingsInput } from './groupApi';
 import { normalizeGroup, normalizeGroupMember, normalizeGroupMessage } from './groupNormalizers';
 import {
   applyGroupDecryptedContentToList,
@@ -19,6 +19,7 @@ export interface GroupState {
   groups: Group[];
   members: Record<string, GroupMember[]>;
   messages: Record<string, GroupMessage[]>;
+  settings: Record<string, GroupSettings>;
   unreadCounts: Record<string, number>;
   e2eeErrors: Record<string, string>;
   encryptionReady: Record<string, boolean>;
@@ -32,11 +33,15 @@ export interface GroupState {
   encryptionPreparer: ((groupUlid: string) => Promise<boolean>) | null;
   bindSession: (session: MobileAuthSession | null) => void;
   reconcile: () => Promise<void>;
+  createGroup: (input: CreateGroupInput) => Promise<string | null>;
+  updateGroup: (groupUlid: string, input: UpdateGroupInput) => Promise<void>;
   refreshGroups: () => Promise<void>;
   refreshUnreadCounts: () => Promise<void>;
   selectGroup: (groupUlid: string | null) => Promise<void>;
   loadMessages: (groupUlid: string) => Promise<void>;
   loadMembers: (groupUlid: string) => Promise<void>;
+  loadSettings: (groupUlid: string) => Promise<void>;
+  updateMySettings: (groupUlid: string, input: UpdateGroupSettingsInput) => Promise<void>;
   inviteMembers: (groupUlid: string, inviteeDids: string[]) => Promise<void>;
   leaveGroup: (groupUlid: string) => Promise<void>;
   removeMember: (groupUlid: string, actorDid: string) => Promise<void>;
@@ -68,6 +73,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   groups: [],
   members: {},
   messages: {},
+  settings: {},
   unreadCounts: {},
   e2eeErrors: {},
   encryptionReady: {},
@@ -112,6 +118,39 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     set({ groups: (payload.groups ?? []).map(normalizeGroup) });
   },
 
+  createGroup: async (input) => {
+    const api = requireApi(get());
+    try {
+      const payload = await api.createGroup(input);
+      if (payload.group) {
+        const group = normalizeGroup(payload.group);
+        set((state) => ({ groups: mergeGroups(state.groups, group) }));
+        return group.ulid;
+      }
+      await get().refreshGroups();
+      return null;
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
+    }
+  },
+
+  updateGroup: async (groupUlid, input) => {
+    const api = requireApi(get());
+    try {
+      const payload = await api.updateGroup(groupUlid, input);
+      if (payload.group) {
+        const group = normalizeGroup(payload.group);
+        set((state) => ({ groups: mergeGroups(state.groups, group) }));
+        return;
+      }
+      await get().refreshGroups();
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
+    }
+  },
+
   refreshUnreadCounts: async () => {
     const api = requireApi(get());
     const groups = get().groups.slice();
@@ -125,7 +164,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   selectGroup: async (groupUlid) => {
     set({ activeGroupUlid: groupUlid });
     if (!groupUlid) return;
-    await Promise.allSettled([get().loadMessages(groupUlid), get().loadMembers(groupUlid)]);
+    await Promise.allSettled([get().loadMessages(groupUlid), get().loadMembers(groupUlid), get().loadSettings(groupUlid)]);
     void get().encryptionPreparer?.(groupUlid);
   },
 
@@ -158,6 +197,30 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
+  loadSettings: async (groupUlid) => {
+    const api = requireApi(get());
+    try {
+      const settings = await api.getMySettings(groupUlid);
+      set((state) => ({
+        settings: { ...state.settings, [groupUlid]: settings },
+      }));
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
+    }
+  },
+
+  updateMySettings: async (groupUlid, input) => {
+    const api = requireApi(get());
+    try {
+      await api.updateMySettings(groupUlid, input);
+      await get().loadSettings(groupUlid);
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
+    }
+  },
+
   inviteMembers: async (groupUlid, inviteeDids) => {
     if (!inviteeDids.length) return;
     const api = requireApi(get());
@@ -178,12 +241,14 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       set((state) => {
         const { [groupUlid]: _members, ...members } = state.members;
         const { [groupUlid]: _messages, ...messages } = state.messages;
+        const { [groupUlid]: _settings, ...settings } = state.settings;
         const { [groupUlid]: _unread, ...unreadCounts } = state.unreadCounts;
         const { [groupUlid]: _ready, ...encryptionReady } = state.encryptionReady;
         return {
           groups: state.groups.filter((group) => group.ulid !== groupUlid),
           members,
           messages,
+          settings,
           unreadCounts,
           encryptionReady,
           activeGroupUlid: state.activeGroupUlid === groupUlid ? null : state.activeGroupUlid,
@@ -332,6 +397,7 @@ function emptyGroupState() {
     groups: [],
     members: {},
     messages: {},
+    settings: {},
     unreadCounts: {},
     e2eeErrors: {},
     encryptionReady: {},
@@ -344,6 +410,13 @@ function emptyGroupState() {
     encryptedEditor: null,
     encryptionPreparer: null,
   };
+}
+
+function mergeGroups(groups: Group[], incoming: Group): Group[] {
+  const exists = groups.some((group) => group.ulid === incoming.ulid);
+  return exists
+    ? groups.map((group) => (group.ulid === incoming.ulid ? { ...group, ...incoming } : group))
+    : [incoming, ...groups];
 }
 
 function requireApi(state: GroupState): GroupApiClient {

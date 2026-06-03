@@ -828,6 +828,22 @@ select,
   gap: 14px;
 }
 
+.group-create-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.group-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.9);
+}
+
 .group-management-panel .ant-list-item {
   padding-inline: 0 !important;
 }
