@@ -87,8 +87,8 @@ Phase B: Rust kernel
 Phase C: Web/runtime
 
 - `features/group/groupE2eeBridge.ts`：typed Rust command adapter。（已落地；Web bridge 使用 generated TS proto 负责 `GroupCiphertext` / `SenderKeyDistributionMessage` bytes 编解。）
-- `features/group/groupE2eeRuntime.ts`：SKDM distribution、consume、repair、rotation。（已落地 encrypted-payload decrypt repair owner；SKDM distribution/consume 与 rotation 继续接入 social runtime。）
-- `features/social/socialRuntime.ts`：friend type `50` control routing 与 group membership rotation hook。
+- `features/group/groupE2eeRuntime.ts`：SKDM distribution、consume、repair、rotation。（已落地 encrypted-payload decrypt repair owner；已接入 type `50` SKDM consume 与 membership rotation hook；SKDM distribution/sent ledger 继续闭环。）
+- `features/social/socialRuntime.ts`：friend type `50` control routing 与 group membership rotation hook。（已接入；runtime 只路由，不写 decrypted projection。）
 - `features/group/groupStore.ts`：接收 decrypted display projection，不保存 crypto internals。（已新增 decrypted message projection 与 E2EE error projection。）
 
 Phase D: UX unlock
@@ -102,8 +102,8 @@ Phase D: UX unlock
 - `pnpm --dir apps/mobile run check:web` 通过，且 guardrail 能阻止 UI/page 解析 group crypto proto。
 - `pnpm --dir apps/mobile run check:rust` 通过，Rust command 已注册且无 dead command。
 - 发送群消息时 Station request body `content` 为空，`encrypted_payload` 非空。
-- 未收到 SKDM 的设备显示 encrypted-waiting projection；收到 SKDM 后 runtime repair 自动恢复明文显示。
-- 成员移除后，本设备 rotate sender chain，后续消息使用新 `sender_key_id`。
+- 未收到 SKDM 的设备显示 encrypted-waiting projection；收到 SKDM 后 runtime repair 自动恢复明文显示。（consume + repair 已接入，UX projection 继续完善。）
+- 成员移除后，本设备 rotate sender chain，后续消息使用新 `sender_key_id`。（rotation hook 已接入，send path 后续验证 sender_key_id。）
 - 页面没有 `refreshGroups/loadMessages/reconcile` freshness patch，也没有 crypto command 调用。
 
 ## 7. 反模式

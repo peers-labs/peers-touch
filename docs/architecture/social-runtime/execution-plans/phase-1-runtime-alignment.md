@@ -158,6 +158,11 @@
   - 周期扫描 group projection 中的 encrypted payload，调用 bridge decrypt，成功后写入 decrypted display projection；
   - `groupStore` 只新增 `applyDecryptedMessage` / `e2eeErrors` projection，不持有 sender chain 或 crypto internals；
   - 页面仍只消费 display projection，不调用 crypto bridge。
+- 已接入 group E2EE runtime orchestration 第一段：
+  - `groupRuntime` 暴露同一个 E2EE controller 给 `socialRuntime`，保持 runtime owner 单一；
+  - friend control message type `50` 由 `socialRuntime` 路由到 `groupE2eeRuntime.consumeSkdmControlMessage`，不会进入 visible friend projection；
+  - `GroupMembershipChange.REMOVED/LEFT` 由 runtime 触发 `rotateAfterMembershipChange`，避免 UI/store 直接调用 crypto；
+  - friend/group normalizer 已归一化 Station JSON base64 `encryptedPayload`，list/realtime 两条路径都可承载 generated proto bytes。
 
 ### Step 7: 验证
 

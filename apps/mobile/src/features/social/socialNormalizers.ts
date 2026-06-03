@@ -79,7 +79,7 @@ export function normalizeMessage(raw: Partial<FriendChatMessage>): FriendChatMes
     threadRootUlid: String(raw.threadRootUlid ?? record.thread_root_ulid ?? ''),
     recalled: Boolean(raw.recalled ?? false),
     editedAt: (raw.editedAt ?? record.edited_at) as FriendChatMessage['editedAt'],
-    encryptedPayload: raw.encryptedPayload,
+    encryptedPayload: bytesValue(raw.encryptedPayload ?? record.encryptedPayload ?? record.encrypted_payload),
   };
 }
 
@@ -230,6 +230,24 @@ function normalizeNumberEnum(value: unknown): number {
     if (value.endsWith('TASK')) return 4;
   }
   return 0;
+}
+
+function bytesValue(value: unknown): Uint8Array {
+  if (value instanceof Uint8Array) return value;
+  if (Array.isArray(value)) return new Uint8Array(value.map(Number));
+  if (typeof value === 'string' && value.trim()) return base64ToBytes(value.trim());
+  return new Uint8Array();
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  try {
+    const binary = globalThis.atob(value);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return bytes;
+  } catch {
+    return new Uint8Array();
+  }
 }
 
 function normalizeMetadata(value: unknown): Record<string, string> {

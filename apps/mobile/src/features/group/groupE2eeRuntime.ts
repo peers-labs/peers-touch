@@ -1,12 +1,14 @@
 import type { MobileAuthSession } from '../auth/authSession';
 import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
-import { decryptGroupPayload } from './groupE2eeBridge';
+import { consumeGroupSkdm, decryptGroupPayload, rotateGroupSenderKey } from './groupE2eeBridge';
 import type { GroupState } from './groupStore';
 
 const GROUP_E2EE_REPAIR_INTERVAL_MS = 5000;
 
 export interface GroupE2eeRuntimeController {
+  consumeSkdmControlMessage: (senderDid: string, skdmBytes: Uint8Array) => Promise<boolean>;
   repairEncryptedMessages: () => Promise<void>;
+  rotateAfterMembershipChange: (groupUlid: string, affectedActorDid: string) => Promise<boolean>;
   teardown: () => void;
 }
 
@@ -33,7 +35,30 @@ export function startGroupE2eeRuntime(
   }, GROUP_E2EE_REPAIR_INTERVAL_MS);
 
   return {
+    consumeSkdmControlMessage: async (senderDid, skdmBytes) => {
+      if (cancelled || !senderDid || !skdmBytes.byteLength) return false;
+      try {
+        await consumeGroupSkdm(session, senderDid, skdmBytes);
+        getStore().setE2eeError(skdmErrorKey(senderDid), null);
+        await repairEncryptedMessages();
+        return true;
+      } catch (error) {
+        getStore().setE2eeError(skdmErrorKey(senderDid), errorMessage(error));
+        return false;
+      }
+    },
     repairEncryptedMessages,
+    rotateAfterMembershipChange: async (groupUlid, affectedActorDid) => {
+      if (cancelled || !groupUlid || affectedActorDid === actorDidForSession(session)) return false;
+      try {
+        await rotateGroupSenderKey(session, groupUlid);
+        getStore().setE2eeError(rotationErrorKey(groupUlid), null);
+        return true;
+      } catch (error) {
+        getStore().setE2eeError(rotationErrorKey(groupUlid), errorMessage(error));
+        return false;
+      }
+    },
     teardown: () => {
       cancelled = true;
       window.clearInterval(repairTimer);
@@ -76,6 +101,18 @@ function shouldRepairMessage(message: GroupMessage): message is GroupMessage & {
   encryptedPayload: Uint8Array;
 } {
   return Boolean(message.ulid && !message.recalled && !message.content && message.encryptedPayload?.byteLength);
+}
+
+function actorDidForSession(session: MobileAuthSession): string {
+  return String(session.actor?.id || session.actor?.actorId || session.actor?.actor_id || '').trim();
+}
+
+function skdmErrorKey(senderDid: string): string {
+  return `skdm:${senderDid}`;
+}
+
+function rotationErrorKey(groupUlid: string): string {
+  return `rotation:${groupUlid}`;
 }
 
 function errorMessage(error: unknown): string {
