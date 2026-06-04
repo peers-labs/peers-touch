@@ -303,7 +303,10 @@ pub fn applets_invoke(
 
 /// Resolve the per-applet storage file path.
 fn applet_storage_path(applet_id: &str, data_dir: &Path) -> PathBuf {
-    data_dir.join("applets").join(applet_id).join("storage.json")
+    data_dir
+        .join("applets")
+        .join(applet_id)
+        .join("storage.json")
 }
 
 /// Read the JSON object from the per-applet storage file.
@@ -324,8 +327,13 @@ fn read_storage_map(path: &Path) -> Result<HashMap<String, Value>, String> {
 /// Atomically write the JSON map back to the storage file.
 fn write_storage_map(path: &Path, map: &HashMap<String, Value>) -> Result<(), String> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create storage directory {}: {}", parent.display(), e))?;
+        fs::create_dir_all(parent).map_err(|e| {
+            format!(
+                "Failed to create storage directory {}: {}",
+                parent.display(),
+                e
+            )
+        })?;
     }
     let content = serde_json::to_string_pretty(map)
         .map_err(|e| format!("Failed to serialize storage map: {}", e))?;
@@ -442,7 +450,9 @@ fn handle_network(action: Option<&str>, params: Option<Value>) -> Result<Value, 
                 .headers()
                 .iter()
                 .filter_map(|(k, v)| {
-                    v.to_str().ok().map(|val| (k.as_str().to_string(), val.to_string()))
+                    v.to_str()
+                        .ok()
+                        .map(|val| (k.as_str().to_string(), val.to_string()))
                 })
                 .collect();
 
@@ -477,24 +487,31 @@ fn handle_config(
             let key = extract_string_param(&params, "key")
                 .ok_or_else(|| "config.get requires params.key (string)".to_string())?;
 
-            let config_path = data_dir
-                .join("applets")
-                .join(applet_id)
-                .join("config.json");
+            let config_path = data_dir.join("applets").join(applet_id).join("config.json");
 
             if !config_path.exists() {
                 return Ok(json!({ "value": null }));
             }
 
-            let content = fs::read_to_string(&config_path)
-                .map_err(|e| format!("Failed to read config file {}: {}", config_path.display(), e))?;
+            let content = fs::read_to_string(&config_path).map_err(|e| {
+                format!(
+                    "Failed to read config file {}: {}",
+                    config_path.display(),
+                    e
+                )
+            })?;
 
             if content.trim().is_empty() {
                 return Ok(json!({ "value": null }));
             }
 
-            let map: HashMap<String, Value> = serde_json::from_str(&content)
-                .map_err(|e| format!("Failed to parse config file {}: {}", config_path.display(), e))?;
+            let map: HashMap<String, Value> = serde_json::from_str(&content).map_err(|e| {
+                format!(
+                    "Failed to parse config file {}: {}",
+                    config_path.display(),
+                    e
+                )
+            })?;
 
             let value = map.get(&key).cloned().unwrap_or(Value::Null);
             Ok(json!({ "value": value }))

@@ -38,6 +38,7 @@ message StreamEvent {
     Resync                resync                   = 16;
     MessageMutation       mutation                 = 17;
     GroupMembershipChange group_membership_change   = 18;
+    ConversationSettingsChanged conversation_settings_changed = 19;
   }
 }
 
@@ -197,6 +198,24 @@ message GroupMembershipChange {
     KIND_ADDED = 1;
     KIND_REMOVED = 2; // an admin kicked them
     KIND_LEFT = 3;    // they left voluntarily
+    KIND_UPDATED = 4; // role or moderation state changed
+  }
+}
+
+// ConversationSettingsChanged invalidates the local per-conversation
+// preference projection for one actor. Station emits it to the actor's
+// own stream after mutating settings so the same account's open
+// Desktop/Mobile sessions converge without waiting for restart.
+message ConversationSettingsChanged {
+  string container_ulid = 1; // friend session_ulid or group_ulid
+  Kind kind = 2;
+  string actor_id = 3;
+  int64 changed_ts_unix_ms = 4;
+
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    FRIEND = 1;
+    GROUP = 2;
   }
 }
 

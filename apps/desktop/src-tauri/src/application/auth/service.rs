@@ -218,7 +218,9 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
         Err(error) => return error,
     };
 
-    let tokens = value_field(&data, "tokens", "tokens").cloned().unwrap_or(Value::Null);
+    let tokens = value_field(&data, "tokens", "tokens")
+        .cloned()
+        .unwrap_or(Value::Null);
     let token = string_field(&tokens, "access_token", "accessToken");
     if token.is_empty() {
         return AppResult::fail(
@@ -229,7 +231,9 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
     }
 
     // Extract actor identity from the station response
-    let actor = value_field(&data, "actor", "actor").cloned().unwrap_or(Value::Null);
+    let actor = value_field(&data, "actor", "actor")
+        .cloned()
+        .unwrap_or(Value::Null);
     let actor_id = string_field(&actor, "id", "id");
 
     let name = string_field(&actor, "display_name", "displayName");

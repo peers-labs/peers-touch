@@ -384,6 +384,9 @@ fn get_group_settings_response_to_value(resp: &model::chat::GetGroupSettingsResp
         "isPinned": resp.is_pinned,
         "myNickname": resp.my_nickname,
         "showMemberNickname": resp.show_member_nickname,
+        "alertEnabled": resp.alert_enabled,
+        "background": if resp.background.is_empty() { "default" } else { resp.background.as_str() },
+        "clearedAt": resp.cleared_at_unix_ms,
     })
 }
 
@@ -457,6 +460,9 @@ fn settings_to_update_request(
         is_muted: None,
         is_pinned: None,
         show_member_nickname: None,
+        alert_enabled: None,
+        background: None,
+        cleared_at_unix_ms: None,
     };
     if let Some(v) = obj
         .get("is_muted")
@@ -478,6 +484,23 @@ fn settings_to_update_request(
         .and_then(|x| x.as_bool())
     {
         req.show_member_nickname = Some(v);
+    }
+    if let Some(v) = obj
+        .get("alert_enabled")
+        .or_else(|| obj.get("alertEnabled"))
+        .and_then(|x| x.as_bool())
+    {
+        req.alert_enabled = Some(v);
+    }
+    if let Some(v) = obj.get("background").and_then(|x| x.as_str()) {
+        req.background = Some(v.to_string());
+    }
+    if let Some(v) = obj
+        .get("cleared_at_unix_ms")
+        .or_else(|| obj.get("clearedAt"))
+        .and_then(|x| x.as_i64())
+    {
+        req.cleared_at_unix_ms = Some(v);
     }
     Ok(req)
 }

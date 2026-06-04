@@ -626,7 +626,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 .map(|a| {
                     json!({
                         "id": a.id, "username": a.username, "displayName": a.display_name,
-						"email": a.email, "actorId": a.actor_id.to_string(), "avatar": a.avatar,
+                        "email": a.email, "actorId": a.actor_id.to_string(), "avatar": a.avatar,
                     })
                 })
                 .collect();
@@ -2136,55 +2136,112 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         // Memory (state-dependent Station API)
         // =================================================================
         "memory_list" => {
-            let input = match parse_args::<MemoryListInput>(args) { Ok(v) => v, Err(e) => return e };
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let input = match parse_args::<MemoryListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_list(input, &token))
         }
         "memory_get" => {
-            let input = match parse_args::<MemoryIdInput>(args) { Ok(v) => v, Err(e) => return e };
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let input = match parse_args::<MemoryIdInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_get(input, &token))
         }
         "memory_delete" => {
-            let input = match parse_args::<MemoryIdInput>(args) { Ok(v) => v, Err(e) => return e };
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let input = match parse_args::<MemoryIdInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_delete(input, &token))
         }
         "memory_search" => {
-            let input = match parse_args::<MemorySearchInput>(args) { Ok(v) => v, Err(e) => return e };
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let input = match parse_args::<MemorySearchInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_search(input, &token))
         }
         "memory_persona" => {
-            let input = match parse_args::<MemoryPersonaInput>(args) { Ok(v) => v, Err(e) => return e };
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let input = match parse_args::<MemoryPersonaInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_persona(input, &token))
         }
         "memory_stats" => {
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_stats(&token))
         }
         "memory_events" => {
-            let input = match parse_args::<MemoryEventsInput>(args) { Ok(v) => v, Err(e) => return e };
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let input = match parse_args::<MemoryEventsInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_events(input, &token))
         }
         "memory_export" => {
-            let input = match parse_args::<MemoryExportInput>(args) { Ok(v) => v, Err(e) => return e };
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let input = match parse_args::<MemoryExportInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_export(input, &token))
         }
         "memory_import" => {
-            let input = match parse_args::<MemoryImportInput>(args) { Ok(v) => v, Err(e) => return e };
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let input = match parse_args::<MemoryImportInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_import(input, &token))
         }
         "memory_embedding_status" => {
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_embedding_status(&token))
         }
         "memory_reembed" => {
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_reembed(&token))
         }
 
@@ -2251,6 +2308,77 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Some(json!({"participant_did": input.participant_did})),
             ) {
                 Ok(data) => to_json(to_stub("friend_chat_create_session", data)),
+                Err(e) => e,
+            }
+        }
+        "friend_chat_get_settings" => {
+            let input = match parse_args::<FriendConversationSettingsInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            if input.session_ulid.trim().is_empty() {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InvalidArgument,
+                    "session_ulid is required",
+                    None,
+                ));
+            }
+            let query = vec![("session_ulid", input.session_ulid)];
+            match station_request_json(
+                Method::GET,
+                "/friend-chat/settings",
+                &token,
+                Some(&query),
+                None,
+            ) {
+                Ok(data) => to_json(to_stub("friend_chat_get_settings", data)),
+                Err(e) => e,
+            }
+        }
+        "friend_chat_update_settings" => {
+            let input = match parse_args::<FriendConversationSettingsUpdateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            if input.session_ulid.trim().is_empty() {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InvalidArgument,
+                    "session_ulid is required",
+                    None,
+                ));
+            }
+            let mut body = json!({"session_ulid": input.session_ulid});
+            if let Some(v) = input.is_muted {
+                body["is_muted"] = json!(v);
+            }
+            if let Some(v) = input.is_pinned {
+                body["is_pinned"] = json!(v);
+            }
+            if let Some(v) = input.alert_enabled {
+                body["alert_enabled"] = json!(v);
+            }
+            if let Some(v) = input.background {
+                body["background"] = json!(v);
+            }
+            if let Some(v) = input.cleared_at_unix_ms {
+                body["cleared_at_unix_ms"] = json!(v);
+            }
+            match station_request_json(
+                Method::PUT,
+                "/friend-chat/settings",
+                &token,
+                None,
+                Some(body),
+            ) {
+                Ok(data) => to_json(to_stub("friend_chat_update_settings", data)),
                 Err(e) => e,
             }
         }
@@ -2557,6 +2685,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 opk_ids: input.opk_ids,
                 opk_pubs: input.opk_pubs,
                 device_id,
+                supported_versions: vec![0, 1],
             };
             match station_client::request_proto::<
                 model::key_exchange::UploadKeyBundleRequest,
@@ -2862,13 +2991,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             }
         }
         "friend_chat_block_user" => {
-            let target_did = args
-                .get("target_did")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string();
-            if target_did.trim().is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
+            let input = match parse_args::<FriendChatBlockUserInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.target_did.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
                     ErrorCode::InvalidArgument,
                     "target_did is required",
                     None,
@@ -2878,16 +3006,116 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            match station_request_json(
+            let req = model::chat::BlockUserRequest {
+                target_did: input.target_did,
+            };
+            let resp = match station_client::request_proto::<
+                model::chat::BlockUserRequest,
+                model::chat::BlockUserResponse,
+            >(
                 Method::POST,
                 "/friend-chat/block",
                 &token,
                 None,
-                Some(json!({"target_did": target_did})),
+                Some(&req),
             ) {
-                Ok(data) => to_json(to_stub("friend_chat_block_user", data)),
-                Err(e) => e,
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "friend_chat_unblock_user" => {
+            let input = match parse_args::<FriendChatBlockUserInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.target_did.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "target_did is required",
+                    None,
+                ));
             }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let req = model::chat::UnblockUserRequest {
+                target_did: input.target_did,
+            };
+            let resp = match station_client::request_proto::<
+                model::chat::UnblockUserRequest,
+                model::chat::UnblockUserResponse,
+            >(
+                Method::DELETE,
+                "/friend-chat/block",
+                &token,
+                None,
+                Some(&req),
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "friend_chat_list_blocked_users" => {
+            let input = match parse_args::<FriendChatListBlockedUsersInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let limit = input.limit.unwrap_or(100).clamp(1, 100);
+            let offset = input.offset.unwrap_or(0).max(0);
+            let query = vec![("limit", limit.to_string()), ("offset", offset.to_string())];
+            let resp = match station_client::request_proto::<
+                (),
+                model::chat::ListBlockedUsersResponse,
+            >(
+                Method::GET,
+                "/friend-chat/blocked",
+                &token,
+                Some(&query),
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "friend_chat_get_friendship_status" => {
+            let input = match parse_args::<FriendChatBlockUserInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.target_did.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "target_did is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let query = vec![("target_did", input.target_did)];
+            let resp = match station_client::request_proto::<
+                (),
+                model::chat::GetFriendshipStatusResponse,
+            >(
+                Method::GET,
+                "/friend-chat/friendship/status",
+                &token,
+                Some(&query),
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
         }
 
         // =================================================================
@@ -3305,6 +3533,37 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Err(e) => e,
             }
         }
+        "group_chat_update_member" => {
+            let input = match parse_args::<GroupUpdateMemberInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let muted_until = input.muted_until_unix_ms.map(|millis| prost_types::Timestamp {
+                seconds: millis / 1000,
+                nanos: ((millis % 1000) * 1_000_000) as i32,
+            });
+            let req = model::chat::UpdateMemberRequest {
+                group_ulid: input.group_ulid,
+                actor_did: input.member_did,
+                role: input.role,
+                muted: input.muted,
+                muted_until,
+            };
+            let resp = match station_client::request_proto::<
+                model::chat::UpdateMemberRequest,
+                model::chat::UpdateMemberResponse,
+            >(
+                Method::PUT, "/group-chat/member/update", &token, None, Some(&req)
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
         "group_chat_recall_message" => {
             let input = match parse_args::<GroupMessageActionInput>(args) {
                 Ok(v) => v,
@@ -3473,6 +3732,15 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             }
             if let Some(v) = input.show_member_nickname {
                 body["show_member_nickname"] = json!(v);
+            }
+            if let Some(v) = input.alert_enabled {
+                body["alert_enabled"] = json!(v);
+            }
+            if let Some(v) = input.background {
+                body["background"] = json!(v);
+            }
+            if let Some(v) = input.cleared_at_unix_ms {
+                body["cleared_at_unix_ms"] = json!(v);
             }
             match station_request_json(
                 Method::PUT,

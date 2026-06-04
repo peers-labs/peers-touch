@@ -1,4 +1,5 @@
 import type { MobileAuthSession } from '../auth/authSession';
+import { FriendshipStatus as FriendshipStatusCode } from '../../gen/proto/domain/chat/chat_pb';
 import { FriendMessageType } from '../../gen/proto/domain/chat/friend_chat_pb';
 import {
   SocialApiError,
@@ -7,6 +8,7 @@ import {
   type FriendChatMessage,
   type FriendChatSession,
   type FriendRequest,
+  type FriendshipStatus,
   type PeerProfile,
   type SocialNotification,
   type StationErrorEnvelope,
@@ -14,7 +16,7 @@ import {
   type UnreadCounts,
 } from './socialTypes';
 
-type HttpMethod = 'GET' | 'POST';
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
 interface SocialRequestOptions {
   method: HttpMethod;
@@ -33,6 +35,12 @@ interface ListSessionsPayload {
   total?: number;
 }
 
+interface ListBlockedUsersPayload {
+  blockedUsers?: Array<{ actorId?: string; actor_id?: string; status?: number }>;
+  blocked_users?: Array<{ actorId?: string; actor_id?: string; status?: number }>;
+  total?: number;
+}
+
 interface ListMessagesPayload {
   messages?: FriendChatMessage[];
   hasMore?: boolean;
@@ -43,6 +51,26 @@ interface SearchMessagesPayload {
   messages?: FriendChatMessage[];
   total?: number;
 }
+
+export interface FriendConversationSettings {
+  sessionUlid: string;
+  isMuted: boolean;
+  isPinned: boolean;
+  alertEnabled: boolean;
+  background: ChatBackgroundId;
+  clearedAt: number;
+}
+
+export interface UpdateFriendConversationSettingsInput {
+  isMuted?: boolean;
+  isPinned?: boolean;
+  alertEnabled?: boolean;
+  background?: ChatBackgroundId;
+  clearedAt?: number;
+}
+
+export const CHAT_BACKGROUND_OPTIONS = ['default', 'paper', 'mint', 'dusk', 'calm', 'graphite'] as const;
+export type ChatBackgroundId = (typeof CHAT_BACKGROUND_OPTIONS)[number];
 
 interface ListNotificationsPayload {
   notifications?: SocialNotification[];
@@ -66,6 +94,12 @@ export interface SocialApiClient {
   sendFriendRequest: (receiverDid: string, message?: string) => Promise<{ request?: FriendRequest }>;
   listSessions: (limit?: number, offset?: number) => Promise<ListSessionsPayload>;
   createSession: (participantDid: string) => Promise<{ session?: FriendChatSession; created?: boolean }>;
+  getConversationSettings: (sessionUlid: string) => Promise<FriendConversationSettings>;
+  updateConversationSettings: (sessionUlid: string, input: UpdateFriendConversationSettingsInput) => Promise<FriendConversationSettings>;
+  blockUser: (targetDid: string) => Promise<Record<string, unknown>>;
+  unblockUser: (targetDid: string) => Promise<Record<string, unknown>>;
+  listBlockedUsers: (limit?: number, offset?: number) => Promise<FriendshipStatus[]>;
+  getFriendshipStatus: (targetDid: string) => Promise<FriendshipStatus>;
   listMessages: (sessionUlid: string, beforeUlid?: string, limit?: number) => Promise<ListMessagesPayload>;
   searchMessages: (query: string, sessionUlid?: string, limit?: number, offset?: number) => Promise<SearchMessagesPayload>;
   sendMessage: (sessionUlid: string, receiverDid: string, content: string) => Promise<{ message?: FriendChatMessage }>;
@@ -157,6 +191,54 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
         path: '/friend-chat/session/create',
         body: { participant_did: participantDid },
       }),
+    getConversationSettings: (sessionUlid) =>
+      request<{ settings?: unknown }>({
+        method: 'GET',
+        path: '/friend-chat/settings',
+        query: { session_ulid: sessionUlid },
+      }).then((payload) => normalizeFriendConversationSettings(payload.settings ?? payload)),
+    updateConversationSettings: (sessionUlid, input) =>
+      request<{ settings?: unknown }>({
+        method: 'PUT',
+        path: '/friend-chat/settings',
+        body: {
+          session_ulid: sessionUlid,
+          ...(input.isMuted !== undefined ? { is_muted: input.isMuted } : {}),
+          ...(input.isPinned !== undefined ? { is_pinned: input.isPinned } : {}),
+          ...(input.alertEnabled !== undefined ? { alert_enabled: input.alertEnabled } : {}),
+          ...(input.background !== undefined ? { background: input.background } : {}),
+          ...(input.clearedAt !== undefined ? { cleared_at_unix_ms: input.clearedAt } : {}),
+        },
+      }).then((payload) => normalizeFriendConversationSettings(payload.settings ?? payload)),
+    blockUser: (targetDid) =>
+      request({
+        method: 'POST',
+        path: '/friend-chat/block',
+        body: { target_did: targetDid },
+      }),
+    unblockUser: (targetDid) =>
+      request({
+        method: 'DELETE',
+        path: '/friend-chat/block',
+        body: { target_did: targetDid },
+      }),
+    listBlockedUsers: (limit = 100, offset = 0) =>
+      request<ListBlockedUsersPayload>({
+        method: 'GET',
+        path: '/friend-chat/blocked',
+        query: { limit, offset },
+      }).then((payload) => {
+        const blockedUsers = payload.blockedUsers ?? payload.blocked_users ?? [];
+        return blockedUsers
+          .map((item) => normalizeFriendshipStatus({ friend: item }))
+          .filter((item) => item.targetDid);
+      }),
+    getFriendshipStatus: (targetDid) =>
+      request<{ friend?: { actorId?: string; actor_id?: string; status?: number } }>({
+        method: 'GET',
+        path: '/friend-chat/friendship/status',
+        query: { target_did: targetDid },
+      }).then((payload) => normalizeFriendshipStatus(payload, targetDid)),
     listMessages: (sessionUlid, beforeUlid, limit = 50) =>
       request<ListMessagesPayload>({
         method: 'GET',
@@ -269,6 +351,36 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
         path: '/actor/federation/resolve',
         query: { handle },
       }),
+  };
+}
+
+function normalizeFriendConversationSettings(payload: unknown): FriendConversationSettings {
+  const record = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>;
+  return {
+    sessionUlid: String(record.sessionUlid ?? record.session_ulid ?? ''),
+    isMuted: Boolean(record.isMuted ?? record.is_muted),
+    isPinned: Boolean(record.isPinned ?? record.is_pinned),
+    alertEnabled: (record.alertEnabled ?? record.alert_enabled) !== false,
+    background: normalizeChatBackgroundId(record.background),
+    clearedAt: Number(record.clearedAtUnixMs ?? record.cleared_at_unix_ms ?? 0),
+  };
+}
+
+export function normalizeChatBackgroundId(value: unknown): ChatBackgroundId {
+  if (typeof value === 'string' && (CHAT_BACKGROUND_OPTIONS as readonly string[]).includes(value)) {
+    return value as ChatBackgroundId;
+  }
+  return 'default';
+}
+
+function normalizeFriendshipStatus(
+  payload: { friend?: { actorId?: string; actor_id?: string; status?: number } },
+  fallbackTargetDid = '',
+): FriendshipStatus {
+  const friend = payload.friend;
+  return {
+    targetDid: String(friend?.actorId ?? friend?.actor_id ?? fallbackTargetDid),
+    blocked: Number(friend?.status ?? 0) === FriendshipStatusCode.BLOCKED,
   };
 }
 

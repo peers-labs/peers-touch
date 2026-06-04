@@ -5,6 +5,7 @@ import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import { FriendChatMessageSchema } from '../../gen/proto/domain/chat/friend_chat_pb';
 import type { FriendChatMessage as ProtoFriendChatMessage } from '../../gen/proto/domain/chat/friend_chat_pb';
 import {
+  ConversationSettingsChanged_Kind,
   GroupMembershipChange_Kind,
   MessageMutation_Kind,
   StreamEventSchema,
@@ -27,7 +28,8 @@ export type RealtimeWireEvent =
   }
   | { kind: 'typing'; sessionUlid: string; fromActorId: string; typing: boolean }
   | { kind: 'presence'; actorId: string; online: boolean }
-  | { kind: 'group-membership'; groupUlid: string; actorDid: string; membershipKind: 'ADDED' | 'REMOVED' | 'LEFT' }
+  | { kind: 'group-membership'; groupUlid: string; actorDid: string; membershipKind: GroupMembershipKind }
+  | { kind: 'settings-changed'; conversationKind: 'friend' | 'group'; containerUlid: string }
   | { kind: 'resync' };
 
 export function decodeRealtimeSseChunk(chunk: string): RealtimeWireEvent[] {
@@ -91,6 +93,15 @@ function decodeRealtimeEvent(bytes: Uint8Array): RealtimeWireEvent | null {
       groupUlid: frame.value.groupUlid,
       actorDid: frame.value.actorDid,
       membershipKind,
+    };
+  }
+  if (frame.case === 'conversationSettingsChanged') {
+    const conversationKind = conversationSettingsKindFromEnum(frame.value.kind);
+    if (!conversationKind || !frame.value.containerUlid) return null;
+    return {
+      kind: 'settings-changed',
+      conversationKind,
+      containerUlid: frame.value.containerUlid,
     };
   }
   if (frame.case === 'resync') return { kind: 'resync' };
@@ -178,10 +189,19 @@ function mutationKindFromEnum(value: number): MessageMutationKind | null {
   return null;
 }
 
-function groupMembershipKindFromEnum(value: number): 'ADDED' | 'REMOVED' | 'LEFT' | null {
+export type GroupMembershipKind = 'ADDED' | 'REMOVED' | 'LEFT' | 'UPDATED';
+
+function groupMembershipKindFromEnum(value: number): GroupMembershipKind | null {
   if (value === GroupMembershipChange_Kind.ADDED) return 'ADDED';
   if (value === GroupMembershipChange_Kind.REMOVED) return 'REMOVED';
   if (value === GroupMembershipChange_Kind.LEFT) return 'LEFT';
+  if (value === GroupMembershipChange_Kind.UPDATED) return 'UPDATED';
+  return null;
+}
+
+function conversationSettingsKindFromEnum(value: number): 'friend' | 'group' | null {
+  if (value === ConversationSettingsChanged_Kind.FRIEND) return 'friend';
+  if (value === ConversationSettingsChanged_Kind.GROUP) return 'group';
   return null;
 }
 

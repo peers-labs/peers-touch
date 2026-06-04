@@ -126,7 +126,7 @@ export type RealtimeMessageMutationKind = 'RECALL' | 'EDIT' | 'DELETE';
  * Group roster change kind, mirrors `GroupMembershipChange.Kind` on the
  * wire. `KIND_UNSPECIFIED` (enum 0) is dropped at the dispatch boundary.
  */
-export type RealtimeGroupMembershipChangeKind = 'ADDED' | 'REMOVED' | 'LEFT';
+export type RealtimeGroupMembershipChangeKind = 'ADDED' | 'REMOVED' | 'LEFT' | 'UPDATED';
 
 export interface RealtimeGroupMembershipChangePayload {
   /** Monotonic SSE envelope id (Last-Event-ID cursor). */
@@ -136,6 +136,14 @@ export interface RealtimeGroupMembershipChangePayload {
   groupUlid: string;
   actorDid: string;
   kind: RealtimeGroupMembershipChangeKind;
+  changedTsUnixMs: number;
+}
+
+export interface RealtimeConversationSettingsChangedPayload {
+  eventId: string;
+  conversationKind: 'friend' | 'group';
+  containerUlid: string;
+  actorId: string;
   changedTsUnixMs: number;
 }
 
@@ -199,6 +207,7 @@ export interface EventPayloadMap {
   [EVENT.REALTIME_TYPING_STATE]: RealtimeTypingStatePayload;
   [EVENT.REALTIME_MESSAGE_MUTATION]: RealtimeMessageMutationPayload;
   [EVENT.REALTIME_GROUP_MEMBERSHIP_CHANGE]: RealtimeGroupMembershipChangePayload;
+  [EVENT.REALTIME_CONVERSATION_SETTINGS_CHANGED]: RealtimeConversationSettingsChangedPayload;
   [EVENT.GROUP_SKDM_INSTALLED]: GroupSkdmInstalledPayload;
 }
 

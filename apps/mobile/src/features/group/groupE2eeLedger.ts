@@ -1,3 +1,5 @@
+import { safeStorageKey } from '@peers-touch/client-storage';
+
 import type { MobileAuthSession } from '../auth/authSession';
 import { getSecureStorageValue, setSecureStorageValue } from '../../services/mobileCommands';
 
@@ -117,7 +119,7 @@ function emptySnapshot(): SkdmLedgerSnapshot {
 
 function ledgerStorageKey(session: MobileAuthSession): string {
   const actorDid = String(session.actor?.id || session.actor?.actorId || session.actor?.actor_id || '').trim();
-  return `${LEDGER_KEY_PREFIX}:${stableKeyPart(session.stationUrl)}:${stableKeyPart(actorDid || session.sessionId)}`;
+  return safeStorageKey([LEDGER_KEY_PREFIX, stableKeyPart(session.stationUrl), stableKeyPart(actorDid || session.sessionId)]);
 }
 
 function stableKeyPart(value: string): string {

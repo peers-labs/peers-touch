@@ -1,7 +1,8 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import enCommon from '../../../../packages/locales/en/common.json';
 import zhCommon from '../../../../packages/locales/zh-CN/common.json';
+import { createMobileAppStorageRuntime } from '../storage/mobileClientStorage';
 
 export type MobileLanguage = 'en' | 'zh-CN';
 
@@ -43,12 +44,22 @@ export function MobileI18nProvider({ children }: { children: ReactNode }) {
       languages,
       setLanguage: (nextLanguage) => {
         setLanguageState(nextLanguage);
-        window.localStorage.setItem(MOBILE_LANGUAGE_KEY, nextLanguage);
+        void createMobileAppStorageRuntime().repositories.chatPreferences.write(MOBILE_LANGUAGE_KEY, { language: nextLanguage });
       },
       t: (key, params) => interpolate(resources[language][key] ?? resources.en[key] ?? key, params),
     }),
     [language],
   );
+
+  useEffect(() => {
+    let active = true;
+    void readStoredLanguage().then((stored) => {
+      if (active && stored) setLanguageState(stored);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return <MobileI18nContext.Provider value={value}>{children}</MobileI18nContext.Provider>;
 }
@@ -60,10 +71,13 @@ export function useMobileI18n() {
 }
 
 function detectInitialLanguage(): MobileLanguage {
-  const stored = window.localStorage.getItem(MOBILE_LANGUAGE_KEY);
-  if (stored === 'en' || stored === 'zh-CN') return stored;
-
   return navigator.language.startsWith('zh') ? 'zh-CN' : 'en';
+}
+
+async function readStoredLanguage(): Promise<MobileLanguage | null> {
+  const value = await createMobileAppStorageRuntime().repositories.chatPreferences.readValue(MOBILE_LANGUAGE_KEY);
+  const language = typeof value === 'object' && value && 'language' in value ? (value as { language?: unknown }).language : value;
+  return language === 'en' || language === 'zh-CN' ? language : null;
 }
 
 function interpolate(value: string, params?: TranslationParams): string {

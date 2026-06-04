@@ -85,10 +85,23 @@ func (s *TimelineService) getPublicTimeline(ctx context.Context, cursor string, 
 	if hasMore {
 		rows = rows[:limit]
 	}
+	scannedRows := append([]*domain.Post(nil), rows...)
+	viewer, err := buildViewerForAuthors(ctx, viewerID, s.repos, s.resolver.ResolveID, s.groups, postAuthorIDs(rows))
+	if err != nil {
+		return nil, fmt.Errorf("build viewer: %w", err)
+	}
+	readable := rows[:0]
+	for _, p := range rows {
+		if ok, _ := domain.CanRead(viewer, p.AuthorID, p.Audience, p.IsDeleted()); !ok {
+			continue
+		}
+		readable = append(readable, p)
+	}
+	rows = readable
 	posts := s.moments.hydratePosts(ctx, rows, viewerID)
 	var nextCursor string
-	if hasMore && len(rows) > 0 {
-		last := rows[len(rows)-1]
+	if hasMore && len(scannedRows) > 0 {
+		last := scannedRows[len(scannedRows)-1]
 		nextCursor = domain.Cursor{LastID: last.ID, CreatedAt: last.CreatedAt}.Encode()
 	}
 	return &model.GetTimelineResponse{Posts: posts, NextCursor: nextCursor, HasMore: hasMore}, nil
@@ -110,10 +123,23 @@ func (s *TimelineService) getPublicHotTimeline(ctx context.Context, cursor strin
 	if hasMore {
 		rows = rows[:limit]
 	}
+	scannedRows := append([]*domain.Post(nil), rows...)
+	viewer, err := buildViewerForAuthors(ctx, viewerID, s.repos, s.resolver.ResolveID, s.groups, postAuthorIDs(rows))
+	if err != nil {
+		return nil, fmt.Errorf("build viewer: %w", err)
+	}
+	readable := rows[:0]
+	for _, p := range rows {
+		if ok, _ := domain.CanRead(viewer, p.AuthorID, p.Audience, p.IsDeleted()); !ok {
+			continue
+		}
+		readable = append(readable, p)
+	}
+	rows = readable
 	posts := s.moments.hydratePosts(ctx, rows, viewerID)
 	var nextCursor string
-	if hasMore && len(rows) > 0 {
-		last := rows[len(rows)-1]
+	if hasMore && len(scannedRows) > 0 {
+		last := scannedRows[len(scannedRows)-1]
 		nextCursor = domain.HotCursor{
 			Score:     float64(last.CommentsCount),
 			CreatedAt: last.CreatedAt,
@@ -206,15 +232,20 @@ func (s *TimelineService) getHomeTimeline(ctx context.Context, cursor string, li
 	if hasMore {
 		merged = merged[:limit]
 	}
+	if err := markBlockedAuthors(ctx, &viewer, s.repos, postAuthorIDs(merged)); err != nil {
+		return nil, fmt.Errorf("mark blocked authors: %w", err)
+	}
 
-	srcLastSeen := make(map[string]*domain.Post)
+	srcLastScanned := make(map[string]*domain.Post)
+	for _, p := range merged {
+		srcLastScanned[srcOf[p]] = p
+	}
 	readable := make([]*domain.Post, 0, len(merged))
 	for _, p := range merged {
 		if ok, _ := domain.CanRead(viewer, p.AuthorID, p.Audience, p.IsDeleted()); !ok {
 			continue
 		}
 		readable = append(readable, p)
-		srcLastSeen[srcOf[p]] = p
 	}
 	posts := s.moments.hydratePosts(ctx, readable, viewerID)
 
@@ -224,7 +255,7 @@ func (s *TimelineService) getHomeTimeline(ctx context.Context, cursor string, li
 
 	nextMC := domain.MultiSourceCursor{}
 	for _, name := range []string{"self_public", "self_private", "followed_public", "followed_followers", "circles", "groups"} {
-		if last, ok := srcLastSeen[name]; ok {
+		if last, ok := srcLastScanned[name]; ok {
 			cur := domain.Cursor{LastID: last.ID, CreatedAt: last.CreatedAt}
 			nextMC.SetSource(name, &cur)
 		}

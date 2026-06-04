@@ -12,6 +12,20 @@ export interface MessagePreview {
 export interface ConversationLocalState {
   hidden?: boolean;
   clearedAt?: number;
+  muted?: boolean;
+  sticky?: boolean;
+  alertEnabled?: boolean;
+  background?: ChatBackgroundId;
+}
+
+export const CHAT_BACKGROUND_OPTIONS = ['default', 'paper', 'mint', 'dusk', 'calm', 'graphite'] as const;
+export type ChatBackgroundId = (typeof CHAT_BACKGROUND_OPTIONS)[number];
+
+export function normalizeChatBackgroundId(value: unknown): ChatBackgroundId {
+  if (typeof value === 'string' && (CHAT_BACKGROUND_OPTIONS as readonly string[]).includes(value)) {
+    return value as ChatBackgroundId;
+  }
+  return 'default';
 }
 
 export type SocialMessage = FriendChatMessage | GroupMessage;
@@ -29,6 +43,14 @@ export interface MessageMutationProjection {
 
 export function conversationKey(kind: 'friend' | 'group', ulid: string): string {
   return `${kind}:${ulid}`;
+}
+
+export function conversationSuppressesAlerts(state: ConversationLocalState | undefined): boolean {
+  return Boolean(state?.muted || state?.alertEnabled === false);
+}
+
+export function visibleConversationUnread(unread: number, state: ConversationLocalState | undefined): number {
+  return conversationSuppressesAlerts(state) ? 0 : unread;
 }
 
 export function messageSentMs(message: SocialMessage): number {

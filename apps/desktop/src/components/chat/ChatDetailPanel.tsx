@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, toast } from '@lobehub/ui';
-import { Divider, Modal, theme, Tooltip, Typography } from 'antd';
+import { Divider, Modal, Select, theme, Tooltip, Typography } from 'antd';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
+import { FriendshipStatus } from '../../gen/proto/domain/chat/chat_pb';
 import {
   Ban,
   BellOff,
+  BellRing,
   ChevronRight,
   ExternalLink,
   FileText,
@@ -16,15 +18,17 @@ import {
   LogOut,
   Paperclip,
   Pin,
+  PinOff,
+  RotateCcw,
   Search,
   ShieldCheck,
-  Sparkles,
   Trash2,
   UserPlus,
   Users,
   X,
 } from 'lucide-react';
 import { useSocialChatStore } from '../../store/socialChat';
+import { CHAT_BACKGROUND_OPTIONS } from '../../store/socialProjection';
 import { api, type AccountProfile } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import type {
@@ -32,13 +36,13 @@ import type {
   FriendChatSession,
   FriendMessageAttachment,
 } from '../../gen/proto/domain/chat/friend_chat_pb';
-import type {
-  Group,
-  GroupMember,
-  GroupMessage,
-  GroupMessageAttachment,
+import {
+  GroupRole,
+  type Group,
+  type GroupMember,
+  type GroupMessage,
+  type GroupMessageAttachment,
 } from '../../gen/proto/domain/chat/group_chat_pb';
-import { readFeatureFlags } from '../../modules/settings/featureFlags';
 import { SafetyVerificationPanel } from './SafetyVerificationPanel';
 import { useAttachmentUrl } from './useAttachmentUrl';
 import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicProfileCard';
@@ -127,7 +131,7 @@ function getCurrentConversationAttachments(messages: SocialMessage[]): DetailAtt
   return items.sort((a, b) => b.timestampMs - a.timestampMs);
 }
 
-function MemberItem({ member }: { member: GroupMember }) {
+function MemberItem({ member, action }: { member: GroupMember; action?: ReactNode }) {
   const { token } = theme.useToken();
   const name = member.nickname || member.actorDid.slice(0, 16);
   return (
@@ -149,6 +153,7 @@ function MemberItem({ member }: { member: GroupMember }) {
         {getInitial(name)}
       </Flexbox>
       <Text ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>{name}</Text>
+      {action}
     </Flexbox>
   );
 }
@@ -473,7 +478,8 @@ export function ChatDetailPanel() {
   const {
     activeTab, activeSessionUlid, activeGroupUlid,
     sessions, groups, groupMembers, messages,
-    setShowDetail, loadGroupMembers, loadGroups, selectGroup,
+    setShowDetail, loadSessions, loadGroupMembers, loadGroups, selectSession, selectGroup,
+    conversationLocalState, updateConversationLocalState,
   } = useSocialChatStore();
   const encryptionEnabled = useSocialChatStore((s) => s.encryptionEnabled);
   const ownFingerprint = useSocialChatStore((s) => s.ownFingerprint);
@@ -495,6 +501,11 @@ export function ChatDetailPanel() {
   // open it on every glance at a chat, and the QR / fetch is
   // network-bound. Lazy mount also defers the bundle fetch.
   const [verifyOpen, setVerifyOpen] = useState(false);
+  const [showAllMembers, setShowAllMembers] = useState(false);
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [inviteDids, setInviteDids] = useState<string[]>([]);
+  const [inviteSubmitting, setInviteSubmitting] = useState(false);
+  const [peerBlocked, setPeerBlocked] = useState(false);
 
   // Resolve the peer DID for friend chats. Group safety numbers
   // are an N×N problem (each pair has its own number) and we
@@ -502,7 +513,25 @@ export function ChatDetailPanel() {
   // see docs/architecture/crypto/double-ratchet-migration.md.
   const peerDid = getFriendPeerDid(activeFriendSession, currentUserDid);
   const members: GroupMember[] = isGroup && activeUlid ? (groupMembers[activeUlid] || []) : [];
+  const memberDidSet = useMemo(() => new Set(members.map((member) => member.actorDid)), [members]);
+  const inviteCandidates = useMemo(
+    () => sessions
+      .map((session) => ({
+        did: getFriendPeerDid(session, currentUserDid),
+        name: getFriendPeerName(session, currentUserDid),
+      }))
+      .filter((candidate): candidate is { did: string; name: string } =>
+        Boolean(candidate.did && !memberDidSet.has(candidate.did)),
+      ),
+    [currentUserDid, memberDidSet, sessions],
+  );
   const groupMemberCount = isGroup ? (activeGroup?.memberCount || members.length) : 0;
+  const myGroupMember = members.find((member) => member.actorDid === currentUserDid);
+  const myGroupRole = activeGroup?.ownerDid === currentUserDid ? GroupRole.OWNER : Number(myGroupMember?.role ?? 0);
+  const canManageGroupMembers = Boolean(
+    activeGroup?.ownerDid === currentUserDid ||
+    myGroupRole >= GroupRole.ADMIN,
+  );
   const currentName = isGroup
     ? (activeGroup?.name || t('chat.social.sessionList.unnamedGroup'))
     : getFriendPeerName(activeFriendSession, currentUserDid);
@@ -511,17 +540,175 @@ export function ChatDetailPanel() {
   const peerPresenceSnapshot = getFriendPeerOnlineSnapshot(activeFriendSession, peerDid);
   const peerPresenceKnown = peerDid ? (peerDid in peerOnline || peerPresenceSnapshot !== null) : false;
   const peerIsOnline = peerDid in peerOnline ? peerOnline[peerDid] : peerPresenceSnapshot;
-  const soonLabel = t('chat.social.detail.comingSoonBadge');
-  const currentConversationAttachments = useMemo(
-    () => getCurrentConversationAttachments(activeUlid ? (messages[activeUlid] || []) : []),
-    [activeUlid, messages],
-  );
-  const mediaAttachments = currentConversationAttachments.filter((item) => item.kind === 'media');
-  const fileAttachments = currentConversationAttachments.filter((item) => item.kind === 'file');
+  const localStateKey = activeUlid ? `${activeTab}:${activeUlid}` : '';
+  const activeLocalState = localStateKey ? conversationLocalState[localStateKey] : undefined;
+  const activeMessages = activeUlid ? (messages[activeUlid] || []) : [];
+  const { mediaAttachments, fileAttachments } = useMemo(() => {
+    const attachments = getCurrentConversationAttachments(activeMessages);
+    return {
+      mediaAttachments: attachments.filter((item) => item.kind === 'media'),
+      fileAttachments: attachments.filter((item) => item.kind === 'file'),
+    };
+  }, [activeMessages]);
 
-  const showComingSoon = (action: string) => {
-    log.info('chat', `${action} detail action clicked`);
-    toast.info(t('chat.social.detail.comingSoon'));
+  const updateActiveLocalState = (patch: Parameters<typeof updateConversationLocalState>[2]) => {
+    if (!activeUlid) return;
+    void updateConversationLocalState(activeTab, activeUlid, patch).catch(() => undefined);
+  };
+
+  const confirmClearHistory = () => {
+    Modal.confirm({
+      title: t('chat.social.detail.clearHistoryConfirmTitle'),
+      content: t('chat.social.detail.clearHistoryConfirmBody'),
+      okText: t('chat.social.detail.clearHistory'),
+      cancelText: t('chat.social.messageArea.cancel'),
+      okButtonProps: { danger: true },
+      onOk: () => updateActiveLocalState({ clearedAt: Date.now() }),
+    });
+  };
+
+  const confirmBlockUser = () => {
+    if (!peerDid) return;
+    Modal.confirm({
+      title: t('chat.social.detail.blockUserConfirmTitle'),
+      content: t('chat.social.detail.blockUserConfirmBody'),
+      okText: t('chat.social.detail.blockUser'),
+      cancelText: t('chat.social.messageArea.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await api.friendChatBlockUser(peerDid);
+          await loadSessions();
+          selectSession('');
+          setShowDetail(false);
+          toast.success(t('chat.social.detail.blockUserSuccess'));
+        } catch (error) {
+          log.error('chat', 'block user failed', { peerDid, error });
+          toast.error(t('chat.social.detail.blockUserFailed'));
+          throw error;
+        }
+      },
+    });
+  };
+
+  const confirmUnblockUser = () => {
+    if (!peerDid) return;
+    Modal.confirm({
+      title: t('chat.social.detail.unblockUserConfirmTitle'),
+      content: t('chat.social.detail.unblockUserConfirmBody'),
+      okText: t('chat.social.detail.unblockUser'),
+      cancelText: t('chat.social.messageArea.cancel'),
+      onOk: async () => {
+        try {
+          await api.friendChatUnblockUser(peerDid);
+          setPeerBlocked(false);
+          await loadSessions();
+          toast.success(t('chat.social.detail.unblockUserSuccess'));
+        } catch (error) {
+          log.error('chat', 'unblock user failed', { peerDid, error });
+          toast.error(t('chat.social.detail.unblockUserFailed'));
+          throw error;
+        }
+      },
+    });
+  };
+
+  const submitGroupInvites = async () => {
+    if (!activeUlid || inviteDids.length === 0) return;
+    setInviteSubmitting(true);
+    try {
+      await api.groupChatInviteToGroup(activeUlid, inviteDids);
+      await Promise.allSettled([loadGroupMembers(activeUlid), loadGroups()]);
+      setInviteDids([]);
+      setInviteModalOpen(false);
+      toast.success(t('chat.social.detail.addMemberSuccess'));
+    } catch (error) {
+      log.error('chat', 'invite group members failed', { groupUlid: activeUlid, inviteeCount: inviteDids.length, error });
+      toast.error(t('chat.social.detail.addMemberFailed'));
+      throw error;
+    } finally {
+      setInviteSubmitting(false);
+    }
+  };
+
+  const confirmRemoveGroupMember = (member: GroupMember) => {
+    if (!activeUlid || !member.actorDid) return;
+    const memberName = member.nickname || member.actorDid;
+    Modal.confirm({
+      title: t('chat.social.detail.removeMemberConfirmTitle'),
+      content: t('chat.social.detail.removeMemberConfirmBody', { name: memberName }),
+      okText: t('chat.social.detail.removeMember'),
+      cancelText: t('chat.social.messageArea.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await api.groupChatRemoveMember(activeUlid, member.actorDid);
+          await Promise.allSettled([loadGroupMembers(activeUlid), loadGroups()]);
+          toast.success(t('chat.social.detail.removeMemberSuccess'));
+        } catch (error) {
+          log.error('chat', 'remove group member failed', { groupUlid: activeUlid, actorDid: member.actorDid, error });
+          toast.error(t('chat.social.detail.removeMemberFailed'));
+          throw error;
+        }
+      },
+    });
+  };
+
+  const updateGroupMember = async (member: GroupMember, input: { role?: number; muted?: boolean }) => {
+    if (!activeUlid || !member.actorDid) return;
+    try {
+      await api.groupChatUpdateMember(activeUlid, member.actorDid, input);
+      await loadGroupMembers(activeUlid);
+      toast.success(t('chat.social.detail.updateMemberSuccess'));
+    } catch (error) {
+      log.error('chat', 'update group member failed', { groupUlid: activeUlid, actorDid: member.actorDid, input, error });
+      toast.error(t('chat.social.detail.updateMemberFailed'));
+      throw error;
+    }
+  };
+
+  const confirmUpdateGroupMemberRole = (member: GroupMember, role: number) => {
+    const memberName = member.nickname || member.actorDid;
+    Modal.confirm({
+      title: role === GroupRole.ADMIN ? t('chat.social.detail.promoteAdminConfirmTitle') : t('chat.social.detail.demoteAdminConfirmTitle'),
+      content: role === GroupRole.ADMIN
+        ? t('chat.social.detail.promoteAdminConfirmBody', { name: memberName })
+        : t('chat.social.detail.demoteAdminConfirmBody', { name: memberName }),
+      okText: role === GroupRole.ADMIN ? t('chat.social.detail.promoteAdmin') : t('chat.social.detail.demoteAdmin'),
+      cancelText: t('chat.social.messageArea.cancel'),
+      onOk: () => updateGroupMember(member, { role }),
+    });
+  };
+
+  const toggleGroupMemberMuted = (member: GroupMember) => {
+    void updateGroupMember(member, { muted: !member.muted });
+  };
+
+  const openBackgroundModal = () => {
+    Modal.confirm({
+      title: t('chat.social.detail.background'),
+      icon: null,
+      width: 440,
+      content: (
+        <Flexbox gap={8}>
+          <Text type="secondary">{t('chat.social.detail.backgroundDesc')}</Text>
+          <Select
+            value={activeLocalState?.background || 'default'}
+            options={CHAT_BACKGROUND_OPTIONS.map((value) => ({
+              value,
+              label: t(`chat.social.background.${value}`),
+            }))}
+            onChange={(value) => {
+              updateActiveLocalState({ background: value });
+              Modal.destroyAll();
+            }}
+            style={{ width: '100%' }}
+          />
+        </Flexbox>
+      ),
+      okButtonProps: { style: { display: 'none' } },
+      cancelText: t('chat.social.messageArea.cancel'),
+    });
   };
 
   const actionRows: DetailActionRowProps[] = [
@@ -529,31 +716,45 @@ export function ChatDetailPanel() {
       icon: <Search size={16} />,
       title: t('chat.social.detail.searchMessages'),
       description: t('chat.social.detail.searchMessagesDesc'),
-      soonLabel,
-      onClick: () => showComingSoon('Search messages'),
+      onClick: () => window.dispatchEvent(new CustomEvent('peers-chat:open-search')),
     },
     {
-      icon: <BellOff size={16} />,
-      title: t('chat.social.detail.notifications'),
-      description: t('chat.social.detail.notificationsDesc'),
-      soonLabel,
-      disabled: true,
+      icon: activeLocalState?.muted ? <BellRing size={16} /> : <BellOff size={16} />,
+      title: activeLocalState?.muted ? t('chat.social.detail.unmute') : t('chat.social.detail.notifications'),
+      description: activeLocalState?.muted ? t('chat.social.detail.unmuteDesc') : t('chat.social.detail.notificationsDesc'),
+      onClick: () => updateActiveLocalState({ muted: !activeLocalState?.muted }),
     },
     {
-      icon: <Pin size={16} />,
-      title: t('chat.social.detail.pinTop'),
-      description: t('chat.social.detail.pinTopDesc'),
-      soonLabel,
-      disabled: true,
+      icon: activeLocalState?.sticky ? <PinOff size={16} /> : <Pin size={16} />,
+      title: activeLocalState?.sticky ? t('chat.social.detail.unpinTop') : t('chat.social.detail.pinTop'),
+      description: activeLocalState?.sticky ? t('chat.social.detail.unpinTopDesc') : t('chat.social.detail.pinTopDesc'),
+      onClick: () => updateActiveLocalState({ sticky: !activeLocalState?.sticky }),
+    },
+    {
+      icon: activeLocalState?.alertEnabled === false ? <BellRing size={16} /> : <BellOff size={16} />,
+      title: activeLocalState?.alertEnabled === false ? t('chat.social.detail.alertsOn') : t('chat.social.detail.alerts'),
+      description: activeLocalState?.alertEnabled === false ? t('chat.social.detail.alertsOnDesc') : t('chat.social.detail.alertsDesc'),
+      onClick: () => updateActiveLocalState({ alertEnabled: activeLocalState?.alertEnabled === false }),
+    },
+    {
+      icon: <ImageIcon size={16} />,
+      title: t('chat.social.detail.background'),
+      description: t('chat.social.detail.backgroundDesc'),
+      onClick: openBackgroundModal,
     },
     {
       icon: <Trash2 size={16} />,
       title: t('chat.social.detail.clearHistory'),
       description: t('chat.social.detail.clearHistoryDesc'),
-      soonLabel,
-      disabled: true,
       danger: true,
+      onClick: confirmClearHistory,
     },
+    ...(activeLocalState?.clearedAt ? [{
+      icon: <RotateCcw size={16} />,
+      title: t('chat.social.detail.restoreHistory'),
+      description: t('chat.social.detail.restoreHistoryDesc'),
+      onClick: () => updateActiveLocalState({ clearedAt: 0 }),
+    }] : []),
   ];
 
 
@@ -562,6 +763,12 @@ export function ChatDetailPanel() {
       loadGroupMembers(activeUlid);
     }
   }, [isGroup, activeUlid, loadGroupMembers]);
+
+  useEffect(() => {
+    setShowAllMembers(false);
+    setInviteModalOpen(false);
+    setInviteDids([]);
+  }, [activeUlid]);
 
   // Lazy peer profile load — same pattern as ChatContactsDetailPanel.
   // The cache lives in socialChat (single owner) so this effect just
@@ -572,45 +779,26 @@ export function ChatDetailPanel() {
     }
   }, [isGroup, peerDid, loadPeerProfile]);
 
+  useEffect(() => {
+    if (isGroup || !peerDid) {
+      setPeerBlocked(false);
+      return;
+    }
+    let cancelled = false;
+    void api.friendChatGetFriendshipStatus(peerDid)
+      .then((response) => {
+        if (!cancelled) setPeerBlocked(Number(response.friend?.status ?? 0) === FriendshipStatus.BLOCKED);
+      })
+      .catch((error) => {
+        log.warn('chat', 'friendship status load failed', { peerDid, error });
+        if (!cancelled) setPeerBlocked(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isGroup, peerDid]);
+
   const cachedPeerProfile = !isGroup && peerDid ? peerProfiles[peerDid] : undefined;
-
-  const handleConfirmUpgrade = async () => {
-    /*
-     * M3 implementation: invoke api.cryptoSessionRefresh() (or equivalent) to tear down
-     * the session and re-run X3DH so the new Double Ratchet session starts at v = 1.
-     * That API does not exist yet — this handler is a QA stub when crypto.dr_enabled is on.
-     */
-    log.info('chat', 'Encryption upgrade requested by user', {
-      sessionUlid: activeUlid,
-      peerDid,
-      drEnabled: true,
-    });
-    toast.info(t('chat.social.encryption.upgradeStubFired'));
-  };
-
-  const openEncryptionUpgradeModal = () => {
-    const drEnabled = readFeatureFlags().cryptoDrEnabled;
-    Modal.confirm({
-      title: t('chat.social.encryption.upgradeTitle'),
-      width: 480,
-      content: (
-        <Flexbox gap={10}>
-          <Text style={{ display: 'block' }}>{t('chat.social.encryption.upgradeBody.line1')}</Text>
-          <Text style={{ display: 'block' }}>{t('chat.social.encryption.upgradeBody.line2')}</Text>
-          <Text style={{ display: 'block' }}>{t('chat.social.encryption.upgradeBody.line3')}</Text>
-          {!drEnabled ? (
-            <Text type="secondary" style={{ fontSize: 12, marginTop: 4 }}>
-              {t('chat.social.encryption.upgradeBlocked')}
-            </Text>
-          ) : null}
-        </Flexbox>
-      ),
-      okText: t('chat.social.encryption.upgradeOk'),
-      cancelText: t('common.action.cancel', { ns: 'common' }),
-      okButtonProps: { disabled: !drEnabled },
-      onOk: drEnabled ? () => handleConfirmUpgrade() : undefined,
-    });
-  };
 
   return (
     <Flexbox
@@ -683,14 +871,61 @@ export function ChatDetailPanel() {
           <Flexbox style={{ padding: '12px 16px' }} gap={6}>
             <Flexbox horizontal align="center" justify="space-between" style={{ marginBottom: 4 }}>
               <Text strong style={{ fontSize: 13 }}>{t('chat.social.detail.members', { count: groupMemberCount })}</Text>
-              <Button type="link" size="small" style={{ fontSize: 12, padding: 0 }} onClick={() => log.info('chat', 'See all members clicked')}>
-                {t('chat.social.detail.seeAll')}
+              <Button
+                type="link"
+                size="small"
+                style={{ fontSize: 12, padding: 0 }}
+                disabled={members.length <= 6}
+                onClick={() => setShowAllMembers((value) => !value)}
+              >
+                {showAllMembers
+                  ? t('chat.social.detail.showLess')
+                  : t('chat.social.detail.seeAll')}
               </Button>
             </Flexbox>
             {members.length > 0 ? (
-              members.slice(0, 6).map((m) => (
-                <MemberItem key={m.actorDid} member={m} />
-              ))
+              (showAllMembers ? members : members.slice(0, 6)).map((m) => {
+                const memberRole = Number(m.role ?? GroupRole.MEMBER);
+                const canManageTarget = canManageGroupMembers
+                  && m.actorDid !== currentUserDid
+                  && memberRole !== GroupRole.OWNER
+                  && (myGroupRole === GroupRole.OWNER || memberRole < myGroupRole);
+                return (
+                  <MemberItem
+                    key={m.actorDid}
+                    member={m}
+                    action={canManageTarget ? (
+                      <Flexbox horizontal gap={4}>
+                        {myGroupRole === GroupRole.OWNER ? (
+                          <Button
+                            type="text"
+                            size="small"
+                            onClick={() => confirmUpdateGroupMemberRole(
+                              m,
+                              memberRole === GroupRole.ADMIN ? GroupRole.MEMBER : GroupRole.ADMIN,
+                            )}
+                          >
+                            {memberRole === GroupRole.ADMIN
+                              ? t('chat.social.detail.demoteAdmin')
+                              : t('chat.social.detail.promoteAdmin')}
+                          </Button>
+                        ) : null}
+                        <Button type="text" size="small" onClick={() => toggleGroupMemberMuted(m)}>
+                          {m.muted ? t('chat.social.detail.unmuteMember') : t('chat.social.detail.muteMember')}
+                        </Button>
+                        <Button
+                          type="text"
+                          size="small"
+                          danger
+                          onClick={() => confirmRemoveGroupMember(m)}
+                        >
+                          {t('chat.social.detail.removeMember')}
+                        </Button>
+                      </Flexbox>
+                    ) : undefined}
+                  />
+                );
+              })
             ) : (
               <Text type="secondary" style={{ fontSize: 12 }}>
                 {t('chat.social.detail.membersLoading')}
@@ -702,7 +937,8 @@ export function ChatDetailPanel() {
               block
               size="small"
               style={{ marginTop: 4 }}
-              onClick={() => log.info('chat', 'Add member clicked')}
+              disabled={!canManageGroupMembers || inviteCandidates.length === 0}
+              onClick={() => setInviteModalOpen(true)}
             >
               {t('chat.social.detail.addMember')}
             </Button>
@@ -710,6 +946,35 @@ export function ChatDetailPanel() {
           <Divider style={{ margin: '0 16px', minWidth: 'auto', width: 'auto' }} />
         </>
       )}
+
+      <Modal
+        title={t('chat.social.detail.addMember')}
+        open={inviteModalOpen}
+        okText={t('chat.social.detail.addMember')}
+        cancelText={t('chat.social.messageArea.cancel')}
+        confirmLoading={inviteSubmitting}
+        okButtonProps={{ disabled: inviteDids.length === 0 }}
+        onOk={() => void submitGroupInvites()}
+        onCancel={() => {
+          setInviteModalOpen(false);
+          setInviteDids([]);
+        }}
+      >
+        <Flexbox gap={8}>
+          <Text type="secondary">{t('chat.social.detail.addMemberDesc')}</Text>
+          <Select
+            mode="multiple"
+            value={inviteDids}
+            options={inviteCandidates.map((candidate) => ({
+              label: candidate.name || candidate.did,
+              value: candidate.did,
+            }))}
+            placeholder={t('chat.social.detail.addMemberPlaceholder')}
+            onChange={setInviteDids}
+            style={{ width: '100%' }}
+          />
+        </Flexbox>
+      </Modal>
 
       <Flexbox style={{ padding: '12px 16px' }} gap={12}>
         <Text strong style={{ fontSize: 13 }}>{t('chat.social.detail.sharedContent')}</Text>
@@ -775,12 +1040,13 @@ export function ChatDetailPanel() {
         <Button
           type="text"
           danger
-          icon={<Ban size={16} />}
+          icon={peerBlocked ? <RotateCcw size={16} /> : <Ban size={16} />}
           style={{ justifyContent: 'flex-start', height: 36 }}
           block
-          onClick={() => log.info('chat', 'Block user clicked')}
+          disabled={!peerDid}
+          onClick={peerBlocked ? confirmUnblockUser : confirmBlockUser}
         >
-          {t('chat.social.detail.blockUser')}
+          {peerBlocked ? t('chat.social.detail.unblockUser') : t('chat.social.detail.blockUser')}
           </Button>
         )}
       </Flexbox>
@@ -824,16 +1090,13 @@ export function ChatDetailPanel() {
             />
           ) : null}
           {activeTab === 'friend' ? (
-            <Flexbox style={{ padding: '8px 16px 12px' }}>
-              <Button
-                type="text"
-                icon={<Sparkles size={16} />}
-                style={{ justifyContent: 'flex-start', height: 36 }}
-                block
-                onClick={openEncryptionUpgradeModal}
-              >
-                {t('chat.social.encryption.upgradeButton')}
-              </Button>
+            <Flexbox style={{ padding: '8px 16px 12px' }} gap={4}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {t('chat.social.encryption.upgradeBody.line3')}
+              </Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {t('chat.social.encryption.upgradeBlocked')}
+              </Text>
             </Flexbox>
           ) : null}
         </>

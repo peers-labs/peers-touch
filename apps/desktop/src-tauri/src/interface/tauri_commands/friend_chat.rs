@@ -5,11 +5,13 @@ use crate::contracts::{
     AttachmentInput, ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput,
     ChatScopeCursorSetInput, FriendChatAcceptFriendRequestInput, FriendChatAckInput,
     FriendChatBlockUserInput, FriendChatCreateSessionInput, FriendChatDeleteInput,
-    FriendChatEditInput, FriendChatListFriendRequestsInput, FriendChatListInput,
-    FriendChatListMessagesInput, FriendChatOnlineInput, FriendChatPendingInput,
-    FriendChatRecallInput, FriendChatRejectFriendRequestInput, FriendChatSendFriendRequestInput,
-    FriendChatSendInput, FriendChatSyncInput, FriendChatSyncMessagesInput,
-    FriendChatThreadCountsInput, FriendChatThreadInput, FriendChatThreadReadInput, StubPayload,
+    FriendChatEditInput, FriendChatListBlockedUsersInput, FriendChatListFriendRequestsInput,
+    FriendChatListInput, FriendChatListMessagesInput, FriendChatOnlineInput,
+    FriendChatPendingInput, FriendChatRecallInput, FriendChatRejectFriendRequestInput,
+    FriendChatSendFriendRequestInput, FriendChatSendInput, FriendChatSyncInput,
+    FriendChatSyncMessagesInput,
+    FriendChatThreadCountsInput, FriendChatThreadInput, FriendChatThreadReadInput,
+    FriendConversationSettingsInput, FriendConversationSettingsUpdateInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -36,6 +38,73 @@ fn token_from_state(
         ));
     }
     Ok(token)
+}
+
+#[tauri::command]
+pub fn friend_chat_get_settings(
+    input: FriendConversationSettingsInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    if input.session_ulid.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "session_ulid is required", None);
+    }
+    let query = vec![("session_ulid", input.session_ulid)];
+    let resp = match station_client::request_proto::<
+        (),
+        model::chat::GetFriendConversationSettingsResponse,
+    >(
+        Method::GET,
+        "/friend-chat/settings",
+        &token,
+        Some(&query),
+        None::<&()>,
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "station request failed"),
+    };
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn friend_chat_update_settings(
+    input: FriendConversationSettingsUpdateInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    if input.session_ulid.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "session_ulid is required", None);
+    }
+    let req = model::chat::UpdateFriendConversationSettingsRequest {
+        session_ulid: input.session_ulid,
+        is_muted: input.is_muted,
+        is_pinned: input.is_pinned,
+        alert_enabled: input.alert_enabled,
+        background: input.background,
+        cleared_at_unix_ms: input.cleared_at_unix_ms,
+    };
+    let resp = match station_client::request_proto::<
+        model::chat::UpdateFriendConversationSettingsRequest,
+        model::chat::UpdateFriendConversationSettingsResponse,
+    >(
+        Method::PUT,
+        "/friend-chat/settings",
+        &token,
+        None,
+        Some(&req),
+    ) {
+        Ok(r) => r,
+        Err(e) => return station_error_proto(e, "station request failed"),
+    };
+    AppResult::success(resp.encode_to_vec())
 }
 
 fn token_from_state_proto(
@@ -1114,6 +1183,89 @@ pub fn friend_chat_block_user(
         model::chat::BlockUserResponse,
     >(Method::POST, "/friend-chat/block", &token, None, Some(&req))
     {
+        Ok(resp) => resp,
+        Err(error) => return station_error_proto(error, "station request failed"),
+    };
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn friend_chat_unblock_user(
+    input: FriendChatBlockUserInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    if input.target_did.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "target_did is required", None);
+    }
+    let req = model::chat::UnblockUserRequest {
+        target_did: input.target_did,
+    };
+    let resp = match station_client::request_proto::<
+        model::chat::UnblockUserRequest,
+        model::chat::UnblockUserResponse,
+    >(Method::DELETE, "/friend-chat/block", &token, None, Some(&req))
+    {
+        Ok(resp) => resp,
+        Err(error) => return station_error_proto(error, "station request failed"),
+    };
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn friend_chat_list_blocked_users(
+    input: FriendChatListBlockedUsersInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    let limit = input.limit.unwrap_or(100).clamp(1, 100);
+    let offset = input.offset.unwrap_or(0).max(0);
+    let query = vec![("limit", limit.to_string()), ("offset", offset.to_string())];
+    let resp = match station_client::request_proto::<(), model::chat::ListBlockedUsersResponse>(
+        Method::GET,
+        "/friend-chat/blocked",
+        &token,
+        Some(&query),
+        None::<&()>,
+    ) {
+        Ok(resp) => resp,
+        Err(error) => return station_error_proto(error, "station request failed"),
+    };
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn friend_chat_get_friendship_status(
+    input: FriendChatBlockUserInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    if input.target_did.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "target_did is required", None);
+    }
+    let query = vec![("target_did", input.target_did)];
+    let resp = match station_client::request_proto::<
+        (),
+        model::chat::GetFriendshipStatusResponse,
+    >(
+        Method::GET,
+        "/friend-chat/friendship/status",
+        &token,
+        Some(&query),
+        None::<&()>,
+    ) {
         Ok(resp) => resp,
         Err(error) => return station_error_proto(error, "station request failed"),
     };

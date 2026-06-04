@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/key_exchange/key_exchange.proto.
  */
 export const file_domain_key_exchange_key_exchange: GenFile = /*@__PURE__*/
-  fileDesc("CiZkb21haW4va2V5X2V4Y2hhbmdlL2tleV9leGNoYW5nZS5wcm90bxIhcGVlcnNfdG91Y2gubW9kZWwua2V5X2V4Y2hhbmdlLnYxIpABChZVcGxvYWRLZXlCdW5kbGVSZXF1ZXN0Eg4KBmlrX3B1YhgBIAEoCRIOCgZzcGtfaWQYAiABKAUSDwoHc3BrX3B1YhgDIAEoCRIPCgdzcGtfc2lnGAQgASgJEg8KB29wa19pZHMYBSADKAUSEAoIb3BrX3B1YnMYBiADKAkSEQoJZGV2aWNlX2lkGAcgASgJIhkKF1VwbG9hZEtleUJ1bmRsZVJlc3BvbnNlIokBCglLZXlCdW5kbGUSCwoDZGlkGAEgASgJEhEKCWRldmljZV9pZBgCIAEoCRIOCgZpa19wdWIYAyABKAkSDwoHc3BrX3B1YhgEIAEoCRIPCgdzcGtfc2lnGAUgASgJEgwKBG9wa3MYBiADKAkSHAoUcHVibGlzaGVkX2F0X3VuaXhfbXMYByABKAMiNwoVRmV0Y2hLZXlCdW5kbGVSZXF1ZXN0EgsKA2RpZBgBIAEoCRIRCglkZXZpY2VfaWQYAiABKAkiVwoWRmV0Y2hLZXlCdW5kbGVSZXNwb25zZRI9CgdidW5kbGVzGAEgAygLMiwucGVlcnNfdG91Y2gubW9kZWwua2V5X2V4Y2hhbmdlLnYxLktleUJ1bmRsZSJMChRSZXBsZW5pc2hPcGtzUmVxdWVzdBIPCgdvcGtfaWRzGAEgAygFEhAKCG9wa19wdWJzGAIgAygJEhEKCWRldmljZV9pZBgDIAEoCSIXChVSZXBsZW5pc2hPcGtzUmVzcG9uc2UiJAoPT3BrQ291bnRSZXF1ZXN0EhEKCWRldmljZV9pZBgBIAEoCSIhChBPcGtDb3VudFJlc3BvbnNlEg0KBWNvdW50GAEgASgDQlJaUGdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2FwcC9zdWJzZXJ2ZXIva2V5X2V4Y2hhbmdlL21vZGVsO21vZGVsYgZwcm90bzM");
+  fileDesc("CiZkb21haW4va2V5X2V4Y2hhbmdlL2tleV9leGNoYW5nZS5wcm90bxIhcGVlcnNfdG91Y2gubW9kZWwua2V5X2V4Y2hhbmdlLnYxIqwBChZVcGxvYWRLZXlCdW5kbGVSZXF1ZXN0Eg4KBmlrX3B1YhgBIAEoCRIOCgZzcGtfaWQYAiABKAUSDwoHc3BrX3B1YhgDIAEoCRIPCgdzcGtfc2lnGAQgASgJEg8KB29wa19pZHMYBSADKAUSEAoIb3BrX3B1YnMYBiADKAkSEQoJZGV2aWNlX2lkGAcgASgJEhoKEnN1cHBvcnRlZF92ZXJzaW9ucxgIIAMoDSIZChdVcGxvYWRLZXlCdW5kbGVSZXNwb25zZSKlAQoJS2V5QnVuZGxlEgsKA2RpZBgBIAEoCRIRCglkZXZpY2VfaWQYAiABKAkSDgoGaWtfcHViGAMgASgJEg8KB3Nwa19wdWIYBCABKAkSDwoHc3BrX3NpZxgFIAEoCRIMCgRvcGtzGAYgAygJEhwKFHB1Ymxpc2hlZF9hdF91bml4X21zGAcgASgDEhoKEnN1cHBvcnRlZF92ZXJzaW9ucxgIIAMoDSI3ChVGZXRjaEtleUJ1bmRsZVJlcXVlc3QSCwoDZGlkGAEgASgJEhEKCWRldmljZV9pZBgCIAEoCSJXChZGZXRjaEtleUJ1bmRsZVJlc3BvbnNlEj0KB2J1bmRsZXMYASADKAsyLC5wZWVyc190b3VjaC5tb2RlbC5rZXlfZXhjaGFuZ2UudjEuS2V5QnVuZGxlIkwKFFJlcGxlbmlzaE9wa3NSZXF1ZXN0Eg8KB29wa19pZHMYASADKAUSEAoIb3BrX3B1YnMYAiADKAkSEQoJZGV2aWNlX2lkGAMgASgJIhcKFVJlcGxlbmlzaE9wa3NSZXNwb25zZSIkCg9PcGtDb3VudFJlcXVlc3QSEQoJZGV2aWNlX2lkGAEgASgJIiEKEE9wa0NvdW50UmVzcG9uc2USDQoFY291bnQYASABKANCUlpQZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9rZXlfZXhjaGFuZ2UvbW9kZWw7bW9kZWxiBnByb3RvMw");
 
 /**
  * X3DH key bundle upload — base64-encoded public keys.
@@ -54,6 +54,15 @@ export type UploadKeyBundleRequest = Message<"peers_touch.model.key_exchange.v1.
    * @generated from field: string device_id = 7;
    */
   deviceId: string;
+
+  /**
+   * Supported encrypted payload wire versions. [0] = legacy chain-only,
+   * [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+   * for backward compatibility.
+   *
+   * @generated from field: repeated uint32 supported_versions = 8;
+   */
+  supportedVersions: number[];
 };
 
 /**
@@ -125,6 +134,11 @@ export type KeyBundle = Message<"peers_touch.model.key_exchange.v1.KeyBundle"> &
    * @generated from field: int64 published_at_unix_ms = 7;
    */
   publishedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: repeated uint32 supported_versions = 8;
+   */
+  supportedVersions: number[];
 };
 
 /**
