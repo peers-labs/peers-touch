@@ -27,6 +27,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/infrastructure"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	gate "github.com/peers-labs/peers-touch/station/frame/touch/accessgate"
+	gatepb "github.com/peers-labs/peers-touch/station/frame/touch/model/accessgate"
 )
 
 // ---------------------------------------------------------------------------
@@ -61,6 +63,9 @@ const (
 	// Audit logs
 	routeAuditLogs = "/dashboard/api/audit-logs"
 
+	// Access gates
+	routeAccessPolicy = "/dashboard/api/access-gates/policy"
+
 	// System
 	routeSystemInfo       = "/dashboard/api/system/info"
 	routeSystemRoutes     = "/dashboard/api/system/routes"
@@ -85,21 +90,21 @@ const (
 	// against the OSS subserver's tables; mutating endpoints
 	// cover bucket lifecycle (create / patch / delete) plus the
 	// existing operator trust actions (peer key pin / unpin).
-	routeOSSBuckets        = "/dashboard/api/oss/buckets"
-	routeOSSBucketDetail   = "/dashboard/api/oss/buckets/:id"
-	routeOSSBucketObjects  = "/dashboard/api/oss/buckets/:id/objects"
-	routeOSSBucketUpload   = "/dashboard/api/oss/buckets/:id/upload"
-	routeOSSObjects        = "/dashboard/api/oss/objects"
-	routeOSSObjectDetail   = "/dashboard/api/oss/objects/:id"
-	routeOSSAudit          = "/dashboard/api/oss/audit"
-	routeOSSUsage          = "/dashboard/api/oss/usage"
-	routeOSSFedMe          = "/dashboard/api/oss/federation/me"
-	routeOSSFedPeers       = "/dashboard/api/oss/federation/peers"
-	routeOSSFedPeerPin     = "/dashboard/api/oss/federation/peers/:id/pin"
-	routeOSSFedPeerUnpin   = "/dashboard/api/oss/federation/peers/:id/unpin"
-	routeOSSFedPeerForget  = "/dashboard/api/oss/federation/peers/:id"
-	routeOSSFedRotate      = "/dashboard/api/oss/federation/rotate-local-key"
-	routeOSSWorkers        = "/dashboard/api/oss/workers"
+	routeOSSBuckets       = "/dashboard/api/oss/buckets"
+	routeOSSBucketDetail  = "/dashboard/api/oss/buckets/:id"
+	routeOSSBucketObjects = "/dashboard/api/oss/buckets/:id/objects"
+	routeOSSBucketUpload  = "/dashboard/api/oss/buckets/:id/upload"
+	routeOSSObjects       = "/dashboard/api/oss/objects"
+	routeOSSObjectDetail  = "/dashboard/api/oss/objects/:id"
+	routeOSSAudit         = "/dashboard/api/oss/audit"
+	routeOSSUsage         = "/dashboard/api/oss/usage"
+	routeOSSFedMe         = "/dashboard/api/oss/federation/me"
+	routeOSSFedPeers      = "/dashboard/api/oss/federation/peers"
+	routeOSSFedPeerPin    = "/dashboard/api/oss/federation/peers/:id/pin"
+	routeOSSFedPeerUnpin  = "/dashboard/api/oss/federation/peers/:id/unpin"
+	routeOSSFedPeerForget = "/dashboard/api/oss/federation/peers/:id"
+	routeOSSFedRotate     = "/dashboard/api/oss/federation/rotate-local-key"
+	routeOSSWorkers       = "/dashboard/api/oss/workers"
 )
 
 // ---------------------------------------------------------------------------
@@ -163,6 +168,12 @@ func (h *dashboardHandler) handlers() []server.Handler {
 		// -- Audit logs --
 		server.NewTypedHandler("dashboard-audit-logs", routeAuditLogs, server.GET,
 			h.handleAuditLogs, auth),
+
+		// -- Access gate policy --
+		server.NewTypedHandler("dashboard-access-policy-get", routeAccessPolicy, server.GET,
+			h.handleGetAccessPolicy, auth),
+		server.NewTypedHandler("dashboard-access-policy-update", routeAccessPolicy, server.POST,
+			h.handleUpdateAccessPolicy, auth),
 
 		// -- System --
 		server.NewTypedHandler("dashboard-system-info", routeSystemInfo, server.GET,
@@ -589,6 +600,58 @@ func (h *dashboardHandler) handleAuditLogs(ctx context.Context, _ *domain.EmptyR
 	}, nil
 }
 
+func (h *dashboardHandler) handleGetAccessPolicy(ctx context.Context, _ *domain.EmptyRequest) (*gatepb.UpdateAccessPolicyResponse, error) {
+	policy, err := gate.GetPolicy(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &gatepb.UpdateAccessPolicyResponse{Policy: gate.ToProtoPolicy(policy)}, nil
+}
+
+func (h *dashboardHandler) handleUpdateAccessPolicy(ctx context.Context, req *gatepb.UpdateAccessPolicyRequest) (*gatepb.UpdateAccessPolicyResponse, error) {
+	if req.GetPolicy() == nil {
+		return nil, server.BadRequest("missing access policy")
+	}
+
+	claims := getClaims(ctx)
+	updatedBy := ""
+	if claims != nil {
+		updatedBy = claims.Username
+	}
+
+	policy, err := gate.UpdatePolicy(ctx, gate.PolicyInput{
+		Mode:             accessPolicyModeName(req.GetPolicy().GetMode()),
+		AllowedEmails:    req.GetPolicy().GetAllowedEmails(),
+		AllowedUsernames: req.GetPolicy().GetAllowedUsernames(),
+		AllowedActorIDs:  req.GetPolicy().GetAllowedActorIds(),
+		UpdatedBy:        updatedBy,
+	})
+	if err != nil {
+		return nil, server.BadRequest(err.Error())
+	}
+
+	if claims != nil {
+		h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username, "access_policy_update", "access_policy",
+			"singleton:"+policy.Mode, getClientIP(ctx), getUserAgent(ctx))
+	}
+
+	return &gatepb.UpdateAccessPolicyResponse{Policy: gate.ToProtoPolicy(policy)}, nil
+}
+
+func accessPolicyModeName(mode gatepb.AccessPolicyMode) string {
+	switch mode {
+	case gatepb.AccessPolicyMode_ACCESS_POLICY_MODE_INVITE_ONLY:
+		return "invite_only"
+	case gatepb.AccessPolicyMode_ACCESS_POLICY_MODE_FIXED_USERS:
+		return "fixed_users"
+	case gatepb.AccessPolicyMode_ACCESS_POLICY_MODE_CLOSED:
+		return "closed"
+	default:
+		return "open"
+	}
+}
+
 // ===========================================================================
 // System handlers
 // ===========================================================================
@@ -1012,7 +1075,7 @@ func ownerID(b *domain.OSSBucketSummary) string {
 //
 //   - `file`              — the bytes (required)
 //   - `visibility`        — public / chat / private (optional;
-//                            falls back to bucket DefaultVisibility)
+//     falls back to bucket DefaultVisibility)
 //   - `chat_session_id`   — required iff resolved visibility=chat
 //   - `filename`          — display-name override (optional)
 //
@@ -1027,7 +1090,7 @@ func ownerID(b *domain.OSSBucketSummary) string {
 // Errors map to:
 //
 //   - 400 invalid_multipart / file_required / chat_session_required /
-//         visibility / quota_exceeded (when the OSS service rejects)
+//     visibility / quota_exceeded (when the OSS service rejects)
 //   - 404 bucket not found
 //   - 413 file_too_large (size > MaxFileSize)
 //   - 503 admin upload not wired (oss subserver missing)

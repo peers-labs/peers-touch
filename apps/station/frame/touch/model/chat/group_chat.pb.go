@@ -3023,6 +3023,9 @@ type GetGroupSettingsResponse struct {
 	IsPinned           bool                   `protobuf:"varint,2,opt,name=is_pinned,json=isPinned,proto3" json:"is_pinned,omitempty"`                                 // 是否置顶
 	MyNickname         string                 `protobuf:"bytes,3,opt,name=my_nickname,json=myNickname,proto3" json:"my_nickname,omitempty"`                            // 我的群昵称
 	ShowMemberNickname bool                   `protobuf:"varint,4,opt,name=show_member_nickname,json=showMemberNickname,proto3" json:"show_member_nickname,omitempty"` // 是否显示成员昵称
+	AlertEnabled       bool                   `protobuf:"varint,5,opt,name=alert_enabled,json=alertEnabled,proto3" json:"alert_enabled,omitempty"`                     // 是否参与提醒/角标
+	Background         string                 `protobuf:"bytes,6,opt,name=background,proto3" json:"background,omitempty"`                                              // 聊天背景标识
+	ClearedAtUnixMs    int64                  `protobuf:"varint,7,opt,name=cleared_at_unix_ms,json=clearedAtUnixMs,proto3" json:"cleared_at_unix_ms,omitempty"`        // 本人清空可见历史的游标
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -3085,6 +3088,27 @@ func (x *GetGroupSettingsResponse) GetShowMemberNickname() bool {
 	return false
 }
 
+func (x *GetGroupSettingsResponse) GetAlertEnabled() bool {
+	if x != nil {
+		return x.AlertEnabled
+	}
+	return false
+}
+
+func (x *GetGroupSettingsResponse) GetBackground() string {
+	if x != nil {
+		return x.Background
+	}
+	return ""
+}
+
+func (x *GetGroupSettingsResponse) GetClearedAtUnixMs() int64 {
+	if x != nil {
+		return x.ClearedAtUnixMs
+	}
+	return 0
+}
+
 // 更新群设置（用户个人设置）
 type UpdateGroupSettingsRequest struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
@@ -3092,6 +3116,9 @@ type UpdateGroupSettingsRequest struct {
 	IsMuted            *bool                  `protobuf:"varint,2,opt,name=is_muted,json=isMuted,proto3,oneof" json:"is_muted,omitempty"`
 	IsPinned           *bool                  `protobuf:"varint,3,opt,name=is_pinned,json=isPinned,proto3,oneof" json:"is_pinned,omitempty"`
 	ShowMemberNickname *bool                  `protobuf:"varint,4,opt,name=show_member_nickname,json=showMemberNickname,proto3,oneof" json:"show_member_nickname,omitempty"`
+	AlertEnabled       *bool                  `protobuf:"varint,5,opt,name=alert_enabled,json=alertEnabled,proto3,oneof" json:"alert_enabled,omitempty"`
+	Background         *string                `protobuf:"bytes,6,opt,name=background,proto3,oneof" json:"background,omitempty"`
+	ClearedAtUnixMs    *int64                 `protobuf:"varint,7,opt,name=cleared_at_unix_ms,json=clearedAtUnixMs,proto3,oneof" json:"cleared_at_unix_ms,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -3152,6 +3179,27 @@ func (x *UpdateGroupSettingsRequest) GetShowMemberNickname() bool {
 		return *x.ShowMemberNickname
 	}
 	return false
+}
+
+func (x *UpdateGroupSettingsRequest) GetAlertEnabled() bool {
+	if x != nil && x.AlertEnabled != nil {
+		return *x.AlertEnabled
+	}
+	return false
+}
+
+func (x *UpdateGroupSettingsRequest) GetBackground() string {
+	if x != nil && x.Background != nil {
+		return *x.Background
+	}
+	return ""
+}
+
+func (x *UpdateGroupSettingsRequest) GetClearedAtUnixMs() int64 {
+	if x != nil && x.ClearedAtUnixMs != nil {
+		return *x.ClearedAtUnixMs
+	}
+	return 0
 }
 
 type UpdateGroupSettingsResponse struct {
@@ -4131,23 +4179,36 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"\bhas_more\x18\x02 \x01(\bR\ahasMore\"8\n" +
 	"\x17GetGroupSettingsRequest\x12\x1d\n" +
 	"\n" +
-	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\"\xa5\x01\n" +
+	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\"\x97\x02\n" +
 	"\x18GetGroupSettingsResponse\x12\x19\n" +
 	"\bis_muted\x18\x01 \x01(\bR\aisMuted\x12\x1b\n" +
 	"\tis_pinned\x18\x02 \x01(\bR\bisPinned\x12\x1f\n" +
 	"\vmy_nickname\x18\x03 \x01(\tR\n" +
 	"myNickname\x120\n" +
-	"\x14show_member_nickname\x18\x04 \x01(\bR\x12showMemberNickname\"\xe8\x01\n" +
+	"\x14show_member_nickname\x18\x04 \x01(\bR\x12showMemberNickname\x12#\n" +
+	"\ralert_enabled\x18\x05 \x01(\bR\falertEnabled\x12\x1e\n" +
+	"\n" +
+	"background\x18\x06 \x01(\tR\n" +
+	"background\x12+\n" +
+	"\x12cleared_at_unix_ms\x18\a \x01(\x03R\x0fclearedAtUnixMs\"\xa1\x03\n" +
 	"\x1aUpdateGroupSettingsRequest\x12\x1d\n" +
 	"\n" +
 	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12\x1e\n" +
 	"\bis_muted\x18\x02 \x01(\bH\x00R\aisMuted\x88\x01\x01\x12 \n" +
 	"\tis_pinned\x18\x03 \x01(\bH\x01R\bisPinned\x88\x01\x01\x125\n" +
-	"\x14show_member_nickname\x18\x04 \x01(\bH\x02R\x12showMemberNickname\x88\x01\x01B\v\n" +
+	"\x14show_member_nickname\x18\x04 \x01(\bH\x02R\x12showMemberNickname\x88\x01\x01\x12(\n" +
+	"\ralert_enabled\x18\x05 \x01(\bH\x03R\falertEnabled\x88\x01\x01\x12#\n" +
+	"\n" +
+	"background\x18\x06 \x01(\tH\x04R\n" +
+	"background\x88\x01\x01\x120\n" +
+	"\x12cleared_at_unix_ms\x18\a \x01(\x03H\x05R\x0fclearedAtUnixMs\x88\x01\x01B\v\n" +
 	"\t_is_mutedB\f\n" +
 	"\n" +
 	"_is_pinnedB\x17\n" +
-	"\x15_show_member_nickname\"7\n" +
+	"\x15_show_member_nicknameB\x10\n" +
+	"\x0e_alert_enabledB\r\n" +
+	"\v_backgroundB\x15\n" +
+	"\x13_cleared_at_unix_ms\"7\n" +
 	"\x1bUpdateGroupSettingsResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\"]\n" +
 	"\x19DeleteGroupMessageRequest\x12\x1d\n" +

@@ -9,9 +9,10 @@
 The cross-platform sharing strategy has evolved from the legacy Flutter shared library model (`peers_touch_base` / `peers_touch_ui`) to a **Proto + API Contract + Applet SDK** model.
 
 **Background:**
-- **Mobile** has migrated from Flutter to **Android (Kotlin) + iOS (Swift)** native dual-platform independent implementations.
+- **Mobile** has migrated from Flutter/native dual-platform UI to **Tauri v2 Mobile + shared Web UI + Rust + native plugins**.
 - **Desktop** is built with **Tauri + React/TS + Rust**.
-- The legacy Flutter shared libraries (`peers_touch_base` / `peers_touch_ui`) are no longer applicable to the native Mobile implementations and have been **archived as historical reference only**.
+- The legacy Flutter shared libraries (`peers_touch_base` / `peers_touch_ui`) are no longer applicable and have been **archived as historical reference only**.
+- Android Kotlin and iOS Swift remain valid for native plugins, not as the primary UI mainline.
 
 **Current Sharing Strategy:**
 1. **Proto Model Layer**: `model/domain/**/*.proto` → each platform generates its own typed contracts.
@@ -48,26 +49,22 @@ graph TD
     DesktopApp[Desktop App<br/>Tauri + React/TS + Rust] --> ProtoRust[Proto Model<br/>generated Rust]
     DesktopApp --> AppletSDK[Applet SDK<br/>TS]
 
-    AndroidApp[Android App<br/>Kotlin] --> ProtoKotlin[Proto Model<br/>generated Kotlin]
-    AndroidApp --> AppletSDKLynxA[Applet SDK<br/>TS in Lynx]
+    MobileApp[Mobile App<br/>Tauri + Web UI + Rust] --> ProtoMobile[Proto Model<br/>generated Rust/TS]
+    MobileApp --> AppletSDKLynxM[Applet SDK<br/>TS in Lynx]
 
-    iOSApp[iOS App<br/>Swift] --> ProtoSwift[Proto Model<br/>generated Swift]
-    iOSApp --> AppletSDKLynxI[Applet SDK<br/>TS in Lynx]
+    NativePlugins[Android/iOS Plugins<br/>Kotlin + Swift] --> MobileApp
 
     Station[Station] --> ProtoGo[Proto Model<br/>generated Go]
 
     ProtoRust --> ProtoDef[model/domain/**/*.proto]
-    ProtoKotlin --> ProtoDef
-    ProtoSwift --> ProtoDef
+    ProtoMobile --> ProtoDef
     ProtoGo --> ProtoDef
 
     AppletSDK --> AppletPkg[packages/applet-sdk/]
-    AppletSDKLynxA --> AppletPkg
-    AppletSDKLynxI --> AppletPkg
+    AppletSDKLynxM --> AppletPkg
 
     DesktopApp --> APIContract[Station HTTP API Contract]
-    AndroidApp --> APIContract
-    iOSApp --> APIContract
+    MobileApp --> APIContract
 ```
 
 ---

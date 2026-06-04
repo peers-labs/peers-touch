@@ -31,9 +31,13 @@ type UploadKeyBundleRequest struct {
 	OpkIds  []int32                `protobuf:"varint,5,rep,packed,name=opk_ids,json=opkIds,proto3" json:"opk_ids,omitempty"`
 	OpkPubs []string               `protobuf:"bytes,6,rep,name=opk_pubs,json=opkPubs,proto3" json:"opk_pubs,omitempty"`
 	// Opaque per-install identifier. Empty => server stores as "legacy".
-	DeviceId      string `protobuf:"bytes,7,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	DeviceId string `protobuf:"bytes,7,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	// Supported encrypted payload wire versions. [0] = legacy chain-only,
+	// [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+	// for backward compatibility.
+	SupportedVersions []uint32 `protobuf:"varint,8,rep,packed,name=supported_versions,json=supportedVersions,proto3" json:"supported_versions,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *UploadKeyBundleRequest) Reset() {
@@ -115,6 +119,13 @@ func (x *UploadKeyBundleRequest) GetDeviceId() string {
 	return ""
 }
 
+func (x *UploadKeyBundleRequest) GetSupportedVersions() []uint32 {
+	if x != nil {
+		return x.SupportedVersions
+	}
+	return nil
+}
+
 type UploadKeyBundleResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -164,6 +175,7 @@ type KeyBundle struct {
 	// One-time prekey pubs consumed for this fetch (base64), newest policy via server.
 	Opks              []string `protobuf:"bytes,6,rep,name=opks,proto3" json:"opks,omitempty"`
 	PublishedAtUnixMs int64    `protobuf:"varint,7,opt,name=published_at_unix_ms,json=publishedAtUnixMs,proto3" json:"published_at_unix_ms,omitempty"` // server stamp (identity upsert time)
+	SupportedVersions []uint32 `protobuf:"varint,8,rep,packed,name=supported_versions,json=supportedVersions,proto3" json:"supported_versions,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -245,6 +257,13 @@ func (x *KeyBundle) GetPublishedAtUnixMs() int64 {
 		return x.PublishedAtUnixMs
 	}
 	return 0
+}
+
+func (x *KeyBundle) GetSupportedVersions() []uint32 {
+	if x != nil {
+		return x.SupportedVersions
+	}
+	return nil
 }
 
 // Fetch another actor's key bundles by DID.
@@ -537,7 +556,7 @@ var File_domain_key_exchange_key_exchange_proto protoreflect.FileDescriptor
 
 const file_domain_key_exchange_key_exchange_proto_rawDesc = "" +
 	"\n" +
-	"&domain/key_exchange/key_exchange.proto\x12!peers_touch.model.key_exchange.v1\"\xc9\x01\n" +
+	"&domain/key_exchange/key_exchange.proto\x12!peers_touch.model.key_exchange.v1\"\xf8\x01\n" +
 	"\x16UploadKeyBundleRequest\x12\x15\n" +
 	"\x06ik_pub\x18\x01 \x01(\tR\x05ikPub\x12\x15\n" +
 	"\x06spk_id\x18\x02 \x01(\x05R\x05spkId\x12\x17\n" +
@@ -545,8 +564,9 @@ const file_domain_key_exchange_key_exchange_proto_rawDesc = "" +
 	"\aspk_sig\x18\x04 \x01(\tR\x06spkSig\x12\x17\n" +
 	"\aopk_ids\x18\x05 \x03(\x05R\x06opkIds\x12\x19\n" +
 	"\bopk_pubs\x18\x06 \x03(\tR\aopkPubs\x12\x1b\n" +
-	"\tdevice_id\x18\a \x01(\tR\bdeviceId\"\x19\n" +
-	"\x17UploadKeyBundleResponse\"\xc8\x01\n" +
+	"\tdevice_id\x18\a \x01(\tR\bdeviceId\x12-\n" +
+	"\x12supported_versions\x18\b \x03(\rR\x11supportedVersions\"\x19\n" +
+	"\x17UploadKeyBundleResponse\"\xf7\x01\n" +
 	"\tKeyBundle\x12\x10\n" +
 	"\x03did\x18\x01 \x01(\tR\x03did\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x15\n" +
@@ -554,7 +574,8 @@ const file_domain_key_exchange_key_exchange_proto_rawDesc = "" +
 	"\aspk_pub\x18\x04 \x01(\tR\x06spkPub\x12\x17\n" +
 	"\aspk_sig\x18\x05 \x01(\tR\x06spkSig\x12\x12\n" +
 	"\x04opks\x18\x06 \x03(\tR\x04opks\x12/\n" +
-	"\x14published_at_unix_ms\x18\a \x01(\x03R\x11publishedAtUnixMs\"F\n" +
+	"\x14published_at_unix_ms\x18\a \x01(\x03R\x11publishedAtUnixMs\x12-\n" +
+	"\x12supported_versions\x18\b \x03(\rR\x11supportedVersions\"F\n" +
 	"\x15FetchKeyBundleRequest\x12\x10\n" +
 	"\x03did\x18\x01 \x01(\tR\x03did\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\"`\n" +

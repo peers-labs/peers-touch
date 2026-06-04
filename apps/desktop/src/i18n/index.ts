@@ -10,6 +10,7 @@ import { initReactI18next } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import type { RustCommandResult } from '../services/desktop_api';
 import { log } from '../utils/logger';
+import { readDesktopPreferenceSync, writeDesktopPreferenceSync } from '../storage/desktopClientStorage';
 
 const i18n = createInstance();
 
@@ -32,7 +33,7 @@ export function getAvailableLanguages(): LanguageInfo[] {
 }
 
 function detectLanguage(availableCodes: string[]): string {
-  const stored = localStorage.getItem('peers-touch-lang');
+  const stored = readDesktopPreferenceSync<string>('peers-touch-lang');
   if (stored && availableCodes.includes(stored)) return stored;
 
   const nav = navigator.language;
@@ -90,7 +91,7 @@ export async function initI18n() {
 
 export function changeLanguage(lang: string) {
   i18n.changeLanguage(lang);
-  localStorage.setItem('peers-touch-lang', lang);
+  writeDesktopPreferenceSync('peers-touch-lang', lang);
 }
 
 const I18N_PREFIX = 'i18n:';

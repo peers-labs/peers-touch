@@ -114,6 +114,21 @@ pub struct FriendChatCreateSessionInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendConversationSettingsInput {
+    pub session_ulid: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendConversationSettingsUpdateInput {
+    pub session_ulid: String,
+    pub is_muted: Option<bool>,
+    pub is_pinned: Option<bool>,
+    pub alert_enabled: Option<bool>,
+    pub background: Option<String>,
+    pub cleared_at_unix_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendChatListMessagesInput {
     pub session_ulid: String,
     pub before_ulid: Option<String>,
@@ -199,6 +214,12 @@ pub struct FriendChatListFriendRequestsInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendChatBlockUserInput {
     pub target_did: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatListBlockedUsersInput {
+    pub limit: Option<i32>,
+    pub offset: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1043,6 +1064,15 @@ pub struct GroupRemoveMemberInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupUpdateMemberInput {
+    pub group_ulid: String,
+    pub member_did: String,
+    pub role: Option<i32>,
+    pub muted: Option<bool>,
+    pub muted_until_unix_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupMessageActionInput {
     pub group_ulid: String,
     pub message_ulid: String,
@@ -1079,6 +1109,9 @@ pub struct GroupUpdateMySettingsInput {
     pub is_muted: Option<bool>,
     pub is_pinned: Option<bool>,
     pub show_member_nickname: Option<bool>,
+    pub alert_enabled: Option<bool>,
+    pub background: Option<String>,
+    pub cleared_at_unix_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1378,4 +1411,27 @@ pub struct SocialCircleRemoveMembersInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialCircleListMembersInput {
     pub circle_id: String,
+}
+
+// Federation gateway inputs (Tier A1 — Desktop FederationRuntime).
+//
+// Two non-trivial commands take input:
+//
+//   • `federation_update_visibility`: the dropdown label the user just
+//     picked ("hidden" | "by_handle" | "indexed"). Server validates the
+//     vocabulary; we only round-trip whatever the UI sent.
+//   • `federation_resolve`: the canonical "@user@host" handle the user
+//     typed into search / add-friend.
+//
+// The remaining two (`federation_get_self`, `federation_health`) take
+// no payload and reuse `tauri::command` argument injection only.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederationVisibilityInput {
+    pub visibility: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederationResolveInput {
+    pub handle: String,
 }

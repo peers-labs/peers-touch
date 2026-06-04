@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package peers_touch.model.federation.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/federation/invalidation/pb;pb";
+
+// FederationInvalidation is the pub/sub event a home station emits
+// when an actor it owns becomes stale on the federation network —
+// either because visibility flipped (e.g. by_handle → hidden) or the
+// row was deleted. Receivers MUST drop their cached
+// ActorProfileEnvelope for the named handle so the next read pulls
+// fresh state via the resolver.
+//
+// Wire path:
+//
+//   home station → its relay-client → relay (TypeBroadcast frame) →
+//     all stations connected to that relay → fedcache.Evict
+//
+// Trust model (Tier C1 minimum-viable):
+//
+//   The relay stamps `origin_peer_id` from the authenticated
+//   handshake before fan-out — the publisher has NO say over what
+//   peer id appears in the broadcast. Receivers cross-check
+//   `origin_peer_id` against the cached row's `home_station_peer_id`
+//   before evicting; a mismatch means another station is trying to
+//   evict someone else's handle and the event is dropped.
+//
+//   We deliberately do NOT carry an end-to-end signature here. The
+//   cost of plumbing federation key lookup at receive time outweighs
+//   the marginal threat in a single-relay deployment where the relay
+//   token is operator-controlled. If multi-tenant relays land, we
+//   add a `signature` field — frame-level wire format is opaque
+//   bytes, so this is forward-compatible.
+//
+// Sequence ordering:
+//
+//   `locator_seq` mirrors ActorLocatorRecord.seq so receivers can
+//   ignore out-of-order deliveries: an invalidation older than the
+//   cached row is stale and a stale evict would force an unnecessary
+//   re-fetch.
+message FederationInvalidation {
+  // Canonical "@user@host" of the affected actor.
+  string federated_handle = 1 [json_name = "federated_handle"];
+
+  // Locator seq at the time this invalidation was emitted. Receivers
+  // require invalidation_seq >= cached.locator_seq before acting; a
+  // smaller seq is dropped as a stale replay.
+  uint64 locator_seq = 2 [json_name = "locator_seq"];
+
+  // Reason explains why the home station emitted the event. The
+  // receiver behaviour is identical for all current reasons (drop the
+  // cache, let the resolver refetch), but the reason is logged so
+  // operators can correlate spikes with deliberate flips vs. mass
+  // tombstones.
+  enum Reason {
+    REASON_UNSPECIFIED = 0;
+    // Visibility went from a discoverable state (by_handle / indexed)
+    // to a less-discoverable one (hidden), or any state→state flip
+    // that requires receivers to re-read.
+    REASON_VISIBILITY_FLIP = 1;
+    // The actor row was deleted / withdrawn. Carries the same payload
+    // shape as visibility flip; receivers do not need a separate code
+    // path today, but the distinction lets future logic (e.g. PUT
+    // actor → 410 Gone) branch on it.
+    REASON_TOMBSTONE = 2;
+  }
+  Reason reason = 3;
+
+  // Filled by the relay from the authenticated handshake. Stations
+  // sending the event leave this empty; the relay rewrites it before
+  // fan-out. Receivers ignore the event when this does not match the
+  // cached row's `home_station_peer_id`.
+  string origin_peer_id = 4 [json_name = "origin_peer_id"];
+
+  // Wall-clock the publisher minted the event. Used only for log
+  // correlation today; receivers do not gate on age (the locator_seq
+  // ordering is the authoritative freshness signal).
+  int64 issued_at_unix_ms = 5 [json_name = "issued_at_unix_ms"];
+}

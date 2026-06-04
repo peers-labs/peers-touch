@@ -16,7 +16,7 @@ Three-tier architecture: **Client → Model → Station**.
 |-----|------|-------|
 | **Station** | `apps/station/` | Go, DDD subservers, Hertz, PostgreSQL |
 | **Desktop** | `apps/desktop/` | Tauri + React/TS + Rust |
-| **Mobile** | `apps/mobile/` | Android (Kotlin/Compose), iOS (Swift/SwiftUI) |
+| **Mobile** | `apps/mobile/` | Tauri v2 Mobile + Web UI + Rust + native plugins |
 
 ---
 
@@ -27,8 +27,11 @@ peers-touch/
 ├── apps/
 │   ├── desktop/           # Tauri + React/TS + Rust
 │   ├── mobile/
-│   │   ├── android/       # Kotlin + Jetpack Compose
-│   │   ├── ios/           # Swift + SwiftUI
+│   │   ├── src/           # mobile-web UI
+│   │   ├── src-tauri/     # mobile-rust capability kernel
+│   │   ├── gen/           # Tauri generated Android/iOS projects
+│   │   ├── android/       # legacy/native plugin source during migration
+│   │   ├── ios/           # legacy/native plugin source during migration
 │   │   └── flutter/       # ⚠️ DEPRECATED — do not touch
 │   ├── station/
 │   │   ├── app/           # Business logic + subservers (DDD)
@@ -69,6 +72,16 @@ When reading or updating docs, follow the constraint direction below:
 4. **Agent entry layer**
    - `docs/.agent/*.md` only tells agents what to read first, what is forbidden, and how to verify.
    - It is **not** the place to redefine architecture or full coding standards.
+5. **Operational knowledge layer** (NEW)
+   - `docs/knowledge/` holds horizontal, machine-readable knowledge that doesn't fit the four layers above:
+     - `invariants/` — properties that any code touching the named paths MUST respect.
+     - `pitfalls/` — bugs we already paid for, with reproduction + mitigation.
+     - `playbooks/` — the standard operating procedure for recurring task classes.
+     - `glossary.md` — project-specific terminology.
+   - Each `invariants/` / `pitfalls/` / `playbooks/` file carries YAML frontmatter with an `owns:` list of repo paths it governs.
+   - Agents MUST consult this layer before editing any path that appears in an `owns:` entry. The `read-before-edit` skill (§13) automates the lookup; AGENTS that do not load the skill must perform the same procedure manually.
+   - Knowledge files are PR'd through the same review process as code. Entries are append-only — superseded knowledge is marked `status: superseded-by:<path>`, never deleted.
+   - Entry doc: [`docs/knowledge/README.md`](docs/knowledge/README.md). Frontmatter template: [`docs/knowledge/_TEMPLATE.md`](docs/knowledge/_TEMPLATE.md).
 
 Constraint rule:
 
@@ -122,6 +135,13 @@ Frontend-backend collaborative APIs: **NO MOCK** unless the user explicitly says
 ### Logging Security
 
 Never log tokens, passwords, secret keys, or PII. Error logs must include context + details.
+
+### No Hardcoded UI Strings
+
+All user-facing text **MUST** go through the i18n system (`packages/locales/`).
+Never embed raw Chinese, English, or any natural-language string literals in components, services, or utility modules.
+Fallback/error messages use **locale keys**, not literal text.
+Non-React modules that cannot use hooks should throw errors with locale key identifiers; the UI layer translates them via `t()`.
 
 ---
 
@@ -202,7 +222,7 @@ Error code ranges: `10000s` (business), `20000s` (protocol), `30000s` (content).
 | Desktop (Tauri) | `cd apps/desktop && source ~/.cargo/env && CI=false pnpm run tauri:build` |
 | Station | `cd apps/station && gofmt -l . && go test ./...` |
 | Go Style | `./tooling/scripts/check-go-style.sh` |
-| Android | `cd apps/mobile/android && ./gradlew build` |
+| Mobile | `pnpm mobile:check` (target script during Tauri Mobile migration; use `docs/.agent/mobile.md` for current fallback checks) |
 | Proto | `./model/build.sh`, `./tooling/scripts/proto-gen-mobile.sh` |
 
 **Completion criteria**: Implementation complete + lint pass + build success + tests pass + functional verification.
@@ -227,7 +247,7 @@ Error code ranges: `10000s` (business), `20000s` (protocol), `30000s` (content).
 |----------|-----------------|
 | Station (Go) | [`docs/.agent/station.md`](docs/.agent/station.md) |
 | Desktop (TS + Rust) | [`docs/.agent/desktop.md`](docs/.agent/desktop.md) |
-| Mobile (Kotlin + Swift) | [`docs/.agent/mobile.md`](docs/.agent/mobile.md) |
+| Mobile (Tauri + native plugins) | [`docs/.agent/mobile.md`](docs/.agent/mobile.md) |
 
 ---
 
@@ -254,6 +274,7 @@ Current project skills:
 | `dev-runtime-handoff` | Choose & start the right dev runtime (make targets) for acceptance testing |
 | `architecture-execution-methodology` | Decompose architectural designs into actionable execution plans, domain ownership, and verification systems (referenced from §4.3) |
 | `desktop-runtime-projections` | Enforce Page / Runtime / Boot kernel contracts under `apps/desktop/src/{kernel,runtimes,services,store,pages,components}` |
+| `read-before-edit` | Consult `docs/knowledge/` invariants / pitfalls / playbooks whose `owns:` covers the path being edited (referenced from §3.5) |
 | `github-commit` | Conventional commit message generation with AI traceability |
 | `github-pr` | PR creation with templates, labels, and issue linking |
 | `github-release` | Semantic versioning, changelog generation, GitHub Release creation |
@@ -304,5 +325,6 @@ This keeps `tooling/skills/` as the single git-tracked truth and prevents skill 
 │  NO print()       │  NO any type    │  NO manual models      │
 │  NO mock APIs     │  NO hardcoded   │  NO silent error       │
 │                   │    secrets       │    swallowing          │
+│  NO hardcoded UI strings — use locale keys via i18n          │
 └──────────────────────────────────────────────────────────────┘
 ```

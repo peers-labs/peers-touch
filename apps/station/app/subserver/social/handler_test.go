@@ -68,6 +68,17 @@ func newHandlerFixture(t *testing.T) *handlerFixture {
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	if err := gdb.Exec(`
+CREATE TABLE friend_chat_friendships (
+	id integer primary key autoincrement,
+	actor_did text,
+	peer_did text,
+	status integer,
+	created_at datetime,
+	updated_at datetime
+)`).Error; err != nil {
+		t.Fatalf("migrate friendships: %v", err)
+	}
 
 	resolver := application.NewNoopActorResolver()
 	groups := application.NewNoopGroupMembershipChecker()
@@ -78,7 +89,7 @@ func newHandlerFixture(t *testing.T) *handlerFixture {
 	commentSvc := application.NewCommentService(repos, momentSvc)
 	circleSvc := application.NewCircleService(repos)
 	timelineSvc := application.NewTimelineService(repos, momentSvc, resolver, groups)
-	relationshipSvc := application.NewRelationshipService(repos.Follows)
+	relationshipSvc := application.NewRelationshipService(repos.Follows, repos.Blocks)
 	statsSvc := application.NewStatsService(gdb, repos)
 
 	s := &subServer{

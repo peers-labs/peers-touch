@@ -32,6 +32,15 @@ const (
 	// persisted session to become this Station's sole active login.
 	RouterURLActorSessionTakeover RouterPath = "/session/takeover"
 
+	// RouterURLAccessAttemptStart starts a Station access gate attempt.
+	RouterURLAccessAttemptStart RouterPath = "/access/start"
+
+	// RouterURLAccessGateSubmit submits an action for the current access gate.
+	RouterURLAccessGateSubmit RouterPath = "/access/submit"
+
+	// RouterURLAccessDecision returns the current access decision for an attempt.
+	RouterURLAccessDecision RouterPath = "/access/decision"
+
 	// RouterURLActorChangePassword Client change password
 	RouterURLActorChangePassword RouterPath = "/change-password"
 
@@ -62,6 +71,43 @@ const (
 
 	// RouterURLOAuthLogin OAuth login: external gateway callback for OAuth-based login/registration
 	RouterURLOAuthLogin RouterPath = "/oauth-bridge"
+
+	// RouterURLFederationProfile is the home-station endpoint that returns
+	// a signed ActorProfileEnvelope for one of its local actors. Public
+	// (no JWT). The federated user-discovery resolver on a peer station
+	// hits this endpoint via /relay/forward to retrieve verified profile
+	// snapshots without granting itself a session on this station.
+	RouterURLFederationProfile RouterPath = "/federation/profile"
+
+	// RouterURLFederationMe returns the federation snapshot of the
+	// currently logged-in actor (handle, visibility, locator_seq).
+	// JWT-protected — never anonymous, since the response identifies a
+	// specific account on this station. Used by Desktop's "settings ›
+	// federation" panel and as the source-of-truth for a fresh login's
+	// "who am I in the federation" hydration.
+	RouterURLFederationMe RouterPath = "/federation/me"
+
+	// RouterURLFederationVisibility flips the logged-in actor's
+	// visibility. JWT-protected; PUT-only (POST is reserved for future
+	// "publish-now-with-extras" workflows). The handler triggers an
+	// async republish so the DHT picks up the change without making
+	// the user wait for libp2p I/O.
+	RouterURLFederationVisibility RouterPath = "/federation/visibility"
+
+	// RouterURLFederationResolve resolves a remote handle to a verified
+	// profile envelope. JWT-protected — federation resolution is a
+	// signed-in-user action (the response carries a profile a UI will
+	// render). Internally wraps frame/touch/federation/resolver, with
+	// federation cache and relay-forward both engaged transparently.
+	RouterURLFederationResolve RouterPath = "/federation/resolve"
+
+	// RouterURLFederationHealth is the public readiness probe.
+	// No JWT — operators (Prometheus / external uptime checks) and
+	// the Desktop pre-login splash both consume it. The handler
+	// always returns 200 with the body's `ready` field carrying the
+	// truth; the transport layer is never an error path so health
+	// scrapers never alert on a mere "not joined yet".
+	RouterURLFederationHealth RouterPath = "/federation/health"
 )
 
 // ---------------------------------------------------------------------------

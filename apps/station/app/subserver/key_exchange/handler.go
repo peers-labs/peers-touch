@@ -73,7 +73,7 @@ func (s *subServer) handleUploadKeyBundle(ctx context.Context, req *kemodel.Uplo
 		opks = append(opks, domain.OneTimePreKey{ID: opkIDs[i], PublicKey: pk, Consumed: false})
 	}
 	devID := normalizeDeviceID(req.GetDeviceId())
-	if err := s.service.UploadKeyBundle(subject.ID, devID, ikPub, req.GetSpkId(), spkPub, spkSig, opks); err != nil {
+	if err := s.service.UploadKeyBundle(subject.ID, devID, ikPub, req.GetSpkId(), spkPub, spkSig, opks, req.GetSupportedVersions()); err != nil {
 		return nil, server.InternalErrorWithCause("failed to upload key bundle", err)
 	}
 	return &kemodel.UploadKeyBundleResponse{}, nil
@@ -110,13 +110,14 @@ func (s *subServer) handleFetchKeyBundle(ctx context.Context, req *kemodel.Fetch
 			opkStrs = append(opkStrs, base64.StdEncoding.EncodeToString(opk.PublicKey))
 		}
 		out = append(out, &kemodel.KeyBundle{
-			Did:                 b.ActorDID,
-			DeviceId:            protoDeviceID(b.DeviceID),
-			IkPub:               base64.StdEncoding.EncodeToString(b.IdentityKeyPub),
-			SpkPub:              base64.StdEncoding.EncodeToString(b.SignedPreKey.PublicKey),
-			SpkSig:              base64.StdEncoding.EncodeToString(b.SignedPreKey.Signature),
-			Opks:                opkStrs,
-			PublishedAtUnixMs:   b.PublishedAtUnixMs,
+			Did:               b.ActorDID,
+			DeviceId:          protoDeviceID(b.DeviceID),
+			IkPub:             base64.StdEncoding.EncodeToString(b.IdentityKeyPub),
+			SpkPub:            base64.StdEncoding.EncodeToString(b.SignedPreKey.PublicKey),
+			SpkSig:            base64.StdEncoding.EncodeToString(b.SignedPreKey.Signature),
+			Opks:              opkStrs,
+			PublishedAtUnixMs: b.PublishedAtUnixMs,
+			SupportedVersions: b.SupportedVersions,
 		})
 	}
 
