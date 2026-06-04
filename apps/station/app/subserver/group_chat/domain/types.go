@@ -2,6 +2,12 @@ package domain
 
 import "time"
 
+const (
+	GroupRoleMember int32 = 1
+	GroupRoleAdmin  int32 = 2
+	GroupRoleOwner  int32 = 3
+)
+
 // Attachment references blob storage for a group message (e.g. image/file).
 //
 // Visibility echoes the OSS-side `oss_files.visibility` for the
@@ -80,13 +86,14 @@ type MutationOutcome struct {
 }
 
 type Member struct {
-	GroupID   string
-	ActorDID  string
-	Role      int32
-	Nickname  string
-	Muted     bool
-	JoinedAt  time.Time
-	InvitedBy string
+	GroupID    string
+	ActorDID   string
+	Role       int32
+	Nickname   string
+	Muted      bool
+	MutedUntil time.Time
+	JoinedAt   time.Time
+	InvitedBy  string
 }
 
 type Invitation struct {
@@ -102,6 +109,9 @@ type GroupSetting struct {
 	IsMuted            bool
 	IsPinned           bool
 	ShowMemberNickname bool
+	AlertEnabled       bool
+	Background         string
+	ClearedAtUnixMs    int64
 }
 
 type OfflineMessage struct {

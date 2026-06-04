@@ -1,5 +1,5 @@
 > **Historical reference (Flutter/GetX era)**. This document describes the Flutter-era mobile UI component specifications.
-> Current Mobile uses native Kotlin + Jetpack Compose (Android) and Swift + SwiftUI (iOS).
+> The previous native Kotlin/Swift mainline note is superseded. Current Mobile uses Tauri v2 Mobile + shared Web UI + Rust + native plugins.
 > See `docs/client/mobile/base.md` and `docs/client/mobile/native-dual-platform.md` for current architecture.
 
 ---

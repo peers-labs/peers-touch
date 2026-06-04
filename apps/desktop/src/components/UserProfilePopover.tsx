@@ -6,7 +6,9 @@ import { Popover, Typography, Divider, Spin, theme } from 'antd';
 import { Button } from '@lobehub/ui';
 import { Globe } from 'lucide-react';
 import { useSessionStore } from '../store/session';
+import { useFederationStore } from '../store/federation';
 import { UserSquareAvatar } from './common/UserSquareAvatar';
+import { FederatedHandle } from './FederatedHandle';
 import { api, type AccountProfile } from '../services/desktop_api';
 import { EVENT, eventBus } from '../kernel/events';
 
@@ -32,6 +34,7 @@ export function UserProfilePopover({ children }: Props) {
   const { t } = useTranslation('layout');
   const { token } = theme.useToken();
   const currentUser = useSessionStore((s) => s.currentUser);
+  const federationSelf = useFederationStore((s) => s.self);
 
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [loading, setLoading] = useState(false);
@@ -40,7 +43,8 @@ export function UserProfilePopover({ children }: Props) {
   const userAvatar = currentUser?.avatarUrl || undefined;
 
   const displayName = profile?.display_name || userName;
-  const username = profile?.username || '';
+  const username = profile?.username || federationSelf?.preferredUsername || '';
+  const homeStation = federationSelf?.homeStationDomain || '';
   const headerSrc = profile?.header || undefined;
   const avatarSrc = profile?.avatar || userAvatar;
   const bio = profile?.note || '';
@@ -76,9 +80,11 @@ export function UserProfilePopover({ children }: Props) {
               {displayName}
             </Text>
             {username && (
-              <Text type="secondary" style={{ fontSize: 12, lineHeight: 1.2 }}>
-                @{username}
-              </Text>
+              <FederatedHandle
+                localPart={username}
+                home={homeStation}
+                fontSize={12}
+              />
             )}
           </Flexbox>
         </Flexbox>

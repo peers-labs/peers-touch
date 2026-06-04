@@ -114,6 +114,23 @@ func (ThreadReadModel) TableName() string {
 	return "friend_chat_thread_reads"
 }
 
+type ConversationSettingsModel struct {
+	ID              uint      `gorm:"column:id;primaryKey"`
+	SessionULID     string    `gorm:"column:session_ulid;size:64;uniqueIndex:idx_fc_settings_actor_session,priority:1;index"`
+	ActorDID        string    `gorm:"column:actor_did;size:255;uniqueIndex:idx_fc_settings_actor_session,priority:2;index"`
+	IsMuted         bool      `gorm:"column:is_muted"`
+	IsPinned        bool      `gorm:"column:is_pinned"`
+	AlertEnabled    bool      `gorm:"column:alert_enabled;default:true"`
+	Background      string    `gorm:"column:background;size:64"`
+	ClearedAtUnixMs int64     `gorm:"column:cleared_at_unix_ms"`
+	CreatedAt       time.Time `gorm:"column:created_at"`
+	UpdatedAt       time.Time `gorm:"column:updated_at"`
+}
+
+func (ConversationSettingsModel) TableName() string {
+	return "friend_chat_conversation_settings"
+}
+
 type FriendRequestModel struct {
 	ID          uint      `gorm:"column:id;primaryKey"`
 	RequestID   string    `gorm:"column:request_id;size:64;uniqueIndex"`
@@ -161,7 +178,7 @@ func NewGormRepo(db *gorm.DB) *GormRepo {
 }
 
 func (r *GormRepo) AutoMigrate() error {
-	if err := r.db.AutoMigrate(&SessionModel{}, &MessageModel{}, &MessageAttachmentModel{}, &ThreadReadModel{}, &OutboxModel{}, &FriendRequestModel{}, &FriendshipModel{}); err != nil {
+	if err := r.db.AutoMigrate(&SessionModel{}, &MessageModel{}, &MessageAttachmentModel{}, &ThreadReadModel{}, &ConversationSettingsModel{}, &OutboxModel{}, &FriendRequestModel{}, &FriendshipModel{}); err != nil {
 		return err
 	}
 	return r.backfillThreadRootULIDs()
@@ -194,6 +211,41 @@ func toDomainFriendship(item FriendshipModel) domain.Friendship {
 		Status:    item.Status,
 		CreatedAt: item.CreatedAt,
 		UpdatedAt: item.UpdatedAt,
+	}
+}
+
+func toDomainConversationSettings(item ConversationSettingsModel) domain.ConversationSettings {
+	return domain.ConversationSettings{
+		SessionID:       item.SessionULID,
+		ActorDID:        item.ActorDID,
+		IsMuted:         item.IsMuted,
+		IsPinned:        item.IsPinned,
+		AlertEnabled:    item.AlertEnabled,
+		Background:      normalizedBackground(item.Background),
+		ClearedAtUnixMs: item.ClearedAtUnixMs,
+		UpdatedAt:       item.UpdatedAt,
+	}
+}
+
+func defaultConversationSettings(actorDID, sessionID string) domain.ConversationSettings {
+	return domain.ConversationSettings{
+		SessionID:    sessionID,
+		ActorDID:     actorDID,
+		AlertEnabled: true,
+		Background:   "default",
+	}
+}
+
+func normalizedBackground(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "default"
+	}
+	switch trimmed {
+	case "default", "paper", "mint", "dusk", "calm", "graphite":
+		return trimmed
+	default:
+		return "default"
 	}
 }
 
@@ -435,6 +487,58 @@ func (r *GormRepo) ListSessions(actorDID string, limit, offset int) ([]domain.Se
 	return out, int(total), nil
 }
 
+func (r *GormRepo) GetConversationSettings(actorDID, sessionID string) (domain.ConversationSettings, error) {
+	var row ConversationSettingsModel
+	err := r.db.Where("session_ulid = ? AND actor_did = ?", sessionID, actorDID).First(&row).Error
+	if err == nil {
+		return toDomainConversationSettings(row), nil
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return defaultConversationSettings(actorDID, sessionID), nil
+	}
+	return domain.ConversationSettings{}, err
+}
+
+func (r *GormRepo) UpdateConversationSettings(actorDID, sessionID string, patch domain.ConversationSettingsPatch) (domain.ConversationSettings, error) {
+	now := time.Now()
+	var row ConversationSettingsModel
+	err := r.db.Where("session_ulid = ? AND actor_did = ?", sessionID, actorDID).First(&row).Error
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.ConversationSettings{}, err
+		}
+		row = ConversationSettingsModel{
+			SessionULID:     sessionID,
+			ActorDID:        actorDID,
+			AlertEnabled:    true,
+			Background:      "default",
+			ClearedAtUnixMs: 0,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+		}
+	}
+	if patch.IsMuted != nil {
+		row.IsMuted = *patch.IsMuted
+	}
+	if patch.IsPinned != nil {
+		row.IsPinned = *patch.IsPinned
+	}
+	if patch.AlertEnabled != nil {
+		row.AlertEnabled = *patch.AlertEnabled
+	}
+	if patch.Background != nil {
+		row.Background = normalizedBackground(*patch.Background)
+	}
+	if patch.ClearedAtUnixMs != nil {
+		row.ClearedAtUnixMs = *patch.ClearedAtUnixMs
+	}
+	row.UpdatedAt = now
+	if err := r.db.Save(&row).Error; err != nil {
+		return domain.ConversationSettings{}, err
+	}
+	return toDomainConversationSettings(row), nil
+}
+
 func (r *GormRepo) BlockUser(actorDID, targetDID string) (domain.Friendship, error) {
 	now := time.Now()
 	var row FriendshipModel
@@ -463,6 +567,40 @@ func (r *GormRepo) BlockUser(actorDID, targetDID string) (domain.Friendship, err
 	return toDomainFriendship(row), nil
 }
 
+func (r *GormRepo) UnblockUser(actorDID, targetDID string) error {
+	return r.db.Where("actor_did = ? AND peer_did = ? AND status = ?", actorDID, targetDID, domain.FriendshipStatusBlocked).
+		Delete(&FriendshipModel{}).Error
+}
+
+func (r *GormRepo) ListBlockedUsers(actorDID string, limit, offset int) ([]domain.Friendship, int, error) {
+	var total int64
+	query := r.db.Model(&FriendshipModel{}).Where("actor_did = ? AND status = ?", actorDID, domain.FriendshipStatusBlocked)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var rows []FriendshipModel
+	if err := query.Order("updated_at DESC").Limit(limit).Offset(offset).Find(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	out := make([]domain.Friendship, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toDomainFriendship(row))
+	}
+	return out, int(total), nil
+}
+
+func (r *GormRepo) GetFriendship(actorDID, targetDID string) (domain.Friendship, error) {
+	var row FriendshipModel
+	err := r.db.Where("actor_did = ? AND peer_did = ?", actorDID, targetDID).First(&row).Error
+	if err == nil {
+		return toDomainFriendship(row), nil
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return domain.Friendship{ActorDID: actorDID, PeerDID: targetDID}, nil
+	}
+	return domain.Friendship{}, err
+}
+
 func (r *GormRepo) IsBlockedBetween(actorDID, peerDID string) (bool, error) {
 	var count int64
 	err := r.db.Model(&FriendshipModel{}).
@@ -479,12 +617,16 @@ func (r *GormRepo) IsBlockedBetween(actorDID, peerDID string) (bool, error) {
 
 func (r *GormRepo) blockedPeersFor(actorDID string) ([]string, error) {
 	var rows []FriendshipModel
-	if err := r.db.Where("actor_did = ? AND status = ?", actorDID, domain.FriendshipStatusBlocked).Find(&rows).Error; err != nil {
+	if err := r.db.Where("status = ? AND (actor_did = ? OR peer_did = ?)", domain.FriendshipStatusBlocked, actorDID, actorDID).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make([]string, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, row.PeerDID)
+		if row.ActorDID == actorDID {
+			out = append(out, row.PeerDID)
+			continue
+		}
+		out = append(out, row.ActorDID)
 	}
 	return out, nil
 }

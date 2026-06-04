@@ -10,6 +10,7 @@ pub mod channels;
 pub mod chat;
 pub mod chat_storage;
 pub mod cron;
+pub mod federation;
 pub mod friend_chat;
 pub mod group_chat;
 pub mod key_exchange;

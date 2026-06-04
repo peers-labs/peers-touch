@@ -59,6 +59,9 @@ fn compile_protos() {
         "domain/agent/memory.proto",
         "domain/key_exchange/key_exchange.proto",
         "domain/realtime/event.proto",
+        "domain/federation/federation_self.proto",
+        "domain/federation/federation_resolve.proto",
+        "domain/federation/federation_health.proto",
     ]
     .iter()
     .map(|p| proto_root.join(p))

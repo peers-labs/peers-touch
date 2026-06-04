@@ -770,14 +770,30 @@ func (x *PostStats) GetViewsCount() int64 {
 }
 
 type PostAuthor struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Username      string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	AvatarUrl     string                 `protobuf:"bytes,4,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
-	IsFollowing   bool                   `protobuf:"varint,5,opt,name=is_following,json=isFollowing,proto3" json:"is_following,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Username    string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
+	DisplayName string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	AvatarUrl   string                 `protobuf:"bytes,4,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
+	IsFollowing bool                   `protobuf:"varint,5,opt,name=is_following,json=isFollowing,proto3" json:"is_following,omitempty"`
+	// Federation identity (Tier B social-graph extension).
+	//
+	// `federated_handle` is the canonical "@user@host" form a UI can
+	// render verbatim. Empty when the actor row pre-dates the federation
+	// backfill — clients fall back to "@username".
+	//
+	// `home_station_domain` is the DNS-style HTTP origin (no scheme)
+	// of the actor's authoritative station. Used by Desktop's
+	// <FederatedHandle/> when it composes the secondary line; also lets
+	// the chat layer detect "same-station" peers without re-parsing the
+	// handle.
+	//
+	// Both fields are population-only — a client that does not understand
+	// them simply ignores them, matching how `is_following` was added.
+	FederatedHandle   string `protobuf:"bytes,6,opt,name=federated_handle,proto3" json:"federated_handle,omitempty"`
+	HomeStationDomain string `protobuf:"bytes,7,opt,name=home_station_domain,proto3" json:"home_station_domain,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *PostAuthor) Reset() {
@@ -843,6 +859,20 @@ func (x *PostAuthor) GetIsFollowing() bool {
 		return x.IsFollowing
 	}
 	return false
+}
+
+func (x *PostAuthor) GetFederatedHandle() string {
+	if x != nil {
+		return x.FederatedHandle
+	}
+	return ""
+}
+
+func (x *PostAuthor) GetHomeStationDomain() string {
+	if x != nil {
+		return x.HomeStationDomain
+	}
+	return ""
 }
 
 type PostInteraction struct {
@@ -3984,7 +4014,7 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\x0ecomments_count\x18\x02 \x01(\x03R\rcommentsCount\x12#\n" +
 	"\rreposts_count\x18\x03 \x01(\x03R\frepostsCount\x12\x1f\n" +
 	"\vviews_count\x18\x04 \x01(\x03R\n" +
-	"viewsCount\"\x9d\x01\n" +
+	"viewsCount\"\xfb\x01\n" +
 	"\n" +
 	"PostAuthor\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
@@ -3992,7 +4022,9 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x1d\n" +
 	"\n" +
 	"avatar_url\x18\x04 \x01(\tR\tavatarUrl\x12!\n" +
-	"\fis_following\x18\x05 \x01(\bR\visFollowing\"r\n" +
+	"\fis_following\x18\x05 \x01(\bR\visFollowing\x12*\n" +
+	"\x10federated_handle\x18\x06 \x01(\tR\x10federated_handle\x120\n" +
+	"\x13home_station_domain\x18\a \x01(\tR\x13home_station_domain\"r\n" +
 	"\x0fPostInteraction\x12\x19\n" +
 	"\bis_liked\x18\x01 \x01(\bR\aisLiked\x12\x1f\n" +
 	"\vis_reposted\x18\x02 \x01(\bR\n" +

@@ -4,6 +4,7 @@ import { useOAuth2Store } from '../store/oauth2';
 import { globalContext } from '../kernel/global-context';
 import { api } from '../services/desktop_api';
 import { onSessionRevoked } from '../services/desktop_api';
+import { removeDesktopPreferenceSync } from '../storage/desktopClientStorage';
 import type { AccountIdentity } from '../services/desktop_api';
 import type { AppLifecycle, AppState, SessionUser } from '../types/navigation';
 
@@ -18,7 +19,7 @@ const WARM_RESUME_KEY = 'pt.auth.lastActiveAt';
 /** Clear any leftover warm-resume marker (legacy installs). */
 export function clearWarmResume(): void {
   try {
-    localStorage.removeItem(WARM_RESUME_KEY);
+    removeDesktopPreferenceSync(WARM_RESUME_KEY);
   } catch {
     // noop
   }

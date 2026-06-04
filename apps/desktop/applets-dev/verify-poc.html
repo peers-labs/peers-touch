@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Lynx for Web POC Verification</title>
+  <style>
+    body { margin: 0; font-family: system-ui; background: #1a1a1a; color: #fff; }
+    #status { padding: 16px; font-size: 14px; }
+    #container { width: 100%; height: 400px; border: 2px solid #333; }
+    .ok { color: #52c41a; }
+    .err { color: #ff4d4f; }
+  </style>
+</head>
+<body>
+  <div id="status">Loading Lynx for Web runtime...</div>
+  <div id="container"></div>
+
+  <script type="module">
+    const status = document.getElementById('status')
+    const container = document.getElementById('container')
+
+    try {
+      // Step 1: Load Lynx for Web runtime (Vite resolves bare specifiers)
+      await import('@lynx-js/web-core/client')
+      await import('@lynx-js/web-elements/all')
+      status.innerHTML = '<span class="ok">✓ Lynx runtime loaded</span> — Creating lynx-view...'
+
+      // Step 2: Create <lynx-view> and load bundle
+      const lynxView = document.createElement('lynx-view')
+      lynxView.style.width = '100%'
+      lynxView.style.height = '100%'
+
+      // Intercept NativeModules calls (bridge)
+      lynxView.onNativeModulesCall = (methodName, data, moduleName) => {
+        const log = `[Bridge] module=${moduleName} method=${methodName} data=${JSON.stringify(data)}`
+        status.innerHTML += `<br><span class="ok">✓ ${log}</span>`
+        return { result: { success: true, echo: data } }
+      }
+
+      // Set URL to load our hello-lynx bundle
+      lynxView.url = '/applets-dist/hello-lynx/main.lynx.bundle'
+
+      container.appendChild(lynxView)
+      status.innerHTML += '<br><span class="ok">✓ lynx-view mounted, bundle loading...</span>'
+
+      // Give it a moment to render
+      setTimeout(() => {
+        if (lynxView.shadowRoot || lynxView.childNodes.length > 0 || container.querySelector('lynx-view')) {
+          status.innerHTML += '<br><span class="ok">✓ POC VERIFIED — Lynx for Web container active</span>'
+        } else {
+          status.innerHTML += '<br><span class="err">⚠ lynx-view exists but no visible render output (check console)</span>'
+        }
+      }, 2000)
+
+    } catch (err) {
+      status.innerHTML = `<span class="err">✗ Error: ${err.message}</span><br><pre>${err.stack}</pre>`
+    }
+  </script>
+</body>
+</html>

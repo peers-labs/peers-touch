@@ -1,5 +1,5 @@
 {
-  "version": "0.5.0",
+  "version": "0.5.4",
   "en": { "name": "English", "nativeName": "English", "namespaces": ["agent", "applet", "auth", "channels", "chat", "common", "cron", "errors", "layout", "memory", "moments", "notes", "oauth", "provider", "search", "settings", "share", "tts"] },
   "zh-CN": { "name": "Chinese (Simplified)", "nativeName": "简体中文", "namespaces": ["agent", "applet", "auth", "channels", "chat", "common", "cron", "errors", "layout", "memory", "moments", "notes", "oauth", "provider", "search", "settings", "share", "tts"] }
 }

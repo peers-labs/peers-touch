@@ -2,6 +2,8 @@ import { fromBinary } from '@bufbuild/protobuf';
 
 import { EVENT, eventBus } from '../kernel/events';
 import type {
+  GroupSkdmInstalledPayload,
+  RealtimeConversationSettingsChangedPayload,
   RealtimeGroupMembershipChangePayload,
   RealtimeMessageMutationPayload,
   RealtimeMessageReceiptPayload,
@@ -10,16 +12,22 @@ import type {
   RealtimeResyncPayload,
   RealtimeTypingStatePayload,
 } from '../kernel/events/types';
+import { retrySkdmDistributionFor, rotateGroupSenderChain } from '../modules/identity/groupSenderKeys';
 import { useMediaRuntimeStore } from './mediaRuntime';
 import { installEventStreamBridge, startEventStream, stopEventStream } from './eventStream';
 import { api, type NotificationData } from './desktop_api';
-import { FriendChatMessageSchema, type FriendChatMessage } from '../gen/proto/domain/chat/friend_chat_pb';
+import {
+  FriendChatMessageSchema,
+  FriendMessageStatus,
+  type FriendChatMessage,
+} from '../gen/proto/domain/chat/friend_chat_pb';
 import { GroupMessageSchema, type GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
 import { NotificationType } from '../gen/proto/domain/notification/notification_pb';
 import { useNotificationStore } from '../store/notification';
 import { useNavigationBadgeStore } from '../store/navigationBadges';
-import { useSessionStore } from '../store/session';
+import { currentAuthenticatedActorId, useSessionStore } from '../store/session';
 import { useSocialChatStore } from '../store/socialChat';
+import { conversationKey, conversationSuppressesAlerts } from '../store/socialProjection';
 import { log } from '../utils/logger';
 
 const TYPING_TTL_MS = 6_000;
@@ -75,6 +83,7 @@ function rememberBounded(set: Set<string>, key: string, maxSize: number): boolea
  * trigger a refresh from view-mount effects.
  */
 export async function refreshSocialProjection(label: string, includeNotifications = false): Promise<void> {
+  if (!currentAuthenticatedActorId()) return;
   if (socialRefreshInFlight) return socialRefreshInFlight;
 
   socialRefreshInFlight = (async () => {
@@ -154,10 +163,10 @@ async function startRealtimeStreamSupervisor(actorId: string): Promise<void> {
 }
 
 function reconcileAuthenticatedRuntime(): void {
-  const session = useSessionStore.getState();
-  const actorId = session.authenticated ? session.currentUser?.actorId ?? null : null;
+  const actorId = currentAuthenticatedActorId();
 
   if (!actorId) {
+    stopSocialReconcile();
     realtimeStreamTransition = realtimeStreamTransition.then(stopRealtimeStreamSupervisor).catch((error) => {
       log.warn('socialRealtime', 'realtime stream stop failed', error);
     });
@@ -171,6 +180,7 @@ function reconcileAuthenticatedRuntime(): void {
   realtimeStreamTransition = realtimeStreamTransition.then(() => startRealtimeStreamSupervisor(actorId)).catch((error) => {
     log.warn('socialRealtime', 'realtime stream start failed', error);
   });
+  startSocialReconcile();
 
   if (bootstrappedActorId === actorId) return;
   bootstrappedActorId = actorId;
@@ -204,6 +214,7 @@ async function refreshGroupMessage(groupUlid: string, shouldLoadMessages: boolea
   await api.groupChatSync(groupUlid, COLD_SYNC_LIMIT, 1);
   if (shouldLoadMessages) {
     await store.loadMessages(groupUlid, 'group');
+    await store.markGroupRead(groupUlid);
   }
 
   await Promise.allSettled([
@@ -283,7 +294,18 @@ function onMessageReceived(payload: RealtimeMessageReceivedPayload): void {
   const isSelfEcho = Boolean(store.currentUserDid && payload.senderActorId === store.currentUserDid);
   const isActiveConversation = isVisibleConversation(store, payload.sessionUlid, isKnownGroup);
 
-  if (!isSelfEcho && !isActiveConversation) {
+  if (!isSelfEcho && !isKnownGroup && payload.messageUlid) {
+    const ackStatus = isActiveConversation ? FriendMessageStatus.READ : FriendMessageStatus.DELIVERED;
+    api.friendChatAckMessages([payload.messageUlid], ackStatus).catch((error) => {
+      log.warn('socialRealtime', 'auto message ack failed', error);
+    });
+  }
+
+  const notificationSuppressed = conversationSuppressesAlerts(
+    store.conversationLocalState[conversationKey(isKnownGroup ? 'group' : 'friend', payload.sessionUlid)],
+  );
+
+  if (!isSelfEcho && !isActiveConversation && !notificationSuppressed) {
     useNavigationBadgeStore.getState().bumpChatUnread(payload.sessionUlid);
   } else {
     useNavigationBadgeStore.getState().clearChatUnread(payload.sessionUlid);
@@ -334,10 +356,22 @@ function onGroupMembershipChange(payload: RealtimeGroupMembershipChangePayload):
 
   runDetached('group membership refresh', async () => {
     const store = useSocialChatStore.getState();
+    const did = store.currentUserDid;
+
+    if (payload.kind === 'REMOVED' || payload.kind === 'LEFT') {
+      if (did && payload.actorDid === did) {
+        store.selectGroup('');
+      } else if (did) {
+        await rotateGroupSenderChain(did, payload.groupUlid).catch((error) => {
+          log.warn('socialRealtime', 'rotateGroupSenderChain failed', error);
+        });
+      }
+    }
+
     await Promise.allSettled([
       store.loadGroups(),
       store.loadGroupUnreadCounts(),
-      store.activeGroupUlid === payload.groupUlid
+      payload.kind === 'ADDED' || payload.kind === 'UPDATED' || store.activeGroupUlid === payload.groupUlid
         ? store.loadGroupMembers(payload.groupUlid)
         : Promise.resolve(),
     ]);
@@ -366,7 +400,21 @@ function onNotificationProjectionChanged(): void {
 
 function onPresenceFlip(payload: RealtimePresenceFlipPayload): void {
   if (!payload.actorId) return;
-  useSocialChatStore.getState().setPeerOnline(payload.actorId, payload.online);
+  const store = useSocialChatStore.getState();
+  store.setPeerOnline(payload.actorId, payload.online);
+
+  if (!payload.online) return;
+  const did = store.currentUserDid;
+  if (!did || payload.actorId === did) return;
+  retrySkdmDistributionFor(did, payload.actorId).catch((error) => {
+    log.warn('socialRealtime', 'retrySkdmDistributionFor failed', error);
+  });
+}
+
+function onGroupSkdmInstalled(payload: GroupSkdmInstalledPayload): void {
+  useSocialChatStore.getState()
+    .redecryptGroupMessages(payload.groupUlid, payload.senderDid)
+    .catch((error) => log.warn('socialRealtime', 'redecryptGroupMessages failed', error));
 }
 
 async function syncKnownConversations(): Promise<void> {
@@ -413,6 +461,18 @@ function onResync(payload: RealtimeResyncPayload): void {
   });
 }
 
+function onConversationSettingsChanged(payload: RealtimeConversationSettingsChangedPayload): void {
+  runDetached('conversation settings refresh', async () => {
+    const chat = useSocialChatStore.getState();
+    if (payload.conversationKind === 'friend') {
+      await chat.loadSessions();
+    } else {
+      await chat.loadGroups();
+    }
+    useNavigationBadgeStore.getState().reconcileChatBadge();
+  });
+}
+
 function startTypingSweep(): void {
   if (typingSweepTimer) return;
   typingSweepTimer = window.setInterval(() => {
@@ -429,6 +489,7 @@ function stopTypingSweep(): void {
 function startSocialReconcile(): void {
   if (socialReconcileTimer) return;
   socialReconcileTimer = window.setInterval(() => {
+    if (!currentAuthenticatedActorId()) return;
     runDetached('periodic social projection refresh', () => (
       refreshSocialProjection('periodic reconcile', true)
     ));
@@ -451,13 +512,14 @@ export function installSocialRealtimeBridge(): void {
     eventBus.subscribe(EVENT.REALTIME_TYPING_STATE, onTypingState),
     eventBus.subscribe(EVENT.REALTIME_MESSAGE_MUTATION, onMessageMutation),
     eventBus.subscribe(EVENT.REALTIME_GROUP_MEMBERSHIP_CHANGE, onGroupMembershipChange),
+    eventBus.subscribe(EVENT.REALTIME_CONVERSATION_SETTINGS_CHANGED, onConversationSettingsChanged),
     eventBus.subscribe(EVENT.REALTIME_PRESENCE_FLIP, onPresenceFlip),
     eventBus.subscribe(EVENT.REALTIME_RESYNC, onResync),
+    eventBus.subscribe(EVENT.GROUP_SKDM_INSTALLED, onGroupSkdmInstalled),
     useNotificationStore.subscribe(onNotificationProjectionChanged),
   ];
 
   startTypingSweep();
-  startSocialReconcile();
   reconcileAuthenticatedRuntime();
 
   teardownBridge = () => {

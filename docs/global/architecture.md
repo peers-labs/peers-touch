@@ -139,19 +139,21 @@ Desktop is the richer local runtime client. It may host local orchestration and 
 
 ### 4.2 Mobile
 
-Mobile is a native dual-platform client:
+Mobile is a Tauri v2 Mobile client:
 
-- Android: Kotlin + Jetpack Compose
-- iOS: Swift + SwiftUI
+- `mobile-web`: shared Web UI and mobile-first presentation
+- `mobile-rust`: Tauri Rust capability kernel
+- Android / iOS native plugins: device capability integration
 
 Mobile high-level principles:
 
-- native implementation per platform
+- shared UI/UX and runtime projection semantics with Desktop where appropriate
+- native implementation only for device capabilities and Tauri mobile plugins
 - shared contract semantics through proto
 - Station remains the shared truth source
 - mobile does not become an independent cross-end business truth owner
 
-Applet-related runtime follows the Lynx-based container direction inside the native hosts.
+Applet-related runtime follows the Lynx-based direction through a Tauri mobile native plugin unless a later platform decision replaces it.
 
 ---
 
@@ -186,8 +188,11 @@ peers-touch/
 ├── apps/
 │   ├── desktop/
 │   ├── mobile/
-│   │   ├── android/
-│   │   ├── ios/
+│   │   ├── src/            # mobile-web UI
+│   │   ├── src-tauri/      # mobile-rust capability kernel
+│   │   ├── gen/            # Tauri generated mobile projects
+│   │   ├── android/        # legacy/native plugin source during migration
+│   │   ├── ios/            # legacy/native plugin source during migration
 │   │   └── flutter/        # deprecated, not active implementation
 │   └── station/
 │       ├── app/
@@ -301,9 +306,10 @@ The source of truth is always the `.proto`, never the generated file.
 - Desktop 端保留 P2P + Relay 混合策略
 
 ### 7. **Applet Container: Lynx**
-- Mobile 端使用 [Lynx](https://github.com/lynx-family/lynx) 作为 Applet/小程序容器
-- Android 通过原生 LynxView 承载，iOS 同理
-- Applet 运行在 Lynx 沙箱中，通过 Bridge 与宿主 App 通信
+- Applet / 小程序运行时以 [Lynx](https://github.com/lynx-family/lynx) 为跨端容器方向
+- Desktop 使用 Lynx for Web 承载 Applet web bundle；Android / iOS 使用原生 LynxView 承载 native Lynx bundle
+- Applet 运行在 Host 托管的 Lynx Runtime 中，通过 Bridge V2 与 Capability Gateway 调用宿主能力
+- 正式架构见 `docs/architecture/applet-runtime/README.md`
 
 ---
 

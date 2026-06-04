@@ -5,7 +5,7 @@
 ### 1.1 目标
 - 定义 Peers Touch 客户端（Desktop + Mobile）与 Station 之间的多端数据同步协议，覆盖全模块。
 - 明确每个业务模块的同步方向、同步模式、冲突解决策略与离线行为。
-- 为 Android（Kotlin + Jetpack Compose）与 iOS（Swift + SwiftUI）原生双端实现提供可直接落地的技术规范。
+- 为 Tauri Mobile（mobile-web + mobile-rust + native plugins）实现提供可直接落地的技术规范。
 - 与 Desktop（Tauri + React/TS + Rust）的同步行为保持语义一致，确保三端用户体验对齐。
 
 ### 1.2 非目标
@@ -24,8 +24,7 @@
 | --- | --- | --- |
 | Station | 权威数据源（Single Source of Truth），承载全部业务领域逻辑 | Go + Hertz + PostgreSQL |
 | Desktop | 客户端端点，丰富交互体验 + 本地缓存 | Tauri + React/TS + Rust |
-| Mobile (Android) | 客户端端点，移动场景交互 + 本地缓存 | Kotlin + Jetpack Compose + Room |
-| Mobile (iOS) | 客户端端点，移动场景交互 + 本地缓存 | Swift + SwiftUI + SwiftData |
+| Mobile | 客户端端点，移动场景交互 + 本地缓存 + native plugins | Tauri v2 Mobile + Web UI + Rust + Android/iOS plugins |
 
 ### 2.2 架构拓扑
 
@@ -52,12 +51,13 @@
                     │                                     │
          ┌──────────▼──────────┐             ┌───────────▼─────────┐
          │      Desktop        │             │       Mobile        │
-         │  (Tauri + Rust)     │             │  (Android / iOS)    │
-         │                     │             │                     │
+         │  Tauri Desktop      │             │  Tauri Mobile       │
+         │  React + Rust       │             │  Web UI + Rust      │
+         │                     │             │  Native Plugins     │
          │  SSE/WS ← Station   │             │  SSE/WS ← Station   │
          │  HTTP → Station     │             │  HTTP → Station     │
-         │  P2P ↔ Desktop      │             │  (No P2P)           │
-         │  Local Cache        │             │  Local Cache        │
+         │  P2P ↔ Desktop      │             │  Push ← Station     │
+         │  Local Cache        │             │  Local Cache/Outbox │
          └─────────────────────┘             └─────────────────────┘
 ```
 
@@ -71,6 +71,7 @@
 | 幂等操作 | 所有写操作均设计为幂等（重复提交不产生副作用），安全支持重试与重放 |
 | 增量优先 | 优先增量同步，全量同步仅用于首次加载或极端不一致恢复 |
 | Mobile 仅走 Relay | Mobile 端不参与 P2P 网络，所有通信经由 Station 中继 |
+| Mobile 生命周期感知 | 前台使用事件流，后台依赖 push 与系统任务，恢复前台必须 delta sync |
 
 ---
 

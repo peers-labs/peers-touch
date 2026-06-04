@@ -225,11 +225,10 @@ func checkAborted(hertzCtx interface{}) bool {
 
 func HTTPHandlerFunc(h http.HandlerFunc) EndpointHandler {
 	return func(ctx context.Context, req Request, resp Response) error {
-		// Create body reader from request body
-		var bodyReader io.Reader
-		if body := req.Body(); len(body) > 0 {
-			bodyReader = bytes.NewReader(body)
-		}
+		// Always provide a non-nil reader so downstream net/http handlers can
+		// safely read r.Body (e.g. io.LimitReader / io.ReadAll) even on GET
+		// requests where the body is empty.
+		bodyReader := bytes.NewReader(req.Body())
 
 		// Parse the full path which may include query string
 		fullPath := req.Path()

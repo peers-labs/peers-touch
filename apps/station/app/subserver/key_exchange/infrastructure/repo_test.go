@@ -27,7 +27,7 @@ func TestFetchKeyBundles_MultiDeviceCompositeKey(t *testing.T) {
 	ikA := []byte("identity-key-public-material-a______")
 	ikB := []byte("identity-key-public-material-b______")
 
-	if err := repo.UpsertIdentityKey(did, devA, ikA, "fp-a", 100); err != nil {
+	if err := repo.UpsertIdentityKey(did, devA, ikA, "fp-a", 100, []uint32{0}); err != nil {
 		t.Fatalf("ik a: %v", err)
 	}
 	if err := repo.UpsertSignedPreKey(did, devA, domain.SignedPreKey{ID: 1, PublicKey: []byte("spk-a___________________________"), Signature: []byte("spk-sig-a_______________________")}); err != nil {
@@ -37,7 +37,7 @@ func TestFetchKeyBundles_MultiDeviceCompositeKey(t *testing.T) {
 		t.Fatalf("opk a: %v", err)
 	}
 
-	if err := repo.UpsertIdentityKey(did, devB, ikB, "fp-b", 200); err != nil {
+	if err := repo.UpsertIdentityKey(did, devB, ikB, "fp-b", 200, []uint32{0, 1}); err != nil {
 		t.Fatalf("ik b: %v", err)
 	}
 	if err := repo.UpsertSignedPreKey(did, devB, domain.SignedPreKey{ID: 2, PublicKey: []byte("spk-b___________________________"), Signature: []byte("spk-sig-b_______________________")}); err != nil {
@@ -60,5 +60,8 @@ func TestFetchKeyBundles_MultiDeviceCompositeKey(t *testing.T) {
 	}
 	if len(bundles[0].OneTimePreKeys) != 1 || len(bundles[1].OneTimePreKeys) != 1 {
 		t.Fatalf("expected one consumed opk per bundle")
+	}
+	if got := bundles[0].SupportedVersions; len(got) != 2 || got[0] != 0 || got[1] != 1 {
+		t.Fatalf("expected devB to preserve supported versions [0 1], got %#v", got)
 	}
 }

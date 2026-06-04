@@ -24,6 +24,7 @@ type Repos struct {
 	// The narrower `domain.FollowRepository` interface is satisfied by
 	// the same instance (Follows implements both).
 	Follows FollowRepository
+	Blocks  BlockGraphRepository
 }
 
 // NewRepos constructs every repo against the supplied *gorm.DB. The
@@ -41,5 +42,6 @@ func NewRepos(gdb *gorm.DB, resolveDID func(context.Context, uint64) (string, er
 		Reactions:     NewReactionRepository(gdb),
 		Circles:       NewCircleRepository(gdb),
 		Follows:       NewFollowRepository(gdb),
+		Blocks:        NewBlockGraphRepository(gdb),
 	}
 }

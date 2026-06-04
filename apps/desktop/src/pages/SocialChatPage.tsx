@@ -16,9 +16,6 @@ import { useSocialChatStore } from '../store/socialChat';
 import { log } from '../utils/logger';
 import { readFeatureFlags } from '../modules/settings/featureFlags';
 import { friendChatP2p } from '../modules/p2p/friendChatP2p';
-import { rotateGroupSenderChain, retrySkdmDistributionFor } from '../modules/identity/groupSenderKeys';
-import { eventBus } from '../kernel/events';
-import { EVENT } from '../kernel/events/catalog';
 
 type ChatSubPage = 'chats' | 'contacts';
 
@@ -43,9 +40,7 @@ export function SocialChatPage() {
     openThreadRootUlid,
     setFriendP2pStatus,
     sessions,
-    groups,
     activeSessionUlid,
-    activeGroupUlid,
     activeTab,
     currentUserDid,
   } = useSocialChatStore();

@@ -3,6 +3,8 @@ package infrastructure
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
@@ -12,9 +14,10 @@ import (
 type IdentityKeyModel struct {
 	ActorDID          string    `gorm:"column:actor_did;size:255;primaryKey"`
 	DeviceID          string    `gorm:"column:device_id;size:128;primaryKey"`
-	IdentityKeyPub      []byte    `gorm:"column:identity_key_pub;type:bytea"`
-	KeyFingerprint      string    `gorm:"column:key_fingerprint;size:128"`
+	IdentityKeyPub    []byte    `gorm:"column:identity_key_pub;type:bytea"`
+	KeyFingerprint    string    `gorm:"column:key_fingerprint;size:128"`
 	PublishedAtUnixMs int64     `gorm:"column:published_at_unix_ms"`
+	SupportedVersions string    `gorm:"column:supported_versions;size:64"`
 	CreatedAt         time.Time `gorm:"column:created_at"`
 	UpdatedAt         time.Time `gorm:"column:updated_at"`
 }
@@ -65,23 +68,24 @@ func (r *GormRepo) AutoMigrate() error {
 			if err := r.db.Migrator().DropTable(&OneTimePreKeyModel{}, &SignedPreKeyModel{}, &IdentityKeyModel{}); err != nil {
 				return fmt.Errorf("key_exchange: failed dropping legacy tables: %w", err)
 			}
-			fmt.Println("[key_exchange] GREENFIELD: dropped legacy key_exchange_* tables for (actor_did, device_id) migration")
 		}
 	}
 	return r.db.AutoMigrate(&IdentityKeyModel{}, &SignedPreKeyModel{}, &OneTimePreKeyModel{})
 }
 
-func (r *GormRepo) UpsertIdentityKey(actorDID, deviceID string, ikPub []byte, fingerprint string, publishedAtUnixMs int64) error {
+func (r *GormRepo) UpsertIdentityKey(actorDID, deviceID string, ikPub []byte, fingerprint string, publishedAtUnixMs int64, supportedVersions []uint32) error {
 	now := time.Now()
+	encodedVersions := encodeSupportedVersions(supportedVersions)
 	var existing IdentityKeyModel
 	err := r.db.Where("actor_did = ? AND device_id = ?", actorDID, deviceID).Take(&existing).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return r.db.Create(&IdentityKeyModel{
 			ActorDID:          actorDID,
-			DeviceID:        deviceID,
+			DeviceID:          deviceID,
 			IdentityKeyPub:    ikPub,
 			KeyFingerprint:    fingerprint,
 			PublishedAtUnixMs: publishedAtUnixMs,
+			SupportedVersions: encodedVersions,
 			CreatedAt:         now,
 			UpdatedAt:         now,
 		}).Error
@@ -92,6 +96,7 @@ func (r *GormRepo) UpsertIdentityKey(actorDID, deviceID string, ikPub []byte, fi
 	existing.IdentityKeyPub = ikPub
 	existing.KeyFingerprint = fingerprint
 	existing.PublishedAtUnixMs = publishedAtUnixMs
+	existing.SupportedVersions = encodedVersions
 	existing.UpdatedAt = now
 	return r.db.Save(&existing).Error
 }
@@ -187,10 +192,11 @@ func (r *GormRepo) FetchKeyBundles(actorDID, filterDeviceID string) ([]domain.Ke
 			}
 			out = append(out, domain.KeyBundle{
 				ActorDID:          ik.ActorDID,
-				DeviceID:        ik.DeviceID,
+				DeviceID:          ik.DeviceID,
 				IdentityKeyPub:    ik.IdentityKeyPub,
 				KeyFingerprint:    ik.KeyFingerprint,
 				PublishedAtUnixMs: ik.PublishedAtUnixMs,
+				SupportedVersions: decodeSupportedVersions(ik.SupportedVersions),
 				SignedPreKey: domain.SignedPreKey{
 					ID:        spk.SPKID,
 					PublicKey: spk.PublicKey,
@@ -208,6 +214,36 @@ func (r *GormRepo) FetchKeyBundles(actorDID, filterDeviceID string) ([]domain.Ke
 		return nil, err
 	}
 	return out, nil
+}
+
+func encodeSupportedVersions(versions []uint32) string {
+	if len(versions) == 0 {
+		return "0"
+	}
+	parts := make([]string, 0, len(versions))
+	for _, version := range versions {
+		parts = append(parts, strconv.FormatUint(uint64(version), 10))
+	}
+	return strings.Join(parts, ",")
+}
+
+func decodeSupportedVersions(value string) []uint32 {
+	if strings.TrimSpace(value) == "" {
+		return []uint32{0}
+	}
+	parts := strings.Split(value, ",")
+	out := make([]uint32, 0, len(parts))
+	for _, part := range parts {
+		parsed, err := strconv.ParseUint(strings.TrimSpace(part), 10, 32)
+		if err != nil {
+			continue
+		}
+		out = append(out, uint32(parsed))
+	}
+	if len(out) == 0 {
+		return []uint32{0}
+	}
+	return out
 }
 
 func (r *GormRepo) CountAvailableOPKs(actorDID, deviceID string) (int64, error) {

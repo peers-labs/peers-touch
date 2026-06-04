@@ -1,4 +1,5 @@
 use crate::error::{AppResult, ErrorCode};
+use crate::infrastructure::station_registry::StationRegistry;
 use crate::model::common::PeersResponse;
 use prost::Message;
 use reqwest::blocking::Client;
@@ -6,6 +7,31 @@ use reqwest::Method;
 use serde::Serialize;
 use serde_json::Value;
 use std::fmt;
+use std::sync::OnceLock;
+
+// ---------------------------------------------------------------------------
+// Global station registry (initialized once during bootstrap)
+// ---------------------------------------------------------------------------
+
+static STATION_REGISTRY: OnceLock<StationRegistry> = OnceLock::new();
+
+/// Initialize the global station registry. Must be called once during bootstrap
+/// after the config directory is resolved.
+pub(crate) fn init_station_registry(config_dir: &std::path::Path) {
+    if STATION_REGISTRY
+        .set(StationRegistry::new(config_dir))
+        .is_err()
+    {
+        tracing::warn!("station_registry: already initialized, ignoring duplicate init");
+    }
+}
+
+/// Access the global station registry. Panics if not yet initialized.
+pub(crate) fn station_registry() -> &'static StationRegistry {
+    STATION_REGISTRY.get().expect(
+        "StationRegistry not initialized — init_station_registry must be called during bootstrap",
+    )
+}
 
 #[derive(Debug, Clone)]
 pub enum StationClientErrorKind {
@@ -123,10 +149,16 @@ fn build_error_for_status(status: u16, path: &str, body: &str) -> StationClientE
 }
 
 pub(crate) fn station_base_url() -> String {
-    std::env::var("PEERS_STATION_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:18080".to_string())
-        .trim_end_matches('/')
-        .to_string()
+    // Prefer the registry if already initialized (normal runtime path).
+    // Falls back to env var before bootstrap completes or if registry
+    // was never set up (e.g. unit tests running without full bootstrap).
+    match STATION_REGISTRY.get() {
+        Some(reg) => reg.active_url(),
+        None => std::env::var("PEERS_STATION_URL")
+            .unwrap_or_else(|_| "http://127.0.0.1:18080".to_string())
+            .trim_end_matches('/')
+            .to_string(),
+    }
 }
 
 fn build_client() -> Result<Client, StationClientError> {
@@ -948,4 +980,73 @@ pub(crate) fn put_presigned_url(
         "← presigned PUT OK"
     );
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Station probe — lightweight health check + metadata fetch
+// ---------------------------------------------------------------------------
+
+/// Probe a station URL to check if it is reachable and fetch basic metadata.
+///
+/// Returns `(online, label, peer_id, peers_count)`. On any network or parse
+/// error the station is reported as offline with `None` metadata fields.
+pub(crate) fn probe_station(url: &str) -> (bool, Option<String>, Option<String>, Option<u32>) {
+    let client = match Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::debug!(error = %e, url = %url, "probe_station: failed to build client");
+            return (false, None, None, None);
+        }
+    };
+
+    let base = url.trim_end_matches('/');
+
+    // Primary reachability check via healthz endpoint.
+    let health_ok = client
+        .get(format!("{}/sub-oss/healthz", base))
+        .send()
+        .map(|r| r.status().is_success())
+        .unwrap_or(false);
+
+    if !health_ok {
+        tracing::debug!(url = %base, "probe_station: healthz unreachable");
+        return (false, None, None, None);
+    }
+
+    // Attempt to fetch bootstrap info for peer_id.
+    let mut peer_id: Option<String> = None;
+    let mut label: Option<String> = None;
+    let mut peers_count: Option<u32> = None;
+
+    if let Ok(resp) = client.get(format!("{}/sub-bootstrap/info", base)).send() {
+        if let Ok(json) = resp.json::<Value>() {
+            // Station may wrap in a `data` envelope or return flat.
+            let data = json.get("data").unwrap_or(&json);
+            peer_id = data
+                .get("peer_id")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            label = data
+                .get("label")
+                .or_else(|| data.get("name"))
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            peers_count = data
+                .get("peers_count")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as u32);
+        }
+    }
+
+    tracing::debug!(
+        url = %base,
+        online = true,
+        peer_id = ?peer_id,
+        "probe_station: OK"
+    );
+
+    (true, label, peer_id, peers_count)
 }

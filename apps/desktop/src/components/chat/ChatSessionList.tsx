@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Dropdown, Input } from '@lobehub/ui';
 import { Badge, Empty, Spin, theme, Typography } from 'antd';
-import { Users, Search, Plus, UserPlus, UsersRound } from 'lucide-react';
+import { BellOff, Pin, Search, Plus, UserPlus, Users, UsersRound } from 'lucide-react';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { useSocialChatStore } from '../../store/socialChat';
 import type { UnifiedConversation } from '../../store/socialChat';
@@ -43,6 +43,7 @@ export function ChatSessionList() {
     activeSessionUlid,
     activeGroupUlid,
     loading,
+    conversationLocalState,
     setActiveTab,
     selectSession,
     selectGroup,
@@ -60,7 +61,7 @@ export function ChatSessionList() {
 
   const conversations = useMemo(
     () => getUnifiedConversations(),
-    [getUnifiedConversations, sessions, groups, groupUnreadCounts, lastPreviews, currentUserDid],
+    [getUnifiedConversations, sessions, groups, groupUnreadCounts, lastPreviews, currentUserDid, conversationLocalState],
   );
 
   const filteredItems = useMemo(() => {
@@ -162,6 +163,7 @@ export function ChatSessionList() {
               const name = c.name || t('chat.social.sessionList.unknown');
               const timeStr = relativeTime(c.lastActivity, t);
               const unread = c.unread;
+              const localState = conversationLocalState[`${c.type}:${c.ulid}`];
 
               let subtitle = '';
               if (c.preview) {
@@ -212,6 +214,12 @@ export function ChatSessionList() {
                         <Text strong ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>
                           {name}
                         </Text>
+                        {localState?.sticky ? (
+                          <Pin size={11} style={{ color: token.colorPrimary, flexShrink: 0 }} aria-label={t('chat.social.detail.stateSticky')} />
+                        ) : null}
+                        {localState?.muted || localState?.alertEnabled === false ? (
+                          <BellOff size={11} style={{ color: token.colorTextTertiary, flexShrink: 0 }} aria-label={t('chat.social.detail.stateMuted')} />
+                        ) : null}
                       </Flexbox>
                       <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
                         {timeStr}
