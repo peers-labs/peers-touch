@@ -4,7 +4,7 @@
 // next-fetched bundle returns a different fingerprint we surface a
 // "fingerprint changed" warning and force the user to re-verify.
 //
-// Storage strategy: localStorage keyed by `socialChat:trust:<actor>`
+// Storage strategy: client storage domain `identity.trust` keyed by `socialChat:trust:<actor>`
 // (actor === the local user's DID). The identity-pipeline clears
 // every key under the `socialChat:` prefix on logout / actor switch
 // (see services/identityHandlers.ts) so we automatically inherit the
@@ -15,6 +15,10 @@
 // during debugging.
 
 import { log } from '../../utils/logger';
+import {
+  readDesktopDomainValueSync,
+  writeDesktopDomainValueSync,
+} from '../../storage/desktopClientStorage';
 
 export type PeerTrustState = 'unverified' | 'verified' | 'changed';
 
@@ -42,11 +46,8 @@ function storageKey(localActorDid: string): string {
 }
 
 function load(localActorDid: string): TrustLedger {
-  if (typeof localStorage === 'undefined') return {};
   try {
-    const raw = localStorage.getItem(storageKey(localActorDid));
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
+    const parsed = readDesktopDomainValueSync<TrustLedger>('identity.trust', storageKey(localActorDid));
     if (parsed && typeof parsed === 'object') return parsed as TrustLedger;
     return {};
   } catch (err) {
@@ -56,9 +57,8 @@ function load(localActorDid: string): TrustLedger {
 }
 
 function persist(localActorDid: string, ledger: TrustLedger): void {
-  if (typeof localStorage === 'undefined') return;
   try {
-    localStorage.setItem(storageKey(localActorDid), JSON.stringify(ledger));
+    writeDesktopDomainValueSync('identity.trust', storageKey(localActorDid), ledger);
   } catch (err) {
     log.warn('peerTrust', 'persist failed', { actor: localActorDid, error: String(err) });
   }

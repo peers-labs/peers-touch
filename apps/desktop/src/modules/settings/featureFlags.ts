@@ -10,7 +10,7 @@ export interface FeatureFlags {
 
 function readBoolFromStorage(key: string, defaultValue: boolean): boolean {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = readDesktopPreferenceSync<string>(key);
     if (raw === null) return defaultValue;
     const v = raw.trim().toLowerCase();
     if (v === 'true' || v === '1') return true;
@@ -30,7 +30,7 @@ export function readFeatureFlags(): FeatureFlags {
 
 export function setFeatureFlag(key: keyof FeatureFlags, value: boolean): void {
   try {
-    localStorage.setItem(FLAG_KEYS[key], value ? 'true' : 'false');
+    writeDesktopPreferenceSync(FLAG_KEYS[key], value ? 'true' : 'false');
   } catch {
     /* ignore */
   }
@@ -38,8 +38,13 @@ export function setFeatureFlag(key: keyof FeatureFlags, value: boolean): void {
 
 export function resetFeatureFlag(key: keyof FeatureFlags): void {
   try {
-    localStorage.removeItem(FLAG_KEYS[key]);
+    removeDesktopPreferenceSync(FLAG_KEYS[key]);
   } catch {
     /* ignore */
   }
 }
+import {
+  readDesktopPreferenceSync,
+  removeDesktopPreferenceSync,
+  writeDesktopPreferenceSync,
+} from '../../storage/desktopClientStorage';

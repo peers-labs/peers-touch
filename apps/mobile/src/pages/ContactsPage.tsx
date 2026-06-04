@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Avatar, Button, Checkbox, Empty, Input, List, Modal, Spin, Tag, Typography } from 'antd';
-import { Check, Search, ShieldCheck, UserPlus, Users, X } from 'lucide-react';
+import { Button, Checkbox, Empty, Input, List, Modal, Spin, Tag, Typography } from 'antd';
+import { Ban, Check, RotateCcw, Search, ShieldCheck, UserPlus, Users, X } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
+import { MobileAvatar } from '../components/MobileAvatar';
 import { useGroupStore } from '../features/group/groupStore';
 import { projectGroupConversations, type GroupConversation } from '../features/group/groupProjection';
 import {
@@ -37,9 +38,13 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
   const sendFriendRequest = useSocialStore((state) => state.sendFriendRequest);
   const selectSession = useSocialStore((state) => state.selectSession);
   const loadPeerProfile = useSocialStore((state) => state.loadPeerProfile);
+  const loadFriendshipStatus = useSocialStore((state) => state.loadFriendshipStatus);
+  const blockUser = useSocialStore((state) => state.blockUser);
+  const unblockUser = useSocialStore((state) => state.unblockUser);
   const peerProfiles = useSocialStore((state) => state.peerProfiles);
   const peerProfileLoading = useSocialStore((state) => state.peerProfileLoading);
   const peerProfileErrors = useSocialStore((state) => state.peerProfileErrors);
+  const friendshipStatus = useSocialStore((state) => state.friendshipStatus);
   const peopleResults = useSocialStore((state) => state.peopleSearchResults);
   const peopleSearching = useSocialStore((state) => state.peopleSearchLoading);
   const peopleError = useSocialStore((state) => state.peopleSearchError);
@@ -96,10 +101,14 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
   const selectedProfile = selectedContact ? peerProfiles[selectedContact.peerDid] : null;
   const selectedProfileLoading = selectedContact ? Boolean(peerProfileLoading[selectedContact.peerDid]) : false;
   const selectedProfileError = selectedContact ? peerProfileErrors[selectedContact.peerDid] : null;
+  const selectedBlocked = selectedContact ? Boolean(friendshipStatus[selectedContact.peerDid]?.blocked) : false;
 
   useEffect(() => {
-    if (selectedContact?.peerDid) void loadPeerProfile(selectedContact.peerDid);
-  }, [loadPeerProfile, selectedContact?.peerDid]);
+    if (selectedContact?.peerDid) {
+      void loadPeerProfile(selectedContact.peerDid);
+      void loadFriendshipStatus(selectedContact.peerDid).catch(() => undefined);
+    }
+  }, [loadFriendshipStatus, loadPeerProfile, selectedContact?.peerDid]);
 
   const closeFindPeople = () => {
     setAddOpen(false);
@@ -119,6 +128,34 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
     await selectSession(contact.session.ulid);
     setSelectedContact(null);
     onOpenChat?.();
+  };
+
+  const confirmBlockSelectedContact = () => {
+    if (!selectedContact) return;
+    Modal.confirm({
+      title: t('mobile.contacts.blockConfirmTitle'),
+      content: t('mobile.contacts.blockConfirmBody'),
+      okText: t('mobile.contacts.block'),
+      cancelText: t('common.action.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        await blockUser(selectedContact.peerDid);
+        setSelectedContact(null);
+      },
+    });
+  };
+
+  const confirmUnblockSelectedContact = () => {
+    if (!selectedContact) return;
+    Modal.confirm({
+      title: t('mobile.contacts.unblockConfirmTitle'),
+      content: t('mobile.contacts.unblockConfirmBody'),
+      okText: t('mobile.contacts.unblock'),
+      cancelText: t('common.action.cancel'),
+      onOk: async () => {
+        await unblockUser(selectedContact.peerDid);
+      },
+    });
   };
 
   const openGroupChat = async (group: GroupConversation) => {
@@ -190,6 +227,7 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
               dataSource={inboundRequests}
               renderItem={(request) => (
                 <List.Item
+                  className="contact-item friend-request-item"
                   actions={[
                     <Button
                       key="accept"
@@ -201,8 +239,8 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
                   ]}
                 >
                   <List.Item.Meta
-                    avatar={<Avatar src={request.senderAvatar}>{(request.senderDisplayName || request.senderDid).slice(0, 1)}</Avatar>}
-                    title={<Text strong>{request.senderDisplayName || request.senderDid}</Text>}
+                    avatar={<MobileAvatar src={request.senderAvatar}>{displayPeerName(request.senderDisplayName, t).slice(0, 1)}</MobileAvatar>}
+                    title={<Text strong>{displayPeerName(request.senderDisplayName, t)}</Text>}
                     description={request.message || t('mobile.contacts.defaultRequestMessage')}
                   />
                 </List.Item>
@@ -219,7 +257,7 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
               renderItem={(contact) => (
                 <List.Item className="contact-item" onClick={() => setSelectedContact(contact)}>
                   <List.Item.Meta
-                    avatar={<Avatar src={contact.peerAvatar}>{contact.peerName.slice(0, 1)}</Avatar>}
+                    avatar={<MobileAvatar src={contact.peerAvatar}>{contact.peerName.slice(0, 1)}</MobileAvatar>}
                     title={<Text strong>{contact.peerName}</Text>}
                     description={contact.peerOnline ? t('mobile.social.online') : t('mobile.social.offline')}
                   />
@@ -248,9 +286,9 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
                 <List.Item className="contact-item" onClick={() => openGroupChat(group)}>
                   <List.Item.Meta
                     avatar={
-                      <Avatar src={group.group.avatarCid} icon={<Users size={16} />}>
+                      <MobileAvatar src={group.group.avatarCid} icon={<Users size={16} />}>
                         {group.group.name.slice(0, 1)}
-                      </Avatar>
+                      </MobileAvatar>
                     }
                     title={<Text strong>{group.group.name}</Text>}
                     description={t('mobile.group.memberCount', { count: group.group.memberCount })}
@@ -278,10 +316,10 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
               <List
                 dataSource={sentRequests}
                 renderItem={(request) => (
-                  <List.Item>
+                  <List.Item className="contact-item">
                     <List.Item.Meta
-                      avatar={<Avatar src={request.receiverAvatar}>{(request.receiverDisplayName || request.receiverDid).slice(0, 1)}</Avatar>}
-                      title={<Text strong>{request.receiverDisplayName || request.receiverDid}</Text>}
+                      avatar={<MobileAvatar src={request.receiverAvatar}>{displayPeerName(request.receiverDisplayName, t).slice(0, 1)}</MobileAvatar>}
+                      title={<Text strong>{displayPeerName(request.receiverDisplayName, t)}</Text>}
                       description={t('mobile.contacts.waitingForAccept')}
                     />
                   </List.Item>
@@ -323,9 +361,9 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
                   const alreadyFriend = contactDids.has(receiverDid);
                   return (
                     <div className="people-result-card" key={receiverDid || result.username}>
-                      <Avatar src={result.avatar} size={42}>
+                      <MobileAvatar src={result.avatar} size={42}>
                         {(result.displayName || result.username || receiverDid).slice(0, 1)}
-                      </Avatar>
+                      </MobileAvatar>
                       <div className="people-result-copy">
                         <div className="people-result-title">
                           <Text strong ellipsis>{result.displayName || result.username || receiverDid}</Text>
@@ -396,7 +434,7 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
               renderItem={(contact) => (
                 <List.Item>
                   <List.Item.Meta
-                    avatar={<Avatar src={contact.peerAvatar}>{contact.peerName.slice(0, 1)}</Avatar>}
+                    avatar={<MobileAvatar src={contact.peerAvatar}>{contact.peerName.slice(0, 1)}</MobileAvatar>}
                     title={<Text strong>{contact.peerName}</Text>}
                     description={<Text type="secondary" copyable>{contact.peerDid}</Text>}
                   />
@@ -423,9 +461,9 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
         {selectedContact ? (
           <div className="contact-profile-card">
             <Spin spinning={selectedProfileLoading}>
-              <Avatar src={selectedProfile?.avatar || selectedContact.peerAvatar} size={64}>
+              <MobileAvatar src={selectedProfile?.avatar || selectedContact.peerAvatar} size={64}>
                 {(selectedProfile?.displayName || selectedContact.peerName).slice(0, 1)}
-              </Avatar>
+              </MobileAvatar>
             </Spin>
             <div className="contact-profile-copy">
               <Text strong className="contact-profile-name">{selectedProfile?.displayName || selectedContact.peerName}</Text>
@@ -451,9 +489,19 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
               </div>
             ) : null}
             {selectedProfileError ? <Text type="danger">{formatSocialError(selectedProfileError)}</Text> : null}
-            <Button type="primary" block onClick={() => openContactChat(selectedContact)}>
+            {selectedBlocked ? <Tag color="error">{t('mobile.contacts.blocked')}</Tag> : null}
+            <Button type="primary" block disabled={selectedBlocked} onClick={() => openContactChat(selectedContact)}>
               {t('mobile.contacts.openChat')}
             </Button>
+            {selectedBlocked ? (
+              <Button block icon={<RotateCcw size={14} />} onClick={confirmUnblockSelectedContact}>
+                {t('mobile.contacts.unblock')}
+              </Button>
+            ) : (
+              <Button block danger icon={<Ban size={14} />} onClick={confirmBlockSelectedContact}>
+                {t('mobile.contacts.block')}
+              </Button>
+            )}
           </div>
         ) : null}
       </Modal>
@@ -468,6 +516,10 @@ function ProfileStat({ label, value }: { label: string; value: number }) {
       <Text type="secondary">{label}</Text>
     </div>
   );
+}
+
+function displayPeerName(name: string | undefined, t: (key: string) => string): string {
+  return name?.trim() || t('mobile.contacts.unknownUser');
 }
 
 function SectionTitle({ title, count }: { title: string; count: number }) {

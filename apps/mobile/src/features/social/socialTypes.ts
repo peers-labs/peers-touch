@@ -104,6 +104,11 @@ export interface SocialConversation {
   lastMessage?: FriendChatMessage;
 }
 
+export interface FriendshipStatus {
+  targetDid: string;
+  blocked: boolean;
+}
+
 export interface TypingEntry {
   typing: boolean;
   lastUpdate: number;

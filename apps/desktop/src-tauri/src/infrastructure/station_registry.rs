@@ -63,14 +63,17 @@ impl StationRegistry {
 
         // Ensure the active URL is always present in entries so the picker shows it.
         if !active.is_empty() && !entries.iter().any(|e| e.url == active) {
-            entries.insert(0, StationEntry {
-                url: active.clone(),
-                label: None,
-                peer_id: None,
-                peers_count: None,
-                last_probe: None,
-                online: false,
-            });
+            entries.insert(
+                0,
+                StationEntry {
+                    url: active.clone(),
+                    label: None,
+                    peer_id: None,
+                    peers_count: None,
+                    last_probe: None,
+                    online: false,
+                },
+            );
         }
 
         (entries, active)

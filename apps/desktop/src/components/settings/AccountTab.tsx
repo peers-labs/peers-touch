@@ -6,6 +6,8 @@ import {
   Empty,
   Input,
   AutoComplete,
+  List,
+  Modal,
   Select,
   Spin,
   Tag,
@@ -14,6 +16,7 @@ import {
 } from 'antd';
 import {
   Camera,
+  Ban,
   Clock3,
   Copy,
   Hash,
@@ -21,10 +24,11 @@ import {
   MapPin,
   Pencil,
   Plus,
+  RotateCcw,
   Trash2,
 } from 'lucide-react';
 import { Button } from '@lobehub/ui';
-import { api, type AccountProfile, type AccountProfileLink } from '../../services/desktop_api';
+import { api, type AccountProfile, type AccountProfileLink, type Friend } from '../../services/desktop_api';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { useAccountIdentityStore } from '../../store/accountIdentity';
 import { useTranslation } from 'react-i18next';
@@ -364,6 +368,9 @@ export function AccountTab() {
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingHeader, setUploadingHeader] = useState(false);
+  const [blockedOpen, setBlockedOpen] = useState(false);
+  const [blockedLoading, setBlockedLoading] = useState(false);
+  const [blockedUsers, setBlockedUsers] = useState<Friend[]>([]);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const timezoneOptions = useMemo(() => buildTimezoneOptions(t), [t]);
@@ -510,6 +517,42 @@ export function AccountTab() {
     } finally {
       setUploadingHeader(false);
     }
+  };
+
+  const loadBlockedUsers = async () => {
+    setBlockedLoading(true);
+    try {
+      const response = await api.friendChatListBlockedUsers();
+      setBlockedUsers(response.blockedUsers ?? []);
+    } catch (error: any) {
+      toast.error(error?.message || t('provider.account.relationship.loadBlockedFailed'));
+    } finally {
+      setBlockedLoading(false);
+    }
+  };
+
+  const openBlockedUsers = () => {
+    setBlockedOpen(true);
+    void loadBlockedUsers();
+  };
+
+  const confirmUnblockUser = (targetDid: string) => {
+    Modal.confirm({
+      title: t('provider.account.relationship.unblockConfirmTitle'),
+      content: t('provider.account.relationship.unblockConfirmBody', { did: targetDid }),
+      okText: t('provider.account.relationship.unblock'),
+      cancelText: t('common.action.cancel', { ns: 'common' }),
+      onOk: async () => {
+        try {
+          await api.friendChatUnblockUser(targetDid);
+          await loadBlockedUsers();
+          toast.success(t('provider.account.relationship.unblockSuccess'));
+        } catch (error: any) {
+          toast.error(error?.message || t('provider.account.relationship.unblockFailed'));
+          throw error;
+        }
+      },
+    });
   };
 
   if (loading) {
@@ -744,6 +787,87 @@ export function AccountTab() {
           ))}
         </Flexbox>
       </SettingsSection>
+
+      <SettingsSection
+        title={t('provider.account.relationship.title')}
+        subtitle={t('provider.account.relationship.subtitle')}
+      >
+        <Flexbox
+          horizontal
+          align="center"
+          justify="space-between"
+          gap={16}
+          style={{
+            padding: '12px 14px',
+            borderRadius: 12,
+            border: `1px solid ${token.colorBorderSecondary}`,
+            background: token.colorFillQuaternary,
+          }}
+        >
+          <Flexbox horizontal align="center" gap={10} style={{ minWidth: 0 }}>
+            <Flexbox
+              align="center"
+              justify="center"
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: token.colorErrorBg,
+                color: token.colorError,
+                flexShrink: 0,
+              }}
+            >
+              <Ban size={17} />
+            </Flexbox>
+            <Flexbox gap={2} style={{ minWidth: 0 }}>
+              <Text strong>{t('provider.account.relationship.blockedUsers')}</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {t('provider.account.relationship.blockedUsersDesc')}
+              </Text>
+            </Flexbox>
+          </Flexbox>
+          <Button icon={<Ban size={14} />} onClick={openBlockedUsers}>
+            {t('provider.account.relationship.manageBlocked')}
+          </Button>
+        </Flexbox>
+      </SettingsSection>
+
+      <Modal
+        title={t('provider.account.relationship.blockedUsers')}
+        open={blockedOpen}
+        footer={null}
+        onCancel={() => setBlockedOpen(false)}
+        destroyOnClose
+      >
+        <Spin spinning={blockedLoading}>
+          {blockedUsers.length > 0 ? (
+            <List
+              dataSource={blockedUsers}
+              renderItem={(item) => (
+                <List.Item
+                  actions={[
+                    <Button
+                      key="unblock"
+                      size="small"
+                      icon={<RotateCcw size={13} />}
+                      onClick={() => confirmUnblockUser(item.actorId)}
+                    >
+                      {t('provider.account.relationship.unblock')}
+                    </Button>,
+                  ]}
+                >
+                  <List.Item.Meta
+                    title={<Text copyable>{item.actorId}</Text>}
+                    description={<Tag color="error">{t('provider.account.relationship.blocked')}</Tag>}
+                  />
+                </List.Item>
+              )}
+            />
+          ) : (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('provider.account.relationship.noBlockedUsers')} />
+          )}
+        </Spin>
+      </Modal>
 
     </SettingsContainer>
   );

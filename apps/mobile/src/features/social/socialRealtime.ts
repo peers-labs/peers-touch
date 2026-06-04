@@ -2,6 +2,7 @@ import type { MobileAuthSession } from '../auth/authSession';
 import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import type { MessageMutationKind } from './socialProjection';
 import type { FriendChatMessage } from './socialTypes';
+import type { GroupMembershipKind } from './socialWire';
 import { decodeRealtimeSseChunk } from './socialWire';
 
 interface RealtimeHandlers {
@@ -16,7 +17,8 @@ interface RealtimeHandlers {
   ) => void;
   onTyping: (sessionUlid: string, fromActorId: string, typing: boolean) => void;
   onPresence: (actorId: string, online: boolean) => void;
-  onGroupMembership: (groupUlid: string, actorDid: string, kind: 'ADDED' | 'REMOVED' | 'LEFT') => void;
+  onGroupMembership: (groupUlid: string, actorDid: string, kind: GroupMembershipKind) => void;
+  onSettingsChanged: (conversationKind: 'friend' | 'group', containerUlid: string) => void;
   onResync: () => void;
 }
 
@@ -25,32 +27,28 @@ export async function startRealtimeStream(
   signal: AbortSignal,
   handlers: RealtimeHandlers,
 ) {
-  try {
-    const response = await fetch(`${session.stationUrl.replace(/\/+$/, '')}/events/stream`, {
-      cache: 'no-store',
-      headers: {
-        Accept: 'text/event-stream',
-        Authorization: `Bearer ${session.accessToken}`,
-        'X-Device-ID': `mobile-web-${session.sessionId}`,
-      },
-      signal,
-    });
-    if (!response.ok || !response.body) return;
+  const response = await fetch(`${session.stationUrl.replace(/\/+$/, '')}/events/stream`, {
+    cache: 'no-store',
+    headers: {
+      Accept: 'text/event-stream',
+      Authorization: `Bearer ${session.accessToken}`,
+      'X-Device-ID': `mobile-web-${session.sessionId}`,
+    },
+    signal,
+  });
+  if (!response.ok || !response.body) throw new Error('mobile.social.realtimeUnavailable');
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
 
-    while (!signal.aborted) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const chunks = buffer.split('\n\n');
-      buffer = chunks.pop() ?? '';
-      chunks.forEach((chunk) => dispatchWireEvents(chunk, handlers));
-    }
-  } catch {
-    // The runtime's reconcile loop remains the availability fallback when SSE drops.
+  while (!signal.aborted) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split('\n\n');
+    buffer = chunks.pop() ?? '';
+    chunks.forEach((chunk) => dispatchWireEvents(chunk, handlers));
   }
 }
 
@@ -86,6 +84,10 @@ function dispatchWireEvents(chunk: string, handlers: RealtimeHandlers) {
     }
     if (event.kind === 'group-membership') {
       handlers.onGroupMembership(event.groupUlid, event.actorDid, event.membershipKind);
+      return;
+    }
+    if (event.kind === 'settings-changed') {
+      handlers.onSettingsChanged(event.conversationKind, event.containerUlid);
       return;
     }
     handlers.onResync();

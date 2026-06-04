@@ -46,8 +46,7 @@ pub fn station_add(input: StationUrlInput) -> AppResult<StubPayload> {
     if input.url.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "url is required", None);
     }
-    let (online, label, peer_id, peers_count) =
-        station_client::probe_station(&input.url);
+    let (online, label, peer_id, peers_count) = station_client::probe_station(&input.url);
     let now = time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "unknown".to_string());
@@ -86,10 +85,15 @@ pub fn station_probe(input: StationUrlInput) -> AppResult<StubPayload> {
     if input.url.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "url is required", None);
     }
-    let (online, label, peer_id, peers_count) =
-        station_client::probe_station(&input.url);
+    let (online, label, peer_id, peers_count) = station_client::probe_station(&input.url);
     let reg = station_client::station_registry();
-    reg.update_probe(&input.url, label.clone(), peer_id.clone(), peers_count, online);
+    reg.update_probe(
+        &input.url,
+        label.clone(),
+        peer_id.clone(),
+        peers_count,
+        online,
+    );
     let payload = serde_json::json!({
         "url": input.url,
         "online": online,

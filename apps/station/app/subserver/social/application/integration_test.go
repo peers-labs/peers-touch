@@ -75,6 +75,17 @@ func newFixture(t *testing.T) *fixture {
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	if err := gdb.Exec(`
+CREATE TABLE friend_chat_friendships (
+	id integer primary key autoincrement,
+	actor_did text,
+	peer_did text,
+	status integer,
+	created_at datetime,
+	updated_at datetime
+)`).Error; err != nil {
+		t.Fatalf("migrate friendships: %v", err)
+	}
 
 	resolver := NewNoopActorResolver()
 	groups := NewNoopGroupMembershipChecker()
@@ -107,6 +118,17 @@ func seedFollow(t *testing.T, f *fixture, follower, following uint64) {
 	t.Helper()
 	if err := f.repos.Follows.Follow(context.Background(), follower, following); err != nil {
 		t.Fatalf("seed follow %d->%d: %v", follower, following, err)
+	}
+}
+
+func seedBlock(t *testing.T, f *fixture, actorID, peerID uint64) {
+	t.Helper()
+	if err := f.gdb.Exec(
+		"INSERT INTO friend_chat_friendships (actor_did, peer_did, status) VALUES (?, ?, 3)",
+		fmt.Sprintf("%d", actorID),
+		fmt.Sprintf("%d", peerID),
+	).Error; err != nil {
+		t.Fatalf("seed block %d->%d: %v", actorID, peerID, err)
 	}
 }
 
@@ -243,6 +265,107 @@ func TestRead_FollowersOnlyVisibleToFollowers(t *testing.T) {
 	}
 }
 
+func TestRead_BlockedViewerCannotReadFollowersOnlyPost(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	const author, follower = uint64(100), uint64(200)
+	seedFollow(t, f, follower, author)
+	seedBlock(t, f, author, follower)
+
+	created, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
+		Content:  textBody("blocked followers cannot read"),
+	}, author)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if got, _ := f.moments.GetMoment(ctx, created.Id, follower); got != nil {
+		t.Fatal("blocked follower must not read FOLLOWERS post")
+	}
+}
+
+func TestRead_BlockCannotBeBypassedByAudienceKinds(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	const author, viewer = uint64(100), uint64(200)
+	seedBlock(t, f, viewer, author)
+
+	for _, tc := range []struct {
+		name     string
+		audience *model.Audience
+	}{
+		{"public", &model.Audience{Kind: model.Audience_PUBLIC}},
+		{"custom_allow", &model.Audience{Kind: model.Audience_CUSTOM_ALLOW, ActorDids: []string{"200"}}},
+		{"custom_deny_public", &model.Audience{Kind: model.Audience_CUSTOM_DENY, BaseKind: model.Audience_PUBLIC, ActorDids: []string{"300"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			created, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+				Type:     model.PostType_TEXT,
+				Audience: tc.audience,
+				Content:  textBody(tc.name),
+			}, author)
+			if err != nil {
+				t.Fatalf("create: %v", err)
+			}
+			if got, _ := f.moments.GetMoment(ctx, created.Id, viewer); got != nil {
+				t.Fatalf("blocked viewer must not read %s post", tc.name)
+			}
+		})
+	}
+}
+
+func TestTimeline_BlockGraphFiltersPublicAndHomeFeeds(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	const author, viewer = uint64(100), uint64(200)
+	seedFollow(t, f, viewer, author)
+	seedBlock(t, f, author, viewer)
+
+	publicPost, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		Content:  textBody("public but blocked"),
+	}, author)
+	if err != nil {
+		t.Fatalf("create public: %v", err)
+	}
+	followersPost, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
+		Content:  textBody("followers but blocked"),
+	}, author)
+	if err != nil {
+		t.Fatalf("create followers: %v", err)
+	}
+
+	publicTimeline, err := f.timeline.GetTimeline(ctx, &model.GetTimelineRequest{Type: model.TimelineType_TIMELINE_PUBLIC, Limit: 20}, viewer)
+	if err != nil {
+		t.Fatalf("public timeline: %v", err)
+	}
+	assertPostAbsent(t, publicTimeline.Posts, publicPost.Id)
+
+	homeTimeline, err := f.timeline.GetTimeline(ctx, &model.GetTimelineRequest{Type: model.TimelineType_TIMELINE_HOME, Limit: 20}, viewer)
+	if err != nil {
+		t.Fatalf("home timeline: %v", err)
+	}
+	assertPostAbsent(t, homeTimeline.Posts, publicPost.Id)
+	assertPostAbsent(t, homeTimeline.Posts, followersPost.Id)
+}
+
+func assertPostAbsent(t *testing.T, posts []*model.Post, postID string) {
+	t.Helper()
+	for _, post := range posts {
+		if post != nil && post.Id == postID {
+			t.Fatalf("post %s must be filtered from feed", postID)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Soft-delete cascade
 // ---------------------------------------------------------------------------
@@ -288,7 +411,7 @@ func TestDelete_ByNonAuthorIsNoop(t *testing.T) {
 
 	// Different actor attempts to delete — silently no-op (no error,
 	// no tombstone applied).
-	if err := f.moments.DeleteMoment(ctx, created.Id, /*non-author*/ 200); err != nil {
+	if err := f.moments.DeleteMoment(ctx, created.Id /*non-author*/, 200); err != nil {
 		t.Fatalf("non-author delete should not error: %v", err)
 	}
 
@@ -389,7 +512,7 @@ func TestComment_OneLevelReplyNesting(t *testing.T) {
 	top, err := f.comments.CreateComment(ctx, &model.CreateCommentRequest{
 		PostId:  post.Id,
 		Content: "first!",
-	}, postID, /*viewer*/ 200)
+	}, postID /*viewer*/, 200)
 	if err != nil {
 		t.Fatalf("create top-level comment: %v", err)
 	}
@@ -399,7 +522,7 @@ func TestComment_OneLevelReplyNesting(t *testing.T) {
 		PostId:           post.Id,
 		Content:          "second",
 		ReplyToCommentId: top.Id,
-	}, postID, /*viewer*/ 300); err != nil {
+	}, postID /*viewer*/, 300); err != nil {
 		t.Fatalf("reply to top-level: %v", err)
 	}
 
@@ -422,7 +545,7 @@ func TestComment_OneLevelReplyNesting(t *testing.T) {
 		PostId:           post.Id,
 		Content:          "third",
 		ReplyToCommentId: lastReplyID,
-	}, postID, /*viewer*/ 400)
+	}, postID /*viewer*/, 400)
 	if err == nil || !strings.Contains(err.Error(), "one-level nesting") {
 		t.Fatalf("two-level reply must be rejected, got err=%v", err)
 	}
@@ -448,7 +571,7 @@ func TestComment_VisibilityInheritsFromPost(t *testing.T) {
 	if _, err := f.comments.CreateComment(ctx, &model.CreateCommentRequest{
 		PostId:  post.Id,
 		Content: "hi",
-	}, postID, /*non-author*/ 200); err == nil {
+	}, postID /*non-author*/, 200); err == nil {
 		t.Fatal("non-author must not be able to comment on SELF post")
 	}
 
@@ -571,7 +694,7 @@ func TestCircle_CreateRenameDelete(t *testing.T) {
 	}
 
 	// A different actor cannot delete.
-	if err := f.circles.Delete(ctx, created.Id, /*not-owner*/ 200); err == nil {
+	if err := f.circles.Delete(ctx, created.Id /*not-owner*/, 200); err == nil {
 		t.Fatal("non-owner delete must be rejected")
 	}
 	if err := f.circles.Delete(ctx, created.Id, owner); err != nil {
@@ -678,7 +801,7 @@ func TestVisibilityGate_GetMomentIsNilForUnauthorisedViewer(t *testing.T) {
 	}
 
 	// Become a follower; now visible.
-	seedFollow(t, f, /*follower*/ stranger, /*following*/ author)
+	seedFollow(t, f /*follower*/, stranger /*following*/, author)
 	if got, _ := f.moments.GetMoment(ctx, followersPost.Id, stranger); got == nil {
 		t.Fatal("FOLLOWERS post must be visible after follow")
 	}

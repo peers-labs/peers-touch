@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/realtime/event.proto.
  */
 export const file_domain_realtime_event: GenFile = /*@__PURE__*/
-  fileDesc("Chtkb21haW4vcmVhbHRpbWUvZXZlbnQucHJvdG8SHXBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxIo0FCgtTdHJlYW1FdmVudBIQCghldmVudF9pZBgBIAEoCRISCgp0c191bml4X21zGAIgASgDEjYKAmhiGAogASgLMigucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuSGVhcnRiZWF0SAASQQoHbWVzc2FnZRgLIAEoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1lc3NhZ2VFbnZlbG9wZUgAEkAKB3JlY2VpcHQYDCABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlUmVjZWlwdEgAEjwKBnR5cGluZxgNIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLlR5cGluZ1N0YXRlSAASPwoIcHJlc2VuY2UYDiABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5QcmVzZW5jZUZsaXBIABI+CglzaWduYWxpbmcYDyABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5DYWxsU2lnbmFsSAASNwoGcmVzeW5jGBAgASgLMiUucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuUmVzeW5jSAASQgoIbXV0YXRpb24YESABKAsyLi5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlTXV0YXRpb25IABJXChdncm91cF9tZW1iZXJzaGlwX2NoYW5nZRgSIAEoCzI0LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkdyb3VwTWVtYmVyc2hpcENoYW5nZUgAQgYKBGtpbmQiIwoJSGVhcnRiZWF0EhYKDmZsb29yX2V2ZW50X2lkGAEgASgJIpcBCg9NZXNzYWdlRW52ZWxvcGUSFwoPc2VuZGVyX2FjdG9yX2lkGAEgASgJEhoKEnJlY2lwaWVudF9hY3Rvcl9pZBgCIAEoCRIUCgxzZXNzaW9uX3VsaWQYAyABKAkSDAoEdWxpZBgEIAEoCRISCgpjaXBoZXJ0ZXh0GAUgASgMEhcKD3NlbnRfdHNfdW5peF9tcxgGIAEoAyLEAQoOTWVzc2FnZVJlY2VpcHQSFAoMc2Vzc2lvbl91bGlkGAEgASgJEgwKBHVsaWQYAiABKAkSQAoEa2luZBgDIAEoDjIyLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1lc3NhZ2VSZWNlaXB0LktpbmQSFQoNZnJvbV9hY3Rvcl9pZBgEIAEoCSI1CgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABINCglERUxJVkVSRUQQARIICgRSRUFEEAIiSgoLVHlwaW5nU3RhdGUSFAoMc2Vzc2lvbl91bGlkGAEgASgJEhUKDWZyb21fYWN0b3JfaWQYAiABKAkSDgoGdHlwaW5nGAMgASgIIjAKDFByZXNlbmNlRmxpcBIQCghhY3Rvcl9pZBgBIAEoCRIOCgZvbmxpbmUYAiABKAgimwIKCkNhbGxTaWduYWwSFAoMc2Vzc2lvbl91bGlkGAEgASgJEhUKDWZyb21fYWN0b3JfaWQYAiABKAkSPAoEa2luZBgDIAEoDjIuLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkNhbGxTaWduYWwuS2luZBIPCgdwYXlsb2FkGAQgASgMIpABCgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIJCgVPRkZFUhABEgoKBkFOU1dFUhACEg0KCUNBTkRJREFURRADEgoKBkhBTkdVUBAEEhAKDENBTExfUkVRVUVTVBAFEg8KC0NBTExfQUNDRVBUEAYSDwoLQ0FMTF9SRUpFQ1QQBxIMCghDQUxMX0VORBAIIpgCCg9NZXNzYWdlTXV0YXRpb24SFAoMc2Vzc2lvbl91bGlkGAEgASgJEgwKBHVsaWQYAiABKAkSFQoNZnJvbV9hY3Rvcl9pZBgDIAEoCRJBCgRraW5kGAQgASgOMjMucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuTWVzc2FnZU11dGF0aW9uLktpbmQSFgoObmV3X2NpcGhlcnRleHQYBSABKAwSEwoLbmV3X2NvbnRlbnQYBiABKAkSGgoSbXV0YXRlZF90c191bml4X21zGAcgASgDIj4KBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEgoKBlJFQ0FMTBABEggKBEVESVQQAhIKCgZERUxFVEUQAyKEAgoVR3JvdXBNZW1iZXJzaGlwQ2hhbmdlEhAKCGV2ZW50X2lkGAEgASgJEhIKCmdyb3VwX3VsaWQYAiABKAkSEQoJYWN0b3JfZGlkGAMgASgJEkcKBGtpbmQYBCABKA4yOS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5Hcm91cE1lbWJlcnNoaXBDaGFuZ2UuS2luZBIaChJjaGFuZ2VkX3RzX3VuaXhfbXMYBSABKAMiTQoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASDgoKS0lORF9BRERFRBABEhAKDEtJTkRfUkVNT1ZFRBACEg0KCUtJTkRfTEVGVBADIjEKBlJlc3luYxIXCg9uZXdlc3RfZXZlbnRfaWQYASABKAkSDgoGcmVhc29uGAIgASgJQk9aTWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsL3JlYWx0aW1lO3JlYWx0aW1lYgZwcm90bzM");
+  fileDesc("Chtkb21haW4vcmVhbHRpbWUvZXZlbnQucHJvdG8SHXBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxIvIFCgtTdHJlYW1FdmVudBIQCghldmVudF9pZBgBIAEoCRISCgp0c191bml4X21zGAIgASgDEjYKAmhiGAogASgLMigucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuSGVhcnRiZWF0SAASQQoHbWVzc2FnZRgLIAEoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1lc3NhZ2VFbnZlbG9wZUgAEkAKB3JlY2VpcHQYDCABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlUmVjZWlwdEgAEjwKBnR5cGluZxgNIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLlR5cGluZ1N0YXRlSAASPwoIcHJlc2VuY2UYDiABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5QcmVzZW5jZUZsaXBIABI+CglzaWduYWxpbmcYDyABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5DYWxsU2lnbmFsSAASNwoGcmVzeW5jGBAgASgLMiUucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuUmVzeW5jSAASQgoIbXV0YXRpb24YESABKAsyLi5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlTXV0YXRpb25IABJXChdncm91cF9tZW1iZXJzaGlwX2NoYW5nZRgSIAEoCzI0LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkdyb3VwTWVtYmVyc2hpcENoYW5nZUgAEmMKHWNvbnZlcnNhdGlvbl9zZXR0aW5nc19jaGFuZ2VkGBMgASgLMjoucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuQ29udmVyc2F0aW9uU2V0dGluZ3NDaGFuZ2VkSABCBgoEa2luZCIjCglIZWFydGJlYXQSFgoOZmxvb3JfZXZlbnRfaWQYASABKAkilwEKD01lc3NhZ2VFbnZlbG9wZRIXCg9zZW5kZXJfYWN0b3JfaWQYASABKAkSGgoScmVjaXBpZW50X2FjdG9yX2lkGAIgASgJEhQKDHNlc3Npb25fdWxpZBgDIAEoCRIMCgR1bGlkGAQgASgJEhIKCmNpcGhlcnRleHQYBSABKAwSFwoPc2VudF90c191bml4X21zGAYgASgDIsQBCg5NZXNzYWdlUmVjZWlwdBIUCgxzZXNzaW9uX3VsaWQYASABKAkSDAoEdWxpZBgCIAEoCRJACgRraW5kGAMgASgOMjIucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuTWVzc2FnZVJlY2VpcHQuS2luZBIVCg1mcm9tX2FjdG9yX2lkGAQgASgJIjUKBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEg0KCURFTElWRVJFRBABEggKBFJFQUQQAiJKCgtUeXBpbmdTdGF0ZRIUCgxzZXNzaW9uX3VsaWQYASABKAkSFQoNZnJvbV9hY3Rvcl9pZBgCIAEoCRIOCgZ0eXBpbmcYAyABKAgiMAoMUHJlc2VuY2VGbGlwEhAKCGFjdG9yX2lkGAEgASgJEg4KBm9ubGluZRgCIAEoCCKbAgoKQ2FsbFNpZ25hbBIUCgxzZXNzaW9uX3VsaWQYASABKAkSFQoNZnJvbV9hY3Rvcl9pZBgCIAEoCRI8CgRraW5kGAMgASgOMi4ucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuQ2FsbFNpZ25hbC5LaW5kEg8KB3BheWxvYWQYBCABKAwikAEKBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEgkKBU9GRkVSEAESCgoGQU5TV0VSEAISDQoJQ0FORElEQVRFEAMSCgoGSEFOR1VQEAQSEAoMQ0FMTF9SRVFVRVNUEAUSDwoLQ0FMTF9BQ0NFUFQQBhIPCgtDQUxMX1JFSkVDVBAHEgwKCENBTExfRU5EEAgimAIKD01lc3NhZ2VNdXRhdGlvbhIUCgxzZXNzaW9uX3VsaWQYASABKAkSDAoEdWxpZBgCIAEoCRIVCg1mcm9tX2FjdG9yX2lkGAMgASgJEkEKBGtpbmQYBCABKA4yMy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlTXV0YXRpb24uS2luZBIWCg5uZXdfY2lwaGVydGV4dBgFIAEoDBITCgtuZXdfY29udGVudBgGIAEoCRIaChJtdXRhdGVkX3RzX3VuaXhfbXMYByABKAMiPgoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASCgoGUkVDQUxMEAESCAoERURJVBACEgoKBkRFTEVURRADIpYCChVHcm91cE1lbWJlcnNoaXBDaGFuZ2USEAoIZXZlbnRfaWQYASABKAkSEgoKZ3JvdXBfdWxpZBgCIAEoCRIRCglhY3Rvcl9kaWQYAyABKAkSRwoEa2luZBgEIAEoDjI5LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkdyb3VwTWVtYmVyc2hpcENoYW5nZS5LaW5kEhoKEmNoYW5nZWRfdHNfdW5peF9tcxgFIAEoAyJfCgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIOCgpLSU5EX0FEREVEEAESEAoMS0lORF9SRU1PVkVEEAISDQoJS0lORF9MRUZUEAMSEAoMS0lORF9VUERBVEVEEAQi5wEKG0NvbnZlcnNhdGlvblNldHRpbmdzQ2hhbmdlZBIWCg5jb250YWluZXJfdWxpZBgBIAEoCRJNCgRraW5kGAIgASgOMj8ucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuQ29udmVyc2F0aW9uU2V0dGluZ3NDaGFuZ2VkLktpbmQSEAoIYWN0b3JfaWQYAyABKAkSGgoSY2hhbmdlZF90c191bml4X21zGAQgASgDIjMKBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEgoKBkZSSUVORBABEgkKBUdST1VQEAIiMQoGUmVzeW5jEhcKD25ld2VzdF9ldmVudF9pZBgBIAEoCRIOCgZyZWFzb24YAiABKAlCT1pNZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvcmVhbHRpbWU7cmVhbHRpbWViBnByb3RvMw");
 
 /**
  * StreamEvent is the single envelope every realtime frame uses.
@@ -97,6 +97,12 @@ export type StreamEvent = Message<"peers_touch.model.realtime.v1.StreamEvent"> &
      */
     value: GroupMembershipChange;
     case: "groupMembershipChange";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.realtime.v1.ConversationSettingsChanged conversation_settings_changed = 19;
+     */
+    value: ConversationSettingsChanged;
+    case: "conversationSettingsChanged";
   } | { case: undefined; value?: undefined };
 };
 
@@ -589,6 +595,13 @@ export enum GroupMembershipChange_Kind {
    * @generated from enum value: KIND_LEFT = 3;
    */
   LEFT = 3,
+
+  /**
+   * role or moderation state changed
+   *
+   * @generated from enum value: KIND_UPDATED = 4;
+   */
+  UPDATED = 4,
 }
 
 /**
@@ -596,6 +609,71 @@ export enum GroupMembershipChange_Kind {
  */
 export const GroupMembershipChange_KindSchema: GenEnum<GroupMembershipChange_Kind> = /*@__PURE__*/
   enumDesc(file_domain_realtime_event, 8, 0);
+
+/**
+ * ConversationSettingsChanged invalidates the local per-conversation
+ * preference projection for one actor. Station emits it to the actor's
+ * own stream after mutating settings so the same account's open
+ * Desktop/Mobile sessions converge without waiting for restart.
+ *
+ * @generated from message peers_touch.model.realtime.v1.ConversationSettingsChanged
+ */
+export type ConversationSettingsChanged = Message<"peers_touch.model.realtime.v1.ConversationSettingsChanged"> & {
+  /**
+   * friend session_ulid or group_ulid
+   *
+   * @generated from field: string container_ulid = 1;
+   */
+  containerUlid: string;
+
+  /**
+   * @generated from field: peers_touch.model.realtime.v1.ConversationSettingsChanged.Kind kind = 2;
+   */
+  kind: ConversationSettingsChanged_Kind;
+
+  /**
+   * @generated from field: string actor_id = 3;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: int64 changed_ts_unix_ms = 4;
+   */
+  changedTsUnixMs: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.realtime.v1.ConversationSettingsChanged.
+ * Use `create(ConversationSettingsChangedSchema)` to create a new message.
+ */
+export const ConversationSettingsChangedSchema: GenMessage<ConversationSettingsChanged> = /*@__PURE__*/
+  messageDesc(file_domain_realtime_event, 9);
+
+/**
+ * @generated from enum peers_touch.model.realtime.v1.ConversationSettingsChanged.Kind
+ */
+export enum ConversationSettingsChanged_Kind {
+  /**
+   * @generated from enum value: KIND_UNSPECIFIED = 0;
+   */
+  KIND_UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FRIEND = 1;
+   */
+  FRIEND = 1,
+
+  /**
+   * @generated from enum value: GROUP = 2;
+   */
+  GROUP = 2,
+}
+
+/**
+ * Describes the enum peers_touch.model.realtime.v1.ConversationSettingsChanged.Kind.
+ */
+export const ConversationSettingsChanged_KindSchema: GenEnum<ConversationSettingsChanged_Kind> = /*@__PURE__*/
+  enumDesc(file_domain_realtime_event, 9, 0);
 
 /**
  * Resync is the server's only signal that the client's Last-Event-ID
@@ -627,5 +705,5 @@ export type Resync = Message<"peers_touch.model.realtime.v1.Resync"> & {
  * Use `create(ResyncSchema)` to create a new message.
  */
 export const ResyncSchema: GenMessage<Resync> = /*@__PURE__*/
-  messageDesc(file_domain_realtime_event, 9);
+  messageDesc(file_domain_realtime_event, 10);
 

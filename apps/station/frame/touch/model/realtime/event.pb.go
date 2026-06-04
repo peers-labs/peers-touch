@@ -203,6 +203,7 @@ const (
 	GroupMembershipChange_KIND_ADDED       GroupMembershipChange_Kind = 1
 	GroupMembershipChange_KIND_REMOVED     GroupMembershipChange_Kind = 2 // an admin kicked them
 	GroupMembershipChange_KIND_LEFT        GroupMembershipChange_Kind = 3 // they left voluntarily
+	GroupMembershipChange_KIND_UPDATED     GroupMembershipChange_Kind = 4 // role or moderation state changed
 )
 
 // Enum value maps for GroupMembershipChange_Kind.
@@ -212,12 +213,14 @@ var (
 		1: "KIND_ADDED",
 		2: "KIND_REMOVED",
 		3: "KIND_LEFT",
+		4: "KIND_UPDATED",
 	}
 	GroupMembershipChange_Kind_value = map[string]int32{
 		"KIND_UNSPECIFIED": 0,
 		"KIND_ADDED":       1,
 		"KIND_REMOVED":     2,
 		"KIND_LEFT":        3,
+		"KIND_UPDATED":     4,
 	}
 )
 
@@ -248,6 +251,55 @@ func (GroupMembershipChange_Kind) EnumDescriptor() ([]byte, []int) {
 	return file_domain_realtime_event_proto_rawDescGZIP(), []int{8, 0}
 }
 
+type ConversationSettingsChanged_Kind int32
+
+const (
+	ConversationSettingsChanged_KIND_UNSPECIFIED ConversationSettingsChanged_Kind = 0
+	ConversationSettingsChanged_FRIEND           ConversationSettingsChanged_Kind = 1
+	ConversationSettingsChanged_GROUP            ConversationSettingsChanged_Kind = 2
+)
+
+// Enum value maps for ConversationSettingsChanged_Kind.
+var (
+	ConversationSettingsChanged_Kind_name = map[int32]string{
+		0: "KIND_UNSPECIFIED",
+		1: "FRIEND",
+		2: "GROUP",
+	}
+	ConversationSettingsChanged_Kind_value = map[string]int32{
+		"KIND_UNSPECIFIED": 0,
+		"FRIEND":           1,
+		"GROUP":            2,
+	}
+)
+
+func (x ConversationSettingsChanged_Kind) Enum() *ConversationSettingsChanged_Kind {
+	p := new(ConversationSettingsChanged_Kind)
+	*p = x
+	return p
+}
+
+func (x ConversationSettingsChanged_Kind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ConversationSettingsChanged_Kind) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_realtime_event_proto_enumTypes[4].Descriptor()
+}
+
+func (ConversationSettingsChanged_Kind) Type() protoreflect.EnumType {
+	return &file_domain_realtime_event_proto_enumTypes[4]
+}
+
+func (x ConversationSettingsChanged_Kind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ConversationSettingsChanged_Kind.Descriptor instead.
+func (ConversationSettingsChanged_Kind) EnumDescriptor() ([]byte, []int) {
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{9, 0}
+}
+
 // StreamEvent is the single envelope every realtime frame uses.
 //
 // Protobuf wire bytes are base64-encoded into the SSE `data:` field;
@@ -274,6 +326,7 @@ type StreamEvent struct {
 	//	*StreamEvent_Resync
 	//	*StreamEvent_Mutation
 	//	*StreamEvent_GroupMembershipChange
+	//	*StreamEvent_ConversationSettingsChanged
 	Kind          isStreamEvent_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -411,6 +464,15 @@ func (x *StreamEvent) GetGroupMembershipChange() *GroupMembershipChange {
 	return nil
 }
 
+func (x *StreamEvent) GetConversationSettingsChanged() *ConversationSettingsChanged {
+	if x != nil {
+		if x, ok := x.Kind.(*StreamEvent_ConversationSettingsChanged); ok {
+			return x.ConversationSettingsChanged
+		}
+	}
+	return nil
+}
+
 type isStreamEvent_Kind interface {
 	isStreamEvent_Kind()
 }
@@ -451,6 +513,10 @@ type StreamEvent_GroupMembershipChange struct {
 	GroupMembershipChange *GroupMembershipChange `protobuf:"bytes,18,opt,name=group_membership_change,json=groupMembershipChange,proto3,oneof"`
 }
 
+type StreamEvent_ConversationSettingsChanged struct {
+	ConversationSettingsChanged *ConversationSettingsChanged `protobuf:"bytes,19,opt,name=conversation_settings_changed,json=conversationSettingsChanged,proto3,oneof"`
+}
+
 func (*StreamEvent_Hb) isStreamEvent_Kind() {}
 
 func (*StreamEvent_Message) isStreamEvent_Kind() {}
@@ -468,6 +534,8 @@ func (*StreamEvent_Resync) isStreamEvent_Kind() {}
 func (*StreamEvent_Mutation) isStreamEvent_Kind() {}
 
 func (*StreamEvent_GroupMembershipChange) isStreamEvent_Kind() {}
+
+func (*StreamEvent_ConversationSettingsChanged) isStreamEvent_Kind() {}
 
 // Heartbeat is emitted by the server every 15 seconds (default,
 // operator-tunable) so the client can detect a silent connection even
@@ -1074,6 +1142,78 @@ func (x *GroupMembershipChange) GetChangedTsUnixMs() int64 {
 	return 0
 }
 
+// ConversationSettingsChanged invalidates the local per-conversation
+// preference projection for one actor. Station emits it to the actor's
+// own stream after mutating settings so the same account's open
+// Desktop/Mobile sessions converge without waiting for restart.
+type ConversationSettingsChanged struct {
+	state           protoimpl.MessageState           `protogen:"open.v1"`
+	ContainerUlid   string                           `protobuf:"bytes,1,opt,name=container_ulid,json=containerUlid,proto3" json:"container_ulid,omitempty"` // friend session_ulid or group_ulid
+	Kind            ConversationSettingsChanged_Kind `protobuf:"varint,2,opt,name=kind,proto3,enum=peers_touch.model.realtime.v1.ConversationSettingsChanged_Kind" json:"kind,omitempty"`
+	ActorId         string                           `protobuf:"bytes,3,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ChangedTsUnixMs int64                            `protobuf:"varint,4,opt,name=changed_ts_unix_ms,json=changedTsUnixMs,proto3" json:"changed_ts_unix_ms,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ConversationSettingsChanged) Reset() {
+	*x = ConversationSettingsChanged{}
+	mi := &file_domain_realtime_event_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConversationSettingsChanged) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConversationSettingsChanged) ProtoMessage() {}
+
+func (x *ConversationSettingsChanged) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_realtime_event_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConversationSettingsChanged.ProtoReflect.Descriptor instead.
+func (*ConversationSettingsChanged) Descriptor() ([]byte, []int) {
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ConversationSettingsChanged) GetContainerUlid() string {
+	if x != nil {
+		return x.ContainerUlid
+	}
+	return ""
+}
+
+func (x *ConversationSettingsChanged) GetKind() ConversationSettingsChanged_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return ConversationSettingsChanged_KIND_UNSPECIFIED
+}
+
+func (x *ConversationSettingsChanged) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *ConversationSettingsChanged) GetChangedTsUnixMs() int64 {
+	if x != nil {
+		return x.ChangedTsUnixMs
+	}
+	return 0
+}
+
 // Resync is the server's only signal that the client's Last-Event-ID
 // cursor falls outside the in-memory ring buffer. On receiving this,
 // clients MUST perform a cold catch-up before trusting any event
@@ -1091,7 +1231,7 @@ type Resync struct {
 
 func (x *Resync) Reset() {
 	*x = Resync{}
-	mi := &file_domain_realtime_event_proto_msgTypes[9]
+	mi := &file_domain_realtime_event_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1103,7 +1243,7 @@ func (x *Resync) String() string {
 func (*Resync) ProtoMessage() {}
 
 func (x *Resync) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_realtime_event_proto_msgTypes[9]
+	mi := &file_domain_realtime_event_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1116,7 +1256,7 @@ func (x *Resync) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Resync.ProtoReflect.Descriptor instead.
 func (*Resync) Descriptor() ([]byte, []int) {
-	return file_domain_realtime_event_proto_rawDescGZIP(), []int{9}
+	return file_domain_realtime_event_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Resync) GetNewestEventId() string {
@@ -1137,7 +1277,7 @@ var File_domain_realtime_event_proto protoreflect.FileDescriptor
 
 const file_domain_realtime_event_proto_rawDesc = "" +
 	"\n" +
-	"\x1bdomain/realtime/event.proto\x12\x1dpeers_touch.model.realtime.v1\"\xfc\x05\n" +
+	"\x1bdomain/realtime/event.proto\x12\x1dpeers_touch.model.realtime.v1\"\xff\x06\n" +
 	"\vStreamEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1c\n" +
 	"\n" +
@@ -1151,7 +1291,8 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\tsignaling\x18\x0f \x01(\v2).peers_touch.model.realtime.v1.CallSignalH\x00R\tsignaling\x12?\n" +
 	"\x06resync\x18\x10 \x01(\v2%.peers_touch.model.realtime.v1.ResyncH\x00R\x06resync\x12L\n" +
 	"\bmutation\x18\x11 \x01(\v2..peers_touch.model.realtime.v1.MessageMutationH\x00R\bmutation\x12n\n" +
-	"\x17group_membership_change\x18\x12 \x01(\v24.peers_touch.model.realtime.v1.GroupMembershipChangeH\x00R\x15groupMembershipChangeB\x06\n" +
+	"\x17group_membership_change\x18\x12 \x01(\v24.peers_touch.model.realtime.v1.GroupMembershipChangeH\x00R\x15groupMembershipChange\x12\x80\x01\n" +
+	"\x1dconversation_settings_changed\x18\x13 \x01(\v2:.peers_touch.model.realtime.v1.ConversationSettingsChangedH\x00R\x1bconversationSettingsChangedB\x06\n" +
 	"\x04kind\"1\n" +
 	"\tHeartbeat\x12$\n" +
 	"\x0efloor_event_id\x18\x01 \x01(\tR\ffloorEventId\"\xe5\x01\n" +
@@ -1213,20 +1354,31 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\x06RECALL\x10\x01\x12\b\n" +
 	"\x04EDIT\x10\x02\x12\n" +
 	"\n" +
-	"\x06DELETE\x10\x03\"\xb9\x02\n" +
+	"\x06DELETE\x10\x03\"\xcb\x02\n" +
 	"\x15GroupMembershipChange\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1d\n" +
 	"\n" +
 	"group_ulid\x18\x02 \x01(\tR\tgroupUlid\x12\x1b\n" +
 	"\tactor_did\x18\x03 \x01(\tR\bactorDid\x12M\n" +
 	"\x04kind\x18\x04 \x01(\x0e29.peers_touch.model.realtime.v1.GroupMembershipChange.KindR\x04kind\x12+\n" +
-	"\x12changed_ts_unix_ms\x18\x05 \x01(\x03R\x0fchangedTsUnixMs\"M\n" +
+	"\x12changed_ts_unix_ms\x18\x05 \x01(\x03R\x0fchangedTsUnixMs\"_\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
 	"KIND_ADDED\x10\x01\x12\x10\n" +
 	"\fKIND_REMOVED\x10\x02\x12\r\n" +
-	"\tKIND_LEFT\x10\x03\"H\n" +
+	"\tKIND_LEFT\x10\x03\x12\x10\n" +
+	"\fKIND_UPDATED\x10\x04\"\x96\x02\n" +
+	"\x1bConversationSettingsChanged\x12%\n" +
+	"\x0econtainer_ulid\x18\x01 \x01(\tR\rcontainerUlid\x12S\n" +
+	"\x04kind\x18\x02 \x01(\x0e2?.peers_touch.model.realtime.v1.ConversationSettingsChanged.KindR\x04kind\x12\x19\n" +
+	"\bactor_id\x18\x03 \x01(\tR\aactorId\x12+\n" +
+	"\x12changed_ts_unix_ms\x18\x04 \x01(\x03R\x0fchangedTsUnixMs\"3\n" +
+	"\x04Kind\x12\x14\n" +
+	"\x10KIND_UNSPECIFIED\x10\x00\x12\n" +
+	"\n" +
+	"\x06FRIEND\x10\x01\x12\t\n" +
+	"\x05GROUP\x10\x02\"H\n" +
 	"\x06Resync\x12&\n" +
 	"\x0fnewest_event_id\x18\x01 \x01(\tR\rnewestEventId\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reasonBOZMgithub.com/peers-labs/peers-touch/station/frame/touch/model/realtime;realtimeb\x06proto3"
@@ -1243,43 +1395,47 @@ func file_domain_realtime_event_proto_rawDescGZIP() []byte {
 	return file_domain_realtime_event_proto_rawDescData
 }
 
-var file_domain_realtime_event_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_domain_realtime_event_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_domain_realtime_event_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_domain_realtime_event_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_domain_realtime_event_proto_goTypes = []any{
-	(MessageReceipt_Kind)(0),        // 0: peers_touch.model.realtime.v1.MessageReceipt.Kind
-	(CallSignal_Kind)(0),            // 1: peers_touch.model.realtime.v1.CallSignal.Kind
-	(MessageMutation_Kind)(0),       // 2: peers_touch.model.realtime.v1.MessageMutation.Kind
-	(GroupMembershipChange_Kind)(0), // 3: peers_touch.model.realtime.v1.GroupMembershipChange.Kind
-	(*StreamEvent)(nil),             // 4: peers_touch.model.realtime.v1.StreamEvent
-	(*Heartbeat)(nil),               // 5: peers_touch.model.realtime.v1.Heartbeat
-	(*MessageEnvelope)(nil),         // 6: peers_touch.model.realtime.v1.MessageEnvelope
-	(*MessageReceipt)(nil),          // 7: peers_touch.model.realtime.v1.MessageReceipt
-	(*TypingState)(nil),             // 8: peers_touch.model.realtime.v1.TypingState
-	(*PresenceFlip)(nil),            // 9: peers_touch.model.realtime.v1.PresenceFlip
-	(*CallSignal)(nil),              // 10: peers_touch.model.realtime.v1.CallSignal
-	(*MessageMutation)(nil),         // 11: peers_touch.model.realtime.v1.MessageMutation
-	(*GroupMembershipChange)(nil),   // 12: peers_touch.model.realtime.v1.GroupMembershipChange
-	(*Resync)(nil),                  // 13: peers_touch.model.realtime.v1.Resync
+	(MessageReceipt_Kind)(0),              // 0: peers_touch.model.realtime.v1.MessageReceipt.Kind
+	(CallSignal_Kind)(0),                  // 1: peers_touch.model.realtime.v1.CallSignal.Kind
+	(MessageMutation_Kind)(0),             // 2: peers_touch.model.realtime.v1.MessageMutation.Kind
+	(GroupMembershipChange_Kind)(0),       // 3: peers_touch.model.realtime.v1.GroupMembershipChange.Kind
+	(ConversationSettingsChanged_Kind)(0), // 4: peers_touch.model.realtime.v1.ConversationSettingsChanged.Kind
+	(*StreamEvent)(nil),                   // 5: peers_touch.model.realtime.v1.StreamEvent
+	(*Heartbeat)(nil),                     // 6: peers_touch.model.realtime.v1.Heartbeat
+	(*MessageEnvelope)(nil),               // 7: peers_touch.model.realtime.v1.MessageEnvelope
+	(*MessageReceipt)(nil),                // 8: peers_touch.model.realtime.v1.MessageReceipt
+	(*TypingState)(nil),                   // 9: peers_touch.model.realtime.v1.TypingState
+	(*PresenceFlip)(nil),                  // 10: peers_touch.model.realtime.v1.PresenceFlip
+	(*CallSignal)(nil),                    // 11: peers_touch.model.realtime.v1.CallSignal
+	(*MessageMutation)(nil),               // 12: peers_touch.model.realtime.v1.MessageMutation
+	(*GroupMembershipChange)(nil),         // 13: peers_touch.model.realtime.v1.GroupMembershipChange
+	(*ConversationSettingsChanged)(nil),   // 14: peers_touch.model.realtime.v1.ConversationSettingsChanged
+	(*Resync)(nil),                        // 15: peers_touch.model.realtime.v1.Resync
 }
 var file_domain_realtime_event_proto_depIdxs = []int32{
-	5,  // 0: peers_touch.model.realtime.v1.StreamEvent.hb:type_name -> peers_touch.model.realtime.v1.Heartbeat
-	6,  // 1: peers_touch.model.realtime.v1.StreamEvent.message:type_name -> peers_touch.model.realtime.v1.MessageEnvelope
-	7,  // 2: peers_touch.model.realtime.v1.StreamEvent.receipt:type_name -> peers_touch.model.realtime.v1.MessageReceipt
-	8,  // 3: peers_touch.model.realtime.v1.StreamEvent.typing:type_name -> peers_touch.model.realtime.v1.TypingState
-	9,  // 4: peers_touch.model.realtime.v1.StreamEvent.presence:type_name -> peers_touch.model.realtime.v1.PresenceFlip
-	10, // 5: peers_touch.model.realtime.v1.StreamEvent.signaling:type_name -> peers_touch.model.realtime.v1.CallSignal
-	13, // 6: peers_touch.model.realtime.v1.StreamEvent.resync:type_name -> peers_touch.model.realtime.v1.Resync
-	11, // 7: peers_touch.model.realtime.v1.StreamEvent.mutation:type_name -> peers_touch.model.realtime.v1.MessageMutation
-	12, // 8: peers_touch.model.realtime.v1.StreamEvent.group_membership_change:type_name -> peers_touch.model.realtime.v1.GroupMembershipChange
-	0,  // 9: peers_touch.model.realtime.v1.MessageReceipt.kind:type_name -> peers_touch.model.realtime.v1.MessageReceipt.Kind
-	1,  // 10: peers_touch.model.realtime.v1.CallSignal.kind:type_name -> peers_touch.model.realtime.v1.CallSignal.Kind
-	2,  // 11: peers_touch.model.realtime.v1.MessageMutation.kind:type_name -> peers_touch.model.realtime.v1.MessageMutation.Kind
-	3,  // 12: peers_touch.model.realtime.v1.GroupMembershipChange.kind:type_name -> peers_touch.model.realtime.v1.GroupMembershipChange.Kind
-	13, // [13:13] is the sub-list for method output_type
-	13, // [13:13] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	6,  // 0: peers_touch.model.realtime.v1.StreamEvent.hb:type_name -> peers_touch.model.realtime.v1.Heartbeat
+	7,  // 1: peers_touch.model.realtime.v1.StreamEvent.message:type_name -> peers_touch.model.realtime.v1.MessageEnvelope
+	8,  // 2: peers_touch.model.realtime.v1.StreamEvent.receipt:type_name -> peers_touch.model.realtime.v1.MessageReceipt
+	9,  // 3: peers_touch.model.realtime.v1.StreamEvent.typing:type_name -> peers_touch.model.realtime.v1.TypingState
+	10, // 4: peers_touch.model.realtime.v1.StreamEvent.presence:type_name -> peers_touch.model.realtime.v1.PresenceFlip
+	11, // 5: peers_touch.model.realtime.v1.StreamEvent.signaling:type_name -> peers_touch.model.realtime.v1.CallSignal
+	15, // 6: peers_touch.model.realtime.v1.StreamEvent.resync:type_name -> peers_touch.model.realtime.v1.Resync
+	12, // 7: peers_touch.model.realtime.v1.StreamEvent.mutation:type_name -> peers_touch.model.realtime.v1.MessageMutation
+	13, // 8: peers_touch.model.realtime.v1.StreamEvent.group_membership_change:type_name -> peers_touch.model.realtime.v1.GroupMembershipChange
+	14, // 9: peers_touch.model.realtime.v1.StreamEvent.conversation_settings_changed:type_name -> peers_touch.model.realtime.v1.ConversationSettingsChanged
+	0,  // 10: peers_touch.model.realtime.v1.MessageReceipt.kind:type_name -> peers_touch.model.realtime.v1.MessageReceipt.Kind
+	1,  // 11: peers_touch.model.realtime.v1.CallSignal.kind:type_name -> peers_touch.model.realtime.v1.CallSignal.Kind
+	2,  // 12: peers_touch.model.realtime.v1.MessageMutation.kind:type_name -> peers_touch.model.realtime.v1.MessageMutation.Kind
+	3,  // 13: peers_touch.model.realtime.v1.GroupMembershipChange.kind:type_name -> peers_touch.model.realtime.v1.GroupMembershipChange.Kind
+	4,  // 14: peers_touch.model.realtime.v1.ConversationSettingsChanged.kind:type_name -> peers_touch.model.realtime.v1.ConversationSettingsChanged.Kind
+	15, // [15:15] is the sub-list for method output_type
+	15, // [15:15] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_domain_realtime_event_proto_init() }
@@ -1297,14 +1453,15 @@ func file_domain_realtime_event_proto_init() {
 		(*StreamEvent_Resync)(nil),
 		(*StreamEvent_Mutation)(nil),
 		(*StreamEvent_GroupMembershipChange)(nil),
+		(*StreamEvent_ConversationSettingsChanged)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_realtime_event_proto_rawDesc), len(file_domain_realtime_event_proto_rawDesc)),
-			NumEnums:      4,
-			NumMessages:   10,
+			NumEnums:      5,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -57,6 +57,7 @@ Peers-Touch 的社交能力需要在 Desktop 与 Mobile 上长期共同演进。
 | [decisions.md](./decisions.md) | Station 真源、Host Adapter、projection owner、防回退等关键决策 |
 | [integration.md](./integration.md) | 当前 Desktop/Mobile 文件映射、差异矩阵、迁移策略 |
 | [execution-plans/phase-1-runtime-alignment.md](./execution-plans/phase-1-runtime-alignment.md) | 第一阶段落地计划 |
+| [execution-plans/20260604-social-chat-product-closure.md](./execution-plans/20260604-social-chat-product-closure.md) | 社交/聊天产品闭环最终形态、四大能力域、长任务执行路径 |
 
 ---
 

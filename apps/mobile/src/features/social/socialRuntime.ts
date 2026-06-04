@@ -5,11 +5,14 @@ import { isSenderKeyDistributionMessage } from './socialProjection';
 import type { SocialState } from './socialStore';
 import { startRealtimeStream } from './socialRealtime';
 import type { FriendChatMessage } from './socialTypes';
+import type { GroupMembershipKind } from './socialWire';
 
 const RECONCILE_INTERVAL_MS = 30000;
 const TYPING_TTL_MS = 6000;
 const TYPING_SWEEP_INTERVAL_MS = 2000;
 const EXTERNAL_RECONCILE_DEBOUNCE_MS = 1000;
+const REALTIME_RECONNECT_BASE_MS = 1000;
+const REALTIME_RECONNECT_MAX_MS = 15000;
 
 interface PresenceFrame {
   actor_id?: string;
@@ -73,13 +76,13 @@ export function startSocialRuntime(
     if (!did || typeof frame.online !== 'boolean') return;
     store.setPeerOnline(String(did), frame.online);
   });
-  startRealtimeStream(session, abortController.signal, {
+  const realtimeHandlers: Parameters<typeof startRealtimeStream>[2] = {
     onMessage: (sessionUlid, message) => {
       if (isSenderKeyDistributionMessage(message)) {
         void routeSkdmControlMessage(store, groupE2eeRuntime, message);
         return;
       }
-      store.ingestRealtimeMessage(sessionUlid, message);
+      void store.ingestRealtimeMessage(sessionUlid, message);
     },
     onGroupMessage: (groupUlid, message) => {
       if (!groupStore) return;
@@ -95,11 +98,19 @@ export function startSocialRuntime(
     onGroupMembership: (groupUlid, actorDid, kind) => {
       void routeGroupMembershipChange(groupStore, groupE2eeRuntime, groupUlid, actorDid, kind);
     },
+    onSettingsChanged: (conversationKind, containerUlid) => {
+      if (conversationKind === 'friend') {
+        void store.loadConversationSettings(containerUlid);
+      } else {
+        void groupStore?.loadSettings(containerUlid);
+      }
+    },
     onResync: () => {
       void store.reconcile();
       void groupStore?.reconcile();
     },
-  });
+  };
+  void superviseRealtimeStream(session, abortController.signal, store, groupStore, groupE2eeRuntime, realtimeHandlers);
 
   const runtimeRef: ActiveSocialRuntime = {
     sessionKey: store.sessionKey,
@@ -108,6 +119,7 @@ export function startSocialRuntime(
 
       if (event.sessionUlid) void store.loadMessages(event.sessionUlid);
       if (event.notificationId || event.target === 'notification') void store.refreshNotifications();
+      void reconcileActiveThreads(store, groupStore, groupE2eeRuntime);
 
       if (externalReconcileTimer) return;
       externalReconcileTimer = window.setTimeout(() => {
@@ -130,6 +142,56 @@ export function startSocialRuntime(
   };
 }
 
+async function superviseRealtimeStream(
+  session: MobileAuthSession,
+  signal: AbortSignal,
+  store: SocialState,
+  groupStore: GroupState | undefined,
+  groupE2eeRuntime: GroupE2eeRuntimeController | undefined,
+  handlers: Parameters<typeof startRealtimeStream>[2],
+) {
+  let reconnectDelay = REALTIME_RECONNECT_BASE_MS;
+  while (!signal.aborted) {
+    try {
+      await startRealtimeStream(session, signal, handlers);
+      reconnectDelay = REALTIME_RECONNECT_BASE_MS;
+	} catch {
+	  if (signal.aborted) return;
+	}
+
+    if (signal.aborted) return;
+    await reconcileActiveThreads(store, groupStore, groupE2eeRuntime);
+    await delay(reconnectDelay, signal);
+    reconnectDelay = Math.min(reconnectDelay * 2, REALTIME_RECONNECT_MAX_MS);
+  }
+}
+
+async function reconcileActiveThreads(
+  store: SocialState,
+  groupStore: GroupState | undefined,
+  groupE2eeRuntime: GroupE2eeRuntimeController | undefined,
+) {
+  await Promise.allSettled([
+    store.reconcileActiveSessionMessages(),
+    groupStore?.reconcileActiveGroupMessages().then(() => groupE2eeRuntime?.repairEncryptedMessages()),
+  ]);
+}
+
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+
+    const timer = window.setTimeout(resolve, ms);
+    signal.addEventListener('abort', () => {
+      window.clearTimeout(timer);
+      resolve();
+    }, { once: true });
+  });
+}
+
 async function routeSkdmControlMessage(
   store: SocialState,
   groupE2eeRuntime: GroupE2eeRuntimeController | undefined,
@@ -145,7 +207,7 @@ async function routeGroupMembershipChange(
   groupE2eeRuntime: GroupE2eeRuntimeController | undefined,
   groupUlid: string,
   actorDid: string,
-  kind: 'ADDED' | 'REMOVED' | 'LEFT',
+  kind: GroupMembershipKind,
 ) {
   try {
     await groupStore?.refreshGroups();

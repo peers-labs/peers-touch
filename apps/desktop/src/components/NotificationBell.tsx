@@ -4,6 +4,7 @@ import { Bell, Check, CheckCheck, Trash2, UserPlus, UserCheck } from 'lucide-rea
 import { Badge, Dropdown, Empty, Spin, Tooltip, theme } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import { useNotificationStore } from '../store/notification';
+import { useSessionStore } from '../store/session';
 import type { NotificationData } from '../services/desktop_api';
 
 const CATEGORY_LABELS: Record<number, string> = {
@@ -156,6 +157,7 @@ export function NotificationBell() {
   const notifications = useNotificationStore((s) => s.notifications);
   const unreadTotal = useNotificationStore((s) => s.unreadTotal);
   const loading = useNotificationStore((s) => s.loading);
+  const authenticatedActorId = useSessionStore((s) => (s.authenticated ? s.currentUser?.actorId ?? null : null));
   const startPolling = useNotificationStore((s) => s.startPolling);
   const stopPolling = useNotificationStore((s) => s.stopPolling);
   const markRead = useNotificationStore((s) => s.markRead);
@@ -164,9 +166,13 @@ export function NotificationBell() {
   const loadNotifications = useNotificationStore((s) => s.loadNotifications);
 
   useEffect(() => {
+    if (!authenticatedActorId) {
+      stopPolling();
+      return;
+    }
     startPolling();
     return () => stopPolling();
-  }, [startPolling, stopPolling]);
+  }, [authenticatedActorId, startPolling, stopPolling]);
 
   const handleMarkRead = useCallback((id: string) => {
     markRead([id]);
