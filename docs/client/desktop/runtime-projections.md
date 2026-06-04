@@ -6,6 +6,10 @@ Desktop UI state is a set of runtime projections over Station truth, local Rust 
 
 This document is the Desktop platform source for how runtime components consume events, refresh derived business state, and reconcile missed updates. It also defines the **kernel contracts** (`Runtime`, `Page`, `Boot`) that all new pages and projection owners must follow.
 
+Cross-end architecture source:
+
+- `docs/architecture/social-runtime/README.md` defines the Desktop/Mobile shared social runtime abstraction. This Desktop document refines that abstraction inside `desktop-web` kernel/runtime contracts.
+
 Read this before changing:
 
 - `apps/desktop/src/kernel/runtime.ts`, `kernel/page.ts`, `kernel/boot.ts`, `kernel/PageHost.tsx`, `kernel/usePrefetch.ts`

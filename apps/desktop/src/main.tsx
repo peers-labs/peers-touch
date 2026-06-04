@@ -4,6 +4,7 @@ import { ThemeProvider } from '@lobehub/ui';
 import { I18nextProvider } from 'react-i18next';
 import { log } from './utils/logger';
 import { initI18n } from './i18n';
+import { registerAppletElements } from './applet/register-elements';
 // Side-effect: register global error / unhandledrejection handlers once.
 import './kernel/events/global-error';
 import App from './App';
@@ -11,6 +12,9 @@ import SharePage from './pages/SharePage';
 import './modules';
 import './index.css';
 import { markPhaseEnd, markPhaseStart } from './kernel/boot';
+
+// Register custom elements early — before any React component attempts to render <lynx-host>.
+registerAppletElements();
 
 // ── Browser Dev Gateway ──
 // When running outside Tauri WebView (e.g. Chrome), patch

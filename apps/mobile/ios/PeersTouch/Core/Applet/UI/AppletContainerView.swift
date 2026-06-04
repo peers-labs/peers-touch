@@ -2,73 +2,79 @@ import SwiftUI
 
 struct AppletContainerView: View {
     let appletId: String
+    @StateObject private var viewModel: AppletContainerViewModel
 
-    @State private var viewState: ViewState = .loading
-    @State private var errorMessage: String?
-
-    private let appletManager = Container.shared.appletManager
-    private let lynxViewFactory = Container.shared.lynxViewFactory
-
-    enum ViewState {
-        case loading
-        case running
-        case error
+    init(appletId: String, appletManager: AppletManager) {
+        self.appletId = appletId
+        _viewModel = StateObject(wrappedValue: AppletContainerViewModel(
+            appletId: appletId,
+            appletManager: appletManager
+        ))
     }
 
     var body: some View {
         Group {
-            switch viewState {
+            switch viewModel.state {
             case .loading:
-                AppletLoadingView(appletName: appletId)
-            case .running:
-                LynxViewRepresentable(appletId: appletId)
-            case .error:
-                AppletErrorView(
-                    message: errorMessage ?? "Unknown error",
-                    onRetry: { loadApplet() }
-                )
+                ProgressView("Loading applet...")
+            case .running(let session):
+                if let loadConfig = session.manifest.iosLoadConfig {
+                    AppletLynxViewRepresentable(
+                        bundleUrl: loadConfig.entry,
+                        session: session
+                    )
+                } else {
+                    errorView("No iOS load config for applet \(appletId)")
+                }
+            case .error(let message):
+                errorView(message)
             }
         }
-        .task {
-            loadApplet()
-        }
+        .onAppear { viewModel.load() }
+        .onDisappear { viewModel.unload() }
     }
 
-    private func loadApplet() {
-        viewState = .loading
-        do {
-            let session = try appletManager.loadApplet(id: appletId)
-            if session.state == .ready || session.state == .running {
-                session.transition(to: .running)
-                viewState = .running
-            } else {
-                errorMessage = "Applet is in \(session.state) state"
-                viewState = .error
-            }
-        } catch {
-            errorMessage = error.localizedDescription
-            viewState = .error
+    private func errorView(_ message: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.largeTitle)
+                .foregroundColor(.orange)
+            Text(message)
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .padding()
         }
     }
 }
 
-struct LynxViewRepresentable: UIViewRepresentable {
-    let appletId: String
-
-    func makeUIView(context: Context) -> UIView {
-        let container = Container.shared
-
-        guard let info = container.appletManager.getAppletInfo(id: appletId),
-              let bundlePath = container.appletBundleStorage.bundlePath(for: appletId),
-              let session = container.appletManager.getApplet(id: appletId) else {
-            let errorView = UIView()
-            errorView.backgroundColor = .systemRed
-            return errorView
-        }
-
-        let entryURL = bundlePath.appendingPathComponent(info.main)
-        return container.lynxViewFactory.create(bundleURL: entryURL, bridgeSession: session)
+@MainActor
+final class AppletContainerViewModel: ObservableObject {
+    enum ContainerState {
+        case loading
+        case running(AppletBridgeSession)
+        case error(String)
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {}
+    @Published var state: ContainerState = .loading
+
+    private let appletId: String
+    private let appletManager: AppletManager
+
+    init(appletId: String, appletManager: AppletManager) {
+        self.appletId = appletId
+        self.appletManager = appletManager
+    }
+
+    func load() {
+        guard let session = appletManager.getApplet(appletId) else {
+            state = .error("Applet \(appletId) not found")
+            return
+        }
+        session.transition(to: .running)
+        state = .running(session)
+    }
+
+    func unload() {
+        appletManager.unloadApplet(appletId)
+    }
 }

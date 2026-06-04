@@ -30,6 +30,7 @@ Do **not** use this file as the place to redefine Desktop architecture, module b
 
 - [Desktop Base](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/desktop/base.md)
 - [Desktop README](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/desktop/README.md)
+- [Desktop Client Lifecycle](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/desktop/lifecycle.md)
 - [Desktop Runtime Projections — Page / Runtime / Boot kernel contracts (single source of truth)](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/desktop/runtime-projections.md)
 - [Desktop Global Context Kernel](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/desktop/global-context-kernel.md)
 

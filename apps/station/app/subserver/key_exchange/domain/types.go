@@ -11,6 +11,7 @@ type KeyBundle struct {
 	SignedPreKey      SignedPreKey
 	OneTimePreKeys    []OneTimePreKey
 	PublishedAtUnixMs int64
+	SupportedVersions []uint32
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }

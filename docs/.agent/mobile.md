@@ -1,6 +1,6 @@
 # Mobile Agent Entry
 
-> Load this file when working on `apps/mobile/android/` or `apps/mobile/ios/`.
+> Load this file when working on `apps/mobile/`, Mobile native plugins, or Mobile docs.
 > Parent rules: [AGENTS.md](../../AGENTS.md)
 
 ---
@@ -24,7 +24,9 @@ Do **not** use this file as the place to redefine Mobile architecture, dual-plat
 ### Platform Sources
 
 - [Mobile Base](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/mobile/base.md)
-- [Native Dual Platform](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/mobile/native-dual-platform.md)
+- [Mobile Client Lifecycle](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/mobile/lifecycle.md)
+- [Native Plugin Layer](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/mobile/native-dual-platform.md)
+- [Tauri Mobile Mainline Migration Plan](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/mobile/execution-plans/20260531-tauri-mobile-mainline-migration.md)
 
 ### Topic Sources
 
@@ -45,37 +47,41 @@ Do **not** use this file as the place to redefine Mobile architecture, dual-plat
 
 ## 3. Hard Constraints
 
-- Mobile is native dual-platform: Android uses Kotlin + Compose, iOS uses Swift + SwiftUI.
+- Mobile mainline is Tauri v2 Mobile: shared Web UI + Rust capability kernel + Android/iOS native plugins.
+- Android Kotlin and iOS Swift are native plugin implementation layers, not the primary UI mainline.
 - Do not reintroduce Flutter as an active implementation path.
 - Proto definitions come from `model/domain/`; do not create manual parallel domain models.
 - Mobile does not become its own cross-end truth source when the architecture says Station owns the truth.
 - Use platform-native secure storage; do not store tokens in plaintext.
-- Use project loggers; do not use `println()`, `print()`, direct Android `Log.*`, or ad-hoc debug output.
+- Use project loggers; do not use `console.log`, `println()`, `print()`, direct Android `Log.*`, or ad-hoc debug output.
+- Mobile pages must not keep long-lived business state fresh through page mount refreshes only; ownership belongs to runtime projections.
 
 ---
 
 ## 4. Verification Commands
 
-Android:
+Target Tauri Mobile commands after the shell scripts land:
+
+Tauri Mobile:
 
 ```bash
-cd apps/mobile/android
-./gradlew build
+pnpm mobile:check
+pnpm mobile:dev:ios
+pnpm mobile:build:ios
 ```
 
-iOS:
+Native plugin verification is iOS-first for the current spike:
 
 ```bash
-cd apps/mobile/ios
-xcodebuild -scheme PeersTouch build
+cd apps/mobile/src-tauri/gen/apple
+xcodebuild -list -project peers-touch-mobile.xcodeproj
 ```
 
 Proto generation:
 
 ```bash
 ./tooling/scripts/proto-gen-mobile.sh
-./tooling/scripts/proto-gen-mobile.sh kotlin
-./tooling/scripts/proto-gen-mobile.sh swift
+./tooling/scripts/proto-gen-mobile.sh
 ```
 
 ---
@@ -83,7 +89,7 @@ Proto generation:
 ## 5. What This File Does Not Define
 
 - It does not define the full Mobile module structure.
-- It does not define the full Android or iOS coding standards.
+- It does not define the full native plugin coding standards.
 - It does not define the full applet/runtime architecture.
 
 If you need those answers, go to the linked source documents above.

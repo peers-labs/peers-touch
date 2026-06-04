@@ -8,7 +8,8 @@ use crate::contracts::{
     GroupChatThreadInput, GroupChatThreadReadInput, GroupChatUnreadInput, GroupCreateInput,
     GroupInviteInput, GroupJoinInput, GroupMembersInput, GroupMessageActionInput,
     GroupOfflineMessagesInput, GroupRemoveMemberInput, GroupSearchMessagesInput, GroupUlidInput,
-    GroupUpdateInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput, StubPayload,
+    GroupUpdateInput, GroupUpdateMemberInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput,
+    StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -772,7 +773,7 @@ pub fn group_chat_invite_to_group(
 
     let data = match request_json(
         Method::POST,
-        "/group-chat/group/invite",
+        "/group-chat/invite",
         &token,
         None,
         Some(json!({
@@ -854,27 +855,72 @@ pub fn group_chat_remove_member(
     input: GroupRemoveMemberInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
-) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state, &window) {
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
         Ok(token) => token,
         Err(error) => return error,
     };
-
-    let data = match request_json(
-        Method::POST,
-        "/group-chat/group/remove-member",
-        &token,
-        None,
-        Some(json!({
-            "group_ulid": input.group_ulid,
-            "member_did": input.member_did,
-        })),
-    ) {
-        Ok(data) => data,
-        Err(error) => return error,
+    if input.group_ulid.trim().is_empty() || input.member_did.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "group_ulid and member_did are required",
+            None,
+        );
+    }
+    let req = model::chat::RemoveMemberRequest {
+        group_ulid: input.group_ulid,
+        actor_did: input.member_did,
+    };
+    let resp = match station_client::request_proto::<
+        model::chat::RemoveMemberRequest,
+        model::chat::RemoveMemberResponse,
+    >(Method::POST, "/group-chat/member/remove", &token, None, Some(&req))
+    {
+        Ok(resp) => resp,
+        Err(error) => return error.into_app_result("station request failed"),
     };
 
-    to_stub("group_chat_remove_member", data)
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn group_chat_update_member(
+    input: GroupUpdateMemberInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    if input.group_ulid.trim().is_empty() || input.member_did.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "group_ulid and member_did are required",
+            None,
+        );
+    }
+    let muted_until = input.muted_until_unix_ms.map(|millis| prost_types::Timestamp {
+        seconds: millis / 1000,
+        nanos: ((millis % 1000) * 1_000_000) as i32,
+    });
+    let req = model::chat::UpdateMemberRequest {
+        group_ulid: input.group_ulid,
+        actor_did: input.member_did,
+        role: input.role,
+        muted: input.muted,
+        muted_until,
+    };
+    let resp = match station_client::request_proto::<
+        model::chat::UpdateMemberRequest,
+        model::chat::UpdateMemberResponse,
+    >(Method::PUT, "/group-chat/member/update", &token, None, Some(&req))
+    {
+        Ok(resp) => resp,
+        Err(error) => return error.into_app_result("station request failed"),
+    };
+
+    AppResult::success(resp.encode_to_vec())
 }
 
 /// Recall (withdraw) a message in a group. Returns proto bytes
@@ -1086,7 +1132,7 @@ pub fn group_chat_get_settings(
 
     let data = match request_json(
         Method::GET,
-        "/group-chat/group/settings",
+        "/group-chat/my-settings",
         &token,
         Some(&query),
         None,
@@ -1110,17 +1156,32 @@ pub fn group_chat_update_settings(
         Err(error) => return error,
     };
 
+    let mut body = json!({"group_ulid": input.group_ulid});
+    if let Some(value) = input.is_muted {
+        body["is_muted"] = json!(value);
+    }
+    if let Some(value) = input.is_pinned {
+        body["is_pinned"] = json!(value);
+    }
+    if let Some(value) = input.show_member_nickname {
+        body["show_member_nickname"] = json!(value);
+    }
+    if let Some(value) = input.alert_enabled {
+        body["alert_enabled"] = json!(value);
+    }
+    if let Some(value) = input.background {
+        body["background"] = json!(value);
+    }
+    if let Some(value) = input.cleared_at_unix_ms {
+        body["cleared_at_unix_ms"] = json!(value);
+    }
+
     let data = match request_json(
-        Method::POST,
-        "/group-chat/group/settings",
+        Method::PUT,
+        "/group-chat/my-settings",
         &token,
         None,
-        Some(json!({
-            "group_ulid": input.group_ulid,
-            "is_muted": input.is_muted,
-            "is_pinned": input.is_pinned,
-            "show_member_nickname": input.show_member_nickname,
-        })),
+        Some(body),
     ) {
         Ok(data) => data,
         Err(error) => return error,

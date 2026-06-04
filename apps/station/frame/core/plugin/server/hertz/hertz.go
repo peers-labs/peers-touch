@@ -124,6 +124,10 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 	// recovery middleware
 	s.hertz.Use(recovery.Recovery())
 
+	// CORS middleware for WebView clients. Mobile Tauri pages run from
+	// tauri.localhost and must preflight authenticated Station APIs.
+	s.hertz.Use(CORSMiddleware())
+
 	// request logger middleware
 	s.hertz.Use(RequestLoggerMiddleware())
 
@@ -171,6 +175,8 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 			s.hertz.DELETE(h.Path(), hertzHandler)
 		case server.PATCH:
 			s.hertz.PATCH(h.Path(), hertzHandler)
+		case server.OPTIONS:
+			s.hertz.OPTIONS(h.Path(), hertzHandler)
 		default:
 			s.hertz.Any(h.Path(), hertzHandler)
 		}
@@ -192,6 +198,28 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 
 	s.started = true
 	return nil
+}
+
+// CORSMiddleware allows browser/WebView clients to call authenticated Station APIs.
+func CORSMiddleware() app.HandlerFunc {
+	return func(c context.Context, ctx *app.RequestContext) {
+		origin := string(ctx.GetHeader("Origin"))
+		if origin != "" {
+			ctx.Header("Access-Control-Allow-Origin", origin)
+			ctx.Header("Access-Control-Allow-Credentials", "true")
+			ctx.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			ctx.Header("Access-Control-Allow-Headers", "Accept, Content-Type, Authorization")
+			ctx.Header("Access-Control-Max-Age", "600")
+		}
+
+		if string(ctx.Method()) == string(server.OPTIONS) {
+			ctx.SetStatusCode(http.StatusNoContent)
+			ctx.Abort()
+			return
+		}
+
+		ctx.Next(c)
+	}
 }
 
 // Stop shuts down base server and Hertz engine.
@@ -251,7 +279,6 @@ func (w *responseWriter) Write(data []byte) (int, error) {
 func (w *responseWriter) WriteHeader(statusCode int) {
 	w.ctx.SetStatusCode(statusCode)
 }
-
 
 func RequestLoggerMiddleware() app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {

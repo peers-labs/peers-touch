@@ -15,8 +15,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DESKTOP_DIR="$PROJECT_ROOT/apps/desktop"
 
-PROFILE="desktop"
-GATEWAY_PORT=3030
+PROFILE="${PT_PROFILE:-desktop}"
+GATEWAY_PORT="${GATEWAY_PORT:-3030}"
 WEB_PORT="${WEB_PORT:-3210}"
 WEB_URL="http://localhost:$WEB_PORT"
 STATION_PORT="${STATION_PORT:-18080}"

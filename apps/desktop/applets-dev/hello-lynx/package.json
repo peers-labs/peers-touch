@@ -1,0 +1,18 @@
+{
+  "name": "hello-lynx",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "rspeedy dev",
+    "build": "rspeedy build"
+  },
+  "dependencies": {
+    "@lynx-js/react": "^0.121.0",
+    "@peers-touch/applet-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@lynx-js/rspeedy": "^0.14.4",
+    "@lynx-js/react-rsbuild-plugin": "^0.16.2"
+  }
+}

@@ -4,13 +4,12 @@ import { Flexbox } from 'react-layout-kit';
 import { Button, TextArea, Tooltip, EmojiPicker } from '@lobehub/ui';
 import { Spin, theme, Typography, Empty } from 'antd';
 import {
-  Send, Inbox, Phone, Video, Search, Info,
+  Send, Inbox, Phone, Video, MoreHorizontal,
   Paperclip, Check, CheckCheck,
   Reply, Trash2, Lock, RotateCcw, Pencil, X as XIcon, MessageCircle,
 } from 'lucide-react';
 import {
   actorProfileFromSessions,
-  groupAvatarRemoteUrl,
   peerOfSession,
   socialThreadKey,
   useSocialChatStore,
@@ -29,6 +28,23 @@ import type { Timestamp } from '@bufbuild/protobuf/wkt';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 
 const { Text } = Typography;
+
+function chatBackgroundCss(background: string | undefined, layoutColor: string, containerColor: string): string {
+  switch (background) {
+    case 'paper':
+      return 'linear-gradient(180deg, rgba(255,251,235,0.9), rgba(254,243,199,0.52))';
+    case 'mint':
+      return 'linear-gradient(180deg, rgba(236,253,245,0.9), rgba(209,250,229,0.52))';
+    case 'dusk':
+      return 'linear-gradient(180deg, rgba(238,242,255,0.9), rgba(224,231,255,0.52))';
+    case 'calm':
+      return 'linear-gradient(180deg, rgba(239,246,255,0.9), rgba(219,234,254,0.52))';
+    case 'graphite':
+      return 'linear-gradient(180deg, rgba(51,65,85,0.12), rgba(15,23,42,0.08))';
+    default:
+      return `linear-gradient(180deg, ${layoutColor} 0%, ${containerColor} 100%)`;
+  }
+}
 
 function isFriendMsg(msg: FriendChatMessage | GroupMessage): msg is FriendChatMessage {
   return 'sessionUlid' in msg;
@@ -307,6 +323,7 @@ export function ChatMessageArea() {
     sessions, groups, loadMessages, loadOlderMessages, sendFriendMessage, sendGroupMessage, toggleDetail,
     deleteMessage, recallFriendMessage, editFriendMessage,
     recallGroupMessage, editGroupMessage, openThread,
+    conversationLocalState,
   } = useSocialChatStore();
   const messageHasMore = useSocialChatStore((s) => s.messageHasMore);
   const messageLoadingMore = useSocialChatStore((s) => s.messageLoadingMore);
@@ -323,6 +340,7 @@ export function ChatMessageArea() {
   const [showSearch, setShowSearch] = useState(false);
   const [sending, setSending] = useState(false);
   const [replyToUlid, setReplyToUlid] = useState<string | null>(null);
+  const [highlightedMessageUlid, setHighlightedMessageUlid] = useState<string | null>(null);
   // When set, the input field operates in "edit" mode: pressing
   // Send dispatches `editFriendMessage(activeUlid, editingUlid, …)`
   // instead of creating a new message. The banner above the input
@@ -334,6 +352,7 @@ export function ChatMessageArea() {
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const currentMessages = activeUlid ? (messages[activeUlid] || []) : [];
+  const activeBackground = activeUlid ? conversationLocalState[`${activeTab}:${activeUlid}`]?.background : undefined;
 
   const activeFriendPeer = (() => {
     if (activeTab !== 'friend' || !activeUlid) return null;
@@ -348,14 +367,6 @@ export function ChatMessageArea() {
     }
     const g = groups.find((grp) => grp.ulid === activeUlid);
     return g?.name || '';
-  })();
-
-  const currentAvatar = (() => {
-    if (activeTab === 'friend') {
-      return activeFriendPeer?.avatar || '';
-    }
-    const g = groups.find((grp) => grp.ulid === activeUlid);
-    return groupAvatarRemoteUrl(g);
   })();
 
   const subtitle = (() => {
@@ -423,6 +434,12 @@ export function ChatMessageArea() {
   useEffect(() => {
     setReplyToUlid(null);
   }, [activeUlid]);
+
+  useEffect(() => {
+    const openSearch = () => setShowSearch(true);
+    window.addEventListener('peers-chat:open-search', openSearch);
+    return () => window.removeEventListener('peers-chat:open-search', openSearch);
+  }, []);
 
   // ---- Typing-state outbound pulses --------------------------------
   //
@@ -553,6 +570,8 @@ export function ChatMessageArea() {
     const raf = requestAnimationFrame(() => {
       const el = document.querySelector(`[data-message-ulid="${scrollToMessageUlid}"]`);
       el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setHighlightedMessageUlid(scrollToMessageUlid);
+      window.setTimeout(() => setHighlightedMessageUlid(null), 1800);
       setScrollToMessageUlid(null);
     });
     return () => cancelAnimationFrame(raf);
@@ -784,25 +803,8 @@ export function ChatMessageArea() {
       border: 0 !important;
       box-shadow: none !important;
     }
-    .typing-dots {
-      display: inline-flex;
-      gap: 3px;
-      align-items: center;
-    }
-    .typing-dots > span {
-      display: inline-block;
-      width: 4px;
-      height: 4px;
-      border-radius: 50%;
-      background: currentColor;
-      opacity: 0.35;
-      animation: typing-dot-bounce 1.2s infinite ease-in-out;
-    }
-    .typing-dots > span:nth-child(2) { animation-delay: 0.15s; }
-    .typing-dots > span:nth-child(3) { animation-delay: 0.3s; }
-    @keyframes typing-dot-bounce {
-      0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
-      30% { transform: translateY(-3px); opacity: 0.85; }
+    .msg-row.highlighted .msg-bubble {
+      box-shadow: 0 0 0 2px ${token.colorPrimaryBorder}, ${token.boxShadowSecondary} !important;
     }
   `;
 
@@ -828,14 +830,21 @@ export function ChatMessageArea() {
         }}
       >
         <Flexbox horizontal align="center" gap={10}>
-          <UserSquareAvatar remoteUrl={currentAvatar} name={currentName} size={36} />
           <Flexbox horizontal align="center" gap={6}>
             <Flexbox>
               <Flexbox horizontal align="center" gap={6}>
                 <Text strong style={{ fontSize: 14 }}>{currentName}</Text>
                 {peerOnlineIndicator}
               </Flexbox>
-              <Text type="secondary" style={{ fontSize: 12 }}>{subtitle}</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {activeTab === 'friend'
+                  ? peerIsTyping
+                    ? t('chat.social.messageArea.typing')
+                    : activePeerDid && peerOnline[activePeerDid]
+                      ? t('chat.social.detail.online')
+                      : t('chat.social.detail.offline')
+                  : subtitle}
+              </Text>
             </Flexbox>
             {encryptionEnabled && (
               <Tooltip title={t('chat.social.encryption.enabled')}>
@@ -879,15 +888,7 @@ export function ChatMessageArea() {
               onClick={() => handleStartCall('video')}
             />
           </Tooltip>
-          <Tooltip title={t('chat.social.search.title')}>
-            <Button
-              type="text"
-              icon={<Search size={16} />}
-              style={{ width: 32, height: 32 }}
-              onClick={() => setShowSearch(true)}
-            />
-          </Tooltip>
-          <Button type="text" icon={<Info size={16} />} style={{ width: 32, height: 32 }} onClick={toggleDetail} />
+          <Button type="text" icon={<MoreHorizontal size={16} />} style={{ width: 32, height: 32, borderRadius: 10 }} onClick={toggleDetail} />
         </Flexbox>
       </Flexbox>
 
@@ -898,7 +899,7 @@ export function ChatMessageArea() {
         style={{
           overflow: 'auto',
           padding: '18px 28px 20px',
-          background: `linear-gradient(180deg, ${token.colorBgLayout} 0%, ${token.colorBgContainer} 100%)`,
+          background: chatBackgroundCss(activeBackground, token.colorBgLayout, token.colorBgContainer),
         }}
         gap={10}
       >
@@ -966,7 +967,7 @@ export function ChatMessageArea() {
                 {showDateSeparator && messageDate && <DateSeparator date={messageDate} />}
                 <Flexbox
                   data-message-ulid={msg.ulid}
-                  className="msg-row"
+                  className={`msg-row ${highlightedMessageUlid === msg.ulid ? 'highlighted' : ''}`}
                   horizontal
                   align="flex-end"
                   style={{
@@ -1029,6 +1030,7 @@ export function ChatMessageArea() {
                     )}
 
                   <Flexbox
+                    className="msg-bubble"
                     style={{
                       padding: '9px 13px',
                       borderRadius: bubbleRadius,
@@ -1165,47 +1167,6 @@ export function ChatMessageArea() {
               </Fragment>
             );
           })
-        )}
-        {peerIsTyping && (
-          // Receiver-side typing indicator. The bubble is laid out
-          // exactly like an incoming peer message so it doesn't shift
-          // the message list when it appears/disappears (avoiding a
-          // layout thrash). The dots are pure CSS animation; we
-          // intentionally don't use a spinner so it's distinguishable
-          // from "still loading messages".
-          <Flexbox
-            horizontal={false}
-            style={{
-              alignSelf: 'flex-start',
-              maxWidth: 'min(74%, 740px)',
-            }}
-          >
-            <Flexbox
-              horizontal
-              align="center"
-              gap={6}
-              style={{
-                padding: '9px 13px',
-                borderRadius: '16px 16px 16px 6px',
-                background: token.colorBgContainer,
-                border: `1px solid ${token.colorBorderSecondary}`,
-                boxShadow: token.boxShadowSecondary,
-                color: token.colorTextSecondary,
-                fontSize: 13,
-                lineHeight: 1.5,
-              }}
-              aria-label={t('chat.social.messageArea.typing', 'is typing…')}
-            >
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {t('chat.social.messageArea.typing', 'is typing…')}
-              </Text>
-              <span className="typing-dots" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </span>
-            </Flexbox>
-          </Flexbox>
         )}
         <div ref={bottomRef} />
       </Flexbox>

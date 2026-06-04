@@ -1,0 +1,29 @@
+[package]
+name = "peers-touch-mobile"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "peers_touch_mobile_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0.1", features = [] }
+
+[dependencies]
+aes-gcm = "0.10"
+base64 = "0.22"
+curve25519-dalek = "4"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+hkdf = "0.12"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tauri = { version = "2.0.1", features = [] }
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+zeroize = { version = "1", features = ["derive"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

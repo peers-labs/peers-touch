@@ -33,15 +33,15 @@ class AppletManager constructor(
                 return@forEach
             }
 
-            if (manifest.targetPlatforms != null && "mobile" !in manifest.targetPlatforms) {
-                rejectedDiagnostics[manifest.id] = listOf("Applet does not target mobile platform")
+            if (manifest.targetPlatforms != null && "android" !in manifest.targetPlatforms) {
+                rejectedDiagnostics[manifest.id] = listOf("Applet does not target android platform")
                 return@forEach
             }
 
             val bundlePath = appletBundleStorage.getBundlePath(manifest.id)
             applets[manifest.id] = AppletInfo(
                 manifest = manifest,
-                main = manifest.load.entry,
+                main = manifest.load.android?.entry ?: "",
                 path = bundlePath?.path ?: ""
             )
         }

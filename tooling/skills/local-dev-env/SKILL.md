@@ -1,0 +1,278 @@
+---
+name: local-dev-env
+description: >
+  Set up worktree-isolated local development environment using profiles.
+  Use when the user wants to run Desktop, Mobile, or Station locally, or
+  connect to a remote Station. Handles profile creation, configuration,
+  activation, and service lifecycle. After this skill runs, the user only
+  needs `make desktop`, `make mobile`, `make station` to start services.
+---
+
+# Local Dev Environment
+
+## Goal
+
+Prepare the development environment so the user can simply run:
+
+```bash
+make station       # Start or verify Station
+make desktop       # Start Desktop (Tauri app)
+make desktop-web   # Start Desktop (browser)
+make mobile        # Start Mobile iOS Simulator
+make status        # Check what's running
+make stop          # Stop everything
+make restart       # Restart everything
+```
+
+The agent's job is to ensure a **profile** is created, configured correctly for
+the user's scenario, and activated. Once that's done, all `make` commands work
+without any additional flags.
+
+## Core Concepts
+
+### Profile
+
+A profile is a `.env` file at `.local/dev/profiles/<name>.env`.
+One profile is **active** per worktree (symlinked from `.local/dev/profile.env`).
+All `make` commands read the active profile automatically.
+
+### Slot
+
+Slot controls port allocation. Multiple worktrees use different slots to avoid
+port conflicts:
+
+| Service | Port formula |
+|---------|--------------|
+| Station | `18080 + slot * 100` |
+| Desktop App gateway | `3030 + slot * 100` |
+| Desktop App web | `3210 + slot * 100` |
+| Desktop Web gateway | `3031 + slot * 100` |
+| Desktop Web vite | `3211 + slot * 100` |
+| Mobile web | `5173 + slot * 100` |
+
+Default slot = 0.
+
+### Station Mode
+
+- `local` — `make station` compiles and runs Station from source
+- `remote` — `make station` only does a health check against the remote URL
+
+### Relay Mode
+
+- `local` — start relay locally (future)
+- `remote` — relay is running elsewhere; configure via `PT_RELAY_URL`
+
+## Commands Reference
+
+```bash
+# Profile management
+make profile-init PROFILE=<name> SLOT=<n>   # Create new profile
+make profile PROFILE=<name>                 # Activate profile
+make profiles                               # List all profiles
+make config                                 # Show active config
+
+# Services
+make station                                # Start/verify Station
+make desktop                                # Desktop Tauri app
+make desktop-web                            # Desktop in browser
+make mobile                                 # Mobile iOS Simulator
+
+# Lifecycle
+make status                                 # Show running services
+make stop                                   # Stop all
+make restart                                # Restart all
+make station-stop                           # Stop Station only
+make station-restart                        # Restart Station only
+make desktop-stop / desktop-restart
+make mobile-stop / mobile-restart
+```
+
+## Profile Variables
+
+```env
+PT_DEV_PROFILE=<name>
+PT_DEV_SLOT=<0-9>
+
+# Station
+PT_STATION_MODE=local|remote
+PT_STATION_NAME=<label>
+PT_STATION_URL=http://<host>:<port>
+PT_STATION_PORT=<port>
+PT_STATION_DB_NAME=<db_name>
+
+# Relay
+PT_RELAY_MODE=local|remote
+PT_RELAY_URL=<url>
+PT_RELAY_MULTIADDR=<multiaddr>
+PT_BOOTSTRAP_NODES=<multiaddr>
+
+# Desktop
+PT_DESKTOP_APP_GATEWAY_PORT=<port>
+PT_DESKTOP_APP_WEB_PORT=<port>
+PT_DESKTOP_WEB_GATEWAY_PORT=<port>
+PT_DESKTOP_WEB_WEB_PORT=<port>
+
+# Mobile
+PT_MOBILE_WEB_PORT=<port>
+PT_MOBILE_DEFAULT_STATION_URL=http://<host>:<port>
+```
+
+## Recipes
+
+### Recipe: Local Station + Desktop + Mobile
+
+```bash
+make profile-init PROFILE=local-dev SLOT=0
+make profile PROFILE=local-dev
+# Profile defaults are correct for local development
+make station   # Compiles and starts Station
+make desktop   # Starts Desktop
+make mobile    # Starts Mobile
+```
+
+### Recipe: Remote Station (e.g. 10.37.246.80) + Local Desktop + Mobile
+
+```bash
+make profile-init PROFILE=remote-s1 SLOT=0
+```
+
+Then edit `.local/dev/profiles/remote-s1.env`:
+
+```env
+PT_STATION_MODE=remote
+PT_STATION_URL=http://10.37.246.80:18080
+PT_STATION_PORT=18080
+PT_MOBILE_DEFAULT_STATION_URL=http://10.37.246.80:18080
+```
+
+```bash
+make profile PROFILE=remote-s1
+make station   # Just verifies remote is reachable
+make desktop   # Connects to 10.37.246.80
+make mobile    # Connects to 10.37.246.80
+```
+
+### Recipe: Second worktree running simultaneously
+
+```bash
+# In worktree-2, use slot=1 to avoid port conflicts
+make profile-init PROFILE=worktree-2 SLOT=1
+make profile PROFILE=worktree-2
+make station   # Runs on :18180
+make desktop   # Gateway on :3130, web on :3310
+```
+
+### Recipe: Connect to Relay
+
+Edit the active profile:
+
+```env
+PT_RELAY_MODE=remote
+PT_RELAY_URL=http://10.37.118.48:18081
+PT_BOOTSTRAP_NODES=/ip4/10.37.118.48/tcp/4001/p2p/<relay-peer-id>
+```
+
+These variables are passed to Station at startup.
+
+## Known Remote Stations (from .localenv topology)
+
+| Name | URL | Notes |
+|------|-----|-------|
+| Station-1 | `http://10.37.246.80:18080` | direct=ON |
+| Station-2 | `http://10.37.195.98:18080` | direct=ON |
+| Relay | `http://10.37.118.48:18081` | bootstrap DHT seed |
+| Station-4 | `http://10.37.195.98:18082` | relay-only, direct=OFF |
+
+## Agent Workflow
+
+When the user says "set up environment for X" or "I want to debug against Y":
+
+1. **Check existing profiles**: `make profiles`
+2. **Decide**: create new or reuse existing profile
+3. **Create if needed**: `make profile-init PROFILE=<name> SLOT=<n>`
+4. **Edit profile** if non-default config needed (remote station, relay, etc.)
+5. **Activate**: `make profile PROFILE=<name>`
+6. **Verify**: `make config` to confirm
+7. **Report**: tell user they can now `make desktop` / `make mobile` / `make station`
+
+## Remote Deployment
+
+Deploy code to remote hosts without pushing to GitHub first.
+Default: local git daemon serves code over LAN, remote fetches directly.
+Fallback: GitHub origin if local daemon unreachable.
+
+### Commands
+
+```bash
+make git-serve             # Start local git server (auto-started by deploy)
+make git-serve-stop        # Stop local git server
+make git-serve-status      # Check if running
+
+make deploy ENV=station-1            # Deploy to remote (fetches from local)
+make deploy ENV=station-1 BRANCH=feat/x  # Deploy specific branch
+make deploy-status ENV=station-1     # Check remote status
+make deploy-logs ENV=station-1       # Fetch remote logs
+```
+
+### Deploy Env Config
+
+Create `.local/deploy/envs/<name>.env`:
+
+```env
+PT_DEPLOY_HOST=10.37.246.80
+PT_DEPLOY_USER=root
+PT_DEPLOY_PATH=/opt/peers-touch
+PT_DEPLOY_ROLE=station
+PT_DEPLOY_BRANCH=main
+PT_DEPLOY_SOURCE=local   # local (git daemon) or github
+```
+
+### How it works (local mode)
+
+1. `make deploy` auto-starts local `git daemon` on `:9418`
+2. SSH to remote, tests if it can `git ls-remote git://<your-ip>:9418/peers-touch`
+3. If reachable: fetches from local → checkout → build → restart
+4. If unreachable: falls back to `git pull origin` (needs prior push to GitHub)
+
+No binary transfer. Remote always builds from source.
+
+## Important Rules
+
+- `.local/` is its own git repo (gitignored by main repo, versioned separately)
+- Profiles and deploy envs are tracked in `.local/` repo
+- Runtime artifacts (pids/logs/data) and active pointers are gitignored within `.local/`
+- Each worktree has its own active profile pointer (keyed by worktree basename)
+- Multiple worktrees share one `.local/` via symlink; pids/logs/data are profile-scoped
+- `make station` is idempotent — if Station is already running, it just confirms
+- `make desktop` / `make mobile` always ensure Station is ready first
+- Never hardcode station URLs in code — they come from the profile
+- PIDs/logs/data live in `.local/dev/{pids,logs,data}/<profile-name>/`
+
+## .local/ Git Repo
+
+`.local/` is a standalone git repo (main repo gitignores it entirely).
+
+**Tracked** (committed in `.local/` repo):
+- `dev/profiles/*.env` — all profiles
+- `deploy/envs/*.env` — all deploy env configs
+- `topology.env` — network topology reference
+- `.gitignore`
+
+**Ignored** (runtime, never committed):
+- `dev/pids/` — PID files per profile
+- `dev/logs/` — log files per profile
+- `dev/data/` — data files per profile
+- `dev/active/` — per-worktree active profile symlinks
+
+### Cross-worktree sharing
+
+All worktrees symlink `.local/` to the same directory:
+
+```bash
+# In another worktree:
+ln -sfn /path/to/primary-worktree/.local .local
+```
+
+Each worktree has its own active profile pointer at
+`.local/dev/active/<worktree-basename>.env`, so switching profiles in one
+worktree doesn't affect others.

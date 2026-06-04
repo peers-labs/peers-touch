@@ -36,8 +36,9 @@ function presenceTriggerFor(reason: IdentityChangeReason): PresenceTrigger {
   }
 }
 
-/** sessionStorage key: set to `"1"` while this window initiates an identity mutation (see `markLocalIdentityAction`). */
+/** In-process flag while this window initiates an identity mutation (see `markLocalIdentityAction`). */
 export const LOCAL_IDENTITY_FLAG = 'pt.identity.local_pipeline';
+let localIdentityActionPending = false;
 
 const TAURI_EVENT_NAME = 'auth:identity-changed';
 
@@ -78,11 +79,7 @@ function isLoginLike(reason: IdentityChangeReason): boolean {
 /** Mark this window as the originator of an identity-mutating command so the
  *  resulting `auth:identity-changed` broadcast does not run the pipeline twice. */
 export function markLocalIdentityAction(): void {
-  try {
-    sessionStorage.setItem(LOCAL_IDENTITY_FLAG, '1');
-  } catch {
-    // sessionStorage unavailable — worst case is a redundant pipeline run (idempotent).
-  }
+  localIdentityActionPending = true;
 }
 
 let installed = false;
@@ -104,13 +101,9 @@ export function installIdentityChangedBridge(): void {
     eventBus.publish(EVENT.AUTH_IDENTITY_CHANGED, undefined);
 
     let skipPipeline = false;
-    try {
-      if (sessionStorage.getItem(LOCAL_IDENTITY_FLAG) === '1') {
-        sessionStorage.removeItem(LOCAL_IDENTITY_FLAG);
-        skipPipeline = true;
-      }
-    } catch {
-      // ignore; continue with pipeline
+    if (localIdentityActionPending) {
+      localIdentityActionPending = false;
+      skipPipeline = true;
     }
     if (skipPipeline) {
       log.info('identity', 'skipping pipeline: local-originated change');

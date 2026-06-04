@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package peers_touch.model.federation.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/federation/api/pb;pb";
+
+// federation_health.proto — wire shape for GET /actor/federation/health.
+//
+// This endpoint is the only federation surface that is intentionally
+// public (no JWT). Two consumers:
+//
+//   * Operators monitoring federation readiness from outside the
+//     account layer — Prometheus exporters, external uptime checks,
+//     curl by a sysadmin debugging a fresh deploy.
+//   * The Desktop pre-login splash, which decides whether to grey
+//     out the "search by handle" entry until ready=true.
+//
+// `ready` is never expressed at the HTTP transport layer (always 200);
+// scrapers and the Desktop client both inspect the body so a "joining
+// the federation" state never trips an availability monitor.
+
+message FederationHealthView {
+  // True iff the local kad-DHT routing table has at least
+  // `min_dht_peers` peers AND the bootstrap subserver has begun
+  // executing. False during the first few seconds of a cold start.
+  bool ready = 1;
+
+  // Current routing table size — peers reachable for GetValue /
+  // PutValue. Below `min_dht_peers` the resolver gates remote
+  // resolves with HTTP 503 + ErrFederationNotReady.
+  int32 peers_in_routing_table = 2 [json_name = "peers_in_routing_table"];
+
+  // libp2p host total connected peers. Broader than the routing
+  // table — includes direct dials, relay-circuit connections, and
+  // peers we are connected to but have not yet exchanged DHT
+  // records with.
+  int32 connected_peers = 3 [json_name = "connected_peers"];
+
+  // Configured federation seeds AFTER the self-filter (a station
+  // never lists itself as a seed). Static after boot.
+  int32 seeds_configured = 4 [json_name = "seeds_configured"];
+
+  // Seeds with libp2p Connectedness == Connected RIGHT NOW. May be
+  // less than `seeds_configured` even when ready=true if the DHT
+  // has learned about other peers via the seed and the seed
+  // connection then dropped.
+  int32 seeds_connected = 5 [json_name = "seeds_connected"];
+
+  // Effective threshold (post policy clamp). Always >= 1 in
+  // production; a negative value here means an operator has
+  // explicitly disabled the gate (ready always true once Start runs).
+  int32 min_dht_peers = 6 [json_name = "min_dht_peers"];
+
+  // Stable identity of this station. Echoes the local libp2p PeerID
+  // and HTTP origin a federation locator record carries, so an
+  // external monitor can correlate health snapshots with locator
+  // records they may also be observing.
+  string station_peer_id = 7 [json_name = "station_peer_id"];
+  string station_domain = 8 [json_name = "station_domain"];
+
+  // RFC-3339 wall-clock time bootstrap.Start() began. Empty when
+  // the bootstrap subserver has not yet started — clients should
+  // treat that as not-ready. Paired with `uptime_seconds` for
+  // human-readable diagnostics.
+  string boot_started_at = 9 [json_name = "boot_started_at"];
+  int64 uptime_seconds = 10 [json_name = "uptime_seconds"];
+}

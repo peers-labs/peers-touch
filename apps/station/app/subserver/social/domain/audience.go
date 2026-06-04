@@ -22,6 +22,10 @@ type Viewer struct {
 	ActorDID string
 	// Set of actor IDs the viewer follows.
 	Following map[uint64]struct{}
+	// Set of actor IDs that are blocked in either direction with this viewer.
+	// Block is a cross-social privacy boundary: it suppresses follow-derived
+	// visibility and prevents audience selectors from becoming a bypass.
+	BlockedActors map[uint64]struct{}
 	// Set of circle IDs the viewer is a member of (looked up via the
 	// circle owner's perspective — circles are publisher-owned but
 	// here we enumerate from the viewer's side).
@@ -53,6 +57,9 @@ func CanRead(viewer Viewer, authorID uint64, audience *model.Audience, deleted b
 	}
 	if viewer.ActorID != 0 && viewer.ActorID == authorID {
 		return true, "author"
+	}
+	if _, blocked := viewer.BlockedActors[authorID]; blocked {
+		return false, "blocked relationship"
 	}
 	if audience == nil {
 		return true, "no audience (legacy public)"
