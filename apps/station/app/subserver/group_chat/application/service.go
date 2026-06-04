@@ -21,6 +21,7 @@ type Repository interface {
 	GetGroup(groupID string) (*domain.Group, bool)
 	GetMember(groupID, actorDID string) (*domain.Member, bool)
 	AddMember(groupID, actorDID, inviterDID string) (*domain.Member, bool)
+	UpdateMember(groupID, actorDID string, role *int32, muted *bool, mutedUntil *time.Time) (*domain.Member, bool)
 	RemoveMember(groupID, actorDID string) bool
 	UpdateGroup(groupID string, name, description *string, muted *bool) (*domain.Group, bool)
 	ListMembers(groupID string, limit, offset int) ([]domain.Member, int)
@@ -40,7 +41,7 @@ type Repository interface {
 	SearchMessages(groupID, query string, limit int) ([]domain.Message, error)
 	UpdateNickname(groupID, actorDID, nickname string) (*domain.Member, bool)
 	GetSettings(groupID, actorDID string) domain.GroupSetting
-	UpdateSettings(groupID, actorDID string, muted, pinned, showNickname *bool)
+	UpdateSettings(groupID, actorDID string, muted, pinned, showNickname, alertEnabled *bool, background *string, clearedAtUnixMs *int64)
 	GetOfflineMessages(actorDID string, limit int) []domain.OfflineMessage
 	AckOffline(ulids []string)
 	Stats() (int32, int32, int64, int32)
@@ -59,6 +60,7 @@ var (
 	ErrInvalidInvitation    = errors.New("invalid invitation")
 	ErrOwnerCannotLeave     = errors.New("owner cannot leave group")
 	ErrCannotRemoveOwner    = errors.New("cannot remove owner")
+	ErrInvalidRole          = errors.New("invalid role")
 	ErrMessageNotFound      = errors.New("message not found")
 	ErrMutationWindowClosed = errors.New("mutation window closed")
 	ErrAlreadyRecalled      = errors.New("message already recalled")
@@ -68,6 +70,18 @@ var (
 // DefaultMutationWindow mirrors friend_chat's. Same default 5m
 // recall / edit window. Operator-tunable via SetMutationWindow.
 const DefaultMutationWindow = 5 * time.Minute
+
+func canManageGroup(role int32) bool {
+	return role >= domain.GroupRoleAdmin
+}
+
+func isOwner(role int32) bool {
+	return role == domain.GroupRoleOwner
+}
+
+func isAssignableRole(role int32) bool {
+	return role == domain.GroupRoleMember || role == domain.GroupRoleAdmin
+}
 
 func NewService(repo Repository) *Service {
 	return &Service{repo: repo, mutationWindow: DefaultMutationWindow}
@@ -139,6 +153,10 @@ func (s *Service) AddMember(groupID, actorDID, inviterDID string) (*domain.Membe
 	return s.repo.AddMember(groupID, actorDID, inviterDID)
 }
 
+func (s *Service) UpdateMember(groupID, actorDID string, role *int32, muted *bool, mutedUntil *time.Time) (*domain.Member, bool) {
+	return s.repo.UpdateMember(groupID, actorDID, role, muted, mutedUntil)
+}
+
 func (s *Service) RemoveMember(groupID, actorDID string) bool {
 	return s.repo.RemoveMember(groupID, actorDID)
 }
@@ -171,8 +189,8 @@ func (s *Service) GetSettings(groupID, actorDID string) domain.GroupSetting {
 	return s.repo.GetSettings(groupID, actorDID)
 }
 
-func (s *Service) UpdateSettings(groupID, actorDID string, muted, pinned, showNickname *bool) {
-	s.repo.UpdateSettings(groupID, actorDID, muted, pinned, showNickname)
+func (s *Service) UpdateSettings(groupID, actorDID string, muted, pinned, showNickname, alertEnabled *bool, background *string, clearedAtUnixMs *int64) {
+	s.repo.UpdateSettings(groupID, actorDID, muted, pinned, showNickname, alertEnabled, background, clearedAtUnixMs)
 }
 
 func (s *Service) GetOfflineMessages(actorDID string, limit int) []domain.OfflineMessage {
@@ -192,7 +210,7 @@ func (s *Service) UpdateGroupByActor(actorDID, groupID string, name, description
 	if !ok {
 		return nil, ErrNotMember
 	}
-	if member.Role != 1 && member.Role != 2 {
+	if !canManageGroup(member.Role) {
 		return nil, ErrPermissionDenied
 	}
 	item, ok := s.repo.UpdateGroup(groupID, name, description, muted)
@@ -228,7 +246,7 @@ func (s *Service) JoinByActor(actorDID, groupID, invitationULID string) (*domain
 }
 
 func (s *Service) LeaveByActor(actorDID, groupID string) error {
-	if member, ok := s.repo.GetMember(groupID, actorDID); ok && member.Role == 1 {
+	if member, ok := s.repo.GetMember(groupID, actorDID); ok && isOwner(member.Role) {
 		return ErrOwnerCannotLeave
 	}
 	if !s.repo.RemoveMember(groupID, actorDID) {
@@ -239,16 +257,53 @@ func (s *Service) LeaveByActor(actorDID, groupID string) error {
 
 func (s *Service) RemoveMemberByActor(actorDID, groupID, targetDID string) error {
 	member, ok := s.repo.GetMember(groupID, actorDID)
-	if !ok || (member.Role != 1 && member.Role != 2) {
+	if !ok || !canManageGroup(member.Role) {
 		return ErrPermissionDenied
 	}
-	if target, ok := s.repo.GetMember(groupID, targetDID); ok && target.Role == 1 {
+	target, ok := s.repo.GetMember(groupID, targetDID)
+	if !ok {
+		return ErrMemberNotFound
+	}
+	if isOwner(target.Role) {
 		return ErrCannotRemoveOwner
+	}
+	if !isOwner(member.Role) && target.Role >= member.Role {
+		return ErrPermissionDenied
 	}
 	if !s.repo.RemoveMember(groupID, targetDID) {
 		return ErrMemberNotFound
 	}
 	return nil
+}
+
+func (s *Service) UpdateMemberByActor(actorDID, groupID, targetDID string, role *int32, muted *bool, mutedUntil *time.Time) (*domain.Member, error) {
+	operator, ok := s.repo.GetMember(groupID, actorDID)
+	if !ok {
+		return nil, ErrNotMember
+	}
+	if !canManageGroup(operator.Role) {
+		return nil, ErrPermissionDenied
+	}
+	target, ok := s.repo.GetMember(groupID, targetDID)
+	if !ok {
+		return nil, ErrMemberNotFound
+	}
+	if isOwner(target.Role) {
+		return nil, ErrCannotRemoveOwner
+	}
+	if role != nil && !isAssignableRole(*role) {
+		return nil, ErrInvalidRole
+	}
+	if !isOwner(operator.Role) {
+		if role != nil || target.Role >= operator.Role {
+			return nil, ErrPermissionDenied
+		}
+	}
+	member, ok := s.repo.UpdateMember(groupID, targetDID, role, muted, mutedUntil)
+	if !ok {
+		return nil, ErrMemberNotFound
+	}
+	return member, nil
 }
 
 // RecallMessageByActor enforces the membership gate; the repo
@@ -283,7 +338,7 @@ func (s *Service) EditMessageByActor(actorDID, groupID, messageID, newContent st
 }
 
 // DeleteMessageByActor allows the original sender OR a group
-// admin / owner (Role ∈ {1,2} per `groupModel`) to hard-delete
+// admin / owner to hard-delete
 // the row. The repo currently enforces sender-ownership; admin
 // override happens here at the application layer.
 func (s *Service) DeleteMessageByActor(actorDID, groupID, messageID string) (domain.MutationOutcome, error) {
@@ -291,7 +346,7 @@ func (s *Service) DeleteMessageByActor(actorDID, groupID, messageID string) (dom
 	if !ok {
 		return domain.MutationOutcome{}, ErrNotMember
 	}
-	isAdmin := member.Role == 1 || member.Role == 2
+	isAdmin := canManageGroup(member.Role)
 	out, err := s.repo.DeleteMessage(actorDID, groupID, messageID)
 	if err != nil {
 		// Admin / owner override: if the only reason the repo

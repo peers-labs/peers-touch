@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -21,8 +20,8 @@ TAURI_ICONS_DIR = MOBILE_ROOT / "src-tauri/icons"
 
 def main() -> None:
     normalize_wordmark()
-    shutil.copyfile(DESKTOP_ICON_SOURCE_PATH, ICON_SOURCE_PATH)
-    icon = Image.open(DESKTOP_ICON_SOURCE_PATH).convert("RGBA")
+    icon = build_mobile_icon_from_desktop()
+    icon.save(ICON_SOURCE_PATH)
     update_ios_app_icons(icon)
     update_tauri_png_icons(icon)
     update_android_launcher_icons(icon)
@@ -46,56 +45,58 @@ def normalize_wordmark() -> None:
     output.save(WORDMARK_PATH)
 
 
-def build_app_icon() -> Image.Image:
-    size = 1024
-    icon = Image.new("RGBA", (size, size), (8, 16, 36, 255))
-    draw = ImageDraw.Draw(icon)
-
-    for y in range(size):
-        t = y / (size - 1)
-        draw.line(
-            (0, y, size, y),
-            fill=(int(8 + 18 * t), int(16 + 28 * t), int(36 + 48 * t), 255),
-        )
-
-    for box, color, blur in [
-        ((-230, -250, 620, 600), (102, 126, 234, 115), 150),
-        ((540, -170, 1180, 470), (80, 190, 92, 95), 130),
-        ((420, 650, 1180, 1340), (118, 75, 162, 76), 150),
-    ]:
-        glow = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        ImageDraw.Draw(glow).ellipse(box, fill=color)
-        icon = Image.alpha_composite(icon, glow.filter(ImageFilter.GaussianBlur(blur)))
-
-    icon = draw_monogram(icon)
-    return draw_leaf_accent(icon)
+def build_mobile_icon_from_desktop() -> Image.Image:
+    desktop_icon = Image.open(DESKTOP_ICON_SOURCE_PATH).convert("RGBA")
+    content = remove_outer_icon_frame(desktop_icon)
+    canvas = Image.new("RGBA", desktop_icon.size, (255, 255, 255, 255))
+    target_size = preserved_desktop_content_size(desktop_icon, content)
+    content.thumbnail(target_size, Image.Resampling.LANCZOS)
+    x = (canvas.width - content.width) // 2
+    y = (canvas.height - content.height) // 2
+    canvas.alpha_composite(content, (x, y))
+    return canvas
 
 
-def draw_monogram(icon: Image.Image) -> Image.Image:
-    size = icon.width
-    draw = ImageDraw.Draw(icon)
-    font = ImageFont.truetype(resolve_font_path(), 650)
-    bbox = draw.textbbox((0, 0), "P", font=font)
-    x = (size - (bbox[2] - bbox[0])) // 2 - bbox[0] - 18
-    y = (size - (bbox[3] - bbox[1])) // 2 - bbox[1] + 20
-
-    shadow = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    ImageDraw.Draw(shadow).text((x + 18, y + 24), "P", font=font, fill=(0, 0, 0, 95))
-    icon = Image.alpha_composite(icon, shadow.filter(ImageFilter.GaussianBlur(18)))
-
-    draw = ImageDraw.Draw(icon)
-    draw.text((x, y), "P", font=font, fill=(255, 255, 255, 248))
-    return icon
+def remove_outer_icon_frame(icon: Image.Image) -> Image.Image:
+    bbox = detect_non_frame_bbox(icon)
+    return icon.crop(bbox)
 
 
-def draw_leaf_accent(icon: Image.Image) -> Image.Image:
-    size = icon.width
-    accent = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(accent)
-    draw.ellipse((610, 250, 820, 460), fill=(80, 190, 92, 238))
-    draw.ellipse((690, 215, 890, 415), fill=(120, 210, 96, 215))
-    draw.rounded_rectangle((675, 326, 852, 390), radius=32, fill=(8, 16, 36, 245))
-    return Image.alpha_composite(icon, accent)
+def detect_non_frame_bbox(icon: Image.Image) -> tuple[int, int, int, int]:
+    pixels = icon.load()
+    width, height = icon.size
+
+    def is_frame_pixel(x: int, y: int) -> bool:
+        r, g, b, a = pixels[x, y]
+        return a == 0 or (r < 48 and g < 48 and b < 48)
+
+    xs: list[int] = []
+    ys: list[int] = []
+    for y in range(height):
+        for x in range(width):
+            if not is_frame_pixel(x, y):
+                xs.append(x)
+                ys.append(y)
+
+    if not xs or not ys:
+        return icon.getchannel("A").getbbox() or (0, 0, width, height)
+
+    margin = max(0, int(width * 0.015))
+    return (
+        max(0, min(xs) - margin),
+        max(0, min(ys) - margin),
+        min(width, max(xs) + margin),
+        min(height, max(ys) + margin),
+    )
+
+
+def preserved_desktop_content_size(desktop_icon: Image.Image, content: Image.Image) -> tuple[int, int]:
+    max_edge = int(max(desktop_icon.width, desktop_icon.height) * 0.84)
+    if max(content.width, content.height) <= max_edge:
+        return content.size
+
+    scale = max_edge / max(content.width, content.height)
+    return (int(content.width * scale), int(content.height * scale))
 
 
 def update_ios_app_icons(icon: Image.Image) -> None:
@@ -148,17 +149,6 @@ def update_android_launcher_icons(icon: Image.Image) -> None:
     for path in android_icon_root.glob("mipmap-*/*.png"):
         old_size = Image.open(path).size
         source.resize(old_size, Image.Resampling.LANCZOS).save(path)
-
-
-def resolve_font_path() -> str:
-    for path in [
-        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-        "/System/Library/Fonts/Supplemental/Helvetica Bold.ttf",
-        "/Library/Fonts/Arial Bold.ttf",
-    ]:
-        if Path(path).exists():
-            return path
-    raise RuntimeError("No supported bold font found for mobile app icon generation.")
 
 
 if __name__ == "__main__":

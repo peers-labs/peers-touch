@@ -33,6 +33,25 @@ type Session struct {
 	UpdatedAt       time.Time
 }
 
+type ConversationSettings struct {
+	SessionID       string
+	ActorDID        string
+	IsMuted         bool
+	IsPinned        bool
+	AlertEnabled    bool
+	Background      string
+	ClearedAtUnixMs int64
+	UpdatedAt       time.Time
+}
+
+type ConversationSettingsPatch struct {
+	IsMuted         *bool
+	IsPinned        *bool
+	AlertEnabled    *bool
+	Background      *string
+	ClearedAtUnixMs *int64
+}
+
 type Message struct {
 	ID          string
 	SessionID   string

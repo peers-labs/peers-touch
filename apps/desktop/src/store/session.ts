@@ -142,3 +142,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     });
   },
 }));
+
+export function currentAuthenticatedActorId(): string | null {
+  const session = useSessionStore.getState();
+  if (!session.authenticated) return null;
+  return session.currentUser?.actorId ?? null;
+}

@@ -35,7 +35,8 @@ export function AccessGateHost({
   const { t } = useMobileI18n();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const canLogin = Boolean(email.trim() && password);
+  const ready = Boolean(decision);
+  const canLogin = Boolean(ready && email.trim() && password);
   const currentGate = decision?.gates.find((gate) => gate.gateId === decision.currentGateId);
   const requiresLogin = currentGate?.type === ACCESS_GATE_TYPE_AUTH_LOGIN
     || currentGate?.type === 'ACCESS_GATE_TYPE_AUTH_LOGIN'
@@ -80,11 +81,15 @@ export function AccessGateHost({
         <div className="auth-gate-copy">
           {blocked ? <ShieldAlert size={18} /> : <LockKeyhole size={18} />}
           <Text type="secondary">
-            {blocked ? (blockedMessage || t('mobile.auth.blockedSubtitle')) : t('mobile.auth.subtitle')}
+            {!ready
+              ? t('mobile.auth.preparing')
+              : blocked
+                ? (blockedMessage || t('mobile.auth.blockedSubtitle'))
+                : t('mobile.auth.subtitle')}
           </Text>
         </div>
 
-        {!blocked && requiresLogin ? (
+        {ready && !blocked && requiresLogin ? (
           <div className="auth-fields">
             <Input
               value={email}
@@ -115,7 +120,7 @@ export function AccessGateHost({
           <Button icon={<ArrowLeft size={16} />} onClick={onBack}>
             {t('mobile.auth.changeStation')}
           </Button>
-          {!blocked && requiresLogin ? (
+          {ready && !blocked && requiresLogin ? (
             <Button type="primary" loading={loading} disabled={!canLogin || loading} onClick={submitLogin}>
               {t('mobile.auth.login')}
             </Button>

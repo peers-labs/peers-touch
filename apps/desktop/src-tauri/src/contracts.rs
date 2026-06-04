@@ -114,6 +114,21 @@ pub struct FriendChatCreateSessionInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendConversationSettingsInput {
+    pub session_ulid: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendConversationSettingsUpdateInput {
+    pub session_ulid: String,
+    pub is_muted: Option<bool>,
+    pub is_pinned: Option<bool>,
+    pub alert_enabled: Option<bool>,
+    pub background: Option<String>,
+    pub cleared_at_unix_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendChatListMessagesInput {
     pub session_ulid: String,
     pub before_ulid: Option<String>,
@@ -199,6 +214,12 @@ pub struct FriendChatListFriendRequestsInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendChatBlockUserInput {
     pub target_did: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendChatListBlockedUsersInput {
+    pub limit: Option<i32>,
+    pub offset: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1043,6 +1064,15 @@ pub struct GroupRemoveMemberInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupUpdateMemberInput {
+    pub group_ulid: String,
+    pub member_did: String,
+    pub role: Option<i32>,
+    pub muted: Option<bool>,
+    pub muted_until_unix_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupMessageActionInput {
     pub group_ulid: String,
     pub message_ulid: String,
@@ -1079,6 +1109,9 @@ pub struct GroupUpdateMySettingsInput {
     pub is_muted: Option<bool>,
     pub is_pinned: Option<bool>,
     pub show_member_nickname: Option<bool>,
+    pub alert_enabled: Option<bool>,
+    pub background: Option<String>,
+    pub cleared_at_unix_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -72,6 +72,7 @@ pub fn key_exchange_upload_bundle(
         opk_ids: input.opk_ids,
         opk_pubs: input.opk_pubs,
         device_id,
+        supported_versions: vec![0, 1],
     };
     match station_client::request_proto::<
         kemodel::UploadKeyBundleRequest,

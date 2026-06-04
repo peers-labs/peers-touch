@@ -3,7 +3,9 @@ package friend_chat
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/application"
@@ -107,6 +109,8 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewHertzHandler("fc-presence-stream", "/friend-chat/presence/stream", server.GET, s.handlePresenceStream, hertzJWTWrapper),
 		server.NewTypedHandler("fc-session-create", "/friend-chat/session/create", server.POST, s.handleCreateSession, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-sessions", "/friend-chat/sessions", server.GET, s.handleGetSessions, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-settings", "/friend-chat/settings", server.GET, s.handleGetConversationSettings, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-update-settings", "/friend-chat/settings", server.PUT, s.handleUpdateConversationSettings, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-message-send", "/friend-chat/message/send", server.POST, s.handleSendMessage, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-message-sync", "/friend-chat/message/sync", server.POST, s.handleSyncMessages, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-messages", "/friend-chat/messages", server.GET, s.handleGetMessages, logIDWrapper, s.jwtWrapper),
@@ -127,7 +131,59 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("fc-friend-request-reject", "/friend-chat/friend-request/reject", server.POST, s.handleRejectFriendRequest, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-friend-requests", "/friend-chat/friend-requests", server.GET, s.handleListFriendRequests, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-block-user", "/friend-chat/block", server.POST, s.handleBlockUser, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-unblock-user", "/friend-chat/block", server.DELETE, s.handleUnblockUser, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-blocked-users", "/friend-chat/blocked", server.GET, s.handleListBlockedUsers, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("fc-friendship-status", "/friend-chat/friendship/status", server.GET, s.handleGetFriendshipStatus, logIDWrapper, s.jwtWrapper),
 	}
+}
+
+func (s *subServer) handleGetConversationSettings(ctx context.Context, req *chat.GetFriendConversationSettingsRequest) (*chat.GetFriendConversationSettingsResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.SessionUlid == "" {
+		return nil, server.BadRequest("session_ulid is required")
+	}
+	settings, err := s.service.GetConversationSettingsByActor(subject.ID, req.SessionUlid)
+	if err != nil {
+		if err == application.ErrSessionNotFound {
+			return nil, server.NotFound("session not found")
+		}
+		if err == application.ErrNotParticipant {
+			return nil, server.Forbidden("not a session participant")
+		}
+		return nil, server.InternalErrorWithCause("failed to get conversation settings", err)
+	}
+	return &chat.GetFriendConversationSettingsResponse{Settings: toProtoConversationSettings(settings)}, nil
+}
+
+func (s *subServer) handleUpdateConversationSettings(ctx context.Context, req *chat.UpdateFriendConversationSettingsRequest) (*chat.UpdateFriendConversationSettingsResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.SessionUlid == "" {
+		return nil, server.BadRequest("session_ulid is required")
+	}
+	settings, err := s.service.UpdateConversationSettingsByActor(subject.ID, req.SessionUlid, domain.ConversationSettingsPatch{
+		IsMuted:         req.IsMuted,
+		IsPinned:        req.IsPinned,
+		AlertEnabled:    req.AlertEnabled,
+		Background:      req.Background,
+		ClearedAtUnixMs: req.ClearedAtUnixMs,
+	})
+	if err != nil {
+		if err == application.ErrSessionNotFound {
+			return nil, server.NotFound("session not found")
+		}
+		if err == application.ErrNotParticipant {
+			return nil, server.Forbidden("not a session participant")
+		}
+		return nil, server.InternalErrorWithCause("failed to update conversation settings", err)
+	}
+	publishConversationSettingsChanged(req.SessionUlid, subject.ID, realtime.ConversationSettingsChanged_FRIEND)
+	return &chat.UpdateFriendConversationSettingsResponse{Settings: toProtoConversationSettings(settings)}, nil
 }
 
 func (s *subServer) handleCreateSession(ctx context.Context, req *chat.CreateSessionRequest) (*chat.CreateSessionResponse, error) {
@@ -243,6 +299,9 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendMessage
 		return nil, server.BadRequest("session_ulid and receiver_did are required")
 	}
 	enc := req.GetEncryptedPayload()
+	if err := validateFriendEncryptedPayload(req.GetType(), enc); err != nil {
+		return nil, server.BadRequestWithCause("invalid encrypted_payload", err)
+	}
 	hasEnc := len(enc) > 0
 	if req.Content == "" && len(req.Attachments) == 0 && !hasEnc {
 		return nil, server.BadRequest("content or attachments are required")
@@ -332,6 +391,68 @@ func (s *subServer) handleBlockUser(ctx context.Context, req *chat.BlockUserRequ
 	}, nil
 }
 
+func (s *subServer) handleUnblockUser(ctx context.Context, req *chat.UnblockUserRequest) (*chat.UnblockUserResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	target := strings.TrimSpace(req.TargetDid)
+	if target == "" {
+		return nil, server.BadRequest("target_did is required")
+	}
+	if err := s.service.UnblockUser(subject.ID, target); err != nil {
+		return nil, server.InternalErrorWithCause("failed to unblock user", err)
+	}
+	return &chat.UnblockUserResponse{Success: true}, nil
+}
+
+func (s *subServer) handleListBlockedUsers(ctx context.Context, req *chat.ListBlockedUsersRequest) (*chat.ListBlockedUsersResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	items, total, err := s.service.ListBlockedUsers(subject.ID, int(req.Limit), int(req.Offset))
+	if err != nil {
+		return nil, server.InternalErrorWithCause("failed to list blocked users", err)
+	}
+	out := make([]*chat.Friend, 0, len(items))
+	for _, item := range items {
+		out = append(out, friendshipToProtoFriend(item))
+	}
+	return &chat.ListBlockedUsersResponse{BlockedUsers: out, Total: int32(total)}, nil
+}
+
+func (s *subServer) handleGetFriendshipStatus(ctx context.Context, req *chat.GetFriendshipStatusRequest) (*chat.GetFriendshipStatusResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	target := strings.TrimSpace(req.TargetDid)
+	if target == "" {
+		return nil, server.BadRequest("target_did is required")
+	}
+	friendship, err := s.service.GetFriendship(subject.ID, target)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("failed to get friendship status", err)
+	}
+	return &chat.GetFriendshipStatusResponse{Friend: friendshipToProtoFriend(friendship)}, nil
+}
+
+func friendshipToProtoFriend(friendship domain.Friendship) *chat.Friend {
+	status := chat.FriendshipStatus_FRIENDSHIP_STATUS_UNSPECIFIED
+	if friendship.Status == domain.FriendshipStatusBlocked {
+		status = chat.FriendshipStatus_FRIENDSHIP_STATUS_BLOCKED
+	}
+	out := &chat.Friend{
+		ActorId: friendship.PeerDID,
+		Status:  status,
+	}
+	if !friendship.CreatedAt.IsZero() {
+		out.FriendshipCreatedAt = timestamppb.New(friendship.CreatedAt)
+	}
+	return out
+}
+
 // publishMessageToBus emits a MessageEnvelope on the unified realtime
 // stream. The wire's `ciphertext` field carries the marshaled
 // FriendChatMessage today (before E2EE rolls out); receivers always
@@ -359,6 +480,26 @@ func publishMessageToBus(bus events.EventBus, m domain.Message, sessionULID, rec
 	}
 	if _, err := bus.Publish(recipientID, ev); err != nil {
 		logger.DefaultHelper.Warnf("friend_chat: realtime publish failed actor=%s: %v", recipientID, err)
+	}
+}
+
+func publishConversationSettingsChanged(containerULID, actorID string, kind realtime.ConversationSettingsChanged_Kind) {
+	bus := events.GetBus()
+	if bus == nil {
+		return
+	}
+	ev := &realtime.StreamEvent{
+		Kind: &realtime.StreamEvent_ConversationSettingsChanged{
+			ConversationSettingsChanged: &realtime.ConversationSettingsChanged{
+				ContainerUlid:   containerULID,
+				Kind:            kind,
+				ActorId:         actorID,
+				ChangedTsUnixMs: time.Now().UTC().UnixMilli(),
+			},
+		},
+	}
+	if _, err := bus.Publish(actorID, ev); err != nil {
+		logger.DefaultHelper.Warnf("friend_chat: settings changed publish failed container=%s actor=%s: %v", containerULID, actorID, err)
 	}
 }
 
@@ -672,6 +813,9 @@ func (s *subServer) handleEditMessage(ctx context.Context, req *chat.EditFriendM
 	if req.GetSessionUlid() == "" || req.GetMessageUlid() == "" {
 		return nil, server.BadRequest("session_ulid and message_ulid are required")
 	}
+	if err := validateFriendEncryptedPayload(chat.FriendMessageType_FRIEND_MESSAGE_TYPE_TEXT, req.GetNewEncryptedPayload()); err != nil {
+		return nil, server.BadRequestWithCause("invalid new_encrypted_payload", err)
+	}
 	out, err := s.service.EditMessageByActor(
 		subject.ID,
 		req.GetSessionUlid(),
@@ -684,6 +828,35 @@ func (s *subServer) handleEditMessage(ctx context.Context, req *chat.EditFriendM
 	}
 	publishMutationToParticipants(out, subject.ID)
 	return &chat.EditFriendMessageResponse{}, nil
+}
+
+func validateFriendEncryptedPayload(messageType chat.FriendMessageType, payload []byte) error {
+	if len(payload) == 0 {
+		return nil
+	}
+	if messageType == chat.FriendMessageType_FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION {
+		return nil
+	}
+	var frame chat.EncryptedMessage
+	if err := proto.Unmarshal(payload, &frame); err != nil {
+		return fmt.Errorf("decode encrypted message: %w", err)
+	}
+	if len(frame.Ciphertext) == 0 {
+		return fmt.Errorf("ciphertext is required")
+	}
+	switch frame.Version {
+	case 0:
+		if frame.Counter == 0 && len(frame.EphemeralKey) == 0 {
+			return fmt.Errorf("legacy payload requires counter or ephemeral_key")
+		}
+	case 1:
+		if len(frame.RatchetPub) != 32 {
+			return fmt.Errorf("double ratchet payload requires 32-byte ratchet_pub")
+		}
+	default:
+		return fmt.Errorf("unsupported encrypted message version %d", frame.Version)
+	}
+	return nil
 }
 
 // handleDeleteMessage hard-deletes the message + its attachment rows
@@ -1096,6 +1269,17 @@ func friendChatMessageFromDomain(m domain.Message) *chat.FriendChatMessage {
 		out.EditedAt = timestamppb.New(m.EditedAt)
 	}
 	return out
+}
+
+func toProtoConversationSettings(settings domain.ConversationSettings) *chat.FriendConversationSettings {
+	return &chat.FriendConversationSettings{
+		SessionUlid:     settings.SessionID,
+		IsMuted:         settings.IsMuted,
+		IsPinned:        settings.IsPinned,
+		AlertEnabled:    settings.AlertEnabled,
+		Background:      settings.Background,
+		ClearedAtUnixMs: settings.ClearedAtUnixMs,
+	}
 }
 
 func threadCountToJSON(item domain.ThreadCount) threadCountJSON {

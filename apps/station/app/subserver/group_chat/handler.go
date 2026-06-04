@@ -102,6 +102,7 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("gc-leave", "/group-chat/leave", server.POST, s.handleLeave, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-members", "/group-chat/members", server.GET, s.handleMembers, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-remove-member", "/group-chat/member/remove", server.POST, s.handleRemoveMember, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("gc-update-member", "/group-chat/member/update", server.PUT, s.handleUpdateMember, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-message-send", "/group-chat/message/send", server.POST, s.handleSendMessage, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-messages", "/group-chat/messages", server.GET, s.handleGetMessages, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-thread-messages", "/group-chat/thread/messages", server.GET, s.handleListThreadMessages, logIDWrapper, s.jwtWrapper),
@@ -611,6 +612,42 @@ func (s *subServer) handleRemoveMember(ctx context.Context, req *chat.RemoveMemb
 	return &chat.RemoveMemberResponse{Success: true}, nil
 }
 
+func (s *subServer) handleUpdateMember(ctx context.Context, req *chat.UpdateMemberRequest) (*chat.UpdateMemberResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.GroupUlid == "" || req.ActorDid == "" {
+		return nil, server.BadRequest("group_ulid and actor_did are required")
+	}
+	var role *int32
+	if req.Role != nil {
+		next := int32(req.GetRole())
+		role = &next
+	}
+	var mutedUntil *time.Time
+	if req.MutedUntil != nil {
+		next := req.MutedUntil.AsTime()
+		mutedUntil = &next
+	}
+	member, err := s.appService.UpdateMemberByActor(subject.ID, req.GroupUlid, req.ActorDid, role, req.Muted, mutedUntil)
+	if err != nil {
+		if err == application_group_chat.ErrPermissionDenied || err == application_group_chat.ErrCannotRemoveOwner {
+			return nil, server.Forbidden(err.Error())
+		}
+		if err == application_group_chat.ErrInvalidRole {
+			return nil, server.BadRequest(err.Error())
+		}
+		if err == application_group_chat.ErrNotMember || err == application_group_chat.ErrMemberNotFound {
+			return nil, server.NotFound(err.Error())
+		}
+		return nil, server.InternalError("update member failed")
+	}
+	recipients := collectGroupMemberDIDs(s, req.GroupUlid)
+	publishGroupMembershipChange(req.GroupUlid, req.ActorDid, realtime.GroupMembershipChange_KIND_UPDATED, recipients)
+	return &chat.UpdateMemberResponse{Member: toProtoMemberFromDomain(member)}, nil
+}
+
 func (s *subServer) handleRecallMessage(ctx context.Context, req *chat.RecallGroupMessageRequest) (*chat.RecallGroupMessageResponse, error) {
 	subject := auth.GetSubject(ctx)
 	if subject == nil {
@@ -743,6 +780,26 @@ func publishGroupMutation(out group_chat_domain.MutationOutcome, originatorActor
 	if _, err := bus.Publish(originatorActorID, build()); err != nil {
 		logger.DefaultHelper.Warnf("group_chat: realtime mutation self-echo failed group=%s ulid=%s actor=%s: %v",
 			out.GroupID, out.Ulid, originatorActorID, err)
+	}
+}
+
+func publishConversationSettingsChanged(containerULID, actorID string, kind realtime.ConversationSettingsChanged_Kind) {
+	bus := events.GetBus()
+	if bus == nil {
+		return
+	}
+	ev := &realtime.StreamEvent{
+		Kind: &realtime.StreamEvent_ConversationSettingsChanged{
+			ConversationSettingsChanged: &realtime.ConversationSettingsChanged{
+				ContainerUlid:   containerULID,
+				Kind:            kind,
+				ActorId:         actorID,
+				ChangedTsUnixMs: time.Now().UTC().UnixMilli(),
+			},
+		},
+	}
+	if _, err := bus.Publish(actorID, ev); err != nil {
+		logger.DefaultHelper.Warnf("group_chat: settings changed publish failed container=%s actor=%s: %v", containerULID, actorID, err)
 	}
 }
 
@@ -902,6 +959,9 @@ func (s *subServer) handleGetMySettings(ctx context.Context, req *chat.GetGroupS
 		IsPinned:           settings.IsPinned,
 		MyNickname:         memberItem.Nickname,
 		ShowMemberNickname: settings.ShowMemberNickname,
+		AlertEnabled:       settings.AlertEnabled,
+		Background:         settings.Background,
+		ClearedAtUnixMs:    settings.ClearedAtUnixMs,
 	}, nil
 }
 
@@ -916,7 +976,8 @@ func (s *subServer) handleUpdateMySettings(ctx context.Context, req *chat.Update
 	if _, ok := s.appService.GetMember(req.GroupUlid, subject.ID); !ok {
 		return nil, server.Forbidden("not a member")
 	}
-	s.appService.UpdateSettings(req.GroupUlid, subject.ID, req.IsMuted, req.IsPinned, req.ShowMemberNickname)
+	s.appService.UpdateSettings(req.GroupUlid, subject.ID, req.IsMuted, req.IsPinned, req.ShowMemberNickname, req.AlertEnabled, req.Background, req.ClearedAtUnixMs)
+	publishConversationSettingsChanged(req.GroupUlid, subject.ID, realtime.ConversationSettingsChanged_GROUP)
 	return &chat.UpdateGroupSettingsResponse{Success: true}, nil
 }
 
@@ -987,7 +1048,7 @@ func toProtoMember(item *member) *chat.GroupMember {
 	if item == nil {
 		return nil
 	}
-	return &chat.GroupMember{
+	out := &chat.GroupMember{
 		GroupUlid: item.GroupID,
 		ActorDid:  item.ActorDID,
 		Role:      chat.GroupRole(item.Role),
@@ -996,6 +1057,10 @@ func toProtoMember(item *member) *chat.GroupMember {
 		JoinedAt:  timestamppb.New(item.JoinedAt),
 		InvitedBy: item.InvitedBy,
 	}
+	if !item.MutedUntil.IsZero() {
+		out.MutedUntil = timestamppb.New(item.MutedUntil)
+	}
+	return out
 }
 
 func toProtoMessage(item *message) *chat.GroupMessage {
@@ -1175,7 +1240,7 @@ func toProtoMemberFromDomain(item *group_chat_domain.Member) *chat.GroupMember {
 	if item == nil {
 		return nil
 	}
-	return &chat.GroupMember{
+	out := &chat.GroupMember{
 		GroupUlid: item.GroupID,
 		ActorDid:  item.ActorDID,
 		Role:      chat.GroupRole(item.Role),
@@ -1184,4 +1249,8 @@ func toProtoMemberFromDomain(item *group_chat_domain.Member) *chat.GroupMember {
 		JoinedAt:  timestamppb.New(item.JoinedAt),
 		InvitedBy: item.InvitedBy,
 	}
+	if !item.MutedUntil.IsZero() {
+		out.MutedUntil = timestamppb.New(item.MutedUntil)
+	}
+	return out
 }

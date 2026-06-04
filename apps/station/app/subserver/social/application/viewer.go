@@ -59,10 +59,25 @@ func buildViewer(
 	if err != nil {
 		return domain.Viewer{}, err
 	}
+	blockedFollowing, err := blockedActorIDs(ctx, repos, viewerID, followingIDs)
+	if err != nil {
+		return domain.Viewer{}, err
+	}
 	if len(followingIDs) > 0 {
 		v.Following = make(map[uint64]struct{}, len(followingIDs))
 		for _, id := range followingIDs {
+			if blockedFollowing[id] {
+				continue
+			}
 			v.Following[id] = struct{}{}
+		}
+	}
+	if len(blockedFollowing) > 0 {
+		v.BlockedActors = make(map[uint64]struct{}, len(blockedFollowing))
+		for id, blocked := range blockedFollowing {
+			if blocked {
+				v.BlockedActors[id] = struct{}{}
+			}
 		}
 	}
 
@@ -93,4 +108,67 @@ func buildViewer(
 	}
 
 	return v, nil
+}
+
+func buildViewerForAuthors(
+	ctx context.Context,
+	viewerID uint64,
+	repos *infrastructure.Repos,
+	resolveDID func(context.Context, uint64) (string, error),
+	groups domain.GroupMembershipChecker,
+	authorIDs []uint64,
+) (domain.Viewer, error) {
+	viewer, err := buildViewer(ctx, viewerID, repos, resolveDID, groups)
+	if err != nil {
+		return domain.Viewer{}, err
+	}
+	if err := markBlockedAuthors(ctx, &viewer, repos, authorIDs); err != nil {
+		return domain.Viewer{}, err
+	}
+	return viewer, nil
+}
+
+func markBlockedAuthors(ctx context.Context, viewer *domain.Viewer, repos *infrastructure.Repos, authorIDs []uint64) error {
+	if viewer == nil || viewer.ActorID == 0 || len(authorIDs) == 0 {
+		return nil
+	}
+	blocked, err := blockedActorIDs(ctx, repos, viewer.ActorID, authorIDs)
+	if err != nil {
+		return err
+	}
+	if len(blocked) == 0 {
+		return nil
+	}
+	if viewer.BlockedActors == nil {
+		viewer.BlockedActors = make(map[uint64]struct{}, len(blocked))
+	}
+	for id, isBlocked := range blocked {
+		if isBlocked {
+			viewer.BlockedActors[id] = struct{}{}
+			delete(viewer.Following, id)
+		}
+	}
+	return nil
+}
+
+func blockedActorIDs(ctx context.Context, repos *infrastructure.Repos, actorID uint64, peerIDs []uint64) (map[uint64]bool, error) {
+	if repos == nil || repos.Blocks == nil || actorID == 0 || len(peerIDs) == 0 {
+		return map[uint64]bool{}, nil
+	}
+	unique := make([]uint64, 0, len(peerIDs))
+	seen := make(map[uint64]struct{}, len(peerIDs))
+	for _, id := range peerIDs {
+		if id == 0 || id == actorID {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+	if len(unique) == 0 {
+		return map[uint64]bool{}, nil
+	}
+	return repos.Blocks.BlockedActorIDs(ctx, actorID, unique)
 }

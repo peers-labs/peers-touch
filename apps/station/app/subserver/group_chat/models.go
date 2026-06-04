@@ -16,16 +16,17 @@ type groupModel struct {
 func (groupModel) TableName() string { return "group_chat_groups" }
 
 type memberModel struct {
-	ID        uint      `gorm:"column:id;primaryKey"`
-	GroupULID string    `gorm:"column:group_ulid;size:64;index:idx_gc_member,priority:1"`
-	ActorDID  string    `gorm:"column:actor_did;size:255;index:idx_gc_member,priority:2"`
-	Role      int32     `gorm:"column:role"`
-	Nickname  string    `gorm:"column:nickname;size:255"`
-	Muted     bool      `gorm:"column:muted"`
-	JoinedAt  time.Time `gorm:"column:joined_at"`
-	InvitedBy string    `gorm:"column:invited_by;size:255"`
-	CreatedAt time.Time `gorm:"column:created_at"`
-	UpdatedAt time.Time `gorm:"column:updated_at"`
+	ID         uint       `gorm:"column:id;primaryKey"`
+	GroupULID  string     `gorm:"column:group_ulid;size:64;index:idx_gc_member,priority:1"`
+	ActorDID   string     `gorm:"column:actor_did;size:255;index:idx_gc_member,priority:2"`
+	Role       int32      `gorm:"column:role"`
+	Nickname   string     `gorm:"column:nickname;size:255"`
+	Muted      bool       `gorm:"column:muted"`
+	MutedUntil *time.Time `gorm:"column:muted_until"`
+	JoinedAt   time.Time  `gorm:"column:joined_at"`
+	InvitedBy  string     `gorm:"column:invited_by;size:255"`
+	CreatedAt  time.Time  `gorm:"column:created_at"`
+	UpdatedAt  time.Time  `gorm:"column:updated_at"`
 }
 
 func (memberModel) TableName() string { return "group_chat_members" }
@@ -128,6 +129,9 @@ type settingModel struct {
 	IsMuted            bool      `gorm:"column:is_muted"`
 	IsPinned           bool      `gorm:"column:is_pinned"`
 	ShowMemberNickname bool      `gorm:"column:show_member_nickname"`
+	AlertEnabled       *bool     `gorm:"column:alert_enabled"`
+	Background         string    `gorm:"column:background;size:64"`
+	ClearedAtUnixMs    int64     `gorm:"column:cleared_at_unix_ms"`
 	CreatedAt          time.Time `gorm:"column:created_at"`
 	UpdatedAt          time.Time `gorm:"column:updated_at"`
 }

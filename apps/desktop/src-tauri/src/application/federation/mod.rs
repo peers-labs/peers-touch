@@ -76,10 +76,7 @@ pub fn set_visibility(
 }
 
 /// GET /actor/federation/resolve?handle=… — authenticated.
-pub fn resolve(
-    token: &str,
-    handle: &str,
-) -> Result<FederationResolveView, FederationGatewayError> {
+pub fn resolve(token: &str, handle: &str) -> Result<FederationResolveView, FederationGatewayError> {
     let trimmed = handle.trim();
     if trimmed.is_empty() {
         return Err(FederationGatewayError::InvalidArgument(

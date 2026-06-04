@@ -1,6 +1,8 @@
 import type { MobileAuthSession } from '../auth/authSession';
 import type { SocialApiErrorContext, StationErrorEnvelope, StationSuccessEnvelope } from '../social/socialTypes';
 import { SocialApiError } from '../social/socialTypes';
+import type { ChatBackgroundId } from '../social/socialApi';
+import { normalizeChatBackgroundId } from '../social/socialApi';
 import type { Group, GroupMember, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT';
@@ -47,17 +49,29 @@ export interface UpdateGroupInput {
   muted?: boolean;
 }
 
+export interface UpdateGroupMemberInput {
+  role?: number;
+  muted?: boolean;
+  mutedUntil?: number;
+}
+
 export interface GroupSettings {
   isMuted: boolean;
   isPinned: boolean;
   myNickname: string;
   showMemberNickname: boolean;
+  alertEnabled: boolean;
+  background: ChatBackgroundId;
+  clearedAt: number;
 }
 
 export interface UpdateGroupSettingsInput {
   isMuted?: boolean;
   isPinned?: boolean;
   showMemberNickname?: boolean;
+  alertEnabled?: boolean;
+  background?: ChatBackgroundId;
+  clearedAt?: number;
 }
 
 export interface GroupApiClient {
@@ -69,6 +83,7 @@ export interface GroupApiClient {
   inviteMembers: (groupUlid: string, inviteeDids: string[]) => Promise<Record<string, unknown>>;
   leaveGroup: (groupUlid: string) => Promise<Record<string, unknown>>;
   removeMember: (groupUlid: string, actorDid: string) => Promise<Record<string, unknown>>;
+  updateMember: (groupUlid: string, actorDid: string, input: UpdateGroupMemberInput) => Promise<{ member?: GroupMember }>;
   sendMessage: (groupUlid: string, encryptedPayload: Uint8Array) => Promise<{ message?: GroupMessage }>;
   editMessage: (groupUlid: string, messageUlid: string, encryptedPayload: Uint8Array) => Promise<Record<string, unknown>>;
   recallMessage: (groupUlid: string, messageUlid: string) => Promise<Record<string, unknown>>;
@@ -173,6 +188,18 @@ export function createGroupApiClient(session: MobileAuthSession): GroupApiClient
         path: '/group-chat/member/remove',
         body: { group_ulid: groupUlid, actor_did: actorDid },
       }),
+    updateMember: (groupUlid, actorDid, input) =>
+      request({
+        method: 'PUT',
+        path: '/group-chat/member/update',
+        body: {
+          group_ulid: groupUlid,
+          actor_did: actorDid,
+          ...(input.role !== undefined ? { role: input.role } : {}),
+          ...(input.muted !== undefined ? { muted: input.muted } : {}),
+          ...(input.mutedUntil !== undefined ? { muted_until: new Date(input.mutedUntil).toISOString() } : {}),
+        },
+      }),
     sendMessage: (groupUlid, encryptedPayload) =>
       request({
         method: 'POST',
@@ -222,6 +249,9 @@ export function createGroupApiClient(session: MobileAuthSession): GroupApiClient
           ...(input.isMuted !== undefined ? { is_muted: input.isMuted } : {}),
           ...(input.isPinned !== undefined ? { is_pinned: input.isPinned } : {}),
           ...(input.showMemberNickname !== undefined ? { show_member_nickname: input.showMemberNickname } : {}),
+          ...(input.alertEnabled !== undefined ? { alert_enabled: input.alertEnabled } : {}),
+          ...(input.background !== undefined ? { background: input.background } : {}),
+          ...(input.clearedAt !== undefined ? { cleared_at_unix_ms: input.clearedAt } : {}),
         },
       }),
     unreadCount: (groupUlid) =>
@@ -283,6 +313,9 @@ function normalizeSettings(payload: unknown): GroupSettings {
     isPinned: Boolean(record.isPinned ?? record.is_pinned),
     myNickname: String(record.myNickname ?? record.my_nickname ?? ''),
     showMemberNickname: Boolean(record.showMemberNickname ?? record.show_member_nickname),
+    alertEnabled: (record.alertEnabled ?? record.alert_enabled) !== false,
+    background: normalizeChatBackgroundId(record.background),
+    clearedAt: Number(record.clearedAtUnixMs ?? record.cleared_at_unix_ms ?? 0),
   };
 }
 

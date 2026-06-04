@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { useSocialChatStore } from './socialChat';
 import type { FriendChatSession } from '../gen/proto/domain/chat/friend_chat_pb';
 import { log } from '../utils/logger';
+import { conversationKey, visibleConversationUnread } from './socialProjection';
 
 // ── Types ──
 
@@ -108,12 +109,18 @@ export const useNavigationBadgeStore = create<NavigationBadgeState>((set) => ({
     // Sum friend session unread counts
     let friendTotal = 0;
     for (const session of socialState.sessions) {
-      friendTotal += friendUnreadForViewer(session, viewerDid);
+      friendTotal += visibleConversationUnread(
+        friendUnreadForViewer(session, viewerDid),
+        socialState.conversationLocalState[conversationKey('friend', session.ulid)],
+      );
     }
 
     // Sum group unread counts
-    const groupTotal = Object.values(socialState.groupUnreadCounts).reduce(
-      (sum, count) => sum + count,
+    const groupTotal = Object.entries(socialState.groupUnreadCounts).reduce(
+      (sum, [ulid, count]) => sum + visibleConversationUnread(
+        count,
+        socialState.conversationLocalState[conversationKey('group', ulid)],
+      ),
       0,
     );
 
@@ -122,14 +129,21 @@ export const useNavigationBadgeStore = create<NavigationBadgeState>((set) => ({
     // Rebuild per-session map from authoritative data
     const chatUnreadBySessions: Record<string, number> = {};
     for (const session of socialState.sessions) {
-      const count = friendUnreadForViewer(session, viewerDid);
+      const count = visibleConversationUnread(
+        friendUnreadForViewer(session, viewerDid),
+        socialState.conversationLocalState[conversationKey('friend', session.ulid)],
+      );
       if (count > 0) {
         chatUnreadBySessions[session.ulid] = count;
       }
     }
     for (const [ulid, count] of Object.entries(socialState.groupUnreadCounts)) {
-      if (count > 0) {
-        chatUnreadBySessions[ulid] = count;
+      const visibleCount = visibleConversationUnread(
+        count,
+        socialState.conversationLocalState[conversationKey('group', ulid)],
+      );
+      if (visibleCount > 0) {
+        chatUnreadBySessions[ulid] = visibleCount;
       }
     }
 

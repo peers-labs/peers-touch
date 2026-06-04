@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import type { MobileAuthSession } from '../auth/authSession';
 import { SocialApiError } from '../social/socialTypes';
 import type { Group, GroupMember, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
-import { createGroupApiClient, type CreateGroupInput, type GroupApiClient, type GroupSettings, type UpdateGroupInput, type UpdateGroupSettingsInput } from './groupApi';
+import { createGroupApiClient, type CreateGroupInput, type GroupApiClient, type GroupSettings, type UpdateGroupInput, type UpdateGroupMemberInput, type UpdateGroupSettingsInput } from './groupApi';
 import { normalizeGroup, normalizeGroupMember, normalizeGroupMessage } from './groupNormalizers';
 import {
   applyGroupDecryptedContentToList,
@@ -33,6 +33,7 @@ export interface GroupState {
   encryptionPreparer: ((groupUlid: string) => Promise<boolean>) | null;
   bindSession: (session: MobileAuthSession | null) => void;
   reconcile: () => Promise<void>;
+  reconcileActiveGroupMessages: () => Promise<void>;
   createGroup: (input: CreateGroupInput) => Promise<string | null>;
   updateGroup: (groupUlid: string, input: UpdateGroupInput) => Promise<void>;
   refreshGroups: () => Promise<void>;
@@ -45,6 +46,7 @@ export interface GroupState {
   inviteMembers: (groupUlid: string, inviteeDids: string[]) => Promise<void>;
   leaveGroup: (groupUlid: string) => Promise<void>;
   removeMember: (groupUlid: string, actorDid: string) => Promise<void>;
+  updateMember: (groupUlid: string, actorDid: string, input: UpdateGroupMemberInput) => Promise<void>;
   ingestRealtimeMessage: (groupUlid: string, message: GroupMessage) => Promise<void>;
   applyMessageMutation: (
     groupUlid: string,
@@ -106,16 +108,36 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     try {
       await refreshGroups();
       await refreshUnreadCounts();
+      await get().reconcileActiveGroupMessages();
       set({ loading: false, lastReconcileAt: Date.now() });
     } catch (error) {
       set({ loading: false, error: normalizeError(error) });
     }
   },
 
+  reconcileActiveGroupMessages: async () => {
+    const groupUlid = get().activeGroupUlid;
+    if (!groupUlid) return;
+    await Promise.allSettled([get().loadMessages(groupUlid), get().loadMembers(groupUlid), get().loadSettings(groupUlid)]);
+    void get().encryptionPreparer?.(groupUlid);
+  },
+
   refreshGroups: async () => {
     const api = requireApi(get());
     const payload = await api.listGroups();
-    set({ groups: (payload.groups ?? []).map(normalizeGroup) });
+    const groups = (payload.groups ?? []).map(normalizeGroup);
+    set({ groups });
+    const entries = await Promise.allSettled(groups.map(async (group) => {
+      const settings = await api.getMySettings(group.ulid);
+      return [group.ulid, settings] as const;
+    }));
+    set((state) => {
+      const next = { ...state.settings };
+      entries.forEach((entry) => {
+        if (entry.status === 'fulfilled') next[entry.value[0]] = entry.value[1];
+      });
+      return { settings: next };
+    });
   },
 
   createGroup: async (input) => {
@@ -158,7 +180,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       const payload = await api.unreadCount(group.ulid);
       return [group.ulid, Number(payload.unreadCount ?? payload.unread_count ?? 0)] as const;
     }));
-    set({ unreadCounts: Object.fromEntries(entries) });
+    const unreadCounts = Object.fromEntries(entries);
+    const activeGroupUlid = get().activeGroupUlid;
+    set({ unreadCounts: activeGroupUlid ? { ...unreadCounts, [activeGroupUlid]: 0 } : unreadCounts });
   },
 
   selectGroup: async (groupUlid) => {
@@ -272,6 +296,27 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
+  updateMember: async (groupUlid, actorDid, input) => {
+    const api = requireApi(get());
+    try {
+      const payload = await api.updateMember(groupUlid, actorDid, input);
+      if (payload.member) {
+        const member = normalizeGroupMember(payload.member);
+        set((state) => ({
+          members: {
+            ...state.members,
+            [groupUlid]: upsertGroupMember(state.members[groupUlid] ?? [], member),
+          },
+        }));
+      } else {
+        await get().loadMembers(groupUlid);
+      }
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
+    }
+  },
+
   ingestRealtimeMessage: async (groupUlid, message) => {
     const normalized = normalizeGroupMessage(message);
     set((state) => ({
@@ -280,6 +325,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         [groupUlid]: mergeGroupMessages(state.messages[groupUlid] ?? [], normalized),
       },
     }));
+    if (get().activeGroupUlid === groupUlid) {
+      await get().markRead(groupUlid, normalized.ulid).catch((error) => set({ error: normalizeError(error) }));
+    }
     await get().refreshGroups().catch((error) => set({ error: normalizeError(error) }));
   },
 
@@ -417,6 +465,13 @@ function mergeGroups(groups: Group[], incoming: Group): Group[] {
   return exists
     ? groups.map((group) => (group.ulid === incoming.ulid ? { ...group, ...incoming } : group))
     : [incoming, ...groups];
+}
+
+function upsertGroupMember(members: GroupMember[], incoming: GroupMember): GroupMember[] {
+  const exists = members.some((member) => member.actorDid === incoming.actorDid);
+  return exists
+    ? members.map((member) => (member.actorDid === incoming.actorDid ? { ...member, ...incoming } : member))
+    : [...members, incoming];
 }
 
 function requireApi(state: GroupState): GroupApiClient {

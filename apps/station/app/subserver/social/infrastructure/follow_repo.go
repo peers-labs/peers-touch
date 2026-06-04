@@ -30,6 +30,7 @@ type FollowRepository interface {
 	GetFollowerCount(ctx context.Context, actorID uint64) (int64, error)
 	GetFollowingCount(ctx context.Context, actorID uint64) (int64, error)
 	GetRelationships(ctx context.Context, followerID uint64, targetIDs []uint64) (map[uint64]*db.Follow, error)
+	GetReverseRelationships(ctx context.Context, followingID uint64, followerIDs []uint64) (map[uint64]bool, error)
 }
 
 type followRepository struct {
@@ -182,6 +183,24 @@ func (r *followRepository) GetRelationships(ctx context.Context, followerID uint
 	out := make(map[uint64]*db.Follow, len(follows))
 	for _, f := range follows {
 		out[f.FollowingID] = f
+	}
+	return out, nil
+}
+
+func (r *followRepository) GetReverseRelationships(ctx context.Context, followingID uint64, followerIDs []uint64) (map[uint64]bool, error) {
+	out := make(map[uint64]bool)
+	if followingID == 0 || len(followerIDs) == 0 {
+		return out, nil
+	}
+	var follows []*db.Follow
+	err := r.db.WithContext(ctx).
+		Where("following_id = ? AND follower_id IN ?", followingID, followerIDs).
+		Find(&follows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range follows {
+		out[f.FollowerID] = true
 	}
 	return out, nil
 }

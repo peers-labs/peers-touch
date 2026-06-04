@@ -44,7 +44,7 @@
  *
  * # SKDM-sent ledger
  *
- * Local-only `localStorage` under
+ * Local-only client storage under domain `crypto.sender-key-ledger` with key
  *   `groupSenderKeys:skdm-sent:<actorId>:<groupUlid>`
  * tracking which member DIDs already received the current chain.
  * Cleared by `resetSkdmDistribution` after a forced rotation so
@@ -61,6 +61,11 @@
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import { eventBus, EVENT } from '../../kernel/events';
+import {
+  readDesktopDomainValueSync,
+  removeDesktopDomainValueSync,
+  writeDesktopDomainValueSync,
+} from '../../storage/desktopClientStorage';
 
 export class MissingSkdmError extends Error {
   constructor(public readonly groupUlid: string, public readonly senderDid: string | null) {
@@ -118,9 +123,7 @@ function pendingKey(actorId: string, groupUlid: string): string {
 
 function loadSentSet(actorId: string, groupUlid: string): Set<string> {
   try {
-    const raw = localStorage.getItem(sentKey(actorId, groupUlid));
-    if (!raw) return new Set();
-    const arr = JSON.parse(raw);
+    const arr = readDesktopDomainValueSync<unknown[]>('crypto.sender-key-ledger', sentKey(actorId, groupUlid));
     if (!Array.isArray(arr)) return new Set();
     return migrateLedgerSet(new Set(arr.filter((v): v is string => typeof v === 'string')));
   } catch {
@@ -130,7 +133,7 @@ function loadSentSet(actorId: string, groupUlid: string): Set<string> {
 
 function saveSentSet(actorId: string, groupUlid: string, set: Set<string>): void {
   try {
-    localStorage.setItem(sentKey(actorId, groupUlid), JSON.stringify(Array.from(set)));
+    writeDesktopDomainValueSync('crypto.sender-key-ledger', sentKey(actorId, groupUlid), Array.from(set));
   } catch (err) {
     log.warn('groupSenderKeys', 'persist sent-set failed', err);
   }
@@ -138,9 +141,7 @@ function saveSentSet(actorId: string, groupUlid: string, set: Set<string>): void
 
 function loadPendingSet(actorId: string, groupUlid: string): Set<string> {
   try {
-    const raw = localStorage.getItem(pendingKey(actorId, groupUlid));
-    if (!raw) return new Set();
-    const arr = JSON.parse(raw);
+    const arr = readDesktopDomainValueSync<unknown[]>('crypto.sender-key-ledger', pendingKey(actorId, groupUlid));
     if (!Array.isArray(arr)) return new Set();
     return migrateLedgerSet(new Set(arr.filter((v): v is string => typeof v === 'string')));
   } catch {
@@ -151,9 +152,9 @@ function loadPendingSet(actorId: string, groupUlid: string): Set<string> {
 function savePendingSet(actorId: string, groupUlid: string, set: Set<string>): void {
   try {
     if (set.size === 0) {
-      localStorage.removeItem(pendingKey(actorId, groupUlid));
+      removeDesktopDomainValueSync('crypto.sender-key-ledger', pendingKey(actorId, groupUlid));
     } else {
-      localStorage.setItem(pendingKey(actorId, groupUlid), JSON.stringify(Array.from(set)));
+      writeDesktopDomainValueSync('crypto.sender-key-ledger', pendingKey(actorId, groupUlid), Array.from(set));
     }
   } catch (err) {
     log.warn('groupSenderKeys', 'persist pending-set failed', err);
@@ -172,8 +173,8 @@ function savePendingSet(actorId: string, groupUlid: string, set: Set<string>): v
  */
 export function resetSkdmDistribution(actorId: string, groupUlid: string): void {
   try {
-    localStorage.removeItem(sentKey(actorId, groupUlid));
-    localStorage.removeItem(pendingKey(actorId, groupUlid));
+    removeDesktopDomainValueSync('crypto.sender-key-ledger', sentKey(actorId, groupUlid));
+    removeDesktopDomainValueSync('crypto.sender-key-ledger', pendingKey(actorId, groupUlid));
   } catch (err) {
     log.warn('groupSenderKeys', 'reset sent-set failed', err);
   }
