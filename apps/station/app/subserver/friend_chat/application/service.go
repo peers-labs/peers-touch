@@ -18,12 +18,17 @@ type Repository interface {
 	ThreadCounts(sessionID, actorDID string, rootULIDs []string) ([]domain.ThreadCount, error)
 	MarkThreadRead(actorDID, sessionID, rootULID, lastReadULID string) error
 	SearchMessages(actorDID, query, sessionUlid string, limit, offset int) ([]domain.Message, int, error)
+	GetConversationSettings(actorDID, sessionID string) (domain.ConversationSettings, error)
+	UpdateConversationSettings(actorDID, sessionID string, patch domain.ConversationSettingsPatch) (domain.ConversationSettings, error)
 	LoadAttachments(messageULID string) ([]domain.Attachment, error)
 	MarkRead(actorDID string, messageIDs []string, status int32) ([]domain.AckedMessage, error)
 	RecallMessage(actorDID, sessionULID, messageULID string, recallWindow time.Duration) (domain.MutationOutcome, error)
 	EditMessage(actorDID, sessionULID, messageULID, newContent string, newCiphertext []byte, editWindow time.Duration) (domain.MutationOutcome, error)
 	DeleteMessage(actorDID, sessionULID, messageULID string) (domain.MutationOutcome, error)
 	BlockUser(actorDID, targetDID string) (domain.Friendship, error)
+	UnblockUser(actorDID, targetDID string) error
+	ListBlockedUsers(actorDID string, limit, offset int) ([]domain.Friendship, int, error)
+	GetFriendship(actorDID, targetDID string) (domain.Friendship, error)
 	IsBlockedBetween(actorDID, peerDID string) (bool, error)
 	ActorDisplayName(actorDID string) string
 	CreateFriendRequest(senderDID, receiverDID, message string) (domain.FriendRequest, error)
@@ -99,6 +104,28 @@ func (s *Service) GetOrCreateSession(actorDID, participantDID string) (*domain.S
 
 func (s *Service) ListSessions(actorDID string, limit, offset int) ([]domain.Session, int, error) {
 	return s.repo.ListSessions(actorDID, limit, offset)
+}
+
+func (s *Service) GetConversationSettingsByActor(actorDID, sessionID string) (domain.ConversationSettings, error) {
+	session, err := s.repo.GetSession(sessionID)
+	if err != nil || session == nil {
+		return domain.ConversationSettings{}, ErrSessionNotFound
+	}
+	if actorDID != session.ParticipantADID && actorDID != session.ParticipantBDID {
+		return domain.ConversationSettings{}, ErrNotParticipant
+	}
+	return s.repo.GetConversationSettings(actorDID, sessionID)
+}
+
+func (s *Service) UpdateConversationSettingsByActor(actorDID, sessionID string, patch domain.ConversationSettingsPatch) (domain.ConversationSettings, error) {
+	session, err := s.repo.GetSession(sessionID)
+	if err != nil || session == nil {
+		return domain.ConversationSettings{}, ErrSessionNotFound
+	}
+	if actorDID != session.ParticipantADID && actorDID != session.ParticipantBDID {
+		return domain.ConversationSettings{}, ErrNotParticipant
+	}
+	return s.repo.UpdateConversationSettings(actorDID, sessionID, patch)
 }
 
 func (s *Service) SendMessage(sessionID, senderDID, receiverDID string, messageType int32, content, replyToID, threadRootID string, attachments []domain.Attachment, encryptedPayload []byte, clientULID string) (domain.Message, error) {
@@ -368,6 +395,30 @@ func (s *Service) BlockUser(actorDID, targetDID string) (domain.Friendship, erro
 		return domain.Friendship{}, errors.New("cannot block yourself")
 	}
 	return s.repo.BlockUser(actorDID, targetDID)
+}
+
+func (s *Service) UnblockUser(actorDID, targetDID string) error {
+	if actorDID == targetDID {
+		return errors.New("cannot unblock yourself")
+	}
+	return s.repo.UnblockUser(actorDID, targetDID)
+}
+
+func (s *Service) ListBlockedUsers(actorDID string, limit, offset int) ([]domain.Friendship, int, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return s.repo.ListBlockedUsers(actorDID, limit, offset)
+}
+
+func (s *Service) GetFriendship(actorDID, targetDID string) (domain.Friendship, error) {
+	if actorDID == "" || targetDID == "" {
+		return domain.Friendship{}, ErrInvalidReceiver
+	}
+	return s.repo.GetFriendship(actorDID, targetDID)
 }
 
 func (s *Service) AcceptFriendRequest(actorDID, requestID string) (*domain.FriendRequest, *domain.Session, error) {

@@ -58,6 +58,8 @@ apps/desktop/
 ```
 
 > **Loading Foundation contracts**: `kernel/`, `runtimes/`, `pages/<Name>.descriptor.tsx`, and the boot pipeline are defined in [`runtime-projections.md`](./runtime-projections.md). New pages and projection owners must conform to those contracts; do not redefine them here.
+>
+> **Lifecycle contract**: Desktop boot, identity/auth gate, runtime bootstrap, steady reconcile, session change, and shutdown are defined in [`lifecycle.md`](./lifecycle.md). Use it as the top-level lifecycle counterpart to Mobile before changing login, runtime bootstrap, or Station/session behavior.
 
 ## Delivery Checklist
 

@@ -142,6 +142,16 @@ pub mod key_exchange {
     pub use v1::*;
 }
 
+pub mod federation {
+    pub mod v1 {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/peers_touch.model.federation.v1.rs"
+        ));
+    }
+    pub use v1::*;
+}
+
 pub mod applet {
     include!(concat!(env!("OUT_DIR"), "/peers_touch.domain.applet.rs"));
 }

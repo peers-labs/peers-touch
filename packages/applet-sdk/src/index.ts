@@ -1,201 +1,88 @@
-import EventEmitter from 'eventemitter3'
-import { 
-  SystemInfo,
-  StorageAPI,
-  NetworkAPI,
-  NotificationAPI,
-  RequestOptions,
-  ResponseData,
-  DownloadOptions,
-  DownloadResult,
-  UploadOptions,
-  UploadResult,
-  NotificationOptions,
-  AppletMeta,
-  AppletEvent,
-  AppletRegistration,
-  EventCallback,
-  LynxNativeBridgeModule,
-  LynxWindow
-} from './types'
+// AppletSDK — public API surface with BridgeAdapter architecture.
+// Auto-detects the runtime environment and selects the appropriate adapter.
 
-class AppletSDK extends EventEmitter {
-  private static instance: AppletSDK
-  private appletMeta: AppletMeta | null = null
+import type { BridgeAdapter } from './adapter.js';
+import { detectAdapter } from './detect.js';
+import { createStorageAPI } from './capabilities/storage.js';
+import { createNetworkAPI } from './capabilities/network.js';
+import { createConfigAPI } from './capabilities/config.js';
+import { createSystemAPI } from './capabilities/system.js';
 
-  private constructor() {
-    super()
-  }
+import type { StorageAPI } from './capabilities/storage.js';
+import type { NetworkAPI, NetworkRequestOptions, NetworkResponse } from './capabilities/network.js';
+import type { ConfigAPI } from './capabilities/config.js';
+import type { SystemAPI, SystemInfo } from './capabilities/system.js';
 
-  public static getInstance(): AppletSDK {
-    if (!AppletSDK.instance) {
-      AppletSDK.instance = new AppletSDK()
-    }
-    return AppletSDK.instance
-  }
+export class AppletSDK {
+  private adapter: BridgeAdapter;
+  private eventHandlers: Array<{ topic: string; handler: (payload: unknown) => void }> = [];
+  private unsubscribeBridge: (() => void) | null = null;
 
-  private getBridge(): LynxNativeBridgeModule | null {
-    if (typeof window === 'undefined') {
-      return null
-    }
-    const hostWindow = window as LynxWindow
-    return (
-      hostWindow.__PEERS_TOUCH_LYNX_BRIDGE__
-      || hostWindow.lynx?.nativeBridge
-      || hostWindow.lynx?.nativeModules?.AppletBridge
-      || hostWindow.LynxNativeBridge
-      || null
-    )
-  }
+  readonly storage: StorageAPI;
+  readonly network: NetworkAPI;
+  readonly config: ConfigAPI;
+  readonly system: SystemAPI;
 
-  private normalizeResult(raw: unknown): unknown {
-    if (typeof raw === 'object' && raw !== null && 'ok' in raw) {
-      const bridgeResponse = raw as { ok?: boolean; result?: unknown; error?: { message?: string } }
-      if (bridgeResponse.ok === false) {
-        throw new Error(bridgeResponse.error?.message || 'Native bridge call failed')
+  constructor(adapter?: BridgeAdapter) {
+    this.adapter = adapter ?? detectAdapter();
+    this.storage = createStorageAPI(this.adapter);
+    this.network = createNetworkAPI(this.adapter);
+    this.config = createConfigAPI(this.adapter);
+    this.system = createSystemAPI(this.adapter);
+
+    // Subscribe to bridge events and dispatch to registered handlers
+    this.unsubscribeBridge = this.adapter.onEvent((topic, payload) => {
+      for (const entry of this.eventHandlers) {
+        if (entry.topic === topic) {
+          entry.handler(payload);
+        }
       }
-      if (bridgeResponse.ok === true && 'result' in bridgeResponse) {
-        return bridgeResponse.result
+    });
+  }
+
+  // Generic invoke for extensions beyond built-in capabilities
+  invoke<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> {
+    return this.adapter.invoke(method, params) as Promise<T>;
+  }
+
+  // Event subscription — returns an unsubscribe function
+  onEvent(topic: string, handler: (payload: unknown) => void): () => void {
+    const entry = { topic, handler };
+    this.eventHandlers.push(entry);
+
+    return () => {
+      const idx = this.eventHandlers.indexOf(entry);
+      if (idx !== -1) {
+        this.eventHandlers.splice(idx, 1);
       }
+    };
+  }
+
+  // Current adapter runtime name
+  get runtime(): string {
+    return this.adapter.name;
+  }
+
+  // Teardown: remove all event listeners
+  destroy(): void {
+    this.eventHandlers = [];
+    if (this.unsubscribeBridge) {
+      this.unsubscribeBridge();
+      this.unsubscribeBridge = null;
     }
-    return raw
-  }
-
-  /**
-   * 调用宿主API
-   */
-  private invokeAPI(api: string, params: any = {}): Promise<any> {
-    const bridge = this.getBridge()
-    if (!bridge || typeof bridge.invoke !== 'function') {
-      return Promise.reject(new Error('Lynx Native Bridge is unavailable'))
-    }
-    return Promise.resolve(bridge.invoke(api, params)).then((raw) => this.normalizeResult(raw))
-  }
-
-  /**
-   * 通用调用入口（供高阶封装使用）
-   */
-  public invoke<T = unknown>(api: string, params: Record<string, unknown> = {}): Promise<T> {
-    return this.invokeAPI(api, params)
-  }
-
-  /**
-   * 获取系统信息
-   */
-  public getSystemInfo(): Promise<SystemInfo> {
-    return this.invokeAPI('system.getInfo')
-  }
-
-  /**
-   * 存储API
-   */
-  public storage: StorageAPI = {
-    get: (key: string) => this.invokeAPI('storage.get', { key }),
-    set: (key: string, value: string) => this.invokeAPI('storage.set', { key, value }),
-    remove: (key: string) => this.invokeAPI('storage.remove', { key }),
-    clear: () => this.invokeAPI('storage.clear'),
-  }
-
-  /**
-   * 网络API
-   */
-  public network: NetworkAPI = {
-    request: (options: RequestOptions) => this.invokeAPI('network.request', options),
-    download: (options: DownloadOptions) => this.invokeAPI('network.download', options),
-    upload: (options: UploadOptions) => this.invokeAPI('network.upload', options),
-  }
-
-  /**
-   * 通知API
-   */
-  public notification: NotificationAPI = {
-    show: (options: NotificationOptions) => this.invokeAPI('notification.show', options),
-    onClick: (callback: (notificationId: string) => void) => {
-      this.on('notification-click', callback)
-    },
-  }
-
-  /**
-   * 获取当前Applet的元信息
-   */
-  public getCurrentApplet(): Promise<AppletMeta> {
-    if (this.appletMeta) {
-      return Promise.resolve(this.appletMeta)
-    }
-    return this.invokeAPI('applet.getManifest').then(meta => {
-      this.appletMeta = meta
-      return meta
-    })
-  }
-
-  /**
-   * 监听Applet生命周期事件
-   */
-  public onEvent(event: AppletEvent, callback: EventCallback): void {
-    this.on(event, callback)
-  }
-
-  /**
-   * 取消监听Applet生命周期事件
-   */
-  public offEvent(event: AppletEvent, callback: EventCallback): void {
-    this.off(event, callback)
-  }
-
-  /**
-   * 关闭当前Applet
-   */
-  public close(): Promise<void> {
-    return this.invokeAPI('applet.close')
-  }
-
-  /**
-   * 获取设备剪贴板内容
-   */
-  public getClipboardContent(): Promise<string> {
-    return this.invokeAPI('device.getClipboardContent')
-  }
-
-  /**
-   * 设置设备剪贴板内容
-   */
-  public setClipboardContent(content: string): Promise<void> {
-    return this.invokeAPI('device.setClipboardContent', { content })
-  }
-
-  /**
-   * 显示Toast提示
-   */
-  public showToast(options: { 
-    content: string
-    duration?: number
-    type?: 'success' | 'error' | 'info' | 'warning'
-  }): Promise<void> {
-    return this.invokeAPI('ui.showToast', options)
   }
 }
 
-// 导出单例
-export const sdk = AppletSDK.getInstance()
+// Singleton instance with auto-detected adapter
+export const sdk = new AppletSDK();
 
-declare global {
-  interface Window {
-    __PEERS_TOUCH_APPLET_FRONTEND__?: AppletRegistration
-  }
-}
-
-/**
- * 前端 Applet 自注册（由宿主读取）
- */
-export function registerApplet(definition: AppletRegistration): AppletRegistration {
-  if (typeof window !== 'undefined') {
-    window.__PEERS_TOUCH_APPLET_FRONTEND__ = definition
-  }
-  return definition
-}
-
-// 导出所有类型
-export * from './types'
-
-// 默认导出
-export default AppletSDK
+// Re-export types and constructs
+export type { BridgeAdapter } from './adapter.js';
+export type { StorageAPI } from './capabilities/storage.js';
+export type { NetworkAPI, NetworkRequestOptions, NetworkResponse } from './capabilities/network.js';
+export type { ConfigAPI } from './capabilities/config.js';
+export type { SystemAPI, SystemInfo } from './capabilities/system.js';
+export type { AppletEvent, EventCallback } from './types.js';
+export { AppletErrorCode, AppletError } from './errors.js';
+export { LynxBridgeAdapter } from './adapters/lynx.js';
+export { StandaloneBridgeAdapter } from './adapters/standalone.js';

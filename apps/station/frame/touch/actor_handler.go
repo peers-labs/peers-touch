@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -23,9 +24,11 @@ import (
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	gate "github.com/peers-labs/peers-touch/station/frame/touch/accessgate"
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	gatepb "github.com/peers-labs/peers-touch/station/frame/touch/model/accessgate"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
@@ -70,6 +73,42 @@ func GetActorHandlers() []ActorHandlerInfo {
 			Wrappers:  []server.Wrapper{actorWrapper},
 		},
 		{
+			RouterURL: RouterURLAccessAttemptStart,
+			Handler:   StartAccessAttempt,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{actorWrapper},
+		},
+		{
+			RouterURL: RouterURLAccessAttemptStart,
+			Handler:   HandleAccessGateOptions,
+			Method:    server.OPTIONS,
+			Wrappers:  []server.Wrapper{actorWrapper},
+		},
+		{
+			RouterURL: RouterURLAccessGateSubmit,
+			Handler:   SubmitAccessGate,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{actorWrapper},
+		},
+		{
+			RouterURL: RouterURLAccessGateSubmit,
+			Handler:   HandleAccessGateOptions,
+			Method:    server.OPTIONS,
+			Wrappers:  []server.Wrapper{actorWrapper},
+		},
+		{
+			RouterURL: RouterURLAccessDecision,
+			Handler:   GetAccessDecision,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{actorWrapper},
+		},
+		{
+			RouterURL: RouterURLAccessDecision,
+			Handler:   HandleAccessGateOptions,
+			Method:    server.OPTIONS,
+			Wrappers:  []server.Wrapper{actorWrapper},
+		},
+		{
 			RouterURL: RouterURLActorLogout,
 			Handler:   ActorLogout,
 			Method:    server.POST,
@@ -98,6 +137,36 @@ func GetActorHandlers() []ActorHandlerInfo {
 			Handler:   PublicProfile,
 			Method:    server.GET,
 			Wrappers:  []server.Wrapper{commonWrapper}, // Public access
+		},
+		{
+			RouterURL: RouterURLFederationProfile,
+			Handler:   FederationProfile,
+			Method:    server.GET,
+			Wrappers:  []server.Wrapper{commonWrapper}, // Public — federation surface
+		},
+		{
+			RouterURL: RouterURLFederationMe,
+			Handler:   FederationMe,
+			Method:    server.GET,
+			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
+		},
+		{
+			RouterURL: RouterURLFederationVisibility,
+			Handler:   FederationUpdateVisibility,
+			Method:    server.PUT,
+			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
+		},
+		{
+			RouterURL: RouterURLFederationResolve,
+			Handler:   FederationResolve,
+			Method:    server.GET,
+			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
+		},
+		{
+			RouterURL: RouterURLFederationHealth,
+			Handler:   FederationHealth,
+			Method:    server.GET,
+			Wrappers:  []server.Wrapper{commonWrapper}, // Public — readiness probe
 		},
 		{
 			RouterURL: RouterURLActorBasicInfo,
@@ -160,6 +229,117 @@ func ActorSignup(c context.Context, ctx *app.RequestContext) {
 	SuccessResponse(c, ctx, "Actor signup successful", nil)
 }
 
+// stationLabel returns the human-readable station name from environment.
+func stationLabel() string {
+	return os.Getenv("PEERS_NODE_LABEL")
+}
+
+func StartAccessAttempt(c context.Context, ctx *app.RequestContext) {
+	setAccessGateCORSHeaders(ctx)
+	if isAccessGatePreflight(ctx) {
+		writeAccessGatePreflight(ctx)
+		return
+	}
+
+	var req gatepb.StartAccessAttemptRequest
+	if err := ctx.Bind(&req); err != nil {
+		log.Warnf(c, "Access attempt bind failed: %v", err)
+		ctx.JSON(http.StatusBadRequest, err.Error())
+		return
+	}
+
+	decision, err := gate.StartAttempt(c, &req)
+	if err != nil {
+		log.Warnf(c, "Access attempt start failed: %v", err)
+		FailedResponse(c, ctx, err)
+		return
+	}
+
+	// Include station_label in the JSON response so clients can display a
+	// human-readable station name instead of raw IP:port.
+	type accessStartResponse struct {
+		Decision     *gatepb.AccessDecision `json:"decision"`
+		StationLabel string                 `json:"station_label,omitempty"`
+	}
+	SuccessResponse(c, ctx, "Access attempt started", &accessStartResponse{
+		Decision:     decision,
+		StationLabel: stationLabel(),
+	})
+}
+
+func HandleAccessGateOptions(_ context.Context, ctx *app.RequestContext) {
+	setAccessGateCORSHeaders(ctx)
+	writeAccessGatePreflight(ctx)
+}
+
+func setAccessGateCORSHeaders(ctx *app.RequestContext) {
+	origin := string(ctx.GetHeader("Origin"))
+	if origin == "" {
+		origin = "*"
+	}
+
+	ctx.Header("Access-Control-Allow-Origin", origin)
+	ctx.Header("Access-Control-Allow-Credentials", "true")
+	ctx.Header("Access-Control-Allow-Methods", "POST, OPTIONS")
+	ctx.Header("Access-Control-Allow-Headers", "Accept, Content-Type, Authorization")
+	ctx.Header("Access-Control-Max-Age", "600")
+}
+
+func isAccessGatePreflight(ctx *app.RequestContext) bool {
+	return string(ctx.Method()) == string(server.OPTIONS)
+}
+
+func writeAccessGatePreflight(ctx *app.RequestContext) {
+	ctx.Data(http.StatusNoContent, "text/plain", nil)
+}
+
+func SubmitAccessGate(c context.Context, ctx *app.RequestContext) {
+	setAccessGateCORSHeaders(ctx)
+	if isAccessGatePreflight(ctx) {
+		writeAccessGatePreflight(ctx)
+		return
+	}
+
+	var req gatepb.SubmitAccessGateRequest
+	if err := ctx.Bind(&req); err != nil {
+		log.Warnf(c, "Access gate submit bind failed: %v", err)
+		ctx.JSON(http.StatusBadRequest, err.Error())
+		return
+	}
+
+	switch req.GetType() {
+	case gatepb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN:
+		submitAccessLogin(c, ctx, &req)
+	default:
+		FailedResponse(c, ctx, fmt.Errorf("unsupported access gate type: %s", req.GetType().String()))
+	}
+}
+
+func GetAccessDecision(c context.Context, ctx *app.RequestContext) {
+	setAccessGateCORSHeaders(ctx)
+	if isAccessGatePreflight(ctx) {
+		writeAccessGatePreflight(ctx)
+		return
+	}
+
+	var req gatepb.GetAccessDecisionRequest
+	if err := ctx.Bind(&req); err != nil {
+		log.Warnf(c, "Access decision bind failed: %v", err)
+		ctx.JSON(http.StatusBadRequest, err.Error())
+		return
+	}
+
+	attempt, ok := gate.GetAttempt(req.GetAttemptId())
+	if !ok {
+		FailedResponse(c, ctx, errors.New("access attempt expired or not found"))
+		return
+	}
+
+	SuccessResponse(c, ctx, "Access decision", &gatepb.GetAccessDecisionResponse{
+		Decision: gate.DecisionForAttempt(c, attempt),
+	})
+}
+
 func ActorLogin(c context.Context, ctx *app.RequestContext) {
 	var loginReq model.LoginRequest
 	if err := ctx.Bind(&loginReq); err != nil {
@@ -219,6 +399,13 @@ func ActorLogin(c context.Context, ctx *app.RequestContext) {
 		}
 	}
 
+	if allowed, reason := gate.CheckActorAllowed(c, accessActorRefFromSessionResult(result, actorIdNum)); !allowed {
+		_ = auth.LogoutSession(c, result.SessionID)
+		log.Warnf(c, "Login blocked by access gate policy: actor_id=%d reason=%s", actorIdNum, reason)
+		FailedResponse(c, ctx, errors.New(reason))
+		return
+	}
+
 	loginResp := loginResponseFromSessionResult(result, actorIdNum)
 	if actorIdNum > 0 {
 		if act, err := actor.GetActorByID(c, actorIdNum); err == nil && act != nil {
@@ -263,6 +450,17 @@ func ActorSessionTakeover(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
+	if allowed, reason := gate.CheckActorAllowed(c, &gatepb.AccessGateActorRef{
+		Id:       strconv.FormatUint(uint64(user.ID), 10),
+		ActorId:  int64(user.ID),
+		Username: user.PreferredUsername,
+		Email:    user.Email,
+	}); !allowed {
+		log.Warnf(c, "Session takeover blocked by access gate policy: actor_id=%d reason=%s", user.ID, reason)
+		FailedResponse(c, ctx, errors.New(reason))
+		return
+	}
+
 	result, err := auth.IssueTokenAndSession(c, &user, ctx.ClientIP(), string(ctx.GetHeader("User-Agent")), req.DeviceType, map[string]interface{}{
 		"auth_method": "session_takeover",
 	})
@@ -300,6 +498,91 @@ func loginResponseFromSessionResult(result *auth.SessionLoginResult, actorIDNum 
 			DisplayName: toString(result.User["display_name"]),
 			Email:       toString(result.User["email"]),
 		},
+	}
+}
+
+func submitAccessLogin(c context.Context, ctx *app.RequestContext, req *gatepb.SubmitAccessGateRequest) {
+	loginReq := req.GetLogin()
+	if loginReq == nil {
+		FailedResponse(c, ctx, errors.New("login gate requires credentials"))
+		return
+	}
+
+	params := model.ActorLoginParams{
+		Email:      loginReq.GetEmail(),
+		Password:   loginReq.GetPassword(),
+		DeviceType: loginReq.GetDeviceType(),
+	}
+	if err := params.Check(); err != nil {
+		log.Warnf(c, "Access login checked params failed: %v", err)
+		FailedResponse(c, ctx, err)
+		return
+	}
+
+	deviceType := params.DeviceType
+	if deviceType == "" {
+		deviceType = "desktop"
+	}
+
+	result, err := auth.LoginWithSession(c, &auth.Credentials{
+		Email:    params.Email,
+		Password: params.Password,
+	}, ctx.ClientIP(), string(ctx.GetHeader("User-Agent")), deviceType)
+	if err != nil {
+		log.Warnf(c, "Access login failed: %v", err)
+		FailedResponse(c, ctx, err)
+		return
+	}
+
+	actorIDNum := actorIDFromSessionResult(result)
+	decision, err := gate.CompleteLogin(c, req.GetAttemptId(), accessActorRefFromSessionResult(result, actorIDNum), result.SessionID)
+	if err != nil {
+		_ = auth.LogoutSession(c, result.SessionID)
+		log.Warnf(c, "Access login completion failed: %v", err)
+		FailedResponse(c, ctx, err)
+		return
+	}
+
+	if decision.GetState() != gatepb.AccessDecisionState_ACCESS_DECISION_STATE_GRANTED {
+		_ = auth.LogoutSession(c, result.SessionID)
+		SuccessResponse(c, ctx, "Access blocked", &gatepb.SubmitAccessGateResponse{Decision: decision})
+		return
+	}
+
+	_ = actor.UpdateActorStatus(c, actorIDNum, db.ActorStatusOnline, string(ctx.GetHeader("User-Agent")))
+	ctx.SetCookie("session_id", result.SessionID, int(24*time.Hour.Seconds()), "/", "", protocol.CookieSameSiteDisabled, false, true)
+
+	loginResp := loginResponseFromSessionResult(result, actorIDNum)
+	if actorIDNum > 0 {
+		if act, err := actor.GetActorByID(c, actorIDNum); err == nil && act != nil {
+			loginResp.ActorRef = actor.ProtoActorRef(act, baseURLFrom(ctx))
+		}
+	}
+
+	SuccessResponse(c, ctx, "Access granted", &gatepb.SubmitAccessGateResponse{
+		Decision:      decision,
+		LoginResponse: loginResp,
+	})
+}
+
+func actorIDFromSessionResult(result *auth.SessionLoginResult) uint64 {
+	if id, ok := result.User["id"].(uint64); ok {
+		return id
+	}
+	if idStr, ok := result.User["id"].(string); ok {
+		if parsed, err := strconv.ParseUint(idStr, 10, 64); err == nil {
+			return parsed
+		}
+	}
+	return 0
+}
+
+func accessActorRefFromSessionResult(result *auth.SessionLoginResult, actorIDNum uint64) *gatepb.AccessGateActorRef {
+	return &gatepb.AccessGateActorRef{
+		Id:       toString(result.User["id"]),
+		ActorId:  int64(actorIDNum),
+		Username: toString(result.User["username"]),
+		Email:    toString(result.User["email"]),
 	}
 }
 

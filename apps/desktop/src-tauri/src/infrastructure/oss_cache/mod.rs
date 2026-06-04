@@ -588,7 +588,9 @@ fn http_get_bytes(url: &str, bearer: Option<&str>) -> Result<Vec<u8>, OssCacheEr
             req = req.bearer_auth(t);
         }
     }
-    let resp = req.send().map_err(|e| OssCacheError::Network(e.to_string()))?;
+    let resp = req
+        .send()
+        .map_err(|e| OssCacheError::Network(e.to_string()))?;
     let status = resp.status();
     if !status.is_success() {
         // 403 from a federated GET should bubble as a federation

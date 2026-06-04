@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package peers_touch.model.federation.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/federation/api/pb;pb";
+
+// federation_self.proto — wire shapes for /actor/federation/{me,visibility}.
+//
+// These messages are the authoritative contract between Station and the
+// Desktop client. JSON rendering happens via the same content-negotiated
+// SuccessResponse pipeline every other Touch endpoint uses; the
+// json_name annotations exist so a curl operator (Accept: application/json)
+// gets the same field names a proto consumer sees.
+//
+// Field naming convention — additive evolution only. Renames or
+// removals require a versioned route (`/actor/federation/v2/...`).
+
+// FederationVisibility mirrors the int16 enum in the touch_actor table.
+// The wire surface speaks labels (`"hidden"`, `"by_handle"`,
+// `"indexed"`) so the Desktop UI can switch on a string without
+// importing protobuf enum descriptors at build time. Server-side the
+// label is translated through actor.VisibilityFromLabel.
+//
+// The numeric values are stable forever: the underlying DB column is
+// int16 with the matching constants, and downgrading a row to an
+// unknown enum tag would silently break visibility checks. Keep this
+// list append-only.
+enum FederationVisibility {
+  FEDERATION_VISIBILITY_UNSPECIFIED = 0;
+
+  // HIDDEN — locator carries a tombstone; no station learns the
+  // actor exists via this handle.
+  FEDERATION_VISIBILITY_HIDDEN = 1;
+
+  // BY_HANDLE — actor is reachable iff someone already knows the
+  // exact federated handle. Default for newly-created actors.
+  FEDERATION_VISIBILITY_BY_HANDLE = 2;
+
+  // INDEXED — actor consents to appearing in cross-station
+  // directory searches. Phase F territory; today behaves like
+  // BY_HANDLE on the wire but is preserved verbatim so the
+  // future search index can pick it up without a schema bump.
+  FEDERATION_VISIBILITY_INDEXED = 3;
+}
+
+// FederationSelfView is the Desktop-facing snapshot of an actor's
+// federation identity. Returned by GET /actor/federation/me and the
+// post-mutation reply of PUT /actor/federation/visibility, so a UI
+// can render the new state without a follow-up GET.
+//
+// `actor_id` is a string (decimal) because uint64 is not safely
+// representable in JavaScript number. The companion `actor_id_uint`
+// field carries the raw uint64 for proto consumers (Rust station
+// gateway, future mobile clients) that prefer not to re-parse the
+// decimal — both are populated identically and never disagree.
+message FederationSelfView {
+  string actor_id = 1 [json_name = "actor_id"];
+  uint64 actor_id_uint = 2 [json_name = "actor_id_uint"];
+
+  // Local handle without the "@user@host" suffix.
+  string preferred_username = 3 [json_name = "preferred_username"];
+
+  // Canonical "@user@host" (host = home station HTTP origin, no scheme).
+  string federated_handle = 4 [json_name = "federated_handle"];
+
+  // libp2p PeerID of the home station. Same value carried in the
+  // signed locator record published by this actor.
+  string home_station_peer_id = 5 [json_name = "home_station_peer_id"];
+
+  // HTTP origin of the home station (host[:port], no scheme).
+  string home_station_domain = 6 [json_name = "home_station_domain"];
+
+  FederationVisibility visibility = 7;
+
+  // Label form of `visibility` for clients that prefer a string
+  // (curl, Desktop UI). Always agrees with `visibility`.
+  string visibility_label = 8 [json_name = "visibility_label"];
+
+  // Monotonic per-handle counter from the locator record. Bumped on
+  // every visibility flip / republish so a client can detect drift.
+  uint64 locator_seq = 9 [json_name = "locator_seq"];
+
+  // "local" for actors owned by this station; the federation API
+  // never returns a remote-cached row here (FederationMe enforces
+  // the local check).
+  string origin = 10;
+
+  // Tier B2 — relay-mount labels currently in effect for this
+  // station's locator records. Populated from the live
+  // `RelayClientHandle.BaseURL()` at request time; empty when
+  // relay-client is disabled or has not yet acquired its mount.
+  //
+  // Diagnostic field for the Settings federation panel ("Reachable
+  // via …") — clients that don't render it ignore the field.
+  repeated string inbox_relay_mounts = 11 [json_name = "inbox_relay_mounts"];
+}
+
+// FederationVisibilityRequest is the body of PUT /actor/federation/visibility.
+// Accepts the label form so a Desktop dropdown can speak the same
+// vocabulary it renders. Empty / unknown labels round-trip as a
+// 400 + ERROR_CODE_FEDERATION_INVALID_VISIBILITY.
+message FederationVisibilityRequest {
+  string visibility = 1;
+}

@@ -14,6 +14,10 @@ message UploadKeyBundleRequest {
   repeated string opk_pubs = 6;
   // Opaque per-install identifier. Empty => server stores as "legacy".
   string device_id = 7;
+  // Supported encrypted payload wire versions. [0] = legacy chain-only,
+  // [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+  // for backward compatibility.
+  repeated uint32 supported_versions = 8;
 }
 
 message UploadKeyBundleResponse {}
@@ -30,6 +34,7 @@ message KeyBundle {
   // One-time prekey pubs consumed for this fetch (base64), newest policy via server.
   repeated string opks = 6;
   int64 published_at_unix_ms = 7; // server stamp (identity upsert time)
+  repeated uint32 supported_versions = 8;
 }
 
 // Fetch another actor's key bundles by DID.

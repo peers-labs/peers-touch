@@ -45,6 +45,22 @@ enum ErrorCode {
   ERROR_CODE_CREATE_COMMENT_FAILED = 30015;
   ERROR_CODE_GET_COMMENTS_FAILED = 30016;
   ERROR_CODE_DELETE_COMMENT_FAILED = 30017;
+
+  // ── Federation (40000s) ───────────────────────────────────────
+  // Phase E.bridge — public federation API errors. Distinct range
+  // because these are surface-level errors the Desktop client maps
+  // 1:1 to UI states (resolve form, visibility toggle, splash
+  // banner). Resolver-internal errors (signature verify, etc.)
+  // collapse to ERROR_CODE_FEDERATION_RESOLVE_FAILED so a single
+  // client branch covers all "non-recoverable upstream" cases.
+  ERROR_CODE_FEDERATION_HANDLE_REQUIRED = 40001;
+  ERROR_CODE_FEDERATION_INVALID_VISIBILITY = 40002;
+  ERROR_CODE_FEDERATION_TOMBSTONED = 40003;
+  ERROR_CODE_FEDERATION_NOT_READY = 40004;
+  ERROR_CODE_FEDERATION_NOT_LOCAL = 40005;
+  ERROR_CODE_FEDERATION_RESOLVE_FAILED = 40006;
+  ERROR_CODE_FEDERATION_HANDLE_NOT_FOUND = 40007;
+  ERROR_CODE_FEDERATION_LOCAL_IDENTITY_MISSING = 40008;
 }
 
 message ErrorResponse {

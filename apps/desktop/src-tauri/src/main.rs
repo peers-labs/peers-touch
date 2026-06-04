@@ -24,9 +24,9 @@ pub mod peers_touch {
 
 use interface::tauri_commands::{
     account, actor, admin, agent_growth, agent_scheduler, agents, applets, auth, channels, chat,
-    cron, crypto, friend_chat, frontend_log, group_chat, i18n, ice, key_exchange, mcp, memory,
-    model_config, models, notebook, notification, oauth2, oss, presence, profile, provider,
-    realtime, search, settings, skills, skills_market, social, system, tools, tts,
+    cron, crypto, federation, friend_chat, frontend_log, group_chat, i18n, ice, key_exchange, mcp,
+    memory, model_config, models, notebook, notification, oauth2, oss, presence, profile, provider,
+    realtime, search, settings, skills, skills_market, social, station, system, tools, tts,
 };
 use std::sync::Arc;
 use tauri::Manager;
@@ -155,6 +155,10 @@ fn main() {
             profile::account_sync_avatar,
             profile::sync_user_profile,
             profile::avatar_resolve_local,
+            federation::federation_get_self,
+            federation::federation_update_visibility,
+            federation::federation_resolve,
+            federation::federation_health,
             admin::admin_health,
             admin::admin_network_probe,
             admin::admin_execute_action,
@@ -330,6 +334,8 @@ fn main() {
             tts::tts_voices,
             friend_chat::friend_chat_list_sessions,
             friend_chat::friend_chat_create_session,
+            friend_chat::friend_chat_get_settings,
+            friend_chat::friend_chat_update_settings,
             friend_chat::friend_chat_list_messages,
             friend_chat::friend_chat_list_thread_messages,
             friend_chat::friend_chat_thread_counts,
@@ -374,6 +380,9 @@ fn main() {
             friend_chat::friend_chat_reject_friend_request,
             friend_chat::friend_chat_list_friend_requests,
             friend_chat::friend_chat_block_user,
+            friend_chat::friend_chat_unblock_user,
+            friend_chat::friend_chat_list_blocked_users,
+            friend_chat::friend_chat_get_friendship_status,
             group_chat::group_chat_list_groups,
             group_chat::group_chat_list_messages,
             group_chat::group_chat_list_thread_messages,
@@ -390,6 +399,7 @@ fn main() {
             group_chat::group_chat_leave_group,
             group_chat::group_chat_get_members,
             group_chat::group_chat_remove_member,
+            group_chat::group_chat_update_member,
             group_chat::group_chat_recall_message,
             group_chat::group_chat_edit_message,
             group_chat::group_chat_delete_message,
@@ -421,7 +431,12 @@ fn main() {
             notification::notification_mark_all_read,
             notification::notification_delete,
             notification::notification_preferences,
-            notification::notification_preferences_update
+            notification::notification_preferences_update,
+            station::station_list,
+            station::station_set_active,
+            station::station_add,
+            station::station_remove,
+            station::station_probe
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

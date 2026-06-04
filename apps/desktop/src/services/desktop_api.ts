@@ -5,10 +5,13 @@ import type { GenMessage } from '@bufbuild/protobuf/codegenv2';
 import { log } from '../utils/logger';
 import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
+import { readDesktopPreferenceSync } from '../storage/desktopClientStorage';
 import type { SessionRevokedPayload, RealtimeCallSignalKind } from '../kernel/events/types';
 import {
   GetSessionsResponseSchema,
   CreateSessionResponseSchema,
+  GetFriendConversationSettingsResponseSchema,
+  UpdateFriendConversationSettingsResponseSchema,
   GetMessagesResponseSchema,
   SendMessageResponseSchema,
   MessageAckResponseSchema,
@@ -24,6 +27,9 @@ import {
   RejectFriendRequestResponseSchema,
   ListFriendRequestsResponseSchema,
   BlockUserResponseSchema,
+  UnblockUserResponseSchema,
+  ListBlockedUsersResponseSchema,
+  GetFriendshipStatusResponseSchema,
 } from '../gen/proto/domain/chat/friend_chat_pb';
 import {
   ListGroupsResponseSchema,
@@ -39,6 +45,7 @@ import {
   LeaveGroupResponseSchema,
   GetGroupMembersResponseSchema,
   RemoveMemberResponseSchema,
+  UpdateMemberResponseSchema,
   RecallGroupMessageResponseSchema,
   EditGroupMessageResponseSchema,
   DeleteGroupMessageResponseSchema,
@@ -55,6 +62,32 @@ export type {
   ActorProfile,
   Actor,
 } from '../gen/proto/domain/actor/actor_pb';
+import {
+  FederationSelfViewSchema,
+} from '../gen/proto/domain/federation/federation_self_pb';
+import {
+  FederationResolveViewSchema,
+} from '../gen/proto/domain/federation/federation_resolve_pb';
+import {
+  FederationHealthViewSchema,
+} from '../gen/proto/domain/federation/federation_health_pb';
+export {
+  FederationVisibility,
+  FederationVisibilityRequestSchema,
+} from '../gen/proto/domain/federation/federation_self_pb';
+export type {
+  FederationSelfView,
+  FederationVisibilityRequest,
+} from '../gen/proto/domain/federation/federation_self_pb';
+export type {
+  FederationResolveView,
+} from '../gen/proto/domain/federation/federation_resolve_pb';
+export type {
+  FederationHealthView,
+} from '../gen/proto/domain/federation/federation_health_pb';
+export type {
+  Friend,
+} from '../gen/proto/domain/chat/chat_pb';
 export type {
   FriendChatSession,
   FriendChatMessage,
@@ -67,6 +100,7 @@ export type {
   GetPendingResponse,
   PendingMessageInfo,
   GetStatsResponse,
+  ListBlockedUsersResponse,
 } from '../gen/proto/domain/chat/friend_chat_pb';
 export type {
   Group,
@@ -86,6 +120,7 @@ export type {
   LeaveGroupResponse,
   GetGroupMembersResponse,
   RemoveMemberResponse,
+  UpdateMemberResponse,
   RecallGroupMessageResponse,
   DeleteGroupMessageResponse,
   SearchGroupMessagesResponse,
@@ -146,7 +181,7 @@ const ALWAYS_QUIET_COMMANDS = new Set([
 
 // Quiet only in production. In dev we want timing for these so we can
 // debug cold-start performance ("first chat tab click is slow") and the
-// 60s background sync loop. Toggle via `localStorage.setItem('pt.debug.quietChat', '1')`
+// 60s background sync loop. Toggle through the desktop config preference store.
 // if the noise becomes a problem during a specific session.
 const PROD_QUIET_COMMANDS = new Set([
   'friend_chat_sync_from_station_scoped',
@@ -160,9 +195,8 @@ function isQuietCommand(command: string): boolean {
     const isDev = typeof import.meta !== 'undefined' && (import.meta as any).env?.DEV;
     let userOverride = false;
     try {
-      userOverride = typeof localStorage !== 'undefined'
-        && localStorage.getItem('pt.debug.quietChat') === '1';
-    } catch { /* no localStorage in some contexts */ }
+      userOverride = readDesktopPreferenceSync<string>('pt.debug.quietChat') === '1';
+    } catch { /* no storage in some contexts */ }
     return !isDev || userOverride;
   }
   return false;
@@ -2053,6 +2087,31 @@ export interface ContextHealthOutput {
   updatedAt: number;
 }
 
+// ── Station registry types ──
+
+export interface StationEntry {
+  url: string;
+  label?: string;
+  peer_id?: string;
+  peers_count?: number;
+  last_probe?: string;
+  online: boolean;
+}
+
+export interface StationListResponse {
+  entries: StationEntry[];
+  active_url: string;
+}
+
+export interface StationProbeResult {
+  url: string;
+  online: boolean;
+  label?: string;
+  peer_id?: string;
+  peers_count?: number;
+  error?: string;
+}
+
 export const api = {
   authLogin: (input: AuthLoginInput) =>
     invokeAuthCommand<AuthLoginInput>('auth_login', input),
@@ -3147,11 +3206,51 @@ export const api = {
     return data;
   },
 
+  // Federation API (Tier A1) — proto-first end-to-end. The Rust shim
+  // already encodes a typed FederationSelfView / FederationResolveView /
+  // FederationHealthView; `invokeRustProto` decodes the byte stream back
+  // into a typed proto-es message so callers never touch JSON.
+  federationGetSelf: () =>
+    invokeRustProto('federation_get_self', FederationSelfViewSchema),
+
+  federationUpdateVisibility: (visibility: string) =>
+    invokeRustProto(
+      'federation_update_visibility',
+      FederationSelfViewSchema,
+      { visibility },
+    ),
+
+  federationResolve: (handle: string) =>
+    invokeRustProto(
+      'federation_resolve',
+      FederationResolveViewSchema,
+      { handle },
+    ),
+
+  federationHealth: () =>
+    invokeRustProto('federation_health', FederationHealthViewSchema),
+
   friendChatListSessions: (limit?: number, offset?: number) =>
     invokeRustProto('friend_chat_list_sessions', GetSessionsResponseSchema, { limit, offset }),
 
   friendChatCreateSession: (participantDid: string) =>
     invokeRustProto('friend_chat_create_session', CreateSessionResponseSchema, { participant_did: participantDid }),
+
+  friendChatGetSettings: (sessionUlid: string) =>
+    invokeRustProto('friend_chat_get_settings', GetFriendConversationSettingsResponseSchema, { session_ulid: sessionUlid }),
+
+  friendChatUpdateSettings: (
+    sessionUlid: string,
+    settings: { isMuted?: boolean; isPinned?: boolean; alertEnabled?: boolean; background?: string; clearedAt?: number },
+  ) =>
+    invokeRustProto('friend_chat_update_settings', UpdateFriendConversationSettingsResponseSchema, {
+      session_ulid: sessionUlid,
+      ...(settings.isMuted !== undefined ? { is_muted: settings.isMuted } : {}),
+      ...(settings.isPinned !== undefined ? { is_pinned: settings.isPinned } : {}),
+      ...(settings.alertEnabled !== undefined ? { alert_enabled: settings.alertEnabled } : {}),
+      ...(settings.background !== undefined ? { background: settings.background } : {}),
+      ...(settings.clearedAt !== undefined ? { cleared_at_unix_ms: settings.clearedAt } : {}),
+    }),
 
   friendChatListMessages: (sessionUlid: string, beforeUlid?: string, limit?: number) =>
     invokeRustProto('friend_chat_list_messages', GetMessagesResponseSchema, { session_ulid: sessionUlid, before_ulid: beforeUlid, limit }),
@@ -3617,6 +3716,15 @@ export const api = {
   groupChatRemoveMember: (groupUlid: string, memberDid: string) =>
     invokeRustProto('group_chat_remove_member', RemoveMemberResponseSchema, { group_ulid: groupUlid, member_did: memberDid }),
 
+  groupChatUpdateMember: (groupUlid: string, memberDid: string, input: { role?: number; muted?: boolean; mutedUntilUnixMs?: number }) =>
+    invokeRustProto('group_chat_update_member', UpdateMemberResponseSchema, {
+      group_ulid: groupUlid,
+      member_did: memberDid,
+      ...(input.role !== undefined ? { role: input.role } : {}),
+      ...(input.muted !== undefined ? { muted: input.muted } : {}),
+      ...(input.mutedUntilUnixMs !== undefined ? { muted_until_unix_ms: input.mutedUntilUnixMs } : {}),
+    }),
+
   groupChatRecallMessage: (groupUlid: string, messageUlid: string) =>
     invokeRustProto('group_chat_recall_message', RecallGroupMessageResponseSchema, { group_ulid: groupUlid, message_ulid: messageUlid }),
 
@@ -3647,8 +3755,18 @@ export const api = {
   groupChatGetSettings: (groupUlid: string) =>
     invokeRustProto('group_chat_get_settings', GetGroupSettingsResponseSchema, { group_ulid: groupUlid }),
 
-  groupChatUpdateSettings: (groupUlid: string, settingsJson: string) =>
-    invokeRustProto('group_chat_update_settings', UpdateGroupSettingsResponseSchema, { group_ulid: groupUlid, settings_json: settingsJson }),
+  groupChatUpdateSettings: (
+    groupUlid: string,
+    settings: { isMuted?: boolean; isPinned?: boolean; alertEnabled?: boolean; background?: string; clearedAt?: number },
+  ) =>
+    invokeRustProto('group_chat_update_settings', UpdateGroupSettingsResponseSchema, {
+      group_ulid: groupUlid,
+      ...(settings.isMuted !== undefined ? { is_muted: settings.isMuted } : {}),
+      ...(settings.isPinned !== undefined ? { is_pinned: settings.isPinned } : {}),
+      ...(settings.alertEnabled !== undefined ? { alert_enabled: settings.alertEnabled } : {}),
+      ...(settings.background !== undefined ? { background: settings.background } : {}),
+      ...(settings.clearedAt !== undefined ? { cleared_at_unix_ms: settings.clearedAt } : {}),
+    }),
 
   groupChatGetOfflineMessages: (groupUlid: string, limit?: number) =>
     invokeRustProto('group_chat_get_offline_messages', GetOfflineMessagesResponseSchema, { group_ulid: groupUlid, limit }),
@@ -3839,6 +3957,15 @@ export const api = {
   friendChatBlockUser: (targetDid: string) =>
     invokeRustProto('friend_chat_block_user', BlockUserResponseSchema, { target_did: targetDid }),
 
+  friendChatUnblockUser: (targetDid: string) =>
+    invokeRustProto('friend_chat_unblock_user', UnblockUserResponseSchema, { target_did: targetDid }),
+
+  friendChatListBlockedUsers: (limit = 100, offset = 0) =>
+    invokeRustProto('friend_chat_list_blocked_users', ListBlockedUsersResponseSchema, { limit, offset }),
+
+  friendChatGetFriendshipStatus: (targetDid: string) =>
+    invokeRustProto('friend_chat_get_friendship_status', GetFriendshipStatusResponseSchema, { target_did: targetDid }),
+
   // ── Notification ──
 
   notificationList: (category?: number, status?: number, cursor?: string, limit?: number) =>
@@ -3875,6 +4002,23 @@ export const api = {
     invokeRustDataFromStatus<{ category: number; enabled: boolean; push_enabled: boolean; sound_enabled: boolean }, { preference: NotificationPreferenceData }>(
       'notification_preferences_update', { category, enabled, push_enabled: pushEnabled, sound_enabled: soundEnabled },
     ),
+
+  // ── Station registry (dynamic URL picker) ──
+
+  stationList: () =>
+    invokeRustDataFromStatus<void, StationListResponse>('station_list'),
+
+  stationSetActive: (url: string) =>
+    invokeRustDataFromStatus<{ url: string }, { active_url: string }>('station_set_active', { url }),
+
+  stationAdd: (url: string) =>
+    invokeRustDataFromStatus<{ url: string }, StationEntry>('station_add', { url }),
+
+  stationRemove: (url: string) =>
+    invokeRustDataFromStatus<{ url: string }, { removed: string }>('station_remove', { url }),
+
+  stationProbe: (url: string) =>
+    invokeRustDataFromStatus<{ url: string }, StationProbeResult>('station_probe', { url }),
 };
 
 export interface ConfigFieldMeta {

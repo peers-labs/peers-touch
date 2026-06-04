@@ -32,7 +32,7 @@ import { fromBinary } from '@bufbuild/protobuf';
 import { eventBus } from '../kernel/events';
 import { EVENT } from '../kernel/events/catalog';
 import type { RealtimeCallSignalKind } from '../kernel/events/types';
-import { StreamEventSchema } from '../gen/proto/domain/realtime/event_pb';
+import { ConversationSettingsChanged_Kind, StreamEventSchema } from '../gen/proto/domain/realtime/event_pb';
 import { api } from './desktop_api';
 import { log } from '../utils/logger';
 
@@ -278,14 +278,30 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
       });
       return;
     }
+    case 'conversationSettingsChanged': {
+      const c = kind.value;
+      const conversationKind = conversationSettingsKindFromEnum(c.kind);
+      if (!conversationKind || !c.containerUlid) {
+        log.warn('eventStream', 'unknown ConversationSettingsChanged kind, dropping', { kind: c.kind });
+        return;
+      }
+      eventBus.publish(EVENT.REALTIME_CONVERSATION_SETTINGS_CHANGED, {
+        eventId,
+        conversationKind,
+        containerUlid: c.containerUlid,
+        actorId: c.actorId,
+        changedTsUnixMs: Number(c.changedTsUnixMs),
+      });
+      return;
+    }
     default:
       return;
   }
 }
 
 // Inverse of GroupMembershipChange.Kind enum. Align with proto:
-// KIND_UNSPECIFIED=0, KIND_ADDED=1, KIND_REMOVED=2, KIND_LEFT=3.
-function groupMembershipKindFromEnum(value: number): 'ADDED' | 'REMOVED' | 'LEFT' | null {
+// KIND_UNSPECIFIED=0, KIND_ADDED=1, KIND_REMOVED=2, KIND_LEFT=3, KIND_UPDATED=4.
+function groupMembershipKindFromEnum(value: number): 'ADDED' | 'REMOVED' | 'LEFT' | 'UPDATED' | null {
   switch (value) {
     case 1:
       return 'ADDED';
@@ -293,6 +309,19 @@ function groupMembershipKindFromEnum(value: number): 'ADDED' | 'REMOVED' | 'LEFT
       return 'REMOVED';
     case 3:
       return 'LEFT';
+    case 4:
+      return 'UPDATED';
+    default:
+      return null;
+  }
+}
+
+function conversationSettingsKindFromEnum(value: number): 'friend' | 'group' | null {
+  switch (value) {
+    case ConversationSettingsChanged_Kind.FRIEND:
+      return 'friend';
+    case ConversationSettingsChanged_Kind.GROUP:
+      return 'group';
     default:
       return null;
   }

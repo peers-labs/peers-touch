@@ -3,6 +3,7 @@ import { theme } from 'antd';
 import { GlobalLayout } from '../components/GlobalLayout';
 import { LoginPage } from '../pages/LoginPage';
 import { LanguageSwitcher } from '../components/common/LanguageSwitcher';
+import { StationPicker } from '../components/common/StationPicker';
 import type { AppLifecycle } from '../types/navigation';
 
 // ── Phase & Timing ──
@@ -227,7 +228,7 @@ export function OnboardingView({ lifecycle }: OnboardingViewProps) {
           />
         </div>
 
-        {/* Language switcher — bottom right, above everything */}
+        {/* Language switcher & Station picker — bottom right, above everything */}
         <div
           style={{
             position: 'absolute',
@@ -236,8 +237,12 @@ export function OnboardingView({ lifecycle }: OnboardingViewProps) {
             zIndex: 100,
             opacity: isTransition ? 0 : 1,
             transition: `opacity ${TRANSITION_DURATION}ms ease`,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
           }}
         >
+          <StationPicker />
           <LanguageSwitcher />
         </div>
       </div>

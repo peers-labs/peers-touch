@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api, type NotificationData, type NotificationUnreadCountsResponse } from '../services/desktop_api';
+import { currentAuthenticatedActorId } from './session';
 import { log } from '../utils/logger';
 
 const POLL_INTERVAL = 15_000;
@@ -34,6 +35,10 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   pollTimer: null,
 
   loadNotifications: async () => {
+    if (!currentAuthenticatedActorId()) {
+      set({ loading: false });
+      return;
+    }
     set({ loading: true });
     try {
       const resp = await api.notificationList(undefined, undefined, undefined, 20);
@@ -51,6 +56,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   },
 
   loadMore: async () => {
+    if (!currentAuthenticatedActorId()) return;
     const { nextCursor, loading, hasMore } = get();
     if (loading || !hasMore || !nextCursor) return;
 
@@ -70,6 +76,10 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   },
 
   refreshUnreadCounts: async () => {
+    if (!currentAuthenticatedActorId()) {
+      set({ unreadTotal: 0, unreadByCategory: {} });
+      return;
+    }
     try {
       const resp: NotificationUnreadCountsResponse = await api.notificationUnreadCounts();
       set({
@@ -82,6 +92,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   },
 
   markRead: async (ids: string[]) => {
+    if (!currentAuthenticatedActorId()) return;
     try {
       await api.notificationMarkRead(ids);
       set((prev) => ({
@@ -96,6 +107,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   },
 
   markAllRead: async (category?: number) => {
+    if (!currentAuthenticatedActorId()) return;
     try {
       await api.notificationMarkAllRead(category);
       set((prev) => ({
@@ -114,6 +126,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   },
 
   deleteNotifications: async (ids: string[]) => {
+    if (!currentAuthenticatedActorId()) return;
     try {
       await api.notificationDelete(ids);
       set((prev) => ({
@@ -126,6 +139,11 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   },
 
   startPolling: () => {
+    if (!currentAuthenticatedActorId()) {
+      get().stopPolling();
+      set({ notifications: [], unreadTotal: 0, unreadByCategory: {}, loading: false });
+      return;
+    }
     const { pollTimer } = get();
     if (pollTimer) return;
 

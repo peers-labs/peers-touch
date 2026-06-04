@@ -18,6 +18,13 @@ var wrapper = option.NewWrapper[Options](optionsKey{}, func(options *option.Opti
 })
 
 // Options holds configuration for the bootstrap subserver.
+//
+// Federation-level concerns (bootstrap-nodes, public-addrs, direct-outbound,
+// direct-inbound) live in the federation package, not here. The bootstrap
+// subserver's createHost reads them via federation.GetPolicy() and
+// federation.LibP2PHostOptions(); tests inject custom policies via
+// federation.SetForTest. This keeps Options scoped to per-host concerns:
+// identity, listen addrs, mDNS, security mode.
 type Options struct {
 	*option.Options
 
@@ -25,7 +32,6 @@ type Options struct {
 	EnableMDNS         bool
 	IdentityKey        crypto.PrivKey
 	ListenAddrs        []string
-	BootstrapNodes     []multiaddr.Multiaddr
 	DHTRefreshInterval time.Duration
 	Libp2pInsecure     bool
 	// Private host configuration
@@ -58,13 +64,6 @@ func WithMDNS(enable bool) option.Option {
 func WithEnabled(enabled bool) option.Option {
 	return wrapper.Wrap(func(o *Options) {
 		o.Enabled = enabled
-	})
-}
-
-// WithBootstrapNodes appends bootstrap multiaddrs.
-func WithBootstrapNodes(bootstrapNodes []multiaddr.Multiaddr) option.Option {
-	return wrapper.Wrap(func(o *Options) {
-		o.BootstrapNodes = append(o.BootstrapNodes, bootstrapNodes...)
 	})
 }
 

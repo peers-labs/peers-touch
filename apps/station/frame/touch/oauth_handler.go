@@ -12,9 +12,11 @@ import (
 	"github.com/cloudwego/hertz/pkg/protocol"
 
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
-	touchauth "github.com/peers-labs/peers-touch/station/frame/touch/auth"
+	gate "github.com/peers-labs/peers-touch/station/frame/touch/accessgate"
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
+	touchauth "github.com/peers-labs/peers-touch/station/frame/touch/auth"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	gatepb "github.com/peers-labs/peers-touch/station/frame/touch/model/accessgate"
 )
 
 // OAuthLogin handles external OAuth gateway callback.
@@ -49,9 +51,6 @@ func OAuthLogin(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	ctx.SetCookie("session_id", result.SessionID, 86400, "/", "",
-		protocol.CookieSameSiteDisabled, false, true)
-
 	var actorIDNum int64
 	if id, ok := result.User["id"].(uint64); ok {
 		actorIDNum = int64(id)
@@ -60,6 +59,21 @@ func OAuthLogin(c context.Context, ctx *app.RequestContext) {
 			actorIDNum = int64(u)
 		}
 	}
+
+	if allowed, reason := gate.CheckActorAllowed(c, &gatepb.AccessGateActorRef{
+		Id:       touchString(result.User["id"]),
+		ActorId:  actorIDNum,
+		Username: touchString(result.User["username"]),
+		Email:    touchString(result.User["email"]),
+	}); !allowed {
+		_ = touchauth.LogoutSession(c, result.SessionID)
+		log.Warnf(c, "[OAuth] login blocked by access gate policy: actor_id=%d reason=%s", actorIDNum, reason)
+		FailedResponse(c, ctx, errors.New(reason))
+		return
+	}
+
+	ctx.SetCookie("session_id", result.SessionID, 86400, "/", "",
+		protocol.CookieSameSiteDisabled, false, true)
 
 	response := &model.OAuthBridgeResponse{
 		SessionId:    result.SessionID,

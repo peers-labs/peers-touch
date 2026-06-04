@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package peers_touch.model.federation.v1;
+
+import "domain/actor/actor.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/federation/api/pb;pb";
+
+// federation_resolve.proto — wire shape for GET /actor/federation/resolve.
+//
+// The internal resolver returns a verified ActorProfileEnvelope plus
+// diagnostic flags (is_local / from_cache). We intentionally do NOT
+// re-export the full envelope on this surface — the signature, kid,
+// and signing-key PEM are server-trust artefacts that a Desktop client
+// has no business validating itself. Instead the surface flattens the
+// useful client-facing fields and embeds the existing
+// peers_touch.model.actor.v1.ActorProfile so chat / contact UIs render
+// remote and local actors through the exact same projection code.
+//
+// All fields are additive; the contract MUST stay backwards-compatible
+// because a stale Desktop binary running against a newer Station will
+// still issue this request.
+
+message FederationResolveView {
+  // Canonical handle this view describes (always lower-cased,
+  // always carrying the "@user@host" form). Echoes the request so
+  // a client can sanity-check it received the response it asked
+  // for, even after request multiplexing.
+  string federated_handle = 1 [json_name = "federated_handle"];
+
+  // Authoritative home station of the resolved actor. Same value
+  // pinned in the on-DHT locator record; clients may use it to
+  // decide whether a handle and a known peer are on the same
+  // station.
+  string home_station_peer_id = 2 [json_name = "home_station_peer_id"];
+  string home_station_domain = 3 [json_name = "home_station_domain"];
+
+  // Diagnostic flags. UI uses them to render a "from cache (xx min
+  // ago)" hint and to suppress the relay-traversal indicator on
+  // own-station resolves.
+  bool is_local = 4 [json_name = "is_local"];
+  bool from_cache = 5 [json_name = "from_cache"];
+
+  // Public profile projection. Same shape as /actor/profile so a
+  // single ActorRef component renders both local and remote
+  // actors. Sensitive fields (email, etc.) are NEVER populated on
+  // this surface.
+  peers_touch.model.actor.v1.ActorProfile profile = 6;
+
+  // Locator metadata kept for clients that want to display "this
+  // record was published with seq=N" in a debug overlay or that
+  // detect stale views on their own. Never required for normal UX.
+  uint64 locator_seq = 7 [json_name = "locator_seq"];
+  int64 issued_at_unix_ms = 8 [json_name = "issued_at_unix_ms"];
+  int64 expires_at_unix_ms = 9 [json_name = "expires_at_unix_ms"];
+
+  // Fingerprint of the home station's federation signing key.
+  // Identical for repeated resolves of the same handle while the
+  // actor's home station has not rotated keys — useful for clients
+  // that pin TOFU on top of Station-side TOFU as defence in depth.
+  string signing_key_kid = 10 [json_name = "signing_key_kid"];
+}

@@ -41,13 +41,43 @@ type message struct {
 }
 
 type member struct {
-	GroupID   string
-	ActorDID  string
-	Role      int32
-	Nickname  string
-	Muted     bool
-	JoinedAt  time.Time
-	InvitedBy string
+	GroupID    string
+	ActorDID   string
+	Role       int32
+	Nickname   string
+	Muted      bool
+	MutedUntil time.Time
+	JoinedAt   time.Time
+	InvitedBy  string
+}
+
+func memberFromModel(row memberModel) *member {
+	return &member{
+		GroupID:    row.GroupULID,
+		ActorDID:   row.ActorDID,
+		Role:       row.Role,
+		Nickname:   row.Nickname,
+		Muted:      row.Muted,
+		MutedUntil: derefTime(row.MutedUntil),
+		JoinedAt:   row.JoinedAt,
+		InvitedBy:  row.InvitedBy,
+	}
+}
+
+func memberToDomain(item *member) *domain.Member {
+	if item == nil {
+		return nil
+	}
+	return &domain.Member{
+		GroupID:    item.GroupID,
+		ActorDID:   item.ActorDID,
+		Role:       item.Role,
+		Nickname:   item.Nickname,
+		Muted:      item.Muted,
+		MutedUntil: item.MutedUntil,
+		JoinedAt:   item.JoinedAt,
+		InvitedBy:  item.InvitedBy,
+	}
 }
 
 type invitation struct {
@@ -63,6 +93,9 @@ type groupSetting struct {
 	IsMuted            bool
 	IsPinned           bool
 	ShowMemberNickname bool
+	AlertEnabled       bool
+	Background         string
+	ClearedAtUnixMs    int64
 }
 
 type offlineMessage struct {
@@ -271,15 +304,7 @@ func (s *service) GetMember(groupID, actorDID string) (*domain.Member, bool) {
 	if !ok {
 		return nil, false
 	}
-	return &domain.Member{
-		GroupID:   item.GroupID,
-		ActorDID:  item.ActorDID,
-		Role:      item.Role,
-		Nickname:  item.Nickname,
-		Muted:     item.Muted,
-		JoinedAt:  item.JoinedAt,
-		InvitedBy: item.InvitedBy,
-	}, true
+	return memberToDomain(item), true
 }
 
 func (s *service) AddMember(groupID, actorDID, inviterDID string) (*domain.Member, bool) {
@@ -287,15 +312,15 @@ func (s *service) AddMember(groupID, actorDID, inviterDID string) (*domain.Membe
 	if !ok {
 		return nil, false
 	}
-	return &domain.Member{
-		GroupID:   item.GroupID,
-		ActorDID:  item.ActorDID,
-		Role:      item.Role,
-		Nickname:  item.Nickname,
-		Muted:     item.Muted,
-		JoinedAt:  item.JoinedAt,
-		InvitedBy: item.InvitedBy,
-	}, true
+	return memberToDomain(item), true
+}
+
+func (s *service) UpdateMember(groupID, actorDID string, role *int32, muted *bool, mutedUntil *time.Time) (*domain.Member, bool) {
+	item, ok := s.updateMember(groupID, actorDID, role, muted, mutedUntil)
+	if !ok {
+		return nil, false
+	}
+	return memberToDomain(item), true
 }
 
 func (s *service) RemoveMember(groupID, actorDID string) bool {
@@ -322,15 +347,7 @@ func (s *service) ListMembers(groupID string, limit, offset int) ([]domain.Membe
 	items, total := s.listMembers(groupID, limit, offset)
 	out := make([]domain.Member, 0, len(items))
 	for _, item := range items {
-		out = append(out, domain.Member{
-			GroupID:   item.GroupID,
-			ActorDID:  item.ActorDID,
-			Role:      item.Role,
-			Nickname:  item.Nickname,
-			Muted:     item.Muted,
-			JoinedAt:  item.JoinedAt,
-			InvitedBy: item.InvitedBy,
-		})
+		out = append(out, *memberToDomain(&item))
 	}
 	return out, total
 }
@@ -444,15 +461,7 @@ func (s *service) UpdateNickname(groupID, actorDID, nickname string) (*domain.Me
 	if !ok {
 		return nil, false
 	}
-	return &domain.Member{
-		GroupID:   item.GroupID,
-		ActorDID:  item.ActorDID,
-		Role:      item.Role,
-		Nickname:  item.Nickname,
-		Muted:     item.Muted,
-		JoinedAt:  item.JoinedAt,
-		InvitedBy: item.InvitedBy,
-	}, true
+	return memberToDomain(item), true
 }
 
 func (s *service) GetSettings(groupID, actorDID string) domain.GroupSetting {
@@ -461,11 +470,21 @@ func (s *service) GetSettings(groupID, actorDID string) domain.GroupSetting {
 		IsMuted:            item.IsMuted,
 		IsPinned:           item.IsPinned,
 		ShowMemberNickname: item.ShowMemberNickname,
+		AlertEnabled:       item.AlertEnabled,
+		Background:         normalizedSettingBackground(item.Background),
+		ClearedAtUnixMs:    item.ClearedAtUnixMs,
 	}
 }
 
-func (s *service) UpdateSettings(groupID, actorDID string, muted, pinned, showNickname *bool) {
-	s.updateSettings(groupID, actorDID, muted, pinned, showNickname)
+func (s *service) UpdateSettings(groupID, actorDID string, muted, pinned, showNickname, alertEnabled *bool, background *string, clearedAtUnixMs *int64) {
+	s.updateSettings(groupID, actorDID, groupSettingsPatch{
+		muted:           muted,
+		pinned:          pinned,
+		showNickname:    showNickname,
+		alertEnabled:    alertEnabled,
+		background:      background,
+		clearedAtUnixMs: clearedAtUnixMs,
+	})
 }
 
 func (s *service) GetOfflineMessages(actorDID string, limit int) []domain.OfflineMessage {
@@ -523,15 +542,7 @@ func (s *service) bootstrapFromDB() error {
 		if s.members[item.GroupULID] == nil {
 			s.members[item.GroupULID] = make(map[string]*member)
 		}
-		s.members[item.GroupULID][item.ActorDID] = &member{
-			GroupID:   item.GroupULID,
-			ActorDID:  item.ActorDID,
-			Role:      item.Role,
-			Nickname:  item.Nickname,
-			Muted:     item.Muted,
-			JoinedAt:  item.JoinedAt,
-			InvitedBy: item.InvitedBy,
-		}
+		s.members[item.GroupULID][item.ActorDID] = memberFromModel(item)
 	}
 	var messages []messageModel
 	if err := s.db.Order("sent_at ASC").Find(&messages).Error; err != nil {
@@ -686,7 +697,7 @@ func (s *service) createGroup(ownerDID, name, description string) *group {
 			if err := tx.Create(&memberModel{
 				GroupULID: item.ID,
 				ActorDID:  ownerDID,
-				Role:      1,
+				Role:      domain.GroupRoleOwner,
 				JoinedAt:  now,
 				CreatedAt: now,
 				UpdatedAt: now,
@@ -728,7 +739,7 @@ func (s *service) createGroup(ownerDID, name, description string) *group {
 	s.members[item.ID][ownerDID] = &member{
 		GroupID:  item.ID,
 		ActorDID: ownerDID,
-		Role:     1,
+		Role:     domain.GroupRoleOwner,
 		JoinedAt: now,
 	}
 	if s.unread == nil {
@@ -1566,15 +1577,7 @@ func (s *service) getMember(groupID, actorDID string) (*member, bool) {
 	if s.db != nil {
 		var row memberModel
 		if err := s.db.Where("group_ulid = ? AND actor_did = ?", groupID, actorDID).First(&row).Error; err == nil {
-			return &member{
-				GroupID:   row.GroupULID,
-				ActorDID:  row.ActorDID,
-				Role:      row.Role,
-				Nickname:  row.Nickname,
-				Muted:     row.Muted,
-				JoinedAt:  row.JoinedAt,
-				InvitedBy: row.InvitedBy,
-			}, true
+			return memberFromModel(row), true
 		}
 	}
 	s.mu.RLock()
@@ -1597,7 +1600,7 @@ func (s *service) addMember(groupID, actorDID, inviterDID string) (*member, bool
 		item := &member{
 			GroupID:   groupID,
 			ActorDID:  actorDID,
-			Role:      3,
+			Role:      domain.GroupRoleMember,
 			JoinedAt:  now,
 			InvitedBy: inviterDID,
 		}
@@ -1662,7 +1665,7 @@ func (s *service) addMember(groupID, actorDID, inviterDID string) (*member, bool
 	item := &member{
 		GroupID:   groupID,
 		ActorDID:  actorDID,
-		Role:      3,
+		Role:      domain.GroupRoleMember,
 		JoinedAt:  now,
 		InvitedBy: inviterDID,
 	}
@@ -1671,6 +1674,71 @@ func (s *service) addMember(groupID, actorDID, inviterDID string) (*member, bool
 	s.groups[groupID].UpdatedAt = now
 	if s.unread[groupID] == nil {
 		s.unread[groupID] = make(map[string]int64)
+	}
+	copy := *item
+	return &copy, true
+}
+
+func (s *service) updateMember(groupID, actorDID string, role *int32, muted *bool, mutedUntil *time.Time) (*member, bool) {
+	now := time.Now()
+	if s.db != nil {
+		updates := map[string]interface{}{"updated_at": now}
+		if role != nil {
+			updates["role"] = *role
+		}
+		if muted != nil {
+			updates["muted"] = *muted
+		}
+		if mutedUntil != nil {
+			if mutedUntil.IsZero() {
+				updates["muted_until"] = nil
+			} else {
+				updates["muted_until"] = *mutedUntil
+			}
+		}
+		err := s.db.Transaction(func(tx *gorm.DB) error {
+			var existing memberModel
+			if err := tx.Where("group_ulid = ? AND actor_did = ?", groupID, actorDID).First(&existing).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&memberModel{}).
+				Where("group_ulid = ? AND actor_did = ?", groupID, actorDID).
+				Updates(updates).Error; err != nil {
+				return err
+			}
+			return tx.Create(&outboxModel{
+				EventID:   fmt.Sprintf("gce-%d", now.UnixNano()),
+				EventType: "group.member.updated",
+				TargetID:  groupID,
+				Payload:   fmt.Sprintf(`{"actor_did":"%s"}`, actorDID),
+				Status:    "pending",
+				CreatedAt: now,
+				UpdatedAt: now,
+			}).Error
+		})
+		if err != nil {
+			return nil, false
+		}
+		return s.getMember(groupID, actorDID)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	bucket := s.members[groupID]
+	item := bucket[actorDID]
+	if item == nil {
+		return nil, false
+	}
+	if role != nil {
+		item.Role = *role
+	}
+	if muted != nil {
+		item.Muted = *muted
+	}
+	if mutedUntil != nil {
+		item.MutedUntil = *mutedUntil
+	}
+	if group := s.groups[groupID]; group != nil {
+		group.UpdatedAt = now
 	}
 	copy := *item
 	return &copy, true
@@ -1730,15 +1798,7 @@ func (s *service) listMembers(groupID string, limit, offset int) ([]member, int)
 			if err := query.Order("joined_at ASC").Limit(limit).Offset(offset).Find(&rows).Error; err == nil {
 				out := make([]member, 0, len(rows))
 				for _, row := range rows {
-					out = append(out, member{
-						GroupID:   row.GroupULID,
-						ActorDID:  row.ActorDID,
-						Role:      row.Role,
-						Nickname:  row.Nickname,
-						Muted:     row.Muted,
-						JoinedAt:  row.JoinedAt,
-						InvitedBy: row.InvitedBy,
-					})
+					out = append(out, *memberFromModel(row))
 				}
 				return out, int(total)
 			}
@@ -2129,53 +2189,115 @@ func (s *service) getSettings(groupID, actorDID string) groupSetting {
 				IsMuted:            row.IsMuted,
 				IsPinned:           row.IsPinned,
 				ShowMemberNickname: row.ShowMemberNickname,
+				AlertEnabled:       boolValueOrDefault(row.AlertEnabled, true),
+				Background:         normalizedSettingBackground(row.Background),
+				ClearedAtUnixMs:    row.ClearedAtUnixMs,
 			}
 		}
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.settings[groupID] == nil {
-		return groupSetting{}
+		return groupSetting{AlertEnabled: true, Background: "default"}
 	}
-	return s.settings[groupID][actorDID]
+	item := s.settings[groupID][actorDID]
+	if item.Background == "" {
+		item.Background = "default"
+	}
+	if !item.AlertEnabled && item == (groupSetting{Background: "default"}) {
+		item.AlertEnabled = true
+	}
+	return item
 }
 
-func (s *service) updateSettings(groupID, actorDID string, muted, pinned, showNickname *bool) {
+type groupSettingsPatch struct {
+	muted           *bool
+	pinned          *bool
+	showNickname    *bool
+	alertEnabled    *bool
+	background      *string
+	clearedAtUnixMs *int64
+}
+
+func defaultGroupSetting() groupSetting {
+	return groupSetting{AlertEnabled: true, Background: "default"}
+}
+
+func applyGroupSettingsPatch(item groupSetting, patch groupSettingsPatch) groupSetting {
+	if item.Background == "" {
+		item.Background = "default"
+	}
+	if patch.muted != nil {
+		item.IsMuted = *patch.muted
+	}
+	if patch.pinned != nil {
+		item.IsPinned = *patch.pinned
+	}
+	if patch.showNickname != nil {
+		item.ShowMemberNickname = *patch.showNickname
+	}
+	if patch.alertEnabled != nil {
+		item.AlertEnabled = *patch.alertEnabled
+	}
+	if patch.background != nil {
+		item.Background = normalizedSettingBackground(*patch.background)
+	}
+	if patch.clearedAtUnixMs != nil {
+		item.ClearedAtUnixMs = *patch.clearedAtUnixMs
+	}
+	return item
+}
+
+func groupSettingsUpdateMap(patch groupSettingsPatch, now time.Time) map[string]interface{} {
+	updates := map[string]interface{}{"updated_at": now}
+	if patch.muted != nil {
+		updates["is_muted"] = *patch.muted
+	}
+	if patch.pinned != nil {
+		updates["is_pinned"] = *patch.pinned
+	}
+	if patch.showNickname != nil {
+		updates["show_member_nickname"] = *patch.showNickname
+	}
+	if patch.alertEnabled != nil {
+		updates["alert_enabled"] = *patch.alertEnabled
+	}
+	if patch.background != nil {
+		updates["background"] = normalizedSettingBackground(*patch.background)
+	}
+	if patch.clearedAtUnixMs != nil {
+		updates["cleared_at_unix_ms"] = *patch.clearedAtUnixMs
+	}
+	return updates
+}
+
+func (s *service) updateSettings(groupID, actorDID string, patch groupSettingsPatch) {
 	if s.db != nil {
 		var row settingModel
 		err := s.db.Where("group_ulid = ? AND actor_did = ?", groupID, actorDID).First(&row).Error
 		now := time.Now()
 		if err != nil {
-			item := groupSetting{}
-			if muted != nil {
-				item.IsMuted = *muted
+			if err != gorm.ErrRecordNotFound {
+				return
 			}
-			if pinned != nil {
-				item.IsPinned = *pinned
-			}
-			if showNickname != nil {
-				item.ShowMemberNickname = *showNickname
-			}
+			item := applyGroupSettingsPatch(defaultGroupSetting(), patch)
 			_ = s.db.Create(&settingModel{
 				GroupULID:          groupID,
 				ActorDID:           actorDID,
 				IsMuted:            item.IsMuted,
 				IsPinned:           item.IsPinned,
 				ShowMemberNickname: item.ShowMemberNickname,
+				AlertEnabled:       boolPtr(item.AlertEnabled),
+				Background:         item.Background,
+				ClearedAtUnixMs:    item.ClearedAtUnixMs,
 				CreatedAt:          now,
 				UpdatedAt:          now,
 			}).Error
 			return
 		}
-		updates := map[string]interface{}{"updated_at": now}
-		if muted != nil {
-			updates["is_muted"] = *muted
-		}
-		if pinned != nil {
-			updates["is_pinned"] = *pinned
-		}
-		if showNickname != nil {
-			updates["show_member_nickname"] = *showNickname
+		updates := groupSettingsUpdateMap(patch, now)
+		if len(updates) == 1 {
+			return
 		}
 		_ = s.db.Model(&settingModel{}).Where("id = ?", row.ID).Updates(updates).Error
 		return
@@ -2188,17 +2310,35 @@ func (s *service) updateSettings(groupID, actorDID string, muted, pinned, showNi
 	if s.settings[groupID] == nil {
 		s.settings[groupID] = make(map[string]groupSetting)
 	}
-	item := s.settings[groupID][actorDID]
-	if muted != nil {
-		item.IsMuted = *muted
+	item, ok := s.settings[groupID][actorDID]
+	if !ok {
+		item = defaultGroupSetting()
 	}
-	if pinned != nil {
-		item.IsPinned = *pinned
+	s.settings[groupID][actorDID] = applyGroupSettingsPatch(item, patch)
+}
+
+func normalizedSettingBackground(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "default"
 	}
-	if showNickname != nil {
-		item.ShowMemberNickname = *showNickname
+	switch trimmed {
+	case "default", "paper", "mint", "dusk", "calm", "graphite":
+		return trimmed
+	default:
+		return "default"
 	}
-	s.settings[groupID][actorDID] = item
+}
+
+func boolPtr(value bool) *bool {
+	return &value
+}
+
+func boolValueOrDefault(value *bool, fallback bool) bool {
+	if value == nil {
+		return fallback
+	}
+	return *value
 }
 
 func (s *service) updateNickname(groupID, actorDID, nickname string) (*member, bool) {

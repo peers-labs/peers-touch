@@ -57,7 +57,9 @@ fun AppletContainerView(
             is AppletContainerState.Running -> {
                 val session = appletManager.getApplet(appletId)
                 if (session != null) {
-                    val bundleUrl = session.manifest.load.entry
+                    val loadConfig = session.manifest.load.android
+                        ?: throw IllegalStateException("Applet ${session.manifest.id} has no android load config")
+                    val bundleUrl = loadConfig.entry
                     AndroidView(
                         factory = { ctx ->
                             lynxViewFactory.create(ctx, bundleUrl, session)

@@ -81,7 +81,7 @@ export function SafetyVerificationPanel({ localActorDid, localFingerprint, peerD
   const [safetyNumber, setSafetyNumber] = useState<string>('');
   // `tick` lets us re-evaluate the trust state after Mark / Reset
   // without lifting the entire ledger into React state. Cheap and
-  // keeps the localStorage-backed ledger as the source of truth.
+  // keeps the client-storage-backed ledger as the source of truth.
   const [tick, setTick] = useState(0);
 
   // Pull the peer's published bundle(s). Prefer the latest `device_id` row's
