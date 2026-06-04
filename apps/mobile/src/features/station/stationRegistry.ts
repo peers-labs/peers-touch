@@ -27,14 +27,10 @@ export interface StationStatusInput {
 
 const STATION_REGISTRY_KEY = 'peers-touch.mobile.station-registry.v1';
 
-export function loadStationRegistry(): StoredStationRegistry {
-  if (typeof window === 'undefined') return createEmptyStationRegistry();
-
+export async function loadStationRegistry(): Promise<StoredStationRegistry> {
   try {
-    const raw = window.localStorage.getItem(STATION_REGISTRY_KEY);
-    if (!raw) return createEmptyStationRegistry();
-
-    const parsed = JSON.parse(raw) as Partial<StoredStationRegistry>;
+    const parsed = await createMobileAppStorageRuntime().repositories.stationRegistry.readValue(STATION_REGISTRY_KEY) as Partial<StoredStationRegistry> | null;
+    if (!parsed) return createEmptyStationRegistry();
     const entries = Array.isArray(parsed.entries)
       ? parsed.entries.filter(isStationEntry).sort(compareRecentlyUsed)
       : [];
@@ -49,8 +45,12 @@ export function loadStationRegistry(): StoredStationRegistry {
   }
 }
 
-export function persistStationRegistry(registry: StoredStationRegistry) {
-  window.localStorage.setItem(STATION_REGISTRY_KEY, JSON.stringify(registry));
+export async function persistStationRegistry(registry: StoredStationRegistry): Promise<void> {
+  await createMobileAppStorageRuntime().repositories.stationRegistry.write(STATION_REGISTRY_KEY, registry);
+}
+
+export function emptyStationRegistry(): StoredStationRegistry {
+  return createEmptyStationRegistry();
 }
 
 export function addStationEntry(
@@ -183,3 +183,4 @@ function isStationEntry(value: unknown): value is MobileStationEntry {
     typeof entry.lastUsedAt === 'number'
   );
 }
+import { createMobileAppStorageRuntime } from '../../storage/mobileClientStorage';

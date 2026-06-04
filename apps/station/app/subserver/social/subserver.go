@@ -76,7 +76,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	s.commentSvc = application.NewCommentService(repos, s.momentSvc)
 	s.circleSvc = application.NewCircleService(repos)
 	s.timelineSvc = application.NewTimelineService(repos, s.momentSvc, resolver, groups)
-	s.relationshipSvc = application.NewRelationshipService(repos.Follows)
+	s.relationshipSvc = application.NewRelationshipService(repos.Follows, repos.Blocks)
 	s.statsSvc = application.NewStatsService(rds, repos)
 
 	log.Warn(ctx, "[social] CUSTOM_*/CIRCLE/GROUP audiences degrade until P3 wires real ActorResolver + GroupMembershipChecker")

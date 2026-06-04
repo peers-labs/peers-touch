@@ -46,10 +46,7 @@ fn token_or_unauthorized(
 }
 
 #[tauri::command]
-pub fn federation_get_self(
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Vec<u8>> {
+pub fn federation_get_self(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<Vec<u8>> {
     let token = match token_or_unauthorized(&state, &window) {
         Ok(t) => t,
         Err(err) => return err,
@@ -102,9 +99,6 @@ pub fn federation_health() -> AppResult<Vec<u8>> {
     }
 }
 
-fn map_station_error(
-    err: station_client::StationClientError,
-    context: &str,
-) -> AppResult<Vec<u8>> {
+fn map_station_error(err: station_client::StationClientError, context: &str) -> AppResult<Vec<u8>> {
     err.into_app_result(context)
 }

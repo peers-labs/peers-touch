@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
-import { Avatar, Button, Drawer, Empty, List, Spin, Typography } from 'antd';
+import { useEffect, useMemo } from 'react';
+import { Button, Drawer, Empty, List, Spin, Typography } from 'antd';
 import { Bell, Check, CheckCheck, MessageCircle, Trash2, UserCheck, UserPlus } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
+import { MobileAvatar } from './MobileAvatar';
 import {
   useSocialStore,
 } from '../features/social/socialStore';
@@ -25,6 +26,9 @@ interface MobileNotificationCenterProps {
 export function MobileNotificationCenter({ open, onClose, onOpenChat, onOpenContacts }: MobileNotificationCenterProps) {
   const { t } = useMobileI18n();
   const notifications = useSocialStore((state) => state.notifications);
+  const friendRequests = useSocialStore((state) => state.friendRequests);
+  const peerProfiles = useSocialStore((state) => state.peerProfiles);
+  const conversationSettings = useSocialStore((state) => state.conversationSettings);
   const loading = useSocialStore((state) => state.loading);
   const markNotificationRead = useSocialStore((state) => state.markNotificationRead);
   const markAllNotificationsRead = useSocialStore((state) => state.markAllNotificationsRead);
@@ -32,8 +36,23 @@ export function MobileNotificationCenter({ open, onClose, onOpenChat, onOpenCont
   const loadMoreNotifications = useSocialStore((state) => state.loadMoreNotifications);
   const notificationHasMore = useSocialStore((state) => state.notificationHasMore);
   const selectSession = useSocialStore((state) => state.selectSession);
-  const unread = useMemo(() => projectUnreadNotifications(notifications), [notifications]);
+  const loadPeerProfile = useSocialStore((state) => state.loadPeerProfile);
+  const visibleNotifications = useMemo(
+    () => notifications.filter((notification) => !notificationSuppressedBySettings(notification, conversationSettings)),
+    [conversationSettings, notifications],
+  );
+  const unread = useMemo(() => projectUnreadNotifications(visibleNotifications), [visibleNotifications]);
   const unreadCount = useMemo(() => unread.length, [unread]);
+  const friendRequestNames = useMemo(() => {
+    return friendRequests.reduce<Record<string, { name: string; avatar: string }>>((next, request) => {
+      const name = request.senderDisplayName || request.receiverDisplayName;
+      const avatar = request.senderAvatar || request.receiverAvatar;
+      [request.requestId, request.id, request.senderDid, request.senderId].filter(Boolean).forEach((key) => {
+        next[String(key)] = { name, avatar };
+      });
+      return next;
+    }, {});
+  }, [friendRequests]);
 
   const openNotification = async (notification: SocialNotification) => {
     if (notification.status === 1) {
@@ -75,18 +94,21 @@ export function MobileNotificationCenter({ open, onClose, onOpenChat, onOpenCont
       }
     >
       <Spin spinning={loading && notifications.length === 0}>
-        {notifications.length === 0 ? (
+        {visibleNotifications.length === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.notifications.empty')} />
         ) : (
           <List
             className="notification-list"
-            dataSource={notifications}
+            dataSource={visibleNotifications}
             renderItem={(notification) => (
               <NotificationItem
                 notification={notification}
                 onDelete={deleteNotification}
                 onMarkRead={markNotificationRead}
                 onOpen={openNotification}
+                onResolveActor={loadPeerProfile}
+                peerProfiles={peerProfiles}
+                friendRequestNames={friendRequestNames}
                 t={t}
               />
             )}
@@ -107,22 +129,36 @@ function NotificationItem({
   onDelete,
   onMarkRead,
   onOpen,
+  onResolveActor,
+  peerProfiles,
+  friendRequestNames,
   t,
 }: {
   notification: SocialNotification;
   onDelete: (notificationId: string) => Promise<void>;
   onMarkRead: (notificationId: string) => Promise<void>;
   onOpen: (notification: SocialNotification) => Promise<void>;
+  onResolveActor: (peerDid: string) => Promise<void>;
+  peerProfiles: ReturnType<typeof useSocialStore.getState>['peerProfiles'];
+  friendRequestNames: Record<string, { name: string; avatar: string }>;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const unread = notification.status === 1;
   const Icon = notificationIcon(notification.type);
   const title = notification.title || notificationTitle(notification, t);
-  const body = notification.body || notificationBody(notification, t);
+  const actorKey = notificationActorKey(notification);
+  const actorProfile = actorKey ? peerProfiles[actorKey] : null;
+  const requestDisplay = notificationRequestDisplay(notification, friendRequestNames);
+  const actorDisplayName = requestDisplay?.name || actorProfile?.displayName || actorProfile?.username || notificationBody(notification, t);
+  const body = shouldPreferActorDisplay(notification) ? actorDisplayName : (notification.body || actorDisplayName);
+
+  useEffect(() => {
+    if (actorKey && !(actorKey in peerProfiles)) void onResolveActor(actorKey);
+  }, [actorKey, onResolveActor, peerProfiles]);
 
   return (
     <List.Item className={`notification-item ${unread ? 'unread' : ''}`} onClick={() => onOpen(notification)}>
-      <Avatar className="notification-icon" icon={<Icon size={16} />} />
+      <MobileAvatar className="notification-icon" src={requestDisplay?.avatar || actorProfile?.avatar} icon={<Icon size={16} />} />
       <div className="notification-copy">
         <div className="notification-title-row">
           <Text strong={unread} ellipsis>{title}</Text>
@@ -176,6 +212,19 @@ function isFriendRequestNotification(notification: SocialNotification): boolean 
   return notification.type === NOTIFICATION_TYPE_FRIEND_REQUEST || notification.targetType === 'friend_request';
 }
 
+function notificationSuppressedBySettings(
+  notification: SocialNotification,
+  conversationSettings: ReturnType<typeof useSocialStore.getState>['conversationSettings'],
+): boolean {
+  const sessionId = resolveSessionId(notification);
+  const settings = sessionId ? conversationSettings[sessionId] : undefined;
+  return Boolean(settings?.isMuted || settings?.alertEnabled === false);
+}
+
+function shouldPreferActorDisplay(notification: SocialNotification): boolean {
+  return isFriendRequestNotification(notification) || notification.type === NOTIFICATION_TYPE_FRIEND_ACCEPTED;
+}
+
 function notificationIcon(type: number) {
   if (type === NOTIFICATION_TYPE_FRIEND_REQUEST) return UserPlus;
   if (type === NOTIFICATION_TYPE_FRIEND_ACCEPTED) return UserCheck;
@@ -191,7 +240,42 @@ function notificationTitle(notification: SocialNotification, t: (key: string) =>
 }
 
 function notificationBody(notification: SocialNotification, t: (key: string) => string): string {
-  return notification.metadata.actor_display_name || notification.actorId || t('mobile.notifications.openHint');
+  return notification.metadata.actor_display_name
+    || notification.metadata.actorDisplayName
+    || notification.metadata.sender_display_name
+    || notification.metadata.senderDisplayName
+    || notification.metadata.username
+    || t('mobile.notifications.openHint');
+}
+
+function notificationActorKey(notification: SocialNotification): string {
+  return notification.metadata.actor_did
+    || notification.metadata.actorDid
+    || notification.metadata.sender_did
+    || notification.metadata.senderDid
+    || notification.metadata.sender_id
+    || notification.metadata.senderId
+    || notification.actorId
+    || '';
+}
+
+function notificationRequestDisplay(
+  notification: SocialNotification,
+  friendRequestNames: Record<string, { name: string; avatar: string }>,
+): { name: string; avatar: string } | null {
+  const keys = [
+    notification.targetId,
+    notification.metadata.request_id,
+    notification.metadata.requestId,
+    notification.metadata.sender_did,
+    notification.metadata.senderDid,
+    notification.actorId,
+  ];
+  for (const key of keys) {
+    const display = key ? friendRequestNames[key] : null;
+    if (display?.name) return display;
+  }
+  return null;
 }
 
 function formatRelativeTime(value: number, t: (key: string, params?: Record<string, string | number>) => string): string {

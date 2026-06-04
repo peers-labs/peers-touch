@@ -18,16 +18,19 @@ static STATION_REGISTRY: OnceLock<StationRegistry> = OnceLock::new();
 /// Initialize the global station registry. Must be called once during bootstrap
 /// after the config directory is resolved.
 pub(crate) fn init_station_registry(config_dir: &std::path::Path) {
-    if STATION_REGISTRY.set(StationRegistry::new(config_dir)).is_err() {
+    if STATION_REGISTRY
+        .set(StationRegistry::new(config_dir))
+        .is_err()
+    {
         tracing::warn!("station_registry: already initialized, ignoring duplicate init");
     }
 }
 
 /// Access the global station registry. Panics if not yet initialized.
 pub(crate) fn station_registry() -> &'static StationRegistry {
-    STATION_REGISTRY
-        .get()
-        .expect("StationRegistry not initialized — init_station_registry must be called during bootstrap")
+    STATION_REGISTRY.get().expect(
+        "StationRegistry not initialized — init_station_registry must be called during bootstrap",
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -987,9 +990,7 @@ pub(crate) fn put_presigned_url(
 ///
 /// Returns `(online, label, peer_id, peers_count)`. On any network or parse
 /// error the station is reported as offline with `None` metadata fields.
-pub(crate) fn probe_station(
-    url: &str,
-) -> (bool, Option<String>, Option<String>, Option<u32>) {
+pub(crate) fn probe_station(url: &str) -> (bool, Option<String>, Option<String>, Option<u32>) {
     let client = match Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()

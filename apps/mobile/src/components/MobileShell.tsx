@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Badge } from 'antd';
-import { Bell, MessageCircle, Users, Settings } from 'lucide-react';
+import { MessageCircle, Users, Settings } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
 import { ChatPage } from '../pages/ChatPage';
@@ -8,11 +8,15 @@ import { ContactsPage } from '../pages/ContactsPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { useAuthStore } from '../features/auth/authStore';
 import type { MobileAuthSession } from '../features/auth/authSession';
-import { projectConversations, projectPendingInboundRequests, projectUnreadNotificationCount } from '../features/social/socialProjection';
+import { projectConversations, projectPendingInboundRequests } from '../features/social/socialProjection';
 import { useSocialStore } from '../features/social/socialStore';
 import { useSocialRuntime } from '../features/social/useSocialRuntime';
 import type { StoredStationRegistry } from '../features/station/stationRegistry';
-import { MobileNotificationCenter } from './MobileNotificationCenter';
+import {
+  visibleChatUnread,
+} from '../features/chat/chatActionState';
+import { projectGroupConversations } from '../features/group/groupProjection';
+import { useGroupStore } from '../features/group/groupStore';
 
 type TabId = 'chat' | 'contacts' | 'settings';
 
@@ -56,7 +60,6 @@ export function MobileShell(props: MobileShellProps) {
   const { t } = useMobileI18n();
   const authSession = useAuthStore((state) => state.session);
   const [activeTab, setActiveTab] = useState<TabId>('chat');
-  const [notificationOpen, setNotificationOpen] = useState(false);
   useSocialRuntime(authSession);
 
   const sessions = useSocialStore((state) => state.sessions);
@@ -64,21 +67,38 @@ export function MobileShell(props: MobileShellProps) {
   const currentUserDid = useSocialStore((state) => state.currentUserDid);
   const peerOnline = useSocialStore((state) => state.peerOnline);
   const friendRequests = useSocialStore((state) => state.friendRequests);
-  const notifications = useSocialStore((state) => state.notifications);
-  const unreadCounts = useSocialStore((state) => state.unreadCounts);
+  const friendConversationSettings = useSocialStore((state) => state.conversationSettings);
+  const groups = useGroupStore((state) => state.groups);
+  const groupMessages = useGroupStore((state) => state.messages);
+  const groupUnreadCounts = useGroupStore((state) => state.unreadCounts);
+  const groupSettings = useGroupStore((state) => state.settings);
   const conversations = useMemo(
     () => projectConversations({ sessions, messages, currentUserDid, peerOnline }),
     [currentUserDid, messages, peerOnline, sessions],
+  );
+  const groupConversations = useMemo(
+    () => projectGroupConversations({ groups, messages: groupMessages, unreadCounts: groupUnreadCounts }),
+    [groupMessages, groupUnreadCounts, groups],
   );
   const inboundRequests = useMemo(
     () => projectPendingInboundRequests(friendRequests, currentUserDid),
     [currentUserDid, friendRequests],
   );
-  const notificationBadge = useMemo(
-    () => projectUnreadNotificationCount({ notifications, unreadTotal: unreadCounts.total }),
-    [notifications, unreadCounts.total],
+  const chatBadge = conversations.reduce(
+    (total, conversation) =>
+      total + visibleChatUnread(conversation.unread, {
+        muted: Boolean(friendConversationSettings[conversation.session.ulid]?.isMuted),
+        alertEnabled: friendConversationSettings[conversation.session.ulid]?.alertEnabled !== false,
+      }),
+    0,
+  ) + groupConversations.reduce(
+    (total, conversation) =>
+      total + visibleChatUnread(conversation.unread, {
+        muted: Boolean(groupSettings[conversation.group.ulid]?.isMuted),
+        alertEnabled: groupSettings[conversation.group.ulid]?.alertEnabled !== false,
+      }),
+    0,
   );
-  const chatBadge = conversations.reduce((total, conversation) => total + conversation.unread, 0);
   const contactBadge = inboundRequests.length;
 
   const switchTab = (tabId: TabId) => {
@@ -87,23 +107,7 @@ export function MobileShell(props: MobileShellProps) {
 
   return (
     <div className="mobile-shell">
-      <button
-        className="shell-notification-button"
-        type="button"
-        onClick={() => setNotificationOpen(true)}
-        aria-label={t('mobile.notifications.title')}
-      >
-        <Badge count={notificationBadge} size="small" offset={[-2, 2]}>
-          <Bell size={20} />
-        </Badge>
-      </button>
       <div className="mobile-content">{renderPage(activeTab, props, authSession, () => switchTab('chat'))}</div>
-      <MobileNotificationCenter
-        open={notificationOpen}
-        onClose={() => setNotificationOpen(false)}
-        onOpenChat={() => switchTab('chat')}
-        onOpenContacts={() => switchTab('contacts')}
-      />
 
       <nav className="mobile-tabbar">
         {tabs.map((tab) => {

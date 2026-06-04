@@ -88,8 +88,8 @@ func NewMomentService(
 //     - CIRCLE: confirm the author owns the target circle.
 //     - GROUP: confirm the author is a member of the target group.
 //     - CUSTOM_*: resolve actor DIDs and verify the author isn't
-//       self-included (already covered by ValidateForAuthor — kept
-//       here as a defense-in-depth assertion).
+//     self-included (already covered by ValidateForAuthor — kept
+//     here as a defense-in-depth assertion).
 //  3. Convert to a domain.Post.
 //  4. Open a transaction and:
 //     a. Insert the post via the appropriate repo (panics on misroute).
@@ -319,6 +319,13 @@ func (s *MomentService) GetMoment(ctx context.Context, postIDStr string, viewerI
 	if p, err := s.repos.PublicPosts.GetByID(ctx, postID); err != nil {
 		return nil, err
 	} else if p != nil {
+		viewer, err := buildViewerForAuthors(ctx, viewerID, s.repos, s.resolver.ResolveID, s.groups, []uint64{p.AuthorID})
+		if err != nil {
+			return nil, fmt.Errorf("build viewer: %w", err)
+		}
+		if ok, _ := domain.CanRead(viewer, p.AuthorID, p.Audience, p.IsDeleted()); !ok {
+			return nil, nil
+		}
 		return s.hydratePost(ctx, p, viewerID)
 	}
 
@@ -331,7 +338,7 @@ func (s *MomentService) GetMoment(ctx context.Context, postIDStr string, viewerI
 	}
 
 	// Third defense line: re-evaluate CanRead in pure form.
-	viewer, err := buildViewer(ctx, viewerID, s.repos, s.resolver.ResolveID, s.groups)
+	viewer, err := buildViewerForAuthors(ctx, viewerID, s.repos, s.resolver.ResolveID, s.groups, []uint64{priv.AuthorID})
 	if err != nil {
 		return nil, fmt.Errorf("build viewer: %w", err)
 	}
@@ -387,7 +394,10 @@ func (s *MomentService) ListByAuthor(ctx context.Context, authorID, viewerID uin
 
 	merged, hasMore := mergePostsByCreatedAtDesc(pubPosts, privPosts, limit)
 
-	viewer, _ := buildViewer(ctx, viewerID, s.repos, s.resolver.ResolveID, s.groups)
+	viewer, err := buildViewerForAuthors(ctx, viewerID, s.repos, s.resolver.ResolveID, s.groups, postAuthorIDs(merged))
+	if err != nil {
+		return nil, "", false, fmt.Errorf("build viewer: %w", err)
+	}
 	readable := merged[:0]
 	for _, p := range merged {
 		if ok, _ := domain.CanRead(viewer, p.AuthorID, p.Audience, p.IsDeleted()); !ok {
@@ -403,6 +413,19 @@ func (s *MomentService) ListByAuthor(ctx context.Context, authorID, viewerID uin
 		nextCursor = domain.Cursor{LastID: last.ID, CreatedAt: last.CreatedAt}.Encode()
 	}
 	return out, nextCursor, hasMore, nil
+}
+
+func postAuthorIDs(posts []*domain.Post) []uint64 {
+	if len(posts) == 0 {
+		return nil
+	}
+	authorIDs := make([]uint64, 0, len(posts))
+	for _, p := range posts {
+		if p != nil {
+			authorIDs = append(authorIDs, p.AuthorID)
+		}
+	}
+	return authorIDs
 }
 
 // hydratePosts is the batch sibling of `hydratePost` — use it whenever

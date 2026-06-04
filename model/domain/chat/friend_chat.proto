@@ -206,6 +206,36 @@ message GetSessionsResponse {
   int32 total = 2;
 }
 
+message FriendConversationSettings {
+  string session_ulid = 1;
+  bool is_muted = 2;
+  bool is_pinned = 3;
+  bool alert_enabled = 4;
+  string background = 5;
+  int64 cleared_at_unix_ms = 6;
+}
+
+message GetFriendConversationSettingsRequest {
+  string session_ulid = 1;
+}
+
+message GetFriendConversationSettingsResponse {
+  FriendConversationSettings settings = 1;
+}
+
+message UpdateFriendConversationSettingsRequest {
+  string session_ulid = 1;
+  optional bool is_muted = 2;
+  optional bool is_pinned = 3;
+  optional bool alert_enabled = 4;
+  optional string background = 5;
+  optional int64 cleared_at_unix_ms = 6;
+}
+
+message UpdateFriendConversationSettingsResponse {
+  FriendConversationSettings settings = 1;
+}
+
 message MarkReadRequest {
   string session_ulid = 1;
   string last_read_ulid = 2;
@@ -346,6 +376,32 @@ message BlockUserRequest {
 }
 
 message BlockUserResponse {
+  Friend friend = 1;
+}
+
+message UnblockUserRequest {
+  string target_did = 1;
+}
+
+message UnblockUserResponse {
+  bool success = 1;
+}
+
+message ListBlockedUsersRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+}
+
+message ListBlockedUsersResponse {
+  repeated Friend blocked_users = 1;
+  int32 total = 2;
+}
+
+message GetFriendshipStatusRequest {
+  string target_did = 1;
+}
+
+message GetFriendshipStatusResponse {
   Friend friend = 1;
 }
 

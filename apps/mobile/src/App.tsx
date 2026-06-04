@@ -18,6 +18,7 @@ import {
   activateStationEntry,
   addStationEntry,
   buildStationUrl,
+  emptyStationRegistry,
   loadStationRegistry,
   persistStationRegistry,
   removeStationEntry,
@@ -31,7 +32,7 @@ type LaunchState = 'station-selection' | 'access-gate-chain' | 'shell';
 function MobileAppRoot() {
   const { t } = useMobileI18n();
   const [launchState, setLaunchState] = useState<LaunchState>('station-selection');
-  const [stationRegistry, setStationRegistry] = useState<StoredStationRegistry>(() => loadStationRegistry());
+  const [stationRegistry, setStationRegistry] = useState<StoredStationRegistry>(() => emptyStationRegistry());
   const [stationError, setStationError] = useState<string | null>(null);
   const [stationChecking, setStationChecking] = useState(false);
   const [verifyingStationUrls, setVerifyingStationUrls] = useState<string[]>([]);
@@ -49,6 +50,12 @@ function MobileAppRoot() {
 
   useEffect(() => {
     let mounted = true;
+
+    loadStationRegistry()
+      .then((registry) => {
+        if (mounted) setStationRegistry(registry);
+      })
+      .catch(() => undefined);
 
     restoreSession()
       .then((session) => {
@@ -73,6 +80,12 @@ function MobileAppRoot() {
   }, [authSession, clearSession, setAuthSession, stationRegistry.activeUrl]);
 
   useEffect(() => {
+    if (!authSession || !stationRegistry.activeUrl || authSession.stationUrl !== stationRegistry.activeUrl) return;
+    if (launchState !== 'station-selection') return;
+    void startAccessGateChain(authSession);
+  }, [authSession, launchState, stationRegistry.activeUrl]);
+
+  useEffect(() => {
     if (launchState !== 'station-selection') return;
 
     for (const entry of stationRegistry.entries) {
@@ -88,7 +101,7 @@ function MobileAppRoot() {
               label: probe.label,
               online: probe.online,
             });
-            persistStationRegistry(next);
+            void persistStationRegistry(next);
             return next;
           });
         })
@@ -235,7 +248,7 @@ function MobileAppRoot() {
         }
         setStationError(null);
         setStationRegistry(next.registry);
-        persistStationRegistry(next.registry);
+        await persistStationRegistry(next.registry);
         setStationChecking(false);
         return true;
       }}
@@ -243,13 +256,13 @@ function MobileAppRoot() {
         setStationError(null);
         const next = activateStationEntry(stationRegistry, url);
         setStationRegistry(next);
-        persistStationRegistry(next);
+        void persistStationRegistry(next);
       }}
       onRemoveStation={(url) => {
         const next = removeStationEntry(stationRegistry, url);
         setStationError(null);
         setStationRegistry(next);
-        persistStationRegistry(next);
+        void persistStationRegistry(next);
       }}
       onContinue={async () => {
         if (!stationRegistry.activeUrl || stationChecking) return;
@@ -268,7 +281,7 @@ function MobileAppRoot() {
           online: probe.online,
         });
         setStationRegistry(next);
-        persistStationRegistry(next);
+        await persistStationRegistry(next);
         setStationChecking(false);
         await startAccessGateChain(authSession?.stationUrl === stationRegistry.activeUrl ? authSession : null);
       }}
