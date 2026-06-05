@@ -8,6 +8,7 @@
 
 | 文档 | 定位 |
 |---|---|
+| [agent-kernel-2/README.md](./agent-kernel-2/README.md) | **目标重构架构** — Agent Kernel 2.0 的模块设计、数据模型、Desktop UI/UX 集成、迁移阶段 |
 | [agent-self-growth-architecture.md](./agent-self-growth-architecture.md) | **peers-touch 架构设计** — 自成长生命周期、领域对象、服务拓扑、Turn 执行闭环、成长评估机制 |
 | [hermes-agent-self-improving-analysis.md](./hermes-agent-self-improving-analysis.md) | **Hermes 参考分析** — hermes-agent 的七层架构、工程实现细节，作为设计参考 |
 
