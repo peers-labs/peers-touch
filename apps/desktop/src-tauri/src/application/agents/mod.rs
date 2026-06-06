@@ -352,6 +352,12 @@ pub fn agents_list_sessions(actor_id: &str, input: AgentIdInput) -> AppResult<St
 mod tests {
     use super::*;
 
+    fn status_json(result: AppResult<StubPayload>) -> Value {
+        assert!(result.ok, "expected ok result: {:?}", result.error);
+        let payload = result.data.expect("payload");
+        serde_json::from_str(&payload.status).expect("json")
+    }
+
     #[test]
     fn agent_stores_isolate_actors() {
         let a = "actor-agent-a";
@@ -381,5 +387,70 @@ mod tests {
             .map(|a| a.len())
             .unwrap_or(0);
         assert_eq!(n2, 2);
+    }
+
+    #[test]
+    fn agents_reorder_persists_pin_sections_and_order() {
+        let actor = "actor-agent-reorder";
+        let one = status_json(agents_create(
+            actor,
+            AgentCreateInput {
+                data: json!({ "name": "alpha", "title": "Alpha" }),
+            },
+        ));
+        let two = status_json(agents_create(
+            actor,
+            AgentCreateInput {
+                data: json!({ "name": "beta", "title": "Beta" }),
+            },
+        ));
+        let three = status_json(agents_create(
+            actor,
+            AgentCreateInput {
+                data: json!({ "name": "gamma", "title": "Gamma" }),
+            },
+        ));
+
+        let one_id = one["id"].as_str().unwrap().to_string();
+        let two_id = two["id"].as_str().unwrap().to_string();
+        let three_id = three["id"].as_str().unwrap().to_string();
+        status_json(agents_reorder(
+            actor,
+            AgentsReorderInput {
+                items: vec![
+                    crate::contracts::AgentOrderItemInput {
+                        id: "agent-1".to_string(),
+                        pinned: true,
+                        sort_order: 1,
+                    },
+                    crate::contracts::AgentOrderItemInput {
+                        id: two_id.clone(),
+                        pinned: true,
+                        sort_order: 0,
+                    },
+                    crate::contracts::AgentOrderItemInput {
+                        id: one_id.clone(),
+                        pinned: false,
+                        sort_order: 0,
+                    },
+                    crate::contracts::AgentOrderItemInput {
+                        id: three_id.clone(),
+                        pinned: false,
+                        sort_order: 1,
+                    },
+                ],
+            },
+        ));
+
+        let listed = status_json(agents_list(actor));
+        let agents = listed["agents"].as_array().unwrap();
+        let names = agents
+            .iter()
+            .map(|agent| agent["name"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["beta", "assistant", "alpha", "gamma"]);
+        assert_eq!(agents[0]["pinned"], true);
+        assert_eq!(agents[2]["pinned"], false);
+        assert_eq!(agents[3]["sortOrder"], 1);
     }
 }
