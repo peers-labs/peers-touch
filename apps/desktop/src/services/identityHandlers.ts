@@ -1,6 +1,6 @@
 import { registerIdentityHandler } from './identityPipeline';
 import { AuthCommandException } from './desktop_api';
-import { useSessionStore } from '../store/session';
+import { currentAuthenticatedActorId, useSessionStore } from '../store/session';
 import { useSocialChatStore } from '../store/socialChat';
 import { useAccountIdentityStore } from '../store/accountIdentity';
 import { useSidebarStore } from '../store/sidebar';
@@ -18,6 +18,7 @@ registerIdentityHandler('clear-zustand-stores', async (payload) => {
     return;
   }
   await useSessionStore.getState().hydrate(actorId);
+  if (!actorId || currentAuthenticatedActorId() !== actorId) return;
   await useSocialChatStore.getState().hydrate(actorId);
   await useAccountIdentityStore.getState().hydrate(actorId);
   await useSidebarStore.getState().hydrate(actorId);
