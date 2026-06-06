@@ -1796,10 +1796,10 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     try {
       const profile = await api.actorGetMyProfile();
       const profileDid = profile?.id?.trim() || null;
-      set((state) => ({
+      set({
         currentUserProfile: profile,
-        currentUserDid: did,
-        conversationLocalState: loadConversationLocalState(did),
+        currentUserDid: profileDid,
+        conversationLocalState: loadConversationLocalState(profileDid),
       });
     } catch (error) {
       log.error('socialChat', 'loadCurrentUserProfile failed', error);
