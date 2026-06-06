@@ -12,20 +12,35 @@ STATION_URL="${PT_STATION_URL:-http://127.0.0.1:18080}"
 STATION_PORT="${PT_STATION_PORT:-18080}"
 STATION_MODE="${PT_STATION_MODE:-local}"
 STATION_CHECK_URL="$STATION_URL/api/oauth/providers"
+DEPLOY_SCRIPT="$PROJECT_ROOT/tooling/scripts/deploy/deploy.sh"
 
 station_is_ready() {
   curl -fsS -m 2 "$STATION_CHECK_URL" >/dev/null 2>&1
 }
 
 if [[ "$STATION_MODE" == "remote" ]]; then
-  echo "[INFO] Station mode: remote"
-  echo "       URL: $STATION_URL"
-  if station_is_ready; then
-    echo "       Status: ready"
-  else
-    echo "       Status: NOT reachable"
+  deploy_env="${PT_STATION_DEPLOY_ENV:-}"
+  if [[ -z "$deploy_env" ]]; then
+    echo "[ERROR] Station mode is remote, but PT_STATION_DEPLOY_ENV is not set."
+    echo "        make station now means: deploy/restart/check remote Station."
+    echo "        Set it in the active profile, for example:"
+    echo "          PT_STATION_DEPLOY_ENV=station-1"
+    echo ""
+    echo "        If you only want a health probe, run:"
+    echo "          make station-check"
     exit 1
   fi
+
+  branch="${PT_STATION_DEPLOY_BRANCH:-$(git -C "$PROJECT_ROOT" branch --show-current 2>/dev/null || echo main)}"
+  echo "[INFO] Station mode: remote ready closure"
+  echo "       URL        : $STATION_URL"
+  echo "       Deploy env : $deploy_env"
+  echo "       Branch     : $branch"
+  echo ""
+
+  BRANCH="$branch" /bin/bash "$DEPLOY_SCRIPT" "$deploy_env"
+  /bin/bash "$SCRIPT_DIR/station-check.sh"
+  echo "[OK] Remote Station ready: $STATION_URL"
   exit 0
 fi
 

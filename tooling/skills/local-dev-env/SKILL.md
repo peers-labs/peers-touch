@@ -15,7 +15,8 @@ description: >
 Prepare the development environment so the user can simply run:
 
 ```bash
-make station       # Start or verify Station
+make station       # Ready Station (local start / remote deploy)
+make relay         # Ready Relay (remote deploy)
 make desktop       # Start Desktop (Tauri app)
 make desktop-web   # Start Desktop (browser)
 make mobile        # Start Mobile iOS Simulator
@@ -33,7 +34,7 @@ without any additional flags.
 ### Profile
 
 A profile is a `.env` file at `.local/dev/profiles/<name>.env`.
-One profile is **active** per worktree (symlinked from `.local/dev/profile.env`).
+One profile is **active** per worktree (symlinked from `.local/dev/active/<worktree-name>.env`).
 All `make` commands read the active profile automatically.
 
 ### Slot
@@ -55,12 +56,20 @@ Default slot = 0.
 ### Station Mode
 
 - `local` — `make station` compiles and runs Station from source
-- `remote` — `make station` only does a health check against the remote URL
+- `remote` — `make station` runs the remote ready closure:
+  pull code via deploy env, build, restart, then health-check. A remote Station
+  profile MUST set `PT_STATION_DEPLOY_ENV`.
+
+Use `make station-check` only when the user explicitly wants health-check only.
 
 ### Relay Mode
 
-- `local` — start relay locally (future)
-- `remote` — relay is running elsewhere; configure via `PT_RELAY_URL`
+- `local` — local relay runner is not implemented yet
+- `remote` — `make relay` runs the remote ready closure:
+  pull code via deploy env, build, restart, then health-check. A remote Relay
+  profile MUST set `PT_RELAY_DEPLOY_ENV`.
+
+Use `make relay-check` only when the user explicitly wants health-check only.
 
 ## Commands Reference
 
@@ -73,6 +82,13 @@ make config                                 # Show active config
 
 # Services
 make station                                # Start/verify Station
+make station-check                          # Health-check Station only
+make station-status                         # Station deployment/runtime status
+make station-logs                           # Station logs
+make relay                                  # Prepare Relay
+make relay-check                            # Health-check Relay only
+make relay-status                           # Relay deployment/runtime status
+make relay-logs                             # Relay logs
 make desktop                                # Desktop Tauri app
 make desktop-web                            # Desktop in browser
 make mobile                                 # Mobile iOS Simulator
@@ -99,10 +115,16 @@ PT_STATION_NAME=<label>
 PT_STATION_URL=http://<host>:<port>
 PT_STATION_PORT=<port>
 PT_STATION_DB_NAME=<db_name>
+PT_STATION_DEPLOY_ENV=<deploy-env-name>
+PT_STATION_DEPLOY_BRANCH=<optional-branch>
+PT_STATION_HEALTH_URL=<optional-health-url>
 
 # Relay
 PT_RELAY_MODE=local|remote
 PT_RELAY_URL=<url>
+PT_RELAY_DEPLOY_ENV=<deploy-env-name>
+PT_RELAY_DEPLOY_BRANCH=<optional-branch>
+PT_RELAY_HEALTH_URL=<optional-health-url>
 PT_RELAY_MULTIADDR=<multiaddr>
 PT_BOOTSTRAP_NODES=<multiaddr>
 
@@ -142,12 +164,13 @@ Then edit `.local/dev/profiles/remote-s1.env`:
 PT_STATION_MODE=remote
 PT_STATION_URL=http://10.37.246.80:18080
 PT_STATION_PORT=18080
+PT_STATION_DEPLOY_ENV=station-1
 PT_MOBILE_DEFAULT_STATION_URL=http://10.37.246.80:18080
 ```
 
 ```bash
 make profile PROFILE=remote-s1
-make station   # Just verifies remote is reachable
+make station   # Deploy/restart/check remote Station
 make desktop   # Connects to 10.37.246.80
 make mobile    # Connects to 10.37.246.80
 ```
@@ -169,6 +192,7 @@ Edit the active profile:
 ```env
 PT_RELAY_MODE=remote
 PT_RELAY_URL=http://10.37.118.48:18081
+PT_RELAY_DEPLOY_ENV=relay-1
 PT_BOOTSTRAP_NODES=/ip4/10.37.118.48/tcp/4001/p2p/<relay-peer-id>
 ```
 
@@ -198,20 +222,45 @@ When the user says "set up environment for X" or "I want to debug against Y":
 ## Remote Deployment
 
 Deploy code to remote hosts without pushing to GitHub first.
-Default: local git daemon serves code over LAN, remote fetches directly.
-Fallback: GitHub origin if local daemon unreachable.
+Uses a **central git server** (bare repo on a designated host) as the single source.
+Local machine pushes there; all remote hosts fetch from it.
+
+### Architecture
+
+```
+Local machine ──push via SSH──→ 80: bare repo
+                                     │
+                           ┌─────────┴─────────┐
+                           ▼                     ▼
+               80: working repo              48: working repo
+               (local path fetch)            (git daemon fetch)
+```
+
+### One-Time Setup
+
+```bash
+make setup-git-server    # Creates bare repo + starts git daemon on central server
+```
+
+Configuration: `.local/deploy/git-server.env`:
+
+```env
+PT_GIT_SERVER_HOST=10.37.246.80
+PT_GIT_SERVER_USER=shuxian
+PT_GIT_SERVER_BARE_PATH=peers-touch/bare.git
+PT_GIT_SERVER_DAEMON_PORT=9418
+```
 
 ### Commands
 
 ```bash
-make git-serve             # Start local git server (auto-started by deploy)
-make git-serve-stop        # Stop local git server
-make git-serve-status      # Check if running
-
-make deploy ENV=station-1            # Deploy to remote (fetches from local)
-make deploy ENV=station-1 BRANCH=feat/x  # Deploy specific branch
+make station                         # Push + deploy + build + restart + health
+make relay                           # Same for relay
+make deploy ENV=station-1            # Direct deploy (same as make station)
+make deploy ENV=station-1 BRANCH=x   # Deploy specific branch
 make deploy-status ENV=station-1     # Check remote status
 make deploy-logs ENV=station-1       # Fetch remote logs
+make setup-git-server                # One-time: init bare repo + daemon
 ```
 
 ### Deploy Env Config
@@ -220,21 +269,27 @@ Create `.local/deploy/envs/<name>.env`:
 
 ```env
 PT_DEPLOY_HOST=10.37.246.80
-PT_DEPLOY_USER=root
-PT_DEPLOY_PATH=/opt/peers-touch
+PT_DEPLOY_USER=shuxian
+PT_DEPLOY_PATH=peers-touch/repo
 PT_DEPLOY_ROLE=station
-PT_DEPLOY_BRANCH=main
-PT_DEPLOY_SOURCE=local   # local (git daemon) or github
+PT_DEPLOY_SOURCE=central
+PT_DEPLOY_HEALTH_URL=http://10.37.246.80:18080/sub-oss/healthz
+PT_DEPLOY_BUILD_CMD='docker compose -f tooling/docker/compose.yml build station'
+PT_DEPLOY_RESTART_CMD='docker compose -f tooling/docker/compose.yml up -d station'
 ```
 
-### How it works (local mode)
+Source modes:
+- `central` — (recommended) push to central bare repo, remotes fetch from it
+- `local` — (legacy) local git daemon + SSH reverse tunnel
+- `github` — remote fetches from GitHub origin
 
-1. `make deploy` auto-starts local `git daemon` on `:9418`
-2. SSH to remote, tests if it can `git ls-remote git://<your-ip>:9418/peers-touch`
-3. If reachable: fetches from local → checkout → build → restart
-4. If unreachable: falls back to `git pull origin` (needs prior push to GitHub)
+### How it works (central mode)
 
-No binary transfer. Remote always builds from source.
+1. `make station` pushes current HEAD to central bare repo (80) via SSH
+2. If target IS the git server: fetch from local path (instant)
+3. If target is another host: fetch from git daemon on git server (LAN speed)
+4. Build → Restart → Health check
+5. Full ready closure: won't return until service is verified healthy
 
 ## Important Rules
 
