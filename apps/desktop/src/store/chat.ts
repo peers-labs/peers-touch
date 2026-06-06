@@ -16,6 +16,7 @@ import {
   type AgentParams,
   type AppletInfo,
   type NotebookDocument,
+  type AgentRuntimeAssets,
   parseAgentChatConfig,
   parseAgentParams,
 } from '../services/desktop_api';
@@ -58,6 +59,7 @@ export interface ChatMessage {
   memoryCount?: number;
   skillCount?: number;
   toolCount?: number;
+  runtimeAssets?: AgentRuntimeAssets;
   error?: string;
   thinking?: string;
   thinkingDone?: boolean;
@@ -255,6 +257,7 @@ function applyStreamEvent(msg: ChatMessage, event: StreamEvent): ChatMessage {
         memoryCount: event.data.memory_count != null ? Number(event.data.memory_count) : msg.memoryCount,
         skillCount: event.data.skill_count != null ? Number(event.data.skill_count) : msg.skillCount,
         toolCount: event.data.tool_count != null ? Number(event.data.tool_count) : msg.toolCount,
+        runtimeAssets: event.data.assets || msg.runtimeAssets,
         processDuration: Math.round((Date.now() - msg.timestamp) / 1000),
       };
     }

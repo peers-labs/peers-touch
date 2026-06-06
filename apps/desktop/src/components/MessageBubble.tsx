@@ -26,10 +26,13 @@ import {
   AlertTriangle,
   BookOpen,
   Terminal,
+  Brain,
+  PackageCheck,
+  Link2,
 } from 'lucide-react';
 import type { ChatMessage, ToolCallInfo } from '../store/chat';
 import { useChatStore } from '../store/chat';
-import { listAgentTurnTraces, type AgentTurnTrace } from '../services/desktop_api';
+import { listAgentTurnTraces, type AgentRuntimeAsset, type AgentTurnTrace } from '../services/desktop_api';
 import { UserSquareAvatar } from './common/UserSquareAvatar';
 import MessageCard, { type CardData } from './MessageCard';
 import { parseDeepLink } from '../utils/deeplink';
@@ -224,6 +227,132 @@ function ToolCallsBlock({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
             <ToolCallItem key={tc.id} tool={tc} />
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+function runtimeAssetLabel(item: AgentRuntimeAsset): string {
+  const label = item.title || item.name || item.identifier || item.id || item.type || item.kind;
+  return typeof label === 'string' && label.trim() ? label : 'item';
+}
+
+function RuntimeAssetSection({
+  icon,
+  title,
+  items,
+}: {
+  icon: ReactNode;
+  title: string;
+  items: AgentRuntimeAsset[];
+}) {
+  const { token } = theme.useToken();
+  if (items.length === 0) return null;
+  return (
+    <Flexbox gap={6}>
+      <Flexbox horizontal align="center" gap={6} style={{ fontSize: 12, color: token.colorTextSecondary, fontWeight: 600 }}>
+        {icon}
+        <span>{title}</span>
+      </Flexbox>
+      <Flexbox horizontal gap={6} wrap="wrap">
+        {items.slice(0, 8).map((item, index) => (
+          <Tag key={`${runtimeAssetLabel(item)}-${index}`} style={{ margin: 0, fontSize: 11 }}>
+            {runtimeAssetLabel(item)}
+          </Tag>
+        ))}
+        {items.length > 8 && (
+          <Tag style={{ margin: 0, fontSize: 11 }}>+{items.length - 8}</Tag>
+        )}
+      </Flexbox>
+    </Flexbox>
+  );
+}
+
+function RuntimeContextBlock({ message }: { message: ChatMessage }) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
+  const [expanded, setExpanded] = useState(false);
+  const assets = message.runtimeAssets;
+  const memories = Array.isArray(assets?.memories) ? assets.memories : [];
+  const skills = Array.isArray(assets?.skills) ? assets.skills : [];
+  const tools = Array.isArray(assets?.tools) ? assets.tools : [];
+  const mcp = Array.isArray(assets?.mcp) ? assets.mcp : [];
+  const memoryWrite = assets?.memory_write;
+  const total =
+    memories.length +
+    skills.length +
+    tools.length +
+    mcp.length +
+    (memoryWrite ? 1 : 0);
+
+  if (total === 0 && !message.memoryCount && !message.skillCount && !message.toolCount) {
+    return null;
+  }
+
+  return (
+    <div
+      style={{
+        borderRadius: 8,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        background: token.colorFillQuaternary,
+        marginBottom: 8,
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '6px 10px',
+          cursor: 'pointer',
+          fontSize: 12,
+          fontWeight: 500,
+          color: token.colorTextSecondary,
+        }}
+      >
+        {expanded
+          ? <ChevronDown size={13} style={{ flexShrink: 0 }} />
+          : <ChevronRight size={13} style={{ flexShrink: 0 }} />
+        }
+        <Brain size={13} style={{ flexShrink: 0, color: token.colorTextTertiary }} />
+        <span>{t('chat.message.runtime.summary', {
+          memory: message.memoryCount ?? memories.length,
+          skills: message.skillCount ?? skills.length,
+          tools: message.toolCount ?? (tools.length + mcp.length),
+        })}</span>
+      </div>
+      {expanded && (
+        <Flexbox gap={10} style={{ padding: '8px 10px 10px', borderTop: `1px solid ${token.colorBorderSecondary}` }}>
+          <RuntimeAssetSection
+            icon={<Brain size={13} />}
+            title={t('chat.message.runtime.memoryUsed', { count: memories.length })}
+            items={memories}
+          />
+          {memoryWrite && (
+            <Flexbox horizontal align="center" gap={6} style={{ fontSize: 12, color: token.colorTextSecondary }}>
+              <CheckCircle2 size={13} style={{ color: token.colorSuccess }} />
+              <span>{t('chat.message.runtime.memoryWrite')}</span>
+              <Tag color="green" style={{ margin: 0, fontSize: 11 }}>{String(memoryWrite.status || 'recorded')}</Tag>
+            </Flexbox>
+          )}
+          <RuntimeAssetSection
+            icon={<PackageCheck size={13} />}
+            title={t('chat.message.runtime.skillsLoaded', { count: skills.length })}
+            items={skills}
+          />
+          <RuntimeAssetSection
+            icon={<Wrench size={13} />}
+            title={t('chat.message.runtime.toolsProjected', { count: tools.length })}
+            items={tools}
+          />
+          <RuntimeAssetSection
+            icon={<Link2 size={13} />}
+            title={t('chat.message.runtime.mcpProjected', { count: mcp.length })}
+            items={mcp}
+          />
+        </Flexbox>
       )}
     </div>
   );
@@ -655,6 +784,10 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
           {/* Tool calls block — LobeChat style: collapsed accordion within assistant message */}
           {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
             <ToolCallsBlock toolCalls={message.toolCalls} />
+          )}
+
+          {!isUser && !message.loading && (
+            <RuntimeContextBlock message={message} />
           )}
 
           {editing ? (

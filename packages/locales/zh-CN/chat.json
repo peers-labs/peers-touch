@@ -205,6 +205,12 @@
   "chat.message.trace.error": "错误",
   "chat.message.trace.yes": "是",
   "chat.message.trace.no": "否",
+  "chat.message.runtime.summary": "运行上下文 · {{memory}} 条 Memory · {{skills}} 个 Skill · {{tools}} 个 Tool",
+  "chat.message.runtime.memoryUsed": "使用的 Memory（{{count}}）",
+  "chat.message.runtime.memoryWrite": "Memory 写入",
+  "chat.message.runtime.skillsLoaded": "加载的 Skill（{{count}}）",
+  "chat.message.runtime.toolsProjected": "投影的 Tool（{{count}}）",
+  "chat.message.runtime.mcpProjected": "投影的 MCP（{{count}}）",
 
   "chat.message.thinking.title": "思考",
   "chat.message.thinking.usingTools": "正在使用 {{count}} 个工具…",

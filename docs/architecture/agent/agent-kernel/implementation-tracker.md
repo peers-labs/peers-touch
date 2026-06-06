@@ -44,7 +44,7 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | Agent Kernel | Proto-first Station domain, Desktop projection, TurnTrace-first execution | Designed; runtime split started |
 | Provider | Unified AgentProvider over Eino-native and CLI-wrapped providers | Initial adapters, CLI controls, traces, capability matrix, and guardrail validation implemented |
 | Model Backend | Model/vendor API remains model backend; AgentProvider is the execution strategy above it | Designed; provider UI now distinguishes model backend from AgentProvider control level |
-| Runtime | Turn lifecycle, provider call, trace persistence, memory hook | Implemented local desktop runtime split and traces |
+| Runtime | Turn lifecycle, provider call, trace persistence, memory hook, runtime assets projection | Implemented local desktop runtime split, traces, and conversation runtime cards |
 | Memory | White-box memory with list/search/persona/events/delete/feedback | Local persistence implemented; feedback UI/API added in current stage |
 | Skill | Package + `SKILL.md` + projection + controlled runtime load | Designed; implementation pending |
 | Tool / MCP | Schema-first registry, policy, approval, audit, dynamic MCP projection | Designed; implementation pending |
@@ -74,29 +74,31 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | Conversation provider trace markers | Agent turns now propagate provider call capability metadata into stream `done` events and show CLI black-box / structured trace markers on assistant messages | Chat locale JSON and targeted TS checks passed |
 | Provider guardrail feedback | Provider settings now show backend save validation errors instead of silently swallowing failed debounced saves | Provider locale JSON and targeted TS checks passed |
 | Conversation trace detail drawer | Clicking a provider trace marker opens a drawer with turn trace, counts, provider call capability, latency, and fallback metadata | Chat locale JSON, targeted TS check, and diff checks passed |
+| Conversation runtime context cards | Assistant messages now show memory used, memory write, loaded skills, projected tools, and projected MCP servers from the turn assets | Agent runtime tests, chat locale JSON, targeted TS check, and diff checks passed |
 
 ---
 
-## 5. Current Stage: Conversation Trace Detail Drawer
+## 5. Current Stage: Conversation Runtime Context Cards
 
 ### Delivered
 
-- Assistant provider trace markers are now clickable.
-- The drawer loads recent local `AgentTurnTrace` records from the Desktop command API.
-- When a trace record is available, the drawer shows:
-  - trace id, status, conversation, agent, prompt hash, and creation time
-  - memory, skill, and tool counts
-  - provider id, model, provider kind, protocol, latency, and capability flags
-  - provider error code/message when the call failed
-- When the persisted trace has aged out of the local recent trace store, the drawer still shows message-level fallback metadata.
+- Agent runtime now returns structured `assets` for each completed turn:
+  - memory records used for prompt context
+  - memory write status for the current turn
+  - enabled Skill packages loaded into the runtime prompt
+  - projected built-in tools
+  - projected MCP servers
+- The frontend stream `done` event carries those assets into the chat store.
+- Assistant messages render a compact runtime context card with expandable memory, Skill, Tool, and MCP sections.
+- The runtime card still renders from count metadata when detailed assets are unavailable.
 - Localization:
-  - English and Chinese trace drawer labels.
+  - English and Chinese runtime context labels.
 
 ### Acceptance Criteria
 
-- Conversation provider trace markers are not just labels; they open inspectable runtime evidence.
-- The drawer can distinguish CLI black-box and structured provider capability modes.
-- Missing local trace records degrade gracefully to message metadata.
+- Conversation projection makes memory use/write and runtime tool projection visible without opening developer logs.
+- CLI-wrapped and Eino-native providers share the same message-level projection surface, with degraded detail represented as missing assets rather than hidden behavior.
+- Existing trace drawer and provider markers keep working with the same message metadata.
 - JSON locales remain valid.
 - Targeted TypeScript check has no errors in the changed files.
 
@@ -166,6 +168,11 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/chat.json` | Passed | Locale JSON valid |
 | 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `MessageBubble`, `desktop_api`, or `chat.json` errors; failures remain in existing App/social/media/navigation areas |
 | 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
+| 2026-06-07 | `cargo test --bin peers-touch-desktop agent_runtime` | Passed | 11 agent runtime/provider/trace tests passed; existing warnings remain |
+| 2026-06-07 | `python3 -m json.tool packages/locales/en/chat.json` | Passed | Locale JSON valid |
+| 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/chat.json` | Passed | Locale JSON valid |
+| 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `MessageBubble`, `store/chat`, `desktop_api`, `chat.json`, or `agent_runtime` errors; failures remain in existing App/social/media/navigation areas |
+| 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
 
 ---
 
@@ -174,4 +181,4 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 1. Full Desktop TypeScript check currently has unrelated pre-existing failures outside this Agent Kernel slice; use targeted checks until the unrelated issues are scheduled.
 2. CLI-wrapped providers cannot guarantee the same internal tool loop fidelity as Eino-native providers. The contract must model capability degradation explicitly instead of pretending they are equally controllable.
 3. Current CLI guardrails validate config shape and process controls, but sandbox presets, retry policy, and bridge approval UX still need dedicated delivery.
-4. Conversation now has provider trace marker details, but memory use/write cards and bridge/tool audit cards still need dedicated UI.
+4. Conversation now has provider trace details and runtime context cards, but bridge/tool audit approval cards still need dedicated UI.

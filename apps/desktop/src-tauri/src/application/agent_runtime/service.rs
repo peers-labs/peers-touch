@@ -209,6 +209,11 @@ pub(crate) fn execute_turn(actor_id: &str, input: AgentExecuteTurnInput) -> AppR
             },
             "assets": {
                 "memories": turn_context.memories,
+                "memory_write": {
+                    "status": "recorded",
+                    "trace_id": recorded_trace.id,
+                    "conversation_id": conversation_id
+                },
                 "skills": turn_context.skills,
                 "tools": turn_context.tools,
                 "mcp": turn_context.mcp,

@@ -205,6 +205,12 @@
   "chat.message.trace.error": "Error",
   "chat.message.trace.yes": "Yes",
   "chat.message.trace.no": "No",
+  "chat.message.runtime.summary": "Runtime context · {{memory}} memory · {{skills}} skills · {{tools}} tools",
+  "chat.message.runtime.memoryUsed": "Memory used ({{count}})",
+  "chat.message.runtime.memoryWrite": "Memory write",
+  "chat.message.runtime.skillsLoaded": "Skills loaded ({{count}})",
+  "chat.message.runtime.toolsProjected": "Tools projected ({{count}})",
+  "chat.message.runtime.mcpProjected": "MCP projected ({{count}})",
 
   "chat.message.thinking.title": "Thinking",
   "chat.message.thinking.usingTools": "Using {{count}} tool…",

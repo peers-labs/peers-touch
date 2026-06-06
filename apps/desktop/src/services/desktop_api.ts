@@ -1664,7 +1664,35 @@ export interface AgentExecuteTurnOutput {
       error_message?: string | null;
     }>;
   };
-  assets?: Record<string, unknown>;
+  assets?: AgentRuntimeAssets;
+}
+
+export interface AgentRuntimeAsset {
+  id?: string;
+  name?: string;
+  title?: string;
+  identifier?: string;
+  description?: string;
+  content?: string;
+  target?: string;
+  layer?: string;
+  kind?: string;
+  type?: string;
+  enabled?: boolean;
+  [key: string]: unknown;
+}
+
+export interface AgentRuntimeAssets {
+  memories?: AgentRuntimeAsset[];
+  memory_write?: {
+    status?: string;
+    trace_id?: string;
+    conversation_id?: string;
+  };
+  skills?: AgentRuntimeAsset[];
+  tools?: AgentRuntimeAsset[];
+  mcp?: AgentRuntimeAsset[];
+  [key: string]: unknown;
 }
 
 export interface ProviderCallTrace {
@@ -4351,6 +4379,7 @@ export function streamChat(
           memory_count: Number(payload?.trace?.memory_count || 0),
           skill_count: Number(payload?.trace?.skill_count || 0),
           tool_count: Number(payload?.trace?.tool_count || 0),
+          assets: payload?.assets,
         },
       });
       log.info('api', 'streamChat complete');
