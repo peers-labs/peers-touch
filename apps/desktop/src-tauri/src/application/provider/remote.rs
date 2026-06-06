@@ -2,6 +2,8 @@ use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde_json::Value;
 use std::collections::BTreeSet;
+use std::io::Write;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 pub(crate) struct ProbeResult {
@@ -273,6 +275,9 @@ fn resolve_protocol_key(protocol: Option<&str>) -> &'static str {
             return adapter.key;
         }
     }
+    if normalized == "cli" || normalized == "cli-wrapped" {
+        return "cli-wrapped";
+    }
     "openai-compatible"
 }
 
@@ -300,6 +305,16 @@ pub(crate) fn probe_provider(
     model: &str,
     protocol: Option<&str>,
 ) -> Result<ProbeResult, String> {
+    if resolve_protocol_key(protocol) == "cli-wrapped" {
+        let command = base_url.trim();
+        if command.is_empty() {
+            return Err("CLI provider command is required".to_string());
+        }
+        return Ok(ProbeResult {
+            endpoint: command.to_string(),
+            models: vec![],
+        });
+    }
     let client = Client::builder()
         .timeout(Duration::from_secs(8))
         .build()
@@ -354,10 +369,57 @@ pub(crate) fn chat_completion(
         .map_err(|e| format!("create http client failed: {}", e))?;
     match protocol_key {
         "anthropic" => completion_anthropic(&client, base_url, api_key, model, user_message),
+        "cli-wrapped" => completion_cli(base_url, model, user_message),
         "gemini" => completion_gemini(&client, base_url, api_key, model, user_message),
         "ollama" => completion_ollama(&client, base_url, model, user_message),
         _ => completion_openai(&client, base_url, api_key, model, user_message),
     }
+}
+
+fn completion_cli(
+    command_spec: &str,
+    model: &str,
+    message: &str,
+) -> Result<CompletionResult, String> {
+    let mut parts = command_spec
+        .split_whitespace()
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        return Err("CLI provider command is required".to_string());
+    }
+    let command = parts.remove(0);
+    tracing::info!(command = %command, model = %model, "Starting CLI-wrapped completion");
+    let mut child = Command::new(command)
+        .args(parts)
+        .arg("--model")
+        .arg(model)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|err| format!("spawn CLI provider failed: {}", err))?;
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin
+            .write_all(message.as_bytes())
+            .map_err(|err| format!("write prompt to CLI provider failed: {}", err))?;
+    }
+    let output = child
+        .wait_with_output()
+        .map_err(|err| format!("wait for CLI provider failed: {}", err))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            format!("CLI provider exited with {}", output.status)
+        } else {
+            stderr
+        });
+    }
+    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Ok(CompletionResult {
+        text,
+        model: model.to_string(),
+    })
 }
 
 fn post_json(
@@ -555,6 +617,7 @@ mod tests {
         assert_eq!(resolve_protocol_key(Some("openai")), "openai-compatible");
         assert_eq!(resolve_protocol_key(Some("google")), "gemini");
         assert_eq!(resolve_protocol_key(Some("claude")), "anthropic");
+        assert_eq!(resolve_protocol_key(Some("cli")), "cli-wrapped");
     }
 
     #[test]

@@ -9,14 +9,7 @@ use crate::application::memory as application_memory;
 
 fn token_from_state(state: &tauri::State<AppState>) -> Result<String, AppResult<StubPayload>> {
     match state.session.lock() {
-        Ok(guard) => match guard.token.clone().filter(|t| !t.trim().is_empty()) {
-            Some(token) => Ok(token),
-            None => Err(AppResult::fail(
-                crate::error::ErrorCode::Unauthorized,
-                "authentication required",
-                None,
-            )),
-        },
+        Ok(guard) => Ok(guard.token.clone().unwrap_or_default()),
         Err(_) => Err(AppResult::fail(
             crate::error::ErrorCode::InternalError,
             "failed to access session state",

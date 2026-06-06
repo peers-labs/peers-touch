@@ -722,6 +722,84 @@ pub fn chat_completion_once(actor_id: &str, input: ChatCompletionInput) -> AppRe
     }
 }
 
+pub(crate) fn record_agent_turn(
+    actor_id: &str,
+    session_id: &str,
+    agent_id: &str,
+    user_content: &str,
+    assistant_content: &str,
+    model: Option<String>,
+) -> AppResult<(String, String)> {
+    let session_id = match chat::normalize_conversation_id(session_id) {
+        Ok(value) => value,
+        Err(message) => return AppResult::fail(ErrorCode::InvalidArgument, message, None),
+    };
+    let user_content = match chat::normalize_content(user_content) {
+        Ok(value) => value,
+        Err(message) => return AppResult::fail(ErrorCode::InvalidArgument, message, None),
+    };
+    let assistant_content = assistant_content.trim().to_string();
+    let key = actor_bucket_id(actor_id);
+    let mut stores = match chat_stores().lock() {
+        Ok(g) => g,
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to acquire chat store lock");
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to access chat store: {}", e),
+                None,
+            );
+        }
+    };
+    let store = stores.buckets.entry(key).or_insert_with(ChatStore::seeded);
+    let now = chat::now_ms();
+    {
+        let conversation = store.ensure_conversation(&session_id, agent_id, now);
+        conversation.model = model.clone();
+    }
+
+    let user_msg_id = chat::next_message_id(None);
+    store
+        .messages
+        .entry(session_id.clone())
+        .or_default()
+        .push(Message {
+            id: user_msg_id.clone(),
+            conversation_id: session_id.clone(),
+            content: user_content,
+            role: "user".to_string(),
+            read: false,
+            via: DeliveryVia::Relay,
+            retry_count: 0,
+            timestamp_ms: now,
+        });
+
+    let assistant_msg_id = chat::next_message_id(None);
+    let assistant_now = chat::now_ms();
+    store
+        .messages
+        .entry(session_id.clone())
+        .or_default()
+        .push(Message {
+            id: assistant_msg_id.clone(),
+            conversation_id: session_id.clone(),
+            content: assistant_content,
+            role: "assistant".to_string(),
+            read: false,
+            via: DeliveryVia::Relay,
+            retry_count: 0,
+            timestamp_ms: assistant_now,
+        });
+
+    if let Some(conversation) = store.conversations.get_mut(&session_id) {
+        conversation.last_message_id = Some(assistant_msg_id.clone());
+        conversation.last_timestamp_ms = assistant_now;
+        conversation.unread_count = conversation.unread_count.saturating_add(2);
+    }
+    realtime::publish_chat_event("agent_execute_turn", &session_id, Some(&assistant_msg_id));
+    AppResult::success((user_msg_id, assistant_msg_id))
+}
+
 pub fn list_conversations_by_agent(actor_id: &str, agent_name: &str) -> Vec<serde_json::Value> {
     let key = actor_bucket_id(actor_id);
     let mut stores = match chat_stores().lock() {

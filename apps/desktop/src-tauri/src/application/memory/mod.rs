@@ -8,6 +8,243 @@ use crate::model::agent;
 use prost_types::Timestamp;
 use reqwest::Method;
 use serde_json::{json, Value};
+use std::sync::{Mutex, OnceLock};
+
+#[derive(Clone)]
+struct LocalMemoryRecord {
+    id: String,
+    agent_id: String,
+    target: String,
+    layer: String,
+    session_id: String,
+    source: String,
+    content: Value,
+    summary: String,
+    source_turn_id: String,
+    relevance: f64,
+    access_count: i32,
+    trust_score: f64,
+    helpful_count: i32,
+    harmful_count: i32,
+    is_frozen: bool,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Clone)]
+struct LocalMemoryEvent {
+    id: String,
+    event_type: String,
+    memory_id: String,
+    session_id: String,
+    agent_id: String,
+    layer: String,
+    detail: Value,
+    timestamp: String,
+}
+
+#[derive(Default)]
+struct LocalMemoryStore {
+    memories: Vec<LocalMemoryRecord>,
+    events: Vec<LocalMemoryEvent>,
+    sequence: u64,
+}
+
+static LOCAL_MEMORY_STORE: OnceLock<Mutex<LocalMemoryStore>> = OnceLock::new();
+
+fn local_memory_store() -> &'static Mutex<LocalMemoryStore> {
+    LOCAL_MEMORY_STORE.get_or_init(|| Mutex::new(LocalMemoryStore::default()))
+}
+
+fn now_iso() -> String {
+    time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
+}
+
+fn local_memory_json(item: &LocalMemoryRecord) -> Value {
+    json!({
+        "id": item.id,
+        "memory_id": item.id,
+        "agent_id": item.agent_id,
+        "target": item.target,
+        "layer": item.layer,
+        "session_id": item.session_id,
+        "source": item.source,
+        "content": item.content,
+        "summary": item.summary,
+        "relevance": item.relevance,
+        "access_count": item.access_count,
+        "last_accessed_at": item.updated_at,
+        "trust_score": item.trust_score,
+        "helpful_count": item.helpful_count,
+        "harmful_count": item.harmful_count,
+        "is_frozen": item.is_frozen,
+        "source_turn_id": item.source_turn_id,
+        "created_at": item.created_at,
+        "updated_at": item.updated_at,
+    })
+}
+
+fn local_event_json(event: &LocalMemoryEvent) -> Value {
+    json!({
+        "id": event.id,
+        "type": event.event_type,
+        "memory_id": event.memory_id,
+        "session_id": event.session_id,
+        "agent_id": event.agent_id,
+        "layer": event.layer,
+        "detail": event.detail,
+        "latency_ms": 0,
+        "timestamp": event.timestamp,
+    })
+}
+
+fn local_memory_matches(
+    item: &LocalMemoryRecord,
+    agent_id: &str,
+    layer: &str,
+    target: &str,
+) -> bool {
+    (agent_id.is_empty() || item.agent_id == agent_id)
+        && (layer.is_empty() || item.layer == layer)
+        && (target.is_empty() || item.target == target)
+}
+
+fn local_memory_list_payload(params: &Value) -> AppResult<StubPayload> {
+    let agent_id = value_string(params, "agent_id");
+    let layer = value_string(params, "layer");
+    let target = value_string(params, "target");
+    let page = value_i32(params, "page").max(1) as usize;
+    let page_size = value_i32(params, "page_size").max(1) as usize;
+    let guard = match local_memory_store().lock() {
+        Ok(guard) => guard,
+        Err(e) => return local_store_error(e),
+    };
+    let mut items = guard
+        .memories
+        .iter()
+        .filter(|item| local_memory_matches(item, &agent_id, &layer, &target))
+        .cloned()
+        .collect::<Vec<_>>();
+    items.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    let total = items.len();
+    let offset = page.saturating_sub(1) * page_size;
+    let memories = items
+        .iter()
+        .skip(offset)
+        .take(page_size)
+        .map(local_memory_json)
+        .collect::<Vec<_>>();
+    success_payload(
+        "memory_list",
+        json!({ "memories": memories, "total": total }),
+    )
+}
+
+fn local_store_error(e: impl std::fmt::Display) -> AppResult<StubPayload> {
+    tracing::error!(error = %e, "Failed to acquire local memory store lock");
+    AppResult::fail(
+        ErrorCode::InternalError,
+        format!("Failed to access local memory store: {}", e),
+        None,
+    )
+}
+
+pub(crate) fn local_memory_snapshot(agent_id: &str, query: &str, limit: usize) -> Vec<Value> {
+    let mut guard = match local_memory_store().lock() {
+        Ok(guard) => guard,
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to read local memory snapshot");
+            return vec![];
+        }
+    };
+    let q = query.trim().to_lowercase();
+    let mut items = guard
+        .memories
+        .iter_mut()
+        .filter(|item| agent_id.is_empty() || item.agent_id == agent_id)
+        .filter(|item| {
+            q.is_empty()
+                || item.summary.to_lowercase().contains(&q)
+                || item.content.to_string().to_lowercase().contains(&q)
+        })
+        .take(limit)
+        .map(|item| {
+            item.access_count = item.access_count.saturating_add(1);
+            item.updated_at = now_iso();
+            local_memory_json(item)
+        })
+        .collect::<Vec<_>>();
+    items.sort_by(|a, b| {
+        b.get("updated_at")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .cmp(a.get("updated_at").and_then(Value::as_str).unwrap_or(""))
+    });
+    items
+}
+
+pub(crate) fn local_remember_turn(
+    agent_id: &str,
+    session_id: &str,
+    source_turn_id: &str,
+    user_input: &str,
+    assistant_text: &str,
+) {
+    let user = user_input.trim();
+    if user.is_empty() {
+        return;
+    }
+    let summary = if user.chars().count() > 180 {
+        user.chars().take(180).collect::<String>()
+    } else {
+        user.to_string()
+    };
+    let now = now_iso();
+    let mut guard = match local_memory_store().lock() {
+        Ok(guard) => guard,
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to write local memory");
+            return;
+        }
+    };
+    guard.sequence = guard.sequence.saturating_add(1);
+    let id = format!("mem-{}", guard.sequence);
+    guard.memories.push(LocalMemoryRecord {
+        id: id.clone(),
+        agent_id: agent_id.to_string(),
+        target: "user".to_string(),
+        layer: "activity".to_string(),
+        session_id: session_id.to_string(),
+        source: "turn".to_string(),
+        content: json!({
+            "user": user,
+            "assistant": assistant_text.chars().take(280).collect::<String>(),
+        }),
+        summary,
+        source_turn_id: source_turn_id.to_string(),
+        relevance: 0.5,
+        access_count: 0,
+        trust_score: 0.5,
+        helpful_count: 0,
+        harmful_count: 0,
+        is_frozen: false,
+        created_at: now.clone(),
+        updated_at: now.clone(),
+    });
+    let event_id = format!("evt-{}", guard.sequence);
+    guard.events.push(LocalMemoryEvent {
+        id: event_id,
+        event_type: "created".to_string(),
+        memory_id: id,
+        session_id: session_id.to_string(),
+        agent_id: agent_id.to_string(),
+        layer: "activity".to_string(),
+        detail: json!({ "source": "agent_turn" }),
+        timestamp: now,
+    });
+}
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
     AppResult::success(StubPayload {
@@ -87,12 +324,23 @@ fn value_string(v: &Value, key: &str) -> String {
         .to_string()
 }
 
+fn non_empty_or(value: String, fallback: String) -> String {
+    if value.trim().is_empty() {
+        fallback
+    } else {
+        value
+    }
+}
+
 fn value_i32(v: &Value, key: &str) -> i32 {
     v.get(key).and_then(|v| v.as_i64()).unwrap_or_default() as i32
 }
 
 pub fn memory_list(input: MemoryListInput, token: &str) -> AppResult<StubPayload> {
     let params = params_value(input.params);
+    if token.trim().is_empty() {
+        return local_memory_list_payload(&params);
+    }
     let req = agent::ListMemoriesRequest {
         agent_id: value_string(&params, "agent_id"),
         target: value_string(&params, "target"),
@@ -124,6 +372,19 @@ pub fn memory_get(input: MemoryIdInput, token: &str) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
+    if token.trim().is_empty() {
+        let guard = match local_memory_store().lock() {
+            Ok(guard) => guard,
+            Err(e) => return local_store_error(e),
+        };
+        let item = guard
+            .memories
+            .iter()
+            .find(|item| item.id == input.id)
+            .map(local_memory_json)
+            .unwrap_or(Value::Null);
+        return success_payload("memory_get", item);
+    }
     let req = agent::GetMemoryRequest { id: input.id };
     match station_client::request_peers_proto::<agent::GetMemoryRequest, agent::GetMemoryResponse>(
         Method::POST,
@@ -147,6 +408,18 @@ pub fn memory_delete(input: MemoryIdInput, token: &str) -> AppResult<StubPayload
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
+    if token.trim().is_empty() {
+        let mut guard = match local_memory_store().lock() {
+            Ok(guard) => guard,
+            Err(e) => return local_store_error(e),
+        };
+        let before = guard.memories.len();
+        guard.memories.retain(|item| item.id != input.id);
+        return success_payload(
+            "memory_delete",
+            json!({ "ok": before != guard.memories.len() }),
+        );
+    }
     let req = agent::DeleteMemoryRequest {
         id: input.id,
         agent_id: String::new(),
@@ -169,6 +442,25 @@ pub fn memory_delete(input: MemoryIdInput, token: &str) -> AppResult<StubPayload
 pub fn memory_search(input: MemorySearchInput, token: &str) -> AppResult<StubPayload> {
     if input.query.trim().is_empty() {
         return invalid_argument("query is required");
+    }
+    if token.trim().is_empty() {
+        let q = input.query.trim().to_lowercase();
+        let limit = input.limit.unwrap_or(10) as usize;
+        let agent_id = input.agent_id.unwrap_or_default();
+        let layers = input.layers.unwrap_or_default();
+        let results = local_memory_snapshot(&agent_id, &q, limit)
+            .into_iter()
+            .filter(|item| {
+                layers.is_empty()
+                    || item
+                        .get("layer")
+                        .and_then(Value::as_str)
+                        .map(|layer| layers.iter().any(|wanted| wanted == layer))
+                        .unwrap_or(false)
+            })
+            .map(|item| json!({ "memory": item, "score": 0.5, "explain": Value::Null }))
+            .collect::<Vec<_>>();
+        return success_payload("memory_search", json!({ "results": results }));
     }
     let req = agent::SearchMemoriesRequest {
         query: input.query,
@@ -221,6 +513,25 @@ pub fn memory_search(input: MemorySearchInput, token: &str) -> AppResult<StubPay
 }
 
 pub fn memory_persona(input: MemoryPersonaInput, token: &str) -> AppResult<StubPayload> {
+    if token.trim().is_empty() {
+        let agent_id = input.agent_id.unwrap_or_default();
+        let memories = local_memory_snapshot(&agent_id, "", 8);
+        let narrative = memories
+            .iter()
+            .filter_map(|m| m.get("summary").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join("\n");
+        return success_payload(
+            "memory_persona",
+            json!({
+                "persona": {
+                    "tagline": if narrative.is_empty() { "No stable memory yet" } else { "Memory-backed assistant" },
+                    "narrative": narrative,
+                    "updated_at": now_iso(),
+                }
+            }),
+        );
+    }
     let req = agent::GetMemoryPersonaRequest {
         agent_id: input.agent_id.unwrap_or_default(),
     };
@@ -243,6 +554,28 @@ pub fn memory_persona(input: MemoryPersonaInput, token: &str) -> AppResult<StubP
 }
 
 pub fn memory_stats(token: &str) -> AppResult<StubPayload> {
+    if token.trim().is_empty() {
+        let guard = match local_memory_store().lock() {
+            Ok(guard) => guard,
+            Err(e) => return local_store_error(e),
+        };
+        let mut by_layer = serde_json::Map::new();
+        for item in &guard.memories {
+            let current = by_layer
+                .get(&item.layer)
+                .and_then(Value::as_i64)
+                .unwrap_or_default();
+            by_layer.insert(item.layer.clone(), json!(current + 1));
+        }
+        return success_payload(
+            "memory_stats",
+            json!({
+                "total": guard.memories.len(),
+                "by_layer": Value::Object(by_layer),
+                "storage_bytes": guard.memories.iter().map(|item| item.content.to_string().len()).sum::<usize>(),
+            }),
+        );
+    }
     let req = agent::GetMemoryStatsRequest {
         agent_id: String::new(),
     };
@@ -265,6 +598,25 @@ pub fn memory_stats(token: &str) -> AppResult<StubPayload> {
 
 pub fn memory_events(input: MemoryEventsInput, token: &str) -> AppResult<StubPayload> {
     let params = params_value(input.params);
+    if token.trim().is_empty() {
+        let event_type = value_string(&params, "type");
+        let agent_id = value_string(&params, "agent_id");
+        let limit = value_i32(&params, "limit").max(20) as usize;
+        let guard = match local_memory_store().lock() {
+            Ok(guard) => guard,
+            Err(e) => return local_store_error(e),
+        };
+        let events = guard
+            .events
+            .iter()
+            .filter(|event| event_type.is_empty() || event.event_type == event_type)
+            .filter(|event| agent_id.is_empty() || event.agent_id == agent_id)
+            .rev()
+            .take(limit)
+            .map(local_event_json)
+            .collect::<Vec<_>>();
+        return success_payload("memory_events", json!({ "events": events }));
+    }
     let req = agent::ListMemoryEventsRequest {
         r#type: value_string(&params, "type"),
         agent_id: value_string(&params, "agent_id"),
@@ -304,6 +656,24 @@ pub fn memory_events(input: MemoryEventsInput, token: &str) -> AppResult<StubPay
 
 pub fn memory_export(input: MemoryExportInput, token: &str) -> AppResult<StubPayload> {
     let params = params_value(input.params);
+    if token.trim().is_empty() {
+        let agent_id = value_string(&params, "agent_id");
+        let layer = value_string(&params, "layer");
+        let guard = match local_memory_store().lock() {
+            Ok(guard) => guard,
+            Err(e) => return local_store_error(e),
+        };
+        let memories = guard
+            .memories
+            .iter()
+            .filter(|item| local_memory_matches(item, &agent_id, &layer, ""))
+            .map(local_memory_json)
+            .collect::<Vec<_>>();
+        return success_payload(
+            "memory_export",
+            json!({ "version": "1.0", "exported_at": now_iso(), "memories": memories, "persona": Value::Null }),
+        );
+    }
     let req = agent::ExportMemoriesRequest {
         agent_id: value_string(&params, "agent_id"),
         layer: value_string(&params, "layer"),
@@ -332,6 +702,67 @@ pub fn memory_export(input: MemoryExportInput, token: &str) -> AppResult<StubPay
 }
 
 pub fn memory_import(input: MemoryImportInput, token: &str) -> AppResult<StubPayload> {
+    if token.trim().is_empty() {
+        let memories = input
+            .data
+            .get("memories")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let mut guard = match local_memory_store().lock() {
+            Ok(guard) => guard,
+            Err(e) => return local_store_error(e),
+        };
+        let mut imported = 0;
+        for value in memories {
+            guard.sequence = guard.sequence.saturating_add(1);
+            let id = value
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|id| !id.trim().is_empty())
+                .map(ToString::to_string)
+                .unwrap_or_else(|| format!("mem-{}", guard.sequence));
+            if input.skip_duplicates.unwrap_or(true)
+                && guard.memories.iter().any(|item| item.id == id)
+            {
+                continue;
+            }
+            let now = now_iso();
+            guard.memories.push(LocalMemoryRecord {
+                id,
+                agent_id: value_string(&value, "agent_id"),
+                target: value_string(&value, "target"),
+                layer: value_string(&value, "layer"),
+                session_id: value_string(&value, "session_id"),
+                source: value_string(&value, "source"),
+                content: value.get("content").cloned().unwrap_or_else(|| json!({})),
+                summary: value_string(&value, "summary"),
+                source_turn_id: value_string(&value, "source_turn_id"),
+                relevance: value
+                    .get("relevance")
+                    .and_then(Value::as_f64)
+                    .unwrap_or(0.5),
+                access_count: value_i32(&value, "access_count"),
+                trust_score: value
+                    .get("trust_score")
+                    .and_then(Value::as_f64)
+                    .unwrap_or(0.5),
+                helpful_count: value_i32(&value, "helpful_count"),
+                harmful_count: value_i32(&value, "harmful_count"),
+                is_frozen: value
+                    .get("is_frozen")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                created_at: non_empty_or(value_string(&value, "created_at"), now.clone()),
+                updated_at: non_empty_or(value_string(&value, "updated_at"), now),
+            });
+            imported += 1;
+        }
+        return success_payload(
+            "memory_import",
+            json!({ "imported": imported, "skipped": 0, "failed": 0, "total": imported }),
+        );
+    }
     let memories = input
         .data
         .get("memories")
@@ -424,6 +855,16 @@ fn value_to_memory_item(value: &Value) -> agent::MemoryItem {
 }
 
 pub fn memory_embedding_status(token: &str) -> AppResult<StubPayload> {
+    if token.trim().is_empty() {
+        let vector_count = match local_memory_store().lock() {
+            Ok(guard) => guard.memories.len(),
+            Err(e) => return local_store_error(e),
+        };
+        return success_payload(
+            "memory_embedding_status",
+            json!({ "provider": "local", "model": "keyword", "dimensions": 0, "vector_count": vector_count }),
+        );
+    }
     match station_client::request_peers_proto::<
         agent::EmbeddingStatusRequest,
         agent::EmbeddingStatusResponse,
@@ -448,6 +889,12 @@ pub fn memory_embedding_status(token: &str) -> AppResult<StubPayload> {
 }
 
 pub fn memory_reembed(token: &str) -> AppResult<StubPayload> {
+    if token.trim().is_empty() {
+        return success_payload(
+            "memory_reembed",
+            json!({ "ok": true, "reembedded_count": 0 }),
+        );
+    }
     match station_client::request_peers_proto::<agent::ReEmbedRequest, agent::ReEmbedResponse>(
         Method::POST,
         "/agent/memory/reembed",

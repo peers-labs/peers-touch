@@ -103,6 +103,29 @@ pub fn mcp_list_servers() -> AppResult<StubPayload> {
     success_payload("mcp_list_servers", json!({ "servers": servers }))
 }
 
+pub(crate) fn enabled_mcp_index() -> Vec<Value> {
+    let guard = match mcp_store().lock() {
+        Ok(guard) => guard,
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to read MCP index");
+            return vec![];
+        }
+    };
+    guard
+        .servers
+        .iter()
+        .filter(|item| item.enabled)
+        .map(|item| {
+            json!({
+                "name": item.name,
+                "title": item.data.get("title").and_then(Value::as_str).unwrap_or(""),
+                "type": item.data.get("type").and_then(Value::as_str).unwrap_or("stdio"),
+                "description": item.data.get("description").and_then(Value::as_str).unwrap_or(""),
+            })
+        })
+        .collect()
+}
+
 pub fn mcp_get_server(input: McpNameInput) -> AppResult<StubPayload> {
     let name = input.name.trim();
     if name.is_empty() {

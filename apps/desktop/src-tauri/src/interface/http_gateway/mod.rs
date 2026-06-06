@@ -23,6 +23,7 @@ use crate::state::AppState;
 // -------------------------------------------------------------------------
 use crate::application::account as app_account;
 use crate::application::admin as app_admin;
+use crate::application::agent_turn as app_agent_turn;
 use crate::application::agents as app_agents;
 use crate::application::applets as app_applets;
 use crate::application::auth::service as app_auth;
@@ -791,6 +792,14 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             };
             to_json(app_chat::chat_completion_once("", input))
         }
+        "agent_execute_turn" => {
+            let input = match parse_args::<AgentExecuteTurnInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_agent_turn::agent_execute_turn("", input))
+        }
+        "agent_turn_traces" => to_json(app_agent_turn::agent_turn_traces()),
 
         // Note: legacy `timeline_*` dev-HTTP routes were removed in P2. The
         // new `social_*` Tauri commands target proto-typed responses and
@@ -2135,55 +2144,112 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         // Memory (state-dependent Station API)
         // =================================================================
         "memory_list" => {
-            let input = match parse_args::<MemoryListInput>(args) { Ok(v) => v, Err(e) => return e };
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let input = match parse_args::<MemoryListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_list(input, &token))
         }
         "memory_get" => {
-            let input = match parse_args::<MemoryIdInput>(args) { Ok(v) => v, Err(e) => return e };
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let input = match parse_args::<MemoryIdInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_get(input, &token))
         }
         "memory_delete" => {
-            let input = match parse_args::<MemoryIdInput>(args) { Ok(v) => v, Err(e) => return e };
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let input = match parse_args::<MemoryIdInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_delete(input, &token))
         }
         "memory_search" => {
-            let input = match parse_args::<MemorySearchInput>(args) { Ok(v) => v, Err(e) => return e };
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let input = match parse_args::<MemorySearchInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_search(input, &token))
         }
         "memory_persona" => {
-            let input = match parse_args::<MemoryPersonaInput>(args) { Ok(v) => v, Err(e) => return e };
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let input = match parse_args::<MemoryPersonaInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_persona(input, &token))
         }
         "memory_stats" => {
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_stats(&token))
         }
         "memory_events" => {
-            let input = match parse_args::<MemoryEventsInput>(args) { Ok(v) => v, Err(e) => return e };
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let input = match parse_args::<MemoryEventsInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_events(input, &token))
         }
         "memory_export" => {
-            let input = match parse_args::<MemoryExportInput>(args) { Ok(v) => v, Err(e) => return e };
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let input = match parse_args::<MemoryExportInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_export(input, &token))
         }
         "memory_import" => {
-            let input = match parse_args::<MemoryImportInput>(args) { Ok(v) => v, Err(e) => return e };
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let input = match parse_args::<MemoryImportInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_import(input, &token))
         }
         "memory_embedding_status" => {
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_embedding_status(&token))
         }
         "memory_reembed" => {
-            let token = match token_from_state(state) { Ok(t) => t, Err(e) => return e };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
             to_json(app_memory::memory_reembed(&token))
         }
 

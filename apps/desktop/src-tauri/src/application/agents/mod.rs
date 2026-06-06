@@ -158,6 +158,25 @@ pub fn agents_get(actor_id: &str, input: AgentIdInput) -> AppResult<StubPayload>
     })
 }
 
+pub(crate) fn agent_data_by_identifier(actor_id: &str, identifier: &str) -> Option<Value> {
+    let key = actor_bucket_id(actor_id);
+    let mut stores = agent_stores().lock().ok()?;
+    let store = stores.buckets.entry(key).or_insert_with(AgentStore::seeded);
+    store
+        .agents
+        .iter()
+        .find(|item| {
+            item.id == identifier
+                || item
+                    .data
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .map(|name| name == identifier)
+                    .unwrap_or(false)
+        })
+        .map(|item| normalized_agent_data(item, 0))
+}
+
 pub fn agents_create(actor_id: &str, input: AgentCreateInput) -> AppResult<StubPayload> {
     with_agent_app_result(actor_id, |store| {
         let id = format!("agent-{}", store.agents.len() + 1);

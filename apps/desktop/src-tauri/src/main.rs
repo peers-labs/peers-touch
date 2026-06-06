@@ -23,10 +23,10 @@ pub mod peers_touch {
 }
 
 use interface::tauri_commands::{
-    account, actor, admin, agent_growth, agent_scheduler, agents, applets, auth, channels, chat,
-    cron, crypto, friend_chat, frontend_log, group_chat, i18n, ice, key_exchange, mcp, memory,
-    model_config, models, notebook, notification, oauth2, oss, presence, profile, provider,
-    realtime, search, settings, skills, skills_market, social, system, tools, tts,
+    account, actor, admin, agent_growth, agent_scheduler, agent_turn, agents, applets, auth,
+    channels, chat, cron, crypto, friend_chat, frontend_log, group_chat, i18n, ice, key_exchange,
+    mcp, memory, model_config, models, notebook, notification, oauth2, oss, presence, profile,
+    provider, realtime, search, settings, skills, skills_market, social, system, tools, tts,
 };
 use std::sync::Arc;
 use tauri::Manager;
@@ -120,6 +120,8 @@ fn main() {
             chat::chat_update_message,
             chat::chat_stop,
             chat::chat_completion_once,
+            agent_turn::agent_execute_turn,
+            agent_turn::agent_turn_traces,
             social::social_create_moment,
             social::social_get_moment,
             social::social_delete_moment,

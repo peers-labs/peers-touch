@@ -25,6 +25,23 @@ pub fn tools_list() -> AppResult<StubPayload> {
     )
 }
 
+pub(crate) fn tool_registry_index() -> Vec<serde_json::Value> {
+    vec![
+        json!({
+            "name": "web_search",
+            "kind": "builtin",
+            "enabled": true,
+            "description": "Search public web sources when the agent needs fresh information."
+        }),
+        json!({
+            "name": "file_search",
+            "kind": "builtin",
+            "enabled": true,
+            "description": "Search local workspace files that the user has made available."
+        }),
+    ]
+}
+
 pub fn tools_search_providers() -> AppResult<StubPayload> {
     success_payload(
         "tools_search_providers",

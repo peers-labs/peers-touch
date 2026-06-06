@@ -133,6 +133,29 @@ pub fn skills_list(input: SkillsListInput) -> AppResult<StubPayload> {
     )
 }
 
+pub(crate) fn enabled_skill_index() -> Vec<serde_json::Value> {
+    let guard = match skill_store().lock() {
+        Ok(guard) => guard,
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to read skill index");
+            return vec![];
+        }
+    };
+    guard
+        .skills
+        .iter()
+        .filter(|item| item.enabled)
+        .map(|item| {
+            json!({
+                "id": item.id,
+                "identifier": item.identifier,
+                "name": item.name,
+                "description": item.description,
+            })
+        })
+        .collect()
+}
+
 pub fn skills_search(input: SkillsSearchInput) -> AppResult<StubPayload> {
     let q = input.q.trim().to_lowercase();
     if q.is_empty() {

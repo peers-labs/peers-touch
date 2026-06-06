@@ -1592,6 +1592,37 @@ export interface ChatCompletionInput {
   message: string;
 }
 
+export interface AgentExecuteTurnInput {
+  conversation_id: string;
+  agent_id: string;
+  user_input: string;
+  provider?: string;
+  model?: string;
+  identity?: string;
+  platform?: string;
+  workspace_root?: string;
+  context_window_size?: number;
+  max_retries?: number;
+}
+
+export interface AgentExecuteTurnOutput {
+  text: string;
+  model?: string;
+  provider_id?: string;
+  agent_id?: string;
+  conversation_id?: string;
+  user_message_id?: string;
+  assistant_message_id?: string;
+  trace?: {
+    id?: string;
+    prompt_hash?: string;
+    memory_count?: number;
+    skill_count?: number;
+    tool_count?: number;
+  };
+  assets?: Record<string, unknown>;
+}
+
 export interface SkillsListInput {
   source?: string;
 }
@@ -4142,7 +4173,7 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
 export function streamChat(
   message: string,
   sessionKey: string,
-  _agentName: string,
+  agentName: string,
   onEvent: (event: StreamEvent) => void,
   onDone: () => void,
   onError: (err: Error) => void,
@@ -4154,13 +4185,15 @@ export function streamChat(
   log.info('api', 'streamChat started', { sessionKey, model });
   (async () => {
     try {
-      const payload = await invokeRustDataFromStatus<ChatCompletionInput, { text: string; model?: string; provider_id?: string }>(
-        'chat_completion_once',
+      const payload = await invokeRustDataFromStatus<AgentExecuteTurnInput, AgentExecuteTurnOutput>(
+        'agent_execute_turn',
         {
-          session_id: sessionKey,
-          provider_id: providerId || '',
+          conversation_id: sessionKey,
+          agent_id: agentName || 'assistant',
+          user_input: message,
+          provider: providerId || '',
           model: model || '',
-          message,
+          platform: 'desktop',
         },
       );
       if (controller.signal.aborted) {
@@ -4170,7 +4203,14 @@ export function streamChat(
       if (text) {
         onEvent({ event: 'text', data: { content: text } });
       }
-      onEvent({ event: 'done', data: { model: payload?.model || model || '' } });
+      onEvent({
+        event: 'done',
+        data: {
+          model: payload?.model || model || '',
+          provider_id: payload?.provider_id || providerId || '',
+          trace_id: payload?.trace?.id || '',
+        },
+      });
       log.info('api', 'streamChat complete');
       onDone();
     } catch (err: any) {
