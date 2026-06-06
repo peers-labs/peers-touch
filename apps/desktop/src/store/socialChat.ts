@@ -3,6 +3,7 @@ import { timestampDate } from '@bufbuild/protobuf/wkt';
 
 import {
   api,
+  isUnauthorizedError,
   pickLatestKeyExchangeBundle,
   type AccountProfile,
   type ChatAttachmentInput,
@@ -47,6 +48,11 @@ import {
   seedPresenceFromSessions,
   type FriendRequestData,
 } from './socialNormalizers';
+import { currentAuthenticatedActorId } from './session';
+
+function hasAuthenticatedActor(): boolean {
+  return Boolean(currentAuthenticatedActorId());
+}
 
 function bytesToB64(bytes: Uint8Array): string {
   let bin = '';
@@ -909,6 +915,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   hydrate: async (actorId: string) => {
     const did = actorId.trim();
     if (!did) return;
+    if (currentAuthenticatedActorId() !== did) return;
     set({ currentUserDid: did });
     const { loadCurrentUserProfile, loadSessions, loadGroups } = get();
     await loadCurrentUserProfile();
@@ -988,6 +995,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   },
 
   loadSessions: async () => {
+    if (!hasAuthenticatedActor()) return;
     set({ loading: true });
     try {
       const data = await api.friendChatListSessions();
@@ -1016,6 +1024,10 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       }));
       set((state) => mergeRemoteConversationLocalState(state, settingsEntries));
     } catch (error) {
+      if (isUnauthorizedError(error)) {
+        set({ loading: false });
+        return;
+      }
       log.error('socialChat', 'loadSessions failed', error);
       set({ loading: false });
       throw error;
@@ -1023,6 +1035,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   },
 
   loadGroups: async () => {
+    if (!hasAuthenticatedActor()) return;
     try {
       const data = await api.groupChatListGroups();
       const groups = (data?.groups || []) as Group[];
@@ -1033,6 +1046,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       }));
       set((state) => mergeRemoteConversationLocalState(state, settingsEntries));
     } catch (error) {
+      if (isUnauthorizedError(error)) return;
       log.error('socialChat', 'loadGroups failed', error);
       throw error;
     }
@@ -1082,6 +1096,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     },
 
   loadMessages: async (ulid, kind) => {
+    if (!hasAuthenticatedActor()) return;
     const activeTab = kind ?? get().activeTab;
     set({ loading: true });
     try {
@@ -1191,6 +1206,10 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         }
       }
     } catch (error) {
+      if (isUnauthorizedError(error)) {
+        set({ loading: false });
+        return;
+      }
       log.error('socialChat', 'loadMessages failed', error);
       set({ loading: false });
       throw error;
@@ -1516,6 +1535,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   },
 
   loadGroupMembers: async (groupUlid) => {
+    if (!hasAuthenticatedActor()) return;
     try {
       const data = await api.groupChatGetMembers(groupUlid);
       const members = (data?.members || []) as GroupMember[];
@@ -1553,6 +1573,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         groupMembers: { ...state.groupMembers, [groupUlid]: members },
       }));
     } catch (error) {
+      if (isUnauthorizedError(error)) return;
       log.error('socialChat', 'loadGroupMembers failed', error);
       throw error;
     }
@@ -1727,6 +1748,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   },
 
   loadCurrentUserProfile: async () => {
+    if (!hasAuthenticatedActor()) return;
     try {
       const profile = await api.actorGetMyProfile();
       const profileDid = profile?.id?.trim() || null;
@@ -1736,12 +1758,14 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         conversationLocalState: loadConversationLocalState(profileDid),
       });
     } catch (error) {
+      if (isUnauthorizedError(error)) return;
       log.error('socialChat', 'loadCurrentUserProfile failed', error);
       throw error;
     }
   },
 
   loadPeerProfile: async (peerDid, force = false) => {
+    if (!hasAuthenticatedActor()) return;
     const did = (peerDid || '').trim();
     if (!did) return;
     const state = get();
@@ -1774,6 +1798,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   },
 
   loadFriendRequests: async (status, limit, offset) => {
+    if (!hasAuthenticatedActor()) return;
     try {
       // status omitted or 0: all statuses; backend returns both sent and received rows.
       const data = await api.friendChatListFriendRequests(
@@ -1784,6 +1809,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       const requests = normalizeFriendRequests(data?.requests);
       set({ friendRequests: requests });
     } catch (error) {
+      if (isUnauthorizedError(error)) return;
       log.error('socialChat', 'loadFriendRequests failed', error);
       throw error;
     }
@@ -1852,6 +1878,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   },
 
   loadGroupUnreadCounts: async () => {
+    if (!hasAuthenticatedActor()) return;
     const { groups } = get();
     const counts: Record<string, number> = {};
     try {
@@ -1862,12 +1889,14 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       const activeGroupUlid = get().activeGroupUlid;
       set({ groupUnreadCounts: activeGroupUlid ? { ...counts, [activeGroupUlid]: 0 } : counts });
     } catch (error) {
+      if (isUnauthorizedError(error)) return;
       log.error('socialChat', 'loadGroupUnreadCounts failed', error);
       throw error;
     }
   },
 
   loadConversationPreviews: async () => {
+    if (!hasAuthenticatedActor()) return;
     const { sessions, groups } = get();
     const previews: Record<string, MessagePreview> = {};
     const tasks: Promise<void>[] = [];
