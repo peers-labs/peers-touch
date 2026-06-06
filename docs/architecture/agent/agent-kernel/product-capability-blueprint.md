@@ -10,13 +10,13 @@
 
 ## 1. 一句话结论
 
-Peers-Touch 的 Agent 应该按“用户可感知的 Agent 产品能力”重构，而不是按现有代码或 gdpa-agent-box 的管理台结构重构。
+Peers-Touch 的 Agent 应该按“用户可感知的 Agent 产品能力”重构，而不是按现有代码或 thirdparty 的管理台结构重构。
 
 目标态是：
 
 - **交互体验、Agent 组织、Desktop / UI / UX 以 LobeHub / LobeChat 为产品基线**：Agent 是长期队友，有 Profile、有 Topic、有 Memory、有 Skill、有 Knowledge、有 Task，有顺滑的聊天、工具卡片、配置抽屉和跨设备体验。
-- **CLI 集成、Skill 包、Bridge Tool、A2A、MCP 后端控制以 gdpa-agent-box 为工程基线**：外部 CLI runtime 以受控 provider 接入，Skill 以 `SKILL.md` / package / progressive disclosure 落地，Tool/MCP/A2A 都有策略、审批、审计和运行事件。
-- **最终实现必须是 Peers-Touch 原生能力**：Station 做业务真源，Proto-first 定合同，Desktop 走 PageDescriptor / RuntimeDescriptor / Projection，UI 使用 Peers-Touch 的产品框架、LobeUI 组件和既有视觉语言，不复制 gdpa-agent-box UI，不背历史数据包袱。
+- **CLI 集成、Skill 包、Bridge Tool、A2A、MCP 后端控制以 thirdparty 为工程基线**：外部 CLI runtime 以受控 provider 接入，Skill 以 `SKILL.md` / package / progressive disclosure 落地，Tool/MCP/A2A 都有策略、审批、审计和运行事件。
+- **最终实现必须是 Peers-Touch 原生能力**：Station 做业务真源，Proto-first 定合同，Desktop 走 PageDescriptor / RuntimeDescriptor / Projection，UI 使用 Peers-Touch 的产品框架、LobeUI 组件和既有视觉语言，不复制 thirdparty UI，不背历史数据包袱。
 
 ---
 
@@ -36,9 +36,9 @@ LobeHub 的强项是“Agent 产品应该长什么样、用户如何感知 Agent
 
 Peers-Touch 应该学习这些**产品能力和交互形态**，不复制它的 Next.js / Electron / Zustand 架构。
 
-### 2.2 gdpa-agent-box 负责回答什么
+### 2.2 thirdparty 负责回答什么
 
-gdpa-agent-box 的强项是“Agent 能力如何被安全、可观测、可扩展地执行”：
+thirdparty 的强项是“Agent 能力如何被安全、可观测、可扩展地执行”：
 
 - CLI runtime 接入成熟：Codex、Claude Code、Cursor CLI、Trae / Coco 等可以作为 external dialogue runtime 被统一调度。
 - Skill 包形态成熟：`SKILL.md`、技能包、skill projection、Skill Bridge、Skill Curator、`skills_list` / `skill_view` / `skill_manage` / `skill_toggle` 等闭环完整。
@@ -58,44 +58,44 @@ Peers-Touch 应该学习这些**工程机制和安全边界**，但把它们纳�
 | 能力域 | 用户感知 | 核心设计来源 | Peers-Touch 目标 |
 |--------|----------|--------------|------------------|
 | Agent Home | 我有哪些 Agent、谁在工作、谁可用 | LobeHub | Agent Center + Agent 状态总览 |
-| Agent Profile | 配置 Agent 的身份、模型、技能、记忆、知识、工具、协作权限 | LobeHub + gdpa | Peers 原生 Profile 页面 |
+| Agent Profile | 配置 Agent 的身份、模型、技能、记忆、知识、工具、协作权限 | LobeHub + thirdparty | Peers 原生 Profile 页面 |
 | Topic / Thread | 每个 Agent 有结构化对话历史，可搜索、收藏、归档、恢复 | LobeHub | Thread 一等资源 |
 | Chat Interaction | 流式回复、thinking、tool cards、artifact、approval、retry、branch | LobeHub | ConversationFlow + runtime projection |
 | Memory | Agent 记住我、可解释地使用记忆、我能编辑/删除/反馈 | LobeHub | White-box Memory + Station 治理 |
-| Skill | 给 Agent 装能力包，Agent 可按需读取技能细节 | gdpa-agent-box | SkillPackage + `SKILL.md` + Skill Bridge |
-| Tool | Agent 能调用工具，用户能看见、审批、回放 | gdpa-agent-box | Schema-first Tool Registry |
-| MCP | 连接外部工具服务、私有 API、本地进程工具 | gdpa-agent-box + LobeHub UX | MCP Server 管理 + Tool projection |
-| A2A / Agent Group | Agent 间协作、顺序/并行/辩论、长任务委派 | gdpa-agent-box + LobeHub UX | A2A 协议 + Agent Group UI |
-| Task / Schedule | 把工作派给 Agent，异步执行、定时执行、等待验收 | LobeHub + gdpa | Agent Task Board + Scheduler |
+| Skill | 给 Agent 装能力包，Agent 可按需读取技能细节 | thirdparty | SkillPackage + `SKILL.md` + Skill Bridge |
+| Tool | Agent 能调用工具，用户能看见、审批、回放 | thirdparty | Schema-first Tool Registry |
+| MCP | 连接外部工具服务、私有 API、本地进程工具 | thirdparty + LobeHub UX | MCP Server 管理 + Tool projection |
+| A2A / Agent Group | Agent 间协作、顺序/并行/辩论、长任务委派 | thirdparty + LobeHub UX | A2A 协议 + Agent Group UI |
+| Task / Schedule | 把工作派给 Agent，异步执行、定时执行、等待验收 | LobeHub + thirdparty | Agent Task Board + Scheduler |
 | Knowledge / Resource | 给 Agent 绑定文档、知识库、项目资料 | LobeHub + Peers | Knowledge Resource + RAG + Workspace |
-| Workspace | Agent 在哪里工作，能看哪些文件，产物放哪里 | gdpa-agent-box | Peers Workspace / Project Workspace |
-| CLI Provider | Codex/Claude/Cursor/Trae 类 CLI 作为 provider 接入 | gdpa-agent-box | CLI-wrapped AgentProvider |
+| Workspace | Agent 在哪里工作，能看哪些文件，产物放哪里 | thirdparty | Peers Workspace / Project Workspace |
+| CLI Provider | Codex/Claude/Cursor/Trae 类 CLI 作为 provider 接入 | thirdparty | CLI-wrapped AgentProvider |
 | Kernel-native Provider | Peers 自己控制 prompt、tool loop、memory、skill | Peers + Eino | Kernel-native AgentProvider |
 | Model Backend | 多模型厂商、本地模型、网关模型统一接入 | LobeHub | ModelBackend 管理 |
-| Approval / Safety | 高风险操作要确认，工具和 CLI 都不能绕过 | gdpa-agent-box | Station enforced policy |
-| Growth / Diagnostics | Agent 变好、记忆/技能有反馈、失败可归因 | Peers + gdpa | Growth Report + TurnTrace |
+| Approval / Safety | 高风险操作要确认，工具和 CLI 都不能绕过 | thirdparty | Station enforced policy |
+| Growth / Diagnostics | Agent 变好、记忆/技能有反馈、失败可归因 | Peers + thirdparty | Growth Report + TurnTrace |
 | Marketplace / Sharing | 发现、安装、发布 Agent / Skill / MCP | LobeHub | Peers Community / Workspace 内共享 |
-| Channel | Agent 可以接入外部聊天渠道 | Peers + gdpa | ChannelBinding + Thread mirror |
+| Channel | Agent 可以接入外部聊天渠道 | Peers + thirdparty | ChannelBinding + Thread mirror |
 
 ---
 
 ## 4. 能力对比矩阵
 
-| 功能点 | LobeHub / LobeChat 强在哪里 | gdpa-agent-box 强在哪里 | Peers-Touch 采用策略 | 评审结论 |
+| 功能点 | LobeHub / LobeChat 强在哪里 | thirdparty 强在哪里 | Peers-Touch 采用策略 | 评审结论 |
 |--------|------------------------------|--------------------------|----------------------|----------|
 | Agent 产品心智 | Agent 是持久队友，Agent Builder、Agent Marketplace、Agent Groups、Tasks、Pages 形成完整产品心智 | LogicalAgent / ExecutionProfile / DialogueThread 更偏工程抽象 | 产品心智采用 LobeHub，领域模型采用 Peers Proto | LobeHub 更强 |
-| Agent Profile | 用户能集中配置 role、model、skills、knowledge、memory | Profile 能表达 runtime、workspace、CLI executor、A2A policy | UI 采用 LobeHub 样式，配置项加入 gdpa 的 runtime/CLI/bridge 能力 | 两者互补 |
-| Chat UX | 对话体验成熟，Skill 按钮、工具启停、Agent 切换、Topic 管理清晰 | 运行事件、tool/approval/bridge 证据链更强 | 前端交互用 LobeHub 风格，事件事实源用 Station projection | LobeHub 做 UX，gdpa 做执行 |
-| Memory | white-box memory、personal memory、可编辑结构化记忆、用户心智清晰 | memory tool、feedback、GrowthLogger、scope、bridge 审批更强 | Memory 产品按 LobeHub，治理按 Peers/gdpa | LobeHub 主导 |
-| Skill | Skills 作为可发现、可安装、可启停的能力，MCP Marketplace 体验好 | `SKILL.md`、package、projection、progressive disclosure、Skill Bridge 明显更深 | Skill 内核采用 gdpa，UI 采用 LobeHub Store | gdpa 主导 |
-| Tool | 用户能理解“开启某能力后 Agent 可调用工具” | Eino ToolRegistry、policy、approval、bridge endpoint、category、schema 更完整 | 后端采用 gdpa 模式，前端用 LobeHub 工具卡体验 | gdpa 主导 |
-| MCP | MCP Marketplace、Custom MCP、Desktop STDIO 一键配置体验好 | 动态工具注册/清理、策略过滤、bridge 调度、执行审计更完整 | MCP UX 学 LobeHub，执行内核学 gdpa | 后端 gdpa 更强，UX LobeHub 更强 |
-| A2A / Multi-Agent | Agent Groups 的顺序/并行/协作产品心智好 | 标准 A2A 协议、Agent Card、Task 状态机、resolver、远程 agent 更完整 | 产品用 Agent Groups，协议用 A2A | gdpa 后端更强 |
-| CLI 集成 | 主要是 LobeHub 自身桌面和 MCP STDIO，不是 CLI coding runtime 核心能力 | Codex/Claude/Cursor/Trae runtime、workspace isolation、bridge skill、keep-alive 经验丰富 | 采用 gdpa 的 CLI integration 思路，封成 Peers AgentProvider | gdpa 显著更强 |
-| Provider / Model | 多模型 provider 体验成熟，用户配置路径清晰 | runtime profile / executor capability 更强 | ModelBackend UI 学 LobeHub，AgentProvider 控制学 Peers/gdpa | 两层抽象 |
-| Task / Schedule | Task 像 Linear/GitHub Issue，可 assign agent、评论、定时、验收 | cron、kanban、coding run、orchestra 后端链路更强 | UI 学 LobeHub，执行闭环结合 Peers 项目能力 | LobeHub 产品更强，gdpa 后端更强 |
+| Agent Profile | 用户能集中配置 role、model、skills、knowledge、memory | Profile 能表达 runtime、workspace、CLI executor、A2A policy | UI 采用 LobeHub 样式，配置项加入 thirdparty 的 runtime/CLI/bridge 能力 | 两者互补 |
+| Chat UX | 对话体验成熟，Skill 按钮、工具启停、Agent 切换、Topic 管理清晰 | 运行事件、tool/approval/bridge 证据链更强 | 前端交互用 LobeHub 风格，事件事实源用 Station projection | LobeHub 做 UX，thirdparty 做执行 |
+| Memory | white-box memory、personal memory、可编辑结构化记忆、用户心智清晰 | memory tool、feedback、GrowthLogger、scope、bridge 审批更强 | Memory 产品按 LobeHub，治理按 Peers/thirdparty | LobeHub 主导 |
+| Skill | Skills 作为可发现、可安装、可启停的能力，MCP Marketplace 体验好 | `SKILL.md`、package、projection、progressive disclosure、Skill Bridge 明显更深 | Skill 内核采用 thirdparty，UI 采用 LobeHub Store | thirdparty 主导 |
+| Tool | 用户能理解“开启某能力后 Agent 可调用工具” | Eino ToolRegistry、policy、approval、bridge endpoint、category、schema 更完整 | 后端采用 thirdparty 模式，前端用 LobeHub 工具卡体验 | thirdparty 主导 |
+| MCP | MCP Marketplace、Custom MCP、Desktop STDIO 一键配置体验好 | 动态工具注册/清理、策略过滤、bridge 调度、执行审计更完整 | MCP UX 学 LobeHub，执行内核学 thirdparty | 后端 thirdparty 更强，UX LobeHub 更强 |
+| A2A / Multi-Agent | Agent Groups 的顺序/并行/协作产品心智好 | 标准 A2A 协议、Agent Card、Task 状态机、resolver、远程 agent 更完整 | 产品用 Agent Groups，协议用 A2A | thirdparty 后端更强 |
+| CLI 集成 | 主要是 LobeHub 自身桌面和 MCP STDIO，不是 CLI coding runtime 核心能力 | Codex/Claude/Cursor/Trae runtime、workspace isolation、bridge skill、keep-alive 经验丰富 | 采用 thirdparty 的 CLI integration 思路，封成 Peers AgentProvider | thirdparty 显著更强 |
+| Provider / Model | 多模型 provider 体验成熟，用户配置路径清晰 | runtime profile / executor capability 更强 | ModelBackend UI 学 LobeHub，AgentProvider 控制学 Peers/thirdparty | 两层抽象 |
+| Task / Schedule | Task 像 Linear/GitHub Issue，可 assign agent、评论、定时、验收 | cron、kanban、coding run、orchestra 后端链路更强 | UI 学 LobeHub，执行闭环结合 Peers 项目能力 | LobeHub 产品更强，thirdparty 后端更强 |
 | Knowledge | 文件上传、知识库、agent 绑定、topic 引用心智成熟 | Knowledge Pack 插件目录、skill/MCP/prompt hook 更工程化 | Peers 用 Knowledge Resource + Knowledge Pack 双层 | 两者互补 |
-| Desktop | Web/Desktop/Mobile 一致体验，桌面端承接 MCP STDIO | Desktop 不是 gdpa 的主要 UX 亮点，但 CLI/workspace 控制强 | Peers Desktop 体验学 LobeHub，Rust 桥和 CLI launcher 学 gdpa | LobeHub UX 更强 |
+| Desktop | Web/Desktop/Mobile 一致体验，桌面端承接 MCP STDIO | Desktop 不是 thirdparty 的主要 UX 亮点，但 CLI/workspace 控制强 | Peers Desktop 体验学 LobeHub，Rust 桥和 CLI launcher 学 thirdparty | LobeHub UX 更强 |
 | Growth / 可观测 | 产品强调 co-evolution，但工程 trace 不一定透明到用户 | GrowthLogger、TurnTrace、memory/skill 事件归因强 | Peers 保留自身 Growth 作为差异化 | Peers 应该自建 |
 
 ---
@@ -104,15 +104,15 @@ Peers-Touch 应该学习这些**工程机制和安全边界**，但把它们纳�
 
 ### 5.1 左侧一级入口
 
-Peers-Touch Desktop 的 Agent 产品不应做成 gdpa-agent-box 管理台，而应是一个“工作台”：
+Peers-Touch Desktop 的 Agent 产品不应做成 thirdparty 管理台，而应是一个“工作台”：
 
 | 入口 | 说明 | 首屏信息 |
 |------|------|----------|
-| Agents | Agent 列表、状态、最近 Topic、运行中任务 | Agent 卡片、在线/运行状态、能力标签 |
+| Agents | 飞书式 Agent 列表，直接选择 Agent，不使用二次确认下拉选择器 | Pinned Agents、普通 Agents、拖拽排序、在线/运行状态、能力标签 |
 | Chat | 当前 Agent 的 Topic / Conversation | Topic 列表、消息流、输入区 |
 | Tasks | 指派给 Agent 的异步任务和定时任务 | Backlog / Running / Review / Done |
 | Memory | 用户记忆、Agent 记忆、项目记忆 | 记忆维度、可编辑条目、使用记录 |
-| Skills | Skill Store、已安装包、Agent 绑定 | LobeHub 风格商店 + gdpa Skill 包详情 |
+| Skills | Skill Store、已安装包、Agent 绑定 | LobeHub 风格商店 + thirdparty Skill 包详情 |
 | Tools | Tool / MCP / Approval / Audit | 工具目录、MCP server、风险等级 |
 | Groups | Agent Group / A2A 协作 | 顺序/并行/辩论编排、成员状态 |
 | Providers | AgentProvider / ModelBackend 配置 | Kernel-native、CLI-wrapped、模型后端 |
@@ -139,14 +139,61 @@ Profile 应包含：
 | Channels | 它在哪些渠道可用 | ChannelBinding、响应模式、话题隔离 |
 | Growth | 它如何变好 | 记忆反馈、技能建议、失败报告、测试用例 |
 
-### 5.3 Conversation 页面
+### 5.3 Agent 列表页
+
+Agent 选择不使用顶部下拉选择器。下拉选择器需要先展开再选择，用户要操作两次才能进入自己的 Agent；Peers-Touch 改为飞书式列表交互：
+
+- 左侧是 Agent 列表，点击某个 Agent 立即选中并进入该 Agent 的工作区。
+- 列表分两个区：
+  - `Pinned Agents`：用户常用 Agent，固定在列表顶部。
+  - `Agents`：普通 Agent 列表。
+- 每个 Agent item 支持：
+  - 单击选中。
+  - pin / unpin。
+  - 拖拽排序。
+  - 从普通区拖到 pin 区。
+  - 从 pin 区拖回普通区。
+- 两个区都保留独立顺序；跨区移动时更新 `pinned` 与 `sort_order`。
+- 当前选中 Agent 用列表 item 高亮表达，不再依赖顶部 Agent 下拉选择器。
+- Agent item 只展示高频信息：
+  - avatar / name
+  - 当前状态：idle / running / waiting approval / failed
+  - 未读或待处理标记
+  - 最近 Topic 或当前 Task 摘要
+  - Memory / Skill / MCP / CLI 等能力小标签
+- 列表顶部只保留搜索、创建 Agent、过滤，不放 Agent 选择下拉。
+
+推荐交互结构：
+
+```text
+Agent Rail
+  Search / Create
+  Pinned Agents
+    Agent item
+    Agent item
+  Agents
+    Agent item
+    Agent item
+```
+
+排序写入 Station：
+
+- `AgentListPreference.user_id`
+- `AgentListPreference.pinned_agent_ids[]`
+- `AgentListPreference.order_items[]`
+- `AgentListPreference.selected_agent_id`
+- `AgentListPreference.updated_at`
+
+Desktop Web 只消费 `agentRuntime.agentListProjection`，拖拽结束后发起一次排序 mutation；mutation 成功后由 projection 回放新顺序。页面不在本地伪造最终顺序，只做 optimistic preview。
+
+### 5.4 Conversation 页面
 
 Conversation 页面应采用 LobeHub 风格的主对话体验，但事实源来自 Peers Runtime Projection。
 
 关键交互：
 
 - 左侧 Topic 列表：搜索、收藏、归档、删除、重命名。
-- 顶部 Agent switcher：切换 Agent 时切换到该 Agent 的 Topic 集合。
+- 当前 Agent 来自 Agent 列表页的选中态；Conversation 顶部只展示 Agent identity chip，不提供 Agent 下拉选择器。
 - 顶部 Provider / model chip：展示当前 Turn 的 effective provider，不允许页面直接改写 Station 真源。
 - 输入区能力按钮：Skill、Tool、MCP、Attachment、Memory、Knowledge、Task。
 - 消息流：
@@ -175,11 +222,11 @@ Conversation 页面应采用 LobeHub 风格的主对话体验，但事实源来�
 
 Memory 必须以 LobeHub 的 white-box memory 为产品基线：用户能看到、能编辑、能删除、能反馈、能理解 Agent 为什么记住和为什么使用。
 
-gdpa-agent-box 的 memory tool、feedback、scope、GrowthLogger 值得保留，但它更偏执行和审计。Peers-Touch 的 Memory 应该同时满足：
+thirdparty 的 memory tool、feedback、scope、GrowthLogger 值得保留，但它更偏执行和审计。Peers-Touch 的 Memory 应该同时满足：
 
 - LobeHub 式用户心智：透明、结构化、可控、跨对话生效。
 - Peers 式治理：Station 真源、proto 合同、版本、权限、审计、回滚。
-- gdpa 式工具闭环：Agent 可通过受控工具搜索/写入/反馈记忆，CLI provider 只能通过 Restricted Bridge 写入。
+- thirdparty 式工具闭环：Agent 可通过受控工具搜索/写入/反馈记忆，CLI provider 只能通过 Restricted Bridge 写入。
 
 ### 6.2 Memory 维度
 
@@ -192,7 +239,7 @@ gdpa-agent-box 的 memory tool、feedback、scope、GrowthLogger 值得保留，
 | Persona | 用户工作风格、沟通方式 | “喜欢直接、不要营销文案” | user |
 | Experience | 从历史任务沉淀的经验 | “上次发布失败是因为 API schema 未同步” | agent / project |
 | Context | 正在进行的项目、目标、约束 | “当前在重构 Agent Kernel” | project / thread-derived |
-| Activity | 时间性活动和近期行为 | “本周在比较 LobeHub 和 gdpa-agent-box” | thread-derived / user |
+| Activity | 时间性活动和近期行为 | “本周在比较 LobeHub 和 thirdparty” | thread-derived / user |
 
 Peers 内部可继续保留 `kind` / `layer` / `scope`，但 UI 不要暴露内部术语。用户看到的是“身份、偏好、经验、项目上下文、近期活动”等自然分类。
 
@@ -301,7 +348,7 @@ P1 风险：
 
 ### 7.1 结论
 
-Skill 采用 gdpa-agent-box 的方式做内核：`SkillPackage`、`SKILL.md`、progressive disclosure、skill projection、Skill Bridge、Skill Curator。
+Skill 采用 thirdparty 的方式做内核：`SkillPackage`、`SKILL.md`、progressive disclosure、skill projection、Skill Bridge、Skill Curator。
 
 LobeHub 的 Skill Store / MCP Marketplace 体验值得学习，但 LobeHub 的 Skill 更偏“工具/MCP 能力启停”，不够表达“Agent 如何学习一份可读、可版本化、可投影给 CLI 的技能文档”。Peers-Touch 应该把 Skill 定义为：
 
@@ -422,9 +469,9 @@ P1 风险：
 
 ### 8.1 结论
 
-Desktop / UI / UX 应学习 LobeHub，不学习 gdpa-agent-box。
+Desktop / UI / UX 应学习 LobeHub，不学习 thirdparty。
 
-gdpa-agent-box 的 UI 更偏“工程控制台 + Coding Agent 管理”，不适合 Peers-Touch 目标态。Peers-Touch 应做成：
+thirdparty 的 UI 更偏“工程控制台 + Coding Agent 管理”，不适合 Peers-Touch 目标态。Peers-Touch 应做成：
 
 - Agent-first workspace
 - Chat-first interaction
@@ -554,9 +601,9 @@ P0 风险：
 
 ### 9.1 Tool
 
-结论：**后端 gdpa-agent-box 更强，前端 LobeHub 更强。**
+结论：**后端 thirdparty 更强，前端 LobeHub 更强。**
 
-gdpa-agent-box 值得学习：
+thirdparty 值得学习：
 
 - `Registry` + `Meta`。
 - category：filesystem、shell、web、memory、skill、mcp。
@@ -594,7 +641,7 @@ UI 采用 LobeHub 风格：
 
 ### 9.2 MCP
 
-结论：**MCP 后端控制 gdpa-agent-box 更强；MCP 安装配置 UX LobeHub 更强。**
+结论：**MCP 后端控制 thirdparty 更强；MCP 安装配置 UX LobeHub 更强。**
 
 LobeHub 值得学习：
 
@@ -604,7 +651,7 @@ LobeHub 值得学习：
 - 支持从 JSON config 快速导入。
 - 支持配置、测试连接、安装、启用。
 
-gdpa-agent-box 值得学习：
+thirdparty 值得学习：
 
 - MCP server 动态注册后投影为 `mcp_{server}_{tool}`。
 - 禁用/删除/重连时按前缀清理动态工具。
@@ -624,7 +671,7 @@ Peers-Touch 设计：
 
 ### 9.3 A2A / Agent Group
 
-结论：**gdpa-agent-box 的 A2A 协议实现更强；LobeHub 的 Agent Group 产品表达更强。**
+结论：**thirdparty 的 A2A 协议实现更强；LobeHub 的 Agent Group 产品表达更强。**
 
 LobeHub 值得学习：
 
@@ -632,7 +679,7 @@ LobeHub 值得学习：
 - 顺序、并行、辩论等协作模式有清晰心智。
 - Agent 像团队成员，任务可以被拆给不同角色。
 
-gdpa-agent-box 值得学习：
+thirdparty 值得学习：
 
 - 标准 A2A Agent Card。
 - JSON-RPC 方法。
@@ -779,7 +826,7 @@ P1 风险：
 
 Knowledge 借鉴 LobeHub 的用户心智：上传文件、创建知识库、绑定给 Agent 或 Topic。
 
-但 Peers-Touch 还需要吸收 gdpa-agent-box 的 Knowledge Pack 思路：知识不只是 RAG 文档，也可以包含 prompt hook、skills、MCP、测试 Agent 和构建流程。
+但 Peers-Touch 还需要吸收 thirdparty 的 Knowledge Pack 思路：知识不只是 RAG 文档，也可以包含 prompt hook、skills、MCP、测试 Agent 和构建流程。
 
 ### 11.2 两层模型
 
@@ -1152,14 +1199,14 @@ P0：
 ### 18.1 必须坚持的方向
 
 1. **产品体验学 LobeHub**：Agent 是持久队友，用户围绕 Agent、Topic、Memory、Skill、Task 工作。
-2. **执行内核学 gdpa-agent-box**：CLI、Skill、Tool、MCP、A2A、Bridge 的工程边界要硬。
+2. **执行内核学 thirdparty**：CLI、Skill、Tool、MCP、A2A、Bridge 的工程边界要硬。
 3. **架构实现用 Peers-Touch**：Proto-first、Station 真源、Desktop Runtime Projection、LobeUI。
 4. **Kernel-native 是主线**：Peers 自己基于 Eino 控制 Agent loop。
 5. **CLI-wrapped 是 provider，不是主架构**：选择性可控，必须真实声明能力降级。
 
 ### 18.2 不能做的事
 
-1. 不能复制 gdpa-agent-box 的 UI/UX。
+1. 不能复制 thirdparty 的 UI/UX。
 2. 不能把 LobeHub 的 Skill/MCP 产品心智直接当成 Peers 的后端模型。
 3. 不能把 CLI provider 当成 Eino-native 一样可控。
 4. 不能把 OpenAI/Claude/Gemini 这类 vendor API 当成 AgentProvider。
@@ -1172,14 +1219,14 @@ P0：
 | 能力 | 更强参考 | Peers-Touch 最终方案 |
 |------|----------|----------------------|
 | Memory | LobeHub | LobeHub white-box memory + Peers Station governance |
-| Skill | gdpa-agent-box | gdpa `SKILL.md` package/projection/bridge + LobeHub Store UX |
+| Skill | thirdparty | thirdparty `SKILL.md` package/projection/bridge + LobeHub Store UX |
 | Desktop / UI / UX | LobeHub | LobeHub interaction pattern + Peers Desktop/LobeUI |
-| Tool | gdpa-agent-box | gdpa ToolRegistry/policy/approval + LobeHub tool card UX |
-| MCP | 后端 gdpa，UX LobeHub | gdpa dynamic projection + LobeHub install/config flow |
-| A2A | gdpa-agent-box | gdpa A2A protocol + LobeHub Agent Group product |
-| CLI Integration | gdpa-agent-box | CLI-wrapped AgentProvider + Restricted Bridge |
-| Provider / Model | LobeHub UX + Peers/gdpa abstraction | AgentProvider / ModelBackend 两层 |
-| Task / Schedule | LobeHub UX + gdpa scheduler | Agent Task Board + TurnRunner/Scheduler |
+| Tool | thirdparty | thirdparty ToolRegistry/policy/approval + LobeHub tool card UX |
+| MCP | 后端 thirdparty，UX LobeHub | thirdparty dynamic projection + LobeHub install/config flow |
+| A2A | thirdparty | thirdparty A2A protocol + LobeHub Agent Group product |
+| CLI Integration | thirdparty | CLI-wrapped AgentProvider + Restricted Bridge |
+| Provider / Model | LobeHub UX + Peers/thirdparty abstraction | AgentProvider / ModelBackend 两层 |
+| Task / Schedule | LobeHub UX + thirdparty scheduler | Agent Task Board + TurnRunner/Scheduler |
 | Growth | Peers 自建 | TurnTrace + Growth diagnostics |
 
 ---
@@ -1197,6 +1244,6 @@ P0：
 - [LobeHub Task](https://lobehub.com/docs/usage/getting-started/task)
 - [LobeHub Pages](https://lobehub.com/docs/usage/getting-started/page)
 - [LobeHub Model Providers](https://lobehub.com/docs/usage/providers)
-- gdpa-agent-box reference: `docs/architecture/backend/10-tool.md`
-- gdpa-agent-box reference: `docs/architecture/backend/12-a2a-protocol.md`
-- gdpa-agent-box reference: `docs/architecture/backend/13-unified-agent-architecture.md`
+- thirdparty reference: `docs/architecture/backend/10-tool.md`
+- thirdparty reference: `docs/architecture/backend/12-a2a-protocol.md`
+- thirdparty reference: `docs/architecture/backend/13-unified-agent-architecture.md`

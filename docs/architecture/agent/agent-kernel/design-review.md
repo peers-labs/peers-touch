@@ -35,7 +35,7 @@
 |--------|--------------|----------|----------|
 | 三层职责 | [design.md](./design.md) / [integration.md](./integration.md) | Model 定合同，Station 做业务真源，Desktop 做体验和设备桥 | 方向正确 |
 | Agent Kernel 定位 | [README.md](./README.md) | 当前目标架构，不是旧 Agent 兼容层 | 正确 |
-| 参考系统边界 | [integration.md](./integration.md) | gdpa-agent-box 只作为参考，不修改、不复制 UI/UX | 正确 |
+| 参考系统边界 | [integration.md](./integration.md) | thirdparty 只作为参考，不修改、不复制 UI/UX | 正确 |
 | 无历史包袱 | [README.md](./README.md) | 旧代码、旧 API、旧数据可删除或替换 | 正确 |
 | 分阶段建设 | [execution-plans/](./execution-plans/) | Contract、Runtime/Tool/Memory/Skill、Desktop、A2A/MCP/Channel/Growth | 需要拆小 Phase 4 |
 

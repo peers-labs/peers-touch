@@ -14,7 +14,7 @@
 2. **Station owns truth**：Agent、Thread、Turn、Tool policy、Memory、Skill、MCP、A2A、Channel、Growth、Scheduler 的业务真源都在 Station。
 3. **Desktop owns experience and device bridge**：Desktop Rust 只承载设备能力、文件选择、本地 CLI Provider 启动、secure storage、stream bridge；Desktop Web 只做 runtime projection 与页面渲染。
 4. **Execution closure first**：每个 Turn 必须可追踪、可重放、可停止、可恢复、可归因；不能只保存最终文本。
-5. **Borrow capability, not shape**：借鉴 Agent Box 的运行时资源拆分、工具桥、MCP、A2A、Workspace 隔离、技能包理念，但 UI/UX、契约层、业务边界全部按 Peers-Touch 重做。
+5. **Borrow capability, not shape**：借鉴 thirdparty 的运行时资源拆分、工具桥、MCP、A2A、Workspace 隔离、技能包理念，但 UI/UX、契约层、业务边界全部按 Peers-Touch 重做。
 6. **Growth is a first-class loop**：Memory / Skill 的获取、应用、反馈、诊断、修正必须进入同一运行闭环，而不是后台统计。
 
 ---
@@ -76,7 +76,7 @@ flowchart TB
     Runtime --> LocalProvider
 ```
 
-目标态的 Agent Kernel 是 Station 业务内核，不是 Desktop 插件，也不是 Agent Box 的嵌入式管理台。它对外提供统一 API、流式事件和 projection 数据；对内通过 runtime、thread、tool、memory、skill、growth 等领域服务完成执行闭环。
+目标态的 Agent Kernel 是 Station 业务内核，不是 Desktop 插件，也不是 thirdparty 的嵌入式管理台。它对外提供统一 API、流式事件和 projection 数据；对内通过 runtime、thread、tool、memory、skill、growth 等领域服务完成执行闭环。
 
 ---
 
@@ -199,7 +199,7 @@ Skill 是可复用操作知识包，不是 UI 插件。
 - Guard：prompt injection、秘密外泄、危险命令、不可见字符扫描。
 - Versioning：编辑、回滚、禁用、归档。
 
-Peers-Touch UI 不复制 Agent Box 的技能市场页面，而是做“Agent Profile 内技能配置 + Skill Library 管理”的双入口。
+Peers-Touch UI 不复制 thirdparty 的技能市场页面，而是做“Agent Profile 内技能配置 + Skill Library 管理”的双入口。
 
 ### 4.7 `mcp`
 

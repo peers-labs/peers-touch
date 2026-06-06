@@ -39,9 +39,9 @@ Agent Kernel 严格落在 Peers-Touch 三层架构里：
 
 ---
 
-## 2. 从 gdpa-agent-box 借鉴什么
+## 2. 从 thirdparty 借鉴什么
 
-| Agent Box 能力 | Peers-Touch 借鉴方式 | 不照搬内容 |
+| thirdparty 能力 | Peers-Touch 借鉴方式 | 不照搬内容 |
 |----------------|----------------------|------------|
 | LogicalAgent / ExecutionProfile / Thread / Run | 转为 Agent / RuntimeProfile / AgentThread / AgentTurn proto-first 模型 | 不复制 SQLite store type 和 Web 管理台结构 |
 | RuntimeRegistry 与 CapabilitySet | 作为 Station runtime descriptor 与能力矩阵 | 不按 CLI 或厂商字符串散落判断 |
@@ -97,11 +97,11 @@ CLI-wrapped Provider 默认不拥有 Station tool 权限。只有 Agent Profile 
 
 ### 4.1 信息架构
 
-Peers-Touch Desktop 侧建议把 Agent 作为工作台能力，而不是 Agent Box 式全屏管理台。
+Peers-Touch Desktop 侧建议把 Agent 作为工作台能力，而不是 thirdparty 式全屏管理台。
 
 一级入口：
 
-- `Agent Center`：Agent 列表、状态、最近运行、创建入口。
+- `Agent Center`：飞书式 Agent 列表、Pinned Agents、普通 Agents、拖拽排序、状态、最近运行、创建入口；点击列表项即选中 Agent，不使用顶部下拉选择器。
 - `Agent Chat`：当前 Agent 的对话与运行态。
 - `Agent Profile`：身份、运行配置、工具策略、Memory/Skill scope。
 - `Agent Assets`：Memory、Skill、MCP、A2A 的分组管理。
@@ -111,7 +111,7 @@ Peers-Touch Desktop 侧建议把 Agent 作为工作台能力，而不是 Agent B
 
 | 页面 | Projection owner | 页面职责 |
 |------|------------------|----------|
-| AgentCenterPage | `agentRuntime.agentList` | 列表、筛选、创建入口 |
+| AgentCenterPage | `agentRuntime.agentList` | Pinned/普通列表、筛选、创建入口、pin/unpin、跨区拖拽排序 |
 | AgentChatPage | `agentRuntime.threadDetail` | 消息流、工具卡、审批、停止/重试 |
 | AgentProfilePage | `agentRuntime.agentProfile` | 编辑 Agent 与 RuntimeProfile |
 | AgentMemoryPage | `agentRuntime.memory` | 检索、冻结、回滚、删除 |

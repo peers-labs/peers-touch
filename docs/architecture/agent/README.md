@@ -20,5 +20,5 @@
 
 - Agent Kernel 是 Peers-Touch 当前目标架构，不是对旧 Agent 子服务的兼容层。
 - 历史代码、历史 API、历史数据都不是约束；阻碍目标架构时可以删除或替换。
-- gdpa-agent-box 是参考源，不是实现源；不要修改 gdpa-agent-box，也不要复制它的 UI/UX。
+- thirdparty 是参考源，不是实现源；不要修改 thirdparty，也不要复制它的 UI/UX。
 - Provider 分两层建模：`AgentProvider` 负责 Turn 编排，`ModelBackend` 负责模型来源；Eino-native 底层同样使用 vendor/model backend，CLI-wrapped 只按能力矩阵选择性可控。

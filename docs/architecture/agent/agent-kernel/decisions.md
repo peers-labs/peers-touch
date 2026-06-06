@@ -16,7 +16,7 @@
 | D-02 | Proto-first 定义 Agent 合同 | accepted |
 | D-03 | 采用 Agent / RuntimeProfile / Thread / Turn 拆分 | accepted |
 | D-04 | 用 schema-first tool calling 替代文本标签解析 | accepted |
-| D-05 | Desktop 使用 Peers-Touch Runtime Projection，不复制 Agent Box UI | accepted |
+| D-05 | Desktop 使用 Peers-Touch Runtime Projection，不复制 thirdparty UI | accepted |
 | D-06 | Memory、Skill、Workspace、Thread/Turn 分离建模 | accepted |
 | D-07 | A2A 与 MCP 都进入 Station，但职责分离 | accepted |
 | D-08 | Growth 是执行闭环的一部分 | accepted |
@@ -125,18 +125,18 @@ schema-first 是安全、审计、MCP、A2A、Desktop approval 的基础。
 
 ---
 
-## D-05: Desktop 使用 Peers-Touch Runtime Projection，不复制 Agent Box UI
+## D-05: Desktop 使用 Peers-Touch Runtime Projection，不复制 thirdparty UI
 
 **Status**: accepted
 **Date**: 2026-06-06
 
 ### Context
 
-用户明确要求 UI、UX 框架使用 Peers-Touch，不用 Agent Box。Peers-Touch Desktop 也已有 PageDescriptor / RuntimeDescriptor 约束。
+用户明确要求 UI、UX 框架使用 Peers-Touch，不用 thirdparty。Peers-Touch Desktop 也已有 PageDescriptor / RuntimeDescriptor 约束。
 
 ### Decision
 
-Agent Desktop 页面必须通过 `agentRuntime` 投影消费数据。页面是纯渲染器，使用 LobeUI first、antd fallback，不复制 Agent Box 的管理台页面结构。
+Agent Desktop 页面必须通过 `agentRuntime` 投影消费数据。页面是纯渲染器，使用 LobeUI first、antd fallback，不复制 thirdparty 的管理台页面结构。
 
 ### Rationale
 
@@ -144,7 +144,7 @@ Agent Desktop 页面必须通过 `agentRuntime` 投影消费数据。页面是�
 
 ### Alternatives Considered
 
-- **嵌入 Agent Box Web 管理台**：最快看到能力，但架构和体验都不一致。
+- **嵌入 thirdparty Web 管理台**：最快看到能力，但架构和体验都不一致。
 - **每个页面 mount-time fetch**：短期容易写，长期状态新鲜度不可控。
 
 ---

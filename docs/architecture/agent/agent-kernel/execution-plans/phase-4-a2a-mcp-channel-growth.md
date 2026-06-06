@@ -31,7 +31,7 @@
 ## 3. 不做什么
 
 - 不实现完整 Coding Agent。
-- 不引入 Agent Box remote sharing UI。
+- 不引入 thirdparty remote sharing UI。
 - 不做复杂 workspace rootfs/proot 隔离。
 - 不把 MCP 工具默认开放给所有 Agent。
 - 不把 CLI-wrapped Provider 视为完全可控 Provider。

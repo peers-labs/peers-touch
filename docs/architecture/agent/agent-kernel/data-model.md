@@ -387,6 +387,7 @@ active -> deleted
 | Turn | `agent_turns` | Station DB | 单轮执行 |
 | TurnEvent | `agent_turn_events` | Station DB | stream replay |
 | ToolCall | `agent_tool_calls` | Station DB | 审计与 UI |
+| AgentListPreference | `agent_list_preferences` | Station DB | 用户级 Agent pin 区与列表排序 |
 | MemoryItem | `agent_memory_items` | Station DB | 长期语义 |
 | MemorySnapshot | `agent_memory_snapshots` | Station DB | Turn freeze |
 | SkillPackage | `agent_skill_packages` | Station DB | 包元信息 |
@@ -404,7 +405,7 @@ Desktop Web 不直接拼接 DB 对象，而消费 Station projection：
 
 | Projection | 用途 |
 |------------|------|
-| `AgentListProjection` | Agent Center 列表、状态、最近运行 |
+| `AgentListProjection` | Agent Center 的 Pinned Agents、普通 Agents、选中态、状态、最近运行、拖拽排序回放 |
 | `AgentProfileProjection` | Profile 页配置与能力矩阵 |
 | `ThreadListProjection` | Chat 侧边栏 |
 | `ThreadDetailProjection` | ConversationFlow、运行态、审批卡 |
@@ -414,3 +415,28 @@ Desktop Web 不直接拼接 DB 对象，而消费 Station projection：
 | `GrowthProjection` | Growth Dashboard |
 
 Projection 可以由 HTTP 拉取 + event stream 增量刷新，所有新鲜度归 `agentRuntime` 管。
+
+Agent 列表偏好由 Station 持久化，不放在 Desktop local storage：
+
+```proto
+message AgentListPreference {
+  string user_id = 1;
+  repeated string pinned_agent_ids = 2;
+  repeated AgentListOrderItem order_items = 3;
+  string selected_agent_id = 4;
+  int64 updated_at_unix_ms = 5;
+}
+
+message AgentListOrderItem {
+  string agent_id = 1;
+  bool pinned = 2;
+  int64 sort_order = 3;
+}
+```
+
+拖拽规则：
+
+- pin 区和普通区都是同一个 `AgentListProjection` 的两个分组。
+- 组内拖动只更新 `sort_order`。
+- 跨组拖动同时更新 `pinned` 和 `sort_order`。
+- 点击 Agent item 立即更新 `selected_agent_id`，Conversation 顶部只展示当前 Agent，不提供二次选择下拉选择器。
