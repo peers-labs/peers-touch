@@ -174,6 +174,43 @@ pub(crate) fn execute_turn(actor_id: &str, input: AgentExecuteTurnInput) -> AppR
         &completion.text,
     );
 
+    let approval_requests = turn_context
+        .tools
+        .iter()
+        .chain(turn_context.mcp.iter())
+        .filter(|item| {
+            item.get("needs_approval")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let bridge_audit_events = approval_requests
+        .iter()
+        .filter_map(|item| {
+            item.get("audit_event")
+                .and_then(serde_json::Value::as_str)
+                .map(|event| {
+                    json!({
+                        "event": event,
+                        "name": item.get("name").or_else(|| item.get("title")).and_then(serde_json::Value::as_str).unwrap_or("bridge"),
+                        "policy": item.get("policy").and_then(serde_json::Value::as_str).unwrap_or("approval"),
+                        "status": "projected",
+                        "replayable": item.get("replayable").and_then(serde_json::Value::as_bool).unwrap_or(true),
+                        "trace_id": recorded_trace.id.clone(),
+                    })
+                })
+        })
+        .chain(std::iter::once(json!({
+            "event": "bridge.memory.write",
+            "name": "memory.write",
+            "policy": "approval",
+            "status": "recorded",
+            "replayable": true,
+            "trace_id": recorded_trace.id.clone(),
+        })))
+        .collect::<Vec<_>>();
+
     success_payload(
         "agent_execute_turn",
         json!({
@@ -210,13 +247,20 @@ pub(crate) fn execute_turn(actor_id: &str, input: AgentExecuteTurnInput) -> AppR
             "assets": {
                 "memories": turn_context.memories,
                 "memory_write": {
+                    "name": "memory.write",
                     "status": "recorded",
                     "trace_id": recorded_trace.id,
-                    "conversation_id": conversation_id
+                    "conversation_id": conversation_id,
+                    "needs_approval": true,
+                    "policy": "approval",
+                    "audit_event": "bridge.memory.write",
+                    "replayable": true
                 },
                 "skills": turn_context.skills,
                 "tools": turn_context.tools,
                 "mcp": turn_context.mcp,
+                "approval_requests": approval_requests,
+                "bridge_audit_events": bridge_audit_events,
             }
         }),
     )

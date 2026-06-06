@@ -237,6 +237,151 @@ function runtimeAssetLabel(item: AgentRuntimeAsset): string {
   return typeof label === 'string' && label.trim() ? label : 'item';
 }
 
+function runtimeAssetString(item: AgentRuntimeAsset, key: string): string {
+  const value = item[key];
+  return typeof value === 'string' ? value : '';
+}
+
+function runtimeAssetBool(item: AgentRuntimeAsset, key: string): boolean {
+  return item[key] === true || item[key] === 'true';
+}
+
+function BridgeGovernanceBlock({ message }: { message: ChatMessage }) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
+  const [expanded, setExpanded] = useState(false);
+  const assets = message.runtimeAssets;
+  if (!assets) return null;
+
+  const tools = Array.isArray(assets.tools) ? assets.tools : [];
+  const mcp = Array.isArray(assets.mcp) ? assets.mcp : [];
+  const explicitApprovals = Array.isArray(assets.approval_requests) ? assets.approval_requests : [];
+  const approvalRequests = explicitApprovals.length > 0
+    ? explicitApprovals
+    : [...tools, ...mcp].filter((item) =>
+      runtimeAssetBool(item, 'needs_approval') || runtimeAssetString(item, 'policy') === 'approval',
+    );
+  const auditEvents = Array.isArray(assets.bridge_audit_events) ? assets.bridge_audit_events : [];
+  const memoryWriteEvent = assets.memory_write?.audit_event
+    ? [{
+      name: assets.memory_write.name || 'memory.write',
+      event: assets.memory_write.audit_event,
+      policy: assets.memory_write.policy || 'approval',
+      status: assets.memory_write.status || 'recorded',
+      replayable: assets.memory_write.replayable,
+    } as AgentRuntimeAsset]
+    : [];
+  const events = auditEvents.length > 0 ? auditEvents : memoryWriteEvent;
+
+  if (approvalRequests.length === 0 && events.length === 0) return null;
+
+  return (
+    <div
+      style={{
+        borderRadius: 8,
+        border: `1px solid ${token.colorWarningBorder}`,
+        background: token.colorWarningBg,
+        marginBottom: 8,
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '6px 10px',
+          cursor: 'pointer',
+          fontSize: 12,
+          fontWeight: 500,
+          color: token.colorTextSecondary,
+        }}
+      >
+        {expanded
+          ? <ChevronDown size={13} style={{ flexShrink: 0 }} />
+          : <ChevronRight size={13} style={{ flexShrink: 0 }} />
+        }
+        <AlertTriangle size={13} style={{ flexShrink: 0, color: token.colorWarning }} />
+        <span>{t('chat.message.governance.summary', {
+          approvals: approvalRequests.length,
+          audits: events.length,
+        })}</span>
+      </div>
+      {expanded && (
+        <Flexbox gap={8} style={{ padding: '8px 10px 10px', borderTop: `1px solid ${token.colorWarningBorder}` }}>
+          {approvalRequests.length > 0 && (
+            <Flexbox gap={6}>
+              <Flexbox horizontal align="center" gap={6} style={{ fontSize: 12, color: token.colorTextSecondary, fontWeight: 600 }}>
+                <AlertTriangle size={13} />
+                <span>{t('chat.message.governance.approvalTitle')}</span>
+              </Flexbox>
+              <Flexbox gap={6}>
+                {approvalRequests.slice(0, 6).map((item, index) => (
+                  <Flexbox
+                    key={`${runtimeAssetLabel(item)}-${index}`}
+                    horizontal
+                    align="center"
+                    gap={6}
+                    style={{
+                      minHeight: 28,
+                      padding: '4px 6px',
+                      borderRadius: 6,
+                      background: token.colorBgContainer,
+                      border: `1px solid ${token.colorBorderSecondary}`,
+                    }}
+                  >
+                    <Tag color="warning" style={{ margin: 0, fontSize: 11 }}>{runtimeAssetString(item, 'policy') || 'approval'}</Tag>
+                    <span style={{ fontSize: 12, color: token.colorText }}>{runtimeAssetLabel(item)}</span>
+                    {runtimeAssetString(item, 'audit_event') && (
+                      <span style={{ marginLeft: 'auto', fontSize: 11, color: token.colorTextTertiary }}>
+                        {runtimeAssetString(item, 'audit_event')}
+                      </span>
+                    )}
+                  </Flexbox>
+                ))}
+              </Flexbox>
+            </Flexbox>
+          )}
+          {events.length > 0 && (
+            <Flexbox gap={6}>
+              <Flexbox horizontal align="center" gap={6} style={{ fontSize: 12, color: token.colorTextSecondary, fontWeight: 600 }}>
+                <CheckCircle2 size={13} />
+                <span>{t('chat.message.governance.auditTitle')}</span>
+              </Flexbox>
+              <Flexbox gap={6}>
+                {events.slice(0, 6).map((item, index) => (
+                  <Flexbox
+                    key={`${runtimeAssetString(item, 'event') || runtimeAssetLabel(item)}-${index}`}
+                    horizontal
+                    align="center"
+                    gap={6}
+                    style={{
+                      minHeight: 28,
+                      padding: '4px 6px',
+                      borderRadius: 6,
+                      background: token.colorBgContainer,
+                      border: `1px solid ${token.colorBorderSecondary}`,
+                    }}
+                  >
+                    <Tag color={runtimeAssetString(item, 'status') === 'recorded' ? 'success' : 'processing'} style={{ margin: 0, fontSize: 11 }}>
+                      {runtimeAssetString(item, 'status') || 'projected'}
+                    </Tag>
+                    <span style={{ fontSize: 12, color: token.colorText }}>{runtimeAssetString(item, 'event') || runtimeAssetString(item, 'audit_event')}</span>
+                    {runtimeAssetBool(item, 'replayable') && (
+                      <Tag style={{ marginLeft: 'auto', marginRight: 0, fontSize: 11 }}>{t('chat.message.governance.replayable')}</Tag>
+                    )}
+                  </Flexbox>
+                ))}
+              </Flexbox>
+            </Flexbox>
+          )}
+        </Flexbox>
+      )}
+    </div>
+  );
+}
+
 function RuntimeAssetSection({
   icon,
   title,
@@ -787,7 +932,10 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
           )}
 
           {!isUser && !message.loading && (
-            <RuntimeContextBlock message={message} />
+            <>
+              <BridgeGovernanceBlock message={message} />
+              <RuntimeContextBlock message={message} />
+            </>
           )}
 
           {editing ? (

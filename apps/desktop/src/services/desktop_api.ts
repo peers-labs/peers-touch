@@ -1694,13 +1694,20 @@ export interface AgentRuntimeAsset {
 export interface AgentRuntimeAssets {
   memories?: AgentRuntimeAsset[];
   memory_write?: {
+    name?: string;
     status?: string;
     trace_id?: string;
     conversation_id?: string;
+    needs_approval?: boolean;
+    policy?: string;
+    audit_event?: string;
+    replayable?: boolean;
   };
   skills?: AgentRuntimeAsset[];
   tools?: AgentRuntimeAsset[];
   mcp?: AgentRuntimeAsset[];
+  approval_requests?: AgentRuntimeAsset[];
+  bridge_audit_events?: AgentRuntimeAsset[];
   [key: string]: unknown;
 }
 

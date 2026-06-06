@@ -94,6 +94,11 @@ pub fn mcp_list_servers() -> AppResult<StubPayload> {
                 "type": data.get("type").and_then(Value::as_str).unwrap_or("stdio"),
                 "source": data.get("source").and_then(Value::as_str).unwrap_or("user"),
                 "enabled": item.enabled,
+                "status": data.get("status").and_then(Value::as_str).unwrap_or("unknown"),
+                "policy": data.get("policy").and_then(Value::as_str).unwrap_or("approval"),
+                "needs_approval": data.get("needs_approval").and_then(Value::as_bool).unwrap_or(true),
+                "audit_event": data.get("audit_event").and_then(Value::as_str).unwrap_or("bridge.mcp.call"),
+                "replayable": data.get("replayable").and_then(Value::as_bool).unwrap_or(true),
                 "metaAvatar": data.get("metaAvatar").and_then(Value::as_str).unwrap_or(""),
                 "metaTags": data.get("metaTags").cloned().unwrap_or_else(|| json!([])),
                 "toolCount": 0
@@ -121,6 +126,12 @@ pub(crate) fn enabled_mcp_index() -> Vec<Value> {
                 "title": item.data.get("title").and_then(Value::as_str).unwrap_or(""),
                 "type": item.data.get("type").and_then(Value::as_str).unwrap_or("stdio"),
                 "description": item.data.get("description").and_then(Value::as_str).unwrap_or(""),
+                "source": item.data.get("source").and_then(Value::as_str).unwrap_or("user"),
+                "status": item.data.get("status").and_then(Value::as_str).unwrap_or("unknown"),
+                "policy": item.data.get("policy").and_then(Value::as_str).unwrap_or("approval"),
+                "needs_approval": item.data.get("needs_approval").and_then(Value::as_bool).unwrap_or(true),
+                "audit_event": item.data.get("audit_event").and_then(Value::as_str).unwrap_or("bridge.mcp.call"),
+                "replayable": item.data.get("replayable").and_then(Value::as_bool).unwrap_or(true),
             })
         })
         .collect()
@@ -232,4 +243,19 @@ pub fn mcp_test_server(input: McpNameInput) -> AppResult<StubPayload> {
         return invalid_argument("name is required");
     }
     success_payload("mcp_test_server", json!({ "ok": true, "tools": [] }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn enabled_mcp_index_should_include_policy_metadata() {
+        let servers = enabled_mcp_index();
+        assert!(servers.iter().any(|server| {
+            server["name"] == "default-mcp"
+                && server["needs_approval"] == true
+                && server["audit_event"] == "bridge.mcp.call"
+        }));
+    }
 }

@@ -79,21 +79,23 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | Skill runtime and market install | Skill store is persisted locally; default Skill market lists installable skills; URL/GitHub/default market installs write into the active Skill store | Skill market Rust tests passed |
 | Tool registry policy/audit surface | Built-in and bridge tools now expose category, source, approval requirement, policy, schema, audit event, and replay metadata in Settings and runtime projection | Tool Rust tests, settings locale JSON, targeted TS check, and diff checks passed |
 | Local growth diagnostics | Growth dashboard normalizes Station camelCase responses and derives a local snapshot from turn traces, memories, and skills when Station growth APIs are unavailable | Targeted TS check has no `desktop_api` or `AgentGrowthTab` errors; diff checks passed |
+| Bridge approval and audit cards | Agent turn runtime now projects approval requests and bridge audit events; assistant messages render bridge governance cards for approval/audit visibility | Agent runtime and MCP Rust tests passed; chat locale JSON and targeted TS checks passed |
 
 ---
 
-## 5. Current Stage: Local Growth Diagnostics
+## 5. Current Stage: Bridge Approval and Audit Cards
 
 ### Delivered
 
-- Growth API normalization now handles both Station camelCase and local snake_case payloads.
-- Growth dashboard can fall back to local turn traces, memory feedback counts, and enabled skills.
-- Agent memory and skill growth tables tolerate both Station list envelopes and local Desktop store envelopes.
+- Agent turn runtime emits `approval_requests` for governed bridge/MCP tools.
+- Agent turn runtime emits `bridge_audit_events`, including recorded memory write audit metadata.
+- MCP projections now carry policy, approval, audit event, replayability, and status metadata.
+- Assistant messages render a bridge governance card with approval-required and audit-event rows.
 
 ### Acceptance Criteria
 
-- Agent Profile Growth tab remains useful when Station growth APIs are unavailable.
-- Growth snapshot field names are stable for UI consumers.
+- CLI-wrapped provider turns expose bridge governance boundaries even when internal tool loops are black-box.
+- MCP tools cannot appear in runtime context as anonymous capabilities; they carry policy/audit metadata.
 - Targeted TypeScript check has no errors in changed files.
 
 ---
@@ -178,6 +180,12 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `SettingsPage`, `desktop_api`, `settings.json`, or `tools` errors; failures remain in existing App/social/media/navigation areas |
 | 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
 | 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `AgentGrowthTab` or `desktop_api` errors; failures remain in existing App/social/media/navigation areas |
+| 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
+| 2026-06-07 | `cargo test --bin peers-touch-desktop agent_runtime` | Passed | 11 agent runtime/provider/trace tests passed; existing warnings remain |
+| 2026-06-07 | `cargo test --bin peers-touch-desktop mcp` | Passed | MCP policy projection test passed; existing warnings remain |
+| 2026-06-07 | `python3 -m json.tool packages/locales/en/chat.json` | Passed | Locale JSON valid |
+| 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/chat.json` | Passed | Locale JSON valid |
+| 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `MessageBubble`, `desktop_api`, `agent_runtime`, `mcp/mod`, or `chat.json` errors; failures remain in existing App/social/media/navigation areas |
 | 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
 
 ---

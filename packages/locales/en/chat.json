@@ -211,6 +211,10 @@
   "chat.message.runtime.skillsLoaded": "Skills loaded ({{count}})",
   "chat.message.runtime.toolsProjected": "Tools projected ({{count}})",
   "chat.message.runtime.mcpProjected": "MCP projected ({{count}})",
+  "chat.message.governance.summary": "Bridge governance · {{approvals}} approvals · {{audits}} audit events",
+  "chat.message.governance.approvalTitle": "Approval required",
+  "chat.message.governance.auditTitle": "Audit events",
+  "chat.message.governance.replayable": "Replayable",
 
   "chat.message.thinking.title": "Thinking",
   "chat.message.thinking.usingTools": "Using {{count}} tool…",

@@ -211,6 +211,10 @@
   "chat.message.runtime.skillsLoaded": "加载的 Skill（{{count}}）",
   "chat.message.runtime.toolsProjected": "投影的 Tool（{{count}}）",
   "chat.message.runtime.mcpProjected": "投影的 MCP（{{count}}）",
+  "chat.message.governance.summary": "Bridge 治理 · {{approvals}} 个审批 · {{audits}} 个审计事件",
+  "chat.message.governance.approvalTitle": "需要审批",
+  "chat.message.governance.auditTitle": "审计事件",
+  "chat.message.governance.replayable": "可回放",
 
   "chat.message.thinking.title": "思考",
   "chat.message.thinking.usingTools": "正在使用 {{count}} 个工具…",
