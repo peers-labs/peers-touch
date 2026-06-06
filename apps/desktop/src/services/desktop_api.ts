@@ -4445,6 +4445,11 @@ export interface GrowthSnapshot {
   negative_feedback: number;
   feedback_ratio: number;
   error_rate: number;
+  retry_rate?: number;
+  review_success_rate?: number;
+  memory_growth_rate?: number;
+  skill_growth_rate?: number;
+  quality_trend?: string;
   growth_score: number;
   growth_verdict: string;
   window_start: string;
@@ -4483,28 +4488,171 @@ export interface SkillItem {
   created_at: string;
 }
 
-export async function getAgentGrowthSnapshot(agentId: string): Promise<GrowthSnapshot> {
-  const result = await invokeRustDataFromStatus<{ agent_id: string }, GrowthSnapshot>(
-    'agent_growth_snapshot',
-    { agent_id: agentId },
+function readNumber(value: unknown, fallback = 0): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function readString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function normalizeGrowthSnapshot(raw: any, agentId: string): GrowthSnapshot {
+  const positive = readNumber(raw?.positive_feedback ?? raw?.positiveFeedback);
+  const negative = readNumber(raw?.negative_feedback ?? raw?.negativeFeedback);
+  const totalTurns = readNumber(raw?.total_turns ?? raw?.totalTurns);
+  const feedbackTotal = positive + negative;
+  const feedbackRatio = raw?.feedback_ratio ?? raw?.feedbackRatio;
+  const computedFeedbackRatio = feedbackTotal > 0 ? positive / feedbackTotal : 0;
+  const growthScore = readNumber(raw?.growth_score ?? raw?.growthScore, computedFeedbackRatio);
+  const verdict = readString(
+    raw?.growth_verdict ?? raw?.growthVerdict,
+    growthScore > 0.6 ? 'improving' : growthScore < 0.35 ? 'declining' : 'stable',
   );
-  return result;
+  return {
+    agent_id: readString(raw?.agent_id ?? raw?.agentId, agentId),
+    total_memories: readNumber(raw?.total_memories ?? raw?.totalMemories),
+    total_skills: readNumber(raw?.total_skills ?? raw?.totalSkills),
+    total_reviews: readNumber(raw?.total_reviews ?? raw?.totalReviews),
+    total_turns: totalTurns,
+    positive_feedback: positive,
+    negative_feedback: negative,
+    feedback_ratio: readNumber(feedbackRatio, computedFeedbackRatio),
+    error_rate: readNumber(raw?.error_rate ?? raw?.errorRate),
+    retry_rate: readNumber(raw?.retry_rate ?? raw?.retryRate),
+    review_success_rate: readNumber(raw?.review_success_rate ?? raw?.reviewSuccessRate),
+    memory_growth_rate: readNumber(raw?.memory_growth_rate ?? raw?.memoryGrowthRate),
+    skill_growth_rate: readNumber(raw?.skill_growth_rate ?? raw?.skillGrowthRate),
+    quality_trend: readString(raw?.quality_trend ?? raw?.qualityTrend, verdict),
+    growth_score: growthScore,
+    growth_verdict: verdict,
+    window_start: readString(raw?.window_start ?? raw?.windowStart),
+    window_end: readString(raw?.window_end ?? raw?.windowEnd),
+  };
+}
+
+function normalizeMemoryItem(raw: any, agentId: string): MemoryItem {
+  const content = typeof raw?.content === 'string'
+    ? raw.content
+    : readString(raw?.summary, JSON.stringify(raw?.content ?? {}));
+  return {
+    id: readString(raw?.id ?? raw?.memory_id ?? raw?.memoryId),
+    agent_id: readString(raw?.agent_id ?? raw?.agentId, agentId),
+    target: readString(raw?.target ?? raw?.layer, 'context'),
+    content,
+    source: readString(raw?.source, raw?.sourceTurnId ? 'turn' : 'local'),
+    is_frozen: Boolean(raw?.is_frozen ?? raw?.isFrozen),
+    trust_score: readNumber(raw?.trust_score ?? raw?.trustScore, 0.5),
+    retrieval_count: readNumber(raw?.retrieval_count ?? raw?.retrievalCount ?? raw?.access_count ?? raw?.accessCount),
+    helpful_count: readNumber(raw?.helpful_count ?? raw?.helpfulCount),
+    harmful_count: readNumber(raw?.harmful_count ?? raw?.harmfulCount),
+    created_at: readString(raw?.created_at ?? raw?.createdAt),
+    updated_at: readString(raw?.updated_at ?? raw?.updatedAt ?? raw?.created_at ?? raw?.createdAt),
+  };
+}
+
+function normalizeSkillItem(raw: any, agentId: string): SkillItem {
+  const version = readNumber(raw?.version, 1);
+  return {
+    id: readString(raw?.id ?? raw?.skill_id ?? raw?.skillId ?? raw?.identifier),
+    agent_id: readString(raw?.agent_id ?? raw?.agentId, agentId),
+    name: readString(raw?.name ?? raw?.metaTitle ?? raw?.identifier, 'Untitled skill'),
+    description: readString(raw?.description ?? raw?.metaDescription),
+    category: readString(raw?.category ?? raw?.source, 'local'),
+    trust_level: readString(raw?.trust_level ?? raw?.trustLevel, raw?.source === 'builtin' ? 'builtin' : 'local'),
+    scan_verdict: readString(raw?.scan_verdict ?? raw?.scanVerdict, 'unknown'),
+    enabled: Boolean(raw?.enabled ?? true),
+    version,
+    view_count: readNumber(raw?.view_count ?? raw?.viewCount),
+    apply_count: readNumber(raw?.apply_count ?? raw?.applyCount ?? raw?.useCount),
+    patch_count: readNumber(raw?.patch_count ?? raw?.patchCount),
+    last_used_at: raw?.last_used_at ?? raw?.lastUsedAt ?? null,
+    created_at: readString(raw?.created_at ?? raw?.createdAt),
+  };
+}
+
+async function deriveLocalGrowthSnapshot(agentId: string): Promise<GrowthSnapshot> {
+  const [traces, memoryRows, skillRows] = await Promise.all([
+    listAgentTurnTraces().catch(() => []),
+    getAgentMemories(agentId).catch(() => []),
+    getAgentSkills(agentId).catch(() => []),
+  ]);
+  const agentTraces = traces.filter((trace) => trace.agent_id === agentId);
+  const failedTurns = agentTraces.filter((trace) =>
+    trace.status && !['ok', 'success', 'completed'].includes(trace.status.toLowerCase()),
+  ).length;
+  const positive = memoryRows.reduce((sum, item) => sum + item.helpful_count, 0);
+  const negative = memoryRows.reduce((sum, item) => sum + item.harmful_count, 0);
+  const feedbackTotal = positive + negative;
+  const feedbackRatio = feedbackTotal > 0 ? positive / feedbackTotal : 0;
+  const errorRate = agentTraces.length > 0 ? failedTurns / agentTraces.length : 0;
+  const growthScore = Math.max(0, Math.min(1, feedbackTotal > 0 ? feedbackRatio * (1 - errorRate) : 1 - errorRate));
+  const createdTimes = agentTraces
+    .map((trace) => Date.parse(trace.created_at))
+    .filter((value) => Number.isFinite(value))
+    .sort((a, b) => a - b);
+  return {
+    agent_id: agentId,
+    total_memories: memoryRows.length,
+    total_skills: skillRows.length,
+    total_reviews: feedbackTotal,
+    total_turns: agentTraces.length,
+    positive_feedback: positive,
+    negative_feedback: negative,
+    feedback_ratio: feedbackRatio,
+    error_rate: errorRate,
+    retry_rate: 0,
+    review_success_rate: feedbackTotal > 0 ? feedbackRatio : 0,
+    memory_growth_rate: memoryRows.length,
+    skill_growth_rate: skillRows.length,
+    quality_trend: growthScore >= 0.65 ? 'improving' : growthScore < 0.35 ? 'declining' : 'stable',
+    growth_score: growthScore,
+    growth_verdict: growthScore >= 0.65 ? 'improving' : growthScore < 0.35 ? 'declining' : 'stable',
+    window_start: createdTimes.length > 0 ? new Date(createdTimes[0]).toISOString() : '',
+    window_end: createdTimes.length > 0 ? new Date(createdTimes[createdTimes.length - 1]).toISOString() : '',
+  };
+}
+
+export async function getAgentGrowthSnapshot(agentId: string): Promise<GrowthSnapshot> {
+  try {
+    const result = await invokeRustDataFromStatus<{ agent_id: string }, any>(
+      'agent_growth_snapshot',
+      { agent_id: agentId },
+    );
+    return normalizeGrowthSnapshot(result, agentId);
+  } catch {
+    return deriveLocalGrowthSnapshot(agentId);
+  }
 }
 
 export async function getAgentMemories(agentId: string): Promise<MemoryItem[]> {
-  const result = await invokeRustDataFromStatus<{ agent_id: string }, MemoryItem[]>(
-    'agent_memory_list',
-    { agent_id: agentId },
-  );
-  return result;
+  try {
+    const result = await invokeRustDataFromStatus<{ agent_id: string }, any>(
+      'agent_memory_list',
+      { agent_id: agentId },
+    );
+    const rows = Array.isArray(result) ? result : Array.isArray(result?.items) ? result.items : [];
+    return rows.map((row: any) => normalizeMemoryItem(row, agentId));
+  } catch {
+    const result = await api.listMemories({ agent_id: agentId, page_size: 100 });
+    return (result.memories || []).map((row) => normalizeMemoryItem(row, agentId));
+  }
 }
 
 export async function getAgentSkills(agentId: string): Promise<SkillItem[]> {
-  const result = await invokeRustDataFromStatus<{ agent_id: string }, SkillItem[]>(
-    'agent_skill_list',
-    { agent_id: agentId },
-  );
-  return result;
+  try {
+    const result = await invokeRustDataFromStatus<{ agent_id: string }, any>(
+      'agent_skill_list',
+      { agent_id: agentId },
+    );
+    const rows = Array.isArray(result) ? result : Array.isArray(result?.skills) ? result.skills : [];
+    return rows.map((row: any) => normalizeSkillItem(row, agentId));
+  } catch {
+    const result = await api.listSkills();
+    return (result.skills || [])
+      .filter((skill) => skill.enabled)
+      .map((row) => normalizeSkillItem(row, agentId));
+  }
 }
 
 export async function submitAgentFeedback(

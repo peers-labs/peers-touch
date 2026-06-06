@@ -78,25 +78,23 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | CLI bridge and runtime policy | CLI-wrapped providers now persist sandbox preset, retry count, and bridge tool allowlist; runtime injects per-run policy env and ephemeral bridge token | Provider tests, provider locale JSON, targeted TS check, and diff checks passed |
 | Skill runtime and market install | Skill store is persisted locally; default Skill market lists installable skills; URL/GitHub/default market installs write into the active Skill store | Skill market Rust tests passed |
 | Tool registry policy/audit surface | Built-in and bridge tools now expose category, source, approval requirement, policy, schema, audit event, and replay metadata in Settings and runtime projection | Tool Rust tests, settings locale JSON, targeted TS check, and diff checks passed |
+| Local growth diagnostics | Growth dashboard normalizes Station camelCase responses and derives a local snapshot from turn traces, memories, and skills when Station growth APIs are unavailable | Targeted TS check has no `desktop_api` or `AgentGrowthTab` errors; diff checks passed |
 
 ---
 
-## 5. Current Stage: Tool Registry Policy and Audit Surface
+## 5. Current Stage: Local Growth Diagnostics
 
 ### Delivered
 
-- Tool registry now returns schema/policy/audit metadata for built-in tools and bridge tools.
-- Runtime tool projection includes governed bridge tools such as `memory.write` and `mcp.call`.
-- Settings Tools table now displays source, policy, replayability, approval status, and audit event.
-- Tool registry tests cover bridge tool projection and audit metadata.
+- Growth API normalization now handles both Station camelCase and local snake_case payloads.
+- Growth dashboard can fall back to local turn traces, memory feedback counts, and enabled skills.
+- Agent memory and skill growth tables tolerate both Station list envelopes and local Desktop store envelopes.
 
 ### Acceptance Criteria
 
-- Tool/MCP bridge capabilities are visible as governed tools instead of hidden prompt-only behavior.
-- Approval requirement and audit event naming are available to UI and future replay flows.
-- Runtime context cards can show the same bridge tools that Settings describes.
-- Settings locale JSON remains valid.
-- Targeted TypeScript check has no errors in the changed files.
+- Agent Profile Growth tab remains useful when Station growth APIs are unavailable.
+- Growth snapshot field names are stable for UI consumers.
+- Targeted TypeScript check has no errors in changed files.
 
 ---
 
@@ -178,6 +176,8 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | 2026-06-07 | `python3 -m json.tool packages/locales/en/settings.json` | Passed | Locale JSON valid |
 | 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/settings.json` | Passed | Locale JSON valid |
 | 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `SettingsPage`, `desktop_api`, `settings.json`, or `tools` errors; failures remain in existing App/social/media/navigation areas |
+| 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
+| 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `AgentGrowthTab` or `desktop_api` errors; failures remain in existing App/social/media/navigation areas |
 | 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
 
 ---
