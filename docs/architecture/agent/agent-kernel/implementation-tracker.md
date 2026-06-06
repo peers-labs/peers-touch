@@ -75,30 +75,34 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | Provider guardrail feedback | Provider settings now show backend save validation errors instead of silently swallowing failed debounced saves | Provider locale JSON and targeted TS checks passed |
 | Conversation trace detail drawer | Clicking a provider trace marker opens a drawer with turn trace, counts, provider call capability, latency, and fallback metadata | Chat locale JSON, targeted TS check, and diff checks passed |
 | Conversation runtime context cards | Assistant messages now show memory used, memory write, loaded skills, projected tools, and projected MCP servers from the turn assets | Agent runtime tests, chat locale JSON, targeted TS check, and diff checks passed |
+| CLI bridge and runtime policy | CLI-wrapped providers now persist sandbox preset, retry count, and bridge tool allowlist; runtime injects per-run policy env and ephemeral bridge token | Provider tests, provider locale JSON, targeted TS check, and diff checks passed |
 
 ---
 
-## 5. Current Stage: Conversation Runtime Context Cards
+## 5. Current Stage: CLI Bridge and Runtime Policy
 
 ### Delivered
 
-- Agent runtime now returns structured `assets` for each completed turn:
-  - memory records used for prompt context
-  - memory write status for the current turn
-  - enabled Skill packages loaded into the runtime prompt
-  - projected built-in tools
-  - projected MCP servers
-- The frontend stream `done` event carries those assets into the chat store.
-- Assistant messages render a compact runtime context card with expandable memory, Skill, Tool, and MCP sections.
-- The runtime card still renders from count metadata when detailed assets are unavailable.
+- CLI-wrapped Provider config now supports:
+  - sandbox preset: `workspace-readonly`, `workspace-write`, `network-off`, `unrestricted`
+  - retry count from 0 to 5
+  - bridge tool allowlist, one governed tool per line
+- Provider guardrails validate sandbox, retry, and allowlist shape before save/check.
+- Provider settings expose the new controls in the CLI Provider detail panel.
+- CLI runtime injects policy into only the current process:
+  - `PEERS_AGENT_SANDBOX_PRESET`
+  - `PEERS_AGENT_TOOL_ALLOWLIST`
+  - `PEERS_AGENT_BRIDGE_TOKEN`
+- The bridge token is generated per CLI attempt and is not persisted in Provider config.
+- Failed CLI attempts follow the configured retry policy.
 - Localization:
-  - English and Chinese runtime context labels.
+  - English and Chinese CLI policy labels.
 
 ### Acceptance Criteria
 
-- Conversation projection makes memory use/write and runtime tool projection visible without opening developer logs.
-- CLI-wrapped and Eino-native providers share the same message-level projection surface, with degraded detail represented as missing assets rather than hidden behavior.
-- Existing trace drawer and provider markers keep working with the same message metadata.
+- CLI-wrapped Provider policy is explicit, visible, saved, and validated.
+- Runtime bridge exposure is scoped to the spawned CLI process and the current attempt.
+- Retry behavior is deterministic and tested.
 - JSON locales remain valid.
 - Targeted TypeScript check has no errors in the changed files.
 
@@ -111,8 +115,7 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | Task | Outcome |
 |------|---------|
 | Conversation projection | Message stream, tool cards, memory use/write markers, provider trace detail drawer |
-| CLI bridge hardening | Restricted bridge token lifecycle, tool allowlist UI, approval cards, and bridge audit events |
-| CLI runtime policy polish | Sandbox presets and retry policy |
+| CLI bridge audit cards | Approval cards and bridge audit events |
 
 ### P1: Add Core Power Features
 
@@ -173,6 +176,11 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/chat.json` | Passed | Locale JSON valid |
 | 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `MessageBubble`, `store/chat`, `desktop_api`, `chat.json`, or `agent_runtime` errors; failures remain in existing App/social/media/navigation areas |
 | 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
+| 2026-06-07 | `cargo test --bin peers-touch-desktop provider` | Passed | 55 provider-related tests passed, including CLI policy, retry, and bridge env tests; existing warnings remain |
+| 2026-06-07 | `python3 -m json.tool packages/locales/en/provider.json` | Passed | Locale JSON valid |
+| 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/provider.json` | Passed | Locale JSON valid |
+| 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `ProviderDetail`, `store/provider`, `desktop_api`, `provider.json`, `cli_runtime`, or `agent_runtime/provider` errors; failures remain in existing App/social/media/navigation areas |
+| 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
 
 ---
 
@@ -180,5 +188,5 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 
 1. Full Desktop TypeScript check currently has unrelated pre-existing failures outside this Agent Kernel slice; use targeted checks until the unrelated issues are scheduled.
 2. CLI-wrapped providers cannot guarantee the same internal tool loop fidelity as Eino-native providers. The contract must model capability degradation explicitly instead of pretending they are equally controllable.
-3. Current CLI guardrails validate config shape and process controls, but sandbox presets, retry policy, and bridge approval UX still need dedicated delivery.
+3. Current CLI guardrails validate config shape, process controls, sandbox preset, retry policy, and bridge allowlist, but approval card UX still needs dedicated delivery.
 4. Conversation now has provider trace details and runtime context cards, but bridge/tool audit approval cards still need dedicated UI.

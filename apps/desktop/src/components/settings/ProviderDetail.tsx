@@ -226,6 +226,17 @@ function envTextToRecord(text: string): Record<string, string> {
   return env;
 }
 
+function listToText(items?: string[]): string {
+  return (items || []).join('\n');
+}
+
+function textToList(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
 export function ProviderDetail() {
   const { t } = useTranslation('provider');
   const {
@@ -240,6 +251,9 @@ export function ProviderDetail() {
   const [cliTimeoutMs, setCliTimeoutMs] = useState('');
   const [cliCwd, setCliCwd] = useState('');
   const [cliEnvText, setCliEnvText] = useState('');
+  const [cliSandboxPreset, setCliSandboxPreset] = useState('');
+  const [cliMaxRetries, setCliMaxRetries] = useState('');
+  const [cliToolAllowlistText, setCliToolAllowlistText] = useState('');
   const [enabled, setEnabled] = useState(false);
   const [checking, setChecking] = useState(false);
   const [checkPass, setCheckPass] = useState(false);
@@ -266,6 +280,9 @@ export function ProviderDetail() {
       setCliTimeoutMs(detail.timeout_ms ? String(detail.timeout_ms) : '');
       setCliCwd(detail.cwd || '');
       setCliEnvText(envRecordToText(detail.env));
+      setCliSandboxPreset(detail.sandbox_preset || 'workspace-readonly');
+      setCliMaxRetries(detail.max_retries != null ? String(detail.max_retries) : '0');
+      setCliToolAllowlistText(listToText(detail.tool_allowlist));
       setEnabled(detail.enabled);
       setCheckModel(detail.check_model || detail.models?.[0]?.id || '');
       setCheckPass(false);
@@ -274,20 +291,35 @@ export function ProviderDetail() {
   }, [detail, isStale]);
 
   const buildRuntimePatch = useCallback(
-    (overrides?: { protocol?: string; timeoutMs?: string; cwd?: string; envText?: string }) => {
+    (overrides?: {
+      protocol?: string;
+      timeoutMs?: string;
+      cwd?: string;
+      envText?: string;
+      sandboxPreset?: string;
+      maxRetries?: string;
+      toolAllowlistText?: string;
+    }) => {
       const nextProtocol = overrides?.protocol ?? protocol;
       const nextTimeout = (overrides?.timeoutMs ?? cliTimeoutMs).trim();
       const nextCwd = overrides?.cwd ?? cliCwd;
       const nextEnvText = overrides?.envText ?? cliEnvText;
+      const nextSandboxPreset = (overrides?.sandboxPreset ?? cliSandboxPreset).trim();
+      const nextMaxRetries = (overrides?.maxRetries ?? cliMaxRetries).trim();
+      const nextToolAllowlist = textToList(overrides?.toolAllowlistText ?? cliToolAllowlistText);
       const env = envTextToRecord(nextEnvText);
+      const isNextCli = nextProtocol === 'cli-wrapped' || nextProtocol === 'cli';
       return {
         protocol: nextProtocol,
-        timeout_ms: nextTimeout ? Number(nextTimeout) : null,
-        cwd: nextCwd.trim() ? nextCwd.trim() : null,
-        env: Object.keys(env).length > 0 ? env : null,
+        timeout_ms: isNextCli && nextTimeout ? Number(nextTimeout) : null,
+        cwd: isNextCli && nextCwd.trim() ? nextCwd.trim() : null,
+        env: isNextCli && Object.keys(env).length > 0 ? env : null,
+        sandbox_preset: isNextCli && nextSandboxPreset ? nextSandboxPreset : null,
+        max_retries: isNextCli ? (nextMaxRetries ? Number(nextMaxRetries) : 0) : null,
+        tool_allowlist: isNextCli && nextToolAllowlist.length > 0 ? nextToolAllowlist : null,
       };
     },
-    [protocol, cliTimeoutMs, cliCwd, cliEnvText],
+    [protocol, cliTimeoutMs, cliCwd, cliEnvText, cliSandboxPreset, cliMaxRetries, cliToolAllowlistText],
   );
 
   const debouncedSave = useCallback(
@@ -357,6 +389,31 @@ export function ProviderDetail() {
     (val: string) => {
       setCliEnvText(val);
       debouncedSave(apiKey, baseUrl, buildRuntimePatch({ envText: val }));
+    },
+    [apiKey, baseUrl, buildRuntimePatch, debouncedSave],
+  );
+
+  const handleCliSandboxChange = useCallback(
+    (val: string) => {
+      setCliSandboxPreset(val);
+      debouncedSave(apiKey, baseUrl, buildRuntimePatch({ sandboxPreset: val }));
+    },
+    [apiKey, baseUrl, buildRuntimePatch, debouncedSave],
+  );
+
+  const handleCliMaxRetriesChange = useCallback(
+    (val: string) => {
+      const normalized = val.replace(/[^\d]/g, '');
+      setCliMaxRetries(normalized);
+      debouncedSave(apiKey, baseUrl, buildRuntimePatch({ maxRetries: normalized }));
+    },
+    [apiKey, baseUrl, buildRuntimePatch, debouncedSave],
+  );
+
+  const handleCliToolAllowlistChange = useCallback(
+    (val: string) => {
+      setCliToolAllowlistText(val);
+      debouncedSave(apiKey, baseUrl, buildRuntimePatch({ toolAllowlistText: val }));
     },
     [apiKey, baseUrl, buildRuntimePatch, debouncedSave],
   );
@@ -701,6 +758,49 @@ export function ProviderDetail() {
                   value={cliEnvText}
                   onChange={(e) => handleCliEnvChange(e.target.value)}
                   placeholder="ANTHROPIC_API_KEY=..."
+                  rows={3}
+                  style={{ width: '100%', fontFamily: 'monospace', fontSize: 12 }}
+                />
+              </FormRow>
+
+              <FormRow
+                label={t('provider.detail.cliSandbox')}
+                desc={t('provider.detail.cliSandboxDesc')}
+              >
+                <Select
+                  value={cliSandboxPreset || 'workspace-readonly'}
+                  onChange={handleCliSandboxChange}
+                  style={{ width: '100%' }}
+                  options={[
+                    { value: 'workspace-readonly', label: t('provider.detail.cliSandbox.workspaceReadonly') },
+                    { value: 'workspace-write', label: t('provider.detail.cliSandbox.workspaceWrite') },
+                    { value: 'network-off', label: t('provider.detail.cliSandbox.networkOff') },
+                    { value: 'unrestricted', label: t('provider.detail.cliSandbox.unrestricted') },
+                  ]}
+                />
+              </FormRow>
+
+              <FormRow
+                label={t('provider.detail.cliMaxRetries')}
+                desc={t('provider.detail.cliMaxRetriesDesc')}
+              >
+                <Input
+                  value={cliMaxRetries}
+                  onChange={(e) => handleCliMaxRetriesChange(e.target.value)}
+                  placeholder="0"
+                  allowClear
+                  style={{ width: '100%' }}
+                />
+              </FormRow>
+
+              <FormRow
+                label={t('provider.detail.cliToolAllowlist')}
+                desc={t('provider.detail.cliToolAllowlistDesc')}
+              >
+                <TextArea
+                  value={cliToolAllowlistText}
+                  onChange={(e) => handleCliToolAllowlistChange(e.target.value)}
+                  placeholder={'memory.write\nmcp:search'}
                   rows={3}
                   style={{ width: '100%', fontFamily: 'monospace', fontSize: 12 }}
                 />

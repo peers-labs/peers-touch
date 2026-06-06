@@ -13,6 +13,9 @@ fn execution_control(request: &ProviderRequest<'_>) -> CliExecutionControl {
         timeout_ms: request.provider.control.timeout_ms,
         cwd: request.provider.control.cwd.clone(),
         env: request.provider.control.env.clone(),
+        sandbox_preset: request.provider.control.sandbox_preset.clone(),
+        max_retries: request.provider.control.max_retries,
+        tool_allowlist: request.provider.control.tool_allowlist.clone(),
     }
 }
 

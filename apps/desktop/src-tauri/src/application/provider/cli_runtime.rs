@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use rand::{distributions::Alphanumeric, Rng};
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::thread;
@@ -13,6 +14,9 @@ pub(crate) struct CliExecutionControl {
     pub(crate) timeout_ms: Option<u64>,
     pub(crate) cwd: Option<String>,
     pub(crate) env: Vec<(String, String)>,
+    pub(crate) sandbox_preset: Option<String>,
+    pub(crate) max_retries: Option<u8>,
+    pub(crate) tool_allowlist: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -110,7 +114,15 @@ fn wait_with_optional_timeout(
     }
 }
 
-pub(crate) fn complete(
+fn bridge_token() -> String {
+    rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(32)
+        .map(char::from)
+        .collect()
+}
+
+fn complete_once(
     command_spec: &str,
     model: &str,
     prompt: &str,
@@ -141,6 +153,18 @@ pub(crate) fn complete(
     for (key, value) in &control.env {
         command_builder.env(key, value);
     }
+    command_builder.env(
+        "PEERS_AGENT_SANDBOX_PRESET",
+        control
+            .sandbox_preset
+            .as_deref()
+            .unwrap_or("workspace-readonly"),
+    );
+    command_builder.env("PEERS_AGENT_BRIDGE_TOKEN", bridge_token());
+    command_builder.env(
+        "PEERS_AGENT_TOOL_ALLOWLIST",
+        control.tool_allowlist.join(","),
+    );
 
     let mut child = command_builder
         .spawn()
@@ -164,6 +188,39 @@ pub(crate) fn complete(
         text: String::from_utf8_lossy(&output.stdout).trim().to_string(),
         model: model.to_string(),
     })
+}
+
+pub(crate) fn complete(
+    command_spec: &str,
+    model: &str,
+    prompt: &str,
+    control: &CliExecutionControl,
+) -> Result<CliCompletionResult, String> {
+    let retries = control.max_retries.unwrap_or(0);
+    if retries == 0 {
+        return complete_once(command_spec, model, prompt, control);
+    }
+
+    let mut last_error = String::new();
+    for attempt in 0..=retries {
+        match complete_once(command_spec, model, prompt, control) {
+            Ok(result) => return Ok(result),
+            Err(err) => {
+                last_error = err;
+                tracing::warn!(
+                    attempt = attempt + 1,
+                    max_attempts = retries + 1,
+                    error = %last_error,
+                    "CLI-wrapped provider attempt failed"
+                );
+            }
+        }
+    }
+    Err(format!(
+        "CLI provider failed after {} attempts: {}",
+        retries + 1,
+        last_error
+    ))
 }
 
 #[cfg(test)]
@@ -202,6 +259,9 @@ mod tests {
                 timeout_ms: Some(1_000),
                 cwd: Some(cwd.clone()),
                 env: vec![("PEERS_AGENT_TEST_ENV".to_string(), "enabled".to_string())],
+                sandbox_preset: Some("workspace-readonly".to_string()),
+                max_retries: None,
+                tool_allowlist: vec!["memory.write".to_string()],
             },
         )
         .expect("cli should complete");
@@ -221,10 +281,58 @@ mod tests {
                 timeout_ms: Some(10),
                 cwd: None,
                 env: vec![],
+                sandbox_preset: None,
+                max_retries: None,
+                tool_allowlist: vec![],
             },
         )
         .expect_err("cli should timeout");
 
         assert_eq!(error, "CLI provider timed out after 10 ms");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn complete_should_retry_when_policy_allows() {
+        let error = complete(
+            r#"/bin/sh -c "exit 7""#,
+            "test-model",
+            "hello",
+            &CliExecutionControl {
+                timeout_ms: Some(1_000),
+                cwd: None,
+                env: vec![],
+                sandbox_preset: None,
+                max_retries: Some(1),
+                tool_allowlist: vec![],
+            },
+        )
+        .expect_err("cli should fail after retries");
+
+        assert!(error.starts_with("CLI provider failed after 2 attempts:"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn complete_should_expose_bridge_policy_env() {
+        let result = complete(
+            r#"/bin/sh -c "printf '%s|%s|%s' \"$PEERS_AGENT_SANDBOX_PRESET\" \"$PEERS_AGENT_TOOL_ALLOWLIST\" \"$PEERS_AGENT_BRIDGE_TOKEN\"""#,
+            "test-model",
+            "hello",
+            &CliExecutionControl {
+                timeout_ms: Some(1_000),
+                cwd: None,
+                env: vec![],
+                sandbox_preset: Some("network-off".to_string()),
+                max_retries: None,
+                tool_allowlist: vec!["memory.write".to_string(), "mcp:search".to_string()],
+            },
+        )
+        .expect("cli should complete");
+
+        let parts = result.text.split('|').collect::<Vec<_>>();
+        assert_eq!(parts[0], "network-off");
+        assert_eq!(parts[1], "memory.write,mcp:search");
+        assert_eq!(parts[2].len(), 32);
     }
 }

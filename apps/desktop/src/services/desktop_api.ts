@@ -709,6 +709,9 @@ export interface ProviderDetail extends ProviderListItem {
   timeout_ms?: number;
   cwd?: string;
   env?: Record<string, string>;
+  sandbox_preset?: string;
+  max_retries?: number;
+  tool_allowlist?: string[];
   show_checker: boolean;
   check_model?: string;
   models: ModelItem[];
@@ -2621,6 +2624,9 @@ export const api = {
     timeout_ms?: number | null;
     cwd?: string | null;
     env?: Record<string, string> | null;
+    sandbox_preset?: string | null;
+    max_retries?: number | null;
+    tool_allowlist?: string[] | null;
   }) =>
     invokeRustDataFromStatus<ProviderUpdateInput, { provider: any }>('provider_update', {
         id,
@@ -2632,6 +2638,9 @@ export const api = {
           ...(data.timeout_ms !== undefined ? { timeout_ms: data.timeout_ms } : {}),
           ...(data.cwd !== undefined ? { cwd: data.cwd } : {}),
           ...(data.env !== undefined ? { env: data.env } : {}),
+          ...(data.sandbox_preset !== undefined ? { sandbox_preset: data.sandbox_preset } : {}),
+          ...(data.max_retries !== undefined ? { max_retries: data.max_retries } : {}),
+          ...(data.tool_allowlist !== undefined ? { tool_allowlist: data.tool_allowlist } : {}),
         }),
     }),
 
@@ -2643,6 +2652,9 @@ export const api = {
     timeout_ms?: number | null;
     cwd?: string | null;
     env?: Record<string, string> | null;
+    sandbox_preset?: string | null;
+    max_retries?: number | null;
+    tool_allowlist?: string[] | null;
   }) =>
     invokeRustDataFromStatus<ProviderCheckInput, ProviderCheckResult>('provider_check', {
         id,
@@ -2651,13 +2663,19 @@ export const api = {
           data.protocol ||
           data.timeout_ms !== undefined ||
           data.cwd !== undefined ||
-          data.env !== undefined
+          data.env !== undefined ||
+          data.sandbox_preset !== undefined ||
+          data.max_retries !== undefined ||
+          data.tool_allowlist !== undefined
           ? JSON.stringify({
           ...(data.base_url !== undefined ? { base_url: data.base_url } : {}),
           ...(data.protocol ? { protocol: data.protocol } : {}),
           ...(data.timeout_ms !== undefined ? { timeout_ms: data.timeout_ms } : {}),
           ...(data.cwd !== undefined ? { cwd: data.cwd } : {}),
           ...(data.env !== undefined ? { env: data.env } : {}),
+          ...(data.sandbox_preset !== undefined ? { sandbox_preset: data.sandbox_preset } : {}),
+          ...(data.max_retries !== undefined ? { max_retries: data.max_retries } : {}),
+          ...(data.tool_allowlist !== undefined ? { tool_allowlist: data.tool_allowlist } : {}),
           model: data.model || '',
         })
           : undefined,
@@ -4310,6 +4328,11 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
     protocol: cfg.protocol || 'openai-compatible',
     timeout_ms: typeof cfg.timeout_ms === 'number' ? cfg.timeout_ms : undefined,
     cwd: typeof cfg.cwd === 'string' ? cfg.cwd : undefined,
+    sandbox_preset: typeof cfg.sandbox_preset === 'string' ? cfg.sandbox_preset : undefined,
+    max_retries: typeof cfg.max_retries === 'number' ? cfg.max_retries : undefined,
+    tool_allowlist: Array.isArray(cfg.tool_allowlist)
+      ? cfg.tool_allowlist.filter((item: unknown): item is string => typeof item === 'string')
+      : undefined,
     env: cfg.env && typeof cfg.env === 'object' && !Array.isArray(cfg.env)
       ? Object.fromEntries(
         Object.entries(cfg.env)

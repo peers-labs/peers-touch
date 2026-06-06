@@ -7,6 +7,9 @@ export interface ProviderRuntimeConfigPatch {
   timeout_ms?: number | null;
   cwd?: string | null;
   env?: Record<string, string> | null;
+  sandbox_preset?: string | null;
+  max_retries?: number | null;
+  tool_allowlist?: string[] | null;
 }
 
 interface ProviderState {

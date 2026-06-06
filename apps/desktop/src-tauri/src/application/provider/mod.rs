@@ -15,6 +15,30 @@ const MIN_CLI_TIMEOUT_MS: u64 = 100;
 const MAX_CLI_TIMEOUT_MS: u64 = 60 * 60 * 1000;
 const MAX_CLI_ENV_ITEMS: usize = 64;
 const MAX_CLI_ENV_VALUE_LEN: usize = 8192;
+const MAX_CLI_RETRIES: u64 = 5;
+const MAX_CLI_TOOL_ALLOWLIST_ITEMS: usize = 128;
+const MAX_CLI_TOOL_ALLOWLIST_ITEM_LEN: usize = 128;
+
+fn cli_sandbox_preset_is_valid(value: &str) -> bool {
+    matches!(
+        value,
+        "workspace-readonly" | "workspace-write" | "network-off" | "unrestricted"
+    )
+}
+
+fn cli_tool_name_is_valid(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_CLI_TOOL_ALLOWLIST_ITEM_LEN
+        && value.chars().all(|ch| {
+            ch == '*'
+                || ch == '-'
+                || ch == '_'
+                || ch == '.'
+                || ch == ':'
+                || ch == '/'
+                || ch.is_ascii_alphanumeric()
+        })
+}
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
     AppResult::success(StubPayload {
@@ -179,6 +203,59 @@ fn validate_cli_guardrails(
         }
     }
 
+    if let Some(sandbox) = config.get("sandbox_preset") {
+        if !sandbox.is_null() {
+            let Some(sandbox) = sandbox.as_str().map(str::trim) else {
+                return Err("CLI provider sandbox_preset must be a string".to_string());
+            };
+            if !sandbox.is_empty() && !cli_sandbox_preset_is_valid(sandbox) {
+                return Err(
+                    "CLI provider sandbox_preset must be workspace-readonly, workspace-write, network-off, or unrestricted"
+                        .to_string(),
+                );
+            }
+        }
+    }
+
+    if let Some(max_retries) = config.get("max_retries") {
+        if !max_retries.is_null() {
+            let Some(max_retries) = max_retries.as_u64() else {
+                return Err("CLI provider max_retries must be a non-negative integer".to_string());
+            };
+            if max_retries > MAX_CLI_RETRIES {
+                return Err(format!(
+                    "CLI provider max_retries must be between 0 and {}",
+                    MAX_CLI_RETRIES
+                ));
+            }
+        }
+    }
+
+    if let Some(allowlist) = config.get("tool_allowlist") {
+        if !allowlist.is_null() {
+            let Some(allowlist) = allowlist.as_array() else {
+                return Err("CLI provider tool_allowlist must be an array".to_string());
+            };
+            if allowlist.len() > MAX_CLI_TOOL_ALLOWLIST_ITEMS {
+                return Err(format!(
+                    "CLI provider tool_allowlist can contain at most {} entries",
+                    MAX_CLI_TOOL_ALLOWLIST_ITEMS
+                ));
+            }
+            for item in allowlist {
+                let Some(item) = item.as_str().map(str::trim) else {
+                    return Err("CLI provider tool_allowlist entries must be strings".to_string());
+                };
+                if !cli_tool_name_is_valid(item) {
+                    return Err(format!(
+                        "CLI provider tool_allowlist entry `{}` is invalid",
+                        item
+                    ));
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -309,6 +386,29 @@ fn provider_guardrail_warnings(
         warnings.push(json!({
             "code": "timeout_default",
             "message": "CLI provider timeout is not set; the default process timeout will be used."
+        }));
+    }
+    if config
+        .get("sandbox_preset")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .is_none()
+    {
+        warnings.push(json!({
+            "code": "sandbox_default",
+            "message": "CLI provider sandbox preset is not set; workspace-readonly will be used."
+        }));
+    }
+    if config
+        .get("tool_allowlist")
+        .and_then(serde_json::Value::as_array)
+        .filter(|items| !items.is_empty())
+        .is_none()
+    {
+        warnings.push(json!({
+            "code": "tool_allowlist_empty",
+            "message": "CLI provider bridge tool allowlist is empty; no governed bridge tools will be exposed."
         }));
     }
     warnings
@@ -718,6 +818,33 @@ mod tests {
     }
 
     #[test]
+    fn provider_update_should_reject_invalid_cli_policy() {
+        let result = provider_update(
+            Some("test-provider-invalid-cli-policy"),
+            ProviderUpdateInput {
+                id: "openai".to_string(),
+                enabled: true,
+                key_vaults: None,
+                config_json: Some(
+                    json!({
+                        "protocol": "cli-wrapped",
+                        "base_url": "codex exec",
+                        "sandbox_preset": "root",
+                        "max_retries": 6
+                    })
+                    .to_string(),
+                ),
+            },
+        );
+
+        assert!(!result.ok);
+        assert_eq!(
+            result.error.expect("error").message,
+            "CLI provider sandbox_preset must be workspace-readonly, workspace-write, network-off, or unrestricted"
+        );
+    }
+
+    #[test]
     fn provider_check_should_report_cli_guardrail_error_with_capabilities() {
         let result = provider_check(
             None,
@@ -760,7 +887,10 @@ mod tests {
                         "model": "test-model",
                         "timeout_ms": 1000,
                         "cwd": cwd,
-                        "env": { "PEERS_TEST_KEY": "1" }
+                        "env": { "PEERS_TEST_KEY": "1" },
+                        "sandbox_preset": "workspace-readonly",
+                        "max_retries": 1,
+                        "tool_allowlist": ["memory.write"]
                     })
                     .to_string(),
                 ),
@@ -780,6 +910,9 @@ mod tests {
         assert!(status["warnings"]
             .as_array()
             .is_some_and(|items| { items.iter().any(|item| item["code"] == "cli_black_box") }));
+        assert!(!status["warnings"]
+            .as_array()
+            .is_some_and(|items| { items.iter().any(|item| item["code"] == "sandbox_default") }));
     }
 
     #[test]

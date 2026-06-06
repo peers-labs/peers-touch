@@ -32,6 +32,9 @@ pub(crate) struct ProviderControl {
     pub(crate) timeout_ms: Option<u64>,
     pub(crate) cwd: Option<String>,
     pub(crate) env: Vec<(String, String)>,
+    pub(crate) sandbox_preset: Option<String>,
+    pub(crate) max_retries: Option<u8>,
+    pub(crate) tool_allowlist: Vec<String>,
 }
 
 #[derive(Clone, Debug)]

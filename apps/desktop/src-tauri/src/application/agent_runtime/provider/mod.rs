@@ -50,7 +50,12 @@ fn kind_for_protocol(protocol: &str) -> ProviderKind {
 
 fn parse_provider_control(config: &serde_json::Value) -> ProviderControl {
     let timeout_ms = config.get("timeout_ms").and_then(serde_json::Value::as_u64);
+    let max_retries = config
+        .get("max_retries")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| u8::try_from(value).ok());
     let cwd = value_string(config, "cwd");
+    let sandbox_preset = value_string(config, "sandbox_preset");
     let env = config
         .get("env")
         .and_then(serde_json::Value::as_object)
@@ -66,11 +71,30 @@ fn parse_provider_control(config: &serde_json::Value) -> ProviderControl {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let tool_allowlist = config
+        .get("tool_allowlist")
+        .and_then(serde_json::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|value| value.as_str().map(str::trim))
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
     ProviderControl {
         timeout_ms,
         cwd: if cwd.is_empty() { None } else { Some(cwd) },
         env,
+        sandbox_preset: if sandbox_preset.is_empty() {
+            None
+        } else {
+            Some(sandbox_preset)
+        },
+        max_retries,
+        tool_allowlist,
     }
 }
 
@@ -265,7 +289,10 @@ mod tests {
                 "cli_command":"codex exec",
                 "timeout_ms":3000,
                 "cwd":"/tmp/work",
-                "env":{"A":"1","B":" 2 "}
+                "env":{"A":"1","B":" 2 "},
+                "sandbox_preset":"workspace-readonly",
+                "max_retries":2,
+                "tool_allowlist":["memory.write","tool:*"]
             }"#,
             "{}",
             None,
@@ -280,6 +307,15 @@ mod tests {
                 ("A".to_string(), "1".to_string()),
                 ("B".to_string(), "2".to_string())
             ]
+        );
+        assert_eq!(
+            config.control.sandbox_preset.as_deref(),
+            Some("workspace-readonly")
+        );
+        assert_eq!(config.control.max_retries, Some(2));
+        assert_eq!(
+            config.control.tool_allowlist,
+            vec!["memory.write".to_string(), "tool:*".to_string()]
         );
     }
 
