@@ -1,8 +1,8 @@
 # Applet Runtime Architecture — 设计决策
 
 > **Status**: draft
-> **Version**: v1.0
-> **Created**: 2026-05-19 | **Updated**: 2026-05-19
+> **Version**: v1.1
+> **Created**: 2026-05-19 | **Updated**: 2026-06-06
 > **Owner**: Architecture Team
 > **Module**: `apps/desktop/src/applet/`, `apps/mobile/`, `packages/applet-sdk/`, `packages/applets/`
 
@@ -20,6 +20,7 @@
 | D-06 | Applet SDK 只暴露跨端能力接口 | accepted |
 | D-07 | Manifest / Bridge / Bundle 协议先于功能扩展稳定 | accepted |
 | D-08 | 第一阶段避免复杂 Web 图表依赖 | accepted |
+| D-09 | Web 是正式 Host，HarmonyOS 仅预留 | accepted |
 
 ---
 
@@ -30,7 +31,7 @@
 
 ### Context
 
-Applet 前端必须同时运行在 Desktop、Android、iOS。React DOM 只能保证 Desktop Webview 可运行，不能保证 Mobile 原生 LynxView 可运行。
+Applet 前端必须同时运行在 Desktop、Android、iOS、Web，并为 HarmonyOS 预留。React DOM 只能保证 Desktop/Web 浏览器环境可运行，不能保证 Mobile 原生 LynxView 可运行。
 
 ### Decision
 
@@ -191,7 +192,7 @@ Applet 是可扩展代码，不能默认信任。网络、存储、配置、通�
 
 ### Context
 
-Applet 开发者需要稳定 API，但不应知道 Desktop、Android、iOS 的 Bridge 注入细节。
+Applet 开发者需要稳定 API，但不应知道 Desktop、Android、iOS、HarmonyOS、Web 的 Bridge 注入细节。
 
 ### Decision
 
@@ -251,7 +252,7 @@ Applet 生态一旦扩展，协议漂移会造成 Host、SDK、Applet、构建�
 
 ### Context
 
-big-a 的首个面板需要图形化展示多空力量，但 Lynx 跨端不等于 Web DOM 全能力。
+首批 applet package 可能需要图形化展示业务指标，但 Lynx 跨端不等于 Web DOM 全能力。
 
 ### Decision
 
@@ -271,3 +272,36 @@ big-a 的首个面板需要图形化展示多空力量，但 Lynx 跨端不等�
 
 - 第一版视觉表现会比 Web 图表克制。
 - 后续需要针对 Lynx Canvas / 自定义元素评估图表能力。
+
+---
+
+## D-09: Web 是正式 Host，HarmonyOS 仅预留
+
+**Status**: accepted
+**Date**: 2026-06-06
+
+### Context
+
+Applet 需要覆盖 Desktop、Mobile 和 Web。历史上 standalone/browser fallback 容易被误用为生产 Web 支持；HarmonyOS 又需要在平台支持列表中提前占位，但当前没有完成运行时验证。
+
+### Decision
+
+Web 必须作为正式 Host 设计，具备 session、Gateway、permission、audit、network proxy。Standalone 只保留为开发调试模式。HarmonyOS 在 contract 中预留 `harmony` platform，但未完成 Lynx adapter、native bridge、Gateway 前必须明确拒载。
+
+### Rationale
+
+- Web 生产环境同样需要权限与审计，不能退化为 browser raw fetch/localStorage。
+- HarmonyOS 如果提前 fallback 到 WebView，会破坏 Lynx-first 和 Gateway-first 原则。
+- 在 manifest 层预留平台能降低后续 contract breaking change。
+
+### Alternatives Considered
+
+- **把 standalone 当 Web**：开发快，但没有生产安全边界。
+- **暂不定义 HarmonyOS**：短期简单，但后续扩平台会影响 contract。
+- **HarmonyOS fallback 到 WebView**：看似能跑，但会制造第二套 runtime。
+
+### Consequences
+
+- Web Host 需要独立服务侧或 BFF 能力。
+- HarmonyOS 首批只做 contract 和拒载语义，不承诺运行。
+- SDK adapter 需要区分 `WebHostBridgeAdapter` 与 `StandaloneBridgeAdapter`。
