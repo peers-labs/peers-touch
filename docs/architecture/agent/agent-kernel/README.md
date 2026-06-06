@@ -56,6 +56,7 @@ gdpa-agent-box 是参考源，不是实现源。它的 Logical Agent / Execution
 
 | 文档 | 说明 |
 |------|------|
+| [product-capability-blueprint.md](./product-capability-blueprint.md) | 面向产品能力的 Agent 蓝图：LobeHub 交互能力、gdpa-agent-box CLI/Skill/Tool 能力与 Peers-Touch 原生方案 |
 | [design.md](./design.md) | 目标架构、核心模块、端到端执行闭环、API 面 |
 | [data-model.md](./data-model.md) | Proto-first 数据模型、状态机、持久化边界 |
 | [module-layout.md](./module-layout.md) | Station / Model / Desktop Rust / Desktop Web 目录规划 |
