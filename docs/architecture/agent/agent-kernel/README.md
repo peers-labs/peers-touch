@@ -60,6 +60,7 @@ gdpa-agent-box 是参考源，不是实现源。它的 Logical Agent / Execution
 | [data-model.md](./data-model.md) | Proto-first 数据模型、状态机、持久化边界 |
 | [module-layout.md](./module-layout.md) | Station / Model / Desktop Rust / Desktop Web 目录规划 |
 | [provider-strategy.md](./provider-strategy.md) | AgentProvider / ModelBackend 两层抽象，以及 Eino-native 与 CLI-wrapped 的行为一致性策略 |
+| [design-review.md](./design-review.md) | 整体设计清单、深度评审、P0/P1/P2 风险与修正顺序 |
 | [integration.md](./integration.md) | 与 Peers-Touch 架构、Agent Box 借鉴点、UI/UX、建设策略的关系 |
 | [decisions.md](./decisions.md) | 关键设计决策与取舍 |
 | [execution-plans/phase-1-contract-and-kernel.md](./execution-plans/phase-1-contract-and-kernel.md) | Phase 1：契约与 Agent Kernel 基座 |
