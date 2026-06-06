@@ -66,7 +66,7 @@ message RuntimeProfile {
   string agent_id = 2;
   string name = 3;
   RuntimeKind kind = 4;
-  ProviderConfig provider = 5;
+  AgentProviderConfig provider = 5;
   CapabilitySet capabilities = 6;
   ToolPolicy tool_policy = 7;
   MemoryPolicy memory_policy = 8;
@@ -75,18 +75,26 @@ message RuntimeProfile {
   map<string, string> launch_config = 11;
 }
 
-message ProviderConfig {
+message AgentProviderConfig {
   string provider_id = 1;
-  ProviderKind kind = 2;
-  string model_id = 3;
-  ProviderCapabilitySet capabilities = 4;
-  ProviderControlPolicy control_policy = 5;
+  AgentProviderKind kind = 2;
+  ModelBackendConfig model_backend = 3;
+  AgentProviderCapabilitySet capabilities = 4;
+  AgentProviderControlPolicy control_policy = 5;
   map<string, string> params = 6;
 }
 
-message ProviderCapabilitySet {
+message ModelBackendConfig {
+  string backend_id = 1;
+  ModelBackendKind kind = 2;
+  string model_id = 3;
+  ModelBackendCapabilitySet capabilities = 4;
+  map<string, string> params = 5;
+}
+
+message AgentProviderCapabilitySet {
   bool streaming = 1;
-  bool native_tool_calling = 2;
+  bool station_tool_loop = 2;
   bool structured_output = 3;
   bool tool_result_injection = 4;
   bool system_prompt_control = 5;
@@ -99,6 +107,17 @@ message ProviderCapabilitySet {
   bool event_trace = 12;
   bool workspace_access = 13;
   bool model_switch = 14;
+}
+
+message ModelBackendCapabilitySet {
+  bool streaming = 1;
+  bool native_tool_calling = 2;
+  bool structured_output = 3;
+  bool multimodal_input = 4;
+  bool reasoning_output = 5;
+  bool prompt_cache = 6;
+  bool usage_reporting = 7;
+  int64 context_window_tokens = 8;
 }
 
 message CapabilitySet {
@@ -118,8 +137,9 @@ message CapabilitySet {
 
 - `Agent` 表达“谁”，不直接绑定 provider 细节。
 - `RuntimeProfile` 表达“怎么跑”，并可以被多个 Thread snapshot。
-- `ProviderConfig` 表达“使用哪个 Provider 和模型”，Provider 可以是 Eino-native、Vendor API 或 CLI-wrapped。
-- `ProviderCapabilitySet` 和 `ProviderControlPolicy` 是运行时决策来源，不让前端或 handler 按字符串判断具体 CLI 或厂商。
+- `AgentProviderConfig` 表达“这次 Turn 由哪个 AgentProvider 编排”，AgentProvider 可以是 Kernel-native 或 CLI-wrapped。
+- `ModelBackendConfig` 表达“Kernel-native 底层使用哪个模型后端”，例如 OpenAI-compatible、Anthropic、Gemini、Ollama 或自定义网关。
+- `AgentProviderCapabilitySet`、`AgentProviderControlPolicy` 和 `ModelBackendCapabilitySet` 是运行时决策来源，不让前端或 handler 按字符串判断具体 CLI 或厂商。
 
 ### 3.2 Thread 与 Turn
 

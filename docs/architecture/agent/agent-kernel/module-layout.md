@@ -125,14 +125,15 @@ domain/provider/
 ├── capability_set.go
 ├── control_policy.go
 ├── registry.go
-├── eino_native_provider.go
-├── vendor_api_provider.go
+├── kernel_native_provider.go
+├── model_backend.go
+├── model_backend_registry.go
 ├── cli_wrapped_provider.go
 ├── cli_bridge_policy.go
 └── provider_event.go
 ```
 
-职责：统一 Provider 合同、Eino-native / Vendor API / CLI-wrapped 三类 Provider 注册、可控性矩阵、CLI Provider 受限桥策略。
+职责：统一 AgentProvider 合同、Kernel-native / CLI-wrapped Provider 注册、ModelBackend 注册、可控性矩阵、CLI Provider 受限桥策略。
 
 ### 4.3 `domain/thread/`
 
@@ -323,7 +324,9 @@ infrastructure/
 │   ├── stream_decoder.go
 │   ├── tool_call_adapter.go
 │   ├── eino_adapter.go
-│   ├── vendor_api_adapter.go
+│   ├── model_backend_openai_compatible.go
+│   ├── model_backend_anthropic.go
+│   ├── model_backend_ollama.go
 │   └── cli_runner_adapter.go
 ├── eventbus/
 │   ├── publisher.go

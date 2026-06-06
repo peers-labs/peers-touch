@@ -20,7 +20,7 @@
 | D-06 | Memory、Skill、Workspace、Thread/Turn 分离建模 | accepted |
 | D-07 | A2A 与 MCP 都进入 Station，但职责分离 | accepted |
 | D-08 | Growth 是执行闭环的一部分 | accepted |
-| D-09 | Eino-native、Vendor API、CLI-wrapped 都统一为 Provider | accepted |
+| D-09 | AgentProvider 与 ModelBackend 分层，CLI-wrapped 只做边界一致 | accepted |
 
 ---
 
@@ -227,31 +227,31 @@ Peers-Touch 当前最有价值的差异化是自成长。如果 Growth 只是后
 
 ---
 
-## D-09: Eino-native、Vendor API、CLI-wrapped 都统一为 Provider
+## D-09: AgentProvider 与 ModelBackend 分层，CLI-wrapped 只做边界一致
 
 **Status**: accepted
 **Date**: 2026-06-06
 
 ### Context
 
-参考系统把 Trae CLI、Cursor CLI、Claude CLI、Codex CLI 等包装成可运行能力。Peers-Touch 不采用 CLI-first 路线，但这些 CLI 的工程能力仍有价值。问题是 CLI 内部行为是黑盒，不能像 Eino-native 一样控制 prompt、tool loop、planning、memory 和 trace。
+参考系统把 Trae CLI、Cursor CLI、Claude CLI、Codex CLI 等包装成可运行能力。Peers-Touch 不采用 CLI-first 路线，但这些 CLI 的工程能力仍有价值。问题是 CLI 内部行为是黑盒，不能像 Kernel-native/Eino 编排一样控制 prompt、tool loop、planning、memory 和 trace。同时，OpenAI、Anthropic、Gemini、Ollama 等厂商 API 并不是与 Eino 并列的 Provider；Eino 底层本来就会使用这些模型后端。
 
 ### Decision
 
-Agent Kernel 统一使用 Provider 抽象：
+Agent Kernel 使用两层抽象：
 
-- `eino_native`：Peers 自建 Eino ReAct / ToolCallingModel，完全可控。
-- `vendor_api`：厂商 API，能力取决于 API capability。
-- `cli_wrapped`：CLI 黑盒包装，选择性可控。
+- `AgentProvider`：一次 Agent Turn 的编排后端，分为 `kernel_native` 和 `cli_wrapped`。
+- `ModelBackend`：Kernel-native 内部使用的模型后端，例如 OpenAI-compatible、Anthropic、Gemini、Ollama、自定义网关。
 
-所有 Provider 都通过 `ProviderDescriptor` 暴露 capability 和 control policy。TurnRunner 只能按 capability/control policy 分支，不能按 CLI 名称写业务逻辑。
+所有 AgentProvider 都通过 descriptor 暴露 capability 和 control policy。TurnRunner 只能按 capability/control policy 分支，不能按 CLI 名称写业务逻辑。ModelBackend 只表达模型 API 能力，不拥有 Agent tool、memory、skill、MCP、A2A 和 Growth。
 
 ### Rationale
 
-这样 UI 和业务理解上“大家都是 Provider”，但系统不会假装所有 Provider 都一样可控。Eino-native 仍是默认主线，CLI-wrapped 只在适合场景作为可选 Provider，并通过 Restricted Bridge 受控访问 Station tool。
+这样产品心智上“大家都是 Provider”，但工程上不会把 vendor API 和 Agent 编排混为一层。Kernel-native/Eino 仍是默认主线，CLI-wrapped 只在适合场景作为可选 AgentProvider，并通过 Restricted Bridge 受控访问 Station tool。两者的一致性来自统一 `AgentRunEnvelope`、统一 `AgentProviderEvent`、Station 强制不变量和 contract tests，而不是内部行为完全一致。
 
 ### Alternatives Considered
 
-- **把 CLI 独立建成执行体系**：容易复制参考系统路线，导致 provider/model 与 CLI 运行两套概念。
+- **把 CLI 独立建成执行体系**：容易复制参考系统路线，导致 Provider 和 CLI 运行两套概念。
 - **完全不接 CLI**：控制性最高，但放弃 Trae/Cursor/Claude/Codex CLI 已有工程能力。
 - **把 CLI 当完全可信 Provider**：实现便利，但审计、权限和 Growth 归因都会失真。
+- **把 Vendor API 与 Eino-native 并列**：概念不准确，因为 Eino-native 底层本来就使用 vendor/model backend。

@@ -1,4 +1,4 @@
-# Agent Kernel — Provider 策略
+# Agent Kernel — Provider 抽象与一致性策略
 
 > **Status**: draft
 > **Version**: 2026.06
@@ -8,236 +8,304 @@
 
 ---
 
-## 1. 设计立场
+## 1. 核心澄清
 
-Peers-Touch 的 Agent 不走 Agent Box 的 CLI-first 路线。Trae CLI、Cursor CLI、Claude CLI、Codex CLI 这类能力可以作为参考和可选 Provider 形态接入，但它们不是 Agent Kernel 的中心。
+`Vendor API Provider` 不应该与 `Eino-native Provider` 并列。Eino-native 本身底层也会使用 OpenAI、Anthropic、Gemini、Ollama、OpenAI-compatible gateway 等厂商或模型服务。
 
-目标抽象是：
+正确分层是：
 
-> 对 Agent Kernel 来说，Eino-native、厂商 API、CLI-wrapped 都是 Provider；区别只在能力矩阵、可控程度、观测粒度和降级策略。
+```text
+AgentProvider
+  ├── Kernel-native Provider     # Peers 控制 Agent loop，通常用 Eino 实现
+  │     └── ModelBackend         # OpenAI / Anthropic / Gemini / Ollama / custom gateway
+  └── CLI-wrapped Provider       # 外部 CLI 控制内部 Agent loop，Peers 只控制外壳
+        └── CLI internal model   # 可能由 CLI 自己连接 vendor/model，Peers 不假设可控
+```
 
-因此不把 CLI 单独建成“特殊 Agent 运行体系”，也不让 UI 或业务逻辑按 CLI 名称分支。所有差异必须收敛到 `ProviderDescriptor`、`ProviderCapabilitySet`、`ProviderControlPolicy` 和 `ProviderAdapter`。
+因此本文使用两个概念：
 
----
+| 概念 | 回答什么问题 | 例子 |
+|------|--------------|------|
+| `AgentProvider` | 一次 Agent Turn 由谁编排、如何执行、能观测到什么 | Kernel-native、CLI-wrapped |
+| `ModelBackend` | 模型 token 从哪里来，支持哪些模型 API 能力 | OpenAI-compatible、Anthropic、Gemini、Ollama、LLM Gateway |
 
-## 2. Provider 分类
-
-| 类型 | 例子 | 可控性 | 适合场景 |
-|------|------|--------|----------|
-| Eino-native Provider | Peers 自建 Eino ReAct / ToolCallingModel runtime | 高可控 | 默认主线、需要精确工具/记忆/技能/审计/Growth 的任务 |
-| Vendor API Provider | OpenAI-compatible、Anthropic、Gemini、Ollama 等 API | 中高可控 | 标准聊天、原生 tool calling、多模态、低本地依赖 |
-| CLI-wrapped Provider | Trae CLI、Cursor CLI、Claude CLI、Codex CLI | 选择性可控 | 代码、本地工程、厂商 CLI 已经封装好复杂能力的场景 |
-
-关键原则：
-
-1. Eino-native 是 Peers-Touch Agent 的默认可控主线。
-2. Vendor API 是标准模型能力接入层。
-3. CLI-wrapped 是黑盒能力包装，不假装拥有内部控制权。
-4. 三者在 Agent Profile、Thread、Turn、UI 上都是 Provider，只通过 capability 展示差异。
+用户在 UI 里看到的是 Provider，但技术上必须清楚：Eino-native 的 provider 能力来自 `AgentProvider + ModelBackend` 的组合；CLI-wrapped 的 provider 能力来自 CLI 暴露的外壳能力，内部模型不作为 Peers 可控事实。
 
 ---
 
-## 3. 统一 Provider 合同
+## 2. 设计目标
+
+1. Eino-native 与 CLI-wrapped 在 Agent Kernel 边界上使用同一套 Turn 合同。
+2. 不要求两者内部行为一致；只要求输入、输出、权限、事件、审计、错误、终态在边界上一致。
+3. Eino-native 保持完全可控主线：prompt、tool loop、memory、skill、MCP、A2A、Growth 都由 Station 编排。
+4. CLI-wrapped 作为选择性可控 Provider：只能声明自己真实支持的能力，不能伪装成 full-control。
+5. Model vendor 差异下沉到 `ModelBackend`，不污染 AgentProvider 抽象。
+
+---
+
+## 3. 两层抽象
+
+### 3.1 AgentProvider
+
+`AgentProvider` 是 Agent Kernel 面向 TurnRunner 的执行合同。
 
 ```go
-type Provider interface {
-    Descriptor(ctx context.Context) ProviderDescriptor
-    Prepare(ctx context.Context, req ProviderPrepareRequest) (*ProviderPreparedRun, error)
-    Execute(ctx context.Context, run *ProviderPreparedRun, sink ProviderEventSink) (*ProviderResult, error)
+type AgentProvider interface {
+    Descriptor(ctx context.Context) AgentProviderDescriptor
+    Prepare(ctx context.Context, envelope AgentRunEnvelope) (*PreparedAgentRun, error)
+    Execute(ctx context.Context, run *PreparedAgentRun, sink AgentProviderEventSink) (*AgentProviderResult, error)
     Stop(ctx context.Context, runID string) error
-    Resume(ctx context.Context, req ProviderResumeRequest, sink ProviderEventSink) (*ProviderResult, error)
-}
-
-type ProviderDescriptor struct {
-    ID           string
-    Kind         ProviderKind
-    DisplayName  string
-    Capabilities ProviderCapabilitySet
-    Control      ProviderControlPolicy
+    Resume(ctx context.Context, req AgentProviderResumeRequest, sink AgentProviderEventSink) (*AgentProviderResult, error)
 }
 ```
 
-`ProviderKind`：
+`AgentProviderKind`：
 
-- `eino_native`
-- `vendor_api`
+- `kernel_native`
 - `cli_wrapped`
 
-`ProviderCapabilitySet`：
+`AgentProviderControlLevel`：
 
-- `streaming`
-- `native_tool_calling`
-- `structured_output`
-- `tool_result_injection`
-- `system_prompt_control`
-- `message_history_control`
-- `context_window_control`
-- `attachment_control`
-- `stop`
-- `resume`
-- `usage_reporting`
-- `event_trace`
-- `workspace_access`
-- `model_switch`
+- `full_control`：Kernel 控制 prompt、history、tool loop、tool result、retry、trace。
+- `bounded_control`：Kernel 控制启动输入、workspace、bridge、停止、部分事件，但不控制内部推理 loop。
+- `black_box`：Kernel 只能提交任务、观察输出、停止进程或会话。
 
-`ProviderControlPolicy`：
+### 3.2 ModelBackend
 
-- `full_control`：Agent Kernel 能控制 prompt、history、tool loop、tool result、retry、trace。
-- `partial_control`：Agent Kernel 能控制启动输入和部分环境，但内部 tool loop / planning / memory 行为不可完全干预。
-- `black_box_control`：Agent Kernel 只能提供任务输入、读取输出、停止进程或会话，内部行为不做假设。
+`ModelBackend` 是 Kernel-native Provider 内部使用的模型后端。
 
----
+```go
+type ModelBackend interface {
+    Descriptor(ctx context.Context) ModelBackendDescriptor
+    Invoke(ctx context.Context, req ModelInvokeRequest, sink ModelEventSink) (*ModelResult, error)
+}
+```
 
-## 4. Eino-native Provider
+`ModelBackendKind`：
 
-Eino-native 是 Agent Kernel 的核心路线。
+- `openai_compatible`
+- `anthropic`
+- `gemini`
+- `ollama`
+- `custom_gateway`
 
-可控能力：
+ModelBackend 只描述模型 API 能力：
 
-- Prompt assembly 完全由 Peers 控制。
-- Tool calling 使用 Station `ToolDescriptor` 和 JSON schema。
-- Tool policy、approval、MCP、A2A、Memory、Skill 都在 Station 统一闭环。
-- Provider call、tool call、memory hit、skill hit 可完整进入 TurnTrace。
-- Growth 可以做精确归因。
+- streaming
+- tool calling
+- structured output
+- image/audio input
+- reasoning output
+- prompt cache
+- usage reporting
+- context window
 
-执行策略：
-
-1. TurnRunner 组装 prompt。
-2. ProviderAdapter 将 ToolDescriptor 转为 Eino tool。
-3. Eino ReAct / ToolCallingModel 执行推理。
-4. 工具调用回到 Station ToolRegistry。
-5. TurnRunner 持久化每个事件。
-
-默认要求：
-
-- 新的通用 Agent 能力优先落在 Eino-native。
-- 需要可解释、可审计、可成长的任务默认使用 Eino-native。
-- CLI provider 缺少的控制能力，不应反向降低 Eino-native 的设计标准。
+它不拥有 Agent memory、skill、MCP、A2A、tool approval、Growth；这些属于 AgentProvider / TurnRunner 层。
 
 ---
 
-## 5. Vendor API Provider
+## 4. 行为一致性靠什么保证
 
-Vendor API Provider 面向厂商模型能力。
+Eino-native 和 CLI-wrapped 的内部机制不可能完全一致，尤其 CLI 内部是黑盒。因此一致性不是“内部过程相同”，而是“边界合同相同 + 能力声明真实 + 不变量由 Station 强制”。
 
-可控能力：
+### 4.1 统一输入：AgentRunEnvelope
 
-- 通常可控 system prompt、message history、model params、streaming。
-- 如果厂商支持 native tool calling，则可以接入 Station ToolRegistry。
-- 如果厂商只支持文本生成，则只能作为 no-tool 或 limited-tool provider。
-- usage、reasoning、tool event 的可见度取决于厂商 API。
+所有 AgentProvider 都接收同一个 `AgentRunEnvelope`：
 
-策略：
+```go
+type AgentRunEnvelope struct {
+    RunID              string
+    AgentID            string
+    ThreadID           string
+    TurnID             string
+    RuntimeSnapshot    RuntimeProfileSnapshot
+    Identity           AgentIdentityBlock
+    UserInput          UserInput
+    ThreadWindow       []ConversationMessage
+    MemorySnapshot     MemorySnapshotBlock
+    SkillIndex         SkillIndexBlock
+    WorkspaceContext   WorkspaceContextBlock
+    ToolCatalog        []ToolDescriptor
+    ToolPolicy         ToolPolicySnapshot
+    ApprovalPolicy     ApprovalPolicySnapshot
+    OutputContract     OutputContract
+    Budget             RunBudget
+    TraceMode          TraceMode
+}
+```
 
-- 将厂商差异封装在 `provider/vendorapi/`。
-- 对 Agent Kernel 暴露统一 `ProviderEvent`。
-- 不在业务代码里判断 OpenAI / Anthropic / Gemini 字符串。
-- 厂商不支持的 capability 必须在 descriptor 中显式为 false。
+Eino-native 直接消费结构化字段。CLI-wrapped 不能直接理解所有字段时，由 adapter 投影成：
+
+- system prompt / instruction bundle
+- workspace 文件
+- tool bridge inventory
+- environment variables
+- CLI args
+- sidecar metadata
+
+但源头仍是同一个 envelope。
+
+### 4.2 统一输出：AgentProviderEvent
+
+所有 AgentProvider 都必须输出统一事件：
+
+| 事件 | Eino-native | CLI-wrapped |
+|------|-------------|-------------|
+| `run_started` | Kernel 发出 | Host wrapper 发出 |
+| `assistant_delta` | Model stream | stdout/log/parser |
+| `tool_call_requested` | Eino tool call | 只允许来自 Restricted Bridge |
+| `tool_result_observed` | ToolRegistry result | Bridge result |
+| `approval_required` | ToolPolicy 触发 | Bridge 触发 |
+| `artifact_created` | Kernel 或 tool 产物 | CLI 输出文件 / patch / log |
+| `usage_reported` | ModelBackend usage | CLI 支持时才有 |
+| `run_completed` | Kernel 判定 | wrapper exit + result parser |
+| `run_failed` | Kernel / ModelBackend 错误 | wrapper / exit / timeout |
+| `raw_observation` | 可选调试事件 | CLI stdout/stderr/log 摘要 |
+
+UI、TurnTrace、Growth 只消费统一事件，不消费 provider 私有日志作为事实源。
+
+### 4.3 Station 强制的不变量
+
+不变量由 Station 强制，不交给 Provider 自觉遵守：
+
+1. **Tool 不变量**：Station tool 只能由 ToolRegistry 执行；CLI 只能通过 Restricted Bridge 请求。
+2. **Approval 不变量**：高风险 tool 必须进入 Station approval，CLI 传入的 `approved=true` 不可信。
+3. **Memory 不变量**：Memory 写入必须走 Station memory tool 或 Station API，CLI 本地文件不能直接变成 Memory。
+4. **Skill 不变量**：Skill 创建/修改必须走 Skill service 和 guard。
+5. **Trace 不变量**：TurnTrace 只能记录 Station 真实观察到的事件；CLI 内部事件只能作为 raw observation。
+6. **Policy 不变量**：Provider capability 只能缩小可用能力，不能绕过 Agent policy。
+7. **Final 不变量**：Turn 终态由 TurnRunner 结合 ProviderResult、exit status、required artifact、policy violation 判定。
+
+### 4.4 能力降级规则
+
+同一 Agent 配置在不同 Provider 下执行时，TurnRunner 按 capability 自动降级：
+
+| 能力 | Kernel-native | CLI-wrapped |
+|------|---------------|-------------|
+| Tool loop | Station 完整控制 | 仅 Bridge 工具可控；CLI 内部工具不可见 |
+| Memory recall | Prompt 结构化注入 | 投影为 prompt 或文件 |
+| Memory write | ToolRegistry 精确记录 | 只能通过 Bridge 写入 |
+| Skill use | Index + skill_view 可追踪 | 投影为文件/说明；内部阅读不可完全追踪 |
+| MCP | Station tool 调用可追踪 | 只能通过 Bridge 调用 MCP tool |
+| A2A | Station task 可追踪 | 只能通过 Bridge 调用 A2A tool |
+| Growth | full trace | black-box trace + bridge trace |
+| Retry | Kernel 可重放 tool loop | 只能重跑 CLI 或 resume |
+
+行为一致性来自这些明确降级，而不是假装 CLI 与 Eino 等价。
+
+---
+
+## 5. Kernel-native Provider
+
+Kernel-native Provider 是默认主线，使用 Eino 编排 Agent loop。
+
+```text
+TurnRunner
+  -> PromptAssembly
+  -> KernelNativeProvider
+      -> Eino Agent / ToolCallingModel
+          -> ModelBackend(OpenAI / Anthropic / Gemini / Ollama / Gateway)
+      -> ToolRegistry
+  -> TurnTrace / Growth
+```
+
+特性：
+
+- Agent loop 由 Peers 控制。
+- Tool calling 由 Station schema-first registry 控制。
+- Memory、Skill、MCP、A2A 都是 Station 工具或服务。
+- TurnTrace 能记录完整 tool/provider/memory/skill 证据。
+- Growth 可做精确归因。
+
+注意：OpenAI、Anthropic、Gemini 等 vendor 是 `ModelBackend`，不是与 Eino-native 并列的 AgentProvider。
 
 ---
 
 ## 6. CLI-wrapped Provider
 
-CLI-wrapped Provider 是“厂商或工具已经封装好的黑盒能力”，例如 Trae CLI、Cursor CLI、Claude CLI、Codex CLI。
+CLI-wrapped Provider 是外部 CLI 包装。
 
-### 6.1 能力边界
+```text
+TurnRunner
+  -> AgentRunEnvelope
+  -> CLIWrappedProvider
+      -> Desktop Rust launcher / Station process adapter
+      -> CLI process
+      -> optional Restricted Bridge -> ToolRegistry
+  -> ProviderResult / RawObservation / BridgeTrace
+```
 
 CLI-wrapped Provider 可以控制：
 
-- 启动命令、工作目录、环境变量、模型参数中 CLI 暴露的部分。
-- 初始 prompt、附件、上下文文件或 workspace。
-- stdout/stderr/event log 的解析。
-- stop / kill / timeout。
-- 如果 CLI 明确支持 resume，则可控制 resume token / session id。
+- CLI 启动命令、工作目录、环境变量、参数。
+- 初始 prompt、上下文文件、workspace 投影。
+- Restricted Bridge 是否开启、暴露哪些 Station tools。
+- stdout/stderr/log 的解析。
+- stop / timeout / resume token。
 
 CLI-wrapped Provider 不能假设控制：
 
 - CLI 内部 prompt 改写。
 - CLI 内部 tool loop。
-- CLI 内部 memory 或 planning。
-- CLI 内部对子代理、shell、文件、网络的真实调用策略。
-- CLI 对输出格式、token usage、错误分类的完整透明度。
-
-### 6.2 接入原则
-
-1. CLI 是 Provider，不是 Agent Kernel 的执行核心。
-2. CLI provider 的 descriptor 必须标记 `Control=partial_control` 或 `black_box_control`。
-3. CLI provider 不允许直接获得 Station 通用 token。
-4. CLI provider 若要调用 Station tool，必须走受限 Tool Bridge，且 Bridge token 绑定 agent、thread、turn、allowed tools。
-5. CLI provider 的工具能力默认少给，按 Agent Profile 显式开放。
-6. CLI provider 的输出事件只作为观察，不作为完整内部 trace。
-7. CLI provider 的 Growth 归因粒度按“Provider run + bridge tool calls + visible artifacts”计算，不伪造内部 tool trace。
-
-### 6.3 Tool Bridge 策略
-
-CLI provider 有两种模式：
-
-| 模式 | 说明 | 适用 |
-|------|------|------|
-| No Bridge | 只给 prompt / workspace / env，不给 Station 工具 | 黑盒代码任务、只需最终产物 |
-| Restricted Bridge | 通过一次性 token 暴露允许的 Station tools | 需要 Memory、Skill、A2A、MCP、Channel 受控访问 |
-
-Restricted Bridge 必须满足：
-
-- token 绑定 `agent_id`、`thread_id`、`turn_id`、`provider_run_id`。
-- token 带 allowlist，不能由 CLI 自己请求扩大权限。
-- approval 工具仍回 Station 审批队列。
-- bridge request body 不能覆盖 token claims。
-- 过期、重复、越权都记录为 ToolCall failed/denied。
-
-### 6.4 事件与观测
-
-CLI provider 的事件分三层：
-
-| 事件层 | 来源 | 可信度 | 用途 |
-|--------|------|--------|------|
-| Host events | Station / Desktop Rust 启停、超时、退出码 | 高 | Turn 状态 |
-| Bridge events | CLI 通过受限 bridge 调 Station tool | 高 | ToolTrace / Growth |
-| Parsed CLI events | stdout/stderr/log 解析 | 中低 | UI 展示、辅助诊断 |
-
-Growth 不应把 Parsed CLI events 当成完整事实，只能作为辅助证据。
+- CLI 内部 memory、planning、subagent。
+- CLI 内部是否访问 shell、文件、网络。
+- CLI token usage、reasoning、错误分类是否完整准确。
 
 ---
 
-## 7. Provider 选择策略
+## 7. Restricted Bridge
 
-Agent Profile 中的 Provider 选择应呈现统一体验：
+CLI-wrapped Provider 默认是 `No Bridge`。需要调用 Station tool 时必须显式开启 `Restricted Bridge`。
 
-| 任务类型 | 推荐 Provider |
-|----------|---------------|
-| 普通对话、社交协作、可审计工具调用 | Eino-native |
-| 多模态、厂商模型特性、低本地依赖 | Vendor API |
-| 代码修改、厂商 CLI 已有深度工程能力 | CLI-wrapped |
-| 高风险工具、需要强审批和精确归因 | Eino-native |
-| 需要本地 IDE/CLI 生态能力 | CLI-wrapped + Restricted Bridge |
+Bridge token 必须绑定：
 
-Provider 自动选择可以做，但必须可解释：
+- `agent_id`
+- `thread_id`
+- `turn_id`
+- `provider_run_id`
+- `allowed_tool_names`
+- `expires_at`
 
-- 为什么选择该 Provider。
-- 该 Provider 不支持哪些能力。
-- 本轮工具、Memory、Skill、Growth 归因会受到什么影响。
+Bridge 请求规则：
+
+1. 请求体不能覆盖 token claims。
+2. 不在 allowlist 的 tool 直接 denied。
+3. approval tool 返回 `approval_required`，等待 Station UI。
+4. tool result 作为 `tool_result_observed` 回到 ProviderEvent。
+5. 所有 Bridge 调用进入 ToolCall 和 TurnTrace。
+
+这样 CLI 只能通过 Station 认可的窄门访问业务能力。
 
 ---
 
-## 8. UI 表达
+## 8. 一致性测试
 
-Desktop UI 不展示独立运行体系概念，只展示 Provider：
+Provider 接入必须通过同一组 contract tests：
 
-- Provider 类型：Eino-native / Vendor API / CLI-wrapped。
-- 可控性标签：完全可控 / 部分可控 / 黑盒。
-- 能力矩阵：Tool calling、MCP、A2A、Memory、Skill、Workspace、Resume、Usage。
-- 风险提示：CLI provider 的内部行为不可完全审计。
+| 测试 | 要求 |
+|------|------|
+| Envelope acceptance | Provider 能接收标准 AgentRunEnvelope |
+| Event normalization | Provider 输出标准 AgentProviderEvent |
+| Tool denial | 未授权 tool 必须被拒绝 |
+| Approval path | 高风险 tool 必须进入 Station approval |
+| Memory write path | Memory 只能通过 Station tool 写入 |
+| Stop semantics | Stop 后 Turn 进入 cancelled 或 failed，不能悬挂 |
+| Final result | completed 必须有 final output 或 required artifact |
+| Trace honesty | CLI-wrapped 不得声明 full trace |
+
+这组测试比“内部行为一致”更实际，也更可验证。
+
+---
+
+## 9. UI 表达
+
+Desktop UI 只展示 Provider，不展示内部执行分层：
+
+- Provider 类型：Kernel-native / CLI-wrapped。
+- Model backend：OpenAI-compatible / Anthropic / Gemini / Ollama / custom gateway，仅在 Kernel-native 下展示。
+- 可控性：完全可控 / 边界可控 / 黑盒。
+- 能力矩阵：Tool calling、MCP、A2A、Memory、Skill、Workspace、Resume、Usage、Trace。
+- 风险提示：CLI-wrapped 的内部行为不可完全审计。
 - Bridge 开关：默认关闭，按工具类别显式打开。
 
-这能让用户理解“都是 provider，但可信和可控程度不同”。
-
----
-
-## 9. 验收标准
-
-1. Agent Profile 中 Eino-native、Vendor API、CLI-wrapped 都通过同一个 Provider 配置模型表达。
-2. TurnRunner 不按 provider 名称写业务分支，只按 capability/control policy 分支。
-3. CLI provider 不获得 Station 通用 token。
-4. CLI provider 无 bridge 时不能调用 Station tools。
-5. CLI provider 有 bridge 时，所有 bridge calls 都写入 ToolCall 和 TurnTrace。
-6. GrowthReport 明确区分 full trace 与 black-box trace。
+这样既满足“大家都是 Provider”的产品心智，又保留工程上必须区分的控制边界。

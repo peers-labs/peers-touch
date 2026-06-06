@@ -46,7 +46,7 @@ Agent Kernel 严格落在 Peers-Touch 三层架构里：
 | LogicalAgent / ExecutionProfile / Thread / Run | 转为 Agent / RuntimeProfile / AgentThread / AgentTurn proto-first 模型 | 不复制 SQLite store type 和 Web 管理台结构 |
 | RuntimeRegistry 与 CapabilitySet | 作为 Station runtime descriptor 与能力矩阵 | 不按 CLI 或厂商字符串散落判断 |
 | Eino/native tool calling | 引入 schema-first ToolDescriptor 和 provider adapter | 不继续文本 tag tool parsing |
-| CLI provider 包装 | 参考其把 Trae/Cursor/Claude/Codex CLI 封装成可选能力的思路 | 不采用 CLI-first 路线，不假装控制黑盒内部行为 |
+| CLI provider 包装 | 参考其把 Trae/Cursor/Claude/Codex CLI 封装成可选 AgentProvider 的思路 | 不采用 CLI-first 路线，不假装控制黑盒内部行为 |
 | MCP 动态工具 | Station 统一管理 MCP server 并投影为 ToolDescriptor | 不默认给所有 Agent 暴露 MCP |
 | A2A resolver | Peers Station 生成 Agent Card、Task 状态和本地/远程 resolver | 不复制参考系统的 remote sharing UI |
 | Skill package | SkillPackage + progressive disclosure + guard + versioning | 不复制技能市场页面和包管理体验 |
@@ -81,13 +81,13 @@ Agent Kernel 严格落在 Peers-Touch 三层架构里：
 
 ## 4. Provider 集成
 
-Provider 统一进入 Agent Profile，不再区分“模型 provider”和“CLI 运行体系”两套概念。
+Provider 统一进入 Agent Profile，但技术上分两层：`AgentProvider` 负责编排 Turn，`ModelBackend` 负责模型来源。Eino-native 是 AgentProvider，OpenAI/Anthropic/Ollama 等是 ModelBackend，不与 Eino 并列。
 
-| Provider 类型 | Station | Desktop Rust | UI |
-|---------------|---------|--------------|----|
-| Eino-native | 完全控制 prompt、tool loop、trace、growth | 无特殊要求 | 标记为完全可控 |
-| Vendor API | 控制 API request、tool calling、streaming，能力取决于厂商 | 无特殊要求 | 显示厂商能力矩阵 |
-| CLI-wrapped | 控制启动、输入、环境、bridge、停止；不控制内部行为 | 启动/停止 CLI 进程，回传事件 | 标记为部分可控或黑盒 |
+| 类型 | Station | Desktop Rust | UI |
+|------|---------|--------------|----|
+| Kernel-native AgentProvider | 完全控制 prompt、tool loop、trace、growth | 无特殊要求 | 标记为完全可控 |
+| ModelBackend | 只提供模型 API 能力，被 Kernel-native 调用 | 无特殊要求 | 作为 Kernel-native 下的模型来源展示 |
+| CLI-wrapped AgentProvider | 控制启动、输入、环境、bridge、停止；不控制内部行为 | 启动/停止 CLI 进程，回传事件 | 标记为边界可控或黑盒 |
 
 CLI-wrapped Provider 默认不拥有 Station tool 权限。只有 Agent Profile 显式开启 Restricted Bridge 后，Station 才发放绑定 `agent_id/thread_id/turn_id/provider_run_id` 的一次性 bridge token。
 

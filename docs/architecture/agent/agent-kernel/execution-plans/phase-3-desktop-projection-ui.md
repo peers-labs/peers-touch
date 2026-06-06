@@ -28,7 +28,7 @@
    - AgentToolsPage
    - AgentGrowthPage
 5. Tool approval 卡片与 Turn event timeline。
-6. Provider 能力矩阵 UI：Eino-native、Vendor API、CLI-wrapped 的可控性与风险标签。
+6. Provider 能力矩阵 UI：Kernel-native AgentProvider、ModelBackend、CLI-wrapped AgentProvider 的可控性与风险标签。
 7. LobeUI first，antd fallback；不引入 Agent Box UI 框架。
 
 ---

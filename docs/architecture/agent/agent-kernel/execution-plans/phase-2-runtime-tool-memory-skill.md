@@ -10,15 +10,15 @@
 
 ## 1. 目标
 
-把 Agent Kernel 从“能记录 Turn”推进到“能真实执行 Turn”：实现 Eino-native Provider、Vendor API Provider、schema-first tool calling、Memory snapshot、Skill index 和 Growth trace 输入。
+把 Agent Kernel 从“能记录 Turn”推进到“能真实执行 Turn”：实现 Kernel-native AgentProvider、ModelBackend、schema-first tool calling、Memory snapshot、Skill index 和 Growth trace 输入。
 
 ---
 
 ## 2. 交付范围
 
-1. `ProviderRegistry`、`eino_native` Provider 与基础 `vendor_api` Provider。
+1. `AgentProviderRegistry`、Kernel-native AgentProvider 与基础 ModelBackend。
 2. `TurnRunner` 状态机：queued、preparing、running、waiting_approval、completed、failed、cancelled。
-3. Provider adapter：支持 Eino-native tool loop 和 OpenAI-compatible native tool calling。
+3. ModelBackend adapter：支持 OpenAI-compatible native tool calling，并能被 Kernel-native Provider 调用。
 4. Tool registry：descriptor、schema、policy、approval、audit。
 5. Builtin tools：memory、skill、scheduler 最小集。
 6. Memory：item、retrieval、snapshot、feedback、freeze/rollback 基础。

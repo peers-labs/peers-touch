@@ -30,7 +30,7 @@ flowchart TB
     subgraph Station["Station Agent Subserver"]
         Handler["handler: HTTP + stream"]
         App["application: use cases"]
-        Runtime["runtime: RuntimeRegistry + TurnRunner"]
+        Runtime["runtime: AgentProviderRegistry + ModelBackendRegistry + TurnRunner"]
         Thread["thread: Thread / Turn / Event / Replay"]
         Prompt["prompt: PromptAssembly"]
         Tool["tool: schema registry + policy + approval"]
@@ -100,30 +100,30 @@ flowchart TB
 | 对象 | 职责 |
 |------|------|
 | `LogicalAgent` | 逻辑 Agent 身份、职责、默认 profile、策略、可见性 |
-| `RuntimeProfile` | provider/model、runtime kind、tool policy、memory/skill scope、workspace policy |
+| `RuntimeProfile` | AgentProvider、ModelBackend、tool policy、memory/skill scope、workspace policy |
 | `CapabilitySet` | streaming、native tool calling、mcp、a2a、workspace、resume、attachment、approval |
-| `ProviderRegistry` | 注册 Eino-native、Vendor API、CLI-wrapped Provider |
+| `AgentProviderRegistry` | 注册 Kernel-native 与 CLI-wrapped AgentProvider |
+| `ModelBackendRegistry` | 注册 OpenAI-compatible、Anthropic、Gemini、Ollama、custom gateway 等模型后端 |
 | `TurnRunner` | 执行单轮 Turn 的状态机 |
 
 推荐接口：
 
 ```go
-type Provider interface {
-    Descriptor(ctx context.Context) ProviderDescriptor
-    Prepare(ctx context.Context, req ProviderPrepareRequest) (*ProviderPreparedRun, error)
-    Execute(ctx context.Context, run *ProviderPreparedRun, sink ProviderEventSink) (*ProviderResult, error)
+type AgentProvider interface {
+    Descriptor(ctx context.Context) AgentProviderDescriptor
+    Prepare(ctx context.Context, envelope AgentRunEnvelope) (*PreparedAgentRun, error)
+    Execute(ctx context.Context, run *PreparedAgentRun, sink AgentProviderEventSink) (*AgentProviderResult, error)
     Stop(ctx context.Context, runID string) error
-    Resume(ctx context.Context, req ProviderResumeRequest, sink ProviderEventSink) (*ProviderResult, error)
+    Resume(ctx context.Context, req AgentProviderResumeRequest, sink AgentProviderEventSink) (*AgentProviderResult, error)
 }
 ```
 
-Provider 分三类，统一进入同一 `Provider` 合同：
+Provider 是两层抽象：
 
-- `eino_native`：Peers 自建 Eino ReAct / ToolCallingModel，完全可控，是默认主线。
-- `vendor_api`：OpenAI-compatible、Anthropic、Gemini、Ollama 等厂商 API，按 API 能力中高可控。
-- `cli_wrapped`：Trae CLI、Cursor CLI、Claude CLI、Codex CLI 等黑盒 CLI，选择性可控，只按 capability 暴露能力。
+- `AgentProvider`：负责一次 Agent Turn 的编排和事件输出，分为 `kernel_native` 与 `cli_wrapped`。
+- `ModelBackend`：负责模型 token 从哪里来，只被 `kernel_native` 使用，例如 OpenAI-compatible、Anthropic、Gemini、Ollama、自定义网关。
 
-CLI-wrapped Provider 不能假装拥有内部 tool loop、prompt 改写、memory、planning 的控制权。它只能通过启动参数、工作目录、环境变量、输入输出、受限 Tool Bridge、停止/超时等外层能力受控。详细策略见 [provider-strategy.md](./provider-strategy.md)。
+Eino-native 不是与 vendor API 并列的东西；Eino-native 是 Kernel-native AgentProvider，vendor API 是它下面的 ModelBackend。CLI-wrapped Provider 不能假装拥有内部 tool loop、prompt 改写、memory、planning 的控制权。它只能通过启动参数、工作目录、环境变量、输入输出、受限 Tool Bridge、停止/超时等外层能力受控。详细策略见 [provider-strategy.md](./provider-strategy.md)。
 
 ### 4.2 `thread`
 
