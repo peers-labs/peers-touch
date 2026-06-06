@@ -12,6 +12,10 @@ case "$target" in
     bash "$SCRIPT_DIR/stop.sh" station
     bash "$SCRIPT_DIR/station-dev.sh"
     ;;
+  relay)
+    bash "$SCRIPT_DIR/stop.sh" relay
+    bash "$SCRIPT_DIR/relay-dev.sh"
+    ;;
   desktop)
     bash "$SCRIPT_DIR/stop.sh" desktop
     bash "$SCRIPT_DIR/desktop-dev.sh" app
@@ -27,9 +31,10 @@ case "$target" in
   all)
     bash "$SCRIPT_DIR/stop.sh" all
     bash "$SCRIPT_DIR/station-dev.sh"
+    bash "$SCRIPT_DIR/relay-dev.sh"
     ;;
   *)
-    echo "[ERROR] Usage: restart.sh [station|desktop|desktop-web|mobile|all]"
+    echo "[ERROR] Usage: restart.sh [station|relay|desktop|desktop-web|mobile|all]"
     exit 1
     ;;
 esac

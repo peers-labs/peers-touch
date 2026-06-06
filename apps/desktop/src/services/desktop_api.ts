@@ -209,13 +209,21 @@ function publishSessionRevoked(payload: SessionRevokedPayload) {
 function extractSessionRevoked(error?: RustCommandError): SessionRevokedPayload | null {
   const details = error?.details as any;
   const reasonFromDetails = typeof details?.reason === 'string' ? details.reason : undefined;
-  if (error?.code === 'UNAUTHORIZED' && typeof details?.code === 'string' && details.code === 'session_revoked') {
+  if (error?.code !== 'UNAUTHORIZED') return null;
+  if (typeof details?.code === 'string' && details.code === 'session_revoked') {
     return {
       reason: (reasonFromDetails as any) || 'unknown',
       raw: typeof details?.raw === 'string' ? details.raw : undefined,
     };
   }
-  return null;
+  return {
+    reason: (reasonFromDetails as any) || 'expired',
+    raw: error.message,
+  };
+}
+
+export function isUnauthorizedError(error: unknown): boolean {
+  return error instanceof AuthCommandException && error.code === 'UNAUTHORIZED';
 }
 
 /**
@@ -240,6 +248,14 @@ async function invokeRustCommand<TInput, TData>(
     const result = await invoke<RustCommandResult<TData>>(command, payload);
     const elapsed = Date.now() - start;
     if (!result.ok) {
+      const revoked = extractSessionRevoked(result.error);
+      if (revoked) {
+        publishSessionRevoked(revoked);
+        if (!quiet) {
+          log.info('api', `← ${command} UNAUTHORIZED (${elapsed}ms)`, { reason: revoked.reason });
+        }
+        return result;
+      }
       // Surface `details.reason` from the Rust side so we don't have to
       // round-trip to the binary just to read why a command failed.
       const detailsReason = (result.error?.details as any)?.reason;
@@ -248,8 +264,6 @@ async function invokeRustCommand<TInput, TData>(
         code: result.error?.code,
         ...(detailsReason ? { reason: detailsReason } : {}),
       });
-      const revoked = extractSessionRevoked(result.error);
-      if (revoked) publishSessionRevoked(revoked);
     } else if (!quiet) {
       log.info('api', `← ${command} OK (${elapsed}ms)`);
     }
@@ -304,6 +318,9 @@ async function invokeRustDataFromStatus<TInput, TOut>(
   if (response.ok && response.data) {
     return parseJSONSafe(response.data.status) as TOut;
   }
+  if (response.error?.code === 'UNAUTHORIZED') {
+    throw new AuthCommandException(response.error);
+  }
   const err = new Error(response.error?.message || `${command} failed`);
   log.error('api', `Command error: ${command}`, { error: err });
   throw err;
@@ -318,6 +335,9 @@ export async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
   if (response.ok && response.data) {
     const bytes = new Uint8Array(response.data);
     return fromBinary(schema, bytes);
+  }
+  if (response.error?.code === 'UNAUTHORIZED') {
+    throw new AuthCommandException(response.error);
   }
   throw new Error(response.error?.message || `${command} failed`);
 }
