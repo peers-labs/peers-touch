@@ -177,6 +177,9 @@
 
   "chat.message.toast.copied": "已复制",
   "chat.message.toast.savedToNotebook": "已保存到笔记本",
+  "chat.message.provider.cliBlackBox": "CLI 黑盒",
+  "chat.message.provider.structured": "结构化追踪",
+  "chat.message.provider.traceTitle": "Trace {{trace}} · provider {{provider}} · protocol {{protocol}} · memory {{memory}} · skills {{skills}} · tools {{tools}}",
 
   "chat.message.thinking.title": "思考",
   "chat.message.thinking.usingTools": "正在使用 {{count}} 个工具…",

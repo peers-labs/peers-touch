@@ -177,6 +177,9 @@
 
   "chat.message.toast.copied": "Copied",
   "chat.message.toast.savedToNotebook": "Saved to notebook",
+  "chat.message.provider.cliBlackBox": "CLI black-box",
+  "chat.message.provider.structured": "Structured trace",
+  "chat.message.provider.traceTitle": "Trace {{trace}} · provider {{provider}} · protocol {{protocol}} · memory {{memory}} · skills {{skills}} · tools {{tools}}",
 
   "chat.message.thinking.title": "Thinking",
   "chat.message.thinking.usingTools": "Using {{count}} tool…",

@@ -45,6 +45,19 @@ export interface ChatMessage {
   loading?: boolean;
   timestamp: number;
   model?: string;
+  providerId?: string;
+  providerKind?: string;
+  providerProtocol?: string;
+  providerBlackBox?: boolean;
+  providerCapabilities?: {
+    stream?: boolean;
+    cancel?: boolean;
+    toolCall?: boolean;
+  };
+  traceId?: string;
+  memoryCount?: number;
+  skillCount?: number;
+  toolCount?: number;
   error?: string;
   thinking?: string;
   thinkingDone?: boolean;
@@ -226,6 +239,22 @@ function applyStreamEvent(msg: ChatMessage, event: StreamEvent): ChatMessage {
         toolCalls: doneCalls,
         loading: false,
         model: event.data.model || msg.model,
+        providerId: event.data.provider_id || msg.providerId,
+        providerKind: event.data.provider_kind || msg.providerKind,
+        providerProtocol: event.data.provider_protocol || msg.providerProtocol,
+        providerBlackBox:
+          event.data.provider_black_box === true ||
+          event.data.provider_black_box === 'true' ||
+          msg.providerBlackBox,
+        providerCapabilities: {
+          stream: event.data.provider_stream === true || event.data.provider_stream === 'true',
+          cancel: event.data.provider_cancel === true || event.data.provider_cancel === 'true',
+          toolCall: event.data.provider_tool_call === true || event.data.provider_tool_call === 'true',
+        },
+        traceId: event.data.trace_id || msg.traceId,
+        memoryCount: event.data.memory_count != null ? Number(event.data.memory_count) : msg.memoryCount,
+        skillCount: event.data.skill_count != null ? Number(event.data.skill_count) : msg.skillCount,
+        toolCount: event.data.tool_count != null ? Number(event.data.tool_count) : msg.toolCount,
         processDuration: Math.round((Date.now() - msg.timestamp) / 1000),
       };
     }

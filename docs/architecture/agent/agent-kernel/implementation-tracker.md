@@ -71,37 +71,35 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | Agent Profile center | Added overview, instructions, model/runtime, capabilities, memory, and task tabs in one Peers-Touch profile surface | Agent locale JSON and targeted TS checks passed |
 | Provider capability matrix | Provider settings now show Eino-native vs CLI-wrapped supported/partial/unsupported capability degradation | Provider locale JSON and targeted TS checks passed |
 | CLI provider guardrails | Provider save/check validates CLI timeout, command quoting, absolute existing cwd, env shape, and check results return capability/warning metadata | Provider Rust tests and `cargo check` passed |
+| Conversation provider trace markers | Agent turns now propagate provider call capability metadata into stream `done` events and show CLI black-box / structured trace markers on assistant messages | Chat locale JSON and targeted TS checks passed |
 
 ---
 
-## 5. Current Stage: Provider Capability Matrix and CLI Guardrails
+## 5. Current Stage: Conversation Provider Trace Markers
 
 ### Delivered
 
-- Provider check now returns capability metadata and CLI warning metadata:
-  - `supported`
-  - `partial`
-  - `unsupported`
-- Provider update/create/check validate CLI guardrails:
-  - command syntax / unterminated quotes
-  - timeout must be an integer in `[100, 3600000]`
-  - cwd must be an absolute path to an existing directory
-  - env must be an object with valid env keys, string values, and bounded size
-- Desktop API and Provider store forward runtime fields into provider check.
-- Provider settings page shows a direct capability matrix:
-  - Eino-native path: Peers controls the Agent loop and uses provider protocol as model backend.
-  - CLI-wrapped path: Peers controls the process wrapper; CLI internals are explicitly degraded/opaque.
+- Agent runtime already records provider call capability in TurnTrace; this stage projects that into the Desktop stream result.
+- Desktop API now exposes first provider call metadata in the `done` event:
+  - provider id / provider kind / protocol
+  - `black_box`, `stream`, `cancel`, `tool_call`
+  - trace id and memory / skill / tool counts
+- Chat store persists the current assistant message's runtime metadata during the turn.
+- Agent Builder panel also preserves trace metadata for its assistant messages.
+- Assistant messages now show runtime tags:
+  - `CLI black-box` when the provider call is opaque
+  - `Structured trace` when the provider call is traceable as a non-black-box path
+- Runtime tag tooltip includes trace id, provider, protocol, memory count, skill count, and tool count.
 - Localization:
-  - English and Chinese Provider capability labels and notes.
+  - English and Chinese chat provider trace labels.
 
 ### Acceptance Criteria
 
-- The settings page makes provider control level visible before a user runs an Agent.
-- CLI-wrapped providers are never presented as equivalent to Eino-native providers.
-- Invalid CLI timeout, cwd, env, or command quoting cannot be accepted by backend validation.
-- Provider check reports capability/warning metadata for CLI and non-CLI protocols.
+- Provider degradation is visible in the conversation surface, not only in settings.
+- CLI-wrapped output is clearly marked as black-box when the runtime reports `black_box=true`.
+- The visible tag comes from actual turn trace metadata, not a UI-only guess.
 - JSON locales remain valid.
-- Rust provider tests and desktop `cargo check` pass.
+- Targeted TypeScript check has no errors in the changed files.
 
 ---
 
@@ -111,8 +109,7 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 
 | Task | Outcome |
 |------|---------|
-| Conversation projection | Message stream, tool cards, memory use/write markers, provider degradation markers |
-| Provider degradation markers in conversation | Surface provider capability/degradation in actual turns, not only settings |
+| Conversation projection | Message stream, tool cards, memory use/write markers, provider trace detail drawer |
 | CLI bridge hardening | Restricted bridge token lifecycle, tool allowlist UI, approval cards, and bridge audit events |
 | CLI runtime policy polish | Sandbox presets, retry policy, and user-visible validation errors for failed debounced saves |
 
@@ -158,6 +155,10 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/provider.json` | Passed | Locale JSON valid |
 | 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `ProviderDetail`, `provider.ts`, `desktop_api`, or `provider.json` errors; failures remain in existing App/social/media/navigation areas |
 | 2026-06-07 | `rg -n "gdpa-agent-box" docs apps packages README.md` | Passed | No forbidden reference string found |
+| 2026-06-07 | `python3 -m json.tool packages/locales/en/chat.json` | Passed | Locale JSON valid |
+| 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/chat.json` | Passed | Locale JSON valid |
+| 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `MessageBubble`, `BuilderPanel`, `store/chat`, `desktop_api`, or `chat.json` errors; failures remain in existing App/social/media/navigation areas |
+| 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
 
 ---
 
@@ -166,4 +167,4 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 1. Full Desktop TypeScript check currently has unrelated pre-existing failures outside this Agent Kernel slice; use targeted checks until the unrelated issues are scheduled.
 2. CLI-wrapped providers cannot guarantee the same internal tool loop fidelity as Eino-native providers. The contract must model capability degradation explicitly instead of pretending they are equally controllable.
 3. Current CLI guardrails validate config shape and process controls, but sandbox presets, retry policy, and bridge approval UX still need dedicated delivery.
-4. Capability matrix is visible in settings; the same degradation signal still needs to appear in conversation turn traces and tool cards.
+4. Conversation now has a compact provider trace marker, but the full trace detail drawer and tool/memory event cards still need dedicated UI.

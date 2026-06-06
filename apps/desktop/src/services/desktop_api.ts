@@ -1647,6 +1647,22 @@ export interface AgentExecuteTurnOutput {
     memory_count?: number;
     skill_count?: number;
     tool_count?: number;
+    provider_calls?: Array<{
+      provider_id?: string;
+      model?: string;
+      provider_kind?: string;
+      protocol?: string;
+      latency_ms?: number;
+      success?: boolean;
+      capability?: {
+        stream?: boolean;
+        cancel?: boolean;
+        tool_call?: boolean;
+        black_box?: boolean;
+      };
+      error_code?: string | null;
+      error_message?: string | null;
+    }>;
   };
   assets?: Record<string, unknown>;
 }
@@ -4137,7 +4153,7 @@ export interface NotificationPreferenceData {
 
 export interface StreamEvent {
   event: string;
-  data: Record<string, string>;
+  data: Record<string, any>;
 }
 
 export interface ChatImageInput {
@@ -4294,6 +4310,15 @@ export function streamChat(
           model: payload?.model || model || '',
           provider_id: payload?.provider_id || providerId || '',
           trace_id: payload?.trace?.id || '',
+          provider_kind: payload?.trace?.provider_calls?.[0]?.provider_kind || '',
+          provider_protocol: payload?.trace?.provider_calls?.[0]?.protocol || '',
+          provider_black_box: Boolean(payload?.trace?.provider_calls?.[0]?.capability?.black_box),
+          provider_tool_call: Boolean(payload?.trace?.provider_calls?.[0]?.capability?.tool_call),
+          provider_stream: Boolean(payload?.trace?.provider_calls?.[0]?.capability?.stream),
+          provider_cancel: Boolean(payload?.trace?.provider_calls?.[0]?.capability?.cancel),
+          memory_count: Number(payload?.trace?.memory_count || 0),
+          skill_count: Number(payload?.trace?.skill_count || 0),
+          tool_count: Number(payload?.trace?.tool_count || 0),
         },
       });
       log.info('api', 'streamChat complete');

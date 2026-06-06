@@ -25,6 +25,7 @@ import {
   VolumeX,
   AlertTriangle,
   BookOpen,
+  Terminal,
 } from 'lucide-react';
 import type { ChatMessage, ToolCallInfo } from '../store/chat';
 import { useChatStore } from '../store/chat';
@@ -677,13 +678,45 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
           </Dropdown>
         </div>
 
-        {/* Model tag — assistant messages only, show user-configured display_name */}
-        {!isUser && message.model && !message.loading && (
-          <Flexbox horizontal align="center" gap={4}>
-            <ModelIcon model={message.model} size={12} type="mono" />
-            <span style={{ fontSize: 11, color: token.colorTextQuaternary }}>
-              {availableModels?.find((m) => m.id === message.model)?.display_name || message.model}
-            </span>
+        {/* Runtime tags — assistant messages only */}
+        {!isUser && !message.loading && (message.model || message.traceId || message.providerKind) && (
+          <Flexbox horizontal align="center" gap={6} wrap="wrap">
+            {message.model && (
+              <Flexbox horizontal align="center" gap={4}>
+                <ModelIcon model={message.model} size={12} type="mono" />
+                <span style={{ fontSize: 11, color: token.colorTextQuaternary }}>
+                  {availableModels?.find((m) => m.id === message.model)?.display_name || message.model}
+                </span>
+              </Flexbox>
+            )}
+            {(message.traceId || message.providerKind) && (
+              <Tag
+                bordered={false}
+                color={message.providerBlackBox ? 'warning' : 'success'}
+                style={{
+                  margin: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 11,
+                  lineHeight: '18px',
+                  paddingInline: 6,
+                }}
+                title={t('chat.message.provider.traceTitle', {
+                  trace: message.traceId || '-',
+                  provider: message.providerId || '-',
+                  protocol: message.providerProtocol || '-',
+                  memory: message.memoryCount ?? 0,
+                  skills: message.skillCount ?? 0,
+                  tools: message.toolCount ?? 0,
+                })}
+              >
+                {message.providerBlackBox ? <Terminal size={11} /> : <CheckCircle2 size={11} />}
+                {message.providerBlackBox
+                  ? t('chat.message.provider.cliBlackBox')
+                  : t('chat.message.provider.structured')}
+              </Tag>
+            )}
           </Flexbox>
         )}
       </Flexbox>

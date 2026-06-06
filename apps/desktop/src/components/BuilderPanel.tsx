@@ -165,6 +165,7 @@ export function BuilderPanel({
     const modelOverride = selectedModel && selectedModel !== defaultModel ? selectedModel : undefined;
     let assistantContent = '';
     let modelName = modelOverride || '';
+    let traceMeta: Partial<ChatMessage> = {};
     const controller = executeAgentTurn(
       text,
       scopedSessionKey,
@@ -176,11 +177,26 @@ export function BuilderPanel({
         }
         if (event.event === 'done') {
           modelName = event.data?.model || modelName;
+          traceMeta = {
+            providerId: event.data?.provider_id || undefined,
+            providerKind: event.data?.provider_kind || undefined,
+            providerProtocol: event.data?.provider_protocol || undefined,
+            providerBlackBox: event.data?.provider_black_box === true || event.data?.provider_black_box === 'true',
+            providerCapabilities: {
+              stream: event.data?.provider_stream === true || event.data?.provider_stream === 'true',
+              cancel: event.data?.provider_cancel === true || event.data?.provider_cancel === 'true',
+              toolCall: event.data?.provider_tool_call === true || event.data?.provider_tool_call === 'true',
+            },
+            traceId: event.data?.trace_id || undefined,
+            memoryCount: event.data?.memory_count != null ? Number(event.data.memory_count) : undefined,
+            skillCount: event.data?.skill_count != null ? Number(event.data.skill_count) : undefined,
+            toolCount: event.data?.tool_count != null ? Number(event.data.tool_count) : undefined,
+          };
         }
       },
       () => {
         setMessages((prev) =>
-          prev.map((m) => (m.id === assistantId ? { ...m, content: assistantContent, loading: false, model: modelName || undefined } : m)),
+          prev.map((m) => (m.id === assistantId ? { ...m, ...traceMeta, content: assistantContent, loading: false, model: modelName || undefined } : m)),
         );
         eventBus.publish(EVENT.AGENT_BUILDER_STREAM_ENDED, undefined);
         setLoading(false);
