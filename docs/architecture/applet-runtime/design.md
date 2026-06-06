@@ -1,8 +1,8 @@
 # Applet Runtime Architecture — 架构设计
 
-> **Status**: implemented (Phase 0–4)
-> **Version**: v1.1
-> **Created**: 2026-05-19 | **Updated**: 2026-05-21
+> **Status**: draft
+> **Version**: v1.2
+> **Created**: 2026-05-19 | **Updated**: 2026-06-06
 > **Owner**: Architecture Team
 > **Module**: `apps/desktop/src/applet/`, `apps/mobile/android/...core/applet/`, `apps/mobile/ios/.../Core/Applet/`, `packages/applet-sdk/`, `packages/applet-contract/`
 
@@ -12,7 +12,7 @@
 
 1. **Lynx-first, not WebView-first**
    - Applet 的 UI 运行在 Lynx Runtime 中，而不是普通 Browser DOM 或 iframe 中。
-   - Desktop 通过 Lynx for Web 承载，Mobile 通过原生 LynxView 承载。
+   - Desktop 通过 Lynx for Web 承载，Mobile 通过原生 LynxView 承载，Web 通过正式 Web Host 承载。
 
 2. **One source, one bundle, all platforms**
    - Applet 前端源码使用 ReactLynx 与 Lynx 元素。
@@ -49,14 +49,13 @@
                └──────────────────┬─────────────────┘
                  ┌────────────────┼─────────────────────┐
                  ▼                ▼                      ▼
-┌──────────────────────────┐ ┌─────────────────────┐ ┌─────────────────────┐
-│ Desktop Host              │ │ Android Host         │ │ iOS Host             │
-│ <lynx-host>→<lynx-view>  │ │ AppletContainerView  │ │ AppletContainerView  │
-│ Lynx for Web (@lynx-js)  │ │ + LynxView (native)  │ │ + LynxView (native)  │
-│ onNativeModulesCall       │ │ BridgeNativeModule   │ │ BridgeNativeModule   │
-└───────────────┬──────────┘ └──────────┬──────────┘ └──────────┬──────────┘
-                │ NativeModules bridge            │ NativeModules bridge
-                ▼                                ▼
+┌──────────────────────────┐ ┌─────────────────────┐ ┌─────────────────────┐ ┌─────────────────────┐
+│ Desktop Host              │ │ Android/iOS Host     │ │ Harmony Host         │ │ Web Host             │
+│ <lynx-host>→<lynx-view>  │ │ LynxView (native)    │ │ reserved Lynx adapter│ │ Lynx for Web / host  │
+│ Lynx for Web (@lynx-js)  │ │ BridgeNativeModule   │ │ ArkTS bridge         │ │ injected bridge      │
+└───────────────┬──────────┘ └──────────┬──────────┘ └──────────┬──────────┘ └──────────┬──────────┘
+                │ NativeModules bridge  │ NativeModules bridge  │ reserved             │ injected bridge
+                ▼                       ▼                       ▼                      ▼
 ┌────────────────────────────────────────────────────────────────────┐
 │                    Host Capability Gateway                         │
 │                                                                    │
@@ -87,6 +86,8 @@
 | Desktop `desktop-rust` | Desktop runtime | Capability Gateway、权限、审计、本地存储、网络代理 | 把权限判断放回前端 |
 | Android Host | Mobile native | 创建 LynxView，注入 NativeModule，执行设备能力 | 让 Applet 直接调用 Android SDK |
 | iOS Host | Mobile native | 创建 LynxView，注入 NativeModule，执行设备能力 | 让 Applet 直接调用 iOS SDK |
+| HarmonyOS Host | Mobile native reserved | 预留 Lynx Harmony adapter 与 ArkTS bridge | fallback 到 WebView 或跳过 Gateway |
+| Web Host | Web platform | 创建正式 Web session，注入 Host bridge，执行 Web Gateway | 把 standalone dev fallback 当成生产 |
 | Station | Server truth | 共享业务真源、跨端持久状态、服务端权限 | 被 Applet 直接绕过 Client Gateway 访问敏感内部接口 |
 
 ---
@@ -97,7 +98,7 @@
 AppletRuntimePage
   → LynxHost React wrapper
   → <lynx-host applet-id src>
-  → internally creates <lynx-view url="...main.web.bundle">
+  → internally creates <lynx-view url="...main.lynx.bundle">
   → injects nativeModulesMap / onNativeModulesCall
   → api.appletInvoke(...)
   → Tauri command applets_invoke
@@ -140,7 +141,7 @@ Applet SDK 是 Applet 代码唯一允许依赖的宿主能力入口。
 ```typescript
 export interface AppletHost {
   readonly appletId: string
-  readonly platform: 'desktop' | 'android' | 'ios' | 'standalone'
+  readonly platform: 'desktop' | 'android' | 'ios' | 'harmony' | 'web' | 'standalone'
   invoke<T>(method: string, params?: unknown): Promise<T>
 }
 
@@ -175,7 +176,7 @@ export interface BridgeAdapter {
 | Adapter | 触发条件 | 实现方式 |
 |---------|---------|---------|
 | `LynxBridgeAdapter` | 检测到 Lynx NativeModules 存在 | `NativeModules.bridge.invoke(method, params)` |
-| `HostInjectedBridgeAdapter` | 检测到 `window.__PEERS_TOUCH_HOST__` | 宿主注入对象的 `invoke()` |
+| `WebHostBridgeAdapter` | 检测到 `globalThis.__PEERS_TOUCH_APPLET_HOST__` | 正式 Web Host 注入对象的 `invoke()` |
 | `StandaloneBridgeAdapter` | 以上都不存在（浏览器独立运行） | `fetch` + `localStorage` 直接执行 |
 | `WxBridgeAdapter` | 检测到 `wx` 全局对象 | 微信小程序 API 适配 |
 
@@ -260,9 +261,9 @@ POC 验证 Lynx for Web in Tauri Webview
 
 **Desktop-only 降级方案（非 iframe）**：
 
-- 容器改为 Shadow DOM 隔离 + dynamic import `main.web.bundle`
+- 容器改为 Shadow DOM 隔离 + dynamic import `main.lynx.bundle`
 - Applet 内部调用 `applet-sdk` 不变
-- SDK BridgeAdapter 检测到非 Lynx Runtime，走 `window.__PEERS_TOUCH_HOST__.invoke()` 注入桥接
+- SDK BridgeAdapter 检测到 Web Host Runtime，走 `globalThis.__PEERS_TOUCH_APPLET_HOST__.invoke()` 注入桥接
 - Mobile 不受影响，仍然是原生 LynxView
 - Bridge/Manifest/Capability 协议不变
 - 协议向 Applet 透明：Applet 源码不感知自己在哪种容器里
@@ -319,14 +320,18 @@ POC 验证 Lynx for Web in Tauri Webview
 
 ---
 
-## 12. 各端实现状态 (Phase 4 完成)
+## 12. 各端落地状态口径
+
+本节记录当前仓库已有实现线索，不等同于生产完成声明。正式验收以 `runtime-architecture.md`、`service-architecture.md` 和执行计划中的 contract tests 为准。
 
 | Platform | Container | Bridge 注入 | Capability Modules | 状态 |
 |----------|-----------|------------|-------------------|------|
-| **Desktop** | `<lynx-host>` → `<lynx-view>` | `onNativeModulesCall` → Tauri Gateway | storage, network, config, system (via Rust) | **Implemented** |
-| **Android** | `AppletContainerView` → `LynxView` | `AppletBridgeNativeModule` → `BridgeDispatcher` | storage, network, config, system, device, notification, UI | **Implemented** |
-| **iOS** | `AppletContainerView` → `LynxView` (UIViewRepresentable) | `AppletBridgeNativeModule` → `BridgeDispatcher` | storage, network, config, system | **Implemented** |
-| **Standalone** | Browser SPA (no host) | `StandaloneBridgeAdapter` | localStorage + fetch | **Implemented** (SDK built-in) |
+| **Desktop** | `<lynx-host>` → `<lynx-view>` | `onNativeModulesCall` → Tauri Gateway | storage, network, config, system (via Rust) | existing implementation, needs formal contract verification |
+| **Android** | `AppletContainerView` → `LynxView` | `AppletBridgeNativeModule` → `BridgeDispatcher` | storage, network, config, system, device, notification, UI | existing implementation, needs formal contract verification |
+| **iOS** | `AppletContainerView` → `LynxView` | `AppletBridgeNativeModule` → `BridgeDispatcher` | storage, network, config, system | existing implementation, needs formal contract verification |
+| **HarmonyOS** | reserved native plugin route | reserved | reserved | reserved, must reject until implemented |
+| **Web** | Web Host | injected Host bridge | Gateway-backed capabilities | required by formal architecture |
+| **Standalone** | Browser SPA (no host) | `StandaloneBridgeAdapter` | localStorage + fetch | development compatibility only |
 
 ### 构建产物统一
 
@@ -338,7 +343,8 @@ main.lynx.bundle  ← 唯一构建产物，所有平台共用
     │
     ├── Desktop: <lynx-view url="applets-dist/{id}/main.lynx.bundle">
     ├── Android: LynxView.loadTemplateUrl("file:///assets/applets/{id}/main.lynx.bundle")
-    └── iOS:     LynxView.loadTemplate(url: bundleUrl)
+    ├── iOS:     LynxView.loadTemplate(url: bundleUrl)
+    └── Web:     Web Host loads the same Lynx bundle through Lynx for Web
 ```
 
 ### Bridge 通信统一
@@ -350,11 +356,18 @@ Applet code → sdk.storage.get("key")
 adapter.invoke("storage.get", { key: "..." })
     │
     ├── LynxBridgeAdapter: NativeModules.bridge.invoke({ method, params })
+    ├── WebHostBridgeAdapter: globalThis.__PEERS_TOUCH_APPLET_HOST__.invoke(...)
     ├── StandaloneBridgeAdapter: localStorage.getItem(key)
     │
-    ▼  Host side (Lynx / Desktop / Android / iOS)
+    ▼  Host side (Desktop / Android / iOS / HarmonyOS reserved / Web)
 Capability Gateway → permission check → execute → return result
 ```
+
+### Web 与 HarmonyOS 口径
+
+- Web 是正式 Host，必须实现 session、permission、audit、network proxy。
+- Standalone 是 applet 的非集成独立运行出口，不能作为 Peers-Touch integrated 的生产安全边界。
+- HarmonyOS 是 reserved platform；如果 Host 未实现，manifest target 为 `harmony` 的 Applet 必须明确拒载。
 
 ### 验证脚本
 
