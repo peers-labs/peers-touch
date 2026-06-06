@@ -4,6 +4,7 @@ import { Flexbox } from 'react-layout-kit';
 import {
   Switch, Typography, theme, message,
   Spin, Divider, Modal, Form, Slider, Checkbox, AutoComplete, Select, Tabs,
+  Alert,
 } from 'antd';
 import { Input, Button, Tag, Avatar, Tooltip, InputPassword, TextArea } from '@lobehub/ui';
 import {
@@ -248,6 +249,7 @@ export function ProviderDetail() {
   const [fetching, setFetching] = useState(false);
   const [modelTypeTab, setModelTypeTab] = useState<string>('all');
   const [modelSearchKeyword, setModelSearchKeyword] = useState('');
+  const [saveError, setSaveError] = useState('');
   const [editModel, setEditModel] = useState<{ id: string; display_name?: string; type?: string; context_window?: number; enabled?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean } | null>(null);
   const { token } = theme.useToken();
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -267,6 +269,7 @@ export function ProviderDetail() {
       setEnabled(detail.enabled);
       setCheckModel(detail.check_model || detail.models?.[0]?.id || '');
       setCheckPass(false);
+      setSaveError('');
     }
   }, [detail, isStale]);
 
@@ -294,12 +297,13 @@ export function ProviderDetail() {
       saveTimerRef.current = setTimeout(async () => {
         try {
           await updateProvider(detail.id, key, url, detail.enabled, runtime);
-        } catch {
-          // silently fail
+          setSaveError('');
+        } catch (err: any) {
+          setSaveError(err?.message || t('provider.detail.saveFailed'));
         }
       }, 800);
     },
-    [detail, updateProvider, buildRuntimePatch],
+    [detail, updateProvider, buildRuntimePatch, t],
   );
 
   useEffect(() => {
@@ -708,6 +712,19 @@ export function ProviderDetail() {
           <div style={{ padding: '16px 0' }}>
             <ProviderCapabilityMatrix cli={isCliProvider} />
           </div>
+
+          {saveError && (
+            <>
+              <Divider style={{ margin: 0, borderColor: token.colorBorderSecondary }} />
+              <Alert
+                type="error"
+                showIcon
+                message={t('provider.detail.saveFailed')}
+                description={saveError}
+                style={{ margin: '16px 0' }}
+              />
+            </>
+          )}
 
           {detail.show_checker && (
             <FormRow

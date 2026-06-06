@@ -71,6 +71,7 @@
   "provider.detail.connectionSuccessful": "Connection successful!",
   "provider.detail.connectionFailed": "Connection failed",
   "provider.detail.connectionCheckFailed": "Connection check failed",
+  "provider.detail.saveFailed": "Failed to save provider settings",
   "provider.detail.encryptionNotice": "Your key and proxy URL will be encrypted using AES-GCM encryption algorithm",
   "provider.detail.disableConfirm.title": "Provider in use by Model Service",
   "provider.detail.disableConfirm.desc": "Disabling this provider will affect these Model Service configurations:",

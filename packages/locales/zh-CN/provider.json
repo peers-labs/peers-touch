@@ -71,6 +71,7 @@
   "provider.detail.connectionSuccessful": "连接成功！",
   "provider.detail.connectionFailed": "连接失败",
   "provider.detail.connectionCheckFailed": "连通性检测失败",
+  "provider.detail.saveFailed": "保存服务商设置失败",
   "provider.detail.encryptionNotice": "你的密钥和代理地址将使用 AES-GCM 加密算法进行加密",
   "provider.detail.disableConfirm.title": "服务商正在被模型服务使用",
   "provider.detail.disableConfirm.desc": "禁用此服务商将影响以下模型服务配置：",

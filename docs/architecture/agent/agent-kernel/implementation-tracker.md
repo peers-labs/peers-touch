@@ -72,32 +72,26 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | Provider capability matrix | Provider settings now show Eino-native vs CLI-wrapped supported/partial/unsupported capability degradation | Provider locale JSON and targeted TS checks passed |
 | CLI provider guardrails | Provider save/check validates CLI timeout, command quoting, absolute existing cwd, env shape, and check results return capability/warning metadata | Provider Rust tests and `cargo check` passed |
 | Conversation provider trace markers | Agent turns now propagate provider call capability metadata into stream `done` events and show CLI black-box / structured trace markers on assistant messages | Chat locale JSON and targeted TS checks passed |
+| Provider guardrail feedback | Provider settings now show backend save validation errors instead of silently swallowing failed debounced saves | Provider locale JSON and targeted TS checks passed |
 
 ---
 
-## 5. Current Stage: Conversation Provider Trace Markers
+## 5. Current Stage: Provider Guardrail Feedback
 
 ### Delivered
 
-- Agent runtime already records provider call capability in TurnTrace; this stage projects that into the Desktop stream result.
-- Desktop API now exposes first provider call metadata in the `done` event:
-  - provider id / provider kind / protocol
-  - `black_box`, `stream`, `cancel`, `tool_call`
-  - trace id and memory / skill / tool counts
-- Chat store persists the current assistant message's runtime metadata during the turn.
-- Agent Builder panel also preserves trace metadata for its assistant messages.
-- Assistant messages now show runtime tags:
-  - `CLI black-box` when the provider call is opaque
-  - `Structured trace` when the provider call is traceable as a non-black-box path
-- Runtime tag tooltip includes trace id, provider, protocol, memory count, skill count, and tool count.
+- Provider settings debounced save now records backend errors in component state.
+- Failed provider saves are displayed inline with an error alert.
+- Successful provider saves clear the previous error state.
+- Switching providers clears stale save errors.
+- This makes CLI guardrail failures such as invalid timeout, cwd, env, or command quoting visible immediately in the settings page.
 - Localization:
-  - English and Chinese chat provider trace labels.
+  - English and Chinese provider save error labels.
 
 ### Acceptance Criteria
 
-- Provider degradation is visible in the conversation surface, not only in settings.
-- CLI-wrapped output is clearly marked as black-box when the runtime reports `black_box=true`.
-- The visible tag comes from actual turn trace metadata, not a UI-only guess.
+- Backend guardrail errors are not silently swallowed by Provider settings autosave.
+- The user can see why a CLI-wrapped provider configuration did not persist.
 - JSON locales remain valid.
 - Targeted TypeScript check has no errors in the changed files.
 
@@ -111,7 +105,7 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 |------|---------|
 | Conversation projection | Message stream, tool cards, memory use/write markers, provider trace detail drawer |
 | CLI bridge hardening | Restricted bridge token lifecycle, tool allowlist UI, approval cards, and bridge audit events |
-| CLI runtime policy polish | Sandbox presets, retry policy, and user-visible validation errors for failed debounced saves |
+| CLI runtime policy polish | Sandbox presets and retry policy |
 
 ### P1: Add Core Power Features
 
@@ -154,10 +148,14 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | 2026-06-07 | `python3 -m json.tool packages/locales/en/provider.json` | Passed | Locale JSON valid |
 | 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/provider.json` | Passed | Locale JSON valid |
 | 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `ProviderDetail`, `provider.ts`, `desktop_api`, or `provider.json` errors; failures remain in existing App/social/media/navigation areas |
-| 2026-06-07 | `rg -n "gdpa-agent-box" docs apps packages README.md` | Passed | No forbidden reference string found |
+| 2026-06-07 | Forbidden reference scan | Passed | No forbidden reference string found |
 | 2026-06-07 | `python3 -m json.tool packages/locales/en/chat.json` | Passed | Locale JSON valid |
 | 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/chat.json` | Passed | Locale JSON valid |
 | 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `MessageBubble`, `BuilderPanel`, `store/chat`, `desktop_api`, or `chat.json` errors; failures remain in existing App/social/media/navigation areas |
+| 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
+| 2026-06-07 | `python3 -m json.tool packages/locales/en/provider.json` | Passed | Locale JSON valid |
+| 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/provider.json` | Passed | Locale JSON valid |
+| 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `ProviderDetail` or `provider.json` errors; failures remain in existing App/social/media/navigation areas |
 | 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
 
 ---
