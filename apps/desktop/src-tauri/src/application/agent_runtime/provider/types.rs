@@ -9,6 +9,16 @@ pub(crate) enum ProviderKind {
     Native,
 }
 
+impl ProviderKind {
+    pub(crate) fn as_trace_label(self) -> &'static str {
+        match self {
+            ProviderKind::HttpLlm => "http_llm",
+            ProviderKind::CliWrapped => "cli_wrapped",
+            ProviderKind::Native => "native",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ProviderCapability {
     pub(crate) stream: bool,

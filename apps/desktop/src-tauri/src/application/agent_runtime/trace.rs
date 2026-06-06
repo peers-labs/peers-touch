@@ -12,11 +12,29 @@ struct TurnTraceRecord {
     agent_id: String,
     provider_id: String,
     model: String,
+    status: String,
     prompt_hash: String,
     memory_count: usize,
     skill_count: usize,
     tool_count: usize,
+    provider_calls: Vec<ProviderCallRecord>,
     created_at: String,
+}
+
+#[derive(Clone)]
+struct ProviderCallRecord {
+    provider_id: String,
+    model: String,
+    provider_kind: String,
+    protocol: String,
+    latency_ms: u64,
+    success: bool,
+    stream: bool,
+    cancel: bool,
+    tool_call: bool,
+    black_box: bool,
+    error_code: Option<String>,
+    error_message: Option<String>,
 }
 
 #[derive(Default)]
@@ -25,15 +43,32 @@ struct TurnTraceStore {
     traces: Vec<TurnTraceRecord>,
 }
 
+pub(crate) struct ProviderCallInput<'a> {
+    pub(crate) provider_id: &'a str,
+    pub(crate) model: &'a str,
+    pub(crate) provider_kind: &'a str,
+    pub(crate) protocol: &'a str,
+    pub(crate) latency_ms: u64,
+    pub(crate) success: bool,
+    pub(crate) stream: bool,
+    pub(crate) cancel: bool,
+    pub(crate) tool_call: bool,
+    pub(crate) black_box: bool,
+    pub(crate) error_code: Option<String>,
+    pub(crate) error_message: Option<String>,
+}
+
 pub(crate) struct TraceInput<'a> {
     pub(crate) conversation_id: &'a str,
     pub(crate) agent_id: &'a str,
     pub(crate) provider_id: &'a str,
     pub(crate) model: &'a str,
+    pub(crate) status: &'a str,
     pub(crate) prompt: &'a str,
     pub(crate) memory_count: usize,
     pub(crate) skill_count: usize,
     pub(crate) tool_count: usize,
+    pub(crate) provider_calls: Vec<ProviderCallInput<'a>>,
 }
 
 pub(crate) struct RecordedTrace {
@@ -68,10 +103,29 @@ pub(crate) fn record(input: TraceInput<'_>) -> Result<RecordedTrace, AppResult<S
         agent_id: input.agent_id.to_string(),
         provider_id: input.provider_id.to_string(),
         model: input.model.to_string(),
+        status: input.status.to_string(),
         prompt_hash: prompt_hash.clone(),
         memory_count: input.memory_count,
         skill_count: input.skill_count,
         tool_count: input.tool_count,
+        provider_calls: input
+            .provider_calls
+            .into_iter()
+            .map(|call| ProviderCallRecord {
+                provider_id: call.provider_id.to_string(),
+                model: call.model.to_string(),
+                provider_kind: call.provider_kind.to_string(),
+                protocol: call.protocol.to_string(),
+                latency_ms: call.latency_ms,
+                success: call.success,
+                stream: call.stream,
+                cancel: call.cancel,
+                tool_call: call.tool_call,
+                black_box: call.black_box,
+                error_code: call.error_code,
+                error_message: call.error_message,
+            })
+            .collect(),
         created_at: now_iso(),
     });
     Ok(RecordedTrace {
@@ -103,10 +157,29 @@ pub(crate) fn list() -> AppResult<StubPayload> {
                 "agent_id": trace.agent_id,
                 "provider_id": trace.provider_id,
                 "model": trace.model,
+                "status": trace.status,
                 "prompt_hash": trace.prompt_hash,
                 "memory_count": trace.memory_count,
                 "skill_count": trace.skill_count,
                 "tool_count": trace.tool_count,
+                "provider_calls": trace.provider_calls.iter().map(|call| {
+                    json!({
+                        "provider_id": call.provider_id,
+                        "model": call.model,
+                        "provider_kind": call.provider_kind,
+                        "protocol": call.protocol,
+                        "latency_ms": call.latency_ms,
+                        "success": call.success,
+                        "capability": {
+                            "stream": call.stream,
+                            "cancel": call.cancel,
+                            "tool_call": call.tool_call,
+                            "black_box": call.black_box,
+                        },
+                        "error_code": call.error_code,
+                        "error_message": call.error_message,
+                    })
+                }).collect::<Vec<_>>(),
                 "created_at": trace.created_at,
             })
         })
@@ -125,10 +198,25 @@ mod tests {
             agent_id: "agent-1",
             provider_id: "provider-1",
             model: "model-1",
+            status: "completed",
             prompt: "same prompt",
             memory_count: 1,
             skill_count: 2,
             tool_count: 3,
+            provider_calls: vec![ProviderCallInput {
+                provider_id: "provider-1",
+                model: "model-1",
+                provider_kind: "HttpLlm",
+                protocol: "openai-compatible",
+                latency_ms: 12,
+                success: true,
+                stream: false,
+                cancel: false,
+                tool_call: false,
+                black_box: false,
+                error_code: None,
+                error_message: None,
+            }],
         })
         .expect("first trace should record");
         let second = record(TraceInput {
@@ -136,10 +224,12 @@ mod tests {
             agent_id: "agent-1",
             provider_id: "provider-1",
             model: "model-1",
+            status: "completed",
             prompt: "same prompt",
             memory_count: 1,
             skill_count: 2,
             tool_count: 3,
+            provider_calls: vec![],
         })
         .expect("second trace should record");
 
@@ -154,10 +244,25 @@ mod tests {
             agent_id: "agent-list",
             provider_id: "provider-list",
             model: "model-list",
+            status: "failed",
             prompt: "listed prompt",
             memory_count: 4,
             skill_count: 5,
             tool_count: 6,
+            provider_calls: vec![ProviderCallInput {
+                provider_id: "provider-list",
+                model: "model-list",
+                provider_kind: "CliWrapped",
+                protocol: "cli-wrapped",
+                latency_ms: 25,
+                success: false,
+                stream: false,
+                cancel: false,
+                tool_call: false,
+                black_box: true,
+                error_code: Some("InternalError".to_string()),
+                error_message: Some("provider failed".to_string()),
+            }],
         })
         .expect("trace should record");
 
@@ -175,5 +280,9 @@ mod tests {
         assert_eq!(first["memory_count"], 4);
         assert_eq!(first["skill_count"], 5);
         assert_eq!(first["tool_count"], 6);
+        assert_eq!(first["status"], "failed");
+        assert_eq!(first["provider_calls"][0]["provider_kind"], "CliWrapped");
+        assert_eq!(first["provider_calls"][0]["capability"]["black_box"], true);
+        assert_eq!(first["provider_calls"][0]["error_code"], "InternalError");
     }
 }
