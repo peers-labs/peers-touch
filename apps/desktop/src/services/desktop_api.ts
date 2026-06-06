@@ -973,6 +973,13 @@ export interface MCPServerItem {
   type: string;
   source: string;
   enabled: boolean;
+  status?: 'unknown' | 'ok' | 'error' | string;
+  policy?: string;
+  needs_approval?: boolean;
+  audit_event?: string;
+  replayable?: boolean;
+  lastTestedAt?: string;
+  lastError?: string;
   metaAvatar: string;
   metaTags: string[];
   toolCount: number;
@@ -1000,6 +1007,14 @@ export interface MCPServerRecord {
   homepage: string;
   repository: string;
   enabled: boolean;
+  status?: 'unknown' | 'ok' | 'error' | string;
+  lastTestedAt?: string;
+  lastError?: string;
+  tools?: string[];
+  policy?: string;
+  needs_approval?: boolean;
+  audit_event?: string;
+  replayable?: boolean;
   createdAt: string;
   updatedAt: string;
 }

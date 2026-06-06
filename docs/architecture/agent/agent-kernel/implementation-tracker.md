@@ -80,22 +80,24 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | Tool registry policy/audit surface | Built-in and bridge tools now expose category, source, approval requirement, policy, schema, audit event, and replay metadata in Settings and runtime projection | Tool Rust tests, settings locale JSON, targeted TS check, and diff checks passed |
 | Local growth diagnostics | Growth dashboard normalizes Station camelCase responses and derives a local snapshot from turn traces, memories, and skills when Station growth APIs are unavailable | Targeted TS check has no `desktop_api` or `AgentGrowthTab` errors; diff checks passed |
 | Bridge approval and audit cards | Agent turn runtime now projects approval requests and bridge audit events; assistant messages render bridge governance cards for approval/audit visibility | Agent runtime and MCP Rust tests passed; chat locale JSON and targeted TS checks passed |
+| MCP persistence and health projection | MCP servers now persist to local Desktop storage; test results write status, last tested time, errors, and projected tools back into Settings and runtime context | MCP Rust tests, provider locale JSON, targeted TS check, and diff checks passed |
 
 ---
 
-## 5. Current Stage: Bridge Approval and Audit Cards
+## 5. Current Stage: MCP Persistence and Health Projection
 
 ### Delivered
 
-- Agent turn runtime emits `approval_requests` for governed bridge/MCP tools.
-- Agent turn runtime emits `bridge_audit_events`, including recorded memory write audit metadata.
-- MCP projections now carry policy, approval, audit event, replayability, and status metadata.
-- Assistant messages render a bridge governance card with approval-required and audit-event rows.
+- MCP server CRUD/toggle/test operations persist to local Desktop storage.
+- MCP test writes health status, last tested time, last error, and projected tools back to the server record.
+- MCP list/detail UI now shows status, approval policy, audit event, last tested time, and last error.
+- Runtime MCP projections carry status and tool count metadata.
 
 ### Acceptance Criteria
 
-- CLI-wrapped provider turns expose bridge governance boundaries even when internal tool loops are black-box.
-- MCP tools cannot appear in runtime context as anonymous capabilities; they carry policy/audit metadata.
+- MCP configuration survives app restart.
+- Users can see whether a server has passed local validation and why it failed.
+- Agent runtime can project MCP servers with policy, audit, and health metadata.
 - Targeted TypeScript check has no errors in changed files.
 
 ---
@@ -186,6 +188,11 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | 2026-06-07 | `python3 -m json.tool packages/locales/en/chat.json` | Passed | Locale JSON valid |
 | 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/chat.json` | Passed | Locale JSON valid |
 | 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `MessageBubble`, `desktop_api`, `agent_runtime`, `mcp/mod`, or `chat.json` errors; failures remain in existing App/social/media/navigation areas |
+| 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
+| 2026-06-07 | `cargo test --bin peers-touch-desktop mcp` | Passed | 2 MCP tests passed, including health persistence; existing warnings remain |
+| 2026-06-07 | `python3 -m json.tool packages/locales/en/provider.json` | Passed | Locale JSON valid |
+| 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/provider.json` | Passed | Locale JSON valid |
+| 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `MCPTab`, `desktop_api`, `mcp/mod`, or `provider.json` errors; failures remain in existing App/social/media/navigation areas |
 | 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
 
 ---

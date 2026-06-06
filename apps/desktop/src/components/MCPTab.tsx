@@ -68,6 +68,8 @@ export function MCPTab() {
       }
     } catch (e: any) {
       message.error(e.message);
+    } finally {
+      loadServers();
     }
   };
 
@@ -177,10 +179,27 @@ function MCPServerCard({
               >
                 {server.type}
               </Tag>
+              <Tag
+                color={server.status === 'ok' ? 'green' : server.status === 'error' ? 'red' : 'default'}
+                style={{ fontSize: 11, margin: 0 }}
+              >
+                {server.status || 'unknown'}
+              </Tag>
+              {server.needs_approval && (
+                <Tag color="warning" style={{ fontSize: 11, margin: 0 }}>
+                  {server.policy || 'approval'}
+                </Tag>
+              )}
             </Flexbox>
             <Text type="secondary" style={{ fontSize: 12 }}>
               {server.description || server.name}
             </Text>
+            {(server.lastTestedAt || server.lastError) && (
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                {server.lastTestedAt ? t('provider.mcp.lastTested', { time: server.lastTestedAt }) : ''}
+                {server.lastError ? ` · ${server.lastError}` : ''}
+              </Text>
+            )}
           </Flexbox>
         </Flexbox>
         <Flexbox horizontal gap={8} align="center">
@@ -391,10 +410,37 @@ function MCPServerDetailModal({
           <Tag color={server.enabled ? 'green' : 'default'}>
             {server.enabled ? t('provider.mcp.detail.enabled') : t('provider.mcp.detail.disabled')}
           </Tag>
+          <Tag color={server.status === 'ok' ? 'green' : server.status === 'error' ? 'red' : 'default'}>
+            {server.status || 'unknown'}
+          </Tag>
+          {server.needs_approval && <Tag color="warning">{server.policy || 'approval'}</Tag>}
+          {server.audit_event && <Tag>{server.audit_event}</Tag>}
         </Flexbox>
 
         {server.description && (
           <Text type="secondary">{server.description}</Text>
+        )}
+
+        {(server.lastTestedAt || server.lastError) && (
+          <Flexbox
+            style={{
+              background: token.colorFillTertiary,
+              borderRadius: 8,
+              padding: 12,
+            }}
+            gap={4}
+          >
+            {server.lastTestedAt && (
+              <Text style={{ fontSize: 12 }}>
+                <Text strong>{t('provider.mcp.detail.lastTested')}</Text>{server.lastTestedAt}
+              </Text>
+            )}
+            {server.lastError && (
+              <Text type="danger" style={{ fontSize: 12 }}>
+                <Text strong>{t('provider.mcp.detail.lastError')}</Text>{server.lastError}
+              </Text>
+            )}
+          </Flexbox>
         )}
 
         <Flexbox
