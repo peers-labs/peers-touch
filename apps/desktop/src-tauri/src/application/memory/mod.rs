@@ -4,13 +4,22 @@ use crate::contracts::{
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
+use crate::infrastructure::storage;
+#[cfg(not(test))]
+use crate::infrastructure::storage::StorageKind;
 use crate::model::agent;
 use prost_types::Timestamp;
 use reqwest::Method;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::fs;
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
-#[derive(Clone)]
+const MAX_LOCAL_MEMORY_RECORDS: usize = 1_000;
+const MAX_LOCAL_MEMORY_EVENTS: usize = 2_000;
+
+#[derive(Clone, Serialize, Deserialize)]
 struct LocalMemoryRecord {
     id: String,
     agent_id: String,
@@ -31,7 +40,7 @@ struct LocalMemoryRecord {
     updated_at: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 struct LocalMemoryEvent {
     id: String,
     event_type: String,
@@ -43,7 +52,7 @@ struct LocalMemoryEvent {
     timestamp: String,
 }
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 struct LocalMemoryStore {
     memories: Vec<LocalMemoryRecord>,
     events: Vec<LocalMemoryEvent>,
@@ -53,7 +62,88 @@ struct LocalMemoryStore {
 static LOCAL_MEMORY_STORE: OnceLock<Mutex<LocalMemoryStore>> = OnceLock::new();
 
 fn local_memory_store() -> &'static Mutex<LocalMemoryStore> {
-    LOCAL_MEMORY_STORE.get_or_init(|| Mutex::new(LocalMemoryStore::default()))
+    LOCAL_MEMORY_STORE.get_or_init(|| Mutex::new(load_local_memory_store()))
+}
+
+#[cfg(test)]
+fn local_memory_store_path() -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "peers-touch-local-memory-{}.json",
+        std::process::id()
+    ))
+}
+
+#[cfg(not(test))]
+fn local_memory_store_path() -> PathBuf {
+    storage::app_file_path(
+        "desktop",
+        StorageKind::Data,
+        &["agent", "memory", "local_memories.json"],
+    )
+    .unwrap_or_else(|_| PathBuf::from("agent.memory.local_memories.json"))
+}
+
+fn trim_local_memory_store(store: &mut LocalMemoryStore) {
+    if store.memories.len() > MAX_LOCAL_MEMORY_RECORDS {
+        let drop_count = store.memories.len() - MAX_LOCAL_MEMORY_RECORDS;
+        store.memories.drain(0..drop_count);
+    }
+    if store.events.len() > MAX_LOCAL_MEMORY_EVENTS {
+        let drop_count = store.events.len() - MAX_LOCAL_MEMORY_EVENTS;
+        store.events.drain(0..drop_count);
+    }
+}
+
+fn load_local_memory_store() -> LocalMemoryStore {
+    let path = local_memory_store_path();
+    if !path.exists() {
+        return LocalMemoryStore::default();
+    }
+    let raw = match fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(err) => {
+            tracing::warn!(path = %path.display(), error = %err, "Failed to read local memory store");
+            return LocalMemoryStore::default();
+        }
+    };
+    match serde_json::from_str::<LocalMemoryStore>(&raw) {
+        Ok(mut store) => {
+            trim_local_memory_store(&mut store);
+            store
+        }
+        Err(err) => {
+            tracing::warn!(path = %path.display(), error = %err, "Failed to parse local memory store");
+            LocalMemoryStore::default()
+        }
+    }
+}
+
+fn persist_local_memory_store(store: &LocalMemoryStore) -> Result<(), AppResult<StubPayload>> {
+    let path = local_memory_store_path();
+    let serialized = serde_json::to_string(store).map_err(|err| {
+        AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to serialize local memory store: {}", err),
+            None,
+        )
+    })?;
+    storage::write_string_atomic(&path, &serialized).map_err(|err| {
+        AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to persist local memory store: {}", err),
+            None,
+        )
+    })
+}
+
+fn persist_local_memory_store_best_effort(context: &str, store: &LocalMemoryStore) {
+    if let Err(err) = persist_local_memory_store(store) {
+        tracing::error!(
+            context = context,
+            error = ?err.error,
+            "Failed to persist local memory store"
+        );
+    }
 }
 
 fn now_iso() -> String {
@@ -176,6 +266,7 @@ pub(crate) fn local_memory_snapshot(agent_id: &str, query: &str, limit: usize) -
             local_memory_json(item)
         })
         .collect::<Vec<_>>();
+    persist_local_memory_store_best_effort("local_memory_snapshot", &guard);
     items.sort_by(|a, b| {
         b.get("updated_at")
             .and_then(Value::as_str)
@@ -244,6 +335,8 @@ pub(crate) fn local_remember_turn(
         detail: json!({ "source": "agent_turn" }),
         timestamp: now,
     });
+    trim_local_memory_store(&mut guard);
+    persist_local_memory_store_best_effort("local_remember_turn", &guard);
 }
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
@@ -415,6 +508,9 @@ pub fn memory_delete(input: MemoryIdInput, token: &str) -> AppResult<StubPayload
         };
         let before = guard.memories.len();
         guard.memories.retain(|item| item.id != input.id);
+        if let Err(err) = persist_local_memory_store(&guard) {
+            return err;
+        }
         return success_payload(
             "memory_delete",
             json!({ "ok": before != guard.memories.len() }),
@@ -757,6 +853,10 @@ pub fn memory_import(input: MemoryImportInput, token: &str) -> AppResult<StubPay
                 updated_at: non_empty_or(value_string(&value, "updated_at"), now),
             });
             imported += 1;
+        }
+        trim_local_memory_store(&mut guard);
+        if let Err(err) = persist_local_memory_store(&guard) {
+            return err;
         }
         return success_payload(
             "memory_import",
