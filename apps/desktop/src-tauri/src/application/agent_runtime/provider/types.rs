@@ -41,6 +41,7 @@ pub(crate) struct ProviderRequest<'a> {
     pub(crate) prompt: &'a str,
 }
 
+#[derive(Debug)]
 pub(crate) struct ProviderResponse {
     pub(crate) text: String,
     pub(crate) model: String,
