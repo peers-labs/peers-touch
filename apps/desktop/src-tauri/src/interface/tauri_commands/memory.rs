@@ -1,6 +1,6 @@
 use crate::contracts::{
-    MemoryEventsInput, MemoryExportInput, MemoryIdInput, MemoryImportInput, MemoryListInput,
-    MemoryPersonaInput, MemorySearchInput, StubPayload,
+    MemoryEventsInput, MemoryExportInput, MemoryFeedbackInput, MemoryIdInput, MemoryImportInput,
+    MemoryListInput, MemoryPersonaInput, MemorySearchInput, StubPayload,
 };
 use crate::error::AppResult;
 use crate::state::AppState;
@@ -49,6 +49,18 @@ pub fn memory_delete(
         Err(err) => return err,
     };
     application_memory::memory_delete(input, &token)
+}
+
+#[tauri::command]
+pub fn memory_feedback(
+    state: tauri::State<AppState>,
+    input: MemoryFeedbackInput,
+) -> AppResult<StubPayload> {
+    let token = match token_from_state(&state) {
+        Ok(token) => token,
+        Err(err) => return err,
+    };
+    application_memory::memory_feedback(input, &token)
 }
 
 #[tauri::command]

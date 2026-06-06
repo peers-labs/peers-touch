@@ -2176,6 +2176,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             };
             to_json(app_memory::memory_delete(input, &token))
         }
+        "memory_feedback" => {
+            let input = match parse_args::<MemoryFeedbackInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            to_json(app_memory::memory_feedback(input, &token))
+        }
         "memory_search" => {
             let input = match parse_args::<MemorySearchInput>(args) {
                 Ok(v) => v,

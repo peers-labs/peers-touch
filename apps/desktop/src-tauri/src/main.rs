@@ -321,6 +321,7 @@ fn main() {
             memory::memory_list,
             memory::memory_get,
             memory::memory_delete,
+            memory::memory_feedback,
             memory::memory_search,
             memory::memory_persona,
             memory::memory_stats,

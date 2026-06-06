@@ -1,6 +1,6 @@
 use crate::contracts::{
-    MemoryEventsInput, MemoryExportInput, MemoryIdInput, MemoryImportInput, MemoryListInput,
-    MemoryPersonaInput, MemorySearchInput, StubPayload,
+    MemoryEventsInput, MemoryExportInput, MemoryFeedbackInput, MemoryIdInput, MemoryImportInput,
+    MemoryListInput, MemoryPersonaInput, MemorySearchInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -535,6 +535,98 @@ pub fn memory_delete(input: MemoryIdInput, token: &str) -> AppResult<StubPayload
     }
 }
 
+pub fn memory_feedback(input: MemoryFeedbackInput, token: &str) -> AppResult<StubPayload> {
+    let memory_id = input.memory_id.trim().to_string();
+    if memory_id.is_empty() {
+        return invalid_argument("memory_id is required");
+    }
+    let reason = input.reason.unwrap_or_default();
+    if token.trim().is_empty() {
+        let mut guard = match local_memory_store().lock() {
+            Ok(guard) => guard,
+            Err(e) => return local_store_error(e),
+        };
+        let Some(item_index) = guard.memories.iter().position(|item| item.id == memory_id) else {
+            return AppResult::fail(
+                ErrorCode::NotFound,
+                format!("memory not found: {}", memory_id),
+                None,
+            );
+        };
+        let (trust_score, event_agent_id, event_session_id, event_layer, event_timestamp) = {
+            let item = &mut guard.memories[item_index];
+            if input.helpful {
+                item.helpful_count = item.helpful_count.saturating_add(1);
+                item.trust_score = (item.trust_score + 0.1).min(1.0);
+            } else {
+                item.harmful_count = item.harmful_count.saturating_add(1);
+                item.trust_score = (item.trust_score - 0.15).max(0.0);
+            }
+            item.updated_at = now_iso();
+            (
+                item.trust_score,
+                item.agent_id.clone(),
+                item.session_id.clone(),
+                item.layer.clone(),
+                item.updated_at.clone(),
+            )
+        };
+        guard.sequence = guard.sequence.saturating_add(1);
+        let event_id = format!("evt-{}", guard.sequence);
+        guard.events.push(LocalMemoryEvent {
+            id: event_id,
+            event_type: "feedback".to_string(),
+            memory_id: memory_id.clone(),
+            session_id: event_session_id,
+            agent_id: event_agent_id,
+            layer: event_layer,
+            detail: json!({
+                "helpful": input.helpful,
+                "reason": reason,
+                "trust_score": trust_score,
+            }),
+            timestamp: event_timestamp,
+        });
+        trim_local_memory_store(&mut guard);
+        if let Err(err) = persist_local_memory_store(&guard) {
+            return err;
+        }
+        return success_payload(
+            "memory_feedback",
+            json!({
+                "memory_id": memory_id,
+                "trust_score": trust_score,
+                "helpful": input.helpful,
+            }),
+        );
+    }
+    let req = agent::MemoryFeedbackRequest {
+        memory_id,
+        helpful: input.helpful,
+        reason,
+    };
+    match station_client::request_peers_proto::<
+        agent::MemoryFeedbackRequest,
+        agent::MemoryFeedbackResponse,
+    >(
+        Method::POST,
+        "/agent/memory/feedback",
+        token,
+        None,
+        Some(&req),
+    ) {
+        Ok(resp) => success_payload(
+            "memory_feedback",
+            json!({
+                "memory_id": resp.memory_id,
+                "trust_score": resp.trust_score,
+                "helpful": resp.helpful,
+            }),
+        ),
+        Err(err) => station_error("memory_feedback", err),
+    }
+}
+
 pub fn memory_search(input: MemorySearchInput, token: &str) -> AppResult<StubPayload> {
     if input.query.trim().is_empty() {
         return invalid_argument("query is required");
@@ -1010,5 +1102,103 @@ pub fn memory_reembed(token: &str) -> AppResult<StubPayload> {
             }),
         ),
         Err(err) => station_error("memory_reembed", err),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn test_lock() -> &'static Mutex<()> {
+        TEST_LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn reset_local_store() {
+        let mut guard = local_memory_store().lock().expect("local memory lock");
+        guard.memories.clear();
+        guard.events.clear();
+        guard.sequence = 0;
+        let _ = fs::remove_file(local_memory_store_path());
+    }
+
+    fn status_json(result: AppResult<StubPayload>) -> Value {
+        assert!(result.ok, "expected ok result: {:?}", result.error);
+        let payload = result.data.expect("payload");
+        serde_json::from_str(&payload.status).expect("status json")
+    }
+
+    #[test]
+    fn memory_feedback_updates_local_trust_and_events() {
+        let _test_guard = test_lock().lock().expect("test lock");
+        reset_local_store();
+        local_remember_turn(
+            "agent-1",
+            "session-1",
+            "turn-1",
+            "remember that I prefer concise summaries",
+            "noted",
+        );
+
+        let helpful = status_json(memory_feedback(
+            MemoryFeedbackInput {
+                memory_id: "mem-1".to_string(),
+                helpful: true,
+                reason: Some("useful".to_string()),
+            },
+            "",
+        ));
+        assert_eq!(helpful["memory_id"], "mem-1");
+        assert_eq!(helpful["helpful"], true);
+        assert!((helpful["trust_score"].as_f64().unwrap() - 0.6).abs() < 1e-9);
+
+        let harmful = status_json(memory_feedback(
+            MemoryFeedbackInput {
+                memory_id: "mem-1".to_string(),
+                helpful: false,
+                reason: None,
+            },
+            "",
+        ));
+        assert_eq!(harmful["helpful"], false);
+        assert!((harmful["trust_score"].as_f64().unwrap() - 0.45).abs() < 1e-9);
+
+        let memory = status_json(memory_get(
+            MemoryIdInput {
+                id: "mem-1".to_string(),
+            },
+            "",
+        ));
+        assert_eq!(memory["helpful_count"], 1);
+        assert_eq!(memory["harmful_count"], 1);
+        assert!((memory["trust_score"].as_f64().unwrap() - 0.45).abs() < 1e-9);
+
+        let events = status_json(memory_events(
+            MemoryEventsInput {
+                params: Some(json!({ "type": "feedback", "limit": 10 })),
+            },
+            "",
+        ));
+        assert_eq!(events["events"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn memory_feedback_requires_existing_local_memory() {
+        let _test_guard = test_lock().lock().expect("test lock");
+        reset_local_store();
+        let result = memory_feedback(
+            MemoryFeedbackInput {
+                memory_id: "missing".to_string(),
+                helpful: true,
+                reason: None,
+            },
+            "",
+        );
+        assert!(!result.ok);
+        assert!(matches!(
+            result.error.expect("error").code,
+            ErrorCode::NotFound
+        ));
     }
 }

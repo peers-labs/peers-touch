@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: 2026.06
-> **Created**: 2026-06-06 | **Updated**: 2026-06-06
+> **Created**: 2026-06-06 | **Updated**: 2026-06-07
 > **Owner**: Architecture Team
 > **Module**: `apps/station/app/subserver/agent/` + `model/domain/agent/` + `apps/desktop/`
 
@@ -64,6 +64,7 @@ thirdparty 是参考源，不是实现源。它的 Logical Agent / Execution Pro
 | [design-review.md](./design-review.md) | 整体设计清单、深度评审、P0/P1/P2 风险与修正顺序 |
 | [integration.md](./integration.md) | 与 Peers-Touch 架构、thirdparty 借鉴点、UI/UX、建设策略的关系 |
 | [decisions.md](./decisions.md) | 关键设计决策与取舍 |
+| [implementation-tracker.md](./implementation-tracker.md) | 当前实现进度、验证记录、剩余交付任务与风险追踪 |
 | [execution-plans/phase-1-contract-and-kernel.md](./execution-plans/phase-1-contract-and-kernel.md) | Phase 1：契约与 Agent Kernel 基座 |
 | [execution-plans/phase-2-runtime-tool-memory-skill.md](./execution-plans/phase-2-runtime-tool-memory-skill.md) | Phase 2：运行时、工具、Memory、Skill |
 | [execution-plans/phase-3-desktop-projection-ui.md](./execution-plans/phase-3-desktop-projection-ui.md) | Phase 3：Desktop 投影与 Peers-Touch UI |

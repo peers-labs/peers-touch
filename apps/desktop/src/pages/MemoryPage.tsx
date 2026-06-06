@@ -25,6 +25,9 @@ import {
   Clock,
   Database,
   RefreshCw,
+  ThumbsDown,
+  ThumbsUp,
+  ShieldCheck,
 } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { ConfigBadge } from '../components/ConfigBadge';
@@ -205,7 +208,7 @@ export function MemoryPage() {
                   {t('memory.tab.browse')}
                 </Flexbox>
               ),
-              children: <BrowseTab onDelete={loadStats} />,
+              children: <BrowseTab onChanged={loadStats} />,
             },
             {
               key: 'search',
@@ -246,7 +249,7 @@ export function MemoryPage() {
 
 /* ─── Browse Tab ─── */
 
-function BrowseTab({ onDelete }: { onDelete: () => void }) {
+function BrowseTab({ onChanged }: { onChanged: () => void }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('memory');
   const { agents, loadAgents } = useChatStore();
@@ -260,6 +263,7 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
   const [groupBy, setGroupBy] = useState<TimelineGroupBy>('day');
   const [loading, setLoading] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [feedbackPendingId, setFeedbackPendingId] = useState<string | null>(null);
   const pageSize = 20;
 
   useEffect(() => { loadAgents(); }, [loadAgents]);
@@ -295,11 +299,29 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
       await api.deleteMemory(id);
       message.success(t('memory.browse.deleteSuccess'));
       load();
-      onDelete();
+      onChanged();
     } catch (err: unknown) {
       message.error(
         err instanceof Error ? err.message : t('memory.browse.deleteFailed'),
       );
+    }
+  };
+
+  const handleFeedback = async (id: string, helpful: boolean) => {
+    setFeedbackPendingId(`${id}:${helpful ? 'helpful' : 'harmful'}`);
+    try {
+      await api.feedbackMemory(id, helpful);
+      message.success(
+        helpful ? t('memory.browse.feedbackHelpfulSuccess') : t('memory.browse.feedbackHarmfulSuccess'),
+      );
+      await load();
+      onChanged();
+    } catch (err: unknown) {
+      message.error(
+        err instanceof Error ? err.message : t('memory.browse.feedbackFailed'),
+      );
+    } finally {
+      setFeedbackPendingId(null);
     }
   };
 
@@ -318,6 +340,17 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
               {m.layer}
             </Tag>
             <Tag color="default">{m.source}</Tag>
+            <Tag color={m.trust_score >= 0.7 ? 'green' : m.trust_score <= 0.3 ? 'red' : 'gold'}>
+              {t('memory.browse.trustScore', { score: Math.round((m.trust_score ?? 0) * 100) })}
+            </Tag>
+            {m.is_frozen && (
+              <Tag color="blue">
+                <Flexbox horizontal align="center" gap={4}>
+                  <ShieldCheck size={12} />
+                  {t('memory.browse.frozen')}
+                </Flexbox>
+              </Tag>
+            )}
             <Text type="secondary" style={{ fontSize: 12 }}>
               {formatDate(m.created_at)}
             </Text>
@@ -329,6 +362,14 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
             </Flexbox>
           </Flexbox>
           <Text style={{ fontSize: 13 }}>{m.summary || t('memory.browse.noSummary')}</Text>
+          <Flexbox horizontal align="center" gap={8}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {t('memory.browse.feedbackCounts', {
+                helpful: m.helpful_count ?? 0,
+                harmful: m.harmful_count ?? 0,
+              })}
+            </Text>
+          </Flexbox>
           {expandedId === m.id && (
             <pre
               style={{
@@ -345,21 +386,43 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
             </pre>
           )}
         </Flexbox>
-        <Popconfirm
-          title={t('memory.browse.deleteConfirm')}
-          onConfirm={(e) => {
-            e?.stopPropagation();
-            handleDelete(m.id);
-          }}
-          onCancel={(e) => e?.stopPropagation()}
-        >
+        <Flexbox horizontal align="center" gap={6}>
           <Button
             size="small"
-            danger
-            icon={<Trash2 size={14} />}
-            onClick={(e) => e.stopPropagation()}
+            icon={<ThumbsUp size={14} />}
+            loading={feedbackPendingId === `${m.id}:helpful`}
+            title={t('memory.browse.markHelpful')}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleFeedback(m.id, true);
+            }}
           />
-        </Popconfirm>
+          <Button
+            size="small"
+            icon={<ThumbsDown size={14} />}
+            loading={feedbackPendingId === `${m.id}:harmful`}
+            title={t('memory.browse.markHarmful')}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleFeedback(m.id, false);
+            }}
+          />
+          <Popconfirm
+            title={t('memory.browse.deleteConfirm')}
+            onConfirm={(e) => {
+              e?.stopPropagation();
+              handleDelete(m.id);
+            }}
+            onCancel={(e) => e?.stopPropagation()}
+          >
+            <Button
+              size="small"
+              danger
+              icon={<Trash2 size={14} />}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </Popconfirm>
+        </Flexbox>
       </Flexbox>
     </Card>
   );

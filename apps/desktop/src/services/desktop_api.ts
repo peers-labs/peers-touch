@@ -1324,6 +1324,10 @@ export interface Memory {
   relevance: number;
   access_count: number;
   last_accessed_at: string | null;
+  trust_score: number;
+  helpful_count: number;
+  harmful_count: number;
+  is_frozen: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -1811,6 +1815,12 @@ export interface OAuthResourceInput {
 
 export interface MemoryIdInput {
   id: string;
+}
+
+export interface MemoryFeedbackInput {
+  memory_id: string;
+  helpful: boolean;
+  reason?: string;
 }
 
 export interface MemoryListInput {
@@ -3107,6 +3117,12 @@ export const api = {
   getMemory: (id: string) => invokeRustDataFromStatus<MemoryIdInput, Memory>('memory_get', { id }),
 
   deleteMemory: (id: string) => invokeRustDataFromStatus<MemoryIdInput, { ok: boolean }>('memory_delete', { id }),
+
+  feedbackMemory: (memoryId: string, helpful: boolean, reason?: string) =>
+    invokeRustDataFromStatus<MemoryFeedbackInput, { memory_id: string; trust_score: number; helpful: boolean }>(
+      'memory_feedback',
+      { memory_id: memoryId, helpful, reason },
+    ),
 
   searchMemories: (
     query: string,

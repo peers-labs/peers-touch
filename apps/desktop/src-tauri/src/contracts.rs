@@ -685,6 +685,13 @@ pub struct MemoryIdInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryFeedbackInput {
+    pub memory_id: String,
+    pub helpful: bool,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryListInput {
     pub params: Option<serde_json::Value>,
 }
