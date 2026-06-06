@@ -40,6 +40,7 @@ const EMPTY_AVATAR: AvatarAssetViewModel = {
 
 const MAX_PERSISTENT_AVATAR_BYTES = 256 * 1024;
 const projections = new Map<string, AvatarAssetViewModel>();
+const loadingProjections = new Map<string, AvatarAssetViewModel>();
 const listeners = new Set<() => void>();
 const inflight = new Map<string, AbortController>();
 
@@ -94,13 +95,22 @@ function subscribeAvatarProjection(listener: () => void): () => void {
 
 function selectAvatarProjection(displayUrl: string): AvatarAssetViewModel {
   if (!displayUrl) return EMPTY_AVATAR;
-  return projections.get(displayUrl) ?? {
+  return projections.get(displayUrl) ?? loadingAvatarProjection(displayUrl);
+}
+
+function loadingAvatarProjection(displayUrl: string): AvatarAssetViewModel {
+  const existing = loadingProjections.get(displayUrl);
+  if (existing) return existing;
+
+  const next: AvatarAssetViewModel = {
     source: displayUrl,
     src: null,
     status: 'loading',
     stale: false,
     error: null,
   };
+  loadingProjections.set(displayUrl, next);
+  return next;
 }
 
 async function ensureAvatarAsset({ displayUrl, session }: EnsureAvatarInput): Promise<void> {
@@ -195,6 +205,7 @@ async function writeCachedAvatar(repository: DomainCacheRepository<string>, disp
 function setAvatarProjection(displayUrl: string, next: AvatarAssetViewModel): void {
   const previous = projections.get(displayUrl);
   if (sameAvatarProjection(previous, next)) return;
+  loadingProjections.delete(displayUrl);
   projections.set(displayUrl, next);
   listeners.forEach((listener) => listener());
 }
