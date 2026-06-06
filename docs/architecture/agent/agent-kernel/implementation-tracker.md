@@ -49,7 +49,7 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | Skill | Package + `SKILL.md` + projection + controlled runtime load | Designed; implementation pending |
 | Tool / MCP | Schema-first registry, policy, approval, audit, dynamic MCP projection | Designed; implementation pending |
 | A2A / Groups | Agent Card, task state, local/remote transport, group orchestration UI | Designed; implementation pending |
-| Desktop UX | LobeHub-style interaction on Peers-Touch framework | Memory page improved; Agent list redesign implemented |
+| Desktop UX | LobeHub-style interaction on Peers-Touch framework | Memory page, Agent rail, and Agent Profile center improved |
 | Growth / Diagnostics | TurnTrace, feedback, provider degradation, suggestions | Trace persistence implemented; dashboards pending |
 
 ---
@@ -68,6 +68,7 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | CLI provider controls in UI | Provider settings expose protocol and CLI control fields | Provider tests and `cargo check` passed previously |
 | Memory feedback loop | Added memory feedback command, API, UI controls, trust/count display, and feedback events | Memory tests, `cargo check`, locale JSON, and diff checks passed |
 | Agent list redesign | Feishu-style pinned/normal Agent rail, direct selection, pin/unpin, drag ordering, persisted preference | Agent reorder tests and locale JSON checks passed |
+| Agent Profile center | Added overview, instructions, model/runtime, capabilities, memory, and task tabs in one Peers-Touch profile surface | Agent locale JSON and targeted TS checks passed |
 
 ---
 
@@ -113,7 +114,6 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 
 | Task | Outcome |
 |------|---------|
-| Agent Profile | One place for instructions, provider, memory, skills, tools, MCP, workspace, collaboration |
 | Conversation projection | Message stream, tool cards, memory use/write markers, provider degradation markers |
 | Provider capability matrix | Same provider contract, explicit supported/partial/unsupported controls |
 | CLI provider guardrails | Process sandbox policy, env allowlist, cwd/workspace validation, kill/timeout/retry UI |
@@ -148,6 +148,7 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | 2026-06-07 | `cargo test --bin peers-touch-desktop agents` | Passed | 2 agent tests passed, including pin/order persistence; existing warnings remain |
 | 2026-06-07 | `python3 -m json.tool packages/locales/en/agent.json` | Passed | Locale JSON valid |
 | 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/agent.json` | Passed | Locale JSON valid |
+| 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `AgentProfilePage` or `agent.json` errors; failures remain in existing App/social/media/navigation areas |
 | 2026-06-07 | `cargo check --quiet` | Passed | Existing warnings remain |
 | 2026-06-07 | `python3 -m json.tool packages/locales/en/memory.json` | Passed | Locale JSON valid |
 | 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/memory.json` | Passed | Locale JSON valid |

@@ -17,12 +17,23 @@ import {
   Brain,
   Zap,
   Plus,
+  Bot,
+  Cpu,
+  FileText,
+  Link2,
+  Network,
+  ShieldCheck,
+  Wrench,
 } from 'lucide-react';
 import { useChatStore } from '../store/chat';
 import {
   api,
   type Agent,
+  type AvailableModel,
+  type MCPServerItem,
+  type SkillListItem,
   parseAgentChatConfig,
+  parseAgentParams,
 } from '../services/desktop_api';
 import { ModelSelect } from '../components/ModelSelect';
 import { AgentSettingsModal } from '../components/AgentSettingsModal';
@@ -114,6 +125,264 @@ const LAYER_COLORS: Record<string, string> = {
   preference: 'orange',
   activity: 'purple',
 };
+
+function parseLines(value?: string): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+  } catch {
+    // Fall through to comma/newline parsing.
+  }
+  return value
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function SectionPanel({
+  title,
+  icon,
+  children,
+  action,
+}: {
+  title: string;
+  icon?: ReactNode;
+  children: ReactNode;
+  action?: ReactNode;
+}) {
+  const { token } = theme.useToken();
+  return (
+    <Flexbox
+      gap={10}
+      style={{
+        padding: 14,
+        borderRadius: 8,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        background: token.colorBgContainer,
+      }}
+    >
+      <Flexbox horizontal align="center" justify="space-between" gap={8}>
+        <Flexbox horizontal align="center" gap={8}>
+          {icon}
+          <span style={{ fontSize: 14, fontWeight: 600, color: token.colorText }}>{title}</span>
+        </Flexbox>
+        {action}
+      </Flexbox>
+      {children}
+    </Flexbox>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: ReactNode }) {
+  const { token } = theme.useToken();
+  return (
+    <Flexbox horizontal align="center" justify="space-between" gap={12}>
+      <span style={{ fontSize: 12, color: token.colorTextSecondary, flexShrink: 0 }}>{label}</span>
+      <span
+        style={{
+          fontSize: 13,
+          color: token.colorText,
+          minWidth: 0,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {value}
+      </span>
+    </Flexbox>
+  );
+}
+
+function EmptyValue({ children }: { children: ReactNode }) {
+  const { token } = theme.useToken();
+  return <span style={{ color: token.colorTextQuaternary }}>{children}</span>;
+}
+
+function OverviewTab({ agent, onStartChat, onOpenSettings }: { agent: Agent; onStartChat: (name: string) => void; onOpenSettings: () => void }) {
+  const { t } = useTranslation('agent');
+  const tags = parseLines(agent.tags);
+  const openingQuestions = parseLines(agent.openingQuestions);
+  const chatConfig = parseAgentChatConfig(agent);
+  const params = parseAgentParams(agent);
+
+  return (
+    <Flexbox gap={12} style={{ overflow: 'auto' }}>
+      <SectionPanel
+        title={t('agent.profile.overview.identity')}
+        icon={<Bot size={15} />}
+        action={
+          <Button size="small" icon={<Settings2 size={14} />} onClick={onOpenSettings}>
+            {t('agent.profile.edit')}
+          </Button>
+        }
+      >
+        <InfoRow label={t('agent.profile.overview.slug')} value={agent.name} />
+        <InfoRow label={t('agent.profile.overview.description')} value={agent.description || <EmptyValue>{t('agent.profile.empty')}</EmptyValue>} />
+        <InfoRow label={t('agent.profile.overview.tags')} value={tags.length ? tags.map((tag) => <Tag key={tag}>{tag}</Tag>) : <EmptyValue>{t('agent.profile.empty')}</EmptyValue>} />
+      </SectionPanel>
+
+      <SectionPanel title={t('agent.profile.overview.opening')} icon={<FileText size={15} />}>
+        <InfoRow label={t('agent.profile.overview.openingMessage')} value={agent.openingMessage || <EmptyValue>{t('agent.profile.empty')}</EmptyValue>} />
+        <InfoRow
+          label={t('agent.profile.overview.openingQuestions')}
+          value={
+            openingQuestions.length
+              ? openingQuestions.slice(0, 3).join(' / ')
+              : <EmptyValue>{t('agent.profile.empty')}</EmptyValue>
+          }
+        />
+      </SectionPanel>
+
+      <SectionPanel
+        title={t('agent.profile.overview.runtimeSnapshot')}
+        icon={<Cpu size={15} />}
+        action={
+          <Button type="primary" size="small" icon={<Play size={14} />} onClick={() => onStartChat(agent.name)}>
+            {t('agent.profile.startConversation')}
+          </Button>
+        }
+      >
+        <InfoRow label={t('agent.profile.runtime.model')} value={agent.model || <EmptyValue>{t('agent.profile.defaultModel')}</EmptyValue>} />
+        <InfoRow label={t('agent.profile.runtime.provider')} value={agent.provider || <EmptyValue>{t('agent.profile.runtime.defaultProvider')}</EmptyValue>} />
+        <InfoRow label={t('agent.profile.runtime.streaming')} value={chatConfig.enableStreaming === false ? t('agent.profile.off') : t('agent.profile.on')} />
+        <InfoRow label={t('agent.profile.runtime.temperature')} value={params.temperature ?? <EmptyValue>{t('agent.profile.default')}</EmptyValue>} />
+      </SectionPanel>
+    </Flexbox>
+  );
+}
+
+function RuntimeTab({
+  agent,
+  availableModels,
+  onModelChange,
+  onOpenSettings,
+}: {
+  agent: Agent;
+  availableModels: AvailableModel[];
+  onModelChange: (modelId: string) => void;
+  onOpenSettings: () => void;
+}) {
+  const { t } = useTranslation('agent');
+  const params = parseAgentParams(agent);
+  const workspaceRoot = (agent as any).workspaceRoot || (agent as any).workspace_root || '';
+
+  return (
+    <Flexbox gap={12} style={{ overflow: 'auto' }}>
+      <SectionPanel title={t('agent.profile.runtime.modelProvider')} icon={<Cpu size={15} />}>
+        <ModelSelect
+          models={availableModels}
+          value={agent.model || undefined}
+          onChange={onModelChange}
+          placeholder={t('agent.profile.defaultModel')}
+          size="middle"
+          style={{ maxWidth: 360 }}
+        />
+        <InfoRow label={t('agent.profile.runtime.provider')} value={agent.provider || <EmptyValue>{t('agent.profile.runtime.defaultProvider')}</EmptyValue>} />
+      </SectionPanel>
+
+      <SectionPanel
+        title={t('agent.profile.runtime.policy')}
+        icon={<ShieldCheck size={15} />}
+        action={
+          <Button size="small" icon={<Settings2 size={14} />} onClick={onOpenSettings}>
+            {t('agent.profile.advancedSettings')}
+          </Button>
+        }
+      >
+        <InfoRow label={t('agent.profile.runtime.toolProfile')} value={agent.toolsProfile || 'standard'} />
+        <InfoRow label={t('agent.profile.runtime.temperature')} value={params.temperature ?? <EmptyValue>{t('agent.profile.default')}</EmptyValue>} />
+        <InfoRow label={t('agent.profile.runtime.maxTokens')} value={params.max_tokens ?? <EmptyValue>{t('agent.profile.default')}</EmptyValue>} />
+      </SectionPanel>
+
+      <SectionPanel title={t('agent.profile.runtime.workspace')} icon={<FileText size={15} />}>
+        <InfoRow label={t('agent.profile.runtime.workspaceRoot')} value={workspaceRoot || <EmptyValue>{t('agent.profile.runtime.workspaceDefault')}</EmptyValue>} />
+        <InfoRow label={t('agent.profile.runtime.artifacts')} value={<EmptyValue>{t('agent.profile.runtime.artifactsDefault')}</EmptyValue>} />
+      </SectionPanel>
+    </Flexbox>
+  );
+}
+
+function CapabilitiesTab({
+  agent,
+  onNavigateSkills,
+  onNavigateApplets,
+}: {
+  agent: Agent;
+  onNavigateSkills?: () => void;
+  onNavigateApplets?: () => void;
+}) {
+  const { t } = useTranslation('agent');
+  const { token } = theme.useToken();
+  const [skills, setSkills] = useState<SkillListItem[]>([]);
+  const [mcpServers, setMcpServers] = useState<MCPServerItem[]>([]);
+
+  useEffect(() => {
+    api.listSkills().then((res) => setSkills(res.skills || [])).catch(() => setSkills([]));
+    api.listMCPServers().then(setMcpServers).catch(() => setMcpServers([]));
+  }, []);
+
+  const enabledSkills = skills.filter((skill) => skill.enabled);
+  const enabledMcp = mcpServers.filter((server) => server.enabled);
+  const allowTools = parseLines(agent.toolsAllow);
+  const denyTools = parseLines(agent.toolsDeny);
+
+  return (
+    <Flexbox gap={12} style={{ overflow: 'auto' }}>
+      <SectionPanel
+        title={t('agent.profile.capabilities.skills')}
+        icon={<Zap size={15} />}
+        action={onNavigateSkills && (
+          <Button size="small" onClick={onNavigateSkills}>{t('agent.profile.open')}</Button>
+        )}
+      >
+        <InfoRow label={t('agent.profile.capabilities.enabled')} value={enabledSkills.length} />
+        <Flexbox horizontal gap={6} wrap="wrap">
+          {enabledSkills.slice(0, 8).map((skill) => (
+            <Tag key={skill.id}>{skill.name || skill.identifier}</Tag>
+          ))}
+          {enabledSkills.length === 0 && <EmptyValue>{t('agent.profile.capabilities.none')}</EmptyValue>}
+        </Flexbox>
+      </SectionPanel>
+
+      <SectionPanel title={t('agent.profile.capabilities.tools')} icon={<Wrench size={15} />}>
+        <InfoRow label={t('agent.profile.runtime.toolProfile')} value={agent.toolsProfile || 'standard'} />
+        <Flexbox gap={6}>
+          <Flexbox horizontal gap={6} wrap="wrap">
+            <span style={{ fontSize: 12, color: token.colorTextSecondary }}>{t('agent.profile.capabilities.allow')}</span>
+            {allowTools.length ? allowTools.map((tool) => <Tag key={tool} color="green">{tool}</Tag>) : <EmptyValue>{t('agent.profile.capabilities.inherit')}</EmptyValue>}
+          </Flexbox>
+          <Flexbox horizontal gap={6} wrap="wrap">
+            <span style={{ fontSize: 12, color: token.colorTextSecondary }}>{t('agent.profile.capabilities.deny')}</span>
+            {denyTools.length ? denyTools.map((tool) => <Tag key={tool} color="red">{tool}</Tag>) : <EmptyValue>{t('agent.profile.capabilities.none')}</EmptyValue>}
+          </Flexbox>
+        </Flexbox>
+      </SectionPanel>
+
+      <SectionPanel
+        title={t('agent.profile.capabilities.mcp')}
+        icon={<Link2 size={15} />}
+        action={onNavigateApplets && (
+          <Button size="small" onClick={onNavigateApplets}>{t('agent.profile.open')}</Button>
+        )}
+      >
+        <InfoRow label={t('agent.profile.capabilities.enabled')} value={enabledMcp.length} />
+        <Flexbox horizontal gap={6} wrap="wrap">
+          {enabledMcp.slice(0, 8).map((server) => (
+            <Tag key={server.name}>{server.title || server.name}</Tag>
+          ))}
+          {enabledMcp.length === 0 && <EmptyValue>{t('agent.profile.capabilities.none')}</EmptyValue>}
+        </Flexbox>
+      </SectionPanel>
+
+      <SectionPanel title={t('agent.profile.capabilities.collaboration')} icon={<Network size={15} />}>
+        <InfoRow label={t('agent.profile.capabilities.a2a')} value={<EmptyValue>{t('agent.profile.capabilities.policyPending')}</EmptyValue>} />
+        <InfoRow label={t('agent.profile.capabilities.groups')} value={<EmptyValue>{t('agent.profile.capabilities.policyPending')}</EmptyValue>} />
+      </SectionPanel>
+    </Flexbox>
+  );
+}
 
 function MemoryTab({ agentName, agentId }: { agentName: string; agentId: string }) {
   const { t } = useTranslation('agent');
@@ -244,12 +513,15 @@ function MemoryTab({ agentName, agentId }: { agentName: string; agentId: string 
 
 // ── Main Agent Profile Page ─────────────────────────────────────────
 
-type ProfileTab = 'prompt' | 'cron' | 'memories';
+type ProfileTab = 'overview' | 'prompt' | 'runtime' | 'capabilities' | 'memories' | 'cron';
 
 const TAB_KEYS: { key: ProfileTab; labelKey: string; icon: ReactNode }[] = [
-  { key: 'prompt', labelKey: 'agent.profile.tab.prompt', icon: null },
-  { key: 'cron', labelKey: 'agent.profile.tab.scheduledTasks', icon: <Clock size={13} /> },
+  { key: 'overview', labelKey: 'agent.profile.tab.overview', icon: <Bot size={13} /> },
+  { key: 'prompt', labelKey: 'agent.profile.tab.prompt', icon: <FileText size={13} /> },
+  { key: 'runtime', labelKey: 'agent.profile.tab.runtime', icon: <Cpu size={13} /> },
+  { key: 'capabilities', labelKey: 'agent.profile.tab.capabilities', icon: <Wrench size={13} /> },
   { key: 'memories', labelKey: 'agent.profile.tab.memories', icon: <Brain size={13} /> },
+  { key: 'cron', labelKey: 'agent.profile.tab.scheduledTasks', icon: <Clock size={13} /> },
 ];
 
 export function AgentProfilePage({
@@ -269,7 +541,7 @@ export function AgentProfilePage({
   const [promptDirty, setPromptDirty] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showBuilder, setShowBuilder] = useState(true);
-  const [activeTab, setActiveTab] = useState<ProfileTab>('prompt');
+  const [activeTab, setActiveTab] = useState<ProfileTab>('overview');
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
@@ -384,8 +656,6 @@ export function AgentProfilePage({
       </Flexbox>
     );
   }
-
-  parseAgentChatConfig(agent);
 
   return (
     <Flexbox horizontal style={{ height: '100%', width: '100%', overflow: 'hidden' }}>
@@ -546,6 +816,14 @@ export function AgentProfilePage({
                 overflow: 'hidden',
               }}
             >
+              {activeTab === 'overview' && (
+                <OverviewTab
+                  agent={agent}
+                  onStartChat={onStartChat}
+                  onOpenSettings={() => setSettingsOpen(true)}
+                />
+              )}
+
               {activeTab === 'prompt' && (
                 <Flexbox flex={1} gap={6} style={{ minHeight: 0 }}>
                   <textarea
@@ -586,6 +864,23 @@ export function AgentProfilePage({
                     {t('agent.profile.promptHelp')}
                   </span>
                 </Flexbox>
+              )}
+
+              {activeTab === 'runtime' && (
+                <RuntimeTab
+                  agent={agent}
+                  availableModels={availableModels}
+                  onModelChange={handleModelChange}
+                  onOpenSettings={() => setSettingsOpen(true)}
+                />
+              )}
+
+              {activeTab === 'capabilities' && (
+                <CapabilitiesTab
+                  agent={agent}
+                  onNavigateSkills={onNavigateSkills}
+                  onNavigateApplets={onNavigateApplets}
+                />
               )}
 
               {activeTab === 'cron' && (
