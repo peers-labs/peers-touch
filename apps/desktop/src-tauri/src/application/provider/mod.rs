@@ -5,6 +5,7 @@ use crate::error::{AppResult, ErrorCode};
 use serde_json::json;
 use state::{find_seeded_provider, persist_provider_store, with_provider_store, ProviderRecord};
 
+pub(crate) mod cli_runtime;
 pub(crate) mod remote;
 pub(crate) mod state;
 pub(crate) mod sync;

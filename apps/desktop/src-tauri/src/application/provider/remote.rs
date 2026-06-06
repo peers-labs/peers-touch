@@ -2,9 +2,9 @@ use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde_json::Value;
 use std::collections::BTreeSet;
-use std::io::Write;
-use std::process::{Command, Stdio};
 use std::time::Duration;
+
+use super::cli_runtime;
 
 pub(crate) struct ProbeResult {
     pub(crate) endpoint: String,
@@ -381,44 +381,15 @@ fn completion_cli(
     model: &str,
     message: &str,
 ) -> Result<CompletionResult, String> {
-    let mut parts = command_spec
-        .split_whitespace()
-        .filter(|part| !part.trim().is_empty())
-        .collect::<Vec<_>>();
-    if parts.is_empty() {
-        return Err("CLI provider command is required".to_string());
-    }
-    let command = parts.remove(0);
-    tracing::info!(command = %command, model = %model, "Starting CLI-wrapped completion");
-    let mut child = Command::new(command)
-        .args(parts)
-        .arg("--model")
-        .arg(model)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|err| format!("spawn CLI provider failed: {}", err))?;
-    if let Some(stdin) = child.stdin.as_mut() {
-        stdin
-            .write_all(message.as_bytes())
-            .map_err(|err| format!("write prompt to CLI provider failed: {}", err))?;
-    }
-    let output = child
-        .wait_with_output()
-        .map_err(|err| format!("wait for CLI provider failed: {}", err))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(if stderr.is_empty() {
-            format!("CLI provider exited with {}", output.status)
-        } else {
-            stderr
-        });
-    }
-    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let result = cli_runtime::complete(
+        command_spec,
+        model,
+        message,
+        &cli_runtime::CliExecutionControl::default(),
+    )?;
     Ok(CompletionResult {
-        text,
-        model: model.to_string(),
+        text: result.text,
+        model: result.model,
     })
 }
 
