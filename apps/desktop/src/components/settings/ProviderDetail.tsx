@@ -83,6 +83,111 @@ const PROVIDER_PROTOCOL_OPTIONS = [
   { value: 'cli-wrapped', label: 'CLI wrapped' },
 ];
 
+type CapabilityStatus = 'supported' | 'partial' | 'unsupported';
+
+const PROVIDER_CAPABILITY_KEYS = [
+  'promptEnvelope',
+  'modelSelection',
+  'streaming',
+  'toolLoop',
+  'memoryWrite',
+  'skillsMcpA2a',
+  'approvalPolicy',
+  'traceFidelity',
+  'cancellationTimeout',
+] as const;
+
+const NATIVE_CAPABILITY_STATUS: Record<(typeof PROVIDER_CAPABILITY_KEYS)[number], CapabilityStatus> = {
+  promptEnvelope: 'supported',
+  modelSelection: 'supported',
+  streaming: 'partial',
+  toolLoop: 'supported',
+  memoryWrite: 'supported',
+  skillsMcpA2a: 'supported',
+  approvalPolicy: 'supported',
+  traceFidelity: 'supported',
+  cancellationTimeout: 'partial',
+};
+
+const CLI_CAPABILITY_STATUS: Record<(typeof PROVIDER_CAPABILITY_KEYS)[number], CapabilityStatus> = {
+  promptEnvelope: 'partial',
+  modelSelection: 'partial',
+  streaming: 'unsupported',
+  toolLoop: 'partial',
+  memoryWrite: 'partial',
+  skillsMcpA2a: 'partial',
+  approvalPolicy: 'partial',
+  traceFidelity: 'partial',
+  cancellationTimeout: 'supported',
+};
+
+function ProviderCapabilityMatrix({ cli }: { cli: boolean }) {
+  const { t } = useTranslation('provider');
+  const { token } = theme.useToken();
+  const statusMap = cli ? CLI_CAPABILITY_STATUS : NATIVE_CAPABILITY_STATUS;
+  const mode = cli ? 'cli' : 'native';
+  const statusColor: Record<CapabilityStatus, string> = {
+    supported: 'green',
+    partial: 'gold',
+    unsupported: 'default',
+  };
+  return (
+    <Flexbox gap={10} style={{ width: '100%' }}>
+      <Flexbox horizontal justify="space-between" align="center" gap={12}>
+        <Flexbox gap={2} style={{ minWidth: 0 }}>
+          <Text strong style={{ fontSize: 13 }}>{t('provider.detail.capabilityMatrix')}</Text>
+          <Text type="secondary" style={{ fontSize: 12, lineHeight: '18px' }}>
+            {t(cli ? 'provider.detail.capabilityMatrix.cliDesc' : 'provider.detail.capabilityMatrix.nativeDesc')}
+          </Text>
+        </Flexbox>
+        <Tag
+          bordered={false}
+          color={cli ? 'gold' : 'green'}
+          style={{ margin: 0, flexShrink: 0 }}
+        >
+          {t(cli ? 'provider.detail.capabilityMode.cli' : 'provider.detail.capabilityMode.native')}
+        </Tag>
+      </Flexbox>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(112px, 0.75fr) 86px minmax(150px, 1.35fr)',
+          rowGap: 6,
+          columnGap: 10,
+          alignItems: 'start',
+          fontSize: 12,
+        }}
+      >
+        {PROVIDER_CAPABILITY_KEYS.map((key) => {
+          const status = statusMap[key];
+          return (
+            <div key={key} style={{ display: 'contents' }}>
+              <Text style={{ fontSize: 12 }}>{t(`provider.detail.capability.${key}`)}</Text>
+              <Tag
+                color={statusColor[status]}
+                bordered={false}
+                style={{ margin: 0, width: 78, textAlign: 'center', fontSize: 11 }}
+              >
+                {t(`provider.detail.capabilityStatus.${status}`)}
+              </Tag>
+              <Text
+                type="secondary"
+                style={{
+                  color: token.colorTextSecondary,
+                  fontSize: 12,
+                  lineHeight: '18px',
+                }}
+              >
+                {t(`provider.detail.capabilityNote.${mode}.${key}`)}
+              </Text>
+            </div>
+          );
+        })}
+      </div>
+    </Flexbox>
+  );
+}
+
 function contextToSlider(v: number): number {
   for (let i = CONTEXT_VALUES.length - 1; i >= 0; i--) {
     if (v >= CONTEXT_VALUES[i]) return i;
@@ -297,7 +402,7 @@ export function ProviderDetail() {
     setChecking(true);
     setCheckPass(false);
     try {
-      const result = await checkProvider(detail.id, apiKey || undefined, baseUrl, checkModel, protocol);
+      const result = await checkProvider(detail.id, apiKey || undefined, baseUrl, checkModel, protocol, buildRuntimePatch());
       if (result.ok) {
         setCheckPass(true);
         message.success(t('provider.detail.connectionSuccessful'));
@@ -598,6 +703,11 @@ export function ProviderDetail() {
               </FormRow>
             </>
           )}
+
+          <Divider style={{ margin: 0, borderColor: token.colorBorderSecondary }} />
+          <div style={{ padding: '16px 0' }}>
+            <ProviderCapabilityMatrix cli={isCliProvider} />
+          </div>
 
           {detail.show_checker && (
             <FormRow

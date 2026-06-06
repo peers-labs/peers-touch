@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api, type ProviderListItem, type ProviderDetail } from '../services/desktop_api';
+import { api, type ProviderListItem, type ProviderDetail, type ProviderCheckResult } from '../services/desktop_api';
 import { log } from '../utils/logger';
 
 export interface ProviderRuntimeConfigPatch {
@@ -19,7 +19,7 @@ interface ProviderState {
   selectProvider: (id: string, skipLoading?: boolean) => Promise<void>;
   updateProvider: (id: string, apiKey: string, baseUrl: string, enabled: boolean, runtime?: ProviderRuntimeConfigPatch) => Promise<void>;
   toggleProvider: (id: string, enabled: boolean) => Promise<void>;
-  checkProvider: (id: string, apiKey?: string, baseUrl?: string, model?: string, protocol?: string) => Promise<{ ok: boolean; error?: string }>;
+  checkProvider: (id: string, apiKey?: string, baseUrl?: string, model?: string, protocol?: string, runtime?: ProviderRuntimeConfigPatch) => Promise<ProviderCheckResult>;
   createProvider: (data: { id: string; name: string; description?: string; logo?: string; base_url: string; api_key?: string }) => Promise<void>;
   deleteProvider: (id: string) => Promise<void>;
   addModel: (providerId: string, data: { id: string; display_name?: string; type?: string; context_window?: number; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean; enabled?: boolean }) => Promise<void>;
@@ -95,8 +95,8 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     }
   },
 
-  checkProvider: async (id: string, apiKey?: string, baseUrl?: string, model?: string, protocol?: string) => {
-    return api.checkProvider(id, { api_key: apiKey, base_url: baseUrl, model, protocol });
+  checkProvider: async (id: string, apiKey?: string, baseUrl?: string, model?: string, protocol?: string, runtime?: ProviderRuntimeConfigPatch) => {
+    return api.checkProvider(id, { api_key: apiKey, base_url: baseUrl, model, protocol, ...runtime });
   },
 
   createProvider: async (data) => {

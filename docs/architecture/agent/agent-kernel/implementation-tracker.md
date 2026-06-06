@@ -42,8 +42,8 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | Area | Target Design | Current Status |
 |------|---------------|----------------|
 | Agent Kernel | Proto-first Station domain, Desktop projection, TurnTrace-first execution | Designed; runtime split started |
-| Provider | Unified AgentProvider over Eino-native and CLI-wrapped providers | Implemented initial adapters, CLI controls, traces |
-| Model Backend | Model/vendor API remains model backend; AgentProvider is the execution strategy above it | Designed; provider UI partially wired |
+| Provider | Unified AgentProvider over Eino-native and CLI-wrapped providers | Initial adapters, CLI controls, traces, capability matrix, and guardrail validation implemented |
+| Model Backend | Model/vendor API remains model backend; AgentProvider is the execution strategy above it | Designed; provider UI now distinguishes model backend from AgentProvider control level |
 | Runtime | Turn lifecycle, provider call, trace persistence, memory hook | Implemented local desktop runtime split and traces |
 | Memory | White-box memory with list/search/persona/events/delete/feedback | Local persistence implemented; feedback UI/API added in current stage |
 | Skill | Package + `SKILL.md` + projection + controlled runtime load | Designed; implementation pending |
@@ -69,42 +69,39 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | Memory feedback loop | Added memory feedback command, API, UI controls, trust/count display, and feedback events | Memory tests, `cargo check`, locale JSON, and diff checks passed |
 | Agent list redesign | Feishu-style pinned/normal Agent rail, direct selection, pin/unpin, drag ordering, persisted preference | Agent reorder tests and locale JSON checks passed |
 | Agent Profile center | Added overview, instructions, model/runtime, capabilities, memory, and task tabs in one Peers-Touch profile surface | Agent locale JSON and targeted TS checks passed |
+| Provider capability matrix | Provider settings now show Eino-native vs CLI-wrapped supported/partial/unsupported capability degradation | Provider locale JSON and targeted TS checks passed |
+| CLI provider guardrails | Provider save/check validates CLI timeout, command quoting, absolute existing cwd, env shape, and check results return capability/warning metadata | Provider Rust tests and `cargo check` passed |
 
 ---
 
-## 5. Current Stage: Memory Feedback Loop
+## 5. Current Stage: Provider Capability Matrix and CLI Guardrails
 
 ### Delivered
 
-- Desktop Rust contract: `MemoryFeedbackInput`.
-- Desktop Rust application command: `memory_feedback`.
-- Local memory behavior:
-  - helpful feedback increments `helpful_count`
-  - harmful feedback increments `harmful_count`
-  - trust score adjusts within `[0.0, 1.0]`
-  - feedback emits a local memory event
-- Station path:
-  - desktop command proxies to `/agent/memory/feedback` when authenticated
-- Desktop API:
-  - `api.feedbackMemory(memoryId, helpful, reason?)`
-  - Memory type exposes trust and feedback fields
-- Memory page:
-  - displays trust score
-  - displays helpful / harmful counts
-  - displays frozen state
-  - provides helpful / harmful action buttons
-  - reloads list and stats after feedback
+- Provider check now returns capability metadata and CLI warning metadata:
+  - `supported`
+  - `partial`
+  - `unsupported`
+- Provider update/create/check validate CLI guardrails:
+  - command syntax / unterminated quotes
+  - timeout must be an integer in `[100, 3600000]`
+  - cwd must be an absolute path to an existing directory
+  - env must be an object with valid env keys, string values, and bounded size
+- Desktop API and Provider store forward runtime fields into provider check.
+- Provider settings page shows a direct capability matrix:
+  - Eino-native path: Peers controls the Agent loop and uses provider protocol as model backend.
+  - CLI-wrapped path: Peers controls the process wrapper; CLI internals are explicitly degraded/opaque.
 - Localization:
-  - English and Chinese memory feedback labels
+  - English and Chinese Provider capability labels and notes.
 
 ### Acceptance Criteria
 
-- Memory feedback works without a Station token using local memory storage.
-- Memory feedback works with a Station token through the proto endpoint.
-- UI exposes feedback without opening a secondary detail page.
-- Feedback is visible in Memory event logs.
+- The settings page makes provider control level visible before a user runs an Agent.
+- CLI-wrapped providers are never presented as equivalent to Eino-native providers.
+- Invalid CLI timeout, cwd, env, or command quoting cannot be accepted by backend validation.
+- Provider check reports capability/warning metadata for CLI and non-CLI protocols.
 - JSON locales remain valid.
-- Rust memory tests and desktop `cargo check` pass.
+- Rust provider tests and desktop `cargo check` pass.
 
 ---
 
@@ -115,8 +112,9 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | Task | Outcome |
 |------|---------|
 | Conversation projection | Message stream, tool cards, memory use/write markers, provider degradation markers |
-| Provider capability matrix | Same provider contract, explicit supported/partial/unsupported controls |
-| CLI provider guardrails | Process sandbox policy, env allowlist, cwd/workspace validation, kill/timeout/retry UI |
+| Provider degradation markers in conversation | Surface provider capability/degradation in actual turns, not only settings |
+| CLI bridge hardening | Restricted bridge token lifecycle, tool allowlist UI, approval cards, and bridge audit events |
+| CLI runtime policy polish | Sandbox presets, retry policy, and user-visible validation errors for failed debounced saves |
 
 ### P1: Add Core Power Features
 
@@ -154,6 +152,12 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/memory.json` | Passed | Locale JSON valid |
 | 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
 | 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `MemoryPage`, `desktop_api`, `memory_feedback`, or `feedbackMemory` errors; failures remain in existing App/social/media/navigation areas |
+| 2026-06-07 | `cargo test --bin peers-touch-desktop provider` | Passed | 52 provider-related tests passed, including CLI guardrail and capability matrix tests; existing warnings remain |
+| 2026-06-07 | `cargo check --quiet` | Passed | Existing warnings remain |
+| 2026-06-07 | `python3 -m json.tool packages/locales/en/provider.json` | Passed | Locale JSON valid |
+| 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/provider.json` | Passed | Locale JSON valid |
+| 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `ProviderDetail`, `provider.ts`, `desktop_api`, or `provider.json` errors; failures remain in existing App/social/media/navigation areas |
+| 2026-06-07 | `rg -n "gdpa-agent-box" docs apps packages README.md` | Passed | No forbidden reference string found |
 
 ---
 
@@ -161,5 +165,5 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 
 1. Full Desktop TypeScript check currently has unrelated pre-existing failures outside this Agent Kernel slice; use targeted checks until the unrelated issues are scheduled.
 2. CLI-wrapped providers cannot guarantee the same internal tool loop fidelity as Eino-native providers. The contract must model capability degradation explicitly instead of pretending they are equally controllable.
-3. Memory feedback updates local trust immediately, but Station scoring policy may evolve independently. Keep the UI bound to returned `trust_score`.
-4. Agent list drag ordering needs a clear persistence model before UI work starts, otherwise optimistic ordering and projection replay can diverge.
+3. Current CLI guardrails validate config shape and process controls, but sandbox presets, retry policy, and bridge approval UX still need dedicated delivery.
+4. Capability matrix is visible in settings; the same degradation signal still needs to appear in conversation turn traces and tool cards.

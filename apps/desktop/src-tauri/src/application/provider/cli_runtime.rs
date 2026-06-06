@@ -78,6 +78,10 @@ fn split_command_spec(command_spec: &str) -> Result<Vec<String>, String> {
     Ok(parts)
 }
 
+pub(crate) fn validate_command_spec(command_spec: &str) -> Result<(), String> {
+    split_command_spec(command_spec).map(|_| ())
+}
+
 fn wait_with_optional_timeout(
     mut child: std::process::Child,
     timeout: Duration,

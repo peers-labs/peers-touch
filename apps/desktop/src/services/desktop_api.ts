@@ -714,6 +714,26 @@ export interface ProviderDetail extends ProviderListItem {
   models: ModelItem[];
 }
 
+export interface ProviderCapabilityItem {
+  key: string;
+  status: 'supported' | 'partial' | 'unsupported' | string;
+  control: string;
+  note: string;
+}
+
+export interface ProviderGuardrailWarning {
+  code: string;
+  message: string;
+}
+
+export interface ProviderCheckResult {
+  ok: boolean;
+  message?: string;
+  error?: string;
+  capabilities?: ProviderCapabilityItem[];
+  warnings?: ProviderGuardrailWarning[];
+}
+
 export interface HelpItem {
   id: string;
   category: string;
@@ -2539,15 +2559,32 @@ export const api = {
         }),
     }),
 
-  checkProvider: (id: string, data: { api_key?: string; base_url?: string; model?: string; protocol?: string }) =>
-    invokeRustDataFromStatus<ProviderCheckInput, { ok: boolean; message?: string; error?: string }>('provider_check', {
+  checkProvider: (id: string, data: {
+    api_key?: string;
+    base_url?: string;
+    model?: string;
+    protocol?: string;
+    timeout_ms?: number | null;
+    cwd?: string | null;
+    env?: Record<string, string> | null;
+  }) =>
+    invokeRustDataFromStatus<ProviderCheckInput, ProviderCheckResult>('provider_check', {
         id,
         key_vaults: data.api_key ? JSON.stringify({ api_key: data.api_key }) : undefined,
-        config_json: data.base_url !== undefined || data.protocol ? JSON.stringify({
+        config_json: data.base_url !== undefined ||
+          data.protocol ||
+          data.timeout_ms !== undefined ||
+          data.cwd !== undefined ||
+          data.env !== undefined
+          ? JSON.stringify({
           ...(data.base_url !== undefined ? { base_url: data.base_url } : {}),
           ...(data.protocol ? { protocol: data.protocol } : {}),
+          ...(data.timeout_ms !== undefined ? { timeout_ms: data.timeout_ms } : {}),
+          ...(data.cwd !== undefined ? { cwd: data.cwd } : {}),
+          ...(data.env !== undefined ? { env: data.env } : {}),
           model: data.model || '',
-        }) : undefined,
+        })
+          : undefined,
     }),
 
   applyPreset: (id: string) =>
