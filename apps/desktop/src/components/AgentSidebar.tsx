@@ -8,10 +8,8 @@ import {
   User,
   Search,
   Hash,
-  ChevronsUpDown,
   ChevronRight,
   Trash2,
-  ArrowLeft,
   Pin,
   MoreHorizontal,
   Star,
@@ -103,7 +101,6 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     mergeSessions,
   } = useChatStore();
 
-  const [showAgentPicker, setShowAgentPicker] = useState(false);
   const [agentSessions, setAgentSessions] = useState<Session[]>([]);
   const [searchText, setSearchText] = useState('');
   const [topicSearch, setTopicSearch] = useState('');
@@ -140,7 +137,6 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
   const handleSwitchAgent = useCallback(
     (agent: Agent) => {
       setSelectedAgent(agent.name);
-      setShowAgentPicker(false);
       onAgentChanged?.(agent.name);
 
       api
@@ -214,80 +210,18 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
 
   const totalTopics = agentSessions.length;
 
-  if (showAgentPicker) {
-    return (
+  return (
+    <Flexbox height="100%" style={{ background: token.colorBgLayout }}>
       <AgentPicker
         agents={agents}
         selectedAgent={selectedAgent}
         searchText={searchText}
         onSearchChange={setSearchText}
         onSelect={handleSwitchAgent}
-        onBack={() => setShowAgentPicker(false)}
         onCreate={onCreateAgent}
         token={token}
         t={t}
       />
-    );
-  }
-
-  return (
-    <Flexbox height="100%" style={{ background: token.colorBgLayout }}>
-      {/* Agent Header */}
-      <Flexbox
-        style={{
-          padding: '12px 12px 0',
-          flexShrink: 0,
-        }}
-      >
-        <Flexbox
-          horizontal
-          align="center"
-          gap={8}
-          onClick={() => setShowAgentPicker(true)}
-          style={{
-            padding: '8px 10px',
-            borderRadius: 8,
-            cursor: 'pointer',
-            transition: 'background 0.2s',
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLDivElement).style.background = token.colorFillTertiary;
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLDivElement).style.background = 'transparent';
-          }}
-        >
-          <div
-            style={{
-              width: 28,
-              height: 28,
-              borderRadius: 8,
-              background: 'linear-gradient(135deg, #667eea, #764ba2)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 16,
-              flexShrink: 0,
-            }}
-          >
-            {currentAgent?.avatar || '🤖'}
-          </div>
-          <span
-            style={{
-              flex: 1,
-              fontSize: 14,
-              fontWeight: 600,
-              color: token.colorText,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {currentAgent?.title || currentAgent?.name || selectedAgent || t('agent.sidebar.defaultAgent')}
-          </span>
-          <ChevronsUpDown size={14} style={{ color: token.colorTextTertiary, flexShrink: 0 }} />
-        </Flexbox>
-      </Flexbox>
 
       {/* Nav Actions */}
       <Flexbox style={{ padding: '4px 12px 8px', flexShrink: 0 }} gap={1}>
@@ -662,7 +596,6 @@ function AgentPicker({
   searchText,
   onSearchChange,
   onSelect,
-  onBack,
   onCreate,
   token,
   t,
@@ -672,7 +605,6 @@ function AgentPicker({
   searchText: string;
   onSearchChange: (v: string) => void;
   onSelect: (a: Agent) => void;
-  onBack: () => void;
   onCreate: () => void;
   token: any;
   t: (key: string) => string;
@@ -690,16 +622,18 @@ function AgentPicker({
   const unpinnedAgents = filtered.filter((a) => !a.pinned);
 
   return (
-    <Flexbox height="100%" style={{ background: token.colorBgLayout }}>
-      {/* Header with back button */}
-      <Flexbox horizontal align="center" gap={8} style={{ padding: '12px 12px 4px' }}>
-        <ActionIcon
-          icon={ArrowLeft}
-          size="small"
-          onClick={onBack}
-          title={t('agent.sidebar.back')}
-        />
-        <span style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>{t('agent.sidebar.switchAgent')}</span>
+    <Flexbox
+      gap={8}
+      style={{
+        padding: '12px 12px 10px',
+        flexShrink: 0,
+        borderBottom: `1px solid ${token.colorBorderSecondary}`,
+      }}
+    >
+      <Flexbox horizontal align="center" gap={8}>
+        <span style={{ fontSize: 14, fontWeight: 600, flex: 1, color: token.colorText }}>
+          {t('agent.sidebar.switchAgent')}
+        </span>
         <ActionIcon
           icon={Plus}
           size="small"
@@ -709,22 +643,33 @@ function AgentPicker({
         />
       </Flexbox>
 
-      <div style={{ padding: '8px 12px' }}>
-        <SearchBar
-          placeholder={t('agent.sidebar.searchAgents')}
-          value={searchText}
-          onChange={(e) => onSearchChange(e.target.value)}
-          allowClear
-        />
-      </div>
+      <SearchBar
+        placeholder={t('agent.sidebar.searchAgents')}
+        value={searchText}
+        onChange={(e) => onSearchChange(e.target.value)}
+        allowClear
+        size="small"
+      />
 
-      <Flexbox flex={1} style={{ overflow: 'auto', padding: '0 8px 8px' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+          gap: 6,
+          maxHeight: 188,
+          overflow: 'auto',
+        }}
+      >
         {filtered.length === 0 && (
           <Flexbox
             align="center"
             justify="center"
-            flex={1}
-            style={{ color: token.colorTextQuaternary, padding: 40, fontSize: 13 }}
+            style={{
+              color: token.colorTextQuaternary,
+              padding: '16px 8px',
+              fontSize: 13,
+              gridColumn: '1 / -1',
+            }}
           >
             {searchText ? t('agent.sidebar.noMatchingAgents') : t('agent.sidebar.noAgentsYet')}
           </Flexbox>
@@ -741,7 +686,7 @@ function AgentPicker({
         ))}
 
         {pinnedAgents.length > 0 && unpinnedAgents.length > 0 && (
-          <div style={{ height: 1, background: token.colorBorderSecondary, margin: '4px 12px' }} />
+          <div style={{ height: 1, background: token.colorBorderSecondary, margin: '2px 4px', gridColumn: '1 / -1' }} />
         )}
 
         {unpinnedAgents.map((agent) => (
@@ -753,7 +698,7 @@ function AgentPicker({
             token={token}
           />
         ))}
-      </Flexbox>
+      </div>
     </Flexbox>
   );
 }
@@ -773,25 +718,27 @@ function AgentPickerItem({
 
   return (
     <Flexbox
-      horizontal
       align="center"
-      gap={10}
+      gap={6}
       onClick={onSelect}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        padding: '8px 12px',
+        position: 'relative',
+        minWidth: 0,
+        minHeight: 74,
+        padding: '8px 6px',
         borderRadius: 8,
         cursor: 'pointer',
+        border: `1px solid ${isSelected ? token.colorPrimary : 'transparent'}`,
         background: isSelected ? token.colorPrimaryBg : hovered ? token.colorFillTertiary : 'transparent',
-        transition: 'background 0.15s',
-        marginBottom: 2,
+        transition: 'background 0.15s, border-color 0.15s',
       }}
     >
       <div
         style={{
-          width: 32,
-          height: 32,
+          width: 30,
+          height: 30,
           borderRadius: 8,
           background: isSelected
             ? 'linear-gradient(135deg, #667eea, #764ba2)'
@@ -805,36 +752,46 @@ function AgentPickerItem({
       >
         {agent.avatar || '🤖'}
       </div>
-      <Flexbox flex={1} style={{ minWidth: 0 }}>
-        <Flexbox horizontal align="center" gap={4}>
-          <span
-            style={{
-              fontSize: 13,
-              fontWeight: isSelected ? 600 : 400,
-              color: token.colorText,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {agent.title || agent.name}
-          </span>
-          {agent.pinned && (
-            <Pin size={10} style={{ color: token.colorTextQuaternary, flexShrink: 0 }} />
-          )}
-        </Flexbox>
+      {agent.pinned && (
+        <Pin
+          size={10}
+          style={{
+            position: 'absolute',
+            top: 6,
+            right: 6,
+            color: token.colorTextQuaternary,
+          }}
+        />
+      )}
+      <span
+        style={{
+          width: '100%',
+          fontSize: 12,
+          fontWeight: isSelected ? 600 : 400,
+          color: isSelected ? token.colorPrimary : token.colorText,
+          overflow: 'hidden',
+          textAlign: 'center',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {agent.title || agent.name}
+      </span>
+      {agent.description && (
         <span
           style={{
+            width: '100%',
             fontSize: 11,
             color: token.colorTextDescription,
             overflow: 'hidden',
+            textAlign: 'center',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
           }}
         >
           {agent.description}
         </span>
-      </Flexbox>
+      )}
     </Flexbox>
   );
 }
