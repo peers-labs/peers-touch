@@ -34,6 +34,10 @@ pub(crate) fn execute_turn(actor_id: &str, input: AgentExecuteTurnInput) -> AppR
         provider_id = %resolved_provider.provider_id,
         model = %resolved_provider.model_id,
         protocol = %resolved_provider.protocol,
+        provider_kind = ?resolved_provider.kind,
+        provider_black_box = resolved_provider.capability.black_box,
+        provider_timeout_ms = ?resolved_provider.control.timeout_ms,
+        provider_cwd = ?resolved_provider.control.cwd,
         "Executing agent turn"
     );
 
