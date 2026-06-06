@@ -1,11 +1,19 @@
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
+use crate::infrastructure::storage;
+#[cfg(not(test))]
+use crate::infrastructure::storage::StorageKind;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 use super::{now_iso, stable_hash, success_payload};
 
-#[derive(Clone)]
+const MAX_TRACE_RECORDS: usize = 500;
+
+#[derive(Clone, Serialize, Deserialize)]
 struct TurnTraceRecord {
     id: String,
     conversation_id: String,
@@ -21,7 +29,7 @@ struct TurnTraceRecord {
     created_at: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 struct ProviderCallRecord {
     provider_id: String,
     model: String,
@@ -37,7 +45,7 @@ struct ProviderCallRecord {
     error_message: Option<String>,
 }
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 struct TurnTraceStore {
     sequence: u64,
     traces: Vec<TurnTraceRecord>,
@@ -79,7 +87,70 @@ pub(crate) struct RecordedTrace {
 static TURN_TRACE_STORE: OnceLock<Mutex<TurnTraceStore>> = OnceLock::new();
 
 fn turn_trace_store() -> &'static Mutex<TurnTraceStore> {
-    TURN_TRACE_STORE.get_or_init(|| Mutex::new(TurnTraceStore::default()))
+    TURN_TRACE_STORE.get_or_init(|| Mutex::new(load_trace_store()))
+}
+
+#[cfg(test)]
+fn trace_store_path() -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "peers-touch-agent-turn-traces-{}.json",
+        std::process::id()
+    ))
+}
+
+#[cfg(not(test))]
+fn trace_store_path() -> PathBuf {
+    storage::app_file_path(
+        "desktop",
+        StorageKind::Data,
+        &["agent", "runtime", "turn_traces.json"],
+    )
+    .unwrap_or_else(|_| PathBuf::from("agent.runtime.turn_traces.json"))
+}
+
+fn load_trace_store() -> TurnTraceStore {
+    let path = trace_store_path();
+    if !path.exists() {
+        return TurnTraceStore::default();
+    }
+    let raw = match fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(err) => {
+            tracing::warn!(path = %path.display(), error = %err, "Failed to read turn trace store");
+            return TurnTraceStore::default();
+        }
+    };
+    match serde_json::from_str::<TurnTraceStore>(&raw) {
+        Ok(mut store) => {
+            if store.traces.len() > MAX_TRACE_RECORDS {
+                let drop_count = store.traces.len() - MAX_TRACE_RECORDS;
+                store.traces.drain(0..drop_count);
+            }
+            store
+        }
+        Err(err) => {
+            tracing::warn!(path = %path.display(), error = %err, "Failed to parse turn trace store");
+            TurnTraceStore::default()
+        }
+    }
+}
+
+fn persist_trace_store(store: &TurnTraceStore) -> Result<(), AppResult<StubPayload>> {
+    let path = trace_store_path();
+    let serialized = serde_json::to_string(store).map_err(|err| {
+        AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to serialize turn trace store: {}", err),
+            None,
+        )
+    })?;
+    storage::write_string_atomic(&path, &serialized).map_err(|err| {
+        AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to persist turn trace store: {}", err),
+            None,
+        )
+    })
 }
 
 pub(crate) fn record(input: TraceInput<'_>) -> Result<RecordedTrace, AppResult<StubPayload>> {
@@ -128,6 +199,11 @@ pub(crate) fn record(input: TraceInput<'_>) -> Result<RecordedTrace, AppResult<S
             .collect(),
         created_at: now_iso(),
     });
+    if guard.traces.len() > MAX_TRACE_RECORDS {
+        let drop_count = guard.traces.len() - MAX_TRACE_RECORDS;
+        guard.traces.drain(0..drop_count);
+    }
+    persist_trace_store(&guard)?;
     Ok(RecordedTrace {
         id: trace_id,
         prompt_hash,
