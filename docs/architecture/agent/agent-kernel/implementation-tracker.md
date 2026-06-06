@@ -46,11 +46,11 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | Model Backend | Model/vendor API remains model backend; AgentProvider is the execution strategy above it | Designed; provider UI now distinguishes model backend from AgentProvider control level |
 | Runtime | Turn lifecycle, provider call, trace persistence, memory hook, runtime assets projection | Implemented local desktop runtime split, traces, and conversation runtime cards |
 | Memory | White-box memory with list/search/persona/events/delete/feedback | Local persistence implemented; feedback UI/API added in current stage |
-| Skill | Package + `SKILL.md` + projection + controlled runtime load | Designed; implementation pending |
+| Skill | Package + `SKILL.md` + projection + controlled runtime load | Local persisted Skill store and default market install path implemented |
 | Tool / MCP | Schema-first registry, policy, approval, audit, dynamic MCP projection | Designed; implementation pending |
 | A2A / Groups | Agent Card, task state, local/remote transport, group orchestration UI | Designed; implementation pending |
 | Desktop UX | LobeHub-style interaction on Peers-Touch framework | Memory page, Agent rail, and Agent Profile center improved |
-| Growth / Diagnostics | TurnTrace, feedback, provider degradation, suggestions | Trace persistence implemented; dashboards pending |
+| Growth / Diagnostics | TurnTrace, feedback, provider degradation, suggestions | Trace persistence and conversation diagnostics implemented; dashboards pending |
 
 ---
 
@@ -76,35 +76,27 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | Conversation trace detail drawer | Clicking a provider trace marker opens a drawer with turn trace, counts, provider call capability, latency, and fallback metadata | Chat locale JSON, targeted TS check, and diff checks passed |
 | Conversation runtime context cards | Assistant messages now show memory used, memory write, loaded skills, projected tools, and projected MCP servers from the turn assets | Agent runtime tests, chat locale JSON, targeted TS check, and diff checks passed |
 | CLI bridge and runtime policy | CLI-wrapped providers now persist sandbox preset, retry count, and bridge tool allowlist; runtime injects per-run policy env and ephemeral bridge token | Provider tests, provider locale JSON, targeted TS check, and diff checks passed |
+| Skill runtime and market install | Skill store is persisted locally; default Skill market lists installable skills; URL/GitHub/default market installs write into the active Skill store | Skill market Rust tests passed |
 
 ---
 
-## 5. Current Stage: CLI Bridge and Runtime Policy
+## 5. Current Stage: Skill Runtime and Market Install
 
 ### Delivered
 
-- CLI-wrapped Provider config now supports:
-  - sandbox preset: `workspace-readonly`, `workspace-write`, `network-off`, `unrestricted`
-  - retry count from 0 to 5
-  - bridge tool allowlist, one governed tool per line
-- Provider guardrails validate sandbox, retry, and allowlist shape before save/check.
-- Provider settings expose the new controls in the CLI Provider detail panel.
-- CLI runtime injects policy into only the current process:
-  - `PEERS_AGENT_SANDBOX_PRESET`
-  - `PEERS_AGENT_TOOL_ALLOWLIST`
-  - `PEERS_AGENT_BRIDGE_TOKEN`
-- The bridge token is generated per CLI attempt and is not persisted in Provider config.
-- Failed CLI attempts follow the configured retry policy.
-- Localization:
-  - English and Chinese CLI policy labels.
+- Local Skill store now persists to Desktop data storage instead of resetting to seed data on restart.
+- Skill create, update, delete, toggle, URL import, GitHub import, and market install all write through the same Skill store.
+- Default local Skill market is available without remote setup.
+- Market list/search/detail/install paths return concrete installable Skill package data.
+- Installed market Skills become visible to the Agent runtime through the existing enabled Skill projection path.
 
 ### Acceptance Criteria
 
-- CLI-wrapped Provider policy is explicit, visible, saved, and validated.
-- Runtime bridge exposure is scoped to the spawned CLI process and the current attempt.
-- Retry behavior is deterministic and tested.
-- JSON locales remain valid.
-- Targeted TypeScript check has no errors in the changed files.
+- Skill packages survive Desktop restart.
+- Market install is not a stub; it creates or updates an enabled Skill record.
+- Runtime prompt Skill projection reads the same installed/toggled Skill records.
+- Default market works offline and uses `thirdparty` only as a generic reference concept in docs.
+- Rust tests cover listing and installing default market Skills.
 
 ---
 
@@ -121,7 +113,7 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 
 | Task | Outcome |
 |------|---------|
-| Skill package runtime | Install/list/view/toggle/load Skill packages with progressive disclosure |
+| Skill package runtime | Persisted install/list/view/toggle/load Skill packages with progressive disclosure |
 | Tool registry | Schema-first tools with policy, approval, audit, and replayable events |
 | MCP server management | Add custom MCP servers, project tools into Tool registry, health/status UI |
 | A2A local orchestration | Agent group calls, child task tracking, local/remote transport abstraction |
@@ -132,7 +124,7 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | Task | Outcome |
 |------|---------|
 | Growth dashboard | Feedback, failure attribution, memory/skill recommendations |
-| Marketplace | Agent / Skill / MCP discovery, install, trust metadata |
+| Marketplace | Skill discovery/install implemented locally; Agent / MCP discovery and trust metadata still pending |
 | Task board | Async tasks, scheduled runs, review/acceptance flow |
 | Channel bindings | External channel mirroring, topic isolation, channel-specific policies |
 | Import/export | Agent packages, skill bundles, provider presets |
@@ -181,6 +173,7 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/provider.json` | Passed | Locale JSON valid |
 | 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `ProviderDetail`, `store/provider`, `desktop_api`, `provider.json`, `cli_runtime`, or `agent_runtime/provider` errors; failures remain in existing App/social/media/navigation areas |
 | 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
+| 2026-06-07 | `cargo test --bin peers-touch-desktop skills` | Passed | 2 Skill market tests passed, including default market listing and install; existing warnings remain |
 
 ---
 

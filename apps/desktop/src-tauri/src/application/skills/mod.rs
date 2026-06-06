@@ -3,10 +3,16 @@ use crate::contracts::{
     SkillsListInput, SkillsSearchInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
+use crate::infrastructure::storage;
+#[cfg(not(test))]
+use crate::infrastructure::storage::StorageKind;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 struct SkillRecord {
     id: String,
     identifier: String,
@@ -59,14 +65,16 @@ impl SkillRecord {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 struct SkillStore {
+    sequence: u64,
     skills: Vec<SkillRecord>,
 }
 
 impl SkillStore {
     fn seeded() -> Self {
         Self {
+            sequence: 1,
             skills: vec![SkillRecord {
                 id: "skill-1".to_string(),
                 identifier: "web-search".to_string(),
@@ -84,7 +92,87 @@ impl SkillStore {
 static SKILL_STORE: OnceLock<Mutex<SkillStore>> = OnceLock::new();
 
 fn skill_store() -> &'static Mutex<SkillStore> {
-    SKILL_STORE.get_or_init(|| Mutex::new(SkillStore::seeded()))
+    SKILL_STORE.get_or_init(|| Mutex::new(load_skill_store()))
+}
+
+#[cfg(test)]
+fn skill_store_path() -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "peers-touch-agent-skills-{}.json",
+        std::process::id()
+    ))
+}
+
+#[cfg(not(test))]
+fn skill_store_path() -> PathBuf {
+    storage::app_file_path(
+        "desktop",
+        StorageKind::Data,
+        &["agent", "skills", "skills.json"],
+    )
+    .unwrap_or_else(|_| PathBuf::from("agent.skills.json"))
+}
+
+fn load_skill_store() -> SkillStore {
+    let path = skill_store_path();
+    if !path.exists() {
+        return SkillStore::seeded();
+    }
+    let raw = match fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(err) => {
+            tracing::warn!(path = %path.display(), error = %err, "Failed to read skill store");
+            return SkillStore::seeded();
+        }
+    };
+    serde_json::from_str::<SkillStore>(&raw).unwrap_or_else(|err| {
+        tracing::warn!(path = %path.display(), error = %err, "Failed to parse skill store");
+        SkillStore::seeded()
+    })
+}
+
+fn persist_skill_store(store: &SkillStore) -> Result<(), AppResult<StubPayload>> {
+    let path = skill_store_path();
+    let serialized = serde_json::to_string(store).map_err(|err| {
+        AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to serialize skill store: {}", err),
+            None,
+        )
+    })?;
+    storage::write_string_atomic(&path, &serialized).map_err(|err| {
+        AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to persist skill store: {}", err),
+            None,
+        )
+    })
+}
+
+fn now_iso() -> String {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default();
+    format!("unix-ms:{millis}")
+}
+
+fn slugify(value: &str) -> String {
+    let slug = value
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
+        .collect::<String>()
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    if slug.is_empty() {
+        "skill".to_string()
+    } else {
+        slug
+    }
 }
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
@@ -221,9 +309,10 @@ pub fn skills_create(input: SkillCreateInput) -> AppResult<StubPayload> {
         Ok(guard) => guard,
         Err(e) => return store_lock_error(e),
     };
-    let id = format!("skill-{}", guard.skills.len() + 1);
-    let identifier = name.to_lowercase().replace(' ', "-");
-    let now = "2026-03-24T00:00:00.000Z".to_string();
+    guard.sequence = guard.sequence.saturating_add(1);
+    let id = format!("skill-{}", guard.sequence);
+    let identifier = slugify(name);
+    let now = now_iso();
     guard.skills.push(SkillRecord {
         id: id.clone(),
         identifier: identifier.clone(),
@@ -234,6 +323,9 @@ pub fn skills_create(input: SkillCreateInput) -> AppResult<StubPayload> {
         created_at: now.clone(),
         updated_at: now,
     });
+    if let Err(err) = persist_skill_store(&guard) {
+        return err;
+    }
     success_payload(
         "skills_create",
         json!({
@@ -269,7 +361,10 @@ pub fn skills_update(input: SkillUpdateInput) -> AppResult<StubPayload> {
         if let Some(enabled) = input.enabled {
             skill.enabled = enabled;
         }
-        skill.updated_at = "2026-03-24T00:00:00.000Z".to_string();
+        skill.updated_at = now_iso();
+        if let Err(err) = persist_skill_store(&guard) {
+            return err;
+        }
         return success_payload("skills_update", json!({ "ok": true }));
     }
     AppResult::fail(ErrorCode::NotFound, "Skill not found", None)
@@ -286,6 +381,11 @@ pub fn skills_delete(input: SkillIdInput) -> AppResult<StubPayload> {
     };
     let before = guard.skills.len();
     guard.skills.retain(|item| item.id != id);
+    if before != guard.skills.len() {
+        if let Err(err) = persist_skill_store(&guard) {
+            return err;
+        }
+    }
     success_payload(
         "skills_delete",
         json!({ "ok": before != guard.skills.len() }),
@@ -299,7 +399,68 @@ pub fn skills_toggle(input: SkillToggleInput) -> AppResult<StubPayload> {
     };
     if let Some(skill) = guard.skills.iter_mut().find(|item| item.id == input.id) {
         skill.enabled = input.enabled;
+        skill.updated_at = now_iso();
+        if let Err(err) = persist_skill_store(&guard) {
+            return err;
+        }
         return success_payload("skills_toggle", json!({ "ok": true }));
     }
     AppResult::fail(ErrorCode::NotFound, "Skill not found", None)
+}
+
+pub(crate) fn install_market_skill(
+    identifier: &str,
+    name: &str,
+    description: &str,
+    content: &str,
+) -> Result<serde_json::Value, AppResult<StubPayload>> {
+    let identifier = slugify(identifier);
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(invalid_argument("name is required"));
+    }
+    let mut guard = match skill_store().lock() {
+        Ok(guard) => guard,
+        Err(e) => return Err(store_lock_error(e)),
+    };
+    if let Some(skill) = guard
+        .skills
+        .iter_mut()
+        .find(|item| item.identifier == identifier)
+    {
+        skill.name = name.to_string();
+        skill.description = description.to_string();
+        skill.content = content.to_string();
+        skill.enabled = true;
+        skill.updated_at = now_iso();
+        let result = json!({
+            "id": skill.id,
+            "identifier": skill.identifier,
+            "name": skill.name,
+            "isNew": false
+        });
+        persist_skill_store(&guard)?;
+        return Ok(result);
+    }
+
+    guard.sequence = guard.sequence.saturating_add(1);
+    let id = format!("skill-{}", guard.sequence);
+    let now = now_iso();
+    guard.skills.push(SkillRecord {
+        id: id.clone(),
+        identifier: identifier.clone(),
+        name: name.to_string(),
+        description: description.to_string(),
+        enabled: true,
+        content: content.to_string(),
+        created_at: now.clone(),
+        updated_at: now,
+    });
+    persist_skill_store(&guard)?;
+    Ok(json!({
+        "id": id,
+        "identifier": identifier,
+        "name": name,
+        "isNew": true
+    }))
 }
