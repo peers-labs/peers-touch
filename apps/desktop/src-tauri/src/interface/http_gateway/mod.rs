@@ -21,17 +21,21 @@ use crate::state::AppState;
 // -------------------------------------------------------------------------
 // Application layer imports (mirrors tauri_commands structure)
 // -------------------------------------------------------------------------
+use crate::application::a2a as app_a2a;
 use crate::application::account as app_account;
 use crate::application::admin as app_admin;
+use crate::application::agent_marketplace as app_agent_marketplace;
 use crate::application::agent_turn as app_agent_turn;
 use crate::application::agents as app_agents;
 use crate::application::applets as app_applets;
 use crate::application::auth::service as app_auth;
+use crate::application::channel_bindings as app_channel_bindings;
 use crate::application::channels as app_channels;
 use crate::application::chat as app_chat;
 use crate::application::chat_storage;
 use crate::application::cron as app_cron;
 use crate::application::key_exchange::{device_install, wire};
+use crate::application::knowledge as app_knowledge;
 use crate::application::mcp as app_mcp;
 use crate::application::memory as app_memory;
 use crate::application::model_config as app_model_config;
@@ -45,6 +49,7 @@ use crate::application::settings as app_settings;
 use crate::application::skills as app_skills;
 use crate::application::skills_market as app_skills_market;
 use crate::application::system as app_system;
+use crate::application::task_board as app_task_board;
 use crate::application::tools as app_tools;
 use crate::application::tts as app_tts;
 
@@ -800,6 +805,111 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             to_json(app_agent_turn::agent_execute_turn("", input))
         }
         "agent_turn_traces" => to_json(app_agent_turn::agent_turn_traces()),
+        "agent_marketplace_list" => {
+            let input = match parse_args::<app_agent_marketplace::AgentMarketplaceListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_agent_marketplace::agent_marketplace_list(input))
+        }
+        "agent_marketplace_get" => {
+            let input = match parse_args::<app_agent_marketplace::AgentMarketplaceIdInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_agent_marketplace::agent_marketplace_get(input))
+        }
+        "agent_a2a_list" => {
+            let input = match parse_args::<app_a2a::A2AListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_a2a::agent_a2a_list(input))
+        }
+        "agent_a2a_start" => {
+            let input = match parse_args::<app_a2a::A2AStartInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_a2a::agent_a2a_start(input))
+        }
+        "agent_a2a_update_task" => {
+            let input = match parse_args::<app_a2a::A2AUpdateTaskInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_a2a::agent_a2a_update_task(input))
+        }
+        "agent_knowledge_list" => {
+            let input = match parse_args::<app_knowledge::KnowledgeListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_knowledge::agent_knowledge_list(input))
+        }
+        "agent_knowledge_bind" => {
+            let input = match parse_args::<app_knowledge::KnowledgeBindInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_knowledge::agent_knowledge_bind(input))
+        }
+        "agent_knowledge_update" => {
+            let input = match parse_args::<app_knowledge::KnowledgeUpdateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_knowledge::agent_knowledge_update(input))
+        }
+        "agent_knowledge_delete" => {
+            let input = match parse_args::<app_knowledge::KnowledgeDeleteInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_knowledge::agent_knowledge_delete(input))
+        }
+        "agent_channel_bindings_list" => {
+            let input = match parse_args::<app_channel_bindings::ChannelBindingListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_channel_bindings::agent_channel_bindings_list(input))
+        }
+        "agent_channel_binding_upsert" => {
+            let input = match parse_args::<app_channel_bindings::ChannelBindingUpsertInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_channel_bindings::agent_channel_binding_upsert(input))
+        }
+        "agent_channel_binding_toggle" => {
+            let input = match parse_args::<app_channel_bindings::ChannelBindingToggleInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_channel_bindings::agent_channel_binding_toggle(input))
+        }
+        "agent_channel_binding_delete" => {
+            let input = match parse_args::<app_channel_bindings::ChannelBindingDeleteInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_channel_bindings::agent_channel_binding_delete(input))
+        }
+        "agent_task_reviews_list" => {
+            let input = match parse_args::<app_task_board::TaskReviewListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_task_board::agent_task_reviews_list(input))
+        }
+        "agent_task_review_update" => {
+            let input = match parse_args::<app_task_board::TaskReviewUpdateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_task_board::agent_task_review_update(input))
+        }
 
         // Note: legacy `timeline_*` dev-HTTP routes were removed in P2. The
         // new `social_*` Tauri commands target proto-typed responses and

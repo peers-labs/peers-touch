@@ -23,10 +23,11 @@ pub mod peers_touch {
 }
 
 use interface::tauri_commands::{
-    account, actor, admin, agent_growth, agent_scheduler, agent_turn, agents, applets, auth,
-    channels, chat, cron, crypto, friend_chat, frontend_log, group_chat, i18n, ice, key_exchange,
-    mcp, memory, model_config, models, notebook, notification, oauth2, oss, presence, profile,
-    provider, realtime, search, settings, skills, skills_market, social, system, tools, tts,
+    a2a, account, actor, admin, agent_growth, agent_marketplace, agent_scheduler, agent_turn,
+    agents, applets, auth, channel_bindings, channels, chat, cron, crypto, friend_chat,
+    frontend_log, group_chat, i18n, ice, key_exchange, knowledge, mcp, memory, model_config,
+    models, notebook, notification, oauth2, oss, presence, profile, provider, realtime, search,
+    settings, skills, skills_market, social, system, task_board, tools, tts,
 };
 use std::sync::Arc;
 use tauri::Manager;
@@ -122,6 +123,21 @@ fn main() {
             chat::chat_completion_once,
             agent_turn::agent_execute_turn,
             agent_turn::agent_turn_traces,
+            agent_marketplace::agent_marketplace_list,
+            agent_marketplace::agent_marketplace_get,
+            a2a::agent_a2a_list,
+            a2a::agent_a2a_start,
+            a2a::agent_a2a_update_task,
+            knowledge::agent_knowledge_list,
+            knowledge::agent_knowledge_bind,
+            knowledge::agent_knowledge_update,
+            knowledge::agent_knowledge_delete,
+            channel_bindings::agent_channel_bindings_list,
+            channel_bindings::agent_channel_binding_upsert,
+            channel_bindings::agent_channel_binding_toggle,
+            channel_bindings::agent_channel_binding_delete,
+            task_board::agent_task_reviews_list,
+            task_board::agent_task_review_update,
             social::social_create_moment,
             social::social_get_moment,
             social::social_delete_moment,

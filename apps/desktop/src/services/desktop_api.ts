@@ -1726,6 +1726,114 @@ export interface AgentRuntimeAssets {
   [key: string]: unknown;
 }
 
+export interface A2ARun {
+  id: string;
+  parent_agent_id: string;
+  parent_agent_name: string;
+  title: string;
+  prompt: string;
+  status: string;
+  transport: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface A2ATask {
+  id: string;
+  run_id: string;
+  parent_agent_id: string;
+  child_agent_id: string;
+  prompt: string;
+  status: string;
+  artifact: string;
+  audit_event: string;
+  transport: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface A2AListResult {
+  runs: A2ARun[];
+  tasks: A2ATask[];
+}
+
+export interface A2AStartInput {
+  parent_agent_id: string;
+  parent_agent_name?: string;
+  child_agent_ids: string[];
+  prompt: string;
+  title?: string;
+}
+
+export interface KnowledgeResource {
+  id: string;
+  agent_id: string;
+  title: string;
+  resource_type: string;
+  source: string;
+  retrieval_policy: string;
+  notes: string;
+  enabled: boolean;
+  audit_event: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KnowledgeBindInput {
+  agent_id: string;
+  title: string;
+  resource_type: string;
+  source: string;
+  retrieval_policy?: string;
+}
+
+export interface KnowledgeUpdateInput {
+  id: string;
+  enabled?: boolean;
+  retrieval_policy?: string;
+  notes?: string;
+}
+
+export interface AgentMarketplaceEntry {
+  id: string;
+  kind: 'agent' | 'mcp' | string;
+  name: string;
+  description: string;
+  publisher: string;
+  source: string;
+  trust_level: string;
+  verified: boolean;
+  risk: string;
+  tags: string[];
+  install_hint: string;
+  manifest: Record<string, any>;
+}
+
+export interface TaskReview {
+  id: string;
+  agent_id: string;
+  target_id: string;
+  target_type: string;
+  status: string;
+  note: string;
+  audit_event: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentChannelBinding {
+  id: string;
+  agent_id: string;
+  channel_id: string;
+  mirror_mode: string;
+  topic_policy: string;
+  execution_policy: string;
+  enabled: boolean;
+  audit_event: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ProviderCallTrace {
   provider_id: string;
   model: string;
@@ -4451,6 +4559,131 @@ export const executeAgentTurn = streamChat;
 export async function listAgentTurnTraces(): Promise<AgentTurnTrace[]> {
   const result = await invokeRustDataFromStatus<void, { traces?: AgentTurnTrace[] }>('agent_turn_traces');
   return result.traces || [];
+}
+
+export async function listA2ATasks(agentId?: string): Promise<A2AListResult> {
+  return invokeRustDataFromStatus<{ agent_id?: string }, A2AListResult>(
+    'agent_a2a_list',
+    { agent_id: agentId },
+  );
+}
+
+export async function startA2AGroupRun(input: A2AStartInput): Promise<{ run: A2ARun; tasks: A2ATask[] }> {
+  return invokeRustDataFromStatus<A2AStartInput, { run: A2ARun; tasks: A2ATask[] }>(
+    'agent_a2a_start',
+    input,
+  );
+}
+
+export async function updateA2ATask(
+  taskId: string,
+  status: string,
+  artifact?: string,
+): Promise<{ task: A2ATask }> {
+  return invokeRustDataFromStatus<{ task_id: string; status: string; artifact?: string }, { task: A2ATask }>(
+    'agent_a2a_update_task',
+    { task_id: taskId, status, artifact },
+  );
+}
+
+export async function listKnowledgeResources(agentId?: string): Promise<{ resources: KnowledgeResource[] }> {
+  return invokeRustDataFromStatus<{ agent_id?: string }, { resources: KnowledgeResource[] }>(
+    'agent_knowledge_list',
+    { agent_id: agentId },
+  );
+}
+
+export async function bindKnowledgeResource(input: KnowledgeBindInput): Promise<{ resource: KnowledgeResource }> {
+  return invokeRustDataFromStatus<KnowledgeBindInput, { resource: KnowledgeResource }>(
+    'agent_knowledge_bind',
+    input,
+  );
+}
+
+export async function updateKnowledgeResource(input: KnowledgeUpdateInput): Promise<{ resource: KnowledgeResource }> {
+  return invokeRustDataFromStatus<KnowledgeUpdateInput, { resource: KnowledgeResource }>(
+    'agent_knowledge_update',
+    input,
+  );
+}
+
+export async function deleteKnowledgeResource(id: string): Promise<{ ok: boolean }> {
+  return invokeRustDataFromStatus<{ id: string }, { ok: boolean }>(
+    'agent_knowledge_delete',
+    { id },
+  );
+}
+
+export async function listAgentMarketplaceEntries(
+  kind?: string,
+  q?: string,
+): Promise<{ entries: AgentMarketplaceEntry[]; source: string }> {
+  return invokeRustDataFromStatus<{ kind?: string; q?: string }, { entries: AgentMarketplaceEntry[]; source: string }>(
+    'agent_marketplace_list',
+    { kind, q },
+  );
+}
+
+export async function getAgentMarketplaceEntry(id: string): Promise<{ entry: AgentMarketplaceEntry }> {
+  return invokeRustDataFromStatus<{ id: string }, { entry: AgentMarketplaceEntry }>(
+    'agent_marketplace_get',
+    { id },
+  );
+}
+
+export async function listTaskReviews(agentId?: string): Promise<{ reviews: TaskReview[] }> {
+  return invokeRustDataFromStatus<{ agent_id?: string }, { reviews: TaskReview[] }>(
+    'agent_task_reviews_list',
+    { agent_id: agentId },
+  );
+}
+
+export async function updateTaskReview(input: {
+  agent_id: string;
+  target_id: string;
+  target_type: string;
+  status: string;
+  note?: string;
+}): Promise<{ review: TaskReview }> {
+  return invokeRustDataFromStatus<typeof input, { review: TaskReview }>(
+    'agent_task_review_update',
+    input,
+  );
+}
+
+export async function listAgentChannelBindings(agentId?: string): Promise<{ bindings: AgentChannelBinding[] }> {
+  return invokeRustDataFromStatus<{ agent_id?: string }, { bindings: AgentChannelBinding[] }>(
+    'agent_channel_bindings_list',
+    { agent_id: agentId },
+  );
+}
+
+export async function upsertAgentChannelBinding(input: {
+  agent_id: string;
+  channel_id: string;
+  mirror_mode: string;
+  topic_policy: string;
+  execution_policy: string;
+  enabled?: boolean;
+}): Promise<{ binding: AgentChannelBinding }> {
+  return invokeRustDataFromStatus<typeof input, { binding: AgentChannelBinding }>(
+    'agent_channel_binding_upsert',
+    input,
+  );
+}
+
+export async function toggleAgentChannelBinding(id: string, enabled: boolean): Promise<{ binding: AgentChannelBinding }> {
+  return invokeRustDataFromStatus<{ id: string; enabled: boolean }, { binding: AgentChannelBinding }>(
+    'agent_channel_binding_toggle',
+    { id, enabled },
+  );
+}
+
+export async function deleteAgentChannelBinding(id: string): Promise<{ ok: boolean }> {
+  return invokeRustDataFromStatus<{ id: string }, { ok: boolean }>(
+    'agent_channel_binding_delete',
+    { id },
+  );
 }
 
 // ---------------------------------------------------------------------------
