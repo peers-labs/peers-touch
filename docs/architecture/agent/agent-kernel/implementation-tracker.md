@@ -73,25 +73,30 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | CLI provider guardrails | Provider save/check validates CLI timeout, command quoting, absolute existing cwd, env shape, and check results return capability/warning metadata | Provider Rust tests and `cargo check` passed |
 | Conversation provider trace markers | Agent turns now propagate provider call capability metadata into stream `done` events and show CLI black-box / structured trace markers on assistant messages | Chat locale JSON and targeted TS checks passed |
 | Provider guardrail feedback | Provider settings now show backend save validation errors instead of silently swallowing failed debounced saves | Provider locale JSON and targeted TS checks passed |
+| Conversation trace detail drawer | Clicking a provider trace marker opens a drawer with turn trace, counts, provider call capability, latency, and fallback metadata | Chat locale JSON, targeted TS check, and diff checks passed |
 
 ---
 
-## 5. Current Stage: Provider Guardrail Feedback
+## 5. Current Stage: Conversation Trace Detail Drawer
 
 ### Delivered
 
-- Provider settings debounced save now records backend errors in component state.
-- Failed provider saves are displayed inline with an error alert.
-- Successful provider saves clear the previous error state.
-- Switching providers clears stale save errors.
-- This makes CLI guardrail failures such as invalid timeout, cwd, env, or command quoting visible immediately in the settings page.
+- Assistant provider trace markers are now clickable.
+- The drawer loads recent local `AgentTurnTrace` records from the Desktop command API.
+- When a trace record is available, the drawer shows:
+  - trace id, status, conversation, agent, prompt hash, and creation time
+  - memory, skill, and tool counts
+  - provider id, model, provider kind, protocol, latency, and capability flags
+  - provider error code/message when the call failed
+- When the persisted trace has aged out of the local recent trace store, the drawer still shows message-level fallback metadata.
 - Localization:
-  - English and Chinese provider save error labels.
+  - English and Chinese trace drawer labels.
 
 ### Acceptance Criteria
 
-- Backend guardrail errors are not silently swallowed by Provider settings autosave.
-- The user can see why a CLI-wrapped provider configuration did not persist.
+- Conversation provider trace markers are not just labels; they open inspectable runtime evidence.
+- The drawer can distinguish CLI black-box and structured provider capability modes.
+- Missing local trace records degrade gracefully to message metadata.
 - JSON locales remain valid.
 - Targeted TypeScript check has no errors in the changed files.
 
@@ -157,6 +162,10 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/provider.json` | Passed | Locale JSON valid |
 | 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `ProviderDetail` or `provider.json` errors; failures remain in existing App/social/media/navigation areas |
 | 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
+| 2026-06-07 | `python3 -m json.tool packages/locales/en/chat.json` | Passed | Locale JSON valid |
+| 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/chat.json` | Passed | Locale JSON valid |
+| 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `MessageBubble`, `desktop_api`, or `chat.json` errors; failures remain in existing App/social/media/navigation areas |
+| 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
 
 ---
 
@@ -165,4 +174,4 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 1. Full Desktop TypeScript check currently has unrelated pre-existing failures outside this Agent Kernel slice; use targeted checks until the unrelated issues are scheduled.
 2. CLI-wrapped providers cannot guarantee the same internal tool loop fidelity as Eino-native providers. The contract must model capability degradation explicitly instead of pretending they are equally controllable.
 3. Current CLI guardrails validate config shape and process controls, but sandbox presets, retry policy, and bridge approval UX still need dedicated delivery.
-4. Conversation now has a compact provider trace marker, but the full trace detail drawer and tool/memory event cards still need dedicated UI.
+4. Conversation now has provider trace marker details, but memory use/write cards and bridge/tool audit cards still need dedicated UI.

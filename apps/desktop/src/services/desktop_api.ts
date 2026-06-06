@@ -1667,6 +1667,38 @@ export interface AgentExecuteTurnOutput {
   assets?: Record<string, unknown>;
 }
 
+export interface ProviderCallTrace {
+  provider_id: string;
+  model: string;
+  provider_kind: string;
+  protocol: string;
+  latency_ms: number;
+  success: boolean;
+  capability: {
+    stream: boolean;
+    cancel: boolean;
+    tool_call: boolean;
+    black_box: boolean;
+  };
+  error_code?: string | null;
+  error_message?: string | null;
+}
+
+export interface AgentTurnTrace {
+  id: string;
+  conversation_id: string;
+  agent_id: string;
+  provider_id: string;
+  model: string;
+  status: string;
+  prompt_hash: string;
+  memory_count: number;
+  skill_count: number;
+  tool_count: number;
+  provider_calls: ProviderCallTrace[];
+  created_at: string;
+}
+
 export interface SkillsListInput {
   source?: string;
 }
@@ -4335,6 +4367,11 @@ export function streamChat(
 }
 
 export const executeAgentTurn = streamChat;
+
+export async function listAgentTurnTraces(): Promise<AgentTurnTrace[]> {
+  const result = await invokeRustDataFromStatus<void, { traces?: AgentTurnTrace[] }>('agent_turn_traces');
+  return result.traces || [];
+}
 
 // ---------------------------------------------------------------------------
 // Agent Growth APIs

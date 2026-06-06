@@ -4,7 +4,7 @@ import { Flexbox } from 'react-layout-kit';
 import { Avatar, Markdown, Tag, Dropdown, TextArea, toast } from '@lobehub/ui';
 import { ModelIcon } from '@lobehub/icons';
 import type { MenuProps } from '@lobehub/ui';
-import { theme } from 'antd';
+import { Drawer, theme } from 'antd';
 import {
   Wrench,
   Loader2,
@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import type { ChatMessage, ToolCallInfo } from '../store/chat';
 import { useChatStore } from '../store/chat';
+import { listAgentTurnTraces, type AgentTurnTrace } from '../services/desktop_api';
 import { UserSquareAvatar } from './common/UserSquareAvatar';
 import MessageCard, { type CardData } from './MessageCard';
 import { parseDeepLink } from '../utils/deeplink';
@@ -228,6 +229,105 @@ function ToolCallsBlock({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
   );
 }
 
+function TraceInfoRow({ label, value }: { label: string; value?: ReactNode }) {
+  const { token } = theme.useToken();
+  return (
+    <Flexbox horizontal justify="space-between" align="flex-start" gap={12} style={{ padding: '7px 0' }}>
+      <span style={{ fontSize: 12, color: token.colorTextSecondary, flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 12, color: token.colorText, textAlign: 'right', wordBreak: 'break-word' }}>
+        {value ?? '-'}
+      </span>
+    </Flexbox>
+  );
+}
+
+function TraceDetailDrawer({
+  open,
+  loading,
+  trace,
+  fallback,
+  onClose,
+}: {
+  open: boolean;
+  loading: boolean;
+  trace: AgentTurnTrace | null;
+  fallback: ChatMessage;
+  onClose: () => void;
+}) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
+  const firstCall = trace?.provider_calls?.[0];
+  return (
+    <Drawer
+      title={t('chat.message.trace.title')}
+      open={open}
+      onClose={onClose}
+      width={380}
+      styles={{ body: { padding: 16 } }}
+    >
+      <Flexbox gap={12}>
+        {loading ? (
+          <span style={{ color: token.colorTextSecondary, fontSize: 13 }}>{t('chat.message.trace.loading')}</span>
+        ) : (
+          <>
+            {!trace && (
+              <div
+                style={{
+                  padding: 10,
+                  borderRadius: 8,
+                  background: token.colorFillQuaternary,
+                  color: token.colorTextSecondary,
+                  fontSize: 12,
+                }}
+              >
+                {t('chat.message.trace.notFound')}
+              </div>
+            )}
+            <div style={{ borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+              <TraceInfoRow label={t('chat.message.trace.traceId')} value={trace?.id || fallback.traceId} />
+              <TraceInfoRow label={t('chat.message.trace.status')} value={trace?.status || t('chat.message.trace.currentTurn')} />
+              <TraceInfoRow label={t('chat.message.trace.conversation')} value={trace?.conversation_id} />
+              <TraceInfoRow label={t('chat.message.trace.agent')} value={trace?.agent_id} />
+              <TraceInfoRow label={t('chat.message.trace.promptHash')} value={trace?.prompt_hash} />
+              <TraceInfoRow label={t('chat.message.trace.createdAt')} value={trace?.created_at} />
+            </div>
+            <div style={{ borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+              <TraceInfoRow label={t('chat.message.trace.memory')} value={trace?.memory_count ?? fallback.memoryCount ?? 0} />
+              <TraceInfoRow label={t('chat.message.trace.skills')} value={trace?.skill_count ?? fallback.skillCount ?? 0} />
+              <TraceInfoRow label={t('chat.message.trace.tools')} value={trace?.tool_count ?? fallback.toolCount ?? 0} />
+            </div>
+            <div>
+              <Flexbox horizontal align="center" justify="space-between" style={{ marginBottom: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{t('chat.message.trace.providerCall')}</span>
+                <Tag
+                  bordered={false}
+                  color={(firstCall?.capability?.black_box ?? fallback.providerBlackBox) ? 'warning' : 'success'}
+                  style={{ margin: 0, fontSize: 11 }}
+                >
+                  {(firstCall?.capability?.black_box ?? fallback.providerBlackBox)
+                    ? t('chat.message.provider.cliBlackBox')
+                    : t('chat.message.provider.structured')}
+                </Tag>
+              </Flexbox>
+              <TraceInfoRow label={t('chat.message.trace.provider')} value={firstCall?.provider_id || fallback.providerId} />
+              <TraceInfoRow label={t('chat.message.trace.model')} value={firstCall?.model || fallback.model} />
+              <TraceInfoRow label={t('chat.message.trace.kind')} value={firstCall?.provider_kind || fallback.providerKind} />
+              <TraceInfoRow label={t('chat.message.trace.protocol')} value={firstCall?.protocol || fallback.providerProtocol} />
+              <TraceInfoRow label={t('chat.message.trace.latency')} value={firstCall ? `${firstCall.latency_ms} ms` : undefined} />
+              <TraceInfoRow label={t('chat.message.trace.streaming')} value={(firstCall?.capability?.stream ?? fallback.providerCapabilities?.stream) ? t('chat.message.trace.yes') : t('chat.message.trace.no')} />
+              <TraceInfoRow label={t('chat.message.trace.toolCall')} value={(firstCall?.capability?.tool_call ?? fallback.providerCapabilities?.toolCall) ? t('chat.message.trace.yes') : t('chat.message.trace.no')} />
+              <TraceInfoRow label={t('chat.message.trace.cancel')} value={(firstCall?.capability?.cancel ?? fallback.providerCapabilities?.cancel) ? t('chat.message.trace.yes') : t('chat.message.trace.no')} />
+              {firstCall?.error_message && (
+                <TraceInfoRow label={t('chat.message.trace.error')} value={`${firstCall.error_code || ''} ${firstCall.error_message}`} />
+              )}
+            </div>
+          </>
+        )}
+      </Flexbox>
+    </Drawer>
+  );
+}
+
 export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
   const isUser = message.role === 'user';
   const isTool = message.role === 'tool';
@@ -239,6 +339,9 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
   const [editContent, setEditContent] = useState('');
   const [collapsed, setCollapsed] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [traceOpen, setTraceOpen] = useState(false);
+  const [traceLoading, setTraceLoading] = useState(false);
+  const [traceDetail, setTraceDetail] = useState<AgentTurnTrace | null>(null);
   const editRef = useRef<any>(null);
 
   const { deleteMessage, editMessage, regenerateMessage, saveMessageToNotebook, availableModels } = useChatStore();
@@ -318,6 +421,20 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
     saveMessageToNotebook(message);
     toast.success(t('chat.message.toast.savedToNotebook'));
   }, [saveMessageToNotebook, message]);
+
+  const handleOpenTrace = useCallback(async () => {
+    if (!message.traceId && !message.providerKind) return;
+    setTraceOpen(true);
+    setTraceLoading(true);
+    try {
+      const traces = await listAgentTurnTraces();
+      setTraceDetail(traces.find((item) => item.id === message.traceId) || null);
+    } catch {
+      setTraceDetail(null);
+    } finally {
+      setTraceLoading(false);
+    }
+  }, [message.traceId, message.providerKind]);
 
   const assistantMoreMenu: MenuProps['items'] = [
     { key: 'edit', icon: <Edit size={14} />, label: t('chat.message.action.edit'), onClick: handleStartEdit },
@@ -453,6 +570,7 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
   // - User bubble: content-based width, max-width 100%, colorFillTertiary bg, no border
   // - Assistant bubble: width 100%, borderRadiusLG, padding 8px 12px
   return (
+    <>
     <Flexbox
       align={isUser ? 'flex-end' : 'flex-start'}
       gap={8}
@@ -693,6 +811,7 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
               <Tag
                 bordered={false}
                 color={message.providerBlackBox ? 'warning' : 'success'}
+                onClick={handleOpenTrace}
                 style={{
                   margin: 0,
                   display: 'flex',
@@ -701,6 +820,7 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
                   fontSize: 11,
                   lineHeight: '18px',
                   paddingInline: 6,
+                  cursor: 'pointer',
                 }}
                 title={t('chat.message.provider.traceTitle', {
                   trace: message.traceId || '-',
@@ -721,5 +841,13 @@ export function MessageBubble({ message, userAvatar, agentAvatar }: Props) {
         )}
       </Flexbox>
     </Flexbox>
+    <TraceDetailDrawer
+      open={traceOpen}
+      loading={traceLoading}
+      trace={traceDetail}
+      fallback={message}
+      onClose={() => setTraceOpen(false)}
+    />
+    </>
   );
 }
