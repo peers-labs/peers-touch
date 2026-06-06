@@ -1201,6 +1201,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             };
             to_json(app_agents::agents_duplicate("", input))
         }
+        "agents_reorder" => {
+            let input = match parse_args::<AgentsReorderInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_agents::agents_reorder("", input))
+        }
         "agents_search" => {
             let input = match parse_args::<AgentSearchInput>(args) {
                 Ok(v) => v,

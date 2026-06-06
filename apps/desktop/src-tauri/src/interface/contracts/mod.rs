@@ -537,6 +537,18 @@ pub struct AgentUpdateInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentOrderItemInput {
+    pub id: String,
+    pub pinned: bool,
+    pub sort_order: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentsReorderInput {
+    pub items: Vec<AgentOrderItemInput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentDuplicateInput {
     pub id: String,
     pub name: String,

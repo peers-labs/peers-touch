@@ -617,6 +617,7 @@ export interface Agent {
   toolsAllow: string;
   toolsDeny: string;
   pinned: boolean;
+  sortOrder: number;
   openingMessage: string;
   openingQuestions: string;
   chatConfig: string;
@@ -638,6 +639,7 @@ export interface AgentCreate {
   tags?: string;
   toolsProfile?: string;
   pinned?: boolean;
+  sortOrder?: number;
   openingMessage?: string;
   openingQuestions?: string;
   chatConfig?: string;
@@ -1914,6 +1916,16 @@ export interface AgentSearchInput {
   q: string;
 }
 
+export interface AgentOrderItem {
+  id: string;
+  pinned: boolean;
+  sort_order: number;
+}
+
+export interface AgentsReorderInput {
+  items: AgentOrderItem[];
+}
+
 export interface SearchPrimaryInput {
   provider: string;
 }
@@ -2391,6 +2403,12 @@ export const api = {
 
   duplicateAgent: (id: string, name: string) =>
     invokeRustDataFromStatus<AgentDuplicateInput, Agent>('agents_duplicate', { id, name }),
+
+  reorderAgents: (items: AgentOrderItem[]) =>
+    invokeRustDataFromStatus<AgentsReorderInput, { agents: Agent[] }>(
+      'agents_reorder',
+      { items },
+    ).then((r) => r.agents),
 
   searchAgents: (q: string) =>
     invokeRustDataFromStatus<AgentSearchInput, { agents: Agent[] }>('agents_search', { q }).then((r) => r.agents),

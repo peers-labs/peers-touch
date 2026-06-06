@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::contracts::{
     AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentSearchInput, AgentUpdateInput,
-    StubPayload,
+    AgentsReorderInput, StubPayload,
 };
 use crate::error::AppResult;
 
@@ -69,6 +69,16 @@ pub fn agents_duplicate(
 ) -> AppResult<StubPayload> {
     let actor_id = actor_id_for_cmd(&state, &window);
     application_agents::agents_duplicate(&actor_id, input)
+}
+
+#[tauri::command]
+pub fn agents_reorder(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    input: AgentsReorderInput,
+) -> AppResult<StubPayload> {
+    let actor_id = actor_id_for_cmd(&state, &window);
+    application_agents::agents_reorder(&actor_id, input)
 }
 
 #[tauri::command]

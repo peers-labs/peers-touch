@@ -178,6 +178,7 @@ fn main() {
             agents::agents_update,
             agents::agents_delete,
             agents::agents_duplicate,
+            agents::agents_reorder,
             agents::agents_search,
             agents::agents_list_sessions,
             tools::tools_list,

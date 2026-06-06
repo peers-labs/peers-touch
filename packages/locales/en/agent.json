@@ -56,6 +56,11 @@
   "agent.sidebar.searchAgents": "Search agents...",
   "agent.sidebar.noMatchingAgents": "No matching agents",
   "agent.sidebar.noAgentsYet": "No agents yet",
+  "agent.sidebar.pinnedAgents": "Pinned",
+  "agent.sidebar.agents": "Agents",
+  "agent.sidebar.pin": "Pin to top",
+  "agent.sidebar.unpin": "Unpin",
+  "agent.sidebar.dragToReorder": "Drag to reorder",
 
   "agent.sidebar.menu.favorite": "Favorite",
   "agent.sidebar.menu.smartRename": "Smart Rename",

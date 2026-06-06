@@ -1,6 +1,6 @@
 use crate::contracts::{
     AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentSearchInput, AgentUpdateInput,
-    StubPayload,
+    AgentsReorderInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use serde_json::{json, Value};
@@ -31,7 +31,10 @@ impl AgentStore {
                     "title":"i18n:agent.default.title",
                     "description":"",
                     "avatar":"🤖",
-                    "scope":"general"
+                    "scope":"general",
+                    "pinned": true,
+                    "sortOrder": 0,
+                    "isDefault": true
                 }),
             }],
         }
@@ -85,12 +88,54 @@ fn store_lock_error(e: impl std::fmt::Display) -> AppResult<StubPayload> {
     )
 }
 
+fn normalized_agent_data(record: &AgentRecord, index: usize) -> Value {
+    let mut data = record.data.clone();
+    if let Some(obj) = data.as_object_mut() {
+        obj.entry("id").or_insert_with(|| json!(record.id.clone()));
+        obj.entry("pinned").or_insert_with(|| json!(false));
+        obj.entry("sortOrder")
+            .or_insert_with(|| json!(index as i64));
+    }
+    data
+}
+
+fn sort_agents(records: &mut [AgentRecord]) {
+    records.sort_by(|a, b| {
+        let a_pinned = a
+            .data
+            .get("pinned")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let b_pinned = b
+            .data
+            .get("pinned")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let a_order = a
+            .data
+            .get("sortOrder")
+            .and_then(Value::as_i64)
+            .unwrap_or(i64::MAX);
+        let b_order = b
+            .data
+            .get("sortOrder")
+            .and_then(Value::as_i64)
+            .unwrap_or(i64::MAX);
+        b_pinned
+            .cmp(&a_pinned)
+            .then_with(|| a_order.cmp(&b_order))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+}
+
 pub fn agents_list(actor_id: &str) -> AppResult<StubPayload> {
     with_agent_app_result(actor_id, |store| {
+        sort_agents(&mut store.agents);
         let agents = store
             .agents
             .iter()
-            .map(|item| item.data.clone())
+            .enumerate()
+            .map(|(index, item)| normalized_agent_data(item, index))
             .collect::<Vec<_>>();
         tracing::info!(
             command = "agents_list",
@@ -120,6 +165,10 @@ pub fn agents_create(actor_id: &str, input: AgentCreateInput) -> AppResult<StubP
         let mut data = input.data;
         if let Some(obj) = data.as_object_mut() {
             obj.insert("id".to_string(), json!(id.clone()));
+            obj.entry("pinned".to_string())
+                .or_insert_with(|| json!(false));
+            obj.entry("sortOrder".to_string())
+                .or_insert_with(|| json!(store.agents.len() as i64));
         }
         store.agents.push(AgentRecord {
             id,
@@ -136,9 +185,17 @@ pub fn agents_update(actor_id: &str, input: AgentUpdateInput) -> AppResult<StubP
     }
     with_agent_app_result(actor_id, |store| {
         if let Some(agent) = store.agents.iter_mut().find(|item| item.id == input.id) {
-            let mut data = input.data;
-            if let Some(obj) = data.as_object_mut() {
-                obj.insert("id".to_string(), json!(input.id));
+            let mut data = agent.data.clone();
+            if let (Some(base), Some(update)) = (data.as_object_mut(), input.data.as_object()) {
+                for (key, value) in update {
+                    base.insert(key.clone(), value.clone());
+                }
+                base.insert("id".to_string(), json!(input.id));
+            } else {
+                data = input.data;
+                if let Some(obj) = data.as_object_mut() {
+                    obj.insert("id".to_string(), json!(input.id));
+                }
             }
             agent.data = data.clone();
             return success_payload("agents_update", data);
@@ -162,6 +219,39 @@ pub fn agents_delete(actor_id: &str, input: AgentIdInput) -> AppResult<StubPaylo
     })
 }
 
+pub fn agents_reorder(actor_id: &str, input: AgentsReorderInput) -> AppResult<StubPayload> {
+    if input.items.is_empty() {
+        return invalid_argument("items is required");
+    }
+    with_agent_app_result(actor_id, |store| {
+        for item in &input.items {
+            if item.id.trim().is_empty() {
+                return invalid_argument("item id is required");
+            }
+            if !store.agents.iter().any(|agent| agent.id == item.id) {
+                return AppResult::fail(ErrorCode::NotFound, "Agent not found", None);
+            }
+        }
+
+        for item in input.items {
+            if let Some(agent) = store.agents.iter_mut().find(|agent| agent.id == item.id) {
+                if let Some(obj) = agent.data.as_object_mut() {
+                    obj.insert("pinned".to_string(), json!(item.pinned));
+                    obj.insert("sortOrder".to_string(), json!(item.sort_order));
+                }
+            }
+        }
+        sort_agents(&mut store.agents);
+        let agents = store
+            .agents
+            .iter()
+            .enumerate()
+            .map(|(index, item)| normalized_agent_data(item, index))
+            .collect::<Vec<_>>();
+        success_payload("agents_reorder", json!({ "agents": agents }))
+    })
+}
+
 pub fn agents_duplicate(actor_id: &str, input: AgentDuplicateInput) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() || input.name.trim().is_empty() {
         return invalid_argument("id and name are required");
@@ -173,6 +263,8 @@ pub fn agents_duplicate(actor_id: &str, input: AgentDuplicateInput) -> AppResult
             if let Some(obj) = data.as_object_mut() {
                 obj.insert("id".to_string(), json!(id.clone()));
                 obj.insert("name".to_string(), json!(input.name));
+                obj.insert("pinned".to_string(), json!(false));
+                obj.insert("sortOrder".to_string(), json!(store.agents.len() as i64));
             }
             store.agents.push(AgentRecord {
                 id,
@@ -190,18 +282,21 @@ pub fn agents_search(actor_id: &str, input: AgentSearchInput) -> AppResult<StubP
     }
     with_agent_app_result(actor_id, |store| {
         let q = input.q.to_lowercase();
+        sort_agents(&mut store.agents);
         let agents = store
             .agents
             .iter()
+            .enumerate()
             .filter(|item| {
-                item.data
+                item.1
+                    .data
                     .get("name")
                     .and_then(Value::as_str)
                     .unwrap_or("")
                     .to_lowercase()
                     .contains(&q)
             })
-            .map(|item| item.data.clone())
+            .map(|(index, item)| normalized_agent_data(item, index))
             .collect::<Vec<_>>();
         success_payload("agents_search", json!({ "agents": agents }))
     })

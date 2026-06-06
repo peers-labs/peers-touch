@@ -56,6 +56,11 @@
   "agent.sidebar.searchAgents": "搜索智能体……",
   "agent.sidebar.noMatchingAgents": "没有匹配的智能体",
   "agent.sidebar.noAgentsYet": "暂无智能体",
+  "agent.sidebar.pinnedAgents": "置顶",
+  "agent.sidebar.agents": "智能体",
+  "agent.sidebar.pin": "置顶",
+  "agent.sidebar.unpin": "取消置顶",
+  "agent.sidebar.dragToReorder": "拖动排序",
 
   "agent.sidebar.menu.favorite": "收藏",
   "agent.sidebar.menu.smartRename": "智能重命名",

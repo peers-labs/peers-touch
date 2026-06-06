@@ -11,6 +11,7 @@ import {
   type UploadResult,
   type AvailableModel,
   type Agent,
+  type AgentOrderItem,
   type AgentChatConfig,
   type AgentParams,
   type AppletInfo,
@@ -107,6 +108,7 @@ interface ChatState {
   setSelectedAgent: (agent: string) => void;
   loadModels: () => Promise<void>;
   loadAgents: () => Promise<void>;
+  reorderAgents: (items: AgentOrderItem[]) => Promise<void>;
   loadApplets: () => Promise<void>;
   toggleApplet: (id: string) => void;
 
@@ -136,6 +138,21 @@ interface ChatState {
 let messageCounter = 0;
 function tempId() {
   return `temp-${Date.now()}-${messageCounter++}`;
+}
+
+function normalizeAgents(agents: Agent[]): Agent[] {
+  return agents
+    .map((a, index) => ({
+      ...a,
+      pinned: Boolean(a.pinned),
+      sortOrder: Number.isFinite(a.sortOrder) ? a.sortOrder : index,
+      title: resolveI18nValue(a.title),
+      description: resolveI18nValue(a.description),
+    }))
+    .sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      return (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name);
+    });
 }
 
 // ── Stream event reducer ────────────────────────────────────────────
@@ -480,11 +497,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadAgents: async () => {
     try {
       const raw = await api.listAgents();
-      const agents = raw.map((a) => ({
-        ...a,
-        title: resolveI18nValue(a.title),
-        description: resolveI18nValue(a.description),
-      }));
+      const agents = normalizeAgents(raw);
       log.info('chat', 'Agents loaded', { count: agents.length });
       set({ agents });
       const current = agents.find((a) => a.name === get().selectedAgent);
@@ -493,6 +506,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     } catch {
       // keep empty
+    }
+  },
+
+  reorderAgents: async (items: AgentOrderItem[]) => {
+    if (items.length === 0) return;
+    const previous = get().agents;
+    const preferenceById = new Map(items.map((item) => [item.id, item]));
+    const optimistic = normalizeAgents(
+      previous.map((agent) => {
+        const preference = preferenceById.get(agent.id);
+        if (!preference) return agent;
+        return {
+          ...agent,
+          pinned: preference.pinned,
+          sortOrder: preference.sort_order,
+        };
+      }),
+    );
+    set({ agents: optimistic });
+    try {
+      const next = await api.reorderAgents(items);
+      set({ agents: normalizeAgents(next) });
+    } catch (e) {
+      log.error('chat', 'Failed to reorder agents', e);
+      set({ agents: previous });
+      get().loadAgents().catch(() => {});
     }
   },
 
@@ -551,7 +590,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const updated = await api.updateAgent(agent.id, payload);
       set((s) => ({
-        agents: s.agents.map((a) => (a.id === updated.id ? updated : a)),
+        agents: normalizeAgents(s.agents.map((a) => (a.id === updated.id ? updated : a))),
       }));
     } catch (e) {
       log.error('chat', 'Failed to update agent config', e);

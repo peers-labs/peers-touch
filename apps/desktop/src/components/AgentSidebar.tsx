@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import type { ReactNode } from 'react';
+import type { CSSProperties, DragEvent, ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { ActionIcon, SearchBar } from '@lobehub/ui';
 import {
@@ -8,23 +8,23 @@ import {
   User,
   Search,
   Hash,
-  ChevronsUpDown,
   ChevronRight,
   Trash2,
-  ArrowLeft,
   Pin,
+  PinOff,
   MoreHorizontal,
   Star,
   Sparkles,
   Pencil,
   Copy,
+  GripVertical,
 } from 'lucide-react';
 import { theme, Modal, Popover } from 'antd';
 import { Dropdown, Input, toast } from '@lobehub/ui';
 import type { MenuProps } from '@lobehub/ui';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '../store/chat';
-import type { Agent, Session } from '../services/desktop_api';
+import type { Agent, AgentOrderItem, Session } from '../services/desktop_api';
 import { api } from '../services/desktop_api';
 
 interface AgentSidebarProps {
@@ -89,11 +89,20 @@ function groupTopicsByDate(sessions: Session[], t: (key: string) => string): { k
   }));
 }
 
+function toOrderItems(nextAgents: Agent[]): AgentOrderItem[] {
+  return nextAgents.map((agent, index) => ({
+    id: agent.id,
+    pinned: Boolean(agent.pinned),
+    sort_order: index,
+  }));
+}
+
 export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, onNavigateChat, onAgentChanged }: AgentSidebarProps) {
   const { t } = useTranslation('agent');
   const {
     agents,
     loadAgents,
+    reorderAgents,
     selectedAgent,
     setSelectedAgent,
     currentSessionKey,
@@ -103,17 +112,31 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     mergeSessions,
   } = useChatStore();
 
-  const [showAgentPicker, setShowAgentPicker] = useState(false);
   const [agentSessions, setAgentSessions] = useState<Session[]>([]);
-  const [searchText, setSearchText] = useState('');
+  const [agentSearch, setAgentSearch] = useState('');
   const [topicSearch, setTopicSearch] = useState('');
   const [showSearch, setShowSearch] = useState(false);
+  const [draggingAgentId, setDraggingAgentId] = useState<string | null>(null);
   const { token } = theme.useToken();
 
   const currentAgent = useMemo(
     () => agents.find((a) => a.name === selectedAgent),
     [agents, selectedAgent],
   );
+
+  const filteredAgents = useMemo(() => {
+    const q = agentSearch.trim().toLowerCase();
+    if (!q) return agents;
+    return agents.filter(
+      (a) =>
+        (a.title || '').toLowerCase().includes(q) ||
+        (a.name || '').toLowerCase().includes(q) ||
+        (a.description || '').toLowerCase().includes(q),
+    );
+  }, [agents, agentSearch]);
+
+  const pinnedAgents = useMemo(() => filteredAgents.filter((agent) => agent.pinned), [filteredAgents]);
+  const normalAgents = useMemo(() => filteredAgents.filter((agent) => !agent.pinned), [filteredAgents]);
 
   useEffect(() => {
     loadAgents();
@@ -137,10 +160,9 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     loadAgentTopics();
   }, [loadAgentTopics]);
 
-  const handleSwitchAgent = useCallback(
+  const handleSelectAgent = useCallback(
     (agent: Agent) => {
       setSelectedAgent(agent.name);
-      setShowAgentPicker(false);
       onAgentChanged?.(agent.name);
 
       api
@@ -164,6 +186,51 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     [setSelectedAgent, selectSession, mergeSessions, onAgentChanged],
   );
 
+  const persistAgentOrder = useCallback(
+    (nextAgents: Agent[]) => reorderAgents(toOrderItems(nextAgents)),
+    [reorderAgents],
+  );
+
+  const handleTogglePin = useCallback(
+    (agent: Agent) => {
+      const rest = agents.filter((item) => item.id !== agent.id);
+      const pinned = rest.filter((item) => item.pinned);
+      const normal = rest.filter((item) => !item.pinned);
+      const moved = { ...agent, pinned: !agent.pinned };
+      const next = moved.pinned
+        ? [moved, ...pinned, ...normal]
+        : [...pinned, moved, ...normal];
+      persistAgentOrder(next);
+    },
+    [agents, persistAgentOrder],
+  );
+
+  const handleDropAgent = useCallback(
+    (targetPinned: boolean, targetId?: string) => {
+      if (!draggingAgentId) return;
+      const dragged = agents.find((agent) => agent.id === draggingAgentId);
+      if (!dragged) return;
+
+      const rest = agents.filter((agent) => agent.id !== draggingAgentId);
+      const pinned = rest.filter((agent) => agent.pinned);
+      const normal = rest.filter((agent) => !agent.pinned);
+      const section = targetPinned ? pinned : normal;
+      const moved = { ...dragged, pinned: targetPinned };
+
+      const targetIndex = targetId ? section.findIndex((agent) => agent.id === targetId) : -1;
+      if (targetIndex >= 0) {
+        section.splice(targetIndex, 0, moved);
+      } else {
+        section.push(moved);
+      }
+
+      const next = targetPinned ? [...section, ...normal] : [...pinned, ...section];
+      persistAgentOrder(next);
+      setDraggingAgentId(null);
+    },
+    [agents, draggingAgentId, persistAgentOrder],
+  );
+
   const handleNewTopic = useCallback(() => {
     const agentName = selectedAgent || 'assistant';
     const key = `agent:${agentName}:${Date.now()}`;
@@ -180,7 +247,7 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     setAgentSessions((prev) => [placeholder, ...prev]);
     selectSession(key);
     onNavigateChat?.();
-  }, [selectedAgent, selectSession, onNavigateChat]);
+  }, [selectedAgent, selectSession, onNavigateChat, t]);
 
   const handleDeleteTopic = useCallback(
     async (sessionKey: string) => {
@@ -192,7 +259,6 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
 
   const handleSelectTopic = useCallback(
     (key: string) => {
-      // Prefer store session (has model_override from mergeSessionModel) over agentSessions
       const session =
         storeSessions.find((s) => s.key === key) ?? agentSessions.find((s) => s.key === key);
       selectSession(key, session);
@@ -214,83 +280,83 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
 
   const totalTopics = agentSessions.length;
 
-  if (showAgentPicker) {
-    return (
-      <AgentPicker
-        agents={agents}
-        selectedAgent={selectedAgent}
-        searchText={searchText}
-        onSearchChange={setSearchText}
-        onSelect={handleSwitchAgent}
-        onBack={() => setShowAgentPicker(false)}
-        onCreate={onCreateAgent}
-        token={token}
-        t={t}
-      />
-    );
-  }
-
   return (
     <Flexbox height="100%" style={{ background: token.colorBgLayout }}>
-      {/* Agent Header */}
-      <Flexbox
-        style={{
-          padding: '12px 12px 0',
-          flexShrink: 0,
-        }}
-      >
-        <Flexbox
-          horizontal
-          align="center"
-          gap={8}
-          onClick={() => setShowAgentPicker(true)}
-          style={{
-            padding: '8px 10px',
-            borderRadius: 8,
-            cursor: 'pointer',
-            transition: 'background 0.2s',
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLDivElement).style.background = token.colorFillTertiary;
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLDivElement).style.background = 'transparent';
-          }}
-        >
-          <div
-            style={{
-              width: 28,
-              height: 28,
-              borderRadius: 8,
-              background: 'linear-gradient(135deg, #667eea, #764ba2)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 16,
-              flexShrink: 0,
-            }}
-          >
-            {currentAgent?.avatar || '🤖'}
+      <Flexbox style={{ padding: '12px 12px 8px', flexShrink: 0 }} gap={8}>
+        <Flexbox horizontal align="center" gap={8}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <SearchBar
+              placeholder={t('agent.sidebar.searchAgents')}
+              value={agentSearch}
+              onChange={(e) => setAgentSearch(e.target.value)}
+              allowClear
+              size="small"
+            />
           </div>
-          <span
-            style={{
-              flex: 1,
-              fontSize: 14,
-              fontWeight: 600,
-              color: token.colorText,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {currentAgent?.title || currentAgent?.name || selectedAgent || t('agent.sidebar.defaultAgent')}
-          </span>
-          <ChevronsUpDown size={14} style={{ color: token.colorTextTertiary, flexShrink: 0 }} />
+          <ActionIcon
+            icon={Plus}
+            size="small"
+            onClick={onCreateAgent}
+            title={t('agent.sidebar.createAgent')}
+            style={{ background: token.colorPrimary, color: '#fff', borderRadius: 6, flexShrink: 0 }}
+          />
         </Flexbox>
       </Flexbox>
 
-      {/* Nav Actions */}
-      <Flexbox style={{ padding: '4px 12px 8px', flexShrink: 0 }} gap={1}>
+      <Flexbox
+        style={{
+          padding: '0 8px 8px',
+          flexShrink: 0,
+          maxHeight: '44%',
+          overflow: 'auto',
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
+        }}
+      >
+        {filteredAgents.length === 0 ? (
+          <Flexbox
+            align="center"
+            justify="center"
+            style={{ color: token.colorTextQuaternary, padding: 24, fontSize: 13 }}
+          >
+            {agentSearch ? t('agent.sidebar.noMatchingAgents') : t('agent.sidebar.noAgentsYet')}
+          </Flexbox>
+        ) : (
+          <>
+            <AgentListSection
+              title={t('agent.sidebar.pinnedAgents')}
+              agents={pinnedAgents}
+              pinned
+              selectedAgent={selectedAgent}
+              draggingAgentId={draggingAgentId}
+              onSelect={handleSelectAgent}
+              onTogglePin={handleTogglePin}
+              onEdit={onEditAgent}
+              onDragStart={setDraggingAgentId}
+              onDropAgent={handleDropAgent}
+              onDragEnd={() => setDraggingAgentId(null)}
+              token={token}
+              t={t}
+            />
+            <AgentListSection
+              title={t('agent.sidebar.agents')}
+              agents={normalAgents}
+              pinned={false}
+              selectedAgent={selectedAgent}
+              draggingAgentId={draggingAgentId}
+              onSelect={handleSelectAgent}
+              onTogglePin={handleTogglePin}
+              onEdit={onEditAgent}
+              onDragStart={setDraggingAgentId}
+              onDropAgent={handleDropAgent}
+              onDragEnd={() => setDraggingAgentId(null)}
+              token={token}
+              t={t}
+            />
+          </>
+        )}
+      </Flexbox>
+
+      <Flexbox style={{ padding: '8px 12px', flexShrink: 0 }} gap={1}>
         <NavItem
           icon={<MessageSquarePlus size={16} />}
           label={t('agent.sidebar.startNewTopic')}
@@ -324,9 +390,7 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
         </div>
       )}
 
-      {/* Topic Section */}
       <Flexbox flex={1} style={{ overflow: 'auto', padding: '0 8px' }}>
-        {/* Section header */}
         <Flexbox
           horizontal
           align="center"
@@ -340,9 +404,9 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
 
         {totalTopics === 0 ? (
           <NavItem
-              icon={<MessageSquarePlus size={16} />}
-              label={t('agent.sidebar.startNewTopic')}
-              onClick={handleNewTopic}
+            icon={<MessageSquarePlus size={16} />}
+            label={t('agent.sidebar.startNewTopic')}
+            onClick={handleNewTopic}
             token={token}
             style={{ margin: '0 4px' }}
           />
@@ -366,6 +430,232 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
   );
 }
 
+function AgentListSection({
+  title,
+  agents,
+  pinned,
+  selectedAgent,
+  draggingAgentId,
+  onSelect,
+  onTogglePin,
+  onEdit,
+  onDragStart,
+  onDropAgent,
+  onDragEnd,
+  token,
+  t,
+}: {
+  title: string;
+  agents: Agent[];
+  pinned: boolean;
+  selectedAgent: string;
+  draggingAgentId: string | null;
+  onSelect: (agent: Agent) => void;
+  onTogglePin: (agent: Agent) => void;
+  onEdit: (agent: Agent) => void;
+  onDragStart: (id: string) => void;
+  onDropAgent: (targetPinned: boolean, targetId?: string) => void;
+  onDragEnd: () => void;
+  token: any;
+  t: (key: string, options?: Record<string, any>) => string;
+}) {
+  const isDropping = draggingAgentId && agents.every((agent) => agent.id !== draggingAgentId);
+
+  return (
+    <div
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={() => onDropAgent(pinned)}
+      style={{
+        paddingBottom: agents.length > 0 ? 6 : 2,
+        minHeight: pinned ? 28 : 42,
+      }}
+    >
+      {(agents.length > 0 || pinned) && (
+        <Flexbox horizontal align="center" style={{ padding: '4px 8px 3px' }}>
+          <span style={{ fontSize: 12, color: token.colorTextSecondary, fontWeight: 600 }}>
+            {title}
+          </span>
+        </Flexbox>
+      )}
+      {agents.map((agent) => (
+        <AgentNavItem
+          key={agent.id}
+          agent={agent}
+          selected={selectedAgent === agent.name}
+          dragging={draggingAgentId === agent.id}
+          onSelect={() => onSelect(agent)}
+          onTogglePin={() => onTogglePin(agent)}
+          onEdit={() => onEdit(agent)}
+          onDragStart={() => onDragStart(agent.id)}
+          onDragEnd={onDragEnd}
+          onDrop={(e) => {
+            e.stopPropagation();
+            onDropAgent(pinned, agent.id);
+          }}
+          token={token}
+          t={t}
+        />
+      ))}
+      {agents.length === 0 && isDropping && (
+        <div
+          style={{
+            margin: '0 8px 4px',
+            height: 30,
+            borderRadius: 6,
+            border: `1px dashed ${token.colorBorder}`,
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AgentNavItem({
+  agent,
+  selected,
+  dragging,
+  onSelect,
+  onTogglePin,
+  onEdit,
+  onDragStart,
+  onDragEnd,
+  onDrop,
+  token,
+  t,
+}: {
+  agent: Agent;
+  selected: boolean;
+  dragging: boolean;
+  onSelect: () => void;
+  onTogglePin: () => void;
+  onEdit: () => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onDrop: (e: DragEvent<HTMLDivElement>) => void;
+  token: any;
+  t: (key: string, options?: Record<string, any>) => string;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const menuItems: MenuProps['items'] = [
+    {
+      key: 'pin',
+      icon: agent.pinned ? <PinOff size={14} /> : <Pin size={14} />,
+      label: agent.pinned ? t('agent.sidebar.unpin') : t('agent.sidebar.pin'),
+      onClick: onTogglePin,
+    },
+    {
+      key: 'profile',
+      icon: <User size={14} />,
+      label: t('agent.sidebar.agentProfile'),
+      onClick: onEdit,
+    },
+  ];
+
+  return (
+    <Dropdown menu={{ items: menuItems }} trigger={['contextMenu']}>
+      <Flexbox
+        horizontal
+        align="center"
+        gap={8}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', agent.id);
+          onDragStart();
+        }}
+        onDragEnd={onDragEnd}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={onDrop}
+        onClick={onSelect}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          padding: '7px 8px',
+          borderRadius: 6,
+          cursor: 'pointer',
+          background: selected ? token.colorPrimaryBg : hovered ? token.colorFillTertiary : 'transparent',
+          opacity: dragging ? 0.45 : 1,
+          transition: 'background 0.15s, opacity 0.15s',
+          marginBottom: 2,
+        }}
+      >
+        <GripVertical
+          size={13}
+          style={{ color: hovered ? token.colorTextQuaternary : 'transparent', flexShrink: 0 }}
+          aria-label={t('agent.sidebar.dragToReorder')}
+        />
+        <div
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 8,
+            background: selected ? token.colorPrimaryBgHover : token.colorFillSecondary,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 15,
+            flexShrink: 0,
+          }}
+        >
+          {agent.avatar || '🤖'}
+        </div>
+        <Flexbox flex={1} style={{ minWidth: 0 }}>
+          <Flexbox horizontal align="center" gap={4} style={{ minWidth: 0 }}>
+            <span
+              style={{
+                fontSize: 13,
+                fontWeight: selected ? 600 : 500,
+                color: selected ? token.colorPrimary : token.colorText,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {agent.title || agent.name}
+            </span>
+            {agent.pinned && (
+              <Pin size={10} style={{ color: token.colorTextQuaternary, flexShrink: 0 }} />
+            )}
+          </Flexbox>
+          <span
+            style={{
+              fontSize: 11,
+              color: token.colorTextDescription,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {agent.description || agent.name}
+          </span>
+        </Flexbox>
+        {(hovered || selected) && (
+          <Dropdown menu={{ items: menuItems }} trigger={['click']} placement="bottomRight">
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 22,
+                height: 22,
+                borderRadius: 4,
+                flexShrink: 0,
+                cursor: 'pointer',
+                color: token.colorTextTertiary,
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = token.colorFillSecondary; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            >
+              <MoreHorizontal size={14} />
+            </div>
+          </Dropdown>
+        )}
+      </Flexbox>
+    </Dropdown>
+  );
+}
+
 function NavItem({
   icon,
   label,
@@ -379,7 +669,7 @@ function NavItem({
   onClick?: () => void;
   active?: boolean;
   token: any;
-  style?: React.CSSProperties;
+  style?: CSSProperties;
 }) {
   const [hovered, setHovered] = useState(false);
 
@@ -476,12 +766,6 @@ function TopicGroup({
   );
 }
 
-// TopicItem — LobeChat-style topic with context menu
-// - Right-click: context menu
-// - Hover: "..." dropdown button
-// - Rename: inline Input replacing the title text (not a Popover)
-// - Delete: Modal.confirm()
-// - Smart Rename: calls backend LLM to generate title
 function TopicItem({
   topic,
   isActive,
@@ -530,7 +814,7 @@ function TopicItem({
     } catch (e: any) {
       toast.error(e.message || t('agent.sidebar.toast.renameFailed'));
     }
-  }, [renameTitle, topic.title, topic.key, onReload]);
+  }, [renameTitle, topic.title, topic.key, onReload, t]);
 
   const handleSmartRename = useCallback(async () => {
     try {
@@ -541,7 +825,7 @@ function TopicItem({
     } catch (e: any) {
       toast.error(e.message || t('agent.sidebar.toast.smartRenameFailed'));
     }
-  }, [topic.key, onReload]);
+  }, [topic.key, onReload, t]);
 
   const handleDuplicate = useCallback(async () => {
     try {
@@ -551,7 +835,7 @@ function TopicItem({
     } catch (e: any) {
       toast.error(e.message || t('agent.sidebar.toast.duplicateFailed'));
     }
-  }, [topic.key, onReload]);
+  }, [topic.key, onReload, t]);
 
   const handleDeleteConfirm = useCallback(() => {
     Modal.confirm({
@@ -562,7 +846,7 @@ function TopicItem({
       centered: true,
       onOk: () => onDelete(),
     });
-  }, [onDelete]);
+  }, [onDelete, t]);
 
   const menuItems: MenuProps['items'] = [
     { key: 'favorite', icon: <Star size={14} />, label: t('agent.sidebar.menu.favorite'), disabled: true },
@@ -599,7 +883,6 @@ function TopicItem({
           }}
         />
 
-        {/* Title + Popover rename (appears below the title, not covering it) */}
         <Popover
           open={renaming}
           placement="bottomLeft"
@@ -640,9 +923,15 @@ function TopicItem({
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                width: 20, height: 20, borderRadius: 4, flexShrink: 0,
-                cursor: 'pointer', color: token.colorTextTertiary,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 20,
+                height: 20,
+                borderRadius: 4,
+                flexShrink: 0,
+                cursor: 'pointer',
+                color: token.colorTextTertiary,
               }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = token.colorFillSecondary; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
@@ -653,188 +942,5 @@ function TopicItem({
         )}
       </Flexbox>
     </Dropdown>
-  );
-}
-
-function AgentPicker({
-  agents,
-  selectedAgent,
-  searchText,
-  onSearchChange,
-  onSelect,
-  onBack,
-  onCreate,
-  token,
-  t,
-}: {
-  agents: Agent[];
-  selectedAgent: string;
-  searchText: string;
-  onSearchChange: (v: string) => void;
-  onSelect: (a: Agent) => void;
-  onBack: () => void;
-  onCreate: () => void;
-  token: any;
-  t: (key: string) => string;
-}) {
-  const filtered = searchText
-    ? agents.filter(
-        (a) =>
-          (a.title || '').toLowerCase().includes(searchText.toLowerCase()) ||
-          (a.name || '').toLowerCase().includes(searchText.toLowerCase()) ||
-          (a.description || '').toLowerCase().includes(searchText.toLowerCase()),
-      )
-    : agents;
-
-  const pinnedAgents = filtered.filter((a) => a.pinned);
-  const unpinnedAgents = filtered.filter((a) => !a.pinned);
-
-  return (
-    <Flexbox height="100%" style={{ background: token.colorBgLayout }}>
-      {/* Header with back button */}
-      <Flexbox horizontal align="center" gap={8} style={{ padding: '12px 12px 4px' }}>
-        <ActionIcon
-          icon={ArrowLeft}
-          size="small"
-          onClick={onBack}
-          title={t('agent.sidebar.back')}
-        />
-        <span style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>{t('agent.sidebar.switchAgent')}</span>
-        <ActionIcon
-          icon={Plus}
-          size="small"
-          onClick={onCreate}
-          title={t('agent.sidebar.createAgent')}
-          style={{ background: token.colorPrimary, color: '#fff', borderRadius: 6 }}
-        />
-      </Flexbox>
-
-      <div style={{ padding: '8px 12px' }}>
-        <SearchBar
-          placeholder={t('agent.sidebar.searchAgents')}
-          value={searchText}
-          onChange={(e) => onSearchChange(e.target.value)}
-          allowClear
-        />
-      </div>
-
-      <Flexbox flex={1} style={{ overflow: 'auto', padding: '0 8px 8px' }}>
-        {filtered.length === 0 && (
-          <Flexbox
-            align="center"
-            justify="center"
-            flex={1}
-            style={{ color: token.colorTextQuaternary, padding: 40, fontSize: 13 }}
-          >
-            {searchText ? t('agent.sidebar.noMatchingAgents') : t('agent.sidebar.noAgentsYet')}
-          </Flexbox>
-        )}
-
-        {pinnedAgents.map((agent) => (
-          <AgentPickerItem
-            key={agent.id}
-            agent={agent}
-            isSelected={selectedAgent === agent.name}
-            onSelect={() => onSelect(agent)}
-            token={token}
-          />
-        ))}
-
-        {pinnedAgents.length > 0 && unpinnedAgents.length > 0 && (
-          <div style={{ height: 1, background: token.colorBorderSecondary, margin: '4px 12px' }} />
-        )}
-
-        {unpinnedAgents.map((agent) => (
-          <AgentPickerItem
-            key={agent.id}
-            agent={agent}
-            isSelected={selectedAgent === agent.name}
-            onSelect={() => onSelect(agent)}
-            token={token}
-          />
-        ))}
-      </Flexbox>
-    </Flexbox>
-  );
-}
-
-function AgentPickerItem({
-  agent,
-  isSelected,
-  onSelect,
-  token,
-}: {
-  agent: Agent;
-  isSelected: boolean;
-  onSelect: () => void;
-  token: any;
-}) {
-  const [hovered, setHovered] = useState(false);
-
-  return (
-    <Flexbox
-      horizontal
-      align="center"
-      gap={10}
-      onClick={onSelect}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        padding: '8px 12px',
-        borderRadius: 8,
-        cursor: 'pointer',
-        background: isSelected ? token.colorPrimaryBg : hovered ? token.colorFillTertiary : 'transparent',
-        transition: 'background 0.15s',
-        marginBottom: 2,
-      }}
-    >
-      <div
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: 8,
-          background: isSelected
-            ? 'linear-gradient(135deg, #667eea, #764ba2)'
-            : token.colorFillSecondary,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 16,
-          flexShrink: 0,
-        }}
-      >
-        {agent.avatar || '🤖'}
-      </div>
-      <Flexbox flex={1} style={{ minWidth: 0 }}>
-        <Flexbox horizontal align="center" gap={4}>
-          <span
-            style={{
-              fontSize: 13,
-              fontWeight: isSelected ? 600 : 400,
-              color: token.colorText,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {agent.title || agent.name}
-          </span>
-          {agent.pinned && (
-            <Pin size={10} style={{ color: token.colorTextQuaternary, flexShrink: 0 }} />
-          )}
-        </Flexbox>
-        <span
-          style={{
-            fontSize: 11,
-            color: token.colorTextDescription,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {agent.description}
-        </span>
-      </Flexbox>
-    </Flexbox>
   );
 }
