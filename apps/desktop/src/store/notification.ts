@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api, type NotificationData, type NotificationUnreadCountsResponse } from '../services/desktop_api';
+import { api, isUnauthorizedError, type NotificationData, type NotificationUnreadCountsResponse } from '../services/desktop_api';
 import { currentAuthenticatedActorId } from './session';
 import { log } from '../utils/logger';
 
@@ -50,6 +50,10 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
         loading: false,
       });
     } catch (err) {
+      if (isUnauthorizedError(err)) {
+        set({ loading: false });
+        return;
+      }
       log.error('notification', 'Failed to load notifications', err);
       set({ loading: false });
     }
@@ -70,6 +74,10 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
         loading: false,
       }));
     } catch (err) {
+      if (isUnauthorizedError(err)) {
+        set({ loading: false });
+        return;
+      }
       log.error('notification', 'Failed to load more notifications', err);
       set({ loading: false });
     }
@@ -86,7 +94,8 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
         unreadTotal: resp.total || 0,
         unreadByCategory: resp.byCategory || {},
       });
-    } catch {
+    } catch (err) {
+      if (isUnauthorizedError(err)) return;
       // Silently ignore — will retry on next poll
     }
   },
@@ -102,6 +111,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
         unreadTotal: Math.max(0, prev.unreadTotal - ids.length),
       }));
     } catch (err) {
+      if (isUnauthorizedError(err)) return;
       log.error('notification', 'Failed to mark notifications read', err);
     }
   },
@@ -121,6 +131,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
           : {},
       }));
     } catch (err) {
+      if (isUnauthorizedError(err)) return;
       log.error('notification', 'Failed to mark all notifications read', err);
     }
   },
@@ -134,6 +145,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       }));
       get().refreshUnreadCounts();
     } catch (err) {
+      if (isUnauthorizedError(err)) return;
       log.error('notification', 'Failed to delete notifications', err);
     }
   },
