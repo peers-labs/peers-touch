@@ -83,6 +83,9 @@
   "settings.tools.columnName": "名称",
   "settings.tools.columnCategory": "分类",
   "settings.tools.columnApproval": "授权",
+  "settings.tools.columnPolicy": "策略",
+  "settings.tools.columnAudit": "审计事件",
+  "settings.tools.replayable": "可回放",
   "settings.tools.approvalRequired": "需授权",
   "settings.tools.approvalAuto": "自动",
 

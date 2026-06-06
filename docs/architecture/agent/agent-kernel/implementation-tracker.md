@@ -47,7 +47,7 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | Runtime | Turn lifecycle, provider call, trace persistence, memory hook, runtime assets projection | Implemented local desktop runtime split, traces, and conversation runtime cards |
 | Memory | White-box memory with list/search/persona/events/delete/feedback | Local persistence implemented; feedback UI/API added in current stage |
 | Skill | Package + `SKILL.md` + projection + controlled runtime load | Local persisted Skill store and default market install path implemented |
-| Tool / MCP | Schema-first registry, policy, approval, audit, dynamic MCP projection | Designed; implementation pending |
+| Tool / MCP | Schema-first registry, policy, approval, audit, dynamic MCP projection | Tool registry metadata and MCP management implemented; approval execution still pending |
 | A2A / Groups | Agent Card, task state, local/remote transport, group orchestration UI | Designed; implementation pending |
 | Desktop UX | LobeHub-style interaction on Peers-Touch framework | Memory page, Agent rail, and Agent Profile center improved |
 | Growth / Diagnostics | TurnTrace, feedback, provider degradation, suggestions | Trace persistence and conversation diagnostics implemented; dashboards pending |
@@ -77,26 +77,26 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | Conversation runtime context cards | Assistant messages now show memory used, memory write, loaded skills, projected tools, and projected MCP servers from the turn assets | Agent runtime tests, chat locale JSON, targeted TS check, and diff checks passed |
 | CLI bridge and runtime policy | CLI-wrapped providers now persist sandbox preset, retry count, and bridge tool allowlist; runtime injects per-run policy env and ephemeral bridge token | Provider tests, provider locale JSON, targeted TS check, and diff checks passed |
 | Skill runtime and market install | Skill store is persisted locally; default Skill market lists installable skills; URL/GitHub/default market installs write into the active Skill store | Skill market Rust tests passed |
+| Tool registry policy/audit surface | Built-in and bridge tools now expose category, source, approval requirement, policy, schema, audit event, and replay metadata in Settings and runtime projection | Tool Rust tests, settings locale JSON, targeted TS check, and diff checks passed |
 
 ---
 
-## 5. Current Stage: Skill Runtime and Market Install
+## 5. Current Stage: Tool Registry Policy and Audit Surface
 
 ### Delivered
 
-- Local Skill store now persists to Desktop data storage instead of resetting to seed data on restart.
-- Skill create, update, delete, toggle, URL import, GitHub import, and market install all write through the same Skill store.
-- Default local Skill market is available without remote setup.
-- Market list/search/detail/install paths return concrete installable Skill package data.
-- Installed market Skills become visible to the Agent runtime through the existing enabled Skill projection path.
+- Tool registry now returns schema/policy/audit metadata for built-in tools and bridge tools.
+- Runtime tool projection includes governed bridge tools such as `memory.write` and `mcp.call`.
+- Settings Tools table now displays source, policy, replayability, approval status, and audit event.
+- Tool registry tests cover bridge tool projection and audit metadata.
 
 ### Acceptance Criteria
 
-- Skill packages survive Desktop restart.
-- Market install is not a stub; it creates or updates an enabled Skill record.
-- Runtime prompt Skill projection reads the same installed/toggled Skill records.
-- Default market works offline and uses `thirdparty` only as a generic reference concept in docs.
-- Rust tests cover listing and installing default market Skills.
+- Tool/MCP bridge capabilities are visible as governed tools instead of hidden prompt-only behavior.
+- Approval requirement and audit event naming are available to UI and future replay flows.
+- Runtime context cards can show the same bridge tools that Settings describes.
+- Settings locale JSON remains valid.
+- Targeted TypeScript check has no errors in the changed files.
 
 ---
 
@@ -114,7 +114,7 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | Task | Outcome |
 |------|---------|
 | Skill package runtime | Persisted install/list/view/toggle/load Skill packages with progressive disclosure |
-| Tool registry | Schema-first tools with policy, approval, audit, and replayable events |
+| Tool registry | Schema-first tools with policy, approval flags, audit names, and replay metadata |
 | MCP server management | Add custom MCP servers, project tools into Tool registry, health/status UI |
 | A2A local orchestration | Agent group calls, child task tracking, local/remote transport abstraction |
 | Knowledge resources | Bind documents/projects to agents, expose retrieval policy in profile |
@@ -174,6 +174,11 @@ It does not track or modify any thirdparty repository. thirdparty remains a refe
 | 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `ProviderDetail`, `store/provider`, `desktop_api`, `provider.json`, `cli_runtime`, or `agent_runtime/provider` errors; failures remain in existing App/social/media/navigation areas |
 | 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
 | 2026-06-07 | `cargo test --bin peers-touch-desktop skills` | Passed | 2 Skill market tests passed, including default market listing and install; existing warnings remain |
+| 2026-06-07 | `cargo test --bin peers-touch-desktop tools` | Passed | 2 Tool registry tests passed, including bridge tool audit metadata; existing warnings remain |
+| 2026-06-07 | `python3 -m json.tool packages/locales/en/settings.json` | Passed | Locale JSON valid |
+| 2026-06-07 | `python3 -m json.tool packages/locales/zh-CN/settings.json` | Passed | Locale JSON valid |
+| 2026-06-07 | `npm --prefix apps/desktop run check` | Failed outside current slice | No `SettingsPage`, `desktop_api`, `settings.json`, or `tools` errors; failures remain in existing App/social/media/navigation areas |
+| 2026-06-07 | `git diff --check` | Passed | No whitespace errors |
 
 ---
 

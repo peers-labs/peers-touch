@@ -83,6 +83,9 @@
   "settings.tools.columnName": "Name",
   "settings.tools.columnCategory": "Category",
   "settings.tools.columnApproval": "Approval",
+  "settings.tools.columnPolicy": "Policy",
+  "settings.tools.columnAudit": "Audit Event",
+  "settings.tools.replayable": "Replayable",
   "settings.tools.approvalRequired": "Required",
   "settings.tools.approvalAuto": "Auto",
 

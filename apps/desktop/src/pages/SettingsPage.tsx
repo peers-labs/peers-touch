@@ -18,7 +18,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { useSettingsStore } from '../store/settings';
 import { useProviderStore } from '../store/provider';
-import { api, type AppletInfo, type HelpCategoryGroup, type SearchProviderInfo, type StatisticsData } from '../services/desktop_api';
+import { api, type AppletInfo, type HelpCategoryGroup, type SearchProviderInfo, type StatisticsData, type ToolInfo } from '../services/desktop_api';
 import { hasSettingsPanel, getAppletFrontend } from '../applets/registry';
 import { getModulesWithSettings } from '../modules/registry';
 import { PageHeader } from '../components/PageHeader';
@@ -1319,6 +1319,24 @@ function ToolsTab() {
       key: 'needs_approval',
       render: (v: boolean) =>
         v ? <Tag color="warning">{t('settings.tools.approvalRequired')}</Tag> : <Tag color="success">{t('settings.tools.approvalAuto')}</Tag>,
+    },
+    {
+      title: t('settings.tools.columnPolicy'),
+      dataIndex: 'policy',
+      key: 'policy',
+      render: (v: string, record: ToolInfo) => (
+        <Flexbox horizontal gap={4} wrap="wrap">
+          <Tag color={record.source === 'bridge' ? 'purple' : 'blue'}>{record.source || 'builtin'}</Tag>
+          <Tag>{v || 'auto'}</Tag>
+          {record.replayable && <Tag color="cyan">{t('settings.tools.replayable')}</Tag>}
+        </Flexbox>
+      ),
+    },
+    {
+      title: t('settings.tools.columnAudit'),
+      dataIndex: 'audit_event',
+      key: 'audit_event',
+      render: (v: string) => <Text code>{v || '-'}</Text>,
     },
   ];
 

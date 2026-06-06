@@ -660,6 +660,12 @@ export interface ToolInfo {
   name: string;
   category: string;
   needs_approval: boolean;
+  enabled?: boolean;
+  source?: string;
+  policy?: string;
+  schema?: Record<string, unknown>;
+  audit_event?: string;
+  replayable?: boolean;
 }
 
 export interface AvailableModel {
