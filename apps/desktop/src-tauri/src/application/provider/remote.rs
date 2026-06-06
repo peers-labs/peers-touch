@@ -265,7 +265,7 @@ fn protocol_adapters() -> &'static [ProtocolAdapter] {
     ADAPTERS
 }
 
-fn resolve_protocol_key(protocol: Option<&str>) -> &'static str {
+pub(crate) fn resolve_protocol_key(protocol: Option<&str>) -> &'static str {
     let normalized = protocol
         .map(|value| value.trim().to_lowercase())
         .filter(|value| !value.is_empty())

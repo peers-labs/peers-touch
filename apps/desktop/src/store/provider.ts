@@ -2,6 +2,13 @@ import { create } from 'zustand';
 import { api, type ProviderListItem, type ProviderDetail } from '../services/desktop_api';
 import { log } from '../utils/logger';
 
+export interface ProviderRuntimeConfigPatch {
+  protocol?: string;
+  timeout_ms?: number | null;
+  cwd?: string | null;
+  env?: Record<string, string> | null;
+}
+
 interface ProviderState {
   providers: ProviderListItem[];
   selectedId: string | null;
@@ -10,15 +17,15 @@ interface ProviderState {
 
   loadProviders: () => Promise<void>;
   selectProvider: (id: string, skipLoading?: boolean) => Promise<void>;
-  updateProvider: (id: string, apiKey: string, baseUrl: string, enabled: boolean) => Promise<void>;
+  updateProvider: (id: string, apiKey: string, baseUrl: string, enabled: boolean, runtime?: ProviderRuntimeConfigPatch) => Promise<void>;
   toggleProvider: (id: string, enabled: boolean) => Promise<void>;
-  checkProvider: (id: string, apiKey?: string, baseUrl?: string, model?: string) => Promise<{ ok: boolean; error?: string }>;
+  checkProvider: (id: string, apiKey?: string, baseUrl?: string, model?: string, protocol?: string) => Promise<{ ok: boolean; error?: string }>;
   createProvider: (data: { id: string; name: string; description?: string; logo?: string; base_url: string; api_key?: string }) => Promise<void>;
   deleteProvider: (id: string) => Promise<void>;
   addModel: (providerId: string, data: { id: string; display_name?: string; type?: string; context_window?: number; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean; enabled?: boolean }) => Promise<void>;
   updateModel: (providerId: string, modelId: string, data: { display_name?: string; type?: string; context_window?: number; enabled?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean }) => Promise<void>;
   deleteModel: (providerId: string, modelId: string) => Promise<void>;
-  fetchRemoteModels: (providerId: string, apiKey?: string, baseUrl?: string) => Promise<{ ok: boolean; models?: string[]; error?: string }>;
+  fetchRemoteModels: (providerId: string, apiKey?: string, baseUrl?: string, protocol?: string) => Promise<{ ok: boolean; models?: string[]; error?: string }>;
   toggleModel: (providerId: string, modelId: string, enabled: boolean) => Promise<void>;
   toggleAllModels: (providerId: string, enabled: boolean) => Promise<void>;
 }
@@ -59,8 +66,8 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     }
   },
 
-  updateProvider: async (id: string, apiKey: string, baseUrl: string, enabled: boolean) => {
-    await api.updateProvider(id, { api_key: apiKey, base_url: baseUrl, enabled });
+  updateProvider: async (id: string, apiKey: string, baseUrl: string, enabled: boolean, runtime?: ProviderRuntimeConfigPatch) => {
+    await api.updateProvider(id, { api_key: apiKey, base_url: baseUrl, enabled, ...runtime });
     await get().loadProviders();
     if (get().selectedId === id) {
       await get().selectProvider(id, true);
@@ -88,8 +95,8 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     }
   },
 
-  checkProvider: async (id: string, apiKey?: string, baseUrl?: string, model?: string) => {
-    return api.checkProvider(id, { api_key: apiKey, base_url: baseUrl, model });
+  checkProvider: async (id: string, apiKey?: string, baseUrl?: string, model?: string, protocol?: string) => {
+    return api.checkProvider(id, { api_key: apiKey, base_url: baseUrl, model, protocol });
   },
 
   createProvider: async (data) => {
@@ -126,8 +133,8 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     }
   },
 
-  fetchRemoteModels: async (providerId: string, apiKey?: string, baseUrl?: string) => {
-    return api.fetchRemoteModels(providerId, { api_key: apiKey, base_url: baseUrl });
+  fetchRemoteModels: async (providerId: string, apiKey?: string, baseUrl?: string, protocol?: string) => {
+    return api.fetchRemoteModels(providerId, { api_key: apiKey, base_url: baseUrl, protocol });
   },
 
   toggleModel: async (providerId: string, modelId: string, enabled: boolean) => {

@@ -705,6 +705,10 @@ export interface ProviderDetail extends ProviderListItem {
   api_key: string;
   base_url: string;
   default_base_url: string;
+  protocol: string;
+  timeout_ms?: number;
+  cwd?: string;
+  env?: Record<string, string>;
   show_checker: boolean;
   check_model?: string;
   models: ModelItem[];
@@ -2503,19 +2507,37 @@ export const api = {
       mapAIChatProviderToDetail(r.provider || {}),
     ),
 
-  updateProvider: (id: string, data: { api_key: string; base_url: string; enabled: boolean }) =>
+  updateProvider: (id: string, data: {
+    api_key: string;
+    base_url: string;
+    enabled: boolean;
+    protocol?: string;
+    timeout_ms?: number | null;
+    cwd?: string | null;
+    env?: Record<string, string> | null;
+  }) =>
     invokeRustDataFromStatus<ProviderUpdateInput, { provider: any }>('provider_update', {
         id,
         enabled: data.enabled,
         key_vaults: JSON.stringify({ api_key: data.api_key || '' }),
-        config_json: JSON.stringify({ base_url: data.base_url || '' }),
+        config_json: JSON.stringify({
+          base_url: data.base_url || '',
+          ...(data.protocol ? { protocol: data.protocol } : {}),
+          ...(data.timeout_ms !== undefined ? { timeout_ms: data.timeout_ms } : {}),
+          ...(data.cwd !== undefined ? { cwd: data.cwd } : {}),
+          ...(data.env !== undefined ? { env: data.env } : {}),
+        }),
     }),
 
-  checkProvider: (id: string, data: { api_key?: string; base_url?: string; model?: string }) =>
+  checkProvider: (id: string, data: { api_key?: string; base_url?: string; model?: string; protocol?: string }) =>
     invokeRustDataFromStatus<ProviderCheckInput, { ok: boolean; message?: string; error?: string }>('provider_check', {
         id,
         key_vaults: data.api_key ? JSON.stringify({ api_key: data.api_key }) : undefined,
-        config_json: data.base_url ? JSON.stringify({ base_url: data.base_url, model: data.model || '' }) : undefined,
+        config_json: data.base_url !== undefined || data.protocol ? JSON.stringify({
+          ...(data.base_url !== undefined ? { base_url: data.base_url } : {}),
+          ...(data.protocol ? { protocol: data.protocol } : {}),
+          model: data.model || '',
+        }) : undefined,
     }),
 
   applyPreset: (id: string) =>
@@ -2552,7 +2574,7 @@ export const api = {
       model_id: modelId,
     }),
 
-  fetchRemoteModels: (providerId: string, data?: { api_key?: string; base_url?: string }) =>
+  fetchRemoteModels: (providerId: string, data?: { api_key?: string; base_url?: string; protocol?: string }) =>
     invokeRustDataFromStatus<ProviderModelFetchInput, { ok: boolean; models: string[] }>('model_fetch_remote', {
       provider_id: providerId,
       data,
@@ -4156,6 +4178,16 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
     api_key: keyVaults.api_key || '',
     base_url: cfg.base_url || '',
     default_base_url: cfg.default_base_url || cfg.base_url || '',
+    protocol: cfg.protocol || 'openai-compatible',
+    timeout_ms: typeof cfg.timeout_ms === 'number' ? cfg.timeout_ms : undefined,
+    cwd: typeof cfg.cwd === 'string' ? cfg.cwd : undefined,
+    env: cfg.env && typeof cfg.env === 'object' && !Array.isArray(cfg.env)
+      ? Object.fromEntries(
+        Object.entries(cfg.env)
+          .filter(([key, value]) => key.trim() && typeof value === 'string')
+          .map(([key, value]) => [key, value as string]),
+      )
+      : undefined,
     show_checker: true,
     check_model: checkModel,
     models: models.length > 0

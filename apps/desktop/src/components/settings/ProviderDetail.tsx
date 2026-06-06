@@ -5,7 +5,7 @@ import {
   Switch, Typography, theme, message,
   Spin, Divider, Modal, Form, Slider, Checkbox, AutoComplete, Select, Tabs,
 } from 'antd';
-import { Input, Button, Tag, Avatar, Tooltip, InputPassword } from '@lobehub/ui';
+import { Input, Button, Tag, Avatar, Tooltip, InputPassword, TextArea } from '@lobehub/ui';
 import {
   CheckCircle2, Settings2, ExternalLink, Lock, Trash2, Plus,
   Brain, X, RefreshCw, Wrench, Eye, Sparkles, Pencil,
@@ -75,6 +75,13 @@ const CONTEXT_MARKS: Record<number, string> = {
   9: '2M',
 };
 const CONTEXT_VALUES = [0, 4000, 8000, 16000, 32000, 64000, 128000, 200000, 1000000, 2000000];
+const PROVIDER_PROTOCOL_OPTIONS = [
+  { value: 'openai-compatible', label: 'OpenAI compatible' },
+  { value: 'anthropic', label: 'Anthropic' },
+  { value: 'gemini', label: 'Gemini' },
+  { value: 'ollama', label: 'Ollama' },
+  { value: 'cli-wrapped', label: 'CLI wrapped' },
+];
 
 function contextToSlider(v: number): number {
   for (let i = CONTEXT_VALUES.length - 1; i >= 0; i--) {
@@ -91,6 +98,28 @@ function formatContextWindow(v: number): string {
   return String(v);
 }
 
+function envRecordToText(env?: Record<string, string>): string {
+  if (!env) return '';
+  return Object.entries(env)
+    .filter(([key]) => key.trim())
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\n');
+}
+
+function envTextToRecord(text: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    const value = trimmed.slice(eq + 1).trim();
+    if (key) env[key] = value;
+  }
+  return env;
+}
+
 export function ProviderDetail() {
   const { t } = useTranslation('provider');
   const {
@@ -101,6 +130,10 @@ export function ProviderDetail() {
   } = useProviderStore();
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
+  const [protocol, setProtocol] = useState('openai-compatible');
+  const [cliTimeoutMs, setCliTimeoutMs] = useState('');
+  const [cliCwd, setCliCwd] = useState('');
+  const [cliEnvText, setCliEnvText] = useState('');
   const [enabled, setEnabled] = useState(false);
   const [checking, setChecking] = useState(false);
   const [checkPass, setCheckPass] = useState(false);
@@ -122,25 +155,46 @@ export function ProviderDetail() {
     if (detail && !isStale) {
       setApiKey(detail.api_key || '');
       setBaseUrl(detail.base_url || detail.default_base_url || '');
+      setProtocol(detail.protocol || 'openai-compatible');
+      setCliTimeoutMs(detail.timeout_ms ? String(detail.timeout_ms) : '');
+      setCliCwd(detail.cwd || '');
+      setCliEnvText(envRecordToText(detail.env));
       setEnabled(detail.enabled);
       setCheckModel(detail.check_model || detail.models?.[0]?.id || '');
       setCheckPass(false);
     }
   }, [detail, isStale]);
 
+  const buildRuntimePatch = useCallback(
+    (overrides?: { protocol?: string; timeoutMs?: string; cwd?: string; envText?: string }) => {
+      const nextProtocol = overrides?.protocol ?? protocol;
+      const nextTimeout = (overrides?.timeoutMs ?? cliTimeoutMs).trim();
+      const nextCwd = overrides?.cwd ?? cliCwd;
+      const nextEnvText = overrides?.envText ?? cliEnvText;
+      const env = envTextToRecord(nextEnvText);
+      return {
+        protocol: nextProtocol,
+        timeout_ms: nextTimeout ? Number(nextTimeout) : null,
+        cwd: nextCwd.trim() ? nextCwd.trim() : null,
+        env: Object.keys(env).length > 0 ? env : null,
+      };
+    },
+    [protocol, cliTimeoutMs, cliCwd, cliEnvText],
+  );
+
   const debouncedSave = useCallback(
-    (key: string, url: string) => {
+    (key: string, url: string, runtime = buildRuntimePatch()) => {
       if (!detail) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(async () => {
         try {
-          await updateProvider(detail.id, key, url, detail.enabled);
+          await updateProvider(detail.id, key, url, detail.enabled, runtime);
         } catch {
           // silently fail
         }
       }, 800);
     },
-    [detail, updateProvider],
+    [detail, updateProvider, buildRuntimePatch],
   );
 
   useEffect(() => {
@@ -163,6 +217,39 @@ export function ProviderDetail() {
       debouncedSave(apiKey, val);
     },
     [apiKey, debouncedSave],
+  );
+
+  const handleProtocolChange = useCallback(
+    (val: string) => {
+      setProtocol(val);
+      debouncedSave(apiKey, baseUrl, buildRuntimePatch({ protocol: val }));
+    },
+    [apiKey, baseUrl, buildRuntimePatch, debouncedSave],
+  );
+
+  const handleCliTimeoutChange = useCallback(
+    (val: string) => {
+      const normalized = val.replace(/[^\d]/g, '');
+      setCliTimeoutMs(normalized);
+      debouncedSave(apiKey, baseUrl, buildRuntimePatch({ timeoutMs: normalized }));
+    },
+    [apiKey, baseUrl, buildRuntimePatch, debouncedSave],
+  );
+
+  const handleCliCwdChange = useCallback(
+    (val: string) => {
+      setCliCwd(val);
+      debouncedSave(apiKey, baseUrl, buildRuntimePatch({ cwd: val }));
+    },
+    [apiKey, baseUrl, buildRuntimePatch, debouncedSave],
+  );
+
+  const handleCliEnvChange = useCallback(
+    (val: string) => {
+      setCliEnvText(val);
+      debouncedSave(apiKey, baseUrl, buildRuntimePatch({ envText: val }));
+    },
+    [apiKey, baseUrl, buildRuntimePatch, debouncedSave],
   );
 
   const allModels = detail?.models || [];
@@ -210,7 +297,7 @@ export function ProviderDetail() {
     setChecking(true);
     setCheckPass(false);
     try {
-      const result = await checkProvider(detail.id, apiKey || undefined, baseUrl || undefined, checkModel);
+      const result = await checkProvider(detail.id, apiKey || undefined, baseUrl, checkModel, protocol);
       if (result.ok) {
         setCheckPass(true);
         message.success(t('provider.detail.connectionSuccessful'));
@@ -228,7 +315,7 @@ export function ProviderDetail() {
   const doFetchModels = async (silent = false) => {
     setFetching(true);
     try {
-      const result = await fetchRemoteModels(detail.id, apiKey || undefined, baseUrl || undefined);
+      const result = await fetchRemoteModels(detail.id, apiKey || undefined, baseUrl, protocol);
       if (result.ok && result.models) {
         const existingIds = new Set((detail.models || []).map((m) => m.id));
         const newModels = result.models.filter((id) => !existingIds.has(id));
@@ -271,7 +358,8 @@ export function ProviderDetail() {
     }
   };
 
-  const isUnconfigured = apiKey.trim().length === 0;
+  const isCliProvider = protocol === 'cli-wrapped' || protocol === 'cli';
+  const isUnconfigured = isCliProvider ? baseUrl.trim().length === 0 : apiKey.trim().length === 0;
   const modelOptions = allModels.map((m) => ({
     value: m.id,
     label: m.display_name || m.id,
@@ -418,41 +506,98 @@ export function ProviderDetail() {
         {/* Form Body */}
         <div style={{ padding: '0 20px' }}>
           <FormRow
-            label={t('provider.detail.apiKey')}
-            desc={
-              detail.api_key_url ? (
-                <>
-                  {t('provider.detail.apiKeyDescWithLink', { name: detail.name })}{' '}
-                  <Link href={detail.api_key_url} target="_blank" style={{ fontSize: 12 }}>
-                    {t('provider.detail.getApiKey')} <ExternalLink size={10} style={{ marginLeft: 2 }} />
-                  </Link>
-                </>
-              ) : (
-                t('provider.detail.apiKeyDesc', { name: detail.name })
-              )
-            }
+            label={t('provider.detail.protocol')}
+            desc={t('provider.detail.protocolDesc')}
           >
-            <InputPassword
-              value={apiKey}
-              onChange={(e) => handleApiKeyChange(e.target.value)}
-              placeholder={t('provider.detail.apiKeyPlaceholder')}
-              autoComplete="new-password"
+            <Select
+              value={protocol}
+              onChange={handleProtocolChange}
+              options={PROVIDER_PROTOCOL_OPTIONS}
               style={{ width: '100%' }}
             />
           </FormRow>
 
+          {!isCliProvider && (
+            <FormRow
+              label={t('provider.detail.apiKey')}
+              desc={
+                detail.api_key_url ? (
+                  <>
+                    {t('provider.detail.apiKeyDescWithLink', { name: detail.name })}{' '}
+                    <Link href={detail.api_key_url} target="_blank" style={{ fontSize: 12 }}>
+                      {t('provider.detail.getApiKey')} <ExternalLink size={10} style={{ marginLeft: 2 }} />
+                    </Link>
+                  </>
+                ) : (
+                  t('provider.detail.apiKeyDesc', { name: detail.name })
+                )
+              }
+            >
+              <InputPassword
+                value={apiKey}
+                onChange={(e) => handleApiKeyChange(e.target.value)}
+                placeholder={t('provider.detail.apiKeyPlaceholder')}
+                autoComplete="new-password"
+                style={{ width: '100%' }}
+              />
+            </FormRow>
+          )}
+
           <FormRow
-            label={t('provider.detail.apiProxyUrl')}
-            desc={t('provider.detail.apiProxyUrlDesc')}
+            label={isCliProvider ? t('provider.detail.cliCommand') : t('provider.detail.apiProxyUrl')}
+            desc={isCliProvider ? t('provider.detail.cliCommandDesc') : t('provider.detail.apiProxyUrlDesc')}
           >
             <Input
               value={baseUrl}
               onChange={(e) => handleBaseUrlChange(e.target.value)}
-              placeholder={detail.default_base_url || 'https://your-proxy-url.com/v1'}
+              placeholder={isCliProvider ? 'codex exec --json' : (detail.default_base_url || t('provider.detail.apiProxyUrlPlaceholder'))}
               allowClear
               style={{ width: '100%' }}
             />
           </FormRow>
+
+          {isCliProvider && (
+            <>
+              <FormRow
+                label={t('provider.detail.cliTimeout')}
+                desc={t('provider.detail.cliTimeoutDesc')}
+              >
+                <Input
+                  value={cliTimeoutMs}
+                  onChange={(e) => handleCliTimeoutChange(e.target.value)}
+                  placeholder="60000"
+                  allowClear
+                  style={{ width: '100%' }}
+                />
+              </FormRow>
+
+              <FormRow
+                label={t('provider.detail.cliCwd')}
+                desc={t('provider.detail.cliCwdDesc')}
+              >
+                <Input
+                  value={cliCwd}
+                  onChange={(e) => handleCliCwdChange(e.target.value)}
+                  placeholder="/path/to/workspace"
+                  allowClear
+                  style={{ width: '100%' }}
+                />
+              </FormRow>
+
+              <FormRow
+                label={t('provider.detail.cliEnv')}
+                desc={t('provider.detail.cliEnvDesc')}
+              >
+                <TextArea
+                  value={cliEnvText}
+                  onChange={(e) => handleCliEnvChange(e.target.value)}
+                  placeholder="ANTHROPIC_API_KEY=..."
+                  rows={3}
+                  style={{ width: '100%', fontFamily: 'monospace', fontSize: 12 }}
+                />
+              </FormRow>
+            </>
+          )}
 
           {detail.show_checker && (
             <FormRow

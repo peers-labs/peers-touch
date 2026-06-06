@@ -311,18 +311,23 @@ pub fn model_fetch_remote(
         .as_ref()
         .and_then(|v| v.get("base_url"))
         .and_then(serde_json::Value::as_str)
-        .map(ToString::to_string)
-        .unwrap_or_default();
-    let base_url = if input_base_url.trim().is_empty() {
-        parse_config_field(&provider.config_json, "base_url").unwrap_or_default()
-    } else {
-        input_base_url
+        .map(ToString::to_string);
+    let base_url = match input_base_url {
+        Some(value) => value,
+        None => parse_config_field(&provider.config_json, "base_url").unwrap_or_default(),
     };
-    let protocol = parse_config_field(&provider.config_json, "protocol");
+    let input_protocol = input
+        .data
+        .as_ref()
+        .and_then(|v| v.get("protocol"))
+        .and_then(serde_json::Value::as_str)
+        .map(ToString::to_string);
+    let protocol = input_protocol.or_else(|| parse_config_field(&provider.config_json, "protocol"));
+    let protocol_key = provider_remote::resolve_protocol_key(protocol.as_deref());
     if base_url.trim().is_empty() {
         return success_payload(
             "model_fetch_remote",
-            json!({ "ok": false, "error": "base_url is required", "models": [] }),
+            json!({ "ok": false, "error": if protocol_key == "cli-wrapped" { "CLI provider command is required" } else { "base_url is required" }, "models": [] }),
         );
     }
     match provider_remote::fetch_models(&base_url, &api_key, protocol.as_deref()) {
@@ -424,14 +429,8 @@ mod tests {
     const TEST_SCOPE: Option<&str> = Some("__test_models_app__");
 
     fn ensure_provider(provider_id: &str) {
-        let exists = with_provider_store(TEST_SCOPE, |store| {
-            store.providers.iter().any(|item| item.id == provider_id)
-        })
-        .expect("store lock should work");
-        if exists {
-            return;
-        }
         with_provider_store(TEST_SCOPE, |store| {
+            store.providers.retain(|item| item.id != provider_id);
             store.providers.push(ProviderRecord {
                 id: provider_id.to_string(),
                 name: "Test Provider".to_string(),

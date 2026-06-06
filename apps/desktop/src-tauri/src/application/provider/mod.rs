@@ -30,6 +30,27 @@ fn internal_error() -> AppResult<StubPayload> {
     )
 }
 
+fn merge_json_object(existing: &str, patch: &str) -> String {
+    let mut base = serde_json::from_str::<serde_json::Value>(existing)
+        .ok()
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    let Ok(patch_value) = serde_json::from_str::<serde_json::Value>(patch) else {
+        return patch.to_string();
+    };
+    let Some(patch_object) = patch_value.as_object() else {
+        return patch.to_string();
+    };
+    for (key, value) in patch_object {
+        if value.is_null() {
+            base.remove(key);
+        } else {
+            base.insert(key.clone(), value.clone());
+        }
+    }
+    serde_json::Value::Object(base).to_string()
+}
+
 pub fn provider_list(scope: Option<&str>) -> AppResult<StubPayload> {
     let providers = match with_provider_store(scope, |store| {
         store
@@ -86,7 +107,7 @@ pub fn provider_update(scope: Option<&str>, input: ProviderUpdateInput) -> AppRe
             provider.key_vaults = key_vaults;
         }
         if let Some(config_json) = input.config_json {
-            provider.config_json = config_json;
+            provider.config_json = merge_json_object(&provider.config_json, &config_json);
         }
         Some(provider.to_json())
     }) {
@@ -126,31 +147,40 @@ pub fn provider_check(scope: Option<&str>, input: ProviderCheckInput) -> AppResu
             json!({ "ok": false, "error": "provider not found" }),
         );
     };
-    let api_key = input
-        .key_vaults
-        .as_deref()
-        .and_then(parse_key_vault_api_key)
-        .or_else(|| parse_key_vault_api_key(&provider.key_vaults))
-        .unwrap_or_default();
-    if api_key.trim().is_empty() {
-        return success_payload(
-            "provider_check",
-            json!({ "ok": false, "error": "api_key is required" }),
-        );
-    }
     let base_url = input
         .config_json
         .as_deref()
         .and_then(|raw| parse_config_field(raw, "base_url"))
         .or_else(|| parse_config_field(&provider.config_json, "base_url"))
         .unwrap_or_default();
+    let protocol = input
+        .config_json
+        .as_deref()
+        .and_then(|raw| parse_config_field(raw, "protocol"))
+        .or_else(|| parse_config_field(&provider.config_json, "protocol"));
+    let protocol_key = remote::resolve_protocol_key(protocol.as_deref());
+    let api_key = input
+        .key_vaults
+        .as_deref()
+        .and_then(parse_key_vault_api_key)
+        .or_else(|| parse_key_vault_api_key(&provider.key_vaults))
+        .unwrap_or_default();
+    if protocol_key != "cli-wrapped" && api_key.trim().is_empty() {
+        return success_payload(
+            "provider_check",
+            json!({ "ok": false, "error": "api_key is required" }),
+        );
+    }
     if base_url.trim().is_empty() {
         return success_payload(
             "provider_check",
-            json!({ "ok": false, "error": "base_url is required" }),
+            json!({ "ok": false, "error": if protocol_key == "cli-wrapped" { "CLI provider command is required" } else { "base_url is required" } }),
         );
     }
-    if !base_url.starts_with("http://") && !base_url.starts_with("https://") {
+    if protocol_key != "cli-wrapped"
+        && !base_url.starts_with("http://")
+        && !base_url.starts_with("https://")
+    {
         return success_payload(
             "provider_check",
             json!({ "ok": false, "error": "base_url must start with http:// or https://" }),
@@ -169,11 +199,6 @@ pub fn provider_check(scope: Option<&str>, input: ProviderCheckInput) -> AppResu
             json!({ "ok": false, "error": "model is required" }),
         );
     }
-    let protocol = input
-        .config_json
-        .as_deref()
-        .and_then(|raw| parse_config_field(raw, "protocol"))
-        .or_else(|| parse_config_field(&provider.config_json, "protocol"));
     match remote::probe_provider(&base_url, &api_key, &model, protocol.as_deref()) {
         Ok(result) => success_payload(
             "provider_check",
