@@ -31,7 +31,7 @@ import {
 } from '../features/social/socialStore';
 import { timestampMillis } from '../features/social/socialNormalizers';
 import { projectConversations } from '../features/social/socialProjection';
-import type { FriendChatMessage, PeerProfile, SocialConversation, TypingEntry } from '../features/social/socialTypes';
+import { SocialApiError, type FriendChatMessage, type PeerProfile, type SocialConversation, type TypingEntry } from '../features/social/socialTypes';
 import {
   CHAT_BACKGROUND_OPTIONS,
   type ChatBackgroundId,
@@ -70,6 +70,7 @@ export function ChatPage() {
   const [groupNameDraft, setGroupNameDraft] = useState('');
   const [groupDescriptionDraft, setGroupDescriptionDraft] = useState('');
   const [editingMessage, setEditingMessage] = useState<EditingMessage | null>(null);
+  const [localActionError, setLocalActionError] = useState('');
   const activeSessionUlid = useSocialStore((state) => state.activeSessionUlid);
   const authSession = useAuthStore((state) => state.session);
   const messages = useSocialStore((state) => (activeSessionUlid ? state.messages[activeSessionUlid] ?? EMPTY_MESSAGES : EMPTY_MESSAGES));
@@ -246,6 +247,15 @@ export function ChatPage() {
     typingIdleTimerRef.current = window.setTimeout(() => {
       emitTypingState(false);
     }, TYPING_FALSE_DELAY_MS);
+  };
+
+  const runChatOperation = async (operation: () => Promise<void>, failureKey: string) => {
+    setLocalActionError('');
+    try {
+      await operation();
+    } catch (operationError) {
+      setLocalActionError(`${t(failureKey)}: ${formatChatOperationError(operationError)}`);
+    }
   };
 
   const submitMessage = async () => {
@@ -594,7 +604,10 @@ export function ChatPage() {
                             type="button"
                             className="message-action-button"
                             aria-label={t('mobile.chat.edit')}
-                            onClick={() => startEditMessage(isGroupThread ? 'group' : 'friend', message)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              startEditMessage(isGroupThread ? 'group' : 'friend', message);
+                            }}
                           >
                             <Pencil size={13} />
                           </button>
@@ -603,9 +616,14 @@ export function ChatPage() {
                           type="button"
                           className="message-action-button"
                           aria-label={t('mobile.chat.recall')}
-                          onClick={() => {
-                            if (isGroupThread) void recallOwnGroupMessage(message as GroupMessage);
-                            else void recallOwnMessage(message as FriendChatMessage);
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void runChatOperation(
+                              () => isGroupThread
+                                ? recallOwnGroupMessage(message as GroupMessage)
+                                : recallOwnMessage(message as FriendChatMessage),
+                              'mobile.chat.operationRecallFailed',
+                            );
                           }}
                         >
                           <RotateCcw size={13} />
@@ -615,14 +633,19 @@ export function ChatPage() {
                           okText={t('common.action.delete')}
                           cancelText={t('common.action.cancel')}
                           onConfirm={() => {
-                            if (isGroupThread) void deleteOwnGroupMessage(message as GroupMessage);
-                            else void deleteOwnMessage(message as FriendChatMessage);
+                            void runChatOperation(
+                              () => isGroupThread
+                                ? deleteOwnGroupMessage(message as GroupMessage)
+                                : deleteOwnMessage(message as FriendChatMessage),
+                              'mobile.chat.operationDeleteFailed',
+                            );
                           }}
                         >
                           <button
                             type="button"
                             className="message-action-button"
                             aria-label={t('common.action.delete')}
+                            onClick={(event) => event.stopPropagation()}
                           >
                             <Trash2 size={13} />
                           </button>
@@ -659,7 +682,7 @@ export function ChatPage() {
               className="message-composer-input"
               value={draft}
               onChange={(event) => handleDraftChange(event.target.value)}
-              onPressEnter={submitMessage}
+              onPressEnter={() => void runChatOperation(submitMessage, 'mobile.chat.operationSendFailed')}
               placeholder={t('mobile.chat.messagePlaceholder')}
               disabled={groupSending}
               autoComplete="off"
@@ -673,7 +696,7 @@ export function ChatPage() {
               icon={<Send size={16} />}
               disabled={!draft.trim() || groupSending}
               loading={groupSending}
-              onClick={submitMessage}
+              onClick={() => void runChatOperation(submitMessage, 'mobile.chat.operationSendFailed')}
             />
           </footer>
         )}
@@ -837,6 +860,7 @@ export function ChatPage() {
         />
       </div>
 
+      {localActionError ? <Text type="danger" className="page-error">{localActionError}</Text> : null}
       {error ? <Text type="danger" className="page-error">{formatSocialError(error)}</Text> : null}
       {groupError ? <Text type="danger" className="page-error">{formatSocialError(groupError)}</Text> : null}
 
@@ -1197,6 +1221,11 @@ function groupPatchFromActionPatch(patch: Partial<ChatActionState>) {
     ...(patch.background !== undefined ? { background: patch.background } : {}),
     ...(patch.clearedAt !== undefined ? { clearedAt: patch.clearedAt } : {}),
   };
+}
+
+function formatChatOperationError(error: unknown): string {
+  if (error instanceof SocialApiError) return formatSocialError(error);
+  return error instanceof Error ? error.message : String(error);
 }
 
 function groupRoleLabel(role: number, t: (key: string) => string): string {
