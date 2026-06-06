@@ -1,7 +1,7 @@
-# Agent Kernel 2.0 — 数据模型
+# Agent Kernel — 数据模型
 
 > **Status**: draft
-> **Version**: v1.0
+> **Version**: 2026.06
 > **Created**: 2026-06-06 | **Updated**: 2026-06-06
 > **Owner**: Architecture Team
 > **Module**: `model/domain/agent/`
@@ -11,7 +11,7 @@
 ## 1. 建模原则
 
 1. 所有跨端对象先进入 proto；Go / Rust / TypeScript 不手写平行模型。
-2. 运行态对象必须记录 snapshot，避免 profile 后续修改污染历史 Turn。
+2. 运行态对象必须记录 snapshot，避免 profile 后续修改污染已完成 Turn。
 3. 语义知识、执行上下文、过程状态三者分离：Memory、Workspace、Thread/Turn 各自独立。
 4. Tool / MCP / A2A 都使用 schema 和状态机表达，不用自由文本约定。
 5. Growth 事件与 TurnTrace 是一等数据，不作为日志附属品。
@@ -75,6 +75,32 @@ message RuntimeProfile {
   map<string, string> launch_config = 11;
 }
 
+message ProviderConfig {
+  string provider_id = 1;
+  ProviderKind kind = 2;
+  string model_id = 3;
+  ProviderCapabilitySet capabilities = 4;
+  ProviderControlPolicy control_policy = 5;
+  map<string, string> params = 6;
+}
+
+message ProviderCapabilitySet {
+  bool streaming = 1;
+  bool native_tool_calling = 2;
+  bool structured_output = 3;
+  bool tool_result_injection = 4;
+  bool system_prompt_control = 5;
+  bool message_history_control = 6;
+  bool context_window_control = 7;
+  bool attachment_control = 8;
+  bool stop = 9;
+  bool resume = 10;
+  bool usage_reporting = 11;
+  bool event_trace = 12;
+  bool workspace_access = 13;
+  bool model_switch = 14;
+}
+
 message CapabilitySet {
   bool streaming = 1;
   bool native_tool_calling = 2;
@@ -92,7 +118,8 @@ message CapabilitySet {
 
 - `Agent` 表达“谁”，不直接绑定 provider 细节。
 - `RuntimeProfile` 表达“怎么跑”，并可以被多个 Thread snapshot。
-- `CapabilitySet` 是运行时决策来源，不让前端或 handler 按字符串判断 executor。
+- `ProviderConfig` 表达“使用哪个 Provider 和模型”，Provider 可以是 Eino-native、Vendor API 或 CLI-wrapped。
+- `ProviderCapabilitySet` 和 `ProviderControlPolicy` 是运行时决策来源，不让前端或 handler 按字符串判断具体 CLI 或厂商。
 
 ### 3.2 Thread 与 Turn
 

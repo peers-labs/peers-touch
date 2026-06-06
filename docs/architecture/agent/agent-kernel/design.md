@@ -1,7 +1,7 @@
-# Agent Kernel 2.0 — 架构设计
+# Agent Kernel — 架构设计
 
 > **Status**: draft
-> **Version**: v1.0
+> **Version**: 2026.06
 > **Created**: 2026-06-06 | **Updated**: 2026-06-06
 > **Owner**: Architecture Team
 > **Module**: `apps/station/app/subserver/agent/`
@@ -12,7 +12,7 @@
 
 1. **Proto-first**：所有跨层数据结构先进入 `model/domain/agent/*.proto`，Station / Desktop Rust / Desktop Web 都从同一契约生成或映射。
 2. **Station owns truth**：Agent、Thread、Turn、Tool policy、Memory、Skill、MCP、A2A、Channel、Growth、Scheduler 的业务真源都在 Station。
-3. **Desktop owns experience and device bridge**：Desktop Rust 只承载设备能力、文件选择、本地 executor 启动、secure storage、stream bridge；Desktop Web 只做 runtime projection 与页面渲染。
+3. **Desktop owns experience and device bridge**：Desktop Rust 只承载设备能力、文件选择、本地 CLI Provider 启动、secure storage、stream bridge；Desktop Web 只做 runtime projection 与页面渲染。
 4. **Execution closure first**：每个 Turn 必须可追踪、可重放、可停止、可恢复、可归因；不能只保存最终文本。
 5. **Borrow capability, not shape**：借鉴 Agent Box 的运行时资源拆分、工具桥、MCP、A2A、Workspace 隔离、技能包理念，但 UI/UX、契约层、业务边界全部按 Peers-Touch 重做。
 6. **Growth is a first-class loop**：Memory / Skill 的获取、应用、反馈、诊断、修正必须进入同一运行闭环，而不是后台统计。
@@ -46,7 +46,7 @@ flowchart TB
     subgraph Rust["Desktop Rust"]
         Gateway["Station API gateway"]
         Device["local device bridge"]
-        LocalExec["optional local executor"]
+        LocalProvider["optional CLI provider launcher"]
     end
 
     subgraph Web["Desktop Web"]
@@ -73,7 +73,7 @@ flowchart TB
     Web --> Projection
     Projection --> Gateway
     Gateway --> Handler
-    Runtime --> LocalExec
+    Runtime --> LocalProvider
 ```
 
 目标态的 Agent Kernel 是 Station 业务内核，不是 Desktop 插件，也不是 Agent Box 的嵌入式管理台。它对外提供统一 API、流式事件和 projection 数据；对内通过 runtime、thread、tool、memory、skill、growth 等领域服务完成执行闭环。
@@ -86,7 +86,7 @@ flowchart TB
 |----|------|----------|
 | Model | proto 合同、枚举、请求响应、事件结构 | 不放业务逻辑，不手写平台私有模型 |
 | Station | 业务真源、执行状态、策略、审计、跨端一致性 | 不依赖 Desktop 页面状态，不把设备 grant 当业务事实 |
-| Desktop Rust | Tauri command、Station API gateway、设备权限、本地 executor 桥 | 不保存 Agent profile，不判断 tool policy |
+| Desktop Rust | Tauri command、Station API gateway、设备权限、本地 CLI Provider 桥 | 不保存 Agent profile，不判断 tool policy |
 | Desktop Web | Runtime projection、页面渲染、表单交互、审批体验 | 不直接绕过 runtime projection 拉业务数据 |
 
 ---
@@ -95,32 +95,35 @@ flowchart TB
 
 ### 4.1 `runtime`
 
-`runtime` 回答“这次由什么执行器、按什么能力执行”。
+`runtime` 回答“这次由哪个 Provider、按什么能力执行”。
 
 | 对象 | 职责 |
 |------|------|
 | `LogicalAgent` | 逻辑 Agent 身份、职责、默认 profile、策略、可见性 |
 | `RuntimeProfile` | provider/model、runtime kind、tool policy、memory/skill scope、workspace policy |
 | `CapabilitySet` | streaming、native tool calling、mcp、a2a、workspace、resume、attachment、approval |
-| `RuntimeRegistry` | 注册 builtin provider runtime、Desktop-local runtime、future mobile/runtime |
+| `ProviderRegistry` | 注册 Eino-native、Vendor API、CLI-wrapped Provider |
 | `TurnRunner` | 执行单轮 Turn 的状态机 |
 
 推荐接口：
 
 ```go
-type Runtime interface {
-    Descriptor(ctx context.Context) RuntimeDescriptor
-    PrepareTurn(ctx context.Context, input TurnInput) (*PreparedTurn, error)
-    ExecuteTurn(ctx context.Context, prepared *PreparedTurn, sink EventSink) (*TurnResult, error)
-    StopTurn(ctx context.Context, turnID string) error
-    ResumeTurn(ctx context.Context, turnID string, input ResumeInput) (*TurnResult, error)
+type Provider interface {
+    Descriptor(ctx context.Context) ProviderDescriptor
+    Prepare(ctx context.Context, req ProviderPrepareRequest) (*ProviderPreparedRun, error)
+    Execute(ctx context.Context, run *ProviderPreparedRun, sink ProviderEventSink) (*ProviderResult, error)
+    Stop(ctx context.Context, runID string) error
+    Resume(ctx context.Context, req ProviderResumeRequest, sink ProviderEventSink) (*ProviderResult, error)
 }
 ```
 
-第一阶段只需要两个 runtime：
+Provider 分三类，统一进入同一 `Provider` 合同：
 
-- `builtin_provider_runtime`：Station 内直接调用 LLM provider，支持原生 tool calling。
-- `desktop_local_runtime`：通过 Desktop Rust 启动本地 executor，用于未来代码/文件任务；Station 仍是记录真源。
+- `eino_native`：Peers 自建 Eino ReAct / ToolCallingModel，完全可控，是默认主线。
+- `vendor_api`：OpenAI-compatible、Anthropic、Gemini、Ollama 等厂商 API，按 API 能力中高可控。
+- `cli_wrapped`：Trae CLI、Cursor CLI、Claude CLI、Codex CLI 等黑盒 CLI，选择性可控，只按 capability 暴露能力。
+
+CLI-wrapped Provider 不能假装拥有内部 tool loop、prompt 改写、memory、planning 的控制权。它只能通过启动参数、工作目录、环境变量、输入输出、受限 Tool Bridge、停止/超时等外层能力受控。详细策略见 [provider-strategy.md](./provider-strategy.md)。
 
 ### 4.2 `thread`
 
@@ -157,7 +160,7 @@ type Runtime interface {
 | `registry` | 注册 tool descriptor、JSON schema、category、owner、capability |
 | `policy` | profile allow/deny、agent allow/deny、channel scope、risk level |
 | `approval` | 人工审批对象、UI token、过期、重复请求合并 |
-| `executor` | 根据 tool kind 调 Station service、MCP、A2A、Desktop bridge |
+| `dispatcher` | 根据 tool kind 调 Station service、MCP、A2A、Desktop bridge；这是工具分发器，不是 LLM Provider |
 | `audit` | 每次 tool call 的输入摘要、输出摘要、错误码、耗时 |
 
 工具类别建议：
@@ -289,23 +292,24 @@ sequenceDiagram
 
 ## 6. API 面
 
-第一阶段建议只暴露必要 API，避免一开始复制 Agent Box 全量 surface。
+第一阶段建议只暴露必要 API，避免一开始复制参考系统的全量 surface。
 
 | API | 说明 |
 |-----|------|
-| `GET /agent/v2/agents` | Agent 列表 |
-| `POST /agent/v2/agents` | 创建 LogicalAgent |
-| `GET /agent/v2/agents/:id` | Agent Profile 详情 |
-| `PUT /agent/v2/agents/:id` | 更新 Agent Profile |
-| `GET /agent/v2/runtime-profiles` | 可用 Runtime Profile |
-| `GET /agent/v2/threads?agent_id=` | Thread 列表 |
-| `POST /agent/v2/threads` | 创建 Thread |
-| `POST /agent/v2/turns` | 执行 Turn |
-| `GET /agent/v2/turns/:id/events` | 获取 TurnEvent |
-| `GET /agent/v2/stream?scope=` | 统一事件流 |
-| `POST /agent/v2/tool-approvals/:id/respond` | 工具审批 |
-| `GET /agent/v2/memory?agent_id=` | Memory 管理 |
-| `GET /agent/v2/skills?agent_id=` | Skill 管理 |
-| `GET /agent/v2/growth/reports?agent_id=` | Growth 报告 |
+| `GET /agent/agents` | Agent 列表 |
+| `POST /agent/agents` | 创建 LogicalAgent |
+| `GET /agent/agents/:id` | Agent Profile 详情 |
+| `PUT /agent/agents/:id` | 更新 Agent Profile |
+| `GET /agent/providers` | 可用 Provider 与能力矩阵 |
+| `GET /agent/runtime-profiles` | 可用 Runtime Profile |
+| `GET /agent/threads?agent_id=` | Thread 列表 |
+| `POST /agent/threads` | 创建 Thread |
+| `POST /agent/turns` | 执行 Turn |
+| `GET /agent/turns/:id/events` | 获取 TurnEvent |
+| `GET /agent/stream?scope=` | 统一事件流 |
+| `POST /agent/tool-approvals/:id/respond` | 工具审批 |
+| `GET /agent/memory?agent_id=` | Memory 管理 |
+| `GET /agent/skills?agent_id=` | Skill 管理 |
+| `GET /agent/growth/reports?agent_id=` | Growth 报告 |
 
 API 返回结构必须来自 proto；HTTP JSON 只是传输编码，不是手写模型来源。

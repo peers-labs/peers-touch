@@ -1,7 +1,7 @@
 # Phase 4 — A2A, MCP, Channel, Growth Completion
 
 > **Status**: draft
-> **Version**: v1.0
+> **Version**: 2026.06
 > **Created**: 2026-06-06 | **Updated**: 2026-06-06
 > **Owner**: Architecture Team
 > **Module**: `apps/station/app/subserver/agent/`
@@ -24,6 +24,7 @@
 6. Response mode：mention-only、always、ai-decide。
 7. Growth metrics、diagnostic、correction proposal。
 8. Scheduler jobs：background review、dogfood、knowledge salvage。
+9. CLI-wrapped Provider 首次接入：只接一个 CLI Provider 作为样板，默认 No Bridge，可选 Restricted Bridge。
 
 ---
 
@@ -33,6 +34,7 @@
 - 不引入 Agent Box remote sharing UI。
 - 不做复杂 workspace rootfs/proot 隔离。
 - 不把 MCP 工具默认开放给所有 Agent。
+- 不把 CLI-wrapped Provider 视为完全可控 Provider。
 
 ---
 
@@ -44,7 +46,8 @@
 4. Channel 入站消息能创建或复用 AgentThread。
 5. GrowthReport 能基于真实 TurnTrace 输出至少三类指标。
 6. CorrectionProposal 能触发 freeze memory、disable skill 或 tighten tool policy。
-7. Station `go test ./...` 至少覆盖新增 domain/service 关键路径。
+7. CLI-wrapped Provider 的 capability/control policy 能在 UI 中明确展示，并且无 bridge 时不能调用 Station tools。
+8. Station `go test ./...` 至少覆盖新增 domain/service 关键路径。
 
 ---
 

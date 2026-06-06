@@ -1,7 +1,7 @@
-# Agent Kernel 2.0 — 设计决策
+# Agent Kernel — 设计决策
 
 > **Status**: draft
-> **Version**: v1.0
+> **Version**: 2026.06
 > **Created**: 2026-06-06 | **Updated**: 2026-06-06
 > **Owner**: Architecture Team
 > **Module**: `apps/station/app/subserver/agent/`
@@ -20,6 +20,7 @@
 | D-06 | Memory、Skill、Workspace、Thread/Turn 分离建模 | accepted |
 | D-07 | A2A 与 MCP 都进入 Station，但职责分离 | accepted |
 | D-08 | Growth 是执行闭环的一部分 | accepted |
+| D-09 | Eino-native、Vendor API、CLI-wrapped 都统一为 Provider | accepted |
 
 ---
 
@@ -34,7 +35,7 @@ Agent 能力涉及跨端状态、工具权限、Memory/Skill、Channel 绑定、
 
 ### Decision
 
-Agent Kernel 的业务真源全部放在 Station。Desktop Rust 只承担设备桥和本地 executor launcher，Desktop Web 只承担 projection 与体验。
+Agent Kernel 的业务真源全部放在 Station。Desktop Rust 只承担设备桥和本地 CLI Provider launcher，Desktop Web 只承担 projection 与体验。
 
 ### Rationale
 
@@ -42,7 +43,7 @@ Agent Kernel 的业务真源全部放在 Station。Desktop Rust 只承担设备�
 
 ### Alternatives Considered
 
-- **Agent Box 式本地全栈管理台**：能力完整但违背 Peers-Touch 三层架构。
+- **参考系统式本地全栈管理台**：能力完整但违背 Peers-Touch 三层架构。
 - **Desktop-only Agent**：实现快，但跨端、Channel、Scheduler 和 Growth 都会产生第二套真源。
 
 ---
@@ -91,12 +92,12 @@ Proto-first 是 Peers-Touch 铁律，能保证 Station、Desktop Rust、Desktop 
 
 ### Rationale
 
-这借鉴 Agent Box 的资源分离，但按 Peers-Touch proto 和 Station DDD 重新建模。它能支持多个 runtime profile、不同 surface 的 Thread、可追溯 TurnTrace。
+这借鉴参考系统的资源分离，但按 Peers-Touch proto 和 Station DDD 重新建模。它能支持多个 runtime profile、不同 surface 的 Thread、可追溯 TurnTrace。
 
 ### Alternatives Considered
 
-- **继续扩展 Conversation/Turn**：迁移成本低，但无法容纳 MCP/A2A/Channel/Growth 等能力。
-- **一个 Agent 一个固定 runtime**：简单，但无法支持不同模型、不同工具策略和 future local executor。
+- **继续扩展 Conversation/Turn**：短期改动少，但无法容纳 MCP/A2A/Channel/Growth 等能力。
+- **一个 Agent 一个固定 runtime**：简单，但无法支持不同模型、不同工具策略和不同 Provider 可控性。
 
 ---
 
@@ -111,7 +112,7 @@ Proto-first 是 Peers-Touch 铁律，能保证 Station、Desktop Rust、Desktop 
 
 ### Decision
 
-Agent Kernel 2.0 的工具层统一使用 `ToolDescriptor + JSON schema + ToolCall state`。Provider runtime 负责把 descriptor 转成对应模型的 native tool calling 格式。
+Agent Kernel 的工具层统一使用 `ToolDescriptor + JSON schema + ToolCall state`。Provider adapter 负责把 descriptor 转成对应 Provider 可接受的 tool calling 或 bridge 格式。
 
 ### Rationale
 
@@ -119,7 +120,7 @@ schema-first 是安全、审计、MCP、A2A、Desktop approval 的基础。
 
 ### Alternatives Considered
 
-- **保留 `<tool_call>` 解析**：兼容旧逻辑，但会阻碍 MCP 和审批体系。
+- **保留 `<tool_call>` 解析**：实现简单，但会阻碍 MCP 和审批体系。
 - **每种工具自己定义自由文本协议**：不可治理，不可测试。
 
 ---
@@ -171,7 +172,7 @@ Agent 能力容易把“记住了什么、在哪儿工作、当前跑到哪一�
 ### Alternatives Considered
 
 - **全部放进 Memory**：恢复简单但会污染长期知识。
-- **全部放进 Workspace 文件**：利于本地 executor，但不利于跨端和审计。
+- **全部放进 Workspace 文件**：利于本地 CLI 工程能力，但不利于跨端和审计。
 
 ---
 
@@ -223,3 +224,34 @@ Peers-Touch 当前最有价值的差异化是自成长。如果 Growth 只是后
 
 - **只统计成功率和反馈率**：信息不足，无法精准回滚。
 - **只靠用户手工管理 Memory/Skill**：可控但不具备自成长能力。
+
+---
+
+## D-09: Eino-native、Vendor API、CLI-wrapped 都统一为 Provider
+
+**Status**: accepted
+**Date**: 2026-06-06
+
+### Context
+
+参考系统把 Trae CLI、Cursor CLI、Claude CLI、Codex CLI 等包装成可运行能力。Peers-Touch 不采用 CLI-first 路线，但这些 CLI 的工程能力仍有价值。问题是 CLI 内部行为是黑盒，不能像 Eino-native 一样控制 prompt、tool loop、planning、memory 和 trace。
+
+### Decision
+
+Agent Kernel 统一使用 Provider 抽象：
+
+- `eino_native`：Peers 自建 Eino ReAct / ToolCallingModel，完全可控。
+- `vendor_api`：厂商 API，能力取决于 API capability。
+- `cli_wrapped`：CLI 黑盒包装，选择性可控。
+
+所有 Provider 都通过 `ProviderDescriptor` 暴露 capability 和 control policy。TurnRunner 只能按 capability/control policy 分支，不能按 CLI 名称写业务逻辑。
+
+### Rationale
+
+这样 UI 和业务理解上“大家都是 Provider”，但系统不会假装所有 Provider 都一样可控。Eino-native 仍是默认主线，CLI-wrapped 只在适合场景作为可选 Provider，并通过 Restricted Bridge 受控访问 Station tool。
+
+### Alternatives Considered
+
+- **把 CLI 独立建成执行体系**：容易复制参考系统路线，导致 provider/model 与 CLI 运行两套概念。
+- **完全不接 CLI**：控制性最高，但放弃 Trae/Cursor/Claude/Codex CLI 已有工程能力。
+- **把 CLI 当完全可信 Provider**：实现便利，但审计、权限和 Growth 归因都会失真。

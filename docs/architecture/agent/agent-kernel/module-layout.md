@@ -1,7 +1,7 @@
-# Agent Kernel 2.0 — 模块目录设计
+# Agent Kernel — 模块目录设计
 
 > **Status**: draft
-> **Version**: v1.0
+> **Version**: 2026.06
 > **Created**: 2026-06-06 | **Updated**: 2026-06-06
 > **Owner**: Architecture Team
 > **Module**: `apps/station/app/subserver/agent/`
@@ -109,18 +109,32 @@ domain/runtime/
 ├── logical_agent.go
 ├── runtime_profile.go
 ├── capability_set.go
-├── runtime_registry.go
-├── runtime.go
-├── builtin_provider_runtime.go
-├── desktop_local_runtime.go
 ├── turn_runner.go
 ├── runtime_event.go
 └── runtime_errors.go
 ```
 
-职责：Runtime 抽象与 descriptor、TurnRunner 状态机、Provider runtime 与 Desktop local runtime 的领域接口、Runtime capability 判定。
+职责：RuntimeProfile、TurnRunner 状态机、运行事件、运行错误、Provider capability 判定。
 
-### 4.2 `domain/thread/`
+### 4.2 `domain/provider/`
+
+```text
+domain/provider/
+├── provider.go
+├── descriptor.go
+├── capability_set.go
+├── control_policy.go
+├── registry.go
+├── eino_native_provider.go
+├── vendor_api_provider.go
+├── cli_wrapped_provider.go
+├── cli_bridge_policy.go
+└── provider_event.go
+```
+
+职责：统一 Provider 合同、Eino-native / Vendor API / CLI-wrapped 三类 Provider 注册、可控性矩阵、CLI Provider 受限桥策略。
+
+### 4.3 `domain/thread/`
 
 ```text
 domain/thread/
@@ -134,7 +148,7 @@ domain/thread/
 
 职责：Thread / Turn 聚合、TurnEvent 顺序保证、历史截断和 replay、标题生成策略。
 
-### 4.3 `domain/prompt/`
+### 4.4 `domain/prompt/`
 
 ```text
 domain/prompt/
@@ -151,7 +165,7 @@ domain/prompt/
 
 职责：Prompt 分层组装、各层 hash 生成、Token budget 与压缩策略。
 
-### 4.4 `domain/tool/`
+### 4.5 `domain/tool/`
 
 ```text
 domain/tool/
@@ -159,7 +173,7 @@ domain/tool/
 ├── registry.go
 ├── policy.go
 ├── approval.go
-├── executor.go
+├── tool_dispatcher.go
 ├── audit.go
 ├── builtin/
 │   ├── memory_tools.go
@@ -172,9 +186,9 @@ domain/tool/
     └── mcp_bridge.go
 ```
 
-职责：schema-first 工具注册、tool allow/deny 与 risk policy、approval 生命周期、MCP / Desktop / Station service tool dispatch。
+职责：schema-first 工具注册、tool allow/deny 与 risk policy、approval 生命周期、MCP / Desktop / Station service tool dispatch。这里的 `tool_dispatcher` 只分发工具调用，不代表 LLM Provider。
 
-### 4.5 `domain/memory/`
+### 4.6 `domain/memory/`
 
 ```text
 domain/memory/
@@ -189,7 +203,7 @@ domain/memory/
 
 职责：Memory 存储与召回、信任分与归因、freeze / rollback / salvage。
 
-### 4.6 `domain/skill/`
+### 4.7 `domain/skill/`
 
 ```text
 domain/skill/
@@ -204,7 +218,7 @@ domain/skill/
 
 职责：SkillPackage 与 SkillRecord、渐进式披露、安全扫描、版本与回滚。
 
-### 4.7 `domain/mcp/`
+### 4.8 `domain/mcp/`
 
 ```text
 domain/mcp/
@@ -217,7 +231,7 @@ domain/mcp/
 
 职责：MCP 服务器配置与连接、capability refresh、MCP tool 到 Station tool 的投影。
 
-### 4.8 `domain/a2a/`
+### 4.9 `domain/a2a/`
 
 ```text
 domain/a2a/
@@ -232,7 +246,7 @@ domain/a2a/
 
 职责：Agent Card 生成、Task 状态机、本地/远程 resolver、per-agent call policy。
 
-### 4.9 `domain/channel/`
+### 4.10 `domain/channel/`
 
 ```text
 domain/channel/
@@ -245,7 +259,7 @@ domain/channel/
 
 职责：Friend / Group / Channel 到 AgentThread 的映射、mention / always / ai-decide 响应策略、渠道上下文注入。
 
-### 4.10 `domain/growth/`
+### 4.11 `domain/growth/`
 
 ```text
 domain/growth/
@@ -260,7 +274,7 @@ domain/growth/
 
 职责：TurnTrace、Growth metric、退化诊断、修正建议与 dogfood 验证。
 
-### 4.11 `domain/scheduler/`
+### 4.12 `domain/scheduler/`
 
 ```text
 domain/scheduler/
@@ -273,7 +287,7 @@ domain/scheduler/
 
 职责：Cron/autonomous job、后台 review、dogfood、定时 Agent Turn。
 
-### 4.12 `domain/workspace/`
+### 4.13 `domain/workspace/`
 
 ```text
 domain/workspace/
@@ -307,7 +321,10 @@ infrastructure/
 │   ├── client.go
 │   ├── openai_compatible.go
 │   ├── stream_decoder.go
-│   └── tool_call_adapter.go
+│   ├── tool_call_adapter.go
+│   ├── eino_adapter.go
+│   ├── vendor_api_adapter.go
+│   └── cli_runner_adapter.go
 ├── eventbus/
 │   ├── publisher.go
 │   └── subscriber.go
@@ -319,7 +336,7 @@ infrastructure/
 约束：
 
 - repository interface 放 application/domain 需要的边界处；GORM 实现放 infrastructure。
-- provider adapter 负责协议转换，不决定业务 policy。
+- provider adapter 负责协议转换、CLI 进程外壳和事件归一，不决定业务 policy。
 - desktopbridge 只对接 Desktop Rust 能力，不绕过 Station 真源。
 
 ---
@@ -387,12 +404,12 @@ apps/desktop/src-tauri/src/
 │   ├── station_client.rs
 │   ├── stream_bridge.rs
 │   ├── local_path_grant.rs
-│   ├── local_executor.rs
+│   ├── cli_provider_launcher.rs
 │   └── secure_store.rs
 ```
 
 约束：
 
 - Web 页面不直接调用 fetch；通过 `agentRuntime` 或 Desktop API service。
-- Rust 不保存 Agent profile，不做 Tool policy。
+- Rust 不保存 Agent profile，不做 Tool policy，不把 CLI Provider 当成独立业务真源。
 - 本地路径授权 token 必须由 Station 记录引用摘要，Desktop 只持有设备态 grant。

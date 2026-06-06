@@ -1,43 +1,24 @@
-# Agent 自成长架构
+# Agent 架构
 
-## 设计来源
-
-本架构受 `external/hermes-agent` 启发，适配 peers-touch 的 Station + Tauri + Desktop 三层体系。核心理念：Agent 在运行中积累知识资产（Memory + Skill），通过信任评分和行为度量评估知识质量，通过精准归因和自动修正回收有害知识。
-
-## 文档
+## 当前源文档
 
 | 文档 | 定位 |
 |---|---|
-| [agent-kernel-2/README.md](./agent-kernel-2/README.md) | **目标重构架构** — Agent Kernel 2.0 的模块设计、数据模型、Desktop UI/UX 集成、迁移阶段 |
-| [agent-self-growth-architecture.md](./agent-self-growth-architecture.md) | **peers-touch 架构设计** — 自成长生命周期、领域对象、服务拓扑、Turn 执行闭环、成长评估机制 |
-| [hermes-agent-self-improving-analysis.md](./hermes-agent-self-improving-analysis.md) | **Hermes 参考分析** — hermes-agent 的七层架构、工程实现细节，作为设计参考 |
+| [agent-kernel/README.md](./agent-kernel/README.md) | **当前目标架构** — Agent Kernel 的模块设计、数据模型、Provider 策略、Desktop UI/UX 集成、建设阶段 |
 
-## 执行计划
+## 参考资料
 
-执行计划独立于架构文档，按依赖顺序排列。状态标记：`done` = 代码已实现并跑通，`code` = 代码已编写但未端到端验证，`pending` = 未开始。
+以下文档只作为设计素材和历史分析参考，不约束当前 Agent Kernel 的模块边界、API、数据模型或交付顺序。
 
-| 优先级 | 状态 | 文档 | 定位 |
-|---|---|---|---|
-| P0 | code | [system-prompt-assembly](./execution-plans/20260411-system-prompt-assembly.md) | System Prompt 层级组装 + Context References + Prompt Caching |
-| P0 | code | [skill-filesystem-and-routing](./execution-plans/20260411-skill-filesystem-and-routing.md) | Skill 文件系统、渐进式披露、Skills Guard 安全扫描 |
-| P0 | code | [memory-bounded-store](./execution-plans/20260411-memory-bounded-store.md) | Memory 有界存储、冻结快照、Knowledge Salvage |
-| P0 | code | [error-recovery](./execution-plans/20260411-error-recovery.md) | 错误分类与恢复 — 14 种 FailoverReason、分类管线、重试策略 |
-| P0 | code | [context-compression-engineering](./execution-plans/20260411-context-compression-engineering.md) | Context Compression — 结构化摘要、迭代更新、Token Budget 尾部保护 |
-| P1 | code | [background-review](./execution-plans/20260411-background-review.md) | Background Review — nudge 触发、错误处理、Credential Pool 继承 |
-| P1 | code | [migration-ai-chat-to-agent](./execution-plans/20260411-migration-ai-chat-to-agent.md) | 存量 ai_chat 迁移至 agent subserver |
-| P2 | pending | [dogfood-self-verification](./execution-plans/20260412-dogfood-self-verification.md) | Dogfood 自验证 — Scenario/Executor/Judge 框架、Tier 1-4 场景 |
+| 文档 | 可复用价值 |
+|---|---|
+| [agent-self-growth-architecture.md](./agent-self-growth-architecture.md) | Memory freeze、Skill guard、Growth 归因、Dogfood、自成长闭环 |
+| [hermes-agent-self-improving-analysis.md](./hermes-agent-self-improving-analysis.md) | 外部 self-improving Agent 的分层思想 |
+| [a2a/README.md](./a2a/README.md) | A2A 协议结构、Agent Card、Task 状态机 |
 
-> **状态说明**：P0/P1 计划的代码（约 8,000 行 Go）已编写在 `apps/station/app/subserver/agent/` 下，但所有验收标准均未通过端到端验证。当前首要任务是跑通第一个完整 Turn，而非继续编写新代码。
+## 当前结论
 
-## 核心结论
-
-- Agent 自成长 = **知识获取 + 知识存储 + 知识应用 + 知识评估 + 知识修正** 的闭环。
-- 成长可度量：Growth Score 基于 turn outcome 的行为度量（成功率、反馈比例、skill 效果、memory 信任健康度），不是 CRUD 计数器。
-- 成长可归因：TurnTrace 记录每次 turn 实际使用的 memory snapshot 和 skills，反馈精准归因到具体知识资产。
-- Station 承担全部后端能力，Tauri 承担通信桥接，Desktop 承担用户交互和成长可视化。
-
-## 命名约定
-
-- 架构文档放在 `docs/architecture/agent/` 根目录
-- 执行计划放在 `docs/architecture/agent/execution-plans/`，按日期命名
-- 文件名格式：`日期-英文短名.md`
+- Agent Kernel 是 Peers-Touch 当前目标架构，不是对旧 Agent 子服务的兼容层。
+- 历史代码、历史 API、历史数据都不是约束；阻碍目标架构时可以删除或替换。
+- gdpa-agent-box 是参考源，不是实现源；不要修改 gdpa-agent-box，也不要复制它的 UI/UX。
+- Provider 统一建模为 Eino-native、Vendor API、CLI-wrapped 三类；CLI-wrapped 只按能力矩阵选择性可控。

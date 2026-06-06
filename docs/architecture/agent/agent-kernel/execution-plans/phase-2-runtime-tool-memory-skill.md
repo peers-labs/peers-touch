@@ -1,7 +1,7 @@
 # Phase 2 — Runtime, Tool, Memory, Skill
 
 > **Status**: draft
-> **Version**: v1.0
+> **Version**: 2026.06
 > **Created**: 2026-06-06 | **Updated**: 2026-06-06
 > **Owner**: Architecture Team
 > **Module**: `apps/station/app/subserver/agent/`
@@ -10,15 +10,15 @@
 
 ## 1. 目标
 
-把 Agent Kernel 从“能记录 Turn”推进到“能真实执行 Turn”：实现 builtin provider runtime、schema-first tool calling、Memory snapshot、Skill index 和 Growth trace 输入。
+把 Agent Kernel 从“能记录 Turn”推进到“能真实执行 Turn”：实现 Eino-native Provider、Vendor API Provider、schema-first tool calling、Memory snapshot、Skill index 和 Growth trace 输入。
 
 ---
 
 ## 2. 交付范围
 
-1. `RuntimeRegistry` 与 `builtin_provider_runtime`。
+1. `ProviderRegistry`、`eino_native` Provider 与基础 `vendor_api` Provider。
 2. `TurnRunner` 状态机：queued、preparing、running、waiting_approval、completed、failed、cancelled。
-3. Provider adapter：支持 native tool calling 的 OpenAI-compatible 协议。
+3. Provider adapter：支持 Eino-native tool loop 和 OpenAI-compatible native tool calling。
 4. Tool registry：descriptor、schema、policy、approval、audit。
 5. Builtin tools：memory、skill、scheduler 最小集。
 6. Memory：item、retrieval、snapshot、feedback、freeze/rollback 基础。
@@ -34,6 +34,7 @@
 - 不做 A2A 远程调用。
 - 不做 Coding Agent。
 - 不做复杂 workspace isolation。
+- 不做 CLI-wrapped Provider；CLI provider 单独阶段接入，避免黑盒能力污染主线闭环。
 
 ---
 
@@ -53,5 +54,5 @@
 | 风险 | 处理 |
 |------|------|
 | provider tool call 格式差异 | provider adapter 只输出统一 ToolCall |
-| 旧文本工具调用依赖未清理 | 新 runtime 不兼容旧 tag，旧入口保留到迁移完成 |
-| Memory/Skill 迁移影响旧数据 | Phase 2 只新增新表和兼容读，不原地破坏 |
+| 文本工具调用依赖残留 | Agent Kernel 不支持 tag tool call，相关代码直接删除 |
+| Memory/Skill 历史数据不匹配 | 历史数据不作为约束，可以清空后按新 schema 初始化 |
