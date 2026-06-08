@@ -1,0 +1,38 @@
+{
+  "id": "desktop-federation-surfaces",
+  "status": "active",
+  "product_area": "federation",
+  "owners": [
+    "apps/desktop/src/pages/FederationGovernancePage.tsx",
+    "apps/desktop/src/components/common/StationPicker.tsx",
+    "apps/desktop/src/components/chat/FindPeopleModal.tsx",
+    "apps/desktop/src/store/stationRegistry.ts",
+    "apps/desktop/src-tauri/src/infrastructure/station_registry.rs"
+  ],
+  "truth_sources": [
+    "StationRegistry",
+    "Federation Plaza projection",
+    "Federation catalog projection"
+  ],
+  "visible_surfaces": [
+    {"type": "desktop", "route": "onboarding station picker"},
+    {"type": "desktop", "route": "federation governance page"},
+    {"type": "desktop", "route": "find people modal"}
+  ],
+  "required_gates": ["desktop-check", "federation-desktop-gateway-smoke"],
+  "acceptance": {
+    "gateway": [
+      "active station points to the expected fedp5 station",
+      "station_probe returns online peer identity"
+    ],
+    "visible": [
+      "StationPicker exposes current station",
+      "Federation page exposes Station and Federation context",
+      "Find People explains local and federation search context"
+    ]
+  },
+  "negative": [
+    "Desktop must not silently connect to the wrong Station",
+    "UI labels must not hide Station Federation or Actor identity context"
+  ]
+}

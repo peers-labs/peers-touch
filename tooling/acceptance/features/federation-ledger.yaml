@@ -1,0 +1,16 @@
+{
+  "id": "federation-ledger",
+  "status": "active",
+  "product_area": "federation",
+  "owners": ["model/domain/federation/**", "apps/station/app/subserver/federation/**"],
+  "truth_sources": ["federation_ledger_events"],
+  "required_gates": ["proto-build", "station-federation-unit", "federation-three-node-e2e"],
+  "acceptance": {
+    "service": [
+      "ledger append preserves hash chain",
+      "replay rebuilds materialized state",
+      "three-node testnet converges to one head"
+    ]
+  },
+  "negative": ["proposals must not advance ledger head", "forks must not be silently ignored"]
+}
