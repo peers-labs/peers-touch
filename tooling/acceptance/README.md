@@ -11,7 +11,7 @@ run for a changed path, and which artifacts should be produced for human review.
 - `domains/` defines validation profiles for product domains such as Federation.
 - `domains/index.yaml` lists project domains, onboarding status, coverage state, and next candidates.
 - `templates/` contains domain, capability, and feature templates for new product domains.
-- `gates.yaml` defines gate commands, timeouts, environments, and artifact expectations.
+- `gates.yaml` defines gate commands, timeouts, environments, tiers, and artifact expectations.
 - `features/` contains product feature contracts.
 - `gates/` contains stable cross-system acceptance implementations.
 - `playbooks/` explains how agents should run, diagnose, and preserve acceptance flows.
@@ -44,12 +44,13 @@ This creates a two-way proof:
 ## Agent Workflow
 
 1. Update or add a feature contract when a new product capability is introduced.
-2. Run `make acceptance-plan` after code changes.
-3. Run `make acceptance-run` for the selected gates.
-4. Run `make acceptance-report` and include proven / unproven scope in the handoff.
-5. Move useful probes into `tooling/acceptance/gates/` and reference them from `gates.yaml`.
-6. For a product capability loop, run the capability-specific report target such as `make acceptance-federation-report`.
-7. For a new product domain, follow `docs/architecture/acceptance-framework/domain-onboarding.md` and start from `tooling/acceptance/templates/`.
+2. Run `make acceptance-plan ACCEPTANCE_RANGE=<base>...<head>` after code changes.
+3. Run `make quality-evidence REVIEW_RANGE=<base>...<head>` when the change is entering review.
+4. Run `make acceptance-run-ci` for selected `ci-*` gates, or `make acceptance-run-env-evidence` only when the required environment is available.
+5. Run `make acceptance-report` and include proven / unproven scope in the handoff.
+6. Move useful probes into `tooling/acceptance/gates/` and reference them from `gates.yaml`.
+7. For a product capability loop, run the capability-specific report target such as `make acceptance-federation-report`.
+8. For a new product domain, follow `docs/architecture/acceptance-framework/domain-onboarding.md` and start from `tooling/acceptance/templates/`.
 
 ## Boundary
 

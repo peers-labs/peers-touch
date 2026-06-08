@@ -1,440 +1,347 @@
 ---
 name: github-review
 description: >
-  Use when the user asks to review a pull request, provide code review feedback,
-  or when you need to analyze PR changes and submit structured review comments
-  on GitHub for the Peers-Touch project.
+  Use when the user asks to review a pull request, audit a diff, provide code
+  review feedback, or decide whether a Peers-Touch change is safe to merge.
+  The agent is the primary reviewer; scripts, CI, quality-check, and acceptance
+  reports provide evidence, not a replacement for code reading and architectural
+  judgment.
 ---
 
-# GitHub Review — Code Review Skill
+# GitHub Review
 
-Perform structured code reviews on GitHub Pull Requests using `gh` CLI,
-following Peers-Touch project conventions.
+Run an agent-led Peers-Touch code review. The goal is a risk-focused merge
+recommendation with concrete findings. Repository instruction files are
+constraints only; do not answer by saying they were read.
 
 ## Review Philosophy
 
-1. **Focus on substance** — logic errors, security issues, architectural violations, performance
-2. **Skip trivia** — do not comment on formatting, naming style, or obvious patterns
-3. **Be constructive** — suggest fixes, not just point out problems
-4. **Respect context** — understand the PR's intent before reviewing
+1. **Agent-led judgment** - the agent owns the review decision; automation owns
+   evidence.
+2. **Evidence over confidence** - CI, hard rules, quality-check, acceptance, and
+   knowledge matching are inputs to judgment, not the judgment itself.
+3. **Findings first** - defects, missing evidence, and unresolved questions lead
+   the response.
+4. **Fail closed on missing evidence** - invalid diff ranges, unavailable CI,
+   failed knowledge matching, or missing acceptance plans are review findings.
+5. **Escalate precisely** - humans handle owner intent, product tradeoffs,
+   security posture, rollout risk, and hard-rule waivers.
 
 ## Review Workflow
 
-### 1. Fetch PR Information
+### 1. Establish The Target
+
+Accept a PR number, PR URL, commit, explicit git range, or supplied diff.
+
+For a PR:
 
 ```bash
-# View PR metadata
-gh pr view <pr-number>
-
-# View the diff
-gh pr diff <pr-number>
-
-# Check CI status
-gh pr checks <pr-number>
-
-# List changed files
+gh pr view <pr-number> --json number,title,body,baseRefName,headRefName,mergeStateStatus,reviewDecision,files,commits
 gh pr diff <pr-number> --name-only
+gh pr diff <pr-number>
+gh pr checks <pr-number>
 ```
 
-### 2. Understand Context
+For a local range:
 
-Before reviewing code:
-- Read the PR description (Summary + Motivation)
-- Check related issues
-- Understand the scope (which platform/module)
-- Review the test plan
+```bash
+git diff --name-only <base>...<head>
+git diff --stat <base>...<head>
+git diff <base>...<head>
+```
 
-### 3. Load Review System Context
+Verify range endpoints before trusting any report derived from them.
 
-Before judging code, run or inspect the same inputs the CI uses:
+### 2. Collect Quality Evidence
+
+Prefer using the `quality-check` skill before making the final review judgment.
+For local ranges, the preferred executable entry is:
+
+```bash
+make quality-evidence REVIEW_RANGE=<base>...<head>
+```
+
+At minimum, or when reconstructing manually, collect:
 
 ```bash
 tooling/scripts/review/route-change.sh --range <base>...<head>
-tooling/scripts/review/knowledge-match.sh --range <base>...<head>
+tooling/scripts/review/knowledge-match.sh --range <base>...<head> --strict
 tooling/scripts/review/hard-rules.sh --range <base>...<head>
+python3 tooling/scripts/acceptance-plan.py --range <base>...<head>
 ```
 
-If the PR changes this skill, `docs/global/code-review-framework.md`, `docs/knowledge/**`, or review scripts/fixtures, also run:
+If the PR touches review or skill infrastructure, also run:
 
 ```bash
 tooling/scripts/review/skill-check.sh
 ```
 
-### 4. Review Checklist
+If the PR touches acceptance infrastructure, also run:
 
-Check against Peers-Touch project conventions (`AGENTS.md`):
+```bash
+make acceptance-validate
+make acceptance-coverage-report
+make acceptance-plan ACCEPTANCE_RANGE=<base>...<head>
+```
 
-#### Hard Rules (must flag violations)
+For selected acceptance gates, record which were run, which were not run, and
+why. Unrun gates are unproven, never passed.
 
-| Rule | What to check |
-|------|---------------|
-| `debug-statement` | `console.log`, `println!`, `fmt.Println`, `print`, `debugPrint` |
-| `secret-exposure` / No hardcoded secrets | Tokens, passwords, API keys, private keys in code |
-| Proto-first | Manual data models instead of proto-generated |
-| `mock-api` / No mock APIs | Mock data in frontend-backend APIs (unless explicitly noted) |
-| `hardcoded-ui-string` | User-facing UI text must use locale keys and i18n |
-| `silent-error` / No silent error swallowing | Empty catch blocks, ignored errors, `_ = err` |
-| Error context | Error messages without operation name or key params |
-| `generated-file-edit` | Changes to `.pb.go`, `.pb.dart`, prost `.rs` files |
+### 3. Read By Risk
 
-#### Architectural Checks
+Review in this order:
 
-| Check | Description |
-|-------|-------------|
-| DDD compliance (Station) | Subserver code follows aggregate root / domain service / domain event |
-| Proto source of truth | New data models defined in `model/domain/*.proto` first |
-| Logging | Uses domain-specific loggers, not raw print |
-| Error codes | Typed error codes in correct range (10000s/20000s/30000s) |
-| Inter-app protocol | Protobuf only, no JSON between apps |
+1. code that owns truth sources, security, privacy, persistence, protocol,
+   runtime freshness, or CI gates;
+2. files matched by `docs/knowledge`;
+3. acceptance feature/capability contracts selected by the diff;
+4. public APIs and generated contract changes;
+5. tests, fixtures, and reports that claim coverage;
+6. documentation and PR template claims.
 
-#### Review Profiles
+### 4. Decide
 
-Use the profile list emitted by `route-change.sh`. If running manually, apply this mapping:
+Use the evidence, but decide from code and project contracts:
+
+- Does the implementation preserve the correct source of truth?
+- Does it violate a matched invariant or repeat a pitfall?
+- Does acceptance evidence actually prove the claimed product scope?
+- Are unproven scopes acceptable for this PR, or must they block?
+- Is human owner approval required for architecture, security, federation,
+  persistence, rollout, or product behavior?
+
+## Review Profiles
 
 | Profile | Focus |
 |---|---|
-| `proto` | `model/domain/*.proto` remains the source of truth; generated files are regenerated, not hand edited |
-| `station` | Station owns shared business truth; `app` depends on `frame`; subservers follow DDD and typed errors |
-| `desktop` | Desktop follows Tauri command path, Page / Runtime / Boot contracts, runtime projection freshness, logger and i18n rules |
-| `mobile` | Mobile remains Tauri v2 Mobile + Web UI + Rust kernel + native plugins; native plugins do not define business truth |
-| `packages` | Shared packages do not introduce hidden platform ownership or incompatible public APIs |
-| `knowledge` | `docs/knowledge` frontmatter, `owns:`, lifecycle, and recurrence checks are valid |
-| `acceptance` | Product acceptance domains, capabilities, features, gates, reports, and onboarding docs remain deterministic and evidence-driven |
-| `skill` | Review Skill has current freshness hash, golden fixtures, and self-growth evidence |
-| `ci` | CI still enforces framework gates and does not bypass hard rules |
-
-#### Operational Knowledge
-
-For every changed path, load matched entries from `docs/knowledge/` using:
-
-```bash
-tooling/scripts/review/knowledge-match.sh --range <base>...<head>
-```
-
-Treat matched invariants as blocking review rules. Treat matched pitfalls as regressions to actively rule out. Treat matched playbooks as required procedure for that task class.
+| `proto` | Model source of truth, compatibility, generated artifact consistency |
+| `station` | Station business truth, DDD subservers, typed errors, persistence |
+| `desktop` | Tauri command path, runtime projection freshness, i18n, logger |
+| `mobile` | Tauri Mobile mainline, native plugin boundaries, no Flutter expansion |
+| `packages` | shared API compatibility and hidden platform dependency |
+| `locales` | locale coverage and no raw user-facing strings |
+| `knowledge` | frontmatter, owns, lifecycle, semantic delta |
+| `acceptance` | capability/domain/feature/gate/report consistency and evidence honesty |
+| `skill` | skill safety, freshness, self-growth, CODEOWNERS |
+| `review-system` | fail-closed scripts, fixtures, CI portability |
+| `ci` | GitHub Actions reliability, permissions, fork/range behavior |
 
 ## Script vs Skill Boundary
 
-Scripts are gates, not reviewers. They provide deterministic evidence:
+Scripts are evidence producers:
 
-- `route-change.sh` identifies which review profiles apply.
+- `quality-evidence.py` aggregates review route, knowledge matching, acceptance
+  plan, gate tiers, and capability proven/unproven scope.
+- `route-change.sh` identifies review profiles.
 - `hard-rules.sh` catches simple blocking patterns.
-- `knowledge-match.sh` finds operational knowledge that must be read.
-- `skill-check.sh` proves this skill is structurally fresh and backed by fixtures.
+- `knowledge-match.sh` finds knowledge entries that must be read.
+- `acceptance-plan.py` selects product features and acceptance gates.
+- `acceptance-validate.py` validates acceptance structure and, with
+  `--require-proven`, latest gate evidence.
+- `skill-check.sh` proves review skill structure and fixtures.
 
-This skill owns the judgment that scripts cannot make:
+This skill owns the judgment scripts cannot make:
 
-- whether a change violates architecture ownership even when syntax passes;
-- whether a runtime projection is complete or only refreshed by a page mount;
-- whether a Station subserver leaked business rules into `frame`;
-- whether proto changes preserve cross-end compatibility;
-- whether tests actually cover the changed behavior;
-- whether a new review finding should become a fixture, pitfall, invariant, or playbook.
+- architecture ownership and source-of-truth correctness;
+- runtime projection completeness vs page refresh hacks;
+- Station `app` / `frame` boundary correctness;
+- proto compatibility and staged rollout safety;
+- whether tests and acceptance gates prove the actual risk;
+- whether knowledge or acceptance contracts are stale;
+- whether a finding should become a fixture, invariant, pitfall, playbook, gate,
+  or skill update.
 
-When script output and code-reading disagree, trust the deeper code-reading result and explain the discrepancy in the review.
+## Hard Rules
+
+Treat these as blocking unless the user explicitly asks for exploratory review:
+
+| Code | Rule |
+|---|---|
+| `debug-statement` | raw `console.log`, `print`, `println!`, `fmt.Println`, `debugPrint`, or equivalent debug output |
+| `secret-exposure` | hardcoded secrets, tokens, passwords, private keys, or credentials |
+| `generated-file-edit` | manual edits to generated `.pb.go`, `.pb.dart`, prost `.rs`, or proto outputs |
+| `proto-first` | shared model or inter-app contract defined outside `model/domain/*.proto` |
+| `mock-api` | No mock frontend-backend collaborative APIs unless explicitly approved |
+| `hardcoded-ui-string` | user-facing text literal outside i18n |
+| `silent-error` | swallowed errors, ignored errors, empty catches, or missing context |
+| `logging-security` | logs tokens, passwords, secrets, or PII |
+| `architecture-boundary` | lower layer redefines architecture or platform ownership |
+
+Keywords intentionally present for freshness checks: hardcoded secrets, No mock,
+hardcoded-ui-string, silent error, generated, runtime projection, CODEOWNERS.
+
+## Operational Knowledge
+
+Run knowledge matching for changed paths and then do semantic review.
+
+Path matching means a knowledge file must enter review context. It does not prove
+the code complies.
+
+Knowledge Delta Review:
+
+- matched invariant violated by code -> block;
+- matched pitfall root cause reintroduced -> block or require evidence;
+- matched playbook skipped -> block unless the PR explains why it does not apply;
+- code changes the truth behind a knowledge entry -> require knowledge update or
+  owner-reviewed supersession;
+- bug fix discovers reusable root cause -> require pitfall or explicit waiver;
+- repeated procedure appears again -> propose playbook.
+
+## Acceptance Evidence
+
+Acceptance Framework proves product capability scope. It does not approve PRs.
+
+For impacted acceptance features:
+
+1. Read selected feature contracts under `tooling/acceptance/features/`.
+2. Read capability evidence under `tooling/acceptance/capabilities/`.
+3. Compare selected gates with gates run.
+4. Copy proven and unproven scope into the review evidence.
+5. Challenge over-claims: typecheck is not DOM E2E; gateway smoke is not full UI
+   behavior; Station SSE proof is not Desktop live DOM consumption.
+
+Block or hold when:
+
+- a product capability changed but feature/capability contracts did not;
+- a required gate is marked proven without run evidence;
+- an environment gate was skipped and the missing scope is central to the PR;
+- acceptance YAML says a truth source changed but code moved truth elsewhere;
+- reports claim more than the gates actually prove.
 
 ## Platform Review Playbooks
 
 ### Proto Review
 
-Use for `model/domain/**` and generated contract consumers.
-
 Check:
 
-- New shared concepts are added to `model/domain/*.proto`, not hand-written TS/Go/Rust/Kotlin/Swift models.
-- Field numbers are stable; removed fields are reserved or intentionally retained for compatibility.
-- Request/response messages carry enough context for typed error handling.
-- Generated files are not manually edited.
-- Station, Desktop, and Mobile contract consumers are updated together or the PR explains staged rollout safety.
-- Required generation commands are listed in the PR test plan.
-
-Blocking examples:
-
-- a client-only DTO duplicates a shared business object;
-- a generated `.pb.go` file changes without a corresponding `.proto` change;
-- a proto field is renumbered or reused.
+- shared concepts live in `model/domain/*.proto`;
+- field numbers are stable and removed fields are reserved;
+- generated files are not manually edited;
+- Station, Desktop, and Mobile contract consumers are updated or staged safely.
 
 ### Station Review
 
-Use for `apps/station/**`.
-
 Check:
 
-- Shared business truth stays in Station, not in Desktop or Mobile clients.
-- `apps/station/app` may depend on `apps/station/frame`; `frame` must not depend on `app`.
-- Business capability code is organized as a subserver with handler, application service, domain behavior, and persistence boundaries.
-- Domain decisions are not made in transport middleware or shared frame infrastructure.
-- Errors use typed codes and include operation context without logging PII or secrets.
-- Persistence changes have migration or compatibility reasoning.
-- Concurrency paths do not block relay read loops, event streams, or heartbeat processing.
-
-Blocking examples:
-
-- importing an app-layer package from frame code;
-- swallowing repository or handler errors;
-- logging tokens, passwords, actor-private data, or raw credentials;
-- adding business policy to frame middleware.
+- Station remains shared business truth;
+- `apps/station/app` may depend on `frame`, not the reverse;
+- business capability code follows subserver boundaries;
+- handlers do not own domain decisions;
+- errors use typed codes and include context;
+- persistence changes include migration or compatibility reasoning.
 
 ### Desktop Review
 
-Use for `apps/desktop/**`.
-
 Check:
 
-- `desktop-web -> desktop-rust -> station` remains the default business path.
-- Business calls go through `services/desktop_api.ts` and Tauri command contracts unless the PR documents a streaming or multipart exception.
-- New Tauri commands are registered in Rust and have aligned TS input/output types.
-- Pages are pure renderers over runtime/store state and do not own long-lived business freshness.
-- Runtime-backed features have both immediate event consumption and periodic reconciliation.
-- User-facing strings use locale keys.
-- Logging uses the Desktop logger, not raw console output.
-- UI changes preserve LobeUI-first direction unless the PR justifies an alternative.
-
-Blocking examples:
-
-- fixing stale chat/contact/notification state only with `useEffect(...load...)` in a component;
-- direct `fetch` for a Station business API without documented exception;
-- adding a page only to the legacy router without an explicit reason;
-- hardcoded UI text in React components.
+- `desktop-web -> desktop-rust -> station` remains the business path;
+- pages are pure renderers and do not own long-lived freshness;
+- runtime-backed features have event consumption and reconciliation;
+- user-facing strings use locale keys;
+- logging uses project loggers.
 
 ### Mobile Review
 
-Use for `apps/mobile/**`.
-
 Check:
 
-- Mobile remains Tauri v2 Mobile + Web UI + Rust capability kernel + native plugins.
-- Android Kotlin / iOS Swift code provides device capability integration, not independent business truth.
-- Flutter/Dart paths remain deprecated and are not expanded.
-- Mobile runtime projections follow the same source-of-truth rule as Desktop where applicable.
-- Station/Relay APIs remain the source for cross-end business state.
-- Native plugin boundaries do not create private protocols that bypass proto or Station ownership.
-- Web UI changes are mobile-first rather than Desktop screens scaled down blindly.
-
-Blocking examples:
-
-- storing shared business truth only in a native plugin;
-- adding new Flutter implementation paths;
-- defining mobile-only business DTOs for shared concepts;
-- bypassing Station truth with private native sync logic.
-
-### Package And Locale Review
-
-Use for `packages/**`.
-
-Check:
-
-- Shared packages do not pull in Desktop-only or Mobile-only runtime dependencies unless the package explicitly owns that platform.
-- Public APIs preserve workspace consumers or include migration notes.
-- `packages/locales/**` changes line up with new UI keys and do not leave raw fallback strings in components.
-- Applet SDK and applet contract changes preserve host/app boundaries.
-
-Blocking examples:
-
-- adding `@tauri-apps/api` to a package intended for shared web use;
-- changing exported storage semantics without updating Desktop/Mobile consumers;
-- adding UI strings without locale coverage.
+- Mobile remains Tauri v2 Mobile + Web UI + Rust capability kernel + native plugins;
+- native plugins provide device capability, not business truth;
+- Flutter paths remain deprecated;
+- Mobile does not create private protocols bypassing Station or proto.
 
 ### Knowledge Review
 
-Use for `docs/knowledge/**` and for PRs that fix bugs or discover invariants.
-
-Check:
-
-- Frontmatter includes `kind`, `title`, `status`, `owns`, and `detected`.
-- Active `owns:` entries point to existing files or valid directory prefixes.
-- Invariants state what must hold and include `How to verify`.
-- Pitfalls include symptom, root cause, mitigation, and recurrence detection.
-- Playbooks include a concrete procedure.
-- Superseded knowledge is marked with `status: superseded-by:<path>` and not deleted.
-
-Blocking examples:
-
-- adding a pitfall without recurrence detection;
-- deleting old knowledge instead of superseding it;
-- using knowledge files as a generic wiki with no path ownership.
+Check frontmatter, `owns:`, lifecycle, recurrence detection, append-only
+supersession, and semantic consistency with the code diff.
 
 ### Review-System Review
 
-Use for `tooling/scripts/review/**`, `tooling/review-fixtures/**`, `tooling/skills/github-review/**`, `.github/**`, and this framework.
-
-Check:
-
-- Deterministic gates remain portable to macOS local runs and Ubuntu CI.
-- New hard rules include at least one fixture.
-- Fixtures are intentionally excluded from normal source hard-rule scans but are scanned by `skill-check.sh`.
-- Review Skill changes update `FRESHNESS.md` only after checking whether upstream rule behavior changed.
-- CODEOWNERS protects skill, knowledge, review scripts, fixtures, architecture docs, and CI.
-- CI produces actionable review summaries, not only pass/fail output.
-
-Blocking examples:
-
-- adding a new hard-rule grep without a fixture;
-- making `skill-check.sh` pass while bypassing fixture detection;
-- letting the Review Skill silently self-modify without owner review.
+Check scripts fail closed, fixtures cover positive and negative cases, workflow
+permissions are minimal, CODEOWNERS are real, and review skill freshness remains
+meaningful.
 
 ### Acceptance Review
 
-Use for `tooling/acceptance/**`, `tooling/scripts/acceptance-*.py`, `tooling/make/acceptance.mk`, and `docs/architecture/acceptance-framework/**`.
+Check domain, capability, feature, gate, report, and onboarding consistency.
+Gate scripts must prove real product behavior or honestly report unproven scope.
 
-Check:
+## Severity Levels
 
-- Domain, capability, feature, and gate YAML remains graph-consistent and validates through `make acceptance-validate`.
-- Gate scripts prove product behavior through real surfaces or clearly declared dry-run gates; they must not hide missing runtime dependencies as success.
-- Reports under `tooling/acceptance/reports/` are reproducible outputs, not hand-authored source-of-truth claims.
-- New domains follow `docs/architecture/acceptance-framework/domain-onboarding.md` and start from `tooling/acceptance/templates/`.
-- Acceptance gates complement unit/platform checks; they do not replace lower-level tests for local correctness.
+| Severity | Blocks merge? | Use when |
+|---|---:|---|
+| `critical` | yes | security/privacy leak, data loss, auth bypass, broken migration, unsafe CI fail-open |
+| `bug` | yes | correctness regression, user-visible wrong behavior, runtime freshness failure |
+| `convention` | yes | project iron-law or source-of-truth violation |
+| `suggestion` | no | maintainability, performance, or test improvement without correctness risk |
+| `question` | maybe | intent unclear; blocks only if answer exposes a blocker |
 
-Blocking examples:
+## Review Output Format
 
-- adding a feature contract that references a missing capability or gate;
-- marking a gate as passed without captured evidence or explicit dry-run status;
-- coupling acceptance scripts to one developer's local paths, ports, credentials, or browser profile.
+Use Markdown. Findings lead the response, ordered by severity:
 
-#### Quality Checks
+```markdown
+Overall: merge | hold | reject
 
-| Check | Description |
-|-------|-------------|
-| Logic correctness | Edge cases, off-by-one, null/nil handling |
-| Concurrency | Race conditions, deadlocks, missing locks |
-| Performance | N+1 queries, unnecessary allocations, missing indexes |
-| Security | SQL injection, XSS, auth bypass, IDOR |
-| Test coverage | Critical paths have test coverage |
+### Findings
 
-### 5. Submit Review
+#### critical
 
-#### Approve (no issues found)
+1. <title>
+   - File:
+   - Problem:
+   - Impact:
+   - Suggested fix:
+   - Confidence:
 
-```bash
-gh pr review <pr-number> --approve --body "LGTM. Changes look correct and follow project conventions."
+### Evidence
+
+- Range:
+- Review profiles:
+- Quality evidence:
+- Acceptance evidence:
+- Matched knowledge:
+- Tests/CI:
+
+### Merge Guidance
+
+- Must fix before merge:
+- Can follow up:
+- Human owner review needed:
 ```
 
-#### Request Changes (blocking issues)
-
-```bash
-gh pr review <pr-number> --request-changes --body "$(cat <<'EOF'
-## Review Summary / 审查总结
-
-<EN: Overall assessment>
-<CN: 整体评估>
-
-## Issues Found / 发现的问题
-
-### 1. [severity] <title>
-
-**File**: `<file-path>#L<line>`
-**Issue**: <EN description>
-**问题**: <CN description>
-**Suggestion**: <proposed fix>
-
-### 2. ...
-
-EOF
-)"
-```
-
-#### Comment (non-blocking feedback)
-
-```bash
-gh pr review <pr-number> --comment --body "$(cat <<'EOF'
-## Review Feedback / 审查反馈
-
-<EN + CN bilingual feedback>
-
-EOF
-)"
-```
-
-#### Inline Comments
-
-For specific line-level feedback, use the GitHub web UI or:
-
-```bash
-# Add a single-line comment
-gh api repos/{owner}/{repo}/pulls/<pr-number>/comments \
-  -f body="<comment>" \
-  -f commit_id="<commit-sha>" \
-  -f path="<file-path>" \
-  -F line=<line-number> \
-  -f side="RIGHT"
-```
-
-### 6. Severity Levels
-
-Use these prefixes in review comments:
-
-| Prefix | Meaning | Blocks merge? |
-|--------|---------|---------------|
-| `[critical]` | Security vulnerability, data loss risk, crash | Yes |
-| `[bug]` | Logic error that causes incorrect behavior | Yes |
-| `[convention]` | Violates AGENTS.md iron laws | Yes |
-| `[suggestion]` | Improvement idea, not blocking | No |
-| `[question]` | Need clarification on intent | No |
-| `[nit]` | Minor style preference (use sparingly) | No |
+If no findings exist, say so and still list residual risk and checks not run.
 
 ## Skill Freshness
 
-This skill is fresh only if all of the following pass:
+This skill is fresh only if:
 
 ```bash
 tooling/scripts/review/skill-check.sh
 ```
 
-The freshness proof is composed of:
-
-- required section markers in this `SKILL.md`;
-- upstream rule hash in `tooling/skills/github-review/FRESHNESS.md`;
-- golden fixtures under `tooling/review-fixtures/`;
-- explicit references to hard rules, review profiles, operational knowledge, CODEOWNERS, generated-file handling, runtime projection checks, and self-growth.
-
-If an upstream rule file changes and the freshness hash changes, the PR must either update this skill or explain why the rule change does not affect review behavior, then refresh the hash in the same PR.
+passes, and any upstream quality, review, knowledge, or acceptance rule change is
+reflected here or explicitly waived in the PR.
 
 ## Self-Growth
 
-The Review Skill can propose growth but must not silently rewrite itself. Use this loop:
+After accepted findings or escaped defects:
 
-1. Classify accepted findings and escaped defects as one-off, invariant, pitfall, playbook, or skill-rule gap.
-2. Add or update a golden fixture when the issue should be caught again.
-3. Update `docs/knowledge/**` when the issue is operational knowledge.
-4. Update this `SKILL.md` when the issue changes review behavior.
-5. Run `tooling/scripts/review/skill-check.sh`.
-6. Require human owner review through CODEOWNERS before merge.
-
-Growth triggers:
-
-- one escaped `critical` or `bug` finding requires a fixture;
-- the same issue class appearing twice should become a pitfall or invariant;
-- a repeated task procedure should become a playbook;
-- three false positives should narrow the rule and add a fixture for the allowed shape.
-
-## Review Output Format
-
-Use bilingual format for all review comments:
-
-```markdown
-## Review Summary / 审查总结
-
-EN: <assessment>
-CN: <评估>
-
-### Issues / 问题
-
-1. **[severity] <title>**
-   - File: `path/to/file.ts#L42`
-   - EN: <description>
-   - CN: <描述>
-   - Fix: <suggestion>
-
-### Positive Notes / 亮点 (optional, only if genuinely noteworthy)
-
-- <notable positive aspect>
-```
+1. classify the gap as one-off, invariant, pitfall, playbook, fixture, gate, or
+   skill-rule gap;
+2. add or update review fixtures for deterministic hard-rule gaps;
+3. update `docs/knowledge/**` for operational knowledge;
+4. update acceptance contracts/gates when product evidence was missing;
+5. update this skill when review behavior changes;
+6. require CODEOWNERS review before merge.
 
 ## Anti-Patterns
 
-- **Never** approve a PR you haven't fully read
-- **Never** comment on every file just to show thoroughness
-- **Never** block a PR for style preferences — only for real issues
-- **Never** review your own PR as the sole reviewer
-- **Never** provide feedback without actionable suggestions
-- **Never** use harsh or judgmental language
+- Approving because CI is green.
+- Treating `make review` or `make acceptance-run` as the review itself.
+- Reporting script output without reading risky code.
+- Marking unrun acceptance gates as proven.
+- Refreshing hashes or fixtures as bookkeeping without explaining behavior.
+- Asking humans to re-review everything instead of escalating precise decisions.
+- Blocking on style preferences.
+- Ignoring missing evidence such as invalid range, unavailable CI, or failed
+  knowledge/acceptance planning.

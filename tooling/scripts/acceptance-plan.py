@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plan acceptance gates from the current git diff."""
+"""Plan acceptance gates from a git diff range."""
 
 from __future__ import annotations
 
@@ -15,9 +15,9 @@ def load_json_yaml(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def changed_paths() -> list[str]:
+def changed_paths(diff_range: str) -> list[str]:
     result = subprocess.run(
-        ["git", "diff", "--name-only", "HEAD"],
+        ["git", "diff", "--name-only", diff_range],
         check=True,
         text=True,
         capture_output=True,
@@ -53,6 +53,7 @@ def plan(root: Path, paths: list[str]) -> dict[str, Any]:
                     "command": gates[gate_id]["command"],
                     "timeout_seconds": gates[gate_id].get("timeout_seconds", 600),
                     "environment": gates[gate_id].get("environment", "local"),
+                    "tier": gates[gate_id].get("tier", "local-evidence"),
                     "description": gates[gate_id].get("description", ""),
                     "required_by": [],
                 },
@@ -71,12 +72,15 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default="tooling/acceptance")
     parser.add_argument("--output", default="tooling/acceptance/reports/latest-plan.json")
+    parser.add_argument("--range", dest="diff_range", default="HEAD")
     parser.add_argument("--self-check", action="store_true")
+    parser.add_argument("--changed-file", action="append", default=[])
     args = parser.parse_args()
 
     root = Path(args.root)
-    paths = changed_paths()
+    paths = args.changed_file or changed_paths(args.diff_range)
     result = plan(root, paths)
+    result["range"] = args.diff_range
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -84,11 +88,12 @@ def main() -> int:
 
     print("Acceptance Plan")
     print("===============")
+    print(f"range: {args.diff_range}")
     print(f"changed_paths: {len(result['changed_paths'])}")
     print(f"impacted_features: {', '.join(result['impacted_features']) or 'none'}")
     if result["selected_gates"]:
         for gate in result["selected_gates"]:
-            print(f"[GATE] {gate['id']}: {gate['command']}")
+            print(f"[GATE] {gate['id']} [{gate['tier']}/{gate['environment']}]: {gate['command']}")
     else:
         print("[GATE] none")
     print(f"plan: {output}")

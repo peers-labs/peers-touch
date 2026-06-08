@@ -10,6 +10,22 @@ import sys
 from pathlib import Path
 from typing import Any
 
+ALLOWED_GATE_TIERS = {
+    "ci-structure",
+    "ci-cheap",
+    "local-evidence",
+    "env-evidence",
+    "nightly",
+    "release",
+}
+
+ALLOWED_GATE_ENVIRONMENTS = {
+    "local",
+    "fedp5",
+    "local-desktop-gateway",
+    "local-desktop-web-gateway",
+}
+
 
 def load(path: Path) -> dict[str, Any]:
     if not path.exists():
@@ -63,6 +79,23 @@ def flatten_feature_gates(features: list[dict[str, Any]], feature_ids: list[str]
         require(feature is not None, f"capability references missing feature: {feature_id}")
         gates.update(feature.get("required_gates", []))
     return gates
+
+
+def validate_gate_catalog(gate_defs: dict[str, Any]) -> None:
+    require(gate_defs, "gates.yaml has no gates")
+    for gate_id, gate in gate_defs.items():
+        require(gate.get("command"), f"{gate_id}: gate command is required")
+        environment = gate.get("environment", "local")
+        tier = gate.get("tier")
+        require(environment in ALLOWED_GATE_ENVIRONMENTS, f"{gate_id}: invalid environment {environment!r}")
+        require(tier in ALLOWED_GATE_TIERS, f"{gate_id}: invalid or missing tier {tier!r}")
+        if environment != "local":
+            require(
+                tier in {"env-evidence", "nightly", "release"},
+                f"{gate_id}: non-local environment {environment!r} cannot use tier {tier!r}",
+            )
+        if tier in {"ci-structure", "ci-cheap"}:
+            require(environment == "local", f"{gate_id}: CI tier gates must use local environment")
 
 
 def latest_passed_gates(reports_dir: Path, current_gate_id: str, require_run: bool) -> set[str]:
@@ -167,6 +200,7 @@ def validate_domain(repo_root: Path, acceptance_root: Path, domain_id: str, requ
     capabilities = load_capabilities(acceptance_root)
     features = [load(path) for path in sorted((acceptance_root / "features").glob("*.yaml"))]
     gate_defs = load(acceptance_root / "gates.yaml").get("gates", {})
+    validate_gate_catalog(gate_defs)
     passed_gates = latest_passed_gates(acceptance_root / "reports", domain.get("validation_gate_id", ""), require_proven)
 
     selected = []
@@ -205,7 +239,7 @@ def main() -> int:
         print(f"[OK] report: {output}")
         for result in results:
             print(f"[{result['status'].upper()}] {result['id']}")
-        if args.require_proven and result["missing_run_gates"]:
+            if args.require_proven and result["missing_run_gates"]:
                 print(f"  missing_run_gates: {', '.join(result['missing_run_gates'])}")
         if args.require_proven:
             unproven.extend(result for result in results if result["status"] != "proven")

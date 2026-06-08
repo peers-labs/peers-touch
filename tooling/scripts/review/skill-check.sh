@@ -140,6 +140,76 @@ else
   done < <(find "$fixtures_dir" -name expected.yml | sort)
 fi
 
+invalid_range="__pt_missing_review_range__"
+if tooling/scripts/review/route-change.sh --range "$invalid_range" >/tmp/pt-route-invalid.$$ 2>&1; then
+  fail "route-change.sh must fail closed on invalid git ranges"
+fi
+rm -f /tmp/pt-route-invalid.$$
+
+if tooling/scripts/review/hard-rules.sh --range "$invalid_range" >/tmp/pt-hard-rules-invalid.$$ 2>&1; then
+  fail "hard-rules.sh must fail closed on invalid git ranges"
+fi
+rm -f /tmp/pt-hard-rules-invalid.$$
+
+if tooling/scripts/review/knowledge-match.sh --range "$invalid_range" >/tmp/pt-knowledge-invalid.$$ 2>&1; then
+  fail "knowledge-match.sh must fail closed on invalid git ranges"
+fi
+rm -f /tmp/pt-knowledge-invalid.$$
+
+knowledge_dir_output="$(
+  tooling/scripts/review/knowledge-match.sh \
+    --changed-file apps/station/frame/touch/federation/republisher/fixture.go \
+    --strict 2>&1
+)"
+if ! grep -q "republisher-broadcast-spam" <<< "$knowledge_dir_output"; then
+  fail "knowledge-match.sh must match owns directories with trailing slashes"
+fi
+
+quality_json="$(mktemp)"
+quality_markdown="$(mktemp)"
+if ! python3 tooling/scripts/quality-evidence.py --range HEAD --output "$quality_json" --markdown-output "$quality_markdown" >/tmp/pt-quality-evidence.$$ 2>&1; then
+  cat /tmp/pt-quality-evidence.$$
+  fail "quality-evidence.py must produce review-ready evidence for HEAD"
+elif ! python3 - "$quality_json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+required = {"range", "changed_paths", "route", "knowledge", "acceptance", "evidence_gaps", "ready_for_github_review"}
+missing = sorted(required - set(data))
+if missing:
+    raise SystemExit(f"missing quality evidence keys: {missing}")
+PY
+then
+  fail "quality-evidence.py JSON output is missing required keys"
+fi
+rm -f "$quality_json" "$quality_markdown" /tmp/pt-quality-evidence.$$
+
+tier_run_json="$(mktemp)"
+if ! python3 tooling/scripts/acceptance-run.py \
+  --gate acceptance-plan-self \
+  --gate chat-runtime-e2e \
+  --tier ci-structure \
+  --dry-run \
+  --output "$tier_run_json" >/tmp/pt-acceptance-tier.$$ 2>&1; then
+  cat /tmp/pt-acceptance-tier.$$
+  fail "acceptance-run.py must support tier-filtered dry runs"
+elif ! python3 - "$tier_run_json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+results = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")).get("results", [])
+ids = [result.get("id") for result in results]
+if ids != ["acceptance-plan-self"]:
+    raise SystemExit(f"unexpected tier-filtered gates: {ids}")
+PY
+then
+  fail "acceptance-run.py tier filtering selected the wrong gates"
+fi
+rm -f "$tier_run_json" /tmp/pt-acceptance-tier.$$
+
 if rg -n 'ignore (previous|all) instructions|you are now|system:\s*override|curl .*\| *sh|rm -rf /' "$skill_file" "$freshness_file" >/tmp/pt-skill-danger.$$ 2>/dev/null; then
   cat /tmp/pt-skill-danger.$$
   rm -f /tmp/pt-skill-danger.$$
