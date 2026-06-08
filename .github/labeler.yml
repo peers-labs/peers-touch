@@ -50,6 +50,19 @@ tooling:
       - any-glob-to-any-file:
           - 'tooling/**'
 
+review-system:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/global/code-review-framework.md'
+          - 'tooling/scripts/review/**'
+          - 'tooling/review-fixtures/**'
+          - 'tooling/skills/github-review/**'
+
+knowledge:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/knowledge/**'
+
 docs:
   - changed-files:
       - any-glob-to-any-file:
