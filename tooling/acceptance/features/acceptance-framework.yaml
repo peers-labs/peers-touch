@@ -1,0 +1,36 @@
+{
+  "id": "acceptance-framework",
+  "status": "active",
+  "product_area": "delivery-quality",
+  "owners": [
+    "tooling/acceptance/**",
+    "tooling/scripts/acceptance-*.py",
+    "Makefile"
+  ],
+  "truth_sources": [
+    "tooling/acceptance/capabilities/*.yaml",
+    "tooling/acceptance/domains/*.yaml",
+    "tooling/acceptance/registry.yaml",
+    "tooling/acceptance/gates.yaml",
+    "tooling/acceptance/features/*.yaml",
+    "tooling/acceptance/reports/latest-run.json"
+  ],
+  "required_gates": ["acceptance-plan-self"],
+  "acceptance": {
+    "framework": [
+      "capability graph links product capabilities to features gates evidence and unproven scope",
+      "domain profiles select product domains used to validate acceptance effectiveness",
+      "changed paths select required gates through registry rules",
+      "explicit product gates can run independently from the current diff",
+      "reports preserve proven and unproven product scope for human review"
+    ],
+    "product_loop": [
+      "Federation gates validate real Station Dashboard and Desktop surfaces",
+      "Federation run results validate that acceptance gates are executable and useful without becoming acceptance core"
+    ]
+  },
+  "negative": [
+    "acceptance must not replace language-native unit tests",
+    "agent probes must be converted to stable gates before a feature is marked done"
+  ]
+}

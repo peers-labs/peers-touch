@@ -1,0 +1,14 @@
+{
+  "id": "<feature-id>",
+  "status": "active",
+  "product_area": "<domain-id>",
+  "owners": ["<repo-path-pattern>"],
+  "truth_sources": ["<business-truth-source>"],
+  "surfaces": ["<visible-or-operational-surface>"],
+  "required_gates": ["<gate-id>"],
+  "acceptance": {
+    "service": ["<service-level behavior>"],
+    "surface": ["<visible behavior>"]
+  },
+  "negative": ["<constraint that must not be violated>"]
+}

@@ -1,0 +1,216 @@
+{
+  "version": 1,
+  "capabilities": [
+    {
+      "id": "chat-proto-service-contract",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-service-contract"],
+      "required_gates": ["proto-build", "station-chat-unit"],
+      "synthetic_paths": [
+        "model/domain/chat/friend_chat.proto",
+        "apps/station/app/subserver/friend_chat/application/service.go",
+        "apps/station/app/subserver/friend_chat/infrastructure/repo.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "model/domain/chat/*.proto",
+          "friend_chat_sessions",
+          "friend_chat_messages",
+          "friend_requests"
+        ],
+        "surfaces": [
+          "/friend-chat/sessions",
+          "/friend-chat/messages",
+          "/friend-chat/friend-requests"
+        ],
+        "proven_by": ["proto-build", "station-chat-unit"],
+        "proven_scope": [
+          "Chat proto contracts regenerate derived code",
+          "Friend chat package tests pass for repository and application contracts",
+          "Session, friend request, message and federation context persistence stay covered by Station package tests"
+        ],
+        "unproven_scope": [
+          "PostgreSQL-backed multi-node chat persistence recovery",
+          "End-to-end user message send and receive through Desktop UI"
+        ]
+      }
+    },
+    {
+      "id": "chat-runtime-message-flow",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-runtime-message-flow"],
+      "required_gates": ["chat-runtime-e2e"],
+      "synthetic_paths": [
+        "apps/station/app/subserver/friend_chat/handler.go",
+        "apps/station/app/subserver/friend_chat/application/service.go",
+        "apps/station/app/subserver/friend_chat/infrastructure/repo.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "running Station friend_chat API",
+          "friend_chat_sessions",
+          "friend_chat_messages"
+        ],
+        "surfaces": [
+          "/actor/sign-up",
+          "/actor/login",
+          "/friend-chat/session/create",
+          "/friend-chat/message/send",
+          "/friend-chat/messages",
+          "/friend-chat/message/ack"
+        ],
+        "proven_by": ["chat-runtime-e2e"],
+        "proven_scope": [
+          "Two real temporary actors can create a chat session on a running Station",
+          "A sent message is persisted and visible to the receiver through the Station API",
+          "The receiver can acknowledge the message as read and the sender observes read status through persistence"
+        ],
+        "unproven_scope": [
+          "Two running Desktop clients receiving live SSE events",
+          "DOM-level message composition and rendering",
+          "Offline replay after Station or network interruption"
+        ]
+      }
+    },
+    {
+      "id": "chat-live-realtime-delivery",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-live-realtime-delivery"],
+      "required_gates": ["chat-live-realtime-e2e"],
+      "synthetic_paths": [
+        "apps/station/app/subserver/events/handler.go",
+        "apps/station/app/subserver/friend_chat/handler.go",
+        "model/domain/realtime/event.proto"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "EventBus per-actor subscription",
+          "protobuf StreamEvent schema",
+          "running Station /events/stream"
+        ],
+        "surfaces": [
+          "/events/stream",
+          "/friend-chat/message/send",
+          "/friend-chat/message/ack"
+        ],
+        "proven_by": ["chat-live-realtime-e2e"],
+        "proven_scope": [
+          "Actor B receives a live MessageEnvelope event after actor A sends a message",
+          "Actor A receives a live READ MessageReceipt event after actor B acknowledges the message",
+          "SSE frames are decoded as base64 protobuf StreamEvent payloads rather than JSON placeholders"
+        ],
+        "unproven_scope": [
+          "Desktop DOM-level message composition and rendering",
+          "Reconnect and missed-event replay after stream interruption",
+          "Multi-Station cross-home chat realtime delivery"
+        ]
+      }
+    },
+    {
+      "id": "chat-realtime-contract",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-realtime-delivery"],
+      "required_gates": ["station-chat-unit", "desktop-check"],
+      "synthetic_paths": [
+        "apps/station/app/subserver/friend_chat/presence_sse.go",
+        "apps/station/app/subserver/friend_chat/handler.go",
+        "apps/desktop/src/services/socialChatRealtime.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "friend_chat message mutation result",
+          "presence SSE stream",
+          "Desktop socialChatRealtime runtime"
+        ],
+        "surfaces": [
+          "Desktop chat realtime runtime",
+          "friend_chat SSE endpoint"
+        ],
+        "proven_by": ["station-chat-unit", "desktop-check"],
+        "proven_scope": [
+          "Station friend_chat package compiles and tests with realtime handler contracts",
+          "Desktop realtime client compiles with chat store and runtime contracts"
+        ],
+        "unproven_scope": [
+          "Live SSE delivery across two running Desktop clients",
+          "Reconnect, backoff and missed-event replay under network failure"
+        ]
+      }
+    },
+    {
+      "id": "desktop-chat-typed-surface",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["desktop-chat-surface"],
+      "required_gates": ["desktop-check"],
+      "synthetic_paths": [
+        "apps/desktop/src/pages/SocialChatPage.tsx",
+        "apps/desktop/src/components/chat/ChatSessionList.tsx",
+        "apps/desktop/src/components/chat/ChatMessageArea.tsx",
+        "apps/desktop/src/store/socialChat.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Desktop socialChat store",
+          "Station friend_chat API responses"
+        ],
+        "surfaces": [
+          "Desktop SocialChatPage",
+          "Desktop chat session list",
+          "Desktop chat message area"
+        ],
+        "proven_by": ["desktop-check"],
+        "proven_scope": [
+          "Desktop chat pages, components, store and service APIs type-check together",
+          "Chat visible surface keeps compile-time contract with Station friend_chat bridge"
+        ],
+        "unproven_scope": [
+          "DOM-level Desktop chat page assertions",
+          "Human-visible message send/read/recall/edit workflow"
+        ]
+      }
+    },
+    {
+      "id": "chat-desktop-dom-message-visible",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-desktop-dom-message-visible"],
+      "required_gates": ["chat-desktop-dom-message-visible"],
+      "synthetic_paths": [
+        "apps/desktop/src/App.tsx",
+        "apps/desktop/src/vite-env.d.ts",
+        "apps/desktop/src/components/chat/ChatSessionList.tsx",
+        "apps/desktop/src/components/chat/ChatMessageArea.tsx",
+        "apps/desktop/src/store/socialChat.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "running Station friend_chat API",
+          "running Desktop HTTP gateway",
+          "Desktop socialChat store",
+          "Desktop React renderer DOM"
+        ],
+        "surfaces": [
+          "Desktop SocialChatPage",
+          "Desktop chat session list DOM",
+          "Desktop chat message area DOM"
+        ],
+        "proven_by": ["chat-desktop-dom-message-visible"],
+        "proven_scope": [
+          "A real Station-backed friend-chat session can be synced through Desktop gateway into the renderer",
+          "Desktop chat session list renders the synced session row with a stable DOM selector",
+          "Desktop chat message area renders the persisted message content and message DOM node"
+        ],
+        "unproven_scope": [
+          "Live realtime DOM event consumption from Tauri event bridge",
+          "Two running Desktop renderers exchanging messages",
+          "Reconnect and missed-event replay after stream interruption"
+        ]
+      }
+    }
+  ]
+}
