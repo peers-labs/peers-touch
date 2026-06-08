@@ -176,6 +176,7 @@
 - Mobile 规范：`global/coding-guide/mobile/`
 - Station 规范：`global/coding-guide/station/`
 - **架构文档标准**：`global/architecture-document-standard.md`
+- **Code Review 框架**：`global/code-review-framework.md`
 
 ### 4.4 同主题多文档时怎么判断
 

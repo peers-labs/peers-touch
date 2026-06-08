@@ -1,0 +1,31 @@
+name: Review Framework
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review-framework:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run review framework gates
+        run: |
+          tooling/scripts/review/run.sh --range "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" --strict-knowledge
+
+      - name: Write review profile summary
+        if: always()
+        run: |
+          {
+            echo "## Review Framework"
+            tooling/scripts/review/route-change.sh --range "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" --format github || true
+            echo
+            tooling/scripts/review/knowledge-match.sh --range "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" || true
+          } >> "$GITHUB_STEP_SUMMARY"
