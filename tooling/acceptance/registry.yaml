@@ -105,7 +105,18 @@
     {
       "id": "acceptance-framework",
       "features": ["acceptance-framework"],
-      "when": {"paths": ["tooling/acceptance/**", "tooling/scripts/acceptance-*.py", "Makefile"]},
+      "when": {
+        "paths": [
+          "tooling/acceptance/**",
+          "tooling/scripts/acceptance-*.py",
+          "tooling/scripts/quality-evidence.py",
+          "tooling/make/acceptance.mk",
+          "tooling/scripts/review/route-change.sh",
+          "docs/architecture/quality-framework/**",
+          "docs/architecture/acceptance-framework/**",
+          "Makefile"
+        ]
+      },
       "require": ["acceptance-plan-self"]
     }
   ]

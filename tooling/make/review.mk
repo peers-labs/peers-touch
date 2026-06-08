@@ -1,6 +1,6 @@
 # ─── Code Review Framework ─────────────────────────────────────
 
-.PHONY: review review-route review-hard-rules review-knowledge review-skill-check
+.PHONY: review review-route review-hard-rules review-knowledge review-skill-check quality-evidence
 
 REVIEW_RANGE ?= HEAD
 
@@ -18,3 +18,6 @@ review-knowledge:
 
 review-skill-check:
 	tooling/scripts/review/skill-check.sh
+
+quality-evidence:
+	python3 tooling/scripts/quality-evidence.py --range "$(REVIEW_RANGE)"

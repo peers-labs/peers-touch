@@ -2,13 +2,15 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-06-07
-covered_docs_hash: 4184da79daab6acb040ec6300a8a0c209344f08379c730814fb2ac883f3e7295
+last_verified_at: 2026-06-09
+covered_docs_hash: f466f9b85f62d0418c3d3eae44cdaf157924e8a6aa1db7a4c17fb3522052843e
 
 covered_docs:
   - AGENTS.md
   - docs/README.md
   - docs/global/code-review-framework.md
+  - docs/architecture/quality-framework/README.md
+  - docs/architecture/acceptance-framework
   - docs/global/architecture.md
   - docs/client/desktop/base.md
   - docs/client/desktop/runtime-projections.md

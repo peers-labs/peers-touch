@@ -44,9 +44,12 @@ trap 'rm -f "$tmp_files"' EXIT
 if [[ -n "$fixture_dir" ]]; then
   find "$fixture_dir" -type f | sed "s#^\./##" > "$tmp_files"
 else
-  git diff --name-only "$diff_range" -- > "$tmp_files" || true
+  if ! git diff --name-only "$diff_range" -- > "$tmp_files"; then
+    echo "hard-rules: invalid or unreadable git range: $diff_range" >&2
+    exit 1
+  fi
   if [[ ! -s "$tmp_files" ]]; then
-    git diff --name-only --cached -- > "$tmp_files" || true
+    git diff --name-only --cached -- > "$tmp_files"
   fi
   git ls-files --others --exclude-standard >> "$tmp_files"
   sort -u "$tmp_files" -o "$tmp_files"
