@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "gates": {
+    "acceptance-plan-self": {
+      "command": "python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --self-check",
+      "timeout_seconds": 30,
+      "environment": "local",
+      "tier": "ci-structure",
+      "description": "Validate that the acceptance registry can plan the current diff."
+    },
+    "proto-build": {
+      "command": "./model/build.sh",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Generate protobuf-derived code from model/domain sources."
+    },
+    "station-federation-unit": {
+      "command": "cd apps/station && go test ./app/subserver/federation/...",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Run Station Federation package tests."
+    },
+    "station-dashboard-unit": {
+      "command": "cd apps/station && go test ./app/subserver/dashboard/...",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Run Station Dashboard package tests."
+    },
+    "station-dashboard-web-check": {
+      "command": "pnpm --dir apps/station/app/subserver/dashboard/web run check",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Run Station Dashboard web TypeScript checks."
+    },
+    "station-chat-unit": {
+      "command": "cd apps/station && go test ./app/subserver/friend_chat/...",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Run Station friend_chat package tests."
+    },
+    "chat-runtime-e2e": {
+      "command": "python3 tooling/acceptance/gates/chat/runtime_e2e.py",
+      "timeout_seconds": 600,
+      "environment": "fedp5",
+      "tier": "env-evidence",
+      "description": "Run a real Station Chat API flow with two temporary actors, persisted message delivery, and read acknowledgement."
+    },
+    "chat-live-realtime-e2e": {
+      "command": "python3 tooling/acceptance/gates/chat/live_realtime_e2e.py",
+      "timeout_seconds": 600,
+      "environment": "fedp5",
+      "tier": "env-evidence",
+      "description": "Run a real Station SSE flow proving live chat message and read receipt delivery between two temporary actors."
+    },
+    "chat-desktop-gateway-e2e": {
+      "command": "python3 tooling/acceptance/gates/chat/desktop_gateway_e2e.py",
+      "timeout_seconds": 600,
+      "environment": "local-desktop-gateway",
+      "tier": "env-evidence",
+      "description": "Run a real Desktop HTTP gateway Chat flow proving desktop-rust auth, session listing, message sync, and read acknowledgement."
+    },
+    "chat-desktop-dom-message-visible": {
+      "command": "python3 tooling/acceptance/gates/chat/desktop_dom_message_visible.py",
+      "timeout_seconds": 600,
+      "environment": "local-desktop-web-gateway",
+      "tier": "env-evidence",
+      "description": "Run a real Desktop renderer DOM flow proving a Station-backed chat message is visible after Desktop gateway sync."
+    },
+    "desktop-check": {
+      "command": "cd apps/desktop && pnpm run check",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Run Desktop TypeScript checks."
+    },
+    "federation-three-node-e2e": {
+      "command": "make testnet-p5-federation-e2e",
+      "timeout_seconds": 1200,
+      "environment": "fedp5",
+      "tier": "nightly",
+      "description": "Create and converge one federation across the isolated three-node testnet."
+    },
+    "federation-surface-smoke": {
+      "command": "python3 tooling/acceptance/gates/federation/surface_smoke.py",
+      "timeout_seconds": 300,
+      "environment": "fedp5",
+      "tier": "env-evidence",
+      "description": "Validate Station health, Dashboard bundle, and Desktop gateway Station binding."
+    },
+    "federation-dashboard-visible-surface": {
+      "command": "python3 tooling/acceptance/gates/dashboard/federation_visible_surface.py",
+      "timeout_seconds": 600,
+      "environment": "fedp5",
+      "tier": "env-evidence",
+      "description": "Open the Dashboard Federation page and assert visible Federation operations state."
+    },
+    "federation-dashboard-operational-drilldown": {
+      "command": "python3 tooling/acceptance/gates/dashboard/federation_operational_drilldown.py",
+      "timeout_seconds": 600,
+      "environment": "fedp5",
+      "tier": "env-evidence",
+      "description": "Validate Federation operations drilldown API and Dashboard visible-surface sections."
+    },
+    "federation-desktop-gateway-smoke": {
+      "command": "python3 tooling/acceptance/gates/desktop/gateway_smoke.py",
+      "timeout_seconds": 600,
+      "environment": "local-desktop-gateway",
+      "tier": "env-evidence",
+      "description": "Validate Desktop gateway active Station and collect render diagnostics."
+    },
+    "federation-mutual-validation": {
+      "command": "python3 tooling/scripts/acceptance-validate.py --domain federation --require-proven",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the Federation domain profile against the project-wide acceptance capability graph, registry, gate catalog, latest run results, and evidence report."
+    },
+    "station-dashboard-domain-validation": {
+      "command": "python3 tooling/scripts/acceptance-validate.py --domain station-dashboard --require-proven",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the Station Dashboard managed domain profile against project-wide acceptance contracts and latest gate evidence."
+    },
+    "chat-domain-validation": {
+      "command": "python3 tooling/scripts/acceptance-validate.py --domain chat --require-proven",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the Chat managed domain profile against service, realtime, Desktop surface, registry, gate, and latest evidence contracts."
+    }
+  }
+}

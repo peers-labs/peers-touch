@@ -1,0 +1,15 @@
+{
+  "id": "<domain-capability-id>",
+  "domain": "<domain-id>",
+  "direction": "acceptance_validates_product",
+  "features": ["<feature-id>"],
+  "required_gates": ["<gate-id>"],
+  "synthetic_paths": ["<path-that-must-select-this-capability-gates>"],
+  "evidence": {
+    "truth_sources": ["<business-truth-source>"],
+    "surfaces": ["<user-or-operator-visible-surface>"],
+    "proven_by": ["<gate-id>"],
+    "proven_scope": ["<specific behavior proven by stable gates>"],
+    "unproven_scope": ["<explicit missing stable gate or manual-review boundary>"]
+  }
+}

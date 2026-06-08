@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "domains": [
+    {
+      "id": "federation",
+      "status": "active",
+      "profile": "tooling/acceptance/domains/federation.yaml",
+      "capabilities": "tooling/acceptance/capabilities/federation.yaml",
+      "coverage": "project_validation_domain",
+      "notes": "First complex validation domain. It proves acceptance framework feasibility without becoming acceptance core."
+    },
+    {
+      "id": "chat",
+      "status": "active",
+      "profile": "tooling/acceptance/domains/chat.yaml",
+      "capabilities": "tooling/acceptance/capabilities/chat.yaml",
+      "coverage": "managed_domain",
+      "notes": "Third product domain. It validates user-path onboarding for chat persistence, realtime contracts, and Desktop typed surfaces without claiming full UI E2E."
+    },
+    {
+      "id": "mobile",
+      "status": "planned",
+      "profile": "",
+      "capabilities": "",
+      "coverage": "not_onboarded",
+      "notes": "Needs mobile-web, Tauri mobile runtime, native plugin, and device/simulator acceptance boundaries."
+    },
+    {
+      "id": "applet",
+      "status": "planned",
+      "profile": "",
+      "capabilities": "",
+      "coverage": "not_onboarded",
+      "notes": "Needs applet SDK/runtime capability contracts and package-level acceptance gates."
+    },
+    {
+      "id": "station-dashboard",
+      "status": "active",
+      "profile": "tooling/acceptance/domains/station-dashboard.yaml",
+      "capabilities": "tooling/acceptance/capabilities/station-dashboard.yaml",
+      "coverage": "managed_domain",
+      "notes": "Second product domain. It validates project-level acceptance onboarding without becoming an acceptance validation domain."
+    }
+  ]
+}

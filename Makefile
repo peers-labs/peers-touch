@@ -8,6 +8,8 @@ include tooling/make/station-go.mk
 include tooling/make/monorepo.mk
 include tooling/make/proto.mk
 include tooling/make/qa.mk
+include tooling/make/review.mk
+include tooling/make/acceptance.mk
 include tooling/make/docker.mk
 include tooling/make/deploy.mk
 include tooling/make/setup.mk
@@ -56,6 +58,13 @@ help:
 	@echo "  make mono-check                pnpm workspace checks"
 	@echo "  make mono-build                pnpm workspace build"
 	@echo "  make model-gen                 Generate proto code"
+	@echo "  make review REVIEW_RANGE=<range>  Run code review framework checks"
+	@echo "  make quality-evidence REVIEW_RANGE=<range>  Aggregate review, knowledge, and acceptance evidence"
+	@echo "  make acceptance-validate [DOMAIN=<name>]  Validate acceptance domain contracts"
+	@echo "  make acceptance-plan ACCEPTANCE_RANGE=<range>  Plan impacted product acceptance gates"
+	@echo "  make acceptance-run            Run planned acceptance gates"
+	@echo "  make acceptance-run-ci         Run planned ci-structure and ci-cheap gates"
+	@echo "  make acceptance-report         Render latest acceptance report"
 	@echo ""
 	@echo "More:"
 	@echo "  make help-docker               Docker deployment commands"
