@@ -6,11 +6,13 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
+  pull-requests: read
 
 jobs:
   review-framework:
     runs-on: ubuntu-latest
+    env:
+      REVIEW_RANGE: ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,14 +20,36 @@ jobs:
 
       - name: Run review framework gates
         run: |
-          tooling/scripts/review/run.sh --range "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" --strict-knowledge
+          tooling/scripts/review/run.sh --range "$REVIEW_RANGE" --strict-knowledge
 
-      - name: Write review profile summary
+      - name: Generate quality evidence
+        if: always()
+        run: |
+          python3 tooling/scripts/quality-evidence.py --range "$REVIEW_RANGE"
+
+      - name: Write review summary
         if: always()
         run: |
           {
             echo "## Review Framework"
-            tooling/scripts/review/route-change.sh --range "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" --format github || true
+            tooling/scripts/review/route-change.sh --range "$REVIEW_RANGE" --format github || true
             echo
-            tooling/scripts/review/knowledge-match.sh --range "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" || true
+            tooling/scripts/review/knowledge-match.sh --range "$REVIEW_RANGE" || true
+            echo
+            if [[ -f tooling/acceptance/reports/latest-quality-evidence.md ]]; then
+              cat tooling/acceptance/reports/latest-quality-evidence.md
+            else
+              echo "Quality evidence report was not generated."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload quality evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-evidence
+          path: |
+            tooling/acceptance/reports/latest-quality-evidence.json
+            tooling/acceptance/reports/latest-quality-evidence.md
+          if-no-files-found: warn
+          retention-days: 14

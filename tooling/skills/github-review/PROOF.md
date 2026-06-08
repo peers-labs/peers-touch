@@ -10,8 +10,9 @@
 2. the skill covers every hard rule and platform profile defined by `docs/global/code-review-framework.md`;
 3. the skill's upstream rule hash in `FRESHNESS.md` matches the current source documents;
 4. every golden fixture has an expected finding and the hard-rule engine detects it;
-5. operational knowledge matching is wired into the review workflow;
-6. self-growth is constrained to PR-reviewed updates with fixtures and owner review.
+5. operational knowledge matching and semantic Knowledge Delta Review are wired into the review workflow;
+6. quality-check and Acceptance Framework evidence are consumed before merge judgment;
+7. self-growth is constrained to PR-reviewed updates with fixtures, gates, knowledge, skills, and owner review.
 
 ## Proof Command
 
@@ -30,7 +31,12 @@ The command fails if any required section, rule reference, upstream hash, fixtur
 | Upstream source freshness | `FRESHNESS.md covered_docs_hash` |
 | Golden fixture existence | `tooling/review-fixtures/*/expected.yml` |
 | Golden fixture detection | `skill-check.sh` invoking `hard-rules.sh --fixture-dir` |
-| Knowledge freshness path | `knowledge-match.sh --strict` |
+| Knowledge freshness path | `knowledge-match.sh --strict` plus Knowledge Delta Review in `SKILL.md` |
+| Quality evidence handoff | `quality-evidence.py`, `make quality-evidence`, and `tooling/skills/quality-check/SKILL.md` |
+| Acceptance evidence path | `acceptance-plan.py --range`, `acceptance-validate`, and Acceptance Review in `SKILL.md` |
+| Acceptance tier filtering | `acceptance-run.py --tier` regression in `skill-check.sh` |
+| Fail-closed script behavior | invalid range regressions in `skill-check.sh` |
+| Knowledge directory matching | trailing-slash `owns:` regression in `skill-check.sh` |
 | Review OS integration | `make review` and `.github/workflows/review.yml` |
 
 ## Current Golden Fixtures
@@ -44,4 +50,4 @@ The command fails if any required section, rule reference, upstream hash, fixtur
 
 ## Non-Bypass Rule
 
-The skill may propose updates to itself, fixtures, or `docs/knowledge`, but those changes must pass `skill-check.sh` and CODEOWNER review before merge.
+The skill may propose updates to itself, fixtures, `docs/knowledge`, or acceptance contracts/gates, but those changes must pass `skill-check.sh` and CODEOWNER review before merge.

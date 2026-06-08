@@ -1,6 +1,7 @@
 # ─── Acceptance Framework ───────────────────────────────────────
 
-.PHONY: acceptance-plan acceptance-run acceptance-report acceptance acceptance-validate \
+.PHONY: acceptance-plan acceptance-run acceptance-run-ci acceptance-run-local-evidence \
+        acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-validate \
         acceptance-coverage-report acceptance-chat acceptance-chat-domain-validation \
         acceptance-chat-desktop-gateway acceptance-chat-desktop-dom \
         acceptance-station-dashboard acceptance-station-dashboard-domain-validation \
@@ -10,12 +11,25 @@
 
 CHAT_DESKTOP_DOM_URL ?= http://127.0.0.1:3210/#/chat
 CHAT_DESKTOP_DOM_GATEWAY_URL ?= http://127.0.0.1:3030
+ACCEPTANCE_RANGE ?= HEAD
 
 acceptance-plan:
-	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance
+	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)"
 
 acceptance-run:
 	python3 tooling/scripts/acceptance-run.py
+
+acceptance-run-ci:
+	python3 tooling/scripts/acceptance-run.py --tier ci-structure --tier ci-cheap
+
+acceptance-run-local-evidence:
+	python3 tooling/scripts/acceptance-run.py --tier local-evidence
+
+acceptance-run-env-evidence:
+	python3 tooling/scripts/acceptance-run.py --tier env-evidence
+
+acceptance-run-nightly:
+	python3 tooling/scripts/acceptance-run.py --tier nightly
 
 acceptance-report:
 	python3 tooling/scripts/acceptance-report.py

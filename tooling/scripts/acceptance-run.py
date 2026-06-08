@@ -27,9 +27,17 @@ def gate_from_definition(gate_id: str, definition: dict[str, Any]) -> dict[str, 
         "command": definition["command"],
         "timeout_seconds": definition.get("timeout_seconds", 600),
         "environment": definition.get("environment", "local"),
+        "tier": definition.get("tier", "local-evidence"),
         "description": definition.get("description", ""),
         "required_by": ["manual"],
     }
+
+
+def filter_gates_by_tier(gates: list[dict[str, Any]], tiers: list[str]) -> list[dict[str, Any]]:
+    if not tiers:
+        return gates
+    selected = set(tiers)
+    return [gate for gate in gates if gate.get("tier", "local-evidence") in selected]
 
 
 def main() -> int:
@@ -38,6 +46,7 @@ def main() -> int:
     parser.add_argument("--gates", default="tooling/acceptance/gates.yaml")
     parser.add_argument("--output", default="tooling/acceptance/reports/latest-run.json")
     parser.add_argument("--gate", action="append", default=[])
+    parser.add_argument("--tier", action="append", default=[])
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -55,10 +64,13 @@ def main() -> int:
             if gate_id not in definitions:
                 raise SystemExit(f"gate {gate_id!r} is missing from {args.gates}")
             gates.append(gate_from_definition(gate_id, definitions[gate_id]))
+    gates = filter_gates_by_tier(gates, args.tier)
 
     results: list[dict[str, Any]] = []
     print("Acceptance Run")
     print("==============")
+    if args.tier:
+        print(f"tiers: {', '.join(args.tier)}")
     if not gates:
         print("[SKIP] no selected gates")
 
@@ -66,10 +78,21 @@ def main() -> int:
         gate_id = gate["id"]
         command = gate["command"]
         timeout = int(gate.get("timeout_seconds") or 600)
-        print(f"[RUN] {gate_id}: {command}")
+        environment = gate.get("environment", "local")
+        tier = gate.get("tier", "local-evidence")
+        print(f"[RUN] {gate_id} [{tier}/{environment}]: {command}")
         started = time.time()
         if args.dry_run:
-            results.append({"id": gate_id, "command": command, "status": "dry-run", "duration_seconds": 0})
+            results.append(
+                {
+                    "id": gate_id,
+                    "command": command,
+                    "environment": environment,
+                    "tier": tier,
+                    "status": "dry-run",
+                    "duration_seconds": 0,
+                }
+            )
             continue
         completed = subprocess.run(
             command,
@@ -89,6 +112,8 @@ def main() -> int:
             {
                 "id": gate_id,
                 "command": command,
+                "environment": environment,
+                "tier": tier,
                 "status": status,
                 "exit_code": completed.returncode,
                 "duration_seconds": duration,
