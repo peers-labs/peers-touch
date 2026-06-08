@@ -1,0 +1,176 @@
+{
+  "version": 1,
+  "capabilities": [
+    {
+      "id": "federation-ledger-convergence",
+      "domain": "federation",
+      "direction": "acceptance_validates_product",
+      "features": ["federation-ledger"],
+      "required_gates": ["proto-build", "station-federation-unit", "federation-three-node-e2e"],
+      "synthetic_paths": [
+        "model/domain/federation/federation_ledger.proto",
+        "apps/station/app/subserver/federation/application/service.go"
+      ],
+      "evidence": {
+        "truth_sources": ["federation_ledger_events"],
+        "proven_by": ["station-federation-unit", "federation-three-node-e2e"],
+        "proven_scope": [
+          "ledger append preserves hash chain",
+          "ledger replay rebuilds materialized state",
+          "fedp5 three-node e2e converges to one head"
+        ],
+        "unproven_scope": []
+      }
+    },
+    {
+      "id": "federation-governance-truth",
+      "domain": "federation",
+      "direction": "acceptance_validates_product",
+      "features": ["federation-governance"],
+      "required_gates": ["station-federation-unit", "federation-three-node-e2e"],
+      "synthetic_paths": [
+        "apps/station/app/subserver/federation/handler.go",
+        "apps/desktop/src/pages/FederationGovernancePage.tsx"
+      ],
+      "evidence": {
+        "truth_sources": ["federation_ledger_proposals", "federation_ledger_events"],
+        "proven_by": ["station-federation-unit", "federation-three-node-e2e"],
+        "proven_scope": [
+          "join proposals are accepted or rejected through governance flow",
+          "governance events replay into member and role projections",
+          "sequencer handover and recovery are verifiable"
+        ],
+        "unproven_scope": [
+          "governance notification SSE complete user experience"
+        ]
+      }
+    },
+    {
+      "id": "federation-discovery-trust-boundary",
+      "domain": "federation",
+      "direction": "acceptance_validates_product",
+      "features": ["federation-discovery-network"],
+      "required_gates": ["station-federation-unit", "federation-surface-smoke"],
+      "synthetic_paths": [
+        "model/domain/federation/federation_discovery.proto",
+        "apps/station/frame/core/plugin/native/federation/discovery/publisher.go"
+      ],
+      "evidence": {
+        "truth_sources": ["signed discovery hint", "federation manifest", "ledger membership replay"],
+        "proven_by": ["station-federation-unit", "federation-surface-smoke"],
+        "proven_scope": [
+          "signed hint can be published and looked up",
+          "network discovery verifies manifest genesis",
+          "discovery hint does not grant membership trust"
+        ],
+        "unproven_scope": [
+          "external ActivityPub interop boundary"
+        ]
+      }
+    },
+    {
+      "id": "federation-dashboard-operational-surface",
+      "domain": "federation",
+      "direction": "acceptance_validates_product",
+      "features": ["federation-dashboard-operations", "federation-operational-observability"],
+      "required_gates": ["station-dashboard-unit", "federation-dashboard-operational-drilldown"],
+      "synthetic_paths": [
+        "apps/station/app/subserver/dashboard/application/federation_service.go",
+        "apps/station/app/subserver/dashboard/web/src/pages/FederationPage.tsx"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "federation_ledger_events",
+          "federation_ledger_proposals",
+          "federation_ledger_sync_cursors",
+          "federation_operational_events"
+        ],
+        "surfaces": ["/dashboard/#/federation"],
+        "proven_by": ["station-dashboard-unit", "federation-dashboard-operational-drilldown"],
+        "proven_scope": [
+          "Dashboard operations API returns summary sync recovery discovery recent events and operational events",
+          "Dashboard visible surface shows operational drilldown and event history",
+          "Dashboard remains read-only over governance truth"
+        ],
+        "unproven_scope": [
+          "Dashboard-wide alert center"
+        ]
+      }
+    },
+    {
+      "id": "desktop-federation-context-surface",
+      "domain": "federation",
+      "direction": "acceptance_validates_product",
+      "features": ["desktop-federation-surfaces"],
+      "required_gates": ["desktop-check", "federation-desktop-gateway-smoke"],
+      "synthetic_paths": [
+        "apps/desktop/src/components/common/StationPicker.tsx",
+        "apps/desktop/src/components/chat/FindPeopleModal.tsx"
+      ],
+      "evidence": {
+        "truth_sources": ["StationRegistry", "Federation Plaza projection", "Federation catalog projection"],
+        "surfaces": ["desktop station picker", "desktop federation page", "find people modal"],
+        "proven_by": ["desktop-check", "federation-desktop-gateway-smoke"],
+        "proven_scope": [
+          "Desktop gateway active Station is bound to expected fedp5 station",
+          "station probe returns online peer identity"
+        ],
+        "unproven_scope": [
+          "Desktop DOM-level StationPicker assertion",
+          "Desktop DOM-level Federation page assertion",
+          "Desktop DOM-level Find People assertion"
+        ]
+      }
+    },
+    {
+      "id": "federation-validates-acceptance-framework",
+      "domain": "delivery-quality",
+      "direction": "product_domain_validates_acceptance",
+      "features": ["acceptance-framework"],
+      "required_gates": [
+        "acceptance-plan-self",
+        "proto-build",
+        "station-federation-unit",
+        "federation-three-node-e2e",
+        "station-dashboard-unit",
+        "desktop-check",
+        "federation-surface-smoke",
+        "federation-dashboard-operational-drilldown",
+        "federation-desktop-gateway-smoke"
+      ],
+      "synthetic_paths": [
+        "tooling/acceptance/domains/federation.yaml",
+        "model/domain/federation/federation_ledger.proto",
+        "apps/station/app/subserver/federation/application/service.go",
+        "apps/station/app/subserver/dashboard/application/federation_service.go",
+        "apps/desktop/src/components/common/StationPicker.tsx"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "tooling/acceptance/capabilities/federation.yaml",
+          "tooling/acceptance/domains/federation.yaml",
+          "tooling/acceptance/reports/latest-run.json"
+        ],
+        "proven_by": [
+          "acceptance-plan-self",
+          "proto-build",
+          "station-federation-unit",
+          "federation-three-node-e2e",
+          "station-dashboard-unit",
+          "desktop-check",
+          "federation-surface-smoke",
+          "federation-dashboard-operational-drilldown",
+          "federation-desktop-gateway-smoke"
+        ],
+        "proven_scope": [
+          "Federation exercises cross-runtime acceptance across Station Dashboard Desktop gateway and fedp5 testnet",
+          "Federation exposes registry coverage gaps through synthetic path validation",
+          "Federation produces reusable evidence without becoming acceptance core"
+        ],
+        "unproven_scope": [
+          "Acceptance framework coverage for Chat Mobile and Applet product domains"
+        ]
+      }
+    }
+  ]
+}

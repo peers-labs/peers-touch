@@ -1,0 +1,20 @@
+{
+  "id": "federation-discovery-network",
+  "status": "active",
+  "product_area": "federation",
+  "owners": [
+    "model/domain/federation/federation_discovery.proto",
+    "apps/station/frame/core/plugin/native/federation/discovery/**",
+    "apps/station/app/subserver/federation/**"
+  ],
+  "truth_sources": ["signed discovery hint", "federation manifest", "ledger membership replay"],
+  "required_gates": ["station-federation-unit", "federation-surface-smoke"],
+  "acceptance": {
+    "service": [
+      "signed hint can be published and looked up",
+      "network discover verifies manifest genesis",
+      "membership trust is checked against local ledger when present"
+    ]
+  },
+  "negative": ["relay or DHT discovery must not grant membership trust"]
+}

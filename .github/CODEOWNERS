@@ -19,6 +19,7 @@
 /packages/applets/ @peers-labs/applets
 
 /tooling/skills/ @peers-labs/architecture
+/tooling/acceptance/ @peers-labs/architecture
 /tooling/scripts/review/ @peers-labs/architecture
 /tooling/review-fixtures/ @peers-labs/architecture
 /.github/ @peers-labs/maintainers

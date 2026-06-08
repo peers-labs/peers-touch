@@ -1,0 +1,33 @@
+{
+  "id": "federation-dashboard-operations",
+  "status": "active",
+  "product_area": "federation",
+  "owners": [
+    "apps/station/app/subserver/dashboard/**",
+    "apps/station/app/subserver/federation/**",
+    "apps/station/app/subserver/dashboard/web/**"
+  ],
+  "truth_sources": [
+    "federation_ledger_events",
+    "federation_ledger_proposals",
+    "federation_ledger_sync_cursors"
+  ],
+  "visible_surfaces": [{"type": "dashboard", "route": "/dashboard/#/federation"}],
+  "required_gates": ["station-dashboard-unit", "federation-dashboard-operational-drilldown"],
+  "acceptance": {
+    "service": [
+      "dashboard overview returns federation count",
+      "federation detail head matches ledger replay",
+      "members proposals and sync cursors come from read-only projections"
+    ],
+    "visible": [
+      "dashboard login succeeds",
+      "federation page is visible",
+              "Station Peer ID Operational Health Members Proposals and Sync Cursors are visible"
+    ]
+  },
+  "negative": [
+    "dashboard must not mutate federation governance truth",
+    "discovery hint must not be treated as membership trust"
+  ]
+}

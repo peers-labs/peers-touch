@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "capabilities": [
+    {
+      "id": "station-dashboard-admin-access",
+      "domain": "station-dashboard",
+      "direction": "acceptance_validates_product",
+      "features": ["station-dashboard-auth"],
+      "required_gates": ["station-dashboard-unit", "station-dashboard-web-check"],
+      "synthetic_paths": [
+        "apps/station/app/subserver/dashboard/application/auth_service.go",
+        "apps/station/app/subserver/dashboard/web/src/pages/LoginPage.tsx"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "dashboard_admins",
+          "dashboard session token"
+        ],
+        "surfaces": [
+          "/dashboard/#/login",
+          "/dashboard/api/auth/login"
+        ],
+        "proven_by": ["station-dashboard-unit", "station-dashboard-web-check"],
+        "proven_scope": [
+          "Dashboard auth service unit tests cover admin login behavior",
+          "Dashboard web type-check proves login surface and auth store contract are compile-safe"
+        ],
+        "unproven_scope": [
+          "Browser-level authenticated login flow outside Federation visible-surface gates",
+          "Role-specific authorization matrix beyond current Dashboard admin model"
+        ]
+      }
+    },
+    {
+      "id": "station-dashboard-operator-surface",
+      "domain": "station-dashboard",
+      "direction": "acceptance_validates_product",
+      "features": ["station-dashboard-operations"],
+      "required_gates": ["station-dashboard-unit", "station-dashboard-web-check"],
+      "synthetic_paths": [
+        "apps/station/app/subserver/dashboard/application/overview_service.go",
+        "apps/station/app/subserver/dashboard/handler.go",
+        "apps/station/app/subserver/dashboard/web/src/components/DashboardLayout.tsx",
+        "apps/station/app/subserver/dashboard/web/src/pages/OverviewPage.tsx"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "station runtime repositories",
+          "dashboard read-only service projections"
+        ],
+        "surfaces": [
+          "/dashboard/#/overview",
+          "/dashboard/#/system",
+          "/dashboard/#/nodes",
+          "/dashboard/#/storage",
+          "/dashboard/#/security"
+        ],
+        "proven_by": ["station-dashboard-unit", "station-dashboard-web-check"],
+        "proven_scope": [
+          "Dashboard backend package tests pass for management-plane services",
+          "Dashboard web type-check proves route, layout, API client and page contracts compile together",
+          "Dashboard remains a management projection surface instead of a product truth source"
+        ],
+        "unproven_scope": [
+          "Dashboard-wide browser visible-surface gate for all management pages",
+          "Remote fedp5 authenticated smoke outside Federation page"
+        ]
+      }
+    }
+  ]
+}

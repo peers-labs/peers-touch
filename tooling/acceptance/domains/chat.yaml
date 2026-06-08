@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "id": "chat",
+  "description": "Chat is a managed product domain for user-facing message paths. It validates that acceptance can manage persistence, realtime contracts, and Desktop typed surfaces without relying on Federation-specific semantics.",
+  "capabilities": [
+    "acceptance-framework-self-consistency",
+    "chat-proto-service-contract",
+    "chat-runtime-message-flow",
+    "chat-live-realtime-delivery",
+    "chat-realtime-contract",
+    "desktop-chat-typed-surface",
+    "chat-desktop-dom-message-visible"
+  ],
+  "validation_gate_id": "chat-domain-validation",
+  "report": "tooling/acceptance/reports/chat-validation.json"
+}
