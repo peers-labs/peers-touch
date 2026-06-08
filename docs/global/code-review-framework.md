@@ -69,6 +69,7 @@ Lower layers may refine implementation details but cannot redefine upper-layer b
 | `packages/locales/**` | `locales` | user-facing strings are locale keys, not component literals |
 | `packages/**` | `packages` | shared API compatibility, workspace checks, no hidden platform dependency |
 | `docs/knowledge/**` | `knowledge` | frontmatter, `owns:` validity, lifecycle rules, append-only supersession |
+| `tooling/acceptance/**`, `tooling/scripts/acceptance-*.py` | `acceptance` | product acceptance contracts, domain onboarding, gate determinism, report freshness |
 | `tooling/skills/**` | `skill` | skill schema, freshness, safety, golden cases |
 | `.github/**` | `ci` | gates still match framework and PR template |
 
@@ -100,6 +101,7 @@ The review report must list the profile-driven commands that were run or explici
 | `mobile` | `pnpm mobile:check`; native Android/iOS build when plugin or generated native project changed |
 | `packages` | `pnpm -r --if-present run check`; package-specific build/test |
 | `knowledge` | `tooling/scripts/review/knowledge-match.sh --range <range>` plus structure validation |
+| `acceptance` | `make acceptance-validate`; `make acceptance-coverage-report`; targeted domain gates when product contracts changed |
 | `skill` | `tooling/scripts/review/skill-check.sh` |
 
 ## 8. Review Skill Freshness

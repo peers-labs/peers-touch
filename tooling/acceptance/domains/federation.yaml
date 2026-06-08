@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "id": "federation",
+  "description": "Federation is the first complex validation domain for the project-wide acceptance framework.",
+  "capabilities": [
+    "acceptance-framework-self-consistency",
+    "federation-ledger-convergence",
+    "federation-governance-truth",
+    "federation-discovery-trust-boundary",
+    "federation-dashboard-operational-surface",
+    "desktop-federation-context-surface",
+    "federation-validates-acceptance-framework"
+  ],
+  "validation_gate_id": "federation-mutual-validation",
+  "report": "tooling/acceptance/reports/federation-mutual-validation.json"
+}

@@ -1,0 +1,36 @@
+{
+  "id": "station-dashboard-operations",
+  "status": "active",
+  "product_area": "station-dashboard",
+  "owners": [
+    "apps/station/app/subserver/dashboard/**",
+    "apps/station/app/subserver/dashboard/web/**"
+  ],
+  "truth_sources": [
+    "station runtime repositories",
+    "dashboard read-only service projections"
+  ],
+  "visible_surfaces": [
+    {"type": "dashboard", "route": "/dashboard/#/overview"},
+    {"type": "dashboard", "route": "/dashboard/#/system"},
+    {"type": "dashboard", "route": "/dashboard/#/nodes"},
+    {"type": "dashboard", "route": "/dashboard/#/storage"},
+    {"type": "dashboard", "route": "/dashboard/#/security"}
+  ],
+  "required_gates": ["station-dashboard-unit", "station-dashboard-web-check"],
+  "acceptance": {
+    "service": [
+      "Dashboard handlers expose read-only management-plane projections",
+      "Dashboard application services derive management state from Station repositories"
+    ],
+    "visible": [
+      "Dashboard layout and core pages are included in the typed web bundle",
+      "Overview System Nodes Storage and Security entries remain route-addressable"
+    ]
+  },
+  "negative": [
+    "Dashboard must not bypass owning subserver truth sources",
+    "Dashboard must not turn UI cache or polling state into business truth",
+    "Dashboard gates must not depend on Federation-specific acceptance semantics"
+  ]
+}

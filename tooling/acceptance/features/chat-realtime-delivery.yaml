@@ -1,0 +1,34 @@
+{
+  "id": "chat-realtime-delivery",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "apps/station/app/subserver/friend_chat/presence_sse.go",
+    "apps/station/app/subserver/friend_chat/handler.go",
+    "apps/desktop/src/services/socialChatRealtime.ts",
+    "apps/desktop/src/store/socialChat.ts"
+  ],
+  "truth_sources": [
+    "friend_chat message mutation result",
+    "presence SSE stream",
+    "Desktop socialChatRealtime runtime"
+  ],
+  "visible_surfaces": [
+    {"type": "desktop-runtime", "route": "socialChatRealtime"},
+    {"type": "api", "route": "/friend-chat/presence/events"}
+  ],
+  "required_gates": ["station-chat-unit", "desktop-check"],
+  "acceptance": {
+    "service": [
+      "friend_chat realtime handler contracts compile and package tests pass",
+      "Desktop realtime client compiles with chat store and service contracts"
+    ],
+    "visible": [
+      "Desktop chat runtime can be type-checked with realtime event handling"
+    ]
+  },
+  "negative": [
+    "SSE stream must not be treated as message persistence truth",
+    "compile-time realtime checks must not be reported as live two-client delivery proof"
+  ]
+}

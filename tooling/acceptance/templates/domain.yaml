@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "id": "<domain-id>",
+  "description": "<why this product domain is managed by acceptance>",
+  "capabilities": [
+    "acceptance-framework-self-consistency",
+    "<domain-capability-id>"
+  ],
+  "validation_gate_id": "<domain-validation-gate-id>",
+  "report": "tooling/acceptance/reports/<domain-id>-validation.json"
+}

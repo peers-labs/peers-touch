@@ -1,0 +1,35 @@
+{
+  "id": "chat-service-contract",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "model/domain/chat/**",
+    "apps/station/app/subserver/friend_chat/**"
+  ],
+  "truth_sources": [
+    "model/domain/chat/*.proto",
+    "friend_chat_sessions",
+    "friend_chat_messages",
+    "friend_requests"
+  ],
+  "visible_surfaces": [
+    {"type": "api", "route": "/friend-chat/sessions"},
+    {"type": "api", "route": "/friend-chat/messages"},
+    {"type": "api", "route": "/friend-chat/friend-requests"}
+  ],
+  "required_gates": ["proto-build", "station-chat-unit"],
+  "acceptance": {
+    "service": [
+      "chat proto sources regenerate derived contracts",
+      "friend_chat service and repository package tests pass",
+      "friend request session and message persistence remain owned by friend_chat"
+    ],
+    "visible": [
+      "chat API contracts remain compatible with Desktop typed clients"
+    ]
+  },
+  "negative": [
+    "chat messages must not be stored as Federation governance truth",
+    "notification or realtime transport must not become chat persistence truth"
+  ]
+}

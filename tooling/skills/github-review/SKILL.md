@@ -99,6 +99,7 @@ Use the profile list emitted by `route-change.sh`. If running manually, apply th
 | `mobile` | Mobile remains Tauri v2 Mobile + Web UI + Rust kernel + native plugins; native plugins do not define business truth |
 | `packages` | Shared packages do not introduce hidden platform ownership or incompatible public APIs |
 | `knowledge` | `docs/knowledge` frontmatter, `owns:`, lifecycle, and recurrence checks are valid |
+| `acceptance` | Product acceptance domains, capabilities, features, gates, reports, and onboarding docs remain deterministic and evidence-driven |
 | `skill` | Review Skill has current freshness hash, golden fixtures, and self-growth evidence |
 | `ci` | CI still enforces framework gates and does not bypass hard rules |
 
@@ -271,6 +272,24 @@ Blocking examples:
 - adding a new hard-rule grep without a fixture;
 - making `skill-check.sh` pass while bypassing fixture detection;
 - letting the Review Skill silently self-modify without owner review.
+
+### Acceptance Review
+
+Use for `tooling/acceptance/**`, `tooling/scripts/acceptance-*.py`, `tooling/make/acceptance.mk`, and `docs/architecture/acceptance-framework/**`.
+
+Check:
+
+- Domain, capability, feature, and gate YAML remains graph-consistent and validates through `make acceptance-validate`.
+- Gate scripts prove product behavior through real surfaces or clearly declared dry-run gates; they must not hide missing runtime dependencies as success.
+- Reports under `tooling/acceptance/reports/` are reproducible outputs, not hand-authored source-of-truth claims.
+- New domains follow `docs/architecture/acceptance-framework/domain-onboarding.md` and start from `tooling/acceptance/templates/`.
+- Acceptance gates complement unit/platform checks; they do not replace lower-level tests for local correctness.
+
+Blocking examples:
+
+- adding a feature contract that references a missing capability or gate;
+- marking a gate as passed without captured evidence or explicit dry-run status;
+- coupling acceptance scripts to one developer's local paths, ports, credentials, or browser profile.
 
 #### Quality Checks
 

@@ -1,0 +1,41 @@
+{
+  "id": "chat-desktop-gateway-message-flow",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
+    "apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs",
+    "apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs",
+    "apps/desktop/src/services/desktop_api.ts"
+  ],
+  "truth_sources": [
+    "running Desktop HTTP gateway",
+    "running Station friend_chat API",
+    "friend_chat_sessions",
+    "friend_chat_messages"
+  ],
+  "visible_surfaces": [
+    {"type": "desktop-gateway", "command": "auth_login"},
+    {"type": "desktop-gateway", "command": "friend_chat_list_sessions"},
+    {"type": "desktop-gateway", "command": "friend_chat_sync_from_station_scoped"},
+    {"type": "desktop-gateway", "command": "friend_chat_list_messages"},
+    {"type": "desktop-gateway", "command": "friend_chat_ack_messages"}
+  ],
+  "required_gates": ["chat-desktop-gateway-e2e"],
+  "acceptance": {
+    "service": [
+      "a real Desktop gateway can authenticate a temporary receiver actor against Station",
+      "Desktop gateway friend_chat commands list the session created by another actor",
+      "Desktop gateway sync/list commands observe the message sent by another actor",
+      "Desktop gateway ack command updates Station persistence so the sender observes READ"
+    ],
+    "visible": [
+      "desktop-rust BFF behavior is proven before DOM-level Desktop automation exists"
+    ]
+  },
+  "negative": [
+    "Desktop gateway command proof must not be reported as DOM-level Desktop UI E2E",
+    "Desktop gateway list/sync proof must not replace live renderer event-consumption proof",
+    "single-gateway flow must not be reported as two running Desktop clients"
+  ]
+}
