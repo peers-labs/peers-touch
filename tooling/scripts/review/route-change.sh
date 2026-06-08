@@ -79,6 +79,9 @@ while IFS= read -r file; do
     docs/knowledge/*)
       add_profile "knowledge" "$file changes operational knowledge"
       ;;
+    tooling/acceptance/*|tooling/scripts/acceptance-*.py|tooling/make/acceptance.mk|docs/architecture/acceptance-framework/*)
+      add_profile "acceptance" "$file changes product acceptance framework"
+      ;;
     tooling/skills/*)
       add_profile "skill" "$file changes agent skill content"
       ;;
@@ -107,6 +110,7 @@ commands_for_profile() {
     mobile) echo "pnpm mobile:check" ;;
     packages) echo "pnpm -r --if-present run check" ;;
     knowledge) echo "tooling/scripts/review/knowledge-match.sh --range ${diff_range}" ;;
+    acceptance) echo "make acceptance-validate && make acceptance-coverage-report" ;;
     skill) echo "tooling/scripts/review/skill-check.sh" ;;
     review-system) echo "tooling/scripts/review/run.sh --range ${diff_range}" ;;
     ci) echo "review workflow syntax check in GitHub Actions" ;;

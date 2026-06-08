@@ -1,0 +1,37 @@
+{
+  "id": "chat-live-realtime-delivery",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "apps/station/app/subserver/events/handler.go",
+    "apps/station/app/subserver/friend_chat/handler.go",
+    "model/domain/realtime/event.proto"
+  ],
+  "truth_sources": [
+    "EventBus per-actor subscription",
+    "protobuf StreamEvent schema",
+    "running Station /events/stream"
+  ],
+  "visible_surfaces": [
+    {"type": "api", "route": "/events/stream"},
+    {"type": "api", "route": "/friend-chat/message/send"},
+    {"type": "api", "route": "/friend-chat/message/ack"}
+  ],
+  "required_gates": ["chat-live-realtime-e2e"],
+  "acceptance": {
+    "service": [
+      "actor B has an authenticated /events/stream subscription before actor A sends a message",
+      "actor B receives a live protobuf MessageEnvelope for the sent message",
+      "actor A has an authenticated /events/stream subscription before actor B acknowledges the message",
+      "actor A receives a live protobuf MessageReceipt READ event for the acknowledged message"
+    ],
+    "visible": [
+      "Station realtime stream proves live message and read receipt delivery before Desktop DOM automation exists"
+    ]
+  },
+  "negative": [
+    "live SSE delivery must not be treated as message persistence truth",
+    "Station stream E2E must not be reported as Desktop DOM-level UI E2E",
+    "single-Station live delivery must not be reported as reconnect or missed-event replay proof"
+  ]
+}
