@@ -8,6 +8,7 @@ include tooling/make/station-go.mk
 include tooling/make/monorepo.mk
 include tooling/make/proto.mk
 include tooling/make/qa.mk
+include tooling/make/review.mk
 include tooling/make/docker.mk
 include tooling/make/deploy.mk
 include tooling/make/setup.mk
@@ -56,6 +57,7 @@ help:
 	@echo "  make mono-check                pnpm workspace checks"
 	@echo "  make mono-build                pnpm workspace build"
 	@echo "  make model-gen                 Generate proto code"
+	@echo "  make review REVIEW_RANGE=<range>  Run code review framework checks"
 	@echo ""
 	@echo "More:"
 	@echo "  make help-docker               Docker deployment commands"

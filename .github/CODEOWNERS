@@ -1,0 +1,24 @@
+# Peers-Touch review ownership.
+# Replace placeholders with real teams/users before enforcing required reviews.
+
+* @peers-labs/maintainers
+
+/docs/architecture/ @peers-labs/architecture
+/docs/global/code-review-framework.md @peers-labs/architecture
+/docs/global/coding-guide/ @peers-labs/architecture
+/docs/knowledge/ @peers-labs/architecture
+
+/model/domain/ @peers-labs/model
+
+/apps/station/ @peers-labs/station
+/apps/desktop/ @peers-labs/desktop
+/apps/mobile/ @peers-labs/mobile
+
+/packages/locales/ @peers-labs/client-platform
+/packages/applet-sdk/ @peers-labs/applets
+/packages/applets/ @peers-labs/applets
+
+/tooling/skills/ @peers-labs/architecture
+/tooling/scripts/review/ @peers-labs/architecture
+/tooling/review-fixtures/ @peers-labs/architecture
+/.github/ @peers-labs/maintainers
