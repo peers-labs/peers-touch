@@ -1,0 +1,35 @@
+{
+  "id": "desktop-chat-surface",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "apps/desktop/src/pages/SocialChatPage.tsx",
+    "apps/desktop/src/pages/SocialChatPage.descriptor.tsx",
+    "apps/desktop/src/components/chat/**",
+    "apps/desktop/src/store/socialChat.ts",
+    "apps/desktop/src/services/socialChatRealtime.ts"
+  ],
+  "truth_sources": [
+    "Desktop socialChat store",
+    "Station friend_chat API responses"
+  ],
+  "visible_surfaces": [
+    {"type": "desktop", "route": "SocialChatPage"},
+    {"type": "desktop", "route": "chat session list"},
+    {"type": "desktop", "route": "chat message area"}
+  ],
+  "required_gates": ["desktop-check"],
+  "acceptance": {
+    "service": [
+      "Desktop chat store and services type-check against generated API contracts"
+    ],
+    "visible": [
+      "SocialChatPage and chat components remain compile-safe",
+      "Session list and message area contracts remain connected to the chat store"
+    ]
+  },
+  "negative": [
+    "Desktop type-check must not be reported as DOM-level UI E2E",
+    "page-local refresh must not replace runtime projection freshness contracts"
+  ]
+}

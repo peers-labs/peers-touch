@@ -41,6 +41,34 @@
 - [ ] Tooling / CI
 - [ ] Other / 其它: <!-- specify -->
 
+## Architecture Impact / 架构影响
+
+<!-- EN: Does this change ownership, source of truth, runtime boundaries, protocol contracts, or lifecycle behavior? -->
+<!-- CN: 是否改变 owner、真源、运行时边界、协议契约或生命周期行为？ -->
+
+- [ ] No architecture impact / 无架构影响
+- [ ] Architecture impact documented below / 有架构影响，说明如下
+
+<!-- Details: -->
+
+## Review Profile / Review 路由
+
+<!-- Run: make review-route REVIEW_RANGE=<base>...<head> -->
+<!-- Paste the emitted profiles and required commands. -->
+
+```text
+<!-- review profiles here -->
+```
+
+## Required Knowledge / 必读知识
+
+<!-- Run: tooling/scripts/review/knowledge-match.sh --range <base>...<head> -->
+<!-- Paste matched docs/knowledge entries, or "none". -->
+
+```text
+<!-- matched operational knowledge here -->
+```
+
 ## Test Plan / 测试计划
 
 <!-- EN: How was this tested? -->
@@ -66,6 +94,9 @@
 - [ ] Proto changes use `model/domain/*.proto` as source of truth / Proto 变更以 proto 文件为准
 - [ ] Generated files are NOT manually edited / 未手动编辑生成文件
 - [ ] Error handling includes context and typed error codes / 错误处理包含上下文和类型化错误码
+- [ ] `make review` or equivalent review framework checks passed / 已通过 Review Framework 检查
+- [ ] If a bug/invariant/playbook was discovered, `docs/knowledge/` was updated or explicitly waived / 如发现缺陷经验、不变量或流程，已更新知识库或说明无需更新
+- [ ] If review rules changed, `tooling/scripts/review/skill-check.sh` passed / 如 Review 规则变化，已通过 Review Skill 保鲜检查
 
 ## AI Traceability / AI 溯源
 

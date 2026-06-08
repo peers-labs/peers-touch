@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "id": "station-dashboard",
+  "description": "Station Dashboard is the first managed product domain after Federation. It validates that acceptance onboarding can manage ordinary product surfaces without using Federation-specific proof semantics.",
+  "capabilities": [
+    "acceptance-framework-self-consistency",
+    "station-dashboard-admin-access",
+    "station-dashboard-operator-surface"
+  ],
+  "validation_gate_id": "station-dashboard-domain-validation",
+  "report": "tooling/acceptance/reports/station-dashboard-validation.json"
+}
