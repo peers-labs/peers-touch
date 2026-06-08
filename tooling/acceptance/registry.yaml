@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "chat-proto",
+      "features": ["chat-service-contract"],
+      "when": {"paths": ["model/domain/chat/**"]},
+      "require": ["proto-build", "station-chat-unit"]
+    },
+    {
+      "id": "station-friend-chat",
+      "features": ["chat-service-contract", "chat-runtime-message-flow", "chat-realtime-delivery", "chat-live-realtime-delivery"],
+      "when": {"paths": ["apps/station/app/subserver/friend_chat/**"]},
+      "require": ["station-chat-unit", "chat-runtime-e2e", "chat-live-realtime-e2e", "desktop-check"]
+    },
+    {
+      "id": "station-events-stream",
+      "features": ["chat-live-realtime-delivery"],
+      "when": {"paths": ["apps/station/app/subserver/events/**", "model/domain/realtime/**"]},
+      "require": ["chat-live-realtime-e2e", "desktop-check"]
+    },
+    {
+      "id": "desktop-chat",
+      "features": ["desktop-chat-surface", "chat-realtime-delivery", "chat-desktop-gateway-message-flow", "chat-desktop-dom-message-visible"],
+      "when": {
+        "paths": [
+          "apps/desktop/src/App.tsx",
+          "apps/desktop/src/vite-env.d.ts",
+          "apps/desktop/src/pages/SocialChatPage.tsx",
+          "apps/desktop/src/pages/SocialChatPage.descriptor.tsx",
+          "apps/desktop/src/components/chat/**",
+          "apps/desktop/src/store/socialChat.ts",
+          "apps/desktop/src/services/socialChatRealtime.ts"
+        ]
+      },
+      "require": ["desktop-check", "chat-desktop-dom-message-visible"]
+    },
+    {
+      "id": "desktop-chat-gateway",
+      "features": ["chat-desktop-gateway-message-flow"],
+      "when": {
+        "paths": [
+          "apps/desktop/src-tauri/src/interface/http_gateway/**",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs",
+          "apps/desktop/src/services/desktop_api.ts"
+        ]
+      },
+      "require": ["desktop-check", "chat-desktop-gateway-e2e"]
+    },
+    {
+      "id": "federation-proto",
+      "features": ["federation-ledger", "federation-governance"],
+      "when": {"paths": ["model/domain/federation/**"]},
+      "require": ["proto-build", "station-federation-unit", "federation-three-node-e2e"]
+    },
+    {
+      "id": "station-federation",
+      "features": ["federation-ledger", "federation-governance", "federation-discovery-network"],
+      "when": {"paths": ["apps/station/app/subserver/federation/**"]},
+      "require": ["station-federation-unit", "federation-three-node-e2e", "federation-surface-smoke"]
+    },
+    {
+      "id": "station-federation-discovery",
+      "features": ["federation-discovery-network"],
+      "when": {"paths": ["apps/station/frame/core/plugin/native/federation/discovery/**"]},
+      "require": ["station-federation-unit", "federation-surface-smoke"]
+    },
+    {
+      "id": "station-dashboard",
+      "features": ["station-dashboard-auth", "station-dashboard-operations"],
+      "when": {"paths": ["apps/station/app/subserver/dashboard/**"]},
+      "require": ["station-dashboard-unit", "station-dashboard-web-check"]
+    },
+    {
+      "id": "dashboard-federation",
+      "features": ["federation-dashboard-operations", "federation-operational-observability"],
+      "when": {
+        "paths": [
+          "apps/station/app/subserver/dashboard/domain/federation.go",
+          "apps/station/app/subserver/dashboard/infrastructure/federation_repo.go",
+          "apps/station/app/subserver/dashboard/application/federation_service.go",
+          "apps/station/app/subserver/dashboard/web/src/api/federation.ts",
+          "apps/station/app/subserver/dashboard/web/src/pages/FederationPage.tsx"
+        ]
+      },
+      "require": ["station-dashboard-unit", "federation-dashboard-operational-drilldown"]
+    },
+    {
+      "id": "desktop-federation",
+      "features": ["desktop-federation-surfaces"],
+      "when": {
+        "paths": [
+          "apps/desktop/src/pages/FederationGovernancePage.tsx",
+          "apps/desktop/src/components/common/StationPicker.tsx",
+          "apps/desktop/src/components/chat/FindPeopleModal.tsx",
+          "apps/desktop/src/store/stationRegistry.ts",
+          "apps/desktop/src/runtimes/stationRuntime.ts",
+          "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/station.rs"
+        ]
+      },
+      "require": ["desktop-check", "federation-desktop-gateway-smoke"]
+    },
+    {
+      "id": "acceptance-framework",
+      "features": ["acceptance-framework"],
+      "when": {
+        "paths": [
+          "tooling/acceptance/**",
+          "tooling/scripts/acceptance-*.py",
+          "tooling/scripts/quality-evidence.py",
+          "tooling/make/acceptance.mk",
+          "tooling/scripts/review/route-change.sh",
+          "docs/architecture/quality-framework/**",
+          "docs/architecture/acceptance-framework/**",
+          "Makefile"
+        ]
+      },
+      "require": ["acceptance-plan-self"]
+    }
+  ]
+}

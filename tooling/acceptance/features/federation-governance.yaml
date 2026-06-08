@@ -1,0 +1,19 @@
+{
+  "id": "federation-governance",
+  "status": "active",
+  "product_area": "federation",
+  "owners": [
+    "apps/station/app/subserver/federation/**",
+    "apps/desktop/src/pages/FederationGovernancePage.tsx"
+  ],
+  "truth_sources": ["federation_ledger_proposals", "federation_ledger_events"],
+  "required_gates": ["station-federation-unit", "federation-three-node-e2e"],
+  "acceptance": {
+    "service": [
+      "join proposals can be accepted or rejected",
+      "governance events replay into member and role projections",
+      "sequencer handover and recovery are verifiable"
+    ]
+  },
+  "negative": ["notification and event stream must not become governance truth"]
+}

@@ -275,6 +275,7 @@ Current project skills:
 | `architecture-execution-methodology` | Decompose architectural designs into actionable execution plans, domain ownership, and verification systems (referenced from §4.3) |
 | `desktop-runtime-projections` | Enforce Page / Runtime / Boot kernel contracts under `apps/desktop/src/{kernel,runtimes,services,store,pages,components}` |
 | `read-before-edit` | Consult `docs/knowledge/` invariants / pitfalls / playbooks whose `owns:` covers the path being edited (referenced from §3.5) |
+| `quality-check` | Produce review-ready evidence from review profiles, acceptance, knowledge, deterministic gates, and test coverage |
 | `github-commit` | Conventional commit message generation with AI traceability |
 | `github-pr` | PR creation with templates, labels, and issue linking |
 | `github-release` | Semantic versioning, changelog generation, GitHub Release creation |

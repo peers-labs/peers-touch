@@ -1,0 +1,33 @@
+{
+  "id": "station-dashboard-auth",
+  "status": "active",
+  "product_area": "station-dashboard",
+  "owners": [
+    "apps/station/app/subserver/dashboard/application/auth_service.go",
+    "apps/station/app/subserver/dashboard/domain/auth.go",
+    "apps/station/app/subserver/dashboard/handler_middleware.go",
+    "apps/station/app/subserver/dashboard/web/src/pages/LoginPage.tsx",
+    "apps/station/app/subserver/dashboard/web/src/store/auth.ts",
+    "apps/station/app/subserver/dashboard/web/src/api/auth.ts"
+  ],
+  "truth_sources": [
+    "dashboard_admins",
+    "dashboard session token"
+  ],
+  "visible_surfaces": [{"type": "dashboard", "route": "/dashboard/#/login"}],
+  "required_gates": ["station-dashboard-unit", "station-dashboard-web-check"],
+  "acceptance": {
+    "service": [
+      "admin login validates persisted Dashboard admin credentials",
+      "authenticated requests are rejected when the session token is absent or invalid"
+    ],
+    "visible": [
+      "Dashboard login page is part of the typed web bundle",
+      "Dashboard auth store and API client contracts compile with the route surface"
+    ]
+  },
+  "negative": [
+    "Dashboard auth state must not become a Station identity truth source",
+    "Acceptance reports must not include hardcoded dashboard passwords or tokens"
+  ]
+}

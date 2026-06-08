@@ -47,6 +47,23 @@ export VITE_PORT=3000
 | `check-social-runtime-boundaries.sh` | 可用 | 校验双端社交 Runtime 边界 | 禁止页面/组件直接拥有社交实时流、reconcile、长期 freshness |
 | `apps/mobile/scripts/check-social-wire-contract.sh` | 可用 | 校验 Mobile 社交实时协议契约 | 禁止回退到手写 protobuf wire decoder |
 | `apps/desktop/scripts/check-social-wire-contract.sh` | 可用 | 校验 Desktop 社交实时协议契约 | 禁止回退到手写 protobuf wire decoder |
+| `review/run.sh` | 推荐 | 运行 Code Review Framework 门禁 | 统一调用变更路由、硬规则、知识库匹配、Review Skill 保鲜检查；也可通过 `make review` 使用 |
+| `review/route-change.sh` | 推荐 | 将 git diff 映射到 Review profiles | 输出每类变更需要关注的规则和验证命令 |
+| `review/hard-rules.sh` | 推荐 | 自动拦截 Review 铁律违规 | 检查 debug 语句、泄密、生成物手改、mock API、硬编码 UI 文案、静默吞错 |
+| `review/knowledge-match.sh` | 推荐 | 匹配 `docs/knowledge/` 的 `owns:` | 输出 PR 必读 invariant / pitfall / playbook，并支持 strict 新鲜度校验 |
+| `review/skill-check.sh` | 推荐 | 校验 Review Skill 完整性与新鲜度 | 检查 skill 结构、上游文档 hash、golden fixtures 和危险指令 |
+| `quality-evidence.py` | 推荐 | 聚合 review route、knowledge、acceptance plan、gate tier 和 proven/unproven scope | 通过 `make quality-evidence REVIEW_RANGE=<range>` 调用；产出 JSON/Markdown evidence |
+| `acceptance-plan.py` | 推荐 | 根据 git diff 和 `tooling/acceptance/registry.yaml` 规划应跑的产品验收 gate | 通过 `make acceptance-plan` 调用 |
+| `acceptance-run.py` | 推荐 | 执行 `acceptance-plan.py` 选出的 gate 并记录日志，支持 `--tier` 分层过滤 | 通过 `make acceptance-run` / `make acceptance-run-ci` 调用 |
+| `acceptance-report.py` | 推荐 | 汇总最新验收计划和执行结果 | 通过 `make acceptance-report` 调用 |
+| `acceptance-validate.py` | 推荐 | 校验 capability graph、domain profile、registry、gate、latest run result、report 闭环 | 通过 `make acceptance-validate` 或 `make acceptance-validate DOMAIN=<name>` 调用 |
+| `acceptance-coverage-report.py` | 推荐 | 汇总项目产品域接入状态、active domain 验证状态和 capability 清单 | 通过 `make acceptance-coverage-report` 调用 |
+| `acceptance-capability-report.py` | 推荐 | 汇总 feature contract、capability graph、mutual validation 与 gate 结果，产出产品能力验收报告 | 通过 `make acceptance-federation-report` 调用 |
+| `tooling/acceptance/gates/federation/surface_smoke.py` | 可用 | agent 主动验收 Federation app surface：Station 健康、Dashboard Federation bundle、Desktop gateway Station 绑定 | 通过 `make federation-surface-smoke` 调用 |
+| `tooling/acceptance/gates/dashboard/federation_visible_surface.py` | 可用 | Headless Chrome 可见面验收 Dashboard；自动读取本地 `.localenv` 的 admin 环境变量，缺凭据时验收 login gate | 通过 `make federation-dashboard-visible-surface` 调用 |
+| `tooling/acceptance/gates/dashboard/federation_operational_drilldown.py` | 可用 | 验证 Dashboard Federation operations API 与 sync/recovery/discovery drilldown 可见面 | 通过 `make federation-dashboard-operational-drilldown` 调用 |
+| `tooling/acceptance/gates/desktop/gateway_smoke.py` | 可用 | 通过 Desktop gateway 校验 active Station，并保存 render diagnostic | 通过 `make federation-desktop-gateway-smoke` 调用 |
+| `tooling/acceptance/gates/federation/mutual_validation.py` | 可用（alias） | Federation domain validation 的兼容 wrapper；核心逻辑在 `acceptance-validate.py` | 通过 `make acceptance-federation-mutual-validation` 调用 |
 | `check-go-style.sh` | 可用（按参数） | Go 风格检查与 lint | 默认目录仍偏旧，建议传入明确目录 |
 | `format-go.sh` | 可用（谨慎） | Go 格式化 | 仅在目标 Go 模块目录执行 |
 | `run_all_tests.sh` | 有风险 | 历史测试聚合脚本 | 根目录推导有偏差，使用前先检查路径 |
