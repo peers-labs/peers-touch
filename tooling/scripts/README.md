@@ -52,8 +52,9 @@ export VITE_PORT=3000
 | `review/hard-rules.sh` | 推荐 | 自动拦截 Review 铁律违规 | 检查 debug 语句、泄密、生成物手改、mock API、硬编码 UI 文案、静默吞错 |
 | `review/knowledge-match.sh` | 推荐 | 匹配 `docs/knowledge/` 的 `owns:` | 输出 PR 必读 invariant / pitfall / playbook，并支持 strict 新鲜度校验 |
 | `review/skill-check.sh` | 推荐 | 校验 Review Skill 完整性与新鲜度 | 检查 skill 结构、上游文档 hash、golden fixtures 和危险指令 |
+| `quality-evidence.py` | 推荐 | 聚合 review route、knowledge、acceptance plan、gate tier 和 proven/unproven scope | 通过 `make quality-evidence REVIEW_RANGE=<range>` 调用；产出 JSON/Markdown evidence |
 | `acceptance-plan.py` | 推荐 | 根据 git diff 和 `tooling/acceptance/registry.yaml` 规划应跑的产品验收 gate | 通过 `make acceptance-plan` 调用 |
-| `acceptance-run.py` | 推荐 | 执行 `acceptance-plan.py` 选出的 gate 并记录日志 | 通过 `make acceptance-run` 调用 |
+| `acceptance-run.py` | 推荐 | 执行 `acceptance-plan.py` 选出的 gate 并记录日志，支持 `--tier` 分层过滤 | 通过 `make acceptance-run` / `make acceptance-run-ci` 调用 |
 | `acceptance-report.py` | 推荐 | 汇总最新验收计划和执行结果 | 通过 `make acceptance-report` 调用 |
 | `acceptance-validate.py` | 推荐 | 校验 capability graph、domain profile、registry、gate、latest run result、report 闭环 | 通过 `make acceptance-validate` 或 `make acceptance-validate DOMAIN=<name>` 调用 |
 | `acceptance-coverage-report.py` | 推荐 | 汇总项目产品域接入状态、active domain 验证状态和 capability 清单 | 通过 `make acceptance-coverage-report` 调用 |

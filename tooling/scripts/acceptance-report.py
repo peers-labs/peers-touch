@@ -40,7 +40,9 @@ def main() -> int:
 
     lines.extend(["", "## Selected Gates", ""])
     for gate in plan.get("selected_gates", []):
-        lines.append(f"- `{gate['id']}`: `{gate['command']}`")
+        tier = gate.get("tier", "local-evidence")
+        environment = gate.get("environment", "local")
+        lines.append(f"- `{gate['id']}` [{tier}/{environment}]: `{gate['command']}`")
     if not plan.get("selected_gates"):
         lines.append("- none")
 
@@ -48,7 +50,9 @@ def main() -> int:
     for result in run.get("results", []):
         log = result.get("log")
         suffix = f" log=`{log}`" if log else ""
-        lines.append(f"- `{result['id']}`: {result['status']}{suffix}")
+        tier = result.get("tier", "local-evidence")
+        environment = result.get("environment", "local")
+        lines.append(f"- `{result['id']}` [{tier}/{environment}]: {result['status']}{suffix}")
     if not run.get("results"):
         lines.append("- not run")
 

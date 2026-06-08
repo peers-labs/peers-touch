@@ -50,9 +50,12 @@ trap 'rm -f "$tmp_changed" "$tmp_owns"' EXIT
 if [[ ${#manual_files[@]} -gt 0 ]]; then
   printf '%s\n' "${manual_files[@]}" > "$tmp_changed"
 else
-  git diff --name-only "$diff_range" -- > "$tmp_changed" || true
+  if ! git diff --name-only "$diff_range" -- > "$tmp_changed"; then
+    echo "knowledge-match: invalid or unreadable git range: $diff_range" >&2
+    exit 1
+  fi
   if [[ ! -s "$tmp_changed" ]]; then
-    git diff --name-only --cached -- > "$tmp_changed" || true
+    git diff --name-only --cached -- > "$tmp_changed"
   fi
   git ls-files --others --exclude-standard >> "$tmp_changed"
   sort -u "$tmp_changed" -o "$tmp_changed"
@@ -129,8 +132,9 @@ while IFS= read -r knowledge_file; do
 
   while IFS= read -r owns_path; do
     [[ -z "$owns_path" ]] && continue
+    normalized_owns="${owns_path%/}"
     if [[ "$strict" -eq 1 ]]; then
-      if [[ ! -e "$owns_path" && ! -d "${owns_path%/}" ]]; then
+      if [[ ! -e "$owns_path" && ! -d "$normalized_owns" ]]; then
         case "$owns_path" in
           */)
             echo "[knowledge-owns] $knowledge_file owns missing directory: $owns_path"
@@ -149,7 +153,7 @@ while IFS= read -r knowledge_file; do
     while IFS= read -r changed; do
       [[ -z "$changed" ]] && continue
       case "$changed" in
-        "$owns_path"|"$owns_path"/*)
+        "$normalized_owns"|"$normalized_owns"/*)
           if [[ "$matches" -eq 0 ]]; then
             echo "Matched operational knowledge:"
           fi

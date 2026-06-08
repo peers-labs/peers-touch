@@ -38,9 +38,12 @@ done
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
-changed_files="$(git diff --name-only "$diff_range" -- || true)"
+if ! changed_files="$(git diff --name-only "$diff_range" --)"; then
+  echo "route-change: invalid or unreadable git range: $diff_range" >&2
+  exit 1
+fi
 if [[ -z "$changed_files" ]]; then
-  changed_files="$(git diff --name-only --cached -- || true)"
+  changed_files="$(git diff --name-only --cached --)"
 fi
 untracked_files="$(git ls-files --others --exclude-standard)"
 changed_files="$(printf '%s\n%s\n' "$changed_files" "$untracked_files" | sed '/^$/d' | sort -u)"
@@ -79,6 +82,11 @@ while IFS= read -r file; do
     docs/knowledge/*)
       add_profile "knowledge" "$file changes operational knowledge"
       ;;
+    tooling/scripts/quality-evidence.py)
+      add_profile "acceptance" "$file changes product acceptance evidence aggregation"
+      add_profile "review-system" "$file changes review framework infrastructure"
+      add_profile "skill" "$file affects review skill verification"
+      ;;
     tooling/acceptance/*|tooling/scripts/acceptance-*.py|tooling/make/acceptance.mk|docs/architecture/acceptance-framework/*)
       add_profile "acceptance" "$file changes product acceptance framework"
       ;;
@@ -110,7 +118,7 @@ commands_for_profile() {
     mobile) echo "pnpm mobile:check" ;;
     packages) echo "pnpm -r --if-present run check" ;;
     knowledge) echo "tooling/scripts/review/knowledge-match.sh --range ${diff_range}" ;;
-    acceptance) echo "make acceptance-validate && make acceptance-coverage-report" ;;
+    acceptance) echo "make acceptance-validate && make acceptance-coverage-report && make acceptance-plan ACCEPTANCE_RANGE=${diff_range}" ;;
     skill) echo "tooling/scripts/review/skill-check.sh" ;;
     review-system) echo "tooling/scripts/review/run.sh --range ${diff_range}" ;;
     ci) echo "review workflow syntax check in GitHub Actions" ;;
