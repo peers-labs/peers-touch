@@ -110,6 +110,30 @@ Use the evidence, but decide from code and project contracts:
 - Is human owner approval required for architecture, security, federation,
   persistence, rollout, or product behavior?
 
+### 5. Run Review Learning Check
+
+For every finding and evidence gap, decide whether the lesson should improve the
+repository review system. The agent must not end with "remember this next time";
+growth must map to repository assets or be explicitly waived as one-off.
+
+Allowed growth decisions:
+
+| Decision | Use when |
+|---|---|
+| `knowledge_invariant` | the review exposed a stable rule future changes must preserve |
+| `knowledge_pitfall` | the review exposed a repeatable bug root cause or escaped defect |
+| `knowledge_playbook` | the review exposed a recurring task procedure |
+| `hard_rule` | the review exposed a deterministic pattern scripts can catch |
+| `review_fixture` | the review exposed a behavior that needs regression coverage |
+| `acceptance_contract` | the review exposed missing or stale product capability scope |
+| `acceptance_gate` | the review exposed missing executable product evidence |
+| `skill_update` | the review exposed a repeatable agent judgment gap |
+| `ci_tooling_update` | the review exposed missing or unreliable CI/tooling evidence |
+| `no_growth_needed` | the lesson is genuinely one-off and the reason is recorded |
+
+If a reusable lesson is found, name the target file or directory. If no growth is
+needed, explain why the finding is not reusable.
+
 ## Review Profiles
 
 | Profile | Focus |
@@ -149,7 +173,7 @@ This skill owns the judgment scripts cannot make:
 - whether tests and acceptance gates prove the actual risk;
 - whether knowledge or acceptance contracts are stale;
 - whether a finding should become a fixture, invariant, pitfall, playbook, gate,
-  or skill update.
+  skill update, or CI/tooling update.
 
 ## Hard Rules
 
@@ -307,9 +331,24 @@ Overall: merge | hold | reject
 - Must fix before merge:
 - Can follow up:
 - Human owner review needed:
+
+### Framework Growth Opportunities
+
+- `knowledge_invariant`:
+- `knowledge_pitfall`:
+- `knowledge_playbook`:
+- `hard_rule`:
+- `review_fixture`:
+- `acceptance_contract`:
+- `acceptance_gate`:
+- `skill_update`:
+- `ci_tooling_update`:
+- `no_growth_needed`:
 ```
 
 If no findings exist, say so and still list residual risk and checks not run.
+The `Framework Growth Opportunities` section is required even when every item is
+empty except `no_growth_needed`.
 
 ## Skill Freshness
 
@@ -326,13 +365,18 @@ reflected here or explicitly waived in the PR.
 
 After accepted findings or escaped defects:
 
-1. classify the gap as one-off, invariant, pitfall, playbook, fixture, gate, or
-   skill-rule gap;
+1. classify each finding or evidence gap using the Review Learning Check
+   decisions;
 2. add or update review fixtures for deterministic hard-rule gaps;
 3. update `docs/knowledge/**` for operational knowledge;
 4. update acceptance contracts/gates when product evidence was missing;
 5. update this skill when review behavior changes;
-6. require CODEOWNERS review before merge.
+6. update CI/tooling when evidence generation or portability failed;
+7. require CODEOWNERS review before merge.
+
+Growth changes are reviewable product assets. They must be submitted through the
+normal PR path and pass `skill-check.sh`; the agent must not silently weaken a
+rule, refresh a hash, or delete a fixture without explaining the behavior change.
 
 ## Anti-Patterns
 
