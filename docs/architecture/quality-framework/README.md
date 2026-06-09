@@ -30,7 +30,8 @@ PR / diff
   -> agent code review judgment
   -> owner escalation when needed
   -> merge / hold / reject
-  -> knowledge, gate, fixture, or skill growth
+  -> review learning classification
+  -> knowledge, gate, fixture, skill, or CI growth
 ```
 
 ---
@@ -150,6 +151,35 @@ Acceptance can prove capability scope, but it cannot approve a PR. Review can ap
 
 ## 8. Growth Loop
 
+The review framework is designed for review agents, not only humans. It must
+improve as the product and business domains evolve. The durable learning target
+is the repository, not an individual agent's private memory.
+
+Every review must run this growth protocol after findings and evidence gaps are
+identified:
+
+```text
+for each finding or evidence gap:
+  decide whether the lesson is reusable
+  if reusable, classify the repository asset that should grow
+  if not reusable, record the no-growth reason
+```
+
+Growth decisions are restricted to these stable categories:
+
+| Decision | Repository Asset |
+|---|---|
+| `knowledge_invariant` | `docs/knowledge/invariants/**` |
+| `knowledge_pitfall` | `docs/knowledge/pitfalls/**` |
+| `knowledge_playbook` | `docs/knowledge/playbooks/**` |
+| `hard_rule` | `tooling/scripts/review/hard-rules.sh` plus fixture |
+| `review_fixture` | `tooling/review-fixtures/**` |
+| `acceptance_contract` | `tooling/acceptance/features/**` or `capabilities/**` |
+| `acceptance_gate` | `tooling/acceptance/gates.yaml` or `tooling/acceptance/gates/**` |
+| `skill_update` | `tooling/skills/github-review/SKILL.md` or `quality-check/SKILL.md` |
+| `ci_tooling_update` | `.github/workflows/**`, `tooling/make/**`, or `tooling/scripts/**` |
+| `no_growth_needed` | explicit review note explaining why the lesson is one-off |
+
 After every accepted finding or escaped defect, classify the missing guard:
 
 | Trigger | Expected Growth |
@@ -161,4 +191,26 @@ After every accepted finding or escaped defect, classify the missing guard:
 | hard-rule gap | review fixture and rule update |
 | review behavior gap | `github-review` or `quality-check` skill update |
 
-The quality system improves only when review conclusions feed back into knowledge, gates, fixtures, and skills.
+The quality system improves only when review conclusions feed back into
+knowledge, gates, fixtures, skills, and CI/tooling.
+
+## 9. Proof Obligations
+
+The framework does not claim an agent will never miss a bug. It proves narrower,
+engineering-testable properties:
+
+| Property | Proof |
+|---|---|
+| Every review protocol includes growth evaluation | `github-review` requires `Review Learning Check` and `Framework Growth Opportunities` |
+| Growth decisions have durable repository targets | decision categories map to concrete repo paths |
+| The growth protocol cannot be silently removed | `skill-check.sh` requires the sections and decision categories |
+| Learned behavior is reusable by future agents | knowledge, skills, fixtures, gates, and CI live in the repo |
+| Regressions in the protocol are caught | growth fixtures under `tooling/review-fixtures/growth-*` are checked |
+
+Therefore the proof target is:
+
+```text
+once a reusable review lesson is recognized and merged into a repository asset,
+future agents executing the same framework inherit that lesson through checked
+repo state instead of private conversational memory.
+```
