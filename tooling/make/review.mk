@@ -1,8 +1,9 @@
 # ─── Code Review Framework ─────────────────────────────────────
 
-.PHONY: review review-route review-hard-rules review-knowledge review-skill-check quality-evidence
+.PHONY: review review-route review-hard-rules review-knowledge review-skill-check quality-evidence review-submit
 
 REVIEW_RANGE ?= HEAD
+REVIEW_BASE ?= origin/master
 
 review:
 	tooling/scripts/review/run.sh --range "$(REVIEW_RANGE)"
@@ -21,3 +22,6 @@ review-skill-check:
 
 quality-evidence:
 	python3 tooling/scripts/quality-evidence.py --range "$(REVIEW_RANGE)"
+
+review-submit:
+	tooling/scripts/review/submit-pipeline.sh --base "$(REVIEW_BASE)"
