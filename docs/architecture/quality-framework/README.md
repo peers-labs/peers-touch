@@ -245,4 +245,20 @@ Therefore the proof target is:
 once a reusable review lesson is recognized and merged into a repository asset,
 future agents executing the same framework inherit that lesson through checked
 repo state instead of private conversational memory.
+
+## 11. Document Set
+
+This directory is the source of truth for the quality framework:
+
+| Document | Purpose |
+|---|---|
+| `README.md` | architecture overview, responsibilities, proof target |
+| `lifecycle.md` | end-to-end quality lifecycle from task to merge and growth |
+| `agent-operation.md` | concrete operating procedure for agents executing the framework |
+| `proof-model.md` | what is machine-proven, what is review-proven, and what is not claimed |
+| `maintenance.md` | how to evolve routes, gates, skills, fixtures, and knowledge safely |
+
+Agents should read `agent-operation.md` when asked to submit an MR/PR or perform
+review. Framework maintainers should read `maintenance.md` before changing the
+quality system itself.
 ```
