@@ -89,7 +89,39 @@ The evidence plan is not an approval. It is the input to agent review.
 
 ---
 
-## 4. Acceptance Evidence Tiers
+## 4. Submit-Time Review Pipeline
+
+When a user asks an agent to submit an MR/PR, the quality lifecycle starts before
+the PR is created. The agent must run the submit-time pipeline against the target
+base branch:
+
+```bash
+make review-submit REVIEW_BASE=origin/master
+```
+
+The pipeline performs:
+
+1. quality evidence generation;
+2. strict review framework checks;
+3. acceptance domain validation and coverage report;
+4. acceptance planning for the PR range;
+5. selected `ci-structure` and `ci-cheap` acceptance gates;
+6. acceptance report generation.
+
+If the submit-time pipeline fails, the agent must not open a normal ready-for-review
+PR. It must either fix the failure, ask the user whether to open a draft with
+explicit evidence gaps, or record an owner-approved waiver.
+
+The PR body must include the generated evidence summary, matched knowledge,
+tests/checks run, unproven scope, and Framework Growth Opportunities.
+
+After PR creation, GitHub Actions rerun the review workflow and attach CI evidence
+artifacts. CI is the second execution of the same lifecycle, not the first time
+quality review starts.
+
+---
+
+## 5. Acceptance Evidence Tiers
 
 Acceptance gates should not all run in PR CI. Each gate should be classified by execution tier:
 
@@ -113,13 +145,13 @@ Executable tier entry points:
 
 ---
 
-## 5. CI Evidence
+## 6. CI Evidence
 
 The GitHub review workflow runs review gates, generates quality evidence, writes the Markdown evidence report into the job summary, and uploads JSON/Markdown artifacts. CI evidence is a review input, not an approval.
 
 ---
 
-## 6. Knowledge Delta Review
+## 7. Knowledge Delta Review
 
 `knowledge-match.sh` is a path resolver. It does not decide whether code violates or obsoletes knowledge.
 
@@ -135,7 +167,7 @@ The agent review must perform the semantic delta:
 
 ---
 
-## 7. Merge Decision Model
+## 8. Merge Decision Model
 
 The final merge decision belongs to agent-led review, using the evidence plan:
 
@@ -149,7 +181,7 @@ Acceptance can prove capability scope, but it cannot approve a PR. Review can ap
 
 ---
 
-## 8. Growth Loop
+## 9. Growth Loop
 
 The review framework is designed for review agents, not only humans. It must
 improve as the product and business domains evolve. The durable learning target
@@ -194,7 +226,7 @@ After every accepted finding or escaped defect, classify the missing guard:
 The quality system improves only when review conclusions feed back into
 knowledge, gates, fixtures, skills, and CI/tooling.
 
-## 9. Proof Obligations
+## 10. Proof Obligations
 
 The framework does not claim an agent will never miss a bug. It proves narrower,
 engineering-testable properties:
