@@ -25,6 +25,7 @@ require_file "$freshness_file"
 required_sections=(
   "Review Philosophy"
   "Review Workflow"
+  "Review Learning Check"
   "Review Profiles"
   "Script vs Skill Boundary"
   "Platform Review Playbooks"
@@ -34,6 +35,7 @@ required_sections=(
   "Self-Growth"
   "Severity Levels"
   "Review Output Format"
+  "Framework Growth Opportunities"
   "Anti-Patterns"
 )
 
@@ -64,9 +66,28 @@ required_rules=(
   "Review-System Review"
 )
 
+growth_decisions=(
+  "knowledge_invariant"
+  "knowledge_pitfall"
+  "knowledge_playbook"
+  "hard_rule"
+  "review_fixture"
+  "acceptance_contract"
+  "acceptance_gate"
+  "skill_update"
+  "ci_tooling_update"
+  "no_growth_needed"
+)
+
 for rule in "${required_rules[@]}"; do
   if ! grep -qi "$rule" "$skill_file"; then
     fail "$skill_file missing required rule reference: $rule"
+  fi
+done
+
+for decision in "${growth_decisions[@]}"; do
+  if ! grep -q "$decision" "$skill_file"; then
+    fail "$skill_file missing growth decision: $decision"
   fi
 done
 
@@ -138,6 +159,34 @@ else
       fail "$fixture did not trigger expected hard-rule code '$expected_code'"
     fi
   done < <(find "$fixtures_dir" -name expected.yml | sort)
+
+  growth_fixture_count="$(find "$fixtures_dir" -mindepth 1 -maxdepth 1 -type d -name 'growth-*' | wc -l | tr -d ' ')"
+  if [[ "$growth_fixture_count" -lt 4 ]]; then
+    fail "expected at least 4 growth fixtures, found $growth_fixture_count"
+  fi
+
+  while IFS= read -r growth; do
+    fixture="$(dirname "$growth")"
+    for field in scenario expected_growth_decision expected_asset proof; do
+      if ! grep -Eq "^${field}:" "$growth"; then
+        fail "$growth missing $field"
+      fi
+    done
+    decision="$(awk -F': *' '/^expected_growth_decision:/ {print $2; exit}' "$growth")"
+    found_decision=0
+    for allowed in "${growth_decisions[@]}"; do
+      if [[ "$decision" == "$allowed" ]]; then
+        found_decision=1
+        break
+      fi
+    done
+    if [[ "$found_decision" -ne 1 ]]; then
+      fail "$fixture has unknown growth decision: $decision"
+    fi
+    if ! grep -q "$decision" "$skill_file"; then
+      fail "$fixture expected growth decision '$decision' is not represented in $skill_file"
+    fi
+  done < <(find "$fixtures_dir" -path '*/growth.yml' | sort)
 fi
 
 invalid_range="__pt_missing_review_range__"
