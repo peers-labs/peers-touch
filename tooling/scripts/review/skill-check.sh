@@ -5,8 +5,11 @@ repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
 skill_file="tooling/skills/github-review/SKILL.md"
+pr_skill_file="tooling/skills/github-pr/SKILL.md"
 freshness_file="tooling/skills/github-review/FRESHNESS.md"
 fixtures_dir="tooling/review-fixtures"
+pr_template=".github/PULL_REQUEST_TEMPLATE.md"
+submit_pipeline="tooling/scripts/review/submit-pipeline.sh"
 
 failures=0
 
@@ -20,7 +23,10 @@ require_file() {
 }
 
 require_file "$skill_file"
+require_file "$pr_skill_file"
 require_file "$freshness_file"
+require_file "$pr_template"
+require_file "$submit_pipeline"
 
 required_sections=(
   "Review Philosophy"
@@ -88,6 +94,28 @@ done
 for decision in "${growth_decisions[@]}"; do
   if ! grep -q "$decision" "$skill_file"; then
     fail "$skill_file missing growth decision: $decision"
+  fi
+done
+
+submit_markers=(
+  "Submit-Time Review Pipeline"
+  "make review-submit"
+  "Quality Evidence"
+  "Framework Growth Opportunities"
+)
+
+for marker in "${submit_markers[@]}"; do
+  if ! grep -q "$marker" "$pr_skill_file"; then
+    fail "$pr_skill_file missing submit pipeline marker: $marker"
+  fi
+  if ! grep -q "$marker" "$pr_template"; then
+    fail "$pr_template missing submit pipeline marker: $marker"
+  fi
+done
+
+for marker in "make quality-evidence" "run.sh --range" "--strict-knowledge" "make acceptance-run-ci"; do
+  if ! grep -q -- "$marker" "$submit_pipeline"; then
+    fail "$submit_pipeline missing required command marker: $marker"
   fi
 done
 

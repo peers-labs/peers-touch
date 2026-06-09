@@ -13,7 +13,8 @@
 5. operational knowledge matching and semantic Knowledge Delta Review are wired into the review workflow;
 6. quality-check and Acceptance Framework evidence are consumed before merge judgment;
 7. Review Learning Check classifies every reusable lesson into a durable repository asset or records `no_growth_needed`;
-8. self-growth is constrained to PR-reviewed updates with fixtures, gates, knowledge, skills, CI/tooling, and owner review.
+8. MR/PR submission starts the quality lifecycle before PR creation;
+9. self-growth is constrained to PR-reviewed updates with fixtures, gates, knowledge, skills, CI/tooling, and owner review.
 
 ## Proof Command
 
@@ -37,6 +38,7 @@ fails.
 | Golden fixture detection | `skill-check.sh` invoking `hard-rules.sh --fixture-dir` |
 | Knowledge freshness path | `knowledge-match.sh --strict` plus Knowledge Delta Review in `SKILL.md` |
 | Quality evidence handoff | `quality-evidence.py`, `make quality-evidence`, and `tooling/skills/quality-check/SKILL.md` |
+| Submit-time lifecycle entry | `submit-pipeline.sh`, `make review-submit`, `github-pr/SKILL.md`, and `.github/PULL_REQUEST_TEMPLATE.md` checks in `skill-check.sh` |
 | Acceptance evidence path | `acceptance-plan.py --range`, `acceptance-validate`, and Acceptance Review in `SKILL.md` |
 | Acceptance tier filtering | `acceptance-run.py --tier` regression in `skill-check.sh` |
 | Fail-closed script behavior | invalid range regressions in `skill-check.sh` |
