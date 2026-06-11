@@ -1,7 +1,8 @@
 package com.peerstouch.mobile.core.lynx
 
 import android.content.Context
-import com.lynx.core.LynxEnv
+import android.app.Application
+import com.lynx.tasm.LynxEnv
 
 class LynxEngineManager constructor() {
     var isInitialized: Boolean = false
@@ -13,7 +14,7 @@ class LynxEngineManager constructor() {
         if (isInitialized) return
         applicationContext = context.applicationContext
         LynxEnv.inst().init(
-            context.applicationContext,
+            context.applicationContext as Application,
             null,
             null,
             null

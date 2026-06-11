@@ -303,7 +303,8 @@ Mobile 加载路径：
 独立运行模式（开发调试 / 第三方小程序平台）：
 - 产物为 `index.html` + JS bundle（标准 SPA）。
 - 可部署到任何静态服务器。
-- SDK 自动 fallback 到 `StandaloneBridgeAdapter`。
+- SDK 只有在显式构造 `StandaloneBridgeAdapter`，或设置 `globalThis.__PEERS_TOUCH_APPLET_STANDALONE__ === true` 后才进入 standalone。
+- 未检测到 Lynx / Web Host 且未显式启用 standalone 时，SDK 返回 `RUNTIME_LOAD_FAILED`，避免把无 Host 浏览器误判为 integrated runtime。
 - 不经过 Host Gateway，直接 fetch 后端。
 - Standalone 不享受 Host Gateway 安全治理；后端必须自行完成鉴权、CORS、限流和审计。
 

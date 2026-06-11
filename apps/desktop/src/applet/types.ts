@@ -18,6 +18,8 @@ export interface AppletLoadMap {
   desktop?: { type: DesktopLoadType; entry: string }
   android?: { type: MobileLoadType; entry: string }
   ios?: { type: MobileLoadType; entry: string }
+  harmony?: { type: MobileLoadType; entry: string }
+  web?: { type: DesktopLoadType; entry: string }
   standalone?: { type: StandaloneLoadType; entry: string }
 }
 
@@ -30,7 +32,27 @@ export interface AppletBridgeConfig {
 
 // ── Manifest ──
 
-export type TargetPlatform = 'desktop' | 'android' | 'ios' | 'standalone'
+export type TargetPlatform = 'desktop' | 'android' | 'ios' | 'harmony' | 'web' | 'standalone'
+
+export interface AppletServiceDeclaration {
+  id: string
+  kind: 'http'
+  binding: 'host-resolved' | 'station-resolved' | 'dev-override'
+  allowedMethods: string[]
+  allowedPaths: string[]
+  streaming?: boolean
+}
+
+export interface AppletSkillDeclaration {
+  id: string
+  inputSchema: string
+  streaming?: boolean
+}
+
+export interface AppletIntegrity {
+  algorithm: 'sha256'
+  files: Record<string, string>
+}
 
 export interface AppletManifest {
   id: string
@@ -45,6 +67,11 @@ export interface AppletManifest {
   targetPlatforms: TargetPlatform[]
   load: AppletLoadMap
   bridge: AppletBridgeConfig
+  targets?: TargetPlatform[]
+  entries?: { lynx: string; standalone?: string }
+  services?: AppletServiceDeclaration[]
+  skills?: AppletSkillDeclaration[]
+  integrity?: AppletIntegrity
 }
 
 // ── Runtime info (manifest + resolved path) ──

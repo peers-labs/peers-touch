@@ -10,8 +10,9 @@ import {
   Checkbox,
   Switch,
   Collapse,
+  Drawer,
 } from 'antd';
-import { Drawer, Input, Tag, Button, TextArea } from '@lobehub/ui';
+import { Input, Tag, Button, TextArea } from '@lobehub/ui';
 import { Flexbox } from 'react-layout-kit';
 import { Sparkles, Terminal, Bot, ChevronDown } from 'lucide-react';
 import { ModelSelect } from './ModelSelect';

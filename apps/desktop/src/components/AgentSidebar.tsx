@@ -617,7 +617,7 @@ function TopicItem({
               size="small"
             />
           }
-          overlayInnerStyle={{ padding: 8 }}
+          styles={{ container: { padding: 8 } }}
           arrow={false}
         >
           <span

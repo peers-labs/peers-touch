@@ -5,7 +5,7 @@ import { globalContext } from '../kernel/global-context';
 import { api } from '../services/desktop_api';
 import { onSessionRevoked } from '../services/desktop_api';
 import { removeDesktopPreferenceSync } from '../storage/desktopClientStorage';
-import type { AccountIdentity } from '../services/desktop_api';
+import type { AccountIdentity, AppletProductWindowLaunchContext } from '../services/desktop_api';
 import type { AppLifecycle, AppState, SessionUser } from '../types/navigation';
 
 // Warm-resume / auto-login on launch is intentionally disabled.
@@ -35,6 +35,37 @@ function accountToSessionUser(account: AccountIdentity): SessionUser {
     hasSession: account.has_session,
     provider: account.provider,
   };
+}
+
+function appletLaunchContextToSessionUser(context: AppletProductWindowLaunchContext): SessionUser {
+  const actorId = context.actorId || 'applet-product-window-certification';
+  return {
+    name: context.name || actorId,
+    email: context.email || '',
+    accountId: `applet-product-window-certification:${actorId}`,
+    hasPin: false,
+    hasSession: true,
+    provider: context.loginMethod || 'product-window-certification',
+  };
+}
+
+function activateAppletProductWindowLaunch(context: AppletProductWindowLaunchContext): boolean {
+  if (!context.enabled || !context.appletId || !context.actorId) return false;
+
+  const loginMethod = context.loginMethod || 'product-window-certification';
+  useSessionStore.getState().activateAppletLaunchSession({
+    actorId: context.actorId,
+    name: context.name || context.actorId,
+    email: context.email || '',
+    loginMethod,
+    loginProvider: loginMethod,
+  });
+
+  const targetHash = `#/applet:${context.appletId}`;
+  if (window.location.hash !== targetHash) {
+    window.history.replaceState(null, '', targetHash);
+  }
+  return true;
 }
 
 export function useAppLifecycle(): AppLifecycle {
@@ -108,23 +139,34 @@ export function useAppLifecycle(): AppLifecycle {
     // so the user can choose an account explicitly.
     const oauth2 = useOAuth2Store.getState();
 
-    Promise.all([
-      oauth2.loadAll().catch(() => {}),
-      api.accountListRestorable().catch(() => [] as AccountIdentity[]),
-    ]).then(([, restorableAccounts]) => {
+    api.appletsProductWindowLaunchContext().catch(() => ({ enabled: false })).then((context) => {
+      if (activateAppletProductWindowLaunch(context)) {
+        const launchUser = appletLaunchContextToSessionUser(context);
+        setRestoredUser(launchUser);
+        setKnownAccounts([launchUser]);
+        setDataReady(true);
+        setState('ready');
+        return;
+      }
+
+      return Promise.all([
+        oauth2.loadAll().catch(() => {}),
+        api.accountListRestorable().catch(() => [] as AccountIdentity[]),
+      ]).then(([, restorableAccounts]) => {
       // Load all accounts that have restorable sessions. Since the in-memory
       // session was intentionally NOT restored, treat all non-PIN accounts as
       // having no live session (they share the global session.json and we
       // refuse to silently adopt it). PIN-protected accounts keep their flag
       // because their encrypted_session is independent and unlock requires
       // explicit PIN entry by the user.
-      if (Array.isArray(restorableAccounts) && restorableAccounts.length > 0) {
-        const accounts = restorableAccounts.map(accountToSessionUser);
-        accounts.forEach(a => { if (!a.hasPin) a.hasSession = false; });
-        setKnownAccounts(accounts);
-      }
+        if (Array.isArray(restorableAccounts) && restorableAccounts.length > 0) {
+          const accounts = restorableAccounts.map(accountToSessionUser);
+          accounts.forEach(a => { if (!a.hasPin) a.hasSession = false; });
+          setKnownAccounts(accounts);
+        }
 
-      setDataReady(true);
+        setDataReady(true);
+      });
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

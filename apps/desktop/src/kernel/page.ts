@@ -33,8 +33,13 @@ export interface PageDescriptor {
   readonly id: string;
   /** Optional human label for diagnostics; not user-visible. */
   readonly title?: string;
+  /**
+   * Optional matcher for dynamic routes such as `applet:<id>`.
+   * Exact `id` matches always win before dynamic descriptors are considered.
+   */
+  readonly match?: (pageId: string) => boolean;
   /** Render the page tree. The host wraps it in keep-alive container divs. */
-  factory(): ReactElement;
+  factory(context: PageFactoryContext): ReactElement;
   readonly preload: Preload;
   readonly keepAlive: KeepAlive;
   /**
@@ -45,14 +50,56 @@ export interface PageDescriptor {
   readonly runtimes: ReadonlyArray<string>;
 }
 
+export interface PageFactoryContext {
+  /** Actual route id, e.g. `applet:hello-lynx` for dynamic descriptors. */
+  readonly pageId: string;
+  /** Descriptor id, e.g. `applet:*` for dynamic descriptors. */
+  readonly descriptorId: string;
+}
+
+export interface PageResolution {
+  readonly descriptor: PageDescriptor;
+  readonly pageId: string;
+  readonly pageKey: string;
+  readonly dynamic: boolean;
+}
+
 const registry = new Map<string, PageDescriptor>();
+const dynamicRegistry: PageDescriptor[] = [];
 
 export function registerPage(desc: PageDescriptor): void {
   registry.set(desc.id, desc);
+  if (desc.match && !dynamicRegistry.some((item) => item.id === desc.id)) {
+    dynamicRegistry.push(desc);
+  }
 }
 
 export function getPage(id: string): PageDescriptor | undefined {
+  return resolvePage(id)?.descriptor;
+}
+
+export function getExactPage(id: string): PageDescriptor | undefined {
   return registry.get(id);
+}
+
+export function resolvePage(id: string): PageResolution | undefined {
+  const exact = registry.get(id);
+  if (exact) {
+    return {
+      descriptor: exact,
+      pageId: id,
+      pageKey: exact.id,
+      dynamic: false,
+    };
+  }
+  const dynamic = dynamicRegistry.find((desc) => desc.match?.(id) === true);
+  if (!dynamic) return undefined;
+  return {
+    descriptor: dynamic,
+    pageId: id,
+    pageKey: id,
+    dynamic: true,
+  };
 }
 
 export function listPages(): PageDescriptor[] {
@@ -60,10 +107,11 @@ export function listPages(): PageDescriptor[] {
 }
 
 export function listIdlePreloadPages(): PageDescriptor[] {
-  return listPages().filter((p) => p.preload === 'idle');
+  return listPages().filter((p) => !p.match && p.preload === 'idle');
 }
 
 /** Test aid — registry is process-singleton in production. */
 export function _resetPageRegistryForTests(): void {
   registry.clear();
+  dynamicRegistry.length = 0;
 }

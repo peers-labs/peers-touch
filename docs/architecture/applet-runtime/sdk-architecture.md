@@ -344,14 +344,15 @@ telemetry.track
 | iOS | `LynxBridgeAdapter` | LynxView NativeModule |
 | HarmonyOS | `LynxBridgeAdapter` reserved | ArkTS native module / Lynx Harmony adapter |
 | Web | `WebHostBridgeAdapter` | Host injected `globalThis.__PEERS_TOUCH_APPLET_HOST__` |
-| Development | `StandaloneBridgeAdapter` | local fetch/localStorage fallback |
+| Development | `StandaloneBridgeAdapter` | explicit local fetch/localStorage outlet |
 
 Adapter 检测顺序：
 
 1. Lynx NativeModules。
 2. Peers-Touch Web Host injection。
-3. Standalone development fallback。
+3. Explicit standalone opt-in (`globalThis.__PEERS_TOUCH_APPLET_STANDALONE__ === true`).
 4. Third-party compatibility adapter, only when explicitly enabled.
+5. `HostUnavailableBridgeAdapter`, which returns `RUNTIME_LOAD_FAILED` instead of silently using standalone.
 
 ---
 

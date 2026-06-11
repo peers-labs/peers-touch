@@ -190,7 +190,7 @@ Mobile 迁移到 Tauri 后，生成链应跟随真实消费端重新收敛：
 ### 8.3 与 Applet 的关系
 
 - Mobile Applet 优先通过 Tauri mobile native plugin 承载 LynxView。
-- Applet 协议边界由 `Manifest V2` 与 `Bridge V2` 约束。
+- Applet 协议边界由 `@peers-touch/applet-contract` canonical manifest 与 `peers-touch.applet.bridge` canonical bridge 约束。
 - Applet 权限裁决必须同时受 Manifest、Tauri capability 和系统权限约束。
 
 ---

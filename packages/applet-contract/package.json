@@ -12,6 +12,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "schema": "pnpm run build && node ../../tooling/scripts/applet-contract-schema.mjs",
     "dev": "tsc --watch",
     "check": "tsc --noEmit"
   },

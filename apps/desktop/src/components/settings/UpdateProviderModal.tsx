@@ -42,7 +42,7 @@ export function UpdateProviderModal({ open, detail, onClose }: UpdateProviderMod
       onOk={handleOk}
       confirmLoading={loading}
       okText={t('provider.updateProvider.okText')}
-      destroyOnClose
+      destroyOnHidden
     >
       <Form
         form={form}

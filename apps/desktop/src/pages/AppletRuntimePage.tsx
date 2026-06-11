@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Blocks, Pin, PinOff } from 'lucide-react';
-import { Empty, Spin, theme, Typography } from 'antd';
+import { Empty, Modal, Spin, message, theme, Typography } from 'antd';
 import { Button, Tag } from '@lobehub/ui';
 import { PageHeader } from '../components/PageHeader';
-import AppletManager from '../applet/AppletManager';
 import LynxContainer from '../applet/LynxContainer';
+import { useAppletsStore } from '../store/applets';
+import { usePageContext } from '../kernel/usePageContext';
+import type { AppletHostDeviceRequest, AppletHostNavigationRequest, AppletHostUiRequest } from '../applet/lynx-host-element';
+import type { Page } from '../types/navigation';
 
 const { Text } = Typography;
 
@@ -18,33 +21,89 @@ interface Props {
 
 export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
   const { t } = useTranslation('applet');
+  const { navigation } = usePageContext();
   const { token } = theme.useToken();
-  const [loading, setLoading] = useState(true);
-  const [exists, setExists] = useState(false);
-  const [diagnostics, setDiagnostics] = useState<string[]>([]);
-  const appletManager = useMemo(() => AppletManager.getInstance(), []);
-  const applet = appletManager.getAppletInfo(appletId);
-
-  useEffect(() => {
-    let cancelled = false;
-    const checkApplet = async () => {
-      setLoading(true);
-      const scanned = await appletManager.scanApplets();
-      if (!cancelled) {
-        setExists(scanned.some((item) => item.id === appletId));
-        const issues = appletManager
-          .getDiagnostics()
-          .filter((diag) => diag.source === appletId)
-          .flatMap((diag) => diag.issues);
-        setDiagnostics(issues);
-        setLoading(false);
+  const [navigationTitle, setNavigationTitle] = useState<string | null>(null);
+  const loading = useAppletsStore((state) => state.loading);
+  const applet = useAppletsStore((state) => state.applets.find((item) => item.manifest.id === appletId)?.manifest);
+  const allDiagnostics = useAppletsStore((state) => state.diagnostics);
+  const diagnostics = useMemo(
+    () => allDiagnostics
+      .filter((diag) => diag.source === appletId)
+      .flatMap((diag) => diag.issues),
+    [allDiagnostics, appletId],
+  );
+  const handleNavigationRequest = useCallback((request: AppletHostNavigationRequest) => {
+    const { action, params } = request;
+    if (action === 'openApplet') {
+      const targetAppletId = stringParam(params, 'appletId') || stringParam(params, 'id');
+      if (targetAppletId) navigation.navigateTo(`applet:${targetAppletId}`);
+      return;
+    }
+    if (action === 'closeApplet') {
+      navigation.navigateTo('applets');
+      return;
+    }
+    if (action === 'navigateTo' || action === 'navigate_to' || action === 'redirectTo' || action === 'redirect_to') {
+      const page = normalizeAppletNavigationPage(stringParam(params, 'page') || stringParam(params, 'target'));
+      if (page) navigation.navigateTo(page);
+      return;
+    }
+    if (action === 'back') {
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        navigation.navigateTo('applets');
       }
-    };
-    checkApplet();
-    return () => {
-      cancelled = true;
-    };
-  }, [appletId, appletManager]);
+    }
+  }, [navigation]);
+
+  const handleUiRequest = useCallback((request: AppletHostUiRequest): unknown | Promise<unknown> => {
+    const { action, params } = request;
+    const loadingKey = `applet:${appletId}:loading`;
+    if (action === 'setNavigationBar' || action === 'set_navigation_bar') {
+      const title = stringParam(params, 'title');
+      setNavigationTitle(title ?? null);
+      return { ok: true };
+    }
+    if (action === 'showToast') {
+      void message.open({
+        type: messageTypeParam(params, 'type'),
+        content: displayTextParam(params) ?? t('applet.runtime.ui.defaultMessage'),
+        duration: numberParam(params, 'durationMs', 2500) / 1000,
+      });
+      return { ok: true };
+    }
+    if (action === 'showLoading') {
+      void message.loading({
+        key: loadingKey,
+        content: displayTextParam(params) ?? t('applet.runtime.ui.loading'),
+        duration: 0,
+      });
+      return { ok: true };
+    }
+    if (action === 'hideLoading') {
+      message.destroy(loadingKey);
+      return { ok: true };
+    }
+    if (action === 'showModal') {
+      return showAppletModal(params, t);
+    }
+    if (action === 'showActionSheet') {
+      return showAppletActionSheet(params, t);
+    }
+    return { ok: false, reason: 'unsupported' };
+  }, [appletId, t]);
+
+  const handleDeviceRequest = useCallback((request: AppletHostDeviceRequest): unknown => {
+    if (request.action === 'getWindowInfo' || request.action === 'get_window_info') {
+      return currentWindowInfo();
+    }
+    if (request.action === 'getSafeArea' || request.action === 'get_safe_area') {
+      return currentSafeArea();
+    }
+    return { ok: false, reason: 'unsupported' };
+  }, []);
 
   if (loading) {
     return (
@@ -54,7 +113,7 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
     );
   }
 
-  if (!exists) {
+  if (!applet) {
     return (
       <Flexbox style={{ height: '100%' }}>
         <PageHeader title={t('applet.runtime.title')} icon={<Blocks size={20} />} />
@@ -73,7 +132,7 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
   return (
     <Flexbox style={{ height: '100%' }}>
       <PageHeader
-        title={applet?.name || appletId}
+        title={navigationTitle || applet?.name || appletId}
         subtitle={applet?.description || ''}
         icon={<Blocks size={20} />}
         actions={(
@@ -95,8 +154,155 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
         <Text type="secondary" style={{ fontSize: 12, color: token.colorTextTertiary }}>
           {t('applet.runtime.source', { id: appletId })}
         </Text>
-        <LynxContainer appletId={appletId} height="100%" />
+        <LynxContainer
+          appletId={appletId}
+          height="100%"
+          onNavigationRequest={handleNavigationRequest}
+          onUiRequest={handleUiRequest}
+          onDeviceRequest={handleDeviceRequest}
+        />
       </Flexbox>
     </Flexbox>
   );
+}
+
+function stringParam(params: Record<string, unknown>, key: string): string | undefined {
+  const value = params[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function normalizeAppletNavigationPage(page?: string): Page | undefined {
+  if (!page) return undefined;
+  if (page.startsWith('applet:')) return page as Page;
+  if (['applets', 'search', 'chat', 'agent', 'notes', 'settings'].includes(page)) {
+    return page as Page;
+  }
+  return undefined;
+}
+
+function displayTextParam(params: Record<string, unknown>): string | undefined {
+  return stringParam(params, 'message')
+    || stringParam(params, 'content')
+    || stringParam(params, 'title');
+}
+
+function numberParam(params: Record<string, unknown>, key: string, fallback: number): number {
+  const value = params[key];
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function messageTypeParam(params: Record<string, unknown>, key: string): 'success' | 'info' | 'warning' | 'error' | 'loading' {
+  const value = params[key];
+  if (value === 'success' || value === 'warning' || value === 'error' || value === 'loading') return value;
+  return 'info';
+}
+
+function showAppletModal(
+  params: Record<string, unknown>,
+  t: (key: string) => string,
+): Promise<{ confirmed: boolean; cancelled: boolean }> {
+  return new Promise((resolve) => {
+    Modal.confirm({
+      title: stringParam(params, 'title') ?? t('applet.runtime.ui.modalTitle'),
+      content: stringParam(params, 'content') ?? stringParam(params, 'message') ?? '',
+      okText: stringParam(params, 'confirmText') ?? t('applet.runtime.ui.confirm'),
+      cancelText: stringParam(params, 'cancelText') ?? t('applet.runtime.ui.cancel'),
+      onOk: () => {
+        resolve({ confirmed: true, cancelled: false });
+      },
+      onCancel: () => {
+        resolve({ confirmed: false, cancelled: true });
+      },
+    });
+  });
+}
+
+function showAppletActionSheet(
+  params: Record<string, unknown>,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): Promise<{ selectedIndex: number; selectedItem: unknown; cancelled: boolean }> {
+  return new Promise((resolve) => {
+    const items = actionSheetItems(params);
+    let modal: ReturnType<typeof Modal.info> | undefined;
+    const select = (item: unknown, index: number) => {
+      modal?.destroy();
+      resolve({ selectedIndex: index, selectedItem: item, cancelled: false });
+    };
+    modal = Modal.info({
+      title: stringParam(params, 'title') ?? t('applet.runtime.ui.actionSheetTitle'),
+      content: (
+        <Flexbox gap={8} style={{ marginTop: 12 }}>
+          {items.map((item, index) => (
+            <Button
+              key={`${index}:${actionSheetItemLabel(item, index, t)}`}
+              onClick={() => select(item, index)}
+              style={{ width: '100%', justifyContent: 'flex-start' }}
+            >
+              {actionSheetItemLabel(item, index, t)}
+            </Button>
+          ))}
+        </Flexbox>
+      ),
+      okButtonProps: { style: { display: 'none' } },
+      onCancel: () => {
+        resolve({ selectedIndex: -1, selectedItem: null, cancelled: true });
+      },
+    });
+  });
+}
+
+function actionSheetItems(params: Record<string, unknown>): unknown[] {
+  const items = params.itemList ?? params.items;
+  return Array.isArray(items) && items.length > 0 ? items : [];
+}
+
+function actionSheetItemLabel(
+  item: unknown,
+  index: number,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  if (typeof item === 'string' && item.trim().length > 0) return item.trim();
+  if (item && typeof item === 'object') {
+    const label = (item as Record<string, unknown>).label ?? (item as Record<string, unknown>).title;
+    if (typeof label === 'string' && label.trim().length > 0) return label.trim();
+  }
+  return t('applet.runtime.ui.actionSheetItem', { index: index + 1 });
+}
+
+function currentWindowInfo(): { width: number; height: number; pixelRatio: number } {
+  const viewport = window.visualViewport;
+  return {
+    width: Math.max(0, Math.round(viewport?.width ?? window.innerWidth ?? 0)),
+    height: Math.max(0, Math.round(viewport?.height ?? window.innerHeight ?? 0)),
+    pixelRatio: Number.isFinite(window.devicePixelRatio) && window.devicePixelRatio > 0
+      ? window.devicePixelRatio
+      : 1,
+  };
+}
+
+function currentSafeArea(): { top: number; right: number; bottom: number; left: number } {
+  const probe = document.createElement('div');
+  probe.style.position = 'fixed';
+  probe.style.inset = '0';
+  probe.style.visibility = 'hidden';
+  probe.style.pointerEvents = 'none';
+  probe.style.paddingTop = 'env(safe-area-inset-top, 0px)';
+  probe.style.paddingRight = 'env(safe-area-inset-right, 0px)';
+  probe.style.paddingBottom = 'env(safe-area-inset-bottom, 0px)';
+  probe.style.paddingLeft = 'env(safe-area-inset-left, 0px)';
+  document.body.appendChild(probe);
+  const style = window.getComputedStyle(probe);
+  const safeArea = {
+    top: cssPixels(style.paddingTop),
+    right: cssPixels(style.paddingRight),
+    bottom: cssPixels(style.paddingBottom),
+    left: cssPixels(style.paddingLeft),
+  };
+  probe.remove();
+  return safeArea;
+}
+
+function cssPixels(value: string): number {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }

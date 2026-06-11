@@ -457,6 +457,7 @@ fn http_gateway_applet_context(state: &AppState) -> Option<crate::domain::applet
     g.token.as_ref().filter(|t| !t.trim().is_empty())?;
     Some(crate::domain::applets::AccessContext {
         actor_id: g.actor_id.clone(),
+        token: g.token.clone().unwrap_or_default(),
     })
 }
 
@@ -554,6 +555,18 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             command: "meta_contract_version".to_string(),
             status: json!({"version": CONTRACT_VERSION}).to_string(),
         })),
+
+        "crypto_ratchet_telemetry_snapshot" => {
+            let snap = crate::domain::crypto::telemetry::snapshot();
+            to_json(to_stub(
+                "crypto_ratchet_telemetry_snapshot",
+                json!({
+                    "legacy_decrypts": snap.legacy_decrypts,
+                    "dr_decrypts": snap.dr_decrypts,
+                    "since_unix_ms": snap.since_unix_ms,
+                }),
+            ))
+        }
 
         // =================================================================
         // Frontend log (fire-and-forget, always succeeds)
@@ -1615,6 +1628,28 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             };
             match http_gateway_applet_context(state) {
                 Some(ctx) => to_json(app_applets::applets_action(ctx, input)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "applets_create_session" => {
+            let input = match parse_args::<AppletCreateSessionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_applet_context(state) {
+                Some(ctx) => {
+                    let data_dir = state
+                        .storage
+                        .dirs
+                        .get(&crate::infrastructure::storage::StorageKind::Data)
+                        .cloned()
+                        .unwrap_or_else(|| std::path::PathBuf::from("."));
+                    to_json(app_applets::applets_create_session(ctx, input, &data_dir))
+                }
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
@@ -3013,11 +3048,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 model::chat::BlockUserRequest,
                 model::chat::BlockUserResponse,
             >(
-                Method::POST,
-                "/friend-chat/block",
-                &token,
-                None,
-                Some(&req),
+                Method::POST, "/friend-chat/block", &token, None, Some(&req)
             ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
@@ -3542,10 +3573,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            let muted_until = input.muted_until_unix_ms.map(|millis| prost_types::Timestamp {
-                seconds: millis / 1000,
-                nanos: ((millis % 1000) * 1_000_000) as i32,
-            });
+            let muted_until = input
+                .muted_until_unix_ms
+                .map(|millis| prost_types::Timestamp {
+                    seconds: millis / 1000,
+                    nanos: ((millis % 1000) * 1_000_000) as i32,
+                });
             let req = model::chat::UpdateMemberRequest {
                 group_ulid: input.group_ulid,
                 actor_did: input.member_did,
@@ -3557,7 +3590,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 model::chat::UpdateMemberRequest,
                 model::chat::UpdateMemberResponse,
             >(
-                Method::PUT, "/group-chat/member/update", &token, None, Some(&req)
+                Method::PUT,
+                "/group-chat/member/update",
+                &token,
+                None,
+                Some(&req),
             ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
@@ -4347,6 +4384,7 @@ fn dispatch_group_sync_from_station(args: Value, state: &AppState) -> Value {
                 query.push(("before_ulid", format!("since:{existing}")));
             }
         }
+
         let data = match station_request_json(
             Method::GET,
             "/group-chat/messages",
@@ -4388,4 +4426,222 @@ fn dispatch_group_sync_from_station(args: Value, state: &AppState) -> Value {
             "cursor_before": cursor, "cursor_after": current_cursor,
         }),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::provider::state as provider_state;
+    use crate::infrastructure::i18n::I18nService;
+    use crate::infrastructure::storage::{StorageKind, StorageLayout};
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    fn temp_layout(name: &str) -> StorageLayout {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("peers-http-gateway-{}-{}", name, stamp));
+        let mut dirs = HashMap::new();
+        for kind in [
+            StorageKind::Config,
+            StorageKind::Data,
+            StorageKind::Cache,
+            StorageKind::Logs,
+            StorageKind::Runtime,
+            StorageKind::Temp,
+        ] {
+            let path = root.join(kind.as_str());
+            std::fs::create_dir_all(&path).expect("test storage dir should be created");
+            dirs.insert(kind, path);
+        }
+        StorageLayout {
+            app_name: format!("http-gateway-test-{}", name),
+            root_source: "test".to_string(),
+            root,
+            dirs,
+        }
+    }
+
+    fn test_state(name: &str) -> AppState {
+        let layout = temp_layout(name);
+        let config_dir = layout
+            .dirs
+            .get(&StorageKind::Config)
+            .cloned()
+            .unwrap_or_else(PathBuf::new);
+        let state = AppState::new(layout, I18nService::new(&config_dir));
+        {
+            let mut session = state.session.lock().expect("test session should lock");
+            session.actor_id = Some("actor-http-gateway-test".to_string());
+            session.token = Some("token-http-gateway-test".to_string());
+        }
+        state
+    }
+
+    fn manifest() -> Value {
+        json!({
+            "id": "http-gateway-applet",
+            "permissions": ["app.getContext", "lifecycle.destroy"],
+            "services": [],
+            "skills": []
+        })
+    }
+
+    fn app_result_ok(value: &Value) -> bool {
+        value.get("ok").and_then(Value::as_bool).unwrap_or(false)
+    }
+
+    fn status_json(value: &Value) -> Value {
+        let status = value
+            .get("data")
+            .and_then(|data| data.get("status"))
+            .and_then(Value::as_str)
+            .expect("stub payload status should exist");
+        serde_json::from_str(status).expect("stub payload status should be JSON")
+    }
+
+    fn register_product_host_gate_provider(base_url: &str) {
+        provider_state::with_provider_store(None, |store| {
+            for provider in &mut store.providers {
+                provider.enabled = false;
+            }
+            let model = provider_state::ModelRecord {
+                id: "gpt-4o".to_string(),
+                display_name: "GPT-4o".to_string(),
+                r#type: "chat".to_string(),
+                enabled: true,
+                context_window: 128000,
+                function_call: false,
+                vision: false,
+                reasoning: false,
+                search: false,
+                image_output: false,
+                video: false,
+                protocol_override: None,
+            };
+            let provider = store
+                .providers
+                .iter_mut()
+                .find(|provider| provider.id == "openai");
+            match provider {
+                Some(provider) => {
+                    provider.enabled = true;
+                    provider.key_vaults = json!({ "api_key": "test-key" }).to_string();
+                    provider.config_json = json!({
+                        "base_url": base_url,
+                        "protocol": "openai-compatible"
+                    })
+                    .to_string();
+                    provider.check_model = model.id.clone();
+                    provider.models = vec![model];
+                }
+                None => store.providers.push(provider_state::ProviderRecord {
+                    id: "openai".to_string(),
+                    name: "OpenAI".to_string(),
+                    description: "Controlled local provider for product host gate".to_string(),
+                    logo: "".to_string(),
+                    enabled: true,
+                    key_vaults: json!({ "api_key": "test-key" }).to_string(),
+                    config_json: json!({
+                        "base_url": base_url,
+                        "protocol": "openai-compatible"
+                    })
+                    .to_string(),
+                    check_model: model.id.clone(),
+                    models: vec![model],
+                    builtin: true,
+                    show_checker: false,
+                    show_api_key: false,
+                }),
+            }
+        })
+        .expect("provider store should be available");
+    }
+
+    #[test]
+    fn applet_commands_route_through_http_gateway_dispatch() {
+        let state = test_state("applet-route");
+        let create = dispatch(
+            "applets_create_session",
+            json!({
+                "id": "http-gateway-applet",
+                "sessionId": "http-gateway-session",
+                "manifest": manifest()
+            }),
+            &state,
+        );
+        assert!(app_result_ok(&create), "create session failed: {}", create);
+
+        let invoke = dispatch(
+            "applets_invoke",
+            json!({
+                "id": "http-gateway-applet",
+                "sessionId": "http-gateway-session",
+                "capability": "app",
+                "action": "getContext",
+                "params": {},
+                "manifest": manifest()
+            }),
+            &state,
+        );
+        assert!(app_result_ok(&invoke), "invoke failed: {}", invoke);
+        let status = status_json(&invoke);
+        assert_eq!(
+            status.get("sessionId").and_then(Value::as_str),
+            Some("http-gateway-session")
+        );
+        assert_eq!(
+            status.get("bridgeProtocol").and_then(Value::as_str),
+            Some("peers-touch.applet.bridge")
+        );
+    }
+
+    #[test]
+    fn applet_http_gateway_requires_authenticated_context() {
+        let layout = temp_layout("applet-auth");
+        let config_dir = layout
+            .dirs
+            .get(&StorageKind::Config)
+            .cloned()
+            .unwrap_or_else(PathBuf::new);
+        let state = AppState::new(layout, I18nService::new(&config_dir));
+
+        let result = dispatch(
+            "applets_create_session",
+            json!({
+                "id": "http-gateway-applet",
+                "sessionId": "http-gateway-session",
+                "manifest": manifest()
+            }),
+            &state,
+        );
+
+        assert_eq!(result.get("ok").and_then(Value::as_bool), Some(false));
+        assert_eq!(
+            result
+                .get("error")
+                .and_then(|error| error.get("code"))
+                .and_then(Value::as_str),
+            Some("UNAUTHORIZED")
+        );
+    }
+
+    #[test]
+    #[ignore]
+    fn applet_http_gateway_server_for_product_host_gate() {
+        let state = test_state("applet-product-host-server");
+        if let Ok(base_url) = std::env::var("PEERS_APPLET_E2E_BASE_URL") {
+            register_product_host_gate_provider(&base_url);
+        }
+        let hold_ms = std::env::var("PEERS_APPLET_HTTP_GATEWAY_HOLD_MS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(60_000);
+        start(Arc::new(state));
+        std::thread::sleep(Duration::from_millis(hold_ms));
+    }
 }
