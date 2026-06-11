@@ -93,13 +93,22 @@ CN: <如何实现>
 **Entry**: Coding complete, branch pushed.
 
 **Actions**:
-1. Self-review the diff: `git diff main..HEAD`
-2. Run verification commands (from AGENTS.md section 9):
+1. Run submit-time review pipeline:
+
+   ```bash
+   make review-submit REVIEW_BASE=origin/master
+   ```
+
+2. Self-review the diff and evidence:
+   - `git diff origin/master..HEAD`
+   - `tooling/acceptance/reports/latest-quality-evidence.md`
+   - `tooling/acceptance/reports/latest-report.md`
+3. Run additional platform verification commands when the submit pipeline or route profile requires them:
    - Desktop: `cd apps/desktop && pnpm run check && pnpm run test`
    - Station: `cd apps/station && go test ./...`
    - Go style: `./tooling/scripts/check-go-style.sh`
-3. Create PR using `github-pr` skill (bilingual description)
-4. Address any CI failures
+4. Create PR using `github-pr` skill (bilingual description with quality evidence and growth opportunities)
+5. Address any CI failures
 
 **Deliverable**: Open PR with passing checks.
 

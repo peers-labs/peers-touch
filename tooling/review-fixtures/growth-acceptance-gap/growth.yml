@@ -1,0 +1,4 @@
+scenario: feature behavior changes but product completion evidence is missing
+expected_growth_decision: acceptance_contract
+expected_asset: tooling/acceptance/features/
+proof: product scope gaps must become feature or capability contracts before later reviews can inherit them

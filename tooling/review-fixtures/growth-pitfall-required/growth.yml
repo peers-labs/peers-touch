@@ -1,0 +1,4 @@
+scenario: repeated bug root cause appears during review
+expected_growth_decision: knowledge_pitfall
+expected_asset: docs/knowledge/pitfalls/
+proof: reusable defect causes must be preserved as recurrence-detectable pitfalls

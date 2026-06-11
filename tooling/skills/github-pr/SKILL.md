@@ -31,15 +31,43 @@ git push -u origin "$(git branch --show-current)"
 gh pr list --head "$(git branch --show-current)" --state open
 ```
 
-### 2. Analyze Changes
+### 2. Run Submit-Time Review Pipeline
+
+When the user asks to submit an MR/PR, run the quality lifecycle before creating
+or updating the PR. Default to `origin/master` unless the user specifies another
+base branch.
+
+```bash
+git fetch origin
+make review-submit REVIEW_BASE=origin/master
+```
+
+This pipeline generates quality evidence, runs strict review framework checks,
+validates acceptance structure, plans acceptance gates, runs selected `ci-*`
+acceptance gates, and renders an acceptance report.
+
+If the pipeline fails:
+
+- do not open a normal ready-for-review PR;
+- fix the failure when it is actionable;
+- or ask the user whether to open a draft PR that explicitly lists evidence gaps;
+- or record an owner-approved waiver in the PR body.
+
+The generated evidence artifacts are:
+
+- `tooling/acceptance/reports/latest-quality-evidence.md`
+- `tooling/acceptance/reports/latest-quality-evidence.json`
+- `tooling/acceptance/reports/latest-report.md`
+
+### 3. Analyze Changes
 
 ```bash
 # Get the diff against the target branch (usually main)
-git log --oneline main..HEAD
-git diff --stat main..HEAD
+git log --oneline origin/master..HEAD
+git diff --stat origin/master..HEAD
 ```
 
-### 3. Determine PR Metadata
+### 4. Determine PR Metadata
 
 #### Title
 
@@ -72,7 +100,7 @@ Platform labels are auto-assigned by the labeler workflow based on file paths.
 
 If the user specifies reviewers, include them. Otherwise, omit (rely on CODEOWNERS or manual assignment).
 
-### 4. Generate PR Body
+### 5. Generate PR Body
 
 Use the project PR template structure. Fill in each section based on actual changes:
 
@@ -104,6 +132,24 @@ Use the project PR template structure. Fill in each section based on actual chan
 
 - [x] <EN: how it was tested / CN: 如何测试的>
 
+## Quality Evidence / 质量证据
+
+- Range:
+- Review profiles:
+- Matched knowledge:
+- Acceptance impacted features:
+- Evidence gaps:
+- Unproven scope:
+
+## Framework Growth Opportunities / 框架成长机会
+
+- knowledge:
+- acceptance:
+- hard rules / fixtures:
+- skill:
+- CI / tooling:
+- no-growth justification:
+
 ## Related Issues / 关联 Issue
 
 Closes #<issue number>
@@ -119,7 +165,7 @@ PR body uses bilingual (EN + CN) for all descriptive sections.
 Each section header is bilingual. Content within each section should
 provide both English and Chinese descriptions.
 
-### 5. Create PR
+### 6. Create PR
 
 ```bash
 gh pr create \
@@ -218,7 +264,9 @@ Examples:
 ## Anti-Patterns
 
 - **Never** create a PR without pushing the branch first
+- **Never** create a normal ready-for-review PR before running the submit-time review pipeline
 - **Never** leave the PR description empty — always fill the template
+- **Never** omit quality evidence, evidence gaps, or unproven scope from the PR body
 - **Never** force-push to a PR branch that others are reviewing
 - **Never** merge your own PR without at least one approval (when team size > 1)
 - **Never** include unrelated changes in a PR — keep PRs focused
