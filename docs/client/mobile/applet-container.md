@@ -1,13 +1,13 @@
 # Applet 容器设计（Mobile 端）
 
-> Mobile 主线已迁移为 Tauri v2 Mobile。本文的 Lynx / Bridge V2 / Manifest V2 语义仍然有效；Android / iOS 原生集成方式应通过 Tauri mobile native plugin 承载，而不是 Compose / SwiftUI 主 UI 直接嵌入。
+> Mobile 主线已迁移为 Tauri v2 Mobile。本文采用 `@peers-touch/applet-contract` 的 canonical manifest 与 `peers-touch.applet.bridge` 协议；历史 Bridge V2 / Manifest V2 术语仅作为兼容背景，不再作为新实现目标。Android / iOS 原生集成方式应通过 Tauri mobile native plugin 承载，而不是 Compose / SwiftUI 主 UI 直接嵌入。
 
 ## 1. 文档目标
 
 ### 1.1 目标
 - 定义 Tauri Mobile 下通过 Android / iOS native plugin 集成 Lynx 引擎、运行 Applet 的容器架构。
 - 明确 Native Bridge 在 Kotlin / Swift 各自的实现方案。
-- 说明 Applet SDK、Manifest V2、Bridge V2 协议在 Mobile 端的复用策略。
+- 说明 Applet SDK、canonical manifest、canonical bridge 协议在 Mobile 端的复用策略。
 - 与 Desktop 端的 `<lynx-host>` 方案形成对比参照。
 
 ### 1.2 非目标
@@ -28,7 +28,7 @@
 │  │   @peers-touch/        │    │   @peers-touch/        │        │
 │  │   applet-sdk           │    │   applet-sdk           │        │
 │  └──────────┬────────────┘    └──────────┬────────────┘         │
-│             │ Bridge V2                   │ Bridge V2            │
+│             │ Canonical bridge             │ Canonical bridge      │
 │  ┌──────────┴────────────────────────────┴────────────┐         │
 │  │              Lynx Engine (Native SDK)               │         │
 │  │         Android: LynxView (Maven)                   │         │
@@ -98,20 +98,23 @@ pod 'LynxSDK', '~> x.y.z'
 Applet 内部的 JS 代码通过 `@peers-touch/applet-sdk` 调用宿主能力。SDK 在 Lynx 运行时内通过以下优先级查找 Native Bridge：
 
 ```typescript
-// 来自 packages/applet-sdk/src/types.ts
-interface LynxWindow extends Window {
-  __PEERS_TOUCH_LYNX_BRIDGE__?: LynxNativeBridgeModule
-  LynxNativeBridge?: LynxNativeBridgeModule
-  lynx?: {
-    nativeBridge?: LynxNativeBridgeModule
-    nativeModules?: {
-      AppletBridge?: LynxNativeBridgeModule
-    }
+interface LynxNativeModules {
+  bridge: {
+    invoke?: (payload: { method: string; params?: Record<string, unknown> }) => unknown | Promise<unknown>
+    call?: (
+      name: string,
+      data: { method: string; params?: Record<string, unknown> },
+      callback: (result: unknown) => void,
+    ) => void
   }
 }
 
-interface LynxNativeBridgeModule {
-  invoke: (method: string, params?: unknown) => unknown | Promise<unknown>
+interface LynxRuntime {
+  requireModule?(name: string): LynxNativeModules['bridge'] | undefined
+  getJSModule(name: string): {
+    addListener(topic: string, handler: (payload: unknown) => void): void
+    removeListener(topic: string, handler: (payload: unknown) => void): void
+  }
 }
 ```
 
@@ -119,7 +122,7 @@ interface LynxNativeBridgeModule {
 - `system.getInfo` → 获取系统信息
 - `storage.get` / `storage.set` / `storage.remove` → 本地存储操作
 - `network.request` → 网络请求代理
-- `notification.show` → 展示通知
+- `ui.showToast` → 展示 toast
 
 ### 4.2 Android Native Bridge 实现
 
@@ -143,7 +146,7 @@ class AppletNativeBridge(
 
 注入方式：
 - 在 `LynxView` 初始化时，通过 Lynx SDK 提供的 `registerModule` / `addJavascriptInterface` 机制将 Bridge 实例注入到 JS 全局作用域。
-- 注入对象绑定到 `window.__PEERS_TOUCH_LYNX_BRIDGE__`。
+- 注入对象必须暴露为 `NativeModules.bridge` 或 `lynx.requireModule('bridge')`，并返回 canonical response envelope。
 - 每个 Applet 实例拥有独立的 Bridge 实例，权限校验基于 Manifest 声明的 `permissions`。
 
 ### 4.3 iOS Native Bridge 实现
@@ -170,8 +173,11 @@ class AppletNativeBridge {
 
 注入方式：
 - 在 `LynxView` 初始化时，通过 Lynx SDK 提供的原生模块注册机制将 Bridge 实例注入。
-- 注入对象绑定到 `window.__PEERS_TOUCH_LYNX_BRIDGE__`。
+- 注入对象必须暴露为 `NativeModules.bridge` 或 `lynx.requireModule('bridge')`，并返回 canonical response envelope。
 - 权限校验逻辑与 Android 一致。
+- iOS `LynxViewFactory` 必须为每个 Applet view 创建 session-scoped `LynxConfig`，用当前
+  `AppletBridgeSession` 注册 `AppletBridgeNativeModule`；不得只加载 bare `LynxView`，也不得把 session param
+  写进共享 engine config 后复用给多个 Applet。
 
 ---
 
@@ -181,7 +187,7 @@ class AppletNativeBridge {
 
 `@peers-touch/applet-sdk`（位于 `packages/applet-sdk/`）是 Applet 开发者使用的统一 SDK，运行在 Lynx JS 运行时内。该 SDK 的设计特点：
 
-- **平台无关**：SDK 只依赖 `window.__PEERS_TOUCH_LYNX_BRIDGE__` 接口，不依赖任何平台特有 API。
+- **平台无关**：SDK 只依赖 Lynx `NativeModules.bridge` / `lynx.requireModule('bridge')` 形态，不依赖任何平台特有 API。
 - **协议驱动**：所有宿主能力调用通过 `invoke(method, params)` 完成，SDK 不感知底层是 Desktop 还是 Mobile。
 - **无需修改**：Mobile 端只需在原生侧正确实现 Native Bridge 并注入到 Lynx 全局作用域，SDK 即可正常工作。
 
@@ -191,106 +197,126 @@ class AppletNativeBridge {
 
 | SDK 调用 | Desktop 返回 | Android 返回 | iOS 返回 |
 | --- | --- | --- | --- |
-| `system.getInfo().platform` | `'desktop'` | `'mobile'` | `'mobile'` |
+| `system.getInfo().platform` | `'desktop'` | `'android'` | `'ios'` |
 | `system.getInfo().os` | `'windows'`/`'macos'`/`'linux'` | `'android'` | `'ios'` |
 | `system.getInfo().statusBarHeight` | `undefined` | 状态栏高度（px） | 状态栏高度（pt） |
 
-Applet 开发者可通过 `sdk.getSystemInfo().platform` 判断平台，实现自适应布局。
+Applet 开发者可通过 `sdk.system.getInfo().platform` 判断平台，实现自适应布局。
 
 ---
 
-## 6. Applet Manifest V2 协议复用
+## 6. Applet Manifest 协议复用
 
 ### 6.1 Manifest 结构
 
-Mobile 端完整复用 Desktop 已定义的 Manifest V2 协议，关键字段：
+Mobile 端复用 `@peers-touch/applet-contract` 定义的 canonical manifest，关键字段：
 
 ```json
 {
-  "manifestVersion": 2,
   "id": "example-applet",
   "name": "Example Applet",
   "version": "1.0.0",
-  "description": "...",
-  "author": "Peers Touch",
-  "permissions": ["storage", "network", "notification"],
-  "capabilities": ["chat.send"],
-  "minPlatformVersion": "0.1.0",
-  "targetPlatforms": ["desktop", "mobile"],
+  "targets": ["desktop", "android", "ios"],
+  "entries": {
+    "lynx": "main.lynx.bundle"
+  },
   "load": {
-    "type": "lynx",
-    "entry": "index.html"
+    "android": { "type": "lynx-native", "entry": "main.lynx.bundle" },
+    "ios": { "type": "lynx-native", "entry": "main.lynx.bundle" },
+    "desktop": { "type": "lynx-web", "entry": "main.lynx.bundle" }
   },
   "bridge": {
-    "version": 2,
-    "protocol": "peers-touch.applet.bridge.v2"
+    "protocol": "peers-touch.applet.bridge",
+    "version": "1.0.0"
+  },
+  "permissions": ["app.getContext", "network.request", "storage.get"],
+  "services": [
+    {
+      "id": "primary-api",
+      "kind": "http",
+      "binding": "station-resolved",
+      "allowedMethods": ["GET", "POST"],
+      "allowedPaths": ["/api/v1/*"]
+    }
+  ],
+  "skills": [],
+  "integrity": {
+    "algorithm": "sha256",
+    "files": {
+      "main.lynx.bundle": "sha256:..."
+    }
   }
 }
 ```
 
 ### 6.2 Mobile 端相关字段
 
-- `targetPlatforms`：Applet 声明支持的平台列表。Mobile 端的 AppletManager 仅加载包含 `"mobile"` 的 Applet。
+- `targets`：Applet 声明支持的平台列表。Android 只加载包含 `"android"` 的 Applet；iOS 只加载包含 `"ios"` 的 Applet。`targetPlatforms` 仅作为历史兼容输入，不能作为新协议主字段。
+- `load.android` / `load.ios`：Mobile 原生 LynxView 加载配置，`type` 必须为 `"lynx-native"`。
+- `entries.lynx`：集成 Lynx bundle 入口，必须被 `integrity.files` 覆盖。
+- `services`：Host-controlled network/service binding 声明，Applet 不能直接传 raw URL。
+- `skills`：声明式 skill schema，schema 文件必须被 `integrity.files` 覆盖。
+- `integrity`：包内关键文件 SHA-256 摘要，移动端加载前必须校验或保持与平台 gate 一致。
 - `minPlatformVersion`：Mobile 端与 Desktop 端独立维护版本号，各自校验兼容性。
-- `permissions`：权限校验逻辑在 Native Bridge 层实现，拒绝未声明权限的 `invoke` 调用。
+- `permissions`：权限校验逻辑在 Native Bridge 层实现，使用完整 capability method，例如 `network.request`、`storage.get`、`ai.chat`。
 
 ### 6.3 Manifest 校验
 
-Mobile 端复用 `packages/applets/schema.js` 中定义的校验逻辑（或按同一规则在原生端重新实现）：
-- `manifestVersion` 必须为 `2`。
-- `id` 匹配 `^[a-z0-9][a-z0-9-]*$`。
+Mobile 端应复用 `@peers-touch/applet-contract` 的语义（或按同一规则在原生端重新实现）：
+- `id` 为非空 DNS-like 小写标识。
 - `version` 匹配 SemVer。
-- `load.type` 必须为 `'lynx'`。
-- `bridge.protocol` 必须为 `'peers-touch.applet.bridge.v2'`。
+- `targets` 必须非空，且 Android/iOS 仅加载对应平台 target。
+- `load.<platform>.type` 必须匹配平台：Android/iOS/Harmony 为 `lynx-native`，Desktop/Web 为 `lynx-web`，Standalone 为 `web-spa`。
+- `bridge.protocol` 必须为 `peers-touch.applet.bridge`。
+- `network.request` 权限要求至少一个 `services` 声明。
+- `integrity.files` 必须包含 `entries.lynx` 以及所有 skill schema。
 
 ---
 
-## 7. Bridge V2 协议原生实现
+## 7. Canonical Bridge 协议原生实现
 
 ### 7.1 协议结构
 
-Bridge V2 协议（`peers-touch.applet.bridge.v2`）定义了 Applet 与宿主之间的通信信封：
+Canonical bridge 协议（`peers-touch.applet.bridge`）定义了 Applet 与宿主之间的通信信封：
 
 ```typescript
-// BridgeV2Envelope
 {
-  protocol: 'peers-touch.applet.bridge.v2',
-  appletId: string
-}
-
-// BridgeV2InitMessage (Applet → Host)
-{
-  protocol: 'peers-touch.applet.bridge.v2',
+  protocol: 'peers-touch.applet.bridge',
+  kind: 'response' | 'event',
   appletId: string,
-  kind: 'init',
-  manifest: AppletManifestV2
-}
-
-// BridgeV2EventMessage (双向)
-{
-  protocol: 'peers-touch.applet.bridge.v2',
-  appletId: string,
-  kind: 'event',
-  event: string,
-  payload?: unknown
+  sessionId: string,
+  requestId: string,
+  ok?: boolean,
+  result?: unknown,
+  error?: {
+    code: 'PERMISSION_DENIED' | 'INVALID_PARAMS' | 'CAPABILITY_FAILED' | string,
+    message: string,
+    requestId?: string
+  },
+  event?: string,
+  payload?: unknown,
 }
 ```
 
 ### 7.2 原生端处理流程
 
-1. **init 阶段**：Applet 加载后发送 `BridgeV2InitMessage`，宿主校验 manifest 合法性，注册 Applet 实例。
-2. **运行阶段**：Applet 通过 `invoke` 调用宿主能力，宿主通过 `BridgeV2EventMessage` 向 Applet 推送事件。
+1. **session 阶段**：宿主校验 manifest 合法性，创建 `AppletBridgeSession`，绑定 `appletId/sessionId/permissions`。
+2. **运行阶段**：Applet 通过 SDK 调用宿主能力，宿主返回 canonical response envelope，并通过 canonical event envelope 向 Applet 推送事件。
 3. **销毁阶段**：宿主发送 `destroy` 事件，Applet 执行清理，宿主回收 LynxView 与 Bridge 实例。
 
 ### 7.3 Android 实现要点
-- `BridgeV2Envelope` 序列化/反序列化使用 `kotlinx.serialization`。
+- Bridge response/event envelope 序列化/反序列化使用平台 JSON 能力，错误码必须使用 canonical applet error code。
 - Bridge 消息通过 Lynx SDK 的 `evaluateJavascript` 从宿主推送到 Applet。
 - 宿主侧维护 `Map<String, AppletBridgeSession>` 管理各 Applet 的 Bridge 会话。
+- `AppletBridgeSessionContractTest` 必须覆盖 canonical manifest 解析、`network.request` service 声明约束、完整 capability method 权限校验、canonical error code、unloaded-session rejection；`applet-mobile-native-manifest-gate` 在检测到 Android SDK 时执行该 JVM 单测。
+- `AppletContainerView` 加载前必须扫描本地 applet bundle，并把 `load.android.entry` 解析为 app sandbox 中的实际 bundle URL，而不是只把相对 entry 传给 Lynx。
+- `pnpm applet:android-lynx-runtime-e2e` 是 Android runtime release evidence 入口；它必须通过 `adb` 在真实 emulator/device 中安装 APK、staging applet 包、用 intent extra 启动 applet route，并且只有在 `AppletBridgeNativeModule` 观察到 SDK `storage.set/get` canonical response marker 后才能写出 release evidence。
 
 ### 7.4 iOS 实现要点
-- `BridgeV2Envelope` 序列化/反序列化使用 `Codable`。
+- Bridge response/event envelope 序列化/反序列化使用 `Codable` / dictionary bridge，错误码必须使用 canonical applet error code。
 - Bridge 消息通过 Lynx SDK 的 JS 执行接口从宿主推送到 Applet。
 - 宿主侧维护 `[String: AppletBridgeSession]` 字典管理各 Applet 的 Bridge 会话。
+- `pnpm applet:ios-lynx-runtime-e2e` 是 iOS runtime release evidence 入口；它必须使用 native Lynx bundle，不能使用 `environments.web` Rspeedy 产物，并且只有在 Simulator 中观察到 SDK `storage.set/get` canonical response marker 后才能写出 release evidence。
 
 ---
 
@@ -345,8 +371,8 @@ Bridge V2 协议（`peers-touch.applet.bridge.v2`）定义了 Applet 与宿主�
 | 内存隔离 | 同进程内多 Applet 共享 Webview 内存池 | 每个 LynxView 独立内存空间 |
 | 调试方式 | Chrome DevTools | Android Studio Debugger / Xcode Debugger + Lynx Inspector |
 | SDK 兼容性 | 完全一致（`@peers-touch/applet-sdk`） | 完全一致 |
-| Manifest 协议 | Manifest V2 | Manifest V2 |
-| Bridge 协议 | Bridge V2 (`peers-touch.applet.bridge.v2`) | Bridge V2 (`peers-touch.applet.bridge.v2`) |
+| Manifest 协议 | Canonical manifest | Canonical manifest |
+| Bridge 协议 | Canonical bridge (`peers-touch.applet.bridge`) | Canonical bridge (`peers-touch.applet.bridge`) |
 
 关键结论：
 - **协议层完全一致**：SDK、Manifest、Bridge 三层协议在 Desktop 与 Mobile 之间零差异，Applet 开发者无需为不同平台维护不同版本。
@@ -381,7 +407,9 @@ Bridge V2 协议（`peers-touch.applet.bridge.v2`）定义了 Applet 与宿主�
 
 ## 11. 验收标准
 - Android 与 iOS 均能正确加载、运行、销毁 Applet，生命周期事件完整。
-- `@peers-touch/applet-sdk` 在 Mobile 端的所有 API（system/storage/network/notification）行为与 Desktop 一致。
-- Bridge V2 协议的 init / event / invoke 消息在双端均可正确序列化与处理。
-- Manifest V2 校验逻辑与 Desktop 端行为一致（相同的合法/非法 manifest 得到相同的校验结果）。
-- 同一个 Applet Bundle（`targetPlatforms` 包含 `"mobile"`）可以在 Android、iOS、Desktop 三端无修改运行。
+- `@peers-touch/applet-sdk` 在 Mobile 端的 API 行为与 Desktop/Web Host 的 canonical contract 一致。
+- Canonical bridge response/event envelope 在双端均可正确序列化与处理，错误码不回退到平台私有 `BRIDGE_*`。
+- Manifest 校验逻辑与 Desktop/Web Host 行为一致（相同的合法/非法 manifest 得到相同的校验结果）。
+- Native manifest/bridge session 行为必须有可执行 gate：iOS 通过 Swift harness，Android 通过 SDK 环境下的 JVM contract test；没有 Android SDK 的本地 run 只能记录 SKIP，不能当作 Android runtime E2E。
+- Release 级 native runtime evidence 必须来自 `applet-ios-lynx-runtime-e2e` / `applet-android-lynx-runtime-e2e` 的真 simulator/emulator/device marker，不得用 source parity scan 或 JVM/Swift harness 代替。
+- 同一个 Applet Bundle（`targets` 包含 `desktop`、`android`、`ios`）可以在 Android、iOS、Desktop 三端无修改运行。

@@ -11,10 +11,10 @@ sealed class BridgeResult {
 }
 
 enum class BridgeError(val code: String, val message: String) {
-    MODULE_NOT_FOUND("BRIDGE_MODULE_NOT_FOUND", "Bridge module not found"),
-    METHOD_NOT_FOUND("BRIDGE_METHOD_NOT_FOUND", "Bridge method not found"),
-    INVALID_PARAMS("BRIDGE_INVALID_PARAMS", "Invalid bridge parameters"),
-    EXECUTION_FAILED("BRIDGE_EXECUTION_FAILED", "Bridge execution failed")
+    MODULE_NOT_FOUND("CAPABILITY_NOT_FOUND", "Bridge module not found"),
+    METHOD_NOT_FOUND("CAPABILITY_NOT_FOUND", "Bridge method not found"),
+    INVALID_PARAMS("INVALID_PARAMS", "Invalid bridge parameters"),
+    EXECUTION_FAILED("CAPABILITY_FAILED", "Bridge execution failed")
 }
 
 class BridgeDispatcher constructor(

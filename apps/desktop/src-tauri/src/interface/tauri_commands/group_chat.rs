@@ -874,8 +874,13 @@ pub fn group_chat_remove_member(
     let resp = match station_client::request_proto::<
         model::chat::RemoveMemberRequest,
         model::chat::RemoveMemberResponse,
-    >(Method::POST, "/group-chat/member/remove", &token, None, Some(&req))
-    {
+    >(
+        Method::POST,
+        "/group-chat/member/remove",
+        &token,
+        None,
+        Some(&req),
+    ) {
         Ok(resp) => resp,
         Err(error) => return error.into_app_result("station request failed"),
     };
@@ -900,10 +905,12 @@ pub fn group_chat_update_member(
             None,
         );
     }
-    let muted_until = input.muted_until_unix_ms.map(|millis| prost_types::Timestamp {
-        seconds: millis / 1000,
-        nanos: ((millis % 1000) * 1_000_000) as i32,
-    });
+    let muted_until = input
+        .muted_until_unix_ms
+        .map(|millis| prost_types::Timestamp {
+            seconds: millis / 1000,
+            nanos: ((millis % 1000) * 1_000_000) as i32,
+        });
     let req = model::chat::UpdateMemberRequest {
         group_ulid: input.group_ulid,
         actor_did: input.member_did,
@@ -914,8 +921,13 @@ pub fn group_chat_update_member(
     let resp = match station_client::request_proto::<
         model::chat::UpdateMemberRequest,
         model::chat::UpdateMemberResponse,
-    >(Method::PUT, "/group-chat/member/update", &token, None, Some(&req))
-    {
+    >(
+        Method::PUT,
+        "/group-chat/member/update",
+        &token,
+        None,
+        Some(&req),
+    ) {
         Ok(resp) => resp,
         Err(error) => return error.into_app_result("station request failed"),
     };

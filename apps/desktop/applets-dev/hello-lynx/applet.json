@@ -4,13 +4,18 @@
   "version": "0.1.0",
   "description": "Minimal POC to verify Lynx for Web in Tauri",
   "author": "peers-touch",
-  "permissions": ["config"],
+  "permissions": [
+    "system.getInfo",
+    "storage.get",
+    "storage.set",
+    "lifecycle.destroy"
+  ],
   "capabilities": [],
   "targetPlatforms": ["desktop"],
   "load": {
     "desktop": {
       "type": "lynx-web",
-      "entry": "main.web.bundle"
+      "entry": "main.lynx.bundle"
     }
   },
   "bridge": {

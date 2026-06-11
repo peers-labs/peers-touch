@@ -53,6 +53,9 @@ export function usePresence(): void {
 
   useEffect(() => {
     const fire = (trigger: PresenceTrigger): void => {
+      if (useSessionStore.getState().currentUser?.loginMethod === 'readiness-probe') {
+        return;
+      }
       const now = Date.now();
       const last = lastTriggerRef.current;
       if (last && last.trigger === trigger && now - last.at < DEBOUNCE_MS) {
@@ -63,7 +66,8 @@ export function usePresence(): void {
     };
 
     const validateActiveSession = (): void => {
-      const { authenticated } = useSessionStore.getState();
+      const { authenticated, currentUser } = useSessionStore.getState();
+      if (currentUser?.loginMethod === 'readiness-probe') return;
       if (!authenticated) return;
       if (document.visibilityState !== 'visible') return;
       void api.authValidateToken({}).catch((error) => {
@@ -81,6 +85,10 @@ export function usePresence(): void {
     // streams bound to the previous actor.
     const tryFireLaunch = (): void => {
       const { authenticated, currentUser } = useSessionStore.getState();
+      if (currentUser?.loginMethod === 'readiness-probe') {
+        startedActorRef.current = null;
+        return;
+      }
       const actorId = authenticated ? currentUser?.actorId || null : null;
       if (!actorId) {
         startedActorRef.current = null;

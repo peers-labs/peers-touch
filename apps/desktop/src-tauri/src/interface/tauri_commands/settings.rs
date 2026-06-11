@@ -1,4 +1,4 @@
-use crate::contracts::{SettingsGetInput, SettingsSetInput, StubPayload};
+use crate::contracts::{SettingsGetInput, SettingsGetPayload, SettingsSetInput, StubPayload};
 use crate::error::AppResult;
 use crate::state::AppState;
 use std::sync::Arc;
@@ -10,7 +10,7 @@ use crate::application::settings as application_settings;
 pub fn settings_get(
     state: State<'_, Arc<AppState>>,
     input: SettingsGetInput,
-) -> AppResult<StubPayload> {
+) -> AppResult<SettingsGetPayload> {
     application_settings::settings_get(state.inner(), input)
 }
 

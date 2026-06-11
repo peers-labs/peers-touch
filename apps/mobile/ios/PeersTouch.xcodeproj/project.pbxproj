@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A11B22C33D44E55F66778899 /* AppletBridgeNativeModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11B22C33D44E55F66778898 /* AppletBridgeNativeModule.swift */; };
 		01CB8559399F6A2486E68CAB /* SettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = E28C37E94634189091F96DAC /* SettingsScreen.swift */; };
 		073CE2953514FF910733C5FB /* TimelineScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73B3C18CBAE47BF960761988 /* TimelineScreen.swift */; };
 		0F1660B8C4C15F6908F2B79D /* ColorTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97AF5750C41D2DDC7A268E0A /* ColorTokens.swift */; };
@@ -14,7 +15,6 @@
 		1CB5B6365D2D07F891DB595F /* Pods_PeersTouch.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0F0E0C85E8EB5B645B597834 /* Pods_PeersTouch.framework */; };
 		1CCA410577655F2EB9188D0C /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AC3EAA80EE0F4938F7FBB13 /* ChatViewModel.swift */; };
 		1D08190498DEFE19C5977798 /* ChatScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC69AC98C3162B527283C854 /* ChatScreen.swift */; };
-		203285A2702265679585B1B8 /* AppletManifestParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C65C3B35B7206AB4B3DC255 /* AppletManifestParser.swift */; };
 		20B588653202F9F9A6429272 /* DeviceBridgeModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73C526281909786CDFB9EAD9 /* DeviceBridgeModule.swift */; };
 		21FCFC7197CEE2C5EADCF3EC /* SettingsRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDB7E16D59B86277692DAB3 /* SettingsRepository.swift */; };
 		24A5D362AC436DA0FA992B9B /* AIViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B4F09E484682A8B35D6059E /* AIViewModel.swift */; };
@@ -47,7 +47,6 @@
 		6DEEC88E5062E609CD935E8A /* AppTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B8DE883D3AA41D22D5FD672 /* AppTabView.swift */; };
 		70E8EA44AB8A1D44A21970CC /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 88CF4FF409FB3AEDF1D70B79 /* UIKit.framework */; };
 		742B4F4C6339FADC83142FF2 /* MemoryScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0643F7641747CCED4B6A03 /* MemoryScreen.swift */; };
-		7FAEBE972ECA691BE1DA5B20 /* AppletState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92911305EFDB6933278760FE /* AppletState.swift */; };
 		824508967FC162B0FD17E3D1 /* Router.swift in Sources */ = {isa = PBXBuildFile; fileRef = 445ED95FCD10E5B547F8D28A /* Router.swift */; };
 		842EFB63AF36EA5C9B072DB5 /* TimelineViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2146649A969A624AF9A84BC /* TimelineViewModel.swift */; };
 		84E030A6E44D273DD4FB8CD9 /* ProfileViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CA7F157C875590D4D4CC692 /* ProfileViewModel.swift */; };
@@ -56,13 +55,13 @@
 		8D67B1568B3FFB45AD6A357D /* AppletBridgeSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5B78C15F90E5072379A0B2C /* AppletBridgeSession.swift */; };
 		8DE750B3C69DA96B14809550 /* EventStreamClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F9F039F768C240221E898FA /* EventStreamClient.swift */; };
 		8DFE3401F0A64E80DBB0509B /* AuthRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = A42350AFD6F0CD13B3CFEC21 /* AuthRepository.swift */; };
+		8F79A1E7D9424F9D8A5E15AA /* AppletManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F79A1E6D9424F9D8A5E15AA /* AppletManifest.swift */; };
+		8F79A1E9D9424F9D8A5E15AA /* AppletLynxViewRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F79A1E8D9424F9D8A5E15AA /* AppletLynxViewRepresentable.swift */; };
 		90231575DD42853086EA0E4A /* HomeScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A3994727C416D7B0C79C427 /* HomeScreen.swift */; };
 		91F1BE7FDE16DF8CB0DB835A /* StationAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B09F48928594FF5A4707CDB /* StationAPI.swift */; };
-		9E16AEE487F22E8D44F882EA /* AppletLoadingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 899245A5EF0790561F69E6E7 /* AppletLoadingView.swift */; };
 		9E3857482B7C190164B36F57 /* SettingsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92E22791EAD87781AF8169AB /* SettingsViewModel.swift */; };
 		9F24DFE3FD3775C749ECA383 /* ProfileRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8E091A47872BF1C3AD56BFC /* ProfileRepository.swift */; };
 		B11C6AD5B9344764E5D39B62 /* TimelineRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45FB21C263565FD4353A78BF /* TimelineRepository.swift */; };
-		BBFE9544747E1C8D6C432767 /* AppletErrorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FE827B28DEF58452207B233 /* AppletErrorView.swift */; };
 		BD2B89D24C3DCA9B55D134F2 /* ChannelsRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63D0AA641C9FA496510DA308 /* ChannelsRepository.swift */; };
 		BD71188E1B4D6CEDBA0BEEE5 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5BA04D67416A64914ABFCE9 /* APIClient.swift */; };
 		BD894E09AE6BE184D6BA5064 /* NotificationBridgeModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3EB06CEA5086018F2D24643 /* NotificationBridgeModule.swift */; };
@@ -87,6 +86,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A11B22C33D44E55F66778898 /* AppletBridgeNativeModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppletBridgeNativeModule.swift; sourceTree = "<group>"; };
 		014AF2F71F94B6B157329126 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		019517C75BAD1DE60FD85449 /* SearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchViewModel.swift; sourceTree = "<group>"; };
 		06B925F7D90C01948A54B44B /* AIScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIScreen.swift; sourceTree = "<group>"; };
@@ -115,8 +115,6 @@
 		4B505549CC222D50F2C5B15D /* SearchRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchRepository.swift; sourceTree = "<group>"; };
 		56BE273AC49759FAB6C52226 /* LoginScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginScreen.swift; sourceTree = "<group>"; };
 		5B4F09E484682A8B35D6059E /* AIViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIViewModel.swift; sourceTree = "<group>"; };
-		5C65C3B35B7206AB4B3DC255 /* AppletManifestParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppletManifestParser.swift; sourceTree = "<group>"; };
-		5FE827B28DEF58452207B233 /* AppletErrorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppletErrorView.swift; sourceTree = "<group>"; };
 		63D0AA641C9FA496510DA308 /* ChannelsRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelsRepository.swift; sourceTree = "<group>"; };
 		675A97861CED793DF7005602 /* ChatRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRepository.swift; sourceTree = "<group>"; };
 		67E0804B78B357A0CCDE14A2 /* NetworkBridgeModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkBridgeModule.swift; sourceTree = "<group>"; };
@@ -132,9 +130,9 @@
 		7A3994727C416D7B0C79C427 /* HomeScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeScreen.swift; sourceTree = "<group>"; };
 		86A27AC5963E1D3E8E51C486 /* LynxViewFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LynxViewFactory.swift; sourceTree = "<group>"; };
 		88CF4FF409FB3AEDF1D70B79 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
-		899245A5EF0790561F69E6E7 /* AppletLoadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppletLoadingView.swift; sourceTree = "<group>"; };
 		8E91D3511BE0792CEC04AE6E /* PeersTouchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeersTouchApp.swift; sourceTree = "<group>"; };
-		92911305EFDB6933278760FE /* AppletState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppletState.swift; sourceTree = "<group>"; };
+		8F79A1E6D9424F9D8A5E15AA /* AppletManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppletManifest.swift; sourceTree = "<group>"; };
+		8F79A1E8D9424F9D8A5E15AA /* AppletLynxViewRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppletLynxViewRepresentable.swift; sourceTree = "<group>"; };
 		92E22791EAD87781AF8169AB /* SettingsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewModel.swift; sourceTree = "<group>"; };
 		97AF5750C41D2DDC7A268E0A /* ColorTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorTokens.swift; sourceTree = "<group>"; };
 		9DAC52366A1B3015F1DEF8DA /* StorageBridgeModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageBridgeModule.swift; sourceTree = "<group>"; };
@@ -258,8 +256,7 @@
 			isa = PBXGroup;
 			children = (
 				A636FF55B360CA0D3B8835F2 /* AppletContainerView.swift */,
-				5FE827B28DEF58452207B233 /* AppletErrorView.swift */,
-				899245A5EF0790561F69E6E7 /* AppletLoadingView.swift */,
+				8F79A1E8D9424F9D8A5E15AA /* AppletLynxViewRepresentable.swift */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -568,6 +565,7 @@
 		C5FCFEA8FD3E2F5727F2B2E3 /* Bridge */ = {
 			isa = PBXGroup;
 			children = (
+				A11B22C33D44E55F66778898 /* AppletBridgeNativeModule.swift */,
 				707363E93F949FF41FAA60C9 /* BridgeDispatcher.swift */,
 				73C526281909786CDFB9EAD9 /* DeviceBridgeModule.swift */,
 				67E0804B78B357A0CCDE14A2 /* NetworkBridgeModule.swift */,
@@ -594,8 +592,7 @@
 				D5B78C15F90E5072379A0B2C /* AppletBridgeSession.swift */,
 				A7DFED3D01E2E1EB78BF32D5 /* AppletBundleStorage.swift */,
 				6EC78BA1429960557347E014 /* AppletManager.swift */,
-				5C65C3B35B7206AB4B3DC255 /* AppletManifestParser.swift */,
-				92911305EFDB6933278760FE /* AppletState.swift */,
+				8F79A1E6D9424F9D8A5E15AA /* AppletManifest.swift */,
 			);
 			path = Applet;
 			sourceTree = "<group>";
@@ -905,11 +902,10 @@
 				8D67B1568B3FFB45AD6A357D /* AppletBridgeSession.swift in Sources */,
 				BE7A9E48EF2127EA7310A8EA /* AppletBundleStorage.swift in Sources */,
 				3530E46DB572CF6BF2BFE2CC /* AppletContainerView.swift in Sources */,
-				BBFE9544747E1C8D6C432767 /* AppletErrorView.swift in Sources */,
-				9E16AEE487F22E8D44F882EA /* AppletLoadingView.swift in Sources */,
+				8F79A1E9D9424F9D8A5E15AA /* AppletLynxViewRepresentable.swift in Sources */,
 				DFD76250F1C42BCF5B0CBB05 /* AppletManager.swift in Sources */,
-				203285A2702265679585B1B8 /* AppletManifestParser.swift in Sources */,
-				7FAEBE972ECA691BE1DA5B20 /* AppletState.swift in Sources */,
+				8F79A1E7D9424F9D8A5E15AA /* AppletManifest.swift in Sources */,
+				A11B22C33D44E55F66778899 /* AppletBridgeNativeModule.swift in Sources */,
 				63A43141754862991CFF4FC8 /* AppletsRepository.swift in Sources */,
 				C3F28273510800C657F40B79 /* AppletsScreen.swift in Sources */,
 				2AC4C71DEAF5A3BA8DDCF8E3 /* AppletsViewModel.swift in Sources */,

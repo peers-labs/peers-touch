@@ -174,7 +174,7 @@ export function UserProfilePopover({ children }: Props) {
         }
       }}
       arrow={false}
-      overlayInnerStyle={{ padding: 0, overflow: 'hidden', borderRadius: 12 }}
+      styles={{ container: { padding: 0, overflow: 'hidden', borderRadius: 12 } }}
     >
       {children}
     </Popover>

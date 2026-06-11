@@ -7,7 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "brand:assets": "python3 ../../tooling/scripts/generate-mobile-brand-assets.py",
-    "check": "pnpm run check:web && pnpm run check:rust && pnpm run check:ios-project",
+    "check": "pnpm run check:web && pnpm run build && pnpm run check:rust && pnpm run check:ios-project",
     "check:social-wire": "scripts/check-social-wire-contract.sh",
     "check:social-runtime-boundaries": "../../tooling/scripts/check-social-runtime-boundaries.sh",
     "check:web": "pnpm run check:social-wire && pnpm run check:social-runtime-boundaries && tsc --noEmit -p tsconfig.json",

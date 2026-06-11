@@ -9,8 +9,9 @@ import {
   Typography,
   Badge,
   Collapse,
+  Drawer,
 } from 'antd';
-import { Button, Tag, Tooltip, Input, Drawer } from '@lobehub/ui';
+import { Button, Tag, Tooltip, Input } from '@lobehub/ui';
 import {
   Plus,
   Play,

@@ -78,6 +78,9 @@
   "settings.statistics.topicRank": "话题内容排行",
   "settings.statistics.rankLabelModel": "模型",
   "settings.statistics.rankLabelAgent": "智能体",
+
+  "settings.agentGrowth.empty": "选择一个智能体以查看成长数据",
+  "settings.agentGrowth.loading": "正在加载成长数据...",
   "settings.statistics.rankLabelTopic": "话题",
   "settings.statistics.rankLabelMessages": "消息数",
   "settings.statistics.rankNoData": "暂无数据",

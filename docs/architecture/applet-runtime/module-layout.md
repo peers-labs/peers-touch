@@ -1,8 +1,8 @@
 # Applet Runtime Architecture — 模块布局
 
 > **Status**: draft
-> **Version**: v1.0
-> **Created**: 2026-05-19 | **Updated**: 2026-05-19
+> **Version**: v1.1
+> **Created**: 2026-05-19 | **Updated**: 2026-06-06
 > **Owner**: Architecture Team
 > **Module**: `apps/desktop/src/applet/`, `apps/mobile/`, `packages/applet-sdk/`, `packages/applets/`
 
@@ -31,10 +31,11 @@ peers-touch/
 │   ├── applet-sdk/                     # Cross-platform SDK used by applets
 │   ├── applet-contract/                # Shared manifest/bridge/capability types
 │   └── applets/                        # Built-in applets build pipeline
+├── apps/web/ or web host module         # Future formal Web Host if/when repo path exists
 └── docs/architecture/applet-runtime/   # This architecture source
 ```
 
-`my-peers-applets/` 是外部 Applet 实现仓，遵循同一协议，但不反向定义 Host 架构。
+Applet package producer 不属于 Peers-Touch 架构输入。Peers-Touch 只接收符合 `applet-contract` 的 applet package。
 
 ---
 
@@ -156,6 +157,27 @@ apps/mobile/ios/
 
 职责与 Android 对齐，平台差异只存在于 LynxView 接入方式和设备能力适配。
 
+### 3.3 HarmonyOS Reserved
+
+目标结构在 HarmonyOS 正式进入工程前只定义为预留：
+
+```text
+apps/mobile/harmony/
+└── feature/applet/
+    ├── AppletContainer.ets
+    ├── LynxViewFactory.ets
+    ├── AppletBridgeModule.ets
+    ├── AppletCapabilityGateway.ets
+    ├── AppletManifestValidator.ets
+    └── AppletLifecycleController.ets
+```
+
+规则：
+
+- 未有真实 Lynx Harmony adapter 前不得声明已支持。
+- Host 必须识别 `harmony` target 并返回 unsupported platform。
+- SDK 不为 HarmonyOS 增加私有 API。
+
 ---
 
 ## 4. SDK 与契约包
@@ -217,7 +239,8 @@ packages/applet-sdk/
 │   ├── adapters/
 │   │   ├── lynx.ts           # LynxBridgeAdapter
 │   │   ├── host-injected.ts  # HostInjectedBridgeAdapter
-│   │   ├── standalone.ts     # StandaloneBridgeAdapter
+│   │   ├── web-host.ts       # WebHostBridgeAdapter
+│   │   ├── standalone.ts     # StandaloneBridgeAdapter for non-integrated standalone outlet
 │   │   └── wx.ts             # WxBridgeAdapter
 │   ├── storage.ts
 │   ├── network.ts
@@ -239,7 +262,7 @@ packages/applet-sdk/
 
 - 依赖 `window.parent`。
 - 直接依赖 Browser DOM 作为运行时假设。
-- 暴露 Desktop / Android / iOS 私有桥接对象。
+- 暴露 Desktop / Android / iOS / HarmonyOS / Web 私有桥接对象。
 - Applet 直接 import adapter 实现（只通过 `index.ts` 公开 API）。
 
 ---
@@ -261,7 +284,6 @@ applets/<applet-id>/
 │   ├── presentation/
 │   └── index.tsx
 └── dist/
-    ├── main.web.bundle
     └── main.lynx.bundle
 ```
 
