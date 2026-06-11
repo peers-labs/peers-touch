@@ -205,7 +205,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
       onCancel={handleClose}
       footer={null}
       width={420}
-      destroyOnClose
+      destroyOnHidden
     >
       <Flexbox gap={12}>
         {/* A2 — federation readiness banner. Kept as an inline Alert

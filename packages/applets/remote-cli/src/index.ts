@@ -1,11 +1,10 @@
-import { Terminal } from 'lucide-react';
-import { registerApplet } from '@peers-touch/applet-sdk';
-import { RemoteCLISettings } from './Settings';
+import { createElement } from 'react';
+import { createRoot } from 'react-dom/client';
 import { RemoteCLIPage } from './Page';
 
-registerApplet({
-  id: 'remote-cli',
-  settingsPanel: RemoteCLISettings,
-  page: RemoteCLIPage,
-  sidebarIcon: Terminal,
-});
+const root = document.getElementById('root');
+if (!root) {
+  throw new Error('remote-cli root element is missing');
+}
+
+createRoot(root).render(createElement(RemoteCLIPage, { onBack: () => undefined }));

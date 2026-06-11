@@ -308,7 +308,7 @@ The source of truth is always the `.proto`, never the generated file.
 ### 7. **Applet Container: Lynx**
 - Applet / 小程序运行时以 [Lynx](https://github.com/lynx-family/lynx) 为跨端容器方向
 - Desktop 使用 Lynx for Web 承载 Applet web bundle；Android / iOS 使用原生 LynxView 承载 native Lynx bundle
-- Applet 运行在 Host 托管的 Lynx Runtime 中，通过 Bridge V2 与 Capability Gateway 调用宿主能力
+- Applet 运行在 Host 托管的 Lynx Runtime 中，通过 canonical bridge (`peers-touch.applet.bridge`) 与 Capability Gateway 调用宿主能力
 - 正式架构见 `docs/architecture/applet-runtime/README.md`
 
 ---

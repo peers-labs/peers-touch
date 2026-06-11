@@ -1,14 +1,52 @@
+use crate::application::provider::{remote as provider_remote, state as provider_state};
 use crate::contracts::{
-    AppletActionInput, AppletConfigSetInput, AppletIdInput, AppletInvokeInput, StubPayload,
+    AppletActionInput, AppletConfigSetInput, AppletCreateSessionInput, AppletGatewayManifest,
+    AppletGatewayService, AppletGatewaySkill, AppletIdInput, AppletInvokeInput, StubPayload,
 };
 use crate::domain::applets::{
-    authorize, build_request_id, emit_audit, normalize_capability, AccessContext,
+    authorize_manifest_permission, build_request_id, capability_method, destroy_session,
+    emit_audit, ensure_active_session, normalize_capability, register_active_session,
+    AccessContext, AppletSessionManifestSnapshot,
 };
 use crate::error::{AppResult, ErrorCode};
+use crate::infrastructure::station_client;
+use reqwest::Method;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
+
+const APPLET_STORAGE_QUOTA_BYTES: usize = 10 * 1024 * 1024;
+const APPLET_FILE_QUOTA_BYTES: usize = 10 * 1024 * 1024;
+const DEFAULT_GATEWAY_MAX_PAYLOAD_BYTES: usize = 256 * 1024;
+const DEFAULT_GATEWAY_SESSION_QUOTA_PER_MINUTE: u32 = 240;
+const DEFAULT_GATEWAY_TIMEOUT_MS: u64 = 30_000;
+const GATEWAY_QUOTA_WINDOW_MS: u128 = 60_000;
+const APPLET_CLIPBOARD_MEMORY_FALLBACK_ENV: &str = "PEERS_APPLET_CLIPBOARD_BACKEND";
+const DEFAULT_APPLET_TASK_COMPLETE_AFTER_MS: u64 = 100;
+const PRODUCT_EXECUTORS_REQUIRED_ENV: &str = "PEERS_APPLET_REQUIRE_PRODUCT_EXECUTORS";
+
+#[derive(Debug, Clone, Copy)]
+struct GatewayLimits {
+    max_payload_bytes: usize,
+    session_quota_per_minute: u32,
+    capability_timeout_ms: u64,
+}
+
+#[derive(Debug, Clone)]
+struct AppletQuotaRecord {
+    window_start_ms: u128,
+    count: u32,
+}
+
+static APPLET_SESSION_QUOTAS: OnceLock<Mutex<HashMap<String, AppletQuotaRecord>>> = OnceLock::new();
+static APPLET_CLIPBOARD_TEXT: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+static APPLET_EVENT_SUBSCRIPTIONS: OnceLock<Mutex<HashMap<String, HashSet<String>>>> =
+    OnceLock::new();
+static APPLET_EVENT_OUTBOX: OnceLock<Mutex<HashMap<String, Vec<Value>>>> = OnceLock::new();
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
     AppResult::success(StubPayload {
@@ -21,8 +59,291 @@ fn invalid_argument(message: &str, request_id: &str) -> AppResult<StubPayload> {
     AppResult::fail(
         ErrorCode::InvalidArgument,
         message,
-        Some(serde_json::json!({ "requestId": request_id })),
+        Some(serde_json::json!({ "requestId": request_id, "appletErrorCode": "INVALID_PARAMS" })),
     )
+}
+
+fn applet_fail(
+    rust_code: ErrorCode,
+    applet_code: &str,
+    message: impl Into<String>,
+    request_id: &str,
+    details: Value,
+) -> AppResult<StubPayload> {
+    let mut detail_map = match details {
+        Value::Object(map) => map,
+        _ => serde_json::Map::new(),
+    };
+    detail_map.insert("requestId".to_string(), json!(request_id));
+    detail_map.insert("appletErrorCode".to_string(), json!(applet_code));
+    AppResult::fail(rust_code, message, Some(Value::Object(detail_map)))
+}
+
+fn map_capability_error(message: &str) -> (&'static str, ErrorCode) {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("quota") || lower.contains("payload") || lower.contains("too large") {
+        ("QUOTA_EXCEEDED", ErrorCode::Conflict)
+    } else if lower.contains("timeout") || lower.contains("timed out") {
+        ("QUOTA_EXCEEDED", ErrorCode::Conflict)
+    } else if lower.contains("raw url")
+        || lower.contains("requires")
+        || lower.contains("unsupported")
+        || lower.contains("topic")
+        || lower.contains("path must")
+        || lower.contains("method")
+    {
+        ("INVALID_PARAMS", ErrorCode::InvalidArgument)
+    } else if lower.contains("permission")
+        || lower.contains("does not allow")
+        || lower.contains("forbidden")
+        || lower.contains("policy")
+    {
+        ("POLICY_DENIED", ErrorCode::Forbidden)
+    } else if lower.contains("session") {
+        ("INVALID_SESSION", ErrorCode::Unauthorized)
+    } else if lower.contains("service is not declared")
+        || lower.contains("service binding")
+        || lower.contains("service ")
+    {
+        ("SERVICE_NOT_FOUND", ErrorCode::NotFound)
+    } else if lower.contains("cancel") {
+        ("TASK_CANCELLED", ErrorCode::Conflict)
+    } else {
+        ("CAPABILITY_FAILED", ErrorCode::InternalError)
+    }
+}
+
+fn quota_store() -> &'static Mutex<HashMap<String, AppletQuotaRecord>> {
+    APPLET_SESSION_QUOTAS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn gateway_limits() -> GatewayLimits {
+    GatewayLimits {
+        max_payload_bytes: env_usize(
+            "PEERS_APPLET_MAX_PAYLOAD_BYTES",
+            DEFAULT_GATEWAY_MAX_PAYLOAD_BYTES,
+            16 * 1024,
+            4 * 1024 * 1024,
+        ),
+        session_quota_per_minute: env_usize(
+            "PEERS_APPLET_SESSION_QUOTA_PER_MINUTE",
+            DEFAULT_GATEWAY_SESSION_QUOTA_PER_MINUTE as usize,
+            1,
+            10_000,
+        ) as u32,
+        capability_timeout_ms: env_usize(
+            "PEERS_APPLET_TIMEOUT_MS",
+            DEFAULT_GATEWAY_TIMEOUT_MS as usize,
+            100,
+            120_000,
+        ) as u64,
+    }
+}
+
+fn env_usize(name: &str, default: usize, min: usize, max: usize) -> usize {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|value| (*value >= min) && (*value <= max))
+        .unwrap_or(default)
+}
+
+fn env_bool(name: &str) -> bool {
+    std::env::var(name)
+        .ok()
+        .map(|value| matches!(value.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
+
+fn product_executors_required(params: Option<&Value>) -> bool {
+    if env_bool(PRODUCT_EXECUTORS_REQUIRED_ENV) {
+        return true;
+    }
+    params
+        .and_then(|value| {
+            value
+                .get("productExecutorsOnly")
+                .or_else(|| value.get("product_executors_only"))
+                .or_else(|| {
+                    value
+                        .get("options")
+                        .and_then(|options| options.get("productExecutorsOnly"))
+                })
+                .or_else(|| {
+                    value
+                        .get("options")
+                        .and_then(|options| options.get("product_executors_only"))
+                })
+        })
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn serialized_value_size(value: &Value) -> Result<usize, String> {
+    serde_json::to_vec(value)
+        .map(|bytes| bytes.len())
+        .map_err(|error| format!("Failed to measure JSON payload size: {}", error))
+}
+
+fn serialized_invoke_size(input: &AppletInvokeInput) -> Result<usize, String> {
+    serde_json::to_vec(input)
+        .map(|bytes| bytes.len())
+        .map_err(|error| format!("Failed to measure applet invoke payload size: {}", error))
+}
+
+fn requested_timeout_ms(params: &Option<Value>, default_timeout_ms: u64) -> u64 {
+    params
+        .as_ref()
+        .and_then(|value| {
+            value
+                .get("timeoutMs")
+                .or_else(|| value.get("timeout_ms"))
+                .or_else(|| {
+                    value
+                        .get("options")
+                        .and_then(|options| options.get("timeoutMs"))
+                })
+                .or_else(|| {
+                    value
+                        .get("options")
+                        .and_then(|options| options.get("timeout_ms"))
+                })
+        })
+        .and_then(Value::as_u64)
+        .filter(|timeout_ms| *timeout_ms > 0)
+        .map(|timeout_ms| timeout_ms.min(default_timeout_ms))
+        .unwrap_or(default_timeout_ms)
+}
+
+fn enforce_payload_limit(
+    input: &AppletInvokeInput,
+    request_id: &str,
+    limits: GatewayLimits,
+) -> Result<(), AppResult<StubPayload>> {
+    let payload_bytes = match serialized_invoke_size(input) {
+        Ok(size) => size,
+        Err(message) => {
+            return Err(applet_fail(
+                ErrorCode::InvalidArgument,
+                "INVALID_PARAMS",
+                message,
+                request_id,
+                json!({}),
+            ));
+        }
+    };
+    if payload_bytes > limits.max_payload_bytes {
+        return Err(applet_fail(
+            ErrorCode::Conflict,
+            "QUOTA_EXCEEDED",
+            format!(
+                "Applet invoke payload exceeds gateway limit: {} > {} bytes",
+                payload_bytes, limits.max_payload_bytes
+            ),
+            request_id,
+            json!({ "limitKind": "payload", "limitBytes": limits.max_payload_bytes, "actualBytes": payload_bytes }),
+        ));
+    }
+    Ok(())
+}
+
+fn enforce_response_payload_limit(
+    response: &Value,
+    request_id: &str,
+    limits: GatewayLimits,
+) -> Result<(), AppResult<StubPayload>> {
+    let payload_bytes = match serialized_value_size(response) {
+        Ok(size) => size,
+        Err(message) => {
+            return Err(applet_fail(
+                ErrorCode::InvalidArgument,
+                "INVALID_PARAMS",
+                message,
+                request_id,
+                json!({}),
+            ));
+        }
+    };
+    if payload_bytes > limits.max_payload_bytes {
+        return Err(applet_fail(
+            ErrorCode::Conflict,
+            "QUOTA_EXCEEDED",
+            format!(
+                "Applet response payload exceeds gateway limit: {} > {} bytes",
+                payload_bytes, limits.max_payload_bytes
+            ),
+            request_id,
+            json!({ "limitKind": "response_payload", "limitBytes": limits.max_payload_bytes, "actualBytes": payload_bytes }),
+        ));
+    }
+    Ok(())
+}
+
+fn enforce_session_quota(
+    context: &AccessContext,
+    request_id: &str,
+    applet_id: &str,
+    session_id: &str,
+    capability: &str,
+    limits: GatewayLimits,
+) -> Result<(), AppResult<StubPayload>> {
+    let key = session_store_key(applet_id, session_id);
+    let now = now_millis();
+    let mut guard = match quota_store().lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return Err(applet_fail(
+                ErrorCode::InternalError,
+                "CAPABILITY_FAILED",
+                "Applet quota registry is unavailable",
+                request_id,
+                json!({ "limitKind": "quota" }),
+            ));
+        }
+    };
+    let record = guard.entry(key).or_insert_with(|| AppletQuotaRecord {
+        window_start_ms: now,
+        count: 0,
+    });
+    if now.saturating_sub(record.window_start_ms) >= GATEWAY_QUOTA_WINDOW_MS {
+        record.window_start_ms = now;
+        record.count = 0;
+    }
+    if record.count >= limits.session_quota_per_minute {
+        emit_audit(
+            request_id,
+            "applets_invoke",
+            Some(applet_id),
+            capability,
+            context.actor_id.as_deref(),
+            "quota_exceeded",
+        );
+        return Err(applet_fail(
+            ErrorCode::Conflict,
+            "QUOTA_EXCEEDED",
+            format!(
+                "Applet session quota exceeded: {} requests per minute",
+                limits.session_quota_per_minute
+            ),
+            request_id,
+            json!({ "limitKind": "request_quota", "windowMs": GATEWAY_QUOTA_WINDOW_MS, "limit": limits.session_quota_per_minute }),
+        ));
+    }
+    record.count += 1;
+    Ok(())
+}
+
+fn capability_error_details(error_msg: &str, timeout_ms: u64) -> Value {
+    let lower = error_msg.to_ascii_lowercase();
+    if lower.contains("timeout") || lower.contains("timed out") {
+        json!({ "limitKind": "timeout", "timeoutMs": timeout_ms })
+    } else if lower.contains("quota") {
+        json!({ "limitKind": "quota" })
+    } else if lower.contains("payload") || lower.contains("too large") {
+        json!({ "limitKind": "payload" })
+    } else {
+        json!({})
+    }
 }
 
 fn ensure_allowed(
@@ -32,7 +353,7 @@ fn ensure_allowed(
     applet_id: Option<&str>,
     capability: &str,
 ) -> Result<(), AppResult<StubPayload>> {
-    if authorize(context, capability) {
+    if is_command_capability_allowed(capability) {
         return Ok(());
     }
     emit_audit(
@@ -51,6 +372,212 @@ fn ensure_allowed(
         ),
         None,
     ))
+}
+
+fn is_command_capability_allowed(capability: &str) -> bool {
+    matches!(
+        capability,
+        "applets.list"
+            | "applets.get"
+            | "applets.activate"
+            | "applets.deactivate"
+            | "applets.get_config"
+            | "applets.set_config"
+            | "applets.create_session"
+            | "applets.action"
+    )
+}
+
+fn ensure_manifest_authorized(
+    context: &AccessContext,
+    request_id: &str,
+    applet_id: &str,
+    input: &AppletInvokeInput,
+    normalized_capability: &str,
+    data_dir: &Path,
+) -> Result<(String, AppletGatewayManifest), AppResult<StubPayload>> {
+    if input.manifest.id != applet_id {
+        emit_audit(
+            request_id,
+            "applets_invoke",
+            Some(applet_id),
+            normalized_capability,
+            context.actor_id.as_deref(),
+            "manifest_mismatch",
+        );
+        return Err(AppResult::fail(
+            ErrorCode::Forbidden,
+            "Applet manifest id does not match invoke target",
+            Some(json!({ "requestId": request_id, "appletErrorCode": "INVALID_MANIFEST" })),
+        ));
+    }
+
+    let requested_manifest_snapshot = match manifest_snapshot(&input.manifest) {
+        Ok(snapshot) => snapshot,
+        Err(message) => {
+            emit_audit(
+                request_id,
+                "applets_invoke",
+                Some(applet_id),
+                normalized_capability,
+                context.actor_id.as_deref(),
+                "manifest_mismatch",
+            );
+            return Err(AppResult::fail(
+                ErrorCode::InvalidArgument,
+                message,
+                Some(json!({ "requestId": request_id, "appletErrorCode": "INVALID_MANIFEST" })),
+            ));
+        }
+    };
+
+    let trusted_session = match ensure_active_session(
+        context,
+        applet_id,
+        &input.session_id,
+        Some(data_dir),
+        requested_manifest_snapshot,
+    ) {
+        Ok(session) => session,
+        Err(message) => {
+            let is_manifest_error = message.to_ascii_lowercase().contains("manifest");
+            let applet_error_code = if is_manifest_error {
+                "INVALID_MANIFEST"
+            } else {
+                "INVALID_SESSION"
+            };
+            emit_audit(
+                request_id,
+                "applets_invoke",
+                Some(applet_id),
+                normalized_capability,
+                context.actor_id.as_deref(),
+                if is_manifest_error {
+                    "manifest_mismatch"
+                } else {
+                    "invalid_session"
+                },
+            );
+            return Err(AppResult::fail(
+                if is_manifest_error {
+                    ErrorCode::Forbidden
+                } else {
+                    ErrorCode::Unauthorized
+                },
+                message,
+                Some(
+                    json!({ "requestId": request_id, "sessionId": input.session_id, "appletErrorCode": applet_error_code }),
+                ),
+            ));
+        }
+    };
+
+    let trusted_manifest = gateway_manifest_from_snapshot(applet_id, trusted_session.manifest)
+        .map_err(|message| {
+            AppResult::fail(
+                ErrorCode::InternalError,
+                message,
+                Some(json!({ "requestId": request_id, "appletErrorCode": "INVALID_MANIFEST" })),
+            )
+        })?;
+
+    let method = match capability_method(normalized_capability, input.action.as_deref()) {
+        Some(value) => value,
+        None => {
+            return Err(AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "Applet capability action is required",
+                Some(json!({ "requestId": request_id, "appletErrorCode": "INVALID_PARAMS" })),
+            ));
+        }
+    };
+
+    if !authorize_manifest_permission(&trusted_manifest.permissions, &method) {
+        emit_audit(
+            request_id,
+            "applets_invoke",
+            Some(applet_id),
+            &method,
+            context.actor_id.as_deref(),
+            "permission_denied",
+        );
+        return Err(AppResult::fail(
+            ErrorCode::Forbidden,
+            format!("Applet manifest does not grant permission: {}", method),
+            Some(json!({ "requestId": request_id, "appletErrorCode": "PERMISSION_DENIED" })),
+        ));
+    }
+
+    Ok((method, trusted_manifest))
+}
+
+fn manifest_snapshot(
+    manifest: &AppletGatewayManifest,
+) -> Result<AppletSessionManifestSnapshot, String> {
+    let services = manifest
+        .services
+        .iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("Failed to snapshot applet services: {}", error))?;
+    let skills = manifest
+        .skills
+        .iter()
+        .map(|skill| {
+            serde_json::to_value(skill).map(|mut value| {
+                remove_null_object_field(&mut value, "executor");
+                value
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("Failed to snapshot applet skills: {}", error))?;
+    Ok(AppletSessionManifestSnapshot {
+        permissions: manifest.permissions.clone(),
+        services,
+        skills,
+    })
+}
+
+fn remove_null_object_field(value: &mut Value, field: &str) {
+    if let Value::Object(map) = value {
+        if map.get(field).is_some_and(Value::is_null) {
+            map.remove(field);
+        }
+    }
+}
+
+fn gateway_manifest_from_snapshot(
+    applet_id: &str,
+    snapshot: AppletSessionManifestSnapshot,
+) -> Result<AppletGatewayManifest, String> {
+    let services = snapshot
+        .services
+        .into_iter()
+        .map(serde_json::from_value::<AppletGatewayService>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| {
+            format!(
+                "Trusted applet session service manifest is invalid: {}",
+                error
+            )
+        })?;
+    let skills = snapshot
+        .skills
+        .into_iter()
+        .map(serde_json::from_value::<AppletGatewaySkill>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| {
+            format!(
+                "Trusted applet session skill manifest is invalid: {}",
+                error
+            )
+        })?;
+    Ok(AppletGatewayManifest {
+        id: applet_id.to_string(),
+        permissions: snapshot.permissions,
+        services,
+        skills,
+    })
 }
 
 fn invoke_gateway(
@@ -220,59 +747,215 @@ pub fn applets_action(context: AccessContext, input: AppletActionInput) -> AppRe
     )
 }
 
+pub fn applets_create_session(
+    context: AccessContext,
+    input: AppletCreateSessionInput,
+    data_dir: &Path,
+) -> AppResult<StubPayload> {
+    let request_id = build_request_id();
+    let applet_id = input.id.trim().to_string();
+    if applet_id.is_empty() {
+        return invalid_argument("id is required", &request_id);
+    }
+    if input.manifest.id != applet_id {
+        emit_audit(
+            &request_id,
+            "applets_create_session",
+            Some(&applet_id),
+            "applets.create_session",
+            context.actor_id.as_deref(),
+            "manifest_mismatch",
+        );
+        return AppResult::fail(
+            ErrorCode::Forbidden,
+            "Applet manifest id does not match session target",
+            Some(json!({ "requestId": request_id, "appletErrorCode": "INVALID_MANIFEST" })),
+        );
+    }
+    if let Err(error) = ensure_allowed(
+        &context,
+        &request_id,
+        "applets_create_session",
+        Some(&applet_id),
+        "applets.create_session",
+    ) {
+        return error;
+    }
+
+    let snapshot = match manifest_snapshot(&input.manifest) {
+        Ok(snapshot) => snapshot,
+        Err(message) => {
+            emit_audit(
+                &request_id,
+                "applets_create_session",
+                Some(&applet_id),
+                "applets.create_session",
+                context.actor_id.as_deref(),
+                "manifest_mismatch",
+            );
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                message,
+                Some(json!({ "requestId": request_id, "appletErrorCode": "INVALID_MANIFEST" })),
+            );
+        }
+    };
+    let session_id = input
+        .session_id
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| format!("desktop-{}-{}", applet_id, build_request_id()));
+
+    match register_active_session(&context, &applet_id, &session_id, Some(data_dir), snapshot) {
+        Ok(_) => {
+            emit_audit(
+                &request_id,
+                "applets_create_session",
+                Some(&applet_id),
+                "applets.create_session",
+                context.actor_id.as_deref(),
+                "ok",
+            );
+            success_payload(
+                "applets_create_session",
+                json!({ "ok": true, "appletId": applet_id, "sessionId": session_id }),
+            )
+        }
+        Err(message) => {
+            let is_manifest_error = message.to_ascii_lowercase().contains("manifest");
+            emit_audit(
+                &request_id,
+                "applets_create_session",
+                Some(&applet_id),
+                "applets.create_session",
+                context.actor_id.as_deref(),
+                if is_manifest_error {
+                    "manifest_mismatch"
+                } else {
+                    "invalid_session"
+                },
+            );
+            AppResult::fail(
+                if is_manifest_error {
+                    ErrorCode::Forbidden
+                } else {
+                    ErrorCode::Unauthorized
+                },
+                message,
+                Some(json!({
+                    "requestId": request_id,
+                    "sessionId": session_id,
+                    "appletErrorCode": if is_manifest_error { "INVALID_MANIFEST" } else { "INVALID_SESSION" }
+                })),
+            )
+        }
+    }
+}
+
 pub fn applets_invoke(
     context: AccessContext,
     input: AppletInvokeInput,
     data_dir: &Path,
 ) -> AppResult<StubPayload> {
     let request_id = build_request_id();
+    let limits = gateway_limits();
     if input.id.trim().is_empty() {
         return invalid_argument("id is required", &request_id);
     }
     if input.capability.trim().is_empty() {
         return invalid_argument("capability is required", &request_id);
     }
+    if let Err(error) = enforce_payload_limit(&input, &request_id, limits) {
+        return error;
+    }
 
     let normalized_capability = normalize_capability(&input.capability);
-    let applet_id = input.id.trim();
+    let applet_id = input.id.trim().to_string();
+    let session_id = input.session_id.clone();
+
+    let (method, trusted_manifest) = match ensure_manifest_authorized(
+        &context,
+        &request_id,
+        &applet_id,
+        &input,
+        &normalized_capability,
+        data_dir,
+    ) {
+        Ok(authorized) => authorized,
+        Err(error) => return error,
+    };
+
+    if method == "lifecycle.destroy" {
+        match destroy_session(&applet_id, &session_id, Some(data_dir)) {
+            Ok(()) => {
+                clear_session_work(&applet_id, &session_id);
+                emit_audit(
+                    &request_id,
+                    "applets_invoke",
+                    Some(&applet_id),
+                    &method,
+                    context.actor_id.as_deref(),
+                    "ok",
+                );
+                return success_payload("applets_invoke", json!({ "ok": true }));
+            }
+            Err(message) => {
+                return AppResult::fail(
+                    ErrorCode::Unauthorized,
+                    message,
+                    Some(json!({ "requestId": request_id, "appletErrorCode": "INVALID_SESSION" })),
+                );
+            }
+        }
+    }
+
+    if let Err(error) = enforce_session_quota(
+        &context,
+        &request_id,
+        &applet_id,
+        &session_id,
+        &method,
+        limits,
+    ) {
+        return error;
+    }
+
+    let manifest = trusted_manifest;
+    let params = input.params.clone();
+    let action = input.action.clone();
 
     if let Err(error) = ensure_allowed(
         &context,
         &request_id,
         "applets_invoke",
-        Some(applet_id),
-        &normalized_capability,
+        Some(&applet_id),
+        "applets.action",
     ) {
         return error;
     }
 
-    let result = match normalized_capability.as_str() {
-        "storage" => handle_storage(applet_id, input.action.as_deref(), input.params, data_dir),
-        "network" => handle_network(input.action.as_deref(), input.params),
-        "config" => handle_config(applet_id, input.action.as_deref(), input.params, data_dir),
-        other => {
-            emit_audit(
-                &request_id,
-                "applets_invoke",
-                Some(applet_id),
-                &normalized_capability,
-                context.actor_id.as_deref(),
-                "unsupported_capability",
-            );
-            return AppResult::fail(
-                ErrorCode::InvalidArgument,
-                format!("Unsupported applet capability: {}", other),
-                Some(json!({ "requestId": request_id })),
-            );
-        }
-    };
+    let timeout_ms = requested_timeout_ms(&params, limits.capability_timeout_ms);
+    let result = dispatch_with_timeout(
+        context.clone(),
+        applet_id.clone(),
+        session_id,
+        request_id.clone(),
+        normalized_capability.clone(),
+        manifest,
+        action,
+        params,
+        data_dir.to_path_buf(),
+        timeout_ms,
+    );
 
     match result {
         Ok(response) => {
+            if let Err(error) = enforce_response_payload_limit(&response, &request_id, limits) {
+                return error;
+            }
             emit_audit(
                 &request_id,
                 "applets_invoke",
-                Some(applet_id),
+                Some(&applet_id),
                 &normalized_capability,
                 context.actor_id.as_deref(),
                 "ok",
@@ -283,17 +966,90 @@ pub fn applets_invoke(
             emit_audit(
                 &request_id,
                 "applets_invoke",
-                Some(applet_id),
+                Some(&applet_id),
                 &normalized_capability,
                 context.actor_id.as_deref(),
                 "error",
             );
-            AppResult::fail(
-                ErrorCode::InternalError,
-                error_msg,
-                Some(json!({ "requestId": request_id })),
-            )
+            let (applet_code, rust_code) = map_capability_error(&error_msg);
+            let details = capability_error_details(&error_msg, timeout_ms);
+            applet_fail(rust_code, applet_code, error_msg, &request_id, details)
         }
+    }
+}
+
+fn dispatch_with_timeout(
+    context: AccessContext,
+    applet_id: String,
+    session_id: String,
+    request_id: String,
+    normalized_capability: String,
+    manifest: AppletGatewayManifest,
+    action: Option<String>,
+    params: Option<Value>,
+    data_dir: PathBuf,
+    timeout_ms: u64,
+) -> Result<Value, String> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let timeout_capability = normalized_capability.clone();
+    std::thread::spawn(move || {
+        let result = dispatch_applet_capability(
+            &context,
+            &applet_id,
+            &session_id,
+            &request_id,
+            &normalized_capability,
+            &manifest,
+            action.as_deref(),
+            params,
+            &data_dir,
+        );
+        let _ = sender.send(result);
+    });
+    match receiver.recv_timeout(Duration::from_millis(timeout_ms)) {
+        Ok(result) => result,
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Err(format!(
+            "Applet capability timed out after {} ms: {}",
+            timeout_ms, timeout_capability
+        )),
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            Err("Applet capability worker disconnected before returning a result".to_string())
+        }
+    }
+}
+
+fn dispatch_applet_capability(
+    context: &AccessContext,
+    applet_id: &str,
+    session_id: &str,
+    request_id: &str,
+    normalized_capability: &str,
+    manifest: &AppletGatewayManifest,
+    action: Option<&str>,
+    params: Option<Value>,
+    data_dir: &Path,
+) -> Result<Value, String> {
+    match normalized_capability {
+        "app" => handle_app(applet_id, session_id, action),
+        "lifecycle" => handle_lifecycle(applet_id, action),
+        "navigation" => handle_navigation(action, params),
+        "storage" => handle_storage(applet_id, action, params, data_dir),
+        "network" => handle_network(context, applet_id, manifest, action, params, data_dir),
+        "config" => handle_config(applet_id, action, params, data_dir),
+        "system" => handle_system(action),
+        "ui" => handle_ui(action, params),
+        "device" => handle_device(action, params),
+        "clipboard" => handle_clipboard(applet_id, session_id, action, params),
+        "file" => handle_file(applet_id, action, params, data_dir),
+        "events" => handle_events(applet_id, session_id, action, params),
+        "skills" => handle_skills(context, applet_id, session_id, manifest, action, params),
+        "tasks" => handle_tasks(
+            context, applet_id, session_id, manifest, action, params, data_dir,
+        ),
+        "agent" => handle_agent(context, applet_id, session_id, request_id, action, params),
+        "ai" => handle_ai(request_id, action, params),
+        "telemetry" => handle_telemetry(applet_id, session_id, action, params),
+        other => Err(format!("Unsupported applet capability: {}", other)),
     }
 }
 
@@ -368,6 +1124,15 @@ fn handle_storage(
                 .unwrap_or(Value::Null);
             let mut map = read_storage_map(&storage_path)?;
             map.insert(key, value);
+            let used_bytes = serde_json::to_string(&map)
+                .map(|content| content.len())
+                .map_err(|error| format!("Failed to measure storage quota: {}", error))?;
+            if used_bytes > APPLET_STORAGE_QUOTA_BYTES {
+                return Err(format!(
+                    "storage quota exceeded: {} > {} bytes",
+                    used_bytes, APPLET_STORAGE_QUOTA_BYTES
+                ));
+            }
             write_storage_map(&storage_path, &map)?;
             Ok(json!({ "ok": true }))
         }
@@ -379,95 +1144,2250 @@ fn handle_storage(
             write_storage_map(&storage_path, &map)?;
             Ok(json!({ "ok": true }))
         }
+        "clear" => {
+            write_storage_map(&storage_path, &HashMap::new())?;
+            Ok(json!({ "ok": true }))
+        }
+        "keys" => {
+            let prefix = params
+                .as_ref()
+                .and_then(|value| value.get("prefix"))
+                .and_then(Value::as_str);
+            let map = read_storage_map(&storage_path)?;
+            let mut keys = map
+                .keys()
+                .filter(|key| prefix.map(|value| key.starts_with(value)).unwrap_or(true))
+                .cloned()
+                .collect::<Vec<String>>();
+            keys.sort();
+            Ok(json!(keys))
+        }
+        "getInfo" | "get_info" => {
+            let map = read_storage_map(&storage_path)?;
+            let used_bytes = serde_json::to_string(&map)
+                .map(|content| content.len())
+                .unwrap_or_default();
+            Ok(json!({
+                "quotaBytes": APPLET_STORAGE_QUOTA_BYTES,
+                "usedBytes": used_bytes,
+                "keys": map.keys().cloned().collect::<Vec<String>>()
+            }))
+        }
         other => Err(format!("Unsupported storage action: {}", other)),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Capability: app / lifecycle / system / ui / events
+// ---------------------------------------------------------------------------
+
+fn handle_app(applet_id: &str, session_id: &str, action: Option<&str>) -> Result<Value, String> {
+    match action.ok_or_else(|| "app capability requires an action".to_string())? {
+        "getContext" | "get_context" => Ok(json!({
+            "appletId": applet_id,
+            "sessionId": session_id,
+            "platform": "desktop",
+            "runtime": "lynx-web",
+            "sdkVersion": "1.0.0",
+            "bridgeProtocol": "peers-touch.applet.bridge",
+            "launchParams": {}
+        })),
+        "getLaunchOptions" | "get_launch_options" => Ok(json!({})),
+        other => Err(format!("Unsupported app action: {}", other)),
+    }
+}
+
+fn handle_lifecycle(applet_id: &str, action: Option<&str>) -> Result<Value, String> {
+    match action.ok_or_else(|| "lifecycle capability requires an action".to_string())? {
+        "reportReady" | "report_ready" => {
+            Ok(json!({ "ok": true, "appletId": applet_id, "state": "active" }))
+        }
+        "onReady" | "onShow" | "onHide" | "onPause" | "onResume" | "onDestroy" => {
+            Ok(json!({ "ok": true, "appletId": applet_id }))
+        }
+        other => Err(format!("Unsupported lifecycle action: {}", other)),
+    }
+}
+
+fn handle_navigation(action: Option<&str>, params: Option<Value>) -> Result<Value, String> {
+    let action = action.ok_or_else(|| "navigation capability requires an action".to_string())?;
+    match action {
+        "openApplet" | "open_applet" => {
+            let applet_id = extract_string_param(&params, "appletId")
+                .or_else(|| extract_string_param(&params, "id"))
+                .ok_or_else(|| "navigation.openApplet requires params.appletId".to_string())?;
+            ensure_safe_navigation_id(&applet_id, "appletId")?;
+            Ok(host_navigation_command(
+                "openApplet",
+                json!({ "appletId": applet_id }),
+            ))
+        }
+        "closeApplet" | "close_applet" => {
+            let reason = extract_string_param(&params, "reason").unwrap_or_default();
+            Ok(host_navigation_command(
+                "closeApplet",
+                json!({ "reason": reason }),
+            ))
+        }
+        "navigateTo" | "navigate_to" | "redirectTo" | "redirect_to" => {
+            let page = extract_string_param(&params, "page")
+                .or_else(|| extract_string_param(&params, "target"))
+                .ok_or_else(|| format!("navigation.{} requires params.page", action))?;
+            let page = normalize_navigation_page(&page)?;
+            Ok(host_navigation_command(action, json!({ "page": page })))
+        }
+        "back" => {
+            let delta = params
+                .as_ref()
+                .and_then(|value| value.get("delta"))
+                .and_then(Value::as_u64)
+                .unwrap_or(1)
+                .clamp(1, 10);
+            Ok(host_navigation_command("back", json!({ "delta": delta })))
+        }
+        other => Err(format!("Unsupported navigation action: {}", other)),
+    }
+}
+
+fn host_navigation_command(action: &str, params: Value) -> Value {
+    json!({
+        "ok": true,
+        "__hostCommands": [{
+            "type": "navigation",
+            "action": action,
+            "params": params
+        }]
+    })
+}
+
+fn ensure_safe_navigation_id(value: &str, field: &str) -> Result<(), String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty()
+        || trimmed.len() > 128
+        || !trimmed
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+    {
+        return Err(format!("navigation {} is invalid: {}", field, value));
+    }
+    Ok(())
+}
+
+fn normalize_navigation_page(page: &str) -> Result<String, String> {
+    let trimmed = page.trim();
+    if let Some(applet_id) = trimmed.strip_prefix("applet:") {
+        ensure_safe_navigation_id(applet_id, "page")?;
+        return Ok(trimmed.to_string());
+    }
+
+    match trimmed {
+        "applets" | "search" | "chat" | "agent" | "notes" | "settings" => Ok(trimmed.to_string()),
+        _ => Err(format!("navigation target is not allowed: {}", page)),
+    }
+}
+
+fn handle_system(action: Option<&str>) -> Result<Value, String> {
+    match action.ok_or_else(|| "system capability requires an action".to_string())? {
+        "getInfo" | "get_info" => Ok(json!({
+            "platform": "desktop",
+            "version": env!("CARGO_PKG_VERSION"),
+            "appName": "Peers Touch Desktop",
+            "theme": "system",
+            "networkType": "unknown"
+        })),
+        "getTheme" | "get_theme" => Ok(json!("system")),
+        "getNetworkType" | "get_network_type" => Ok(json!("unknown")),
+        other => Err(format!("Unsupported system action: {}", other)),
+    }
+}
+
+fn handle_device(action: Option<&str>, params: Option<Value>) -> Result<Value, String> {
+    match action.ok_or_else(|| "device capability requires an action".to_string())? {
+        "getSafeArea" | "get_safe_area" => Ok(host_device_command("getSafeArea", json!({}), true)),
+        "getWindowInfo" | "get_window_info" => {
+            Ok(host_device_command("getWindowInfo", json!({}), true))
+        }
+        "vibrate" => {
+            let duration_ms = params
+                .as_ref()
+                .and_then(|value| value.get("durationMs").or_else(|| value.get("duration_ms")))
+                .and_then(Value::as_u64)
+                .unwrap_or(10)
+                .min(500);
+            Ok(json!({ "ok": true, "durationMs": duration_ms }))
+        }
+        other => Err(format!("Unsupported device action: {}", other)),
+    }
+}
+
+fn host_device_command(action: &str, params: Value, returns_result: bool) -> Value {
+    json!({
+        "ok": true,
+        "__hostCommands": [{
+            "type": "device",
+            "action": action,
+            "params": params,
+            "returnsResult": returns_result
+        }]
+    })
+}
+
+fn handle_ui(action: Option<&str>, params: Option<Value>) -> Result<Value, String> {
+    let action = action.ok_or_else(|| "ui capability requires an action".to_string())?;
+    let params = params.unwrap_or_else(|| json!({}));
+    match action {
+        "showToast" | "showLoading" | "hideLoading" | "setNavigationBar" | "set_navigation_bar" => {
+            Ok(host_ui_command(action, params, false))
+        }
+        "showModal" | "showActionSheet" => Ok(host_ui_command(action, params, true)),
+        other => Err(format!("Unsupported ui action: {}", other)),
+    }
+}
+
+fn host_ui_command(action: &str, params: Value, returns_result: bool) -> Value {
+    json!({
+        "ok": true,
+        "__hostCommands": [{
+            "type": "ui",
+            "action": action,
+            "params": params,
+            "returnsResult": returns_result
+        }]
+    })
+}
+
+fn clipboard_store() -> &'static Mutex<HashMap<String, String>> {
+    APPLET_CLIPBOARD_TEXT.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn clipboard_memory_fallback_enabled() -> bool {
+    cfg!(test)
+        || std::env::var(APPLET_CLIPBOARD_MEMORY_FALLBACK_ENV)
+            .ok()
+            .map(|value| value.eq_ignore_ascii_case("memory"))
+            .unwrap_or(false)
+}
+
+fn read_native_clipboard_text() -> Result<String, String> {
+    let mut clipboard = arboard::Clipboard::new()
+        .map_err(|error| format!("native clipboard is unavailable: {}", error))?;
+    clipboard
+        .get_text()
+        .map_err(|error| format!("native clipboard read failed: {}", error))
+}
+
+fn write_native_clipboard_text(text: &str) -> Result<(), String> {
+    let mut clipboard = arboard::Clipboard::new()
+        .map_err(|error| format!("native clipboard is unavailable: {}", error))?;
+    clipboard
+        .set_text(text.to_string())
+        .map_err(|error| format!("native clipboard write failed: {}", error))
+}
+
+fn read_applet_clipboard_text(key: &str) -> Result<String, String> {
+    match read_native_clipboard_text() {
+        Ok(text) => Ok(text),
+        Err(_) if clipboard_memory_fallback_enabled() => {
+            let guard = clipboard_store()
+                .lock()
+                .map_err(|_| "applet clipboard memory fallback is unavailable".to_string())?;
+            Ok(guard.get(key).cloned().unwrap_or_default())
+        }
+        Err(native_error) => Err(native_error),
+    }
+}
+
+fn write_applet_clipboard_text(key: &str, text: &str) -> Result<(), String> {
+    match write_native_clipboard_text(text) {
+        Ok(()) => Ok(()),
+        Err(_) if clipboard_memory_fallback_enabled() => {
+            let mut guard = clipboard_store()
+                .lock()
+                .map_err(|_| "applet clipboard memory fallback is unavailable".to_string())?;
+            guard.insert(key.to_string(), text.to_string());
+            Ok(())
+        }
+        Err(native_error) => Err(native_error),
+    }
+}
+
+fn handle_clipboard(
+    applet_id: &str,
+    session_id: &str,
+    action: Option<&str>,
+    params: Option<Value>,
+) -> Result<Value, String> {
+    let key = session_store_key(applet_id, session_id);
+    match action.ok_or_else(|| "clipboard capability requires an action".to_string())? {
+        "getText" | "get_text" => Ok(json!(read_applet_clipboard_text(&key)?)),
+        "setText" | "set_text" => {
+            let text = extract_string_param(&params, "text")
+                .ok_or_else(|| "clipboard.setText requires params.text (string)".to_string())?;
+            let user_activated = params
+                .as_ref()
+                .and_then(|value| {
+                    value
+                        .get("userActivated")
+                        .or_else(|| value.get("user_activated"))
+                })
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if !user_activated {
+                return Err(
+                    "clipboard.setText requires a user-activated applet gesture".to_string()
+                );
+            }
+            write_applet_clipboard_text(&key, &text)?;
+            Ok(json!({ "ok": true }))
+        }
+        other => Err(format!("Unsupported clipboard action: {}", other)),
+    }
+}
+
+fn event_subscription_store() -> &'static Mutex<HashMap<String, HashSet<String>>> {
+    APPLET_EVENT_SUBSCRIPTIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn event_outbox_store() -> &'static Mutex<HashMap<String, Vec<Value>>> {
+    APPLET_EVENT_OUTBOX.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn handle_events(
+    applet_id: &str,
+    session_id: &str,
+    action: Option<&str>,
+    params: Option<Value>,
+) -> Result<Value, String> {
+    let key = session_store_key(applet_id, session_id);
+    match action.ok_or_else(|| "events capability requires an action".to_string())? {
+        "subscribe" => {
+            let topic = extract_event_topic(&params, "events.subscribe")?;
+            ensure_subscribable_event_topic(&topic)?;
+            let mut guard = event_subscription_store()
+                .lock()
+                .map_err(|_| "applet event subscription registry is unavailable".to_string())?;
+            guard.entry(key).or_default().insert(topic.clone());
+            Ok(json!({ "ok": true, "topic": topic, "subscribed": true }))
+        }
+        "unsubscribe" => {
+            let topic = extract_event_topic(&params, "events.unsubscribe")?;
+            ensure_subscribable_event_topic(&topic)?;
+            let mut guard = event_subscription_store()
+                .lock()
+                .map_err(|_| "applet event subscription registry is unavailable".to_string())?;
+            if let Some(topics) = guard.get_mut(&key) {
+                topics.remove(&topic);
+                if topics.is_empty() {
+                    guard.remove(&key);
+                }
+            }
+            Ok(json!({ "ok": true, "topic": topic, "subscribed": false }))
+        }
+        "emit" => {
+            let topic = extract_event_topic(&params, "events.emit")?;
+            ensure_emit_event_topic(&topic)?;
+            let payload = params
+                .as_ref()
+                .and_then(|value| value.get("payload"))
+                .cloned()
+                .unwrap_or(Value::Null);
+            Ok(with_gateway_events(
+                applet_id,
+                session_id,
+                json!({ "ok": true, "topic": topic }),
+                vec![json!({ "topic": topic, "payload": payload })],
+            ))
+        }
+        "poll" | "drain" => Ok(json!({
+            "ok": true,
+            "events": drain_gateway_events(applet_id, session_id)?
+        })),
+        other => Err(format!("Unsupported events action: {}", other)),
+    }
+}
+
+fn extract_event_topic(params: &Option<Value>, operation: &str) -> Result<String, String> {
+    extract_string_param(params, "topic")
+        .map(|topic| topic.trim().to_string())
+        .filter(|topic| !topic.is_empty())
+        .ok_or_else(|| format!("{} requires params.topic (string)", operation))
+}
+
+fn is_valid_event_topic(topic: &str) -> bool {
+    !topic.is_empty()
+        && topic.len() <= 128
+        && !topic.starts_with('.')
+        && !topic.ends_with('.')
+        && !topic.contains("..")
+        && topic
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+}
+
+fn is_gateway_event_topic(topic: &str) -> bool {
+    matches!(topic, "task.event" | "skill.stream" | "agent.stream")
+}
+
+fn is_custom_event_topic(topic: &str) -> bool {
+    topic.starts_with("applet.") || topic.starts_with("custom.")
+}
+
+fn is_reserved_host_event_topic(topic: &str) -> bool {
+    matches!(
+        topic,
+        "ready" | "show" | "hide" | "pause" | "resume" | "destroy" | "launch"
+    )
+}
+
+fn ensure_subscribable_event_topic(topic: &str) -> Result<(), String> {
+    if !is_valid_event_topic(topic) {
+        return Err(format!("event topic is invalid: {}", topic));
+    }
+    if is_gateway_event_topic(topic) || is_custom_event_topic(topic) {
+        return Ok(());
+    }
+    Err(format!(
+        "event topic is not allowed for applet subscription: {}",
+        topic
+    ))
+}
+
+fn ensure_emit_event_topic(topic: &str) -> Result<(), String> {
+    if is_reserved_host_event_topic(topic) || is_gateway_event_topic(topic) {
+        return Err(format!(
+            "events.emit cannot publish reserved Gateway or lifecycle topic: {}",
+            topic
+        ));
+    }
+    if !is_valid_event_topic(topic) || !is_custom_event_topic(topic) {
+        return Err(format!("events.emit topic is not allowed: {}", topic));
+    }
+    Ok(())
+}
+
+fn is_session_subscribed_to_event(applet_id: &str, session_id: &str, topic: &str) -> bool {
+    event_subscription_store()
+        .lock()
+        .ok()
+        .and_then(|guard| {
+            guard
+                .get(&session_store_key(applet_id, session_id))
+                .map(|topics| topics.contains(topic))
+        })
+        .unwrap_or(false)
 }
 
 // ---------------------------------------------------------------------------
 // Capability: network
 // ---------------------------------------------------------------------------
 
-fn handle_network(action: Option<&str>, params: Option<Value>) -> Result<Value, String> {
+fn handle_network(
+    context: &AccessContext,
+    applet_id: &str,
+    manifest: &AppletGatewayManifest,
+    action: Option<&str>,
+    params: Option<Value>,
+    data_dir: &Path,
+) -> Result<Value, String> {
     let action = action.ok_or_else(|| "network capability requires an action".to_string())?;
 
     match action {
         "request" => {
             let params = params.ok_or_else(|| "network.request requires params".to_string())?;
-
-            let url = params
-                .get("url")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| "network.request requires params.url (string)".to_string())?;
-
-            let method = params
-                .get("method")
-                .and_then(|v| v.as_str())
-                .unwrap_or("GET")
-                .to_uppercase();
-
-            let client = reqwest::blocking::Client::builder()
-                .timeout(std::time::Duration::from_secs(30))
-                .build()
-                .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
-
-            let mut request_builder = match method.as_str() {
-                "GET" => client.get(url),
-                "POST" => client.post(url),
-                "PUT" => client.put(url),
-                "DELETE" => client.delete(url),
-                "PATCH" => client.patch(url),
-                "HEAD" => client.head(url),
-                other => return Err(format!("Unsupported HTTP method: {}", other)),
-            };
-
-            // Apply custom headers
-            if let Some(headers_val) = params.get("headers") {
-                if let Some(headers_obj) = headers_val.as_object() {
-                    for (key, value) in headers_obj {
-                        if let Some(val_str) = value.as_str() {
-                            request_builder = request_builder.header(key.as_str(), val_str);
-                        }
+            let response = perform_network_request(context, manifest, &params, "GET")?;
+            Ok(
+                json!({ "status": response.status, "headers": sanitize_applet_response_headers(response.headers), "body": response.body }),
+            )
+        }
+        "upload" => {
+            let mut params = params.ok_or_else(|| "network.upload requires params".to_string())?;
+            let file_path = params
+                .get("filePath")
+                .or_else(|| params.get("file_path"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            if params.get("body").is_none() {
+                if let Some(file_path) = file_path.as_deref() {
+                    let safe_path = safe_applet_relative_path(file_path)?;
+                    let absolute = applet_files_dir(applet_id, data_dir).join(safe_path);
+                    let content = fs::read_to_string(&absolute).map_err(|error| {
+                        format!(
+                            "network.upload failed to read sandbox file {}: {}",
+                            file_path, error
+                        )
+                    })?;
+                    let file_name = params
+                        .get("fileName")
+                        .or_else(|| params.get("file_name"))
+                        .and_then(Value::as_str)
+                        .unwrap_or(file_path)
+                        .to_string();
+                    if let Some(map) = params.as_object_mut() {
+                        map.insert(
+                            "body".to_string(),
+                            json!({
+                                "fileName": file_name,
+                                "content": content
+                            }),
+                        );
                     }
                 }
             }
-
-            // Apply request body
-            if let Some(body) = params.get("body") {
-                let body_string = match body {
-                    Value::String(s) => s.clone(),
-                    other => other.to_string(),
-                };
-                request_builder = request_builder.body(body_string);
+            let response = perform_network_request(context, manifest, &params, "POST")?;
+            Ok(
+                json!({ "status": response.status, "headers": sanitize_applet_response_headers(response.headers), "body": response.body }),
+            )
+        }
+        "download" => {
+            let params = params.ok_or_else(|| "network.download requires params".to_string())?;
+            let file_path = params
+                .get("filePath")
+                .or_else(|| params.get("file_path"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            let response = perform_network_request(context, manifest, &params, "GET")?;
+            let headers = sanitize_applet_response_headers(response.headers);
+            if let Some(file_path) = file_path {
+                let safe_path = safe_applet_relative_path(&file_path)?;
+                let file_root = applet_files_dir(applet_id, data_dir);
+                let absolute = file_root.join(safe_path);
+                if let Some(parent) = absolute.parent() {
+                    fs::create_dir_all(parent).map_err(|error| {
+                        format!(
+                            "network.download failed to create file directory: {}",
+                            error
+                        )
+                    })?;
+                }
+                let content = response
+                    .body
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| response.body.to_string());
+                fs::write(&absolute, content.as_bytes()).map_err(|error| {
+                    format!(
+                        "network.download failed to write sandbox file {}: {}",
+                        file_path, error
+                    )
+                })?;
+                enforce_file_quota(&file_root)?;
+                Ok(
+                    json!({ "status": response.status, "headers": headers, "file": { "path": file_path, "sizeBytes": content.len() } }),
+                )
+            } else {
+                Ok(json!({ "status": response.status, "headers": headers, "body": response.body }))
             }
-
-            let response = request_builder
-                .send()
-                .map_err(|e| format!("HTTP request to {} failed: {}", url, e))?;
-
-            let status = response.status().as_u16();
-
-            let response_headers: HashMap<String, String> = response
-                .headers()
-                .iter()
-                .filter_map(|(k, v)| {
-                    v.to_str()
-                        .ok()
-                        .map(|val| (k.as_str().to_string(), val.to_string()))
-                })
-                .collect();
-
-            let body = response
-                .text()
-                .map_err(|e| format!("Failed to read response body: {}", e))?;
-
-            Ok(json!({
-                "status": status,
-                "headers": response_headers,
-                "body": body
-            }))
         }
         other => Err(format!("Unsupported network action: {}", other)),
     }
+}
+
+fn perform_network_request(
+    context: &AccessContext,
+    manifest: &AppletGatewayManifest,
+    params: &Value,
+    default_method: &str,
+) -> Result<station_client::JsonHttpResponse, String> {
+    if params.get("url").is_some() {
+        return Err("network.request must use service and path; raw URL is forbidden".to_string());
+    }
+
+    let service = params
+        .get("service")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "network request requires params.service (string)".to_string())?;
+
+    let path = params
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "network request requires params.path (string)".to_string())?;
+
+    if !path.starts_with('/') || path.contains("..") {
+        return Err("network request path must be absolute and sandbox-safe".to_string());
+    }
+
+    let method = params
+        .get("method")
+        .and_then(|v| v.as_str())
+        .unwrap_or(default_method)
+        .to_uppercase();
+
+    if !matches!(
+        method.as_str(),
+        "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD"
+    ) {
+        return Err(format!("Unsupported HTTP method: {}", method));
+    }
+
+    let service = manifest
+        .services
+        .iter()
+        .find(|candidate| candidate.id == service)
+        .ok_or_else(|| format!("network request service is not declared: {}", service))?;
+    ensure_service_allows(service, &method, path)?;
+
+    let service_override = service_override_base_url(&service.id);
+    if service.binding != "station-resolved" && service_override.is_none() {
+        return Err(format!(
+            "network request service binding is not executable by Desktop Gateway: {}",
+            service.binding
+        ));
+    }
+
+    let body = params.get("body").cloned();
+    let http_method = parse_http_method(&method)?;
+    match service_override {
+        Some(base_url) => station_client::request_json_response_base_url(
+            &base_url,
+            http_method,
+            path,
+            &context.token,
+            None,
+            body,
+        ),
+        None => {
+            station_client::request_json_response(http_method, path, &context.token, None, body)
+        }
+    }
+    .map_err(|error| format!("network gateway request failed: {}", error))
+}
+
+fn sanitize_applet_response_headers(headers: Value) -> Value {
+    const ALLOWED_HEADERS: &[&str] = &[
+        "cache-control",
+        "content-length",
+        "content-type",
+        "etag",
+        "last-modified",
+        "x-correlation-id",
+        "x-request-id",
+    ];
+
+    let Some(map) = headers.as_object() else {
+        return json!({});
+    };
+    let mut sanitized = serde_json::Map::new();
+    for (name, value) in map {
+        let lower = name.to_ascii_lowercase();
+        if ALLOWED_HEADERS.contains(&lower.as_str()) {
+            sanitized.insert(lower, value.clone());
+        }
+    }
+    Value::Object(sanitized)
+}
+
+fn service_override_base_url(service_id: &str) -> Option<String> {
+    let suffix = service_id
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    std::env::var(format!("PEERS_APPLET_SERVICE_{}", suffix))
+        .ok()
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .filter(|value| {
+            value.starts_with("http://127.0.0.1:") || value.starts_with("http://localhost:")
+        })
+}
+
+fn ensure_service_allows(
+    service: &AppletGatewayService,
+    method: &str,
+    path: &str,
+) -> Result<(), String> {
+    if service.kind != "http" {
+        return Err(format!("Unsupported service kind: {}", service.kind));
+    }
+    if !service
+        .allowed_methods
+        .iter()
+        .any(|allowed| allowed.eq_ignore_ascii_case(method))
+    {
+        return Err(format!(
+            "Service {} does not allow method {}",
+            service.id, method
+        ));
+    }
+    if !service
+        .allowed_paths
+        .iter()
+        .any(|pattern| path_matches(pattern, path))
+    {
+        return Err(format!(
+            "Service {} does not allow path {}",
+            service.id, path
+        ));
+    }
+    Ok(())
+}
+
+fn path_matches(pattern: &str, path: &str) -> bool {
+    if pattern == path {
+        return true;
+    }
+    pattern
+        .strip_suffix('*')
+        .map(|prefix| path.starts_with(prefix))
+        .unwrap_or(false)
+}
+
+fn parse_http_method(method: &str) -> Result<Method, String> {
+    method
+        .parse::<Method>()
+        .map_err(|error| format!("Unsupported HTTP method {}: {}", method, error))
+}
+
+// ---------------------------------------------------------------------------
+// Capability: file
+// ---------------------------------------------------------------------------
+
+fn applet_files_dir(applet_id: &str, data_dir: &Path) -> PathBuf {
+    data_dir.join("applets").join(applet_id).join("files")
+}
+
+fn safe_applet_relative_path(path: &str) -> Result<PathBuf, String> {
+    let trimmed = path.trim().trim_start_matches("./");
+    if trimmed.is_empty()
+        || trimmed.starts_with('/')
+        || trimmed.contains("..")
+        || trimmed.contains('\\')
+    {
+        return Err(format!("Applet file path is outside the sandbox: {}", path));
+    }
+    Ok(PathBuf::from(trimmed))
+}
+
+fn applet_file_path(applet_id: &str, data_dir: &Path, path: &str) -> Result<PathBuf, String> {
+    Ok(applet_files_dir(applet_id, data_dir).join(safe_applet_relative_path(path)?))
+}
+
+fn directory_size_bytes(path: &Path) -> Result<usize, String> {
+    if !path.exists() {
+        return Ok(0);
+    }
+    let mut total = 0usize;
+    for entry in fs::read_dir(path)
+        .map_err(|error| format!("Failed to read file sandbox {}: {}", path.display(), error))?
+    {
+        let entry = entry.map_err(|error| format!("Failed to inspect file sandbox: {}", error))?;
+        let metadata = entry
+            .metadata()
+            .map_err(|error| format!("Failed to inspect applet file metadata: {}", error))?;
+        if metadata.is_dir() {
+            total = total.saturating_add(directory_size_bytes(&entry.path())?);
+        } else {
+            total = total.saturating_add(metadata.len() as usize);
+        }
+    }
+    Ok(total)
+}
+
+fn enforce_file_quota(root: &Path) -> Result<(), String> {
+    let used_bytes = directory_size_bytes(root)?;
+    if used_bytes > APPLET_FILE_QUOTA_BYTES {
+        return Err(format!(
+            "file quota exceeded: {} > {} bytes",
+            used_bytes, APPLET_FILE_QUOTA_BYTES
+        ));
+    }
+    Ok(())
+}
+
+fn collect_file_entries(
+    root: &Path,
+    current: &Path,
+    entries: &mut Vec<Value>,
+) -> Result<(), String> {
+    if !current.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(current).map_err(|error| {
+        format!(
+            "Failed to read file sandbox {}: {}",
+            current.display(),
+            error
+        )
+    })? {
+        let entry = entry.map_err(|error| format!("Failed to inspect file sandbox: {}", error))?;
+        let metadata = entry
+            .metadata()
+            .map_err(|error| format!("Failed to inspect applet file metadata: {}", error))?;
+        let path = entry.path();
+        let relative = path
+            .strip_prefix(root)
+            .map_err(|error| format!("Failed to resolve sandbox file path: {}", error))?
+            .to_string_lossy()
+            .replace('\\', "/");
+        if metadata.is_dir() {
+            entries.push(json!({ "path": relative, "kind": "directory", "sizeBytes": 0 }));
+            collect_file_entries(root, &path, entries)?;
+        } else {
+            entries.push(json!({ "path": relative, "kind": "file", "sizeBytes": metadata.len() }));
+        }
+    }
+    Ok(())
+}
+
+fn handle_file(
+    applet_id: &str,
+    action: Option<&str>,
+    params: Option<Value>,
+    data_dir: &Path,
+) -> Result<Value, String> {
+    let root = applet_files_dir(applet_id, data_dir);
+    match action.ok_or_else(|| "file capability requires an action".to_string())? {
+        "read" => {
+            let path = extract_string_param(&params, "path")
+                .ok_or_else(|| "file.read requires params.path (string)".to_string())?;
+            let absolute = applet_file_path(applet_id, data_dir, &path)?;
+            let content = fs::read_to_string(&absolute)
+                .map_err(|error| format!("Failed to read applet file {}: {}", path, error))?;
+            Ok(
+                json!({ "path": path, "content": content, "sizeBytes": content.len(), "encoding": "utf8" }),
+            )
+        }
+        "write" => {
+            let path = extract_string_param(&params, "path")
+                .ok_or_else(|| "file.write requires params.path (string)".to_string())?;
+            let content = extract_string_param(&params, "content")
+                .ok_or_else(|| "file.write requires params.content (string)".to_string())?;
+            let absolute = applet_file_path(applet_id, data_dir, &path)?;
+            if let Some(parent) = absolute.parent() {
+                fs::create_dir_all(parent).map_err(|error| {
+                    format!("Failed to create applet file directory: {}", error)
+                })?;
+            }
+            fs::write(&absolute, content.as_bytes())
+                .map_err(|error| format!("Failed to write applet file {}: {}", path, error))?;
+            enforce_file_quota(&root)?;
+            Ok(json!({ "path": path, "sizeBytes": content.len() }))
+        }
+        "delete" => {
+            let path = extract_string_param(&params, "path")
+                .ok_or_else(|| "file.delete requires params.path (string)".to_string())?;
+            let absolute = applet_file_path(applet_id, data_dir, &path)?;
+            if absolute.exists() {
+                fs::remove_file(&absolute)
+                    .map_err(|error| format!("Failed to delete applet file {}: {}", path, error))?;
+            }
+            Ok(json!({ "ok": true }))
+        }
+        "list" => {
+            let scope = extract_string_param(&params, "path").unwrap_or_else(|| ".".to_string());
+            let base = if scope == "." {
+                root.clone()
+            } else {
+                root.join(safe_applet_relative_path(&scope)?)
+            };
+            let mut entries = Vec::new();
+            collect_file_entries(&root, &base, &mut entries)?;
+            entries.sort_by(|left, right| left["path"].as_str().cmp(&right["path"].as_str()));
+            Ok(Value::Array(entries))
+        }
+        "getInfo" | "get_info" => {
+            let mut entries = Vec::new();
+            collect_file_entries(&root, &root, &mut entries)?;
+            entries.sort_by(|left, right| left["path"].as_str().cmp(&right["path"].as_str()));
+            Ok(json!({
+                "quotaBytes": APPLET_FILE_QUOTA_BYTES,
+                "usedBytes": directory_size_bytes(&root)?,
+                "entries": entries
+            }))
+        }
+        other => Err(format!("Unsupported file action: {}", other)),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Capability: skills / tasks / agent / ai / telemetry
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AppletTaskRecord {
+    task_id: String,
+    request_id: String,
+    applet_id: String,
+    session_id: String,
+    state: String,
+    input: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    output: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+    updated_at: String,
+    sequence: u64,
+    #[serde(default)]
+    started_at_ms: u128,
+    #[serde(default)]
+    complete_after_ms: u64,
+}
+
+static APPLET_TASKS: OnceLock<Mutex<HashMap<String, AppletTaskRecord>>> = OnceLock::new();
+static APPLET_RUNTIME_SKILLS: OnceLock<Mutex<HashMap<String, Vec<Value>>>> = OnceLock::new();
+
+fn task_store() -> &'static Mutex<HashMap<String, AppletTaskRecord>> {
+    APPLET_TASKS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn task_store_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("applets").join("runtime").join("tasks.json")
+}
+
+fn load_persisted_tasks(data_dir: &Path) -> Result<(), String> {
+    let path = task_store_path(data_dir);
+    if !path.exists() {
+        return Ok(());
+    }
+    let content = fs::read_to_string(&path).map_err(|error| {
+        format!(
+            "Failed to read applet task store {}: {}",
+            path.display(),
+            error
+        )
+    })?;
+    if content.trim().is_empty() {
+        return Ok(());
+    }
+    let persisted =
+        serde_json::from_str::<HashMap<String, AppletTaskRecord>>(&content).map_err(|error| {
+            format!(
+                "Failed to parse applet task store {}: {}",
+                path.display(),
+                error
+            )
+        })?;
+    let mut guard = task_store()
+        .lock()
+        .map_err(|_| "applet task store is unavailable".to_string())?;
+    for (task_id, record) in persisted {
+        guard.entry(task_id).or_insert(record);
+    }
+    Ok(())
+}
+
+fn persist_tasks(data_dir: &Path) -> Result<(), String> {
+    let path = task_store_path(data_dir);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "Failed to create applet task store directory {}: {}",
+                parent.display(),
+                error
+            )
+        })?;
+    }
+    let guard = task_store()
+        .lock()
+        .map_err(|_| "applet task store is unavailable".to_string())?;
+    let content = serde_json::to_string_pretty(&*guard)
+        .map_err(|error| format!("Failed to serialize applet task store: {}", error))?;
+    fs::write(&path, content).map_err(|error| {
+        format!(
+            "Failed to write applet task store {}: {}",
+            path.display(),
+            error
+        )
+    })
+}
+
+#[cfg(test)]
+fn remove_task_record_for_test(task_id: &str) {
+    if let Ok(mut guard) = task_store().lock() {
+        guard.remove(task_id);
+    }
+}
+
+#[cfg(test)]
+fn set_quota_record_for_test(applet_id: &str, session_id: &str, count: u32) {
+    if let Ok(mut guard) = quota_store().lock() {
+        guard.insert(
+            session_store_key(applet_id, session_id),
+            AppletQuotaRecord {
+                window_start_ms: now_millis(),
+                count,
+            },
+        );
+    }
+}
+
+fn runtime_skill_store() -> &'static Mutex<HashMap<String, Vec<Value>>> {
+    APPLET_RUNTIME_SKILLS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn session_store_key(applet_id: &str, session_id: &str) -> String {
+    format!("{}:{}", applet_id, session_id)
+}
+
+fn clear_session_work(applet_id: &str, session_id: &str) {
+    let key = session_store_key(applet_id, session_id);
+    if let Ok(mut guard) = task_store().lock() {
+        guard.retain(|_, record| record.applet_id != applet_id || record.session_id != session_id);
+    }
+    if let Ok(mut guard) = runtime_skill_store().lock() {
+        guard.remove(&key);
+    }
+    if let Ok(mut guard) = event_subscription_store().lock() {
+        guard.remove(&key);
+    }
+    if let Ok(mut guard) = event_outbox_store().lock() {
+        guard.remove(&key);
+    }
+    if let Ok(mut guard) = quota_store().lock() {
+        guard.remove(&key);
+    }
+}
+
+fn now_millis() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0)
+}
+
+fn now_timestamp() -> String {
+    let millis = now_millis();
+    let seconds = (millis / 1000) as i64;
+    let nanos = ((millis % 1000) * 1_000_000) as u32;
+    match time::OffsetDateTime::from_unix_timestamp(seconds) {
+        Ok(timestamp) => timestamp
+            .replace_nanosecond(nanos)
+            .unwrap_or(timestamp)
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap_or_else(|_| millis.to_string()),
+        Err(_) => millis.to_string(),
+    }
+}
+
+fn with_gateway_events(
+    applet_id: &str,
+    session_id: &str,
+    mut response: Value,
+    events: Vec<Value>,
+) -> Value {
+    let deliverable_events = events
+        .into_iter()
+        .filter(|event| {
+            event
+                .get("topic")
+                .and_then(Value::as_str)
+                .map(|topic| is_session_subscribed_to_event(applet_id, session_id, topic))
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+    if !deliverable_events.is_empty() {
+        if let Some(map) = response.as_object_mut() {
+            map.insert("__events".to_string(), Value::Array(deliverable_events));
+        }
+    }
+    response
+}
+
+fn enqueue_gateway_events(
+    applet_id: &str,
+    session_id: &str,
+    events: Vec<Value>,
+) -> Result<(), String> {
+    let deliverable_events = events
+        .into_iter()
+        .filter(|event| {
+            event
+                .get("topic")
+                .and_then(Value::as_str)
+                .map(|topic| is_session_subscribed_to_event(applet_id, session_id, topic))
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+    if deliverable_events.is_empty() {
+        return Ok(());
+    }
+
+    let key = session_store_key(applet_id, session_id);
+    let mut guard = event_outbox_store()
+        .lock()
+        .map_err(|_| "applet event outbox is unavailable".to_string())?;
+    let entry = guard.entry(key).or_default();
+    entry.extend(deliverable_events);
+    if entry.len() > 128 {
+        let overflow = entry.len() - 128;
+        entry.drain(0..overflow);
+    }
+    Ok(())
+}
+
+fn drain_gateway_events(applet_id: &str, session_id: &str) -> Result<Vec<Value>, String> {
+    let key = session_store_key(applet_id, session_id);
+    let mut guard = event_outbox_store()
+        .lock()
+        .map_err(|_| "applet event outbox is unavailable".to_string())?;
+    Ok(guard.remove(&key).unwrap_or_default())
+}
+
+fn task_event(record: &AppletTaskRecord, state: &str, payload: Value) -> Value {
+    json!({
+        "topic": "task.event",
+        "payload": {
+            "taskId": record.task_id,
+            "requestId": record.request_id,
+            "state": state,
+            "payload": payload,
+            "sequence": record.sequence,
+            "timestamp": now_timestamp()
+        }
+    })
+}
+
+fn task_complete_after_ms(params: &Value) -> u64 {
+    let configured = params
+        .get("completeAfterMs")
+        .or_else(|| params.get("complete_after_ms"))
+        .or_else(|| {
+            params.get("options").and_then(|options| {
+                options
+                    .get("completeAfterMs")
+                    .or_else(|| options.get("complete_after_ms"))
+            })
+        })
+        .and_then(Value::as_u64)
+        .or_else(|| {
+            std::env::var("PEERS_APPLET_TASK_COMPLETE_AFTER_MS")
+                .ok()
+                .and_then(|value| value.parse::<u64>().ok())
+        })
+        .unwrap_or(DEFAULT_APPLET_TASK_COMPLETE_AFTER_MS);
+    configured.min(DEFAULT_GATEWAY_TIMEOUT_MS)
+}
+
+fn advance_task_record(record: &mut AppletTaskRecord) -> Option<Value> {
+    if record.state != "running" && record.state != "progress" {
+        return None;
+    }
+
+    let started_at_ms = if record.started_at_ms == 0 {
+        record.started_at_ms = now_millis();
+        record.started_at_ms
+    } else {
+        record.started_at_ms
+    };
+    let elapsed_ms = now_millis().saturating_sub(started_at_ms);
+
+    if elapsed_ms >= u128::from(record.complete_after_ms) {
+        record.state = "completed".to_string();
+        record.sequence += 1;
+        record.updated_at = now_timestamp();
+        record.output = Some(record.input.clone());
+        record.error = None;
+        return Some(task_event(
+            record,
+            "completed",
+            json!({ "progress": 1, "output": record.output }),
+        ));
+    }
+
+    let progress_at_ms = u128::from(record.complete_after_ms / 2);
+    if record.state == "running" && elapsed_ms >= progress_at_ms {
+        record.state = "progress".to_string();
+        record.sequence += 1;
+        record.updated_at = now_timestamp();
+        return Some(task_event(record, "progress", json!({ "progress": 0.5 })));
+    }
+
+    None
+}
+
+fn schedule_task_completion(task_id: String, data_dir: PathBuf, complete_after_ms: u64) {
+    std::thread::spawn(move || {
+        if complete_after_ms > 0 {
+            std::thread::sleep(Duration::from_millis(complete_after_ms));
+        }
+
+        let mut guard = match task_store().lock() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+        let Some(record) = guard.get_mut(&task_id) else {
+            return;
+        };
+        if record.state == "completed" || record.state == "cancelled" || record.state == "failed" {
+            return;
+        }
+        record.state = "completed".to_string();
+        record.sequence += 1;
+        record.updated_at = now_timestamp();
+        record.output = Some(record.input.clone());
+        record.error = None;
+        let applet_id = record.applet_id.clone();
+        let session_id = record.session_id.clone();
+        let event = task_event(
+            record,
+            "completed",
+            json!({ "progress": 1, "output": record.output }),
+        );
+        drop(guard);
+
+        if let Err(error) = enqueue_gateway_events(&applet_id, &session_id, vec![event]) {
+            tracing::warn!(error = %error, task_id = %task_id, "Failed to enqueue completed applet task event");
+        }
+        if let Err(error) = persist_tasks(&data_dir) {
+            tracing::warn!(error = %error, task_id = %task_id, "Failed to persist completed applet task");
+        }
+    });
+}
+
+fn handle_skills(
+    context: &AccessContext,
+    applet_id: &str,
+    session_id: &str,
+    manifest: &AppletGatewayManifest,
+    action: Option<&str>,
+    params: Option<Value>,
+) -> Result<Value, String> {
+    match action.ok_or_else(|| "skills capability requires an action".to_string())? {
+        "register" => {
+            let spec = params
+                .as_ref()
+                .and_then(|value| value.get("spec"))
+                .cloned()
+                .ok_or_else(|| "skills.register requires params.spec".to_string())?;
+            let skill_id = spec
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "skills.register requires spec.id".to_string())?
+                .to_string();
+            let mut descriptor = spec;
+            if let Some(map) = descriptor.as_object_mut() {
+                map.insert("enabled".to_string(), Value::Bool(true));
+            }
+            let mut guard = runtime_skill_store()
+                .lock()
+                .map_err(|_| "runtime skill registry is unavailable".to_string())?;
+            let entry = guard
+                .entry(session_store_key(applet_id, session_id))
+                .or_default();
+            entry
+                .retain(|skill| skill.get("id").and_then(Value::as_str) != Some(skill_id.as_str()));
+            entry.push(descriptor);
+            Ok(json!({ "ok": true, "skillId": skill_id }))
+        }
+        "list" => {
+            let mut skills = manifest
+                .skills
+                .iter()
+                .map(|skill| {
+                    let mut descriptor = json!({
+                        "id": skill.id,
+                        "inputSchema": skill.input_schema,
+                        "streaming": skill.streaming,
+                        "enabled": true
+                    });
+                    if let Some(map) = descriptor.as_object_mut() {
+                        if let Some(executor) = &skill.executor {
+                            map.insert("executor".to_string(), executor.clone());
+                        }
+                    }
+                    descriptor
+                })
+                .collect::<Vec<_>>();
+            let guard = runtime_skill_store()
+                .lock()
+                .map_err(|_| "runtime skill registry is unavailable".to_string())?;
+            if let Some(runtime_skills) = guard.get(&session_store_key(applet_id, session_id)) {
+                skills.extend(runtime_skills.iter().cloned());
+            }
+            Ok(Value::Array(skills))
+        }
+        "invoke" => invoke_skill(context, applet_id, session_id, manifest, params),
+        other => Err(format!("Unsupported skills action: {}", other)),
+    }
+}
+
+fn invoke_skill(
+    context: &AccessContext,
+    applet_id: &str,
+    session_id: &str,
+    manifest: &AppletGatewayManifest,
+    params: Option<Value>,
+) -> Result<Value, String> {
+    let params = params.ok_or_else(|| "skills.invoke requires params".to_string())?;
+    let skill_id = params
+        .get("skillId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "skills.invoke requires params.skillId".to_string())?;
+    let request_id = params
+        .get("options")
+        .and_then(|options| options.get("requestId"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(build_request_id);
+    let input = params.get("input").cloned().unwrap_or(Value::Null);
+    let input_policy_deny = input
+        .get("policyDeny")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let input_fail = input.get("fail").and_then(Value::as_bool).unwrap_or(false);
+    let stream = params
+        .get("options")
+        .and_then(|options| options.get("stream"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+
+    let descriptor = match skill_descriptor(applet_id, session_id, manifest, skill_id)? {
+        Some(descriptor) => descriptor,
+        None => {
+            return Ok(
+                json!({ "ok": false, "skillId": skill_id, "requestId": request_id, "error": "POLICY_DENIED: skill is not registered for this applet session" }),
+            );
+        }
+    };
+
+    if let Some(network_params) = skill_network_executor_params(&descriptor, &input) {
+        return invoke_network_skill(
+            context,
+            applet_id,
+            session_id,
+            manifest,
+            skill_id,
+            &request_id,
+            input,
+            stream,
+            network_params,
+        );
+    }
+
+    if let Some(agent_params) = skill_agent_executor_params(&descriptor, &input) {
+        return invoke_agent_skill(
+            context,
+            applet_id,
+            session_id,
+            manifest,
+            skill_id,
+            &request_id,
+            input,
+            stream,
+            agent_params,
+        );
+    }
+
+    if descriptor.get("executor").is_some() {
+        return Ok(
+            json!({ "ok": false, "skillId": skill_id, "requestId": request_id, "error": "CAPABILITY_FAILED: unsupported skill executor" }),
+        );
+    }
+
+    if product_executors_required(Some(&params)) {
+        return Ok(
+            json!({ "ok": false, "skillId": skill_id, "requestId": request_id, "error": "CAPABILITY_FAILED: product skill executor is required" }),
+        );
+    }
+
+    if input_policy_deny {
+        return Ok(
+            json!({ "ok": false, "skillId": skill_id, "requestId": request_id, "error": "POLICY_DENIED" }),
+        );
+    }
+    if input_fail {
+        return Ok(
+            json!({ "ok": false, "skillId": skill_id, "requestId": request_id, "error": "CAPABILITY_FAILED" }),
+        );
+    }
+
+    let events = if stream {
+        vec![
+            json!({ "topic": "skill.stream", "payload": { "skillId": skill_id, "requestId": request_id, "type": "progress", "payload": { "progress": 0.5 }, "sequence": 1 }}),
+            json!({ "topic": "skill.stream", "payload": { "skillId": skill_id, "requestId": request_id, "type": "final", "payload": input, "sequence": 2 }}),
+        ]
+    } else {
+        Vec::new()
+    };
+    Ok(with_gateway_events(
+        applet_id,
+        session_id,
+        json!({ "ok": true, "skillId": skill_id, "requestId": request_id, "output": input }),
+        events,
+    ))
+}
+
+fn invoke_network_skill(
+    context: &AccessContext,
+    applet_id: &str,
+    session_id: &str,
+    manifest: &AppletGatewayManifest,
+    skill_id: &str,
+    request_id: &str,
+    input: Value,
+    stream: bool,
+    network_params: Value,
+) -> Result<Value, String> {
+    let execution = perform_network_request(context, manifest, &network_params, "POST");
+    let (result, terminal_event) = match execution {
+        Ok(response) => {
+            let output = json!({
+                "executor": "network",
+                "status": response.status,
+                "headers": sanitize_applet_response_headers(response.headers),
+                "body": response.body
+            });
+            (
+                json!({ "ok": true, "skillId": skill_id, "requestId": request_id, "output": output }),
+                json!({ "topic": "skill.stream", "payload": { "skillId": skill_id, "requestId": request_id, "type": "final", "payload": output, "sequence": 2 }}),
+            )
+        }
+        Err(error) => (
+            json!({ "ok": false, "skillId": skill_id, "requestId": request_id, "error": error }),
+            json!({ "topic": "skill.stream", "payload": { "skillId": skill_id, "requestId": request_id, "type": "error", "payload": { "input": input, "error": error }, "sequence": 2 }}),
+        ),
+    };
+    let events = if stream {
+        vec![
+            json!({ "topic": "skill.stream", "payload": { "skillId": skill_id, "requestId": request_id, "type": "progress", "payload": { "progress": 0.5 }, "sequence": 1 }}),
+            terminal_event,
+        ]
+    } else {
+        Vec::new()
+    };
+    Ok(with_gateway_events(applet_id, session_id, result, events))
+}
+
+fn invoke_agent_skill(
+    context: &AccessContext,
+    applet_id: &str,
+    session_id: &str,
+    manifest: &AppletGatewayManifest,
+    skill_id: &str,
+    request_id: &str,
+    input: Value,
+    stream: bool,
+    agent_params: Value,
+) -> Result<Value, String> {
+    if !authorize_manifest_permission(&manifest.permissions, "agent.stream") {
+        let error =
+            "PERMISSION_DENIED: agent.stream permission is required for agent skill executor"
+                .to_string();
+        return Ok(skill_executor_error_result(
+            applet_id, session_id, skill_id, request_id, input, stream, error,
+        ));
+    }
+
+    let message = agent_params
+        .get("message")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            "agent skill executor requires request.message or input.message".to_string()
+        })?;
+    let body = json!({
+        "agentSessionId": agent_params.get("agentSessionId").cloned(),
+        "message": message,
+        "metadata": agent_params.get("metadata").cloned().unwrap_or_else(|| json!({})),
+    });
+    let execution = station_client::request_json(
+        Method::POST,
+        "/agent/turn/execute",
+        &context.token,
+        None,
+        Some(body),
+    )
+    .map_err(|error| format!("agent skill executor request failed: {}", error));
+    let (result, terminal_event) = match execution {
+        Ok(response) => {
+            let output = json!({
+                "executor": "agent",
+                "response": response
+            });
+            (
+                json!({ "ok": true, "skillId": skill_id, "requestId": request_id, "output": output }),
+                json!({ "topic": "skill.stream", "payload": { "skillId": skill_id, "requestId": request_id, "type": "final", "payload": output, "sequence": 2 }}),
+            )
+        }
+        Err(error) => (
+            json!({ "ok": false, "skillId": skill_id, "requestId": request_id, "error": error }),
+            json!({ "topic": "skill.stream", "payload": { "skillId": skill_id, "requestId": request_id, "type": "error", "payload": { "input": input, "error": error }, "sequence": 2 }}),
+        ),
+    };
+    let events = if stream {
+        vec![
+            json!({ "topic": "skill.stream", "payload": { "skillId": skill_id, "requestId": request_id, "type": "progress", "payload": { "progress": 0.5 }, "sequence": 1 }}),
+            terminal_event,
+        ]
+    } else {
+        Vec::new()
+    };
+    Ok(with_gateway_events(applet_id, session_id, result, events))
+}
+
+fn skill_executor_error_result(
+    applet_id: &str,
+    session_id: &str,
+    skill_id: &str,
+    request_id: &str,
+    input: Value,
+    stream: bool,
+    error: String,
+) -> Value {
+    let result =
+        json!({ "ok": false, "skillId": skill_id, "requestId": request_id, "error": error });
+    let events = if stream {
+        vec![
+            json!({ "topic": "skill.stream", "payload": { "skillId": skill_id, "requestId": request_id, "type": "error", "payload": { "input": input, "error": error }, "sequence": 1 }}),
+        ]
+    } else {
+        Vec::new()
+    };
+    with_gateway_events(applet_id, session_id, result, events)
+}
+
+fn skill_network_executor_params(descriptor: &Value, input: &Value) -> Option<Value> {
+    let executor = descriptor.get("executor")?;
+    if executor.get("type").and_then(Value::as_str) != Some("network") {
+        return None;
+    }
+    let mut request = executor.get("request")?.clone();
+    if request.get("body").is_none() {
+        if let Some(map) = request.as_object_mut() {
+            map.insert("body".to_string(), input.clone());
+        }
+    }
+    Some(request)
+}
+
+fn skill_agent_executor_params(descriptor: &Value, input: &Value) -> Option<Value> {
+    let executor = descriptor.get("executor")?;
+    if executor.get("type").and_then(Value::as_str) != Some("agent") {
+        return None;
+    }
+    let mut request = executor
+        .get("request")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    if let Some(map) = request.as_object_mut() {
+        if map.get("message").is_none() {
+            if let Some(message) = input.get("message").and_then(Value::as_str) {
+                map.insert("message".to_string(), Value::String(message.to_string()));
+            }
+        }
+        if map.get("agentSessionId").is_none() {
+            if let Some(agent_session_id) = input.get("agentSessionId").and_then(Value::as_str) {
+                map.insert(
+                    "agentSessionId".to_string(),
+                    Value::String(agent_session_id.to_string()),
+                );
+            }
+        }
+        if map.get("metadata").is_none() {
+            if let Some(metadata) = input.get("metadata").cloned() {
+                map.insert("metadata".to_string(), metadata);
+            }
+        }
+    }
+    Some(request)
+}
+
+fn skill_descriptor(
+    applet_id: &str,
+    session_id: &str,
+    manifest: &AppletGatewayManifest,
+    skill_id: &str,
+) -> Result<Option<Value>, String> {
+    if let Some(skill) = manifest.skills.iter().find(|skill| skill.id == skill_id) {
+        let mut descriptor = json!({
+            "id": skill.id,
+            "inputSchema": skill.input_schema,
+            "streaming": skill.streaming,
+            "enabled": true
+        });
+        if let Some(map) = descriptor.as_object_mut() {
+            if let Some(executor) = &skill.executor {
+                map.insert("executor".to_string(), executor.clone());
+            }
+        }
+        return Ok(Some(descriptor));
+    }
+    let guard = runtime_skill_store()
+        .lock()
+        .map_err(|_| "runtime skill registry is unavailable".to_string())?;
+    Ok(guard
+        .get(&session_store_key(applet_id, session_id))
+        .and_then(|skills| {
+            skills
+                .iter()
+                .find(|skill| skill.get("id").and_then(Value::as_str) == Some(skill_id))
+                .cloned()
+        }))
+}
+
+fn task_network_executor_params(params: &Value) -> Option<Value> {
+    let executor = params
+        .get("executor")
+        .or_else(|| params.get("executorType"))
+        .or_else(|| params.get("executor_type"))
+        .or_else(|| params.get("taskType"))
+        .or_else(|| params.get("task_type"))
+        .and_then(Value::as_str)?;
+    if executor != "network" && executor != "network.request" {
+        return None;
+    }
+
+    let input = params.get("input");
+    params
+        .get("request")
+        .or_else(|| params.get("network"))
+        .or_else(|| input.and_then(|value| value.get("request")))
+        .or_else(|| input.and_then(|value| value.get("network")))
+        .cloned()
+        .or_else(|| {
+            let request_source = if params.get("service").is_some() && params.get("path").is_some()
+            {
+                params
+            } else {
+                input?
+            };
+            let service = request_source.get("service")?.clone();
+            let path = request_source.get("path")?.clone();
+            let mut request = serde_json::Map::new();
+            request.insert("service".to_string(), service);
+            request.insert("path".to_string(), path);
+            for key in ["method", "headers", "body", "timeoutMs", "timeout_ms"] {
+                if let Some(value) = request_source.get(key) {
+                    request.insert(key.to_string(), value.clone());
+                }
+            }
+            Some(Value::Object(request))
+        })
+}
+
+fn task_agent_executor_params(params: &Value) -> Option<Value> {
+    let executor = params
+        .get("executor")
+        .or_else(|| params.get("executorType"))
+        .or_else(|| params.get("executor_type"))
+        .or_else(|| params.get("taskType"))
+        .or_else(|| params.get("task_type"))
+        .and_then(Value::as_str)?;
+    if executor != "agent" && executor != "agent.stream" {
+        return None;
+    }
+
+    let input = params.get("input");
+    let mut request = params
+        .get("request")
+        .or_else(|| params.get("agent"))
+        .or_else(|| input.and_then(|value| value.get("request")))
+        .or_else(|| input.and_then(|value| value.get("agent")))
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+
+    if let Some(map) = request.as_object_mut() {
+        let source = input.unwrap_or(params);
+        if map.get("message").is_none() {
+            if let Some(message) = source.get("message").and_then(Value::as_str) {
+                map.insert("message".to_string(), Value::String(message.to_string()));
+            }
+        }
+        if map.get("agentSessionId").is_none() {
+            if let Some(agent_session_id) = source.get("agentSessionId").and_then(Value::as_str) {
+                map.insert(
+                    "agentSessionId".to_string(),
+                    Value::String(agent_session_id.to_string()),
+                );
+            }
+        }
+        if map.get("metadata").is_none() {
+            if let Some(metadata) = source.get("metadata").cloned() {
+                map.insert("metadata".to_string(), metadata);
+            }
+        }
+    }
+
+    Some(request)
+}
+
+fn handle_tasks(
+    context: &AccessContext,
+    applet_id: &str,
+    session_id: &str,
+    manifest: &AppletGatewayManifest,
+    action: Option<&str>,
+    params: Option<Value>,
+    data_dir: &Path,
+) -> Result<Value, String> {
+    load_persisted_tasks(data_dir)?;
+    match action.ok_or_else(|| "tasks capability requires an action".to_string())? {
+        "start" => {
+            let task_id = build_request_id();
+            let request_id = build_request_id();
+            let input = params.unwrap_or_else(|| json!({}));
+            let started_at_ms = now_millis();
+            let record = AppletTaskRecord {
+                task_id: task_id.clone(),
+                request_id,
+                applet_id: applet_id.to_string(),
+                session_id: session_id.to_string(),
+                state: "queued".to_string(),
+                input: input.clone(),
+                output: None,
+                error: None,
+                updated_at: now_timestamp(),
+                sequence: 1,
+                started_at_ms,
+                complete_after_ms: task_complete_after_ms(&input),
+            };
+            let queued = task_event(&record, "queued", json!({ "progress": 0 }));
+            let mut running_record = record.clone();
+            running_record.state = "running".to_string();
+            running_record.sequence = 2;
+            running_record.updated_at = now_timestamp();
+            let running = task_event(&running_record, "running", json!({ "progress": 0.1 }));
+            let mut guard = task_store()
+                .lock()
+                .map_err(|_| "applet task store is unavailable".to_string())?;
+            guard.insert(task_id.clone(), running_record.clone());
+            drop(guard);
+
+            if let Some(network_params) = task_network_executor_params(&input) {
+                let execution = perform_network_request(context, manifest, &network_params, "GET");
+                let mut guard = task_store()
+                    .lock()
+                    .map_err(|_| "applet task store is unavailable".to_string())?;
+                let record = guard
+                    .get_mut(&task_id)
+                    .ok_or_else(|| format!("Applet task not found after start: {}", task_id))?;
+                let terminal_event = match execution {
+                    Ok(response) => {
+                        let output = json!({
+                            "executor": "network",
+                            "status": response.status,
+                            "headers": sanitize_applet_response_headers(response.headers),
+                            "body": response.body
+                        });
+                        record.state = "completed".to_string();
+                        record.output = Some(output.clone());
+                        record.error = None;
+                        record.sequence += 1;
+                        record.updated_at = now_timestamp();
+                        task_event(
+                            record,
+                            "completed",
+                            json!({ "progress": 1, "output": output }),
+                        )
+                    }
+                    Err(error) => {
+                        record.state = "failed".to_string();
+                        record.output = None;
+                        record.error = Some(error.clone());
+                        record.sequence += 1;
+                        record.updated_at = now_timestamp();
+                        task_event(record, "failed", json!({ "error": error }))
+                    }
+                };
+                let response = with_gateway_events(
+                    applet_id,
+                    session_id,
+                    task_record_json(record),
+                    vec![queued, running, terminal_event],
+                );
+                drop(guard);
+                persist_tasks(data_dir)?;
+                return Ok(response);
+            }
+
+            if let Some(agent_params) = task_agent_executor_params(&input) {
+                let execution = if authorize_manifest_permission(
+                    &manifest.permissions,
+                    "agent.stream",
+                ) {
+                    agent_params
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| {
+                            "agent task executor requires request.message or input.message"
+                                .to_string()
+                        })
+                        .and_then(|message| {
+                            let body = json!({
+                                "agentSessionId": agent_params.get("agentSessionId").cloned(),
+                                "message": message,
+                                "metadata": agent_params
+                                    .get("metadata")
+                                    .cloned()
+                                    .unwrap_or_else(|| json!({})),
+                            });
+                            station_client::request_json(
+                                Method::POST,
+                                "/agent/turn/execute",
+                                &context.token,
+                                None,
+                                Some(body),
+                            )
+                            .map_err(|error| {
+                                format!("agent task executor request failed: {}", error)
+                            })
+                        })
+                } else {
+                    Err(
+                        "PERMISSION_DENIED: agent.stream permission is required for agent task executor"
+                            .to_string(),
+                    )
+                };
+                let mut guard = task_store()
+                    .lock()
+                    .map_err(|_| "applet task store is unavailable".to_string())?;
+                let record = guard
+                    .get_mut(&task_id)
+                    .ok_or_else(|| format!("Applet task not found after start: {}", task_id))?;
+                let terminal_event = match execution {
+                    Ok(response) => {
+                        let output = json!({
+                            "executor": "agent",
+                            "response": response
+                        });
+                        record.state = "completed".to_string();
+                        record.output = Some(output.clone());
+                        record.error = None;
+                        record.sequence += 1;
+                        record.updated_at = now_timestamp();
+                        task_event(
+                            record,
+                            "completed",
+                            json!({ "progress": 1, "output": output }),
+                        )
+                    }
+                    Err(error) => {
+                        record.state = "failed".to_string();
+                        record.output = None;
+                        record.error = Some(error.clone());
+                        record.sequence += 1;
+                        record.updated_at = now_timestamp();
+                        task_event(record, "failed", json!({ "error": error }))
+                    }
+                };
+                let response = with_gateway_events(
+                    applet_id,
+                    session_id,
+                    task_record_json(record),
+                    vec![queued, running, terminal_event],
+                );
+                drop(guard);
+                persist_tasks(data_dir)?;
+                return Ok(response);
+            }
+
+            if product_executors_required(Some(&input)) {
+                let mut guard = task_store()
+                    .lock()
+                    .map_err(|_| "applet task store is unavailable".to_string())?;
+                let record = guard
+                    .get_mut(&task_id)
+                    .ok_or_else(|| format!("Applet task not found after start: {}", task_id))?;
+                let error = "CAPABILITY_FAILED: product task executor is required".to_string();
+                record.state = "failed".to_string();
+                record.output = None;
+                record.error = Some(error.clone());
+                record.sequence += 1;
+                record.updated_at = now_timestamp();
+                let failed = task_event(record, "failed", json!({ "error": error }));
+                let response = with_gateway_events(
+                    applet_id,
+                    session_id,
+                    task_record_json(record),
+                    vec![queued, running, failed],
+                );
+                drop(guard);
+                persist_tasks(data_dir)?;
+                return Ok(response);
+            }
+
+            persist_tasks(data_dir)?;
+            schedule_task_completion(
+                task_id,
+                data_dir.to_path_buf(),
+                running_record.complete_after_ms,
+            );
+            Ok(with_gateway_events(
+                applet_id,
+                session_id,
+                task_record_json(&running_record),
+                vec![queued, running],
+            ))
+        }
+        "get" => {
+            let task_id = extract_string_param(&params, "taskId")
+                .ok_or_else(|| "tasks.get requires params.taskId (string)".to_string())?;
+            let mut guard = task_store()
+                .lock()
+                .map_err(|_| "applet task store is unavailable".to_string())?;
+            let record = guard
+                .get_mut(&task_id)
+                .filter(|record| record.applet_id == applet_id && record.session_id == session_id)
+                .ok_or_else(|| format!("Applet task not found: {}", task_id))?;
+            if let Some(event) = advance_task_record(record) {
+                let response = with_gateway_events(
+                    applet_id,
+                    session_id,
+                    task_record_json(record),
+                    vec![event],
+                );
+                drop(guard);
+                persist_tasks(data_dir)?;
+                return Ok(response);
+            }
+            let response = task_record_json(record);
+            drop(guard);
+            persist_tasks(data_dir)?;
+            Ok(response)
+        }
+        "cancel" => {
+            let task_id = extract_string_param(&params, "taskId")
+                .ok_or_else(|| "tasks.cancel requires params.taskId (string)".to_string())?;
+            let mut guard = task_store()
+                .lock()
+                .map_err(|_| "applet task store is unavailable".to_string())?;
+            let record = guard
+                .get_mut(&task_id)
+                .filter(|record| record.applet_id == applet_id && record.session_id == session_id)
+                .ok_or_else(|| format!("Applet task not found: {}", task_id))?;
+            if record.state == "completed"
+                || record.state == "cancelled"
+                || record.state == "failed"
+            {
+                let response = task_record_json(record);
+                drop(guard);
+                persist_tasks(data_dir)?;
+                return Ok(response);
+            }
+            record.state = "cancelled".to_string();
+            record.sequence += 1;
+            record.updated_at = now_timestamp();
+            let event = task_event(record, "cancelled", json!({ "cancelled": true }));
+            let response =
+                with_gateway_events(applet_id, session_id, task_record_json(record), vec![event]);
+            drop(guard);
+            persist_tasks(data_dir)?;
+            Ok(response)
+        }
+        other => Err(format!("Unsupported tasks action: {}", other)),
+    }
+}
+
+fn task_record_json(record: &AppletTaskRecord) -> Value {
+    let mut payload = json!({
+        "taskId": record.task_id,
+        "requestId": record.request_id,
+        "appletId": record.applet_id,
+        "sessionId": record.session_id,
+        "state": record.state,
+        "input": record.input,
+        "updatedAt": record.updated_at,
+        "sequence": record.sequence,
+        "startedAtMs": record.started_at_ms,
+        "completeAfterMs": record.complete_after_ms,
+    });
+    if let Some(map) = payload.as_object_mut() {
+        if let Some(output) = &record.output {
+            map.insert("output".to_string(), output.clone());
+        }
+        if let Some(error) = &record.error {
+            map.insert("error".to_string(), Value::String(error.clone()));
+        }
+    }
+    payload
+}
+
+fn handle_agent(
+    context: &AccessContext,
+    applet_id: &str,
+    session_id: &str,
+    request_id: &str,
+    action: Option<&str>,
+    params: Option<Value>,
+) -> Result<Value, String> {
+    match action.ok_or_else(|| "agent capability requires an action".to_string())? {
+        "startSession" | "start_session" => Ok(json!({
+            "agentSessionId": format!("agent:{}:{}", applet_id, session_id),
+            "requestId": request_id,
+            "createdAt": now_timestamp()
+        })),
+        "stream" | "send" => {
+            let is_stream = matches!(action, Some("stream"));
+            let params = params.ok_or_else(|| "agent.send requires params".to_string())?;
+            let message = params
+                .get("message")
+                .and_then(|value| value.as_str())
+                .ok_or_else(|| "agent.send requires params.message".to_string())?;
+            let body = json!({
+                "agentSessionId": params.get("agentSessionId").cloned(),
+                "message": message,
+                "metadata": params.get("metadata").cloned().unwrap_or_else(|| json!({})),
+            });
+            let response = station_client::request_json(
+                Method::POST,
+                "/agent/turn/execute",
+                &context.token,
+                None,
+                Some(body),
+            )
+            .map_err(|error| format!("agent gateway request failed: {}", error))?;
+            let content = response
+                .get("content")
+                .or_else(|| response.get("message"))
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let message_id = response
+                .get("messageId")
+                .or_else(|| response.get("message_id"))
+                .and_then(|value| value.as_str())
+                .map(str::to_string)
+                .unwrap_or_else(build_request_id);
+            let events = if is_stream {
+                vec![
+                    json!({ "topic": "agent.stream", "payload": { "requestId": request_id, "type": "thinking", "payload": { "message": "started" }, "sequence": 1 }}),
+                    json!({ "topic": "agent.stream", "payload": { "requestId": request_id, "type": "partial", "payload": { "content": content }, "sequence": 2 }}),
+                    json!({ "topic": "agent.stream", "payload": { "requestId": request_id, "type": "final", "payload": { "messageId": message_id, "content": content }, "sequence": 3 }}),
+                ]
+            } else {
+                Vec::new()
+            };
+            Ok(with_gateway_events(
+                applet_id,
+                session_id,
+                json!({ "requestId": request_id, "messageId": message_id, "content": content }),
+                events,
+            ))
+        }
+        other => Err(format!("Unsupported agent action: {}", other)),
+    }
+}
+
+fn handle_ai(
+    request_id: &str,
+    action: Option<&str>,
+    params: Option<Value>,
+) -> Result<Value, String> {
+    match action.ok_or_else(|| "ai capability requires an action".to_string())? {
+        "generate" => invoke_ai_generate(request_id, params),
+        "chat" => invoke_ai_chat(request_id, params),
+        other => Err(format!("Unsupported ai action: {}", other)),
+    }
+}
+
+fn invoke_ai_generate(request_id: &str, params: Option<Value>) -> Result<Value, String> {
+    let params = params.ok_or_else(|| "ai.generate requires params".to_string())?;
+    let prompt = params
+        .get("prompt")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "ai.generate requires params.prompt".to_string())?;
+    let chat = json!({
+        "messages": [{ "role": "user", "content": prompt }],
+        "metadata": params.get("metadata").cloned().unwrap_or_else(|| json!({}))
+    });
+    let result = invoke_ai_chat(request_id, Some(chat))?;
+    let content = result
+        .get("message")
+        .and_then(|message| message.get("content"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    Ok(json!({ "requestId": request_id, "content": content }))
+}
+
+fn invoke_ai_chat(request_id: &str, params: Option<Value>) -> Result<Value, String> {
+    let params = params.ok_or_else(|| "ai.chat requires params".to_string())?;
+    let messages = params
+        .get("messages")
+        .and_then(|value| value.as_array())
+        .ok_or_else(|| "ai.chat requires params.messages".to_string())?;
+    let content = messages
+        .iter()
+        .rev()
+        .find(|message| message.get("role").and_then(|value| value.as_str()) == Some("user"))
+        .and_then(|message| message.get("content"))
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| "ai.chat requires at least one user message".to_string())?;
+
+    let provider_data = resolve_ai_provider(&params)?;
+    let model_id = resolve_ai_model(&params, &provider_data)?;
+
+    if !provider_data.enabled {
+        return Err(format!("AI provider is disabled: {}", provider_data.id));
+    }
+
+    let api_key = serde_json::from_str::<Value>(&provider_data.key_vaults)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("api_key")
+                .and_then(|key| key.as_str())
+                .map(String::from)
+        })
+        .unwrap_or_default();
+    let config: Value = serde_json::from_str(&provider_data.config_json).unwrap_or_default();
+    let base_url = config
+        .get("base_url")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| format!("AI provider base_url is missing: {}", provider_data.id))?;
+    let provider_protocol = config.get("protocol").and_then(|value| value.as_str());
+    let model_record = provider_data
+        .models
+        .iter()
+        .find(|model| model.id == model_id.as_str());
+    let effective_protocol = provider_remote::resolve_model_protocol(
+        model_record.and_then(|model| model.protocol_override.as_deref()),
+        provider_protocol,
+    );
+
+    let result = provider_remote::chat_completion(
+        base_url,
+        &api_key,
+        &model_id,
+        Some(effective_protocol),
+        content,
+    )
+    .map_err(|error| format!("ai.chat provider request failed: {}", error))?;
+
+    Ok(
+        json!({ "requestId": request_id, "message": { "role": "assistant", "content": result.text }, "model": result.model }),
+    )
+}
+
+fn resolve_ai_provider(params: &Value) -> Result<provider_state::ProviderRecord, String> {
+    let requested_provider = params
+        .get("metadata")
+        .and_then(|metadata| {
+            metadata
+                .get("providerId")
+                .or_else(|| metadata.get("provider_id"))
+        })
+        .or_else(|| params.get("providerId"))
+        .or_else(|| params.get("provider_id"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+
+    provider_state::with_provider_store(None, |store| {
+        store
+            .providers
+            .iter()
+            .find(|provider| {
+                provider.enabled
+                    && (requested_provider.is_empty() || provider.id == requested_provider)
+            })
+            .cloned()
+    })
+    .map_err(|_| "AI provider store is unavailable".to_string())?
+    .ok_or_else(|| {
+        if requested_provider.is_empty() {
+            "AI provider not found: no enabled provider is configured".to_string()
+        } else {
+            format!("AI provider not found: {}", requested_provider)
+        }
+    })
+}
+
+fn resolve_ai_model(
+    params: &Value,
+    provider_data: &provider_state::ProviderRecord,
+) -> Result<String, String> {
+    let requested_model = params
+        .get("metadata")
+        .and_then(|metadata| metadata.get("model"))
+        .or_else(|| params.get("model"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let model_id = if requested_model.is_empty() {
+        provider_data.check_model.clone()
+    } else {
+        requested_model
+    };
+    if model_id.trim().is_empty() {
+        return Err("AI model not found: provider has no default model".to_string());
+    }
+    Ok(model_id)
+}
+
+fn handle_telemetry(
+    applet_id: &str,
+    session_id: &str,
+    action: Option<&str>,
+    params: Option<Value>,
+) -> Result<Value, String> {
+    match action.ok_or_else(|| "telemetry capability requires an action".to_string())? {
+        "track" => {
+            record_product_window_e2e_telemetry(applet_id, session_id, params.as_ref())?;
+            Ok(json!({ "ok": true }))
+        }
+        "reportError" | "mark" => Ok(json!({ "ok": true })),
+        other => Err(format!("Unsupported telemetry action: {}", other)),
+    }
+}
+
+fn record_product_window_e2e_telemetry(
+    applet_id: &str,
+    session_id: &str,
+    params: Option<&Value>,
+) -> Result<(), String> {
+    let enabled = std::env::var("PEERS_APPLET_PRODUCT_WINDOW_E2E")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false);
+    if !enabled {
+        return Ok(());
+    }
+
+    let event = params.map(|value| value.get("event").unwrap_or(value));
+    let name = event
+        .and_then(|value| value.get("name"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if name != "applet.readiness.flow.completed" {
+        return Ok(());
+    }
+
+    let output_path = match std::env::var("PEERS_APPLET_PRODUCT_WINDOW_E2E_EVIDENCE") {
+        Ok(path) if !path.trim().is_empty() => PathBuf::from(path),
+        _ => return Ok(()),
+    };
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create product-window readiness evidence directory: {}",
+                error
+            )
+        })?;
+    }
+
+    let evidence = json!({
+        "ok": true,
+        "appletId": applet_id,
+        "sessionId": session_id,
+        "launchMode": "product-window-certification",
+        "productShell": true,
+        "event": name,
+        "properties": event
+            .and_then(|value| value.get("properties"))
+            .cloned()
+            .unwrap_or_else(|| json!({})),
+        "recordedAt": now_timestamp(),
+    });
+    fs::write(
+        &output_path,
+        serde_json::to_vec_pretty(&evidence).map_err(|error| {
+            format!(
+                "failed to serialize product-window readiness evidence: {}",
+                error
+            )
+        })?,
+    )
+    .map_err(|error| {
+        format!(
+            "failed to write product-window readiness evidence {}: {}",
+            output_path.display(),
+            error
+        )
+    })?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -531,4 +3451,2334 @@ fn extract_string_param(params: &Option<Value>, field: &str) -> Option<String> {
         .and_then(|p| p.get(field))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::applets::{drain_audit_records, remove_session_record_for_test};
+
+    fn context() -> AccessContext {
+        AccessContext {
+            actor_id: Some("actor-test".to_string()),
+            token: "token-test".to_string(),
+        }
+    }
+
+    fn manifest(permissions: Vec<&str>) -> AppletGatewayManifest {
+        AppletGatewayManifest {
+            id: "test-applet".to_string(),
+            permissions: permissions.into_iter().map(str::to_string).collect(),
+            services: vec![AppletGatewayService {
+                id: "station-api".to_string(),
+                kind: "http".to_string(),
+                binding: "station-resolved".to_string(),
+                allowed_methods: vec!["GET".to_string(), "POST".to_string()],
+                allowed_paths: vec!["/api/v1/*".to_string()],
+                streaming: false,
+            }],
+            skills: vec![crate::contracts::AppletGatewaySkill {
+                id: "declared-skill".to_string(),
+                input_schema: "schemas/skill.input.json".to_string(),
+                streaming: true,
+                executor: None,
+            }],
+        }
+    }
+
+    fn invoke(
+        session_id: &str,
+        capability: &str,
+        action: &str,
+        params: Option<Value>,
+        manifest: AppletGatewayManifest,
+    ) -> AppletInvokeInput {
+        AppletInvokeInput {
+            id: "test-applet".to_string(),
+            session_id: session_id.to_string(),
+            capability: capability.to_string(),
+            action: Some(action.to_string()),
+            params,
+            manifest,
+        }
+    }
+
+    fn applets_invoke_registered(
+        context: AccessContext,
+        input: AppletInvokeInput,
+        data_dir: &Path,
+    ) -> AppResult<StubPayload> {
+        let create = applets_create_session(
+            context.clone(),
+            AppletCreateSessionInput {
+                id: input.id.clone(),
+                session_id: Some(input.session_id.clone()),
+                manifest: input.manifest.clone(),
+            },
+            data_dir,
+        );
+        if !create.ok {
+            return create;
+        }
+        applets_invoke(context, input, data_dir)
+    }
+
+    fn applet_error_code(result: &AppResult<StubPayload>) -> Option<String> {
+        result
+            .error
+            .as_ref()
+            .and_then(|error| error.details.as_ref())
+            .and_then(|details| details.get("appletErrorCode"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }
+
+    fn subscribe_event(
+        session_id: &str,
+        topic: &str,
+        manifest: AppletGatewayManifest,
+        data_dir: &Path,
+    ) {
+        let result = applets_invoke_registered(
+            context(),
+            invoke(
+                session_id,
+                "events",
+                "subscribe",
+                Some(json!({ "topic": topic })),
+                manifest,
+            ),
+            data_dir,
+        );
+        assert!(result.ok, "event subscribe failed: {:?}", result.error);
+    }
+
+    fn temp_data_dir(name: &str) -> PathBuf {
+        let request_id = build_request_id().replace('-', "_");
+        let path = std::env::temp_dir().join(format!("peers-touch-applet-{}-{}", name, request_id));
+        fs::create_dir_all(&path).expect("test temp dir should be created");
+        path
+    }
+
+    fn unique_session_id(prefix: &str) -> String {
+        format!("{}-{}", prefix, build_request_id())
+    }
+
+    fn register_e2e_provider(provider_id: &str, protocol: &str, model_id: &str, base_url: &str) {
+        provider_state::with_provider_store(None, |store| {
+            store
+                .providers
+                .retain(|provider| provider.id != provider_id);
+            store.providers.push(provider_state::ProviderRecord {
+                id: provider_id.to_string(),
+                name: format!("Applet E2E Provider {}", protocol),
+                description: "Controlled local provider for applet e2e".to_string(),
+                logo: "".to_string(),
+                enabled: true,
+                key_vaults: json!({ "api_key": "test-key" }).to_string(),
+                config_json: json!({ "base_url": base_url, "protocol": protocol }).to_string(),
+                check_model: model_id.to_string(),
+                models: vec![provider_state::ModelRecord {
+                    id: model_id.to_string(),
+                    display_name: format!("E2E Model {}", protocol),
+                    r#type: "chat".to_string(),
+                    enabled: true,
+                    context_window: 4096,
+                    function_call: false,
+                    vision: false,
+                    reasoning: false,
+                    search: false,
+                    image_output: false,
+                    video: false,
+                    protocol_override: Some(protocol.to_string()),
+                }],
+                builtin: false,
+                show_checker: false,
+                show_api_key: false,
+            });
+        })
+        .expect("provider store should be available");
+    }
+
+    #[test]
+    fn rejects_invoke_before_explicit_session_creation() {
+        let data_dir = temp_data_dir("unregistered-session");
+        let session_id = "session-not-created";
+        remove_session_record_for_test(session_id);
+        let result = applets_invoke(
+            context(),
+            invoke(
+                session_id,
+                "app",
+                "getContext",
+                None,
+                manifest(vec!["app.getContext"]),
+            ),
+            &data_dir,
+        );
+        assert!(!result.ok);
+        assert_eq!(result.error.as_ref().unwrap().code, ErrorCode::Unauthorized);
+        assert_eq!(
+            applet_error_code(&result).as_deref(),
+            Some("INVALID_SESSION")
+        );
+    }
+
+    #[test]
+    fn denies_capability_missing_from_manifest_permissions() {
+        let result = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-deny",
+                "ai",
+                "chat",
+                None,
+                manifest(vec!["app.getContext"]),
+            ),
+            Path::new("."),
+        );
+        assert!(!result.ok);
+        assert_eq!(result.error.as_ref().unwrap().code, ErrorCode::Forbidden);
+        assert_eq!(
+            applet_error_code(&result).as_deref(),
+            Some("PERMISSION_DENIED")
+        );
+    }
+
+    #[test]
+    fn rejects_manifest_permission_escalation_after_session_registration() {
+        let data_dir = temp_data_dir("manifest-escalation");
+        let session_id = "session-manifest-escalation";
+        remove_session_record_for_test(session_id);
+        let initial = applets_invoke_registered(
+            context(),
+            invoke(
+                session_id,
+                "app",
+                "getContext",
+                None,
+                manifest(vec!["app.getContext"]),
+            ),
+            &data_dir,
+        );
+        assert!(initial.ok);
+
+        let escalated = applets_invoke_registered(
+            context(),
+            invoke(
+                session_id,
+                "ai",
+                "chat",
+                Some(json!({ "messages": [{ "role": "user", "content": "should not run" }] })),
+                manifest(vec!["app.getContext", "ai.chat"]),
+            ),
+            &data_dir,
+        );
+        assert!(!escalated.ok);
+        assert_eq!(escalated.error.as_ref().unwrap().code, ErrorCode::Forbidden);
+        assert!(escalated
+            .error
+            .as_ref()
+            .unwrap()
+            .message
+            .contains("manifest changed"));
+        assert_eq!(
+            applet_error_code(&escalated).as_deref(),
+            Some("INVALID_MANIFEST")
+        );
+    }
+
+    #[test]
+    fn rejects_raw_network_url_before_proxying() {
+        let result = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-raw-url",
+                "network",
+                "request",
+                Some(json!({ "url": "https://example.com/api" })),
+                manifest(vec!["network.request"]),
+            ),
+            Path::new("."),
+        );
+        assert!(!result.ok);
+        assert!(result
+            .error
+            .as_ref()
+            .unwrap()
+            .message
+            .contains("raw URL is forbidden"));
+        assert_eq!(
+            applet_error_code(&result).as_deref(),
+            Some("INVALID_PARAMS")
+        );
+    }
+
+    #[test]
+    fn rejects_network_path_outside_service_binding() {
+        let result = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-service-deny",
+                "network",
+                "request",
+                Some(json!({ "service": "station-api", "path": "/admin", "method": "GET" })),
+                manifest(vec!["network.request"]),
+            ),
+            Path::new("."),
+        );
+        assert!(!result.ok);
+        assert!(result
+            .error
+            .unwrap()
+            .message
+            .contains("does not allow path"));
+    }
+
+    #[test]
+    fn rejects_oversized_gateway_request_payload() {
+        let result = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-payload-too-large",
+                "storage",
+                "set",
+                Some(
+                    json!({ "key": "large", "value": "x".repeat(DEFAULT_GATEWAY_MAX_PAYLOAD_BYTES + 1024) }),
+                ),
+                manifest(vec!["storage.set"]),
+            ),
+            Path::new("."),
+        );
+        assert!(!result.ok);
+        assert_eq!(result.error.as_ref().unwrap().code, ErrorCode::Conflict);
+        assert_eq!(
+            applet_error_code(&result).as_deref(),
+            Some("QUOTA_EXCEEDED")
+        );
+        assert_eq!(
+            result
+                .error
+                .as_ref()
+                .unwrap()
+                .details
+                .as_ref()
+                .and_then(|details| details.get("limitKind"))
+                .and_then(Value::as_str),
+            Some("payload")
+        );
+    }
+
+    #[test]
+    fn rejects_session_request_quota_exhaustion() {
+        let data_dir = temp_data_dir("quota");
+        let session_id = unique_session_id("session-quota-exhausted");
+        set_quota_record_for_test(
+            "test-applet",
+            &session_id,
+            DEFAULT_GATEWAY_SESSION_QUOTA_PER_MINUTE,
+        );
+        let result = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "app",
+                "getContext",
+                None,
+                manifest(vec!["app.getContext"]),
+            ),
+            &data_dir,
+        );
+        assert!(!result.ok);
+        assert_eq!(result.error.as_ref().unwrap().code, ErrorCode::Conflict);
+        assert_eq!(
+            applet_error_code(&result).as_deref(),
+            Some("QUOTA_EXCEEDED")
+        );
+    }
+
+    #[test]
+    fn allows_lifecycle_destroy_when_session_quota_is_exhausted() {
+        let data_dir = temp_data_dir("quota-destroy");
+        let session_id = unique_session_id("session-quota-destroy");
+        let session_manifest = manifest(vec!["app.getContext", "lifecycle.destroy"]);
+        remove_session_record_for_test(&session_id);
+        let ready = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "app",
+                "getContext",
+                None,
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(ready.ok);
+
+        set_quota_record_for_test(
+            "test-applet",
+            &session_id,
+            DEFAULT_GATEWAY_SESSION_QUOTA_PER_MINUTE,
+        );
+        let destroyed = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "lifecycle",
+                "destroy",
+                None,
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(destroyed.ok);
+
+        let after_destroy = applets_invoke_registered(
+            context(),
+            invoke(&session_id, "app", "getContext", None, session_manifest),
+            &data_dir,
+        );
+        assert!(!after_destroy.ok);
+        assert_eq!(
+            applet_error_code(&after_destroy).as_deref(),
+            Some("INVALID_SESSION")
+        );
+    }
+
+    #[test]
+    fn sanitizes_network_response_headers_before_returning_to_applet() {
+        let sanitized = sanitize_applet_response_headers(json!({
+            "Content-Type": "application/json",
+            "Set-Cookie": "session=secret",
+            "Authorization": "Bearer secret",
+            "X-Request-Id": "request-1",
+            "Server": "fixture"
+        }));
+        assert_eq!(
+            sanitized.get("content-type").and_then(Value::as_str),
+            Some("application/json")
+        );
+        assert_eq!(
+            sanitized.get("x-request-id").and_then(Value::as_str),
+            Some("request-1")
+        );
+        assert!(sanitized.get("set-cookie").is_none());
+        assert!(sanitized.get("authorization").is_none());
+        assert!(sanitized.get("server").is_none());
+    }
+
+    #[test]
+    fn rejects_capability_execution_after_requested_timeout() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("timeout fixture should bind");
+        let address = listener
+            .local_addr()
+            .expect("timeout fixture should expose address");
+        let server = std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buffer = [0_u8; 1024];
+                let _ = stream.read(&mut buffer);
+                std::thread::sleep(Duration::from_millis(100));
+                let body = r#"{"ok":true}"#;
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(), body
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        std::env::set_var(
+            "PEERS_APPLET_SERVICE_TIMEOUT_API",
+            format!("http://{}", address),
+        );
+
+        let mut timeout_manifest = manifest(vec!["network.request"]);
+        timeout_manifest.services[0].id = "timeout-api".to_string();
+        let result = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-timeout",
+                "network",
+                "request",
+                Some(
+                    json!({ "service": "timeout-api", "path": "/api/v1/slow", "method": "GET", "timeoutMs": 10 }),
+                ),
+                timeout_manifest,
+            ),
+            Path::new("."),
+        );
+        std::env::remove_var("PEERS_APPLET_SERVICE_TIMEOUT_API");
+        let _ = server.join();
+
+        assert!(!result.ok);
+        assert!(result.error.as_ref().unwrap().message.contains("timed out"));
+        assert_eq!(
+            applet_error_code(&result).as_deref(),
+            Some("QUOTA_EXCEEDED")
+        );
+        assert_eq!(
+            result
+                .error
+                .as_ref()
+                .unwrap()
+                .details
+                .as_ref()
+                .and_then(|details| details.get("limitKind"))
+                .and_then(Value::as_str),
+            Some("timeout")
+        );
+    }
+
+    #[test]
+    fn rejects_storage_write_beyond_applet_quota() {
+        let data_dir = temp_data_dir("storage-quota");
+        let result = handle_storage(
+            "test-applet",
+            Some("set"),
+            Some(json!({ "key": "large", "value": "x".repeat(APPLET_STORAGE_QUOTA_BYTES + 1024) })),
+            &data_dir,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("storage quota exceeded"));
+    }
+
+    #[test]
+    fn supports_storage_keys_with_prefix_filter() {
+        let data_dir = temp_data_dir("storage-keys");
+        handle_storage(
+            "test-applet",
+            Some("set"),
+            Some(json!({ "key": "project:a", "value": 1 })),
+            &data_dir,
+        )
+        .expect("project:a should be stored");
+        handle_storage(
+            "test-applet",
+            Some("set"),
+            Some(json!({ "key": "project:b", "value": 2 })),
+            &data_dir,
+        )
+        .expect("project:b should be stored");
+        handle_storage(
+            "test-applet",
+            Some("set"),
+            Some(json!({ "key": "session:a", "value": 3 })),
+            &data_dir,
+        )
+        .expect("session:a should be stored");
+
+        let keys = handle_storage(
+            "test-applet",
+            Some("keys"),
+            Some(json!({ "prefix": "project:" })),
+            &data_dir,
+        )
+        .expect("storage.keys should succeed");
+
+        assert_eq!(keys, json!(["project:a", "project:b"]));
+    }
+
+    #[test]
+    fn supports_v1_app_lifecycle_and_ui_surface() {
+        let app_context = handle_app("test-applet", "session-v1", Some("getContext"))
+            .expect("app.getContext should succeed");
+        assert_eq!(
+            app_context.get("appletId").and_then(Value::as_str),
+            Some("test-applet")
+        );
+        assert_eq!(
+            app_context
+                .get("launchParams")
+                .and_then(Value::as_object)
+                .map(|params| params.is_empty()),
+            Some(true)
+        );
+        assert_eq!(
+            handle_app("test-applet", "session-v1", Some("getLaunchOptions"))
+                .expect("app.getLaunchOptions should succeed"),
+            json!({})
+        );
+        assert!(handle_lifecycle("test-applet", Some("onPause"))
+            .expect("lifecycle.onPause should succeed")
+            .get("ok")
+            .and_then(Value::as_bool)
+            .unwrap_or(false));
+        assert!(handle_ui(
+            Some("setNavigationBar"),
+            Some(json!({ "title": "Fixture" })),
+        )
+        .expect("ui.setNavigationBar should succeed")
+        .get("ok")
+        .and_then(Value::as_bool)
+        .unwrap_or(false));
+        let ui = handle_ui(Some("showModal"), Some(json!({ "title": "Fixture" })))
+            .expect("ui.showModal should produce a Host command");
+        assert_eq!(ui.get("ok").and_then(Value::as_bool), Some(true));
+        let ui_command = ui
+            .get("__hostCommands")
+            .and_then(Value::as_array)
+            .and_then(|commands| commands.first())
+            .expect("ui command should be present");
+        assert_eq!(ui_command.get("type").and_then(Value::as_str), Some("ui"));
+        assert_eq!(
+            ui_command.get("returnsResult").and_then(Value::as_bool),
+            Some(true)
+        );
+        let navigation = handle_navigation(Some("navigateTo"), Some(json!({ "page": "applets" })))
+            .expect("navigation.navigateTo should produce a Host command");
+        assert_eq!(navigation.get("ok").and_then(Value::as_bool), Some(true));
+        assert_eq!(
+            navigation
+                .get("__hostCommands")
+                .and_then(Value::as_array)
+                .and_then(|commands| commands.first())
+                .and_then(|command| command.get("type"))
+                .and_then(Value::as_str),
+            Some("navigation")
+        );
+        assert!(handle_navigation(
+            Some("navigateTo"),
+            Some(json!({ "page": "https://example.invalid" })),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn routes_navigation_through_authorized_host_command() {
+        let session_manifest = manifest(vec!["navigation.navigateTo"]);
+        let result = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-navigation",
+                "navigation",
+                "navigateTo",
+                Some(json!({ "page": "applets" })),
+                session_manifest,
+            ),
+            Path::new("."),
+        );
+
+        assert!(result.ok, "navigation failed: {:?}", result.error);
+        let status = result.data.unwrap().status;
+        assert!(status.contains("\"__hostCommands\""));
+        assert!(status.contains("\"navigation\""));
+        assert!(status.contains("\"applets\""));
+    }
+
+    #[test]
+    fn routes_ui_through_authorized_host_command() {
+        let session_manifest = manifest(vec!["ui.showModal"]);
+        let result = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-ui",
+                "ui",
+                "showModal",
+                Some(json!({ "title": "Confirm", "content": "Proceed" })),
+                session_manifest,
+            ),
+            Path::new("."),
+        );
+
+        assert!(result.ok, "ui.showModal failed: {:?}", result.error);
+        let status = result.data.unwrap().status;
+        assert!(status.contains("\"__hostCommands\""));
+        assert!(status.contains("\"ui\""));
+        assert!(status.contains("\"showModal\""));
+        assert!(status.contains("\"returnsResult\":true"));
+    }
+
+    #[test]
+    fn supports_v1_device_clipboard_and_file_surface() {
+        let data_dir = temp_data_dir("device-clipboard-file");
+        let safe_area =
+            handle_device(Some("getSafeArea"), None).expect("device.getSafeArea should succeed");
+        assert_eq!(safe_area.get("ok").and_then(Value::as_bool), Some(true));
+        let safe_area_command = safe_area
+            .get("__hostCommands")
+            .and_then(Value::as_array)
+            .and_then(|commands| commands.first())
+            .expect("device.getSafeArea should be delegated to Host");
+        assert_eq!(
+            safe_area_command.get("type").and_then(Value::as_str),
+            Some("device")
+        );
+        assert_eq!(
+            safe_area_command.get("action").and_then(Value::as_str),
+            Some("getSafeArea")
+        );
+        assert_eq!(
+            safe_area_command
+                .get("returnsResult")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        let window_info = handle_device(Some("getWindowInfo"), None)
+            .expect("device.getWindowInfo should succeed");
+        assert_eq!(
+            window_info
+                .get("__hostCommands")
+                .and_then(Value::as_array)
+                .and_then(|commands| commands.first())
+                .and_then(|command| command.get("action"))
+                .and_then(Value::as_str),
+            Some("getWindowInfo")
+        );
+
+        let denied_clipboard = handle_clipboard(
+            "test-applet",
+            "session-v1-surface",
+            Some("setText"),
+            Some(json!({ "text": "not-user-activated" })),
+        );
+        assert!(denied_clipboard.is_err());
+
+        handle_clipboard(
+            "test-applet",
+            "session-v1-surface",
+            Some("setText"),
+            Some(json!({ "text": "copied", "userActivated": true })),
+        )
+        .expect("clipboard.setText should succeed with user activation");
+        assert_eq!(
+            handle_clipboard("test-applet", "session-v1-surface", Some("getText"), None)
+                .expect("clipboard.getText should succeed"),
+            json!("copied")
+        );
+
+        let written = handle_file(
+            "test-applet",
+            Some("write"),
+            Some(json!({ "path": "state/session.json", "content": "{\"ok\":true}" })),
+            &data_dir,
+        )
+        .expect("file.write should succeed");
+        assert_eq!(
+            written.get("path").and_then(Value::as_str),
+            Some("state/session.json")
+        );
+
+        let read = handle_file(
+            "test-applet",
+            Some("read"),
+            Some(json!({ "path": "state/session.json" })),
+            &data_dir,
+        )
+        .expect("file.read should succeed");
+        assert_eq!(
+            read.get("content").and_then(Value::as_str),
+            Some("{\"ok\":true}")
+        );
+
+        let entries = handle_file(
+            "test-applet",
+            Some("list"),
+            Some(json!({ "path": "state" })),
+            &data_dir,
+        )
+        .expect("file.list should succeed");
+        assert!(entries.to_string().contains("state/session.json"));
+
+        let info = handle_file("test-applet", Some("getInfo"), None, &data_dir)
+            .expect("file.getInfo should succeed");
+        assert!(info.get("usedBytes").and_then(Value::as_u64).unwrap_or(0) > 0);
+    }
+
+    #[test]
+    fn enforces_event_subscription_state_and_topic_policy() {
+        let data_dir = temp_data_dir("event-subscriptions");
+        let session_id = unique_session_id("session-events");
+        let session_manifest = manifest(vec![
+            "events.subscribe",
+            "events.unsubscribe",
+            "events.emit",
+        ]);
+
+        let unsubscribed_emit = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "events",
+                "emit",
+                Some(json!({ "topic": "applet.local", "payload": { "value": 1 } })),
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(unsubscribed_emit.ok);
+        let unsubscribed_payload: Value =
+            serde_json::from_str(&unsubscribed_emit.data.unwrap().status).unwrap();
+        assert!(unsubscribed_payload.get("__events").is_none());
+
+        subscribe_event(
+            &session_id,
+            "applet.local",
+            session_manifest.clone(),
+            &data_dir,
+        );
+
+        let subscribed_emit = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "events",
+                "emit",
+                Some(json!({ "topic": "applet.local", "payload": { "value": 2 } })),
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(subscribed_emit.ok);
+        let subscribed_payload: Value =
+            serde_json::from_str(&subscribed_emit.data.unwrap().status).unwrap();
+        assert!(subscribed_payload
+            .get("__events")
+            .and_then(Value::as_array)
+            .is_some());
+
+        let reserved_emit = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "events",
+                "emit",
+                Some(json!({ "topic": "task.event", "payload": {} })),
+                session_manifest,
+            ),
+            &data_dir,
+        );
+        assert!(!reserved_emit.ok);
+        assert_eq!(
+            applet_error_code(&reserved_emit).as_deref(),
+            Some("INVALID_PARAMS")
+        );
+    }
+
+    #[test]
+    fn uses_declared_skills_without_hardcoded_skill_results() {
+        let result = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-skills",
+                "skills",
+                "list",
+                None,
+                manifest(vec!["skills.list"]),
+            ),
+            Path::new("."),
+        );
+        assert!(result.ok);
+        let status = result.data.unwrap().status;
+        assert!(status.contains("declared-skill"));
+        assert!(!status.contains("generic-skill"));
+    }
+
+    #[test]
+    fn supports_runtime_skill_register_invoke_and_policy_deny() {
+        let session_id = unique_session_id("session-skill-runtime");
+        remove_session_record_for_test(&session_id);
+        let data_dir = temp_data_dir("skill-runtime");
+        let session_manifest =
+            manifest(vec!["skills.register", "skills.invoke", "events.subscribe"]);
+        let register = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "skills",
+                "register",
+                Some(
+                    json!({ "spec": { "id": "runtime-skill", "inputSchema": { "type": "object" }, "streaming": true }}),
+                ),
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(register.ok);
+        subscribe_event(
+            &session_id,
+            "skill.stream",
+            session_manifest.clone(),
+            &data_dir,
+        );
+
+        let invoke_result = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "skills",
+                "invoke",
+                Some(
+                    json!({ "skillId": "runtime-skill", "input": { "value": 1 }, "options": { "stream": true, "requestId": "skill-request-1" }}),
+                ),
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(invoke_result.ok);
+        let payload: Value = serde_json::from_str(&invoke_result.data.unwrap().status).unwrap();
+        assert_eq!(payload.get("ok").and_then(Value::as_bool), Some(true));
+        assert!(payload.get("__events").and_then(Value::as_array).is_some());
+
+        let denied = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "skills",
+                "invoke",
+                Some(json!({ "skillId": "runtime-skill", "input": { "policyDeny": true } })),
+                session_manifest,
+            ),
+            &data_dir,
+        );
+        assert!(denied.ok);
+        assert!(denied.data.unwrap().status.contains("POLICY_DENIED"));
+    }
+
+    #[test]
+    fn rejects_placeholder_skill_when_product_executors_required() {
+        let session_id = unique_session_id("session-skill-product-required");
+        remove_session_record_for_test(&session_id);
+        let data_dir = temp_data_dir("skill-product-required");
+        let session_manifest = manifest(vec!["skills.register", "skills.invoke"]);
+        let register = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "skills",
+                "register",
+                Some(
+                    json!({ "spec": { "id": "placeholder-skill", "inputSchema": { "type": "object" }, "streaming": false }}),
+                ),
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(register.ok);
+
+        let invoke_result = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "skills",
+                "invoke",
+                Some(json!({
+                    "skillId": "placeholder-skill",
+                    "input": { "value": 1 },
+                    "options": { "productExecutorsOnly": true }
+                })),
+                session_manifest,
+            ),
+            &data_dir,
+        );
+
+        assert!(invoke_result.ok);
+        let payload: Value = serde_json::from_str(&invoke_result.data.unwrap().status).unwrap();
+        assert_eq!(payload.get("ok").and_then(Value::as_bool), Some(false));
+        assert!(payload
+            .get("error")
+            .and_then(Value::as_str)
+            .is_some_and(|error| error.contains("product skill executor is required")));
+    }
+
+    #[test]
+    fn executes_network_skill_through_gateway_service_policy() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("skill fixture should bind");
+        let address = listener
+            .local_addr()
+            .expect("skill fixture should expose address");
+        let server = std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buffer = [0_u8; 2048];
+                let _ = stream.read(&mut buffer);
+                let body =
+                    r#"{"message":"e2e-network-post-ok","echo":{"message":"skill-network"}}"#;
+                let response = format!(
+                    "HTTP/1.1 201 Created\r\nContent-Type: application/json\r\nX-Request-Id: skill-network\r\nSet-Cookie: session=secret\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        std::env::set_var(
+            "PEERS_APPLET_SERVICE_SKILL_API",
+            format!("http://{}", address),
+        );
+
+        let session_id = unique_session_id("session-skill-network");
+        let data_dir = temp_data_dir("skill-network");
+        let mut session_manifest =
+            manifest(vec!["skills.register", "skills.invoke", "events.subscribe"]);
+        session_manifest.services[0].id = "skill-api".to_string();
+        let register = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "skills",
+                "register",
+                Some(json!({
+                    "spec": {
+                        "id": "network-summary",
+                        "inputSchema": { "type": "object" },
+                        "streaming": true,
+                        "executor": {
+                            "type": "network",
+                            "request": {
+                                "service": "skill-api",
+                                "path": "/api/v1/e2e/echo",
+                                "method": "POST"
+                            }
+                        }
+                    }
+                })),
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(register.ok);
+        subscribe_event(
+            &session_id,
+            "skill.stream",
+            session_manifest.clone(),
+            &data_dir,
+        );
+
+        let invoke_result = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "skills",
+                "invoke",
+                Some(json!({
+                    "skillId": "network-summary",
+                    "input": { "message": "skill-network" },
+                    "options": { "stream": true, "requestId": "skill-network-request" }
+                })),
+                session_manifest,
+            ),
+            &data_dir,
+        );
+        assert!(
+            invoke_result.ok,
+            "network skill failed: {:?}",
+            invoke_result.error
+        );
+        let payload: Value = serde_json::from_str(&invoke_result.data.unwrap().status).unwrap();
+        assert_eq!(payload.get("ok").and_then(Value::as_bool), Some(true));
+        assert_eq!(
+            payload
+                .get("output")
+                .and_then(|output| output.get("status"))
+                .and_then(Value::as_u64),
+            Some(201)
+        );
+        assert_eq!(
+            payload
+                .get("output")
+                .and_then(|output| output.get("body"))
+                .and_then(|body| body.get("echo"))
+                .and_then(|echo| echo.get("message"))
+                .and_then(Value::as_str),
+            Some("skill-network")
+        );
+        assert_eq!(
+            payload
+                .get("output")
+                .and_then(|output| output.get("headers"))
+                .and_then(|headers| headers.get("x-request-id"))
+                .and_then(Value::as_str),
+            Some("skill-network")
+        );
+        assert!(payload
+            .get("output")
+            .and_then(|output| output.get("headers"))
+            .and_then(|headers| headers.get("set-cookie"))
+            .is_none());
+        assert!(payload
+            .get("__events")
+            .and_then(Value::as_array)
+            .is_some_and(|events| events.iter().any(|event| {
+                event
+                    .get("payload")
+                    .and_then(|payload| payload.get("type"))
+                    .and_then(Value::as_str)
+                    == Some("final")
+            })));
+        server.join().expect("skill fixture should complete");
+    }
+
+    #[test]
+    fn fails_network_skill_when_service_policy_denies_request() {
+        let data_dir = temp_data_dir("skill-network-deny");
+        let session_id = unique_session_id("session-skill-network-deny");
+        let session_manifest =
+            manifest(vec!["skills.register", "skills.invoke", "events.subscribe"]);
+
+        let register = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "skills",
+                "register",
+                Some(json!({
+                    "spec": {
+                        "id": "denied-network-summary",
+                        "inputSchema": { "type": "object" },
+                        "streaming": true,
+                        "executor": {
+                            "type": "network",
+                            "request": {
+                                "service": "station-api",
+                                "path": "/admin",
+                                "method": "POST"
+                            }
+                        }
+                    }
+                })),
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(register.ok);
+        subscribe_event(
+            &session_id,
+            "skill.stream",
+            session_manifest.clone(),
+            &data_dir,
+        );
+
+        let invoke_result = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "skills",
+                "invoke",
+                Some(json!({
+                    "skillId": "denied-network-summary",
+                    "input": { "message": "must-not-run" },
+                    "options": { "stream": true, "requestId": "skill-network-deny-request" }
+                })),
+                session_manifest,
+            ),
+            &data_dir,
+        );
+
+        assert!(
+            invoke_result.ok,
+            "denied network skill returns typed skill result"
+        );
+        let payload: Value = serde_json::from_str(&invoke_result.data.unwrap().status).unwrap();
+        assert_eq!(payload.get("ok").and_then(Value::as_bool), Some(false));
+        assert!(payload
+            .get("error")
+            .and_then(Value::as_str)
+            .is_some_and(|error| error.contains("does not allow path")));
+        assert!(payload
+            .get("__events")
+            .and_then(Value::as_array)
+            .is_some_and(|events| events.iter().any(|event| {
+                event
+                    .get("payload")
+                    .and_then(|payload| payload.get("type"))
+                    .and_then(Value::as_str)
+                    == Some("error")
+            })));
+    }
+
+    #[test]
+    fn denies_agent_skill_executor_without_agent_permission() {
+        let data_dir = temp_data_dir("skill-agent-deny");
+        let session_id = unique_session_id("session-skill-agent-deny");
+        let session_manifest = manifest(vec!["skills.register", "skills.invoke"]);
+
+        let register = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "skills",
+                "register",
+                Some(json!({
+                    "spec": {
+                        "id": "agent-summary",
+                        "inputSchema": { "type": "object" },
+                        "streaming": true,
+                        "executor": { "type": "agent" }
+                    }
+                })),
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(register.ok);
+
+        let invoke_result = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "skills",
+                "invoke",
+                Some(json!({
+                    "skillId": "agent-summary",
+                    "input": { "message": "must-not-run" }
+                })),
+                session_manifest,
+            ),
+            &data_dir,
+        );
+
+        assert!(invoke_result.ok);
+        let payload: Value = serde_json::from_str(&invoke_result.data.unwrap().status).unwrap();
+        assert_eq!(payload.get("ok").and_then(Value::as_bool), Some(false));
+        assert!(payload
+            .get("error")
+            .and_then(Value::as_str)
+            .is_some_and(
+                |error| error.contains("PERMISSION_DENIED") && error.contains("agent.stream")
+            ));
+    }
+
+    #[test]
+    fn keeps_real_task_lifecycle_state() {
+        let data_dir = temp_data_dir("task-lifecycle");
+        let session_id = unique_session_id("session-task");
+        let session_manifest = manifest(vec![
+            "tasks.start",
+            "tasks.get",
+            "tasks.cancel",
+            "events.subscribe",
+        ]);
+        subscribe_event(
+            &session_id,
+            "task.event",
+            session_manifest.clone(),
+            &data_dir,
+        );
+        let start = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "tasks",
+                "start",
+                Some(json!({ "kind": "sync", "completeAfterMs": 0 })),
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(start.ok);
+        let started: Value = serde_json::from_str(&start.data.unwrap().status).unwrap();
+        let task_id = started.get("taskId").and_then(Value::as_str).unwrap();
+        assert!(started.get("requestId").and_then(Value::as_str).is_some());
+        assert!(started.get("updatedAt").and_then(Value::as_str).is_some());
+        assert!(started.get("__events").and_then(Value::as_array).is_some());
+
+        let complete = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "tasks",
+                "get",
+                Some(json!({ "taskId": task_id })),
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(complete.ok);
+        assert!(complete.data.unwrap().status.contains("completed"));
+
+        let cancel = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "tasks",
+                "cancel",
+                Some(json!({ "taskId": task_id })),
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(cancel.ok);
+        assert!(cancel.data.unwrap().status.contains("completed"));
+
+        let cancellable = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "tasks",
+                "start",
+                Some(json!({ "kind": "cancellable", "completeAfterMs": 10_000 })),
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(cancellable.ok);
+        let cancellable_payload: Value =
+            serde_json::from_str(&cancellable.data.unwrap().status).unwrap();
+        let cancellable_task_id = cancellable_payload
+            .get("taskId")
+            .and_then(Value::as_str)
+            .unwrap();
+
+        let cancelled = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "tasks",
+                "cancel",
+                Some(json!({ "taskId": cancellable_task_id })),
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(cancelled.ok);
+        assert!(cancelled.data.unwrap().status.contains("cancelled"));
+
+        std::thread::sleep(Duration::from_millis(5));
+        let after_cancel = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "tasks",
+                "get",
+                Some(json!({ "taskId": cancellable_task_id })),
+                session_manifest,
+            ),
+            &data_dir,
+        );
+        assert!(after_cancel.ok);
+        let after_cancel_status = after_cancel.data.unwrap().status;
+        assert!(after_cancel_status.contains("cancelled"));
+        assert!(!after_cancel_status.contains("completed"));
+    }
+
+    #[test]
+    fn rejects_placeholder_task_when_product_executors_required() {
+        let data_dir = temp_data_dir("task-product-required");
+        let session_id = unique_session_id("session-task-product-required");
+        let session_manifest = manifest(vec!["tasks.start", "events.subscribe"]);
+        subscribe_event(
+            &session_id,
+            "task.event",
+            session_manifest.clone(),
+            &data_dir,
+        );
+
+        let start = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "tasks",
+                "start",
+                Some(json!({
+                    "taskType": "readiness",
+                    "input": { "value": 1 },
+                    "productExecutorsOnly": true
+                })),
+                session_manifest,
+            ),
+            &data_dir,
+        );
+
+        assert!(start.ok, "placeholder task should become failed task");
+        let payload: Value = serde_json::from_str(&start.data.unwrap().status).unwrap();
+        assert_eq!(payload.get("state").and_then(Value::as_str), Some("failed"));
+        assert!(payload
+            .get("error")
+            .and_then(Value::as_str)
+            .is_some_and(|error| error.contains("product task executor is required")));
+        assert!(payload
+            .get("__events")
+            .and_then(Value::as_array)
+            .is_some_and(|events| events.iter().any(|event| {
+                event
+                    .get("payload")
+                    .and_then(|payload| payload.get("state"))
+                    .and_then(Value::as_str)
+                    == Some("failed")
+            })));
+    }
+
+    #[test]
+    fn executes_network_task_through_gateway_service_policy() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("task fixture should bind");
+        let address = listener
+            .local_addr()
+            .expect("task fixture should expose address");
+        let server = std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buffer = [0_u8; 2048];
+                let _ = stream.read(&mut buffer);
+                let body = r#"{"message":"e2e-network-post-ok","echo":{"message":"task-network"}}"#;
+                let response = format!(
+                    "HTTP/1.1 201 Created\r\nContent-Type: application/json\r\nX-Request-Id: task-network\r\nSet-Cookie: session=secret\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        std::env::set_var(
+            "PEERS_APPLET_SERVICE_TASK_API",
+            format!("http://{}", address),
+        );
+
+        let data_dir = temp_data_dir("task-network");
+        let session_id = unique_session_id("session-task-network");
+        let mut session_manifest = manifest(vec!["tasks.start", "events.subscribe"]);
+        session_manifest.services[0].id = "task-api".to_string();
+        subscribe_event(
+            &session_id,
+            "task.event",
+            session_manifest.clone(),
+            &data_dir,
+        );
+
+        let start = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "tasks",
+                "start",
+                Some(json!({
+                    "taskType": "network",
+                    "input": {
+                        "request": {
+                            "service": "task-api",
+                            "path": "/api/v1/e2e/echo",
+                            "method": "POST",
+                            "body": { "message": "task-network" }
+                        }
+                    }
+                })),
+                session_manifest,
+            ),
+            &data_dir,
+        );
+        assert!(start.ok, "network task failed: {:?}", start.error);
+        let payload: Value = serde_json::from_str(&start.data.unwrap().status).unwrap();
+        assert_eq!(
+            payload.get("state").and_then(Value::as_str),
+            Some("completed")
+        );
+        assert_eq!(
+            payload
+                .get("output")
+                .and_then(|output| output.get("status"))
+                .and_then(Value::as_u64),
+            Some(201)
+        );
+        assert_eq!(
+            payload
+                .get("output")
+                .and_then(|output| output.get("body"))
+                .and_then(|body| body.get("echo"))
+                .and_then(|echo| echo.get("message"))
+                .and_then(Value::as_str),
+            Some("task-network")
+        );
+        assert_eq!(
+            payload
+                .get("output")
+                .and_then(|output| output.get("headers"))
+                .and_then(|headers| headers.get("x-request-id"))
+                .and_then(Value::as_str),
+            Some("task-network")
+        );
+        assert!(payload
+            .get("output")
+            .and_then(|output| output.get("headers"))
+            .and_then(|headers| headers.get("set-cookie"))
+            .is_none());
+        assert!(payload
+            .get("__events")
+            .and_then(Value::as_array)
+            .is_some_and(|events| events.iter().any(|event| {
+                event
+                    .get("payload")
+                    .and_then(|payload| payload.get("state"))
+                    .and_then(Value::as_str)
+                    == Some("completed")
+            })));
+        server.join().expect("task fixture should complete");
+    }
+
+    #[test]
+    fn fails_network_task_when_service_policy_denies_request() {
+        let data_dir = temp_data_dir("task-network-deny");
+        let session_id = unique_session_id("session-task-network-deny");
+        let session_manifest = manifest(vec!["tasks.start"]);
+        let start = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "tasks",
+                "start",
+                Some(json!({
+                    "taskType": "network",
+                    "input": {
+                        "service": "station-api",
+                        "path": "/admin",
+                        "method": "POST",
+                        "body": { "message": "must-not-run" }
+                    }
+                })),
+                session_manifest,
+            ),
+            &data_dir,
+        );
+
+        assert!(start.ok, "denied network task should become failed task");
+        let payload: Value = serde_json::from_str(&start.data.unwrap().status).unwrap();
+        assert_eq!(payload.get("state").and_then(Value::as_str), Some("failed"));
+        assert!(payload
+            .get("error")
+            .and_then(Value::as_str)
+            .is_some_and(|error| error.contains("does not allow path")));
+    }
+
+    #[test]
+    fn executes_agent_task_through_station_client() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("agent task fixture should bind");
+        let address = listener
+            .local_addr()
+            .expect("agent task fixture should expose address");
+        let server = std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buffer = [0_u8; 2048];
+                let _ = stream.read(&mut buffer);
+                let body = r#"{"messageId":"agent-task-1","content":"agent-task-ok task-agent"}"#;
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        std::env::set_var("PEERS_STATION_URL", format!("http://{}", address));
+
+        let data_dir = temp_data_dir("task-agent");
+        let session_id = unique_session_id("session-task-agent");
+        let session_manifest = manifest(vec!["tasks.start", "events.subscribe", "agent.stream"]);
+        subscribe_event(
+            &session_id,
+            "task.event",
+            session_manifest.clone(),
+            &data_dir,
+        );
+
+        let start = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "tasks",
+                "start",
+                Some(json!({
+                    "taskType": "agent",
+                    "input": {
+                        "message": "task-agent",
+                        "metadata": { "source": "task-agent-test" }
+                    }
+                })),
+                session_manifest,
+            ),
+            &data_dir,
+        );
+        std::env::remove_var("PEERS_STATION_URL");
+
+        assert!(start.ok, "agent task failed: {:?}", start.error);
+        let payload: Value = serde_json::from_str(&start.data.unwrap().status).unwrap();
+        assert_eq!(
+            payload.get("state").and_then(Value::as_str),
+            Some("completed")
+        );
+        assert_eq!(
+            payload
+                .get("output")
+                .and_then(|output| output.get("executor"))
+                .and_then(Value::as_str),
+            Some("agent")
+        );
+        assert_eq!(
+            payload
+                .get("output")
+                .and_then(|output| output.get("response"))
+                .and_then(|response| response.get("content"))
+                .and_then(Value::as_str),
+            Some("agent-task-ok task-agent")
+        );
+        assert!(payload
+            .get("__events")
+            .and_then(Value::as_array)
+            .is_some_and(|events| events.iter().any(|event| {
+                event
+                    .get("payload")
+                    .and_then(|payload| payload.get("state"))
+                    .and_then(Value::as_str)
+                    == Some("completed")
+            })));
+        server.join().expect("agent task fixture should complete");
+    }
+
+    #[test]
+    fn fails_agent_task_executor_without_agent_permission() {
+        let data_dir = temp_data_dir("task-agent-deny");
+        let session_id = unique_session_id("session-task-agent-deny");
+        let session_manifest = manifest(vec!["tasks.start"]);
+        let start = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "tasks",
+                "start",
+                Some(json!({
+                    "taskType": "agent",
+                    "input": { "message": "must-not-run" }
+                })),
+                session_manifest,
+            ),
+            &data_dir,
+        );
+
+        assert!(start.ok, "denied agent task should become failed task");
+        let payload: Value = serde_json::from_str(&start.data.unwrap().status).unwrap();
+        assert_eq!(payload.get("state").and_then(Value::as_str), Some("failed"));
+        assert!(payload
+            .get("error")
+            .and_then(Value::as_str)
+            .is_some_and(
+                |error| error.contains("PERMISSION_DENIED") && error.contains("agent.stream")
+            ));
+    }
+
+    #[test]
+    fn drains_background_task_events_from_gateway_outbox() {
+        let data_dir = temp_data_dir("task-outbox");
+        let session_id = unique_session_id("session-task-outbox");
+        let session_manifest = manifest(vec![
+            "tasks.start",
+            "tasks.cancel",
+            "events.subscribe",
+            "events.poll",
+        ]);
+        subscribe_event(
+            &session_id,
+            "task.event",
+            session_manifest.clone(),
+            &data_dir,
+        );
+
+        let start = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "tasks",
+                "start",
+                Some(json!({ "kind": "background", "completeAfterMs": 10 })),
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(start.ok);
+        let started: Value = serde_json::from_str(&start.data.unwrap().status).unwrap();
+        let task_id = started.get("taskId").and_then(Value::as_str).unwrap();
+
+        std::thread::sleep(Duration::from_millis(80));
+        let polled = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "events",
+                "poll",
+                None,
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(polled.ok);
+        let payload: Value = serde_json::from_str(&polled.data.unwrap().status).unwrap();
+        let events = payload
+            .get("events")
+            .and_then(Value::as_array)
+            .expect("events.poll should return an events array");
+        assert!(events.iter().any(|event| {
+            event
+                .get("payload")
+                .and_then(|payload| payload.get("taskId"))
+                .and_then(Value::as_str)
+                == Some(task_id)
+                && event
+                    .get("payload")
+                    .and_then(|payload| payload.get("state"))
+                    .and_then(Value::as_str)
+                    == Some("completed")
+        }));
+
+        let drained = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "events",
+                "poll",
+                None,
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(drained.ok);
+        let drained_payload: Value = serde_json::from_str(&drained.data.unwrap().status).unwrap();
+        assert!(drained_payload
+            .get("events")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty));
+
+        let cancellable = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "tasks",
+                "start",
+                Some(json!({ "kind": "cancelled-background", "completeAfterMs": 50 })),
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(cancellable.ok);
+        let cancellable_payload: Value =
+            serde_json::from_str(&cancellable.data.unwrap().status).unwrap();
+        let cancellable_task_id = cancellable_payload
+            .get("taskId")
+            .and_then(Value::as_str)
+            .unwrap();
+
+        let cancelled = applets_invoke_registered(
+            context(),
+            invoke(
+                &session_id,
+                "tasks",
+                "cancel",
+                Some(json!({ "taskId": cancellable_task_id })),
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(cancelled.ok);
+
+        std::thread::sleep(Duration::from_millis(90));
+        let after_cancel_poll = applets_invoke_registered(
+            context(),
+            invoke(&session_id, "events", "poll", None, session_manifest),
+            &data_dir,
+        );
+        assert!(after_cancel_poll.ok);
+        let after_cancel_payload: Value =
+            serde_json::from_str(&after_cancel_poll.data.unwrap().status).unwrap();
+        let after_cancel_events = after_cancel_payload
+            .get("events")
+            .and_then(Value::as_array)
+            .expect("events.poll should return an events array");
+        assert!(!after_cancel_events.iter().any(|event| {
+            event
+                .get("payload")
+                .and_then(|payload| payload.get("taskId"))
+                .and_then(Value::as_str)
+                == Some(cancellable_task_id)
+                && event
+                    .get("payload")
+                    .and_then(|payload| payload.get("state"))
+                    .and_then(Value::as_str)
+                    == Some("completed")
+        }));
+    }
+
+    #[test]
+    fn reloads_persisted_task_lifecycle_state() {
+        let data_dir = temp_data_dir("task-persist");
+        let session_manifest = manifest(vec!["tasks.start", "tasks.get"]);
+        let start = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-task-persist",
+                "tasks",
+                "start",
+                Some(json!({ "kind": "persist", "completeAfterMs": 10 })),
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(start.ok);
+        let started: Value = serde_json::from_str(&start.data.unwrap().status).unwrap();
+        let task_id = started
+            .get("taskId")
+            .and_then(Value::as_str)
+            .unwrap()
+            .to_string();
+        assert!(task_store_path(&data_dir).exists());
+
+        std::thread::sleep(Duration::from_millis(30));
+        remove_task_record_for_test(&task_id);
+
+        let reloaded = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-task-persist",
+                "tasks",
+                "get",
+                Some(json!({ "taskId": task_id })),
+                session_manifest,
+            ),
+            &data_dir,
+        );
+        assert!(reloaded.ok);
+        assert!(reloaded.data.unwrap().status.contains("completed"));
+    }
+
+    #[test]
+    fn live_desktop_e2e_chain() {
+        let Ok(base_url) = std::env::var("PEERS_APPLET_E2E_BASE_URL") else {
+            return;
+        };
+        std::env::set_var("PEERS_APPLET_SERVICE_STATION_API", &base_url);
+        std::env::set_var("PEERS_STATION_URL", &base_url);
+        register_e2e_provider(
+            "applet-e2e-provider",
+            "openai-compatible",
+            "e2e-model",
+            &base_url,
+        );
+
+        let live_manifest = manifest(vec![
+            "network.request",
+            "skills.register",
+            "skills.invoke",
+            "tasks.start",
+            "tasks.get",
+            "agent.startSession",
+            "agent.stream",
+            "ai.generate",
+            "ai.chat",
+        ]);
+
+        let network = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-live",
+                "network",
+                "request",
+                Some(json!({ "service": "station-api", "path": "/api/v1/e2e", "method": "GET" })),
+                live_manifest.clone(),
+            ),
+            Path::new("."),
+        );
+        assert!(network.ok, "network failed: {:?}", network.error);
+        assert!(network.data.unwrap().status.contains("e2e-network-ok"));
+
+        let network_post = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-live",
+                "network",
+                "request",
+                Some(
+                    json!({ "service": "station-api", "path": "/api/v1/e2e/echo", "method": "POST", "body": { "message": "station-post" } }),
+                ),
+                live_manifest.clone(),
+            ),
+            Path::new("."),
+        );
+        assert!(
+            network_post.ok,
+            "network POST failed: {:?}",
+            network_post.error
+        );
+        let network_post_status = network_post.data.unwrap().status;
+        assert!(network_post_status.contains("e2e-network-post-ok"));
+        assert!(network_post_status.contains("station-post"));
+
+        let network_task = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-live",
+                "tasks",
+                "start",
+                Some(json!({
+                    "taskType": "network",
+                    "input": {
+                        "request": {
+                            "service": "station-api",
+                            "path": "/api/v1/e2e/echo",
+                            "method": "POST",
+                            "body": { "message": "task-network" }
+                        }
+                    }
+                })),
+                live_manifest.clone(),
+            ),
+            Path::new("."),
+        );
+        assert!(
+            network_task.ok,
+            "network task failed: {:?}",
+            network_task.error
+        );
+        let network_task_status = network_task.data.unwrap().status;
+        assert!(network_task_status.contains("\"state\":\"completed\""));
+        assert!(network_task_status.contains("e2e-network-post-ok"));
+        assert!(network_task_status.contains("task-network"));
+
+        let agent_task = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-live",
+                "tasks",
+                "start",
+                Some(json!({
+                    "taskType": "agent",
+                    "input": {
+                        "message": "task-agent",
+                        "metadata": { "source": "live-e2e" }
+                    }
+                })),
+                live_manifest.clone(),
+            ),
+            Path::new("."),
+        );
+        assert!(agent_task.ok, "agent task failed: {:?}", agent_task.error);
+        let agent_task_status = agent_task.data.unwrap().status;
+        assert!(agent_task_status.contains("\"state\":\"completed\""));
+        assert!(agent_task_status.contains("agent-e2e-ok"));
+        assert!(agent_task_status.contains("task-agent"));
+
+        let skill_register = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-live",
+                "skills",
+                "register",
+                Some(json!({
+                    "spec": {
+                        "id": "network-summary",
+                        "inputSchema": { "type": "object" },
+                        "streaming": true,
+                        "executor": {
+                            "type": "network",
+                            "request": {
+                                "service": "station-api",
+                                "path": "/api/v1/e2e/echo",
+                                "method": "POST"
+                            }
+                        }
+                    }
+                })),
+                live_manifest.clone(),
+            ),
+            Path::new("."),
+        );
+        assert!(
+            skill_register.ok,
+            "skill register failed: {:?}",
+            skill_register.error
+        );
+        let skill = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-live",
+                "skills",
+                "invoke",
+                Some(json!({
+                    "skillId": "network-summary",
+                    "input": { "message": "skill-network" }
+                })),
+                live_manifest.clone(),
+            ),
+            Path::new("."),
+        );
+        assert!(skill.ok, "skill failed: {:?}", skill.error);
+        let skill_status = skill.data.unwrap().status;
+        assert!(skill_status.contains("e2e-network-post-ok"));
+        assert!(skill_status.contains("skill-network"));
+
+        let agent_skill_register = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-live",
+                "skills",
+                "register",
+                Some(json!({
+                    "spec": {
+                        "id": "agent-summary",
+                        "inputSchema": { "type": "object" },
+                        "streaming": true,
+                        "executor": { "type": "agent" }
+                    }
+                })),
+                live_manifest.clone(),
+            ),
+            Path::new("."),
+        );
+        assert!(
+            agent_skill_register.ok,
+            "agent skill register failed: {:?}",
+            agent_skill_register.error
+        );
+        let agent_skill = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-live",
+                "skills",
+                "invoke",
+                Some(json!({
+                    "skillId": "agent-summary",
+                    "input": { "message": "skill-agent" }
+                })),
+                live_manifest.clone(),
+            ),
+            Path::new("."),
+        );
+        assert!(
+            agent_skill.ok,
+            "agent skill failed: {:?}",
+            agent_skill.error
+        );
+        assert!(agent_skill.data.unwrap().status.contains("agent-e2e-ok"));
+
+        let agent_session = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-live",
+                "agent",
+                "startSession",
+                Some(json!({ "purpose": "e2e" })),
+                live_manifest.clone(),
+            ),
+            Path::new("."),
+        );
+        assert!(
+            agent_session.ok,
+            "agent session failed: {:?}",
+            agent_session.error
+        );
+
+        let agent = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-live",
+                "agent",
+                "stream",
+                Some(json!({ "message": "hello" })),
+                live_manifest.clone(),
+            ),
+            Path::new("."),
+        );
+        assert!(agent.ok, "agent failed: {:?}", agent.error);
+        assert!(agent.data.unwrap().status.contains("agent-e2e-ok"));
+
+        let ai = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-live",
+                "ai",
+                "chat",
+                Some(
+                    json!({ "messages": [{ "role": "user", "content": "hello" }], "metadata": { "providerId": "applet-e2e-provider", "model": "e2e-model" }}),
+                ),
+                live_manifest,
+            ),
+            Path::new("."),
+        );
+        assert!(ai.ok, "ai failed: {:?}", ai.error);
+        assert!(ai.data.unwrap().status.contains("provider-e2e-ok"));
+    }
+
+    #[test]
+    fn live_provider_protocol_fixture_matrix() {
+        let Ok(base_url) = std::env::var("PEERS_APPLET_E2E_BASE_URL") else {
+            return;
+        };
+        let live_manifest = manifest(vec!["ai.chat"]);
+        let cases = [
+            (
+                "applet-e2e-provider-openai",
+                "openai-compatible",
+                "e2e-model-openai",
+                "provider-e2e-ok",
+            ),
+            (
+                "applet-e2e-provider-anthropic",
+                "anthropic",
+                "e2e-model-anthropic",
+                "provider-anthropic-e2e-ok",
+            ),
+            (
+                "applet-e2e-provider-gemini",
+                "gemini",
+                "e2e-model-gemini",
+                "provider-gemini-e2e-ok",
+            ),
+            (
+                "applet-e2e-provider-ollama",
+                "ollama",
+                "e2e-model-ollama",
+                "provider-ollama-e2e-ok",
+            ),
+        ];
+
+        for (provider_id, protocol, model_id, expected_text) in cases {
+            register_e2e_provider(provider_id, protocol, model_id, &base_url);
+            let result = applets_invoke_registered(
+                context(),
+                invoke(
+                    &format!("session-live-provider-{}", protocol),
+                    "ai",
+                    "chat",
+                    Some(
+                        json!({ "messages": [{ "role": "user", "content": "hello" }], "metadata": { "providerId": provider_id, "model": model_id }}),
+                    ),
+                    live_manifest.clone(),
+                ),
+                Path::new("."),
+            );
+            assert!(
+                result.ok,
+                "provider protocol {} failed: {:?}",
+                protocol, result.error
+            );
+            assert!(result.data.unwrap().status.contains(expected_text));
+        }
+    }
+
+    #[test]
+    fn rejects_invocation_after_gateway_session_destroy() {
+        let data_dir = temp_data_dir("session-destroy");
+        let session_id = "session-destroy";
+        let session_manifest = manifest(vec!["app.getContext", "lifecycle.destroy"]);
+        remove_session_record_for_test(session_id);
+        let ready = applets_invoke_registered(
+            context(),
+            invoke(
+                session_id,
+                "app",
+                "getContext",
+                None,
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(ready.ok);
+
+        let destroy = applets_invoke_registered(
+            context(),
+            invoke(
+                session_id,
+                "lifecycle",
+                "destroy",
+                None,
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(destroy.ok);
+
+        let after_destroy = applets_invoke_registered(
+            context(),
+            invoke(session_id, "app", "getContext", None, session_manifest),
+            &data_dir,
+        );
+        assert!(!after_destroy.ok);
+        assert_eq!(
+            after_destroy.error.as_ref().unwrap().code,
+            ErrorCode::Unauthorized
+        );
+        assert_eq!(
+            applet_error_code(&after_destroy).as_deref(),
+            Some("INVALID_SESSION")
+        );
+    }
+
+    #[test]
+    fn reloads_persisted_destroyed_session_state() {
+        let data_dir = temp_data_dir("session-persist");
+        let session_id = "session-persist-destroyed";
+        let session_manifest = manifest(vec!["app.getContext", "lifecycle.destroy"]);
+        remove_session_record_for_test(session_id);
+        let ready = applets_invoke_registered(
+            context(),
+            invoke(
+                session_id,
+                "app",
+                "getContext",
+                None,
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(ready.ok);
+        let destroyed = applets_invoke_registered(
+            context(),
+            invoke(
+                session_id,
+                "lifecycle",
+                "destroy",
+                None,
+                session_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(destroyed.ok);
+
+        remove_session_record_for_test(session_id);
+
+        let after_restart = applets_invoke_registered(
+            context(),
+            invoke(session_id, "app", "getContext", None, session_manifest),
+            &data_dir,
+        );
+        assert!(!after_restart.ok);
+        assert_eq!(
+            applet_error_code(&after_restart).as_deref(),
+            Some("INVALID_SESSION")
+        );
+    }
+
+    #[test]
+    fn captures_gateway_audit_evidence_for_security_paths() {
+        let _ = drain_audit_records();
+        let data_dir = temp_data_dir("audit");
+
+        let allowed = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-audit-allow",
+                "app",
+                "getContext",
+                None,
+                manifest(vec!["app.getContext"]),
+            ),
+            &data_dir,
+        );
+        assert!(allowed.ok);
+
+        let denied = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-audit-deny",
+                "ai",
+                "chat",
+                None,
+                manifest(vec!["app.getContext"]),
+            ),
+            &data_dir,
+        );
+        assert!(!denied.ok);
+
+        let destroy_session_id = "session-audit-destroy";
+        let destroy_manifest = manifest(vec!["app.getContext", "lifecycle.destroy"]);
+        let ready = applets_invoke_registered(
+            context(),
+            invoke(
+                destroy_session_id,
+                "app",
+                "getContext",
+                None,
+                destroy_manifest.clone(),
+            ),
+            &data_dir,
+        );
+        assert!(ready.ok);
+        let destroyed = applets_invoke_registered(
+            context(),
+            invoke(
+                destroy_session_id,
+                "lifecycle",
+                "destroy",
+                None,
+                destroy_manifest,
+            ),
+            &data_dir,
+        );
+        assert!(destroyed.ok);
+
+        let listener =
+            std::net::TcpListener::bind("127.0.0.1:0").expect("audit fixture should bind");
+        let audit_address = listener
+            .local_addr()
+            .expect("audit fixture should expose address");
+        drop(listener);
+        std::env::set_var(
+            "PEERS_APPLET_SERVICE_AUDIT_API",
+            format!("http://{}", audit_address),
+        );
+        let mut audit_manifest = manifest(vec!["network.request"]);
+        audit_manifest.services[0].id = "audit-api".to_string();
+        let network_allowed = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-audit-network-allow",
+                "network",
+                "request",
+                Some(json!({ "service": "audit-api", "path": "/api/v1/e2e", "method": "GET" })),
+                audit_manifest,
+            ),
+            &data_dir,
+        );
+        std::env::remove_var("PEERS_APPLET_SERVICE_AUDIT_API");
+        assert!(!network_allowed.ok);
+
+        let network_denied = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-audit-network-deny",
+                "network",
+                "request",
+                Some(json!({ "url": "https://example.com/api" })),
+                manifest(vec!["network.request"]),
+            ),
+            &data_dir,
+        );
+        assert!(!network_denied.ok);
+
+        let mut forged_manifest = manifest(vec!["app.getContext"]);
+        forged_manifest.id = "forged-applet".to_string();
+        let anti_forge = applets_invoke_registered(
+            context(),
+            invoke(
+                "session-audit-forge",
+                "app",
+                "getContext",
+                None,
+                forged_manifest,
+            ),
+            &data_dir,
+        );
+        assert!(!anti_forge.ok);
+
+        let audit = drain_audit_records();
+        assert!(audit
+            .iter()
+            .any(|record| record.capability == "app" && record.outcome == "ok"));
+        assert!(audit
+            .iter()
+            .any(|record| record.capability == "ai.chat" && record.outcome == "permission_denied"));
+        assert!(audit
+            .iter()
+            .any(|record| record.capability == "lifecycle.destroy" && record.outcome == "ok"));
+        assert!(audit
+            .iter()
+            .any(|record| record.capability == "network" && record.outcome == "error"));
+        assert!(audit
+            .iter()
+            .any(|record| record.capability == "applets.create_session"
+                && record.outcome == "manifest_mismatch"));
+    }
 }

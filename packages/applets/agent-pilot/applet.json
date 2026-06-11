@@ -1,25 +1,34 @@
 {
-  "manifestVersion": 2,
   "id": "agent-pilot",
   "name": "Agent Pilot",
   "version": "1.0.0",
   "description": "AI project management Kanban board",
   "author": "Peers Touch",
   "icon": "assets/icon.png",
-  "main": "index.html",
+  "minPlatformVersion": "0.1.0",
+  "targets": ["standalone"],
+  "entries": {
+    "lynx": "index.html",
+    "standalone": "index.html"
+  },
   "load": {
-    "type": "lynx",
-    "entry": "index.html"
+    "standalone": {
+      "type": "web-spa",
+      "entry": "index.html"
+    }
   },
   "bridge": {
-    "version": 2,
-    "protocol": "peers-touch.applet.bridge.v2"
+    "protocol": "peers-touch.applet.bridge",
+    "version": "1.0.0"
   },
   "permissions": [
-    "storage",
-    "network",
-    "notification"
+    "app.getContext",
+    "app.getLaunchOptions",
+    "lifecycle.reportReady",
+    "storage.get",
+    "storage.set"
   ],
-  "minPlatformVersion": "0.1.0",
-  "targetPlatforms": ["desktop", "mobile"]
+  "capabilities": [],
+  "services": [],
+  "skills": []
 }

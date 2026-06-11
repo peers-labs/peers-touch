@@ -1,0 +1,15 @@
+{
+  "kind": "peers-touch.applet.release.manual-product-acceptance",
+  "appletId": "real-third-party-applet-id",
+  "thirdPartyAttestation": "release/third-party-producer-attestation.json",
+  "normalUserSession": true,
+  "productShell": true,
+  "manualRun": true,
+  "synthetic": false,
+  "automatedHarness": false,
+  "acceptedBy": "normal user or reviewer name",
+  "acceptedAt": "2026-06-09T00:00:00.000Z",
+  "evidenceFiles": [
+    "applet-readiness-evidence/release/manual-product-acceptance-notes.txt"
+  ]
+}

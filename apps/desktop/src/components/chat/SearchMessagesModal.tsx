@@ -321,7 +321,7 @@ export function SearchMessagesModal({
       onCancel={handleClose}
       footer={null}
       width={640}
-      destroyOnClose
+      destroyOnHidden
     >
       <Flexbox gap={12}>
         <Input

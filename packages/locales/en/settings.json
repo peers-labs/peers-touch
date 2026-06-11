@@ -78,6 +78,9 @@
   "settings.statistics.topicRank": "Topic Content Rank",
   "settings.statistics.rankLabelModel": "Model",
   "settings.statistics.rankLabelAgent": "Agent",
+
+  "settings.agentGrowth.empty": "Select an agent to view growth data",
+  "settings.agentGrowth.loading": "Loading growth data...",
   "settings.statistics.rankLabelTopic": "Topic",
   "settings.statistics.rankLabelMessages": "Messages",
   "settings.statistics.rankNoData": "No Data",
