@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { log } from '@/utils/logger';
 import { Flexbox } from 'react-layout-kit';
 import {
-  Card, Descriptions, Divider, Empty, Modal,
+  Card, Descriptions, Divider, Drawer, Empty, Modal,
   Popconfirm, Progress, Select, Spin, Switch, Typography, Upload, message, theme,
 } from 'antd';
-import { Alert, Avatar, Button, Drawer, Input, Tabs, Tag, Tooltip, TextArea } from '@lobehub/ui';
+import { Alert, Avatar, Button, Input, Tabs, Tag, Tooltip, TextArea } from '@lobehub/ui';
 import {
   BookOpen, ChevronRight, Code2, Download, Edit, ExternalLink,
   FolderOpen, Link as LinkIcon, Plus, RefreshCw, Search,

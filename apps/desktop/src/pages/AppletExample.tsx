@@ -44,7 +44,7 @@ const AppletExample: React.FC = () => {
 
   const handleUnloadApplet = () => {
     if (selectedApplet) {
-      appletManager.unloadApplet(selectedApplet)
+      void appletManager.unloadApplet(selectedApplet)
     }
     setSelectedApplet(null)
     setAppletLoaded(false)

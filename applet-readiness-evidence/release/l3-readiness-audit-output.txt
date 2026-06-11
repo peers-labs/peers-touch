@@ -1,0 +1,67 @@
+FAIL Applet L3 release readiness audit
+Mode: release
+Candidate checks: PASS
+Release checks: FAIL
+
+Candidate evidence checks:
+- PASS Canonical contract schema and validation (contract/schema-source.txt) - Evidence markers are present.
+- PASS Contract JSON Schema generation (contract/schema-generation-output.txt) - Evidence markers are present.
+- PASS Contract schema consumer evidence (contract/schema-consumers.txt) - Evidence markers are present.
+- PASS Contract executable envelope tests (sdk/contract-test-output.txt) - Evidence markers are present.
+- PASS Platform check gate (checks/platform-check-output.txt) - Evidence markers are present.
+- PASS Platform check current source freshness (checks/platform-check-output.txt) - Platform check evidence is current relative to SDK, Desktop, and Mobile source inputs.
+- PASS Package manifest validation (contract/validation-output.txt) - Evidence markers are present.
+- PASS Desktop applet package distribution gate (desktop/package-gate-output.txt) - Evidence markers are present.
+- PASS Desktop packaged frontendDist assets gate (desktop/packaged-assets-gate-output.txt) - Evidence markers are present.
+- PASS Desktop packaged assets current filesystem freshness (apps/desktop/dist/applets-dist) - Desktop dist applet assets match current source applets-dist.
+- PASS Desktop Tauri bundle freshness gate (desktop/tauri-bundle-gate-output.txt) - Evidence markers are present.
+- PASS Desktop Tauri bundle current filesystem freshness (/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/apps/desktop/src-tauri/target/release/bundle/macos/Peers Touch Desktop.app/Contents/MacOS/peers-touch-desktop) - Tauri bundle is current relative to Desktop packaged applet assets.
+- PASS Desktop HTTP Gateway command dispatch gate (desktop/http-gateway-gate-output.txt) - Evidence markers are present.
+- PASS Desktop HTTP Gateway current source freshness (desktop/http-gateway-gate-output.txt) - Desktop HTTP Gateway evidence is current relative to Gateway command dispatch source inputs.
+- PASS Desktop Lynx runtime gate (desktop/runtime-gate-output.txt) - Evidence markers are present.
+- PASS Desktop Lynx runtime current source freshness (desktop/runtime-gate-output.txt) - Desktop Lynx runtime evidence is current relative to SDK, Desktop applet runtime, gate, and generated package inputs.
+- PASS Desktop product Host real Gateway gate (desktop/product-host-real-gateway-gate-output.txt) - Evidence markers are present.
+- PASS Desktop product Host real Gateway current source freshness (desktop/product-host-real-gateway-gate-output.txt) - Desktop product Host real Gateway evidence is current relative to SDK, product Host, Rust Gateway, gate, and generated package inputs.
+- PASS Desktop product shell real Gateway gate (desktop/product-shell-real-gateway-gate-output.txt) - Evidence markers are present.
+- PASS Desktop product shell real Gateway current source freshness (desktop/product-shell-real-gateway-gate-output.txt) - Desktop product shell real Gateway evidence is current relative to SDK, product shell routing, Rust Gateway, gate, and generated package inputs.
+- PASS Desktop packaged product-window gate (desktop/product-window-gate-output.txt) - Evidence markers are present.
+- PASS Desktop packaged product-window current source freshness (desktop/product-window-gate-output.txt) - Desktop packaged product-window evidence is current relative to product shell, Rust Gateway, packaged applets, gate, and generated package inputs.
+- PASS Desktop live E2E controlled upstream (desktop/live-e2e-output.txt) - Evidence markers are present.
+- PASS Desktop live E2E current source freshness (desktop/live-e2e-output.txt) - Desktop live E2E evidence is current relative to contract, SDK, Rust Gateway, controlled upstream gate, and generated package inputs.
+- PASS Product capability service executor gate (release/product-capability-service-gate-output.txt) - Evidence markers are present.
+- PASS Product capability service executor current source freshness (release/product-capability-service-gate-output.txt) - Product capability service executor evidence is current relative to Gateway executor source and live E2E evidence.
+- PASS Developer SDK package flow (developer-flow/sdk-package-flow-output.txt) - Evidence markers are present.
+- PASS Developer SDK package flow current source freshness (developer-flow/sdk-package-flow-output.txt) - Developer SDK package flow evidence is current relative to contract, SDK, generator, and generated package inputs.
+- PASS Producer independence forbidden-path scan (producer-independence/forbidden-producer-scan-output.txt) - Evidence markers are present.
+- PASS Host package input smoke (producer-independence/host-package-input-output.txt) - Evidence markers are present.
+- PASS SDK adapter surface gate (sdk/adapter-test-output.txt) - Evidence markers are present.
+- PASS SDK adapter current source freshness (sdk/adapter-test-output.txt) - SDK adapter evidence is current relative to contract, SDK, and adapter-test source inputs.
+- PASS Mobile and Web parity gate (parity/mobile-web-bridge-output.txt) - Evidence markers are present.
+- PASS Mobile and Web parity current source freshness (parity/mobile-web-bridge-output.txt) - Mobile/Web parity evidence is current relative to SDK and native bridge source inputs.
+- PASS Mobile native manifest source/iOS executable gate (mobile/native-manifest-gate-output.txt) - Evidence markers are present.
+- PASS Mobile native manifest current source freshness (mobile/native-manifest-gate-output.txt) - Mobile native manifest evidence is current relative to contract, SDK, native bridge, and generated package inputs.
+- PASS Android JVM native bridge contract executed in SDK environment (mobile/native-manifest-gate-output.txt) - Evidence markers are present.
+- PASS Android Lynx runtime E2E (mobile/android-lynx-runtime-e2e-output.txt) - Evidence markers are present.
+- PASS Android Lynx runtime E2E current source freshness (mobile/android-lynx-runtime-e2e-output.txt) - Android Lynx runtime E2E evidence is current relative to SDK, native runtime, gate, and generated package inputs.
+- PASS iOS Lynx runtime E2E (mobile/ios-lynx-runtime-e2e-output.txt) - Evidence markers are present.
+- PASS iOS Lynx runtime E2E current source freshness (mobile/ios-lynx-runtime-e2e-output.txt) - iOS Lynx runtime E2E evidence is current relative to SDK, native runtime, gate, and generated package inputs.
+- PASS Web Host runtime gate (web/web-host-runtime-gate-output.txt) - Evidence markers are present.
+- PASS Web Host runtime current source freshness (web/web-host-runtime-gate-output.txt) - Web Host runtime evidence is current relative to contract, SDK, gate, and generated package inputs.
+- PASS Production Web Host shell integration (web/production-web-host-runtime-output.txt) - Evidence markers are present.
+- PASS Production Web Host shell current source freshness (web/production-web-host-runtime-output.txt) - Production Web Host shell evidence is current relative to contract, SDK, gate, and generated package inputs.
+- PASS Repo-external synthetic certification chain (external-producer/certification-output.txt) - Evidence markers are present.
+- PASS Repo-external synthetic certification current package check (/tmp/peers-touch-external-l3-cert) - Repo-external synthetic package still exists, matches certification evidence, and is not a repo-package dry-run.
+
+Release evidence checks:
+- PENDING Real independently authored third-party producer attestation (release/third-party-producer-attestation.json) - Missing evidence file: release/third-party-producer-attestation.json
+- PENDING Manual normal-user product acceptance (release/manual-product-acceptance.json) - Missing evidence file: release/manual-product-acceptance.json
+
+Release evidence templates:
+- release/third-party-producer-attestation.json must attest real independent authorship, point at an outside-repository package whose manifest id matches appletId, reference a passing non-dry-run external-producer certification output for the same package path and manifest id, include authorshipEvidenceFiles, and avoid known Peers-Touch generated certification fixture packages.
+- release/manual-product-acceptance.json must reference the third-party attestation, record a non-synthetic normal-user manual product-shell run for the same appletId, and list supporting artifacts containing product-shell, normal-user, and applet-id evidence.
+- release reviewedAt/acceptedAt fields must be canonical UTC ISO-8601 timestamps; reviewedAt must be at or after certificationOutput file mtime, and acceptedAt must be at or after thirdPartyAttestation.reviewedAt.
+
+Automated candidate evidence constraints:
+- mobile/android-lynx-runtime-e2e-output.txt and mobile/ios-lynx-runtime-e2e-output.txt must come from native runtime E2E, not source parity scans.
+- web/production-web-host-runtime-output.txt must come from the Production Web Host shell gate, not only the adapter/runtime harness.
+- release/product-capability-service-gate-output.txt must prove product-backed task/skill executors where registry/timer-backed placeholders are not release-final.

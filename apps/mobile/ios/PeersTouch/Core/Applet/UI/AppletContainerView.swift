@@ -3,9 +3,15 @@ import SwiftUI
 struct AppletContainerView: View {
     let appletId: String
     @StateObject private var viewModel: AppletContainerViewModel
+    private let lynxViewFactory: LynxViewFactory
 
-    init(appletId: String, appletManager: AppletManager) {
+    init(
+        appletId: String,
+        appletManager: AppletManager = Container.shared.appletManager,
+        lynxViewFactory: LynxViewFactory = Container.shared.lynxViewFactory
+    ) {
         self.appletId = appletId
+        self.lynxViewFactory = lynxViewFactory
         _viewModel = StateObject(wrappedValue: AppletContainerViewModel(
             appletId: appletId,
             appletManager: appletManager
@@ -17,11 +23,12 @@ struct AppletContainerView: View {
             switch viewModel.state {
             case .loading:
                 ProgressView("Loading applet...")
-            case .running(let session):
+            case .running(let session, let bundleURL):
                 if let loadConfig = session.manifest.iosLoadConfig {
                     AppletLynxViewRepresentable(
-                        bundleUrl: loadConfig.entry,
-                        session: session
+                        bundleURL: bundleURL.appendingPathComponent(loadConfig.entry),
+                        session: session,
+                        lynxViewFactory: lynxViewFactory
                     )
                 } else {
                     errorView("No iOS load config for applet \(appletId)")
@@ -51,7 +58,7 @@ struct AppletContainerView: View {
 final class AppletContainerViewModel: ObservableObject {
     enum ContainerState {
         case loading
-        case running(AppletBridgeSession)
+        case running(AppletBridgeSession, URL)
         case error(String)
     }
 
@@ -66,12 +73,17 @@ final class AppletContainerViewModel: ObservableObject {
     }
 
     func load() {
-        guard let session = appletManager.getApplet(appletId) else {
+        do {
+            let session = try appletManager.loadApplet(id: appletId)
+            guard let bundleURL = appletManager.getBundleURL(appletId) else {
+                state = .error("Applet \(appletId) bundle URL not found")
+                return
+            }
+            session.transition(to: .running)
+            state = .running(session, bundleURL)
+        } catch {
             state = .error("Applet \(appletId) not found")
-            return
         }
-        session.transition(to: .running)
-        state = .running(session)
     }
 
     func unload() {

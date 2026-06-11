@@ -128,7 +128,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
         </Flexbox>
       }
       width={420}
-      destroyOnClose
+      destroyOnHidden
     >
       <Flexbox gap={12}>
         <Input

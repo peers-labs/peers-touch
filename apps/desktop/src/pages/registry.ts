@@ -11,6 +11,8 @@
 import { registerSearchPage } from './SearchPage.descriptor';
 import { registerSocialChatPage } from './SocialChatPage.descriptor';
 import { registerSettingsPage } from './SettingsPage.descriptor';
+import { registerAppletsPage } from './AppletsPage.descriptor';
+import { registerAppletRuntimePage } from './AppletRuntimePage.descriptor';
 
 let registered = false;
 
@@ -21,4 +23,6 @@ export function registerKernelPages(): void {
   registerSearchPage();
   registerSocialChatPage();
   registerSettingsPage();
+  registerAppletsPage();
+  registerAppletRuntimePage();
 }

@@ -181,8 +181,15 @@ class LynxViewFactory constructor(
         bridgeSession: AppletBridgeSession
     ): View {
         check(engineManager.isInitialized) { "LynxEngineManager must be initialized" }
-        val lynxView = LynxView(context)
-        lynxView.loadTemplateUrl(bundleUrl)
+        val lynxView = LynxView.builder(context).apply {
+            registerModule("bridge", AppletBridgeNativeModule::class.java, bridgeSession)
+        }.build(context)
+        if (bundleUrl.startsWith("file:")) {
+            val bundleBytes = File(URI(bundleUrl)).readBytes()
+            lynxView.renderTemplateWithBaseUrl(bundleBytes, emptyMap<String, Any>(), bundleUrl)
+        } else {
+            lynxView.renderTemplateUrl(bundleUrl, emptyMap<String, Any>())
+        }
         return lynxView
     }
 }
@@ -204,17 +211,32 @@ final class LynxViewFactory: Sendable {
         guard engineManager.isInitialized else {
             fatalError("LynxEngineManager must be initialized before creating views")
         }
+        let config = LynxConfig(provider: engineManager.config?.templateProvider)
+        config.register(AppletBridgeNativeModule.self, param: bridgeSession)
+        LynxEnv.sharedInstance().prepareConfig(config)
+
         let lynxView = LynxView(builderBlock: { builder in
             builder.frame = UIScreen.main.bounds
-            builder.config = self.engineManager.config
+            builder.config = config
         })
-        lynxView.loadTemplate(fromURL: bundleURL.absoluteString)
+        if let bundleData = try? Data(contentsOf: bundleURL) {
+            lynxView.loadTemplate(bundleData, withURL: bundleURL.absoluteString)
+        } else {
+            lynxView.loadTemplate(fromURL: bundleURL.absoluteString)
+        }
         return lynxView
     }
 }
 ```
 
-两端均在创建前检查引擎初始化状态。iOS 端通过 builder 模式配置 frame 和 config。
+两端均在创建前检查引擎初始化状态，并在 view 级别注册当前 session 的 `AppletBridgeNativeModule`。iOS 端通过 builder 模式配置 frame，并为每个 Applet view 创建带当前
+`AppletBridgeSession` 的 `LynxConfig`，将 `AppletBridgeNativeModule` 注入为 `NativeModules.bridge` /
+`lynx.requireModule('bridge')` 可访问的 per-session bridge；不要把 session 级 bridge param 注册到共享
+`LynxEngineManager.config` 上。
+
+Runtime E2E 证据约束：
+- `pnpm applet:ios-lynx-runtime-e2e` 必须生成 native Lynx bundle；不要用 `environments.web` 的 Rspeedy 产物冒充 native runtime 证据。
+- `pnpm applet:android-lynx-runtime-e2e` 只有在真实 emulator/device 中观察到 `storage.set/get` 经过 `AppletBridgeNativeModule` 返回 canonical marker envelope 时，才能写出 `mobile/android-lynx-runtime-e2e-output.txt`。
 
 ---
 
@@ -1023,41 +1045,61 @@ final class AppletBundleStorage: @unchecked Sendable {
 
 ### AppletManifest 解析
 
-每个 Applet bundle 目录下包含一个 `applet.json` 清单文件。`AppletManifestParser` 负责解析和校验。
+每个 Applet bundle 目录下包含一个 `applet.json` / `manifest.json` 清单文件。`AppletManifestParser` 负责按 `@peers-touch/applet-contract` 的 canonical manifest 语义解析和校验。
 
 清单文件结构：
 
 ```json
 {
-  "manifestVersion": 2,
   "id": "my-applet",
   "name": "My Applet",
   "version": "1.0.0",
   "description": "A sample applet",
   "author": "PeersTouch Team",
   "icon": "icon.png",
-  "permissions": ["storage", "network"],
-  "capabilities": [],
   "minPlatformVersion": "0.1.0",
-  "targetPlatforms": ["mobile", "desktop"],
+  "targets": ["android", "ios"],
+  "entries": {
+    "lynx": "main.lynx.bundle"
+  },
   "load": {
-    "type": "lynx",
-    "entry": "bundle.js"
+    "android": { "type": "lynx-native", "entry": "main.lynx.bundle" },
+    "ios": { "type": "lynx-native", "entry": "main.lynx.bundle" }
   },
   "bridge": {
-    "version": 2,
-    "protocol": "peers-touch.applet.bridge.v2"
+    "protocol": "peers-touch.applet.bridge",
+    "version": "1.0.0"
+  },
+  "permissions": ["app.getContext", "network.request", "storage.get", "storage.set"],
+  "capabilities": [],
+  "services": [
+    {
+      "id": "primary-api",
+      "kind": "http",
+      "binding": "station-resolved",
+      "allowedMethods": ["GET", "POST"],
+      "allowedPaths": ["/api/v1/*"]
+    }
+  ],
+  "skills": [],
+  "integrity": {
+    "algorithm": "sha256",
+    "files": {
+      "main.lynx.bundle": "sha256:..."
+    }
   }
 }
 ```
 
 校验规则：
-- `manifestVersion` 必须等于 `2`
 - `id` 必须匹配 `^[a-z0-9][a-z0-9-]*$`
 - `version` 必须是合法 semver
-- `load.type` 目前仅支持 `"lynx"`
-- `bridge.protocol` 必须等于 `"peers-touch.applet.bridge.v2"`
-- `targetPlatforms` 可选，有效值为 `"desktop"`, `"mobile"`, `"web"`
+- `targets` 必须包含当前平台：Android 使用 `"android"`，iOS 使用 `"ios"`
+- `load.android.type` / `load.ios.type` 必须为 `"lynx-native"`
+- `bridge.protocol` 必须等于 `"peers-touch.applet.bridge"`
+- `permissions` 必须使用完整 capability method，例如 `network.request`
+- `network.request` 权限要求至少一个 `services` 声明
+- `integrity.files` 必须覆盖 `entries.lynx` 与所有 skill schema
 
 ### Applet 加载与卸载
 

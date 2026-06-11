@@ -837,7 +837,7 @@ export function AccountTab() {
         open={blockedOpen}
         footer={null}
         onCancel={() => setBlockedOpen(false)}
-        destroyOnClose
+        destroyOnHidden
       >
         <Spin spinning={blockedLoading}>
           {blockedUsers.length > 0 ? (

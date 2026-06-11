@@ -9,9 +9,9 @@ use crate::contracts::{
     FriendChatListInput, FriendChatListMessagesInput, FriendChatOnlineInput,
     FriendChatPendingInput, FriendChatRecallInput, FriendChatRejectFriendRequestInput,
     FriendChatSendFriendRequestInput, FriendChatSendInput, FriendChatSyncInput,
-    FriendChatSyncMessagesInput,
-    FriendChatThreadCountsInput, FriendChatThreadInput, FriendChatThreadReadInput,
-    FriendConversationSettingsInput, FriendConversationSettingsUpdateInput, StubPayload,
+    FriendChatSyncMessagesInput, FriendChatThreadCountsInput, FriendChatThreadInput,
+    FriendChatThreadReadInput, FriendConversationSettingsInput,
+    FriendConversationSettingsUpdateInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -1208,8 +1208,13 @@ pub fn friend_chat_unblock_user(
     let resp = match station_client::request_proto::<
         model::chat::UnblockUserRequest,
         model::chat::UnblockUserResponse,
-    >(Method::DELETE, "/friend-chat/block", &token, None, Some(&req))
-    {
+    >(
+        Method::DELETE,
+        "/friend-chat/block",
+        &token,
+        None,
+        Some(&req),
+    ) {
         Ok(resp) => resp,
         Err(error) => return station_error_proto(error, "station request failed"),
     };
@@ -1256,10 +1261,7 @@ pub fn friend_chat_get_friendship_status(
         return AppResult::fail(ErrorCode::InvalidArgument, "target_did is required", None);
     }
     let query = vec![("target_did", input.target_did)];
-    let resp = match station_client::request_proto::<
-        (),
-        model::chat::GetFriendshipStatusResponse,
-    >(
+    let resp = match station_client::request_proto::<(), model::chat::GetFriendshipStatusResponse>(
         Method::GET,
         "/friend-chat/friendship/status",
         &token,

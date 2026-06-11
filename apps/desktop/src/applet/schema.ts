@@ -4,6 +4,7 @@ import {
   type AppletLoadMap,
   type TargetPlatform,
 } from './types'
+import { validateManifest } from '@peers-touch/applet-contract'
 
 // ── Index format ──
 
@@ -24,7 +25,7 @@ type ParseResult<T> = ParseSuccess<T> | ParseFailure
 
 // ── Validation helpers ──
 
-const TARGET_PLATFORMS = new Set<TargetPlatform>(['desktop', 'android', 'ios', 'standalone'])
+const TARGET_PLATFORMS = new Set<TargetPlatform>(['desktop', 'android', 'ios', 'harmony', 'web', 'standalone'])
 const DESKTOP_LOAD_TYPES = new Set(['lynx-web'])
 const MOBILE_LOAD_TYPES = new Set(['lynx-native'])
 const STANDALONE_LOAD_TYPES = new Set(['web-spa'])
@@ -115,6 +116,36 @@ function validateLoadMap(load: unknown, source: string): ParseResult<AppletLoadM
     }
   }
 
+  if (load.harmony !== undefined) {
+    if (!isRecord(load.harmony)) {
+      issues.push(`${source}.load.harmony must be an object`)
+    } else {
+      if (!MOBILE_LOAD_TYPES.has(load.harmony.type as string)) {
+        issues.push(`${source}.load.harmony.type must be "lynx-native"`)
+      }
+      if (typeof load.harmony.entry !== 'string' || load.harmony.entry.trim().length === 0) {
+        issues.push(`${source}.load.harmony.entry must be a non-empty string`)
+      } else {
+        result.harmony = { type: 'lynx-native', entry: (load.harmony.entry as string).trim() }
+      }
+    }
+  }
+
+  if (load.web !== undefined) {
+    if (!isRecord(load.web)) {
+      issues.push(`${source}.load.web must be an object`)
+    } else {
+      if (!DESKTOP_LOAD_TYPES.has(load.web.type as string)) {
+        issues.push(`${source}.load.web.type must be "lynx-web"`)
+      }
+      if (typeof load.web.entry !== 'string' || load.web.entry.trim().length === 0) {
+        issues.push(`${source}.load.web.entry must be a non-empty string`)
+      } else {
+        result.web = { type: 'lynx-web', entry: (load.web.entry as string).trim() }
+      }
+    }
+  }
+
   if (load.standalone !== undefined) {
     if (!isRecord(load.standalone)) {
       issues.push(`${source}.load.standalone must be an object`)
@@ -131,7 +162,7 @@ function validateLoadMap(load: unknown, source: string): ParseResult<AppletLoadM
   }
 
   // At least one platform must be defined
-  if (!result.desktop && !result.android && !result.ios && !result.standalone) {
+  if (!result.desktop && !result.android && !result.ios && !result.harmony && !result.web && !result.standalone) {
     issues.push(`${source}.load must contain at least one platform entry`)
   }
 
@@ -147,6 +178,10 @@ export function parseAppletInfo(rawManifest: unknown, source: string): ParseResu
   }
 
   const issues: string[] = []
+  const contractCheck = validateManifest(rawManifest)
+  if (!contractCheck.valid) {
+    return { ok: false, issues: contractCheck.errors.map((issue) => `${source}: ${issue}`) }
+  }
 
   const id = parseNonEmptyString(rawManifest.id, `${source}.id`)
   if (!id.ok) {
@@ -188,16 +223,17 @@ export function parseAppletInfo(rawManifest: unknown, source: string): ParseResu
 
   // targetPlatforms
   let targetPlatforms: TargetPlatform[] = []
-  if (!Array.isArray(rawManifest.targetPlatforms)) {
-    issues.push(`${source}.targetPlatforms must be an array`)
+  const rawTargets = Array.isArray(rawManifest.targets) ? rawManifest.targets : rawManifest.targetPlatforms
+  if (!Array.isArray(rawTargets)) {
+    issues.push(`${source}.targets must be an array`)
   } else {
-    const invalidIdx = rawManifest.targetPlatforms.findIndex(
+    const invalidIdx = rawTargets.findIndex(
       (p: unknown) => !TARGET_PLATFORMS.has(p as TargetPlatform),
     )
     if (invalidIdx >= 0) {
-      issues.push(`${source}.targetPlatforms[${invalidIdx}] must be one of: desktop, android, ios, standalone`)
+      issues.push(`${source}.targets[${invalidIdx}] must be one of: desktop, android, ios, harmony, web, standalone`)
     } else {
-      targetPlatforms = rawManifest.targetPlatforms as TargetPlatform[]
+      targetPlatforms = rawTargets as TargetPlatform[]
     }
   }
 
@@ -240,6 +276,11 @@ export function parseAppletInfo(rawManifest: unknown, source: string): ParseResu
         version: (rawManifest.bridge as Record<string, unknown>).version as string,
       },
       path: `/applets-dist/${idValue}`,
+      targets: targetPlatforms,
+      entries: isRecord(rawManifest.entries) ? rawManifest.entries as { lynx: string; standalone?: string } : undefined,
+      services: Array.isArray(rawManifest.services) ? rawManifest.services as AppletInfo['services'] : undefined,
+      skills: Array.isArray(rawManifest.skills) ? rawManifest.skills as AppletInfo['skills'] : undefined,
+      integrity: isRecord(rawManifest.integrity) ? rawManifest.integrity as unknown as AppletInfo['integrity'] : undefined,
     },
   }
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import {
   Card, Statistic, Progress, Table, Tag, Badge, Button,
@@ -50,6 +51,7 @@ function TrustBar({ score }: { score: number }) {
 }
 
 export function AgentGrowthTab({ agentId }: AgentGrowthTabProps) {
+  const { t } = useTranslation('settings');
   theme.useToken();
   const [loading, setLoading] = useState(false);
   const [snapshot, setSnapshot] = useState<GrowthSnapshot | null>(null);
@@ -106,7 +108,7 @@ export function AgentGrowthTab({ agentId }: AgentGrowthTabProps) {
   if (!agentId) {
     return (
       <Flexbox align="center" justify="center" style={{ padding: 48 }}>
-        <Empty description="Select an agent to view growth data" />
+        <Empty description={t('settings.agentGrowth.empty')} />
       </Flexbox>
     );
   }
@@ -114,7 +116,7 @@ export function AgentGrowthTab({ agentId }: AgentGrowthTabProps) {
   if (loading && !snapshot) {
     return (
       <Flexbox align="center" justify="center" style={{ padding: 48 }}>
-        <Spin tip="Loading growth data..." />
+        <Spin description={t('settings.agentGrowth.loading')} />
       </Flexbox>
     );
   }

@@ -3,7 +3,6 @@ import { useChatStore } from '../store/chat';
 import { ChatPage } from '../pages/ChatPage';
 import { NotesPage } from '../pages/NotesPage';
 import { AgentProfilePage } from '../pages/AgentProfilePage';
-import { AppletRuntimePage } from '../pages/AppletRuntimePage';
 import { getModule } from '../modules/registry';
 import { getPage } from '../kernel/page';
 import { scheduleIdle } from '../kernel/boot';
@@ -24,7 +23,7 @@ interface PageRouterProps {
 // Currently kernel-owned: search, chat, settings.
 const KEEP_ALIVE_PAGES = new Set<string>(['agent']);
 
-export function PageRouter({ page, router, navigation, appletPins }: PageRouterProps) {
+export function PageRouter({ page, router, navigation }: PageRouterProps) {
   const [mounted, setMounted] = useState<Set<string>>(() => {
     const initial = new Set<string>();
     if (KEEP_ALIVE_PAGES.has(page)) initial.add(page);
@@ -92,14 +91,14 @@ export function PageRouter({ page, router, navigation, appletPins }: PageRouterP
 
       {/* Other pages: rendered conditionally (lightweight, no persistent state) */}
       {!KEEP_ALIVE_PAGES.has(page) && !isKernelOwned && (
-        <EphemeralPage page={page} router={router} navigation={navigation} appletPins={appletPins} />
+        <EphemeralPage page={page} router={router} navigation={navigation} />
       )}
     </>
   );
 }
 
 // Non-keep-alive pages that mount/unmount on navigation
-function EphemeralPage({ page, router, navigation, appletPins }: PageRouterProps) {
+function EphemeralPage({ page, router, navigation }: Pick<PageRouterProps, 'page' | 'router' | 'navigation'>) {
   switch (page) {
     case 'notes':
       return (
@@ -128,17 +127,6 @@ function EphemeralPage({ page, router, navigation, appletPins }: PageRouterProps
       );
 
     default: {
-      if (page.startsWith('applet:')) {
-        const appletId = page.slice('applet:'.length);
-        return (
-          <AppletRuntimePage
-            appletId={appletId}
-            onPin={() => appletPins.togglePin(appletId)}
-            pinned={appletPins.pinnedApplets.includes(appletId)}
-          />
-        );
-      }
-
       const mod = getModule(page);
       if (mod?.page) {
         const PageComp = mod.page;
