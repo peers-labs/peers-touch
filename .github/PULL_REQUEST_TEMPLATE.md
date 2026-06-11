@@ -81,6 +81,35 @@
 
 <!-- If manual testing, describe steps / 手动测试步骤说明: -->
 
+## Quality Evidence / 质量证据
+
+<!-- Submit-Time Review Pipeline -->
+<!-- Run before opening PR: make review-submit REVIEW_BASE=<base> -->
+<!-- Paste or summarize tooling/acceptance/reports/latest-quality-evidence.md -->
+
+- Range:
+- Review profiles:
+- Matched knowledge:
+- Acceptance impacted features:
+- Evidence gaps:
+- Unproven scope:
+
+## Framework Growth Opportunities / 框架成长机会
+
+<!-- For every finding/evidence gap, decide whether the review framework should grow. -->
+<!-- Use no_growth_needed only with a reason. -->
+
+- `knowledge_invariant`:
+- `knowledge_pitfall`:
+- `knowledge_playbook`:
+- `hard_rule`:
+- `review_fixture`:
+- `acceptance_contract`:
+- `acceptance_gate`:
+- `skill_update`:
+- `ci_tooling_update`:
+- `no_growth_needed`:
+
 ## Related Issues / 关联 Issue
 
 <!-- Link related issues: Closes #123, Fixes #456 -->

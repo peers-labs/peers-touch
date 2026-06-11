@@ -1,0 +1,4 @@
+scenario: deterministic project rule violation is found manually
+expected_growth_decision: hard_rule
+expected_asset: tooling/scripts/review/hard-rules.sh
+proof: repeatable mechanical violations should move from manual review into a checked rule plus fixture

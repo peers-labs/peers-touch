@@ -30,7 +30,8 @@ PR / diff
   -> agent code review judgment
   -> owner escalation when needed
   -> merge / hold / reject
-  -> knowledge, gate, fixture, or skill growth
+  -> review learning classification
+  -> knowledge, gate, fixture, skill, or CI growth
 ```
 
 ---
@@ -88,7 +89,39 @@ The evidence plan is not an approval. It is the input to agent review.
 
 ---
 
-## 4. Acceptance Evidence Tiers
+## 4. Submit-Time Review Pipeline
+
+When a user asks an agent to submit an MR/PR, the quality lifecycle starts before
+the PR is created. The agent must run the submit-time pipeline against the target
+base branch:
+
+```bash
+make review-submit REVIEW_BASE=origin/master
+```
+
+The pipeline performs:
+
+1. quality evidence generation;
+2. strict review framework checks;
+3. acceptance domain validation and coverage report;
+4. acceptance planning for the PR range;
+5. selected `ci-structure` and `ci-cheap` acceptance gates;
+6. acceptance report generation.
+
+If the submit-time pipeline fails, the agent must not open a normal ready-for-review
+PR. It must either fix the failure, ask the user whether to open a draft with
+explicit evidence gaps, or record an owner-approved waiver.
+
+The PR body must include the generated evidence summary, matched knowledge,
+tests/checks run, unproven scope, and Framework Growth Opportunities.
+
+After PR creation, GitHub Actions rerun the review workflow and attach CI evidence
+artifacts. CI is the second execution of the same lifecycle, not the first time
+quality review starts.
+
+---
+
+## 5. Acceptance Evidence Tiers
 
 Acceptance gates should not all run in PR CI. Each gate should be classified by execution tier:
 
@@ -112,13 +145,13 @@ Executable tier entry points:
 
 ---
 
-## 5. CI Evidence
+## 6. CI Evidence
 
 The GitHub review workflow runs review gates, generates quality evidence, writes the Markdown evidence report into the job summary, and uploads JSON/Markdown artifacts. CI evidence is a review input, not an approval.
 
 ---
 
-## 6. Knowledge Delta Review
+## 7. Knowledge Delta Review
 
 `knowledge-match.sh` is a path resolver. It does not decide whether code violates or obsoletes knowledge.
 
@@ -134,7 +167,7 @@ The agent review must perform the semantic delta:
 
 ---
 
-## 7. Merge Decision Model
+## 8. Merge Decision Model
 
 The final merge decision belongs to agent-led review, using the evidence plan:
 
@@ -148,7 +181,36 @@ Acceptance can prove capability scope, but it cannot approve a PR. Review can ap
 
 ---
 
-## 8. Growth Loop
+## 9. Growth Loop
+
+The review framework is designed for review agents, not only humans. It must
+improve as the product and business domains evolve. The durable learning target
+is the repository, not an individual agent's private memory.
+
+Every review must run this growth protocol after findings and evidence gaps are
+identified:
+
+```text
+for each finding or evidence gap:
+  decide whether the lesson is reusable
+  if reusable, classify the repository asset that should grow
+  if not reusable, record the no-growth reason
+```
+
+Growth decisions are restricted to these stable categories:
+
+| Decision | Repository Asset |
+|---|---|
+| `knowledge_invariant` | `docs/knowledge/invariants/**` |
+| `knowledge_pitfall` | `docs/knowledge/pitfalls/**` |
+| `knowledge_playbook` | `docs/knowledge/playbooks/**` |
+| `hard_rule` | `tooling/scripts/review/hard-rules.sh` plus fixture |
+| `review_fixture` | `tooling/review-fixtures/**` |
+| `acceptance_contract` | `tooling/acceptance/features/**` or `capabilities/**` |
+| `acceptance_gate` | `tooling/acceptance/gates.yaml` or `tooling/acceptance/gates/**` |
+| `skill_update` | `tooling/skills/github-review/SKILL.md` or `quality-check/SKILL.md` |
+| `ci_tooling_update` | `.github/workflows/**`, `tooling/make/**`, or `tooling/scripts/**` |
+| `no_growth_needed` | explicit review note explaining why the lesson is one-off |
 
 After every accepted finding or escaped defect, classify the missing guard:
 
@@ -161,4 +223,42 @@ After every accepted finding or escaped defect, classify the missing guard:
 | hard-rule gap | review fixture and rule update |
 | review behavior gap | `github-review` or `quality-check` skill update |
 
-The quality system improves only when review conclusions feed back into knowledge, gates, fixtures, and skills.
+The quality system improves only when review conclusions feed back into
+knowledge, gates, fixtures, skills, and CI/tooling.
+
+## 10. Proof Obligations
+
+The framework does not claim an agent will never miss a bug. It proves narrower,
+engineering-testable properties:
+
+| Property | Proof |
+|---|---|
+| Every review protocol includes growth evaluation | `github-review` requires `Review Learning Check` and `Framework Growth Opportunities` |
+| Growth decisions have durable repository targets | decision categories map to concrete repo paths |
+| The growth protocol cannot be silently removed | `skill-check.sh` requires the sections and decision categories |
+| Learned behavior is reusable by future agents | knowledge, skills, fixtures, gates, and CI live in the repo |
+| Regressions in the protocol are caught | growth fixtures under `tooling/review-fixtures/growth-*` are checked |
+
+Therefore the proof target is:
+
+```text
+once a reusable review lesson is recognized and merged into a repository asset,
+future agents executing the same framework inherit that lesson through checked
+repo state instead of private conversational memory.
+
+## 11. Document Set
+
+This directory is the source of truth for the quality framework:
+
+| Document | Purpose |
+|---|---|
+| `README.md` | architecture overview, responsibilities, proof target |
+| `lifecycle.md` | end-to-end quality lifecycle from task to merge and growth |
+| `agent-operation.md` | concrete operating procedure for agents executing the framework |
+| `proof-model.md` | what is machine-proven, what is review-proven, and what is not claimed |
+| `maintenance.md` | how to evolve routes, gates, skills, fixtures, and knowledge safely |
+
+Agents should read `agent-operation.md` when asked to submit an MR/PR or perform
+review. Framework maintainers should read `maintenance.md` before changing the
+quality system itself.
+```

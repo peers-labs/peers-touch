@@ -59,6 +59,7 @@ help:
 	@echo "  make mono-build                pnpm workspace build"
 	@echo "  make model-gen                 Generate proto code"
 	@echo "  make review REVIEW_RANGE=<range>  Run code review framework checks"
+	@echo "  make review-submit REVIEW_BASE=<base>  Run submit-time review pipeline before PR/MR"
 	@echo "  make quality-evidence REVIEW_RANGE=<range>  Aggregate review, knowledge, and acceptance evidence"
 	@echo "  make acceptance-validate [DOMAIN=<name>]  Validate acceptance domain contracts"
 	@echo "  make acceptance-plan ACCEPTANCE_RANGE=<range>  Plan impacted product acceptance gates"
