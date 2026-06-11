@@ -5,3 +5,7 @@ export interface BridgeAdapter {
   onEvent(handler: (topic: string, payload: unknown) => void): () => void;
   readonly name: string;
 }
+
+export interface RuntimeContextProvider {
+  getContext?(): Record<string, unknown> | undefined;
+}

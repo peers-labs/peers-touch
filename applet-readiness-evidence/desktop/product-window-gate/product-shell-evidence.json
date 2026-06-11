@@ -1,0 +1,13 @@
+{
+  "appletId": "generic-complex-applet",
+  "event": "applet.readiness.flow.completed",
+  "launchMode": "product-window-certification",
+  "ok": true,
+  "productShell": true,
+  "properties": {
+    "agentTaskId": "apl-1781108160368-39",
+    "taskId": "apl-1781108160366-36"
+  },
+  "recordedAt": "2026-06-10T16:16:01.324Z",
+  "sessionId": "desktop-generic-complex-applet-apl-1781108160287-2"
+}

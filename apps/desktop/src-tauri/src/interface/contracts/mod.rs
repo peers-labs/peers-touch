@@ -470,11 +470,54 @@ pub struct AppletActionInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppletCreateSessionInput {
+    pub id: String,
+    #[serde(rename = "sessionId")]
+    pub session_id: Option<String>,
+    pub manifest: AppletGatewayManifest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppletInvokeInput {
     pub id: String,
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
     pub capability: String,
     pub action: Option<String>,
     pub params: Option<serde_json::Value>,
+    pub manifest: AppletGatewayManifest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppletGatewayManifest {
+    pub id: String,
+    pub permissions: Vec<String>,
+    #[serde(default)]
+    pub services: Vec<AppletGatewayService>,
+    #[serde(default)]
+    pub skills: Vec<AppletGatewaySkill>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppletGatewayService {
+    pub id: String,
+    pub kind: String,
+    pub binding: String,
+    #[serde(rename = "allowedMethods")]
+    pub allowed_methods: Vec<String>,
+    #[serde(rename = "allowedPaths")]
+    pub allowed_paths: Vec<String>,
+    #[serde(default)]
+    pub streaming: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppletGatewaySkill {
+    pub id: String,
+    #[serde(rename = "inputSchema")]
+    pub input_schema: String,
+    #[serde(default)]
+    pub streaming: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

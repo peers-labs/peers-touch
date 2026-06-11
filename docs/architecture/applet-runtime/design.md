@@ -177,20 +177,21 @@ export interface BridgeAdapter {
 |---------|---------|---------|
 | `LynxBridgeAdapter` | 检测到 Lynx NativeModules 存在 | `NativeModules.bridge.invoke(method, params)` |
 | `WebHostBridgeAdapter` | 检测到 `globalThis.__PEERS_TOUCH_APPLET_HOST__` | 正式 Web Host 注入对象的 `invoke()` |
-| `StandaloneBridgeAdapter` | 以上都不存在（浏览器独立运行） | `fetch` + `localStorage` 直接执行 |
+| `StandaloneBridgeAdapter` | 显式构造，或设置 `globalThis.__PEERS_TOUCH_APPLET_STANDALONE__ === true` | `fetch` + `localStorage` 直接执行 |
+| `HostUnavailableBridgeAdapter` | 未检测到 Lynx / Web Host，且未显式启用 standalone | 返回 `RUNTIME_LOAD_FAILED`，阻止 silent standalone fallback |
 | `WxBridgeAdapter` | 检测到 `wx` 全局对象 | 微信小程序 API 适配 |
 
-SDK 启动时自动检测运行时并选择对应 adapter。Applet 业务代码不感知运行时差异，不直接访问 NativeModules、DOM API 或平台私有对象。
+SDK 启动时自动检测运行时并选择对应 adapter。正式 integrated runtime 必须检测到 Lynx 或 Web Host bridge；没有 Host 时不得静默降级为 standalone。Applet 业务代码不感知运行时差异，不直接访问 NativeModules、DOM API 或平台私有对象。
 
 **独立运行模式**：
 
-Applet 可以在纯浏览器中独立运行（开发调试 / 第三方平台）。此时 `StandaloneBridgeAdapter` 生效：
+Applet 可以在纯浏览器中独立运行（开发调试 / 第三方平台）。此时必须显式构造 `StandaloneBridgeAdapter`，或在 applet bootstrap 前设置 `globalThis.__PEERS_TOUCH_APPLET_STANDALONE__ === true`：
 - `network.request` → 浏览器 `fetch`
 - `storage.get/set/remove` → `localStorage`
 - `config.get` → URL params / 环境变量
 - `system.getInfo` → `navigator.userAgent` 构造
 
-这不改变 SDK 对外接口，也不改变 Host 治理模型。独立运行只是"无 Host 时的 best-effort 模式"。
+这不改变 SDK 对外接口，也不改变 Host 治理模型。独立运行只是显式开发/第三方出口，不能作为 Peers-Touch integrated Web Host、Desktop Lynx、Mobile Lynx 的验收证据。
 
 ---
 

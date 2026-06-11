@@ -1,4 +1,4 @@
-use crate::contracts::{SettingsGetInput, SettingsSetInput, StubPayload};
+use crate::contracts::{SettingsGetInput, SettingsGetPayload, SettingsSetInput, StubPayload};
 use crate::domain::settings::{
     default_settings, default_value, key_name, parse_key, side_effect, validate_value, SettingKey,
     SettingSideEffect,
@@ -9,25 +9,26 @@ use crate::state::AppState;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
-pub fn settings_get(state: &AppState, input: SettingsGetInput) -> AppResult<StubPayload> {
+pub fn settings_get(state: &AppState, input: SettingsGetInput) -> AppResult<SettingsGetPayload> {
     let key = match parse_key(&input.key) {
         Ok(key) => key,
-        Err(message) => return invalid_value("settings_get", message),
+        Err(message) => return invalid_value_payload("settings_get", message),
     };
     let settings = match load_settings_with_defaults() {
         Ok(settings) => settings,
-        Err(error) => return storage_error_to_result("settings_get", error),
+        Err(error) => return storage_error_to_payload("settings_get", error),
     };
     let current = settings
         .get(key_name(key))
         .cloned()
         .unwrap_or_else(|| default_value(key));
     if let Err(error) = apply_side_effect(state, key, &current) {
-        return error;
+        return convert_failure(error);
     }
-    AppResult::success(StubPayload {
+    AppResult::success(SettingsGetPayload {
         command: "settings_get".to_string(),
         status: format!("ok:{}", key_name(key)),
+        value: current,
     })
 }
 
@@ -132,6 +133,33 @@ fn invalid_value(command: &str, message: String) -> AppResult<StubPayload> {
         message,
         Some(json!({ "command": command, "reason": "invalid_value" })),
     )
+}
+
+fn invalid_value_payload(command: &str, message: String) -> AppResult<SettingsGetPayload> {
+    AppResult::fail(
+        ErrorCode::InvalidArgument,
+        message,
+        Some(json!({ "command": command, "reason": "invalid_value" })),
+    )
+}
+
+fn convert_failure<T: serde::Serialize>(result: AppResult<StubPayload>) -> AppResult<T> {
+    match result.error {
+        Some(error) => AppResult {
+            ok: false,
+            data: None,
+            error: Some(error),
+        },
+        None => AppResult::fail(
+            ErrorCode::InternalError,
+            "settings operation failed without error details",
+            None,
+        ),
+    }
+}
+
+fn storage_error_to_payload(command: &str, error: StorageError) -> AppResult<SettingsGetPayload> {
+    convert_failure(storage_error_to_result(command, error))
 }
 
 fn storage_error_to_result(command: &str, error: StorageError) -> AppResult<StubPayload> {

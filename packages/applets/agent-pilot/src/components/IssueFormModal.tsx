@@ -44,7 +44,7 @@ export function IssueFormModal({
       open={open}
       onOk={handleOk}
       onCancel={onCancel}
-      destroyOnClose
+      destroyOnHidden
       okText={mode === 'create' ? 'Create' : 'Save'}
       afterOpenChange={(visible) => {
         if (visible) {

@@ -183,7 +183,7 @@ function CreateProviderModal({
           {t('provider.menu.createBtn')}
         </Button>
       }
-      destroyOnClose
+      destroyOnHidden
       width={520}
     >
       <Form form={form} layout="horizontal" labelCol={{ span: 8 }} wrapperCol={{ span: 16 }} style={{ marginTop: 8 }}>

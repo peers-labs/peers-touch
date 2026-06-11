@@ -5,6 +5,7 @@ pub enum SettingKey {
     Theme,
     Locale,
     TelemetryEnabled,
+    CurrentAgent,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,6 +20,7 @@ pub fn parse_key(key: &str) -> Result<SettingKey, String> {
         "theme" => Ok(SettingKey::Theme),
         "locale" => Ok(SettingKey::Locale),
         "telemetry_enabled" => Ok(SettingKey::TelemetryEnabled),
+        "settings.currentAgent" => Ok(SettingKey::CurrentAgent),
         _ => Err("unsupported setting key".to_string()),
     }
 }
@@ -28,6 +30,7 @@ pub fn key_name(key: SettingKey) -> &'static str {
         SettingKey::Theme => "theme",
         SettingKey::Locale => "locale",
         SettingKey::TelemetryEnabled => "telemetry_enabled",
+        SettingKey::CurrentAgent => "settings.currentAgent",
     }
 }
 
@@ -36,6 +39,7 @@ pub fn default_value(key: SettingKey) -> Value {
         SettingKey::Theme => Value::String("system".to_string()),
         SettingKey::Locale => Value::String("zh-CN".to_string()),
         SettingKey::TelemetryEnabled => Value::Bool(false),
+        SettingKey::CurrentAgent => Value::String("assistant".to_string()),
     }
 }
 
@@ -53,6 +57,10 @@ pub fn default_settings() -> Vec<(String, Value)> {
             key_name(SettingKey::TelemetryEnabled).to_string(),
             default_value(SettingKey::TelemetryEnabled),
         ),
+        (
+            key_name(SettingKey::CurrentAgent).to_string(),
+            default_value(SettingKey::CurrentAgent),
+        ),
     ]
 }
 
@@ -60,7 +68,7 @@ pub fn side_effect(key: SettingKey) -> SettingSideEffect {
     match key {
         SettingKey::Theme => SettingSideEffect::ThemeChanged,
         SettingKey::Locale => SettingSideEffect::LocaleChanged,
-        SettingKey::TelemetryEnabled => SettingSideEffect::None,
+        SettingKey::TelemetryEnabled | SettingKey::CurrentAgent => SettingSideEffect::None,
     }
 }
 
@@ -94,6 +102,19 @@ pub fn validate_value(key: SettingKey, value: &Value) -> Result<Value, String> {
                 .as_bool()
                 .ok_or_else(|| "telemetry_enabled must be boolean".to_string())?;
             Ok(Value::Bool(enabled))
+        }
+        SettingKey::CurrentAgent => {
+            let name = value
+                .as_str()
+                .ok_or_else(|| "settings.currentAgent must be string".to_string())?
+                .trim();
+            if name.is_empty() {
+                return Err("settings.currentAgent must not be empty".to_string());
+            }
+            if name.len() > 128 {
+                return Err("settings.currentAgent is too long".to_string());
+            }
+            Ok(Value::String(name.to_string()))
         }
     }
 }

@@ -137,7 +137,7 @@ export function LarkSimulateLoginModal({ open, onClose, intent = 'oauth', appNam
     : t('provider.lark.simulateDesc');
 
   return (
-    <Modal open={open} onCancel={onClose} footer={null} width={440} centered destroyOnClose>
+    <Modal open={open} onCancel={onClose} footer={null} width={440} centered destroyOnHidden>
       {state === 'loading' && (
         <Flexbox gap={16} align="center" style={{ padding: '24px 0' }}>
           <Spin size="large" />
