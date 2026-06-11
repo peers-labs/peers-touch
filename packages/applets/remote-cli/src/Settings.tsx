@@ -199,7 +199,7 @@ export function RemoteCLISettings() {
           setEditingId(null);
         }}
         okText="Save"
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item name="name" label="Name">

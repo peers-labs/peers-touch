@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Tag, Tooltip, toast } from '@lobehub/ui';
@@ -18,9 +18,8 @@ import {
   Power,
   PowerOff,
 } from 'lucide-react';
-import { api } from '../services/desktop_api';
 import { PageHeader } from '../components/PageHeader';
-import type { AppletInfo } from '../services/desktop_api';
+import { useAppletsStore, type RuntimeAppletInfo } from '../store/applets';
 
 const { Text, Paragraph } = Typography;
 
@@ -61,72 +60,89 @@ const CAP_LABELS: Record<string, { labelKey: string; icon: React.ReactNode }> = 
   tools: { labelKey: 'applet.cap.tools', icon: <Wrench size={11} /> },
   help: { labelKey: 'applet.cap.help', icon: <HelpCircle size={11} /> },
   agents: { labelKey: 'applet.cap.agents', icon: <Bot size={11} /> },
+  app: { labelKey: 'applet.cap.app', icon: <Blocks size={11} /> },
+  lifecycle: { labelKey: 'applet.cap.lifecycle', icon: <Power size={11} /> },
+  navigation: { labelKey: 'applet.cap.navigation', icon: <ChevronRight size={11} /> },
+  ui: { labelKey: 'applet.cap.ui', icon: <Blocks size={11} /> },
+  events: { labelKey: 'applet.cap.events', icon: <Sparkles size={11} /> },
+  skills: { labelKey: 'applet.cap.skills', icon: <Wrench size={11} /> },
+  tasks: { labelKey: 'applet.cap.tasks', icon: <Clock size={11} /> },
+  agent: { labelKey: 'applet.cap.agent', icon: <Bot size={11} /> },
+  ai: { labelKey: 'applet.cap.ai', icon: <Sparkles size={11} /> },
+  telemetry: { labelKey: 'applet.cap.telemetry', icon: <Shield size={11} /> },
+  storage: { labelKey: 'applet.cap.storage', icon: <Blocks size={11} /> },
+  config: { labelKey: 'applet.cap.config', icon: <Wrench size={11} /> },
+  system: { labelKey: 'applet.cap.system', icon: <Shield size={11} /> },
+  device: { labelKey: 'applet.cap.device', icon: <Blocks size={11} /> },
+  clipboard: { labelKey: 'applet.cap.clipboard', icon: <Blocks size={11} /> },
+  file: { labelKey: 'applet.cap.file', icon: <Wrench size={11} /> },
+  network: { labelKey: 'applet.cap.network', icon: <Wifi size={11} /> },
 };
 
-const PERM_LABELS: Record<string, { labelKey: string; color: string }> = {
-  network: { labelKey: 'applet.perm.network', color: 'blue' },
-  llm: { labelKey: 'applet.perm.llm', color: 'purple' },
-  'file:read': { labelKey: 'applet.perm.files', color: 'green' },
-  'file:write': { labelKey: 'applet.perm.write', color: 'orange' },
-  shell: { labelKey: 'applet.perm.shell', color: 'red' },
-  database: { labelKey: 'applet.perm.db', color: 'cyan' },
-  secrets: { labelKey: 'applet.perm.secrets', color: 'gold' },
+const PERMISSION_GROUP_LABELS: Record<string, { labelKey: string; color: string; icon: React.ReactNode }> = {
+  network: { labelKey: 'applet.perm.network', color: 'blue', icon: <Wifi size={10} /> },
+  app: { labelKey: 'applet.perm.app', color: 'default', icon: <Blocks size={10} /> },
+  lifecycle: { labelKey: 'applet.perm.lifecycle', color: 'default', icon: <Power size={10} /> },
+  navigation: { labelKey: 'applet.perm.navigation', color: 'geekblue', icon: <ChevronRight size={10} /> },
+  ui: { labelKey: 'applet.perm.ui', color: 'cyan', icon: <Blocks size={10} /> },
+  events: { labelKey: 'applet.perm.events', color: 'magenta', icon: <Sparkles size={10} /> },
+  skills: { labelKey: 'applet.perm.skills', color: 'green', icon: <Wrench size={10} /> },
+  tasks: { labelKey: 'applet.perm.tasks', color: 'lime', icon: <Clock size={10} /> },
+  agent: { labelKey: 'applet.perm.agent', color: 'purple', icon: <Bot size={10} /> },
+  ai: { labelKey: 'applet.perm.ai', color: 'purple', icon: <Sparkles size={10} /> },
+  llm: { labelKey: 'applet.perm.llm', color: 'purple', icon: <Sparkles size={10} /> },
+  telemetry: { labelKey: 'applet.perm.telemetry', color: 'gold', icon: <Shield size={10} /> },
+  storage: { labelKey: 'applet.perm.storage', color: 'cyan', icon: <Blocks size={10} /> },
+  config: { labelKey: 'applet.perm.config', color: 'gold', icon: <Wrench size={10} /> },
+  system: { labelKey: 'applet.perm.system', color: 'default', icon: <Shield size={10} /> },
+  device: { labelKey: 'applet.perm.device', color: 'default', icon: <Blocks size={10} /> },
+  clipboard: { labelKey: 'applet.perm.clipboard', color: 'default', icon: <Blocks size={10} /> },
+  file: { labelKey: 'applet.perm.files', color: 'green', icon: <Wrench size={10} /> },
+  shell: { labelKey: 'applet.perm.shell', color: 'red', icon: <Shield size={10} /> },
+  database: { labelKey: 'applet.perm.db', color: 'cyan', icon: <Blocks size={10} /> },
+  secrets: { labelKey: 'applet.perm.secrets', color: 'gold', icon: <Shield size={10} /> },
+  unknown: { labelKey: 'applet.perm.unknown', color: 'default', icon: <Shield size={10} /> },
 };
 
-import { hasPage } from '../applets/registry';
+interface PermissionGroup {
+  group: string;
+  permissions: string[];
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
 
 export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => void }) {
   const { t } = useTranslation('applet');
-  const [applets, setApplets] = useState<AppletInfo[]>([]);
-  const [loading, setLoading] = useState(true);
   const { token } = theme.useToken();
-
-  const loadApplets = useCallback(async () => {
-    try {
-      const data = await api.listApplets();
-      setApplets(data);
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadApplets();
-  }, [loadApplets]);
+  const applets = useAppletsStore((state) => state.applets);
+  const loading = useAppletsStore((state) => state.loading);
+  const loadApplet = useAppletsStore((state) => state.loadApplet);
+  const unloadApplet = useAppletsStore((state) => state.unloadApplet);
 
   const handleToggle = useCallback(async (id: string, currentStatus: string) => {
     try {
       if (currentStatus === 'active') {
-        await api.deactivateApplet(id);
+        await unloadApplet(id);
         toast.success(t('applet.toast.deactivated'));
       } else {
-        await api.activateApplet(id);
+        await loadApplet(id);
         toast.success(t('applet.toast.activated'));
       }
-      loadApplets();
-    } catch (e: any) {
-      toast.error(e.message || t('applet.toast.operationFailed'));
+    } catch (error) {
+      toast.error(errorMessage(error, t('applet.toast.operationFailed')));
     }
-  }, [loadApplets, t]);
+  }, [loadApplet, t, unloadApplet]);
 
-  const handleOpen = useCallback(async (id: string, currentStatus: string) => {
-    if (currentStatus !== 'active') {
-      try {
-        await api.activateApplet(id);
-        loadApplets();
-      } catch (e: any) {
-        toast.error(e.message || t('applet.toast.failedToActivate'));
-        return;
-      }
+  const handleOpen = useCallback(async (id: string) => {
+    try {
+      await loadApplet(id);
+      onNavigate?.(`applet:${id}`);
+    } catch (error) {
+      toast.error(errorMessage(error, t('applet.toast.failedToActivate')));
     }
-    if (hasPage(id) && onNavigate) {
-      onNavigate(`applet:${id}`);
-    } else {
-      toast.info(t('applet.toast.noPage'));
-    }
-  }, [loadApplets, onNavigate, t]);
+  }, [loadApplet, onNavigate, t]);
 
   if (loading) {
     return (
@@ -159,7 +175,7 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
             key={info.manifest.id}
             info={info}
             onToggle={() => handleToggle(info.manifest.id, info.status)}
-            onOpen={() => handleOpen(info.manifest.id, info.status)}
+            onOpen={() => handleOpen(info.manifest.id)}
           />
         ))}
 
@@ -188,7 +204,7 @@ function AppletCard({
   onToggle,
   onOpen,
 }: {
-  info: AppletInfo;
+  info: RuntimeAppletInfo;
   onToggle: () => void;
   onOpen: () => void;
 }) {
@@ -199,7 +215,12 @@ function AppletCard({
   const isActive = status === 'active';
 
   return (
-    <div className="applet-card">
+    <div
+      className="applet-card"
+      data-applet-card={manifest.id}
+      data-applet-status={status}
+      data-applet-opened-this-session={info.lastOpenedAt ? 'true' : 'false'}
+    >
       <div
         style={{
           borderRadius: 16,
@@ -282,6 +303,7 @@ function AppletCard({
             {/* Toggle button */}
             <Tooltip title={isActive ? t('applet.card.deactivate') : t('applet.card.activate')}>
               <button
+                data-applet-toggle={manifest.id}
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggle();
@@ -342,27 +364,30 @@ function AppletCard({
 
             <div style={{ width: 1, height: 14, background: token.colorBorderSecondary, margin: '0 2px' }} />
 
-            {manifest.permissions?.map((perm) => {
-              const permMeta = PERM_LABELS[perm];
-              if (!permMeta) return null;
+            {permissionGroups(manifest.permissions ?? []).map((group) => {
+              const permMeta = PERMISSION_GROUP_LABELS[group.group] ?? PERMISSION_GROUP_LABELS.unknown;
               return (
-                <Tag
-                  key={perm}
-                  color={permMeta.color}
-                  style={{
-                    fontSize: 11,
-                    lineHeight: '20px',
-                    padding: '0 8px',
-                    borderRadius: 6,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    margin: 0,
-                  }}
-                >
-                  {perm === 'network' ? <Wifi size={10} /> : <Shield size={10} />}
-                  {t(permMeta.labelKey)}
-                </Tag>
+                <Tooltip key={group.group} title={group.permissions.join('\n')}>
+                  <Tag
+                    data-applet-permission-group={group.group}
+                    data-applet-permissions={group.permissions.join(',')}
+                    color={permMeta.color}
+                    style={{
+                      fontSize: 11,
+                      lineHeight: '20px',
+                      padding: '0 8px',
+                      borderRadius: 6,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      margin: 0,
+                    }}
+                  >
+                    {permMeta.icon}
+                    {t(permMeta.labelKey)}
+                    {group.permissions.length > 1 ? ` (${group.permissions.length})` : ''}
+                  </Tag>
+                </Tooltip>
               );
             })}
           </Flexbox>
@@ -380,11 +405,12 @@ function AppletCard({
             <Flexbox horizontal align="center" gap={6}>
               <Clock size={12} style={{ color: token.colorTextQuaternary }} />
               <Text type="secondary" style={{ fontSize: 12 }}>
-                {t('applet.card.lastUsed')}
+                {appletSessionLabel(info, t)}
               </Text>
             </Flexbox>
 
             <Flexbox
+              data-applet-open={manifest.id}
               horizontal
               align="center"
               gap={4}
@@ -407,4 +433,31 @@ function AppletCard({
       </div>
     </div>
   );
+}
+
+function permissionGroups(permissions: string[]): PermissionGroup[] {
+  const grouped = new Map<string, string[]>();
+  for (const permission of permissions) {
+    const group = permissionGroup(permission);
+    grouped.set(group, [...(grouped.get(group) ?? []), permission]);
+  }
+  return Array.from(grouped.entries()).map(([group, groupPermissions]) => ({
+    group,
+    permissions: groupPermissions,
+  }));
+}
+
+function permissionGroup(permission: string): string {
+  const separator = permission.includes('.') ? '.' : ':';
+  const group = permission.split(separator)[0];
+  return group && PERMISSION_GROUP_LABELS[group] ? group : 'unknown';
+}
+
+function appletSessionLabel(
+  info: RuntimeAppletInfo,
+  t: (key: string) => string,
+): string {
+  if (info.status === 'active') return t('applet.card.runningThisSession');
+  if (info.lastOpenedAt) return t('applet.card.openedThisSession');
+  return t('applet.card.notOpenedThisSession');
 }

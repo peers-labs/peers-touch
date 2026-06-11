@@ -6,7 +6,6 @@ import { PageRouter } from '../components/PageRouter';
 import { useHashRouter } from '../hooks/useHashRouter';
 import { useNavigation } from '../hooks/useNavigation';
 import { useAppletPins } from '../hooks/useAppletPins';
-import AppletManager from '../applet/AppletManager';
 import { PageHost } from '../kernel/PageHost';
 import { PageContextProvider } from '../kernel/PageContext';
 import { markPhaseEnd, markPhaseStart } from '../kernel/boot';
@@ -25,7 +24,6 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
   const router = useHashRouter();
   const navigation = useNavigation(router);
   const appletPins = useAppletPins();
-  const appletManager = AppletManager.getInstance();
   const setChatSurfaceVisible = useNavigationBadgeStore((s) => s.setChatSurfaceVisible);
 
   useEffect(() => {
@@ -43,10 +41,6 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
   useEffect(() => {
     setChatSurfaceVisible(router.page === 'chat');
   }, [router.page, setChatSurfaceVisible]);
-
-  useEffect(() => {
-    appletManager.scanApplets().catch(() => undefined);
-  }, [appletManager]);
 
   return (
     <PageContextProvider value={{ router, navigation, appletPins }}>

@@ -237,7 +237,7 @@ export function MomentComposer({ open, onClose, initialAudience, onPublished }: 
       onCancel={handleClose}
       footer={null}
       width={560}
-      destroyOnClose
+      destroyOnHidden
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <TextArea

@@ -13,5 +13,11 @@ window.addEventListener('error', (e) => {
 });
 
 window.addEventListener('unhandledrejection', (e) => {
-  log.error('app', 'Unhandled rejection', { reason: String(e.reason) });
+  const reason = e.reason;
+  log.error('app', 'Unhandled rejection', {
+    reason: String(reason),
+    error: reason instanceof Error
+      ? { message: reason.message, stack: reason.stack }
+      : undefined,
+  });
 });

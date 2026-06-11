@@ -144,7 +144,7 @@ export function ConnectDialog({ open, onClose, onConnect, onSave, connection, mo
       okText={okText}
       confirmLoading={loading}
       width={520}
-      destroyOnClose
+      destroyOnHidden
     >
       {error && (
         <Alert
@@ -200,7 +200,7 @@ export function ConnectDialog({ open, onClose, onConnect, onSave, connection, mo
                   options={keyOptions}
                   optionFilterProp="value"
                   allowClear
-                  dropdownRender={(menu) => (
+                  popupRender={(menu) => (
                     <>
                       {menu}
                       <Divider style={{ margin: '4px 0' }} />

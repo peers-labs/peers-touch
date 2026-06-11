@@ -36,3 +36,4 @@ src-tauri/gen/
 
 # Applets build output
 applets-dist/
+src-tauri/applets/runtime/

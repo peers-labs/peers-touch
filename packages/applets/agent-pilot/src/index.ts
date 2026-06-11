@@ -3,12 +3,13 @@
  *
  * Plan tasks with Kanban, run Coding Agents in workspaces, review diffs, ship via PR.
  */
-import { Plane } from 'lucide-react';
-import { registerApplet } from '@peers-touch/applet-sdk';
+import { createElement } from 'react';
+import { createRoot } from 'react-dom/client';
 import { AgentPilotPage } from './Page';
 
-registerApplet({
-  id: 'agent-pilot',
-  page: AgentPilotPage,
-  sidebarIcon: Plane,
-});
+const root = document.getElementById('root');
+if (!root) {
+  throw new Error('agent-pilot root element is missing');
+}
+
+createRoot(root).render(createElement(AgentPilotPage, {}));

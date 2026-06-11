@@ -1,8 +1,8 @@
 # Applet Runtime Architecture — 集成与迁移
 
 > **Status**: draft
-> **Version**: v1.0
-> **Created**: 2026-05-19 | **Updated**: 2026-05-19
+> **Version**: v1.1
+> **Created**: 2026-05-19 | **Updated**: 2026-06-06
 > **Owner**: Architecture Team
 > **Module**: `apps/desktop/src/applet/`, `apps/mobile/`, `packages/applet-sdk/`, `packages/applets/`
 
@@ -13,9 +13,9 @@
 本迁移不追求兼容历史 iframe runtime，而是建立长期 Applet Runtime 主线：
 
 ```text
-ReactLynx Applet Source
-  → Rspeedy dual bundle
-  → Desktop Lynx for Web / Mobile LynxView
+TypeScript + ReactLynx Applet Source
+  → Rspeedy Lynx bundle
+  → Desktop Lynx for Web / Mobile LynxView / Web Host
   → NativeModules bridge
   → Host Capability Gateway
 ```
@@ -24,9 +24,10 @@ ReactLynx Applet Source
 
 - Desktop 不存在 iframe 加载 Applet 的正式代码路径。
 - Desktop 不存在 `window.parent.postMessage` 作为 Applet bridge 主链。
-- Applet 前端源码可为 Desktop 和 Mobile 构建。
+- Applet 前端源码可为 Desktop、Mobile、Web 构建。
 - Host 能审计每一次 capability 调用。
 - 未声明权限的调用一律失败。
+- HarmonyOS target 在未实现前必须明确拒载。
 
 ---
 
@@ -58,7 +59,7 @@ ReactLynx Applet Source
 
 替换：
 
-- `load.entry: index.html` → `load.desktop.entry: main.web.bundle`
+- `load.entry: index.html` → `load.desktop.entry: main.lynx.bundle`
 - React DOM Applet → ReactLynx Applet
 - fetch/localStorage direct usage → applet-sdk capability usage
 
@@ -82,42 +83,50 @@ iOS：
 - 注入同名 `bridge` NativeModule。
 - Gateway 行为与 Android 对齐。
 
-Mobile 不应复用 Desktop Web bundle，也不应通过 WebView 承载 Applet。
+Mobile 不应通过 WebView 承载 Applet。Desktop、Mobile、Web 可消费同一 ReactLynx 源码产出的 Lynx bundle，但各端 Host 的加载方式和 Gateway 实现不同。
 
 ---
 
-## 4. 与 `my-peers-applets` 的集成
+## 4. 与 Web / HarmonyOS 的集成
 
-`my-peers-applets` 是 Applet 实现仓，不是 Host 架构真源。
+Web：
 
-big-a 迁移目标：
+- 新增正式 Web Host，而不是使用 standalone fallback 作为生产路径。
+- Web Host 必须创建 session、注入 `globalThis.__PEERS_TOUCH_APPLET_HOST__`、执行 Gateway/BFF 权限校验。
+- Web Host 的 `network.request` 必须走 proxy，不允许退回 raw browser fetch 访问内部服务。
+
+HarmonyOS：
+
+- Manifest 预留 `targetPlatforms: ["harmony"]` 与 `load.harmony`。
+- 未完成 Lynx Harmony adapter、ArkTS bridge、Gateway 前，Host 必须返回 unsupported platform。
+- 不允许为了兼容 HarmonyOS 而把 Mobile Applet fallback 到 WebView。
+
+---
+
+## 5. 与 Applet Package 的集成
+
+Peers-Touch 不引用任何具体 applet package producer。所有 applet 都必须先产出符合 `applet-contract` 的 package，再进入 Host runtime。
+
+Integrated package 目标结构：
 
 ```text
-applets/big-a/
-├── web/                         # 当前 React DOM 实现，迁移后不作为正式跨端 UI 主线
-├── lynx/                        # 建议新增 ReactLynx 实现
-│   ├── package.json
-│   ├── lynx.config.ts
-│   ├── applet.json
-│   └── src/
-│       ├── domain/
-│       ├── application/
-│       ├── infrastructure/
-│       └── presentation/
-└── server/                      # 独立后端，继续保留
+applet-package/
+├── manifest.json
+├── main.lynx.bundle
+├── assets/
+└── integrity.json
 ```
 
-big-a 第一阶段面板：
+Host 集成规则：
 
-- 股票代码输入。
-- 调用 `network.request` 到 big-a server。
-- 展示综合多空结论。
-- 展示六维得分条和风险/信号文本。
-- 暂不迁移 SVG 雷达图。
+- Host 只读取 package contract，不读取 producer 目录结构。
+- Standalone 运行能力属于 package producer 自身，不进入 Peers-Touch integrated 验收口径。
+- 所有敏感能力必须通过 `@peers-touch/applet-sdk` 进入 Host Gateway。
+- package 不得依赖 DOM、iframe、`window.parent.postMessage` 或 Host 私有对象。
 
 ---
 
-## 5. 迁移阶段
+## 6. 迁移阶段
 
 ### Phase 0: Contract Freeze
 
@@ -133,7 +142,8 @@ big-a 第一阶段面板：
 - 非法 manifest 会被构建期和运行期拒绝。
 - `runtime.type !== 'lynx'` 会被拒绝。
 - 当前平台缺少对应 `load.<platform>.entry` 会被拒绝。
-- `load.<platform>.type` 必须匹配平台：Desktop 为 `lynx-web`，Android / iOS 为 `lynx-native`，Standalone 为 `web-spa`。
+- `load.<platform>.type` 必须匹配平台：Desktop/Web 为 `lynx-web`，Android/iOS/HarmonyOS 为 `lynx-native`，Standalone 为 `web-spa`。
+- `standalone` 是 applet 集合单体的独立运行出口，不作为 Peers-Touch integrated 生产平台。
 
 ### Phase 1: Desktop Lynx Host POC
 
@@ -142,7 +152,7 @@ big-a 第一阶段面板：
 - Desktop 安装 `@lynx-js/web-core`。
 - `<lynx-host>` 内部创建 `<lynx-view>`。
 - `onNativeModulesCall` 转发到 `api.appletInvoke`。
-- hello applet 能加载 `main.web.bundle`。
+- hello applet 能加载 `main.lynx.bundle`。
 
 验收：
 
@@ -162,19 +172,20 @@ big-a 第一阶段面板：
 
 - Applet 源码不直接访问 NativeModules。
 - SDK 在 Desktop Lynx for Web 中可通过 `LynxBridgeAdapter` 调用 Gateway。
-- SDK 在 standalone 模式中可通过 `StandaloneBridgeAdapter` 独立运行。
+- SDK 在 standalone 模式中可通过 `StandaloneBridgeAdapter` 独立运行，但该路径不证明 Host Gateway 权限与审计。
+- SDK 在 Web Host 中可通过 `WebHostBridgeAdapter` 调用 Gateway。
 
-### Phase 3: big-a Lynx First Panel
+### Phase 3: First Package Acceptance
 
 交付：
 
-- big-a 新增 ReactLynx applet。
-- 第一面板调用真实 big-a server。
+- 准备一个符合 `applet-contract` 的 sample applet package。
+- sample package 通过 `@peers-touch/applet-sdk` 调用真实后端或本地测试服务。
 - Desktop 中通过 `<lynx-view>` 渲染。
 
 验收：
 
-- 面板能在 Desktop 展示。
+- sample package 能在 Desktop 展示。
 - 网络请求走 Gateway。
 - 权限未声明时请求失败。
 
@@ -188,7 +199,7 @@ big-a 第一阶段面板：
 
 验收：
 
-- big-a 第一面板能在 Android / iOS 运行。
+- 同一 sample package 能在 Android / iOS / Web 运行。
 - Bridge 行为与 Desktop 一致。
 
 ### Phase 5: Advanced Capabilities
@@ -207,7 +218,7 @@ big-a 第一阶段面板：
 
 ---
 
-## 6. 构建与分发链路
+## 7. 构建与分发链路
 
 ### 6.1 构建工具
 
@@ -222,15 +233,14 @@ big-a 第一阶段面板：
 
 ```text
 applets/<applet-id>/dist/
-├── main.web.bundle        # Desktop (Lynx for Web)
-├── main.lynx.bundle       # Mobile (原生 LynxView)
+├── main.lynx.bundle       # Desktop Lynx for Web / Mobile LynxView / Web Host
 ├── index.html             # Standalone 浏览器运行
 └── integrity.json         # 哈希校验表
 ```
 
 规则：
 - 三个 bundle 来自同一源码同一次构建。
-- `integrity.json` 自动生成，内容为 `{ "main.web.bundle": "sha256:...", ... }`。
+- `integrity.json` 自动生成，内容为 `{ "main.lynx.bundle": "sha256:...", ... }`。
 - 构建完成后写入 `applet.json` 的 `integrity.files`。
 
 ### 6.3 开发期（Dev）
@@ -239,12 +249,12 @@ applets/<applet-id>/dist/
 Applet 开发者本地
   → rspeedy dev --env web
   → localhost:3000 启动 Lynx for Web dev server
-  → Desktop Tauri 中 <lynx-view url="http://localhost:3000/main.web.bundle">
+  → Desktop Tauri 中 <lynx-view url="http://localhost:3000/main.lynx.bundle">
   → HMR 通过 Lynx for Web 的 dev protocol 支持
 ```
 
 开发期工作流：
-- `applet-sdk` 在 standalone 模式下直接 `fetch` + `localStorage`，无需启动 Desktop。
+- `applet-sdk` 在 standalone 模式下直接 `fetch` + `localStorage`，无需启动 Desktop；该模式属于独立运行出口。
 - 如果要联调 Desktop Gateway，启动 Tauri dev，`<lynx-host>` 指向本地 dev server URL。
 - Rspeedy 的 `--env lynx` 模式可用 Lynx DevTool 模拟器调试 Mobile 效果。
 
@@ -253,15 +263,15 @@ Applet 开发者本地
 ```text
 CI 构建
   → rspeedy build
-  → dist/main.web.bundle + dist/main.lynx.bundle + dist/index.html
+  → dist/main.lynx.bundle + dist/index.html
   → 复制 dist/ 到 peers-touch/apps/desktop/applets-dist/<applet-id>/
   → 重新生成 applets-dist/index.json
   → Desktop 打包时 Tauri 将 applets-dist/ 打入应用资源
 ```
 
 Desktop 加载路径：
-- Tauri custom protocol `asset://applets-dist/<applet-id>/main.web.bundle`
-- 或 file-based: `{resource_dir}/applets-dist/<applet-id>/main.web.bundle`
+- Tauri custom protocol `asset://applets-dist/<applet-id>/main.lynx.bundle`
+- 或 file-based: `{resource_dir}/applets-dist/<applet-id>/main.lynx.bundle`
 - 具体取决于 Tauri asset resolver 配置
 
 ### 6.5 生产期（Mobile）
@@ -293,7 +303,8 @@ Mobile 加载路径：
 独立运行模式（开发调试 / 第三方小程序平台）：
 - 产物为 `index.html` + JS bundle（标准 SPA）。
 - 可部署到任何静态服务器。
-- SDK 自动 fallback 到 `StandaloneBridgeAdapter`。
+- SDK 只有在显式构造 `StandaloneBridgeAdapter`，或设置 `globalThis.__PEERS_TOUCH_APPLET_STANDALONE__ === true` 后才进入 standalone。
+- 未检测到 Lynx / Web Host 且未显式启用 standalone 时，SDK 返回 `RUNTIME_LOAD_FAILED`，避免把无 Host 浏览器误判为 integrated runtime。
 - 不经过 Host Gateway，直接 fetch 后端。
 - Standalone 不享受 Host Gateway 安全治理；后端必须自行完成鉴权、CORS、限流和审计。
 
@@ -304,7 +315,7 @@ Mobile 加载路径：
 | 风险 | 影响 | 缓解 |
 |------|------|------|
 | Lynx for Web 在 Tauri Webview 中存在兼容问题 | Desktop POC 失败或不稳定 | 先做最小 POC，验证 Worker、asset path、custom protocol |
-| React DOM 存量 UI 迁移成本高 | big-a 首屏延期 | 第一阶段只迁移核心信息架构，图表后置 |
+| React DOM 存量 UI 接入成本高 | sample package 延期 | Peers-Touch integrated package 必须以 ReactLynx / Lynx bundle 为验收对象 |
 | SDK 与 Host 协议漂移 | Applet 生态不可维护 | 引入 `applet-contract` 和 contract test |
 | 三端 Gateway 行为不一致 | Applet 跨端 bug | 权限矩阵和错误码作为架构协议固化 |
 | Lynx 组件生态不足 | 复杂 UI 受限 | 先使用 Lynx 原生布局，复杂组件专项评估 |
@@ -333,4 +344,4 @@ Mobile 加载路径：
 - Mobile Host 真正使用 LynxView。
 - SDK 对 Applet 暴露跨端一致 API。
 - Gateway 是能力唯一执行点。
-- big-a 第一面板能用同一源码构建并在 Desktop + 至少一个 Mobile 端运行。
+- sample package 能用同一 bundle 在 Desktop + 至少一个 Mobile 端运行。

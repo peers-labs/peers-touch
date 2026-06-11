@@ -1,25 +1,45 @@
 {
-  "manifestVersion": 2,
   "id": "web-search",
   "name": "Web Search",
   "version": "1.0.0",
   "description": "Web search and information retrieval",
   "author": "Peers Touch",
   "icon": "assets/icon.png",
-  "main": "index.html",
+  "minPlatformVersion": "0.1.0",
+  "targets": ["standalone"],
+  "entries": {
+    "lynx": "index.html",
+    "standalone": "index.html"
+  },
   "load": {
-    "type": "lynx",
-    "entry": "index.html"
+    "standalone": {
+      "type": "web-spa",
+      "entry": "index.html"
+    }
   },
   "bridge": {
-    "version": 2,
-    "protocol": "peers-touch.applet.bridge.v2"
+    "protocol": "peers-touch.applet.bridge",
+    "version": "1.0.0"
   },
   "permissions": [
-    "storage",
-    "network",
-    "notification"
+    "app.getContext",
+    "app.getLaunchOptions",
+    "lifecycle.reportReady",
+    "storage.get",
+    "storage.set",
+    "network.request",
+    "tasks.start"
   ],
-  "minPlatformVersion": "0.1.0",
-  "targetPlatforms": ["desktop", "mobile"]
+  "capabilities": [],
+  "services": [
+    {
+      "id": "station-api",
+      "kind": "http",
+      "binding": "station-resolved",
+      "allowedMethods": ["POST"],
+      "allowedPaths": ["/api/v1/search"],
+      "streaming": false
+    }
+  ],
+  "skills": []
 }

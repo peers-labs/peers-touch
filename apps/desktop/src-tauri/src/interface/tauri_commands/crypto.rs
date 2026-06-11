@@ -37,6 +37,13 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+fn now_unix_seconds_i32() -> i32 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs().min(i32::MAX as u64) as i32)
+        .unwrap_or(0)
+}
+
 fn to_stub(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
     AppResult::success(StubPayload {
         command: command.to_string(),
@@ -194,11 +201,11 @@ pub fn crypto_get_key_bundle(
     let spk_pub = PublicKey::from(&spk_sk);
     let spk_pub_bytes = spk_pub.to_bytes();
     let spk_sig = ik.signing_key.sign(spk_pub_bytes.as_slice());
-    let spk_id = now_ms();
+    let spk_id = now_unix_seconds_i32();
 
     if let Err(reason) = local_chat_store::crypto_store_signed_prekey(
         user_scope.as_str(),
-        spk_id,
+        i64::from(spk_id),
         spk_sk.to_bytes().as_slice(),
     ) {
         return AppResult::fail(

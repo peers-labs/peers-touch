@@ -16,6 +16,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.peerstouch.mobile.core.applet.AppletManager
 import com.peerstouch.mobile.core.applet.AppletState
 import com.peerstouch.mobile.core.lynx.LynxViewFactory
+import java.io.File
 
 sealed class AppletContainerState {
     data object Loading : AppletContainerState()
@@ -34,6 +35,7 @@ fun AppletContainerView(
 
     LaunchedEffect(appletId) {
         try {
+            appletManager.scanLocalApplets()
             val session = appletManager.loadApplet(appletId)
             if (session.state == AppletState.READY || session.state == AppletState.RUNNING) {
                 containerState = AppletContainerState.Running
@@ -59,7 +61,9 @@ fun AppletContainerView(
                 if (session != null) {
                     val loadConfig = session.manifest.load.android
                         ?: throw IllegalStateException("Applet ${session.manifest.id} has no android load config")
-                    val bundleUrl = loadConfig.entry
+                    val bundleUrl = appletManager.getAppletInfo(appletId)
+                        ?.let { File(it.path, loadConfig.entry).toURI().toString() }
+                        ?: loadConfig.entry
                     AndroidView(
                         factory = { ctx ->
                             lynxViewFactory.create(ctx, bundleUrl, session)

@@ -42,6 +42,12 @@ android {
     buildFeatures {
         compose = true
     }
+
+    sourceSets {
+        getByName("main") {
+            java.setSrcDirs(listOf("src/main/java/com"))
+        }
+    }
 }
 
 dependencies {
@@ -94,4 +100,8 @@ dependencies {
     implementation(libs.coil.compose)
 
     implementation(libs.protobuf.javalite)
+
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.kotlin.test.junit)
+    testImplementation(libs.junit)
 }

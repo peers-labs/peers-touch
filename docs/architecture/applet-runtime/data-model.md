@@ -1,8 +1,8 @@
 # Applet Runtime Architecture — 数据模型与协议
 
 > **Status**: draft
-> **Version**: v1.0
-> **Created**: 2026-05-19 | **Updated**: 2026-05-19
+> **Version**: v1.1
+> **Created**: 2026-05-19 | **Updated**: 2026-06-06
 > **Owner**: Architecture Team
 > **Module**: `apps/desktop/src/applet/`, `apps/mobile/`, `packages/applet-sdk/`, `packages/applets/`
 
@@ -21,7 +21,7 @@ export interface AppletManifest {
   author: string
   icon: string
   minPlatformVersion?: string
-  targetPlatforms: Array<'desktop' | 'android' | 'ios' | 'standalone'>
+  targetPlatforms: Array<'desktop' | 'android' | 'ios' | 'harmony' | 'web' | 'standalone'>
   runtime: {
     type: 'lynx'
     minEngineVersion?: string
@@ -37,6 +37,14 @@ export interface AppletManifest {
     }
     ios?: {
       type: 'lynx-native'
+      entry: string
+    }
+    harmony?: {
+      type: 'lynx-native'
+      entry: string
+    }
+    web?: {
+      type: 'lynx-web'
       entry: string
     }
     standalone?: {
@@ -60,13 +68,13 @@ export interface AppletManifest {
 
 ```json
 {
-  "id": "big-a",
-  "name": "Big A",
+  "id": "sample-applet",
+  "name": "Sample Applet",
   "version": "0.1.0",
-  "description": "A-share force analysis applet",
+  "description": "Sample applet package",
   "author": "Peers Touch",
   "icon": "chart",
-  "targetPlatforms": ["desktop", "android", "ios", "standalone"],
+  "targetPlatforms": ["desktop", "android", "ios", "web"],
   "runtime": {
     "type": "lynx",
     "minEngineVersion": "3.6.0"
@@ -74,7 +82,7 @@ export interface AppletManifest {
   "load": {
     "desktop": {
       "type": "lynx-web",
-      "entry": "main.web.bundle"
+      "entry": "main.lynx.bundle"
     },
     "android": {
       "type": "lynx-native",
@@ -84,9 +92,9 @@ export interface AppletManifest {
       "type": "lynx-native",
       "entry": "main.lynx.bundle"
     },
-    "standalone": {
-      "type": "web-spa",
-      "entry": "index.html"
+    "web": {
+      "type": "lynx-web",
+      "entry": "main.lynx.bundle"
     }
   },
   "bridge": {
@@ -99,7 +107,9 @@ export interface AppletManifest {
 `load` 字段规则：
 - 每个 `targetPlatforms` 声明的平台必须在 `load` 中有对应入口。
 - Host 只加载匹配自身平台的入口。
-- `standalone` 是可选平台，用于浏览器独立运行和第三方小程序平台。
+- `web` 是正式 Web Host 生产平台，必须具备 Host Gateway、session、权限和审计。
+- `standalone` 是 applet 集合单体的独立运行出口，不是 Peers-Touch integrated 生产平台；它不证明 Host Gateway、session、权限和审计成立。
+- `harmony` 是预留平台；Host 未实现前必须明确拒载，而不是 fallback 到 Web。
 - 未来如果 Android 和 iOS 的 bundle 需要分化，已天然支持。
 
 ---
@@ -131,8 +141,9 @@ Applet 源码通过 Rspeedy 构建为两个目标：
 
 ```text
 source: ReactLynx + applet-sdk
-  ├── desktop target → main.web.bundle
-  └── mobile target  → main.lynx.bundle
+  ├── desktop target → main.lynx.bundle via Lynx for Web
+  ├── mobile target  → main.lynx.bundle via native LynxView
+  └── web target     → main.lynx.bundle via Web Host
 ```
 
 约束：
@@ -140,7 +151,10 @@ source: ReactLynx + applet-sdk
 - Desktop 只加载 `load.desktop.entry`。
 - Android 只加载 `load.android.entry`。
 - iOS 只加载 `load.ios.entry`。
-- 两个 bundle 来自同一源码提交。
+- HarmonyOS 只加载 `load.harmony.entry`，未实现时拒载。
+- Web Host 只加载 `load.web.entry`。
+- Standalone dev mode 可加载 `load.standalone.entry`。
+- bundle 来自同一源码提交。
 - 构建产物必须写入 integrity map。
 
 ---
@@ -327,7 +341,7 @@ export interface AppletSession {
   state: AppletLifecycleState
   createdAt: string
   updatedAt: string
-  platform: 'desktop' | 'android' | 'ios'
+  platform: 'desktop' | 'android' | 'ios' | 'harmony' | 'web'
   grantedPermissions: AppletPermission[]
 }
 ```

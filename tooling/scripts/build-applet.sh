@@ -7,7 +7,7 @@
 #
 # Example:
 #   ./tooling/scripts/build-applet.sh apps/desktop/applets-dev/hello-lynx hello-lynx
-#   ./tooling/scripts/build-applet.sh ../my-peers-applets/applets/big-a/lynx big-a
+#   ./tooling/scripts/build-applet.sh /path/to/applet/lynx sample-applet
 
 set -euo pipefail
 
