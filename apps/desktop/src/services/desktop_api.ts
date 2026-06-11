@@ -155,6 +155,18 @@ export interface RustCommandResult<T = Record<string, any>> {
   error?: RustCommandError;
 }
 
+export class RustCommandException extends Error {
+  code: RustErrorCode;
+  details?: Record<string, any>;
+
+  constructor(command: string, error?: RustCommandError) {
+    super(error?.message || `${command} failed`);
+    this.name = 'RustCommandException';
+    this.code = error?.code ?? 'INTERNAL_ERROR';
+    this.details = error?.details;
+  }
+}
+
 export interface ChatThreadCount {
   rootUlid: string;
   replyCount: number;
@@ -177,6 +189,9 @@ const ALWAYS_QUIET_COMMANDS = new Set([
   'ice_session_answer_post',
   'ice_peer_register',
   'notification_list',
+  'applets_action',
+  'applets_invoke',
+  'applets_set_config',
 ]);
 
 // Quiet only in production. In dev we want timing for these so we can
@@ -321,8 +336,8 @@ async function invokeRustDataFromStatus<TInput, TOut>(
   if (response.error?.code === 'UNAUTHORIZED') {
     throw new AuthCommandException(response.error);
   }
-  const err = new Error(response.error?.message || `${command} failed`);
-  log.error('api', `Command error: ${command}`, { error: err });
+  const err = new RustCommandException(command, response.error);
+  log.error('api', `Command error: ${command}`, { error: err.message, code: err.code });
   throw err;
 }
 
@@ -803,7 +818,7 @@ export interface AppletManifest {
     version: 2;
     protocol: 'peers-touch.applet.bridge.v2';
   };
-  config_schema?: Record<string, any>;
+  config_schema?: Record<string, unknown>;
 }
 
 export interface AppletInfo {
@@ -1439,6 +1454,10 @@ export interface TauriStubPayload {
   status: string;
 }
 
+export interface SettingsGetPayload extends TauriStubPayload {
+  value?: unknown;
+}
+
 export interface AuthSessionResponse extends TauriStubPayload {
   actor_id?: string;
   name?: string;
@@ -1894,20 +1913,48 @@ export interface AppletIdInput {
 
 export interface AppletConfigSetInput {
   id: string;
-  config: Record<string, any>;
+  config: Record<string, unknown>;
 }
 
 export interface AppletActionInput {
   id: string;
   action: string;
-  params?: Record<string, any>;
+  params?: Record<string, unknown>;
+}
+
+export interface AppletCreateSessionInput {
+  id: string;
+  sessionId?: string;
+  manifest: {
+    id: string;
+    permissions: string[];
+    services?: unknown[];
+    skills?: unknown[];
+  };
 }
 
 export interface AppletInvokeInput {
   id: string;
+  sessionId: string;
   capability: string;
   action?: string;
-  params?: Record<string, any>;
+  params?: Record<string, unknown>;
+  manifest: {
+    id: string;
+    permissions: string[];
+    services?: unknown[];
+    skills?: unknown[];
+  };
+}
+
+export interface AppletProductWindowLaunchContext {
+  enabled: boolean;
+  appletId?: string;
+  actorId?: string;
+  name?: string;
+  email?: string;
+  loginMethod?: string;
+  mode?: 'product-shell';
 }
 
 export interface SkillImportAddressInput {
@@ -2149,7 +2196,7 @@ export const api = {
     invokeAuthCommand<void>('ensure_station_session'),
 
   settingsGet: (input: SettingsGetInput) =>
-    invokeRustCommand<SettingsGetInput, TauriStubPayload>('settings_get', input),
+    invokeRustCommand<SettingsGetInput, SettingsGetPayload>('settings_get', input),
 
   settingsSet: (input: SettingsSetInput) =>
     invokeRustCommand<SettingsSetInput, TauriStubPayload>('settings_set', input),
@@ -2730,16 +2777,28 @@ export const api = {
     invokeRustDataFromStatus<AppletIdInput, { ok: boolean }>('applets_deactivate', { id }),
 
   getAppletConfig: (id: string) =>
-    invokeRustDataFromStatus<AppletIdInput, { config: Record<string, any> }>('applets_get_config', { id }).then((r) => r.config),
+    invokeRustDataFromStatus<AppletIdInput, { config: Record<string, unknown> }>('applets_get_config', { id }).then((r) => r.config),
 
-  setAppletConfig: (id: string, config: Record<string, any>) =>
+  setAppletConfig: (id: string, config: Record<string, unknown>) =>
     invokeRustDataFromStatus<AppletConfigSetInput, { ok: boolean }>('applets_set_config', { id, config }),
 
-  appletAction: <T = any>(id: string, action: string, params?: Record<string, any>) =>
+  appletAction: <T = unknown>(id: string, action: string, params?: Record<string, unknown>) =>
     invokeRustDataFromStatus<AppletActionInput, T>('applets_action', { id, action, params }),
 
-  appletInvoke: <T = any>(id: string, capability: string, action?: string, params?: Record<string, any>) =>
-    invokeRustDataFromStatus<AppletInvokeInput, T>('applets_invoke', { id, capability, action, params }),
+  appletCreateSession: (input: AppletCreateSessionInput) =>
+    invokeRustDataFromStatus<AppletCreateSessionInput, { ok: boolean; appletId: string; sessionId: string }>(
+      'applets_create_session',
+      input,
+    ),
+
+  appletInvoke: <T = unknown>(input: AppletInvokeInput) =>
+    invokeRustDataFromStatus<AppletInvokeInput, T>('applets_invoke', input),
+
+  appletsProductWindowLaunchContext: () =>
+    invokeRustDataFromStatus<void, AppletProductWindowLaunchContext>('applets_product_window_launch_context'),
+
+  appletsReadinessProbeContext: () =>
+    invokeRustDataFromStatus<void, AppletProductWindowLaunchContext>('applets_readiness_probe_context'),
 
   // ── Skills API ──
 
@@ -3423,11 +3482,7 @@ export const api = {
       { trigger },
     ).catch((err) => {
       // Best-effort: lifecycle hooks must never surface errors to the UI.
-      try {
-        // Use console.debug instead of warn so production builds stay quiet.
-        // eslint-disable-next-line no-console
-        console.debug('[presence] presenceNotify failed', trigger, err);
-      } catch { /* noop */ }
+      log.debug('presence', 'presenceNotify failed', { trigger, error: err instanceof Error ? err.message : String(err) });
       return { command: 'presence_notify', status: '{"accepted":false}' };
     }),
 

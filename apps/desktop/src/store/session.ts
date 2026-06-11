@@ -14,7 +14,7 @@ export interface CurrentUser {
    *  local file caching is owned by the UserSquareAvatar component / Rust
    *  avatar_cache infrastructure. */
   avatarUrl?: string;
-  loginMethod: 'password' | 'oauth';
+  loginMethod: string;
   loginProvider?: string;
 }
 
@@ -36,6 +36,7 @@ interface SessionStore {
   loginWithOAuth: (providerId: string) => Promise<void>;
   restoreSession: () => Promise<void>;
   logout: () => Promise<void>;
+  activateAppletLaunchSession: (user: CurrentUser) => void;
   /** Update the remote avatar URL after upload or profile sync. */
   updateAvatar: (avatarUrl: string) => void;
 }
@@ -131,6 +132,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       actorId: null,
       loginMethod: null,
     });
+  },
+
+  activateAppletLaunchSession: (user) => {
+    set({ currentUser: user, authenticated: true, restoring: false });
   },
 
   updateAvatar: (avatarUrl: string) => {

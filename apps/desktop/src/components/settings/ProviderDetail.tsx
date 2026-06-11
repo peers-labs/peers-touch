@@ -828,7 +828,7 @@ function AddModelModal({
       open={open}
       onCancel={onClose}
       footer={null}
-      destroyOnClose
+      destroyOnHidden
       width={560}
     >
       <Form
@@ -1035,7 +1035,7 @@ function EditModelModal({
       open={open}
       onCancel={onClose}
       footer={null}
-      destroyOnClose
+      destroyOnHidden
       width={560}
     >
       <Form

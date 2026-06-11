@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 pub const CONTRACT_VERSION: &str = "2026-03-24.desktop-tauri-rust.v1";
 
@@ -38,6 +39,13 @@ pub struct AuthValidateTokenInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SettingsGetInput {
     pub key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SettingsGetPayload {
+    pub command: String,
+    pub status: String,
+    pub value: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -793,11 +801,56 @@ pub struct AppletActionInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppletCreateSessionInput {
+    pub id: String,
+    #[serde(rename = "sessionId")]
+    pub session_id: Option<String>,
+    pub manifest: AppletGatewayManifest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppletInvokeInput {
     pub id: String,
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
     pub capability: String,
     pub action: Option<String>,
     pub params: Option<serde_json::Value>,
+    pub manifest: AppletGatewayManifest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppletGatewayManifest {
+    pub id: String,
+    pub permissions: Vec<String>,
+    #[serde(default)]
+    pub services: Vec<AppletGatewayService>,
+    #[serde(default)]
+    pub skills: Vec<AppletGatewaySkill>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppletGatewayService {
+    pub id: String,
+    pub kind: String,
+    pub binding: String,
+    #[serde(rename = "allowedMethods")]
+    pub allowed_methods: Vec<String>,
+    #[serde(rename = "allowedPaths")]
+    pub allowed_paths: Vec<String>,
+    #[serde(default)]
+    pub streaming: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppletGatewaySkill {
+    pub id: String,
+    #[serde(rename = "inputSchema")]
+    pub input_schema: String,
+    #[serde(default)]
+    pub streaming: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub executor: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

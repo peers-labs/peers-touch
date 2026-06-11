@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Alert } from '@lobehub/ui'
 import { Card, Spin } from 'antd'
 import AppletManager from './AppletManager'
 import LynxHost from './LynxHost'
+import type { AppletHostDeviceRequest, AppletHostNavigationRequest, AppletHostUiRequest } from './lynx-host-element'
 import type { AppletInfo } from './types'
 
 interface LynxContainerProps {
@@ -11,6 +13,9 @@ interface LynxContainerProps {
   height?: number | string
   onLoad?: () => void
   onError?: (error: Error) => void
+  onNavigationRequest?: (request: AppletHostNavigationRequest) => void
+  onUiRequest?: (request: AppletHostUiRequest) => unknown | Promise<unknown>
+  onDeviceRequest?: (request: AppletHostDeviceRequest) => unknown | Promise<unknown>
 }
 
 /**
@@ -23,10 +28,15 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
   height = '600px',
   onLoad,
   onError,
+  onNavigationRequest,
+  onUiRequest,
+  onDeviceRequest,
 }) => {
+  const { t } = useTranslation('applet')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
   const [appletInfo, setAppletInfo] = useState<AppletInfo | null>(null)
+  const [sessionId, setSessionId] = useState<string | null>(null)
   const appletManager = AppletManager.getInstance()
 
   useEffect(() => {
@@ -37,14 +47,22 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
 
         const info = appletManager.getAppletInfo(appletId)
         if (!info) {
-          throw new Error(`Applet "${appletId}" not found in registry`)
+          throw new Error(t('applet.runtime.registryNotFound', { id: appletId }))
+        }
+        if (!info.load.desktop) {
+          throw new Error(t('applet.runtime.noDesktopLoad', { id: appletId }))
         }
 
         await appletManager.loadApplet(appletId)
+        const createdSessionId = appletManager.getSessionId(appletId)
+        if (!createdSessionId) {
+          throw new Error(t('applet.runtime.sessionCreateFailed', { id: appletId }))
+        }
         setAppletInfo(info)
+        setSessionId(createdSessionId)
         setLoading(false)
       } catch (err) {
-        const loadError = err instanceof Error ? err : new Error('Failed to load applet')
+        const loadError = err instanceof Error ? err : new Error(t('applet.runtime.loadFailedFallback'))
         setError(loadError)
         onError?.(loadError)
         setLoading(false)
@@ -53,24 +71,25 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
 
     load()
     return () => {
-      appletManager.unloadApplet(appletId)
+      void appletManager.unloadApplet(appletId)
+      setSessionId(null)
     }
-  }, [appletId, appletManager, onError])
+  }, [appletId, appletManager, onError, t])
 
   if (loading) {
     return (
       <Card style={{ width, height, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Spin size="large" tip="Loading Applet..." />
+        <Spin size="large" description={t('applet.runtime.loading')} />
       </Card>
     )
   }
 
-  if (error || !appletInfo) {
+  if (error || !appletInfo || !sessionId) {
     return (
       <Card style={{ width, height }}>
         <Alert
-          message="Failed to load Applet"
-          description={error?.message || 'Unknown error'}
+          message={t('applet.runtime.loadFailed')}
+          description={error?.message || t('applet.runtime.unknownError')}
           type="error"
           showIcon
         />
@@ -84,8 +103,8 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
     return (
       <Card style={{ width, height }}>
         <Alert
-          message="Unsupported Platform"
-          description={`Applet "${appletId}" has no desktop load configuration`}
+          message={t('applet.runtime.unsupportedPlatform')}
+          description={t('applet.runtime.noDesktopLoad', { id: appletId })}
           type="warning"
           showIcon
         />
@@ -98,6 +117,7 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
   return (
     <LynxHost
       appletId={appletId}
+      sessionId={sessionId}
       url={bundleUrl}
       style={{
         width,
@@ -113,6 +133,9 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
         setError(hostError)
         onError?.(hostError)
       }}
+      onNavigationRequest={onNavigationRequest}
+      onUiRequest={onUiRequest}
+      onDeviceRequest={onDeviceRequest}
     />
   )
 }

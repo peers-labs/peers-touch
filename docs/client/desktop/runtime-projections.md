@@ -155,6 +155,8 @@ Prefetch is **not** a substitute for a runtime — runtimes own *long-lived* pro
 | `search` | `pages/SearchPage.descriptor.tsx` | `search` | migrated |
 | `chat` | `pages/SocialChatPage.descriptor.tsx` | `social` | migrated |
 | `settings` | `pages/SettingsPage.descriptor.tsx` | `settings` | migrated |
-| `agent`, `notes`, `agent-profile`, `applet:*` | — | — | legacy `PageRouter` fallback |
+| `applets` | `pages/AppletsPage.descriptor.tsx` | `applets` | migrated |
+| `applet:*` | `pages/AppletRuntimePage.descriptor.tsx` | `applets` | migrated dynamic route |
+| `agent`, `notes`, `agent-profile` | — | — | legacy `PageRouter` fallback |
 
 New pages that fit the contract should ship as descriptors from day one. Adding a page to the legacy `PageRouter` requires an explicit reason in the PR description.

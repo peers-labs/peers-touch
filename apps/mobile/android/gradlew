@@ -8,7 +8,7 @@
 
 APP_NAME="Gradle"
 APP_BASE_NAME=$(basename "$0")
-DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m"'
+DEFAULT_JVM_OPTS="-Xmx64m -Xms64m"
 
 MAX_FD="maximum"
 
@@ -33,6 +33,8 @@ case "$(uname)" in
   MSYS* | MINGW* )  msys=true;;
   NonStop* )        nonstop=true;;
 esac
+
+APP_HOME=$( cd "${APP_HOME:-$(dirname "$0")}" > /dev/null && pwd -P ) || exit
 
 CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar
 
@@ -71,8 +73,6 @@ if [ "$MAX_FD" = "maximum" -o "$MAX_FD" = "max" ] ; then
     MAX_FD_LIMIT=$(ulimit -H -n) ||
         warn "Could not query maximum file descriptor limit"
 fi
-
-APP_HOME=$( cd "${APP_HOME:-$(dirname "$0")}" > /dev/null && pwd -P ) || exit
 
 exec "$JAVACMD" \
     $DEFAULT_JVM_OPTS \

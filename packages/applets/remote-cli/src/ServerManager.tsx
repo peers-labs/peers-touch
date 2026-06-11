@@ -147,7 +147,8 @@ export function ServerManager({
       }
       open={open}
       onClose={onClose}
-      width={480}
+      size="default"
+      styles={{ wrapper: { width: 480 } }}
       extra={
         <Button type="primary" icon={<Plus size={14} />} onClick={onAdd}>
           New

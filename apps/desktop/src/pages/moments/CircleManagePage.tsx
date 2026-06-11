@@ -240,7 +240,7 @@ export function CircleManageView() {
         }
         onCancel={() => setEditing(null)}
         onOk={handleSave}
-        destroyOnClose
+        destroyOnHidden
       >
         <Space direction="vertical" style={{ width: '100%' }} size={12}>
           <Input

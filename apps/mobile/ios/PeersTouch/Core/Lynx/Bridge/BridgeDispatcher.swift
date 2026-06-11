@@ -17,11 +17,11 @@ enum BridgeResult {
     case error(code: String, message: String)
 }
 
-enum BridgeErrorCode: String, Sendable {
-    case moduleNotFound = "BRIDGE_MODULE_NOT_FOUND"
-    case methodNotFound = "BRIDGE_METHOD_NOT_FOUND"
-    case invalidParams = "BRIDGE_INVALID_PARAMS"
-    case executionFailed = "BRIDGE_EXECUTION_FAILED"
+enum BridgeErrorCode {
+    static let moduleNotFound = "CAPABILITY_NOT_FOUND"
+    static let methodNotFound = "CAPABILITY_NOT_FOUND"
+    static let invalidParams = "INVALID_PARAMS"
+    static let executionFailed = "CAPABILITY_FAILED"
 }
 
 final class BridgeDispatcher: @unchecked Sendable {
@@ -49,7 +49,7 @@ final class BridgeDispatcher: @unchecked Sendable {
 
         guard let bridgeModule else {
             return .error(
-                code: BridgeErrorCode.moduleNotFound.rawValue,
+                code: BridgeErrorCode.moduleNotFound,
                 message: "Bridge module not found: \(module)"
             )
         }
@@ -59,7 +59,7 @@ final class BridgeDispatcher: @unchecked Sendable {
             return .success(result)
         } catch {
             return .error(
-                code: BridgeErrorCode.executionFailed.rawValue,
+                code: BridgeErrorCode.executionFailed,
                 message: "Bridge execution failed: \(module).\(method) - \(error.localizedDescription)"
             )
         }
@@ -69,7 +69,7 @@ final class BridgeDispatcher: @unchecked Sendable {
         let components = api.split(separator: ".", maxSplits: 1)
         guard components.count == 2 else {
             return .error(
-                code: BridgeErrorCode.invalidParams.rawValue,
+                code: BridgeErrorCode.invalidParams,
                 message: "API format must be 'module.method', got: \(api)"
             )
         }

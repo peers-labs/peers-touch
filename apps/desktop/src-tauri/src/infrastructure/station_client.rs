@@ -3,6 +3,7 @@ use crate::infrastructure::station_registry::StationRegistry;
 use crate::model::common::PeersResponse;
 use prost::Message;
 use reqwest::blocking::Client;
+use reqwest::header::HeaderMap;
 use reqwest::Method;
 use serde::Serialize;
 use serde_json::Value;
@@ -47,6 +48,13 @@ pub struct StationClientError {
     pub kind: StationClientErrorKind,
     pub message: String,
     pub details: Option<Value>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct JsonHttpResponse {
+    pub status: u16,
+    pub headers: Value,
+    pub body: Value,
 }
 
 impl StationClientError {
@@ -658,6 +666,94 @@ pub(crate) fn request_json(
 
     tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json)");
     Ok(result)
+}
+
+pub(crate) fn request_json_response(
+    method: Method,
+    path: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+    body: Option<Value>,
+) -> Result<JsonHttpResponse, StationClientError> {
+    let url = format!("{}{}", station_base_url(), path);
+    request_json_response_url(method, path, &url, token, query, body)
+}
+
+pub(crate) fn request_json_response_base_url(
+    base_url: &str,
+    method: Method,
+    path: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+    body: Option<Value>,
+) -> Result<JsonHttpResponse, StationClientError> {
+    let url = format!("{}{}", base_url.trim_end_matches('/'), path);
+    request_json_response_url(method, path, &url, token, query, body)
+}
+
+fn request_json_response_url(
+    method: Method,
+    path: &str,
+    url: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+    body: Option<Value>,
+) -> Result<JsonHttpResponse, StationClientError> {
+    tracing::debug!(method = %method, path = %path, "→ station (json response)");
+
+    let start = std::time::Instant::now();
+    let client = build_client()?;
+    let mut req = client.request(method.clone(), url).bearer_auth(token);
+
+    if let Some(q) = query {
+        req = req.query(q);
+    }
+
+    if let Some(b) = body {
+        req = req.header("Content-Type", "application/json").json(&b);
+    } else {
+        req = req.header("Content-Type", "application/json");
+    }
+    req = req.header("Accept", "application/json");
+
+    let resp = req.send().map_err(|e| {
+        let elapsed = start.elapsed().as_millis();
+        tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
+        StationClientError::new(
+            StationClientErrorKind::Network,
+            format!("request failed: {}", e),
+            None,
+        )
+    })?;
+
+    let status = resp.status().as_u16();
+    let headers = headers_to_json(resp.headers());
+    let text = resp.text().map_err(|e| {
+        tracing::error!(path = %path, error = %e, "← station DECODE_ERROR");
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("read body failed: {}", e),
+            None,
+        )
+    })?;
+    let body = serde_json::from_str::<Value>(&text).unwrap_or_else(|_| Value::String(text));
+
+    tracing::debug!(path = %path, status = status, elapsed_ms = start.elapsed().as_millis(), "← station RESPONSE (json)");
+    Ok(JsonHttpResponse {
+        status,
+        headers,
+        body,
+    })
+}
+
+fn headers_to_json(headers: &HeaderMap) -> Value {
+    let mut map = serde_json::Map::new();
+    for (name, value) in headers.iter() {
+        if let Ok(text) = value.to_str() {
+            map.insert(name.as_str().to_string(), Value::String(text.to_string()));
+        }
+    }
+    Value::Object(map)
 }
 
 pub(crate) fn request_proto<Req, Resp>(
