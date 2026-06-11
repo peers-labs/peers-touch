@@ -33,7 +33,7 @@ class AppletManager constructor(
                 return@forEach
             }
 
-            if (manifest.targetPlatforms != null && "android" !in manifest.targetPlatforms) {
+            if ("android" !in manifest.targets) {
                 rejectedDiagnostics[manifest.id] = listOf("Applet does not target android platform")
                 return@forEach
             }

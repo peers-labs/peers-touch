@@ -47,11 +47,12 @@ function App() {
   // runtimes; the kernel `runtime:critical` phase is observed here for
   // boot-trace symmetry.
   useEffect(() => {
+    if (!lifecycle.dataReady) return;
     markPhaseStart('runtime:critical');
     installAppRuntime();
     markPhaseEnd('runtime:critical', { critical: CRITICAL_SESSION_RUNTIMES });
     return () => teardownAppRuntime();
-  }, []);
+  }, [lifecycle.dataReady]);
 
   // Schedule idle-scope runtime install once we hit `ready`. The
   // pipeline only activates the slot when an actor is known; otherwise

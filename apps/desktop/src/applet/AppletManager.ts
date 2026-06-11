@@ -1,13 +1,21 @@
 import { parseAppletIndex, parseAppletInfo, type AppletDiagnostic } from './schema'
 import { type AppletInfo } from './types'
+import { api } from '../services/desktop_api'
 import { log } from '../utils/logger'
 
 export type { AppletInfo } from './types'
 
+interface AppletInstanceRecord {
+  info: AppletInfo
+  sessionId: string
+  loadedAt: number
+  status: 'loaded'
+}
+
 class AppletManager {
   private static instance: AppletManager
   private applets: Map<string, AppletInfo> = new Map()
-  private appletInstances: Map<string, any> = new Map()
+  private appletInstances: Map<string, AppletInstanceRecord> = new Map()
   private rejectedDiagnostics: Map<string, string[]> = new Map()
   private indexDiagnostics: string[] = []
   private appletDir: string = '/applets-dist'
@@ -117,13 +125,26 @@ class AppletManager {
       throw new Error(`Applet ${appletId} requires higher platform version: ${appletInfo.minPlatformVersion}`)
     }
 
+    const integrityIssues = await this.verifyIntegrity(appletInfo)
+    if (integrityIssues.length > 0) {
+      this.rejectedDiagnostics.set(appletId, integrityIssues)
+      this.printDiagnostics(`Refused to load applet with invalid integrity "${appletId}"`, integrityIssues)
+      throw new Error(`Applet ${appletId} failed integrity validation:\n${integrityIssues.join('\n')}`)
+    }
+
     if (this.appletInstances.has(appletId)) {
       return appletInfo
     }
 
+    const session = await api.appletCreateSession({
+      id: appletInfo.id,
+      manifest: this.toGatewayManifest(appletInfo),
+    })
+
     // 记录Applet实例
     this.appletInstances.set(appletId, {
       info: appletInfo,
+      sessionId: session.sessionId,
       loadedAt: Date.now(),
       status: 'loaded',
     })
@@ -134,8 +155,24 @@ class AppletManager {
   /**
    * 卸载Applet
    */
-  public unloadApplet(appletId: string): void {
-    this.appletInstances.delete(appletId)
+  public async unloadApplet(appletId: string): Promise<void> {
+    const instance = this.appletInstances.get(appletId)
+    if (!instance) return
+
+    try {
+      await api.appletInvoke({
+        id: instance.info.id,
+        sessionId: instance.sessionId,
+        capability: 'lifecycle',
+        action: 'destroy',
+        manifest: this.toGatewayManifest(instance.info),
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      log.warn('AppletManager', 'Failed to destroy applet gateway session', { appletId, error: message })
+    } finally {
+      this.appletInstances.delete(appletId)
+    }
   }
 
   /**
@@ -143,6 +180,10 @@ class AppletManager {
    */
   public getLoadedApplets(): string[] {
     return Array.from(this.appletInstances.keys())
+  }
+
+  public getSessionId(appletId: string): string | undefined {
+    return this.appletInstances.get(appletId)?.sessionId
   }
 
   public getDiagnostics(): AppletDiagnostic[] {
@@ -182,6 +223,79 @@ class AppletManager {
   private printDiagnostics(scope: string, issues: string[]): void {
     if (issues.length === 0) return
     log.error('AppletManager', scope, issues)
+  }
+
+  private toGatewayManifest(appletInfo: AppletInfo): {
+    id: string
+    permissions: string[]
+    services?: unknown[]
+    skills?: unknown[]
+  } {
+    return {
+      id: appletInfo.id,
+      permissions: appletInfo.permissions,
+      services: appletInfo.services,
+      skills: appletInfo.skills,
+    }
+  }
+
+  private async verifyIntegrity(appletInfo: AppletInfo): Promise<string[]> {
+    const integrity = appletInfo.integrity
+    if (!integrity || integrity.algorithm !== 'sha256') {
+      return ['integrity.algorithm must be sha256']
+    }
+    if (!appletInfo.load.desktop?.entry) {
+      return ['load.desktop.entry is required for Desktop runtime']
+    }
+    const requiredFiles = [appletInfo.load.desktop.entry, ...(appletInfo.skills ?? []).map((skill) => skill.inputSchema)]
+    const missing = requiredFiles.filter((file) => !integrity.files[file])
+    if (missing.length > 0) {
+      return missing.map((file) => `integrity.files missing required file: ${file}`)
+    }
+
+    const issues: string[] = []
+    for (const file of requiredFiles) {
+      const expected = integrity.files[file]
+      if (!this.isSafeRelativePath(file)) {
+        issues.push(`integrity.files contains unsafe file path: ${file}`)
+        continue
+      }
+      if (!expected.startsWith('sha256:') || expected.length !== 71) {
+        issues.push(`integrity.files invalid sha256 digest for file: ${file}`)
+        continue
+      }
+
+      try {
+        const response = await fetch(`${appletInfo.path}/${file}`)
+        if (!response.ok) {
+          issues.push(`integrity file fetch failed: ${file}`)
+          continue
+        }
+        const bytes = await response.arrayBuffer()
+        const actual = await this.sha256Hex(bytes)
+        if (`sha256:${actual}` !== expected.toLowerCase()) {
+          issues.push(`integrity mismatch for file: ${file}`)
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        issues.push(`integrity file verification failed for ${file}: ${message}`)
+      }
+    }
+    return issues
+  }
+
+  private isSafeRelativePath(file: string): boolean {
+    return file.length > 0 && !file.startsWith('/') && !file.includes('..') && !file.includes('\\')
+  }
+
+  private async sha256Hex(bytes: ArrayBuffer): Promise<string> {
+    if (!globalThis.crypto?.subtle) {
+      throw new Error('SubtleCrypto is unavailable')
+    }
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes)
+    return Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('')
   }
 
   private compareSemver(left: string, right: string): number {

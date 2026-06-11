@@ -5,6 +5,7 @@
     "moduleResolution": "bundler",
     "lib": ["ESNext"],
     "declaration": true,
+    "rootDir": "./src",
     "outDir": "./dist",
     "strict": true,
     "esModuleInterop": true,

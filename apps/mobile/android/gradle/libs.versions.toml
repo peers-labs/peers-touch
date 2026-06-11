@@ -20,6 +20,8 @@ lynx-primjs = "2.11.1-rc.0"
 material3 = "1.3.1"
 coil = "2.7.0"
 protobuf-javalite = "4.29.3"
+kotlin-test = "2.1.0"
+junit = "4.13.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "core-ktx" }
@@ -71,6 +73,9 @@ lynx-service-http = { group = "org.lynxsdk.lynx", name = "lynx-service-http", ve
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 
 protobuf-javalite = { group = "com.google.protobuf", name = "protobuf-javalite", version.ref = "protobuf-javalite" }
+kotlin-test = { group = "org.jetbrains.kotlin", name = "kotlin-test", version.ref = "kotlin-test" }
+kotlin-test-junit = { group = "org.jetbrains.kotlin", name = "kotlin-test-junit", version.ref = "kotlin-test" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

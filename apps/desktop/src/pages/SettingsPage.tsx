@@ -1168,7 +1168,7 @@ function SecuritySection() {
         footer={null}
         centered
         width={360}
-        destroyOnClose
+        destroyOnHidden
         styles={{ body: { padding: '32px 24px 24px' } }}
       >
         <Flexbox align="center" gap={20}>

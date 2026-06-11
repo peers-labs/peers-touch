@@ -2,11 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import {
-  Badge, Card, Empty, Form, Modal, Progress, Select, Switch,
+  Badge, Card, Drawer, Empty, Form, Modal, Progress, Select, Switch,
   Typography, theme, message, Popconfirm, Space, Divider,
   Descriptions, Statistic,
 } from 'antd';
-import { Button, Drawer, Input, Tabs, Tag, Alert, Tooltip, TextArea, InputPassword } from '@lobehub/ui';
+import { Button, Input, Tabs, Tag, Alert, Tooltip, TextArea, InputPassword } from '@lobehub/ui';
 import {
   Plus, Trash2, Zap, Settings2, Send, RefreshCw, Play, Square,
   Webhook, MessageSquare, Bot, Hash, ArrowDownLeft, ArrowUpRight,
@@ -226,7 +226,7 @@ function CreateBotProgressModal({
       maskClosable={!!error}
       width={400}
       centered
-      destroyOnClose
+      destroyOnHidden
       title={t('channels.progress.title')}
     >
       <Flexbox direction="vertical" gap={20} style={{ padding: '8px 0' }}>

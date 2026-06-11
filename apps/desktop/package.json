@@ -15,7 +15,7 @@
     "check": "pnpm run check:social-wire && pnpm run check:social-runtime-boundaries && tsc --noEmit -p tsconfig.json",
     "lint": "ESLINT_USE_FLAT_CONFIG=false eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "vitest run",
-    "test:applet": "vitest run src/applet/AppletManager.test.ts",
+    "test:applet": "vitest run src/applet/*.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -26,8 +26,10 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@lobehub/icons": "^5.0.1",
     "@lobehub/ui": "^5.3.0",
+    "@lynx-js/lynx-core": "0.1.3",
     "@lynx-js/web-core": "^0.20.4",
     "@lynx-js/web-elements": "^0.12.2",
+    "@peers-touch/applet-contract": "workspace:*",
     "@peers-touch/client-storage": "workspace:*",
     "@peers-touch/sdk-ts": "workspace:*",
     "@peers-touch/ui-desktop": "workspace:*",

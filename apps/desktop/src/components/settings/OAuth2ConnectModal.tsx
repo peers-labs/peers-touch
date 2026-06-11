@@ -168,7 +168,7 @@ export function OAuth2ConnectModal({ provider, open, onCancel, onSuccess }: Prop
       footer={null}
       width={420}
       centered
-      destroyOnClose
+      destroyOnHidden
       closable={authState !== 'waiting'}
       maskClosable={authState !== 'waiting'}
     >
