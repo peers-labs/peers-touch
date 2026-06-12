@@ -5,16 +5,16 @@ use crate::contracts::{
     ChatScopeCursorSetInput, GroupAckOfflineInput, GroupChatCreateGroupInput, GroupChatEditInput,
     GroupChatLeaveGroupInput, GroupChatListInput, GroupChatListMessagesInput,
     GroupChatMarkReadInput, GroupChatSendInput, GroupChatSyncInput, GroupChatThreadCountsInput,
-    GroupChatThreadInput, GroupChatThreadReadInput, GroupChatUnreadInput, GroupCreateInput,
-    GroupInviteInput, GroupJoinInput, GroupMembersInput, GroupMessageActionInput,
-    GroupOfflineMessagesInput, GroupRemoveMemberInput, GroupSearchMessagesInput, GroupUlidInput,
-    GroupUpdateInput, GroupUpdateMemberInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput,
-    StubPayload,
+    GroupChatThreadInput, GroupChatThreadReadInput, GroupChatUnreadInput, GroupInviteInput,
+    GroupJoinInput, GroupMembersInput, GroupMessageActionInput, GroupOfflineMessagesInput,
+    GroupRemoveMemberInput, GroupSearchMessagesInput, GroupUlidInput, GroupUpdateInput,
+    GroupUpdateMemberInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
 use crate::model;
 use crate::state::AppState;
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use prost::Message;
 use reqwest::Method;
 use serde_json::{json, Value};
@@ -90,19 +90,20 @@ fn extract_latest_ulid(payload: &Value) -> Option<String> {
     None
 }
 
-fn attachment_inputs_to_json(inputs: Option<Vec<AttachmentInput>>) -> Vec<Value> {
+fn map_group_attachments(inputs: &[AttachmentInput]) -> Vec<model::chat::GroupMessageAttachment> {
     inputs
-        .unwrap_or_default()
-        .into_iter()
+        .iter()
         .map(|a| {
-            json!({
-                "cid": a.cid,
-                "filename": a.filename,
-                "mime_type": a.mime_type,
-                "size": a.size,
-                "thumbnail_cid": a.thumbnail_cid.unwrap_or_default(),
-                "visibility": a.visibility.unwrap_or_default(),
-            })
+            model::chat::GroupMessageAttachment {
+                cid: a.cid.clone(),
+                filename: a.filename.clone(),
+                mime_type: a.mime_type.clone(),
+                size: a.size,
+                thumbnail_cid: a.thumbnail_cid.clone().unwrap_or_default(),
+                visibility: a.visibility.clone().unwrap_or_default(),
+                media_encryption: None,
+                ..Default::default()
+            }
         })
         .collect()
 }
@@ -293,56 +294,70 @@ pub fn group_chat_send_message(
     input: GroupChatSendInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
-) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state, &window) {
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
         Ok(token) => token,
         Err(error) => return error,
     };
-    // Sender Keys is the only supported send path. We forward the
-    // sender's `encrypted_payload` (base64-encoded bytes of a
-    // `GroupCiphertext` proto, produced by `crypto_group_encrypt`)
-    // and pin `content` to the empty string. The plaintext field
-    // is not optional-by-coincidence here -- we explicitly set ""
-    // so a misbehaving caller cannot smuggle plaintext in alongside
-    // ciphertext. Station will additionally enforce the same
-    // invariant in G6 (it MUST reject populated `content`); the
-    // desktop layer enforcing it client-side first means a buggy
-    // build cannot accidentally publish plaintext history.
-    let attachments = attachment_inputs_to_json(input.attachments);
+    // Sender Keys is the only supported send path. The web layer passes
+    // base64-encoded `GroupCiphertext` proto bytes from `crypto_group_encrypt`;
+    // Desktop decodes those bytes and sends a protobuf request to Station.
+    // `content` is pinned to empty so plaintext can never be smuggled beside
+    // ciphertext.
     let encrypted_payload = match input.encrypted_payload.as_ref() {
-        Some(s) if !s.trim().is_empty() => s.clone(),
-        _ if attachments.is_empty() => {
+        Some(s) if !s.trim().is_empty() => match B64.decode(s.trim().as_bytes()) {
+            Ok(bytes) if !bytes.is_empty() => bytes,
+            Ok(_) => {
+                return AppResult::fail(
+                    ErrorCode::InvalidArgument,
+                    "encrypted_payload is required for group sends",
+                    None,
+                );
+            }
+            Err(e) => {
+                return AppResult::fail(
+                    ErrorCode::InvalidArgument,
+                    format!("Invalid encrypted_payload: {}", e),
+                    None,
+                );
+            }
+        },
+        _ => {
             return AppResult::fail(
-                crate::error::ErrorCode::InvalidArgument,
-                "encrypted_payload or attachments are required for group sends",
+                ErrorCode::InvalidArgument,
+                "encrypted_payload is required for group sends",
                 None,
             );
         }
-        _ => String::new(),
     };
-    let data = match request_json(
+
+    let attachments = input.attachments.unwrap_or_default();
+    let req = model::chat::SendGroupMessageRequest {
+        group_ulid: input.group_ulid,
+        r#type: input.r#type.unwrap_or(1),
+        content: String::new(),
+        attachments: map_group_attachments(&attachments),
+        reply_to_ulid: input.reply_to_ulid.unwrap_or_default(),
+        mentioned_dids: input.mentioned_dids.unwrap_or_default(),
+        mention_all: input.mention_all.unwrap_or(false),
+        encrypted_payload,
+        thread_root_ulid: input.thread_root_ulid.unwrap_or_default(),
+    };
+
+    let resp = match station_client::request_proto::<
+        model::chat::SendGroupMessageRequest,
+        model::chat::SendGroupMessageResponse,
+    >(
         Method::POST,
         "/group-chat/message/send",
         &token,
         None,
-        Some(json!({
-            "group_ulid": input.group_ulid,
-            "content": "",
-            "type": input.r#type.unwrap_or(1),
-            "reply_to_ulid": input.reply_to_ulid.unwrap_or_default(),
-            "thread_root_ulid": input.thread_root_ulid.unwrap_or_default(),
-            "mentioned_dids": input.mentioned_dids.unwrap_or_default(),
-            "mention_all": input.mention_all.unwrap_or(false),
-            "attachments": attachments,
-            "encrypted_payload": encrypted_payload,
-        })),
+        Some(&req),
     ) {
-        Ok(data) => data,
-        Err(error) => return error,
+        Ok(r) => r,
+        Err(e) => return e.into_app_result("station request failed"),
     };
-    let user_scope = user_scope_from_state(&state, &window);
-    let _ = chat_storage::ingest_group_messages(user_scope.as_str(), &data);
-    to_stub("group_chat_send_message", data)
+    AppResult::success(resp.encode_to_vec())
 }
 
 #[tauri::command]

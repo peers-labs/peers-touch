@@ -4,6 +4,8 @@ package peers_touch.model.social.v1;
 
 import "google/protobuf/timestamp.proto";
 import "domain/activity/activity.proto";
+import "domain/common/common.proto";
+import "domain/social/media.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
 
@@ -175,6 +177,7 @@ message ImageAttachment {
   int32 height = 6;
   string blurhash = 7;
   string alt_text = 8;
+  peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;
 }
 
 message VideoAttachment {
@@ -188,6 +191,7 @@ message VideoAttachment {
   string blurhash = 8;
   VideoQuality quality = 9;
   repeated VideoVariant variants = 10;
+  peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;
 }
 
 message VideoVariant {
@@ -258,6 +262,10 @@ message CreateTextPostRequest {
 message CreateImagePostRequest {
   string text = 1;
   repeated string image_ids = 2;
+  // Typed image attachments for E2EE media publishing. `image_ids` stays
+  // for legacy clients, but new clients SHOULD populate `images` so the
+  // media encryption descriptor survives the create -> hydrate loop.
+  repeated ImageAttachment images = 3;
 }
 
 message CreateVideoPostRequest {
@@ -462,6 +470,10 @@ message Audience {
   // is subtracted from. MUST be PUBLIC or FOLLOWERS. For all other Kinds
   // this field is silently ignored.
   Kind base_kind = 4;
+  // Key envelopes are audience-specific and intentionally separate from
+  // media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+  // sealed keys so Station can authorize fanout without reading media keys.
+  repeated peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;
 }
 
 // ============================================================================

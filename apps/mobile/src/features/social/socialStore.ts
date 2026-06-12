@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { clearChatUnreadForParticipant } from '@peers-touch/client-chat-core';
 import type { DomainCacheRepository } from '@peers-touch/client-storage';
 
 import type { MobileAuthSession } from '../auth/authSession';
@@ -9,6 +10,7 @@ import {
 import {
   createSocialApiClient,
   type FriendConversationSettings,
+  type ChatAttachmentInput,
   type SocialApiClient,
   type UpdateFriendConversationSettingsInput,
 } from './socialApi';
@@ -24,7 +26,10 @@ import {
 } from './socialNormalizers';
 import {
   applyMessageMutationToList,
+  applyFriendEncryptedPayloadToMessage,
   applyMessageReceiptToList,
+  applyPresenceToMap,
+  applyTypingStateToMap,
   mergeMessages,
   mergeNotifications,
   type MessageMutationKind,
@@ -38,6 +43,11 @@ import {
   seedPresenceFromSessions,
   visibleFriendMessages,
 } from './socialProjection';
+import {
+  createFriendEncryptedChatPayload,
+  decryptFriendChatPayload,
+  encryptFriendChatPayload,
+} from './socialFriendE2ee';
 import {
   SocialApiError,
   type FriendChatMessage,
@@ -67,6 +77,7 @@ interface ParsedHandle {
 
 export interface SocialState {
   sessionKey: string | null;
+  authSession: MobileAuthSession | null;
   currentUserDid: string | null;
   api: SocialApiClient | null;
   storage: MobileClientStorageRuntime | null;
@@ -89,9 +100,6 @@ export interface SocialState {
   peopleSearchResults: ActorSearchResult[];
   peopleSearchLoading: boolean;
   peopleSearchError: SocialApiError | null;
-  messageSearchResults: FriendChatMessage[];
-  messageSearchLoading: boolean;
-  messageSearchError: SocialApiError | null;
   activeSessionUlid: string | null;
   loading: boolean;
   error: SocialApiError | null;
@@ -121,7 +129,7 @@ export interface SocialState {
   loadMessages: (sessionUlid: string) => Promise<void>;
   loadCurrentUserProfile: (force?: boolean) => Promise<void>;
   loadPeerProfile: (peerDid: string, force?: boolean) => Promise<void>;
-  sendMessage: (sessionUlid: string, content: string) => Promise<void>;
+  sendMessage: (sessionUlid: string, content: string, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<void>;
   editMessage: (sessionUlid: string, messageUlid: string, content: string) => Promise<void>;
   recallMessage: (sessionUlid: string, messageUlid: string) => Promise<void>;
   deleteMessage: (sessionUlid: string, messageUlid: string) => Promise<void>;
@@ -139,8 +147,6 @@ export interface SocialState {
   sendTypingState: (sessionUlid: string, typing: boolean) => Promise<void>;
   searchPeople: (query: string) => Promise<void>;
   clearPeopleSearch: () => void;
-  searchMessages: (query: string, sessionUlid?: string) => Promise<void>;
-  clearMessageSearch: () => void;
   clearError: () => void;
 }
 
@@ -148,6 +154,7 @@ const emptyUnreadCounts: UnreadCounts = { total: 0, byCategory: {} };
 
 export const useSocialStore = create<SocialState>((set, get) => ({
   sessionKey: null,
+  authSession: null,
   currentUserDid: null,
   api: null,
   storage: null,
@@ -170,9 +177,6 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   peopleSearchResults: [],
   peopleSearchLoading: false,
   peopleSearchError: null,
-  messageSearchResults: [],
-  messageSearchLoading: false,
-  messageSearchError: null,
   activeSessionUlid: null,
   loading: false,
   error: null,
@@ -182,6 +186,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     if (!session) {
       set({
         sessionKey: null,
+        authSession: null,
         currentUserDid: null,
         api: null,
         storage: null,
@@ -204,9 +209,6 @@ export const useSocialStore = create<SocialState>((set, get) => ({
         peopleSearchResults: [],
         peopleSearchLoading: false,
         peopleSearchError: null,
-        messageSearchResults: [],
-        messageSearchLoading: false,
-        messageSearchError: null,
         activeSessionUlid: null,
         loading: false,
         error: null,
@@ -220,6 +222,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
 
     set({
       sessionKey,
+      authSession: session,
       currentUserDid: resolveActorDid(session),
       api: createSocialApiClient(session),
       storage: createMobileClientStorageRuntime(session),
@@ -242,9 +245,6 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       peopleSearchResults: [],
       peopleSearchLoading: false,
       peopleSearchError: null,
-      messageSearchResults: [],
-      messageSearchLoading: false,
-      messageSearchError: null,
       activeSessionUlid: null,
       loading: false,
       error: null,
@@ -522,10 +522,11 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   loadMessages: async (sessionUlid) => {
-    const api = requireApi(get());
+    const state = get();
+    const api = requireApi(state);
     try {
       const payload = await api.listMessages(sessionUlid);
-      const messages = visibleFriendMessages((payload.messages ?? []).map(normalizeMessage));
+      const messages = await decryptVisibleMessages(state, sessionUlid, (payload.messages ?? []).map(normalizeMessage));
       set((state) => ({
         messages: { ...state.messages, [sessionUlid]: messages },
       }));
@@ -606,19 +607,27 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     }
   },
 
-  sendMessage: async (sessionUlid, content) => {
-    const api = requireApi(get());
+  sendMessage: async (sessionUlid, content, attachments, messageType) => {
+    const state = get();
+    const api = requireApi(state);
+    const authSession = requireAuthSession(state);
     const trimmed = content.trim();
-    if (!trimmed) return;
+    if (!trimmed && !attachments?.length) return;
 
-    const session = get().sessions.find((item) => item.ulid === sessionUlid);
-    const receiverDid = session ? peerDidFromSession(session, get().currentUserDid) : '';
+    const session = state.sessions.find((item) => item.ulid === sessionUlid);
+    const receiverDid = session ? peerDidFromSession(session, state.currentUserDid) : '';
     if (!receiverDid) return;
 
     try {
-      const payload = await api.sendMessage(sessionUlid, receiverDid, trimmed);
+      const encryptedPlaintext = createFriendEncryptedChatPayload({
+        text: trimmed,
+        attachments: attachments ?? [],
+        messageType,
+      });
+      const encryptedPayload = await encryptFriendChatPayload(authSession, sessionUlid, receiverDid, encryptedPlaintext);
+      const payload = await api.sendEncryptedMessage(sessionUlid, receiverDid, encryptedPayload, encryptedPlaintext.messageType);
       if (payload.message) {
-        const message = normalizeMessage(payload.message);
+        const message = applyFriendEncryptedPayloadToMessage(normalizeMessage(payload.message), encryptedPlaintext);
         set((state) => ({
           messages: { ...state.messages, [sessionUlid]: [...(state.messages[sessionUlid] ?? []), message] },
         }));
@@ -631,14 +640,23 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   editMessage: async (sessionUlid, messageUlid, content) => {
-    const api = requireApi(get());
+    const state = get();
+    const api = requireApi(state);
+    const authSession = requireAuthSession(state);
     const trimmed = content.trim();
     if (!trimmed) return;
 
+    const session = state.sessions.find((item) => item.ulid === sessionUlid);
+    const receiverDid = session ? peerDidFromSession(session, state.currentUserDid) : '';
+    if (!receiverDid) return;
+
     try {
-      await api.editMessage(sessionUlid, messageUlid, trimmed);
+      const encryptedPlaintext = createFriendEncryptedChatPayload({ text: trimmed });
+      const encryptedPayload = await encryptFriendChatPayload(authSession, sessionUlid, receiverDid, encryptedPlaintext);
+      await api.editMessage(sessionUlid, messageUlid, encryptedPayload);
       get().applyMessageMutation(sessionUlid, messageUlid, 'EDIT', {
         newContent: trimmed,
+        newCiphertext: encryptedPayload,
         mutatedTsUnixMs: Date.now(),
       });
       await get().refreshSessions();
@@ -672,12 +690,13 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   setPeerOnline: (did, online) =>
-    set((state) => ({
-      peerOnline: { ...state.peerOnline, [did]: online },
-    })),
+    set((state) => {
+      const next = applyPresenceToMap(state.peerOnline, did, online);
+      return next ? { peerOnline: next } : state;
+    }),
 
   ingestRealtimeMessage: async (sessionUlid, message) => {
-    const normalized = normalizeMessage(message);
+    const normalized = await decryptMessage(get(), sessionUlid, normalizeMessage(message));
     set((state) => ({
       messages: {
         ...state.messages,
@@ -715,17 +734,8 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   applyTypingState: (sessionUlid, fromActorId, typing) => {
     if (!sessionUlid || !fromActorId) return;
     set((state) => {
-      const sessionMap = state.typingPeers[sessionUlid] ?? {};
-      if (!typing && !sessionMap[fromActorId]) return state;
-      return {
-        typingPeers: {
-          ...state.typingPeers,
-          [sessionUlid]: {
-            ...sessionMap,
-            [fromActorId]: { typing, lastUpdate: Date.now() },
-          },
-        },
-      };
+      const next = applyTypingStateToMap(state.typingPeers, sessionUlid, fromActorId, typing);
+      return next ? { typingPeers: next } : state;
     });
   },
 
@@ -772,27 +782,6 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   clearPeopleSearch: () => set({ peopleSearchResults: [], peopleSearchError: null, peopleSearchLoading: false }),
-
-  searchMessages: async (query, sessionUlid) => {
-    const trimmed = query.trim();
-    if (!trimmed) {
-      set({ messageSearchResults: [], messageSearchError: null });
-      return;
-    }
-    const api = requireApi(get());
-    set({ messageSearchLoading: true, messageSearchError: null });
-    try {
-      const payload = await api.searchMessages(trimmed, sessionUlid);
-      set({
-        messageSearchResults: visibleFriendMessages((payload.messages ?? []).map(normalizeMessage)),
-        messageSearchLoading: false,
-      });
-    } catch (error) {
-      set({ messageSearchResults: [], messageSearchLoading: false, messageSearchError: normalizeError(error) });
-    }
-  },
-
-  clearMessageSearch: () => set({ messageSearchResults: [], messageSearchError: null, messageSearchLoading: false }),
 
   clearError: () => set({ error: null }),
 }));
@@ -859,6 +848,37 @@ function requireApi(state: SocialState): SocialApiClient {
   return state.api;
 }
 
+function requireAuthSession(state: SocialState): MobileAuthSession {
+  if (!state.authSession) {
+    throw new SocialApiError({ method: 'GET', path: '/social', message: 'mobile.social.notAuthenticated' });
+  }
+  return state.authSession;
+}
+
+async function decryptVisibleMessages(
+  state: SocialState,
+  sessionUlid: string,
+  messages: FriendChatMessage[],
+): Promise<FriendChatMessage[]> {
+  const visibleMessages = visibleFriendMessages(messages);
+  return Promise.all(visibleMessages.map((message) => decryptMessage(state, sessionUlid, message)));
+}
+
+async function decryptMessage(
+  state: SocialState,
+  sessionUlid: string,
+  message: FriendChatMessage,
+): Promise<FriendChatMessage> {
+  if (!state.authSession || !state.currentUserDid || !message.encryptedPayload?.byteLength) return message;
+  const payload = await decryptFriendChatPayload(state.authSession, {
+    sessionUlid,
+    senderDid: message.senderDid,
+    currentUserDid: state.currentUserDid,
+    encryptedPayload: message.encryptedPayload,
+  }).catch(() => null);
+  return payload ? applyFriendEncryptedPayloadToMessage(message, payload) : message;
+}
+
 function normalizeError(error: unknown): SocialApiError {
   if (error instanceof SocialApiError) return error;
   return new SocialApiError({ method: 'GET', path: '/social', message: error instanceof Error ? error.message : String(error) });
@@ -904,10 +924,5 @@ function clearSessionUnreadForActor(
   sessionUlid: string,
   currentUserDid: string,
 ): FriendChatSession[] {
-  return sessions.map((session) => {
-    if (session.ulid !== sessionUlid) return session;
-    if (session.participantADid === currentUserDid) return { ...session, unreadCountA: 0 };
-    if (session.participantBDid === currentUserDid) return { ...session, unreadCountB: 0 };
-    return session;
-  });
+  return clearChatUnreadForParticipant(sessions, sessionUlid, currentUserDid);
 }

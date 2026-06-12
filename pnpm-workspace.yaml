@@ -4,6 +4,8 @@ packages:
   - apps/desktop/applets-dev/*
   - apps/station/app/subserver/dashboard/web
   - packages/model
+  - packages/client-chat-core
+  - packages/client-media-security
   - packages/client-storage
   - packages/sdk/ts
   - packages/ui/desktop

@@ -6508,6 +6508,14 @@ public final class Event {
        * <code>KIND_LEFT = 3;</code>
        */
       KIND_LEFT(3),
+      /**
+       * <pre>
+       * role or moderation state changed
+       * </pre>
+       *
+       * <code>KIND_UPDATED = 4;</code>
+       */
+      KIND_UPDATED(4),
       UNRECOGNIZED(-1),
       ;
 
@@ -6535,6 +6543,14 @@ public final class Event {
        * <code>KIND_LEFT = 3;</code>
        */
       public static final int KIND_LEFT_VALUE = 3;
+      /**
+       * <pre>
+       * role or moderation state changed
+       * </pre>
+       *
+       * <code>KIND_UPDATED = 4;</code>
+       */
+      public static final int KIND_UPDATED_VALUE = 4;
 
 
       @java.lang.Override
@@ -6562,6 +6578,7 @@ public final class Event {
           case 1: return KIND_ADDED;
           case 2: return KIND_REMOVED;
           case 3: return KIND_LEFT;
+          case 4: return KIND_UPDATED;
           default: return null;
         }
       }

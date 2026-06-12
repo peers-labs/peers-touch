@@ -1,3 +1,5 @@
+import { seedChatPresenceFromParticipants } from '@peers-touch/client-chat-core';
+
 import type { FriendChatSession } from '../gen/proto/domain/chat/friend_chat_pb';
 
 export interface FriendRequestData {
@@ -55,16 +57,10 @@ export function normalizeFriendRequestData(raw: unknown): FriendRequestData {
 }
 
 export function seedPresenceFromSessions(sessions: FriendChatSession[]): Record<string, boolean> {
-  const presenceSeed: Record<string, boolean> = {};
-  for (const session of sessions) {
-    if (session.participantADid && presenceSeed[session.participantADid] === undefined) {
-      presenceSeed[session.participantADid] = session.participantAOnline;
-    }
-    if (session.participantBDid && presenceSeed[session.participantBDid] === undefined) {
-      presenceSeed[session.participantBDid] = session.participantBOnline;
-    }
-  }
-  return presenceSeed;
+  return seedChatPresenceFromParticipants(sessions, (session) => [
+    { actorId: session.participantADid, online: session.participantAOnline },
+    { actorId: session.participantBDid, online: session.participantBOnline },
+  ]);
 }
 
 function recordFromUnknown(value: unknown): RawRecord {
