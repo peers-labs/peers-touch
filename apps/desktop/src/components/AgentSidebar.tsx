@@ -211,7 +211,7 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
   const totalTopics = agentSessions.length;
 
   return (
-    <Flexbox height="100%" style={{ background: token.colorBgLayout }}>
+    <Flexbox height="100%" style={{ background: token.colorBgContainer }}>
       <AgentPicker
         agents={agents}
         selectedAgent={selectedAgent}
@@ -224,7 +224,7 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       />
 
       {/* Nav Actions */}
-      <Flexbox style={{ padding: '4px 12px 8px', flexShrink: 0 }} gap={1}>
+      <Flexbox style={{ padding: '8px', flexShrink: 0, borderBottom: `1px solid ${token.colorBorderSecondary}` }} gap={1}>
         <NavItem
           icon={<MessageSquarePlus size={16} />}
           label={t('agent.sidebar.startNewTopic')}
@@ -259,13 +259,13 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       )}
 
       {/* Topic Section */}
-      <Flexbox flex={1} style={{ overflow: 'auto', padding: '0 8px' }}>
+      <Flexbox flex={1} style={{ overflow: 'auto', padding: '8px' }}>
         {/* Section header */}
         <Flexbox
           horizontal
           align="center"
           justify="space-between"
-          style={{ padding: '4px 8px', marginBottom: 2 }}
+          style={{ padding: '0 8px 6px' }}
         >
           <span style={{ fontSize: 12, fontWeight: 600, color: token.colorTextSecondary }}>
             {t('agent.sidebar.topic')} {totalTopics > 0 ? totalTopics : ''}
@@ -318,25 +318,26 @@ function NavItem({
   const [hovered, setHovered] = useState(false);
 
   return (
-    <Flexbox
-      horizontal
-      align="center"
-      gap={10}
+      <Flexbox
+        horizontal
+        align="center"
+        gap={10}
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        padding: '7px 10px',
-        borderRadius: 6,
+        minHeight: 36,
+        padding: '4px 8px',
+        borderRadius: 8,
         cursor: 'pointer',
         fontSize: 13,
-        color: active ? token.colorPrimary : token.colorText,
-        background: active ? token.colorPrimaryBg : hovered ? token.colorFillTertiary : 'transparent',
-        transition: 'all 0.15s',
+        color: active ? token.colorText : token.colorTextSecondary,
+        background: active ? token.colorFillSecondary : hovered ? token.colorFillTertiary : 'transparent',
+        transition: 'background 0.18s ease, color 0.18s ease',
         ...style,
       }}
     >
-      <span style={{ display: 'flex', color: active ? token.colorPrimary : token.colorTextSecondary }}>
+      <span style={{ display: 'flex', color: active ? token.colorText : token.colorTextDescription }}>
         {icon}
       </span>
       <span>{label}</span>
@@ -366,14 +367,15 @@ function TopicGroup({
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <div style={{ marginBottom: 2 }}>
+    <div style={{ marginBottom: 4 }}>
       <Flexbox
         horizontal
         align="center"
         gap={4}
         onClick={() => setCollapsed(!collapsed)}
         style={{
-          padding: '4px 8px',
+          minHeight: 28,
+          padding: '0 8px',
           cursor: 'pointer',
         }}
       >
@@ -391,7 +393,7 @@ function TopicGroup({
       </Flexbox>
 
       {!collapsed && (
-        <Flexbox gap={1} style={{ paddingLeft: 4 }}>
+        <Flexbox gap={1}>
           {topics.map((topic) => (
             <TopicItem
               key={topic.key}
@@ -518,17 +520,18 @@ function TopicItem({
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         style={{
-          padding: '6px 8px 6px 12px',
-          borderRadius: 6,
+          minHeight: 36,
+          padding: '4px 8px',
+          borderRadius: 8,
           cursor: 'pointer',
-          background: isActive ? token.colorPrimaryBg : hovered ? token.colorFillTertiary : 'transparent',
-          transition: 'background 0.15s',
+          background: isActive ? token.colorFillSecondary : hovered ? token.colorFillTertiary : 'transparent',
+          transition: 'background 0.18s ease',
         }}
       >
         <Hash
           size={14}
           style={{
-            color: isActive ? token.colorPrimary : token.colorTextTertiary,
+            color: isActive ? token.colorText : token.colorTextDescription,
             flexShrink: 0,
           }}
         />
@@ -558,7 +561,7 @@ function TopicItem({
             style={{
               flex: 1,
               fontSize: 13,
-              color: isActive ? token.colorPrimary : token.colorText,
+              color: isActive ? token.colorText : token.colorTextSecondary,
               fontWeight: isActive ? 500 : 400,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
@@ -625,13 +628,13 @@ function AgentPicker({
     <Flexbox
       gap={8}
       style={{
-        padding: '12px 12px 10px',
+        padding: '8px',
         flexShrink: 0,
         borderBottom: `1px solid ${token.colorBorderSecondary}`,
       }}
     >
-      <Flexbox horizontal align="center" gap={8}>
-        <span style={{ fontSize: 14, fontWeight: 600, flex: 1, color: token.colorText }}>
+      <Flexbox horizontal align="center" gap={8} style={{ minHeight: 32, padding: '0 4px' }}>
+        <span style={{ fontSize: 13, fontWeight: 600, flex: 1, color: token.colorTextSecondary }}>
           {t('agent.sidebar.switchAgent')}
         </span>
         <ActionIcon
@@ -651,12 +654,10 @@ function AgentPicker({
         size="small"
       />
 
-      <div
+      <Flexbox
+        gap={1}
         style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-          gap: 6,
-          maxHeight: 188,
+          maxHeight: 236,
           overflow: 'auto',
         }}
       >
@@ -668,7 +669,6 @@ function AgentPicker({
               color: token.colorTextQuaternary,
               padding: '16px 8px',
               fontSize: 13,
-              gridColumn: '1 / -1',
             }}
           >
             {searchText ? t('agent.sidebar.noMatchingAgents') : t('agent.sidebar.noAgentsYet')}
@@ -686,7 +686,7 @@ function AgentPicker({
         ))}
 
         {pinnedAgents.length > 0 && unpinnedAgents.length > 0 && (
-          <div style={{ height: 1, background: token.colorBorderSecondary, margin: '2px 4px', gridColumn: '1 / -1' }} />
+          <div style={{ height: 1, background: token.colorBorderSecondary, margin: '4px 8px' }} />
         )}
 
         {unpinnedAgents.map((agent) => (
@@ -698,7 +698,7 @@ function AgentPicker({
             token={token}
           />
         ))}
-      </div>
+      </Flexbox>
     </Flexbox>
   );
 }
@@ -718,31 +718,29 @@ function AgentPickerItem({
 
   return (
     <Flexbox
+      horizontal
       align="center"
-      gap={6}
+      gap={8}
       onClick={onSelect}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
         position: 'relative',
         minWidth: 0,
-        minHeight: 74,
-        padding: '8px 6px',
+        height: 38,
+        padding: '4px 8px 4px 6px',
         borderRadius: 8,
         cursor: 'pointer',
-        border: `1px solid ${isSelected ? token.colorPrimary : 'transparent'}`,
-        background: isSelected ? token.colorPrimaryBg : hovered ? token.colorFillTertiary : 'transparent',
-        transition: 'background 0.15s, border-color 0.15s',
+        background: isSelected ? token.colorFillSecondary : hovered ? token.colorFillTertiary : 'transparent',
+        transition: 'background 0.18s ease',
       }}
     >
       <div
         style={{
-          width: 30,
-          height: 30,
-          borderRadius: 8,
-          background: isSelected
-            ? 'linear-gradient(135deg, #667eea, #764ba2)'
-            : token.colorFillSecondary,
+          width: 28,
+          height: 28,
+          borderRadius: 7,
+          background: isSelected ? token.colorFill : token.colorFillSecondary,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -752,45 +750,22 @@ function AgentPickerItem({
       >
         {agent.avatar || '🤖'}
       </div>
-      {agent.pinned && (
-        <Pin
-          size={10}
-          style={{
-            position: 'absolute',
-            top: 6,
-            right: 6,
-            color: token.colorTextQuaternary,
-          }}
-        />
-      )}
       <span
         style={{
-          width: '100%',
+          flex: 1,
+          minWidth: 0,
           fontSize: 12,
           fontWeight: isSelected ? 600 : 400,
-          color: isSelected ? token.colorPrimary : token.colorText,
+          color: isSelected ? token.colorText : token.colorTextSecondary,
           overflow: 'hidden',
-          textAlign: 'center',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
         }}
       >
         {agent.title || agent.name}
       </span>
-      {agent.description && (
-        <span
-          style={{
-            width: '100%',
-            fontSize: 11,
-            color: token.colorTextDescription,
-            overflow: 'hidden',
-            textAlign: 'center',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {agent.description}
-        </span>
+      {agent.pinned && (
+        <Pin size={11} style={{ color: token.colorTextQuaternary, flexShrink: 0 }} />
       )}
     </Flexbox>
   );
