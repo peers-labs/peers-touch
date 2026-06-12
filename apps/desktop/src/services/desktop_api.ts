@@ -175,12 +175,21 @@ export interface ChatThreadCount {
   unreadCount: number;
 }
 
+export interface DesktopNativeHostEventInput {
+  kind: 'resume' | 'app-resume' | 'tray-open' | 'notification-tap';
+  target?: string;
+  sessionUlid?: string;
+  notificationId?: string;
+  reason?: string;
+}
+
 // Always-quiet (regardless of mode): commands that fire many times per
 // second and would drown out everything else.
 const ALWAYS_QUIET_COMMANDS = new Set([
   'logs_tail',
   'frontend_log',
   'visitor_heartbeat',
+  'oss_upload_attachment_bytes_chat',
   'ice_session_candidates_get',
   'ice_session_candidate_post',
   'ice_session_offer_get',
@@ -448,6 +457,23 @@ export interface ChatUploadAttachmentInput {
   chat_session_id?: string | null;
 }
 
+export interface ChatScreenshotAttachmentInput {
+  bucket: string;
+  visibility: 'public' | 'chat' | 'private';
+  /** Required when `visibility` is `chat`. */
+  chat_session_id?: string | null;
+}
+
+export interface ChatUploadAttachmentBytesInput {
+  filename: string;
+  mime_type: string;
+  bytes: number[];
+  bucket: string;
+  visibility: 'public' | 'chat' | 'private';
+  /** Required when `visibility` is `chat`. */
+  chat_session_id?: string | null;
+}
+
 /**
  * Payload returned by `oss_upload_attachment_chat` /
  * `oss_upload_attachment_social`.
@@ -477,6 +503,27 @@ export interface OssAttachmentUploaded {
   visibility?: string;
 }
 
+export interface SocialEncryptedMediaDescriptorWire {
+  encrypted: true;
+  version: number;
+  suite: string;
+  key_b64: string;
+  nonce_b64: string;
+  plaintext_sha256_b64: string;
+  ciphertext_sha256_b64: string;
+  plaintext_size: number;
+  ciphertext_size: number;
+  chunking?: string;
+  chunk_size?: number;
+  chunk_count?: number;
+  tag_size?: number;
+  nonce_strategy?: string;
+}
+
+export interface SocialEncryptedAttachmentUploaded extends OssAttachmentUploaded {
+  media_encryption: SocialEncryptedMediaDescriptorWire;
+}
+
 /**
  * @deprecated Use `OssAttachmentUploaded`. Kept as alias for
  * downstream callers that have not migrated yet.
@@ -502,14 +549,14 @@ export interface OssCapabilities {
 }
 
 /**
- * Result of `oss_resolve_url`. The renderer should prefer
- * `local_path` (it is served via Tauri's `convertFileSrc`) and fall
- * back to `url` when the attachment is not yet cached or the backend
- * requires signed URLs.
+ * Result of `oss_resolve_url`. The renderer should prefer `data_url`
+ * for inline image previews when present, then `local_path` (served
+ * via Tauri's `convertFileSrc`), and finally `url`.
  */
 export interface OssResolved {
   local_path?: string | null;
   url: string;
+  data_url?: string | null;
   host: string;
   key: string;
 }
@@ -2297,6 +2344,24 @@ export const api = {
       input,
     ),
 
+  ossUploadAttachmentBytesChat: (input: ChatUploadAttachmentBytesInput) =>
+    invokeRustDataFromStatus<ChatUploadAttachmentBytesInput, OssAttachmentUploaded>(
+      'oss_upload_attachment_bytes_chat',
+      input,
+    ),
+
+  ossUploadEncryptedAttachmentChat: (input: ChatUploadAttachmentInput) =>
+    invokeRustDataFromStatus<ChatUploadAttachmentInput, SocialEncryptedAttachmentUploaded>(
+      'oss_upload_encrypted_attachment_chat',
+      input,
+    ),
+
+  ossCaptureScreenshotChat: (input: ChatScreenshotAttachmentInput) =>
+    invokeRustDataFromStatus<ChatScreenshotAttachmentInput, OssAttachmentUploaded>(
+      'oss_capture_screenshot_chat',
+      input,
+    ),
+
   /**
    * Social/Moments consumer — open a multi-select picker scoped to
    * image MIME types. The `maxCount` cap is enforced at the Tauri
@@ -2333,6 +2398,12 @@ export const api = {
   ossUploadAttachmentSocial: (filePath: string) =>
     invokeRustDataFromStatus<{ file_path: string }, OssAttachmentUploaded>(
       'oss_upload_attachment_social',
+      { file_path: filePath },
+    ),
+
+  ossUploadEncryptedAttachmentSocial: (filePath: string) =>
+    invokeRustDataFromStatus<{ file_path: string }, SocialEncryptedAttachmentUploaded>(
+      'oss_upload_encrypted_attachment_social',
       { file_path: filePath },
     ),
 
@@ -4078,6 +4149,12 @@ export const api = {
       'notification_preferences_update', { category, enabled, push_enabled: pushEnabled, sound_enabled: soundEnabled },
     ),
 
+  desktopNativeHostEventEmit: (input: DesktopNativeHostEventInput) =>
+    invokeRustDataFromStatus<DesktopNativeHostEventInput, { emitted: boolean; kind: string }>(
+      'desktop_native_event_emit',
+      input,
+    ),
+
   // ── Station registry (dynamic URL picker) ──
 
   stationList: () =>
@@ -4131,6 +4208,18 @@ export type ChatAttachmentInput = {
   size: number;
   thumbnail_cid?: string;
   visibility?: string;
+  encryption_suite?: string;
+  encryption_key_b64?: string;
+  encryption_nonce_b64?: string;
+  plaintext_sha256_b64?: string;
+  ciphertext_sha256_b64?: string;
+  plaintext_size?: number;
+  ciphertext_size?: number;
+  chunking?: string;
+  chunk_size?: number;
+  chunk_count?: number;
+  tag_size?: number;
+  nonce_strategy?: string;
 };
 
 export interface CryptoKeyBundlePayload {

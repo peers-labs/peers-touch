@@ -13,6 +13,7 @@ pub mod cron;
 pub mod federation;
 pub mod friend_chat;
 pub mod group_chat;
+pub mod host_events;
 pub mod key_exchange;
 pub mod mcp;
 pub mod memory;

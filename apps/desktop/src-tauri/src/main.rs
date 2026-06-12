@@ -24,9 +24,10 @@ pub mod peers_touch {
 
 use interface::tauri_commands::{
     account, actor, admin, agent_growth, agent_scheduler, agents, applets, auth, channels, chat,
-    cron, crypto, federation, friend_chat, frontend_log, group_chat, i18n, ice, key_exchange, mcp,
-    memory, model_config, models, notebook, notification, oauth2, oss, presence, profile, provider,
-    realtime, search, settings, skills, skills_market, social, station, system, tools, tts,
+    cron, crypto, federation, friend_chat, frontend_log, group_chat, host_events, i18n, ice,
+    key_exchange, mcp, memory, model_config, models, notebook, notification, oauth2, oss, presence,
+    profile, provider, realtime, search, settings, skills, skills_market, social, station, system,
+    tools, tts,
 };
 use std::sync::Arc;
 use tauri::Manager;
@@ -314,8 +315,12 @@ fn main() {
             presence::presence_notify,
             oss::oss_pick_attachment_chat,
             oss::oss_upload_attachment_chat,
+            oss::oss_upload_attachment_bytes_chat,
+            oss::oss_upload_encrypted_attachment_chat,
+            oss::oss_capture_screenshot_chat,
             oss::oss_pick_image_social,
             oss::oss_upload_attachment_social,
+            oss::oss_upload_encrypted_attachment_social,
             oss::oss_resolve_url,
             oss::oss_list_my_files,
             oss::oss_delete_file,
@@ -441,6 +446,7 @@ fn main() {
             notification::notification_delete,
             notification::notification_preferences,
             notification::notification_preferences_update,
+            host_events::desktop_native_event_emit,
             station::station_list,
             station::station_set_active,
             station::station_add,
@@ -459,6 +465,15 @@ fn main() {
             // has a chance to complete before the process exits — but
             // bound by a generous wall-clock budget so a wedged station
             // cannot prevent shutdown.
+            if matches!(event, tauri::RunEvent::Resumed) {
+                if let Err(error) = application::host_events::emit_resume(app, "tauri-run-event") {
+                    let _ = application::host_events::emit_native_event_error(
+                        app,
+                        "emit-desktop-resume",
+                        &error.to_string(),
+                    );
+                }
+            }
             if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
                 let state = app.state::<Arc<state::AppState>>();
                 let supervisor = app.state::<Arc<application::presence::PresenceSupervisor>>();

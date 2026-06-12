@@ -70,6 +70,24 @@ export interface FriendChatMessage {
   recalled?: boolean;
   editedAt?: SocialTimestamp;
   encryptedPayload?: Uint8Array;
+  attachments?: FriendMessageAttachment[];
+}
+
+export interface FriendMessageAttachment {
+  cid: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  thumbnailCid?: string;
+  visibility?: string;
+  mediaEncryption?: unknown;
+  encryptionSuite?: string;
+  encryptionKeyB64?: string;
+  encryptionNonceB64?: string;
+  plaintextSha256B64?: string;
+  ciphertextSha256B64?: string;
+  plaintextSize?: number;
+  ciphertextSize?: number;
 }
 
 export interface SocialNotification {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { theme } from 'antd';
 import { ImageThumbnail } from './ImageThumbnail';
 import { ImageLightbox } from './ImageLightbox';
+import type { Audience, ImageAttachment } from '../../gen/proto/domain/social/post_pb';
 
 // ImageGrid — renders 1-9 image attachments in WeChat-style layout:
 //
@@ -17,6 +18,9 @@ import { ImageLightbox } from './ImageLightbox';
 
 interface ImageGridProps {
   cids: string[];
+  images?: ImageAttachment[];
+  audience?: Audience | null;
+  authorDid?: string | null;
   /** Optional alt text per image. */
   alts?: string[];
 }
@@ -35,7 +39,7 @@ function pickLayout(n: number): GridLayout {
   return { columns: 3, singleWide: false };
 }
 
-export function ImageGrid({ cids, alts }: ImageGridProps) {
+export function ImageGrid({ cids, images, audience, authorDid, alts }: ImageGridProps) {
   const { token } = theme.useToken();
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
@@ -65,6 +69,9 @@ export function ImageGrid({ cids, alts }: ImageGridProps) {
           >
             <ImageThumbnail
               cid={cid}
+              attachment={images?.[idx]}
+              audience={audience}
+              authorDid={authorDid}
               alt={alts?.[idx]}
               disablePreview
               onClick={() => setLightboxIndex(idx)}
@@ -77,6 +84,9 @@ export function ImageGrid({ cids, alts }: ImageGridProps) {
       {lightboxIndex !== null && (
         <ImageLightbox
           cids={cids}
+          images={images}
+          audience={audience}
+          authorDid={authorDid}
           alts={alts}
           startIndex={lightboxIndex}
           onClose={() => setLightboxIndex(null)}

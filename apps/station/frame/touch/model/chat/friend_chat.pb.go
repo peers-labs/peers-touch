@@ -7,6 +7,7 @@
 package chat
 
 import (
+	types "github.com/peers-labs/peers-touch/station/frame/core/types"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -567,9 +568,10 @@ type FriendMessageAttachment struct {
 	// or has been published to a wider audience. Empty string is
 	// treated as "unknown" by older clients and rendered without
 	// a badge; new servers SHOULD always populate it.
-	Visibility    string `protobuf:"bytes,6,opt,name=visibility,proto3" json:"visibility,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Visibility      string                          `protobuf:"bytes,6,opt,name=visibility,proto3" json:"visibility,omitempty"`
+	MediaEncryption *types.EncryptedMediaDescriptor `protobuf:"bytes,7,opt,name=media_encryption,json=mediaEncryption,proto3" json:"media_encryption,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *FriendMessageAttachment) Reset() {
@@ -642,6 +644,13 @@ func (x *FriendMessageAttachment) GetVisibility() string {
 		return x.Visibility
 	}
 	return ""
+}
+
+func (x *FriendMessageAttachment) GetMediaEncryption() *types.EncryptedMediaDescriptor {
+	if x != nil {
+		return x.MediaEncryption
+	}
+	return nil
 }
 
 type MessageEnvelope struct {
@@ -3747,7 +3756,7 @@ var File_domain_chat_friend_chat_proto protoreflect.FileDescriptor
 
 const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\n" +
-	"\x1ddomain/chat/friend_chat.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16domain/chat/chat.proto\"\xf3\x05\n" +
+	"\x1ddomain/chat/friend_chat.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16domain/chat/chat.proto\x1a\x1adomain/common/common.proto\"\xf3\x05\n" +
 	"\x11FriendChatSession\x12\x12\n" +
 	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12*\n" +
 	"\x11participant_a_did\x18\x02 \x01(\tR\x0fparticipantADid\x12*\n" +
@@ -3789,7 +3798,7 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"updated_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12+\n" +
 	"\x11encrypted_payload\x18\x0f \x01(\fR\x10encryptedPayload\x12\x1a\n" +
 	"\brecalled\x18\x10 \x01(\bR\brecalled\x127\n" +
-	"\tedited_at\x18\x11 \x01(\v2\x1a.google.protobuf.TimestampR\beditedAt\"\xbd\x01\n" +
+	"\tedited_at\x18\x11 \x01(\v2\x1a.google.protobuf.TimestampR\beditedAt\"\x9f\x02\n" +
 	"\x17FriendMessageAttachment\x12\x10\n" +
 	"\x03cid\x18\x01 \x01(\tR\x03cid\x12\x1a\n" +
 	"\bfilename\x18\x02 \x01(\tR\bfilename\x12\x1b\n" +
@@ -3798,7 +3807,8 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\rthumbnail_cid\x18\x05 \x01(\tR\fthumbnailCid\x12\x1e\n" +
 	"\n" +
 	"visibility\x18\x06 \x01(\tR\n" +
-	"visibility\"\x82\x02\n" +
+	"visibility\x12`\n" +
+	"\x10media_encryption\x18\a \x01(\v25.peers_touch.model.common.v1.EncryptedMediaDescriptorR\x0fmediaEncryption\"\x82\x02\n" +
 	"\x0fMessageEnvelope\x12!\n" +
 	"\fmessage_ulid\x18\x01 \x01(\tR\vmessageUlid\x12\x1d\n" +
 	"\n" +
@@ -4117,9 +4127,10 @@ var file_domain_chat_friend_chat_proto_goTypes = []any{
 	(*DeleteFriendMessageResponse)(nil),              // 60: peers_touch.model.chat.v1.DeleteFriendMessageResponse
 	(*EncryptedMessage)(nil),                         // 61: peers_touch.model.chat.v1.EncryptedMessage
 	(*timestamppb.Timestamp)(nil),                    // 62: google.protobuf.Timestamp
-	(*FriendRequest)(nil),                            // 63: peers_touch.model.chat.v1.FriendRequest
-	(FriendRequestStatus)(0),                         // 64: peers_touch.model.chat.v1.FriendRequestStatus
-	(*Friend)(nil),                                   // 65: peers_touch.model.chat.v1.Friend
+	(*types.EncryptedMediaDescriptor)(nil),           // 63: peers_touch.model.common.v1.EncryptedMediaDescriptor
+	(*FriendRequest)(nil),                            // 64: peers_touch.model.chat.v1.FriendRequest
+	(FriendRequestStatus)(0),                         // 65: peers_touch.model.chat.v1.FriendRequestStatus
+	(*Friend)(nil),                                   // 66: peers_touch.model.chat.v1.Friend
 }
 var file_domain_chat_friend_chat_proto_depIdxs = []int32{
 	62, // 0: peers_touch.model.chat.v1.FriendChatSession.last_message_at:type_name -> google.protobuf.Timestamp
@@ -4134,41 +4145,42 @@ var file_domain_chat_friend_chat_proto_depIdxs = []int32{
 	62, // 9: peers_touch.model.chat.v1.FriendChatMessage.created_at:type_name -> google.protobuf.Timestamp
 	62, // 10: peers_touch.model.chat.v1.FriendChatMessage.updated_at:type_name -> google.protobuf.Timestamp
 	62, // 11: peers_touch.model.chat.v1.FriendChatMessage.edited_at:type_name -> google.protobuf.Timestamp
-	2,  // 12: peers_touch.model.chat.v1.OfflineMessage.status:type_name -> peers_touch.model.chat.v1.OfflineMessageStatus
-	62, // 13: peers_touch.model.chat.v1.OfflineMessage.expire_at:type_name -> google.protobuf.Timestamp
-	62, // 14: peers_touch.model.chat.v1.OfflineMessage.delivered_at:type_name -> google.protobuf.Timestamp
-	62, // 15: peers_touch.model.chat.v1.OfflineMessage.created_at:type_name -> google.protobuf.Timestamp
-	62, // 16: peers_touch.model.chat.v1.OfflineMessage.updated_at:type_name -> google.protobuf.Timestamp
-	0,  // 17: peers_touch.model.chat.v1.SendMessageRequest.type:type_name -> peers_touch.model.chat.v1.FriendMessageType
-	5,  // 18: peers_touch.model.chat.v1.SendMessageRequest.attachments:type_name -> peers_touch.model.chat.v1.FriendMessageAttachment
-	4,  // 19: peers_touch.model.chat.v1.SendMessageResponse.message:type_name -> peers_touch.model.chat.v1.FriendChatMessage
-	4,  // 20: peers_touch.model.chat.v1.GetMessagesResponse.messages:type_name -> peers_touch.model.chat.v1.FriendChatMessage
-	4,  // 21: peers_touch.model.chat.v1.SearchFriendMessagesResponse.messages:type_name -> peers_touch.model.chat.v1.FriendChatMessage
-	3,  // 22: peers_touch.model.chat.v1.CreateSessionResponse.session:type_name -> peers_touch.model.chat.v1.FriendChatSession
-	3,  // 23: peers_touch.model.chat.v1.GetSessionsResponse.sessions:type_name -> peers_touch.model.chat.v1.FriendChatSession
-	18, // 24: peers_touch.model.chat.v1.GetFriendConversationSettingsResponse.settings:type_name -> peers_touch.model.chat.v1.FriendConversationSettings
-	18, // 25: peers_touch.model.chat.v1.UpdateFriendConversationSettingsResponse.settings:type_name -> peers_touch.model.chat.v1.FriendConversationSettings
-	6,  // 26: peers_touch.model.chat.v1.RelayMessageRequest.envelope:type_name -> peers_touch.model.chat.v1.MessageEnvelope
-	62, // 27: peers_touch.model.chat.v1.RelayMessageResponse.delivered_at:type_name -> google.protobuf.Timestamp
-	0,  // 28: peers_touch.model.chat.v1.SyncMessageItem.type:type_name -> peers_touch.model.chat.v1.FriendMessageType
-	62, // 29: peers_touch.model.chat.v1.SyncMessageItem.sent_at:type_name -> google.protobuf.Timestamp
-	5,  // 30: peers_touch.model.chat.v1.SyncMessageItem.attachments:type_name -> peers_touch.model.chat.v1.FriendMessageAttachment
-	27, // 31: peers_touch.model.chat.v1.SyncMessagesRequest.messages:type_name -> peers_touch.model.chat.v1.SyncMessageItem
-	35, // 32: peers_touch.model.chat.v1.GetPendingResponse.messages:type_name -> peers_touch.model.chat.v1.PendingMessageInfo
-	63, // 33: peers_touch.model.chat.v1.SendFriendRequestResponse.request:type_name -> peers_touch.model.chat.v1.FriendRequest
-	63, // 34: peers_touch.model.chat.v1.AcceptFriendRequestResponse.request:type_name -> peers_touch.model.chat.v1.FriendRequest
-	3,  // 35: peers_touch.model.chat.v1.AcceptFriendRequestResponse.session:type_name -> peers_touch.model.chat.v1.FriendChatSession
-	63, // 36: peers_touch.model.chat.v1.RejectFriendRequestResponse.request:type_name -> peers_touch.model.chat.v1.FriendRequest
-	64, // 37: peers_touch.model.chat.v1.ListFriendRequestsRequest.status:type_name -> peers_touch.model.chat.v1.FriendRequestStatus
-	63, // 38: peers_touch.model.chat.v1.ListFriendRequestsResponse.requests:type_name -> peers_touch.model.chat.v1.FriendRequest
-	65, // 39: peers_touch.model.chat.v1.BlockUserResponse.friend:type_name -> peers_touch.model.chat.v1.Friend
-	65, // 40: peers_touch.model.chat.v1.ListBlockedUsersResponse.blocked_users:type_name -> peers_touch.model.chat.v1.Friend
-	65, // 41: peers_touch.model.chat.v1.GetFriendshipStatusResponse.friend:type_name -> peers_touch.model.chat.v1.Friend
-	42, // [42:42] is the sub-list for method output_type
-	42, // [42:42] is the sub-list for method input_type
-	42, // [42:42] is the sub-list for extension type_name
-	42, // [42:42] is the sub-list for extension extendee
-	0,  // [0:42] is the sub-list for field type_name
+	63, // 12: peers_touch.model.chat.v1.FriendMessageAttachment.media_encryption:type_name -> peers_touch.model.common.v1.EncryptedMediaDescriptor
+	2,  // 13: peers_touch.model.chat.v1.OfflineMessage.status:type_name -> peers_touch.model.chat.v1.OfflineMessageStatus
+	62, // 14: peers_touch.model.chat.v1.OfflineMessage.expire_at:type_name -> google.protobuf.Timestamp
+	62, // 15: peers_touch.model.chat.v1.OfflineMessage.delivered_at:type_name -> google.protobuf.Timestamp
+	62, // 16: peers_touch.model.chat.v1.OfflineMessage.created_at:type_name -> google.protobuf.Timestamp
+	62, // 17: peers_touch.model.chat.v1.OfflineMessage.updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 18: peers_touch.model.chat.v1.SendMessageRequest.type:type_name -> peers_touch.model.chat.v1.FriendMessageType
+	5,  // 19: peers_touch.model.chat.v1.SendMessageRequest.attachments:type_name -> peers_touch.model.chat.v1.FriendMessageAttachment
+	4,  // 20: peers_touch.model.chat.v1.SendMessageResponse.message:type_name -> peers_touch.model.chat.v1.FriendChatMessage
+	4,  // 21: peers_touch.model.chat.v1.GetMessagesResponse.messages:type_name -> peers_touch.model.chat.v1.FriendChatMessage
+	4,  // 22: peers_touch.model.chat.v1.SearchFriendMessagesResponse.messages:type_name -> peers_touch.model.chat.v1.FriendChatMessage
+	3,  // 23: peers_touch.model.chat.v1.CreateSessionResponse.session:type_name -> peers_touch.model.chat.v1.FriendChatSession
+	3,  // 24: peers_touch.model.chat.v1.GetSessionsResponse.sessions:type_name -> peers_touch.model.chat.v1.FriendChatSession
+	18, // 25: peers_touch.model.chat.v1.GetFriendConversationSettingsResponse.settings:type_name -> peers_touch.model.chat.v1.FriendConversationSettings
+	18, // 26: peers_touch.model.chat.v1.UpdateFriendConversationSettingsResponse.settings:type_name -> peers_touch.model.chat.v1.FriendConversationSettings
+	6,  // 27: peers_touch.model.chat.v1.RelayMessageRequest.envelope:type_name -> peers_touch.model.chat.v1.MessageEnvelope
+	62, // 28: peers_touch.model.chat.v1.RelayMessageResponse.delivered_at:type_name -> google.protobuf.Timestamp
+	0,  // 29: peers_touch.model.chat.v1.SyncMessageItem.type:type_name -> peers_touch.model.chat.v1.FriendMessageType
+	62, // 30: peers_touch.model.chat.v1.SyncMessageItem.sent_at:type_name -> google.protobuf.Timestamp
+	5,  // 31: peers_touch.model.chat.v1.SyncMessageItem.attachments:type_name -> peers_touch.model.chat.v1.FriendMessageAttachment
+	27, // 32: peers_touch.model.chat.v1.SyncMessagesRequest.messages:type_name -> peers_touch.model.chat.v1.SyncMessageItem
+	35, // 33: peers_touch.model.chat.v1.GetPendingResponse.messages:type_name -> peers_touch.model.chat.v1.PendingMessageInfo
+	64, // 34: peers_touch.model.chat.v1.SendFriendRequestResponse.request:type_name -> peers_touch.model.chat.v1.FriendRequest
+	64, // 35: peers_touch.model.chat.v1.AcceptFriendRequestResponse.request:type_name -> peers_touch.model.chat.v1.FriendRequest
+	3,  // 36: peers_touch.model.chat.v1.AcceptFriendRequestResponse.session:type_name -> peers_touch.model.chat.v1.FriendChatSession
+	64, // 37: peers_touch.model.chat.v1.RejectFriendRequestResponse.request:type_name -> peers_touch.model.chat.v1.FriendRequest
+	65, // 38: peers_touch.model.chat.v1.ListFriendRequestsRequest.status:type_name -> peers_touch.model.chat.v1.FriendRequestStatus
+	64, // 39: peers_touch.model.chat.v1.ListFriendRequestsResponse.requests:type_name -> peers_touch.model.chat.v1.FriendRequest
+	66, // 40: peers_touch.model.chat.v1.BlockUserResponse.friend:type_name -> peers_touch.model.chat.v1.Friend
+	66, // 41: peers_touch.model.chat.v1.ListBlockedUsersResponse.blocked_users:type_name -> peers_touch.model.chat.v1.Friend
+	66, // 42: peers_touch.model.chat.v1.GetFriendshipStatusResponse.friend:type_name -> peers_touch.model.chat.v1.Friend
+	43, // [43:43] is the sub-list for method output_type
+	43, // [43:43] is the sub-list for method input_type
+	43, // [43:43] is the sub-list for extension type_name
+	43, // [43:43] is the sub-list for extension extendee
+	0,  // [0:43] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_friend_chat_proto_init() }

@@ -15,6 +15,7 @@ pub mod federation;
 pub mod friend_chat;
 pub mod frontend_log;
 pub mod group_chat;
+pub mod host_events;
 pub mod i18n;
 pub mod ice;
 pub mod key_exchange;

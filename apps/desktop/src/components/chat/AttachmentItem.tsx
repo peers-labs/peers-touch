@@ -5,15 +5,20 @@
 // `oss://{host}/{key}` cid carries the source-of-truth station and
 // the local file cache is the preferred backing store.
 //
-// Attachments render as compact cards that open the resolved URL in
-// the system browser.
+// Non-image attachments render as compact cards that open the
+// resolved URL in the system browser. Image attachments render as
+// images first; filename metadata is intentionally hidden.
 
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { theme, Typography, Tooltip } from 'antd';
-import { ExternalLink, FileImage, Globe, Lock, MessageSquare, Paperclip } from 'lucide-react';
-import { useAttachmentUrl } from './useAttachmentUrl';
+import { ExternalLink, FileAudio, FileImage, FileVideo, Globe, Lock, MessageSquare, Paperclip } from 'lucide-react';
+import {
+  chatMediaKindForAttachment,
+  formatChatAttachmentSize,
+} from '@peers-touch/client-chat-core';
+import { useDecryptedOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 import type { FriendMessageAttachment } from '../../gen/proto/domain/chat/friend_chat_pb';
 import type { GroupMessageAttachment } from '../../gen/proto/domain/chat/group_chat_pb';
 
@@ -22,8 +27,6 @@ const { Text } = Typography;
 type Attachment = FriendMessageAttachment | GroupMessageAttachment;
 
 export type ChatAttachmentVisibilityHint = 'public' | 'chat' | 'private';
-
-const IMAGE_FILENAME_PATTERN = /\.(apng|avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$/i;
 
 interface Props {
   attachment: Attachment;
@@ -63,11 +66,8 @@ function visibilityChip(
     case 'public':
       return {
         icon: Globe,
-        label: t('chat.social.messageArea.attachmentScopePublic', 'Public'),
-        tooltip: t(
-          'chat.social.messageArea.attachmentVisiblePublic',
-          'Anyone with the link can fetch this file.',
-        ),
+        label: t('chat.social.messageArea.attachmentScopePublic'),
+        tooltip: t('chat.social.messageArea.attachmentVisiblePublic'),
         bg: isOwn ? ownBg : token.colorInfoBg,
         fg: isOwn ? ownFg : token.colorInfoText,
       };
@@ -117,26 +117,14 @@ function VisibilityBadge({ chip }: { chip: VisibilityChip }) {
   );
 }
 
-function isImageAttachment(attachment: Attachment): boolean {
-  const mimeType = attachment.mimeType?.toLowerCase() ?? '';
-  const filename = attachment.filename ?? '';
-  return mimeType.startsWith('image/') || IMAGE_FILENAME_PATTERN.test(filename);
-}
-
-function formatAttachmentSize(size: Attachment['size']): string {
-  const bytes = Number(size);
-  if (!Number.isFinite(bytes) || bytes < 0) return '';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 function attachmentTypeLabel(
+  kind: 'image' | 'video' | 'audio' | 'file',
   attachment: Attachment,
-  isImage: boolean,
   t: ReturnType<typeof useTranslation>['t'],
 ): string {
-  if (isImage) return t('chat.social.messageArea.attachmentTypeImage', 'Image');
+  if (kind === 'image') return t('chat.social.messageArea.attachmentTypeImage');
+  if (kind === 'video') return t('chat.social.messageArea.attachmentTypeVideo');
+  if (kind === 'audio') return t('chat.social.messageArea.attachmentTypeAudio');
 
   const mimeType = attachment.mimeType?.trim();
   if (mimeType) {
@@ -148,14 +136,14 @@ function attachmentTypeLabel(
   const extension = filename.includes('.') ? filename.split('.').pop() : '';
   return extension
     ? extension.toUpperCase()
-    : t('chat.social.messageArea.attachmentTypeFile', 'File');
+    : t('chat.social.messageArea.attachmentTypeFile');
 }
 
 interface AttachmentDetailsProps {
   actionLabel: string;
   actionVisible: boolean;
   filename: string;
-  isImage: boolean;
+  kind: 'image' | 'video' | 'audio' | 'file';
   isOwn: boolean;
   onOpen: () => void;
   openTitle: string;
@@ -169,7 +157,7 @@ function AttachmentDetails({
   actionLabel,
   actionVisible,
   filename,
-  isImage,
+  kind,
   isOwn,
   onOpen,
   openTitle,
@@ -178,7 +166,13 @@ function AttachmentDetails({
   token,
   typeLabel,
 }: AttachmentDetailsProps) {
-  const TypeIcon = isImage ? FileImage : Paperclip;
+  const TypeIcon = kind === 'image'
+    ? FileImage
+    : kind === 'video'
+      ? FileVideo
+      : kind === 'audio'
+        ? FileAudio
+        : Paperclip;
   const textColor = isOwn ? '#fff' : token.colorText;
   const secondaryColor = isOwn ? 'rgba(255,255,255,0.72)' : token.colorTextSecondary;
 
@@ -254,15 +248,18 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
   const { token } = theme.useToken();
   const [hovered, setHovered] = useState(false);
   const [previewFailed, setPreviewFailed] = useState(false);
-  const src = useAttachmentUrl(attachment.cid);
-  const isImage = isImageAttachment(attachment);
+  const src = useDecryptedOssAttachmentUrl(attachment);
+  const attachmentKind = chatMediaKindForAttachment(attachment);
+  const isImage = attachmentKind === 'image';
+  const isVideo = attachmentKind === 'video';
+  const isAudio = attachmentKind === 'audio';
   const chip = visibilityChip(visibilityHint, t, isOwn, token);
   const showHint = chip !== null;
-  const filename = attachment.filename?.trim() || t('chat.social.messageArea.attachmentUnnamed', 'Attachment');
-  const typeLabel = attachmentTypeLabel(attachment, isImage, t);
-  const sizeLabel = formatAttachmentSize(attachment.size);
-  const actionLabel = t('chat.social.messageArea.attachmentOpen', 'Open');
-  const openTitle = t('chat.social.messageArea.attachmentOpenOrDownload', 'Open or download attachment');
+  const filename = attachment.filename?.trim() || t('chat.social.messageArea.attachmentUnnamed');
+  const typeLabel = attachmentTypeLabel(attachmentKind, attachment, t);
+  const sizeLabel = formatChatAttachmentSize(attachment.size);
+  const actionLabel = t('chat.social.messageArea.attachmentOpen');
+  const openTitle = t('chat.social.messageArea.attachmentOpenOrDownload');
   const canPreviewImage = isImage && src && !previewFailed;
   const cardBackground = isOwn
     ? hovered
@@ -291,7 +288,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
 
   if (canPreviewImage) {
     return (
-      <Flexbox gap={3} style={{ maxWidth: '100%' }}>
+      <Flexbox gap={3} style={{ alignSelf: isOwn ? 'flex-end' : 'flex-start', maxWidth: '100%' }}>
         <Flexbox
           role="button"
           tabIndex={0}
@@ -300,12 +297,11 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
           style={{
-            width: 'min(220px, 100%)',
-            maxWidth: '100%',
+            maxWidth: 'min(240px, 100%)',
             overflow: 'hidden',
-            border: `1px solid ${cardBorder}`,
-            borderRadius: 10,
-            background: cardBackground,
+            border: '0',
+            borderRadius: 6,
+            background: 'transparent',
             boxShadow: hovered ? token.boxShadowTertiary : 'none',
             cursor: 'pointer',
             transition: 'background 120ms ease, box-shadow 120ms ease',
@@ -316,19 +312,55 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
             alt={filename}
             style={{
               display: 'block',
-              width: '100%',
-              height: 124,
-              objectFit: 'cover',
-              background: token.colorFillSecondary,
+              width: 'auto',
+              maxWidth: '100%',
+              maxHeight: 260,
+              objectFit: 'contain',
+              background: 'transparent',
             }}
             onError={() => setPreviewFailed(true)}
           />
-          <Flexbox style={{ padding: '7px 8px' }}>
+        </Flexbox>
+        {showHint && chip && <VisibilityBadge chip={chip} />}
+      </Flexbox>
+    );
+  }
+
+  if (src && isVideo) {
+    return (
+      <Flexbox gap={3} style={{ maxWidth: '100%' }}>
+        <Flexbox
+          gap={6}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          style={{
+            width: 'min(320px, 100%)',
+            maxWidth: '100%',
+            overflow: 'hidden',
+            border: `1px solid ${cardBorder}`,
+            borderRadius: 8,
+            background: cardBackground,
+            boxShadow: hovered ? token.boxShadowTertiary : 'none',
+            transition: 'background 120ms ease, box-shadow 120ms ease',
+          }}
+        >
+          <video
+            src={src}
+            controls
+            preload="metadata"
+            style={{
+              display: 'block',
+              width: '100%',
+              maxHeight: 220,
+              background: token.colorBgSpotlight,
+            }}
+          />
+          <Flexbox style={{ padding: '0 8px 8px' }}>
             <AttachmentDetails
               actionLabel={actionLabel}
               actionVisible={hovered}
               filename={filename}
-              isImage={isImage}
+              kind={attachmentKind}
               isOwn={isOwn}
               onOpen={openAttachment}
               openTitle={openTitle}
@@ -338,6 +370,44 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
               typeLabel={typeLabel}
             />
           </Flexbox>
+        </Flexbox>
+        {showHint && chip && <VisibilityBadge chip={chip} />}
+      </Flexbox>
+    );
+  }
+
+  if (src && isAudio) {
+    return (
+      <Flexbox gap={3} style={{ maxWidth: '100%' }}>
+        <Flexbox
+          gap={8}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          style={{
+            width: 'min(300px, 100%)',
+            maxWidth: '100%',
+            padding: '9px',
+            border: `1px solid ${cardBorder}`,
+            borderRadius: 8,
+            background: cardBackground,
+            boxShadow: hovered ? token.boxShadowTertiary : 'none',
+            transition: 'background 120ms ease, box-shadow 120ms ease',
+          }}
+        >
+          <audio src={src} controls preload="metadata" style={{ width: '100%', height: 32 }} />
+          <AttachmentDetails
+            actionLabel={actionLabel}
+            actionVisible={hovered}
+            filename={filename}
+            kind={attachmentKind}
+            isOwn={isOwn}
+            onOpen={openAttachment}
+            openTitle={openTitle}
+            sizeLabel={sizeLabel}
+            src={src}
+            token={token}
+            typeLabel={typeLabel}
+          />
         </Flexbox>
         {showHint && chip && <VisibilityBadge chip={chip} />}
       </Flexbox>
@@ -356,7 +426,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
           maxWidth: '100%',
           padding: '8px 9px',
           border: `1px solid ${cardBorder}`,
-          borderRadius: 10,
+          borderRadius: 8,
           background: cardBackground,
           boxShadow: hovered ? token.boxShadowTertiary : 'none',
           cursor: src ? 'pointer' : 'default',
@@ -372,7 +442,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
           actionLabel={actionLabel}
           actionVisible={hovered}
           filename={filename}
-          isImage={isImage}
+          kind={attachmentKind}
           isOwn={isOwn}
           onOpen={openAttachment}
           openTitle={openTitle}

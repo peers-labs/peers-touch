@@ -7,11 +7,14 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import {
   Audience_Kind,
   AudienceSchema,
+  ImageAttachmentSchema,
   type Audience,
+  type ImageAttachment,
 } from '../../gen/proto/domain/social/post_pb';
+import { EncryptedMediaDescriptorSchema } from '../../gen/proto/domain/common/common_pb';
 import { AudiencePicker } from './AudiencePicker';
 import { useMomentsStore } from '../../store/moments';
-import { api } from '../../services/desktop_api';
+import { api, type SocialEncryptedMediaDescriptorWire } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 
 const { TextArea } = Input;
@@ -61,6 +64,8 @@ interface PendingImage {
   status: 'uploading' | 'done' | 'error';
   /** Populated when status === 'done'. */
   cid?: string;
+  /** Typed descriptor persisted into CreateImagePostRequest.images. */
+  image?: ImageAttachment;
   /** Populated when status === 'error'. */
   error?: string;
 }
@@ -69,6 +74,25 @@ let pendingIdSeq = 0;
 function makeLocalId(): string {
   pendingIdSeq += 1;
   return `pending-${Date.now()}-${pendingIdSeq}`;
+}
+
+function toEncryptedMediaDescriptor(wire: SocialEncryptedMediaDescriptorWire) {
+  return create(EncryptedMediaDescriptorSchema, {
+    encrypted: wire.encrypted,
+    version: wire.version,
+    suite: wire.suite,
+    keyB64: wire.key_b64,
+    nonceB64: wire.nonce_b64,
+    plaintextSha256B64: wire.plaintext_sha256_b64,
+    ciphertextSha256B64: wire.ciphertext_sha256_b64,
+    plaintextSize: BigInt(wire.plaintext_size),
+    ciphertextSize: BigInt(wire.ciphertext_size),
+    chunking: wire.chunking || 'single-aead',
+    chunkSize: wire.chunk_size ?? 0,
+    chunkCount: wire.chunk_count ?? 0,
+    tagSize: wire.tag_size ?? 0,
+    nonceStrategy: wire.nonce_strategy ?? '',
+  });
 }
 
 export function MomentComposer({ open, onClose, initialAudience, onPublished }: MomentComposerProps) {
@@ -120,14 +144,20 @@ export function MomentComposer({ open, onClose, initialAudience, onPublished }: 
   // otherwise spike to ~70MB if uploaded in parallel.
   const uploadOne = async (filePath: string, localId: string) => {
     try {
-      const uploaded = await api.ossUploadAttachmentSocial(filePath);
+      const uploaded = await api.ossUploadEncryptedAttachmentSocial(filePath);
       if (!uploaded?.cid) {
         throw new Error('upload returned no cid');
       }
+      const image = create(ImageAttachmentSchema, {
+        id: uploaded.cid,
+        url: uploaded.cid,
+        sizeBytes: BigInt(uploaded.media_encryption.plaintext_size || uploaded.size || 0),
+        mediaEncryption: toEncryptedMediaDescriptor(uploaded.media_encryption),
+      });
       setPending((prev) =>
         prev.map((p) =>
           p.localId === localId
-            ? { ...p, status: 'done', cid: uploaded.cid }
+            ? { ...p, status: 'done', cid: uploaded.cid, image }
             : p,
         ),
       );
@@ -205,6 +235,9 @@ export function MomentComposer({ open, onClose, initialAudience, onPublished }: 
     const cids = pending
       .filter((p) => p.status === 'done' && p.cid)
       .map((p) => p.cid as string);
+    const images = pending
+      .filter((p) => p.status === 'done' && p.image)
+      .map((p) => p.image as ImageAttachment);
 
     setSubmitting(true);
     try {
@@ -214,6 +247,7 @@ export function MomentComposer({ open, onClose, initialAudience, onPublished }: 
               kind: 'image',
               text: trimmed,
               imageIds: cids,
+              images,
               audience,
             })
           : await createPost({ kind: 'text', text: trimmed, audience });

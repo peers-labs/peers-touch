@@ -11654,6 +11654,17 @@ public final class PostOuterClass {
      */
     com.google.protobuf.ByteString
         getAltTextBytes();
+
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     * @return Whether the mediaEncryption field is set.
+     */
+    boolean hasMediaEncryption();
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     * @return The mediaEncryption.
+     */
+    peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption();
   }
   /**
    * Protobuf type {@code peers_touch.model.social.v1.ImageAttachment}
@@ -11670,6 +11681,7 @@ public final class PostOuterClass {
       blurhash_ = "";
       altText_ = "";
     }
+    private int bitField0_;
     public static final int ID_FIELD_NUMBER = 1;
     private java.lang.String id_;
     /**
@@ -11986,6 +11998,54 @@ public final class PostOuterClass {
       checkByteStringIsUtf8(value);
       altText_ = value.toStringUtf8();
 
+    }
+
+    public static final int MEDIA_ENCRYPTION_FIELD_NUMBER = 9;
+    private peers_touch.model.common.v1.Common.EncryptedMediaDescriptor mediaEncryption_;
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    @java.lang.Override
+    public boolean hasMediaEncryption() {
+      return ((bitField0_ & 0x00000001) != 0);
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption() {
+      return mediaEncryption_ == null ? peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.getDefaultInstance() : mediaEncryption_;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+      value.getClass();  // minimal bytecode null check
+      mediaEncryption_ = value;
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+      value.getClass();  // minimal bytecode null check
+      if (mediaEncryption_ != null &&
+          mediaEncryption_ != peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.getDefaultInstance()) {
+        mediaEncryption_ =
+          peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.newBuilder(mediaEncryption_).mergeFrom(value).buildPartial();
+      } else {
+        mediaEncryption_ = value;
+      }
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    private void clearMediaEncryption() {
+      mediaEncryption_ = null;
+      bitField0_ = (bitField0_ & ~0x00000001);
     }
 
     public static peers_touch.model.social.v1.PostOuterClass.ImageAttachment parseFrom(
@@ -12414,6 +12474,53 @@ public final class PostOuterClass {
         return this;
       }
 
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      @java.lang.Override
+      public boolean hasMediaEncryption() {
+        return instance.hasMediaEncryption();
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption() {
+        return instance.getMediaEncryption();
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      public Builder setMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+        copyOnWrite();
+        instance.setMediaEncryption(value);
+        return this;
+        }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      public Builder setMediaEncryption(
+          peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.Builder builderForValue) {
+        copyOnWrite();
+        instance.setMediaEncryption(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      public Builder mergeMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+        copyOnWrite();
+        instance.mergeMediaEncryption(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      public Builder clearMediaEncryption() {  copyOnWrite();
+        instance.clearMediaEncryption();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.ImageAttachment)
     }
     @java.lang.Override
@@ -12430,6 +12537,7 @@ public final class PostOuterClass {
         }
         case BUILD_MESSAGE_INFO: {
             java.lang.Object[] objects = new java.lang.Object[] {
+              "bitField0_",
               "id_",
               "url_",
               "thumbnailUrl_",
@@ -12438,10 +12546,11 @@ public final class PostOuterClass {
               "height_",
               "blurhash_",
               "altText_",
+              "mediaEncryption_",
             };
             java.lang.String info =
-                "\u0000\b\u0000\u0000\u0001\b\b\u0000\u0000\u0000\u0001\u0208\u0002\u0208\u0003\u0208" +
-                "\u0004\u0002\u0005\u0004\u0006\u0004\u0007\u0208\b\u0208";
+                "\u0000\t\u0000\u0001\u0001\t\t\u0000\u0000\u0000\u0001\u0208\u0002\u0208\u0003\u0208" +
+                "\u0004\u0002\u0005\u0004\u0006\u0004\u0007\u0208\b\u0208\t\u1009\u0000";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {
@@ -12596,6 +12705,17 @@ public final class PostOuterClass {
      * <code>repeated .peers_touch.model.social.v1.VideoVariant variants = 10;</code>
      */
     int getVariantsCount();
+
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+     * @return Whether the mediaEncryption field is set.
+     */
+    boolean hasMediaEncryption();
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+     * @return The mediaEncryption.
+     */
+    peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption();
   }
   /**
    * Protobuf type {@code peers_touch.model.social.v1.VideoAttachment}
@@ -12612,6 +12732,7 @@ public final class PostOuterClass {
       blurhash_ = "";
       variants_ = emptyProtobufList();
     }
+    private int bitField0_;
     public static final int ID_FIELD_NUMBER = 1;
     private java.lang.String id_;
     /**
@@ -13046,6 +13167,54 @@ public final class PostOuterClass {
     private void removeVariants(int index) {
       ensureVariantsIsMutable();
       variants_.remove(index);
+    }
+
+    public static final int MEDIA_ENCRYPTION_FIELD_NUMBER = 11;
+    private peers_touch.model.common.v1.Common.EncryptedMediaDescriptor mediaEncryption_;
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+     */
+    @java.lang.Override
+    public boolean hasMediaEncryption() {
+      return ((bitField0_ & 0x00000001) != 0);
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption() {
+      return mediaEncryption_ == null ? peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.getDefaultInstance() : mediaEncryption_;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+      value.getClass();  // minimal bytecode null check
+      mediaEncryption_ = value;
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+      value.getClass();  // minimal bytecode null check
+      if (mediaEncryption_ != null &&
+          mediaEncryption_ != peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.getDefaultInstance()) {
+        mediaEncryption_ =
+          peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.newBuilder(mediaEncryption_).mergeFrom(value).buildPartial();
+      } else {
+        mediaEncryption_ = value;
+      }
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+     */
+    private void clearMediaEncryption() {
+      mediaEncryption_ = null;
+      bitField0_ = (bitField0_ & ~0x00000001);
     }
 
     public static peers_touch.model.social.v1.PostOuterClass.VideoAttachment parseFrom(
@@ -13602,6 +13771,53 @@ public final class PostOuterClass {
         return this;
       }
 
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+       */
+      @java.lang.Override
+      public boolean hasMediaEncryption() {
+        return instance.hasMediaEncryption();
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption() {
+        return instance.getMediaEncryption();
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+       */
+      public Builder setMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+        copyOnWrite();
+        instance.setMediaEncryption(value);
+        return this;
+        }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+       */
+      public Builder setMediaEncryption(
+          peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.Builder builderForValue) {
+        copyOnWrite();
+        instance.setMediaEncryption(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+       */
+      public Builder mergeMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+        copyOnWrite();
+        instance.mergeMediaEncryption(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+       */
+      public Builder clearMediaEncryption() {  copyOnWrite();
+        instance.clearMediaEncryption();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.VideoAttachment)
     }
     @java.lang.Override
@@ -13618,6 +13834,7 @@ public final class PostOuterClass {
         }
         case BUILD_MESSAGE_INFO: {
             java.lang.Object[] objects = new java.lang.Object[] {
+              "bitField0_",
               "id_",
               "url_",
               "thumbnailUrl_",
@@ -13629,10 +13846,12 @@ public final class PostOuterClass {
               "quality_",
               "variants_",
               peers_touch.model.social.v1.PostOuterClass.VideoVariant.class,
+              "mediaEncryption_",
             };
             java.lang.String info =
-                "\u0000\n\u0000\u0000\u0001\n\n\u0000\u0001\u0000\u0001\u0208\u0002\u0208\u0003\u0208" +
-                "\u0004\u0002\u0005\u0004\u0006\u0004\u0007\u0004\b\u0208\t\f\n\u001b";
+                "\u0000\u000b\u0000\u0001\u0001\u000b\u000b\u0000\u0001\u0000\u0001\u0208\u0002\u0208" +
+                "\u0003\u0208\u0004\u0002\u0005\u0004\u0006\u0004\u0007\u0004\b\u0208\t\f\n\u001b" +
+                "\u000b\u1009\u0000";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {
@@ -17730,6 +17949,38 @@ public final class PostOuterClass {
      */
     com.google.protobuf.ByteString
         getImageIdsBytes(int index);
+
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    java.util.List<peers_touch.model.social.v1.PostOuterClass.ImageAttachment> 
+        getImagesList();
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    peers_touch.model.social.v1.PostOuterClass.ImageAttachment getImages(int index);
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    int getImagesCount();
   }
   /**
    * Protobuf type {@code peers_touch.model.social.v1.CreateImagePostRequest}
@@ -17742,6 +17993,7 @@ public final class PostOuterClass {
     private CreateImagePostRequest() {
       text_ = "";
       imageIds_ = com.google.protobuf.GeneratedMessageLite.emptyProtobufList();
+      images_ = emptyProtobufList();
     }
     public static final int TEXT_FIELD_NUMBER = 1;
     private java.lang.String text_;
@@ -17884,6 +18136,169 @@ public final class PostOuterClass {
       checkByteStringIsUtf8(value);
       ensureImageIdsIsMutable();
       imageIds_.add(value.toStringUtf8());
+    }
+
+    public static final int IMAGES_FIELD_NUMBER = 3;
+    private com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.PostOuterClass.ImageAttachment> images_;
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    @java.lang.Override
+    public java.util.List<peers_touch.model.social.v1.PostOuterClass.ImageAttachment> getImagesList() {
+      return images_;
+    }
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.ImageAttachmentOrBuilder> 
+        getImagesOrBuilderList() {
+      return images_;
+    }
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    @java.lang.Override
+    public int getImagesCount() {
+      return images_.size();
+    }
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.ImageAttachment getImages(int index) {
+      return images_.get(index);
+    }
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    public peers_touch.model.social.v1.PostOuterClass.ImageAttachmentOrBuilder getImagesOrBuilder(
+        int index) {
+      return images_.get(index);
+    }
+    private void ensureImagesIsMutable() {
+      com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.PostOuterClass.ImageAttachment> tmp = images_;
+      if (!tmp.isModifiable()) {
+        images_ =
+            com.google.protobuf.GeneratedMessageLite.mutableCopy(tmp);
+       }
+    }
+
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setImages(
+        int index, peers_touch.model.social.v1.PostOuterClass.ImageAttachment value) {
+      value.getClass();  // minimal bytecode null check
+      ensureImagesIsMutable();
+      images_.set(index, value);
+    }
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addImages(peers_touch.model.social.v1.PostOuterClass.ImageAttachment value) {
+      value.getClass();  // minimal bytecode null check
+      ensureImagesIsMutable();
+      images_.add(value);
+    }
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addImages(
+        int index, peers_touch.model.social.v1.PostOuterClass.ImageAttachment value) {
+      value.getClass();  // minimal bytecode null check
+      ensureImagesIsMutable();
+      images_.add(index, value);
+    }
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    private void addAllImages(
+        java.lang.Iterable<? extends peers_touch.model.social.v1.PostOuterClass.ImageAttachment> values) {
+      ensureImagesIsMutable();
+      com.google.protobuf.AbstractMessageLite.addAll(
+          values, images_);
+    }
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    private void clearImages() {
+      images_ = emptyProtobufList();
+    }
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    private void removeImages(int index) {
+      ensureImagesIsMutable();
+      images_.remove(index);
     }
 
     public static peers_touch.model.social.v1.PostOuterClass.CreateImagePostRequest parseFrom(
@@ -18124,6 +18539,180 @@ public final class PostOuterClass {
         return this;
       }
 
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      @java.lang.Override
+      public java.util.List<peers_touch.model.social.v1.PostOuterClass.ImageAttachment> getImagesList() {
+        return java.util.Collections.unmodifiableList(
+            instance.getImagesList());
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      @java.lang.Override
+      public int getImagesCount() {
+        return instance.getImagesCount();
+      }/**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.ImageAttachment getImages(int index) {
+        return instance.getImages(index);
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      public Builder setImages(
+          int index, peers_touch.model.social.v1.PostOuterClass.ImageAttachment value) {
+        copyOnWrite();
+        instance.setImages(index, value);
+        return this;
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      public Builder setImages(
+          int index, peers_touch.model.social.v1.PostOuterClass.ImageAttachment.Builder builderForValue) {
+        copyOnWrite();
+        instance.setImages(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      public Builder addImages(peers_touch.model.social.v1.PostOuterClass.ImageAttachment value) {
+        copyOnWrite();
+        instance.addImages(value);
+        return this;
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      public Builder addImages(
+          int index, peers_touch.model.social.v1.PostOuterClass.ImageAttachment value) {
+        copyOnWrite();
+        instance.addImages(index, value);
+        return this;
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      public Builder addImages(
+          peers_touch.model.social.v1.PostOuterClass.ImageAttachment.Builder builderForValue) {
+        copyOnWrite();
+        instance.addImages(builderForValue.build());
+        return this;
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      public Builder addImages(
+          int index, peers_touch.model.social.v1.PostOuterClass.ImageAttachment.Builder builderForValue) {
+        copyOnWrite();
+        instance.addImages(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      public Builder addAllImages(
+          java.lang.Iterable<? extends peers_touch.model.social.v1.PostOuterClass.ImageAttachment> values) {
+        copyOnWrite();
+        instance.addAllImages(values);
+        return this;
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      public Builder clearImages() {
+        copyOnWrite();
+        instance.clearImages();
+        return this;
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      public Builder removeImages(int index) {
+        copyOnWrite();
+        instance.removeImages(index);
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.CreateImagePostRequest)
     }
     @java.lang.Override
@@ -18142,10 +18731,12 @@ public final class PostOuterClass {
             java.lang.Object[] objects = new java.lang.Object[] {
               "text_",
               "imageIds_",
+              "images_",
+              peers_touch.model.social.v1.PostOuterClass.ImageAttachment.class,
             };
             java.lang.String info =
-                "\u0000\u0002\u0000\u0000\u0001\u0002\u0002\u0000\u0001\u0000\u0001\u0208\u0002\u021a" +
-                "";
+                "\u0000\u0003\u0000\u0000\u0001\u0003\u0003\u0000\u0002\u0000\u0001\u0208\u0002\u021a" +
+                "\u0003\u001b";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {
@@ -28045,6 +28636,38 @@ public final class PostOuterClass {
      * @return The baseKind.
      */
     peers_touch.model.social.v1.PostOuterClass.Audience.Kind getBaseKind();
+
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    java.util.List<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> 
+        getKeyEnvelopesList();
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    peers_touch.model.social.v1.Media.AudienceKeyEnvelope getKeyEnvelopes(int index);
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    int getKeyEnvelopesCount();
   }
   /**
    * <pre>
@@ -28080,6 +28703,7 @@ public final class PostOuterClass {
       AudienceOrBuilder {
     private Audience() {
       actorDids_ = com.google.protobuf.GeneratedMessageLite.emptyProtobufList();
+      keyEnvelopes_ = emptyProtobufList();
     }
     /**
      * Protobuf enum {@code peers_touch.model.social.v1.Audience.Kind}
@@ -28510,6 +29134,169 @@ public final class PostOuterClass {
       baseKind_ = 0;
     }
 
+    public static final int KEY_ENVELOPES_FIELD_NUMBER = 5;
+    private com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> keyEnvelopes_;
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    @java.lang.Override
+    public java.util.List<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> getKeyEnvelopesList() {
+      return keyEnvelopes_;
+    }
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    public java.util.List<? extends peers_touch.model.social.v1.Media.AudienceKeyEnvelopeOrBuilder> 
+        getKeyEnvelopesOrBuilderList() {
+      return keyEnvelopes_;
+    }
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    @java.lang.Override
+    public int getKeyEnvelopesCount() {
+      return keyEnvelopes_.size();
+    }
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.Media.AudienceKeyEnvelope getKeyEnvelopes(int index) {
+      return keyEnvelopes_.get(index);
+    }
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    public peers_touch.model.social.v1.Media.AudienceKeyEnvelopeOrBuilder getKeyEnvelopesOrBuilder(
+        int index) {
+      return keyEnvelopes_.get(index);
+    }
+    private void ensureKeyEnvelopesIsMutable() {
+      com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> tmp = keyEnvelopes_;
+      if (!tmp.isModifiable()) {
+        keyEnvelopes_ =
+            com.google.protobuf.GeneratedMessageLite.mutableCopy(tmp);
+       }
+    }
+
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setKeyEnvelopes(
+        int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+      value.getClass();  // minimal bytecode null check
+      ensureKeyEnvelopesIsMutable();
+      keyEnvelopes_.set(index, value);
+    }
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addKeyEnvelopes(peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+      value.getClass();  // minimal bytecode null check
+      ensureKeyEnvelopesIsMutable();
+      keyEnvelopes_.add(value);
+    }
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addKeyEnvelopes(
+        int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+      value.getClass();  // minimal bytecode null check
+      ensureKeyEnvelopesIsMutable();
+      keyEnvelopes_.add(index, value);
+    }
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    private void addAllKeyEnvelopes(
+        java.lang.Iterable<? extends peers_touch.model.social.v1.Media.AudienceKeyEnvelope> values) {
+      ensureKeyEnvelopesIsMutable();
+      com.google.protobuf.AbstractMessageLite.addAll(
+          values, keyEnvelopes_);
+    }
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    private void clearKeyEnvelopes() {
+      keyEnvelopes_ = emptyProtobufList();
+    }
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    private void removeKeyEnvelopes(int index) {
+      ensureKeyEnvelopesIsMutable();
+      keyEnvelopes_.remove(index);
+    }
+
     public static peers_touch.model.social.v1.PostOuterClass.Audience parseFrom(
         java.nio.ByteBuffer data)
         throws com.google.protobuf.InvalidProtocolBufferException {
@@ -28923,6 +29710,180 @@ public final class PostOuterClass {
         return this;
       }
 
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      @java.lang.Override
+      public java.util.List<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> getKeyEnvelopesList() {
+        return java.util.Collections.unmodifiableList(
+            instance.getKeyEnvelopesList());
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      @java.lang.Override
+      public int getKeyEnvelopesCount() {
+        return instance.getKeyEnvelopesCount();
+      }/**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.Media.AudienceKeyEnvelope getKeyEnvelopes(int index) {
+        return instance.getKeyEnvelopes(index);
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      public Builder setKeyEnvelopes(
+          int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+        copyOnWrite();
+        instance.setKeyEnvelopes(index, value);
+        return this;
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      public Builder setKeyEnvelopes(
+          int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope.Builder builderForValue) {
+        copyOnWrite();
+        instance.setKeyEnvelopes(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      public Builder addKeyEnvelopes(peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+        copyOnWrite();
+        instance.addKeyEnvelopes(value);
+        return this;
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      public Builder addKeyEnvelopes(
+          int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+        copyOnWrite();
+        instance.addKeyEnvelopes(index, value);
+        return this;
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      public Builder addKeyEnvelopes(
+          peers_touch.model.social.v1.Media.AudienceKeyEnvelope.Builder builderForValue) {
+        copyOnWrite();
+        instance.addKeyEnvelopes(builderForValue.build());
+        return this;
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      public Builder addKeyEnvelopes(
+          int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope.Builder builderForValue) {
+        copyOnWrite();
+        instance.addKeyEnvelopes(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      public Builder addAllKeyEnvelopes(
+          java.lang.Iterable<? extends peers_touch.model.social.v1.Media.AudienceKeyEnvelope> values) {
+        copyOnWrite();
+        instance.addAllKeyEnvelopes(values);
+        return this;
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      public Builder clearKeyEnvelopes() {
+        copyOnWrite();
+        instance.clearKeyEnvelopes();
+        return this;
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      public Builder removeKeyEnvelopes(int index) {
+        copyOnWrite();
+        instance.removeKeyEnvelopes(index);
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.Audience)
     }
     @java.lang.Override
@@ -28943,10 +29904,12 @@ public final class PostOuterClass {
               "targetId_",
               "actorDids_",
               "baseKind_",
+              "keyEnvelopes_",
+              peers_touch.model.social.v1.Media.AudienceKeyEnvelope.class,
             };
             java.lang.String info =
-                "\u0000\u0004\u0000\u0000\u0001\u0004\u0004\u0000\u0001\u0000\u0001\f\u0002\u0003" +
-                "\u0003\u021a\u0004\f";
+                "\u0000\u0005\u0000\u0000\u0001\u0005\u0005\u0000\u0002\u0000\u0001\f\u0002\u0003" +
+                "\u0003\u021a\u0004\f\u0005\u001b";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {

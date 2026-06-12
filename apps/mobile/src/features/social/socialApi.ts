@@ -1,6 +1,24 @@
+import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
+import { encryptClientMediaBlob, encryptClientMediaBlobChunked, type ClientEncryptedMediaAsset } from '@peers-touch/client-media-security';
+
 import type { MobileAuthSession } from '../auth/authSession';
 import { FriendshipStatus as FriendshipStatusCode } from '../../gen/proto/domain/chat/chat_pb';
 import { FriendMessageType } from '../../gen/proto/domain/chat/friend_chat_pb';
+import { EncryptedMediaDescriptorSchema } from '../../gen/proto/domain/common/common_pb';
+import {
+  Audience,
+  CreateImagePostRequestSchema,
+  CreatePostRequestSchema,
+  CreatePostResponseSchema,
+  CreateTextPostRequestSchema,
+  ImageAttachmentSchema,
+  PostType,
+  type CreatePostRequest,
+  type CreatePostResponse,
+  type ImageAttachment,
+  type Mention,
+  type Post,
+} from '../../gen/proto/domain/social/post_pb';
 import {
   SocialApiError,
   type ActorSearchResult,
@@ -25,6 +43,65 @@ interface SocialRequestOptions {
   body?: Record<string, unknown>;
 }
 
+export type ChatAttachmentInput = {
+  cid: string;
+  filename: string;
+  mime_type: string;
+  size: number;
+  thumbnail_cid?: string;
+  visibility?: string;
+  encryption_suite?: string;
+  encryption_key_b64?: string;
+  encryption_nonce_b64?: string;
+  plaintext_sha256_b64?: string;
+  ciphertext_sha256_b64?: string;
+  plaintext_size?: number;
+  ciphertext_size?: number;
+  chunking?: string;
+  chunk_size?: number;
+  chunk_count?: number;
+  tag_size?: number;
+  nonce_strategy?: string;
+};
+
+export interface UploadedChatAttachment {
+  key?: string;
+  cid: string;
+  url?: string;
+  size: number;
+  mime?: string;
+  filename: string;
+}
+
+interface UploadedOssAttachment {
+  key?: string;
+  cid?: string;
+  url?: string;
+  size?: number;
+  mime?: string;
+  filename?: string;
+}
+
+interface MobileMomentDraftBase {
+  audience: Audience;
+  mentions?: Mention[];
+  replyToPostId?: string;
+}
+
+export interface MobileTextMomentDraft extends MobileMomentDraftBase {
+  kind: 'text';
+  text: string;
+}
+
+export interface MobileImageMomentDraft extends MobileMomentDraftBase {
+  kind: 'image';
+  text: string;
+  imageIds: string[];
+  images?: ImageAttachment[];
+}
+
+export type MobileMomentDraft = MobileTextMomentDraft | MobileImageMomentDraft;
+
 interface ListFriendRequestsPayload {
   requests?: FriendRequest[];
   total?: number;
@@ -45,11 +122,6 @@ interface ListMessagesPayload {
   messages?: FriendChatMessage[];
   hasMore?: boolean;
   has_more?: boolean;
-}
-
-interface SearchMessagesPayload {
-  messages?: FriendChatMessage[];
-  total?: number;
 }
 
 export interface FriendConversationSettings {
@@ -101,10 +173,10 @@ export interface SocialApiClient {
   listBlockedUsers: (limit?: number, offset?: number) => Promise<FriendshipStatus[]>;
   getFriendshipStatus: (targetDid: string) => Promise<FriendshipStatus>;
   listMessages: (sessionUlid: string, beforeUlid?: string, limit?: number) => Promise<ListMessagesPayload>;
-  searchMessages: (query: string, sessionUlid?: string, limit?: number, offset?: number) => Promise<SearchMessagesPayload>;
-  sendMessage: (sessionUlid: string, receiverDid: string, content: string) => Promise<{ message?: FriendChatMessage }>;
+  sendMessage: (sessionUlid: string, receiverDid: string, content: string, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<{ message?: FriendChatMessage }>;
+  sendEncryptedMessage: (sessionUlid: string, receiverDid: string, encryptedPayload: Uint8Array, messageType?: number) => Promise<{ message?: FriendChatMessage }>;
   sendSenderKeyDistribution: (sessionUlid: string, receiverDid: string, encryptedPayload: Uint8Array) => Promise<{ message?: FriendChatMessage }>;
-  editMessage: (sessionUlid: string, messageUlid: string, newContent: string) => Promise<Record<string, unknown>>;
+  editMessage: (sessionUlid: string, messageUlid: string, newEncryptedPayload: Uint8Array) => Promise<Record<string, unknown>>;
   recallMessage: (sessionUlid: string, messageUlid: string) => Promise<Record<string, unknown>>;
   deleteMessage: (sessionUlid: string, messageUlid: string) => Promise<Record<string, unknown>>;
   ackMessages: (ulids: string[], status: number) => Promise<Record<string, unknown>>;
@@ -118,6 +190,7 @@ export interface SocialApiClient {
   searchActors: (query: string) => Promise<ActorSearchPayload>;
   getPeerProfile: (did: string) => Promise<PeerProfile>;
   resolveFederationHandle: (handle: string) => Promise<FederationResolveView>;
+  createMoment: (draft: MobileMomentDraft) => Promise<Post | undefined>;
 }
 
 export function createSocialApiClient(session: MobileAuthSession): SocialApiClient {
@@ -152,6 +225,39 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
     }
 
     return unwrapPayload<T>(payload);
+  }
+
+  async function createMoment(draft: MobileMomentDraft): Promise<Post | undefined> {
+    const req = buildMobileCreatePostRequest(draft);
+    let response: Response;
+
+    try {
+      response = await fetch(buildUrl(stationUrl, '/api/v1/social/moments'), {
+        method: 'POST',
+        cache: 'no-store',
+        headers: {
+          Accept: 'application/x-protobuf',
+          Authorization: `Bearer ${session.accessToken}`,
+          'Content-Type': 'application/x-protobuf',
+        },
+        body: toBinary(CreatePostRequestSchema, req),
+      });
+    } catch (error) {
+      throw new SocialApiError({
+        method: 'POST',
+        path: '/api/v1/social/moments',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    if (!response.ok) {
+      const payload = await readJson(response);
+      throw buildApiError('POST', '/api/v1/social/moments', response.status, payload);
+    }
+
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const created: CreatePostResponse = fromBinary(CreatePostResponseSchema, bytes);
+    return created.post;
   }
 
   return {
@@ -245,17 +351,29 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
         path: '/friend-chat/messages',
         query: { session_ulid: sessionUlid, before_ulid: beforeUlid, limit },
       }),
-    searchMessages: (query, sessionUlid = '', limit = 50, offset = 0) =>
-      request<SearchMessagesPayload>({
-        method: 'GET',
-        path: '/friend-chat/messages/search',
-        query: { query, session_ulid: sessionUlid, limit, offset },
-      }),
-    sendMessage: (sessionUlid, receiverDid, content) =>
+    sendMessage: (sessionUlid, receiverDid, content, attachments, messageType = 1) =>
       request({
         method: 'POST',
         path: '/friend-chat/message/send',
-        body: { session_ulid: sessionUlid, receiver_did: receiverDid, content, type: 1 },
+        body: {
+          session_ulid: sessionUlid,
+          receiver_did: receiverDid,
+          content,
+          type: messageType,
+          ...(attachments?.length ? { attachments } : {}),
+        },
+      }),
+    sendEncryptedMessage: (sessionUlid, receiverDid, encryptedPayload, messageType = 1) =>
+      request({
+        method: 'POST',
+        path: '/friend-chat/message/send',
+        body: {
+          session_ulid: sessionUlid,
+          receiver_did: receiverDid,
+          content: '',
+          type: messageType,
+          encrypted_payload: bytesToBase64(encryptedPayload),
+        },
       }),
     sendSenderKeyDistribution: (sessionUlid, receiverDid, encryptedPayload) =>
       request({
@@ -269,11 +387,16 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
           encrypted_payload: bytesToBase64(encryptedPayload),
         },
       }),
-    editMessage: (sessionUlid, messageUlid, newContent) =>
+    editMessage: (sessionUlid, messageUlid, newEncryptedPayload) =>
       request({
         method: 'POST',
         path: '/friend-chat/message/edit',
-        body: { session_ulid: sessionUlid, message_ulid: messageUlid, new_content: newContent },
+        body: {
+          session_ulid: sessionUlid,
+          message_ulid: messageUlid,
+          new_content: '',
+          new_encrypted_payload: bytesToBase64(newEncryptedPayload),
+        },
       }),
     recallMessage: (sessionUlid, messageUlid) =>
       request({
@@ -351,7 +474,160 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
         path: '/actor/federation/resolve',
         query: { handle },
       }),
+    createMoment,
   };
+}
+
+export function buildMobileCreatePostRequest(draft: MobileMomentDraft): CreatePostRequest {
+  const base = {
+    audience: draft.audience,
+    ...(draft.mentions?.length ? { mentions: draft.mentions } : {}),
+    ...(draft.replyToPostId ? { replyToPostId: draft.replyToPostId } : {}),
+  };
+
+  switch (draft.kind) {
+    case 'text':
+      return create(CreatePostRequestSchema, {
+        ...base,
+        type: PostType.TEXT,
+        content: {
+          case: 'text',
+          value: create(CreateTextPostRequestSchema, { text: draft.text }),
+        },
+      });
+    case 'image': {
+      const typedImages = draft.images ?? [];
+      return create(CreatePostRequestSchema, {
+        ...base,
+        type: PostType.IMAGE,
+        content: {
+          case: 'image',
+          value: create(CreateImagePostRequestSchema, {
+            text: draft.text,
+            imageIds: typedImages.length > 0 ? [] : draft.imageIds,
+            images: typedImages,
+          }),
+        },
+      });
+    }
+  }
+}
+
+export async function uploadMobileChatAttachment(
+  session: MobileAuthSession,
+  file: File,
+  conversationId: string,
+): Promise<ChatAttachmentInput> {
+  const encrypted = await encryptClientMediaBlob(file);
+  const uploaded = await uploadMobileEncryptedAttachment(session, file, encrypted, {
+    bucket: 'chat',
+    visibility: 'chat',
+    chatSessionId: conversationId,
+  });
+
+  return {
+    cid: String(uploaded.cid ?? ''),
+    filename: String(uploaded.filename ?? file.name),
+    mime_type: String(uploaded.mime ?? file.type ?? 'application/octet-stream'),
+    size: file.size,
+    thumbnail_cid: '',
+    visibility: 'chat',
+    encryption_suite: encrypted.descriptor.suite,
+    encryption_key_b64: encrypted.descriptor.keyB64,
+    encryption_nonce_b64: encrypted.descriptor.nonceB64,
+    plaintext_sha256_b64: encrypted.descriptor.plaintextSha256B64,
+    ciphertext_sha256_b64: encrypted.descriptor.ciphertextSha256B64,
+    plaintext_size: encrypted.descriptor.plaintextSize,
+    ciphertext_size: Number(uploaded.size ?? encrypted.descriptor.ciphertextSize),
+    chunking: encrypted.descriptor.chunking,
+    chunk_size: encrypted.descriptor.chunkSize,
+    chunk_count: encrypted.descriptor.chunkCount,
+    tag_size: encrypted.descriptor.tagSize,
+    nonce_strategy: encrypted.descriptor.nonceStrategy,
+  };
+}
+
+export async function uploadMobileMomentImage(
+  session: MobileAuthSession,
+  file: File,
+): Promise<ImageAttachment> {
+  const encrypted = await encryptClientMediaBlobChunked(file);
+  const uploaded = await uploadMobileEncryptedAttachment(session, file, encrypted, {
+    bucket: 'moments',
+    visibility: 'public',
+  });
+
+  const cid = String(uploaded.cid ?? uploaded.url ?? '');
+  if (!cid) {
+    throw new SocialApiError({
+      method: 'POST',
+      path: '/sub-oss/upload',
+      message: 'upload returned no cid',
+    });
+  }
+
+  return create(ImageAttachmentSchema, {
+    id: cid,
+    url: cid,
+    sizeBytes: BigInt(encrypted.descriptor.plaintextSize),
+    mediaEncryption: create(EncryptedMediaDescriptorSchema, {
+      encrypted: encrypted.descriptor.encrypted,
+      version: encrypted.descriptor.version,
+      suite: encrypted.descriptor.suite,
+      keyB64: encrypted.descriptor.keyB64,
+      nonceB64: encrypted.descriptor.nonceB64,
+      plaintextSha256B64: encrypted.descriptor.plaintextSha256B64,
+      ciphertextSha256B64: encrypted.descriptor.ciphertextSha256B64,
+      plaintextSize: BigInt(encrypted.descriptor.plaintextSize),
+      ciphertextSize: BigInt(Number(uploaded.size ?? encrypted.descriptor.ciphertextSize)),
+      chunking: encrypted.descriptor.chunking ?? '',
+      chunkSize: encrypted.descriptor.chunkSize ?? 0,
+      chunkCount: encrypted.descriptor.chunkCount ?? 0,
+      tagSize: encrypted.descriptor.tagSize ?? 0,
+      nonceStrategy: encrypted.descriptor.nonceStrategy ?? '',
+    }),
+  });
+}
+
+async function uploadMobileEncryptedAttachment(
+  session: MobileAuthSession,
+  file: File,
+  encrypted: ClientEncryptedMediaAsset,
+  scope: { bucket: string; visibility: string; chatSessionId?: string },
+): Promise<UploadedOssAttachment> {
+  const stationUrl = session.stationUrl.replace(/\/+$/, '');
+  const encryptedFile = new File([encrypted.encryptedBlob], file.name, { type: 'application/octet-stream' });
+  const form = new FormData();
+  form.set('file', encryptedFile, file.name);
+  form.set('bucket', scope.bucket);
+  form.set('visibility', scope.visibility);
+  if (scope.chatSessionId) form.set('chat_session_id', scope.chatSessionId);
+
+  let response: Response;
+  try {
+    response = await fetch(`${stationUrl}/sub-oss/upload`, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${session.accessToken}`,
+      },
+      body: form,
+    });
+  } catch (error) {
+    throw new SocialApiError({
+      method: 'POST',
+      path: '/sub-oss/upload',
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  const payload = await readJson(response);
+  if (!response.ok) {
+    throw buildApiError('POST', '/sub-oss/upload', response.status, payload);
+  }
+
+  return payload as UploadedOssAttachment;
 }
 
 function normalizeFriendConversationSettings(payload: unknown): FriendConversationSettings {

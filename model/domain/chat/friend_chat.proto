@@ -4,6 +4,7 @@ package peers_touch.model.chat.v1;
 
 import "google/protobuf/timestamp.proto";
 import "domain/chat/chat.proto";
+import "domain/common/common.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
 
@@ -110,6 +111,7 @@ message FriendMessageAttachment {
   // treated as "unknown" by older clients and rendered without
   // a badge; new servers SHOULD always populate it.
   string visibility = 6;
+  peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 7;
 }
 
 message MessageEnvelope {
