@@ -1,7 +1,7 @@
 import type { MobileAuthSession } from '../auth/authSession';
 import type { SocialApiErrorContext, StationErrorEnvelope, StationSuccessEnvelope } from '../social/socialTypes';
 import { SocialApiError } from '../social/socialTypes';
-import type { ChatBackgroundId } from '../social/socialApi';
+import type { ChatAttachmentInput, ChatBackgroundId } from '../social/socialApi';
 import { normalizeChatBackgroundId } from '../social/socialApi';
 import type { Group, GroupMember, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 
@@ -84,7 +84,7 @@ export interface GroupApiClient {
   leaveGroup: (groupUlid: string) => Promise<Record<string, unknown>>;
   removeMember: (groupUlid: string, actorDid: string) => Promise<Record<string, unknown>>;
   updateMember: (groupUlid: string, actorDid: string, input: UpdateGroupMemberInput) => Promise<{ member?: GroupMember }>;
-  sendMessage: (groupUlid: string, encryptedPayload: Uint8Array) => Promise<{ message?: GroupMessage }>;
+  sendMessage: (groupUlid: string, encryptedPayload: Uint8Array, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<{ message?: GroupMessage }>;
   editMessage: (groupUlid: string, messageUlid: string, encryptedPayload: Uint8Array) => Promise<Record<string, unknown>>;
   recallMessage: (groupUlid: string, messageUlid: string) => Promise<Record<string, unknown>>;
   deleteMessage: (groupUlid: string, messageUlid: string) => Promise<Record<string, unknown>>;
@@ -200,15 +200,16 @@ export function createGroupApiClient(session: MobileAuthSession): GroupApiClient
           ...(input.mutedUntil !== undefined ? { muted_until: new Date(input.mutedUntil).toISOString() } : {}),
         },
       }),
-    sendMessage: (groupUlid, encryptedPayload) =>
+    sendMessage: (groupUlid, encryptedPayload, attachments, messageType = 1) =>
       request({
         method: 'POST',
         path: '/group-chat/message/send',
         body: {
           group_ulid: groupUlid,
           content: '',
-          type: 1,
+          type: messageType,
           encrypted_payload: bytesToBase64(encryptedPayload),
+          ...(attachments?.length ? { attachments } : {}),
         },
       }),
     editMessage: (groupUlid, messageUlid, encryptedPayload) =>

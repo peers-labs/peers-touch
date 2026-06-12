@@ -200,12 +200,19 @@ func (s *MomentService) validateAttachmentCIDs(ctx context.Context, req *model.C
 		if img == nil {
 			return fmt.Errorf("IMAGE post requires CreateImagePostRequest content")
 		}
-		if n := len(img.ImageIds); n == 0 {
+		imageIDs, err := imageIDsFromCreateRequest(img)
+		if err != nil {
+			return err
+		}
+		if n := len(imageIDs); n == 0 {
 			return fmt.Errorf("IMAGE post requires at least one image_id")
 		} else if n > maxImagesPerPost {
 			return fmt.Errorf("IMAGE post supports at most %d images, got %d", maxImagesPerPost, n)
 		}
-		return s.media.ValidateCIDs(ctx, img.ImageIds)
+		if err := validatePrivateImageMediaEncryption(req.Audience, img); err != nil {
+			return err
+		}
+		return s.media.ValidateCIDs(ctx, imageIDs)
 
 	case model.PostType_VIDEO:
 		// Video is deferred to a later iteration (see plan D3) but the
@@ -226,6 +233,56 @@ func (s *MomentService) validateAttachmentCIDs(ctx context.Context, req *model.C
 			return fmt.Errorf("LOCATION post supports at most %d images, got %d", maxImagesPerPost, n)
 		}
 		return s.media.ValidateCIDs(ctx, loc.ImageIds)
+	}
+	return nil
+}
+
+func imageIDsFromCreateRequest(img *model.CreateImagePostRequest) ([]string, error) {
+	if img == nil {
+		return nil, nil
+	}
+	if len(img.ImageIds) > 0 && len(img.Images) > 0 {
+		return nil, fmt.Errorf("IMAGE post accepts either image_ids or images, not both")
+	}
+	if len(img.ImageIds) > 0 {
+		return img.ImageIds, nil
+	}
+	ids := make([]string, 0, len(img.Images))
+	for _, image := range img.Images {
+		if image == nil {
+			continue
+		}
+		if image.Id != "" {
+			ids = append(ids, image.Id)
+		} else if image.Url != "" {
+			ids = append(ids, image.Url)
+		}
+	}
+	return ids, nil
+}
+
+func validatePrivateImageMediaEncryption(audience *model.Audience, img *model.CreateImagePostRequest) error {
+	if audience == nil || audience.Kind == model.Audience_PUBLIC {
+		return nil
+	}
+	if len(audience.GetKeyEnvelopes()) == 0 {
+		return fmt.Errorf("non-public IMAGE post requires audience key envelopes")
+	}
+	if img == nil || len(img.Images) == 0 {
+		return fmt.Errorf("non-public IMAGE post requires encrypted image attachments")
+	}
+	for _, image := range img.Images {
+		if image == nil || image.MediaEncryption == nil || !image.MediaEncryption.Encrypted {
+			return fmt.Errorf("non-public IMAGE post requires encrypted image attachments")
+		}
+		if image.MediaEncryption.GetKeyB64() != "" {
+			return fmt.Errorf("non-public IMAGE post rejects inline media key material")
+		}
+	}
+	for _, envelope := range audience.GetKeyEnvelopes() {
+		if envelope == nil || envelope.GetRecipientDid() == "" || envelope.GetDeviceId() == "" || envelope.GetKeyId() == "" || len(envelope.GetEncryptedKey()) == 0 || envelope.GetSuite() == "" {
+			return fmt.Errorf("non-public IMAGE post has incomplete audience key envelope")
+		}
 	}
 	return nil
 }

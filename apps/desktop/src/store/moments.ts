@@ -30,6 +30,8 @@ import {
   type MomentDraft,
   type TimelineSort,
 } from '../services/social_api';
+import { sealMomentDraftAudienceKeys } from '../services/momentAudienceKeys';
+import { currentAuthenticatedActorId } from './session';
 import { log } from '../utils/logger';
 
 const TAG = 'moments-store';
@@ -350,7 +352,8 @@ export const useMomentsStore = create<MomentsState>((set, get) => ({
   },
 
   createPost: async (draft) => {
-    const post = await socialCreateMoment(draft);
+    const sealedDraft = await sealMomentDraftAudienceKeys(draft, currentAuthenticatedActorId());
+    const post = await socialCreateMoment(sealedDraft);
     if (!post || !post.id) {
       throw new Error('createPost: server returned no post');
     }

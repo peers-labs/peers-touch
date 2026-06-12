@@ -274,6 +274,7 @@ fn map_attachments(inputs: &[AttachmentInput]) -> Vec<model_chat::FriendMessageA
             // input means "unknown", which the renderer treats as
             // unbadged.
             visibility: a.visibility.clone().unwrap_or_default(),
+            media_encryption: None,
         })
         .collect()
 }

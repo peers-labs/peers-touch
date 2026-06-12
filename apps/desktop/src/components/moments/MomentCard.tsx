@@ -17,6 +17,7 @@ import {
   ReactionKind,
   type Post,
   type ReactionSummary,
+  type ImageAttachment,
 } from '../../gen/proto/domain/social/post_pb';
 import { ReactionBar } from './ReactionBar';
 import { ImageGrid } from './ImageGrid';
@@ -112,12 +113,11 @@ function getBodyText(post: Post): string {
   }
 }
 
-function getImages(post: Post): { id: string; url: string }[] {
+function getImages(post: Post): ImageAttachment[] {
   const c = post.content as any;
   if (!c || !c.case) return [];
   if (c.case === 'imagePost' || c.case === 'locationPost') {
-    const imgs = c.value?.images ?? [];
-    return imgs.map((im: any) => ({ id: String(im.id ?? ''), url: String(im.url ?? im.id ?? '') }));
+    return c.value?.images ?? [];
   }
   return [];
 }
@@ -225,7 +225,10 @@ export function MomentCard({
           {images.length > 0 && (
             <div onClick={(e) => e.stopPropagation()}>
               <ImageGrid
+                images={images.slice(0, 9)}
                 cids={images.slice(0, 9).map((im) => im.url || im.id)}
+                audience={audience}
+                authorDid={post.authorId || author?.id || null}
               />
             </div>
           )}

@@ -1,4 +1,9 @@
 import type { MobileAuthSession } from '../auth/authSession';
+import {
+  socialHostEventTargetsNotifications,
+  type SocialHostEvent,
+  type SocialHostEventKind,
+} from '@peers-touch/client-chat-core';
 import type { GroupE2eeRuntimeController } from '../group/groupE2eeRuntime';
 import type { GroupState } from '../group/groupStore';
 import { isSenderKeyDistributionMessage } from './socialProjection';
@@ -25,22 +30,8 @@ export interface SocialRuntimeController {
   teardown: () => void;
 }
 
-export type SocialRuntimeExternalEventKind =
-  | 'app-resume'
-  | 'network-online'
-  | 'push'
-  | 'deep-link'
-  | 'notification-tap'
-  | 'native-hint';
-
-export interface SocialRuntimeExternalEvent {
-  kind: SocialRuntimeExternalEventKind;
-  target?: string;
-  sessionUlid?: string;
-  notificationId?: string;
-  url?: string;
-  reason?: string;
-}
+export type SocialRuntimeExternalEventKind = SocialHostEventKind;
+export type SocialRuntimeExternalEvent = SocialHostEvent;
 
 interface ActiveSocialRuntime {
   sessionKey: string | null;
@@ -118,7 +109,7 @@ export function startSocialRuntime(
       if (cancelled) return;
 
       if (event.sessionUlid) void store.loadMessages(event.sessionUlid);
-      if (event.notificationId || event.target === 'notification') void store.refreshNotifications();
+      if (socialHostEventTargetsNotifications(event)) void store.refreshNotifications();
       void reconcileActiveThreads(store, groupStore, groupE2eeRuntime);
 
       if (externalReconcileTimer) return;

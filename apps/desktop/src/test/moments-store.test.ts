@@ -18,18 +18,22 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
-import { toBinary, create } from '@bufbuild/protobuf';
+import { fromBinary, toBinary, create } from '@bufbuild/protobuf';
 import {
   AudienceSchema,
+  Audience_Kind,
+  CreatePostRequestSchema,
   CreatePostResponseSchema,
   GetPostResponseSchema,
   GetTimelineResponseSchema,
+  ImageAttachmentSchema,
   ListPostsResponseSchema,
   ReactToPostResponseSchema,
   PostType,
   ReactionKind,
   type Audience,
 } from '../gen/proto/domain/social/post_pb';
+import { EncryptedMediaDescriptorSchema } from '../gen/proto/domain/common/common_pb';
 import {
   GetCommentsResponseSchema,
   CreateCommentResponseSchema,
@@ -39,6 +43,8 @@ import {
 } from '../gen/proto/domain/social/relationship_pb';
 import { useMomentsStore } from '../store/moments';
 import { useRelationshipsStore } from '../store/relationships';
+import { useSessionStore } from '../store/session';
+import { openMomentMediaKeyFromAudience } from '../services/momentAudienceKeys';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -65,7 +71,7 @@ function bytesOk(schema: any, value: any) {
 }
 
 interface QueuedReply {
-  match: (cmd: string) => boolean;
+  match: (cmd: string, args?: unknown) => boolean;
   result: unknown;
 }
 
@@ -73,6 +79,14 @@ let pending: QueuedReply[] = [];
 
 function enqueue(cmd: string, result: unknown) {
   pending.push({ match: (c) => c === cmd, result });
+}
+
+function enqueueMatch(match: QueuedReply['match'], result: unknown) {
+  pending.push({ match, result });
+}
+
+function statusOk(value: unknown) {
+  return { ok: true, data: { status: JSON.stringify(value) } };
 }
 
 function audience(): Audience {
@@ -84,9 +98,10 @@ beforeEach(() => {
   pending = [];
   useMomentsStore.getState().reset();
   useRelationshipsStore.getState().reset();
+  useSessionStore.getState().reset();
   invokeMock.mockImplementation((cmd: string, _args?: unknown) => {
     if (cmd === 'frontend_log') return Promise.resolve(undefined);
-    const idx = pending.findIndex((p) => p.match(cmd));
+    const idx = pending.findIndex((p) => p.match(cmd, _args));
     if (idx === -1) {
       return Promise.reject(new Error(`unexpected invoke(${cmd}) — no fixture queued`));
     }
@@ -193,6 +208,117 @@ describe('moments store: createPost / deletePost', () => {
     const stored = useMomentsStore.getState().postsById['pIMG'];
     expect(stored?.type).toBe(PostType.IMAGE);
     expect(useMomentsStore.getState().feeds.home.postIds[0]).toBe('pIMG');
+  });
+
+  it('createPost(private image) seals audience keys, strips inline media keys, and reopens the key for display', async () => {
+    const authorDid = 'did:peers:author';
+    const authorIk = 'author-ik-b64';
+    const mediaCid = 'oss://station.local/private/family.png';
+    const mediaKeyB64 = 'bWVkaWEta2V5LTEyMzQ1Njc4OTA=';
+    const sealedPayloads: string[] = [];
+
+    useSessionStore.setState({
+      authenticated: true,
+      currentUser: {
+        actorId: authorDid,
+        name: 'author',
+        email: '',
+        loginMethod: 'password',
+      },
+    });
+
+    enqueue('key_exchange_fetch_bundle', statusOk({
+      bundles: [{ did: authorDid, device_id: 'device-author', ik_pub: authorIk }],
+    }));
+    enqueueMatch((cmd, args) => {
+      if (cmd !== 'signaling_envelope_seal') return false;
+      const payload = args as { plaintext?: string };
+      if (!payload.plaintext) return false;
+      sealedPayloads.push(payload.plaintext);
+      return true;
+    }, statusOk({ payload_b64: btoa('sealed-moment-media-key') }));
+
+    let sealedAudience: Audience | undefined;
+    let sealedImageKeyB64: string | undefined;
+    let sealedImageSuite: string | undefined;
+    let createRequestContentCase: string | undefined;
+    let createRequestImageIdCount: number | undefined;
+    enqueueMatch((cmd, args) => {
+      if (cmd !== 'social_create_moment') return false;
+      const payload = (args as { input?: { payload?: number[] } }).input?.payload ?? [];
+      const request = fromBinary(CreatePostRequestSchema, new Uint8Array(payload));
+      const imageRequest = request.content.case === 'image' ? request.content.value : undefined;
+      const image = imageRequest?.images[0];
+      sealedAudience = request.audience;
+      createRequestContentCase = request.content.case;
+      createRequestImageIdCount = imageRequest?.imageIds.length;
+      sealedImageKeyB64 = image?.mediaEncryption?.keyB64;
+      sealedImageSuite = image?.mediaEncryption?.suite;
+      return true;
+    }, bytesOk(CreatePostResponseSchema, {
+      post: { id: 'pPRIVATE', authorId: authorDid, type: PostType.IMAGE },
+    }));
+
+    const id = await useMomentsStore.getState().createPost({
+      kind: 'image',
+      text: 'private family photo',
+      imageIds: [mediaCid],
+      audience: create(AudienceSchema, { kind: Audience_Kind.SELF }),
+      images: [create(ImageAttachmentSchema, {
+        id: 'image-1',
+        url: mediaCid,
+        sizeBytes: BigInt(4096),
+        mediaEncryption: create(EncryptedMediaDescriptorSchema, {
+          encrypted: true,
+          version: 2,
+          suite: 'AES-256-GCM-CHUNKED',
+          keyB64: mediaKeyB64,
+          nonceB64: 'bm9uY2UtYmFzZTY0',
+          plaintextSha256B64: 'plain-sha',
+          ciphertextSha256B64: 'cipher-sha',
+          plaintextSize: BigInt(2048),
+          ciphertextSize: BigInt(2096),
+          chunking: 'fixed',
+          chunkSize: 1024,
+          chunkCount: 2,
+          tagSize: 16,
+          nonceStrategy: 'counter-last-4',
+        }),
+      })],
+    });
+
+    expect(id).toBe('pPRIVATE');
+    expect(createRequestContentCase).toBe('image');
+    expect(createRequestImageIdCount).toBe(0);
+    expect(sealedAudience?.kind).toBe(Audience_Kind.SELF);
+    expect(sealedAudience?.keyEnvelopes).toHaveLength(1);
+    expect(sealedImageKeyB64).toBe('');
+    expect(sealedImageSuite).toBe('AES-256-GCM-CHUNKED');
+    expect(sealedPayloads).toHaveLength(1);
+    expect(JSON.parse(sealedPayloads[0] ?? '{}')).toEqual({
+      v: 1,
+      kind: 'moment-media-key',
+      cid: mediaCid,
+      keyB64: mediaKeyB64,
+    });
+    expect(sealedAudience?.keyEnvelopes[0]?.encryptedKey).toEqual(new TextEncoder().encode('sealed-moment-media-key'));
+
+    enqueue('account_get_device_id', statusOk({ device_id: 'device-author' }));
+    enqueue('key_exchange_fetch_bundle', statusOk({
+      bundles: [
+        { did: authorDid, device_id: 'stale-device', ik_pub: 'stale-author-ik' },
+        { did: authorDid, device_id: 'device-author', ik_pub: authorIk },
+      ],
+    }));
+    enqueue('signaling_envelope_open', statusOk({ plaintext: sealedPayloads[0] }));
+
+    const openedKey = await openMomentMediaKeyFromAudience({
+      cid: mediaCid,
+      authorDid,
+      audience: sealedAudience,
+    });
+
+    expect(openedKey).toBe(mediaKeyB64);
   });
 
   it('deletePost scrubs the id from every feed', async () => {
