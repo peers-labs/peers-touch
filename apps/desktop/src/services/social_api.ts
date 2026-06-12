@@ -49,6 +49,7 @@ import {
   type Post,
   type ReactToPostResponse,
   type UnreactToPostResponse,
+  type ImageAttachment,
 } from '../gen/proto/domain/social/post_pb';
 import {
   CreateCommentResponseSchema,
@@ -111,6 +112,8 @@ export interface ImageDraft extends MomentDraftBase {
   text: string;
   /** OSS CIDs (`oss://origin/key`); empty until OSS upload lands. */
   imageIds: string[];
+  /** Typed attachments carrying E2EE media descriptors for new clients. */
+  images?: ImageAttachment[];
 }
 
 export interface RepostDraft extends MomentDraftBase {
@@ -131,9 +134,10 @@ export type MomentDraft = TextDraft | ImageDraft | RepostDraft;
  * lands; tests construct ImageDraft directly to exercise the path.
  */
 export function buildCreatePostRequest(draft: MomentDraft): CreatePostRequest {
-  const req = create(CreatePostRequestSchema, {
+  const base = {
     audience: draft.audience,
-  });
+    ...(draft.replyToPostId ? { replyToPostId: draft.replyToPostId } : {}),
+  };
   // The oneof inner value MUST be a properly-constructed message —
   // bufbuild's `toBinary` rejects bare POJOs because it can't tell
   // which schema to use for the embedded fields.
@@ -142,37 +146,43 @@ export function buildCreatePostRequest(draft: MomentDraft): CreatePostRequest {
   // not the message-type short forms).
   switch (draft.kind) {
     case 'text':
-      req.type = PostType.TEXT;
-      req.content = {
-        case: 'text',
-        value: create(CreateTextPostRequestSchema, { text: draft.text }),
-      } as any;
-      break;
-    case 'image':
-      req.type = PostType.IMAGE;
-      req.content = {
-        case: 'image',
-        value: create(CreateImagePostRequestSchema, {
-          text: draft.text,
-          imageIds: draft.imageIds,
-        }),
-      } as any;
-      break;
+      return create(CreatePostRequestSchema, {
+        ...base,
+        type: PostType.TEXT,
+        content: {
+          case: 'text',
+          value: create(CreateTextPostRequestSchema, { text: draft.text }),
+        },
+      });
+    case 'image': {
+      const typedImages = draft.images ?? [];
+      return create(CreatePostRequestSchema, {
+        ...base,
+        type: PostType.IMAGE,
+        content: {
+          case: 'image',
+          value: create(CreateImagePostRequestSchema, {
+            text: draft.text,
+            imageIds: typedImages.length > 0 ? [] : draft.imageIds,
+            images: typedImages,
+          }),
+        },
+      });
+    }
     case 'repost':
-      req.type = PostType.REPOST;
-      req.content = {
-        case: 'repost',
-        value: create(CreateRepostRequestSchema, {
-          originalPostId: draft.originalPostId,
-          comment: draft.comment,
-        }),
-      } as any;
-      break;
+      return create(CreatePostRequestSchema, {
+        ...base,
+        type: PostType.REPOST,
+        content: {
+          case: 'repost',
+          value: create(CreateRepostRequestSchema, {
+            originalPostId: draft.originalPostId,
+            comment: draft.comment,
+          }),
+        },
+      });
   }
-  if (draft.replyToPostId) {
-    req.replyToPostId = draft.replyToPostId;
-  }
-  return req;
+  throw new Error('socialCreateMoment: unsupported draft kind');
 }
 
 // ---------------------------------------------------------------------------

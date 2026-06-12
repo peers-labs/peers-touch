@@ -80,7 +80,31 @@ export function normalizeMessage(raw: Partial<FriendChatMessage>): FriendChatMes
     recalled: Boolean(raw.recalled ?? false),
     editedAt: (raw.editedAt ?? record.edited_at) as FriendChatMessage['editedAt'],
     encryptedPayload: bytesValue(raw.encryptedPayload ?? record.encryptedPayload ?? record.encrypted_payload),
+    attachments: normalizeMessageAttachments(raw.attachments ?? record.attachments),
   };
+}
+
+function normalizeMessageAttachments(value: unknown): FriendChatMessage['attachments'] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    const record = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
+    return {
+      cid: String(record.cid ?? ''),
+      filename: String(record.filename ?? ''),
+      mimeType: String(record.mimeType ?? record.mime_type ?? ''),
+      size: Number(record.size ?? 0),
+      thumbnailCid: String(record.thumbnailCid ?? record.thumbnail_cid ?? ''),
+      visibility: String(record.visibility ?? ''),
+      mediaEncryption: record.mediaEncryption ?? record.media_encryption,
+      encryptionSuite: String(record.encryptionSuite ?? record.encryption_suite ?? ''),
+      encryptionKeyB64: String(record.encryptionKeyB64 ?? record.encryption_key_b64 ?? ''),
+      encryptionNonceB64: String(record.encryptionNonceB64 ?? record.encryption_nonce_b64 ?? ''),
+      plaintextSha256B64: String(record.plaintextSha256B64 ?? record.plaintext_sha256_b64 ?? ''),
+      ciphertextSha256B64: String(record.ciphertextSha256B64 ?? record.ciphertext_sha256_b64 ?? ''),
+      plaintextSize: Number(record.plaintextSize ?? record.plaintext_size ?? 0),
+      ciphertextSize: Number(record.ciphertextSize ?? record.ciphertext_size ?? 0),
+    };
+  }).filter((attachment) => attachment.cid || attachment.filename);
 }
 
 export function normalizeNotification(raw: Partial<SocialNotification>): SocialNotification {

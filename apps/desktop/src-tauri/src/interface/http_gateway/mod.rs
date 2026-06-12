@@ -37,6 +37,7 @@ use crate::application::model_config as app_model_config;
 use crate::application::models as app_models;
 use crate::application::notebook as app_notebook;
 use crate::application::oauth2 as app_oauth2;
+use crate::application::oss as app_oss;
 use crate::application::profile as app_profile;
 use crate::application::provider as app_provider;
 use crate::application::search as app_search;
@@ -49,9 +50,14 @@ use crate::application::tts as app_tts;
 
 // Actor & chat modules use station_client + proto directly
 use crate::infrastructure::station_client;
+use crate::interface::tauri_commands::oss::{
+    capture_screenshot_to_temp_file, safe_temp_filename, validate_chat_upload_scope,
+    OssCaptureScreenshotInput, OssUploadAttachmentBytesInput,
+};
 use crate::model;
 use prost::Message;
 use reqwest::Method;
+use ulid::Ulid;
 
 const DEFAULT_PORT: u16 = 3030;
 const POOL_SIZE: usize = 8;
@@ -433,6 +439,106 @@ fn parse_args<T: serde::de::DeserializeOwned>(args: Value) -> Result<T, Value> {
     })
 }
 
+fn dispatch_oss_upload_attachment_bytes_chat(args: Value, state: &AppState) -> Value {
+    let input = match parse_args::<OssUploadAttachmentBytesInput>(args) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let token = match token_from_state(state) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    if input.bytes.is_empty() {
+        return to_json(AppResult::<StubPayload>::fail(
+            ErrorCode::InvalidArgument,
+            "bytes is required",
+            None,
+        ));
+    }
+
+    let vis = input.visibility.trim().to_ascii_lowercase();
+    let (bucket, visibility, chat_sid) = match validate_chat_upload_scope(
+        input.bucket.as_str(),
+        vis.as_str(),
+        &input.chat_session_id,
+    ) {
+        Ok(scope) => scope,
+        Err(error) => return to_json(error),
+    };
+    let bucket = bucket.to_string();
+    let visibility = visibility.to_string();
+    let chat_sid = chat_sid.map(str::to_string);
+    let filename = safe_temp_filename(input.filename.as_str());
+    let mime_override = input.mime_type.trim().to_string();
+    let temp_path = std::env::temp_dir().join(format!("peers-chat-{}-{}", Ulid::new(), filename));
+
+    if let Err(error) = std::fs::write(&temp_path, input.bytes) {
+        return to_json(AppResult::<StubPayload>::fail(
+            ErrorCode::InternalError,
+            format!("write temp chat attachment: {error}"),
+            None,
+        ));
+    }
+    let cleanup = app_oss::TempFileCleanup::new(temp_path.clone(), "http chat attachment");
+
+    let result = app_oss::upload_attachment_with_mime(
+        temp_path.to_string_lossy().as_ref(),
+        &token,
+        "chat",
+        bucket.as_str(),
+        visibility.as_str(),
+        chat_sid.as_deref(),
+        if mime_override.is_empty() {
+            None
+        } else {
+            Some(mime_override.as_str())
+        },
+    );
+    cleanup.remove_now();
+    to_json(result)
+}
+
+fn dispatch_oss_capture_screenshot_chat(args: Value, state: &AppState) -> Value {
+    let input = match parse_args::<OssCaptureScreenshotInput>(args) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let token = match token_from_state(state) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+
+    let vis = input.visibility.trim().to_ascii_lowercase();
+    let (bucket, visibility, chat_sid) = match validate_chat_upload_scope(
+        input.bucket.as_str(),
+        vis.as_str(),
+        &input.chat_session_id,
+    ) {
+        Ok(scope) => scope,
+        Err(error) => return to_json(error),
+    };
+    let bucket = bucket.to_string();
+    let visibility = visibility.to_string();
+    let chat_sid = chat_sid.map(str::to_string);
+
+    let path = match capture_screenshot_to_temp_file() {
+        Ok(path) => path,
+        Err(error) => return to_json(error),
+    };
+    let cleanup = app_oss::TempFileCleanup::new(path.clone(), "http chat screenshot");
+    let result = app_oss::upload_attachment_with_mime(
+        path.to_string_lossy().as_ref(),
+        &token,
+        "chat",
+        bucket.as_str(),
+        visibility.as_str(),
+        chat_sid.as_deref(),
+        Some("image/png"),
+    );
+    cleanup.remove_now();
+    to_json(result)
+}
+
 /// Debug HTTP gateway: resolve session token from the legacy global session lock.
 fn http_gateway_bearer_token(state: &AppState) -> Option<String> {
     state
@@ -610,6 +716,14 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         },
 
         // =================================================================
+        // OSS (state-dependent)
+        // =================================================================
+        "oss_upload_attachment_bytes_chat" => {
+            dispatch_oss_upload_attachment_bytes_chat(args, state)
+        }
+        "oss_capture_screenshot_chat" => dispatch_oss_capture_screenshot_chat(args, state),
+
+        // =================================================================
         // Actor (state-dependent, proto-based)
         // =================================================================
         "actor_search_actors" => {
@@ -630,7 +744,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             ) {
                 Ok(r) => r,
                 Err(e) => {
-                    return to_json(e.into_app_result::<StubPayload>("Station request failed"))
+                    return to_json(e.into_app_result::<StubPayload>("Station request failed"));
                 }
             };
             let items: Vec<Value> = resp
@@ -663,7 +777,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             ) {
                 Ok(r) => r,
                 Err(e) => {
-                    return to_json(e.into_app_result::<StubPayload>("Station request failed"))
+                    return to_json(e.into_app_result::<StubPayload>("Station request failed"));
                 }
             };
             to_json(to_stub(
@@ -3385,7 +3499,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             ) {
                 Ok(r) => r,
                 Err(e) => {
-                    return to_json(e.into_app_result::<StubPayload>("Station request failed"))
+                    return to_json(e.into_app_result::<StubPayload>("Station request failed"));
                 }
             };
             let group_json = match resp.group {
@@ -3509,7 +3623,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             ) {
                 Ok(r) => r,
                 Err(e) => {
-                    return to_json(e.into_app_result::<StubPayload>("Station request failed"))
+                    return to_json(e.into_app_result::<StubPayload>("Station request failed"));
                 }
             };
             to_json(to_stub(
@@ -4280,7 +4394,7 @@ fn dispatch_friend_sync_from_station(args: Value, state: &AppState) -> Value {
                 ErrorCode::InternalError,
                 "get cursor failed",
                 Some(json!({"reason": reason})),
-            ))
+            ));
         }
     };
     let page_limit = input.limit.unwrap_or(100);
@@ -4366,7 +4480,7 @@ fn dispatch_group_sync_from_station(args: Value, state: &AppState) -> Value {
                 ErrorCode::InternalError,
                 "get cursor failed",
                 Some(json!({"reason": reason})),
-            ))
+            ));
         }
     };
     let page_limit = input.limit.unwrap_or(100);

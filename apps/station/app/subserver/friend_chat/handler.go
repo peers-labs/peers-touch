@@ -306,6 +306,9 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendMessage
 	if req.Content == "" && len(req.Attachments) == 0 && !hasEnc {
 		return nil, server.BadRequest("content or attachments are required")
 	}
+	if friendAttachmentsExposeKeyMaterial(req.Attachments) {
+		return nil, server.BadRequest("attachment encryption metadata must be carried inside encrypted_payload")
+	}
 	content := req.Content
 	if hasEnc && strings.TrimSpace(content) == "" {
 		content = "[Encrypted Message]"
@@ -1374,6 +1377,19 @@ func friendAttachmentsFromProto(in []*chat.FriendMessageAttachment) []domain.Att
 		})
 	}
 	return out
+}
+
+func friendAttachmentsExposeKeyMaterial(in []*chat.FriendMessageAttachment) bool {
+	for _, a := range in {
+		if a == nil || a.GetMediaEncryption() == nil {
+			continue
+		}
+		media := a.GetMediaEncryption()
+		if media.GetKeyB64() != "" || media.GetNonceB64() != "" || media.GetSuite() != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func friendAttachmentsToProto(in []domain.Attachment) []*chat.FriendMessageAttachment {

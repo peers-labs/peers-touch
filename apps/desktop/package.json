@@ -15,6 +15,7 @@
     "check": "pnpm run check:social-wire && pnpm run check:social-runtime-boundaries && tsc --noEmit -p tsconfig.json",
     "lint": "ESLINT_USE_FLAT_CONFIG=false eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "vitest run",
+    "test:chat-visual": "vitest run src/components/chat/chatComposerInput.test.ts",
     "test:applet": "vitest run src/applet/*.test.ts",
     "preview": "vite preview"
   },
@@ -30,6 +31,8 @@
     "@lynx-js/web-core": "^0.20.4",
     "@lynx-js/web-elements": "^0.12.2",
     "@peers-touch/applet-contract": "workspace:*",
+    "@peers-touch/client-chat-core": "workspace:*",
+    "@peers-touch/client-media-security": "workspace:*",
     "@peers-touch/client-storage": "workspace:*",
     "@peers-touch/sdk-ts": "workspace:*",
     "@peers-touch/ui-desktop": "workspace:*",
