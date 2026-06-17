@@ -448,6 +448,7 @@ const server = await createServer({
   resolve: {
     alias: {
       '@lynx-js/web-core/client': path.join(desktopNodeModules, '@lynx-js/web-core/dist/client/index.js'),
+      '@lynx-js/web-core/dist/client/mainthread/TemplateManager.js': path.join(desktopNodeModules, '@lynx-js/web-core/dist/client/mainthread/TemplateManager.js'),
       '@lynx-js/web-core': path.join(desktopNodeModules, '@lynx-js/web-core'),
       '@lynx-js/web-elements/all': path.join(desktopNodeModules, '@lynx-js/web-elements/dist/elements/all.js'),
       '@lynx-js/web-elements': path.join(desktopNodeModules, '@lynx-js/web-elements'),
