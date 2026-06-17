@@ -5,17 +5,19 @@ const MTS_PRELOAD_RETRY_COUNT = 8;
 
 type LynxTemplateManager = {
   getBundle(url: string): { lepusCode?: Record<string, string> } | undefined;
+  fetchBundle(
+    url: string,
+    lynxViewInstancePromise: Promise<LynxViewInstanceLike>,
+    transformVW: boolean,
+    transformVH: boolean,
+    transformREM: boolean,
+    overrideConfig?: Record<string, string>,
+  ): Promise<void>;
 };
 
 type LynxViewInstanceLike = {
   onMTSScriptsLoaded(currentUrl: string, isLazy: boolean): Promise<void>;
   [MTS_PRELOAD_PATCH]?: boolean;
-};
-
-type LynxViewInstanceModule = {
-  LynxViewInstance: {
-    prototype: LynxViewInstanceLike;
-  };
 };
 
 type LynxTemplateManagerModule = {
@@ -41,22 +43,33 @@ async function loadBundledRuntime(): Promise<void> {
 }
 
 async function preloadBundledRuntimeMainThread(): Promise<void> {
-  const [templateManagerModule, instanceModule] = await Promise.all([
-    import('@lynx-js/web-core/dist/client/mainthread/TemplateManager.js'),
-    import('@lynx-js/web-core/dist/client/mainthread/LynxViewInstance.js'),
-  ]) as [LynxTemplateManagerModule, LynxViewInstanceModule];
-  installMTSScriptPreloadPatch(templateManagerModule.templateManager, instanceModule.LynxViewInstance.prototype);
+  const templateManagerModule = await import('@lynx-js/web-core/dist/client/mainthread/TemplateManager.js') as LynxTemplateManagerModule;
+  installMTSScriptPreloadPatch(templateManagerModule.templateManager);
 }
 
-function installMTSScriptPreloadPatch(templateManager: LynxTemplateManager, prototype: LynxViewInstanceLike): void {
-  if (prototype[MTS_PRELOAD_PATCH]) return;
+function installMTSScriptPreloadPatch(templateManager: LynxTemplateManager): void {
+  if ((templateManager as unknown as LynxViewInstanceLike)[MTS_PRELOAD_PATCH]) return;
 
-  const originalOnMTSScriptsLoaded = prototype.onMTSScriptsLoaded;
-  prototype.onMTSScriptsLoaded = async function onMTSScriptsLoadedWithPreloadWait(currentUrl: string, isLazy: boolean) {
-    await waitForLepusRoot(templateManager, currentUrl);
-    return originalOnMTSScriptsLoaded.call(this, currentUrl, isLazy);
+  const originalFetchBundle = templateManager.fetchBundle.bind(templateManager);
+  templateManager.fetchBundle = (url, lynxViewInstancePromise, transformVW, transformVH, transformREM, overrideConfig) => {
+    const patchedInstancePromise = lynxViewInstancePromise.then((instance) => {
+      installInstanceMTSScriptPreloadPatch(templateManager, instance);
+      return instance;
+    });
+    return originalFetchBundle(url, patchedInstancePromise, transformVW, transformVH, transformREM, overrideConfig);
   };
-  prototype[MTS_PRELOAD_PATCH] = true;
+  (templateManager as unknown as LynxViewInstanceLike)[MTS_PRELOAD_PATCH] = true;
+}
+
+function installInstanceMTSScriptPreloadPatch(templateManager: LynxTemplateManager, instance: LynxViewInstanceLike): void {
+  if (instance[MTS_PRELOAD_PATCH]) return;
+
+  const originalOnMTSScriptsLoaded = instance.onMTSScriptsLoaded.bind(instance);
+  instance.onMTSScriptsLoaded = async (currentUrl, isLazy) => {
+    await waitForLepusRoot(templateManager, currentUrl);
+    return originalOnMTSScriptsLoaded(currentUrl, isLazy);
+  };
+  instance[MTS_PRELOAD_PATCH] = true;
 }
 
 async function waitForLepusRoot(templateManager: LynxTemplateManager, currentUrl: string): Promise<void> {
