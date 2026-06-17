@@ -1,9 +1,28 @@
 let runtimeReady: Promise<void> | null = null;
 
+const MTS_PRELOAD_PATCH = Symbol.for('peers-touch.lynx-web-runtime.mts-preload-patch');
+const MTS_PRELOAD_RETRY_COUNT = 8;
+
+type LynxTemplateManager = {
+  getBundle(url: string): { lepusCode?: Record<string, string> } | undefined;
+};
+
+type LynxViewInstanceLike = {
+  onMTSScriptsLoaded(currentUrl: string, isLazy: boolean): Promise<void>;
+  [MTS_PRELOAD_PATCH]?: boolean;
+};
+
+type LynxViewInstanceModule = {
+  LynxViewInstance: {
+    prototype: LynxViewInstanceLike;
+  };
+};
+
+type LynxTemplateManagerModule = {
+  templateManager: LynxTemplateManager;
+};
+
 export function ensureLynxWebRuntime(): Promise<void> {
-  if (customElements.get('lynx-view')) {
-    return Promise.resolve();
-  }
   if (runtimeReady) {
     return runtimeReady;
   }
@@ -15,7 +34,38 @@ export function ensureLynxWebRuntime(): Promise<void> {
 }
 
 async function loadBundledRuntime(): Promise<void> {
-  await import('@lynx-js/web-core/client');
+  if (!customElements.get('lynx-view')) {
+    await import('@lynx-js/web-core/client');
+  }
+  await preloadBundledRuntimeMainThread();
+}
+
+async function preloadBundledRuntimeMainThread(): Promise<void> {
+  const [templateManagerModule, instanceModule] = await Promise.all([
+    import('@lynx-js/web-core/dist/client/mainthread/TemplateManager.js'),
+    import('@lynx-js/web-core/dist/client/mainthread/LynxViewInstance.js'),
+  ]) as [LynxTemplateManagerModule, LynxViewInstanceModule];
+  installMTSScriptPreloadPatch(templateManagerModule.templateManager, instanceModule.LynxViewInstance.prototype);
+}
+
+function installMTSScriptPreloadPatch(templateManager: LynxTemplateManager, prototype: LynxViewInstanceLike): void {
+  if (prototype[MTS_PRELOAD_PATCH]) return;
+
+  const originalOnMTSScriptsLoaded = prototype.onMTSScriptsLoaded;
+  prototype.onMTSScriptsLoaded = async function onMTSScriptsLoadedWithPreloadWait(currentUrl: string, isLazy: boolean) {
+    await waitForLepusRoot(templateManager, currentUrl);
+    return originalOnMTSScriptsLoaded.call(this, currentUrl, isLazy);
+  };
+  prototype[MTS_PRELOAD_PATCH] = true;
+}
+
+async function waitForLepusRoot(templateManager: LynxTemplateManager, currentUrl: string): Promise<void> {
+  for (let attempt = 0; attempt < MTS_PRELOAD_RETRY_COUNT; attempt += 1) {
+    const lepusCode = templateManager.getBundle(currentUrl)?.lepusCode;
+    if (lepusCode?.root) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error(`Lynx Web runtime did not expose a main-thread root script for ${currentUrl}`);
 }
 
 function loadPackagedRuntime(): Promise<void> {
