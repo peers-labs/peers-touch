@@ -2,6 +2,7 @@ package com.peerstouch.mobile.core.applet
 
 import com.peerstouch.mobile.core.lynx.bridge.BridgeDispatcher
 import com.peerstouch.mobile.core.lynx.bridge.BridgeResult
+import com.peerstouch.mobile.core.lynx.bridge.MANIFEST_SERVICES_PARAM
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -37,7 +38,7 @@ class AppletBridgeSession(
                 "Applet ${manifest.id} lacks permission for capability: $api"
             )
         }
-        return bridgeDispatcher.invoke(module, method, params)
+        return bridgeDispatcher.invoke(module, method, withManifestContext(api, params))
     }
 
     suspend fun dispatch(api: String, params: Map<String, Any?>): BridgeResult {
@@ -57,7 +58,12 @@ class AppletBridgeSession(
                 )
             }
         }
-        return bridgeDispatcher.invoke(api, params)
+        return bridgeDispatcher.invoke(api, withManifestContext(api, params))
+    }
+
+    private fun withManifestContext(api: String, params: Map<String, Any?>): Map<String, Any?> {
+        if (api != "network.request") return params
+        return params + (MANIFEST_SERVICES_PARAM to manifest.services)
     }
 
     private fun hasPermission(module: String, api: String): Boolean =
