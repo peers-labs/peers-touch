@@ -5,6 +5,8 @@
   "applet.page.recent": "最近使用",
   "applet.page.mine": "我的应用",
   "applet.page.manage": "管理操作在应用内进行",
+  "applet.page.launcherTitle": "打开一个应用",
+  "applet.page.launcherDescription": "通过图标和名称识别应用，运行与管理操作进入应用后处理。",
 
   "applet.card.active": "已启用",
   "applet.card.inactive": "未启用",
