@@ -1,20 +1,27 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { useSessionStore } from '../store/session';
 import { useOAuth2Store } from '../store/oauth2';
+import { useAccountIdentityStore } from '../store/accountIdentity';
+import { EVENT, eventBus } from '../kernel/events';
 import { globalContext } from '../kernel/global-context';
-import { api } from '../services/desktop_api';
-import { onSessionRevoked } from '../services/desktop_api';
+import {
+  DEFAULT_IDENTITY_POLICY,
+  identityPhaseAllowsReady,
+  identityPhaseNeedsAuthGate,
+  identityReducer,
+  shouldResolveSessionOnBoot,
+  type IdentityAuthGateReason,
+  type IdentityBootReason,
+  type IdentityPhase,
+} from '../kernel/identityLifecycle';
+import { markPhaseEnd, markPhaseStart } from '../kernel/boot';
+import { api, AuthCommandException, onSessionRevoked } from '../services/desktop_api';
 import { removeDesktopPreferenceSync } from '../storage/desktopClientStorage';
 import type { AccountIdentity, AppletProductWindowLaunchContext } from '../services/desktop_api';
 import type { AppLifecycle, AppState, SessionUser } from '../types/navigation';
 
-// Warm-resume / auto-login on launch is intentionally disabled.
-// Project policy: every launch (including dev-dual where two windows boot
-// simultaneously) MUST land on the account picker. Even with a single known
-// account the user explicitly selects it. This keeps multi-account isolation
-// observable and prevents two windows in dev-dual from silently materialising
-// as the same identity from a shared on-disk session blob.
 const WARM_RESUME_KEY = 'pt.auth.lastActiveAt';
+const RENDERER_AUTH_MARKER_KEY = 'pt.identity.rendererAuthenticated';
 
 /** Clear any leftover warm-resume marker (legacy installs). */
 export function clearWarmResume(): void {
@@ -22,6 +29,32 @@ export function clearWarmResume(): void {
     removeDesktopPreferenceSync(WARM_RESUME_KEY);
   } catch {
     // noop
+  }
+}
+
+function readRendererBootReason(): IdentityBootReason {
+  try {
+    return window.sessionStorage.getItem(RENDERER_AUTH_MARKER_KEY) === '1'
+      ? 'renderer_reload'
+      : 'cold_launch';
+  } catch {
+    return 'cold_launch';
+  }
+}
+
+function markRendererAuthenticated(): void {
+  try {
+    window.sessionStorage.setItem(RENDERER_AUTH_MARKER_KEY, '1');
+  } catch {
+    // sessionStorage may be unavailable in test shells.
+  }
+}
+
+function clearRendererAuthenticated(): void {
+  try {
+    window.sessionStorage.removeItem(RENDERER_AUTH_MARKER_KEY);
+  } catch {
+    // sessionStorage may be unavailable in test shells.
   }
 }
 
@@ -37,6 +70,18 @@ function accountToSessionUser(account: AccountIdentity): SessionUser {
   };
 }
 
+async function loadKnownAccountUsers(sessionAuthenticated: boolean): Promise<SessionUser[]> {
+  const accounts = await api.accountListRestorable();
+  if (!Array.isArray(accounts) || accounts.length === 0) return [];
+  const mapped = accounts.map(accountToSessionUser);
+  if (!sessionAuthenticated) {
+    mapped.forEach((account) => {
+      if (!account.hasPin) account.hasSession = false;
+    });
+  }
+  return mapped;
+}
+
 function appletLaunchContextToSessionUser(context: AppletProductWindowLaunchContext): SessionUser {
   const actorId = context.actorId || 'applet-product-window-certification';
   return {
@@ -47,6 +92,35 @@ function appletLaunchContextToSessionUser(context: AppletProductWindowLaunchCont
     hasSession: true,
     provider: context.loginMethod || 'product-window-certification',
   };
+}
+
+function currentSessionUser(): SessionUser | null {
+  const current = useSessionStore.getState().currentUser;
+  if (!current?.actorId) return null;
+  return {
+    name: current.name || current.actorId,
+    email: current.email || '',
+    avatar: current.avatarUrl,
+    hasSession: true,
+    provider: current.loginProvider || current.loginMethod,
+  };
+}
+
+function appStateFromIdentity(phase: IdentityPhase): AppState {
+  if (identityPhaseAllowsReady(phase)) return 'ready';
+  if (phase.kind === 'resolvingSession') return 'resuming';
+  return 'onboarding';
+}
+
+function classifyRestoreFailure(error: unknown): IdentityAuthGateReason {
+  if (error instanceof AuthCommandException && error.code === 'UNAUTHORIZED') {
+    const details = error.details as { reason?: string } | undefined;
+    if (details?.reason === 'pin_required') return 'pin_required';
+    if (details?.reason === 'session_missing' || details?.reason === 'token_missing') {
+      return 'session_missing';
+    }
+  }
+  return 'restore_failed';
 }
 
 function activateAppletProductWindowLaunch(context: AppletProductWindowLaunchContext): boolean {
@@ -68,112 +142,157 @@ function activateAppletProductWindowLaunch(context: AppletProductWindowLaunchCon
   return true;
 }
 
+export function lifecycleNeedsSessionRevalidation(state: AppState, authenticated: boolean): boolean {
+  return state === 'ready' && !authenticated;
+}
+
 export function useAppLifecycle(): AppLifecycle {
-  // Always start at 'onboarding' — auto-login is forbidden by policy.
-  const [state, setState] = useState<AppState>('onboarding');
+  const initialBootReasonRef = useRef<IdentityBootReason>(readRendererBootReason());
+  const [identityPhase, dispatchIdentity] = useReducer(identityReducer, {
+    kind: 'booting',
+    reason: initialBootReasonRef.current,
+  } satisfies IdentityPhase);
+  const state = appStateFromIdentity(identityPhase);
   const [restoredUser, setRestoredUser] = useState<SessionUser | null>(null);
   const [knownAccounts, setKnownAccounts] = useState<SessionUser[]>([]);
   const [dataReady, setDataReady] = useState(false);
+  const sessionAuthenticated = useSessionStore((s) => s.authenticated);
+  const revalidatingSessionRef = useRef(false);
+  const bootStartedRef = useRef(false);
+
+  const loadAuthGate = useCallback(async (
+    reason: IdentityAuthGateReason,
+    runLogoutPipeline: boolean,
+  ) => {
+    clearWarmResume();
+    clearRendererAuthenticated();
+    setRestoredUser(null);
+    dispatchIdentity({ type: 'ACCOUNT_GATE_READY', reason });
+    if (runLogoutPipeline) {
+      globalContext.runPipeline('session_logout').catch(() => {});
+    }
+    const oauth2 = useOAuth2Store.getState();
+    const [, restorableAccounts] = await Promise.all([
+      oauth2.loadAll().catch(() => {}),
+      loadKnownAccountUsers(false).catch(() => [] as SessionUser[]),
+    ]);
+    setKnownAccounts(restorableAccounts);
+    setDataReady(true);
+  }, []);
+
+  const resolveSession = useCallback(async (source: 'live' | 'disk' | 'applet') => {
+    dispatchIdentity({ type: 'SESSION_RESOLVE_STARTED', source });
+    try {
+      await useSessionStore.getState().restoreSession();
+      const user = currentSessionUser();
+      if (!user) {
+        await loadAuthGate('session_missing', false);
+        return;
+      }
+      markRendererAuthenticated();
+      setRestoredUser(user);
+      setKnownAccounts([user]);
+      setDataReady(true);
+      dispatchIdentity({ type: 'SESSION_RESTORED', source: 'restore', user });
+    } catch (error) {
+      await loadAuthGate(classifyRestoreFailure(error), false);
+    }
+  }, [loadAuthGate]);
 
   useEffect(() => {
-    // Drop any legacy warm-resume marker so older clients converge on the
-    // new "always show picker" policy on first launch.
     clearWarmResume();
     globalContext.bootstrap().catch(() => {});
   }, []);
 
-  // Global auth guard: if the backend revokes/expires the session, exit to onboarding.
   useEffect(() => {
     const off = onSessionRevoked(() => {
-      clearWarmResume();
-      globalContext.runPipeline('session_logout').catch(() => {});
-      setRestoredUser(null);
-      setState('onboarding');
+      dispatchIdentity({ type: 'SESSION_REVOKED', reason: 'revoked' });
+      loadAuthGate('revoked', true).catch(() => {});
     });
-    const unsub = useSessionStore.subscribe((s) => {
-      if (!s.authenticated) {
-        clearWarmResume();
-        setRestoredUser(null);
-        setState('onboarding');
-      }
+    return off;
+  }, [loadAuthGate]);
+
+  useEffect(() => {
+    if (!lifecycleNeedsSessionRevalidation(state, sessionAuthenticated)) return;
+    if (revalidatingSessionRef.current) return;
+
+    revalidatingSessionRef.current = true;
+    resolveSession('live').finally(() => {
+      revalidatingSessionRef.current = false;
     });
-    return () => {
-      off();
-      unsub();
+  }, [resolveSession, sessionAuthenticated, state]);
+
+  useEffect(() => {
+    if (!identityPhaseNeedsAuthGate(identityPhase)) return;
+    let cancelled = false;
+    const refreshKnownAccounts = () => {
+      const { authenticated } = useSessionStore.getState();
+      loadKnownAccountUsers(authenticated).then((accounts) => {
+        if (!cancelled) setKnownAccounts(accounts);
+      }).catch(() => {
+        if (!cancelled) setKnownAccounts([]);
+      });
     };
-  }, []);
-
-  // Re-fetch account list whenever we land on onboarding so the account
-  // picker always reflects the latest identities.json data (names, avatars).
-  useEffect(() => {
-    if (state !== 'onboarding') return;
-    api.accountListRestorable().then((accounts) => {
-      if (Array.isArray(accounts) && accounts.length > 0) {
-        const mapped = accounts.map(accountToSessionUser);
-        const { authenticated } = useSessionStore.getState();
-        // Non-PIN accounts share a single session.json; when the active session
-        // is gone, their token shadows are also gone. PIN-protected accounts
-        // each have their own per-account encrypted_session that is independent
-        // from the in-memory session, so keep their hasSession flag intact.
-        if (!authenticated) {
-          mapped.forEach(a => { if (!a.hasPin) a.hasSession = false; });
-        }
-        setKnownAccounts(mapped);
-      } else {
-        setKnownAccounts([]);
-      }
-    }).catch(() => {});
-  }, [state]);
+    refreshKnownAccounts();
+    const unsubscribeIdentity = eventBus.subscribe(EVENT.AUTH_IDENTITY_CHANGED, refreshKnownAccounts);
+    return () => {
+      cancelled = true;
+      unsubscribeIdentity();
+    };
+  }, [identityPhase]);
 
   useEffect(() => {
-    if (state === 'ready') {
+    if (identityPhaseAllowsReady(identityPhase)) {
       globalContext.setRuntimeAppState('ready');
     } else {
       globalContext.setRuntimeAppState('booting');
     }
-  }, [state]);
+  }, [identityPhase]);
 
   useEffect(() => {
-    // On launch, do NOT auto-restore the in-memory session. We only need the
-    // OAuth2 connections (for the picker UI) and the on-disk identities list
-    // so the user can choose an account explicitly.
-    const oauth2 = useOAuth2Store.getState();
+    if (bootStartedRef.current) return;
+    bootStartedRef.current = true;
+    const bootReason = initialBootReasonRef.current;
+    dispatchIdentity({ type: 'BOOT_STARTED', reason: bootReason });
+    dispatchIdentity({ type: 'LAUNCH_CONTEXT_CHECK_STARTED' });
+    markPhaseStart('identity');
 
     api.appletsProductWindowLaunchContext().catch(() => ({ enabled: false })).then((context) => {
       if (activateAppletProductWindowLaunch(context)) {
         const launchUser = appletLaunchContextToSessionUser(context);
+        markRendererAuthenticated();
         setRestoredUser(launchUser);
         setKnownAccounts([launchUser]);
         setDataReady(true);
-        setState('ready');
+        dispatchIdentity({ type: 'APPLET_LAUNCH_AUTHENTICATED', user: launchUser });
+        markPhaseEnd('identity', { state: 'authenticated', reason: 'applet_launch' });
         return;
       }
 
-      return Promise.all([
-        oauth2.loadAll().catch(() => {}),
-        api.accountListRestorable().catch(() => [] as AccountIdentity[]),
-      ]).then(([, restorableAccounts]) => {
-      // Load all accounts that have restorable sessions. Since the in-memory
-      // session was intentionally NOT restored, treat all non-PIN accounts as
-      // having no live session (they share the global session.json and we
-      // refuse to silently adopt it). PIN-protected accounts keep their flag
-      // because their encrypted_session is independent and unlock requires
-      // explicit PIN entry by the user.
-        if (Array.isArray(restorableAccounts) && restorableAccounts.length > 0) {
-          const accounts = restorableAccounts.map(accountToSessionUser);
-          accounts.forEach(a => { if (!a.hasPin) a.hasSession = false; });
-          setKnownAccounts(accounts);
-        }
+      if (shouldResolveSessionOnBoot(bootReason, DEFAULT_IDENTITY_POLICY)) {
+        return resolveSession('live').finally(() => {
+          markPhaseEnd('identity', {
+            state: useSessionStore.getState().authenticated ? 'authenticated' : 'accountGate',
+            reason: bootReason,
+          });
+        });
+      }
 
-        setDataReady(true);
+      return loadAuthGate('cold_policy', false).finally(() => {
+        markPhaseEnd('identity', { state: 'accountGate', reason: bootReason });
       });
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loadAuthGate, resolveSession]);
 
   const completeLogin = useCallback(() => {
-    // Guard: never enter ready state without a valid authenticated session
     const { authenticated } = useSessionStore.getState();
     if (!authenticated) return;
+    const user = currentSessionUser();
+    if (!user) return;
+
+    markRendererAuthenticated();
+    setRestoredUser(user);
+    dispatchIdentity({ type: 'LOGIN_SUCCEEDED', user });
 
     useOAuth2Store.getState().loadAll().catch(() => {});
 
@@ -183,9 +302,16 @@ export function useAppLifecycle(): AppLifecycle {
       if (result?.avatar_url) {
         useSessionStore.getState().updateAvatar(result.avatar_url);
       }
+      return useAccountIdentityStore.getState().load();
     }).catch(() => {});
-    setState('ready');
   }, []);
 
-  return { state, restoredUser, knownAccounts, dataReady, completeLogin };
+  return {
+    state,
+    authenticated: identityPhaseAllowsReady(identityPhase),
+    restoredUser,
+    knownAccounts,
+    dataReady,
+    completeLogin,
+  };
 }

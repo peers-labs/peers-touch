@@ -18,6 +18,8 @@ import {
   FolderOpen,
   Image,
   Loader2,
+  Maximize2,
+  Minimize2,
   Mic,
   RotateCcw,
   Scissors,
@@ -49,6 +51,10 @@ import {
 } from './composer/useChatAttachmentDrafts';
 import { useChatScreenshotCapture } from './composer/useChatScreenshotCapture';
 import { useChatVoiceRecorder } from './composer/useChatVoiceRecorder';
+import { useSettingsStore } from '../../store/settings';
+import { formatChatScreenshotShortcut } from '../../utils/chatScreenshotShortcut';
+import { formatMediaDurationSeconds } from '../../utils/mediaDisplay';
+import { uploadChatAttachmentFile } from '../../services/chatAttachments';
 
 export type { ChatComposerCapabilities } from '@peers-touch/client-chat-core';
 
@@ -141,7 +147,10 @@ export function ChatComposer({
   const lastCompositionEndRef = useRef(0);
   const [dragging, setDragging] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [inputExpanded, setInputExpanded] = useState(false);
+  const [voiceSending, setVoiceSending] = useState(false);
   const [recentEmojis, setRecentEmojis] = useState<string[]>(() => loadRecentEmojis());
+  const screenshotShortcut = useSettingsStore((state) => state.chatScreenshotShortcut);
   const activeCapabilities = resolveChatComposerCapabilities(
     CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN,
     capabilities,
@@ -165,29 +174,56 @@ export function ChatComposer({
     fallbackName: t('chat.social.composer.attachmentFallbackName'),
     onUploadFailed: () => toast.error(t('chat.social.composer.uploadFailed')),
   });
+  const sendRecordedVoice = async (file: File) => {
+    if (disabled || editing || sending || voiceSending) return;
+    setVoiceSending(true);
+    try {
+      const attachment = await uploadChatAttachmentFile({ conversationId: activeConversationId }, file);
+      await onSend({
+        text: '',
+        attachments: [attachment],
+        messageType: chatMessageTypeForAttachments([attachment]),
+      });
+    } catch (error) {
+      log.error('chat', 'voice message send failed', error);
+      toast.error(t('chat.social.composer.voiceSendFailed'));
+    } finally {
+      setVoiceSending(false);
+    }
+  };
+
   const {
     recording,
     recordingSeconds,
     startRecording,
     stopRecording,
   } = useChatVoiceRecorder({
-    disabled,
+    disabled: disabled || sending || voiceSending,
     editing,
-    addFiles,
+    onRecorded: (file) => {
+      sendRecordedVoice(file).catch((error) => {
+        log.error('chat', 'voice message send task failed', error);
+      });
+    },
     onDenied: () => toast.error(t('chat.social.composer.voiceDenied')),
     onUnsupported: () => toast.error(t('chat.social.composer.voiceUnsupported')),
   });
-  const { captureScreenshot } = useChatScreenshotCapture({
+  const { captureScreenshot, capturing } = useChatScreenshotCapture({
     conversationId: activeConversationId,
     disabled,
     editing,
     enabled: activeCapabilities.screenshot,
     onCaptured: appendReadyAttachment,
-    onFailed: () => toast.error(t('chat.social.composer.screenshotFailed')),
+    onFailed: (reason) => toast.error(
+      reason === 'capture_permission_or_display_failed'
+        ? t('chat.social.composer.screenshotPermissionFailed')
+        : t('chat.social.composer.screenshotFailed'),
+    ),
   });
 
   const canSend = !disabled
     && !sending
+    && !voiceSending
     && !uploading
     && !failed
     && canSubmitChatComposerDraft({
@@ -205,6 +241,7 @@ export function ChatComposer({
 
   useEffect(() => {
     setEmojiOpen(false);
+    setInputExpanded(false);
   }, [activeConversationId]);
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -260,6 +297,7 @@ export function ChatComposer({
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(start + emoji.length, start + emoji.length);
     });
+    setEmojiOpen(false);
   };
 
   const emojiPanel = (
@@ -363,6 +401,32 @@ export function ChatComposer({
     return <Icon size={15} />;
   };
 
+  const renderDraftLabels = (item: ChatDraftAttachment) => {
+    const kind = chatMediaKindFromMimeFilename(item.mimeType, item.name);
+    const durationLabel = formatMediaDurationSeconds(item.durationSeconds);
+    const sizeLabel = formatChatAttachmentSize(item.size);
+    if (kind === 'image') {
+      return {
+        primary: t('chat.social.messageArea.attachmentTypeImage'),
+        secondary: sizeLabel,
+      };
+    }
+    if (kind === 'audio') {
+      return {
+        primary: t('chat.social.messageArea.attachmentTypeAudio'),
+        secondary: durationLabel || sizeLabel,
+      };
+    }
+    return {
+      primary: item.name,
+      secondary: sizeLabel,
+    };
+  };
+
+  const handleToggleInputExpanded = () => {
+    setInputExpanded((expanded) => !expanded);
+  };
+
   const banner = useMemo(() => {
     if (editing) {
       return {
@@ -380,6 +444,10 @@ export function ChatComposer({
     }
     return null;
   }, [editPreview, editing, onCancelEdit, onCancelReply, replyPreview, replyPreviewKey, t, value]);
+  const inputMinHeight = inputExpanded
+    ? visualLayout.composerInputExpandedMinHeight
+    : visualLayout.composerInputMinHeight;
+  const inputMaxHeight = inputExpanded ? visualLayout.composerInputExpandedMaxHeight : 180;
 
   return (
     <Flexbox
@@ -461,7 +529,9 @@ export function ChatComposer({
       >
         {drafts.length > 0 && (
           <Flexbox horizontal gap={8} style={{ padding: '8px 10px 0', overflowX: 'auto' }}>
-            {drafts.map((item) => (
+            {drafts.map((item) => {
+              const labels = renderDraftLabels(item);
+              return (
               <Flexbox
                 key={item.id}
                 gap={6}
@@ -495,8 +565,10 @@ export function ChatComposer({
                 </Flexbox>
                 <Flexbox horizontal align="center" justify="space-between" gap={4}>
                   <Flexbox style={{ minWidth: 0, flex: 1 }}>
-                    <Text ellipsis style={{ fontSize: 11 }}>{item.name}</Text>
-                    <Text type="secondary" style={{ fontSize: 10 }}>{formatChatAttachmentSize(item.size)}</Text>
+                    <Text ellipsis style={{ fontSize: 11 }}>{labels.primary}</Text>
+                    {labels.secondary && (
+                      <Text type="secondary" style={{ fontSize: 10 }}>{labels.secondary}</Text>
+                    )}
                   </Flexbox>
                   {item.status === 'failed' && (
                     <Tooltip title={t('chat.social.composer.retryUpload')}>
@@ -509,7 +581,8 @@ export function ChatComposer({
                 </Flexbox>
                 {item.status === 'uploading' && <Progress percent={55} showInfo={false} size="small" status="active" />}
               </Flexbox>
-            ))}
+              );
+            })}
           </Flexbox>
         )}
 
@@ -535,7 +608,7 @@ export function ChatComposer({
         <textarea
           ref={textareaRef}
           value={value}
-          disabled={disabled || sending || recording}
+          disabled={disabled || sending || recording || voiceSending}
           rows={3}
           onChange={(event) => onChange(event.target.value)}
           onCompositionStart={() => {
@@ -551,8 +624,8 @@ export function ChatComposer({
           placeholder={placeholder ?? t('chat.social.messageArea.placeholder')}
           style={{
             width: '100%',
-            minHeight: visualLayout.composerInputMinHeight,
-            maxHeight: 180,
+            minHeight: inputMinHeight,
+            maxHeight: inputMaxHeight,
             resize: 'none',
             border: 0,
             outline: 'none',
@@ -563,6 +636,8 @@ export function ChatComposer({
             caretColor: token.colorPrimary,
             font: 'inherit',
             lineHeight: 1.55,
+            overflowY: 'auto',
+            transition: 'min-height 0.18s ease, max-height 0.18s ease',
           }}
         />
 
@@ -611,19 +686,19 @@ export function ChatComposer({
                   icon={<FolderOpen size={20} />}
                   aria-label={t('chat.social.composer.file')}
                   onClick={handlePickAttachment}
-                  disabled={disabled || editing || recording}
+                  disabled={disabled || editing || recording || voiceSending}
                   style={toolButtonStyle}
                 />
               </Tooltip>
             )}
             {activeCapabilities.screenshot && (
-              <Tooltip title={t('chat.social.composer.screenshot')}>
+              <Tooltip title={t('chat.social.composer.screenshot', { shortcut: formatChatScreenshotShortcut(screenshotShortcut) })}>
                 <Button
                   type="text"
-                  icon={<Scissors size={20} />}
-                  aria-label={t('chat.social.composer.screenshot')}
+                  icon={capturing ? <Loader2 size={20} className="chat-composer-spin" /> : <Scissors size={20} />}
+                  aria-label={t('chat.social.composer.screenshot', { shortcut: formatChatScreenshotShortcut(screenshotShortcut) })}
                   onClick={captureScreenshot}
-                  disabled={disabled || editing || recording}
+                  disabled={disabled || editing || recording || capturing || voiceSending}
                   style={toolButtonStyle}
                 />
               </Tooltip>
@@ -632,10 +707,10 @@ export function ChatComposer({
               <Tooltip title={recording ? t('chat.social.composer.recordingTooltip') : t('chat.social.composer.voice')}>
                 <Button
                   type="text"
-                  icon={<Mic size={20} />}
+                  icon={voiceSending ? <Loader2 size={20} className="chat-composer-spin" /> : <Mic size={20} />}
                   aria-label={t('chat.social.composer.voice')}
                   onClick={recording ? () => stopRecording(false) : startRecording}
-                  disabled={disabled || editing}
+                  disabled={disabled || editing || voiceSending}
                   style={{ ...toolButtonStyle, color: recording ? token.colorError : token.colorTextSecondary }}
                 />
               </Tooltip>
@@ -643,7 +718,18 @@ export function ChatComposer({
           </Flexbox>
 
           <Flexbox horizontal align="center" gap={8}>
-            {uploading && (
+            <Tooltip title={inputExpanded ? t('chat.social.composer.collapseInput') : t('chat.social.composer.expandInput')}>
+              <Button
+                type="text"
+                icon={inputExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                aria-label={inputExpanded ? t('chat.social.composer.collapseInput') : t('chat.social.composer.expandInput')}
+                aria-pressed={inputExpanded}
+                onClick={handleToggleInputExpanded}
+                disabled={disabled}
+                style={toolButtonStyle}
+              />
+            </Tooltip>
+            {(uploading || voiceSending) && (
               <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>
                 {t('chat.social.composer.uploading')}
               </Text>

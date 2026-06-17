@@ -37,6 +37,8 @@
 
 use std::io::{Read, Write};
 use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -358,24 +360,40 @@ pub fn oss_upload_attachment_bytes_chat(
 pub(crate) fn capture_screenshot_to_temp_file() -> Result<std::path::PathBuf, AppResult<StubPayload>>
 {
     let path = std::env::temp_dir().join(format!("peers-chat-screenshot-{}.png", Ulid::new()));
-    let status = std::process::Command::new("screencapture")
+    let output = std::process::Command::new("screencapture")
         .arg("-i")
         .arg("-x")
         .arg(&path)
-        .status()
+        .output()
         .map_err(|error| {
             AppResult::fail(
                 ErrorCode::InternalError,
                 format!("start screenshot tool: {error}"),
-                None,
+                Some(serde_json::json!({ "reason": "command_start_failed" })),
             )
         })?;
 
-    if !status.success() {
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let reason = if stderr.contains("could not create image from display")
+            || stderr.to_ascii_lowercase().contains("screen")
+        {
+            "capture_permission_or_display_failed"
+        } else {
+            "capture_cancelled_or_failed"
+        };
         return Err(AppResult::fail(
             ErrorCode::InvalidArgument,
-            "screenshot cancelled",
-            None,
+            if stderr.is_empty() {
+                "screenshot capture failed".to_string()
+            } else {
+                format!("screenshot capture failed: {stderr}")
+            },
+            Some(serde_json::json!({
+                "reason": reason,
+                "exit_code": output.status.code(),
+                "stderr": stderr,
+            })),
         ));
     }
 
@@ -383,10 +401,44 @@ pub(crate) fn capture_screenshot_to_temp_file() -> Result<std::path::PathBuf, Ap
         Ok(meta) if meta.len() > 0 => Ok(path),
         _ => Err(AppResult::fail(
             ErrorCode::InvalidArgument,
-            "screenshot cancelled",
-            None,
+            "screenshot produced no image",
+            Some(serde_json::json!({ "reason": "empty_output" })),
         )),
     }
+}
+
+#[cfg(target_os = "macos")]
+fn capture_screenshot_with_window_hidden(
+    window: &Window,
+) -> Result<std::path::PathBuf, AppResult<StubPayload>> {
+    let was_visible = window.is_visible().unwrap_or(true);
+    if was_visible {
+        if let Err(error) = window.hide() {
+            tracing::warn!(error = %error, "Failed to hide window before screenshot capture");
+        }
+        thread::sleep(Duration::from_millis(180));
+    }
+
+    let result = capture_screenshot_to_temp_file();
+
+    if was_visible {
+        if let Err(error) = window.show() {
+            tracing::warn!(error = %error, "Failed to restore window after screenshot capture");
+        }
+        if let Err(error) = window.set_focus() {
+            tracing::warn!(error = %error, "Failed to focus window after screenshot capture");
+        }
+    }
+
+    result
+}
+
+#[cfg(not(target_os = "macos"))]
+fn capture_screenshot_with_window_hidden(
+    window: &Window,
+) -> Result<std::path::PathBuf, AppResult<StubPayload>> {
+    let _ = window;
+    capture_screenshot_to_temp_file()
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -419,7 +471,7 @@ pub fn oss_capture_screenshot_chat(
         Err(error) => return error,
     };
 
-    let path = match capture_screenshot_to_temp_file() {
+    let path = match capture_screenshot_with_window_hidden(&window) {
         Ok(path) => path,
         Err(error) => return error,
     };
@@ -828,7 +880,8 @@ pub fn oss_upload_encrypted_attachment_social(
             )
         }
     };
-    let cleanup = application_oss::TempFileCleanup::new(temp_path.clone(), "encrypted social attachment");
+    let cleanup =
+        application_oss::TempFileCleanup::new(temp_path.clone(), "encrypted social attachment");
     let mut plaintext_hasher = Sha256::new();
     let mut ciphertext_hasher = Sha256::new();
     let mut ciphertext_size: u64 = 0;

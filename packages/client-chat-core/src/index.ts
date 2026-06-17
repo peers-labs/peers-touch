@@ -185,6 +185,14 @@ export interface ChatThreadSurfaceOptions<T extends ChatMessageLike> {
   readonly loadedThreadMessages: readonly T[];
 }
 
+export interface ChatThreadPreviewOptions<T extends ChatMessageLike> {
+  readonly rootUlid: string;
+  readonly currentMessages: readonly T[];
+  readonly loadedThreadMessages?: readonly T[];
+  readonly resolveTimestampMs: (message: T) => number;
+  readonly limit?: number;
+}
+
 export interface ChatThreadSurface<T extends ChatMessageLike> {
   readonly rootMessage: T | null;
   readonly replies: T[];
@@ -287,6 +295,8 @@ export interface ChatVisualLayoutContract {
   readonly composerShellRadius: number;
   readonly composerShellShadow: string;
   readonly composerInputMinHeight: number;
+  readonly composerInputExpandedMinHeight: string;
+  readonly composerInputExpandedMaxHeight: string;
   readonly composerToolButtonSize: number;
   readonly composerHasAttachmentTools: boolean;
 }
@@ -370,7 +380,6 @@ export const CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN: ResolvedChatComposerCapabi
 
 export const CHAT_COMPOSER_CAPABILITIES_DESKTOP_THREAD: ResolvedChatComposerCapabilities = {
   ...CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN,
-  screenshot: false,
 };
 
 export const CHAT_COMPOSER_CAPABILITIES_MOBILE_MAIN: ResolvedChatComposerCapabilities = {
@@ -382,6 +391,8 @@ export const CHAT_COMPOSER_CAPABILITIES_MOBILE_MAIN: ResolvedChatComposerCapabil
 export const CHAT_COMPOSER_CAPABILITIES_MOBILE_THREAD: ResolvedChatComposerCapabilities = {
   ...CHAT_COMPOSER_CAPABILITIES_MOBILE_MAIN,
 };
+
+export const CHAT_THREAD_ROOT_PREVIEW_LIMIT = 10;
 
 export const CHAT_VISUAL_LAYOUT_DESKTOP_MAIN: ChatVisualLayoutContract = {
   surface: 'desktop-main',
@@ -402,6 +413,8 @@ export const CHAT_VISUAL_LAYOUT_DESKTOP_MAIN: ChatVisualLayoutContract = {
   composerShellRadius: 8,
   composerShellShadow: '0 12px 34px rgba(15, 23, 42, 0.10)',
   composerInputMinHeight: 82,
+  composerInputExpandedMinHeight: 'min(360px, 44vh)',
+  composerInputExpandedMaxHeight: 'min(520px, 58vh)',
   composerToolButtonSize: 32,
   composerHasAttachmentTools: true,
 };
@@ -439,6 +452,8 @@ export const CHAT_VISUAL_LAYOUT_MOBILE_MAIN: ChatVisualLayoutContract = {
   composerShellRadius: 12,
   composerShellShadow: '0 -8px 26px rgba(15, 23, 42, 0.08)',
   composerInputMinHeight: 38,
+  composerInputExpandedMinHeight: 'min(280px, 42vh)',
+  composerInputExpandedMaxHeight: 'min(420px, 56vh)',
   composerToolButtonSize: 40,
   composerHasAttachmentTools: false,
 };
@@ -523,6 +538,8 @@ export function chatVisualCssVars(layout: ChatVisualLayoutContract): Record<stri
     '--chat-composer-radius': `${layout.composerShellRadius}px`,
     '--chat-composer-shadow': layout.composerShellShadow,
     '--chat-composer-input-min-height': `${layout.composerInputMinHeight}px`,
+    '--chat-composer-input-expanded-min-height': layout.composerInputExpandedMinHeight,
+    '--chat-composer-input-expanded-max-height': layout.composerInputExpandedMaxHeight,
     '--chat-composer-tool-button-size': `${layout.composerToolButtonSize}px`,
   };
 }
@@ -825,7 +842,11 @@ export function messageReplyToUlid(message: ChatMessageLike): string {
 }
 
 export function messageThreadRootUlid(message: ChatMessageLike): string {
-  return message.threadRootUlid || messageReplyToUlid(message);
+  return message.threadRootUlid ?? '';
+}
+
+export function isExplicitChatThreadReply(message: ChatMessageLike): boolean {
+  return Boolean(messageThreadRootUlid(message));
 }
 
 export function isRecalledChatMessage(message: ChatMessageLike): boolean {
@@ -922,6 +943,39 @@ export function countChatThreadReplies<T extends ChatMessageLike>(
 ): number {
   if (!rootUlid) return 0;
   return messages.filter((message) => messageThreadRootUlid(message) === rootUlid).length;
+}
+
+export function collectChatThreadPreviewMessages<T extends ChatMessageLike>({
+  rootUlid,
+  currentMessages,
+  loadedThreadMessages = [],
+  resolveTimestampMs,
+  limit = CHAT_THREAD_ROOT_PREVIEW_LIMIT,
+}: ChatThreadPreviewOptions<T>): T[] {
+  if (!rootUlid || limit <= 0) return [];
+
+  const byUlid = new Map<string, T>();
+  for (const message of [...currentMessages, ...loadedThreadMessages]) {
+    if (!message.ulid || message.ulid === rootUlid) continue;
+    if (messageThreadRootUlid(message) !== rootUlid) continue;
+    byUlid.set(message.ulid, message);
+  }
+
+  const sortedMessages = [...byUlid.values()]
+    .sort((a, b) => {
+      const timestampDelta = resolveTimestampMs(a) - resolveTimestampMs(b);
+      if (timestampDelta !== 0) return timestampDelta;
+      return (a.ulid ?? '').localeCompare(b.ulid ?? '');
+    });
+
+  return sortedMessages.slice(Math.max(0, sortedMessages.length - limit));
+}
+
+export function countHiddenEarlierChatThreadReplies(
+  totalReplyCount: number,
+  previewReplyCount: number,
+): number {
+  return Math.max(0, totalReplyCount - previewReplyCount);
 }
 
 export function mergeChatMessages<T extends ChatMessageLike>(
