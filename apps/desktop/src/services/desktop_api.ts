@@ -1535,6 +1535,10 @@ export interface SettingsSetInput {
   value: any;
 }
 
+export interface ChatScreenshotShortcutRegisterInput {
+  shortcut: string;
+}
+
 export interface ChatListMessagesInput {
   conversation_id: string;
   cursor?: string;
@@ -2250,6 +2254,12 @@ export const api = {
 
   settingsReset: () =>
     invokeRustCommand<void, TauriStubPayload>('settings_reset'),
+
+  chatScreenshotShortcutRegister: (input: ChatScreenshotShortcutRegisterInput) =>
+    invokeRustCommand<ChatScreenshotShortcutRegisterInput, TauriStubPayload>(
+      'chat_screenshot_shortcut_register',
+      input,
+    ),
 
   chatListConversations: () =>
     invokeRustCommand<void, TauriStubPayload>('chat_list_conversations'),
