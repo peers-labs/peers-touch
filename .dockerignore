@@ -1,5 +1,8 @@
 # Only send what the Dockerfile actually needs to the build context.
-# Station Dockerfile needs: apps/station/{app,frame}, tooling/docker/entrypoint.sh
+# Station Dockerfile needs:
+# - apps/station/{app,frame}
+# - apps/applets official service modules that Station go.mod may replace
+# - tooling/docker/entrypoint.sh
 
 # Exclude everything we don't need
 .git
