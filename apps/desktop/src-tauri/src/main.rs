@@ -24,11 +24,12 @@ pub mod peers_touch {
 
 use interface::tauri_commands::{
     account, actor, admin, agent_growth, agent_scheduler, agents, applets, auth, channels, chat,
-    cron, crypto, federation, friend_chat, frontend_log, group_chat, host_events, i18n, ice,
-    key_exchange, mcp, memory, model_config, models, notebook, notification, oauth2, oss, presence,
-    profile, provider, realtime, search, settings, skills, skills_market, social, station, system,
-    tools, tts,
+    cron, crypto, desktop_capture, federation, friend_chat, frontend_log, group_chat, host_events,
+    i18n, ice, key_exchange, mcp, memory, model_config, models, notebook, notification, oauth2,
+    oss, presence, profile, provider, realtime, search, settings, skills, skills_market, social,
+    station, system, tools, tts,
 };
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -46,12 +47,25 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(desktop_capture::global_shortcut_plugin())
         .manage(app_state)
+        .manage(desktop_capture::ChatScreenshotShortcutState::default())
         .manage(presence_supervisor)
         .setup(|app| {
             let resource_dir = app.path()
                 .resource_dir()
-                .expect("[setup] Failed to resolve resource directory");
+                .unwrap_or_else(|e| {
+                    #[cfg(debug_assertions)]
+                    {
+                        tracing::warn!(
+                            error = %e,
+                            "Resource directory unavailable in dev; falling back to src-tauri resources path"
+                        );
+                        return PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources");
+                    }
+                    #[cfg(not(debug_assertions))]
+                    panic!("[setup] Failed to resolve resource directory: {e}");
+                });
             let state = app.state::<Arc<state::AppState>>();
             if let Err(e) = state.i18n.deploy_builtin_packs(&resource_dir) {
                 tracing::error!(error = %e, "Failed to deploy built-in i18n packs");
@@ -108,6 +122,7 @@ fn main() {
             settings::settings_get,
             settings::settings_set,
             settings::settings_reset,
+            desktop_capture::chat_screenshot_shortcut_register,
             chat::chat_list_conversations,
             chat::chat_list_messages,
             chat::chat_send_message,
