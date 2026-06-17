@@ -42,6 +42,7 @@ export type AppState = 'onboarding' | 'resuming' | 'ready';
 
 export interface AppLifecycle {
   state: AppState;
+  authenticated: boolean;
   restoredUser: SessionUser | null;
   knownAccounts: SessionUser[];
   dataReady: boolean;
