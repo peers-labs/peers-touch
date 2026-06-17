@@ -3,6 +3,8 @@ package com.peerstouch.mobile.core.applet
 import com.peerstouch.mobile.core.lynx.bridge.BridgeDispatcher
 import com.peerstouch.mobile.core.lynx.bridge.BridgeModule
 import com.peerstouch.mobile.core.lynx.bridge.BridgeResult
+import com.peerstouch.mobile.core.lynx.bridge.AppletServiceRequestResolver
+import com.peerstouch.mobile.core.lynx.bridge.MANIFEST_SERVICES_PARAM
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -15,6 +17,13 @@ class AppletBridgeSessionContractTest {
 
         override suspend fun handle(method: String, params: Map<String, Any?>): Any? =
             mapOf("method" to method, "value" to params["value"])
+    }
+
+    private class NetworkEchoBridgeModule : BridgeModule {
+        override val moduleName = "network"
+
+        override suspend fun handle(method: String, params: Map<String, Any?>): Any? =
+            mapOf("method" to method, "services" to params[MANIFEST_SERVICES_PARAM])
     }
 
     private class ThrowingBridgeModule : BridgeModule {
@@ -36,8 +45,54 @@ class AppletBridgeSessionContractTest {
         assertEquals(AppletManifestParser.BRIDGE_PROTOCOL, manifest.bridge.protocol)
         assertTrue(manifest.permissions.contains("network.request"))
         assertTrue(manifest.services.any { service -> service.id == "primary-api" })
+        val noteService = manifest.services.first { service -> service.id == "note" }
+        assertEquals("/v1", noteService.publicPathPrefix)
+        assertEquals("/applets/note/v1", noteService.stationPathPrefix)
         assertTrue(manifest.integrity.files.containsKey("main.lynx.bundle"))
         assertTrue(manifest.integrity.files.containsKey("schemas/skill.input.json"))
+    }
+
+    @Test
+    fun stationResolvedNetworkRequestRewritesPublicPathToStationPath() {
+        val manifest = assertIs<ParseResult.Success<AppletManifest>>(
+            AppletManifestParser.parse(canonicalManifestRaw(), "android-contract")
+        ).value
+
+        val resolved = AppletServiceRequestResolver.resolve(
+            stationBaseUrl = "https://station.example/base/",
+            params = mapOf(
+                "service" to "note",
+                "method" to "GET",
+                "path" to "/v1/notes",
+                "query" to mapOf("includeDeleted" to false)
+            ),
+            services = manifest.services
+        )
+
+        assertEquals("GET", resolved.method)
+        assertEquals("https://station.example/applets/note/v1/notes?includeDeleted=false", resolved.url)
+    }
+
+    @Test
+    fun stationResolvedNetworkRequestRejectsUndeclaredPath() {
+        val manifest = assertIs<ParseResult.Success<AppletManifest>>(
+            AppletManifestParser.parse(canonicalManifestRaw(), "android-contract")
+        ).value
+
+        val failure = kotlin.runCatching {
+            AppletServiceRequestResolver.resolve(
+                stationBaseUrl = "https://station.example/",
+                params = mapOf(
+                    "service" to "note",
+                    "method" to "GET",
+                    "path" to "/v1/private"
+                ),
+                services = manifest.services
+            )
+        }
+
+        assertTrue(failure.isFailure)
+        assertTrue(failure.exceptionOrNull()?.message?.contains("Path is not allowed") == true)
     }
 
     @Test
@@ -60,7 +115,7 @@ class AppletBridgeSessionContractTest {
         val manifest = assertIs<ParseResult.Success<AppletManifest>>(
             AppletManifestParser.parse(canonicalManifestRaw(), "android-contract")
         ).value
-        val dispatcher = BridgeDispatcher(setOf(EchoBridgeModule(), ThrowingBridgeModule()))
+        val dispatcher = BridgeDispatcher(setOf(EchoBridgeModule(), NetworkEchoBridgeModule(), ThrowingBridgeModule()))
         val session = AppletBridgeSession(manifest, dispatcher)
 
         val allowed = assertIs<BridgeResult.Success>(
@@ -79,6 +134,13 @@ class AppletBridgeSessionContractTest {
             session.dispatch("tasks.start", emptyMap())
         )
         assertEquals("CAPABILITY_FAILED", failed.code)
+
+        val network = assertIs<BridgeResult.Success>(
+            session.dispatch("network.request", mapOf("service" to "note", "path" to "/v1/notes"))
+        )
+        val networkData = assertIs<Map<*, *>>(network.data)
+        val services = assertIs<List<*>>(networkData["services"])
+        assertTrue(services.any { service -> service is AppletServiceDeclaration && service.id == "note" })
 
         val malformed = assertIs<BridgeResult.Error>(
             session.dispatch("malformed", emptyMap())
@@ -119,6 +181,16 @@ class AppletBridgeSessionContractTest {
                 "binding" to "host-resolved",
                 "allowedMethods" to listOf("GET", "POST"),
                 "allowedPaths" to listOf("/api/v1/e2e", "/api/v1/e2e/echo"),
+                "streaming" to false
+            ),
+            mapOf(
+                "id" to "note",
+                "kind" to "http",
+                "binding" to "station-resolved",
+                "allowedMethods" to listOf("GET", "POST", "PATCH", "DELETE"),
+                "allowedPaths" to listOf("/v1/notes", "/v1/notes/*", "/v1/notes:search"),
+                "publicPathPrefix" to "/v1",
+                "stationPathPrefix" to "/applets/note/v1",
                 "streaming" to false
             )
         ),
