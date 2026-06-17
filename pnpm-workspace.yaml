@@ -2,6 +2,7 @@ packages:
   - apps/mobile
   - apps/desktop
   - apps/desktop/applets-dev/*
+  - apps/applets/*/frontend
   - apps/station/app/subserver/dashboard/web
   - packages/model
   - packages/client-storage

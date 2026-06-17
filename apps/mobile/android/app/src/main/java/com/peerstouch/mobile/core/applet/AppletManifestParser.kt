@@ -30,6 +30,8 @@ data class AppletServiceDeclaration(
     val binding: String,
     val allowedMethods: List<String>,
     val allowedPaths: List<String>,
+    val publicPathPrefix: String? = null,
+    val stationPathPrefix: String? = null,
     val streaming: Boolean = false
 )
 
@@ -278,15 +280,27 @@ object AppletManifestParser {
             val binding = service["binding"] as? String
             val allowedMethods = parseStringArray(service["allowedMethods"] as? List<*>, "$source.services[$index].allowedMethods", issues, requireNonEmpty = true)
             val allowedPaths = parseStringArray(service["allowedPaths"] as? List<*>, "$source.services[$index].allowedPaths", issues, requireNonEmpty = true)
+            val publicPathPrefix = service["publicPathPrefix"] as? String
+            val stationPathPrefix = service["stationPathPrefix"] as? String
             if (id.isNullOrBlank()) issues.add("$source.services[$index].id must be a non-empty string")
             if (kind != "http") issues.add("$source.services[$index].kind must be http")
             if (binding == null || binding !in SERVICE_BINDINGS) issues.add("$source.services[$index].binding must be one of $SERVICE_BINDINGS")
+            if (binding == "station-resolved") {
+                if (publicPathPrefix.isNullOrBlank() || !publicPathPrefix.startsWith("/")) {
+                    issues.add("$source.services[$index].publicPathPrefix must be an absolute path for station-resolved services")
+                }
+                if (stationPathPrefix.isNullOrBlank() || !stationPathPrefix.startsWith("/")) {
+                    issues.add("$source.services[$index].stationPathPrefix must be an absolute path for station-resolved services")
+                }
+            }
             AppletServiceDeclaration(
                 id = id ?: "",
                 kind = kind ?: "",
                 binding = binding ?: "",
                 allowedMethods = allowedMethods,
                 allowedPaths = allowedPaths,
+                publicPathPrefix = publicPathPrefix,
+                stationPathPrefix = stationPathPrefix,
                 streaming = service["streaming"] == true
             )
         }
