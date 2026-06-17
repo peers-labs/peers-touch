@@ -1,0 +1,20 @@
+{
+  "note.action.clearSearch": "清除搜索",
+  "note.action.createSample": "创建样例",
+  "note.action.delete": "删除",
+  "note.action.refresh": "刷新",
+  "note.action.searchSample": "搜索样例",
+  "note.detail.identifier": "笔记 ID",
+  "note.empty": "暂无笔记",
+  "note.error.invalidResponse": "笔记服务响应无效",
+  "note.error.operationFailed": "操作失败",
+  "note.sample.content": "通过 Peers-Touch SDK 从官方 Note 小程序创建。",
+  "note.sample.searchQuery": "官方",
+  "note.sample.title": "官方笔记",
+  "note.section.notes": "笔记",
+  "note.section.searchResults": "搜索结果",
+  "note.status.loading": "加载中",
+  "note.status.ready": "就绪",
+  "note.subtitle": "由独立服务支撑的独立小程序界面",
+  "note.title": "笔记"
+}

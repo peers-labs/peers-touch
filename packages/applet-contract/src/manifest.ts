@@ -35,6 +35,8 @@ export interface AppletServiceDeclaration {
   binding: AppletServiceBinding;
   allowedMethods: Array<'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD'>;
   allowedPaths: string[];
+  publicPathPrefix?: string;
+  stationPathPrefix?: string;
   streaming?: boolean;
 }
 
@@ -231,6 +233,8 @@ function validateServices(raw: unknown, errors: string[]): AppletServiceDeclarat
       binding: item.binding as AppletServiceBinding,
       allowedMethods: allowedMethods as AppletServiceDeclaration['allowedMethods'],
       allowedPaths,
+      publicPathPrefix: nonEmptyString(item.publicPathPrefix) ? item.publicPathPrefix : undefined,
+      stationPathPrefix: nonEmptyString(item.stationPathPrefix) ? item.stationPathPrefix : undefined,
       streaming: item.streaming === true,
     }];
   });
