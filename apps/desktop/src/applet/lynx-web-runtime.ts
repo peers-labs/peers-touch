@@ -1,7 +1,8 @@
 let runtimeReady: Promise<void> | null = null;
 
 const MTS_PRELOAD_PATCH = Symbol.for('peers-touch.lynx-web-runtime.mts-preload-patch');
-const MTS_PRELOAD_RETRY_COUNT = 8;
+const MTS_PRELOAD_TIMEOUT_MS = 2000;
+const MTS_PRELOAD_RETRY_DELAY_MS = 10;
 
 type LynxTemplateManager = {
   getBundle(url: string): { lepusCode?: Record<string, string> } | undefined;
@@ -66,19 +67,24 @@ function installInstanceMTSScriptPreloadPatch(templateManager: LynxTemplateManag
 
   const originalOnMTSScriptsLoaded = instance.onMTSScriptsLoaded.bind(instance);
   instance.onMTSScriptsLoaded = async (currentUrl, isLazy) => {
-    await waitForLepusRoot(templateManager, currentUrl);
+    if (!isLazy) {
+      await waitForLepusRoot(templateManager, currentUrl);
+    }
     return originalOnMTSScriptsLoaded(currentUrl, isLazy);
   };
   instance[MTS_PRELOAD_PATCH] = true;
 }
 
 async function waitForLepusRoot(templateManager: LynxTemplateManager, currentUrl: string): Promise<void> {
-  for (let attempt = 0; attempt < MTS_PRELOAD_RETRY_COUNT; attempt += 1) {
+  const deadline = Date.now() + MTS_PRELOAD_TIMEOUT_MS;
+  let observedKeys: string[] = [];
+  while (Date.now() < deadline) {
     const lepusCode = templateManager.getBundle(currentUrl)?.lepusCode;
+    observedKeys = Object.keys(lepusCode ?? {});
     if (lepusCode?.root) return;
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, MTS_PRELOAD_RETRY_DELAY_MS));
   }
-  throw new Error(`Lynx Web runtime did not expose a main-thread root script for ${currentUrl}`);
+  throw new Error(`Lynx Web runtime did not expose a main-thread root script for ${currentUrl}; observed keys: ${observedKeys.join(',') || 'none'}`);
 }
 
 function loadPackagedRuntime(): Promise<void> {
