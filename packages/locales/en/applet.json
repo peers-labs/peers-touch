@@ -5,6 +5,8 @@
   "applet.page.recent": "Recent",
   "applet.page.mine": "My Applets",
   "applet.page.manage": "Manage inside each applet",
+  "applet.page.launcherTitle": "Open an applet",
+  "applet.page.launcherDescription": "Choose by icon and name. Runtime and management actions stay inside each applet.",
 
   "applet.card.active": "Active",
   "applet.card.inactive": "Inactive",
