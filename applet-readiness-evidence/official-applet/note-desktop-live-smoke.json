@@ -1,0 +1,1057 @@
+{
+  "status": "PASS",
+  "evidenceClass": "REAL_PRODUCT_PATH",
+  "appletId": "peers.note",
+  "packageDir": "apps/desktop/applets-dist/peers.note",
+  "bundle": "main.lynx.bundle",
+  "harness": "http://127.0.0.1:50373/@fs//Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/applet-readiness-evidence/official-applet/note-desktop-live-smoke/index.html",
+  "detail": {
+    "appletId": "peers.note",
+    "sessionId": "note-live-smoke-session",
+    "viewState": {
+      "hostExists": true,
+      "lynxViewExists": false,
+      "shadowRoot": false,
+      "shadowText": "",
+      "pageExists": false
+    },
+    "invocations": [
+      {
+        "command": "frontend_log",
+        "input": {
+          "level": "info",
+          "tag": "api",
+          "message": "→ applets_create_session",
+          "data": "{\"req\":{\"id\":\"peers.note\",\"manifest\":{\"id\":\"peers.note\",\"permissions\":[\"app.getContext\",\"app.getLaunchOptions\",\"lifecycle.reportReady\",\"network.request\",\"storage.get\",\"storage.set\",\"storage.remove\",\"ui.showToast\",\"ui.showLoading\",\"ui.hideLoading\",\"ui.showModal\",\"navigation.navigateTo\",\"navigation.back\",\"events.emit\",\"events.subscribe\",\"events.unsubscribe\",\"telemetry.track\",\"telemetry.reportError\"],\"services\":[{\"id\":\"note\",\"kind\":\"http\",\"binding\":\"station-resolved\",\"allowedMethods\":[\"GET\",\"POST\",\"PATCH\",\"DELETE\"],\"allowedPaths\":[\"/v1/notes\",\"/v1/notes/*\",\"/v1/notes:search\"],\"publicPathPrefix\":\"/v1\",\"stationPathPrefix\":\"/applets/note/v1\",\"streaming\":false}],\"skills\":[]}}}"
+        }
+      },
+      {
+        "command": "applets_create_session",
+        "input": {
+          "id": "peers.note",
+          "manifest": {
+            "id": "peers.note",
+            "permissions": [
+              "app.getContext",
+              "app.getLaunchOptions",
+              "lifecycle.reportReady",
+              "network.request",
+              "storage.get",
+              "storage.set",
+              "storage.remove",
+              "ui.showToast",
+              "ui.showLoading",
+              "ui.hideLoading",
+              "ui.showModal",
+              "navigation.navigateTo",
+              "navigation.back",
+              "events.emit",
+              "events.subscribe",
+              "events.unsubscribe",
+              "telemetry.track",
+              "telemetry.reportError"
+            ],
+            "services": [
+              {
+                "id": "note",
+                "kind": "http",
+                "binding": "station-resolved",
+                "allowedMethods": [
+                  "GET",
+                  "POST",
+                  "PATCH",
+                  "DELETE"
+                ],
+                "allowedPaths": [
+                  "/v1/notes",
+                  "/v1/notes/*",
+                  "/v1/notes:search"
+                ],
+                "publicPathPrefix": "/v1",
+                "stationPathPrefix": "/applets/note/v1",
+                "streaming": false
+              }
+            ],
+            "skills": []
+          }
+        }
+      },
+      {
+        "command": "frontend_log",
+        "input": {
+          "level": "info",
+          "tag": "api",
+          "message": "← applets_create_session OK (0ms)"
+        }
+      },
+      {
+        "command": "frontend_log",
+        "input": {
+          "level": "info",
+          "tag": "lynx-host",
+          "message": "Mounted lynx-view for applet: peers.note"
+        }
+      },
+      {
+        "command": "applets_invoke",
+        "input": {
+          "id": "peers.note",
+          "sessionId": "note-live-smoke-session",
+          "capability": "lifecycle",
+          "action": "reportReady",
+          "params": {},
+          "manifest": {
+            "id": "peers.note",
+            "permissions": [
+              "app.getContext",
+              "app.getLaunchOptions",
+              "lifecycle.reportReady",
+              "network.request",
+              "storage.get",
+              "storage.set",
+              "storage.remove",
+              "ui.showToast",
+              "ui.showLoading",
+              "ui.hideLoading",
+              "ui.showModal",
+              "navigation.navigateTo",
+              "navigation.back",
+              "events.emit",
+              "events.subscribe",
+              "events.unsubscribe",
+              "telemetry.track",
+              "telemetry.reportError"
+            ],
+            "services": [
+              {
+                "id": "note",
+                "kind": "http",
+                "binding": "station-resolved",
+                "allowedMethods": [
+                  "GET",
+                  "POST",
+                  "PATCH",
+                  "DELETE"
+                ],
+                "allowedPaths": [
+                  "/v1/notes",
+                  "/v1/notes/*",
+                  "/v1/notes:search"
+                ],
+                "publicPathPrefix": "/v1",
+                "stationPathPrefix": "/applets/note/v1",
+                "streaming": false
+              }
+            ],
+            "skills": []
+          }
+        }
+      },
+      {
+        "command": "applets_invoke",
+        "input": {
+          "id": "peers.note",
+          "sessionId": "note-live-smoke-session",
+          "capability": "network",
+          "action": "request",
+          "params": {
+            "service": "note",
+            "method": "GET",
+            "path": "/v1/notes"
+          },
+          "manifest": {
+            "id": "peers.note",
+            "permissions": [
+              "app.getContext",
+              "app.getLaunchOptions",
+              "lifecycle.reportReady",
+              "network.request",
+              "storage.get",
+              "storage.set",
+              "storage.remove",
+              "ui.showToast",
+              "ui.showLoading",
+              "ui.hideLoading",
+              "ui.showModal",
+              "navigation.navigateTo",
+              "navigation.back",
+              "events.emit",
+              "events.subscribe",
+              "events.unsubscribe",
+              "telemetry.track",
+              "telemetry.reportError"
+            ],
+            "services": [
+              {
+                "id": "note",
+                "kind": "http",
+                "binding": "station-resolved",
+                "allowedMethods": [
+                  "GET",
+                  "POST",
+                  "PATCH",
+                  "DELETE"
+                ],
+                "allowedPaths": [
+                  "/v1/notes",
+                  "/v1/notes/*",
+                  "/v1/notes:search"
+                ],
+                "publicPathPrefix": "/v1",
+                "stationPathPrefix": "/applets/note/v1",
+                "streaming": false
+              }
+            ],
+            "skills": []
+          }
+        }
+      },
+      {
+        "command": "applets_invoke",
+        "input": {
+          "id": "peers.note",
+          "sessionId": "note-live-smoke-session",
+          "capability": "telemetry",
+          "action": "track",
+          "params": {
+            "event": {
+              "name": "official_applet.bootstrap",
+              "properties": {
+                "service": "note"
+              }
+            }
+          },
+          "manifest": {
+            "id": "peers.note",
+            "permissions": [
+              "app.getContext",
+              "app.getLaunchOptions",
+              "lifecycle.reportReady",
+              "network.request",
+              "storage.get",
+              "storage.set",
+              "storage.remove",
+              "ui.showToast",
+              "ui.showLoading",
+              "ui.hideLoading",
+              "ui.showModal",
+              "navigation.navigateTo",
+              "navigation.back",
+              "events.emit",
+              "events.subscribe",
+              "events.unsubscribe",
+              "telemetry.track",
+              "telemetry.reportError"
+            ],
+            "services": [
+              {
+                "id": "note",
+                "kind": "http",
+                "binding": "station-resolved",
+                "allowedMethods": [
+                  "GET",
+                  "POST",
+                  "PATCH",
+                  "DELETE"
+                ],
+                "allowedPaths": [
+                  "/v1/notes",
+                  "/v1/notes/*",
+                  "/v1/notes:search"
+                ],
+                "publicPathPrefix": "/v1",
+                "stationPathPrefix": "/applets/note/v1",
+                "streaming": false
+              }
+            ],
+            "skills": []
+          }
+        }
+      },
+      {
+        "command": "applets_invoke",
+        "input": {
+          "id": "peers.note",
+          "sessionId": "note-live-smoke-session",
+          "capability": "lifecycle",
+          "action": "destroy",
+          "manifest": {
+            "id": "peers.note",
+            "permissions": [
+              "app.getContext",
+              "app.getLaunchOptions",
+              "lifecycle.reportReady",
+              "network.request",
+              "storage.get",
+              "storage.set",
+              "storage.remove",
+              "ui.showToast",
+              "ui.showLoading",
+              "ui.hideLoading",
+              "ui.showModal",
+              "navigation.navigateTo",
+              "navigation.back",
+              "events.emit",
+              "events.subscribe",
+              "events.unsubscribe",
+              "telemetry.track",
+              "telemetry.reportError"
+            ],
+            "services": [
+              {
+                "id": "note",
+                "kind": "http",
+                "binding": "station-resolved",
+                "allowedMethods": [
+                  "GET",
+                  "POST",
+                  "PATCH",
+                  "DELETE"
+                ],
+                "allowedPaths": [
+                  "/v1/notes",
+                  "/v1/notes/*",
+                  "/v1/notes:search"
+                ],
+                "publicPathPrefix": "/v1",
+                "stationPathPrefix": "/applets/note/v1",
+                "streaming": false
+              }
+            ],
+            "skills": []
+          }
+        }
+      }
+    ],
+    "hostEvents": [
+      {
+        "name": "applet.event",
+        "payload": [
+          {
+            "protocol": "peers-touch.applet.bridge",
+            "appletId": "peers.note",
+            "sessionId": "note-live-smoke-session",
+            "requestId": "desktop-event-1781678445137-wg5x6108qu7",
+            "kind": "event",
+            "topic": "ready",
+            "event": "ready",
+            "payload": {
+              "sessionId": "note-live-smoke-session",
+              "state": "active"
+            }
+          }
+        ]
+      },
+      {
+        "name": "applet.event",
+        "payload": [
+          {
+            "protocol": "peers-touch.applet.bridge",
+            "appletId": "peers.note",
+            "sessionId": "note-live-smoke-session",
+            "requestId": "desktop-event-1781678445137-1gai13ntmenh",
+            "kind": "event",
+            "topic": "show",
+            "event": "show",
+            "payload": {
+              "sessionId": "note-live-smoke-session",
+              "reason": "host-visible"
+            }
+          }
+        ]
+      },
+      {
+        "name": "applet.event",
+        "payload": [
+          {
+            "protocol": "peers-touch.applet.bridge",
+            "appletId": "peers.note",
+            "sessionId": "note-live-smoke-session",
+            "requestId": "desktop-event-1781678445167-f3sg32oba3r",
+            "kind": "event",
+            "topic": "hide",
+            "event": "hide",
+            "payload": {
+              "sessionId": "note-live-smoke-session",
+              "reason": "host-unmount"
+            }
+          }
+        ]
+      },
+      {
+        "name": "applet.event",
+        "payload": [
+          {
+            "protocol": "peers-touch.applet.bridge",
+            "appletId": "peers.note",
+            "sessionId": "note-live-smoke-session",
+            "requestId": "desktop-event-1781678445167-0q2ze1ldvbwe",
+            "kind": "event",
+            "topic": "destroy",
+            "event": "destroy",
+            "payload": {
+              "sessionId": "note-live-smoke-session"
+            }
+          }
+        ]
+      }
+    ],
+    "networkRequests": [
+      {
+        "service": "note",
+        "method": "GET",
+        "path": "/v1/notes"
+      }
+    ],
+    "diagnostics": {
+      "console": [
+        {
+          "type": "debug",
+          "args": [
+            "[vite] connecting..."
+          ]
+        },
+        {
+          "type": "debug",
+          "args": [
+            "[vite] connected."
+          ]
+        },
+        {
+          "type": "error",
+          "args": [
+            "TypeError: this.__snapshot_def.update[e] is not a function\n    at eY.callUpdateIfNotDirectOrDeepEqual (/applets-dist/peers.note/main.lynx.bundle/root:2:27875)\n    at eY.setAttribute (/applets-dist/peers.note/main.lynx.bundle/root:2:27521)\n    at /applets-dist/peers.note/main.lynx.bundle/root:2:35670\n    at rLynxChange (/applets-dist/peers.note/main.lynx.bundle/root:2:35794)\n    at http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/dist/client/mainthread/Background.js?v=bae8f328:118:24\n    at #onMessage (http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-worker-rpc@0.21.0/node_modules/@lynx-js/web-worker-rpc/dist/Rpc.js?v=bae8f328:74:38)\n    at port.onmessage (http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-worker-rpc@0.21.0/node_modules/@lynx-js/web-worker-rpc/dist/Rpc.js?v=bae8f328:34:53)"
+          ]
+        },
+        {
+          "type": "error",
+          "args": [
+            "Error: Snapshot not found: __snapshot_9d7af_b4f90_5\n    at new eY (/applets-dist/peers.note/main.lynx.bundle/root:2:28167)\n    at /applets-dist/peers.note/main.lynx.bundle/root:2:34441\n    at rLynxChange (/applets-dist/peers.note/main.lynx.bundle/root:2:35794)\n    at http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/dist/client/mainthread/Background.js?v=bae8f328:118:24\n    at #onMessage (http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-worker-rpc@0.21.0/node_modules/@lynx-js/web-worker-rpc/dist/Rpc.js?v=bae8f328:74:38)\n    at port.onmessage (http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-worker-rpc@0.21.0/node_modules/@lynx-js/web-worker-rpc/dist/Rpc.js?v=bae8f328:34:53)"
+          ]
+        }
+      ],
+      "exceptions": [
+        {
+          "text": "Uncaught",
+          "description": "TypeError: t.getJSModule is not a function\n    at ti.onEvent (/applets-dist/peers.note/main.lynx.bundle/root:2:38718)\n    at new tc (/applets-dist/peers.note/main.lynx.bundle/root:2:52340)\n    at /applets-dist/peers.note/main.lynx.bundle/root:2:52426\n    at /applets-dist/peers.note/main.lynx.bundle/root:3:4"
+        }
+      ],
+      "networkFailures": [],
+      "responses": [
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/dist/client/webElementsDynamicLoader.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/dist/client/endpoints.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/dist/client/LynxCrossThreadContext.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-worker-rpc@0.21.0/node_modules/@lynx-js/web-worker-rpc/dist/index.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/binary/client/client_bg.wasm",
+          "status": 200,
+          "mimeType": "application/wasm"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/dist/client/mainthread/crossThreadHandlers/registerInvokeUIMethodHandler.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/dist/client/mainthread/crossThreadHandlers/registerSetNativePropsHandler.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/dist/client/mainthread/crossThreadHandlers/registerTriggerComponentEventHandler.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/binary/client/client.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/dist/client/mainthread/crossThreadHandlers/registerSelectComponentHandler.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/dist/client/mainthread/crossThreadHandlers/registerGetPathInfoHandler.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/dist/client/mainthread/crossThreadHandlers/registerTriggerElementMethodEndpointHandler.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/dist/client/mainthread/crossThreadHandlers/registerNativeModulesCallHandler.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/dist/client/mainthread/elementAPIs/createCrossThreadEvent.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/dist/client/mainthread/crossThreadHandlers/registerReloadHandler.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/dist/client/mainthread/crossThreadHandlers/registerNapiModulesCallHandler.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/dist/client/mainthread/utils/setElementPropertyOrAttribute.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/dist/client/mainthread/utils/convertLengthToPx.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-worker-rpc@0.21.0/node_modules/@lynx-js/web-worker-rpc/dist/Rpc.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/dist/client/mainthread/crossThreadHandlers/queryNodes.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/dist/client/mainthread/elementAPIs/pureElementPAPIs.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-worker-rpc@0.21.0/node_modules/@lynx-js/web-worker-rpc/dist/RpcEndpoint.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-core@0.21.0_@lynx-js+css-serializer@0.1.6_@lynx-js+lynx-core@0.1.3_tslib@2.8.1/node_modules/@lynx-js/web-core/css/in_shadow.css?inline",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/all.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "blob:http://127.0.0.1:50373/517cae23-7328-4c70-bf0e-d472b663ecdd",
+          "status": 200,
+          "mimeType": "text/css"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/LynxWrapper/index.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XAudioTT/index.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XCanvas/XCanvas.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/ScrollView/index.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "blob:http://127.0.0.1:50373/1ad942aa-709b-4471-a085-83108b5ae7a7",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XFoldViewNg/index.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XImage/index.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XInput/index.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XOverlayNg/index.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XRefreshView/index.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XSvg/index.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XSwiper/index.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XText/index.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XTextarea/index.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XView/index.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XViewpagerNg/index.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XList/index.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XMarkdown/index.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XWebView/index.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XList/ListItem.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/LynxWrapper/LynxWrapper.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XAudioTT/XAudioTT.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XCanvas/CanvasAttributes.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/ScrollView/ScrollView.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XFoldViewNg/XFoldviewHeaderNg.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XFoldViewNg/XFoldviewSlotDragNg.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XFoldViewNg/XFoldviewSlotNg.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XFoldViewNg/XFoldviewNg.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XFoldViewNg/XFoldviewToolbarNg.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XImage/XImage.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XImage/FilterImage.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XInput/XInput.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XOverlayNg/XOverlayNg.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XSwiper/SwiperItem.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XRefreshView/XRefreshFooter.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XRefreshView/XRefreshHeader.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XText/InlineImage.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XRefreshView/XRefreshView.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XSvg/XSvg.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XText/InlineText.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XText/InlineTruncation.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XText/RawText.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XView/XView.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XSwiper/XSwiper.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XView/XBlurView.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XText/XText.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XTextarea/XTextarea.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XList/XList.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XViewpagerNg/XViewpagerItemNg.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XViewpagerNg/XViewpagerNg.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XMarkdown/XMarkdown.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XWebView/XWebView.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XList/ListItemAttributes.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XAudioTT/utils.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XAudioTT/XAudioEvents.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XAudioTT/XAudioAttribute.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/ScrollView/FadeEdgeLengthAttribute.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/htmlTemplates.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/compat/index.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/ScrollView/ScrollIntoView.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/ScrollView/ScrollAttributes.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/ScrollView/ScrollViewEvents.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/common/getCombinedParentElement.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XFoldViewNg/XFoldviewSlotNgTouchEventsHandler.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XFoldViewNg/XFoldviewNgEvents.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XImage/ImageSrc.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XImage/DropShadow.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XImage/ImageEvents.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XInput/XInputAttribute.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XInput/XInputEvents.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XInput/InputBaseAttributes.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XInput/Placeholder.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XRefreshView/XRefreshViewEventsEmitter.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XSwiper/XSwiperEvents.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XRefreshView/XRefreshSubElementIntersectionObserver.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XOverlayNg/XOverlayAttributes.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XView/BlurRadius.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XSwiper/XSwiperIndicator.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XTextarea/Placeholder.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XText/XTextTruncation.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XSwiper/XSwiperAutoScroll.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XSwiper/XSwiperCircular.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XTextarea/XTextareaAttributes.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XTextarea/TextareaBaseAttributes.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XTextarea/XTextareaEvents.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XList/XListAttributes.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XList/XListEvents.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XList/XListWaterfall.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XViewpagerNg/XViewpagerNgEvents.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XWebView/XWebViewAttribute.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/compat/LinearContainer/LinearContainer.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/common/bindToIntersectionObserver.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/common/renameEvent.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/XMarkdown/XMarkdownAttributes.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        },
+        {
+          "url": "http://127.0.0.1:50373/@fs/Users/bytedance/Documents/Projects/peers-touch/peers-touch-applet/node_modules/.pnpm/@lynx-js+web-elements@0.12.3_tslib@2.8.1/node_modules/@lynx-js/web-elements/dist/elements/common/throttle.js?v=bae8f328",
+          "status": 200,
+          "mimeType": "text/javascript"
+        }
+      ]
+    }
+  },
+  "staticHits": [
+    {
+      "kind": "lynx.bundle",
+      "path": "main.lynx.bundle",
+      "bytes": 129295
+    },
+    {
+      "kind": "lynx.bundle",
+      "path": "main.lynx.bundle",
+      "bytes": 129295
+    }
+  ],
+  "chromeStderr": "\nDevTools listening on ws://127.0.0.1:50374/devtools/browser/0ac9749e-d9c2-42f1-b92e-4c375e42ab23\n"
+}
