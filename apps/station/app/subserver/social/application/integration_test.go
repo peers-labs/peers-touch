@@ -72,6 +72,7 @@ func newFixture(t *testing.T) *fixture {
 		&db.SocialReaction{},
 		&db.SocialCircle{},
 		&db.SocialCircleMember{},
+		&db.SocialStationModerationPolicy{},
 		&db.Follow{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
