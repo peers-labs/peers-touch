@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Tag } from '@lobehub/ui';
-import { Card, Segmented, Space, Typography, theme } from 'antd';
-import { Flexbox } from 'react-layout-kit';
+import { Button, Card, Tag, theme } from 'antd';
 import {
-  Plus,
   ShieldCheck,
 } from 'lucide-react';
 import { MomentsFeedView } from './MomentsFeedPage';
@@ -19,26 +16,24 @@ import {
   ensureUserMomentsProjection,
 } from '../../runtimes/momentsRuntime';
 import { useMomentsStore } from '../../store/moments';
-
-const { Text, Title } = Typography;
+import {
+  SocialContentRail,
+  SocialScopeBar,
+  SocialSection,
+} from '../../components/moments/surfaces';
 
 // MomentsApp — the single page registered in the module registry.
 //
-// Why an internal tab bar (vs. distinct top-level routes):
-//   - The host router uses a flat `Page` enum. Adding nested
-//     Moments routes would mean teaching the router about
-//     hierarchical paths — out of scope for P2.
-//   - Tab-style navigation matches Twitter / Mastodon UX where
-//     "Home / Explore / Search / Profile / Circles" all live in
-//     the same shell with shared header chrome.
-//
-// Internal navigation contract:
-//   - Feed / Explore / Search / Circles are the four main "tabs".
-//   - Detail and User are pushed views: clicking on a post / author
-//     anywhere in the app sets `view = { kind: 'detail', postId }`
-//     or `{ kind: 'user', actorId }` and renders that sub-page in
-//     place of the tab content. A back button returns to the
-//     previously-active tab.
+// UI Identity refactor notes:
+//   - The page header (title + tabs + primary CTA) is rendered
+//     through SocialScopeBar. They share one group — no more
+//     "tabs and button look like different component systems".
+//   - The main column is SocialContentRail. It owns width, padding,
+//     vertical rhythm. Child pages render their content directly
+//     inside it.
+//   - Context sidebar (ShieldCheck block) and Circles panel keep
+//     using antd Card but with token-aligned styling — the visual
+//     surface is a separate concern from the content rail.
 
 type MainTab = 'feed' | 'explore' | 'search' | 'circles';
 
@@ -122,28 +117,14 @@ export function MomentsApp() {
     scrollFeedTop();
   }, [activeTab, scrollFeedTop]);
 
-  const tabBar = useMemo(
-    () => (
-      <Segmented
-        value={activeTab}
-        onChange={(v) => goTab(v as MainTab)}
-        size={isCompact ? 'small' : 'middle'}
-        style={{ maxWidth: '100%', overflowX: 'auto' }}
-        options={[
-          { value: 'feed', label: t('moments.tab.feed') },
-          { value: 'explore', label: t('moments.tab.explore') },
-          {
-            value: 'search',
-            label: t('moments.tab.search'),
-          },
-          {
-            value: 'circles',
-            label: t('moments.tab.circle'),
-          },
-        ]}
-      />
-    ),
-    [activeTab, goTab, isCompact, t],
+  const tabs = useMemo(
+    () => [
+      { value: 'feed', label: t('moments.tab.feed') },
+      { value: 'explore', label: t('moments.tab.explore') },
+      { value: 'search', label: t('moments.tab.search') },
+      { value: 'circles', label: t('moments.tab.circle') },
+    ],
+    [t],
   );
 
   const activeContext = useMemo(() => {
@@ -227,70 +208,98 @@ export function MomentsApp() {
 
   const contextPanel = (
     <Card
-      style={{ borderRadius: 16, borderColor: token.colorBorderSecondary, boxShadow: 'none' }}
-      bodyStyle={{ padding: isCompact ? 12 : 14 }}
+      styles={{
+        body: { padding: isCompact ? 12 : 14 },
+      }}
+      style={{
+        borderRadius: 14,
+        borderColor: token.colorBorderSecondary,
+        boxShadow: 'none',
+      }}
     >
-      <Space direction="vertical" size={10} style={{ width: '100%' }}>
-        <Space align="center">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <ShieldCheck size={16} color={token.colorPrimary} />
-          <Text strong>{activeContext.title}</Text>
-        </Space>
-        <Text type="secondary" style={{ fontSize: 13, lineHeight: 1.6 }}>
+          <span style={{ fontWeight: 600, fontSize: 13 }}>{activeContext.title}</span>
+        </div>
+        <span style={{ fontSize: 12.5, lineHeight: 1.6, color: token.colorTextSecondary }}>
           {activeContext.description}
-        </Text>
+        </span>
         {!isCompact && (
-          <Space size={6} wrap>
-            <Tag color={activeTab === 'feed' ? 'blue' : 'default'} style={{ margin: 0, borderRadius: 999 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            <Tag
+              color={activeTab === 'feed' ? 'blue' : 'default'}
+              style={{ margin: 0, borderRadius: 999 }}
+            >
               {t('moments.filter.following')}
             </Tag>
-            <Tag color={activeTab === 'circles' ? 'blue' : 'default'} style={{ margin: 0, borderRadius: 999 }}>
+            <Tag
+              color={activeTab === 'circles' ? 'blue' : 'default'}
+              style={{ margin: 0, borderRadius: 999 }}
+            >
               {t('moments.filter.circles')}
             </Tag>
-            <Tag color={activeTab === 'explore' ? 'blue' : 'default'} style={{ margin: 0, borderRadius: 999 }}>
+            <Tag
+              color={activeTab === 'explore' ? 'blue' : 'default'}
+              style={{ margin: 0, borderRadius: 999 }}
+            >
               {t('moments.filter.remotePublic')}
             </Tag>
-          </Space>
+          </div>
         )}
-      </Space>
+      </div>
     </Card>
   );
 
   const circlesPanel = (
     <Card
-      style={{ borderRadius: 16, borderColor: token.colorBorderSecondary, boxShadow: 'none' }}
-      bodyStyle={{ padding: 14 }}
+      styles={{ body: { padding: 14 } }}
+      style={{ borderRadius: 14, borderColor: token.colorBorderSecondary, boxShadow: 'none' }}
     >
-      <Space direction="vertical" size={10} style={{ width: '100%' }}>
-        <Flexbox horizontal justify="space-between" align="center">
-          <Text strong>{t('moments.sidebar.circlesTitle')}</Text>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontWeight: 600, fontSize: 13 }}>{t('moments.sidebar.circlesTitle')}</span>
           <Button type="link" size="small" onClick={() => goTab('circles')}>
             {t('moments.action.manageCircles')}
           </Button>
-        </Flexbox>
+        </div>
         {circles.length === 0 ? (
-          <Text type="secondary" style={{ fontSize: 13 }}>
+          <span style={{ fontSize: 12.5, color: token.colorTextSecondary }}>
             {t('moments.placeholder.circleEmpty')}
-          </Text>
+          </span>
         ) : (
           circles.slice(0, 4).map((circle) => (
-            <Flexbox key={String(circle.id)} horizontal justify="space-between" align="center">
-              <Text ellipsis style={{ maxWidth: 180 }}>{circle.name}</Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>
+            <div
+              key={String(circle.id)}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+            >
+              <span
+                style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  maxWidth: 180,
+                }}
+              >
+                {circle.name}
+              </span>
+              <span style={{ fontSize: 12, color: token.colorTextSecondary }}>
                 {t('moments.circle.memberCount', {
                   count: circleMembers[String(circle.id)]?.length ?? 0,
                 })}
-              </Text>
-            </Flexbox>
+              </span>
+            </div>
           ))
         )}
-      </Space>
+      </div>
     </Card>
   );
 
   return (
-    <Flexbox
-      flex={1}
+    <div
       style={{
+        flex: 1,
+        display: 'flex',
         background: token.colorBgLayout,
         minHeight: 0,
       }}
@@ -305,51 +314,19 @@ export function MomentsApp() {
         }}
       >
         <div style={{ maxWidth: isNarrow ? 720 : 1080, margin: '0 auto' }}>
-          <div
-            style={{
-              marginBottom: isCompact ? 10 : 14,
-              padding: '0 2px',
+          <SocialScopeBar
+            tabs={tabs}
+            activeTab={activeTab}
+            onTabChange={(v) => goTab(v as MainTab)}
+            primaryAction={{
+              label: t('moments.action.compose'),
+              onClick: openComposer,
             }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: isCompact ? 'flex-start' : 'center',
-                justifyContent: 'space-between',
-                flexDirection: isCompact ? 'column' : 'row',
-                gap: isCompact ? 10 : 18,
-              }}
-            >
-              <div style={{ minWidth: 0, width: isCompact ? '100%' : undefined }}>
-                <Flexbox gap={2} style={{ minWidth: 0 }}>
-                  <Title level={3} style={{ margin: 0, fontSize: isCompact ? 22 : 24 }}>
-                    {t('moments.title')}
-                  </Title>
-                  <Text type="secondary" ellipsis style={{ maxWidth: isCompact ? '100%' : 520 }}>
-                    {t('moments.subtitle')}
-                  </Text>
-                </Flexbox>
-              </div>
-              <Space
-                size={10}
-                wrap
-                style={{
-                  justifyContent: isCompact ? 'flex-start' : 'flex-end',
-                  width: isCompact ? '100%' : undefined,
-                }}
-              >
-                {tabBar}
-                <Button type="primary" icon={<Plus size={14} />} onClick={openComposer}>
-                  {t('moments.action.compose')}
-                </Button>
-              </Space>
-            </div>
-          </div>
+            compact={isCompact}
+          />
 
           {isNarrow && (
-            <div style={{ marginBottom: 10 }}>
-              {contextPanel}
-            </div>
+            <SocialSection tone="soft">{contextPanel}</SocialSection>
           )}
 
           <div
@@ -362,7 +339,18 @@ export function MomentsApp() {
               gap: 16,
             }}
           >
-            <main style={{ minWidth: 0, maxWidth: isNarrow ? 700 : undefined, width: '100%', margin: isNarrow ? '0 auto' : undefined }}>{content}</main>
+            <main
+              style={{
+                minWidth: 0,
+                maxWidth: isNarrow ? 700 : undefined,
+                width: '100%',
+                margin: isNarrow ? '0 auto' : undefined,
+              }}
+            >
+              <SocialContentRail narrow={isNarrow} compact={isCompact}>
+                {content}
+              </SocialContentRail>
+            </main>
             <aside
               style={{
                 position: 'sticky',
@@ -378,6 +366,6 @@ export function MomentsApp() {
           </div>
         </div>
       </div>
-    </Flexbox>
+    </div>
   );
 }

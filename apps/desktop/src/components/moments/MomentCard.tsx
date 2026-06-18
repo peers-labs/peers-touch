@@ -1,17 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@lobehub/ui';
-import { Card, Dropdown, Space, Typography, theme, message } from 'antd';
-import {
-  Globe,
-  Lock,
-  MessageCircle,
-  MoreHorizontal,
-  UserCheck,
-  UsersRound,
-  Users,
-  Eye,
-} from 'lucide-react';
+import { Button, Dropdown, Typography, theme, message } from 'antd';
+import { MoreHorizontal } from 'lucide-react';
 import {
   Audience_Kind,
   RelationshipReason_Kind,
@@ -19,73 +9,72 @@ import {
   ReactionKind,
   type FeedObjectExplanation,
   type Post,
-  type ReactionSummary,
   type ImageAttachment,
 } from '../../gen/proto/domain/social/post_pb';
 import type { Comment } from '../../gen/proto/domain/social/comment_pb';
-import { ReactionBar } from './ReactionBar';
 import { ImageGrid } from './ImageGrid';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { FederatedHandle } from '../FederatedHandle';
 import { useFederationStore } from '../../store/federation';
+import {
+  SocialTrustMeta,
+  SocialActionBar,
+} from './surfaces';
 
 const { Paragraph, Text, Link } = Typography;
 
 // MomentCard — renders a single Post in a feed list.
 //
+// Refactored for UI Identity:
+//   - The outer card border is now just a soft container (no heavy border).
+//   - source · reason · audience  →  SocialTrustMeta
+//   - reaction picker + count +  "more"  →  SocialActionBar
+//
 // Anatomy:
 //   ┌─────────────────────────────────────────────┐
 //   │ [avatar]  display_name @username · 5m       │ ← header
-//   │           [audience badge]                  │
+//   │           [SocialTrustMeta: source · reason · audience]
 //   │                                             │
-//   │  Body text here… (truncated to 5 lines      │
-//   │  with "Show more" affordance)               │
+//   │  Body text here…                            │
 //   │  [image grid if any]                        │
 //   │  [original-post embed if REPOST]            │
 //   │                                             │
-//   │  👍 12  ❤️ 3   + React  💬 7   ↗ Repost    │
+//   │  [SocialActionBar: 👍12  3❤️  💬7   ⋯ ]   │
 //   └─────────────────────────────────────────────┘
-//
-// Repost rendering:
-//   - The card shows the reposter's wrapper text + a nested embed
-//     of the original post. To avoid recursion-depth surprises we
-//     render the original at most ONE level deep — repost-of-repost
-//     collapses to "Reposted via X" without the chain.
 
 interface MomentCardProps {
   post: Post;
-  reactions?: ReactionSummary[];
+  reactions?: import('../../gen/proto/domain/social/post_pb').ReactionSummary[];
   explanation?: FeedObjectExplanation;
   viewerActorId?: string;
   surface?: 'home' | 'federated' | 'profile' | 'circle';
-  /** Optional click target — opens the detail page when provided. */
   onOpen?: (postId: string) => void;
-  /** Click handler for the comment count + composer. */
   onOpenComments?: (postId: string) => void;
   onReact?: (postId: string, kind: ReactionKind) => Promise<void>;
   onUnreact?: (postId: string, kind?: ReactionKind) => Promise<void>;
   onAuthorClick?: (actorId: string) => void;
   commentPreview?: Comment[];
+  embedded?: boolean;
 }
 
-function audienceBadge(kind: Audience_Kind, t: (k: string) => string) {
+function audienceLabel(kind: Audience_Kind, t: (k: string) => string) {
   switch (kind) {
     case Audience_Kind.PUBLIC:
-      return { Icon: Globe, label: t('moments.audience.public') };
+      return t('moments.audience.public');
     case Audience_Kind.FOLLOWERS:
-      return { Icon: UserCheck, label: t('moments.audience.followers') };
+      return t('moments.audience.followers');
     case Audience_Kind.SELF:
-      return { Icon: Lock, label: t('moments.audience.self') };
+      return t('moments.audience.self');
     case Audience_Kind.CIRCLE:
-      return { Icon: UsersRound, label: t('moments.audience.circle') };
+      return t('moments.audience.circle');
     case Audience_Kind.GROUP:
-      return { Icon: Users, label: t('moments.audience.group') };
+      return t('moments.audience.group');
     case Audience_Kind.CUSTOM_ALLOW:
-      return { Icon: Eye, label: t('moments.audience.customAllow') };
+      return t('moments.audience.customAllow');
     case Audience_Kind.CUSTOM_DENY:
-      return { Icon: Eye, label: t('moments.audience.customDeny') };
+      return t('moments.audience.customDeny');
     default:
-      return { Icon: Globe, label: t('moments.audience.public') };
+      return t('moments.audience.public');
   }
 }
 
@@ -143,26 +132,10 @@ function protocolReasonLabel({
   }
 }
 
-function sourceLabel({
-  authorId,
-  stationDomain,
-  selfStationDomain,
-  t,
-}: {
-  authorId?: string;
-  stationDomain?: string;
-  selfStationDomain?: string;
-  t: (k: string, options?: Record<string, string>) => string;
-}) {
-  if (!authorId) return t('moments.source.unresolved');
-  if (stationDomain && selfStationDomain && stationDomain === selfStationDomain) {
-    return t('moments.source.local');
-  }
-  if (stationDomain) return t('moments.source.station', { station: stationDomain });
-  return t('moments.source.unresolved');
-}
-
-function relativeTime(seconds: bigint | undefined, t: (k: string, options?: Record<string, number>) => string): string {
+function relativeTime(
+  seconds: bigint | undefined,
+  t: (k: string, options?: Record<string, number>) => string,
+): string {
   if (!seconds) return '';
   const ms = Number(seconds) * 1000;
   const diffSec = Math.max(0, Math.floor((Date.now() - ms) / 1000));
@@ -196,7 +169,7 @@ function getBodyText(post: Post): string {
 }
 
 function getImages(post: Post): ImageAttachment[] {
-  const c = post.content as any;
+  const c = post.content as unknown as { case?: string; value?: { images?: ImageAttachment[] } };
   if (!c || !c.case) return [];
   if (c.case === 'imagePost' || c.case === 'locationPost') {
     return c.value?.images ?? [];
@@ -206,7 +179,10 @@ function getImages(post: Post): ImageAttachment[] {
 
 function getRepostOriginal(post: Post): Post | undefined {
   if (post.type !== PostType.REPOST) return undefined;
-  const c = post.content;
+  const c = post.content as unknown as {
+    case?: string;
+    value?: { originalPost?: Post };
+  };
   if (c?.case === 'repostPost') {
     return c.value?.originalPost as Post | undefined;
   }
@@ -225,6 +201,7 @@ export function MomentCard({
   onUnreact,
   onAuthorClick,
   commentPreview,
+  embedded,
 }: MomentCardProps) {
   const { t } = useTranslation('moments');
   const { token } = theme.useToken();
@@ -234,8 +211,8 @@ export function MomentCard({
 
   const author = post.author;
   const audience = post.audience;
-  const audienceKind = explanation?.audienceExplanation?.kind ?? audience?.kind ?? Audience_Kind.PUBLIC;
-  const badge = audienceBadge(audienceKind, t);
+  const audienceKind =
+    explanation?.audienceExplanation?.kind ?? audience?.kind ?? Audience_Kind.PUBLIC;
   const body = getBodyText(post);
   const images = getImages(post);
   const original = getRepostOriginal(post);
@@ -258,13 +235,6 @@ export function MomentCard({
     fallback: fallbackReason,
     t,
   });
-  const source = sourceLabel({
-    authorId: explanation?.relationshipReason?.actorId || author?.id,
-    stationDomain,
-    selfStationDomain,
-    t,
-  });
-
   const handleReact = async (kind: ReactionKind) => {
     if (reactionSubmitting) return;
     setReactionSubmitting(true);
@@ -289,23 +259,23 @@ export function MomentCard({
     }
   };
 
+  const createdText = relativeTime(post.createdAt?.seconds, t);
+
   return (
-    <Card
-      style={{
-        marginBottom: 10,
-        borderColor: token.colorBorderSecondary,
-        borderRadius: 16,
-        boxShadow: 'none',
-        overflow: 'hidden',
-      }}
-      bodyStyle={{ padding: 0 }}
-      hoverable={!!onOpen}
+    <div
       onClick={() => onOpen?.(post.id)}
+      style={{
+        background: embedded ? 'transparent' : token.colorBgContainer,
+        border: embedded ? 'none' : `1px solid ${token.colorBorderSecondary}`,
+        borderRadius: embedded ? 0 : 14,
+        padding: embedded ? 0 : 16,
+        cursor: onOpen ? 'pointer' : 'default',
+      }}
     >
-      <div style={{ display: 'flex', gap: 12, padding: '14px 16px' }}>
+      <div style={{ display: 'flex', gap: 12 }}>
         <div
           onClick={(e) => {
-            e?.stopPropagation();
+            e.stopPropagation();
             if (author?.id) onAuthorClick?.(author.id);
           }}
           style={{ cursor: author?.id ? 'pointer' : 'default', flexShrink: 0 }}
@@ -317,12 +287,16 @@ export function MomentCard({
             radius={13}
           />
         </div>
+
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-            <Space size={6} align="center" wrap style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flexWrap: 'wrap' }}>
               <Text
                 strong
-                style={{ cursor: author?.id ? 'pointer' : 'default', fontSize: 14.5 }}
+                style={{
+                  cursor: author?.id ? 'pointer' : 'default',
+                  fontSize: 14.5,
+                }}
                 onClick={(e) => {
                   e.stopPropagation();
                   if (author?.id) onAuthorClick?.(author.id);
@@ -337,16 +311,23 @@ export function MomentCard({
                   fontSize={12}
                 />
               )}
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                · {relativeTime(post.createdAt?.seconds, t)}
-              </Text>
-            </Space>
+              {createdText && (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  · {createdText}
+                </Text>
+              )}
+            </div>
+
             <Dropdown
               trigger={['click']}
               menu={{
                 items: [
                   { key: 'open', label: t('moments.action.openPost') },
-                  { key: 'profile', label: t('moments.action.viewProfile'), disabled: !author?.id },
+                  {
+                    key: 'profile',
+                    label: t('moments.action.viewProfile'),
+                    disabled: !author?.id,
+                  },
                 ],
                 onClick: ({ key, domEvent }) => {
                   domEvent.stopPropagation();
@@ -364,17 +345,18 @@ export function MomentCard({
             </Dropdown>
           </div>
 
-          <Text
-            type="secondary"
-            style={{
-              display: 'block',
-              marginTop: 4,
-              fontSize: 12,
-              lineHeight: 1.5,
+          <SocialTrustMeta
+            source={{
+              kind: stationDomain
+                ? stationDomain === selfStationDomain
+                  ? 'local'
+                  : 'remote'
+                : 'unknown',
+              stationDomain,
             }}
-          >
-            {source} · {reason} · {badge.label}
-          </Text>
+            reason={{ label: reason, kind: explanation?.relationshipReason?.kind }}
+            audience={{ kind: audienceKind, label: audienceLabel(audienceKind, t) }}
+          />
 
           {body && (
             <Paragraph
@@ -402,7 +384,7 @@ export function MomentCard({
           )}
 
           {images.length > 0 && (
-            <div onClick={(e) => e.stopPropagation()}>
+            <div style={{ marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
               <ImageGrid
                 images={images.slice(0, 9)}
                 cids={images.slice(0, 9).map((im) => im.url || im.id)}
@@ -413,44 +395,48 @@ export function MomentCard({
           )}
 
           {original && (
-            <Card
-              size="small"
+            <div
+              onClick={(e) => e.stopPropagation()}
               style={{
                 marginTop: 8,
+                padding: 12,
                 background: token.colorBgLayout,
-                borderColor: token.colorBorderSecondary,
-                borderRadius: 16,
+                border: `1px solid ${token.colorBorderSecondary}`,
+                borderRadius: 12,
               }}
-              bodyStyle={{ padding: 12 }}
             >
-              <Space size={6}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <UserSquareAvatar
                   remoteUrl={original.author?.avatarUrl || undefined}
-                  name={original.author?.displayName || original.author?.username || t('moments.author.unknown')}
+                  name={
+                    original.author?.displayName ||
+                    original.author?.username ||
+                    t('moments.author.unknown')
+                  }
                   size={20}
                   radius={5}
                 />
                 <Text strong style={{ fontSize: 13 }}>
-                  {original.author?.displayName || original.author?.username || t('moments.author.unknown')}
+                  {original.author?.displayName ||
+                    original.author?.username ||
+                    t('moments.author.unknown')}
                 </Text>
-              </Space>
-              <Paragraph
-                style={{ margin: 0, marginTop: 4, fontSize: 13, whiteSpace: 'pre-wrap' }}
-              >
+              </div>
+              <Paragraph style={{ margin: 0, marginTop: 4, fontSize: 13, whiteSpace: 'pre-wrap' }}>
                 {getBodyText(original)}
               </Paragraph>
-            </Card>
+            </div>
           )}
 
           {(visibleComments.length > 0 || commentsCount > 0) && (
             <div
+              onClick={(e) => e.stopPropagation()}
               style={{
                 marginTop: 10,
-                padding: '8px 10px',
+                padding: '8px 12px',
                 borderRadius: 12,
                 background: token.colorFillQuaternary,
               }}
-              onClick={(e) => e.stopPropagation()}
             >
               {visibleComments.map((comment) => (
                 <div key={comment.id} style={{ fontSize: 13, lineHeight: 1.6 }}>
@@ -475,37 +461,18 @@ export function MomentCard({
             </div>
           )}
 
-          <div
-            style={{
-              marginTop: 10,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 10,
-              flexWrap: 'wrap',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <ReactionBar
+          <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 10 }}>
+            <SocialActionBar
               reactions={reactions ?? post.reactions ?? []}
+              commentCount={commentsCount}
               loading={reactionSubmitting}
-              onReact={handleReact}
+              onReact={(kind) => handleReact(kind)}
               onUnreact={handleUnreact}
+              onOpenComments={() => onOpenComments?.(post.id)}
             />
-            <Space size={4} wrap>
-              <Button
-                type="text"
-                size="small"
-                icon={<MessageCircle size={15} />}
-                onClick={() => onOpenComments?.(post.id)}
-                style={{ color: token.colorTextSecondary }}
-              >
-                {String(post.stats?.commentsCount ?? 0n)}
-              </Button>
-            </Space>
           </div>
         </div>
       </div>
-    </Card>
+    </div>
   );
 }

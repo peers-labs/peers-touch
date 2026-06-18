@@ -5,10 +5,11 @@
 ## Reading Order
 
 1. [ux-design-methodology.md](./ux-design-methodology.md) — 从具体 UX 问题抽象为准则、契约、invariant 的方法论。
-2. [form-control-ux-contract.md](./form-control-ux-contract.md) — 跨端表单控件与组合输入控件体验契约。
-3. [base.md](./base.md) — 跨平台共享策略。
-4. [globalcontext.md](./globalcontext.md) — GlobalContext 相关共享说明。
-5. [packages.md](./packages.md) — shared package 说明。
+2. [ui-identity/README.md](./ui-identity/README.md) — Peers Touch 客户端通用 UI Identity、模块 UI ID、跨模块 patterns。
+3. [form-control-ux-contract.md](./form-control-ux-contract.md) — 跨端表单控件与组合输入控件体验契约。
+4. [base.md](./base.md) — 跨平台共享策略。
+5. [globalcontext.md](./globalcontext.md) — GlobalContext 相关共享说明。
+6. [packages.md](./packages.md) — shared package 说明。
 
 ## Related Platform Docs
 
@@ -20,3 +21,7 @@
 
 - [../../knowledge/invariants/composite-form-control-boundaries.md](../../knowledge/invariants/composite-form-control-boundaries.md)
 - [../../knowledge/playbooks/ux-case-to-contract.md](../../knowledge/playbooks/ux-case-to-contract.md)
+
+## UI Identity Modules
+
+- [ui-identity/modules/social/README.md](./ui-identity/modules/social/README.md) — Human 联邦社交 UI ID，当前作为方法论验证样板。
