@@ -211,6 +211,7 @@ const PROD_QUIET_COMMANDS = new Set([
   'friend_chat_sync_from_station_scoped',
   'friend_chat_list_sessions',
   'friend_chat_list_messages',
+  'chat_index_local_messages',
 ]);
 
 function isQuietCommand(command: string): boolean {
@@ -2167,6 +2168,17 @@ export interface ChatSearchLocalResultRow {
   mime_type?: string;
 }
 
+export interface ChatIndexLocalMessageInput {
+  scope: 'friend' | 'group';
+  conversation_id: string;
+  message_id: string;
+  sender_did: string;
+  content: string;
+  reply_to_ulid?: string;
+  thread_root_ulid?: string;
+  sent_at: number;
+}
+
 export interface GroupChatSyncInput {
   group_ulid: string;
   limit?: number;
@@ -3588,6 +3600,12 @@ export const api = {
       conversation_id: conversationId,
       limit: limit ?? 30,
     }),
+
+  chatIndexLocalMessages: (messages: ChatIndexLocalMessageInput[]) =>
+    invokeRustDataFromStatus<{ messages: ChatIndexLocalMessageInput[] }, { indexed_count: number }>(
+      'chat_index_local_messages',
+      { messages },
+    ),
 
   friendChatSync: (sessionUlid: string, limit?: number, maxPages?: number) =>
     invokeRustDataFromStatus<FriendChatSyncInput, { synced_count: number; pages_fetched: number }>(
