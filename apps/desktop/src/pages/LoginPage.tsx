@@ -28,11 +28,28 @@ interface Props {
 
 const CARD_WIDTH = 400;
 const CARD_MIN_HEIGHT = 420;
+const LOGIN_CARD_MIN_HEIGHT = 356;
+const REAUTH_CARD_MIN_HEIGHT = 392;
 const PANEL_WIDTH = 250;
 const ARROW_SIZE = 8;
 const PANEL_GAP = 8;
 const PIN_LENGTH = 6;
 const PIN_SUBMIT_DELAY_MS = 140;
+
+const LOGIN_FORM_LAYOUT = {
+  logoSize: 56,
+  logoRadius: 14,
+  logoBottom: 12,
+  subtitleBottom: 16,
+  reauthSubtitleBottom: 10,
+  reauthAlertBottom: 14,
+  tabBottom: 16,
+};
+
+function loginCardMinHeight(loginState: LoginState, hasExpiredAccount: boolean): number {
+  if (loginState !== 'logged_out') return CARD_MIN_HEIGHT;
+  return hasExpiredAccount ? REAUTH_CARD_MIN_HEIGHT : LOGIN_CARD_MIN_HEIGHT;
+}
 
 function accountIdentityToSessionUser(account: AccountIdentity): SessionUser {
   return {
@@ -684,6 +701,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
 
   const panelOpen = !!connectProvider && loginState === 'logged_out';
   const hasSignedInUser = hasValidRestoredUser;
+  const cardMinHeight = loginCardMinHeight(loginState, !!expiredAccount);
 
   useEffect(() => {
     if (!panelOpen) return;
@@ -701,7 +719,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
 
   const cardStyle: React.CSSProperties = {
     width: CARD_WIDTH,
-    minHeight: CARD_MIN_HEIGHT,
+    minHeight: cardMinHeight,
     background: token.colorBgContainer,
     borderRadius: 24,
     boxShadow: token.boxShadow,
@@ -865,10 +883,10 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
             />
           )}
           <h2 style={{ fontSize: 20, fontWeight: 700, color: token.colorText, margin: '0 0 4px' }}>
-            {t('auth.accountPicker.title', { defaultValue: 'Choose Account' })}
+            {t('auth.accountPicker.title')}
           </h2>
           <Text type="secondary" style={{ fontSize: 13, marginBottom: 20 }}>
-            {t('auth.accountPicker.subtitle', { defaultValue: 'Select an account to continue' })}
+            {t('auth.accountPicker.subtitle')}
           </Text>
 
           <div style={{
@@ -927,9 +945,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                       // attempting to resume. Surface that up-front so the
                       // user isn't surprised.
                       <span
-                        title={t('auth.accountPicker.signInRequired', {
-                          defaultValue: 'Sign in required',
-                        })}
+                        title={t('auth.accountPicker.signInRequired')}
                         style={{
                           fontSize: 10,
                           fontWeight: 600,
@@ -941,7 +957,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                           flexShrink: 0,
                         }}
                       >
-                        {t('auth.accountPicker.signInBadge', { defaultValue: 'Sign in' })}
+                        {t('auth.accountPicker.signInBadge')}
                       </span>
                     )}
                     {account.hasPin && (
@@ -966,7 +982,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
             icon={<LogIn size={14} />}
             onClick={handleNewAccountLogin}
           >
-            {t('auth.accountPicker.addAccount', { defaultValue: 'Sign in with another account' })}
+            {t('auth.accountPicker.addAccount')}
           </Button>
         </>
       );
@@ -1282,7 +1298,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
               <>
                 <ArrowLeft size={14} style={{ color: token.colorTextTertiary }} />
                 <Text style={{ fontSize: 11, color: token.colorTextSecondary }}>
-                  {t('auth.accountPicker.back', { defaultValue: 'Accounts' })}
+                  {t('auth.accountPicker.back')}
                 </Text>
               </>
             ) : (
@@ -1304,20 +1320,29 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
             src={BRANDING.logos.desktop}
             alt={BRANDING.appName}
             style={{
-                width: 64,
-                height: 64,
-                borderRadius: 16,
-                marginBottom: 16,
-              }}
+              width: LOGIN_FORM_LAYOUT.logoSize,
+              height: LOGIN_FORM_LAYOUT.logoSize,
+              borderRadius: LOGIN_FORM_LAYOUT.logoRadius,
+              marginBottom: LOGIN_FORM_LAYOUT.logoBottom,
+            }}
           />
         )}
 
-        <h2 style={{ fontSize: 22, fontWeight: 700, color: token.colorText, margin: '0 0 6px' }}>
+        <h2 style={{ fontSize: 22, fontWeight: 700, color: token.colorText, margin: '0 0 4px' }}>
           {expiredAccount
             ? t('auth.login.welcomeBackTitle', { defaultValue: 'Welcome back' })
             : t('auth.login.title')}
         </h2>
-        <Text type="secondary" style={{ fontSize: 13, marginBottom: expiredAccount ? 12 : 24, textAlign: 'center' }}>
+        <Text
+          type="secondary"
+          style={{
+            fontSize: 13,
+            marginBottom: expiredAccount
+              ? LOGIN_FORM_LAYOUT.reauthSubtitleBottom
+              : LOGIN_FORM_LAYOUT.subtitleBottom,
+            textAlign: 'center',
+          }}
+        >
           {expiredAccount
             ? reauthReason === 'revoked'
               ? t('auth.login.expiredSubtitle', {
@@ -1338,7 +1363,12 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                 ? <AlertTriangle size={18} style={{ color: token.colorWarningText }} />
                 : <Lock size={18} style={{ color: token.colorInfoText }} />
             }
-            style={{ width: '100%', marginBottom: 18, borderRadius: 12, padding: '10px 12px' }}
+            style={{
+              width: '100%',
+              marginBottom: LOGIN_FORM_LAYOUT.reauthAlertBottom,
+              borderRadius: 12,
+              padding: '10px 12px',
+            }}
             message={
               <Text
                 strong
@@ -1380,7 +1410,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
             padding: 4,
             borderRadius: 10,
             display: 'flex',
-            marginBottom: 24,
+            marginBottom: LOGIN_FORM_LAYOUT.tabBottom,
             border: `1px solid ${token.colorBorderSecondary}`,
           }}
         >
