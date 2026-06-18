@@ -28,9 +28,11 @@ func init() {
 			// from the private one. CUSTOM_ALLOW/DENY actor lists, comments,
 			// reactions, and circles each get their own table.
 			&SocialPublicPost{}, &SocialPrivatePost{},
+			&SocialMomentDelivery{},
 			&SocialPrivateAudienceGrant{},
 			&SocialComment{}, &SocialReaction{},
 			&SocialCircle{}, &SocialCircleMember{},
+			&SocialStationModerationPolicy{},
 			// Cross-domain relationship (kept generic — used by social subserver
 			// today, may be reused by chat / oss later).
 			&Follow{},

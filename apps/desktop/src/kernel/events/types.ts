@@ -171,6 +171,43 @@ export interface RealtimeMessageMutationPayload {
   mutatedTsUnixMs: number;
 }
 
+export interface MomentRealtimeBasePayload {
+  /** Monotonic realtime cursor when the event comes from Station SSE. */
+  eventId: string;
+  postId: string;
+  authorActorId?: string;
+  occurredAtUnixMs: number;
+}
+
+export interface MomentCreatedPayload extends MomentRealtimeBasePayload {
+  audience?: string;
+}
+
+export interface MomentDeletedPayload extends MomentRealtimeBasePayload {
+  deletedByActorId?: string;
+}
+
+export interface MomentCommentedPayload extends MomentRealtimeBasePayload {
+  commentId: string;
+  commentAuthorActorId?: string;
+}
+
+export interface MomentReactedPayload extends MomentRealtimeBasePayload {
+  reactionActorId?: string;
+  kind?: string;
+  removed: boolean;
+}
+
+export interface MomentResyncRequestedPayload {
+  reason: string;
+  newestEventId?: string;
+}
+
+export interface RelationshipChangedPayload {
+  targetActorId: string;
+  action: 'follow' | 'unfollow' | 'block' | 'unblock';
+}
+
 /**
  * Group Sender-Keys distribution-message install notification.
  *
@@ -208,6 +245,12 @@ export interface EventPayloadMap {
   [EVENT.REALTIME_MESSAGE_MUTATION]: RealtimeMessageMutationPayload;
   [EVENT.REALTIME_GROUP_MEMBERSHIP_CHANGE]: RealtimeGroupMembershipChangePayload;
   [EVENT.REALTIME_CONVERSATION_SETTINGS_CHANGED]: RealtimeConversationSettingsChangedPayload;
+  [EVENT.MOMENT_CREATED]: MomentCreatedPayload;
+  [EVENT.MOMENT_DELETED]: MomentDeletedPayload;
+  [EVENT.MOMENT_COMMENTED]: MomentCommentedPayload;
+  [EVENT.MOMENT_REACTED]: MomentReactedPayload;
+  [EVENT.MOMENT_RESYNC_REQUESTED]: MomentResyncRequestedPayload;
+  [EVENT.RELATIONSHIP_CHANGED]: RelationshipChangedPayload;
   [EVENT.GROUP_SKDM_INSTALLED]: GroupSkdmInstalledPayload;
 }
 

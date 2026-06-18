@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -42,7 +43,8 @@ const (
 	routeSocialComment = "/api/v1/social/comments/:commentId"
 
 	// Timeline
-	routeSocialTimeline = "/api/v1/social/timeline"
+	routeSocialTimeline    = "/api/v1/social/timeline"
+	routeSocialMomentsSync = "/api/v1/social/moments/sync"
 
 	// Relationships
 	routeSocialFollow       = "/api/v1/social/relationships/follow"
@@ -57,6 +59,9 @@ const (
 
 	// Self-stats (drives the user-side dashboard panel)
 	routeSocialMyStats = "/api/v1/social/me/stats"
+
+	// Moderation / Station trust policy
+	routeSocialStationModeration = "/api/v1/social/moderation/stations"
 
 	// Circles
 	routeSocialCircles      = "/api/v1/social/circles"
@@ -81,6 +86,7 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("social-get-post", routeSocialPost, server.GET, s.handleGetPost, cw),
 		server.NewTypedHandler("social-get-moment", routeSocialMoment, server.GET, s.handleGetPost, cw),
 		server.NewTypedHandler("social-get-timeline", routeSocialTimeline, server.GET, s.handleGetTimeline, cw, jw),
+		server.NewTypedHandler("social-sync-moments-projection", routeSocialMomentsSync, server.POST, s.handleSyncMomentsProjection, cw, jw),
 		server.NewTypedHandler("social-get-user-posts", routeSocialUserPosts, server.GET, s.handleGetUserPosts, cw, jw),
 
 		// Reactions
@@ -106,6 +112,11 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("social-search-users", routeSocialUserSearch, server.GET, s.handleSearchUsers, cw, jw),
 		server.NewTypedHandler("social-get-me", routeSocialUserMe, server.GET, s.handleGetMe, cw, jw),
 		server.NewTypedHandler("social-my-stats", routeSocialMyStats, server.GET, s.handleGetMyStats, cw, jw),
+
+		// Moderation
+		server.NewTypedHandler("social-upsert-station-moderation", routeSocialStationModeration, server.POST, s.handleUpsertStationModerationPolicy, cw, jw),
+		server.NewTypedHandler("social-list-station-moderation", routeSocialStationModeration, server.GET, s.handleListStationModerationPolicies, cw, jw),
+		server.NewTypedHandler("social-delete-station-moderation", routeSocialStationModeration, server.DELETE, s.handleDeleteStationModerationPolicy, cw, jw),
 
 		// Circles
 		server.NewTypedHandler("social-create-circle", routeSocialCircles, server.POST, s.handleCreateCircle, cw, jw),
@@ -221,7 +232,15 @@ func (s *subServer) handleGetPost(ctx context.Context, req *model.GetPostRequest
 	if post == nil {
 		return nil, server.NotFound("post not found")
 	}
-	return &model.GetPostResponse{Post: post}, nil
+	if blocked, err := s.moderationSvc.IsPostAuthorStationBlocked(ctx, post); err != nil {
+		return nil, server.InternalErrorWithCause("station moderation check failed", err)
+	} else if blocked {
+		return nil, server.NotFound("post not found")
+	}
+	return &model.GetPostResponse{
+		Post:        post,
+		Explanation: application.BuildFeedObjectExplanation(post, model.RelationshipReason_RELATIONSHIP_REASON_PROFILE_VIEW),
+	}, nil
 }
 
 func (s *subServer) handleGetUserPosts(ctx context.Context, req *model.ListPostsRequest) (*model.ListPostsResponse, error) {
@@ -253,10 +272,26 @@ func (s *subServer) handleGetUserPosts(ctx context.Context, req *model.ListPosts
 		return nil, server.InternalErrorWithCause("failed to list user posts", err)
 	}
 	return &model.ListPostsResponse{
-		Posts:      posts,
-		NextCursor: nextCursor,
-		HasMore:    hasMore,
+		Posts:        posts,
+		NextCursor:   nextCursor,
+		HasMore:      hasMore,
+		Explanations: buildProfileExplanations(posts),
 	}, nil
+}
+
+func buildProfileExplanations(posts []*model.Post) []*model.FeedObjectExplanation {
+	if len(posts) == 0 {
+		return nil
+	}
+
+	explanations := make([]*model.FeedObjectExplanation, 0, len(posts))
+	for _, post := range posts {
+		explanation := application.BuildFeedObjectExplanation(post, model.RelationshipReason_RELATIONSHIP_REASON_PROFILE_VIEW)
+		if explanation != nil {
+			explanations = append(explanations, explanation)
+		}
+	}
+	return explanations
 }
 
 // --- Reaction handlers ----------------------------------------------------
@@ -345,10 +380,7 @@ func (s *subServer) handleGetPostComments(ctx context.Context, req *model.GetCom
 	if id, ok := getUserID(ctx); ok {
 		viewerID = id
 	}
-	if err := s.assertReadable(ctx, req.PostId, viewerID); err != nil {
-		return nil, err
-	}
-	resp, err := s.commentSvc.ListByPost(ctx, postID, req.Cursor, int(req.Limit))
+	resp, err := s.commentSvc.ListByPost(ctx, postID, viewerID, req.Cursor, int(req.Limit))
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to list comments", err)
 	}
@@ -404,6 +436,48 @@ func (s *subServer) handleGetTimeline(ctx context.Context, req *model.GetTimelin
 		return nil, server.InternalErrorWithCause("failed to get timeline", err)
 	}
 	return resp, nil
+}
+
+func (s *subServer) handleSyncMomentsProjection(ctx context.Context, req *model.SyncMomentsProjectionRequest) (*model.SyncMomentsProjectionResponse, error) {
+	viewerID, ok := getUserID(ctx)
+	if !ok {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req == nil {
+		req = &model.SyncMomentsProjectionRequest{}
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	home, err := s.timelineSvc.GetTimeline(ctx, &model.GetTimelineRequest{
+		Type:   model.TimelineType_TIMELINE_HOME,
+		Cursor: req.HomeCursor,
+		Limit:  limit,
+	}, viewerID)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("failed to sync home moments projection", err)
+	}
+
+	public, err := s.timelineSvc.GetTimeline(ctx, &model.GetTimelineRequest{
+		Type:   model.TimelineType_TIMELINE_PUBLIC,
+		Cursor: req.PublicCursor,
+		Limit:  limit,
+		Sort:   req.PublicSort,
+	}, viewerID)
+	if err != nil {
+		return nil, server.InternalErrorWithCause("failed to sync public moments projection", err)
+	}
+
+	return &model.SyncMomentsProjectionResponse{
+		HomeTimeline:   home,
+		PublicTimeline: public,
+		SyncToken:      fmt.Sprintf("%s:%s", home.GetNextCursor(), public.GetNextCursor()),
+	}, nil
 }
 
 // --- Relationship handlers ----------------------------------------------------
@@ -526,16 +600,26 @@ func (s *subServer) handleSearchUsers(ctx context.Context, req *model.SearchUser
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to search users", err)
 	}
-	items := make([]*model.Actor, len(actors))
-	for i, a := range actors {
-		items[i] = &model.Actor{
-			Id:          fmt.Sprintf("%d", a.ID),
-			Username:    a.PreferredUsername,
-			DisplayName: a.Name,
-			Email:       a.Email,
-			ActorId:     a.ID,
-			Avatar:      a.Icon,
+	items := make([]*model.Actor, 0, len(actors))
+	for _, a := range actors {
+		blocked, err := s.moderationSvc.IsStationBlocked(ctx, a.HomeStationDomain, a.HomeStationPeerID)
+		if err != nil {
+			return nil, server.InternalErrorWithCause("station moderation check failed", err)
 		}
+		if blocked {
+			continue
+		}
+		items = append(items, &model.Actor{
+			Id:                fmt.Sprintf("%d", a.ID),
+			Username:          a.PreferredUsername,
+			DisplayName:       a.Name,
+			Email:             a.Email,
+			ActorId:           a.ID,
+			Avatar:            a.Icon,
+			FederatedHandle:   a.FederatedHandle,
+			HomeStationPeerId: a.HomeStationPeerID,
+			HomeStationDomain: a.HomeStationDomain,
+		})
 	}
 	return &model.ActorList{Items: items, Total: int64(len(items))}, nil
 }
@@ -550,10 +634,12 @@ func (s *subServer) handleGetMe(ctx context.Context, _ *model.GetMeRequest) (*mo
 		return nil, server.InternalErrorWithCause("failed to get current user", err)
 	}
 	return &model.ActorProfile{
-		Id:          fmt.Sprintf("%d", a.ID),
-		DisplayName: a.Name,
-		Username:    a.PreferredUsername,
-		Avatar:      a.Icon,
+		Id:           fmt.Sprintf("%d", a.ID),
+		DisplayName:  a.Name,
+		Username:     a.PreferredUsername,
+		Avatar:       a.Icon,
+		ServerDomain: a.HomeStationDomain,
+		Acct:         a.FederatedHandle,
 	}, nil
 }
 
@@ -663,6 +749,50 @@ func (s *subServer) handleGetMyStats(ctx context.Context, _ *model.GetMyMomentsS
 		FollowersCount:         stats.FollowersCount,
 		CirclesCount:           stats.CirclesCount,
 	}, nil
+}
+
+// --- Moderation ---------------------------------------------------------
+
+func (s *subServer) handleUpsertStationModerationPolicy(
+	ctx context.Context,
+	req *model.UpsertStationModerationPolicyRequest,
+) (*model.UpsertStationModerationPolicyResponse, error) {
+	userID, ok := getUserID(ctx)
+	if !ok {
+		return nil, server.Unauthorized("authentication required")
+	}
+	policy, err := s.moderationSvc.UpsertStationPolicy(ctx, req, userID)
+	if err != nil {
+		return nil, server.BadRequest(err.Error())
+	}
+	return &model.UpsertStationModerationPolicyResponse{Policy: policy}, nil
+}
+
+func (s *subServer) handleDeleteStationModerationPolicy(
+	ctx context.Context,
+	req *model.DeleteStationModerationPolicyRequest,
+) (*model.DeleteStationModerationPolicyResponse, error) {
+	if _, ok := getUserID(ctx); !ok {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if err := s.moderationSvc.DeleteStationPolicy(ctx, req); err != nil {
+		return nil, server.BadRequest(err.Error())
+	}
+	return &model.DeleteStationModerationPolicyResponse{Success: true}, nil
+}
+
+func (s *subServer) handleListStationModerationPolicies(
+	ctx context.Context,
+	req *model.ListStationModerationPoliciesRequest,
+) (*model.ListStationModerationPoliciesResponse, error) {
+	if _, ok := getUserID(ctx); !ok {
+		return nil, server.Unauthorized("authentication required")
+	}
+	resp, err := s.moderationSvc.ListStationPolicies(ctx, req)
+	if err != nil {
+		return nil, server.BadRequest(err.Error())
+	}
+	return resp, nil
 }
 
 // --- Helpers ----------------------------------------------------

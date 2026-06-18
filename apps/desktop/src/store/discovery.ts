@@ -27,6 +27,7 @@ export interface DiscoveryUser {
   email?: string;
   actorId?: string;
   avatar?: string;
+  homeStationDomain?: string;
 }
 
 export interface MeProfile {
@@ -93,6 +94,9 @@ export const useDiscoveryStore = create<DiscoveryState>((set, get) => ({
         email: raw.email ? String(raw.email) : undefined,
         actorId: raw.actorId ? String(raw.actorId) : undefined,
         avatar: raw.avatar ? String(raw.avatar) : undefined,
+        homeStationDomain: raw.homeStationDomain || raw.home_station_domain
+          ? String(raw.homeStationDomain ?? raw.home_station_domain)
+          : undefined,
       }));
       set({ results: items, total: data.total ?? items.length, searching: false });
     } catch (err) {

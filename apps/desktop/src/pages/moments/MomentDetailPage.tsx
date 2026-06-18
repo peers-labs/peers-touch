@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Empty, Spin, Typography, message } from 'antd';
+import { Button } from '@lobehub/ui';
+import { Card, Empty, Spin, Typography, message, theme } from 'antd';
 import { ChevronLeft } from 'lucide-react';
 import { selectMomentComments, useMomentsStore } from '../../store/moments';
 import { MomentCard } from '../../components/moments/MomentCard';
@@ -11,10 +11,9 @@ const { Text } = Typography;
 
 // MomentDetailView — single post + comment thread.
 //
-// Loads on mount even if the post is already in `postsById` from
-// the feed: detail view shows the FULL reaction list and the comment
-// thread, both of which the timeline payload doesn't carry. The
-// store dedupes the post by id so the second load is cheap.
+// Detail projection is refreshed by `momentsRuntime` before this view
+// is shown. This component only renders store state and forwards user
+// actions such as comment pagination or submission.
 
 interface MomentDetailViewProps {
   postId: string;
@@ -30,22 +29,18 @@ export function MomentDetailView({
   onAuthorClick,
 }: MomentDetailViewProps) {
   const { t } = useTranslation('moments');
+  const { token } = theme.useToken();
   const post = useMomentsStore((s) => s.postsById[postId]);
   const reactions = useMomentsStore((s) => s.reactions[postId]);
+  const explanation = useMomentsStore((s) => s.feedExplanations[postId]);
   const comments = useMomentsStore((s) => selectMomentComments(s, postId));
   const commentsHasMore = useMomentsStore((s) => !!s.commentsHasMore[postId]);
   const commentsLoading = useMomentsStore((s) => !!s.commentsLoading[postId]);
-  const loadPost = useMomentsStore((s) => s.loadPost);
   const loadComments = useMomentsStore((s) => s.loadComments);
   const createComment = useMomentsStore((s) => s.createComment);
   const deleteComment = useMomentsStore((s) => s.deleteComment);
   const reactToPost = useMomentsStore((s) => s.reactToPost);
   const unreactToPost = useMomentsStore((s) => s.unreactToPost);
-
-  useEffect(() => {
-    loadPost(postId).catch(() => {});
-    loadComments(postId, true).catch(() => {});
-  }, [postId, loadPost, loadComments]);
 
   const handleReact = async (id: string, k: ReactionKind) => {
     await reactToPost(id, k);
@@ -62,7 +57,7 @@ export function MomentDetailView({
         onClick={onBack}
         style={{ marginBottom: 12 }}
       >
-        {t('moments.action.back', { defaultValue: 'Back' })}
+        {t('moments.action.back')}
       </Button>
 
       {!post && (
@@ -76,11 +71,23 @@ export function MomentDetailView({
           <MomentCard
             post={post}
             reactions={reactions}
+            explanation={explanation}
+            viewerActorId={viewerActorId}
             onAuthorClick={onAuthorClick}
             onReact={handleReact}
             onUnreact={handleUnreact}
           />
-          <div style={{ marginTop: 16 }}>
+          <Card
+            size="small"
+            bordered
+            style={{
+              marginTop: 10,
+              borderRadius: 16,
+              borderColor: token.colorBorderSecondary,
+              boxShadow: 'none',
+            }}
+            bodyStyle={{ padding: 14 }}
+          >
             <CommentList
               postId={postId}
               comments={comments}
@@ -100,7 +107,7 @@ export function MomentDetailView({
                 await deleteComment(postId, cid);
               }}
             />
-          </div>
+          </Card>
         </>
       )}
 
