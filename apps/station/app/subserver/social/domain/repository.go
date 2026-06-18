@@ -227,3 +227,14 @@ type FollowRepository interface {
 
 	IsFollowing(ctx context.Context, followerID, followingID uint64) (bool, error)
 }
+
+// StationModerationRepository persists Station-scoped trust policy.
+// Unlike actor block, this is not a social relationship edge; it is a
+// Station policy source consumed by feed projection and action gates.
+type StationModerationRepository interface {
+	Upsert(ctx context.Context, policy *StationModerationPolicy) error
+	Delete(ctx context.Context, stationDomain, stationPeerID string, kind StationModerationPolicyKind) error
+	List(ctx context.Context, kind StationModerationPolicyKind, c Cursor, limit int) ([]*StationModerationPolicy, error)
+	IsBlockedStation(ctx context.Context, stationDomain, stationPeerID string) (bool, error)
+	ListBlockedStations(ctx context.Context) (map[string]*StationModerationPolicy, error)
+}

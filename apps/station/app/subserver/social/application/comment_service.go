@@ -60,6 +60,11 @@ func (s *CommentService) CreateComment(ctx context.Context, req *model.CreateCom
 	if parent.IsDeleted {
 		return nil, fmt.Errorf("parent post %d is deleted", parentPostID)
 	}
+	if blocked, err := postAuthorStationModerated(ctx, s.repos.Moderation, parent); err != nil {
+		return nil, err
+	} else if blocked {
+		return nil, fmt.Errorf("parent post %d not found or not readable", parentPostID)
+	}
 
 	// PostClass is derived from the parent's audience — the parent we
 	// just loaded passed the visibility check, so its audience kind is
@@ -166,6 +171,11 @@ func (s *CommentService) ListByPost(ctx context.Context, parentPostID, viewerID 
 		return nil, fmt.Errorf("lookup parent post: %w", err)
 	}
 	if parent == nil {
+		return nil, fmt.Errorf("parent post %d not found or not readable", parentPostID)
+	}
+	if blocked, err := postAuthorStationModerated(ctx, s.repos.Moderation, parent); err != nil {
+		return nil, err
+	} else if blocked {
 		return nil, fmt.Errorf("parent post %d not found or not readable", parentPostID)
 	}
 	postAuthorID := parseActorID(parent.GetAuthorId())

@@ -29,7 +29,8 @@ use crate::contracts::{
     SocialDeleteMomentInput, SocialFollowInput, SocialGetCommentsInput, SocialGetFollowersInput,
     SocialGetFollowingInput, SocialGetMomentInput, SocialGetRelationshipInput,
     SocialGetTimelineInput, SocialListByAuthorInput, SocialReactInput,
-    SocialSyncMomentsProjectionInput, SocialUnreactInput,
+    SocialStationModerationDeleteInput, SocialStationModerationListInput,
+    SocialStationModerationUpsertInput, SocialSyncMomentsProjectionInput, SocialUnreactInput,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -95,6 +96,14 @@ fn delete_proto<Resp: Message + Default>(
     token: &str,
 ) -> Result<Resp, station_client::StationClientError> {
     station_client::request_proto::<(), Resp>(Method::DELETE, path, token, None, None)
+}
+
+fn delete_proto_with_query<Resp: Message + Default>(
+    path: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+) -> Result<Resp, station_client::StationClientError> {
+    station_client::request_proto::<(), Resp>(Method::DELETE, path, token, query, None)
 }
 
 /// Translate the JS-side string id (always a stringified u64 to keep
@@ -270,6 +279,110 @@ pub fn social_sync_moments_projection(
         match post_proto("/api/v1/social/moments/sync", &token, &req) {
             Ok(r) => r,
             Err(e) => return station_error_proto(e, "sync moments projection failed"),
+        };
+    AppResult::success(resp.encode_to_vec())
+}
+
+// ---------------------------------------------------------------------------
+// Moderation — Station trust policy
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn social_station_moderation_upsert(
+    input: SocialStationModerationUpsertInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    if input.station_domain.trim().is_empty()
+        && input
+            .station_peer_id
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .is_empty()
+    {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "station_domain or station_peer_id is required",
+            None,
+        );
+    }
+    let req = model::social::UpsertStationModerationPolicyRequest {
+        policy: Some(model::social::StationModerationPolicy {
+            station_domain: input.station_domain,
+            station_peer_id: input.station_peer_id.unwrap_or_default(),
+            kind: input.kind.unwrap_or(1),
+            reason: input.reason.unwrap_or_default(),
+            ..Default::default()
+        }),
+    };
+    let resp: model::social::UpsertStationModerationPolicyResponse =
+        match post_proto("/api/v1/social/moderation/stations", &token, &req) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "upsert station moderation failed"),
+        };
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn social_station_moderation_delete(
+    input: SocialStationModerationDeleteInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let station_domain = input.station_domain.unwrap_or_default();
+    let station_peer_id = input.station_peer_id.unwrap_or_default();
+    if station_domain.trim().is_empty() && station_peer_id.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "station_domain or station_peer_id is required",
+            None,
+        );
+    }
+    let query = vec![
+        ("station_domain", station_domain),
+        ("station_peer_id", station_peer_id),
+        ("kind", input.kind.unwrap_or(1).to_string()),
+    ];
+    let resp: model::social::DeleteStationModerationPolicyResponse =
+        match delete_proto_with_query("/api/v1/social/moderation/stations", &token, Some(&query)) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "delete station moderation failed"),
+        };
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn social_station_moderation_list(
+    input: SocialStationModerationListInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let mut query: Vec<(&str, String)> = vec![("kind", input.kind.unwrap_or(1).to_string())];
+    if let Some(c) = input.cursor {
+        if !c.is_empty() {
+            query.push(("cursor", c));
+        }
+    }
+    if let Some(l) = input.limit {
+        query.push(("limit", l.to_string()));
+    }
+    let resp: model::social::ListStationModerationPoliciesResponse =
+        match get_proto("/api/v1/social/moderation/stations", &token, Some(&query)) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "list station moderation failed"),
         };
     AppResult::success(resp.encode_to_vec())
 }

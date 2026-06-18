@@ -16,7 +16,7 @@
 //     failure — otherwise the follow button stays in the wrong state
 //     after a network error.
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { fromBinary, toBinary, create } from '@bufbuild/protobuf';
 import {
@@ -30,8 +30,11 @@ import {
   SyncMomentsProjectionResponseSchema,
   ListPostsResponseSchema,
   ReactToPostResponseSchema,
+  UpsertStationModerationPolicyResponseSchema,
+  DeleteStationModerationPolicyResponseSchema,
   PostType,
   ReactionKind,
+  RelationshipReason_Kind,
   type Audience,
 } from '../gen/proto/domain/social/post_pb';
 import { EncryptedMediaDescriptorSchema } from '../gen/proto/domain/common/common_pb';
@@ -42,13 +45,29 @@ import {
 import {
   FollowResponseSchema,
 } from '../gen/proto/domain/social/relationship_pb';
+import {
+  BlockUserResponseSchema,
+  UnblockUserResponseSchema,
+} from '../gen/proto/domain/chat/friend_chat_pb';
+import { ListMyCirclesResponseSchema } from '../gen/proto/domain/social/circle_pb';
 import { selectMomentComments, useMomentsStore } from '../store/moments';
 import { useRelationshipsStore } from '../store/relationships';
 import { useSessionStore } from '../store/session';
 import { openMomentMediaKeyFromAudience } from '../services/momentAudienceKeys';
+import { EVENT, eventBus } from '../kernel/events';
+import { momentsRuntime } from '../runtimes/momentsRuntime';
+import { api } from '../services/desktop_api';
+import {
+  socialStationModerationDelete,
+  socialStationModerationUpsert,
+} from '../services/social_api';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
+}));
+
+vi.mock('../storage/desktopClientStorage', () => ({
+  readDesktopPreferenceSync: vi.fn(() => undefined),
 }));
 
 const invokeMock = vi.mocked(invoke);
@@ -94,7 +113,23 @@ function audience(): Audience {
   return create(AudienceSchema, { kind: 1 /* PUBLIC */ }) as Audience;
 }
 
+function installEventWindowStub(): void {
+  const target = new EventTarget();
+  vi.stubGlobal('window', {
+    addEventListener: target.addEventListener.bind(target),
+    removeEventListener: target.removeEventListener.bind(target),
+    dispatchEvent: target.dispatchEvent.bind(target),
+    setInterval: vi.fn(() => 1),
+    clearInterval: vi.fn(),
+  });
+}
+
+function dataOk(status: unknown) {
+  return { ok: true, data: { status: JSON.stringify(status) } };
+}
+
 beforeEach(() => {
+  momentsRuntime.teardown();
   invokeMock.mockReset();
   pending = [];
   useMomentsStore.getState().reset();
@@ -111,6 +146,11 @@ beforeEach(() => {
   });
 });
 
+afterEach(() => {
+  momentsRuntime.teardown();
+  vi.unstubAllGlobals();
+});
+
 describe('moments store: loadFeed', () => {
   it('ingests posts and dedupes across two pages', async () => {
     enqueue('social_get_timeline',
@@ -118,6 +158,14 @@ describe('moments store: loadFeed', () => {
         posts: [
           { id: 'p1', authorId: 'a', type: PostType.TEXT },
           { id: 'p2', authorId: 'a', type: PostType.TEXT },
+        ],
+        explanations: [
+          {
+            objectId: 'p1',
+            relationshipReason: {
+              kind: RelationshipReason_Kind.RELATIONSHIP_REASON_FOLLOWING,
+            },
+          },
         ],
         nextCursor: 'cur1',
         hasMore: true,
@@ -142,6 +190,9 @@ describe('moments store: loadFeed', () => {
     const ids = useMomentsStore.getState().feeds.home.postIds;
     expect(ids).toEqual(['p1', 'p2', 'p3']);
     expect(useMomentsStore.getState().feeds.home.hasMore).toBe(false);
+    expect(useMomentsStore.getState().feedExplanations['p1']?.relationshipReason?.kind).toBe(
+      RelationshipReason_Kind.RELATIONSHIP_REASON_FOLLOWING,
+    );
   });
 
   it('replaces (not appends) when refresh=true', async () => {
@@ -173,6 +224,14 @@ describe('moments store: syncProjection', () => {
       bytesOk(SyncMomentsProjectionResponseSchema, {
         homeTimeline: {
           posts: [{ id: 'home-new', authorId: 'a', type: PostType.TEXT }],
+          explanations: [
+            {
+              objectId: 'home-new',
+              relationshipReason: {
+                kind: RelationshipReason_Kind.RELATIONSHIP_REASON_SELF,
+              },
+            },
+          ],
           nextCursor: 'home-cur',
           hasMore: true,
         },
@@ -195,6 +254,9 @@ describe('moments store: syncProjection', () => {
     expect(state.feeds.explore.nextCursor).toBe('pub-cur');
     expect(state.postsById['home-new']?.id).toBe('home-new');
     expect(state.postsById['pub-new']?.id).toBe('pub-new');
+    expect(state.feedExplanations['home-new']?.relationshipReason?.kind).toBe(
+      RelationshipReason_Kind.RELATIONSHIP_REASON_SELF,
+    );
   });
 });
 
@@ -357,6 +419,14 @@ describe('moments store: createPost / deletePost', () => {
     enqueue('social_get_timeline',
       bytesOk(GetTimelineResponseSchema, {
         posts: [{ id: 'p1', authorId: 'a' }, { id: 'p2', authorId: 'a' }],
+        explanations: [
+          {
+            objectId: 'p2',
+            relationshipReason: {
+              kind: RelationshipReason_Kind.RELATIONSHIP_REASON_FOLLOWING,
+            },
+          },
+        ],
         nextCursor: '',
         hasMore: false,
       }),
@@ -378,6 +448,7 @@ describe('moments store: createPost / deletePost', () => {
     expect(useMomentsStore.getState().feeds.home.postIds).toEqual(['p1']);
     expect(useMomentsStore.getState().userFeeds['a'].postIds).toEqual(['p3']);
     expect(useMomentsStore.getState().postsById['p2']).toBeUndefined();
+    expect(useMomentsStore.getState().feedExplanations['p2']).toBeUndefined();
   });
 });
 
@@ -470,6 +541,7 @@ describe('moments store: reactions', () => {
 
 describe('relationships store: optimistic follow', () => {
   it('flips following=true immediately and confirms with server payload', async () => {
+    const publishSpy = vi.spyOn(eventBus, 'publish').mockImplementation(() => undefined);
     enqueue('social_follow',
       bytesOk(FollowResponseSchema, {
         success: true,
@@ -488,9 +560,15 @@ describe('relationships store: optimistic follow', () => {
     await promise;
     expect(useRelationshipsStore.getState().relations['u2']?.following).toBe(true);
     expect(useRelationshipsStore.getState().relations['u2']?.id).toBe('r1');
+    expect(publishSpy).toHaveBeenCalledWith(EVENT.RELATIONSHIP_CHANGED, {
+      targetActorId: 'u2',
+      action: 'follow',
+    });
+    publishSpy.mockRestore();
   });
 
   it('rolls back on follow failure', async () => {
+    const publishSpy = vi.spyOn(eventBus, 'publish').mockImplementation(() => undefined);
     enqueue('social_follow', {
       ok: false,
       error: { code: 'NETWORK', message: 'boom' },
@@ -500,5 +578,166 @@ describe('relationships store: optimistic follow', () => {
       useRelationshipsStore.getState().follow('u3'),
     ).rejects.toThrow();
     expect(useRelationshipsStore.getState().relations['u3']?.following).toBe(false);
+    expect(publishSpy).not.toHaveBeenCalledWith(EVENT.RELATIONSHIP_CHANGED, expect.anything());
+    publishSpy.mockRestore();
+  });
+});
+
+describe('friend-chat block bridge: moments projection signal', () => {
+  it('publishes relationship.changed after block succeeds', async () => {
+    const publishSpy = vi.spyOn(eventBus, 'publish').mockImplementation(() => undefined);
+    enqueue('friend_chat_block_user', bytesOk(BlockUserResponseSchema, {}));
+
+    await api.friendChatBlockUser('did:peers:u4');
+
+    expect(publishSpy).toHaveBeenCalledWith(EVENT.RELATIONSHIP_CHANGED, {
+      targetActorId: 'did:peers:u4',
+      action: 'block',
+    });
+    publishSpy.mockRestore();
+  });
+
+  it('publishes relationship.changed after unblock succeeds', async () => {
+    const publishSpy = vi.spyOn(eventBus, 'publish').mockImplementation(() => undefined);
+    enqueue('friend_chat_unblock_user', bytesOk(UnblockUserResponseSchema, { success: true }));
+
+    await api.friendChatUnblockUser('did:peers:u4');
+
+    expect(publishSpy).toHaveBeenCalledWith(EVENT.RELATIONSHIP_CHANGED, {
+      targetActorId: 'did:peers:u4',
+      action: 'unblock',
+    });
+    publishSpy.mockRestore();
+  });
+
+  it('does not publish relationship.changed when block fails', async () => {
+    const publishSpy = vi.spyOn(eventBus, 'publish').mockImplementation(() => undefined);
+    enqueue('friend_chat_block_user', {
+      ok: false,
+      error: { code: 'BLOCK_FAILED', message: 'boom' },
+    });
+
+    await expect(api.friendChatBlockUser('did:peers:u5')).rejects.toThrow();
+
+    expect(publishSpy).not.toHaveBeenCalledWith(EVENT.RELATIONSHIP_CHANGED, expect.anything());
+    publishSpy.mockRestore();
+  });
+});
+
+describe('station moderation bridge: moments projection signal', () => {
+  it('publishes moment.resync_requested after station policy upsert succeeds', async () => {
+    const publishSpy = vi.spyOn(eventBus, 'publish').mockImplementation(() => undefined);
+    enqueue('social_station_moderation_upsert',
+      bytesOk(UpsertStationModerationPolicyResponseSchema, {
+        policy: {
+          stationDomain: 'station-b.example',
+          kind: 1,
+        },
+      }),
+    );
+
+    await socialStationModerationUpsert({ stationDomain: 'station-b.example' });
+
+    expect(publishSpy).toHaveBeenCalledWith(EVENT.MOMENT_RESYNC_REQUESTED, {
+      reason: 'station_moderation_upsert',
+    });
+    publishSpy.mockRestore();
+  });
+
+  it('publishes moment.resync_requested after station policy delete succeeds', async () => {
+    const publishSpy = vi.spyOn(eventBus, 'publish').mockImplementation(() => undefined);
+    enqueue('social_station_moderation_delete',
+      bytesOk(DeleteStationModerationPolicyResponseSchema, { success: true }),
+    );
+
+    await socialStationModerationDelete({ stationDomain: 'station-b.example' });
+
+    expect(publishSpy).toHaveBeenCalledWith(EVENT.MOMENT_RESYNC_REQUESTED, {
+      reason: 'station_moderation_delete',
+    });
+    publishSpy.mockRestore();
+  });
+});
+
+describe('moments runtime: realtime recovery', () => {
+  it('refreshes the Moments projection after realtime reconnect', async () => {
+    installEventWindowStub();
+    useSessionStore.setState({
+      authenticated: true,
+      currentUser: {
+        actorId: 'viewer',
+        name: 'Viewer',
+        email: '',
+        loginMethod: 'password',
+      },
+      restoring: false,
+    });
+    enqueue('actor_get_my_profile', dataOk({
+      id: 'viewer',
+      displayName: 'Viewer',
+      username: 'viewer',
+      avatar: '',
+    }));
+    enqueue('social_sync_moments_projection',
+      bytesOk(SyncMomentsProjectionResponseSchema, {
+        homeTimeline: {
+          posts: [{ id: 'bootstrap-post', authorId: 'viewer', type: PostType.TEXT }],
+          nextCursor: '',
+          hasMore: false,
+        },
+        publicTimeline: {
+          posts: [],
+          nextCursor: '',
+          hasMore: false,
+        },
+      }),
+    );
+    enqueue('social_circle_list_mine', bytesOk(ListMyCirclesResponseSchema, { circles: [] }));
+
+    momentsRuntime.install();
+
+    await vi.waitFor(() => {
+      expect(useMomentsStore.getState().feeds.home.postIds).toEqual(['bootstrap-post']);
+    });
+
+    enqueue('social_sync_moments_projection',
+      bytesOk(SyncMomentsProjectionResponseSchema, {
+        homeTimeline: {
+          posts: [{ id: 'reconnected-post', authorId: 'remote', type: PostType.TEXT }],
+          explanations: [
+            {
+              objectId: 'reconnected-post',
+              relationshipReason: {
+                kind: RelationshipReason_Kind.RELATIONSHIP_REASON_FOLLOWING,
+              },
+            },
+          ],
+          nextCursor: '',
+          hasMore: false,
+        },
+        publicTimeline: {
+          posts: [],
+          nextCursor: '',
+          hasMore: false,
+        },
+      }),
+    );
+    enqueue('social_circle_list_mine', bytesOk(ListMyCirclesResponseSchema, { circles: [] }));
+
+    eventBus.publish(EVENT.REALTIME_CONNECTION_STATE, {
+      connected: false,
+      reason: 'network_lost',
+    });
+    eventBus.publish(EVENT.REALTIME_CONNECTION_STATE, {
+      connected: true,
+      reason: 'network_resumed',
+    });
+
+    await vi.waitFor(() => {
+      expect(useMomentsStore.getState().feeds.home.postIds).toEqual(['reconnected-post']);
+      expect(
+        useMomentsStore.getState().feedExplanations['reconnected-post']?.relationshipReason?.kind,
+      ).toBe(RelationshipReason_Kind.RELATIONSHIP_REASON_FOLLOWING);
+    });
   });
 });
