@@ -36,6 +36,7 @@ import { currentAuthenticatedActorId } from './session';
 import { log } from '../utils/logger';
 
 const TAG = 'moments-store';
+const EMPTY_COMMENTS: Comment[] = [];
 
 // All proto-shaped types in this store come straight from the
 // `apps/desktop/src/gen/proto/domain/social/*` bundle, which is a
@@ -74,6 +75,13 @@ const emptyFeed = (): MomentFeedState => ({
   hasMore: false,
   loading: false,
 });
+
+export function selectMomentComments(
+  state: { comments: Record<string, Comment[]> },
+  postId: string,
+): Comment[] {
+  return state.comments[postId] ?? EMPTY_COMMENTS;
+}
 
 interface MomentsState {
   // Posts indexed by id; every feed list stores ids only.
