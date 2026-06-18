@@ -474,7 +474,7 @@ type timelineItem struct {
 
 func (i timelineItem) deliveryAudienceKind() model.Audience_Kind {
 	if i.delivery != nil {
-		return i.delivery.AudienceKind
+		return audienceKindFromDelivery(i.delivery.AudienceKind)
 	}
 	if i.post != nil {
 		if i.post.Audience != nil {
