@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@lobehub/ui';
-import { Card, Input, Space, Tooltip, Typography, message, theme } from 'antd';
+import { Input, Space, Tooltip, Typography, message, theme } from 'antd';
 import { ImagePlus, LockKeyhole, RotateCcw, SendHorizontal, X } from 'lucide-react';
 import { create } from '@bufbuild/protobuf';
 import { convertFileSrc } from '@tauri-apps/api/core';
@@ -261,20 +261,10 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
   };
 
   return (
-    <Card
-      id="moments-composer"
-      style={{
-        marginBottom: 10,
-        borderColor: token.colorBorderSecondary,
-        borderRadius: 16,
-        boxShadow: 'none',
-        overflow: 'hidden',
-      }}
-      bodyStyle={{ padding: 0 }}
-    >
       <div
+        id="moments-composer"
         style={{
-          padding: 14,
+          padding: 2,
           background: token.colorBgContainer,
         }}
       >
@@ -392,7 +382,6 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
           </Space>
         </Space>
       </div>
-    </Card>
   );
 }
 

@@ -1,19 +1,24 @@
 import { useTranslation } from 'react-i18next';
-import { Button } from '@lobehub/ui';
-import { Card, Empty, Spin, Typography, message, theme } from 'antd';
+import { Button, message } from 'antd';
 import { ChevronLeft } from 'lucide-react';
 import { selectMomentComments, useMomentsStore } from '../../store/moments';
 import { MomentCard } from '../../components/moments/MomentCard';
 import { CommentList } from '../../components/moments/CommentList';
+import {
+  SocialEmptyState,
+  SocialThreadDivider,
+  SocialThreadSection,
+  SocialThreadSurface,
+} from '../../components/moments/surfaces';
 import type { ReactionKind } from '../../gen/proto/domain/social/post_pb';
-
-const { Text } = Typography;
 
 // MomentDetailView — single post + comment thread.
 //
-// Detail projection is refreshed by `momentsRuntime` before this view
-// is shown. This component only renders store state and forwards user
-// actions such as comment pagination or submission.
+// UI Identity contract:
+//   - Detail post, comments, and reply composer must read as one
+//     thread surface instead of three stacked cards.
+//   - Loading / empty state must be explicit; a missing projection is
+//     not rendered as a broken blank card.
 
 interface MomentDetailViewProps {
   postId: string;
@@ -29,7 +34,6 @@ export function MomentDetailView({
   onAuthorClick,
 }: MomentDetailViewProps) {
   const { t } = useTranslation('moments');
-  const { token } = theme.useToken();
   const post = useMomentsStore((s) => s.postsById[postId]);
   const reactions = useMomentsStore((s) => s.reactions[postId]);
   const explanation = useMomentsStore((s) => s.feedExplanations[postId]);
@@ -42,52 +46,49 @@ export function MomentDetailView({
   const reactToPost = useMomentsStore((s) => s.reactToPost);
   const unreactToPost = useMomentsStore((s) => s.unreactToPost);
 
-  const handleReact = async (id: string, k: ReactionKind) => {
-    await reactToPost(id, k);
+  const handleReact = async (id: string, kind: ReactionKind) => {
+    await reactToPost(id, kind);
   };
-  const handleUnreact = async (id: string, k?: ReactionKind) => {
-    await unreactToPost(id, k);
+
+  const handleUnreact = async (id: string, kind?: ReactionKind) => {
+    await unreactToPost(id, kind);
   };
 
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <Button
         type="text"
         icon={<ChevronLeft size={16} />}
         onClick={onBack}
-        style={{ marginBottom: 12 }}
+        style={{ alignSelf: 'flex-start', paddingInline: 0 }}
       >
         {t('moments.action.back')}
       </Button>
 
-      {!post && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-          <Spin />
-        </div>
+      {!post && commentsLoading && <SocialEmptyState kind="loading" />}
+
+      {!post && !commentsLoading && (
+        <SocialEmptyState
+          kind="empty"
+          title={t('moments.placeholder.empty')}
+          description={t('moments.placeholder.detailEmpty')}
+        />
       )}
 
       {post && (
-        <>
+        <SocialThreadSurface>
           <MomentCard
             post={post}
             reactions={reactions}
             explanation={explanation}
             viewerActorId={viewerActorId}
+            embedded
             onAuthorClick={onAuthorClick}
             onReact={handleReact}
             onUnreact={handleUnreact}
           />
-          <Card
-            size="small"
-            bordered
-            style={{
-              marginTop: 10,
-              borderRadius: 16,
-              borderColor: token.colorBorderSecondary,
-              boxShadow: 'none',
-            }}
-            bodyStyle={{ padding: 14 }}
-          >
+          <SocialThreadDivider label={t('moments.comment.viewAll')} />
+          <SocialThreadSection>
             <CommentList
               postId={postId}
               comments={comments}
@@ -107,12 +108,8 @@ export function MomentDetailView({
                 await deleteComment(postId, cid);
               }}
             />
-          </Card>
-        </>
-      )}
-
-      {!post && !commentsLoading && (
-        <Empty description={<Text>{t('moments.placeholder.detailEmpty')}</Text>} />
+          </SocialThreadSection>
+        </SocialThreadSurface>
       )}
     </div>
   );

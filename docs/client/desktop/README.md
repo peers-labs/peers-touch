@@ -34,6 +34,8 @@ Desktop 与 `station / desktop-rust / desktop-web / desktop-app` 的跨进程关
 ## 跨端通用 UX
 
 - [../common/ux-design-methodology.md](../common/ux-design-methodology.md) — 客户端 UX 问题从案例沉淀成准则、契约、invariant 的方法论
+- [../common/ui-identity/README.md](../common/ui-identity/README.md) — Peers Touch 客户端通用 UI Identity、模块 UI ID、跨模块 patterns
+- [../common/ui-identity/modules/social/desktop.md](../common/ui-identity/modules/social/desktop.md) — Desktop Social UI ID，约束 feed/detail/comment/composer/reaction/moderation 表达
 - [../common/form-control-ux-contract.md](../common/form-control-ux-contract.md) — 跨端表单控件与组合输入控件体验契约
 
 ## 规范层（写代码前看）
