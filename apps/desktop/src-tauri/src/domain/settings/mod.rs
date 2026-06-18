@@ -6,6 +6,7 @@ pub enum SettingKey {
     Locale,
     TelemetryEnabled,
     CurrentAgent,
+    ChatScreenshotShortcut,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,6 +22,7 @@ pub fn parse_key(key: &str) -> Result<SettingKey, String> {
         "locale" => Ok(SettingKey::Locale),
         "telemetry_enabled" => Ok(SettingKey::TelemetryEnabled),
         "settings.currentAgent" => Ok(SettingKey::CurrentAgent),
+        "settings.chat.screenshotShortcut" => Ok(SettingKey::ChatScreenshotShortcut),
         _ => Err("unsupported setting key".to_string()),
     }
 }
@@ -31,6 +33,7 @@ pub fn key_name(key: SettingKey) -> &'static str {
         SettingKey::Locale => "locale",
         SettingKey::TelemetryEnabled => "telemetry_enabled",
         SettingKey::CurrentAgent => "settings.currentAgent",
+        SettingKey::ChatScreenshotShortcut => "settings.chat.screenshotShortcut",
     }
 }
 
@@ -40,6 +43,7 @@ pub fn default_value(key: SettingKey) -> Value {
         SettingKey::Locale => Value::String("zh-CN".to_string()),
         SettingKey::TelemetryEnabled => Value::Bool(false),
         SettingKey::CurrentAgent => Value::String("assistant".to_string()),
+        SettingKey::ChatScreenshotShortcut => Value::String("Mod+Shift+A".to_string()),
     }
 }
 
@@ -61,6 +65,10 @@ pub fn default_settings() -> Vec<(String, Value)> {
             key_name(SettingKey::CurrentAgent).to_string(),
             default_value(SettingKey::CurrentAgent),
         ),
+        (
+            key_name(SettingKey::ChatScreenshotShortcut).to_string(),
+            default_value(SettingKey::ChatScreenshotShortcut),
+        ),
     ]
 }
 
@@ -68,7 +76,9 @@ pub fn side_effect(key: SettingKey) -> SettingSideEffect {
     match key {
         SettingKey::Theme => SettingSideEffect::ThemeChanged,
         SettingKey::Locale => SettingSideEffect::LocaleChanged,
-        SettingKey::TelemetryEnabled | SettingKey::CurrentAgent => SettingSideEffect::None,
+        SettingKey::TelemetryEnabled
+        | SettingKey::CurrentAgent
+        | SettingKey::ChatScreenshotShortcut => SettingSideEffect::None,
     }
 }
 
@@ -115,6 +125,19 @@ pub fn validate_value(key: SettingKey, value: &Value) -> Result<Value, String> {
                 return Err("settings.currentAgent is too long".to_string());
             }
             Ok(Value::String(name.to_string()))
+        }
+        SettingKey::ChatScreenshotShortcut => {
+            let shortcut = value
+                .as_str()
+                .ok_or_else(|| "settings.chat.screenshotShortcut must be string".to_string())?
+                .trim();
+            if shortcut.is_empty() {
+                return Err("settings.chat.screenshotShortcut must not be empty".to_string());
+            }
+            if shortcut.len() > 64 {
+                return Err("settings.chat.screenshotShortcut is too long".to_string());
+            }
+            Ok(Value::String(shortcut.to_string()))
         }
     }
 }

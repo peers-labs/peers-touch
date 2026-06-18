@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Button, Card, Empty, Spin, Typography, message, theme } from 'antd';
 import { ChevronLeft } from 'lucide-react';
-import { useMomentsStore } from '../../store/moments';
+import { selectMomentComments, useMomentsStore } from '../../store/moments';
 import { MomentCard } from '../../components/moments/MomentCard';
 import { CommentList } from '../../components/moments/CommentList';
 import type { ReactionKind } from '../../gen/proto/domain/social/post_pb';
@@ -31,7 +31,7 @@ export function MomentDetailView({
   const { token } = theme.useToken();
   const post = useMomentsStore((s) => s.postsById[postId]);
   const reactions = useMomentsStore((s) => s.reactions[postId]);
-  const comments = useMomentsStore((s) => s.comments[postId] ?? []);
+  const comments = useMomentsStore((s) => selectMomentComments(s, postId));
   const commentsHasMore = useMomentsStore((s) => !!s.commentsHasMore[postId]);
   const commentsLoading = useMomentsStore((s) => !!s.commentsLoading[postId]);
   const loadComments = useMomentsStore((s) => s.loadComments);

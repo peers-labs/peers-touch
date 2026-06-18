@@ -520,6 +520,13 @@ pub fn ingest_group_messages(user_scope: &str, payload: &Value) -> Result<(), St
     local_chat_store::ingest_group_payload(user_scope, payload)
 }
 
+pub fn index_plaintext_messages(
+    user_scope: &str,
+    records: &[LocalChatRecord],
+) -> Result<usize, String> {
+    local_chat_store::upsert_plaintext_records(user_scope, records)
+}
+
 pub fn search_friend_messages(
     user_scope: &str,
     query: &str,

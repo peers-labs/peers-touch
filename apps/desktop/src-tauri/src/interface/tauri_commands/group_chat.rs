@@ -93,17 +93,15 @@ fn extract_latest_ulid(payload: &Value) -> Option<String> {
 fn map_group_attachments(inputs: &[AttachmentInput]) -> Vec<model::chat::GroupMessageAttachment> {
     inputs
         .iter()
-        .map(|a| {
-            model::chat::GroupMessageAttachment {
-                cid: a.cid.clone(),
-                filename: a.filename.clone(),
-                mime_type: a.mime_type.clone(),
-                size: a.size,
-                thumbnail_cid: a.thumbnail_cid.clone().unwrap_or_default(),
-                visibility: a.visibility.clone().unwrap_or_default(),
-                media_encryption: None,
-                ..Default::default()
-            }
+        .map(|a| model::chat::GroupMessageAttachment {
+            cid: a.cid.clone(),
+            filename: a.filename.clone(),
+            mime_type: a.mime_type.clone(),
+            size: a.size,
+            thumbnail_cid: a.thumbnail_cid.clone().unwrap_or_default(),
+            visibility: a.visibility.clone().unwrap_or_default(),
+            media_encryption: None,
+            ..Default::default()
         })
         .collect()
 }
