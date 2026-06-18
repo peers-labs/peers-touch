@@ -1380,6 +1380,51 @@ pub struct SocialGetTimelineInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialSyncMomentsProjectionInput {
+    #[serde(default)]
+    pub home_cursor: Option<String>,
+    #[serde(default)]
+    pub public_cursor: Option<String>,
+    #[serde(default)]
+    pub limit: Option<i32>,
+    #[serde(default)]
+    pub public_sort: Option<i32>,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialStationModerationUpsertInput {
+    pub station_domain: String,
+    #[serde(default)]
+    pub station_peer_id: Option<String>,
+    #[serde(default)]
+    pub kind: Option<i32>,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialStationModerationDeleteInput {
+    #[serde(default)]
+    pub station_domain: Option<String>,
+    #[serde(default)]
+    pub station_peer_id: Option<String>,
+    #[serde(default)]
+    pub kind: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialStationModerationListInput {
+    #[serde(default)]
+    pub kind: Option<i32>,
+    #[serde(default)]
+    pub cursor: Option<String>,
+    #[serde(default)]
+    pub limit: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialReactInput {
     pub post_id: String,
     /// `ReactionKind` enum value (1=LIKE, 2=LOVE, 3=LAUGH, 4=WOW, 5=SAD).

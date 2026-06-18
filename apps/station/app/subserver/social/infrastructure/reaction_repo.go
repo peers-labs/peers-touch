@@ -56,6 +56,27 @@ func (r *reactionRepo) Remove(ctx context.Context, postID, actorID uint64, kind 
 		Delete(&db.SocialReaction{}).Error
 }
 
+func (r *reactionRepo) ListByPost(ctx context.Context, postID uint64) ([]domain.Reaction, error) {
+	var rows []db.SocialReaction
+	if err := r.db.WithContext(ctx).
+		Where("post_id = ?", postID).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.Reaction, 0, len(rows))
+	for _, row := range rows {
+		kind := model.ReactionKind_value[row.Kind]
+		out = append(out, domain.Reaction{
+			PostID:    row.PostID,
+			PostClass: domain.PostClass(row.PostClass),
+			ActorID:   row.ActorID,
+			Kind:      model.ReactionKind(kind),
+			CreatedAt: row.CreatedAt,
+		})
+	}
+	return out, nil
+}
+
 // Aggregate returns one ReactionSummary per non-zero kind. Kinds with
 // zero count are omitted from the result so callers can render "0
 // reactions" by checking `len(summaries) == 0` without iterating.
