@@ -384,6 +384,7 @@ fn main() {
             key_exchange::key_exchange_upload_bundle,
             key_exchange::key_exchange_fetch_bundle,
             crypto::chat_search_local,
+            crypto::chat_index_local_messages,
             crypto::crypto_generate_identity,
             crypto::crypto_get_fingerprint,
             crypto::crypto_ratchet_telemetry_snapshot,

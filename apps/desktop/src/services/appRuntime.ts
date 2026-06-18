@@ -2,6 +2,7 @@ import { installIdentityChangedBridge } from './identity_event';
 import { installPresenceBridge, teardownPresenceBridge } from './presence';
 import { installPeerPresenceBridge, teardownPeerPresenceBridge } from './peerPresence';
 import { installEventStreamBridge, teardownEventStreamBridge } from './eventStream';
+import { installSessionKickBridge, teardownSessionKickBridge } from './sessionKick';
 import { installMediaRuntime, teardownMediaRuntime } from './mediaRuntime';
 import { installNavigationBadgeProjection, teardownNavigationBadgeProjection } from '../store/navigationBadges';
 import { bootstrapRuntime, installRuntime, registerRuntime, teardownRuntime } from '../kernel/runtime';
@@ -65,6 +66,7 @@ export function installAppRuntime(): void {
   void installPresenceBridge();
   void installPeerPresenceBridge();
   void installEventStreamBridge();
+  void installSessionKickBridge();
 
   log.info('appRuntime', 'runtime installed');
 }
@@ -81,6 +83,7 @@ export function teardownAppRuntime(): void {
   teardownRuntime(momentsRuntime.id);
   teardownMediaRuntime();
   teardownNavigationBadgeProjection();
+  teardownSessionKickBridge();
   teardownEventStreamBridge();
   teardownPeerPresenceBridge();
   teardownPresenceBridge();
