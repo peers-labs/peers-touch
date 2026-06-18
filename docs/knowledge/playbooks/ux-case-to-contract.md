@@ -10,9 +10,11 @@ owns:
   - docs/knowledge/playbooks/
 referenced-by:
   - docs/knowledge/invariants/composite-form-control-boundaries.md
+  - docs/knowledge/invariants/client-ui-identity-before-edit.md
 related:
   - docs/client/common/ux-design-methodology.md
   - docs/client/common/form-control-ux-contract.md
+  - docs/client/common/ui-identity/README.md
 detected: 2026-06-09
 ---
 
@@ -80,13 +82,14 @@ Is evidence too narrow or controversial?
 2. **Name the defect** — Describe the failure in precise UX terms, such as "split focus model", "detached popup", "duplicate external borders", "content occlusion", "missing recovery", or "trust state underweighted".
 3. **Identify the user intention** — Decide whether the UI represents one semantic field, one action surface, one scroll surface, one recovery flow, one trust decision, or multiple independent elements.
 4. **Map UX dimensions** — Use `docs/client/common/ux-design-methodology.md` to mark task success, boundaries, information hierarchy, feedback, content, accessibility, platform fit, performance perception, and data extremes.
-5. **Extract the principle** — Convert the defect into a reusable but scoped rule. Avoid universal rules from one example.
-6. **Choose the artifact** — Apply the Artifact Decision tree.
-7. **Update or create the contract** — Put shared rules under `docs/client/common/` or a domain-specific `docs/client/<domain>/` directory.
-8. **Add platform refinements** — Put Mobile-specific rules under `docs/client/mobile/` and Desktop-specific rules under `docs/client/desktop/`.
-9. **Add an invariant when needed** — If future edits to known paths must obey the rule, add or update `docs/knowledge/invariants/` with `owns:` entries.
-10. **Define acceptance evidence** — Add a matrix covering user task, context, input/data extremes, expected behavior, evidence, and owner.
-11. **Update indexes** — Link the new or changed documents from the relevant README or platform entry document.
+5. **Load UI Identity** — For client UI work, read `docs/client/common/ui-identity/README.md`, the closest module contract, and relevant patterns before naming the target style.
+6. **Extract the principle** — Convert the defect into a reusable but scoped rule. Avoid universal rules from one example.
+7. **Choose the artifact** — Apply the Artifact Decision tree.
+8. **Update or create the contract** — Put shared rules under `docs/client/common/`, `docs/client/common/ui-identity/`, or a domain-specific `docs/client/<domain>/` directory.
+9. **Add platform refinements** — Put Mobile-specific rules under `docs/client/mobile/` and Desktop-specific rules under `docs/client/desktop/`.
+10. **Add an invariant when needed** — If future edits to known paths must obey the rule, add or update `docs/knowledge/invariants/` with `owns:` entries.
+11. **Define acceptance evidence** — Add a matrix covering user task, context, input/data extremes, expected behavior, evidence, and owner.
+12. **Update indexes** — Link the new or changed documents from the relevant README or platform entry document.
 
 ## Conflict Handling
 
@@ -110,5 +113,5 @@ When reviewers disagree:
 
 ## Crosswalks
 
-- Invariants this playbook respects: `docs/knowledge/invariants/composite-form-control-boundaries.md`.
-- Contracts this playbook currently supports: `docs/client/common/ux-design-methodology.md`, `docs/client/common/form-control-ux-contract.md`.
+- Invariants this playbook respects: `docs/knowledge/invariants/composite-form-control-boundaries.md`, `docs/knowledge/invariants/client-ui-identity-before-edit.md`.
+- Contracts this playbook currently supports: `docs/client/common/ux-design-methodology.md`, `docs/client/common/form-control-ux-contract.md`, `docs/client/common/ui-identity/README.md`.

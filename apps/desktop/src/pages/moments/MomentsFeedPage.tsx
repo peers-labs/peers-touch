@@ -1,12 +1,14 @@
 import { useTranslation } from 'react-i18next';
-import { Typography } from 'antd';
 import { useMomentsStore } from '../../store/moments';
 import { MomentCard } from '../../components/moments/MomentCard';
 import { MomentComposer } from '../../components/moments/MomentComposer';
 import { MomentListState } from '../../components/moments/MomentListState';
+import {
+  SocialComposer,
+  SocialEmptyState,
+  SocialScopeHint,
+} from '../../components/moments/surfaces';
 import type { ReactionKind } from '../../gen/proto/domain/social/post_pb';
-
-const { Text } = Typography;
 
 // MomentsFeedView — the HOME timeline (followed actors + own posts).
 //
@@ -47,26 +49,23 @@ export function MomentsFeedView({
     await unreactToPost(postId, kind);
   };
 
+  const showInitialState = feed.loading || posts.length === 0;
+
   return (
-    <div>
-      <div
-        style={{
-          marginBottom: 10,
-          padding: '0 2px',
-        }}
-      >
-        <Text type="secondary" style={{ fontSize: 13, lineHeight: 1.6 }}>
-          {t('moments.feedContext.homeDescription')}
-        </Text>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <SocialScopeHint>{t('moments.feedContext.homeDescription')}</SocialScopeHint>
 
-      <MomentComposer onPublished={onComposerPublished} />
+      <SocialComposer title={t('moments.compose.title')} hint={t('moments.compose.privacyHint')}>
+        <MomentComposer onPublished={onComposerPublished} />
+      </SocialComposer>
 
-      <MomentListState
-        loading={feed.loading}
-        empty={posts.length === 0}
-        emptyText={t('moments.placeholder.feedEmpty')}
-      />
+      {showInitialState && (
+        <SocialEmptyState
+          kind={feed.loading ? 'loading' : 'empty'}
+          title={feed.loading ? undefined : t('moments.placeholder.empty')}
+          description={feed.loading ? undefined : t('moments.placeholder.feedEmpty')}
+        />
+      )}
 
       {posts.map((p) => (
         <MomentCard
@@ -85,14 +84,16 @@ export function MomentsFeedView({
         />
       ))}
 
-      <MomentListState
-        loading={feed.loading}
-        empty={false}
-        emptyText={t('moments.placeholder.feedEmpty')}
-        loadMoreText={t('moments.action.loadMore')}
-        hasMore={feed.hasMore}
-        onLoadMore={() => loadFeed('home').catch(() => {})}
-      />
+      {posts.length > 0 && (
+        <MomentListState
+          loading={feed.loading}
+          empty={false}
+          emptyText={t('moments.placeholder.feedEmpty')}
+          loadMoreText={t('moments.action.loadMore')}
+          hasMore={feed.hasMore}
+          onLoadMore={() => loadFeed('home').catch(() => {})}
+        />
+      )}
     </div>
   );
 }
