@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Segmented } from 'antd';
+import { Segmented, Typography } from 'antd';
 import { useMomentsStore } from '../../store/moments';
 import { MomentCard } from '../../components/moments/MomentCard';
 import { MomentListState } from '../../components/moments/MomentListState';
 import type { ReactionKind } from '../../gen/proto/domain/social/post_pb';
 import type { TimelineSort } from '../../services/social_api';
+
+const { Text } = Typography;
 
 // MomentsExploreView — the PUBLIC timeline.
 //
@@ -30,6 +32,7 @@ export function MomentsExploreView({ viewerActorId: _viewerActorId, onOpenPost, 
   const postsById = useMomentsStore((s) => s.postsById);
   const comments = useMomentsStore((s) => s.comments);
   const reactions = useMomentsStore((s) => s.reactions);
+  const feedExplanations = useMomentsStore((s) => s.feedExplanations);
   const loadFeed = useMomentsStore((s) => s.loadFeed);
   const reactToPost = useMomentsStore((s) => s.reactToPost);
   const unreactToPost = useMomentsStore((s) => s.unreactToPost);
@@ -52,16 +55,34 @@ export function MomentsExploreView({ viewerActorId: _viewerActorId, onOpenPost, 
 
   return (
     <div>
-      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
-        <Segmented
-          value={sort}
-          onChange={(v) => handleSortChange(v as TimelineSort)}
-          options={[
-            { value: 'recent', label: t('moments.tab.recent') },
-            { value: 'hot', label: t('moments.tab.hot') },
-          ]}
-          size="small"
-        />
+      <div
+        style={{
+          marginBottom: 10,
+          padding: '0 2px',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            gap: 12,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
+          <Text type="secondary" style={{ fontSize: 13, lineHeight: 1.6, minWidth: 220 }}>
+            {t('moments.feedContext.federatedDescription')}
+          </Text>
+          <Segmented
+            value={sort}
+            onChange={(v) => handleSortChange(v as TimelineSort)}
+            options={[
+              { value: 'recent', label: t('moments.tab.recent') },
+              { value: 'hot', label: t('moments.tab.hot') },
+            ]}
+            size="small"
+          />
+        </div>
       </div>
 
       <MomentListState
@@ -75,7 +96,10 @@ export function MomentsExploreView({ viewerActorId: _viewerActorId, onOpenPost, 
           key={p.id}
           post={p}
           reactions={reactions[p.id]}
+          explanation={feedExplanations[p.id]}
           commentPreview={comments[p.id]}
+          viewerActorId={_viewerActorId}
+          surface="federated"
           onOpen={onOpenPost}
           onOpenComments={onOpenPost}
           onAuthorClick={onAuthorClick}

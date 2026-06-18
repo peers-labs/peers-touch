@@ -476,6 +476,11 @@ func (s *MomentService) GetMoment(ctx context.Context, postIDStr string, viewerI
 		if ok, _ := domain.CanRead(viewer, p.AuthorID, p.Audience, p.IsDeleted()); !ok {
 			return nil, nil
 		}
+		if blocked, err := actorStationModerated(ctx, s.repos.Moderation, p.AuthorID); err != nil {
+			return nil, err
+		} else if blocked {
+			return nil, nil
+		}
 		return s.hydratePost(ctx, p, viewerID)
 	}
 
@@ -493,6 +498,11 @@ func (s *MomentService) GetMoment(ctx context.Context, postIDStr string, viewerI
 		return nil, fmt.Errorf("build viewer: %w", err)
 	}
 	if ok, _ := domain.CanRead(viewer, priv.AuthorID, priv.Audience, priv.IsDeleted()); !ok {
+		return nil, nil
+	}
+	if blocked, err := actorStationModerated(ctx, s.repos.Moderation, priv.AuthorID); err != nil {
+		return nil, err
+	} else if blocked {
 		return nil, nil
 	}
 	return s.hydratePost(ctx, priv, viewerID)
@@ -551,6 +561,11 @@ func (s *MomentService) ListByAuthor(ctx context.Context, authorID, viewerID uin
 	}
 	if limit <= 0 || limit > 100 {
 		limit = 20
+	}
+	if blocked, err := actorStationModerated(ctx, s.repos.Moderation, authorID); err != nil {
+		return nil, "", false, err
+	} else if blocked {
+		return nil, "", false, nil
 	}
 
 	pubPosts, err := s.repos.PublicPosts.ListByAuthor(ctx, authorID, c, limit+1)

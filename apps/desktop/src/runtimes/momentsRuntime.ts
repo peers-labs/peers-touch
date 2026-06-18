@@ -16,17 +16,22 @@ import type {
   MomentDeletedPayload,
   MomentReactedPayload,
   MomentResyncRequestedPayload,
+  RelationshipChangedPayload,
+  RealtimeConnectionStatePayload,
   RealtimeResyncPayload,
 } from '../kernel/events/types';
 import { log } from '../utils/logger';
 
 const MOMENTS_RECONCILE_INTERVAL_MS = 45_000;
+const MOMENTS_RECONNECT_REFRESH_MIN_INTERVAL_MS = 5_000;
 
 let teardownRuntime: (() => void) | null = null;
 let reconcileTimer: number | null = null;
 let bootstrappedActorId: string | null = null;
 let bootstrapSequence = 0;
 let refreshInFlight: Promise<void> | null = null;
+let realtimeWasDisconnected = false;
+let lastReconnectRefreshAt = 0;
 const seenMomentEventIds = new Set<string>();
 
 function runDetached(label: string, task: () => Promise<void>): void {
@@ -140,6 +145,18 @@ function onMomentReacted(payload: MomentReactedPayload): void {
   });
 }
 
+function onRelationshipChanged(payload: RelationshipChangedPayload): void {
+  if (!bootstrappedActorId) return;
+  runDetached('relationship changed moments projection refresh', async () => {
+    const relationships = useRelationshipsStore.getState();
+    await Promise.allSettled([
+      relationships.loadRelationship(payload.targetActorId),
+      relationships.loadFollowers(payload.targetActorId, true),
+      refreshMomentsProjection(`event:relationship.changed:${payload.action}`),
+    ]);
+  });
+}
+
 function onMomentResyncRequested(payload: MomentResyncRequestedPayload): void {
   if (!bootstrappedActorId) return;
   runDetached('moment resync projection refresh', async () => {
@@ -151,6 +168,25 @@ function onRealtimeResync(payload: RealtimeResyncPayload): void {
   if (!bootstrappedActorId) return;
   runDetached('realtime resync moments projection refresh', async () => {
     await refreshMomentsProjection(`event:realtime.resync:${payload.reason}`);
+  });
+}
+
+function onRealtimeConnectionState(payload: RealtimeConnectionStatePayload): void {
+  if (!bootstrappedActorId) return;
+  if (!payload.connected) {
+    realtimeWasDisconnected = true;
+    return;
+  }
+
+  if (!realtimeWasDisconnected) return;
+  realtimeWasDisconnected = false;
+
+  const now = Date.now();
+  if (now - lastReconnectRefreshAt < MOMENTS_RECONNECT_REFRESH_MIN_INTERVAL_MS) return;
+  lastReconnectRefreshAt = now;
+
+  runDetached('realtime reconnect moments projection refresh', async () => {
+    await refreshMomentsProjection(`event:realtime.connection_state:${payload.reason || 'reconnected'}`);
   });
 }
 
@@ -173,6 +209,8 @@ function reconcileAuthenticatedRuntime(): void {
   const actorId = session.authenticated ? session.currentUser?.actorId ?? null : null;
   if (!actorId) {
     bootstrappedActorId = null;
+    realtimeWasDisconnected = false;
+    lastReconnectRefreshAt = 0;
     bootstrapSequence += 1;
     useMomentsStore.getState().reset();
     useDiscoveryStore.getState().reset();
@@ -219,8 +257,10 @@ export const momentsRuntime: RuntimeDescriptor = {
       eventBus.subscribe(EVENT.MOMENT_DELETED, onMomentDeleted),
       eventBus.subscribe(EVENT.MOMENT_COMMENTED, onMomentCommented),
       eventBus.subscribe(EVENT.MOMENT_REACTED, onMomentReacted),
+      eventBus.subscribe(EVENT.RELATIONSHIP_CHANGED, onRelationshipChanged),
       eventBus.subscribe(EVENT.MOMENT_RESYNC_REQUESTED, onMomentResyncRequested),
       eventBus.subscribe(EVENT.REALTIME_RESYNC, onRealtimeResync),
+      eventBus.subscribe(EVENT.REALTIME_CONNECTION_STATE, onRealtimeConnectionState),
     ];
     startReconcileTimer();
     reconcileAuthenticatedRuntime();
@@ -230,6 +270,8 @@ export const momentsRuntime: RuntimeDescriptor = {
       stopReconcileTimer();
       teardownRuntime = null;
       bootstrappedActorId = null;
+      realtimeWasDisconnected = false;
+      lastReconnectRefreshAt = 0;
       bootstrapSequence += 1;
       seenMomentEventIds.clear();
     };

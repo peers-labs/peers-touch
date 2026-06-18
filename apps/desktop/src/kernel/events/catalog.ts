@@ -23,6 +23,7 @@ export const EVENT = {
   MOMENT_COMMENTED: 'moment.commented',
   MOMENT_REACTED: 'moment.reacted',
   MOMENT_RESYNC_REQUESTED: 'moment.resync_requested',
+  RELATIONSHIP_CHANGED: 'relationship.changed',
   // Fired by handleInboundSkdm after a peer's Sender Keys
   // distribution message has been successfully consumed and
   // persisted. Subscribers (socialChat) use this to re-attempt

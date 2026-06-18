@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type {
   Audience,
+  FeedObjectExplanation,
   Mention,
   Post,
   PostAuthor,
@@ -13,7 +14,7 @@ import {
   socialCreateMoment,
   socialDeleteMoment,
   socialGetComments,
-  socialGetMoment,
+  socialGetMomentResponse,
   socialGetTimeline,
   socialSyncMomentsProjection,
   socialListByAuthor,
@@ -104,6 +105,8 @@ interface MomentsState {
   // every refresh — the explicit map exists so optimistic toggles in
   // the UI can patch a single post without re-rendering the whole feed.
   reactions: Record<string, ReactionSummary[]>;
+  // Per-post viewer-scoped explanation projection returned by Station.
+  feedExplanations: Record<string, FeedObjectExplanation>;
 
   // Publisher's circles (publisher-private audience labels).
   circles: Circle[];
@@ -169,6 +172,7 @@ const initialState: Pick<
   | 'commentsHasMore'
   | 'commentsLoading'
   | 'reactions'
+  | 'feedExplanations'
   | 'circles'
   | 'circlesLoading'
   | 'circleMembers'
@@ -184,6 +188,7 @@ const initialState: Pick<
   commentsHasMore: {},
   commentsLoading: {},
   reactions: {},
+  feedExplanations: {},
   circles: [],
   circlesLoading: false,
   circleMembers: {},
@@ -198,12 +203,20 @@ const initialState: Pick<
  * future timeline items — otherwise the UI falls back to "Unknown".
  */
 function ingestPosts(
-  state: Pick<MomentsState, 'postsById' | 'authorsById' | 'reactions'>,
+  state: Pick<MomentsState, 'postsById' | 'authorsById' | 'reactions' | 'feedExplanations'>,
   posts: Post[],
-): { postsById: typeof state.postsById; authorsById: typeof state.authorsById; reactions: typeof state.reactions; ids: string[] } {
+  explanations: FeedObjectExplanation[] = [],
+): {
+  postsById: typeof state.postsById;
+  authorsById: typeof state.authorsById;
+  reactions: typeof state.reactions;
+  feedExplanations: typeof state.feedExplanations;
+  ids: string[];
+} {
   const postsById = { ...state.postsById };
   const authorsById = { ...state.authorsById };
   const reactions = { ...state.reactions };
+  const feedExplanations = { ...state.feedExplanations };
   const ids: string[] = [];
   for (const p of posts) {
     if (!p.id) continue;
@@ -216,7 +229,18 @@ function ingestPosts(
     }
     ids.push(p.id);
   }
-  return { postsById, authorsById, reactions, ids };
+  for (const explanation of explanations) {
+    if (explanation.objectId) {
+      feedExplanations[explanation.objectId] = explanation;
+    }
+  }
+  return { postsById, authorsById, reactions, feedExplanations, ids };
+}
+
+function refreshProjectionBestEffort(store: MomentsState, reason: string): void {
+  void store.syncProjection(reason).catch((err) => {
+    log.warn(TAG, 'best-effort projection refresh failed', { reason, err: String(err) });
+  });
 }
 
 export const useMomentsStore = create<MomentsState>((set, get) => ({
@@ -240,7 +264,7 @@ export const useMomentsStore = create<MomentsState>((set, get) => ({
     try {
       const resp = await socialGetTimeline(wireKind, cursor || undefined, undefined, sort);
       set((s) => {
-        const merged = ingestPosts(s, resp.posts);
+        const merged = ingestPosts(s, resp.posts, resp.explanations);
         const prevIds = refresh ? [] : s.feeds[kind].postIds;
         const seen = new Set(prevIds);
         const nextIds = [...prevIds, ...merged.ids.filter((id) => !seen.has(id))];
@@ -248,6 +272,7 @@ export const useMomentsStore = create<MomentsState>((set, get) => ({
           postsById: merged.postsById,
           authorsById: merged.authorsById,
           reactions: merged.reactions,
+          feedExplanations: merged.feedExplanations,
           feeds: {
             ...s.feeds,
             [kind]: {
@@ -281,12 +306,13 @@ export const useMomentsStore = create<MomentsState>((set, get) => ({
       set((s) => {
         const home = resp.homeTimeline;
         const explore = resp.publicTimeline;
-        const mergedHome = ingestPosts(s, home?.posts ?? []);
-        const mergedExplore = ingestPosts(mergedHome, explore?.posts ?? []);
+        const mergedHome = ingestPosts(s, home?.posts ?? [], home?.explanations ?? []);
+        const mergedExplore = ingestPosts(mergedHome, explore?.posts ?? [], explore?.explanations ?? []);
         return {
           postsById: mergedExplore.postsById,
           authorsById: mergedExplore.authorsById,
           reactions: mergedExplore.reactions,
+          feedExplanations: mergedExplore.feedExplanations,
           feeds: {
             home: {
               postIds: mergedHome.ids,
@@ -349,7 +375,7 @@ export const useMomentsStore = create<MomentsState>((set, get) => ({
     try {
       const resp = await socialListByAuthor(actorId, cursor || undefined);
       set((s) => {
-        const merged = ingestPosts(s, resp.posts);
+        const merged = ingestPosts(s, resp.posts, resp.explanations);
         const prevIds = refresh ? [] : (s.userFeeds[actorId]?.postIds ?? []);
         const seen = new Set(prevIds);
         const nextIds = [...prevIds, ...merged.ids.filter((id) => !seen.has(id))];
@@ -357,6 +383,7 @@ export const useMomentsStore = create<MomentsState>((set, get) => ({
           postsById: merged.postsById,
           authorsById: merged.authorsById,
           reactions: merged.reactions,
+          feedExplanations: merged.feedExplanations,
           userFeeds: {
             ...s.userFeeds,
             [actorId]: {
@@ -387,14 +414,16 @@ export const useMomentsStore = create<MomentsState>((set, get) => ({
 
   loadPost: async (postId) => {
     try {
-      const post = await socialGetMoment(postId);
+      const resp = await socialGetMomentResponse(postId);
+      const post = resp.post;
       if (!post) return undefined;
       set((s) => {
-        const merged = ingestPosts(s, [post]);
+        const merged = ingestPosts(s, [post], resp.explanation ? [resp.explanation] : []);
         return {
           postsById: merged.postsById,
           authorsById: merged.authorsById,
           reactions: merged.reactions,
+          feedExplanations: merged.feedExplanations,
         };
       });
       return post;
@@ -419,12 +448,14 @@ export const useMomentsStore = create<MomentsState>((set, get) => ({
         postsById: merged.postsById,
         authorsById: merged.authorsById,
         reactions: merged.reactions,
+        feedExplanations: merged.feedExplanations,
         feeds: {
           ...s.feeds,
           home: { ...s.feeds.home, postIds: homeIds },
         },
       };
     });
+    refreshProjectionBestEffort(get(), 'action:createPost');
     return post.id;
   },
 
@@ -432,9 +463,11 @@ export const useMomentsStore = create<MomentsState>((set, get) => ({
     await socialDeleteMoment(postId);
     set((s) => {
       const { [postId]: _drop, ...rest } = s.postsById;
+      const { [postId]: _dropExplanation, ...feedExplanations } = s.feedExplanations;
       const filterIds = (ids: string[]) => ids.filter((id) => id !== postId);
       return {
         postsById: rest,
+        feedExplanations,
         feeds: {
           home: { ...s.feeds.home, postIds: filterIds(s.feeds.home.postIds) },
           explore: { ...s.feeds.explore, postIds: filterIds(s.feeds.explore.postIds) },
