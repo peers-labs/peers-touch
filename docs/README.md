@@ -184,6 +184,7 @@
 - Federation 虚拟网络与治理账本：`architecture/federation/README.md`
 - 质量保证闭环：`architecture/quality-framework/README.md`
 - 产品验收框架：`architecture/acceptance-framework/README.md`
+- Human 联邦社交活动层：`architecture/federated-social-activity/README.md`
 
 ### 4.2 平台层真源
 
