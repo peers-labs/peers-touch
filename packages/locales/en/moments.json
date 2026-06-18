@@ -79,6 +79,20 @@
   "moments.placeholder.userEmpty": "This actor hasn't published any posts visible to you.",
   "moments.placeholder.searchEmpty": "Search for actors by name or @username.",
   "moments.placeholder.noResults": "No matches found.",
+  "moments.empty.title": "Nothing here yet",
+  "moments.empty.description": "This surface is ready, but there is no content to show yet.",
+  "moments.empty.loading": "Loading Social",
+  "moments.empty.loading-description": "Fetching the latest Social projection.",
+  "moments.empty.please-wait": "Please wait",
+  "moments.empty.try-again": "Try again",
+  "moments.empty.degraded.title": "Some Social data is unavailable",
+  "moments.empty.degraded.description": "The page is showing what is available while one capability is degraded.",
+  "moments.empty.unavailable.title": "Social is unavailable",
+  "moments.empty.unavailable.description": "The service or projection cannot be reached right now.",
+  "moments.empty.not-implemented.title": "Capability not implemented yet",
+  "moments.empty.not-implemented.description": "This capability has a defined UI state, but the backend/runtime path is not complete yet.",
+  "moments.empty.not-implemented.cta": "Review capability",
+  "moments.empty.settings": "Settings",
 
   "moments.audience.public": "Public",
   "moments.audience.followers": "Followers only",
@@ -173,5 +187,7 @@
   "moments.circle.addMember": "Add",
 
   "moments.search.title": "Find people",
-  "moments.search.placeholder": "Search by name or @username"
+  "moments.search.placeholder": "Search by name or @username",
+  "moments.search.no-results.title": "No matching people",
+  "moments.search.no-results.description": "No result matches \"{{query}}\" yet."
 }

@@ -120,6 +120,7 @@
 适合放这里的问题：
 
 - 客户端 UX 问题如何从截图/案例沉淀成准则、契约、invariant
+- Peers Touch 客户端 UI Identity、模块 UI ID、跨模块 patterns
 - 通用表单控件、组合控件、共享交互语义
 - 跨端 UI 设计方法论与 AI agent 可执行语言
 
@@ -189,6 +190,7 @@
 ### 4.2 平台层真源
 
 - 客户端 UX 方法论：`client/common/ux-design-methodology.md`
+- 客户端 UI Identity：`client/common/ui-identity/README.md`
 - 表单控件 UX 契约：`client/common/form-control-ux-contract.md`
 - Desktop 平台总纲：`client/desktop/base.md`
 - Desktop 页面 / 运行时 / 启动契约：`client/desktop/runtime-projections.md`
