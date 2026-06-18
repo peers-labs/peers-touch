@@ -203,6 +203,11 @@ export interface MomentResyncRequestedPayload {
   newestEventId?: string;
 }
 
+export interface RelationshipChangedPayload {
+  targetActorId: string;
+  action: 'follow' | 'unfollow' | 'block' | 'unblock';
+}
+
 /**
  * Group Sender-Keys distribution-message install notification.
  *
@@ -245,6 +250,7 @@ export interface EventPayloadMap {
   [EVENT.MOMENT_COMMENTED]: MomentCommentedPayload;
   [EVENT.MOMENT_REACTED]: MomentReactedPayload;
   [EVENT.MOMENT_RESYNC_REQUESTED]: MomentResyncRequestedPayload;
+  [EVENT.RELATIONSHIP_CHANGED]: RelationshipChangedPayload;
   [EVENT.GROUP_SKDM_INSTALLED]: GroupSkdmInstalledPayload;
 }
 

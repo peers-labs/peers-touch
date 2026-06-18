@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Button } from 'antd';
+import { Button } from '@lobehub/ui';
 import { ChevronLeft } from 'lucide-react';
 import { useMomentsStore } from '../../store/moments';
 import { useRelationshipsStore } from '../../store/relationships';
@@ -36,6 +36,7 @@ export function MomentsUserView({
   const feed = useMomentsStore((s) => s.userFeeds[actorId]);
   const postsById = useMomentsStore((s) => s.postsById);
   const reactions = useMomentsStore((s) => s.reactions);
+  const feedExplanations = useMomentsStore((s) => s.feedExplanations);
   const loadUserFeed = useMomentsStore((s) => s.loadUserFeed);
   const reactToPost = useMomentsStore((s) => s.reactToPost);
   const unreactToPost = useMomentsStore((s) => s.unreactToPost);
@@ -61,7 +62,7 @@ export function MomentsUserView({
         onClick={onBack}
         style={{ marginBottom: 12 }}
       >
-        {t('moments.action.back', { defaultValue: 'Back' })}
+        {t('moments.action.back')}
       </Button>
 
       <UserProfileHeader
@@ -85,6 +86,9 @@ export function MomentsUserView({
             key={p.id}
             post={p}
             reactions={reactions[p.id]}
+            explanation={feedExplanations[p.id]}
+            viewerActorId={viewerActorId}
+            surface="profile"
             onOpen={onOpenPost}
             onOpenComments={onOpenPost}
             onReact={handleReact}

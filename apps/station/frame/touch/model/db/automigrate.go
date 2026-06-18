@@ -32,6 +32,7 @@ func init() {
 			&SocialPrivateAudienceGrant{},
 			&SocialComment{}, &SocialReaction{},
 			&SocialCircle{}, &SocialCircleMember{},
+			&SocialStationModerationPolicy{},
 			// Cross-domain relationship (kept generic — used by social subserver
 			// today, may be reused by chat / oss later).
 			&Follow{},

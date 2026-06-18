@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Input, Space, Spin, Typography, message, theme } from 'antd';
+import { Button } from '@lobehub/ui';
+import { Input, Space, Spin, Typography, message, theme } from 'antd';
 import { Trash2 } from 'lucide-react';
 import type { Comment } from '../../gen/proto/domain/social/comment_pb';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
@@ -49,6 +50,7 @@ export function CommentList({
   const { token } = theme.useToken();
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
 
   // Reset the composer if the active post changes underfoot.
@@ -113,6 +115,7 @@ export function CommentList({
                   size="small"
                   type="link"
                   style={{ padding: 0, fontSize: 12 }}
+                  disabled={!!deletingCommentId}
                   onClick={() => setReplyTarget(c)}
                 >
                   {t('moments.comment.reply')}
@@ -124,11 +127,17 @@ export function CommentList({
                     danger
                     style={{ padding: 0, fontSize: 12 }}
                     icon={<Trash2 size={11} />}
+                    loading={deletingCommentId === c.id}
+                    disabled={!!deletingCommentId}
                     onClick={async () => {
+                      if (deletingCommentId) return;
+                      setDeletingCommentId(c.id);
                       try {
                         await onDelete(c.id);
                       } catch (err) {
                         message.error(String(err));
+                      } finally {
+                        setDeletingCommentId(null);
                       }
                     }}
                   >

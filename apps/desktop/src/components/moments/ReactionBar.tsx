@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Popover, Space, Tooltip, theme } from 'antd';
+import { Button } from '@lobehub/ui';
+import { Popover, Space, Tooltip, theme } from 'antd';
 import { Heart, Smile, ThumbsUp, PartyPopper, Eye } from 'lucide-react';
 import {
   ReactionKind,
@@ -79,7 +80,7 @@ export function ReactionBar({ reactions, loading, onReact, onUnreact }: Reaction
   }, [reactions]);
 
   const picker = (
-    <Space size={6}>
+    <Space size={8}>
       {PICKABLE_KINDS.map((k) => {
         const meta = kindMeta(k, token);
         const reacted = (reactions ?? []).find((r) => r.kind === k)?.reactedByViewer;
@@ -91,6 +92,7 @@ export function ReactionBar({ reactions, loading, onReact, onUnreact }: Reaction
               icon={<meta.Icon size={16} color={reacted ? '#fff' : meta.hue} />}
               onClick={() => (reacted ? onUnreact(k) : onReact(k))}
               disabled={loading}
+              shape="circle"
             />
           </Tooltip>
         );
@@ -99,7 +101,7 @@ export function ReactionBar({ reactions, loading, onReact, onUnreact }: Reaction
   );
 
   return (
-    <Space size={2} wrap>
+    <Space size={4} wrap>
       {summary.map((r) => {
         const meta = kindMeta(r.kind, token);
         return (
@@ -116,9 +118,10 @@ export function ReactionBar({ reactions, loading, onReact, onUnreact }: Reaction
               onClick={() => (r.reactedByViewer ? onUnreact(r.kind) : onReact(r.kind))}
               disabled={loading}
               style={{
-                paddingInline: 6,
+                paddingInline: 8,
+                borderRadius: 999,
                 color: r.reactedByViewer ? token.colorPrimary : token.colorTextSecondary,
-                background: 'transparent',
+                background: r.reactedByViewer ? token.colorPrimaryBg : token.colorFillQuaternary,
               }}
             >
               <span style={{ fontVariantNumeric: 'tabular-nums' }}>
@@ -142,7 +145,12 @@ export function ReactionBar({ reactions, loading, onReact, onUnreact }: Reaction
           type="text"
           disabled={loading}
           icon={<ThumbsUp size={14} />}
-          style={{ color: token.colorTextSecondary, paddingInline: 6 }}
+          style={{
+            color: token.colorTextSecondary,
+            paddingInline: 10,
+            borderRadius: 999,
+            background: summary.length === 0 ? token.colorFillQuaternary : 'transparent',
+          }}
         >
           {summary.length === 0 ? t('moments.reaction.add') : null}
         </Button>

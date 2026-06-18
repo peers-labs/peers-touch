@@ -4128,11 +4128,17 @@ export const api = {
   friendChatListFriendRequests: (status?: number, limit?: number, offset?: number) =>
     invokeRustProto('friend_chat_list_friend_requests', ListFriendRequestsResponseSchema, { status, limit, offset }),
 
-  friendChatBlockUser: (targetDid: string) =>
-    invokeRustProto('friend_chat_block_user', BlockUserResponseSchema, { target_did: targetDid }),
+  friendChatBlockUser: async (targetDid: string) => {
+    const response = await invokeRustProto('friend_chat_block_user', BlockUserResponseSchema, { target_did: targetDid });
+    eventBus.publish(EVENT.RELATIONSHIP_CHANGED, { targetActorId: targetDid, action: 'block' });
+    return response;
+  },
 
-  friendChatUnblockUser: (targetDid: string) =>
-    invokeRustProto('friend_chat_unblock_user', UnblockUserResponseSchema, { target_did: targetDid }),
+  friendChatUnblockUser: async (targetDid: string) => {
+    const response = await invokeRustProto('friend_chat_unblock_user', UnblockUserResponseSchema, { target_did: targetDid });
+    eventBus.publish(EVENT.RELATIONSHIP_CHANGED, { targetActorId: targetDid, action: 'unblock' });
+    return response;
+  },
 
   friendChatListBlockedUsers: (limit = 100, offset = 0) =>
     invokeRustProto('friend_chat_list_blocked_users', ListBlockedUsersResponseSchema, { limit, offset }),
