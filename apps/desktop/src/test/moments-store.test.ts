@@ -41,7 +41,7 @@ import {
 import {
   FollowResponseSchema,
 } from '../gen/proto/domain/social/relationship_pb';
-import { useMomentsStore } from '../store/moments';
+import { selectMomentComments, useMomentsStore } from '../store/moments';
 import { useRelationshipsStore } from '../store/relationships';
 import { useSessionStore } from '../store/session';
 import { openMomentMediaKeyFromAudience } from '../services/momentAudienceKeys';
@@ -350,6 +350,13 @@ describe('moments store: createPost / deletePost', () => {
 });
 
 describe('moments store: comments', () => {
+  it('returns a stable empty comments fallback for missing post threads', () => {
+    const state = useMomentsStore.getState();
+
+    expect(selectMomentComments(state, 'missing')).toBe(selectMomentComments(state, 'missing'));
+    expect(selectMomentComments(state, 'missing')).toBe(selectMomentComments(state, 'other-missing'));
+  });
+
   it('paginates via per-post cursor', async () => {
     enqueue('social_get_comments',
       bytesOk(GetCommentsResponseSchema, {

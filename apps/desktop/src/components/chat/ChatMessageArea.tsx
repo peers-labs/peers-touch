@@ -2,12 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Tooltip } from '@lobehub/ui';
-import { Spin, theme, Typography, Empty } from 'antd';
+import { Empty, Spin, theme, Typography } from 'antd';
 import {
   Inbox, Phone, Video, MoreHorizontal,
   Lock,
 } from 'lucide-react';
-import { CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN } from '@peers-touch/client-chat-core';
+import {
+  CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN,
+  collectChatThreadPreviewMessages,
+} from '@peers-touch/client-chat-core';
 import {
   peerOfSession,
   socialThreadKey,
@@ -23,6 +26,8 @@ import type { FriendChatMessage } from '../../gen/proto/domain/chat/friend_chat_
 import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import {
   isFriendMessage,
+  messageThreadRootUlid,
+  messageTimestampMs,
   replyPreviewForMessage,
 } from './message/chatMessageModel';
 import {
@@ -49,6 +54,67 @@ function chatBackgroundCss(background: string | undefined, layoutColor: string, 
   }
 }
 
+function ChatDeleteConfirmOverlay({
+  deleting,
+  onCancel,
+  onConfirm,
+}: {
+  deleting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
+
+  return (
+    <Flexbox
+      align="center"
+      justify="center"
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 20,
+        background: 'rgba(15, 23, 42, 0.18)',
+        padding: 24,
+      }}
+      onClick={() => {
+        if (!deleting) onCancel();
+      }}
+    >
+      <Flexbox
+        gap={14}
+        style={{
+          width: 320,
+          maxWidth: '100%',
+          padding: 18,
+          borderRadius: 8,
+          background: token.colorBgElevated,
+          border: `1px solid ${token.colorBorderSecondary}`,
+          boxShadow: token.boxShadowSecondary,
+        }}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <Flexbox gap={6}>
+          <Text strong style={{ fontSize: 15 }}>
+            {t('chat.social.messageArea.deleteConfirmTitle')}
+          </Text>
+          <Text type="secondary" style={{ fontSize: 13, lineHeight: 1.45 }}>
+            {t('chat.social.messageArea.deleteConfirmBody')}
+          </Text>
+        </Flexbox>
+        <Flexbox horizontal justify="flex-end" gap={8}>
+          <Button disabled={deleting} onClick={onCancel}>
+            {t('chat.social.messageArea.cancel')}
+          </Button>
+          <Button type="primary" danger loading={deleting} onClick={onConfirm}>
+            {t('chat.social.messageArea.deleteConfirmOk')}
+          </Button>
+        </Flexbox>
+      </Flexbox>
+    </Flexbox>
+  );
+}
+
 export function ChatMessageArea() {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
@@ -72,6 +138,7 @@ export function ChatMessageArea() {
   const peerOnline = useSocialChatStore((s) => s.peerOnline);
   const typingPeers = useSocialChatStore((s) => s.typingPeers);
   const threadCounts = useSocialChatStore((s) => s.threadCounts);
+  const threadMessages = useSocialChatStore((s) => s.threadMessages);
   const [inputValue, setInputValue] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [sending, setSending] = useState(false);
@@ -82,6 +149,8 @@ export function ChatMessageArea() {
   // instead of creating a new message. The banner above the input
   // shows the original content + a cancel handle.
   const [editingUlid, setEditingUlid] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<FriendChatMessage | GroupMessage | null>(null);
+  const [deletingMessage, setDeletingMessage] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prependRestoreRef = useRef<{ previousHeight: number } | null>(null);
@@ -89,6 +158,7 @@ export function ChatMessageArea() {
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const activeKind = activeTab === 'friend' ? 'friend' : 'group';
   const currentMessages = activeUlid ? (messages[activeUlid] || []) : [];
+  const mainTimelineMessages = currentMessages.filter((message) => !messageThreadRootUlid(message));
   const activeBackground = activeUlid ? conversationLocalState[`${activeTab}:${activeUlid}`]?.background : undefined;
 
   const activeFriendPeer = (() => {
@@ -140,8 +210,8 @@ export function ChatMessageArea() {
           aria-label={tip}
           style={{
             display: 'inline-block',
-            width: 8,
-            height: 8,
+            width: 6,
+            height: 6,
             borderRadius: '50%',
             background: online ? token.colorSuccess : token.colorTextQuaternary,
             flexShrink: 0,
@@ -173,10 +243,12 @@ export function ChatMessageArea() {
       return;
     }
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [currentMessages.length]);
+  }, [mainTimelineMessages.length]);
 
   useEffect(() => {
     setReplyToUlid(null);
+    setDeleteTarget(null);
+    setDeletingMessage(false);
   }, [activeUlid]);
 
   useEffect(() => {
@@ -445,6 +517,25 @@ export function ChatMessageArea() {
     }
   };
 
+  const confirmDeleteMessage = (target: FriendChatMessage | GroupMessage) => {
+    if (!activeUlid) return;
+    setDeleteTarget(target);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!activeUlid || !deleteTarget) return;
+    setDeletingMessage(true);
+    try {
+      await deleteMessage(activeUlid, deleteTarget.ulid, activeKind);
+      setDeleteTarget(null);
+    } catch (e) {
+      log.error('chat', 'deleteMessage failed', e);
+      toast.error(t('chat.social.messageArea.deleteFailed'));
+    } finally {
+      setDeletingMessage(false);
+    }
+  };
+
   const handleStartEdit = (msg: FriendChatMessage | GroupMessage) => {
     // Only plaintext messages are editable today. An E2EE chat
     // would need a separate flow that re-encrypts under the active
@@ -468,6 +559,17 @@ export function ChatMessageArea() {
     file: t('chat.social.messageArea.attachmentTypeFile'),
   });
 
+  const threadPreviewMessagesForRoot = (rootUlid: string) => {
+    if (!activeUlid || !rootUlid) return [];
+    const key = socialThreadKey(activeKind, activeUlid, rootUlid);
+    return collectChatThreadPreviewMessages({
+      rootUlid,
+      currentMessages,
+      loadedThreadMessages: threadMessages[key] || [],
+      resolveTimestampMs: messageTimestampMs,
+    });
+  };
+
   if (!activeUlid) {
     return (
       <Flexbox flex={1} align="center" justify="center" gap={12} style={{ background: token.colorBgContainer }}>
@@ -482,9 +584,42 @@ export function ChatMessageArea() {
     token.colorBgLayout,
     token.colorBgContainer,
   );
+  const headerSubtitle = activeTab === 'friend'
+    ? peerIsTyping
+      ? t('chat.social.messageArea.typing')
+      : ''
+    : subtitle;
 
   return (
-    <Flexbox flex={1} gap={0} style={{ height: '100%', background: token.colorBgLayout }}>
+    <Flexbox
+      flex={1}
+      gap={0}
+      style={{
+        height: '100%',
+        background: token.colorBgLayout,
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      <style>
+        {`
+          .chat-message-scroll {
+            scrollbar-width: thin;
+            scrollbar-color: ${token.colorFillSecondary} transparent;
+          }
+          .chat-message-scroll::-webkit-scrollbar {
+            width: 6px;
+            height: 0;
+          }
+          .chat-message-scroll::-webkit-scrollbar-thumb {
+            background: ${token.colorFillSecondary};
+            border-radius: 999px;
+          }
+          .chat-message-scroll::-webkit-scrollbar-track {
+            background: transparent;
+          }
+        `}
+      </style>
       <SearchMessagesModal
         open={showSearch}
         onClose={() => setShowSearch(false)}
@@ -497,7 +632,8 @@ export function ChatMessageArea() {
         align="center"
         justify="space-between"
         style={{
-          padding: '12px 18px',
+          height: 64,
+          padding: '0 18px',
           borderBottom: `1px solid ${token.colorBorderSecondary}`,
           background: token.colorBgContainer,
           flexShrink: 0,
@@ -509,22 +645,18 @@ export function ChatMessageArea() {
               <Flexbox horizontal align="center" gap={6}>
                 <Text strong style={{ fontSize: 14 }}>{currentName}</Text>
                 {peerOnlineIndicator}
+                {encryptionEnabled && (
+                  <Tooltip title={t('chat.social.encryption.enabled')}>
+                    <Lock size={13} style={{ color: token.colorTextTertiary, marginLeft: 2 }} />
+                  </Tooltip>
+                )}
               </Flexbox>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {activeTab === 'friend'
-                  ? peerIsTyping
-                    ? t('chat.social.messageArea.typing')
-                    : activePeerDid && peerOnline[activePeerDid]
-                      ? t('chat.social.detail.online')
-                      : t('chat.social.detail.offline')
-                  : subtitle}
-              </Text>
+              {headerSubtitle && (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {headerSubtitle}
+                </Text>
+              )}
             </Flexbox>
-            {encryptionEnabled && (
-              <Tooltip title={t('chat.social.encryption.enabled')}>
-                <Lock size={14} style={{ color: token.colorSuccess, marginLeft: 4 }} />
-              </Tooltip>
-            )}
           </Flexbox>
         </Flexbox>
         <Flexbox horizontal align="center" gap={4}>
@@ -567,11 +699,13 @@ export function ChatMessageArea() {
       </Flexbox>
 
       <Flexbox
+        className="chat-message-scroll"
         flex={1}
         ref={scrollContainerRef}
         onScroll={handleScroll}
         style={{
-          overflow: 'auto',
+          overflowY: 'auto',
+          overflowX: 'hidden',
           padding: '18px 20px 18px',
           background: conversationSurfaceBackground,
         }}
@@ -582,11 +716,11 @@ export function ChatMessageArea() {
             <Spin size="small" />
           </Flexbox>
         )}
-        {loading && currentMessages.length === 0 ? (
+        {loading && mainTimelineMessages.length === 0 ? (
           <Flexbox align="center" justify="center" flex={1}>
             <Spin />
           </Flexbox>
-        ) : currentMessages.length === 0 ? (
+        ) : mainTimelineMessages.length === 0 ? (
           <Flexbox align="center" justify="center" flex={1}>
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.messageArea.noMessages')} />
           </Flexbox>
@@ -598,16 +732,8 @@ export function ChatMessageArea() {
             currentUserProfile={currentUserProfile}
             groupMembers={groupMembers}
             highlightedMessageUlid={highlightedMessageUlid}
-            messages={currentMessages}
-            onDelete={async (target) => {
-              if (!activeUlid) return;
-              try {
-                await deleteMessage(activeUlid, target.ulid, activeKind);
-              } catch (e) {
-                log.error('chat', 'deleteMessage failed', e);
-                toast.error(t('chat.social.messageArea.deleteFailed'));
-              }
-            }}
+            messages={mainTimelineMessages}
+            onDelete={confirmDeleteMessage}
             onEdit={handleStartEdit}
             onOpenThread={openThread}
             onRecall={handleRecall}
@@ -620,6 +746,7 @@ export function ChatMessageArea() {
               const threadSummary = threadCounts[threadKey];
               return {
                 replyCount: threadSummary?.replyCount ?? loadedThreadReplyCount(currentMessages, message.ulid),
+                previewMessages: threadPreviewMessagesForRoot(message.ulid),
                 unreadCount: threadSummary?.unreadCount ?? 0,
               };
             }}
@@ -646,6 +773,14 @@ export function ChatMessageArea() {
         sending={sending}
         capabilities={CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN}
       />
+
+      {deleteTarget && (
+        <ChatDeleteConfirmOverlay
+          deleting={deletingMessage}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={handleConfirmDelete}
+        />
+      )}
     </Flexbox>
   );
 }

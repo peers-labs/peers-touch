@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, toast } from '@lobehub/ui';
 import { Alert, Empty, Spin, theme, Typography } from 'antd';
-import { LocateFixed, MessageCircle, X } from 'lucide-react';
+import { LocateFixed, MessageSquareReply, MessagesSquare, X } from 'lucide-react';
 import {
   CHAT_COMPOSER_CAPABILITIES_DESKTOP_THREAD,
   buildChatThreadSurface,
@@ -16,31 +20,151 @@ import {
   socialThreadKey,
 } from '../../store/socialChat';
 import { log } from '../../utils/logger';
+import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
+import { ChatMessageContent } from './message/ChatMessageContent';
 import {
+  isOwnMessage,
+  messageReplyToUlid,
+  messageTimestampDate,
   replyPreviewForMessage,
+  resolveChatSenderProfile,
   type ChatMessage,
 } from './message/chatMessageModel';
-import {
-  ChatMessageRow,
-  ChatMessageRowInteractionStyle,
-} from './message/ChatMessageRow';
 
 const { Text } = Typography;
 
-const disabledThreadRowActions = {
-  delete: false,
-  edit: false,
-  recall: false,
-  thread: false,
-} as const;
+function formatThreadTime(message: ChatMessage): string {
+  return messageTimestampDate(message)?.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  }) ?? '';
+}
 
-const disabledRootRowActions = {
-  ...disabledThreadRowActions,
-  reply: false,
-} as const;
+interface ThreadMessageItemProps {
+  activeConversationId: string;
+  activeKind: 'friend' | 'group';
+  currentUserDid: string | null;
+  currentUserProfile: ReturnType<typeof useSocialChatStore.getState>['currentUserProfile'];
+  groupMembers: ReturnType<typeof useSocialChatStore.getState>['groupMembers'];
+  message: ChatMessage;
+  messages: ChatMessage[];
+  onReply?: (message: ChatMessage) => void;
+  root?: boolean;
+  rootUlid: string;
+  sessions: ReturnType<typeof useSocialChatStore.getState>['sessions'];
+}
 
-function ignoreThreadRowAction(): void {}
+function ThreadMessageItem({
+  activeConversationId,
+  activeKind,
+  currentUserDid,
+  currentUserProfile,
+  groupMembers,
+  message,
+  messages,
+  onReply,
+  root = false,
+  rootUlid,
+  sessions,
+}: ThreadMessageItemProps) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
+  const senderProfile = resolveChatSenderProfile({
+    activeKind,
+    activeConversationId,
+    currentUserDid,
+    currentUserProfile,
+    groupMembers,
+    sessions,
+    message,
+  });
+  const isOwn = isOwnMessage(message, currentUserDid);
+  const replyToUlid = messageReplyToUlid(message);
+  const replyPreview = replyPreviewForMessage(
+    replyToUlid && replyToUlid !== rootUlid
+      ? messages.find((item) => item.ulid === replyToUlid)
+      : null,
+    {
+      image: t('chat.social.messageArea.attachmentTypeImage'),
+      video: t('chat.social.messageArea.attachmentTypeVideo'),
+      audio: t('chat.social.messageArea.attachmentTypeAudio'),
+      file: t('chat.social.messageArea.attachmentTypeFile'),
+    },
+  );
+
+  return (
+    <Flexbox
+      horizontal
+      align="flex-start"
+      gap={10}
+      style={{
+        padding: root ? '12px 12px 13px' : '10px 0',
+        borderRadius: root ? 8 : 0,
+        background: root ? token.colorFillQuaternary : 'transparent',
+        borderBottom: root ? 'none' : `1px solid ${token.colorBorderSecondary}`,
+        position: 'relative',
+      }}
+      className="thread-comment-row"
+    >
+      <UserSquareAvatar
+        remoteUrl={senderProfile.avatar}
+        name={senderProfile.name}
+        size={root ? 30 : 28}
+        style={{ flexShrink: 0 }}
+      />
+      <Flexbox gap={5} style={{ flex: 1, minWidth: 0 }}>
+        <Flexbox horizontal align="center" justify="space-between" gap={8}>
+          <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0 }}>
+            <Text ellipsis strong style={{ fontSize: 12, maxWidth: 150 }}>
+              {isOwn ? t('chat.social.thread.you') : senderProfile.name}
+            </Text>
+            <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
+              {formatThreadTime(message)}
+            </Text>
+          </Flexbox>
+          {!root && onReply && (
+            <Button
+              className="thread-reply-action"
+              type="text"
+              size="small"
+              icon={<MessageSquareReply size={13} />}
+              aria-label={t('chat.social.thread.replyToMessage')}
+              title={t('chat.social.thread.replyToMessage')}
+              onClick={() => onReply(message)}
+              style={{ width: 24, height: 24, flexShrink: 0 }}
+            />
+          )}
+        </Flexbox>
+        {replyPreview && (
+          <Text
+            type="secondary"
+            ellipsis
+            style={{
+              fontSize: 11,
+              padding: '3px 6px',
+              borderLeft: `2px solid ${token.colorPrimaryBorder}`,
+              background: token.colorFillQuaternary,
+              borderRadius: 4,
+            }}
+          >
+            {replyPreview}
+          </Text>
+        )}
+        <Flexbox
+          style={{
+            color: token.colorText,
+            fontSize: root ? 13 : 12,
+            lineHeight: 1.55,
+            wordBreak: 'break-word',
+          }}
+        >
+          <ChatMessageContent message={message} isOwn={isOwn} attachmentGap={5} />
+        </Flexbox>
+      </Flexbox>
+    </Flexbox>
+  );
+}
 
 export function ChatThreadPanel() {
   const { token } = theme.useToken();
@@ -100,7 +224,7 @@ export function ChatThreadPanel() {
     }),
     [currentMessages, loadedThreadMessages, openThreadRootUlid],
   );
-  const { rootMessage, replies, displayMessages: threadDisplayMessages } = threadSurface;
+  const { rootMessage, replies, displayMessages } = threadSurface;
 
   useEffect(() => {
     if (activeTab === 'group' && activeUlid) {
@@ -178,7 +302,6 @@ export function ChatThreadPanel() {
     const rootUlid = rootMessage?.ulid || openThreadRootUlid;
     if (!rootUlid) return;
     setScrollToMessageUlid(rootUlid);
-    closeThread();
   };
 
   if (!openThreadRootUlid) return null;
@@ -200,32 +323,70 @@ export function ChatThreadPanel() {
         flexShrink: 0,
       }}
     >
+      <style>
+        {`
+          .chat-thread-scroll {
+            scrollbar-width: thin;
+            scrollbar-color: ${token.colorFillSecondary} transparent;
+          }
+          .chat-thread-scroll::-webkit-scrollbar {
+            width: 6px;
+            height: 0;
+          }
+          .chat-thread-scroll::-webkit-scrollbar-thumb {
+            background: ${token.colorFillSecondary};
+            border-radius: 999px;
+          }
+          .chat-thread-scroll::-webkit-scrollbar-track {
+            background: transparent;
+          }
+          .thread-reply-action {
+            opacity: 0;
+            transition: opacity 0.14s ease;
+          }
+          .thread-comment-row:hover .thread-reply-action,
+          .thread-comment-row:focus-within .thread-reply-action {
+            opacity: 1;
+          }
+        `}
+      </style>
       <Flexbox
         horizontal
         align="center"
         justify="space-between"
         style={{
-          padding: '12px 16px',
+          height: 64,
+          padding: '0 18px',
           borderBottom: `1px solid ${token.colorBorderSecondary}`,
           flexShrink: 0,
         }}
       >
         <Flexbox horizontal align="center" gap={8}>
-          <MessageCircle size={16} style={{ color: token.colorPrimary }} />
-          <Text strong style={{ fontSize: 15 }}>
-            {t('chat.social.thread.title')}
-          </Text>
+          <MessagesSquare size={16} style={{ color: token.colorPrimary }} />
+          <Flexbox>
+            <Text strong style={{ fontSize: 14 }}>
+              {t('chat.social.thread.title')}
+            </Text>
+            {rootMessage && (
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                {t('chat.social.thread.replies', { count: replies.length })}
+              </Text>
+            )}
+          </Flexbox>
         </Flexbox>
         <Flexbox horizontal align="center" gap={4}>
           <Button
             type="text"
             title={t('chat.social.thread.jumpToOriginal')}
+            aria-label={t('chat.social.thread.jumpToOriginal')}
             icon={<LocateFixed size={15} />}
             onClick={handleJumpToOriginal}
             style={{ width: 28, height: 28 }}
           />
           <Button
             type="text"
+            title={t('chat.social.thread.close')}
+            aria-label={t('chat.social.thread.close')}
             icon={<X size={16} />}
             onClick={closeThread}
             style={{ width: 28, height: 28 }}
@@ -239,8 +400,12 @@ export function ChatThreadPanel() {
         </Flexbox>
       ) : (
         <>
-          <Flexbox flex={1} gap={14} style={{ overflow: 'auto', padding: 16 }}>
-            <ChatMessageRowInteractionStyle />
+          <Flexbox
+            className="chat-thread-scroll"
+            flex={1}
+            gap={12}
+            style={{ overflowY: 'auto', overflowX: 'hidden', padding: '14px 16px 12px' }}
+          >
             {loadingThread && (
               <Flexbox horizontal align="center" gap={8} style={{ color: token.colorTextSecondary }}>
                 <Spin size="small" />
@@ -257,37 +422,26 @@ export function ChatThreadPanel() {
                 description={threadLoadError}
               />
             )}
-            <Flexbox gap={8}>
-              <Text type="secondary" style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: 0 }}>
+            <Flexbox gap={7}>
+              <Text type="secondary" style={{ fontSize: 11, letterSpacing: 0 }}>
                 {t('chat.social.thread.rootMessage')}
               </Text>
-              <ChatMessageRow
-                actionVisibility={disabledRootRowActions}
+              <ThreadMessageItem
                 activeConversationId={activeUlid || ''}
                 activeKind={activeKind}
                 currentUserDid={currentUserDid}
                 currentUserProfile={currentUserProfile}
-                density="compact"
                 groupMembers={groupMembers}
-                highlighted={false}
                 message={rootMessage}
-                messages={threadDisplayMessages}
-                onDelete={ignoreThreadRowAction}
-                onEdit={ignoreThreadRowAction}
-                onOpenThread={ignoreThreadRowAction}
-                onRecall={ignoreThreadRowAction}
-                onReply={ignoreThreadRowAction}
+                messages={displayMessages}
+                root
+                rootUlid={rootMessage.ulid}
                 sessions={sessions}
-                showHoverActions={false}
-                showThreadSummary={false}
-                threadReplyCount={0}
-                threadUnreadCount={0}
-                timelineGap={false}
               />
             </Flexbox>
 
-            <Flexbox gap={8}>
-              <Text type="secondary" style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: 0 }}>
+            <Flexbox gap={4}>
+              <Text type="secondary" style={{ fontSize: 11, letterSpacing: 0 }}>
                 {t('chat.social.thread.replies', { count: replies.length })}
               </Text>
               {replies.length === 0 ? (
@@ -295,39 +449,29 @@ export function ChatThreadPanel() {
                   align="center"
                   justify="center"
                   style={{
-                    padding: '18px 12px',
+                    padding: '16px 12px',
                     borderRadius: 8,
                     background: token.colorFillQuaternary,
                   }}
                 >
-                  <Text type="secondary" style={{ fontSize: 13 }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
                     {t('chat.social.thread.noReplies')}
                   </Text>
                 </Flexbox>
               ) : (
                 replies.map((reply) => (
-                  <ChatMessageRow
+                  <ThreadMessageItem
                     key={reply.ulid}
-                    actionVisibility={disabledThreadRowActions}
                     activeConversationId={activeUlid || ''}
                     activeKind={activeKind}
                     currentUserDid={currentUserDid}
                     currentUserProfile={currentUserProfile}
-                    density="compact"
                     groupMembers={groupMembers}
-                    highlighted={false}
                     message={reply}
-                    messages={threadDisplayMessages}
-                    onDelete={ignoreThreadRowAction}
-                    onEdit={ignoreThreadRowAction}
-                    onOpenThread={ignoreThreadRowAction}
-                    onRecall={ignoreThreadRowAction}
-                    onReply={() => setReplyTarget(reply)}
+                    messages={displayMessages}
+                    onReply={setReplyTarget}
+                    rootUlid={rootMessage.ulid}
                     sessions={sessions}
-                    showThreadSummary={false}
-                    threadReplyCount={0}
-                    threadUnreadCount={0}
-                    timelineGap={false}
                   />
                 ))
               )}
@@ -337,7 +481,7 @@ export function ChatThreadPanel() {
                   type="text"
                   loading={loadingMoreReplies}
                   onClick={handleLoadMoreReplies}
-                  style={{ alignSelf: 'center', fontSize: 12 }}
+                  style={{ alignSelf: 'center', fontSize: 12, marginTop: 8 }}
                 >
                   {t('chat.social.thread.loadMoreReplies')}
                 </Button>
