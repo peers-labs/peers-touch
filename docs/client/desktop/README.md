@@ -10,6 +10,7 @@
 2. [lifecycle.md](./lifecycle.md) — Desktop 顶层生命周期：boot、identity/auth gate、runtime bootstrap、steady reconcile
 3. [runtime-projections.md](./runtime-projections.md) — `desktop-web` 内部 Page / Runtime / Boot 三组契约的**单点真源**
 4. [global-context-kernel.md](./global-context-kernel.md) — 全局上下文内核（与 Page/Runtime/Boot 正交）
+5. [chat-layout-contract.md](./chat-layout-contract.md) — Desktop Chat 布局、pane、hover、右键菜单、Composer 边界契约
 
 ## 架构层真源（跨进程）
 
@@ -24,6 +25,16 @@ Desktop 与 `station / desktop-rust / desktop-web / desktop-app` 的跨进程关
 - [applet-launcher-ux-contract.md](./applet-launcher-ux-contract.md)
 - [provider-model-target-architecture.md](./provider-model-target-architecture.md)
 - [execution-plans/global-context-kernel-migration.md](./execution-plans/global-context-kernel-migration.md)
+
+## 跨端 Chat 体验
+
+- [../chat/chat-ux-contract.md](../chat/chat-ux-contract.md) — Desktop 与 Mobile 共同遵守的 Chat / IM 产品体验契约
+- [chat-layout-contract.md](./chat-layout-contract.md) — Desktop 对跨端 Chat 契约的平台化约束
+
+## 跨端通用 UX
+
+- [../common/ux-design-methodology.md](../common/ux-design-methodology.md) — 客户端 UX 问题从案例沉淀成准则、契约、invariant 的方法论
+- [../common/form-control-ux-contract.md](../common/form-control-ux-contract.md) — 跨端表单控件与组合输入控件体验契约
 
 ## 规范层（写代码前看）
 
