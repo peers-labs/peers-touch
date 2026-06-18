@@ -488,6 +488,13 @@ func (i timelineItem) deliveryAudienceKind() model.Audience_Kind {
 	return model.Audience_KIND_UNSPECIFIED
 }
 
+func audienceKindFromDelivery(kind string) model.Audience_Kind {
+	if v, ok := model.Audience_Kind_value[kind]; ok {
+		return model.Audience_Kind(v)
+	}
+	return model.Audience_KIND_UNSPECIFIED
+}
+
 func sortTimelineItems(items []timelineItem) {
 	for i := 1; i < len(items); i++ {
 		j := i
