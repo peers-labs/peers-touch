@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DEFAULT_IDENTITY_POLICY,
+  identityAuthenticatedEdge,
   identityPhaseAllowsReady,
   identityPhaseNeedsAuthGate,
   identityReducer,
-  shouldResolveSessionOnBoot,
+  resolveBootSessionPolicy,
   type IdentityPhase,
 } from './identityLifecycle';
 
@@ -20,11 +21,49 @@ const user = {
 
 describe('identity lifecycle state machine', () => {
   it('restores a cold launch by default', () => {
-    expect(shouldResolveSessionOnBoot('cold_launch', DEFAULT_IDENTITY_POLICY)).toBe(true);
+    expect(resolveBootSessionPolicy('cold_launch', DEFAULT_IDENTITY_POLICY)).toEqual({
+      kind: 'resolveSession',
+      source: 'live',
+    });
   });
 
   it('does restore a renderer reload by default', () => {
-    expect(shouldResolveSessionOnBoot('renderer_reload', DEFAULT_IDENTITY_POLICY)).toBe(true);
+    expect(resolveBootSessionPolicy('renderer_reload', DEFAULT_IDENTITY_POLICY)).toEqual({
+      kind: 'resolveSession',
+      source: 'live',
+    });
+  });
+
+  it('resolves boot restore policy as an explicit decision', () => {
+    expect(resolveBootSessionPolicy('cold_launch', DEFAULT_IDENTITY_POLICY)).toEqual({
+      kind: 'resolveSession',
+      source: 'live',
+    });
+    expect(resolveBootSessionPolicy('cold_launch', {
+      ...DEFAULT_IDENTITY_POLICY,
+      coldLaunch: 'auth_gate',
+    })).toEqual({
+      kind: 'authGate',
+      reason: 'cold_policy',
+    });
+  });
+
+  it('models authenticated edges with completion semantics', () => {
+    expect(identityAuthenticatedEdge('fresh_login', user)).toMatchObject({
+      completion: 'pending',
+      event: { type: 'FRESH_LOGIN_AUTHENTICATED' },
+      kind: 'fresh_login',
+    });
+    expect(identityAuthenticatedEdge('completed_login', user)).toMatchObject({
+      completion: 'ready',
+      event: { type: 'LOGIN_SUCCEEDED' },
+      kind: 'completed_login',
+    });
+    expect(identityAuthenticatedEdge('pin_unlock', user)).toMatchObject({
+      completion: 'ready',
+      event: { source: 'unlock', type: 'SESSION_RESTORED' },
+      kind: 'pin_unlock',
+    });
   });
 
   it('keeps ready behind authenticated only', () => {

@@ -13,6 +13,14 @@ export type IdentityAuthGateReason =
 export type IdentityProfileStatus = 'unknown' | 'syncing' | 'ready' | 'stale' | 'failed';
 export type IdentityAccountCacheStatus = 'unknown' | 'refreshing' | 'ready' | 'failed';
 export type IdentityAvatarStatus = 'unknown' | 'remoteKnown';
+export type IdentityBootSessionPolicy = 'restore_session' | 'auth_gate';
+export type IdentityAuthenticatedEdgeKind =
+  | 'fresh_login'
+  | 'completed_login'
+  | 'restored_session'
+  | 'pin_unlock'
+  | 'account_switch'
+  | 'applet_launch';
 
 export interface IdentityReadiness {
   profile: IdentityProfileStatus;
@@ -61,14 +69,27 @@ export type IdentityEvent =
   | { type: 'LOGOUT_REQUESTED' };
 
 export interface IdentityPolicy {
-  allowRestoreOnColdLaunch: boolean;
-  allowRestoreOnRendererReload: boolean;
+  coldLaunch: IdentityBootSessionPolicy;
+  rendererReload: IdentityBootSessionPolicy;
+  appletLaunch: IdentityBootSessionPolicy;
 }
 
 export const DEFAULT_IDENTITY_POLICY: IdentityPolicy = {
-  allowRestoreOnColdLaunch: true,
-  allowRestoreOnRendererReload: true,
+  coldLaunch: 'restore_session',
+  rendererReload: 'restore_session',
+  appletLaunch: 'restore_session',
 };
+
+export type IdentityBootResolution =
+  | { kind: 'resolveSession'; source: 'live' | 'applet' }
+  | { kind: 'authGate'; reason: IdentityAuthGateReason };
+
+export interface IdentityAuthenticatedEdge {
+  kind: IdentityAuthenticatedEdgeKind;
+  completion: 'pending' | 'ready';
+  user: SessionUser;
+  event: IdentityEvent;
+}
 
 function bootReasonFromPhase(state: IdentityPhase): IdentityBootReason {
   if (
@@ -133,13 +154,73 @@ function updateAuthenticated(
   };
 }
 
-export function shouldResolveSessionOnBoot(
+export function resolveBootSessionPolicy(
   reason: IdentityBootReason,
   policy: IdentityPolicy = DEFAULT_IDENTITY_POLICY,
-): boolean {
-  if (reason === 'renderer_reload') return policy.allowRestoreOnRendererReload;
-  if (reason === 'cold_launch') return policy.allowRestoreOnColdLaunch;
-  return true;
+): IdentityBootResolution {
+  if (reason === 'renderer_reload') {
+    return policy.rendererReload === 'restore_session'
+      ? { kind: 'resolveSession', source: 'live' }
+      : { kind: 'authGate', reason: 'cold_policy' };
+  }
+  if (reason === 'cold_launch') {
+    return policy.coldLaunch === 'restore_session'
+      ? { kind: 'resolveSession', source: 'live' }
+      : { kind: 'authGate', reason: 'cold_policy' };
+  }
+  return policy.appletLaunch === 'restore_session'
+    ? { kind: 'resolveSession', source: 'applet' }
+    : { kind: 'authGate', reason: 'cold_policy' };
+}
+
+export function identityAuthenticatedEdge(
+  kind: IdentityAuthenticatedEdgeKind,
+  user: SessionUser,
+): IdentityAuthenticatedEdge {
+  switch (kind) {
+    case 'fresh_login':
+      return {
+        kind,
+        completion: 'pending',
+        user,
+        event: { type: 'FRESH_LOGIN_AUTHENTICATED', user },
+      };
+    case 'completed_login':
+      return {
+        kind,
+        completion: 'ready',
+        user,
+        event: { type: 'LOGIN_SUCCEEDED', user },
+      };
+    case 'restored_session':
+      return {
+        kind,
+        completion: 'ready',
+        user,
+        event: { type: 'SESSION_RESTORED', source: 'restore', user },
+      };
+    case 'pin_unlock':
+      return {
+        kind,
+        completion: 'ready',
+        user,
+        event: { type: 'SESSION_RESTORED', source: 'unlock', user },
+      };
+    case 'account_switch':
+      return {
+        kind,
+        completion: 'ready',
+        user,
+        event: { type: 'SESSION_RESTORED', source: 'switch', user },
+      };
+    case 'applet_launch':
+      return {
+        kind,
+        completion: 'ready',
+        user,
+        event: { type: 'APPLET_LAUNCH_AUTHENTICATED', user },
+      };
+  }
 }
 
 export function identityReducer(state: IdentityPhase, event: IdentityEvent): IdentityPhase {
