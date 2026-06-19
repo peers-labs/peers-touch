@@ -46,7 +46,12 @@ export interface AppLifecycle {
   restoredUser: SessionUser | null;
   knownAccounts: SessionUser[];
   dataReady: boolean;
-  completeLogin: () => void;
+  completeLogin: () => Promise<void>;
+  loginWithPassword: (account: string, password: string) => Promise<void>;
+  loginWithOAuthBridge: () => Promise<void>;
+  switchAccount: (accountId: string) => Promise<void>;
+  unlockWithPin: (accountId: string, pin: string) => Promise<void>;
+  refreshCurrentProfile: (fallbackAvatar?: string) => Promise<void>;
 }
 
 export interface HashRouter {

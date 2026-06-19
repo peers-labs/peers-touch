@@ -10,13 +10,28 @@ export type IdentityAuthGateReason =
   | 'revoked'
   | 'logout';
 
+export type IdentityProfileStatus = 'unknown' | 'syncing' | 'ready' | 'stale' | 'failed';
+export type IdentityAccountCacheStatus = 'unknown' | 'refreshing' | 'ready' | 'failed';
+export type IdentityAvatarStatus = 'unknown' | 'remoteKnown';
+
+export interface IdentityReadiness {
+  profile: IdentityProfileStatus;
+  accountCache: IdentityAccountCacheStatus;
+  avatar: IdentityAvatarStatus;
+}
+
 export type IdentityPhase =
   | { kind: 'booting'; reason: IdentityBootReason }
   | { kind: 'checkingLaunchContext'; reason: IdentityBootReason }
   | { kind: 'resolvingSession'; reason: IdentityBootReason; source: 'live' | 'disk' | 'applet' }
   | { kind: 'accountGate'; reason: IdentityAuthGateReason }
   | { kind: 'pinGate'; accountId: string }
-  | { kind: 'authenticated'; user: SessionUser; source: 'login' | 'restore' | 'unlock' | 'switch' | 'applet' }
+  | {
+    kind: 'authenticated';
+    user: SessionUser;
+    source: 'login' | 'restore' | 'unlock' | 'switch' | 'applet';
+    readiness: IdentityReadiness;
+  }
   | { kind: 'revoked'; reason: IdentityAuthGateReason };
 
 export type IdentityEvent =
@@ -29,6 +44,12 @@ export type IdentityEvent =
   | { type: 'ACCOUNT_GATE_READY'; reason: IdentityAuthGateReason }
   | { type: 'PIN_REQUIRED'; accountId: string }
   | { type: 'LOGIN_SUCCEEDED'; user: SessionUser }
+  | { type: 'PROFILE_SYNC_STARTED' }
+  | { type: 'PROFILE_SYNC_SUCCEEDED'; user: SessionUser }
+  | { type: 'PROFILE_SYNC_FAILED' }
+  | { type: 'ACCOUNT_CACHE_REFRESH_STARTED' }
+  | { type: 'ACCOUNT_CACHE_REFRESH_SUCCEEDED'; user?: SessionUser }
+  | { type: 'ACCOUNT_CACHE_REFRESH_FAILED' }
   | { type: 'SESSION_REVOKED'; reason: IdentityAuthGateReason }
   | { type: 'LOGOUT_REQUESTED' };
 
@@ -53,6 +74,47 @@ function bootReasonFromPhase(state: IdentityPhase): IdentityBootReason {
   return 'cold_launch';
 }
 
+const initialReadiness: IdentityReadiness = {
+  profile: 'unknown',
+  accountCache: 'unknown',
+  avatar: 'unknown',
+};
+
+function avatarStatusForUser(user: SessionUser): IdentityAvatarStatus {
+  return user.avatar ? 'remoteKnown' : 'unknown';
+}
+
+function authenticatedPhase(
+  user: SessionUser,
+  source: Extract<IdentityPhase, { kind: 'authenticated' }>['source'],
+): IdentityPhase {
+  return {
+    kind: 'authenticated',
+    user,
+    source,
+    readiness: {
+      ...initialReadiness,
+      avatar: avatarStatusForUser(user),
+    },
+  };
+}
+
+function updateAuthenticated(
+  state: IdentityPhase,
+  patch: Partial<Extract<IdentityPhase, { kind: 'authenticated' }>>,
+  readinessPatch?: Partial<IdentityReadiness>,
+): IdentityPhase {
+  if (state.kind !== 'authenticated') return state;
+  return {
+    ...state,
+    ...patch,
+    readiness: {
+      ...state.readiness,
+      ...readinessPatch,
+    },
+  };
+}
+
 export function shouldResolveSessionOnBoot(
   reason: IdentityBootReason,
   policy: IdentityPolicy = DEFAULT_IDENTITY_POLICY,
@@ -72,7 +134,7 @@ export function identityReducer(state: IdentityPhase, event: IdentityEvent): Ide
         reason: bootReasonFromPhase(state),
       };
     case 'APPLET_LAUNCH_AUTHENTICATED':
-      return { kind: 'authenticated', user: event.user, source: 'applet' };
+      return authenticatedPhase(event.user, 'applet');
     case 'SESSION_RESOLVE_STARTED':
       return {
         kind: 'resolvingSession',
@@ -80,14 +142,37 @@ export function identityReducer(state: IdentityPhase, event: IdentityEvent): Ide
         source: event.source,
       };
     case 'SESSION_RESTORED':
-      return { kind: 'authenticated', user: event.user, source: event.source };
+      return authenticatedPhase(event.user, event.source);
     case 'SESSION_RESTORE_FAILED':
     case 'ACCOUNT_GATE_READY':
       return { kind: 'accountGate', reason: event.reason };
     case 'PIN_REQUIRED':
       return { kind: 'pinGate', accountId: event.accountId };
     case 'LOGIN_SUCCEEDED':
-      return { kind: 'authenticated', user: event.user, source: 'login' };
+      return authenticatedPhase(event.user, 'login');
+    case 'PROFILE_SYNC_STARTED':
+      return updateAuthenticated(state, {}, { profile: 'syncing' });
+    case 'PROFILE_SYNC_SUCCEEDED':
+      return updateAuthenticated(
+        state,
+        { user: event.user },
+        { profile: 'ready', avatar: avatarStatusForUser(event.user) },
+      );
+    case 'PROFILE_SYNC_FAILED':
+      return updateAuthenticated(state, {}, { profile: 'failed' });
+    case 'ACCOUNT_CACHE_REFRESH_STARTED':
+      return updateAuthenticated(state, {}, { accountCache: 'refreshing' });
+    case 'ACCOUNT_CACHE_REFRESH_SUCCEEDED':
+      return updateAuthenticated(
+        state,
+        event.user ? { user: event.user } : {},
+        {
+          accountCache: 'ready',
+          ...(event.user ? { avatar: avatarStatusForUser(event.user) } : {}),
+        },
+      );
+    case 'ACCOUNT_CACHE_REFRESH_FAILED':
+      return updateAuthenticated(state, {}, { accountCache: 'failed' });
     case 'SESSION_REVOKED':
       return { kind: 'revoked', reason: event.reason };
     case 'LOGOUT_REQUESTED':
