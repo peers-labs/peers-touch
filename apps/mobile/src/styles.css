@@ -517,8 +517,10 @@ select,
   align-items: center;
   min-width: 0;
   height: 44px;
+  gap: 6px;
+  padding: 4px;
   border: 1px solid #d9d9d9;
-  border-radius: 10px;
+  border-radius: 12px;
   background: #fff;
   overflow: hidden;
 }
@@ -535,19 +537,30 @@ select,
 .station-protocol-select {
   flex: 0 0 auto;
   min-width: 0 !important;
-  width: auto !important;
+  width: 86px !important;
+  height: 34px;
 }
 
 .station-protocol-select .ant-select-selector {
-  padding: 0 8px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  padding: 0 12px !important;
   border: none !important;
-  border-radius: 7px !important;
-  background: var(--brand-muted) !important;
+  border-radius: 9px !important;
+  background: rgba(248, 250, 252, 0.96) !important;
   box-shadow: none !important;
 }
 
 .station-protocol-select .ant-select-selection-item {
-  font-size: 11px;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  line-height: 34px !important;
+  font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.02em;
   color: rgba(0, 0, 0, 0.72);
@@ -557,7 +570,7 @@ select,
 .station-address-input {
   flex: 1 1 auto;
   min-width: 0;
-  padding-left: 2px !important;
+  padding-left: 0 !important;
 }
 
 .station-address-input .ant-input {
