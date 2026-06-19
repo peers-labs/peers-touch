@@ -19,8 +19,8 @@ const user = {
 };
 
 describe('identity lifecycle state machine', () => {
-  it('does not restore a cold launch by default', () => {
-    expect(shouldResolveSessionOnBoot('cold_launch', DEFAULT_IDENTITY_POLICY)).toBe(false);
+  it('restores a cold launch by default', () => {
+    expect(shouldResolveSessionOnBoot('cold_launch', DEFAULT_IDENTITY_POLICY)).toBe(true);
   });
 
   it('does restore a renderer reload by default', () => {
@@ -93,5 +93,33 @@ describe('identity lifecycle state machine', () => {
     });
     expect(refreshing).toMatchObject({ readiness: { accountCache: 'refreshing' } });
     expect(ready).toMatchObject({ readiness: { accountCache: 'ready' } });
+  });
+
+  it('keeps fresh login reconciliation observable before login completion', () => {
+    const pending = identityReducer(
+      { kind: 'accountGate', reason: 'session_missing' },
+      { type: 'FRESH_LOGIN_AUTHENTICATED', user },
+    );
+    const syncing = identityReducer(pending, { type: 'PROFILE_SYNC_STARTED' });
+    const synced = identityReducer(syncing, {
+      type: 'PROFILE_SYNC_SUCCEEDED',
+      user: { ...user, avatar: 'https://example.test/fresh-avatar.png' },
+    });
+    const completed = identityReducer(synced, { type: 'LOGIN_COMPLETED' });
+
+    expect(identityPhaseAllowsReady(pending)).toBe(false);
+    expect(syncing).toMatchObject({ readiness: { profile: 'syncing' } });
+    expect(synced).toMatchObject({
+      kind: 'authenticatedPendingCompletion',
+      readiness: { avatar: 'remoteKnown', profile: 'ready' },
+      user: { avatar: 'https://example.test/fresh-avatar.png' },
+    });
+    expect(completed).toMatchObject({
+      kind: 'authenticated',
+      source: 'login',
+      readiness: { profile: 'ready' },
+      user: { avatar: 'https://example.test/fresh-avatar.png' },
+    });
+    expect(identityPhaseAllowsReady(completed)).toBe(true);
   });
 });
