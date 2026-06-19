@@ -5,6 +5,7 @@ import { markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
 import { removeDesktopPreferenceSync } from '../storage/desktopClientStorage';
 import type { AppLifecycle, AppState, SessionUser } from '../types/navigation';
+import { log } from '../utils/logger';
 import { markPhaseEnd, markPhaseStart } from './boot';
 import { EVENT, eventBus } from './events';
 import { globalContext } from './global-context';
@@ -267,6 +268,12 @@ class IdentityRuntime {
     if (!user) return;
 
     useOAuth2Store.getState().loadAll().catch(() => {});
+    if (this.phase.kind === 'authenticatedPendingCompletion') {
+      this.restoredUser = user;
+      this.dataReady = true;
+      this.dispatch({ type: 'LOGIN_COMPLETED', user });
+      return;
+    }
     await this.acceptAuthenticatedEdge({ event: { type: 'LOGIN_SUCCEEDED', user }, user });
   };
 
@@ -278,6 +285,7 @@ class IdentityRuntime {
       actorId: resp.actor_id ?? null,
       loginMethod: 'password',
     });
+    await this.acceptFreshLoginEdge();
   };
 
   loginWithOAuthBridge = async (): Promise<void> => {
@@ -289,6 +297,7 @@ class IdentityRuntime {
       actorId: resp.actor_id ?? null,
       loginMethod: method,
     });
+    await this.acceptFreshLoginEdge();
   };
 
   switchAccount = async (accountId: string): Promise<void> => {
@@ -386,6 +395,17 @@ class IdentityRuntime {
     await this.reconcileAuthenticatedIdentity(input.user);
   };
 
+  private acceptFreshLoginEdge = async (): Promise<void> => {
+    const user = currentSessionUser();
+    if (!user) return;
+    markRendererAuthenticated();
+    this.restoredUser = user;
+    this.knownAccounts = [user];
+    this.dataReady = true;
+    this.dispatch({ type: 'FRESH_LOGIN_AUTHENTICATED', user });
+    await this.reconcileAuthenticatedIdentity(user);
+  };
+
   private reconcileAuthenticatedIdentity = async (seedUser: SessionUser): Promise<void> => {
     let reconciledUser = seedUser;
 
@@ -400,7 +420,11 @@ class IdentityRuntime {
       });
       this.restoredUser = reconciledUser;
       this.dispatch({ type: 'PROFILE_SYNC_SUCCEEDED', user: reconciledUser });
-    } catch {
+    } catch (error) {
+      log.warn('identity', 'profile sync failed during authenticated reconciliation', {
+        actorId: useSessionStore.getState().currentUser?.actorId,
+        error: String(error),
+      });
       this.dispatch({ type: 'PROFILE_SYNC_FAILED' });
     }
 
@@ -411,7 +435,11 @@ class IdentityRuntime {
       this.knownAccounts = refreshedAccounts.length > 0 ? refreshedAccounts : [reconciledUser];
       const latestUser = currentSessionUser() ?? reconciledUser;
       this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_SUCCEEDED', user: latestUser });
-    } catch {
+    } catch (error) {
+      log.warn('identity', 'account cache refresh failed during authenticated reconciliation', {
+        actorId: useSessionStore.getState().currentUser?.actorId,
+        error: String(error),
+      });
       this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_FAILED' });
     }
   };
