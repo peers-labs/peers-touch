@@ -9,8 +9,11 @@ import { api, AuthCommandException } from '../services/desktop_api';
 import type { AccountIdentity, OAuth2ProviderSummary } from '../services/desktop_api';
 import { UserSquareAvatar } from '../components/common/UserSquareAvatar';
 import { PlatformLogo } from '../components/common/PlatformLogo';
+import { StationNetworkIntro } from '../components/common/StationNetworkIntro';
+import { STATION_ACTIVE_CHANGED_EVENT, type StationActiveChangedDetail } from '../components/common/stationRegistryEvents';
 import { BRANDING } from '../branding';
 import type { SessionUser } from '../types/navigation';
+import { log } from '../utils/logger';
 
 const { Text } = Typography;
 
@@ -70,6 +73,17 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+function stationDisplayName(entryLabel?: string, stationUrl?: string): string {
+  if (entryLabel) return entryLabel;
+  if (!stationUrl) return '';
+
+  try {
+    return new URL(stationUrl).hostname;
+  } catch {
+    return stationUrl;
+  }
+}
+
 export function LoginPage({
   onComplete,
   onLoginWithPassword,
@@ -104,6 +118,7 @@ export function LoginPage({
   const [connectProvider, setConnectProvider] = useState<OAuth2ProviderSummary | null>(null);
   const [authState, setAuthState] = useState<AuthState>('idle');
   const [authError, setAuthError] = useState('');
+  const [activeStationName, setActiveStationName] = useState('');
   const [arrowTop, setArrowTop] = useState(0);
   const buttonRefs = useRef<Record<string, HTMLElement | null>>({});
   const cardRef = useRef<HTMLDivElement>(null);
@@ -154,6 +169,39 @@ export function LoginPage({
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  useEffect(() => {
+    if (embedded) return;
+
+    let cancelled = false;
+
+    async function loadActiveStationName() {
+      try {
+        const result = await api.stationList();
+        if (cancelled) return;
+
+        const activeUrl = result.active_url ?? '';
+        const activeEntry = result.entries?.find(entry => entry.url === activeUrl);
+        setActiveStationName(stationDisplayName(activeEntry?.label, activeUrl));
+      } catch (err) {
+        log.warn('LoginPage', 'Failed to load active station for network intro', { error: err });
+      }
+    }
+
+    void loadActiveStationName();
+
+    function handleActiveStationChanged(event: Event) {
+      const detail = (event as CustomEvent<StationActiveChangedDetail>).detail;
+      setActiveStationName(stationDisplayName(detail?.label, detail?.url));
+    }
+
+    window.addEventListener(STATION_ACTIVE_CHANGED_EVENT, handleActiveStationChanged);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener(STATION_ACTIVE_CHANGED_EVENT, handleActiveStationChanged);
+    };
+  }, [embedded]);
 
   // Guard: if welcome_back is reached without a valid session, redirect to login form
   useEffect(() => {
@@ -711,6 +759,25 @@ export function LoginPage({
   const panelOpen = !!connectProvider && loginState === 'logged_out';
   const hasSignedInUser = hasValidRestoredUser;
   const cardMinHeight = loginCardMinHeight(loginState, !!expiredAccount);
+  const networkIntroLabels = useMemo(() => ({
+    title: t('auth.network.title'),
+    personal: t('auth.network.personal'),
+    actor: t('auth.network.actor'),
+    relay: t('auth.network.relay'),
+    relayLink: t('auth.network.relayLink'),
+    alice: t('auth.network.alice'),
+    service: t('auth.network.service'),
+    station: t('auth.network.station'),
+    bob: t('auth.network.bob'),
+    agent: t('auth.network.agent'),
+    joining: t('auth.network.joining'),
+    yourStation: t('auth.network.yourStation'),
+    messageFlow: t('auth.network.messageFlow'),
+    imageFlow: t('auth.network.imageFlow'),
+    fileFlow: t('auth.network.fileFlow'),
+    taskFlow: t('auth.network.taskFlow'),
+  }), [t]);
+  const selectedStationName = activeStationName || t('auth.network.defaultStationName');
 
   useEffect(() => {
     if (!panelOpen) return;
@@ -1636,12 +1703,16 @@ export function LoginPage({
   if (embedded) return cardContent;
 
   return (
-    <Flexbox
-      align="center"
-      justify="center"
-      style={{ width: '100%', height: '100%', background: token.colorBgLayout }}
-    >
-      {cardContent}
-    </Flexbox>
+    <div className="login-network-shell">
+      <div className="login-network-intro">
+        <StationNetworkIntro
+          selectedStationName={selectedStationName}
+          labels={networkIntroLabels}
+        />
+      </div>
+      <div className="login-card-region">
+        {cardContent}
+      </div>
+    </div>
   );
 }
