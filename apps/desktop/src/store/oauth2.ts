@@ -1,8 +1,6 @@
 import { create } from 'zustand';
 import { api, type OAuth2ProviderSummary, type OAuth2Connection } from '../services/desktop_api';
 import { EVENT, eventBus } from '../kernel/events';
-import { useSessionStore } from './session';
-import { log } from '../utils/logger';
 
 let loadAllPromise: Promise<void> | null = null;
 
@@ -79,16 +77,6 @@ export const useOAuth2Store = create<OAuth2Store>((set, get) => ({
         if (timeoutTimer) clearTimeout(timeoutTimer);
         if (poller) clearInterval(poller);
         await get().loadAll();
-
-        // After a successful OAuth loopback, bridge the session into BFF
-        // so the app is immediately authenticated.
-        if (!errorMessage) {
-          try {
-            await useSessionStore.getState().loginWithOAuth(id);
-          } catch (err: any) {
-            log.warn('oauth2', 'loginWithOAuth failed (non-fatal)', err?.message);
-          }
-        }
 
         if (errorMessage) {
           reject(new Error(errorMessage));
