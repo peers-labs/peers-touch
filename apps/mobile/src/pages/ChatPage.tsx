@@ -95,7 +95,7 @@ export function ChatPage() {
   const [conversationQuery, setConversationQuery] = useState('');
   const [threadSearchQuery, setThreadSearchQuery] = useState('');
   const [threadSearchOpen, setThreadSearchOpen] = useState(false);
-  const [actionDrawerOpen, setActionDrawerOpen] = useState(false);
+  const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [composerEmojiOpen, setComposerEmojiOpen] = useState(false);
   const [composerMoreOpen, setComposerMoreOpen] = useState(false);
   const [attachmentDrafts, setAttachmentDrafts] = useState<MobileChatAttachmentDraft[]>([]);
@@ -236,7 +236,7 @@ export function ChatPage() {
   useEffect(() => {
     setThreadSearchQuery('');
     setThreadSearchOpen(false);
-    setActionDrawerOpen(false);
+    setActionSheetOpen(false);
     setComposerEmojiOpen(false);
     setComposerMoreOpen(false);
     setEditingMessage(null);
@@ -519,7 +519,7 @@ export function ChatPage() {
       okButtonProps: { danger: true },
       onOk: async () => {
         await blockUser(activeConversation.peerDid);
-        setActionDrawerOpen(false);
+        setActionSheetOpen(false);
       },
     });
   };
@@ -650,7 +650,7 @@ export function ChatPage() {
               <button
                 className="header-action"
                 type="button"
-                onClick={() => setActionDrawerOpen(true)}
+                onClick={() => setActionSheetOpen(true)}
                 aria-label={t('mobile.chat.moreActions')}
               >
                 <MoreHorizontal size={20} />
@@ -659,13 +659,13 @@ export function ChatPage() {
           )}
         </header>
 
-        <ChatActionDrawer
-          open={actionDrawerOpen}
+        <ChatActionSheet
+          open={actionSheetOpen}
           state={actionState}
-          onClose={() => setActionDrawerOpen(false)}
+          onClose={() => setActionSheetOpen(false)}
           onSearch={() => {
             setThreadSearchOpen(true);
-            setActionDrawerOpen(false);
+            setActionSheetOpen(false);
           }}
           onToggleMute={() => { void updateChatActionState(activeKey, { muted: !actionState.muted }); }}
           onToggleSticky={() => { void updateChatActionState(activeKey, { sticky: !actionState.sticky }); }}
@@ -685,7 +685,7 @@ export function ChatPage() {
           isFriendThread={Boolean(activeConversation)}
           onManageGroup={activeGroupConversation ? () => {
             setGroupManageOpen(true);
-            setActionDrawerOpen(false);
+            setActionSheetOpen(false);
           } : undefined}
           peerBlocked={activePeerBlocked}
           onBlockPeer={confirmBlockActivePeer}
@@ -1176,7 +1176,7 @@ function MessageAvatar({ src, fallback }: { src: string; fallback: string }) {
   );
 }
 
-function ChatActionDrawer({
+function ChatActionSheet({
   open,
   state,
   onClose,
@@ -1213,35 +1213,38 @@ function ChatActionDrawer({
   if (!open) return null;
 
   return (
-    <div className="chat-action-drawer-shell">
-      <button className="chat-action-drawer-backdrop" type="button" aria-label={t('common.action.close')} onClick={onClose} />
-      <aside className="chat-action-drawer">
-        <div className="chat-action-drawer-header">
-          <Text strong>{t('mobile.chat.moreActions')}</Text>
+    <div className="chat-action-sheet-shell">
+      <button className="chat-action-sheet-backdrop" type="button" aria-label={t('common.action.close')} onClick={onClose} />
+      <aside className="chat-action-sheet" role="dialog" aria-modal="true" aria-labelledby="chat-action-sheet-title">
+        <div className="chat-action-sheet-handle" aria-hidden="true" />
+        <div className="chat-action-sheet-header">
+          <Text strong id="chat-action-sheet-title">{t('mobile.chat.moreActions')}</Text>
           <button className="header-action" type="button" aria-label={t('common.action.close')} onClick={onClose}>
             <X size={18} />
           </button>
         </div>
         <div className="chat-action-list">
-          <ChatActionButton icon={<Search size={18} />} title={t('mobile.chat.quickSearch')} onClick={onSearch} />
-          <ChatActionButton
-            icon={<VolumeX size={18} />}
-            title={t('mobile.chat.quickMute')}
-            active={state.muted}
-            onClick={onToggleMute}
-          />
-          <ChatActionButton
-            icon={<Pin size={18} />}
-            title={t('mobile.chat.quickSticky')}
-            active={state.sticky}
-            onClick={onToggleSticky}
-          />
-          <ChatActionButton
-            icon={<Bell size={18} />}
-            title={t('mobile.chat.quickAlert')}
-            active={state.alertEnabled}
-            onClick={onToggleAlert}
-          />
+          <div className="chat-action-group">
+            <ChatActionButton icon={<Search size={18} />} title={t('mobile.chat.quickSearch')} onClick={onSearch} />
+            <ChatActionButton
+              icon={<VolumeX size={18} />}
+              title={t('mobile.chat.quickMute')}
+              active={state.muted}
+              onClick={onToggleMute}
+            />
+            <ChatActionButton
+              icon={<Pin size={18} />}
+              title={t('mobile.chat.quickSticky')}
+              active={state.sticky}
+              onClick={onToggleSticky}
+            />
+            <ChatActionButton
+              icon={<Bell size={18} />}
+              title={t('mobile.chat.quickAlert')}
+              active={state.alertEnabled}
+              onClick={onToggleAlert}
+            />
+          </div>
           <div className="chat-background-section">
             <Text type="secondary" className="chat-background-title">{t('mobile.chat.quickBackground')}</Text>
             <div className="chat-background-grid">
@@ -1258,20 +1261,24 @@ function ChatActionDrawer({
               ))}
             </div>
           </div>
-          <ChatActionButton icon={<Trash2 size={18} />} title={t('mobile.chat.quickClearHistory')} danger onClick={onClearHistory} />
-          {state.clearedAt ? (
-            <ChatActionButton icon={<RotateCcw size={18} />} title={t('mobile.chat.quickRestoreHistory')} onClick={onRestoreHistory} />
-          ) : null}
-          {onManageGroup ? (
-            <ChatActionButton icon={<Users size={18} />} title={t('mobile.group.members')} onClick={onManageGroup} />
-          ) : null}
-          {isFriendThread ? (
-            peerBlocked ? (
-              <ChatActionButton icon={<RotateCcw size={18} />} title={t('mobile.contacts.unblock')} onClick={onUnblockPeer} />
-            ) : (
-              <ChatActionButton icon={<Ban size={18} />} title={t('mobile.contacts.block')} danger onClick={onBlockPeer} />
-            )
-          ) : null}
+          <div className="chat-action-group">
+            {state.clearedAt ? (
+              <ChatActionButton icon={<RotateCcw size={18} />} title={t('mobile.chat.quickRestoreHistory')} onClick={onRestoreHistory} />
+            ) : null}
+            {onManageGroup ? (
+              <ChatActionButton icon={<Users size={18} />} title={t('mobile.group.members')} onClick={onManageGroup} />
+            ) : null}
+          </div>
+          <div className="chat-action-group danger">
+            <ChatActionButton icon={<Trash2 size={18} />} title={t('mobile.chat.quickClearHistory')} danger onClick={onClearHistory} />
+            {isFriendThread ? (
+              peerBlocked ? (
+                <ChatActionButton icon={<RotateCcw size={18} />} title={t('mobile.contacts.unblock')} onClick={onUnblockPeer} />
+              ) : (
+                <ChatActionButton icon={<Ban size={18} />} title={t('mobile.contacts.block')} danger onClick={onBlockPeer} />
+              )
+            ) : null}
+          </div>
         </div>
       </aside>
     </div>

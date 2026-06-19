@@ -2,7 +2,7 @@
 
 > Status: Mobile platform-level contract.
 > Audience: Mobile Chat implementers, reviewers, and AI agents.
-> Updated: 2026-06-09.
+> Updated: 2026-06-19.
 
 ## 1. Purpose
 
@@ -91,7 +91,32 @@ Forbidden placements:
 - Context surfaces clipped by `MessageViewport`.
 - Floating menus hidden behind composer, keyboard, attachment panel, or Home Indicator.
 
-## 6. Touch And Gesture Boundaries
+## 6. Conversation Action Sheets
+
+Conversation-level actions are opened from the chat header or conversation detail controls. They configure the conversation rather than operating on one message.
+
+Required mobile behavior:
+
+- Use a bottom action sheet or a dedicated chat settings page for conversation actions.
+- Do not use a desktop-style right drawer on phone-width screens.
+- The sheet MUST include the system safe area in its bottom padding.
+- The sheet MUST have one scroll container when content exceeds the available height.
+- The backdrop MUST make the underlying conversation non-interactive while preserving visual context.
+- The header, close affordance, and drag/handle affordance MUST share one sheet boundary.
+- Reversible preferences such as search, mute, sticky, alert, and background MAY update optimistically when rollback or re-open recovery is clear.
+- Destructive actions such as clear history and block MUST be grouped separately and confirmed when they remove or hide conversation context.
+
+Acceptance states:
+
+| State | Expected outcome |
+| --- | --- |
+| iPhone safe-area device | Sheet clears the Home Indicator and remains scrollable. |
+| Long action list | Sheet scrolls internally; header and close remain available. |
+| Background selected | The selected option is visible as selection state, not as a command row. |
+| Destructive action visible | Danger group is separated from reversible preferences. |
+| Backdrop tap | Sheet closes and the chat returns to its previous scroll context. |
+
+## 7. Touch And Gesture Boundaries
 
 - Minimum interactive target SHOULD use `chat.message.action.minTarget`.
 - Horizontal swipe gestures MUST NOT conflict with vertical message scroll.
@@ -99,7 +124,7 @@ Forbidden placements:
 - Pull-to-refresh, history loading, and scroll-to-bottom affordances MUST not share the same gesture zone.
 - Image preview gestures MUST not trigger message context actions accidentally.
 
-## 7. Conversation List And Bottom Tab
+## 8. Conversation List And Bottom Tab
 
 Conversation list pages may show the app-level bottom tab, but they MUST still reserve bottom space:
 
@@ -117,7 +142,7 @@ Bottom tab constraints:
 - Conversation list empty/loading/error states MUST fit above the bottom tab.
 - Entering chat detail SHOULD transition into a tab-hidden secondary page.
 
-## 8. Mobile Acceptance Matrix
+## 9. Mobile Acceptance Matrix
 
 Every Mobile Chat UI change should be checked in these states:
 
@@ -130,11 +155,12 @@ Every Mobile Chat UI change should be checked in these states:
 | Long text selected | Menu does not cover selected text. |
 | Image selected | Menu does not cover image body. |
 | Long image near bottom | Fallback action surface does not collide with composer. |
+| Conversation action sheet open | Sheet uses bottom placement, safe-area padding, internal scroll, and separated danger group. |
 | Failed send | Retry is visible in `MetaRow` or reserved status row. |
 | Home Indicator device | Bottom content clears system safe area. |
 | Android gesture navigation | Bottom content clears system safe area. |
 
-## 9. AI Agent Notes
+## 10. AI Agent Notes
 
 When changing `apps/mobile/src/pages/ChatPage.tsx`, `apps/mobile/src/features/chat/`, or future Mobile Chat components, an AI agent MUST:
 
@@ -144,7 +170,9 @@ When changing `apps/mobile/src/pages/ChatPage.tsx`, `apps/mobile/src/features/ch
 4. Read `docs/knowledge/invariants/mobile-chat-layout-boundaries.md`.
 5. Name every bottom occlusion source in the implementation or review notes.
 6. Avoid one-off pixel values; add or reuse Chat layout tokens.
+7. Check conversation action sheets separately from message action menus.
 
-## 10. Change Record
+## 11. Change Record
 
 - 2026-06-09: Created Mobile-specific Chat layout contract for safe area, keyboard, composer, bottom tab, and touch action boundaries.
+- 2026-06-19: Added `ConversationActionSurface` mobile action sheet rules after a phone-width right drawer regressed the Peers Touch UI identity.
