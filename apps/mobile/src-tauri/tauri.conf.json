@@ -5,7 +5,7 @@
   "identifier": "com.peers.touch.mobile",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:4210",
+    "devUrl": "http://127.0.0.1:5173",
     "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build"
   },
