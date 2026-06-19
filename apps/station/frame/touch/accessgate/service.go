@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	"github.com/peers-labs/peers-touch/station/frame/touch/accessgate/gatekeeper"
 	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
 	pb "github.com/peers-labs/peers-touch/station/frame/touch/model/accessgate"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
@@ -24,26 +26,40 @@ const (
 	policyModeClosed     = "closed"
 )
 
+const (
+	gateIDCapability      = "station.capability"
+	gateIDLogin           = "auth.login"
+	gateIDInviteAllowlist = "invite.allowlist"
+	gateIDInviteCode      = "invite.code"
+)
+
+// defaultGateOrder is the chain a Station evaluates when its policy does not pin
+// an explicit enabled_gates list. Capability runs first, then login establishes
+// actor identity, then the allowlist enforces administrator policy.
+var defaultGateOrder = []pb.AccessGateType{
+	pb.AccessGateType_ACCESS_GATE_TYPE_STATION_CAPABILITY,
+	pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN,
+	pb.AccessGateType_ACCESS_GATE_TYPE_INVITE_ALLOWLIST,
+}
+
 type Attempt struct {
-	ID        string
-	SessionID string
-	Actor     *pb.AccessGateActorRef
-	CreatedAt time.Time
-	ExpiresAt time.Time
+	ID           string
+	SessionID    string
+	Actor        *pb.AccessGateActorRef
+	InvitePassed bool
+	CreatedAt    time.Time
+	ExpiresAt    time.Time
 }
 
 type PolicyInput struct {
-	Mode             string
-	AllowedEmails    []string
-	AllowedUsernames []string
-	AllowedActorIDs  []int64
-	UpdatedBy        string
+	Mode              string
+	AllowedEmails     []string
+	AllowedUsernames  []string
+	AllowedActorIDs   []int64
+	EnabledGates      []pb.AccessGateType
+	SelfServiceInvite bool
+	UpdatedBy         string
 }
-
-var (
-	attemptsMu sync.Mutex
-	attempts   = map[string]*Attempt{}
-)
 
 func StartAttempt(ctx context.Context, req *pb.StartAccessAttemptRequest) (*pb.AccessDecision, error) {
 	actorRef, err := actorRefFromSession(ctx, strings.TrimSpace(req.GetSessionId()))
@@ -59,11 +75,11 @@ func StartAttempt(ctx context.Context, req *pb.StartAccessAttemptRequest) (*pb.A
 		ExpiresAt: time.Now().Add(15 * time.Minute),
 	}
 
-	attemptsMu.Lock()
-	attempts[attempt.ID] = attempt
-	attemptsMu.Unlock()
+	if err := createAttempt(ctx, attempt, req); err != nil {
+		return nil, err
+	}
 
-	return DecisionForAttempt(ctx, attempt), nil
+	return decisionAndPersist(ctx, attempt), nil
 }
 
 func actorRefFromSession(ctx context.Context, sessionID string) (*pb.AccessGateActorRef, error) {
@@ -94,65 +110,109 @@ func actorRefFromSession(ctx context.Context, sessionID string) (*pb.AccessGateA
 	}, nil
 }
 
-func GetAttempt(id string) (*Attempt, bool) {
-	attemptsMu.Lock()
-	defer attemptsMu.Unlock()
-
-	attempt, ok := attempts[id]
-	if !ok || time.Now().After(attempt.ExpiresAt) {
-		delete(attempts, id)
-		return nil, false
-	}
-	return attempt, true
+// GetAttempt loads a live attempt from the persistent store. Expired, cancelled,
+// or missing attempts report not found so callers surface one uniform message.
+func GetAttempt(ctx context.Context, id string) (*Attempt, bool) {
+	return findAttempt(ctx, id)
 }
 
 func CompleteLogin(ctx context.Context, attemptID string, actor *pb.AccessGateActorRef, sessionID string) (*pb.AccessDecision, error) {
-	attempt, ok := GetAttempt(attemptID)
+	attempt, ok := findAttempt(ctx, attemptID)
 	if !ok {
-		return nil, fmt.Errorf("access attempt expired or not found")
+		return nil, errAttemptNotFound
 	}
 
 	attempt.Actor = actor
 	attempt.SessionID = sessionID
 
-	return DecisionForAttempt(ctx, attempt), nil
+	return decisionAndPersist(ctx, attempt), nil
 }
 
-func DecisionForAttempt(ctx context.Context, attempt *Attempt) *pb.AccessDecision {
-	gates := []*pb.AccessGate{passedCapabilityGate()}
-	if attempt.Actor == nil {
-		return &pb.AccessDecision{
-			State:         pb.AccessDecisionState_ACCESS_DECISION_STATE_ACTION_REQUIRED,
-			AttemptId:     attempt.ID,
-			CurrentGateId: "auth.login",
-			Gates:         append(gates, loginGate(pb.AccessGateState_ACCESS_GATE_STATE_ACTION_REQUIRED, "")),
-			ExpiresAt:     timestamppb.New(attempt.ExpiresAt),
+// CancelAttempt closes a live attempt. It is idempotent: cancelling an attempt
+// that is already gone or terminal returns cancelled=false without an error.
+func CancelAttempt(ctx context.Context, attemptID string) (bool, error) {
+	return cancelAttempt(ctx, strings.TrimSpace(attemptID))
+}
+
+// CompleteInviteCode redeems an invite code for an attempt and, on success,
+// marks the attempt's invite gate passed before re-evaluating the chain. The
+// redemption is atomic; an invalid code returns the chain's blocked decision so
+// the client can re-prompt without leaking which validation failed.
+func CompleteInviteCode(ctx context.Context, attemptID, code string) (*pb.AccessDecision, error) {
+	attempt, ok := findAttempt(ctx, attemptID)
+	if !ok {
+		return nil, errAttemptNotFound
+	}
+
+	if err := redeemInviteCode(ctx, code); err != nil {
+		if errors.Is(err, errInviteCodeInvalid) {
+			return nil, errInviteCodeInvalid
 		}
+		return nil, err
 	}
 
-	allowed, reason := CheckActorAllowed(ctx, attempt.Actor)
-	inviteState := pb.AccessGateState_ACCESS_GATE_STATE_PASSED
-	decisionState := pb.AccessDecisionState_ACCESS_DECISION_STATE_GRANTED
-	currentGateID := ""
-	if !allowed {
-		inviteState = pb.AccessGateState_ACCESS_GATE_STATE_BLOCKED
-		decisionState = pb.AccessDecisionState_ACCESS_DECISION_STATE_BLOCKED
-		currentGateID = "invite.allowlist"
+	attempt.InvitePassed = true
+	if err := markAttemptInvitePassed(ctx, attempt.ID); err != nil {
+		return nil, err
 	}
 
-	return &pb.AccessDecision{
-		State:         decisionState,
-		AttemptId:     attempt.ID,
-		CurrentGateId: currentGateID,
-		Gates: append(gates,
-			loginGate(pb.AccessGateState_ACCESS_GATE_STATE_PASSED, ""),
-			inviteGate(inviteState, reason),
-		),
-		Actor:         attempt.Actor,
-		AccessGrantId: grantID(attempt.ID, attempt.Actor),
-		ExpiresAt:     timestamppb.New(attempt.ExpiresAt),
-		Message:       reason,
+	return decisionAndPersist(ctx, attempt), nil
+}
+
+// DecisionForAttempt evaluates the gate chain without persisting the outcome.
+// Use decisionAndPersist on the write paths so the stored attempt status tracks
+// the decision the client receives.
+func DecisionForAttempt(ctx context.Context, attempt *Attempt) *pb.AccessDecision {
+	return registry().Decide(ctx, &gatekeeper.EvalContext{
+		AttemptID:    attempt.ID,
+		Actor:        attempt.Actor,
+		ExpiresAt:    attempt.ExpiresAt,
+		InvitePassed: attempt.InvitePassed,
+	}, gateOrder(ctx))
+}
+
+// decisionAndPersist evaluates the gate chain and writes the resulting status
+// and current gate back onto the attempt row before returning the decision.
+func decisionAndPersist(ctx context.Context, attempt *Attempt) *pb.AccessDecision {
+	decision := DecisionForAttempt(ctx, attempt)
+	_ = saveAttemptDecision(ctx, attempt, decision)
+	return decision
+}
+
+var (
+	registryOnce sync.Once
+	registryInst *gatekeeper.Registry
+)
+
+// registry lazily builds the gatekeeper registry with the Station's built-in
+// gates. Custom or future gates register here without touching DecisionForAttempt.
+func registry() *gatekeeper.Registry {
+	registryOnce.Do(func() {
+		r := gatekeeper.NewRegistry(grantID)
+		r.Register(capabilityGatekeeper{})
+		r.Register(loginGatekeeper{})
+		r.Register(allowlistGatekeeper{allowed: CheckActorAllowed})
+		r.Register(inviteCodeGatekeeper{})
+		registryInst = r
+	})
+	return registryInst
+}
+
+// gateOrder resolves the evaluation order for the current Station policy. An
+// explicit enabled_gates list wins so the Dashboard can disable a gate flow
+// across every client; otherwise the built-in default chain applies. Gates that
+// have no registered gatekeeper are dropped by the orchestrator.
+func gateOrder(ctx context.Context) []pb.AccessGateType {
+	policy, err := GetPolicy(ctx)
+	if err != nil {
+		return defaultGateOrder
 	}
+
+	enabled := decodeEnabledGates(policy.EnabledGates)
+	if len(enabled) == 0 {
+		return defaultGateOrder
+	}
+	return enabled
 }
 
 func CheckActorAllowed(ctx context.Context, actor *pb.AccessGateActorRef) (bool, string) {
@@ -223,12 +283,46 @@ func UpdatePolicy(ctx context.Context, input PolicyInput) (*dbmodel.AccessPolicy
 	policy.AllowedEmails = joinStrings(input.AllowedEmails)
 	policy.AllowedUsernames = joinStrings(input.AllowedUsernames)
 	policy.AllowedActorIDs = joinInt64(input.AllowedActorIDs)
+	policy.EnabledGates = encodeEnabledGates(input.EnabledGates)
+	policy.SelfServiceInvite = input.SelfServiceInvite
 	policy.UpdatedBy = input.UpdatedBy
 
 	if err := rds.WithContext(ctx).Save(policy).Error; err != nil {
 		return nil, err
 	}
 	return policy, nil
+}
+
+// encodeEnabledGates serializes the enabled gate types as a comma-separated list
+// of their numeric enum values for storage.
+func encodeEnabledGates(gates []pb.AccessGateType) string {
+	parts := make([]string, 0, len(gates))
+	for _, gate := range gates {
+		if gate == pb.AccessGateType_ACCESS_GATE_TYPE_UNSPECIFIED {
+			continue
+		}
+		parts = append(parts, strconv.Itoa(int(gate)))
+	}
+	return strings.Join(parts, ",")
+}
+
+// decodeEnabledGates parses the stored enabled gate list back into enum values,
+// dropping any malformed or unspecified entries.
+func decodeEnabledGates(raw string) []pb.AccessGateType {
+	values := splitList(raw)
+	gates := make([]pb.AccessGateType, 0, len(values))
+	for _, value := range values {
+		num, err := strconv.Atoi(value)
+		if err != nil {
+			continue
+		}
+		gate := pb.AccessGateType(num)
+		if gate == pb.AccessGateType_ACCESS_GATE_TYPE_UNSPECIFIED {
+			continue
+		}
+		gates = append(gates, gate)
+	}
+	return gates
 }
 
 func ToProtoPolicy(policy *dbmodel.AccessPolicy) *pb.AccessPolicy {
@@ -240,44 +334,14 @@ func ToProtoPolicy(policy *dbmodel.AccessPolicy) *pb.AccessPolicy {
 	}
 
 	return &pb.AccessPolicy{
-		Mode:             toProtoPolicyMode(policy.Mode),
-		AllowedEmails:    splitList(policy.AllowedEmails),
-		AllowedUsernames: splitList(policy.AllowedUsernames),
-		AllowedActorIds:  actorIDs,
-		UpdatedAt:        timestamppb.New(policy.UpdatedAt),
-		UpdatedBy:        policy.UpdatedBy,
-	}
-}
-
-func passedCapabilityGate() *pb.AccessGate {
-	return &pb.AccessGate{
-		GateId: "station.capability",
-		Type:   pb.AccessGateType_ACCESS_GATE_TYPE_STATION_CAPABILITY,
-		State:  pb.AccessGateState_ACCESS_GATE_STATE_PASSED,
-		Title:  "Station compatibility",
-	}
-}
-
-func loginGate(state pb.AccessGateState, reason string) *pb.AccessGate {
-	return &pb.AccessGate{
-		GateId:         "auth.login",
-		Type:           pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN,
-		State:          state,
-		Title:          "Log in",
-		Description:    "Log in before entering this Station.",
-		BlockingReason: reason,
-		SubmitAction:   "submit_login",
-	}
-}
-
-func inviteGate(state pb.AccessGateState, reason string) *pb.AccessGate {
-	return &pb.AccessGate{
-		GateId:         "invite.allowlist",
-		Type:           pb.AccessGateType_ACCESS_GATE_TYPE_INVITE_ALLOWLIST,
-		State:          state,
-		Title:          "Station access",
-		Description:    "Station access is controlled by the Station administrator.",
-		BlockingReason: reason,
+		Mode:              toProtoPolicyMode(policy.Mode),
+		AllowedEmails:     splitList(policy.AllowedEmails),
+		AllowedUsernames:  splitList(policy.AllowedUsernames),
+		AllowedActorIds:   actorIDs,
+		EnabledGates:      decodeEnabledGates(policy.EnabledGates),
+		SelfServiceInvite: policy.SelfServiceInvite,
+		UpdatedAt:         timestamppb.New(policy.UpdatedAt),
+		UpdatedBy:         policy.UpdatedBy,
 	}
 }
 

@@ -7,6 +7,15 @@ import { useOAuth2Store } from '../store/oauth2';
 import { useSessionStore } from '../store/session';
 import { api, AuthCommandException } from '../services/desktop_api';
 import type { AccountIdentity, OAuth2ProviderSummary } from '../services/desktop_api';
+import {
+  accessDecisionMessage,
+  currentGate,
+  isAccessBlocked,
+  isAccessGranted,
+  isInviteCodeGate,
+  parseGateFields,
+  type AccessDecision,
+} from '../services/accessGate';
 import { useAccountIdentityStore } from '../store/accountIdentity';
 import { UserSquareAvatar } from '../components/common/UserSquareAvatar';
 import { PlatformLogo } from '../components/common/PlatformLogo';
@@ -54,7 +63,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
   const { token } = theme.useToken();
   const { t } = useTranslation('auth');
   const { providers, connections, loadAll, startAuth } = useOAuth2Store();
-  const { loginWithPassword } = useSessionStore();
+  const { accessStart, accessSubmitInviteCode, accessSubmitLogin } = useSessionStore();
   const unlockWithPin = useAccountIdentityStore((s) => s.unlockWithPin);
   const switchAccount = useAccountIdentityStore((s) => s.switchAccount);
 
@@ -74,6 +83,16 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Interactive access-gate chain. When the Station's policy inserts an
+  // invite-code gate before login, `handleEmailLogin` pauses here: it holds
+  // the live attempt and renders the invite-code form until the code passes,
+  // then resumes into the login gate. `gateDecision` null means no chain is in
+  // flight (the legacy one-shot login path is unaffected).
+  const [gateDecision, setGateDecision] = useState<AccessDecision | null>(null);
+  const [inviteCode, setInviteCode] = useState('');
+  const [gateError, setGateError] = useState('');
+  const [gateLoading, setGateLoading] = useState(false);
 
   const [connectProvider, setConnectProvider] = useState<OAuth2ProviderSummary | null>(null);
   const [authState, setAuthState] = useState<AuthState>('idle');
@@ -205,19 +224,74 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     setLoginState('set_pin');
   }, [clearAccountSessionless]);
 
+  // Resume the chain once an attempt has cleared every pre-login gate: submit
+  // the held credentials against the login gate and land the session.
+  const finishLoginGate = useCallback(async (attemptId: string) => {
+    await accessSubmitLogin(attemptId, email.trim(), password);
+    setGateDecision(null);
+    setInviteCode('');
+    await continueAfterFreshAuth();
+  }, [accessSubmitLogin, email, password, continueAfterFreshAuth]);
+
   const handleEmailLogin = useCallback(async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!email.trim() || !password.trim()) return;
     setLoading(true);
+    setGateError('');
     try {
-      await loginWithPassword(email.trim(), password);
-      await continueAfterFreshAuth();
+      const decision = await accessStart();
+      const gate = currentGate(decision);
+      // The Station drives the chain. An invite-code gate pauses for input;
+      // anything else (login gate or open policy) proceeds straight to login.
+      if (isAccessBlocked(decision)) {
+        message.error(accessDecisionMessage(decision) || t('auth.gate.blocked.subtitle'));
+        return;
+      }
+      if (isInviteCodeGate(gate)) {
+        setGateDecision(decision);
+        setInviteCode('');
+        return;
+      }
+      await finishLoginGate(decision.attemptId);
     } catch (err: unknown) {
       message.error(errorMessage(err, t('auth.login.failed')));
     } finally {
       setLoading(false);
     }
-  }, [email, password, loginWithPassword, continueAfterFreshAuth, t]);
+  }, [email, password, accessStart, finishLoginGate, t]);
+
+  const handleSubmitInviteCode = useCallback(async () => {
+    if (!gateDecision?.attemptId || !inviteCode.trim()) return;
+    setGateLoading(true);
+    setGateError('');
+    try {
+      const decision = await accessSubmitInviteCode(gateDecision.attemptId, inviteCode.trim());
+      if (isAccessBlocked(decision)) {
+        setGateError(accessDecisionMessage(decision) || t('auth.gate.blocked.subtitle'));
+        setGateDecision(decision);
+        return;
+      }
+      if (isAccessGranted(decision) || !isInviteCodeGate(currentGate(decision))) {
+        // Invite passed: the chain has advanced to the login gate. Reuse the
+        // credentials already entered to land the session in one motion.
+        await finishLoginGate(gateDecision.attemptId);
+        return;
+      }
+      // Still on the invite gate (e.g. a multi-step schema) — keep the form up.
+      setGateDecision(decision);
+    } catch (err: unknown) {
+      setGateError(errorMessage(err, t('auth.gate.inviteCode.rejected')));
+    } finally {
+      setGateLoading(false);
+    }
+  }, [gateDecision, inviteCode, accessSubmitInviteCode, finishLoginGate, t]);
+
+  const handleCancelGate = useCallback(() => {
+    setGateDecision(null);
+    setInviteCode('');
+    setGateError('');
+    setGateLoading(false);
+  }, []);
 
   const handleOAuthConnect = useCallback((provider: OAuth2ProviderSummary) => {
     const btn = buttonRefs.current[provider.id];
@@ -1430,6 +1504,70 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                   </Button>
                 </>
               )}
+            </Flexbox>
+          ) : gateDecision ? (
+            <Flexbox gap={10}>
+              <Alert
+                type="info"
+                showIcon
+                icon={<ShieldCheck size={18} style={{ color: token.colorInfoText }} />}
+                style={{ width: '100%', borderRadius: 12, padding: '10px 12px' }}
+                message={
+                  <Text strong style={{ fontSize: 13, color: token.colorInfoText }}>
+                    {currentGate(gateDecision)?.title || t('auth.gate.inviteCode.title')}
+                  </Text>
+                }
+                description={
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {currentGate(gateDecision)?.description || t('auth.gate.inviteCode.subtitle')}
+                  </Text>
+                }
+              />
+              <Flexbox horizontal gap={8} align="center">
+                <Input
+                  size="large"
+                  autoFocus
+                  prefix={<Lock size={16} style={{ color: token.colorTextQuaternary }} />}
+                  placeholder={
+                    parseGateFields(currentGate(gateDecision))[0]?.placeholder
+                      || parseGateFields(currentGate(gateDecision))[0]?.label
+                      || t('auth.gate.inviteCode.placeholder')
+                  }
+                  value={inviteCode}
+                  onChange={e => setInviteCode(e.target.value)}
+                  onPressEnter={handleSubmitInviteCode}
+                  style={{ borderRadius: 12, height: 44, flex: 1 }}
+                />
+                <Button
+                  type="primary"
+                  loading={gateLoading}
+                  disabled={!inviteCode.trim() || gateLoading}
+                  onClick={handleSubmitInviteCode}
+                  style={{
+                    height: 44,
+                    borderRadius: 12,
+                    fontWeight: 500,
+                    padding: '0 16px',
+                    flexShrink: 0,
+                  }}
+                  icon={!gateLoading ? <ArrowRight size={16} /> : undefined}
+                  iconPosition="end"
+                >
+                  {t('auth.gate.inviteCode.submit')}
+                </Button>
+              </Flexbox>
+              {gateError && (
+                <Text type="danger" style={{ fontSize: 12 }}>{gateError}</Text>
+              )}
+              <Button
+                type="text"
+                size="small"
+                icon={<ArrowLeft size={14} />}
+                onClick={handleCancelGate}
+                style={{ alignSelf: 'flex-start' }}
+              >
+                {t('auth.gate.inviteCode.back')}
+              </Button>
             </Flexbox>
           ) : (
             <form onSubmit={handleEmailLogin}>

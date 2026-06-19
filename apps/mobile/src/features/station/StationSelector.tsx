@@ -136,8 +136,8 @@ export function StationSelector({
               >
                 <Server size={18} />
                 <span className="station-entry-copy">
-                  <Text strong={isActive}>{entry.label}</Text>
-                  <Text type="secondary" ellipsis>{entry.url}</Text>
+                  <Text strong={isActive} className="mobile-truncate">{entry.label}</Text>
+                  <Text type="secondary" className="mobile-truncate">{entry.url}</Text>
                 </span>
                 <span className={`station-entry-status ${status.className}`}>
                   {status.label}

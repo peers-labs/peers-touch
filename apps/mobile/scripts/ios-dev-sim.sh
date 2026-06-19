@@ -25,6 +25,20 @@ cd "$APP_DIR"
 mkdir -p "$(dirname "$DEV_CONFIG")"
 mkdir -p "$(dirname "$VITE_LOG")"
 
+IOS_PROJECT_DIR="$APP_DIR/src-tauri/gen/apple"
+if [ -f "$IOS_PROJECT_DIR/project.yml" ]; then
+  if ! command -v xcodegen >/dev/null 2>&1; then
+    echo "xcodegen is required to sync the iOS project from project.yml before launch." >&2
+    exit 1
+  fi
+  mkdir -p "$IOS_PROJECT_DIR/Externals" "$IOS_PROJECT_DIR/assets"
+  (cd "$IOS_PROJECT_DIR" && xcodegen generate >/dev/null)
+fi
+
+# Remove the pre-Tauri iOS app if it is installed; otherwise SpringBoard can
+# show and launch the stale PeersTouchMobile icon next to the current app.
+xcrun simctl uninstall booted com.peerstouch.mobile >/dev/null 2>&1 || true
+
 if ! is_dev_url_ready; then
   pnpm dev -- --host "$MOBILE_DEV_HOST" --port "$MOBILE_WEB_PORT" --strictPort >"$VITE_LOG" 2>&1 &
   VITE_PID="$!"
@@ -57,6 +71,8 @@ cat > "$DEV_CONFIG" <<EOF
   }
 }
 EOF
+export MOBILE_TAURI_DEV_CONFIG="$DEV_CONFIG"
+export TAURI_CONFIG="$(cat "$DEV_CONFIG")"
 
 if [ -f "$HOME/.cargo/env" ]; then
   # shellcheck disable=SC1091
