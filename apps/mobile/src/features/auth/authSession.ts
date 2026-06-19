@@ -30,10 +30,21 @@ export interface StationLoginInput {
 }
 
 export const ACCESS_GATE_TYPE_AUTH_LOGIN = 2;
+export const ACCESS_GATE_TYPE_INVITE_CODE = 5;
 export const ACCESS_DECISION_ACTION_REQUIRED = 2;
 export const ACCESS_DECISION_GRANTED = 3;
 export const ACCESS_DECISION_BLOCKED = 4;
 export const ACCESS_DECISION_FAILED = 5;
+
+// A single field descriptor parsed from a gate's input_schema_json. The Station
+// owns the schema so a gate's form can change without a client release.
+export interface AccessGateField {
+  name: string;
+  type: string;
+  label?: string;
+  required?: boolean;
+  placeholder?: string;
+}
 
 export interface AccessGate {
   gateId: string;
@@ -43,6 +54,31 @@ export interface AccessGate {
   description?: string;
   blockingReason?: string;
   submitAction?: string;
+  inputSchemaJson?: string;
+}
+
+/** Parse a gate's input_schema_json into a field list. Unparseable schemas
+ * yield an empty list so the host can fall back to its default rendering. */
+export function parseGateFields(gate: AccessGate | undefined): AccessGateField[] {
+  if (!gate?.inputSchemaJson) return [];
+  try {
+    const parsed = JSON.parse(gate.inputSchemaJson) as { fields?: AccessGateField[] };
+    return Array.isArray(parsed.fields) ? parsed.fields : [];
+  } catch {
+    return [];
+  }
+}
+
+/** True when the gate type denotes self-service invite-code redemption. */
+export function isInviteCodeGate(gate: AccessGate | undefined): boolean {
+  return gate?.type === ACCESS_GATE_TYPE_INVITE_CODE
+    || gate?.type === 'ACCESS_GATE_TYPE_INVITE_CODE';
+}
+
+/** True when the gate type denotes the login credential gate. */
+export function isLoginGate(gate: AccessGate | undefined): boolean {
+  return gate?.type === ACCESS_GATE_TYPE_AUTH_LOGIN
+    || gate?.type === 'ACCESS_GATE_TYPE_AUTH_LOGIN';
 }
 
 export interface AccessDecision {
@@ -110,6 +146,8 @@ interface RawAccessGate {
   blockingReason?: string;
   submit_action?: string;
   submitAction?: string;
+  input_schema_json?: string;
+  inputSchemaJson?: string;
 }
 
 const AUTH_SESSION_KEY = 'peers-touch.mobile.auth-session.v1';
@@ -122,6 +160,8 @@ export const AUTH_ERROR_KEYS = {
   GATE_NOT_READY: 'mobile.auth.gateNotReady',
   ACCESS_DENIED: 'mobile.auth.accessDenied',
   MISSING_SESSION: 'mobile.auth.missingSession',
+  INVITE_CODE_REQUIRED: 'mobile.auth.inviteCodeRequired',
+  INVITE_CODE_REJECTED: 'mobile.auth.inviteCodeRejected',
 } as const;
 
 export async function loginToStation(input: StationLoginInput): Promise<MobileAuthSession> {
@@ -244,6 +284,49 @@ export async function submitStationLoginGate(input: StationLoginInput & { attemp
   return { decision, session, persistenceError };
 }
 
+// submitStationInviteCodeGate redeems a self-service invite code for the live
+// attempt and returns the re-evaluated decision. It never produces a session;
+// the chain continues to the login gate once the code passes.
+export async function submitStationInviteCodeGate(input: {
+  stationUrl: string;
+  attemptId: string;
+  inviteCode: string;
+}): Promise<AccessDecision> {
+  const stationUrl = input.stationUrl.replace(/\/+$/, '');
+  const code = input.inviteCode.trim();
+  if (!code) throw new Error(AUTH_ERROR_KEYS.INVITE_CODE_REQUIRED);
+
+  let response: Response;
+  try {
+    response = await fetch(`${stationUrl}/actor/access/submit`, {
+      body: JSON.stringify({
+        attempt_id: input.attemptId,
+        gate_id: 'invite.code',
+        type: ACCESS_GATE_TYPE_INVITE_CODE,
+        invite_code: code,
+      }),
+      cache: 'no-store',
+      credentials: 'include',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      method: 'POST',
+    });
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : String(err);
+    throw new Error(`${stationUrl} → ${raw}`);
+  }
+
+  const envelope = (await response.json().catch(() => null)) as StationLoginEnvelope | null;
+  if (!response.ok || envelope?.code !== '200' || !envelope.data) {
+    const serverMsg = envelope?.msg || (envelope as Record<string, unknown>)?.message as string;
+    throw new Error(serverMsg || AUTH_ERROR_KEYS.INVITE_CODE_REJECTED);
+  }
+
+  return normalizeDecision((envelope.data as AccessSubmitPayload).decision);
+}
+
 function normalizeAuthActor(actor: MobileAuthSession['actor']): MobileAuthSession['actor'] {
   if (!actor) return undefined;
   const id = actor.id || (actor.actor_id ? String(actor.actor_id) : '') || (actor.actorId ? String(actor.actorId) : '');
@@ -317,6 +400,7 @@ function normalizeDecision(raw?: RawAccessDecision): AccessDecision {
       description: gate.description,
       blockingReason: gate.blocking_reason ?? gate.blockingReason,
       submitAction: gate.submit_action ?? gate.submitAction,
+      inputSchemaJson: gate.input_schema_json ?? gate.inputSchemaJson,
     })),
   };
 }
