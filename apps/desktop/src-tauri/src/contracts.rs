@@ -36,6 +36,37 @@ pub struct AuthValidateTokenInput {
     pub token: Option<String>,
 }
 
+// --- Access gate (interactive chain) contracts ---
+//
+// The Station owns the access policy and emits an ordered gate chain. The
+// desktop client drives the chain interactively: it starts an attempt, then
+// submits the gate the Station marks `action_required` (invite code first,
+// then login credentials). `AccessDecisionPayload.decision` carries the raw
+// Station decision JSON unchanged so the TS layer can normalize the
+// snake_case / string-enum wire shape with the same logic mobile uses.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccessSubmitInviteInput {
+    pub attempt_id: String,
+    pub invite_code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccessSubmitLoginInput {
+    pub attempt_id: String,
+    pub account: String,
+    pub password: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccessDecisionPayload {
+    pub command: String,
+    pub status: String,
+    /// Raw Station `AccessDecision` JSON. Passed through verbatim so the
+    /// frontend normalizes the wire shape (snake_case keys, string enums).
+    pub decision: serde_json::Value,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SettingsGetInput {
     pub key: String,

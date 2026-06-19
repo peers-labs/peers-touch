@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { api, AuthCommandException, type AuthSessionResponse } from '../services/desktop_api';
 import { markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
+import { normalizeDecision, type AccessDecision } from '../services/accessGate';
 
 // ── Types ──
 
@@ -32,6 +33,14 @@ interface SessionStore {
   reset: () => void;
   hydrate: (actorId: string) => Promise<void>;
 
+  loginWithPassword: (account: string, password: string) => Promise<void>;
+  loginWithOAuth: (providerId: string) => Promise<void>;
+  /** Open an interactive access attempt and return the Station's first decision. */
+  accessStart: () => Promise<AccessDecision>;
+  /** Redeem an invite code against a live attempt; returns the re-evaluated decision. */
+  accessSubmitInviteCode: (attemptId: string, code: string) => Promise<AccessDecision>;
+  /** Submit the login gate for a live attempt; on grant lands the session. */
+  accessSubmitLogin: (attemptId: string, account: string, password: string) => Promise<void>;
   restoreSession: () => Promise<void>;
   logout: () => Promise<void>;
   activateAppletLaunchSession: (user: CurrentUser) => void;
@@ -64,6 +73,47 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   hydrate: async () => {
     await get().restoreSession();
+  },
+
+  loginWithPassword: async (account, password) => {
+    markLocalIdentityAction();
+    const resp = await api.authLogin({ account, password });
+    await runIdentityPipeline({
+      reason: 'login',
+      actorId: resp.actor_id ?? null,
+      loginMethod: 'password',
+    });
+  },
+
+  accessStart: async () => {
+    const resp = await api.accessStart();
+    return normalizeDecision(resp.decision);
+  },
+
+  accessSubmitInviteCode: async (attemptId, code) => {
+    const resp = await api.accessSubmitInviteCode({ attempt_id: attemptId, invite_code: code });
+    return normalizeDecision(resp.decision);
+  },
+
+  accessSubmitLogin: async (attemptId, account, password) => {
+    markLocalIdentityAction();
+    const resp = await api.accessSubmitLogin({ attempt_id: attemptId, account, password });
+    await runIdentityPipeline({
+      reason: 'login',
+      actorId: resp.actor_id ?? null,
+      loginMethod: 'password',
+    });
+  },
+
+  loginWithOAuth: async (_providerId: string) => {
+    markLocalIdentityAction();
+    const resp = await api.ensureStationSession();
+    const method = (resp.login_method as string) || 'oauth';
+    await runIdentityPipeline({
+      reason: 'oauth_bridge',
+      actorId: resp.actor_id ?? null,
+      loginMethod: method,
+    });
   },
 
   restoreSession: async () => {
