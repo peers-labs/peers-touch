@@ -46,6 +46,11 @@ booting
   -> checkingLaunchContext
   -> resolvingSession
   -> accountGate | pinGate | authenticated
+accountGate
+  -> authenticatedPendingCompletion
+  -> profileSyncing
+  -> accountCacheRefreshing
+  -> authenticated(ready after login completion / PIN decision)
 authenticated
   -> profileSyncing
   -> accountCacheRefreshing
@@ -74,6 +79,8 @@ Every authenticated edge must run the same reconciliation closure:
 ```text
 authenticated edge
   -> set current session user from auth response / restored session
+  -> for fresh password/OAuth login, enter authenticatedPendingCompletion
+     until the login page finishes set/relink/skip PIN
   -> PROFILE_SYNC_STARTED
   -> sync_user_profile
   -> update session.currentUser from synced profile
@@ -107,7 +114,7 @@ Desktop intentionally distinguishes cold launch from renderer reload:
 
 | Boot reason | Default behavior |
 | --- | --- |
-| `cold_launch` | Do not silently enter business UI. Show auth/account gate unless policy changes. |
+| `cold_launch` | Restore the persisted active session when one exists, then run the full profile/account reconciliation closure. If no valid session exists, show auth/account gate. |
 | `renderer_reload` | Restore the live session and run the full profile/account reconciliation closure. |
 | `applet_launch` | Accept applet launch context only when actor context is present. |
 

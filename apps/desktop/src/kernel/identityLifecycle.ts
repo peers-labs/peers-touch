@@ -27,6 +27,11 @@ export type IdentityPhase =
   | { kind: 'accountGate'; reason: IdentityAuthGateReason }
   | { kind: 'pinGate'; accountId: string }
   | {
+    kind: 'authenticatedPendingCompletion';
+    user: SessionUser;
+    readiness: IdentityReadiness;
+  }
+  | {
     kind: 'authenticated';
     user: SessionUser;
     source: 'login' | 'restore' | 'unlock' | 'switch' | 'applet';
@@ -43,6 +48,8 @@ export type IdentityEvent =
   | { type: 'SESSION_RESTORE_FAILED'; reason: IdentityAuthGateReason }
   | { type: 'ACCOUNT_GATE_READY'; reason: IdentityAuthGateReason }
   | { type: 'PIN_REQUIRED'; accountId: string }
+  | { type: 'FRESH_LOGIN_AUTHENTICATED'; user: SessionUser }
+  | { type: 'LOGIN_COMPLETED'; user?: SessionUser }
   | { type: 'LOGIN_SUCCEEDED'; user: SessionUser }
   | { type: 'PROFILE_SYNC_STARTED' }
   | { type: 'PROFILE_SYNC_SUCCEEDED'; user: SessionUser }
@@ -59,7 +66,7 @@ export interface IdentityPolicy {
 }
 
 export const DEFAULT_IDENTITY_POLICY: IdentityPolicy = {
-  allowRestoreOnColdLaunch: false,
+  allowRestoreOnColdLaunch: true,
   allowRestoreOnRendererReload: true,
 };
 
@@ -99,12 +106,23 @@ function authenticatedPhase(
   };
 }
 
+function authenticatedPendingCompletionPhase(user: SessionUser): IdentityPhase {
+  return {
+    kind: 'authenticatedPendingCompletion',
+    user,
+    readiness: {
+      ...initialReadiness,
+      avatar: avatarStatusForUser(user),
+    },
+  };
+}
+
 function updateAuthenticated(
   state: IdentityPhase,
-  patch: Partial<Extract<IdentityPhase, { kind: 'authenticated' }>>,
+  patch: Partial<Pick<Extract<IdentityPhase, { kind: 'authenticated' }>, 'user'>>,
   readinessPatch?: Partial<IdentityReadiness>,
 ): IdentityPhase {
-  if (state.kind !== 'authenticated') return state;
+  if (state.kind !== 'authenticated' && state.kind !== 'authenticatedPendingCompletion') return state;
   return {
     ...state,
     ...patch,
@@ -148,6 +166,18 @@ export function identityReducer(state: IdentityPhase, event: IdentityEvent): Ide
       return { kind: 'accountGate', reason: event.reason };
     case 'PIN_REQUIRED':
       return { kind: 'pinGate', accountId: event.accountId };
+    case 'FRESH_LOGIN_AUTHENTICATED':
+      return authenticatedPendingCompletionPhase(event.user);
+    case 'LOGIN_COMPLETED':
+      if (state.kind === 'authenticatedPendingCompletion') {
+        return {
+          kind: 'authenticated',
+          source: 'login',
+          user: event.user ?? state.user,
+          readiness: state.readiness,
+        };
+      }
+      return state;
     case 'LOGIN_SUCCEEDED':
       return authenticatedPhase(event.user, 'login');
     case 'PROFILE_SYNC_STARTED':
