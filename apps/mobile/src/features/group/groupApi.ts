@@ -1,6 +1,6 @@
 import type { MobileAuthSession } from '../auth/authSession';
 import type { SocialApiErrorContext, StationErrorEnvelope, StationSuccessEnvelope } from '../social/socialTypes';
-import { SocialApiError } from '../social/socialTypes';
+import { SocialApiError, readableErrorMessage } from '../social/socialTypes';
 import type { ChatAttachmentInput, ChatBackgroundId } from '../social/socialApi';
 import { normalizeChatBackgroundId } from '../social/socialApi';
 import type { Group, GroupMember, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
@@ -116,7 +116,7 @@ export function createGroupApiClient(session: MobileAuthSession): GroupApiClient
       throw new SocialApiError({
         method: options.method,
         path: options.path,
-        message: error instanceof Error ? error.message : String(error),
+        message: readableErrorMessage(error),
       });
     }
 
@@ -297,12 +297,13 @@ function unwrapPayload<T>(payload: unknown): T {
 
 function buildApiError(method: string, path: string, status: number, payload: unknown): SocialApiError {
   const envelope = (payload && typeof payload === 'object' ? payload : {}) as StationErrorEnvelope;
+  const message = envelope.msg ?? envelope.message ?? envelope.detail ?? 'group api request failed';
   const context: SocialApiErrorContext = {
     method,
     path,
     status,
-    code: envelope.code,
-    message: envelope.msg ?? envelope.message ?? envelope.detail ?? 'group api request failed',
+    code: envelope.code ? readableErrorMessage(envelope.code) : undefined,
+    message: readableErrorMessage(message, 'group api request failed'),
   };
   return new SocialApiError(context);
 }

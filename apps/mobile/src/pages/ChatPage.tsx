@@ -25,6 +25,7 @@ import { decryptClientMediaBlob, type ClientMediaEncryptionDescriptor } from '@p
 import { useMobileI18n } from '../app/mobileI18n';
 import logo from '../assets/logo.png';
 import { MobileAvatar } from '../components/MobileAvatar';
+import { MobileNotice } from '../components/MobileNotice';
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
 import type { ChatAttachmentInput } from '../features/social/socialApi';
@@ -53,7 +54,7 @@ import {
 } from '../features/social/socialStore';
 import { timestampMillis } from '../features/social/socialNormalizers';
 import { projectConversations } from '../features/social/socialProjection';
-import { SocialApiError, type FriendChatMessage, type FriendMessageAttachment, type PeerProfile, type SocialConversation, type TypingEntry } from '../features/social/socialTypes';
+import { SocialApiError, readableErrorMessage, type FriendChatMessage, type FriendMessageAttachment, type PeerProfile, type SocialConversation, type TypingEntry } from '../features/social/socialTypes';
 import {
   CHAT_BACKGROUND_OPTIONS,
   type ChatBackgroundId,
@@ -127,6 +128,7 @@ export function ChatPage() {
   const recallMessage = useSocialStore((state) => state.recallMessage);
   const deleteMessage = useSocialStore((state) => state.deleteMessage);
   const sendTypingState = useSocialStore((state) => state.sendTypingState);
+  const clearSocialError = useSocialStore((state) => state.clearError);
   const friendConversationSettings = useSocialStore((state) => state.conversationSettings);
   const updateFriendConversationSettings = useSocialStore((state) => state.updateConversationSettings);
   const activeGroupUlid = useGroupStore((state) => state.activeGroupUlid);
@@ -149,6 +151,7 @@ export function ChatPage() {
   const editGroupMessage = useGroupStore((state) => state.editEncryptedMessage);
   const recallGroupMessage = useGroupStore((state) => state.recallMessage);
   const deleteGroupMessage = useGroupStore((state) => state.deleteMessage);
+  const clearGroupError = useGroupStore((state) => state.clearError);
   const composingRef = useRef(false);
   const activeConversationKeyRef = useRef('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -237,6 +240,7 @@ export function ChatPage() {
     setComposerEmojiOpen(false);
     setComposerMoreOpen(false);
     setEditingMessage(null);
+    setLocalActionError('');
     setAttachmentDrafts((drafts) => {
       drafts.forEach((item) => revokeObjectUrl(item.previewUrl));
       return [];
@@ -322,6 +326,8 @@ export function ChatPage() {
         if (edited) {
           setEditingMessage(null);
           setDraft('');
+        } else {
+          throw new Error(t('mobile.group.composerPending'));
         }
         return;
       }
@@ -330,11 +336,16 @@ export function ChatPage() {
       if (sent) {
         setDraft('');
         clearAttachmentDrafts();
+      } else {
+        throw new Error(t('mobile.group.composerPending'));
       }
       return;
     }
 
-    if (!activeConversation || friendshipStatus[activeConversation.peerDid]?.blocked) return;
+    if (!activeConversation) return;
+    if (friendshipStatus[activeConversation.peerDid]?.blocked) {
+      throw new Error(t('mobile.chat.blockedComposer'));
+    }
     await emitTypingState(false);
 
     if (editingMessage?.kind === 'friend') {
@@ -681,7 +692,9 @@ export function ChatPage() {
           onUnblockPeer={confirmUnblockActivePeer}
         />
 
-        {localActionError ? <Text type="danger" className="page-error">{localActionError}</Text> : null}
+        {localActionError ? (
+          <MobileNotice onClose={() => setLocalActionError('')}>{localActionError}</MobileNotice>
+        ) : null}
 
         {threadSearchQuery.trim() ? (
           <section className="message-search-panel">
@@ -1084,12 +1097,18 @@ export function ChatPage() {
         />
       </div>
 
-      {localActionError ? <Text type="danger" className="page-error">{localActionError}</Text> : null}
-      {error ? <Text type="danger" className="page-error">{formatSocialError(error)}</Text> : null}
-      {groupError ? <Text type="danger" className="page-error">{formatSocialError(groupError)}</Text> : null}
+      {localActionError ? (
+        <MobileNotice onClose={() => setLocalActionError('')}>{localActionError}</MobileNotice>
+      ) : null}
+      {error ? (
+        <MobileNotice onClose={clearSocialError}>{formatSocialError(error)}</MobileNotice>
+      ) : null}
+      {groupError ? (
+        <MobileNotice onClose={clearGroupError}>{formatSocialError(groupError)}</MobileNotice>
+      ) : null}
 
       <section className="social-list-panel">
-        <Spin spinning={loading || groupLoading}>
+        <Spin spinning={(loading || groupLoading) && filteredConversationSurfaceItems.length === 0}>
           {filteredConversationSurfaceItems.length === 0 ? (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -1685,7 +1704,7 @@ function groupPatchFromActionPatch(patch: Partial<ChatActionState>) {
 
 function formatChatOperationError(error: unknown): string {
   if (error instanceof SocialApiError) return formatSocialError(error);
-  return error instanceof Error ? error.message : String(error);
+  return readableErrorMessage(error, 'operation_failed');
 }
 
 function groupRoleLabel(role: number, t: (key: string) => string): string {
