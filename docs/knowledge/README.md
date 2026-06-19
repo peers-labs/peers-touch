@@ -2,7 +2,7 @@
 
 > Status: Canonical. Owner: Architecture.
 > Audience: humans AND AI agents acting on this codebase.
-> Updated: 2026-05-19
+> Updated: 2026-06-19
 
 ---
 
@@ -163,6 +163,7 @@ Pick one based on intent:
 - [`pitfalls/c1-tombstone-only-broadcast.md`](pitfalls/c1-tombstone-only-broadcast.md) — first cut of Tier C1 fired invalidation only on tombstone, leaving BY_HANDLE/INDEXED transitions and profile updates on the slow path.
 - [`pitfalls/republisher-broadcast-spam.md`](pitfalls/republisher-broadcast-spam.md) — naive "broadcast on every PublishVisibility success" turns periodic republisher into a relay traffic generator.
 - [`pitfalls/social-ui-identity-surface-fragmentation.md`](pitfalls/social-ui-identity-surface-fragmentation.md) — Social UI surfaces must not fragment content rail, action row, trust meta, thread, or incomplete-capability states.
+- [`pitfalls/mobile-chat-conversation-actions-right-drawer.md`](pitfalls/mobile-chat-conversation-actions-right-drawer.md) — Mobile Chat conversation actions must use bottom sheets or settings pages, not phone-width right drawers.
 
 ### Playbooks
 
