@@ -2,7 +2,7 @@
 
 > Status: Canonical client-level contract.
 > Audience: Desktop, Mobile, reviewers, and AI agents generating Chat UI code.
-> Updated: 2026-06-09.
+> Updated: 2026-06-19.
 
 ## 1. Purpose
 
@@ -13,6 +13,7 @@ This document defines the cross-client contract for:
 - Message structure and visual semantics.
 - Non-overlap layout boundaries.
 - Message action placement.
+- Conversation-level action surfaces.
 - Scroll anchoring and new-message behavior.
 - Composer, status, failure, and empty/error states.
 
@@ -117,6 +118,17 @@ Occlusion rectangles:
 - Desktop sidebars, detail panels, and resizable splitters.
 - System safe areas.
 - Existing modal, drawer, or popover layers.
+
+Conversation-level action surfaces are not message actions.
+
+Rules:
+
+- Conversation actions such as search, mute, sticky, alert, background, clear history, group members, block, and unblock belong to `ConversationActionSurface`.
+- `ConversationActionSurface` is anchored to the chat header or conversation detail route, not to a message bubble.
+- Mobile implementations SHOULD use a bottom action sheet or a dedicated chat settings page, not a desktop-style right drawer.
+- Desktop implementations MAY use a side panel when the conversation pane owns the width and the panel does not cover readable messages.
+- Destructive actions inside `ConversationActionSurface` MUST be visually grouped away from reversible local preferences.
+- Background/theme choices are selection controls, not ordinary command rows, and MUST use a distinct selection group.
 
 ## 6. Message Type Rules
 
