@@ -5,6 +5,7 @@ status: active
 owns:
   - apps/desktop/src/kernel/identityLifecycle.ts
   - apps/desktop/src/kernel/identityRuntime.ts
+  - apps/desktop/src-tauri/src/application/account/mod.rs
   - apps/desktop/src/hooks/useAppLifecycle.ts
   - apps/desktop/src/store/session.ts
   - apps/desktop/src/store/accountIdentity.ts
