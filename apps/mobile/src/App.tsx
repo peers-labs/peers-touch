@@ -6,6 +6,7 @@ import { MobileShell } from './components/MobileShell';
 import {
   startStationAccessAttempt,
   submitStationLoginGate,
+  submitStationInviteCodeGate,
   isAccessGranted,
   type MobileAuthSession,
   type StationLoginInput,
@@ -36,6 +37,7 @@ function MobileAppRoot() {
   const [stationError, setStationError] = useState<string | null>(null);
   const [stationChecking, setStationChecking] = useState(false);
   const [verifyingStationUrls, setVerifyingStationUrls] = useState<string[]>([]);
+  const stationRegistryRef = useRef(stationRegistry);
   const authSession = useAuthStore((state) => state.session);
   const authError = useAuthStore((state) => state.error);
   const authLoading = useAuthStore((state) => state.loading);
@@ -47,25 +49,24 @@ function MobileAppRoot() {
   const setAuthLoading = useAuthStore((state) => state.setLoading);
   const setAccessDecision = useAuthStore((state) => state.setAccessDecision);
   const autoVerifiedStationUrls = useRef<Set<string>>(new Set());
+  const stationUrlsKey = stationRegistry.entries.map((entry) => entry.url).join('\n');
 
   useEffect(() => {
     let mounted = true;
 
-    loadStationRegistry()
-      .then((registry) => {
-        if (mounted) setStationRegistry(registry);
-      })
-      .catch(() => undefined);
-
-    restoreSession()
-      .then((session) => {
-        if (!mounted) return;
-        if (session && stationRegistry.activeUrl === session.stationUrl) {
-          startAccessGateChain(session);
-        }
-      })
-      .catch(() => {
+    Promise.all([
+      loadStationRegistry().catch(() => emptyStationRegistry()),
+      restoreSession().catch(() => {
         if (mounted) setAuthSession(null);
+        return null;
+      }),
+    ])
+      .then(([registry, session]) => {
+        if (!mounted) return;
+        replaceStationRegistry(registry);
+        if (session && registry.activeUrl === session.stationUrl) {
+          void startAccessGateChainFor(registry.activeUrl, session);
+        }
       });
 
     return () => {
@@ -88,28 +89,45 @@ function MobileAppRoot() {
   useEffect(() => {
     if (launchState !== 'station-selection') return;
 
-    for (const entry of stationRegistry.entries) {
-      if (autoVerifiedStationUrls.current.has(entry.url)) continue;
-      autoVerifiedStationUrls.current.add(entry.url);
-      setVerifyingStationUrls((urls) => (urls.includes(entry.url) ? urls : [...urls, entry.url]));
-
-      probeStation(entry.url)
-        .then((probe) => {
-          setStationRegistry((current) => {
-            const next = updateStationEntryStatus(current, entry.url, {
-              checkedAt: probe.checkedAt,
-              label: probe.label,
-              online: probe.online,
-            });
-            void persistStationRegistry(next);
-            return next;
-          });
-        })
-        .finally(() => {
-          setVerifyingStationUrls((urls) => urls.filter((url) => url !== entry.url));
-        });
+    const stationUrls = stationUrlsKey ? stationUrlsKey.split('\n') : [];
+    for (const url of stationUrls) {
+      autoProbeStation(url);
     }
-  }, [launchState, stationRegistry.entries]);
+  }, [launchState, stationUrlsKey]);
+
+  function replaceStationRegistry(registry: StoredStationRegistry) {
+    stationRegistryRef.current = registry;
+    setStationRegistry(registry);
+  }
+
+  async function commitStationRegistry(registry: StoredStationRegistry) {
+    replaceStationRegistry(registry);
+    await persistStationRegistry(registry);
+  }
+
+  function autoProbeStation(url: string) {
+    if (autoVerifiedStationUrls.current.has(url)) return;
+    autoVerifiedStationUrls.current.add(url);
+    setVerifyingStationUrls((urls) => (urls.includes(url) ? urls : [...urls, url]));
+
+    probeStation(url)
+      .then((probe) => {
+        setStationRegistry((current) => {
+          const next = updateStationEntryStatus(current, url, {
+            checkedAt: probe.checkedAt,
+            label: probe.label,
+            online: probe.online,
+          });
+          if (next === current) return current;
+          stationRegistryRef.current = next;
+          void persistStationRegistry(next);
+          return next;
+        });
+      })
+      .finally(() => {
+        setVerifyingStationUrls((urls) => urls.filter((entryUrl) => entryUrl !== url));
+      });
+  }
 
   async function login(input: Omit<StationLoginInput, 'stationUrl'>) {
     if (!stationRegistry.activeUrl) {
@@ -148,13 +166,45 @@ function MobileAppRoot() {
     setLaunchState('access-gate-chain');
   }
 
-  async function startAccessGateChain(session?: MobileAuthSession | null) {
-    if (!stationRegistry.activeUrl) return;
+  async function submitInviteCode(code: string) {
+    if (!stationRegistry.activeUrl) {
+      setAuthError(t('mobile.auth.selectStation'));
+      return;
+    }
+    if (!accessDecision?.attemptId) {
+      setAuthError(t('mobile.auth.gateNotReady'));
+      return;
+    }
 
     setAuthLoading(true);
     setAuthError(null);
     try {
-      const decision = await startStationAccessAttempt(stationRegistry.activeUrl, session?.sessionId);
+      const decision = await submitStationInviteCodeGate({
+        stationUrl: stationRegistry.activeUrl,
+        attemptId: accessDecision.attemptId,
+        inviteCode: code,
+      });
+      setAccessDecision(decision);
+      if (isAccessGranted(decision)) setLaunchState('shell');
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : '';
+      setAuthError(t(msg) !== msg ? t(msg) : (msg || t('mobile.auth.inviteCodeRejected')));
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function startAccessGateChain(session?: MobileAuthSession | null) {
+    await startAccessGateChainFor(stationRegistryRef.current.activeUrl, session);
+  }
+
+  async function startAccessGateChainFor(stationUrl: string, session?: MobileAuthSession | null) {
+    if (!stationUrl) return;
+
+    setAuthLoading(true);
+    setAuthError(null);
+    try {
+      const decision = await startStationAccessAttempt(stationUrl, session?.sessionId);
       setAccessDecision(decision);
       if (isAccessGranted(decision)) {
         setLaunchState('shell');
@@ -168,7 +218,7 @@ function MobileAppRoot() {
         setAuthSession(null);
         setAccessDecision(null);
         try {
-          const decision = await startStationAccessAttempt(stationRegistry.activeUrl);
+          const decision = await startStationAccessAttempt(stationUrl);
           setAccessDecision(decision);
           setLaunchState(isAccessGranted(decision) ? 'shell' : 'access-gate-chain');
           return;
@@ -210,6 +260,7 @@ function MobileAppRoot() {
           setLaunchState('station-selection');
         }}
         onLogin={login}
+        onInviteCode={submitInviteCode}
       />
     );
   }
@@ -229,61 +280,69 @@ function MobileAppRoot() {
 
         setStationChecking(true);
         setStationError(null);
-        const probe = await probeStation(normalizedUrl);
-        if (!probe.online) {
-          setStationChecking(false);
-          setStationError(probe.error ?? t('mobile.launch.stationUnavailable'));
-          return false;
-        }
+        try {
+          const probe = await probeStation(normalizedUrl);
+          if (!probe.online) {
+            setStationError(probe.error ?? t('mobile.launch.stationUnavailable'));
+            return false;
+          }
 
-        const next = addStationEntry(
-          stationRegistry,
-          { protocol, address },
-          { checkedAt: probe.checkedAt, label: probe.label, online: probe.online },
-        );
-        if (!next.ok) {
-          setStationChecking(false);
-          setStationError(t(next.error));
+          const next = addStationEntry(
+            stationRegistryRef.current,
+            { protocol, address },
+            { checkedAt: probe.checkedAt, label: probe.label, online: probe.online },
+          );
+          if (!next.ok) {
+            setStationError(t(next.error));
+            return false;
+          }
+          autoVerifiedStationUrls.current.add(normalizedUrl);
+          setStationError(null);
+          await commitStationRegistry(next.registry);
+          return true;
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : '';
+          setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));
           return false;
+        } finally {
+          setStationChecking(false);
         }
-        setStationError(null);
-        setStationRegistry(next.registry);
-        await persistStationRegistry(next.registry);
-        setStationChecking(false);
-        return true;
       }}
       onSelectStation={(url) => {
         setStationError(null);
-        const next = activateStationEntry(stationRegistry, url);
-        setStationRegistry(next);
-        void persistStationRegistry(next);
+        const next = activateStationEntry(stationRegistryRef.current, url);
+        void commitStationRegistry(next);
       }}
       onRemoveStation={(url) => {
-        const next = removeStationEntry(stationRegistry, url);
         setStationError(null);
-        setStationRegistry(next);
-        void persistStationRegistry(next);
+        const next = removeStationEntry(stationRegistryRef.current, url);
+        if (next !== stationRegistryRef.current) void commitStationRegistry(next);
       }}
       onContinue={async () => {
-        if (!stationRegistry.activeUrl || stationChecking) return;
+        const activeUrl = stationRegistryRef.current.activeUrl;
+        if (!activeUrl || stationChecking) return;
 
         setStationChecking(true);
         setStationError(null);
-        const probe = await probeStation(stationRegistry.activeUrl);
-        if (!probe.online) {
+        try {
+          const probe = await probeStation(activeUrl);
+          if (!probe.online) {
+            setStationError(probe.error ?? t('mobile.launch.stationUnavailable'));
+            return;
+          }
+          const next = activateStationEntry(stationRegistryRef.current, activeUrl, {
+            checkedAt: probe.checkedAt,
+            label: probe.label,
+            online: probe.online,
+          });
+          await commitStationRegistry(next);
+          await startAccessGateChainFor(next.activeUrl, authSession?.stationUrl === next.activeUrl ? authSession : null);
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : '';
+          setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));
+        } finally {
           setStationChecking(false);
-          setStationError(probe.error ?? t('mobile.launch.stationUnavailable'));
-          return;
         }
-        const next = activateStationEntry(stationRegistry, stationRegistry.activeUrl, {
-          checkedAt: probe.checkedAt,
-          label: probe.label,
-          online: probe.online,
-        });
-        setStationRegistry(next);
-        await persistStationRegistry(next);
-        setStationChecking(false);
-        await startAccessGateChain(authSession?.stationUrl === stationRegistry.activeUrl ? authSession : null);
       }}
     />
   );
