@@ -545,13 +545,22 @@ select,
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
+  width: 100% !important;
   height: 34px !important;
   min-height: 34px !important;
   padding: 0 12px !important;
-  border: none !important;
+  border: 1px solid rgba(15, 23, 42, 0.1) !important;
   border-radius: 9px !important;
-  background: rgba(248, 250, 252, 0.96) !important;
+  background: #fff !important;
   box-shadow: none !important;
+}
+
+.station-protocol-select .ant-select-selection-wrap {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100%;
+  min-width: 0;
 }
 
 .station-protocol-select .ant-select-selection-item {
@@ -559,12 +568,13 @@ select,
   align-items: center;
   justify-content: center;
   width: 100%;
-  line-height: 34px !important;
+  padding: 0 !important;
+  line-height: 32px !important;
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.02em;
   color: rgba(0, 0, 0, 0.72);
-  padding-inline-end: 0 !important;
+  text-align: center;
 }
 
 .station-address-input {
