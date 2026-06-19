@@ -8,9 +8,10 @@
 
 1. [base.md](./base.md) — 平台总纲、目录基线、交付检查
 2. [lifecycle.md](./lifecycle.md) — Desktop 顶层生命周期：boot、identity/auth gate、runtime bootstrap、steady reconcile
-3. [runtime-projections.md](./runtime-projections.md) — `desktop-web` 内部 Page / Runtime / Boot 三组契约的**单点真源**
-4. [global-context-kernel.md](./global-context-kernel.md) — 全局上下文内核（与 Page/Runtime/Boot 正交）
-5. [chat-layout-contract.md](./chat-layout-contract.md) — Desktop Chat 布局、pane、hover、右键菜单、Composer 边界契约
+3. [identity-lifecycle.md](./identity-lifecycle.md) — Desktop 登录态、profile、account cache、avatar cache 的状态机闭环
+4. [runtime-projections.md](./runtime-projections.md) — `desktop-web` 内部 Page / Runtime / Boot 三组契约的**单点真源**
+5. [global-context-kernel.md](./global-context-kernel.md) — 全局上下文内核（与 Page/Runtime/Boot 正交）
+6. [chat-layout-contract.md](./chat-layout-contract.md) — Desktop Chat 布局、pane、hover、右键菜单、Composer 边界契约
 
 ## 架构层真源（跨进程）
 

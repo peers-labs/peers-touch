@@ -1,8 +1,6 @@
 import { create } from 'zustand';
-import { api, type AccountIdentity, type AuthSessionResponse } from '../services/desktop_api';
+import { api, type AccountIdentity } from '../services/desktop_api';
 import { EVENT, eventBus } from '../kernel/events';
-import { markLocalIdentityAction } from '../services/identity_event';
-import { runIdentityPipeline } from '../services/identityPipeline';
 
 const initialState = {
   accounts: [] as AccountIdentity[],
@@ -86,25 +84,12 @@ export const useAccountIdentityStore = create<AccountIdentityStore>((set, get) =
   },
 
   switchAccount: async (id: string) => {
-    markLocalIdentityAction();
     await api.accountSwitch(id);
-    const restored = await api.authRestoreSession();
-    await runIdentityPipeline({
-      reason: 'switch',
-      actorId: restored.actor_id ?? id,
-      loginMethod: restored.login_method ?? null,
-    });
     await get().load();
   },
 
   unlockWithPin: async (accountId: string, pin: string) => {
-    markLocalIdentityAction();
-    const resp: AuthSessionResponse = await api.accountUnlock(accountId, pin);
-    await runIdentityPipeline({
-      reason: 'unlock',
-      actorId: resp.actor_id ?? null,
-      loginMethod: resp.login_method ?? null,
-    });
+    await api.accountUnlock(accountId, pin);
     await get().load();
   },
 }));
