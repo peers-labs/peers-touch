@@ -11,11 +11,13 @@ import { EVENT, eventBus } from './events';
 import { globalContext } from './global-context';
 import {
   DEFAULT_IDENTITY_POLICY,
+  identityAuthenticatedEdge,
   identityPhaseAllowsReady,
   identityPhaseNeedsAuthGate,
   identityReducer,
-  shouldResolveSessionOnBoot,
+  resolveBootSessionPolicy,
   type IdentityAuthGateReason,
+  type IdentityAuthenticatedEdge,
   type IdentityBootReason,
   type IdentityEvent,
   type IdentityPhase,
@@ -221,18 +223,14 @@ class IdentityRuntime {
     api.appletsProductWindowLaunchContext().catch(() => ({ enabled: false })).then((context) => {
       if (activateAppletProductWindowLaunch(context)) {
         const launchUser = appletLaunchContextToSessionUser(context);
-        markRendererAuthenticated();
-        this.restoredUser = launchUser;
-        this.knownAccounts = [launchUser];
-        this.dataReady = true;
-        this.dispatch({ type: 'APPLET_LAUNCH_AUTHENTICATED', user: launchUser });
-        void this.reconcileAuthenticatedIdentity(launchUser);
+        void this.acceptAuthenticatedEdge(identityAuthenticatedEdge('applet_launch', launchUser));
         markPhaseEnd('identity', { state: 'authenticated', reason: 'applet_launch' });
         return;
       }
 
-      if (shouldResolveSessionOnBoot(bootReason, DEFAULT_IDENTITY_POLICY)) {
-        return this.resolveSession('live').finally(() => {
+      const bootResolution = resolveBootSessionPolicy(bootReason, DEFAULT_IDENTITY_POLICY);
+      if (bootResolution.kind === 'resolveSession') {
+        return this.resolveSession(bootResolution.source).finally(() => {
           markPhaseEnd('identity', {
             state: useSessionStore.getState().authenticated ? 'authenticated' : 'accountGate',
             reason: bootReason,
@@ -240,7 +238,7 @@ class IdentityRuntime {
         });
       }
 
-      return this.loadAuthGate('cold_policy', false).finally(() => {
+      return this.loadAuthGate(bootResolution.reason, false).finally(() => {
         markPhaseEnd('identity', { state: 'accountGate', reason: bootReason });
       });
     });
@@ -255,7 +253,7 @@ class IdentityRuntime {
         await this.loadAuthGate('session_missing', false);
         return;
       }
-      await this.acceptAuthenticatedEdge({ event: { type: 'SESSION_RESTORED', source: 'restore', user }, user });
+      await this.acceptAuthenticatedEdge(identityAuthenticatedEdge('restored_session', user));
     } catch (error) {
       await this.loadAuthGate(classifyRestoreFailure(error), false);
     }
@@ -274,7 +272,7 @@ class IdentityRuntime {
       this.dispatch({ type: 'LOGIN_COMPLETED', user });
       return;
     }
-    await this.acceptAuthenticatedEdge({ event: { type: 'LOGIN_SUCCEEDED', user }, user });
+    await this.acceptAuthenticatedEdge(identityAuthenticatedEdge('completed_login', user));
   };
 
   loginWithPassword = async (account: string, password: string): Promise<void> => {
@@ -285,7 +283,7 @@ class IdentityRuntime {
       actorId: resp.actor_id ?? null,
       loginMethod: 'password',
     });
-    await this.acceptFreshLoginEdge();
+    await this.acceptAuthenticatedEdgeFromCurrentSession('fresh_login');
   };
 
   loginWithOAuthBridge = async (): Promise<void> => {
@@ -297,7 +295,7 @@ class IdentityRuntime {
       actorId: resp.actor_id ?? null,
       loginMethod: method,
     });
-    await this.acceptFreshLoginEdge();
+    await this.acceptAuthenticatedEdgeFromCurrentSession('fresh_login');
   };
 
   switchAccount = async (accountId: string): Promise<void> => {
@@ -312,10 +310,7 @@ class IdentityRuntime {
     await useAccountIdentityStore.getState().load();
     const user = currentSessionUser();
     if (!user) return;
-    await this.acceptAuthenticatedEdge({
-      event: { type: 'SESSION_RESTORED', source: 'switch', user },
-      user,
-    });
+    await this.acceptAuthenticatedEdge(identityAuthenticatedEdge('account_switch', user));
   };
 
   unlockWithPin = async (accountId: string, pin: string): Promise<void> => {
@@ -329,10 +324,7 @@ class IdentityRuntime {
     await useAccountIdentityStore.getState().load();
     const user = currentSessionUser();
     if (!user) return;
-    await this.acceptAuthenticatedEdge({
-      event: { type: 'SESSION_RESTORED', source: 'unlock', user },
-      user,
-    });
+    await this.acceptAuthenticatedEdge(identityAuthenticatedEdge('pin_unlock', user));
   };
 
   refreshCurrentProfile = async (fallbackAvatar?: string): Promise<void> => {
@@ -386,27 +378,32 @@ class IdentityRuntime {
     this.resolveSession('live').catch(() => {});
   };
 
-  private acceptAuthenticatedEdge = async (input: { event: IdentityEvent; user: SessionUser }): Promise<void> => {
-    markRendererAuthenticated();
-    this.restoredUser = input.user;
-    this.knownAccounts = [input.user];
-    this.dataReady = true;
-    this.dispatch(input.event);
-    await this.reconcileAuthenticatedIdentity(input.user);
-  };
-
-  private acceptFreshLoginEdge = async (): Promise<void> => {
+  private acceptAuthenticatedEdgeFromCurrentSession = async (
+    kind: Parameters<typeof identityAuthenticatedEdge>[0],
+  ): Promise<void> => {
     const user = currentSessionUser();
     if (!user) return;
-    markRendererAuthenticated();
-    this.restoredUser = user;
-    this.knownAccounts = [user];
-    this.dataReady = true;
-    this.dispatch({ type: 'FRESH_LOGIN_AUTHENTICATED', user });
-    await this.reconcileAuthenticatedIdentity(user);
+    await this.acceptAuthenticatedEdge(identityAuthenticatedEdge(kind, user));
   };
 
-  private reconcileAuthenticatedIdentity = async (seedUser: SessionUser): Promise<void> => {
+  private acceptAuthenticatedEdge = async (edge: IdentityAuthenticatedEdge): Promise<void> => {
+    markRendererAuthenticated();
+    this.restoredUser = edge.user;
+    this.knownAccounts = [edge.user];
+    this.dataReady = true;
+    log.info('identity', 'authenticated edge accepted', {
+      edge: edge.kind,
+      completion: edge.completion,
+      actorId: useSessionStore.getState().currentUser?.actorId,
+    });
+    this.dispatch(edge.event);
+    await this.reconcileAuthenticatedIdentity(edge.user, edge.kind);
+  };
+
+  private reconcileAuthenticatedIdentity = async (
+    seedUser: SessionUser,
+    edgeKind: IdentityAuthenticatedEdge['kind'],
+  ): Promise<void> => {
     let reconciledUser = seedUser;
 
     this.dispatch({ type: 'PROFILE_SYNC_STARTED' });
@@ -422,6 +419,7 @@ class IdentityRuntime {
       this.dispatch({ type: 'PROFILE_SYNC_SUCCEEDED', user: reconciledUser });
     } catch (error) {
       log.warn('identity', 'profile sync failed during authenticated reconciliation', {
+        edge: edgeKind,
         actorId: useSessionStore.getState().currentUser?.actorId,
         error: String(error),
       });
@@ -437,6 +435,7 @@ class IdentityRuntime {
       this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_SUCCEEDED', user: latestUser });
     } catch (error) {
       log.warn('identity', 'account cache refresh failed during authenticated reconciliation', {
+        edge: edgeKind,
         actorId: useSessionStore.getState().currentUser?.actorId,
         error: String(error),
       });

@@ -28,7 +28,9 @@ The regression guard is [`docs/knowledge/invariants/desktop-identity-lifecycle-c
 | Concern | Owner | Rule |
 | --- | --- | --- |
 | Session validity | `desktop-rust` auth service + `session` store | A session is valid only after `auth_restore_session`, `auth_login`, `account_unlock`, or `account_switch` returns an actor. |
-| Identity phase | `apps/desktop/src/kernel/identityLifecycle.ts` | The reducer is the single phase model for boot, gates, restore, authenticated, and revoked states. |
+| Boot restore policy | `IdentityBootResolution` in `apps/desktop/src/kernel/identityLifecycle.ts` | Boot must decide `resolveSession` vs `authGate` as an explicit policy object, not an inline boolean. |
+| Authenticated edges | `IdentityAuthenticatedEdge` in `apps/desktop/src/kernel/identityLifecycle.ts` | Password/OAuth login, restore, PIN unlock, account switch, and applet launch must be represented as named edges with completion semantics. |
+| Identity phase | `apps/desktop/src/kernel/identityLifecycle.ts` | The reducer is the single phase model for boot, gates, restore, authenticated, pending completion, and revoked states. |
 | Identity effects | `apps/desktop/src/kernel/identityRuntime.ts` | Effects call Rust commands and must feed observable reducer events. |
 | Account registry | `accountIdentity` store + Rust `identities.json` | Login pages and shell UI must observe the same refreshed account projection. |
 | Current profile | Station profile via `sync_user_profile` | After any authenticated edge, current profile sync is part of identity reconciliation. |
@@ -77,7 +79,9 @@ effects are not allowed.
 Every authenticated edge must run the same reconciliation closure:
 
 ```text
-authenticated edge
+IdentityAuthenticatedEdge
+  -> kind: fresh_login | completed_login | restored_session | pin_unlock | account_switch | applet_launch
+  -> completion: pending | ready
   -> set current session user from auth response / restored session
   -> for fresh password/OAuth login, enter authenticatedPendingCompletion
      until the login page finishes set/relink/skip PIN
@@ -95,6 +99,7 @@ Authenticated edges are:
 
 - password login;
 - OAuth bridge login;
+- completed login after PIN decision or compatibility completion;
 - PIN unlock;
 - account switch;
 - renderer reload restore;
@@ -122,10 +127,27 @@ The renderer reload marker is an implementation detail. It must only decide
 whether session resolution starts automatically; it must not skip profile or
 account reconciliation.
 
+Implementation rule:
+
+```text
+IdentityBootReason + IdentityPolicy
+  -> IdentityBootResolution(resolveSession | authGate)
+  -> resolveSession(source) | loadAuthGate(reason)
+```
+
+Runtime code must not branch on raw booleans such as
+`allowRestoreOnColdLaunch`; boot behavior must be visible as a named
+`IdentityBootResolution`.
+
 ## 6. Invariants
 
 - `authenticated` without a current actor is invalid.
+- `authenticatedPendingCompletion` may refresh profile/account data, but it
+  must not expose the business shell until `LOGIN_COMPLETED`.
 - `ready` without a valid session is invalid.
+- Every transition into an authenticated actor must be represented as an
+  `IdentityAuthenticatedEdge`.
+- Boot restore decisions must go through `IdentityBootResolution`.
 - `sync_user_profile` failures must be represented as `profile=failed` or `profile=stale`.
 - `accountIdentity.load` failures must be represented as `accountCache=failed`.
 - `knownAccounts` must refresh after successful profile sync because account
