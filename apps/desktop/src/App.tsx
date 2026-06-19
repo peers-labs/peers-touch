@@ -94,16 +94,13 @@ function App() {
     }
   }, [lifecycle.authenticated]);
 
-  // Single session-revoked handler: trigger logout + show user notification.
-  // State transition is automatic — logout() sets authenticated=false,
-  // which the derived AppState in useAppLifecycle picks up.
+  // Session-revoked UI notification. Identity state transition is owned by
+  // identityRuntime; App only decides whether to notify the visible user.
   useEffect(() => {
     return onSessionRevoked((payload) => {
       const { authenticated } = useSessionStore.getState();
       const sessionVisible = authenticated || lifecycle.authenticated;
       if (!sessionVisible) return;
-
-      useSessionStore.getState().logout().catch(() => {});
 
       // Show notification only once per revocation cycle.
       if (sessionEndedRef.current) return;

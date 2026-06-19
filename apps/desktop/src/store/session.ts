@@ -32,11 +32,11 @@ interface SessionStore {
   reset: () => void;
   hydrate: (actorId: string) => Promise<void>;
 
-  loginWithPassword: (account: string, password: string) => Promise<void>;
-  loginWithOAuth: (providerId: string) => Promise<void>;
   restoreSession: () => Promise<void>;
   logout: () => Promise<void>;
   activateAppletLaunchSession: (user: CurrentUser) => void;
+  /** Update the current actor profile projection after identity reconciliation. */
+  updateProfile: (profile: Partial<Pick<CurrentUser, 'name' | 'email' | 'avatarUrl'>>) => void;
   /** Update the remote avatar URL after upload or profile sync. */
   updateAvatar: (avatarUrl: string) => void;
 }
@@ -64,27 +64,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   hydrate: async () => {
     await get().restoreSession();
-  },
-
-  loginWithPassword: async (account, password) => {
-    markLocalIdentityAction();
-    const resp = await api.authLogin({ account, password });
-    await runIdentityPipeline({
-      reason: 'login',
-      actorId: resp.actor_id ?? null,
-      loginMethod: 'password',
-    });
-  },
-
-  loginWithOAuth: async (_providerId: string) => {
-    markLocalIdentityAction();
-    const resp = await api.ensureStationSession();
-    const method = (resp.login_method as string) || 'oauth';
-    await runIdentityPipeline({
-      reason: 'oauth_bridge',
-      actorId: resp.actor_id ?? null,
-      loginMethod: method,
-    });
   },
 
   restoreSession: async () => {
@@ -136,6 +115,18 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   activateAppletLaunchSession: (user) => {
     set({ currentUser: user, authenticated: true, restoring: false });
+  },
+
+  updateProfile: (profile) => {
+    set((state) => {
+      if (!state.currentUser) return state;
+      return {
+        currentUser: {
+          ...state.currentUser,
+          ...profile,
+        },
+      };
+    });
   },
 
   updateAvatar: (avatarUrl: string) => {
