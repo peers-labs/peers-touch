@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Button, Input, Select, Tag, Typography } from 'antd';
+import { Button, Input, Tag, Typography } from 'antd';
 import { AlertTriangle, Check, Plus, Server, Trash2, X } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
@@ -78,17 +78,13 @@ export function StationSelector({
       {showStationInput ? (
         <div className={`station-input-row ${hasEntries ? 'with-cancel' : ''}`}>
           <div className={`station-url-control ${error ? 'error' : ''}`}>
-            <Select
+            <button
+              type="button"
               className="station-protocol-select"
-              value={protocol}
-              suffixIcon={null}
-              popupMatchSelectWidth={false}
-              onChange={(value) => setProtocol(value)}
-              options={[
-                { value: 'http', label: 'HTTP' },
-                { value: 'https', label: 'HTTPS' },
-              ]}
-            />
+              onClick={() => setProtocol(protocol === 'https' ? 'http' : 'https')}
+            >
+              {protocol.toUpperCase()}
+            </button>
             <Input
               className="station-address-input"
               value={address}
