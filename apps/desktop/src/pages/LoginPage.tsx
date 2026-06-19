@@ -40,9 +40,9 @@ const PIN_LENGTH = 6;
 const PIN_SUBMIT_DELAY_MS = 140;
 
 const LOGIN_FORM_LAYOUT = {
-  logoSize: 56,
-  logoRadius: 14,
-  logoBottom: 12,
+  logoSize: 72,
+  logoRadius: 18,
+  logoBottom: 14,
   subtitleBottom: 16,
   reauthSubtitleBottom: 10,
   reauthAlertBottom: 14,
@@ -884,10 +884,10 @@ export function LoginPage({
               src={BRANDING.logos.desktop}
               alt={BRANDING.appName}
               style={{
-                width: 48,
-                height: 48,
-                borderRadius: 12,
-                marginBottom: 12,
+                width: LOGIN_FORM_LAYOUT.logoSize,
+                height: LOGIN_FORM_LAYOUT.logoSize,
+                borderRadius: LOGIN_FORM_LAYOUT.logoRadius,
+                marginBottom: LOGIN_FORM_LAYOUT.logoBottom,
               }}
             />
           )}
