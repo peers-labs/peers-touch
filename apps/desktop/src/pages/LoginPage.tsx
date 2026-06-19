@@ -7,7 +7,6 @@ import { useOAuth2Store } from '../store/oauth2';
 import { useSessionStore } from '../store/session';
 import { api, AuthCommandException } from '../services/desktop_api';
 import type { AccountIdentity, OAuth2ProviderSummary } from '../services/desktop_api';
-import { useAccountIdentityStore } from '../store/accountIdentity';
 import { UserSquareAvatar } from '../components/common/UserSquareAvatar';
 import { PlatformLogo } from '../components/common/PlatformLogo';
 import { BRANDING } from '../branding';
@@ -20,7 +19,11 @@ type LoginTab = 'quick' | 'email';
 type AuthState = 'idle' | 'waiting' | 'success' | 'error';
 
 interface Props {
-  onComplete: () => void;
+  onComplete: () => Promise<void>;
+  onLoginWithPassword: (account: string, password: string) => Promise<void>;
+  onLoginWithOAuthBridge: () => Promise<void>;
+  onSwitchAccount: (accountId: string) => Promise<void>;
+  onUnlockWithPin: (accountId: string, pin: string) => Promise<void>;
   restoredUser?: SessionUser | null;
   knownAccounts?: SessionUser[];
   embedded?: boolean;
@@ -67,13 +70,19 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
-export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedded }: Props) {
+export function LoginPage({
+  onComplete,
+  onLoginWithPassword,
+  onLoginWithOAuthBridge,
+  onSwitchAccount,
+  onUnlockWithPin,
+  restoredUser,
+  knownAccounts = [],
+  embedded,
+}: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('auth');
   const { providers, connections, loadAll, startAuth } = useOAuth2Store();
-  const { loginWithPassword } = useSessionStore();
-  const unlockWithPin = useAccountIdentityStore((s) => s.unlockWithPin);
-  const switchAccount = useAccountIdentityStore((s) => s.switchAccount);
 
   // restoredUser is only set when the session has real identity data (actorId + name).
   // If null, the user has no valid session — go directly to login form.
@@ -227,14 +236,14 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     if (!email.trim() || !password.trim()) return;
     setLoading(true);
     try {
-      await loginWithPassword(email.trim(), password);
+      await onLoginWithPassword(email.trim(), password);
       await continueAfterFreshAuth();
     } catch (err: unknown) {
       message.error(errorMessage(err, t('auth.login.failed')));
     } finally {
       setLoading(false);
     }
-  }, [email, password, loginWithPassword, continueAfterFreshAuth, t]);
+  }, [email, password, onLoginWithPassword, continueAfterFreshAuth, t]);
 
   const handleOAuthConnect = useCallback((provider: OAuth2ProviderSummary) => {
     const btn = buttonRefs.current[provider.id];
@@ -280,8 +289,9 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
   const handleAuthDone = useCallback(async () => {
     setConnectProvider(null);
     setAuthState('idle');
+    await onLoginWithOAuthBridge();
     await continueAfterFreshAuth();
-  }, [continueAfterFreshAuth]);
+  }, [onLoginWithOAuthBridge, continueAfterFreshAuth]);
 
   const handleSwitchAccount = useCallback(() => {
     setConnectProvider(null);
@@ -382,7 +392,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
       // Non-PIN accounts share a single session.json, so the active token
       // might belong to a different account.
       try {
-        await switchAccount(account.accountId);
+        await onSwitchAccount(account.accountId);
         const { currentUser } = useSessionStore.getState();
         if (currentUser?.email && account.email && currentUser.email !== account.email) {
           // Restored session belongs to a different user — require fresh login
@@ -406,7 +416,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     // No saved session — go straight to the right login form for this
     // account's provider. This is the normal "stale picker entry" path.
     routeToProviderLogin(account, false);
-  }, [switchAccount, routeToProviderLogin, markAccountSessionless]);
+  }, [onSwitchAccount, routeToProviderLogin, markAccountSessionless]);
 
   // ── PIN Entry ──
 
@@ -442,8 +452,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     setPinLoading(true);
     setPinError('');
     try {
-      await unlockWithPin(selectedAccount.accountId, pin);
-      onComplete();
+      await onUnlockWithPin(selectedAccount.accountId, pin);
     } catch (err: any) {
       const details = err instanceof AuthCommandException ? err.details : undefined;
 
@@ -496,7 +505,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     } finally {
       setPinLoading(false);
     }
-  }, [selectedAccount, pinDigits, onComplete, t, unlockWithPin, routeToProviderLogin, markAccountSessionless]);
+  }, [selectedAccount, pinDigits, t, onUnlockWithPin, routeToProviderLogin, markAccountSessionless]);
 
   // Auto-submit PIN when all digits are entered
   useEffect(() => {
