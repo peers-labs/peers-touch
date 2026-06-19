@@ -113,6 +113,17 @@ The closure must update both:
 If these projections are updated by different paths, account picker avatars and
 shell avatars can diverge. That is a state-machine violation.
 
+`knownAccounts` must be returned as a projection, not raw file order:
+
+```text
+active account first
+  -> then last_login_at descending
+  -> then stable name/id tie-breakers
+```
+
+This prevents stale historical rows in `identities.json` from masking the row
+that was just refreshed by `sync_user_profile`.
+
 ## 5. Hot Reload Policy
 
 Desktop intentionally distinguishes cold launch from renderer reload:
@@ -152,6 +163,8 @@ Runtime code must not branch on raw booleans such as
 - `accountIdentity.load` failures must be represented as `accountCache=failed`.
 - `knownAccounts` must refresh after successful profile sync because account
   picker identity data is sourced from the local account registry.
+- `knownAccounts` must not preserve `identities.json` insertion order; the
+  active/current row must be first, followed by most recent login rows.
 - `session.currentUser.avatarUrl` and `knownAccounts[].avatar` must derive from
   the same remote avatar URL after reconciliation.
 - User-facing identity UI must not read one-off profile data and replace the
