@@ -34,9 +34,10 @@ func init() {
 			// Cross-domain relationship (kept generic — used by social subserver
 			// today, may be reused by chat / oss later).
 			&Follow{},
-			// Station access gate policy. Attempts remain short-lived runtime
-			// state, but policy is a Dashboard-managed Station source of truth.
-			&AccessPolicy{},
+			// Station access gate. Policy is the Dashboard-managed source of
+			// truth; attempts are the persisted lifecycle/state-machine record;
+			// invite codes are Station-issued credentials for the invite.code gate.
+			&AccessPolicy{}, &AccessAttempt{}, &AccessInviteCode{},
 		)
 		if err != nil {
 			panic(fmt.Errorf("auto migrate failed: %v", err))
