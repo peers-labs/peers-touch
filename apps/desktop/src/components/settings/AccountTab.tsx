@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Tooltip, toast } from '@lobehub/ui';
-import { useSessionStore } from '../../store/session';
 import {
   Empty,
   Input,
@@ -30,7 +29,7 @@ import {
 import { Button } from '@lobehub/ui';
 import { api, type AccountProfile, type AccountProfileLink, type Friend } from '../../services/desktop_api';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
-import { useAccountIdentityStore } from '../../store/accountIdentity';
+import { identityRuntime } from '../../kernel/identityRuntime';
 import { useTranslation } from 'react-i18next';
 import { SettingsContainer, SettingsSection } from './SettingsLayout';
 import { log } from '../../utils/logger';
@@ -377,19 +376,7 @@ export function AccountTab() {
   const timezoneOptions = useMemo(() => buildTimezoneOptions(t), [t]);
 
   const syncCurrentProfileIdentity = async (fallbackAvatar?: string) => {
-    try {
-      const result = await api.syncUserProfile();
-      if (result?.avatar_url) {
-        useSessionStore.getState().updateAvatar(result.avatar_url);
-      }
-      await useAccountIdentityStore.getState().load();
-      return;
-    } catch (error) {
-      if (!fallbackAvatar) throw error;
-      await api.accountSyncAvatar(fallbackAvatar);
-      useSessionStore.getState().updateAvatar(fallbackAvatar);
-      await useAccountIdentityStore.getState().load();
-    }
+    await identityRuntime.refreshCurrentProfile(fallbackAvatar);
   };
 
   const loadProfile = async (silent = false) => {

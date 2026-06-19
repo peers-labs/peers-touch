@@ -11,6 +11,7 @@ import {
 
 const user = {
   accountId: 'password:actor-1',
+  avatar: 'https://example.test/avatar.png',
   email: 'u@example.com',
   hasSession: true,
   name: 'User',
@@ -37,6 +38,13 @@ describe('identity lifecycle state machine', () => {
 
     expect(identityPhaseAllowsReady(resolving)).toBe(false);
     expect(identityPhaseAllowsReady(authenticated)).toBe(true);
+    expect(authenticated).toMatchObject({
+      readiness: {
+        accountCache: 'unknown',
+        avatar: 'remoteKnown',
+        profile: 'unknown',
+      },
+    });
   });
 
   it('routes failed restores to the account gate with a reason', () => {
@@ -52,7 +60,10 @@ describe('identity lifecycle state machine', () => {
   });
 
   it('treats revoked sessions as a terminal identity event', () => {
-    const authenticated: IdentityPhase = { kind: 'authenticated', source: 'restore', user };
+    const authenticated = identityReducer(
+      { kind: 'booting', reason: 'renderer_reload' },
+      { type: 'SESSION_RESTORED', source: 'restore', user },
+    );
     const revoked = identityReducer(authenticated, {
       type: 'SESSION_REVOKED',
       reason: 'revoked',
@@ -60,5 +71,27 @@ describe('identity lifecycle state machine', () => {
 
     expect(revoked).toEqual({ kind: 'revoked', reason: 'revoked' });
     expect(identityPhaseAllowsReady(revoked)).toBe(false);
+  });
+
+  it('tracks profile and account cache substates inside authenticated phase', () => {
+    const authenticated = identityReducer(
+      { kind: 'booting', reason: 'renderer_reload' },
+      { type: 'LOGIN_SUCCEEDED', user },
+    );
+    const syncing = identityReducer(authenticated, { type: 'PROFILE_SYNC_STARTED' });
+    const synced = identityReducer(syncing, {
+      type: 'PROFILE_SYNC_SUCCEEDED',
+      user: { ...user, avatar: 'https://example.test/new-avatar.png' },
+    });
+    const refreshing = identityReducer(synced, { type: 'ACCOUNT_CACHE_REFRESH_STARTED' });
+    const ready = identityReducer(refreshing, { type: 'ACCOUNT_CACHE_REFRESH_SUCCEEDED' });
+
+    expect(syncing).toMatchObject({ readiness: { profile: 'syncing' } });
+    expect(synced).toMatchObject({
+      readiness: { avatar: 'remoteKnown', profile: 'ready' },
+      user: { avatar: 'https://example.test/new-avatar.png' },
+    });
+    expect(refreshing).toMatchObject({ readiness: { accountCache: 'refreshing' } });
+    expect(ready).toMatchObject({ readiness: { accountCache: 'ready' } });
   });
 });
