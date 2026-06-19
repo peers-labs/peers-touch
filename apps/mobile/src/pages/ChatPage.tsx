@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type Keyboard
 import { Badge, Button, Empty, Input, List, Modal, Popconfirm, Spin, Switch, Tag, Typography } from 'antd';
 import { ArrowLeft, Ban, Bell, Check, CheckCheck, FolderOpen, Image, Mic, MoreHorizontal, Paperclip, Pencil, Pin, Plus, RotateCcw, Scissors, Search, Send, Smile, Trash2, Users, VolumeX, X } from 'lucide-react';
 import {
-  CHAT_COMPOSER_CAPABILITIES_MOBILE_MAIN,
+  CHAT_COMPOSER_CAPABILITIES_MOBILE_THREAD,
   buildChatConversationSurfaceItems,
   canSubmitChatComposerDraft,
   canEditChatMessage,
@@ -68,8 +68,8 @@ const EMPTY_MESSAGES: FriendChatMessage[] = [];
 const EMPTY_GROUP_MESSAGES: GroupMessage[] = [];
 const EMPTY_GROUP_MEMBERS: GroupMember[] = [];
 const EMPTY_TYPING_PEERS: Record<string, TypingEntry> = {};
-const MOBILE_COMPOSER_CAPABILITIES = CHAT_COMPOSER_CAPABILITIES_MOBILE_MAIN;
-const MOBILE_CHAT_VISUAL_VARS = chatVisualCssVars(chatVisualLayoutForSurface('mobile-main')) as CSSProperties;
+const MOBILE_THREAD_COMPOSER_CAPABILITIES = CHAT_COMPOSER_CAPABILITIES_MOBILE_THREAD;
+const MOBILE_THREAD_VISUAL_VARS = chatVisualCssVars(chatVisualLayoutForSurface('mobile-thread')) as CSSProperties;
 const MOBILE_COMPOSER_EMOJIS = ['😀', '😊', '😂', '😍', '👍', '🙏', '🎉', '🔥', '❤️', '✨', '😭', '🤔'] as const;
 
 type MobileConversation =
@@ -311,7 +311,7 @@ export function ChatPage() {
   };
 
   const submitMessage = async () => {
-    if (!canSubmitChatComposerDraft({ text: draft, attachmentCount: attachmentDrafts.length, capabilities: MOBILE_COMPOSER_CAPABILITIES })) return;
+    if (!canSubmitChatComposerDraft({ text: draft, attachmentCount: attachmentDrafts.length, capabilities: MOBILE_THREAD_COMPOSER_CAPABILITIES })) return;
 
     const readyAttachments = attachmentDrafts.map((item) => item.attachment);
     const messageType = chatMessageTypeForAttachments(readyAttachments) ?? 1;
@@ -590,7 +590,7 @@ export function ChatPage() {
     const threadSearchResults = localThreadSearchResults(threadMessages, threadSearchQuery, isGroupThread);
 
     return (
-      <div className="page-container chat-thread-page" style={MOBILE_CHAT_VISUAL_VARS}>
+      <div className="page-container chat-thread-page" style={MOBILE_THREAD_VISUAL_VARS}>
         <header className={`page-header chat-thread-header ${threadSearchOpen ? 'searching' : ''}`}>
           <button
             className="header-action"
@@ -869,7 +869,7 @@ export function ChatPage() {
               multiple
               onChange={(event) => { void handleMobileFilesSelected(event.target.files); }}
             />
-            {MOBILE_COMPOSER_CAPABILITIES.emoji ? (
+            {MOBILE_THREAD_COMPOSER_CAPABILITIES.emoji ? (
               <button
                 type="button"
                 className={`message-composer-tool ${composerEmojiOpen ? 'active' : ''}`}
@@ -918,7 +918,7 @@ export function ChatPage() {
               className="message-send-button"
               type="primary"
               icon={<Send size={16} />}
-              disabled={!canSubmitChatComposerDraft({ text: draft, attachmentCount: attachmentDrafts.length, capabilities: MOBILE_COMPOSER_CAPABILITIES }) || groupSending || attachmentUploading}
+              disabled={!canSubmitChatComposerDraft({ text: draft, attachmentCount: attachmentDrafts.length, capabilities: MOBILE_THREAD_COMPOSER_CAPABILITIES }) || groupSending || attachmentUploading}
               loading={groupSending || attachmentUploading}
               onClick={() => void runChatOperation(submitMessage, 'mobile.chat.operationSendFailed')}
             />
