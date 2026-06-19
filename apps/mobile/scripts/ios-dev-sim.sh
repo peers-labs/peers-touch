@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEVICE_NAME="${1:-iPhone 17 Pro Max}"
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MOBILE_WEB_PORT="${VITE_DEV_SERVER_PORT:-5173}"
 MOBILE_DEV_HOST="${VITE_DEV_SERVER_HOST:-127.0.0.1}"
@@ -9,6 +8,18 @@ DEV_CONFIG="${MOBILE_TAURI_DEV_CONFIG:-$APP_DIR/src-tauri/target/mobile-tauri-de
 DEV_URL="http://$MOBILE_DEV_HOST:$MOBILE_WEB_PORT"
 VITE_LOG="$APP_DIR/src-tauri/target/mobile-vite-dev.log"
 VITE_PID=""
+
+booted_iphone_name() {
+  xcrun simctl list devices booted \
+    | sed -nE 's/^[[:space:]]+([^()]+)[[:space:]]+\([^)]+\)[[:space:]]+\(Booted\)$/\1/p' \
+    | sed 's/[[:space:]]*$//' \
+    | grep -E '^iPhone ' \
+    | head -n 1
+}
+
+REQUESTED_DEVICE_NAME="${1:-${MOBILE_IOS_DEVICE:-${PT_MOBILE_IOS_DEVICE:-}}}"
+DEVICE_NAME="${REQUESTED_DEVICE_NAME:-$(booted_iphone_name)}"
+DEVICE_NAME="${DEVICE_NAME:-iPhone 17}"
 
 is_dev_url_ready() {
   curl --silent --fail --max-time 1 "$DEV_URL" >/dev/null 2>&1
@@ -38,6 +49,11 @@ fi
 # Remove the pre-Tauri iOS app if it is installed; otherwise SpringBoard can
 # show and launch the stale PeersTouchMobile icon next to the current app.
 xcrun simctl uninstall booted com.peerstouch.mobile >/dev/null 2>&1 || true
+
+# Tauri installs to the named simulator. Keep that target booted so a shutdown
+# default device cannot tear down the dev server after a successful build.
+xcrun simctl boot "$DEVICE_NAME" >/dev/null 2>&1 || true
+xcrun simctl bootstatus "$DEVICE_NAME" -b >/dev/null
 
 if ! is_dev_url_ready; then
   pnpm dev -- --host "$MOBILE_DEV_HOST" --port "$MOBILE_WEB_PORT" --strictPort >"$VITE_LOG" 2>&1 &
@@ -86,4 +102,5 @@ if [ -f "$HOME/.cargo/env" ]; then
   source "$HOME/.cargo/env"
 fi
 
+echo "Launching Peers on iOS simulator: $DEVICE_NAME"
 npx tauri ios dev --config "$DEV_CONFIG" "$DEVICE_NAME"
