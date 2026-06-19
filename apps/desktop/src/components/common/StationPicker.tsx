@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../../services/desktop_api';
 import type { StationEntry, StationProbeResult } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
+import { dispatchStationActiveChanged } from './stationRegistryEvents';
 
 type StationHealthStatus = 'unknown' | 'checking' | 'online' | 'offline';
 
@@ -159,6 +160,7 @@ export function StationPicker() {
       await api.stationSetActive(url);
       setActiveUrl(url);
       const entry = entries.find((item) => item.url === url);
+      dispatchStationActiveChanged({ url, label: entry?.label });
       if (entry) {
         const requestId = ++probeRequestRef.current;
         void probeStations([entry], url, requestId);
