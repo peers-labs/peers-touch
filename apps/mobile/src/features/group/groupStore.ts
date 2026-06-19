@@ -6,7 +6,7 @@ import {
 } from '@peers-touch/client-chat-core';
 
 import type { MobileAuthSession } from '../auth/authSession';
-import { SocialApiError } from '../social/socialTypes';
+import { SocialApiError, readableErrorMessage } from '../social/socialTypes';
 import type { ChatEncryptedMessagePayload, Group, GroupMember, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import type { ChatAttachmentInput } from '../social/socialApi';
 import { createGroupApiClient, type CreateGroupInput, type GroupApiClient, type GroupSettings, type UpdateGroupInput, type UpdateGroupMemberInput, type UpdateGroupSettingsInput } from './groupApi';
@@ -112,7 +112,8 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   reconcile: async () => {
     const { refreshGroups, refreshUnreadCounts } = get();
-    set({ loading: true, error: null });
+    const coldStart = get().groups.length === 0;
+    set({ loading: coldStart, error: null });
     try {
       await refreshGroups();
       await refreshUnreadCounts();
@@ -500,5 +501,5 @@ function requireApi(state: GroupState): GroupApiClient {
 
 function normalizeError(error: unknown): SocialApiError {
   if (error instanceof SocialApiError) return error;
-  return new SocialApiError({ method: 'UNKNOWN', path: 'group-store', message: error instanceof Error ? error.message : String(error) });
+  return new SocialApiError({ method: 'UNKNOWN', path: 'group-store', message: readableErrorMessage(error) });
 }

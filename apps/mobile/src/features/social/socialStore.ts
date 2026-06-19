@@ -50,6 +50,7 @@ import {
 } from './socialFriendE2ee';
 import {
   SocialApiError,
+  readableErrorMessage,
   type FriendChatMessage,
   type FriendChatSession,
   type FriendRequest,
@@ -256,7 +257,8 @@ export const useSocialStore = create<SocialState>((set, get) => ({
 
   reconcile: async () => {
     const { refreshFriendRequests, refreshSessions, refreshBlockedUsers, refreshConversationSettings, refreshNotifications } = get();
-    set({ loading: true, error: null });
+    const coldStart = get().sessions.length === 0 && get().friendRequests.length === 0 && get().notifications.length === 0;
+    set({ loading: coldStart, error: null });
     try {
       await Promise.all([refreshFriendRequests(), refreshSessions(), refreshBlockedUsers(), refreshNotifications()]);
       await refreshConversationSettings();
@@ -807,9 +809,8 @@ export function unreadNotificationCount(state: SocialState): number {
 }
 
 export function formatSocialError(error: SocialApiError): string {
-  const status = error.context.status ? ` HTTP ${error.context.status}` : '';
-  const code = error.context.code ? ` code=${error.context.code}` : '';
-  return `${error.context.method} ${error.context.path}${status}${code}: ${error.context.message}`;
+  const code = error.context.code ? ` (${error.context.code})` : '';
+  return `${error.context.message}${code}`;
 }
 
 type SocialSetState = (partial: Partial<SocialState> | ((state: SocialState) => Partial<SocialState>)) => void;
@@ -881,7 +882,7 @@ async function decryptMessage(
 
 function normalizeError(error: unknown): SocialApiError {
   if (error instanceof SocialApiError) return error;
-  return new SocialApiError({ method: 'GET', path: '/social', message: error instanceof Error ? error.message : String(error) });
+  return new SocialApiError({ method: 'GET', path: '/social', message: readableErrorMessage(error) });
 }
 
 function resolveActorDid(session: MobileAuthSession): string | null {
