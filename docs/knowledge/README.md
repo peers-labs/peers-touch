@@ -152,6 +152,7 @@ Pick one based on intent:
 
 - [`invariants/relay-readloop-discipline.md`](invariants/relay-readloop-discipline.md) — readLoop goroutines must dispatch blocking work asynchronously.
 - [`invariants/locator-publisher-symmetry.md`](invariants/locator-publisher-symmetry.md) — `PublishVisibility` callers split into "user-driven" (broadcast) and "maintenance" (no broadcast); no third category.
+- [`invariants/access-gate-wire-contract.md`](invariants/access-gate-wire-contract.md) — `AccessDecision` consumers must tolerate snake_case-first keys and match enums by both number and string name across Go→Rust→TS.
 
 ### Pitfalls
 
@@ -161,6 +162,7 @@ Pick one based on intent:
 ### Playbooks
 
 - [`playbooks/adding-federation-broadcast-topic.md`](playbooks/adding-federation-broadcast-topic.md) — full path for a new relay-mediated broadcast topic.
+- [`playbooks/adding-an-access-gate.md`](playbooks/adding-an-access-gate.md) — proto → Station gatekeeper → Dashboard → Desktop/Mobile renderer for a new access gate.
 
 ### Reference
 

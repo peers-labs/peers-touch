@@ -445,6 +445,15 @@ select,
   padding: 0 2px;
 }
 
+.mobile-truncate {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .station-selector-header {
   display: flex;
   align-items: flex-start;

@@ -334,6 +334,25 @@ async function invokeAuthCommand<TInput>(
   return response.data;
 }
 
+/// Drive an interactive access-gate step that returns a Station decision
+/// (rather than a landed session). Shares `AuthCommandException` semantics so
+/// callers handle FORBIDDEN/INVALID_ARGUMENT/UNAUTHORIZED uniformly.
+async function invokeAccessCommand<TInput>(
+  command: string,
+  input?: TInput,
+): Promise<AccessDecisionResponse> {
+  const response = await invokeRustCommand<TInput, AccessDecisionResponse>(command, input);
+  if (!response.ok || !response.data) {
+    throw new AuthCommandException(
+      response.error ?? {
+        code: 'INTERNAL_ERROR',
+        message: 'access command failed',
+      },
+    );
+  }
+  return response.data;
+}
+
 async function invokeRustDataFromStatus<TInput, TOut>(
   command: string,
   input?: TInput,
@@ -1522,6 +1541,23 @@ export interface AuthLoginInput {
   base_url?: string;
 }
 
+/// Raw Station `AccessDecision`, passed through verbatim by the Rust layer.
+/// The frontend normalizes the wire shape (snake_case keys, string enums).
+export interface AccessDecisionResponse extends TauriStubPayload {
+  decision: unknown;
+}
+
+export interface AccessSubmitInviteInput {
+  attempt_id: string;
+  invite_code: string;
+}
+
+export interface AccessSubmitLoginInput {
+  attempt_id: string;
+  account: string;
+  password: string;
+}
+
 export interface AuthValidateTokenInput {
   token?: string;
 }
@@ -2229,6 +2265,15 @@ export interface StationProbeResult {
 export const api = {
   authLogin: (input: AuthLoginInput) =>
     invokeAuthCommand<AuthLoginInput>('auth_login', input),
+
+  accessStart: () =>
+    invokeAccessCommand<void>('access_start'),
+
+  accessSubmitInviteCode: (input: AccessSubmitInviteInput) =>
+    invokeAccessCommand<AccessSubmitInviteInput>('access_submit_invite_code', input),
+
+  accessSubmitLogin: (input: AccessSubmitLoginInput) =>
+    invokeAuthCommand<AccessSubmitLoginInput>('access_submit_login', input),
 
   authLogout: () =>
     invokeAuthCommand<void>('auth_logout'),
