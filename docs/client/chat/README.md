@@ -4,8 +4,8 @@
 
 ## Reading Order
 
-1. [chat-ux-contract.md](./chat-ux-contract.md) — 跨端 Chat UX 语义、布局边界、消息结构、操作语义的单点真源。
-2. [../mobile/chat-layout-contract.md](../mobile/chat-layout-contract.md) — Mobile 专属布局、键盘、安全区、底部输入区、触控菜单规则。
+1. [chat-ux-contract.md](./chat-ux-contract.md) — 跨端 Chat UX 语义、布局边界、消息结构、会话级操作和消息操作语义的单点真源。
+2. [../mobile/chat-layout-contract.md](../mobile/chat-layout-contract.md) — Mobile 专属布局、键盘、安全区、底部输入区、触控菜单和会话操作 sheet 规则。
 3. [../desktop/chat-layout-contract.md](../desktop/chat-layout-contract.md) — Desktop 专属布局、侧栏、hover、右键菜单、窗口尺寸规则。
 
 ## Knowledge Invariants
@@ -15,6 +15,7 @@
 - [../../knowledge/invariants/chat-message-boundaries.md](../../knowledge/invariants/chat-message-boundaries.md)
 - [../../knowledge/invariants/mobile-chat-layout-boundaries.md](../../knowledge/invariants/mobile-chat-layout-boundaries.md)
 - [../../knowledge/invariants/desktop-chat-layout-boundaries.md](../../knowledge/invariants/desktop-chat-layout-boundaries.md)
+- [../../knowledge/pitfalls/mobile-chat-conversation-actions-right-drawer.md](../../knowledge/pitfalls/mobile-chat-conversation-actions-right-drawer.md)
 
 ## Scope
 
