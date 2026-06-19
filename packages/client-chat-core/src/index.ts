@@ -461,6 +461,18 @@ export const CHAT_VISUAL_LAYOUT_MOBILE_MAIN: ChatVisualLayoutContract = {
 export const CHAT_VISUAL_LAYOUT_MOBILE_THREAD: ChatVisualLayoutContract = {
   ...CHAT_VISUAL_LAYOUT_MOBILE_MAIN,
   surface: 'mobile-thread',
+  avatarSize: 34,
+  avatarGap: 7,
+  avatarRadius: 10,
+  ownRowMaxWidth: '82%',
+  peerRowMaxWidth: '82%',
+  groupPeerRowMaxWidth: '82%',
+  bubbleMinWidth: 44,
+  bubblePadding: '7px 10px 6px',
+  ownBubbleRadius: '16px 16px 5px 16px',
+  peerBubbleRadius: '16px 16px 16px 5px',
+  composerOuterPadding: '8px 10px 10px',
+  composerToolButtonSize: 38,
 };
 
 export function shouldSendComposerEnter(state: ComposerEnterKeyState): boolean {
