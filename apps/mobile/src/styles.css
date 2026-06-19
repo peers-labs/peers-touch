@@ -979,6 +979,53 @@ select,
   text-align: center;
 }
 
+.mobile-notice {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0 18px 10px;
+  padding: 10px 10px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.mobile-notice.error {
+  background: rgba(255, 77, 79, 0.1);
+  color: #d9363e;
+}
+
+.mobile-notice.info {
+  background: rgba(76, 110, 245, 0.1);
+  color: #3d5afe;
+}
+
+.mobile-notice.success {
+  background: rgba(82, 196, 26, 0.1);
+  color: #237804;
+}
+
+.mobile-notice-icon {
+  flex: 0 0 auto;
+}
+
+.mobile-notice-copy {
+  min-width: 0;
+}
+
+.mobile-notice-close {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.54);
+  color: inherit;
+}
+
 .page-error {
   margin: 0 18px 10px;
   padding: 8px 10px;
