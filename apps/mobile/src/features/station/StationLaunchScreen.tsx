@@ -67,7 +67,7 @@ export function StationLaunchScreen({
             {activeStationLabel ? (
               <div className="launch-target">
                 <Text type="secondary">{t('mobile.launch.activeStation')}</Text>
-                <Text strong ellipsis>
+                <Text strong className="mobile-truncate">
                   {activeStationLabel}
                 </Text>
               </div>

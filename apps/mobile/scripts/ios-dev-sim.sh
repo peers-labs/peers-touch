@@ -3,7 +3,7 @@ set -euo pipefail
 
 DEVICE_NAME="${1:-iPhone 17 Pro Max}"
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MOBILE_WEB_PORT="${VITE_DEV_SERVER_PORT:-4210}"
+MOBILE_WEB_PORT="${VITE_DEV_SERVER_PORT:-5173}"
 MOBILE_DEV_HOST="${VITE_DEV_SERVER_HOST:-127.0.0.1}"
 DEV_CONFIG="${MOBILE_TAURI_DEV_CONFIG:-$APP_DIR/src-tauri/target/mobile-tauri-dev.json}"
 DEV_URL="http://$MOBILE_DEV_HOST:$MOBILE_WEB_PORT"
@@ -24,6 +24,20 @@ cd "$APP_DIR"
 
 mkdir -p "$(dirname "$DEV_CONFIG")"
 mkdir -p "$(dirname "$VITE_LOG")"
+
+IOS_PROJECT_DIR="$APP_DIR/src-tauri/gen/apple"
+if [ -f "$IOS_PROJECT_DIR/project.yml" ]; then
+  if ! command -v xcodegen >/dev/null 2>&1; then
+    echo "xcodegen is required to sync the iOS project from project.yml before launch." >&2
+    exit 1
+  fi
+  mkdir -p "$IOS_PROJECT_DIR/Externals" "$IOS_PROJECT_DIR/assets"
+  (cd "$IOS_PROJECT_DIR" && xcodegen generate >/dev/null)
+fi
+
+# Remove the pre-Tauri iOS app if it is installed; otherwise SpringBoard can
+# show and launch the stale PeersTouchMobile icon next to the current app.
+xcrun simctl uninstall booted com.peerstouch.mobile >/dev/null 2>&1 || true
 
 if ! is_dev_url_ready; then
   pnpm dev -- --host "$MOBILE_DEV_HOST" --port "$MOBILE_WEB_PORT" --strictPort >"$VITE_LOG" 2>&1 &
@@ -57,6 +71,15 @@ cat > "$DEV_CONFIG" <<EOF
   }
 }
 EOF
+export MOBILE_TAURI_DEV_CONFIG="$DEV_CONFIG"
+export TAURI_CONFIG="$(cat "$DEV_CONFIG")"
+# Tauri embeds devUrl into the native context during the Rust build. Force the
+# build script to rerun so dev sessions cannot reuse a stale libapp.a.
+touch "$APP_DIR/src-tauri/build.rs"
+xattr -dr com.apple.provenance "$APP_DIR/src-tauri/target" 2>/dev/null || true
+find "$APP_DIR/src-tauri/target" "$APP_DIR/src-tauri/gen/apple/Externals" \
+  \( -name libpeers_touch_mobile_lib.a -o -name libapp.a \) \
+  -delete 2>/dev/null || true
 
 if [ -f "$HOME/.cargo/env" ]; then
   # shellcheck disable=SC1091

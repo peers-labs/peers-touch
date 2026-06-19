@@ -6,7 +6,7 @@ import desktopLogo from '../src-tauri/icons/icon.png';
  */
 export const BRANDING = {
   /** 应用名称 */
-  appName: 'Peers Touch Desktop',
+  appName: 'Peers',
   
   /** 应用logo */
   logos: {
