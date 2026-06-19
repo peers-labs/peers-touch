@@ -157,6 +157,7 @@ Pick one based on intent:
 - [`invariants/desktop-chat-layout-boundaries.md`](invariants/desktop-chat-layout-boundaries.md) — Desktop Chat actions must respect conversation pane bounds and collision handling.
 - [`invariants/composite-form-control-boundaries.md`](invariants/composite-form-control-boundaries.md) — composite form controls that represent one semantic input must share one parent frame and state model.
 - [`invariants/desktop-identity-lifecycle-closure.md`](invariants/desktop-identity-lifecycle-closure.md) — Desktop identity/profile/account/avatar projections must close through the identity state machine.
+- [`invariants/access-gate-wire-contract.md`](invariants/access-gate-wire-contract.md) — `AccessDecision` consumers must tolerate snake_case-first keys and match enums by both number and string name across Go→Rust→TS.
 
 ### Pitfalls
 
@@ -168,6 +169,7 @@ Pick one based on intent:
 
 - [`playbooks/adding-federation-broadcast-topic.md`](playbooks/adding-federation-broadcast-topic.md) — full path for a new relay-mediated broadcast topic.
 - [`playbooks/ux-case-to-contract.md`](playbooks/ux-case-to-contract.md) — promote concrete UX examples into reusable contracts, platform refinements, invariants, and acceptance matrices.
+- [`playbooks/adding-an-access-gate.md`](playbooks/adding-an-access-gate.md) — proto → Station gatekeeper → Dashboard → Desktop/Mobile renderer for a new access gate.
 
 ### Reference
 
