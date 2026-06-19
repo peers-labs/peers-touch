@@ -535,46 +535,26 @@ select,
 }
 
 .station-protocol-select {
-  flex: 0 0 auto;
-  min-width: 0 !important;
-  width: 86px !important;
-  height: 34px;
-}
-
-.station-protocol-select .ant-select-selector {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  width: 100% !important;
-  height: 34px !important;
-  min-height: 34px !important;
-  padding: 0 12px !important;
-  border: 1px solid rgba(15, 23, 42, 0.1) !important;
-  border-radius: 9px !important;
-  background: #fff !important;
-  box-shadow: none !important;
-}
-
-.station-protocol-select .ant-select-selection-wrap {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  width: 100%;
-  min-width: 0;
-}
-
-.station-protocol-select .ant-select-selection-item {
-  display: flex !important;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  padding: 0 !important;
-  line-height: 32px !important;
+  flex: 0 0 auto;
+  min-width: 72px;
+  height: 34px;
+  padding: 0 13px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: none;
+  font: inherit;
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.02em;
+  line-height: 1;
   color: rgba(0, 0, 0, 0.72);
   text-align: center;
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 .station-address-input {
