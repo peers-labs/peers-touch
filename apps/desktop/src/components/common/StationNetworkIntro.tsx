@@ -8,7 +8,9 @@ interface StationNetworkIntroLabels {
   service: string;
   station: string;
   bob: string;
+  carol: string;
   agent: string;
+  storage: string;
   joining: string;
   yourStation: string;
   messageFlow: string;
@@ -22,6 +24,67 @@ interface StationNetworkIntroProps {
   labels: StationNetworkIntroLabels;
 }
 
+const VIEW_W = 1440;
+const VIEW_H = 900;
+
+type NodeId =
+  | 'alice'
+  | 'aliceStation'
+  | 'relay'
+  | 'storage'
+  | 'service'
+  | 'carol'
+  | 'bob'
+  | 'agent'
+  | 'selected';
+
+interface NodePoint {
+  x: number;
+  y: number;
+}
+
+// Spatial layout of the federated mesh. The selected node sits center-left so it
+// stays clear of the floating login card on the right edge.
+const NODES: Record<NodeId, NodePoint> = {
+  alice: { x: 168, y: 232 },
+  aliceStation: { x: 372, y: 392 },
+  relay: { x: 612, y: 196 },
+  storage: { x: 860, y: 286 },
+  service: { x: 792, y: 540 },
+  carol: { x: 742, y: 742 },
+  bob: { x: 392, y: 700 },
+  agent: { x: 158, y: 560 },
+  selected: { x: 540, y: 470 },
+};
+
+// Curvature offsets keep edges organic instead of straight wires.
+const EDGES: { id: string; from: NodeId; to: NodeId; bend: number; hot?: boolean }[] = [
+  { id: 'd-edge-1', from: 'alice', to: 'aliceStation', bend: 36, hot: true },
+  { id: 'd-edge-2', from: 'aliceStation', to: 'relay', bend: -54 },
+  { id: 'd-edge-3', from: 'aliceStation', to: 'selected', bend: 30, hot: true },
+  { id: 'd-edge-4', from: 'relay', to: 'selected', bend: 48, hot: true },
+  { id: 'd-edge-5', from: 'relay', to: 'storage', bend: -34 },
+  { id: 'd-edge-6', from: 'storage', to: 'service', bend: 40 },
+  { id: 'd-edge-7', from: 'service', to: 'selected', bend: -30, hot: true },
+  { id: 'd-edge-8', from: 'carol', to: 'service', bend: 36 },
+  { id: 'd-edge-9', from: 'carol', to: 'selected', bend: -44 },
+  { id: 'd-edge-10', from: 'bob', to: 'selected', bend: 30, hot: true },
+  { id: 'd-edge-11', from: 'bob', to: 'agent', bend: -40 },
+  { id: 'd-edge-12', from: 'agent', to: 'selected', bend: -36 },
+  { id: 'd-edge-13', from: 'bob', to: 'service', bend: 56 },
+];
+
+function edgePath(from: NodePoint, to: NodePoint, bend: number): string {
+  const mx = (from.x + to.x) / 2;
+  const my = (from.y + to.y) / 2;
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const cx = mx + (-dy / len) * bend;
+  const cy = my + (dx / len) * bend;
+  return `M${from.x} ${from.y} Q${cx} ${cy} ${to.x} ${to.y}`;
+}
+
 export function StationNetworkIntro({ selectedStationName, labels }: StationNetworkIntroProps) {
   return (
     <section className="pt-network-intro" aria-label={labels.title}>
@@ -29,70 +92,71 @@ export function StationNetworkIntro({ selectedStationName, labels }: StationNetw
         <span>{labels.title}</span>
       </div>
 
-      <svg className="pt-network-intro__mesh" viewBox="0 0 390 548" role="img" aria-label={labels.title}>
+      <svg
+        className="pt-network-intro__mesh"
+        viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+        preserveAspectRatio="xMidYMid slice"
+        role="img"
+        aria-label={labels.title}
+      >
         <defs>
-          <path id="desktop-network-edge-1" d="M70 94 C104 108 132 128 166 154" />
-          <path id="desktop-network-edge-2" d="M166 154 C204 104 246 88 306 108" />
-          <path id="desktop-network-edge-3" d="M306 108 C332 150 340 198 322 252" />
-          <path id="desktop-network-edge-4" d="M166 154 C152 214 168 272 206 326" />
-          <path id="desktop-network-edge-5" d="M206 326 C160 326 118 342 82 374" />
-          <path id="desktop-network-edge-6" d="M82 374 C130 430 196 452 292 432" />
-          <path id="desktop-network-edge-7" d="M322 252 C314 314 306 370 292 432" />
-          <path id="desktop-network-edge-8" d="M206 326 C230 378 258 408 292 432" />
-          <path id="desktop-network-edge-9" d="M166 154 C226 188 270 218 322 252" />
-          <path id="desktop-network-edge-10" d="M322 252 C246 284 164 324 82 374" />
-          <path id="desktop-network-edge-11" d="M306 108 C326 230 322 340 292 432" />
+          {EDGES.map(edge => (
+            <path key={edge.id} id={edge.id} d={edgePath(NODES[edge.from], NODES[edge.to], edge.bend)} />
+          ))}
         </defs>
 
-        <use className="pt-network-intro__edge pt-network-intro__edge--hot" href="#desktop-network-edge-1" />
-        <use className="pt-network-intro__edge" href="#desktop-network-edge-2" />
-        <use className="pt-network-intro__edge pt-network-intro__edge--hot" href="#desktop-network-edge-3" />
-        <use className="pt-network-intro__edge" href="#desktop-network-edge-4" />
-        <use className="pt-network-intro__edge pt-network-intro__edge--hot" href="#desktop-network-edge-5" />
-        <use className="pt-network-intro__edge" href="#desktop-network-edge-6" />
-        <use className="pt-network-intro__edge pt-network-intro__edge--hot" href="#desktop-network-edge-7" />
-        <use className="pt-network-intro__edge" href="#desktop-network-edge-8" />
-        <use className="pt-network-intro__edge" href="#desktop-network-edge-9" />
-        <use className="pt-network-intro__edge pt-network-intro__edge--hot" href="#desktop-network-edge-10" />
-        <use className="pt-network-intro__edge" href="#desktop-network-edge-11" />
+        {EDGES.map(edge => (
+          <use
+            key={`use-${edge.id}`}
+            className={`pt-network-intro__edge${edge.hot ? ' pt-network-intro__edge--hot' : ''}`}
+            href={`#${edge.id}`}
+          />
+        ))}
 
-        <DataToken type="message" edgeId="desktop-network-edge-1" colorClass="pt-network-intro__data--blue" label={labels.messageFlow} duration="5.2s" />
-        <DataToken type="image" edgeId="desktop-network-edge-4" colorClass="pt-network-intro__data--green" label={labels.imageFlow} duration="5.8s" begin="-1.4s" />
-        <DataToken type="file" edgeId="desktop-network-edge-7" colorClass="pt-network-intro__data--amber" label={labels.fileFlow} duration="6.1s" begin="-2.1s" />
-        <DataToken type="message" edgeId="desktop-network-edge-8" colorClass="pt-network-intro__data--cyan" label={labels.messageFlow} duration="5.5s" begin="-3.2s" />
-        <DataToken type="task" edgeId="desktop-network-edge-10" colorClass="pt-network-intro__data--rose" label={labels.taskFlow} duration="6.8s" begin="-0.8s" />
-        <DataToken type="image" edgeId="desktop-network-edge-9" colorClass="pt-network-intro__data--green" label={labels.imageFlow} duration="5.9s" begin="-4.3s" />
-        <DataToken type="file" edgeId="desktop-network-edge-11" colorClass="pt-network-intro__data--amber" label={labels.fileFlow} duration="7s" begin="-2.6s" />
-        <DataToken type="message" edgeId="desktop-network-edge-6" colorClass="pt-network-intro__data--blue" label={labels.messageFlow} duration="6.4s" begin="-5.1s" />
+        <DataToken type="message" edgeId="d-edge-1" colorClass="pt-network-intro__data--blue" label={labels.messageFlow} duration="5.2s" />
+        <DataToken type="image" edgeId="d-edge-3" colorClass="pt-network-intro__data--green" label={labels.imageFlow} duration="5.8s" begin="-1.4s" />
+        <DataToken type="file" edgeId="d-edge-6" colorClass="pt-network-intro__data--amber" label={labels.fileFlow} duration="6.1s" begin="-2.1s" />
+        <DataToken type="message" edgeId="d-edge-10" colorClass="pt-network-intro__data--cyan" label={labels.messageFlow} duration="5.5s" begin="-3.2s" />
+        <DataToken type="task" edgeId="d-edge-12" colorClass="pt-network-intro__data--rose" label={labels.taskFlow} duration="6.8s" begin="-0.8s" />
+        <DataToken type="image" edgeId="d-edge-9" colorClass="pt-network-intro__data--green" label={labels.imageFlow} duration="5.9s" begin="-4.3s" />
+        <DataToken type="file" edgeId="d-edge-5" colorClass="pt-network-intro__data--amber" label={labels.fileFlow} duration="7s" begin="-2.6s" />
+        <DataToken type="message" edgeId="d-edge-7" colorClass="pt-network-intro__data--blue" label={labels.messageFlow} duration="6.4s" begin="-5.1s" />
+        <DataToken type="task" edgeId="d-edge-8" colorClass="pt-network-intro__data--rose" label={labels.taskFlow} duration="6.6s" begin="-3.7s" />
+        <DataToken type="image" edgeId="d-edge-2" colorClass="pt-network-intro__data--cyan" label={labels.imageFlow} duration="6.2s" begin="-1.9s" />
 
-        <NetworkNode x={70} y={94} label={labels.alice} subLabel={labels.personal} />
-        <NetworkNode x={166} y={154} label={labels.station} subLabel={labels.alice} />
-        <NetworkNode x={306} y={108} label={labels.relay} subLabel={labels.relayLink} />
-        <NetworkNode x={322} y={252} label={labels.service} subLabel={labels.station} />
-        <NetworkNode x={206} y={326} label={labels.station} subLabel={labels.bob} />
-        <NetworkNode x={82} y={374} label={labels.agent} subLabel={labels.station} />
+        <NetworkNode point={NODES.alice} label={labels.alice} subLabel={labels.personal} />
+        <NetworkNode point={NODES.aliceStation} label={labels.station} subLabel={labels.alice} />
+        <NetworkNode point={NODES.relay} label={labels.relay} subLabel={labels.relayLink} />
+        <NetworkNode point={NODES.storage} label={labels.storage} subLabel={labels.station} />
+        <NetworkNode point={NODES.service} label={labels.service} subLabel={labels.station} />
+        <NetworkNode point={NODES.carol} label={labels.station} subLabel={labels.carol} />
+        <NetworkNode point={NODES.bob} label={labels.station} subLabel={labels.bob} />
+        <NetworkNode point={NODES.agent} label={labels.agent} subLabel={labels.station} />
 
-        <g className="pt-network-intro__node pt-network-intro__node--selected" transform="translate(292 432)">
-          <circle className="pt-network-intro__swap-flash" r="42" />
-          <circle className="pt-network-intro__node-halo" r="36" />
-          <rect className="pt-network-intro__node-hit" x="-52" y="-27" width="104" height="54" rx="19" />
-          <text className="pt-network-intro__node-label pt-network-intro__placeholder-name" y="-3">{labels.station}</text>
-          <text className="pt-network-intro__node-sub pt-network-intro__placeholder-name" y="13">{labels.joining}</text>
-          <text className="pt-network-intro__node-label pt-network-intro__chosen-name" y="-3">{selectedStationName}</text>
-          <text className="pt-network-intro__node-sub pt-network-intro__chosen-name" y="13">{labels.yourStation}</text>
+        <g
+          className="pt-network-intro__node pt-network-intro__node--selected"
+          transform={`translate(${NODES.selected.x} ${NODES.selected.y})`}
+        >
+          <circle className="pt-network-intro__swap-flash" r="78" />
+          <circle className="pt-network-intro__node-halo" r="66" />
+          <rect className="pt-network-intro__node-hit" x="-92" y="-46" width="184" height="92" rx="30" />
+          <text className="pt-network-intro__node-label pt-network-intro__placeholder-name" y="-4">{labels.station}</text>
+          <text className="pt-network-intro__node-sub pt-network-intro__placeholder-name" y="22">{labels.joining}</text>
+          <text className="pt-network-intro__node-label pt-network-intro__chosen-name" y="-4">{selectedStationName}</text>
+          <text className="pt-network-intro__node-sub pt-network-intro__chosen-name" y="22">{labels.yourStation}</text>
         </g>
       </svg>
     </section>
   );
 }
 
-function NetworkNode({ x, y, label, subLabel }: { x: number; y: number; label: string; subLabel: string }) {
+function NetworkNode({ point, label, subLabel }: { point: NodePoint; label: string; subLabel: string }) {
   return (
-    <g className="pt-network-intro__node" transform={`translate(${x} ${y})`}>
-      <circle className="pt-network-intro__node-halo" r="34" />
-      <rect className="pt-network-intro__node-hit" x="-46" y="-24" width="92" height="48" rx="17" />
-      <text className="pt-network-intro__node-label" y="-2">{label}</text>
-      <text className="pt-network-intro__node-sub" y="13">{subLabel}</text>
+    <g className="pt-network-intro__node" transform={`translate(${point.x} ${point.y})`}>
+      <circle className="pt-network-intro__node-halo" r="58" />
+      <rect className="pt-network-intro__node-hit" x="-80" y="-40" width="160" height="80" rx="26" />
+      <text className="pt-network-intro__node-label" y="-3">{label}</text>
+      <text className="pt-network-intro__node-sub" y="20">{subLabel}</text>
     </g>
   );
 }
@@ -114,30 +178,32 @@ function DataToken({
 }) {
   return (
     <g className={`pt-network-intro__data ${colorClass}`} aria-label={label}>
-      {type === 'message' && (
-        <>
-          <rect className="pt-network-intro__token-shell" x="-11" y="-8" width="22" height="16" rx="6" />
-          <path className="pt-network-intro__token-glyph" d="M-5 -2h10M-5 3h6M-4 8l3 -3" />
-        </>
-      )}
-      {type === 'image' && (
-        <>
-          <rect className="pt-network-intro__token-shell" x="-10" y="-9" width="20" height="18" rx="5" />
-          <path className="pt-network-intro__token-glyph" d="M-6 4l4 -4l3 3l2 -2l4 5M-5 -4h0.1" />
-        </>
-      )}
-      {type === 'file' && (
-        <>
-          <path className="pt-network-intro__token-shell" d="M-8 -10h11l5 5v15h-16z" />
-          <path className="pt-network-intro__token-glyph" d="M2 -10v6h6M-4 0h7M-4 5h8" />
-        </>
-      )}
-      {type === 'task' && (
-        <>
-          <rect className="pt-network-intro__token-shell" x="-10" y="-9" width="20" height="18" rx="7" />
-          <path className="pt-network-intro__token-glyph" d="M-4 0l3 3l6 -7M-5 6h10" />
-        </>
-      )}
+      <g className="pt-network-intro__data-glyph">
+        {type === 'message' && (
+          <>
+            <rect className="pt-network-intro__token-shell" x="-11" y="-8" width="22" height="16" rx="6" />
+            <path className="pt-network-intro__token-glyph" d="M-5 -2h10M-5 3h6M-4 8l3 -3" />
+          </>
+        )}
+        {type === 'image' && (
+          <>
+            <rect className="pt-network-intro__token-shell" x="-10" y="-9" width="20" height="18" rx="5" />
+            <path className="pt-network-intro__token-glyph" d="M-6 4l4 -4l3 3l2 -2l4 5M-5 -4h0.1" />
+          </>
+        )}
+        {type === 'file' && (
+          <>
+            <path className="pt-network-intro__token-shell" d="M-8 -10h11l5 5v15h-16z" />
+            <path className="pt-network-intro__token-glyph" d="M2 -10v6h6M-4 0h7M-4 5h8" />
+          </>
+        )}
+        {type === 'task' && (
+          <>
+            <rect className="pt-network-intro__token-shell" x="-10" y="-9" width="20" height="18" rx="7" />
+            <path className="pt-network-intro__token-glyph" d="M-4 0l3 3l6 -7M-5 6h10" />
+          </>
+        )}
+      </g>
       <animateMotion dur={duration} begin={begin} repeatCount="indefinite">
         <mpath href={`#${edgeId}`} />
       </animateMotion>
