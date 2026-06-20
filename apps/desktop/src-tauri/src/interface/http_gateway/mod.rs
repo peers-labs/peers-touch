@@ -3264,54 +3264,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Err(e) => e,
             }
         }
-        "friend_chat_go_online" => {
-            let input = match parse_args::<FriendChatOnlineInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let body = match &input.did {
-                Some(did) => json!({"did": did}),
-                None => json!({}),
-            };
-            match station_request_json(
-                Method::POST,
-                "/friend-chat/online",
-                &token,
-                None,
-                Some(body),
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_go_online", data)),
-                Err(e) => e,
-            }
-        }
-        "friend_chat_go_offline" => {
-            let input = match parse_args::<FriendChatOnlineInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let body = match &input.did {
-                Some(did) => json!({"did": did}),
-                None => json!({}),
-            };
-            match station_request_json(
-                Method::POST,
-                "/friend-chat/offline",
-                &token,
-                None,
-                Some(body),
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_go_offline", data)),
-                Err(e) => e,
-            }
-        }
         "friend_chat_get_pending" => {
             let input = match parse_args::<FriendChatPendingInput>(args) {
                 Ok(v) => v,

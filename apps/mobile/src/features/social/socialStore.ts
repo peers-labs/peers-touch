@@ -40,7 +40,6 @@ import {
   projectUnreadNotificationCount,
   projectUnreadNotifications,
   pruneTypingPeers,
-  seedPresenceFromSessions,
   visibleFriendMessages,
 } from './socialProjection';
 import {
@@ -291,7 +290,6 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       sessions: activeSessionUlid && currentUserDid
         ? clearSessionUnreadForActor(sessions, activeSessionUlid, currentUserDid)
         : sessions,
-      peerOnline: { ...seedPresenceFromSessions(sessions, state.currentUserDid), ...state.peerOnline },
     }));
     await Promise.allSettled(sessions.slice(0, 20).map(async (session) => {
       if ((get().messages[session.ulid] ?? []).length > 0) return;

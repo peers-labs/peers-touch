@@ -68,7 +68,6 @@ import {
   normalizeFriendChatSession,
   normalizeFriendRequestData,
   normalizeFriendRequests,
-  seedPresenceFromSessions,
   type FriendRequestData,
 } from './socialNormalizers';
 import { currentAuthenticatedActorId } from './session';
@@ -417,10 +416,8 @@ interface SocialChatState {
    * up (e.g. bootstrapping ICE), so the two concepts must not be
    * conflated in the UI.
    *
-   * Source of truth: Station's `/friend-chat/presence/stream` SSE
-   * (real-time push) plus the `participant_*_online` snapshot embedded
-   * in `friendChatListSessions` responses (used to seed the map on
-   * cold-start before the SSE has caught up).
+   * Source of truth: Station `StreamEvent.PresenceFlip` events carried
+   * by the unified `/events/stream`.
    */
   peerOnline: Record<string, boolean>;
   setPeerOnline: (did: string, online: boolean) => void;
@@ -1244,21 +1241,12 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       const list = (data?.sessions || []).map(normalizeFriendChatSession);
       const derivedDid = deriveCurrentUserDidFromSessions(list);
 
-      // Seed peerOnline from the snapshot embedded in this response.
-      // We deliberately *only seed*, never *overwrite*: an SSE flip
-      // that arrived 200ms before this list call must not be undone
-      // by the response we're parsing now (the snapshot is server-side
-      // serialized at request time, the SSE is live). Hence we only
-      // write to keys that are currently `undefined`.
-      const presenceSeed = seedPresenceFromSessions(list);
-
       set((state) => ({
         sessions: clearActiveFriendUnread(list, state.activeSessionUlid, derivedDid || state.currentUserDid),
         loading: false,
         ...(!state.currentUserDid && derivedDid
           ? { currentUserDid: derivedDid, conversationLocalState: loadConversationLocalState(derivedDid) }
           : {}),
-        peerOnline: { ...presenceSeed, ...state.peerOnline },
       }));
       const settingsEntries = await Promise.allSettled(list.map(async (session) => {
         const resp = await api.friendChatGetSettings(session.ulid);
