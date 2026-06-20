@@ -8,7 +8,10 @@ import {
   submitStationLoginGate,
   submitStationInviteCodeGate,
   isAccessGranted,
+  loadRememberedLoginAccounts,
+  rememberLoginAccount,
   type MobileAuthSession,
+  type RememberedLoginAccount,
   type StationLoginInput,
 } from './features/auth/authSession';
 import { AccessGateHost } from './features/auth/AccessGateHost';
@@ -37,6 +40,7 @@ function MobileAppRoot() {
   const [stationError, setStationError] = useState<string | null>(null);
   const [stationChecking, setStationChecking] = useState(false);
   const [verifyingStationUrls, setVerifyingStationUrls] = useState<string[]>([]);
+  const [rememberedAccounts, setRememberedAccounts] = useState<RememberedLoginAccount[]>([]);
   const stationRegistryRef = useRef(stationRegistry);
   const authSession = useAuthStore((state) => state.session);
   const authError = useAuthStore((state) => state.error);
@@ -64,6 +68,14 @@ function MobileAppRoot() {
       .then(([registry, session]) => {
         if (!mounted) return;
         replaceStationRegistry(registry);
+        if (session?.actor?.email) {
+          void rememberLoginAccount(session, session.actor.email)
+            .then(() => loadRememberedLoginAccounts(session.stationUrl))
+            .then((accounts) => {
+              if (mounted) setRememberedAccounts(accounts);
+            })
+            .catch(() => undefined);
+        }
         if (session && registry.activeUrl === session.stationUrl) {
           void startAccessGateChainFor(registry.activeUrl, session);
         }
@@ -94,6 +106,26 @@ function MobileAppRoot() {
       autoProbeStation(url);
     }
   }, [launchState, stationUrlsKey]);
+
+  useEffect(() => {
+    const activeUrl = stationRegistry.activeUrl;
+    if (!activeUrl) {
+      setRememberedAccounts([]);
+      return;
+    }
+
+    let mounted = true;
+    loadRememberedLoginAccounts(activeUrl)
+      .then((accounts) => {
+        if (mounted) setRememberedAccounts(accounts);
+      })
+      .catch(() => {
+        if (mounted) setRememberedAccounts([]);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [stationRegistry.activeUrl]);
 
   function replaceStationRegistry(registry: StoredStationRegistry) {
     stationRegistryRef.current = registry;
@@ -148,6 +180,8 @@ function MobileAppRoot() {
         attemptId: accessDecision.attemptId,
         ...input,
       });
+      await rememberLoginAccount(session, input.email).catch(() => undefined);
+      setRememberedAccounts(await loadRememberedLoginAccounts(session.stationUrl).catch(() => []));
       setAuthSession(session);
       setAccessDecision(decision);
       if (persistenceError) setAuthError(persistenceError);
@@ -163,7 +197,12 @@ function MobileAppRoot() {
   async function logout() {
     await clearSession();
     setAccessDecision(null);
-    setLaunchState('access-gate-chain');
+    const activeUrl = stationRegistryRef.current.activeUrl;
+    if (!activeUrl) {
+      setLaunchState('station-selection');
+      return;
+    }
+    await startAccessGateChainFor(activeUrl, null);
   }
 
   async function submitInviteCode(code: string) {
@@ -255,6 +294,7 @@ function MobileAppRoot() {
         stationUrl={stationRegistry.activeUrl || ''}
         error={authError}
         loading={authLoading}
+        rememberedAccounts={rememberedAccounts}
         onBack={() => {
           setAccessDecision(null);
           setLaunchState('station-selection');

@@ -1132,9 +1132,12 @@ export function ChatPage() {
                   <List.Item className="conversation-item" onClick={() => openConversation(conversation)}>
                     <List.Item.Meta
                       avatar={
-                        <Badge dot={conversation.kind === 'friend' ? conversation.conversation.peerOnline : false} color="green" offset={[-2, 28]}>
+                        <span className="conversation-avatar-frame">
                           <MobileAvatar src={conversationAvatar(conversation)}>{conversationTitle(conversation).slice(0, 1)}</MobileAvatar>
-                        </Badge>
+                          {conversation.kind === 'friend' && conversation.conversation.peerOnline ? (
+                            <span className="conversation-online-dot" aria-hidden="true" />
+                          ) : null}
+                        </span>
                       }
                       title={
                         <span className="conversation-title-row">
@@ -1457,7 +1460,8 @@ function conversationPreview(conversation: MobileConversation, t: (key: string) 
   }
 
   const lastMessage = conversation.conversation.lastMessage;
-  return lastMessage ? friendMessageDisplayText(lastMessage, t) : t('mobile.chat.noPreview');
+  if (lastMessage) return friendMessageDisplayText(lastMessage, t);
+  return conversation.conversation.session.lastMessageUlid ? t('mobile.chat.latestMessage') : t('mobile.chat.noPreview');
 }
 
 function conversationUpdatedAt(conversation: MobileConversation): number {
