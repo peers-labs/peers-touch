@@ -64,6 +64,7 @@
   "mobile.auth.selectStation": "Please select a Station first",
   "mobile.auth.login": "Log in",
   "mobile.auth.password": "Password",
+  "mobile.auth.recentAccounts": "Recent accounts",
   "mobile.auth.subtitle": "Log in before entering this Station",
   "mobile.auth.title": "Log In to Station",
 
@@ -179,6 +180,7 @@
   "mobile.chat.noMessageResults": "No matching messages",
   "mobile.chat.recalledMessage": "Message recalled",
   "mobile.chat.noPreview": "No messages yet",
+  "mobile.chat.latestMessage": "Latest message",
   "mobile.chat.emptyThread": "No messages yet",
   "mobile.chat.messagePlaceholder": "Type a message",
   "mobile.chat.composerEmoji": "Emoji",

@@ -52,6 +52,7 @@ export interface FriendChatSession {
   participantBAvatar: string;
   participantAOnline: boolean;
   participantBOnline: boolean;
+  lastMessage?: FriendChatMessage;
 }
 
 export interface FriendChatMessage {

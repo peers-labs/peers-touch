@@ -64,6 +64,7 @@
   "mobile.auth.selectStation": "请先选择 Station",
   "mobile.auth.login": "登录",
   "mobile.auth.password": "密码",
+  "mobile.auth.recentAccounts": "最近登录账号",
   "mobile.auth.subtitle": "登录后进入当前 Station",
   "mobile.auth.title": "登录 Station",
 
@@ -179,6 +180,7 @@
   "mobile.chat.noMessageResults": "没有匹配的消息",
   "mobile.chat.recalledMessage": "消息已撤回",
   "mobile.chat.noPreview": "暂无消息",
+  "mobile.chat.latestMessage": "最新消息",
   "mobile.chat.emptyThread": "还没有消息",
   "mobile.chat.messagePlaceholder": "输入消息",
   "mobile.chat.composerEmoji": "表情",
