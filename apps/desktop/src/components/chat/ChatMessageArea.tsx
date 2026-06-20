@@ -187,12 +187,10 @@ export function ChatMessageArea() {
   // station, separate from whether our P2P channel happens to be up.
   const activePeerDid = activeTab === 'friend' ? activeFriendPeer?.did || null : null;
 
-  // Peer-presence indicator. Truth source: Station's
-  // `/friend-chat/presence/stream` SSE, mirrored into `peerOnline` by
-  // `services/peerPresence.ts`. The seed comes from the
-  // `participant_*_online` snapshot embedded in the sessions list.
+  // Peer-presence indicator. Truth source: Station's PresenceFlip
+  // events carried by the unified `/events/stream` runtime.
   //
-  // Unknown (peer DID never seen by the SSE or the snapshot) renders
+  // Unknown (peer DID never seen by the realtime stream) renders
   // *no* indicator rather than a grey dot — a grey dot would be hard
   // to distinguish from "offline" at a glance, and "we don't know yet"
   // is a real third state.

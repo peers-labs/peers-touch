@@ -474,7 +474,7 @@ type timelineItem struct {
 
 func (i timelineItem) deliveryAudienceKind() model.Audience_Kind {
 	if i.delivery != nil {
-		return i.delivery.AudienceKind
+		return parseDeliveryAudienceKind(i.delivery.AudienceKind)
 	}
 	if i.post != nil {
 		if i.post.Audience != nil {
@@ -484,6 +484,16 @@ func (i timelineItem) deliveryAudienceKind() model.Audience_Kind {
 	}
 	if i.wire != nil && i.wire.GetAudience() != nil {
 		return i.wire.GetAudience().GetKind()
+	}
+	return model.Audience_KIND_UNSPECIFIED
+}
+
+func parseDeliveryAudienceKind(kind string) model.Audience_Kind {
+	if kind == "" {
+		return model.Audience_KIND_UNSPECIFIED
+	}
+	if value, ok := model.Audience_Kind_value[kind]; ok {
+		return model.Audience_Kind(value)
 	}
 	return model.Audience_KIND_UNSPECIFIED
 }

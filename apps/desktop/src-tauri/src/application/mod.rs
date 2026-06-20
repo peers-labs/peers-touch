@@ -23,7 +23,6 @@ pub mod notebook;
 pub mod oauth2;
 pub mod oss;
 pub mod presence;
-pub mod presence_stream;
 pub mod profile;
 pub mod provider;
 pub mod search;

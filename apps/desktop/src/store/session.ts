@@ -86,16 +86,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   logout: async () => {
     markLocalIdentityAction();
-    // Stop the peer-presence SSE supervisor before tearing down auth state,
-    // otherwise the Rust thread would keep retrying with a stale token in
-    // an exponential-backoff loop until process exit. Best-effort: a
-    // failure here just leaves the supervisor running, which is annoying
-    // but not user-facing.
-    try {
-      await api.friendChatPresenceStop();
-    } catch {
-      // noop
-    }
     try {
       await api.realtimeStreamStop();
     } catch {

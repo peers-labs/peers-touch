@@ -1,5 +1,3 @@
-import { seedChatPresenceFromParticipants } from '@peers-touch/client-chat-core';
-
 import type { FriendChatSession } from '../gen/proto/domain/chat/friend_chat_pb';
 
 export interface FriendRequestData {
@@ -29,8 +27,6 @@ export function normalizeFriendChatSession(raw: unknown): FriendChatSession {
     participantAAvatar: stringValue(session.participantAAvatar, record.participant_a_avatar),
     participantBDisplayName: stringValue(session.participantBDisplayName, record.participant_b_display_name),
     participantBAvatar: stringValue(session.participantBAvatar, record.participant_b_avatar),
-    participantAOnline: booleanValue(session.participantAOnline, record.participant_a_online),
-    participantBOnline: booleanValue(session.participantBOnline, record.participant_b_online),
   };
 }
 
@@ -56,13 +52,6 @@ export function normalizeFriendRequestData(raw: unknown): FriendRequestData {
   };
 }
 
-export function seedPresenceFromSessions(sessions: FriendChatSession[]): Record<string, boolean> {
-  return seedChatPresenceFromParticipants(sessions, (session) => [
-    { actorId: session.participantADid, online: session.participantAOnline },
-    { actorId: session.participantBDid, online: session.participantBOnline },
-  ]);
-}
-
 function recordFromUnknown(value: unknown): RawRecord {
   return value && typeof value === 'object' ? value as RawRecord : {};
 }
@@ -83,15 +72,4 @@ function numberValue(value: unknown): number {
     return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
-}
-
-function booleanValue(...values: unknown[]): boolean {
-  for (const value of values) {
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'number') return value !== 0;
-    if (typeof value === 'string' && value.trim()) {
-      return value === 'true' || value === '1';
-    }
-  }
-  return false;
 }
