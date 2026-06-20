@@ -144,13 +144,13 @@ public final class FriendChat {
             }
           };
 
-    public static com.google.protobuf.Internal.EnumVerifier 
+    public static com.google.protobuf.Internal.EnumVerifier
         internalGetVerifier() {
       return FriendMessageTypeVerifier.INSTANCE;
     }
 
-    private static final class FriendMessageTypeVerifier implements 
-         com.google.protobuf.Internal.EnumVerifier { 
+    private static final class FriendMessageTypeVerifier implements
+         com.google.protobuf.Internal.EnumVerifier {
             static final com.google.protobuf.Internal.EnumVerifier
                 INSTANCE = new FriendMessageTypeVerifier();
             @java.lang.Override
@@ -270,13 +270,13 @@ public final class FriendChat {
             }
           };
 
-    public static com.google.protobuf.Internal.EnumVerifier 
+    public static com.google.protobuf.Internal.EnumVerifier
         internalGetVerifier() {
       return FriendMessageStatusVerifier.INSTANCE;
     }
 
-    private static final class FriendMessageStatusVerifier implements 
-         com.google.protobuf.Internal.EnumVerifier { 
+    private static final class FriendMessageStatusVerifier implements
+         com.google.protobuf.Internal.EnumVerifier {
             static final com.google.protobuf.Internal.EnumVerifier
                 INSTANCE = new FriendMessageStatusVerifier();
             @java.lang.Override
@@ -378,13 +378,13 @@ public final class FriendChat {
             }
           };
 
-    public static com.google.protobuf.Internal.EnumVerifier 
+    public static com.google.protobuf.Internal.EnumVerifier
         internalGetVerifier() {
       return OfflineMessageStatusVerifier.INSTANCE;
     }
 
-    private static final class OfflineMessageStatusVerifier implements 
-         com.google.protobuf.Internal.EnumVerifier { 
+    private static final class OfflineMessageStatusVerifier implements
+         com.google.protobuf.Internal.EnumVerifier {
             static final com.google.protobuf.Internal.EnumVerifier
                 INSTANCE = new OfflineMessageStatusVerifier();
             @java.lang.Override
@@ -554,24 +554,6 @@ public final class FriendChat {
      */
     com.google.protobuf.ByteString
         getParticipantBAvatarBytes();
-
-    /**
-     * <pre>
-     * Initial presence snapshot for each participant. Populated by the
-     * session list endpoint from the in-memory online map; clients should
-     * subscribe to /friend-chat/presence/stream (SSE) for live updates.
-     * </pre>
-     *
-     * <code>bool participant_a_online = 14;</code>
-     * @return The participantAOnline.
-     */
-    boolean getParticipantAOnline();
-
-    /**
-     * <code>bool participant_b_online = 15;</code>
-     * @return The participantBOnline.
-     */
-    boolean getParticipantBOnline();
   }
   /**
    * Protobuf type {@code peers_touch.model.chat.v1.FriendChatSession}
@@ -847,7 +829,7 @@ public final class FriendChat {
      * @param value The unreadCountA to set.
      */
     private void setUnreadCountA(int value) {
-      
+
       unreadCountA_ = value;
     }
     /**
@@ -873,7 +855,7 @@ public final class FriendChat {
      * @param value The unreadCountB to set.
      */
     private void setUnreadCountB(int value) {
-      
+
       unreadCountB_ = value;
     }
     /**
@@ -1190,76 +1172,6 @@ public final class FriendChat {
       checkByteStringIsUtf8(value);
       participantBAvatar_ = value.toStringUtf8();
 
-    }
-
-    public static final int PARTICIPANT_A_ONLINE_FIELD_NUMBER = 14;
-    private boolean participantAOnline_;
-    /**
-     * <pre>
-     * Initial presence snapshot for each participant. Populated by the
-     * session list endpoint from the in-memory online map; clients should
-     * subscribe to /friend-chat/presence/stream (SSE) for live updates.
-     * </pre>
-     *
-     * <code>bool participant_a_online = 14;</code>
-     * @return The participantAOnline.
-     */
-    @java.lang.Override
-    public boolean getParticipantAOnline() {
-      return participantAOnline_;
-    }
-    /**
-     * <pre>
-     * Initial presence snapshot for each participant. Populated by the
-     * session list endpoint from the in-memory online map; clients should
-     * subscribe to /friend-chat/presence/stream (SSE) for live updates.
-     * </pre>
-     *
-     * <code>bool participant_a_online = 14;</code>
-     * @param value The participantAOnline to set.
-     */
-    private void setParticipantAOnline(boolean value) {
-      
-      participantAOnline_ = value;
-    }
-    /**
-     * <pre>
-     * Initial presence snapshot for each participant. Populated by the
-     * session list endpoint from the in-memory online map; clients should
-     * subscribe to /friend-chat/presence/stream (SSE) for live updates.
-     * </pre>
-     *
-     * <code>bool participant_a_online = 14;</code>
-     */
-    private void clearParticipantAOnline() {
-
-      participantAOnline_ = false;
-    }
-
-    public static final int PARTICIPANT_B_ONLINE_FIELD_NUMBER = 15;
-    private boolean participantBOnline_;
-    /**
-     * <code>bool participant_b_online = 15;</code>
-     * @return The participantBOnline.
-     */
-    @java.lang.Override
-    public boolean getParticipantBOnline() {
-      return participantBOnline_;
-    }
-    /**
-     * <code>bool participant_b_online = 15;</code>
-     * @param value The participantBOnline to set.
-     */
-    private void setParticipantBOnline(boolean value) {
-      
-      participantBOnline_ = value;
-    }
-    /**
-     * <code>bool participant_b_online = 15;</code>
-     */
-    private void clearParticipantBOnline() {
-
-      participantBOnline_ = false;
     }
 
     public static peers_touch.model.chat.v1.FriendChat.FriendChatSession parseFrom(
@@ -1968,80 +1880,6 @@ public final class FriendChat {
         return this;
       }
 
-      /**
-       * <pre>
-       * Initial presence snapshot for each participant. Populated by the
-       * session list endpoint from the in-memory online map; clients should
-       * subscribe to /friend-chat/presence/stream (SSE) for live updates.
-       * </pre>
-       *
-       * <code>bool participant_a_online = 14;</code>
-       * @return The participantAOnline.
-       */
-      @java.lang.Override
-      public boolean getParticipantAOnline() {
-        return instance.getParticipantAOnline();
-      }
-      /**
-       * <pre>
-       * Initial presence snapshot for each participant. Populated by the
-       * session list endpoint from the in-memory online map; clients should
-       * subscribe to /friend-chat/presence/stream (SSE) for live updates.
-       * </pre>
-       *
-       * <code>bool participant_a_online = 14;</code>
-       * @param value The participantAOnline to set.
-       * @return This builder for chaining.
-       */
-      public Builder setParticipantAOnline(boolean value) {
-        copyOnWrite();
-        instance.setParticipantAOnline(value);
-        return this;
-      }
-      /**
-       * <pre>
-       * Initial presence snapshot for each participant. Populated by the
-       * session list endpoint from the in-memory online map; clients should
-       * subscribe to /friend-chat/presence/stream (SSE) for live updates.
-       * </pre>
-       *
-       * <code>bool participant_a_online = 14;</code>
-       * @return This builder for chaining.
-       */
-      public Builder clearParticipantAOnline() {
-        copyOnWrite();
-        instance.clearParticipantAOnline();
-        return this;
-      }
-
-      /**
-       * <code>bool participant_b_online = 15;</code>
-       * @return The participantBOnline.
-       */
-      @java.lang.Override
-      public boolean getParticipantBOnline() {
-        return instance.getParticipantBOnline();
-      }
-      /**
-       * <code>bool participant_b_online = 15;</code>
-       * @param value The participantBOnline to set.
-       * @return This builder for chaining.
-       */
-      public Builder setParticipantBOnline(boolean value) {
-        copyOnWrite();
-        instance.setParticipantBOnline(value);
-        return this;
-      }
-      /**
-       * <code>bool participant_b_online = 15;</code>
-       * @return This builder for chaining.
-       */
-      public Builder clearParticipantBOnline() {
-        copyOnWrite();
-        instance.clearParticipantBOnline();
-        return this;
-      }
-
       // @@protoc_insertion_point(builder_scope:peers_touch.model.chat.v1.FriendChatSession)
     }
     @java.lang.Override
@@ -2072,13 +1910,11 @@ public final class FriendChat {
               "participantAAvatar_",
               "participantBDisplayName_",
               "participantBAvatar_",
-              "participantAOnline_",
-              "participantBOnline_",
             };
             java.lang.String info =
-                "\u0000\u000f\u0000\u0001\u0001\u000f\u000f\u0000\u0000\u0000\u0001\u0208\u0002\u0208" +
-                "\u0003\u0208\u0004\u0208\u0005\u1009\u0000\u0006\u0004\u0007\u0004\b\u1009\u0001" +
-                "\t\u1009\u0002\n\u0208\u000b\u0208\f\u0208\r\u0208\u000e\u0007\u000f\u0007";
+                "\u0000\r\u0000\u0001\u0001\r\r\u0000\u0000\u0000\u0001\u0208\u0002\u0208\u0003\u0208" +
+                "\u0004\u0208\u0005\u1009\u0000\u0006\u0004\u0007\u0004\b\u1009\u0001\t\u1009\u0002" +
+                "\n\u0208\u000b\u0208\f\u0208\r\u0208";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {
@@ -2211,7 +2047,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendMessageAttachment attachments = 7;</code>
      */
-    java.util.List<peers_touch.model.chat.v1.FriendChat.FriendMessageAttachment> 
+    java.util.List<peers_touch.model.chat.v1.FriendChat.FriendMessageAttachment>
         getAttachmentsList();
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendMessageAttachment attachments = 7;</code>
@@ -2676,7 +2512,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendMessageAttachment attachments = 7;</code>
      */
-    public java.util.List<? extends peers_touch.model.chat.v1.FriendChat.FriendMessageAttachmentOrBuilder> 
+    public java.util.List<? extends peers_touch.model.chat.v1.FriendChat.FriendMessageAttachmentOrBuilder>
         getAttachmentsOrBuilderList() {
       return attachments_;
     }
@@ -3194,7 +3030,7 @@ public final class FriendChat {
      */
     private void setEncryptedPayload(com.google.protobuf.ByteString value) {
       java.lang.Class<?> valueClass = value.getClass();
-  
+
       encryptedPayload_ = value;
     }
     /**
@@ -3244,7 +3080,7 @@ public final class FriendChat {
      * @param value The recalled to set.
      */
     private void setRecalled(boolean value) {
-      
+
       recalled_ = value;
     }
     /**
@@ -4733,7 +4569,7 @@ public final class FriendChat {
      * @param value The size to set.
      */
     private void setSize(long value) {
-      
+
       size_ = value;
     }
     /**
@@ -5797,7 +5633,7 @@ public final class FriendChat {
      */
     private void setEncryptedPayload(com.google.protobuf.ByteString value) {
       java.lang.Class<?> valueClass = value.getClass();
-  
+
       encryptedPayload_ = value;
     }
     /**
@@ -5823,7 +5659,7 @@ public final class FriendChat {
      * @param value The timestamp to set.
      */
     private void setTimestamp(long value) {
-      
+
       timestamp_ = value;
     }
     /**
@@ -6698,7 +6534,7 @@ public final class FriendChat {
      */
     private void setEncryptedPayload(com.google.protobuf.ByteString value) {
       java.lang.Class<?> valueClass = value.getClass();
-  
+
       encryptedPayload_ = value;
     }
     /**
@@ -7640,7 +7476,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendMessageAttachment attachments = 5;</code>
      */
-    java.util.List<peers_touch.model.chat.v1.FriendChat.FriendMessageAttachment> 
+    java.util.List<peers_touch.model.chat.v1.FriendChat.FriendMessageAttachment>
         getAttachmentsList();
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendMessageAttachment attachments = 5;</code>
@@ -7930,7 +7766,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendMessageAttachment attachments = 5;</code>
      */
-    public java.util.List<? extends peers_touch.model.chat.v1.FriendChat.FriendMessageAttachmentOrBuilder> 
+    public java.util.List<? extends peers_touch.model.chat.v1.FriendChat.FriendMessageAttachmentOrBuilder>
         getAttachmentsOrBuilderList() {
       return attachments_;
     }
@@ -8079,7 +7915,7 @@ public final class FriendChat {
      */
     private void setEncryptedPayload(com.google.protobuf.ByteString value) {
       java.lang.Class<?> valueClass = value.getClass();
-  
+
       encryptedPayload_ = value;
     }
     /**
@@ -9500,7 +9336,7 @@ public final class FriendChat {
      * @param value The limit to set.
      */
     private void setLimit(int value) {
-      
+
       limit_ = value;
     }
     /**
@@ -9818,7 +9654,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendChatMessage messages = 1;</code>
      */
-    java.util.List<peers_touch.model.chat.v1.FriendChat.FriendChatMessage> 
+    java.util.List<peers_touch.model.chat.v1.FriendChat.FriendChatMessage>
         getMessagesList();
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendChatMessage messages = 1;</code>
@@ -9871,7 +9707,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendChatMessage messages = 1;</code>
      */
-    public java.util.List<? extends peers_touch.model.chat.v1.FriendChat.FriendChatMessageOrBuilder> 
+    public java.util.List<? extends peers_touch.model.chat.v1.FriendChat.FriendChatMessageOrBuilder>
         getMessagesOrBuilderList() {
       return messages_;
     }
@@ -9971,7 +9807,7 @@ public final class FriendChat {
      * @param value The hasMore to set.
      */
     private void setHasMore(boolean value) {
-      
+
       hasMore_ = value;
     }
     /**
@@ -10547,7 +10383,7 @@ public final class FriendChat {
      * @param value The limit to set.
      */
     private void setLimit(int value) {
-      
+
       limit_ = value;
     }
     /**
@@ -10573,7 +10409,7 @@ public final class FriendChat {
      * @param value The offset to set.
      */
     private void setOffset(int value) {
-      
+
       offset_ = value;
     }
     /**
@@ -10920,7 +10756,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendChatMessage messages = 1;</code>
      */
-    java.util.List<peers_touch.model.chat.v1.FriendChat.FriendChatMessage> 
+    java.util.List<peers_touch.model.chat.v1.FriendChat.FriendChatMessage>
         getMessagesList();
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendChatMessage messages = 1;</code>
@@ -10960,7 +10796,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendChatMessage messages = 1;</code>
      */
-    public java.util.List<? extends peers_touch.model.chat.v1.FriendChat.FriendChatMessageOrBuilder> 
+    public java.util.List<? extends peers_touch.model.chat.v1.FriendChat.FriendChatMessageOrBuilder>
         getMessagesOrBuilderList() {
       return messages_;
     }
@@ -11060,7 +10896,7 @@ public final class FriendChat {
      * @param value The total to set.
      */
     private void setTotal(int value) {
-      
+
       total_ = value;
     }
     /**
@@ -11765,7 +11601,7 @@ public final class FriendChat {
      * @param value The created to set.
      */
     private void setCreated(boolean value) {
-      
+
       created_ = value;
     }
     /**
@@ -12066,7 +11902,7 @@ public final class FriendChat {
      * @param value The limit to set.
      */
     private void setLimit(int value) {
-      
+
       limit_ = value;
     }
     /**
@@ -12092,7 +11928,7 @@ public final class FriendChat {
      * @param value The offset to set.
      */
     private void setOffset(int value) {
-      
+
       offset_ = value;
     }
     /**
@@ -12339,7 +12175,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendChatSession sessions = 1;</code>
      */
-    java.util.List<peers_touch.model.chat.v1.FriendChat.FriendChatSession> 
+    java.util.List<peers_touch.model.chat.v1.FriendChat.FriendChatSession>
         getSessionsList();
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendChatSession sessions = 1;</code>
@@ -12379,7 +12215,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendChatSession sessions = 1;</code>
      */
-    public java.util.List<? extends peers_touch.model.chat.v1.FriendChat.FriendChatSessionOrBuilder> 
+    public java.util.List<? extends peers_touch.model.chat.v1.FriendChat.FriendChatSessionOrBuilder>
         getSessionsOrBuilderList() {
       return sessions_;
     }
@@ -12479,7 +12315,7 @@ public final class FriendChat {
      * @param value The total to set.
      */
     private void setTotal(int value) {
-      
+
       total_ = value;
     }
     /**
@@ -12921,7 +12757,7 @@ public final class FriendChat {
      * @param value The isMuted to set.
      */
     private void setIsMuted(boolean value) {
-      
+
       isMuted_ = value;
     }
     /**
@@ -12947,7 +12783,7 @@ public final class FriendChat {
      * @param value The isPinned to set.
      */
     private void setIsPinned(boolean value) {
-      
+
       isPinned_ = value;
     }
     /**
@@ -12973,7 +12809,7 @@ public final class FriendChat {
      * @param value The alertEnabled to set.
      */
     private void setAlertEnabled(boolean value) {
-      
+
       alertEnabled_ = value;
     }
     /**
@@ -13047,7 +12883,7 @@ public final class FriendChat {
      * @param value The clearedAtUnixMs to set.
      */
     private void setClearedAtUnixMs(long value) {
-      
+
       clearedAtUnixMs_ = value;
     }
     /**
@@ -15526,7 +15362,7 @@ public final class FriendChat {
      * @param value The unreadCount to set.
      */
     private void setUnreadCount(int value) {
-      
+
       unreadCount_ = value;
     }
     /**
@@ -16632,7 +16468,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendMessageAttachment attachments = 8;</code>
      */
-    java.util.List<peers_touch.model.chat.v1.FriendChat.FriendMessageAttachment> 
+    java.util.List<peers_touch.model.chat.v1.FriendChat.FriendMessageAttachment>
         getAttachmentsList();
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendMessageAttachment attachments = 8;</code>
@@ -16997,7 +16833,7 @@ public final class FriendChat {
      */
     private void setEncryptedPayload(com.google.protobuf.ByteString value) {
       java.lang.Class<?> valueClass = value.getClass();
-  
+
       encryptedPayload_ = value;
     }
     /**
@@ -17024,7 +16860,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendMessageAttachment attachments = 8;</code>
      */
-    public java.util.List<? extends peers_touch.model.chat.v1.FriendChat.FriendMessageAttachmentOrBuilder> 
+    public java.util.List<? extends peers_touch.model.chat.v1.FriendChat.FriendMessageAttachmentOrBuilder>
         getAttachmentsOrBuilderList() {
       return attachments_;
     }
@@ -17929,7 +17765,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.SyncMessageItem messages = 1;</code>
      */
-    java.util.List<peers_touch.model.chat.v1.FriendChat.SyncMessageItem> 
+    java.util.List<peers_touch.model.chat.v1.FriendChat.SyncMessageItem>
         getMessagesList();
     /**
      * <code>repeated .peers_touch.model.chat.v1.SyncMessageItem messages = 1;</code>
@@ -17963,7 +17799,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.SyncMessageItem messages = 1;</code>
      */
-    public java.util.List<? extends peers_touch.model.chat.v1.FriendChat.SyncMessageItemOrBuilder> 
+    public java.util.List<? extends peers_touch.model.chat.v1.FriendChat.SyncMessageItemOrBuilder>
         getMessagesOrBuilderList() {
       return messages_;
     }
@@ -18383,7 +18219,7 @@ public final class FriendChat {
      * @param value The synced to set.
      */
     private void setSynced(int value) {
-      
+
       synced_ = value;
     }
     /**
@@ -18942,7 +18778,7 @@ public final class FriendChat {
      * @param value The status to set.
      */
     private void setStatus(int value) {
-      
+
       status_ = value;
     }
     /**
@@ -19441,604 +19277,6 @@ public final class FriendChat {
     }
   }
 
-  public interface OnlineRequestOrBuilder extends
-      // @@protoc_insertion_point(interface_extends:peers_touch.model.chat.v1.OnlineRequest)
-      com.google.protobuf.MessageLiteOrBuilder {
-
-    /**
-     * <code>string did = 1;</code>
-     * @return The did.
-     */
-    java.lang.String getDid();
-    /**
-     * <code>string did = 1;</code>
-     * @return The bytes for did.
-     */
-    com.google.protobuf.ByteString
-        getDidBytes();
-  }
-  /**
-   * <pre>
-   * Online/Offline status
-   * </pre>
-   *
-   * Protobuf type {@code peers_touch.model.chat.v1.OnlineRequest}
-   */
-  public  static final class OnlineRequest extends
-      com.google.protobuf.GeneratedMessageLite<
-          OnlineRequest, OnlineRequest.Builder> implements
-      // @@protoc_insertion_point(message_implements:peers_touch.model.chat.v1.OnlineRequest)
-      OnlineRequestOrBuilder {
-    private OnlineRequest() {
-      did_ = "";
-    }
-    public static final int DID_FIELD_NUMBER = 1;
-    private java.lang.String did_;
-    /**
-     * <code>string did = 1;</code>
-     * @return The did.
-     */
-    @java.lang.Override
-    public java.lang.String getDid() {
-      return did_;
-    }
-    /**
-     * <code>string did = 1;</code>
-     * @return The bytes for did.
-     */
-    @java.lang.Override
-    public com.google.protobuf.ByteString
-        getDidBytes() {
-      return com.google.protobuf.ByteString.copyFromUtf8(did_);
-    }
-    /**
-     * <code>string did = 1;</code>
-     * @param value The did to set.
-     */
-    @java.lang.SuppressWarnings("ReturnValueIgnored")
-    private void setDid(
-        java.lang.String value) {
-      value.getClass();  // minimal bytecode null check
-
-      did_ = value;
-    }
-    /**
-     * <code>string did = 1;</code>
-     */
-    private void clearDid() {
-
-      did_ = getDefaultInstance().getDid();
-    }
-    /**
-     * <code>string did = 1;</code>
-     * @param value The bytes for did to set.
-     */
-    private void setDidBytes(
-        com.google.protobuf.ByteString value) {
-      checkByteStringIsUtf8(value);
-      did_ = value.toStringUtf8();
-
-    }
-
-    public static peers_touch.model.chat.v1.FriendChat.OnlineRequest parseFrom(
-        java.nio.ByteBuffer data)
-        throws com.google.protobuf.InvalidProtocolBufferException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, data);
-    }
-    public static peers_touch.model.chat.v1.FriendChat.OnlineRequest parseFrom(
-        java.nio.ByteBuffer data,
-        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-        throws com.google.protobuf.InvalidProtocolBufferException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, data, extensionRegistry);
-    }
-    public static peers_touch.model.chat.v1.FriendChat.OnlineRequest parseFrom(
-        com.google.protobuf.ByteString data)
-        throws com.google.protobuf.InvalidProtocolBufferException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, data);
-    }
-    public static peers_touch.model.chat.v1.FriendChat.OnlineRequest parseFrom(
-        com.google.protobuf.ByteString data,
-        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-        throws com.google.protobuf.InvalidProtocolBufferException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, data, extensionRegistry);
-    }
-    public static peers_touch.model.chat.v1.FriendChat.OnlineRequest parseFrom(byte[] data)
-        throws com.google.protobuf.InvalidProtocolBufferException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, data);
-    }
-    public static peers_touch.model.chat.v1.FriendChat.OnlineRequest parseFrom(
-        byte[] data,
-        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-        throws com.google.protobuf.InvalidProtocolBufferException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, data, extensionRegistry);
-    }
-    public static peers_touch.model.chat.v1.FriendChat.OnlineRequest parseFrom(java.io.InputStream input)
-        throws java.io.IOException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, input);
-    }
-    public static peers_touch.model.chat.v1.FriendChat.OnlineRequest parseFrom(
-        java.io.InputStream input,
-        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-        throws java.io.IOException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, input, extensionRegistry);
-    }
-
-    public static peers_touch.model.chat.v1.FriendChat.OnlineRequest parseDelimitedFrom(java.io.InputStream input)
-        throws java.io.IOException {
-      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
-    }
-
-    public static peers_touch.model.chat.v1.FriendChat.OnlineRequest parseDelimitedFrom(
-        java.io.InputStream input,
-        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-        throws java.io.IOException {
-      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
-    }
-    public static peers_touch.model.chat.v1.FriendChat.OnlineRequest parseFrom(
-        com.google.protobuf.CodedInputStream input)
-        throws java.io.IOException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, input);
-    }
-    public static peers_touch.model.chat.v1.FriendChat.OnlineRequest parseFrom(
-        com.google.protobuf.CodedInputStream input,
-        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-        throws java.io.IOException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, input, extensionRegistry);
-    }
-
-    public static Builder newBuilder() {
-      return (Builder) DEFAULT_INSTANCE.createBuilder();
-    }
-    public static Builder newBuilder(peers_touch.model.chat.v1.FriendChat.OnlineRequest prototype) {
-      return DEFAULT_INSTANCE.createBuilder(prototype);
-    }
-
-    /**
-     * <pre>
-     * Online/Offline status
-     * </pre>
-     *
-     * Protobuf type {@code peers_touch.model.chat.v1.OnlineRequest}
-     */
-    public static final class Builder extends
-        com.google.protobuf.GeneratedMessageLite.Builder<
-          peers_touch.model.chat.v1.FriendChat.OnlineRequest, Builder> implements
-        // @@protoc_insertion_point(builder_implements:peers_touch.model.chat.v1.OnlineRequest)
-        peers_touch.model.chat.v1.FriendChat.OnlineRequestOrBuilder {
-      // Construct using peers_touch.model.chat.v1.FriendChat.OnlineRequest.newBuilder()
-      private Builder() {
-        super(DEFAULT_INSTANCE);
-      }
-
-
-      /**
-       * <code>string did = 1;</code>
-       * @return The did.
-       */
-      @java.lang.Override
-      public java.lang.String getDid() {
-        return instance.getDid();
-      }
-      /**
-       * <code>string did = 1;</code>
-       * @return The bytes for did.
-       */
-      @java.lang.Override
-      public com.google.protobuf.ByteString
-          getDidBytes() {
-        return instance.getDidBytes();
-      }
-      /**
-       * <code>string did = 1;</code>
-       * @param value The did to set.
-       * @return This builder for chaining.
-       */
-      public Builder setDid(
-          java.lang.String value) {
-        copyOnWrite();
-        instance.setDid(value);
-        return this;
-      }
-      /**
-       * <code>string did = 1;</code>
-       * @return This builder for chaining.
-       */
-      public Builder clearDid() {
-        copyOnWrite();
-        instance.clearDid();
-        return this;
-      }
-      /**
-       * <code>string did = 1;</code>
-       * @param value The bytes for did to set.
-       * @return This builder for chaining.
-       */
-      public Builder setDidBytes(
-          com.google.protobuf.ByteString value) {
-        copyOnWrite();
-        instance.setDidBytes(value);
-        return this;
-      }
-
-      // @@protoc_insertion_point(builder_scope:peers_touch.model.chat.v1.OnlineRequest)
-    }
-    @java.lang.Override
-    @java.lang.SuppressWarnings({"ThrowNull"})
-    protected final java.lang.Object dynamicMethod(
-        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
-        java.lang.Object arg0, java.lang.Object arg1) {
-      switch (method) {
-        case NEW_MUTABLE_INSTANCE: {
-          return new peers_touch.model.chat.v1.FriendChat.OnlineRequest();
-        }
-        case NEW_BUILDER: {
-          return new Builder();
-        }
-        case BUILD_MESSAGE_INFO: {
-            java.lang.Object[] objects = new java.lang.Object[] {
-              "did_",
-            };
-            java.lang.String info =
-                "\u0000\u0001\u0000\u0000\u0001\u0001\u0001\u0000\u0000\u0000\u0001\u0208";
-            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
-        }
-        case GET_DEFAULT_INSTANCE: {
-          return DEFAULT_INSTANCE;
-        }
-        case GET_PARSER: {
-          com.google.protobuf.Parser<peers_touch.model.chat.v1.FriendChat.OnlineRequest> parser = PARSER;
-          if (parser == null) {
-            synchronized (peers_touch.model.chat.v1.FriendChat.OnlineRequest.class) {
-              parser = PARSER;
-              if (parser == null) {
-                parser =
-                    new DefaultInstanceBasedParser<peers_touch.model.chat.v1.FriendChat.OnlineRequest>(
-                        DEFAULT_INSTANCE);
-                PARSER = parser;
-              }
-            }
-          }
-          return parser;
-        }
-        case GET_MEMOIZED_IS_INITIALIZED: {
-          return (byte) 1;
-        }
-        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
-        // So it can do anything. Combine with default case for smaller codegen.
-        case SET_MEMOIZED_IS_INITIALIZED:
-      }
-      // Should never happen. Generates tight code to throw an exception.
-      throw null;
-    }
-
-
-    // @@protoc_insertion_point(class_scope:peers_touch.model.chat.v1.OnlineRequest)
-    private static final peers_touch.model.chat.v1.FriendChat.OnlineRequest DEFAULT_INSTANCE;
-    static {
-      OnlineRequest defaultInstance = new OnlineRequest();
-      // New instances are implicitly immutable so no need to make
-      // immutable.
-      DEFAULT_INSTANCE = defaultInstance;
-      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
-        OnlineRequest.class, defaultInstance);
-    }
-
-    public static peers_touch.model.chat.v1.FriendChat.OnlineRequest getDefaultInstance() {
-      return DEFAULT_INSTANCE;
-    }
-
-    private static volatile com.google.protobuf.Parser<OnlineRequest> PARSER;
-
-    public static com.google.protobuf.Parser<OnlineRequest> parser() {
-      return DEFAULT_INSTANCE.getParserForType();
-    }
-  }
-
-  public interface OnlineResponseOrBuilder extends
-      // @@protoc_insertion_point(interface_extends:peers_touch.model.chat.v1.OnlineResponse)
-      com.google.protobuf.MessageLiteOrBuilder {
-
-    /**
-     * <code>string status = 1;</code>
-     * @return The status.
-     */
-    java.lang.String getStatus();
-    /**
-     * <code>string status = 1;</code>
-     * @return The bytes for status.
-     */
-    com.google.protobuf.ByteString
-        getStatusBytes();
-  }
-  /**
-   * Protobuf type {@code peers_touch.model.chat.v1.OnlineResponse}
-   */
-  public  static final class OnlineResponse extends
-      com.google.protobuf.GeneratedMessageLite<
-          OnlineResponse, OnlineResponse.Builder> implements
-      // @@protoc_insertion_point(message_implements:peers_touch.model.chat.v1.OnlineResponse)
-      OnlineResponseOrBuilder {
-    private OnlineResponse() {
-      status_ = "";
-    }
-    public static final int STATUS_FIELD_NUMBER = 1;
-    private java.lang.String status_;
-    /**
-     * <code>string status = 1;</code>
-     * @return The status.
-     */
-    @java.lang.Override
-    public java.lang.String getStatus() {
-      return status_;
-    }
-    /**
-     * <code>string status = 1;</code>
-     * @return The bytes for status.
-     */
-    @java.lang.Override
-    public com.google.protobuf.ByteString
-        getStatusBytes() {
-      return com.google.protobuf.ByteString.copyFromUtf8(status_);
-    }
-    /**
-     * <code>string status = 1;</code>
-     * @param value The status to set.
-     */
-    @java.lang.SuppressWarnings("ReturnValueIgnored")
-    private void setStatus(
-        java.lang.String value) {
-      value.getClass();  // minimal bytecode null check
-
-      status_ = value;
-    }
-    /**
-     * <code>string status = 1;</code>
-     */
-    private void clearStatus() {
-
-      status_ = getDefaultInstance().getStatus();
-    }
-    /**
-     * <code>string status = 1;</code>
-     * @param value The bytes for status to set.
-     */
-    private void setStatusBytes(
-        com.google.protobuf.ByteString value) {
-      checkByteStringIsUtf8(value);
-      status_ = value.toStringUtf8();
-
-    }
-
-    public static peers_touch.model.chat.v1.FriendChat.OnlineResponse parseFrom(
-        java.nio.ByteBuffer data)
-        throws com.google.protobuf.InvalidProtocolBufferException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, data);
-    }
-    public static peers_touch.model.chat.v1.FriendChat.OnlineResponse parseFrom(
-        java.nio.ByteBuffer data,
-        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-        throws com.google.protobuf.InvalidProtocolBufferException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, data, extensionRegistry);
-    }
-    public static peers_touch.model.chat.v1.FriendChat.OnlineResponse parseFrom(
-        com.google.protobuf.ByteString data)
-        throws com.google.protobuf.InvalidProtocolBufferException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, data);
-    }
-    public static peers_touch.model.chat.v1.FriendChat.OnlineResponse parseFrom(
-        com.google.protobuf.ByteString data,
-        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-        throws com.google.protobuf.InvalidProtocolBufferException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, data, extensionRegistry);
-    }
-    public static peers_touch.model.chat.v1.FriendChat.OnlineResponse parseFrom(byte[] data)
-        throws com.google.protobuf.InvalidProtocolBufferException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, data);
-    }
-    public static peers_touch.model.chat.v1.FriendChat.OnlineResponse parseFrom(
-        byte[] data,
-        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-        throws com.google.protobuf.InvalidProtocolBufferException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, data, extensionRegistry);
-    }
-    public static peers_touch.model.chat.v1.FriendChat.OnlineResponse parseFrom(java.io.InputStream input)
-        throws java.io.IOException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, input);
-    }
-    public static peers_touch.model.chat.v1.FriendChat.OnlineResponse parseFrom(
-        java.io.InputStream input,
-        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-        throws java.io.IOException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, input, extensionRegistry);
-    }
-
-    public static peers_touch.model.chat.v1.FriendChat.OnlineResponse parseDelimitedFrom(java.io.InputStream input)
-        throws java.io.IOException {
-      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
-    }
-
-    public static peers_touch.model.chat.v1.FriendChat.OnlineResponse parseDelimitedFrom(
-        java.io.InputStream input,
-        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-        throws java.io.IOException {
-      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
-    }
-    public static peers_touch.model.chat.v1.FriendChat.OnlineResponse parseFrom(
-        com.google.protobuf.CodedInputStream input)
-        throws java.io.IOException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, input);
-    }
-    public static peers_touch.model.chat.v1.FriendChat.OnlineResponse parseFrom(
-        com.google.protobuf.CodedInputStream input,
-        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
-        throws java.io.IOException {
-      return com.google.protobuf.GeneratedMessageLite.parseFrom(
-          DEFAULT_INSTANCE, input, extensionRegistry);
-    }
-
-    public static Builder newBuilder() {
-      return (Builder) DEFAULT_INSTANCE.createBuilder();
-    }
-    public static Builder newBuilder(peers_touch.model.chat.v1.FriendChat.OnlineResponse prototype) {
-      return DEFAULT_INSTANCE.createBuilder(prototype);
-    }
-
-    /**
-     * Protobuf type {@code peers_touch.model.chat.v1.OnlineResponse}
-     */
-    public static final class Builder extends
-        com.google.protobuf.GeneratedMessageLite.Builder<
-          peers_touch.model.chat.v1.FriendChat.OnlineResponse, Builder> implements
-        // @@protoc_insertion_point(builder_implements:peers_touch.model.chat.v1.OnlineResponse)
-        peers_touch.model.chat.v1.FriendChat.OnlineResponseOrBuilder {
-      // Construct using peers_touch.model.chat.v1.FriendChat.OnlineResponse.newBuilder()
-      private Builder() {
-        super(DEFAULT_INSTANCE);
-      }
-
-
-      /**
-       * <code>string status = 1;</code>
-       * @return The status.
-       */
-      @java.lang.Override
-      public java.lang.String getStatus() {
-        return instance.getStatus();
-      }
-      /**
-       * <code>string status = 1;</code>
-       * @return The bytes for status.
-       */
-      @java.lang.Override
-      public com.google.protobuf.ByteString
-          getStatusBytes() {
-        return instance.getStatusBytes();
-      }
-      /**
-       * <code>string status = 1;</code>
-       * @param value The status to set.
-       * @return This builder for chaining.
-       */
-      public Builder setStatus(
-          java.lang.String value) {
-        copyOnWrite();
-        instance.setStatus(value);
-        return this;
-      }
-      /**
-       * <code>string status = 1;</code>
-       * @return This builder for chaining.
-       */
-      public Builder clearStatus() {
-        copyOnWrite();
-        instance.clearStatus();
-        return this;
-      }
-      /**
-       * <code>string status = 1;</code>
-       * @param value The bytes for status to set.
-       * @return This builder for chaining.
-       */
-      public Builder setStatusBytes(
-          com.google.protobuf.ByteString value) {
-        copyOnWrite();
-        instance.setStatusBytes(value);
-        return this;
-      }
-
-      // @@protoc_insertion_point(builder_scope:peers_touch.model.chat.v1.OnlineResponse)
-    }
-    @java.lang.Override
-    @java.lang.SuppressWarnings({"ThrowNull"})
-    protected final java.lang.Object dynamicMethod(
-        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
-        java.lang.Object arg0, java.lang.Object arg1) {
-      switch (method) {
-        case NEW_MUTABLE_INSTANCE: {
-          return new peers_touch.model.chat.v1.FriendChat.OnlineResponse();
-        }
-        case NEW_BUILDER: {
-          return new Builder();
-        }
-        case BUILD_MESSAGE_INFO: {
-            java.lang.Object[] objects = new java.lang.Object[] {
-              "status_",
-            };
-            java.lang.String info =
-                "\u0000\u0001\u0000\u0000\u0001\u0001\u0001\u0000\u0000\u0000\u0001\u0208";
-            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
-        }
-        case GET_DEFAULT_INSTANCE: {
-          return DEFAULT_INSTANCE;
-        }
-        case GET_PARSER: {
-          com.google.protobuf.Parser<peers_touch.model.chat.v1.FriendChat.OnlineResponse> parser = PARSER;
-          if (parser == null) {
-            synchronized (peers_touch.model.chat.v1.FriendChat.OnlineResponse.class) {
-              parser = PARSER;
-              if (parser == null) {
-                parser =
-                    new DefaultInstanceBasedParser<peers_touch.model.chat.v1.FriendChat.OnlineResponse>(
-                        DEFAULT_INSTANCE);
-                PARSER = parser;
-              }
-            }
-          }
-          return parser;
-        }
-        case GET_MEMOIZED_IS_INITIALIZED: {
-          return (byte) 1;
-        }
-        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
-        // So it can do anything. Combine with default case for smaller codegen.
-        case SET_MEMOIZED_IS_INITIALIZED:
-      }
-      // Should never happen. Generates tight code to throw an exception.
-      throw null;
-    }
-
-
-    // @@protoc_insertion_point(class_scope:peers_touch.model.chat.v1.OnlineResponse)
-    private static final peers_touch.model.chat.v1.FriendChat.OnlineResponse DEFAULT_INSTANCE;
-    static {
-      OnlineResponse defaultInstance = new OnlineResponse();
-      // New instances are implicitly immutable so no need to make
-      // immutable.
-      DEFAULT_INSTANCE = defaultInstance;
-      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
-        OnlineResponse.class, defaultInstance);
-    }
-
-    public static peers_touch.model.chat.v1.FriendChat.OnlineResponse getDefaultInstance() {
-      return DEFAULT_INSTANCE;
-    }
-
-    private static volatile com.google.protobuf.Parser<OnlineResponse> PARSER;
-
-    public static com.google.protobuf.Parser<OnlineResponse> parser() {
-      return DEFAULT_INSTANCE.getParserForType();
-    }
-  }
-
   public interface GetPendingRequestOrBuilder extends
       // @@protoc_insertion_point(interface_extends:peers_touch.model.chat.v1.GetPendingRequest)
       com.google.protobuf.MessageLiteOrBuilder {
@@ -20078,7 +19316,7 @@ public final class FriendChat {
      * @param value The limit to set.
      */
     private void setLimit(int value) {
-      
+
       limit_ = value;
     }
     /**
@@ -20518,7 +19756,7 @@ public final class FriendChat {
      */
     private void setEncryptedPayload(com.google.protobuf.ByteString value) {
       java.lang.Class<?> valueClass = value.getClass();
-  
+
       encryptedPayload_ = value;
     }
     /**
@@ -20544,7 +19782,7 @@ public final class FriendChat {
      * @param value The createdAt to set.
      */
     private void setCreatedAt(long value) {
-      
+
       createdAt_ = value;
     }
     /**
@@ -20941,7 +20179,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.PendingMessageInfo messages = 1;</code>
      */
-    java.util.List<peers_touch.model.chat.v1.FriendChat.PendingMessageInfo> 
+    java.util.List<peers_touch.model.chat.v1.FriendChat.PendingMessageInfo>
         getMessagesList();
     /**
      * <code>repeated .peers_touch.model.chat.v1.PendingMessageInfo messages = 1;</code>
@@ -20975,7 +20213,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.PendingMessageInfo messages = 1;</code>
      */
-    public java.util.List<? extends peers_touch.model.chat.v1.FriendChat.PendingMessageInfoOrBuilder> 
+    public java.util.List<? extends peers_touch.model.chat.v1.FriendChat.PendingMessageInfoOrBuilder>
         getMessagesOrBuilderList() {
       return messages_;
     }
@@ -21530,24 +20768,18 @@ public final class FriendChat {
       com.google.protobuf.MessageLiteOrBuilder {
 
     /**
-     * <code>int32 online_peers = 1;</code>
-     * @return The onlinePeers.
-     */
-    int getOnlinePeers();
-
-    /**
-     * <code>int64 pending_messages = 2;</code>
+     * <code>int64 pending_messages = 1;</code>
      * @return The pendingMessages.
      */
     long getPendingMessages();
 
     /**
-     * <code>string status = 3;</code>
+     * <code>string status = 2;</code>
      * @return The status.
      */
     java.lang.String getStatus();
     /**
-     * <code>string status = 3;</code>
+     * <code>string status = 2;</code>
      * @return The bytes for status.
      */
     com.google.protobuf.ByteString
@@ -21564,36 +20796,10 @@ public final class FriendChat {
     private GetStatsResponse() {
       status_ = "";
     }
-    public static final int ONLINE_PEERS_FIELD_NUMBER = 1;
-    private int onlinePeers_;
-    /**
-     * <code>int32 online_peers = 1;</code>
-     * @return The onlinePeers.
-     */
-    @java.lang.Override
-    public int getOnlinePeers() {
-      return onlinePeers_;
-    }
-    /**
-     * <code>int32 online_peers = 1;</code>
-     * @param value The onlinePeers to set.
-     */
-    private void setOnlinePeers(int value) {
-      
-      onlinePeers_ = value;
-    }
-    /**
-     * <code>int32 online_peers = 1;</code>
-     */
-    private void clearOnlinePeers() {
-
-      onlinePeers_ = 0;
-    }
-
-    public static final int PENDING_MESSAGES_FIELD_NUMBER = 2;
+    public static final int PENDING_MESSAGES_FIELD_NUMBER = 1;
     private long pendingMessages_;
     /**
-     * <code>int64 pending_messages = 2;</code>
+     * <code>int64 pending_messages = 1;</code>
      * @return The pendingMessages.
      */
     @java.lang.Override
@@ -21601,25 +20807,25 @@ public final class FriendChat {
       return pendingMessages_;
     }
     /**
-     * <code>int64 pending_messages = 2;</code>
+     * <code>int64 pending_messages = 1;</code>
      * @param value The pendingMessages to set.
      */
     private void setPendingMessages(long value) {
-      
+
       pendingMessages_ = value;
     }
     /**
-     * <code>int64 pending_messages = 2;</code>
+     * <code>int64 pending_messages = 1;</code>
      */
     private void clearPendingMessages() {
 
       pendingMessages_ = 0L;
     }
 
-    public static final int STATUS_FIELD_NUMBER = 3;
+    public static final int STATUS_FIELD_NUMBER = 2;
     private java.lang.String status_;
     /**
-     * <code>string status = 3;</code>
+     * <code>string status = 2;</code>
      * @return The status.
      */
     @java.lang.Override
@@ -21627,7 +20833,7 @@ public final class FriendChat {
       return status_;
     }
     /**
-     * <code>string status = 3;</code>
+     * <code>string status = 2;</code>
      * @return The bytes for status.
      */
     @java.lang.Override
@@ -21636,7 +20842,7 @@ public final class FriendChat {
       return com.google.protobuf.ByteString.copyFromUtf8(status_);
     }
     /**
-     * <code>string status = 3;</code>
+     * <code>string status = 2;</code>
      * @param value The status to set.
      */
     @java.lang.SuppressWarnings("ReturnValueIgnored")
@@ -21647,14 +20853,14 @@ public final class FriendChat {
       status_ = value;
     }
     /**
-     * <code>string status = 3;</code>
+     * <code>string status = 2;</code>
      */
     private void clearStatus() {
 
       status_ = getDefaultInstance().getStatus();
     }
     /**
-     * <code>string status = 3;</code>
+     * <code>string status = 2;</code>
      * @param value The bytes for status to set.
      */
     private void setStatusBytes(
@@ -21762,35 +20968,7 @@ public final class FriendChat {
 
 
       /**
-       * <code>int32 online_peers = 1;</code>
-       * @return The onlinePeers.
-       */
-      @java.lang.Override
-      public int getOnlinePeers() {
-        return instance.getOnlinePeers();
-      }
-      /**
-       * <code>int32 online_peers = 1;</code>
-       * @param value The onlinePeers to set.
-       * @return This builder for chaining.
-       */
-      public Builder setOnlinePeers(int value) {
-        copyOnWrite();
-        instance.setOnlinePeers(value);
-        return this;
-      }
-      /**
-       * <code>int32 online_peers = 1;</code>
-       * @return This builder for chaining.
-       */
-      public Builder clearOnlinePeers() {
-        copyOnWrite();
-        instance.clearOnlinePeers();
-        return this;
-      }
-
-      /**
-       * <code>int64 pending_messages = 2;</code>
+       * <code>int64 pending_messages = 1;</code>
        * @return The pendingMessages.
        */
       @java.lang.Override
@@ -21798,7 +20976,7 @@ public final class FriendChat {
         return instance.getPendingMessages();
       }
       /**
-       * <code>int64 pending_messages = 2;</code>
+       * <code>int64 pending_messages = 1;</code>
        * @param value The pendingMessages to set.
        * @return This builder for chaining.
        */
@@ -21808,7 +20986,7 @@ public final class FriendChat {
         return this;
       }
       /**
-       * <code>int64 pending_messages = 2;</code>
+       * <code>int64 pending_messages = 1;</code>
        * @return This builder for chaining.
        */
       public Builder clearPendingMessages() {
@@ -21818,7 +20996,7 @@ public final class FriendChat {
       }
 
       /**
-       * <code>string status = 3;</code>
+       * <code>string status = 2;</code>
        * @return The status.
        */
       @java.lang.Override
@@ -21826,7 +21004,7 @@ public final class FriendChat {
         return instance.getStatus();
       }
       /**
-       * <code>string status = 3;</code>
+       * <code>string status = 2;</code>
        * @return The bytes for status.
        */
       @java.lang.Override
@@ -21835,7 +21013,7 @@ public final class FriendChat {
         return instance.getStatusBytes();
       }
       /**
-       * <code>string status = 3;</code>
+       * <code>string status = 2;</code>
        * @param value The status to set.
        * @return This builder for chaining.
        */
@@ -21846,7 +21024,7 @@ public final class FriendChat {
         return this;
       }
       /**
-       * <code>string status = 3;</code>
+       * <code>string status = 2;</code>
        * @return This builder for chaining.
        */
       public Builder clearStatus() {
@@ -21855,7 +21033,7 @@ public final class FriendChat {
         return this;
       }
       /**
-       * <code>string status = 3;</code>
+       * <code>string status = 2;</code>
        * @param value The bytes for status to set.
        * @return This builder for chaining.
        */
@@ -21882,13 +21060,12 @@ public final class FriendChat {
         }
         case BUILD_MESSAGE_INFO: {
             java.lang.Object[] objects = new java.lang.Object[] {
-              "onlinePeers_",
               "pendingMessages_",
               "status_",
             };
             java.lang.String info =
-                "\u0000\u0003\u0000\u0000\u0001\u0003\u0003\u0000\u0000\u0000\u0001\u0004\u0002\u0002" +
-                "\u0003\u0208";
+                "\u0000\u0002\u0000\u0000\u0001\u0002\u0002\u0000\u0000\u0000\u0001\u0002\u0002\u0208" +
+                "";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {
@@ -24022,7 +23199,7 @@ public final class FriendChat {
      * @param value The limit to set.
      */
     private void setLimit(int value) {
-      
+
       limit_ = value;
     }
     /**
@@ -24048,7 +23225,7 @@ public final class FriendChat {
      * @param value The offset to set.
      */
     private void setOffset(int value) {
-      
+
       offset_ = value;
     }
     /**
@@ -24343,7 +23520,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendRequest requests = 1;</code>
      */
-    java.util.List<peers_touch.model.chat.v1.Chat.FriendRequest> 
+    java.util.List<peers_touch.model.chat.v1.Chat.FriendRequest>
         getRequestsList();
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendRequest requests = 1;</code>
@@ -24383,7 +23560,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.FriendRequest requests = 1;</code>
      */
-    public java.util.List<? extends peers_touch.model.chat.v1.Chat.FriendRequestOrBuilder> 
+    public java.util.List<? extends peers_touch.model.chat.v1.Chat.FriendRequestOrBuilder>
         getRequestsOrBuilderList() {
       return requests_;
     }
@@ -24483,7 +23660,7 @@ public final class FriendChat {
      * @param value The total to set.
      */
     private void setTotal(int value) {
-      
+
       total_ = value;
     }
     /**
@@ -25716,7 +24893,7 @@ public final class FriendChat {
      * @param value The success to set.
      */
     private void setSuccess(boolean value) {
-      
+
       success_ = value;
     }
     /**
@@ -25967,7 +25144,7 @@ public final class FriendChat {
      * @param value The limit to set.
      */
     private void setLimit(int value) {
-      
+
       limit_ = value;
     }
     /**
@@ -25993,7 +25170,7 @@ public final class FriendChat {
      * @param value The offset to set.
      */
     private void setOffset(int value) {
-      
+
       offset_ = value;
     }
     /**
@@ -26240,7 +25417,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.Friend blocked_users = 1;</code>
      */
-    java.util.List<peers_touch.model.chat.v1.Chat.Friend> 
+    java.util.List<peers_touch.model.chat.v1.Chat.Friend>
         getBlockedUsersList();
     /**
      * <code>repeated .peers_touch.model.chat.v1.Friend blocked_users = 1;</code>
@@ -26280,7 +25457,7 @@ public final class FriendChat {
     /**
      * <code>repeated .peers_touch.model.chat.v1.Friend blocked_users = 1;</code>
      */
-    public java.util.List<? extends peers_touch.model.chat.v1.Chat.FriendOrBuilder> 
+    public java.util.List<? extends peers_touch.model.chat.v1.Chat.FriendOrBuilder>
         getBlockedUsersOrBuilderList() {
       return blockedUsers_;
     }
@@ -26380,7 +25557,7 @@ public final class FriendChat {
      * @param value The total to set.
      */
     private void setTotal(int value) {
-      
+
       total_ = value;
     }
     /**
@@ -28170,7 +27347,7 @@ public final class FriendChat {
      */
     private void setNewEncryptedPayload(com.google.protobuf.ByteString value) {
       java.lang.Class<?> valueClass = value.getClass();
-  
+
       newEncryptedPayload_ = value;
     }
     /**
@@ -29427,7 +28604,7 @@ public final class FriendChat {
      */
     private void setCiphertext(com.google.protobuf.ByteString value) {
       java.lang.Class<?> valueClass = value.getClass();
-  
+
       ciphertext_ = value;
     }
     /**
@@ -29453,7 +28630,7 @@ public final class FriendChat {
      * @param value The counter to set.
      */
     private void setCounter(int value) {
-      
+
       counter_ = value;
     }
     /**
@@ -29480,7 +28657,7 @@ public final class FriendChat {
      */
     private void setEphemeralKey(com.google.protobuf.ByteString value) {
       java.lang.Class<?> valueClass = value.getClass();
-  
+
       ephemeralKey_ = value;
     }
     /**
@@ -29507,7 +28684,7 @@ public final class FriendChat {
      */
     private void setRatchetPub(com.google.protobuf.ByteString value) {
       java.lang.Class<?> valueClass = value.getClass();
-  
+
       ratchetPub_ = value;
     }
     /**
@@ -29533,7 +28710,7 @@ public final class FriendChat {
      * @param value The prevCounter to set.
      */
     private void setPrevCounter(int value) {
-      
+
       prevCounter_ = value;
     }
     /**
@@ -29567,7 +28744,7 @@ public final class FriendChat {
      * @param value The version to set.
      */
     private void setVersion(int value) {
-      
+
       version_ = value;
     }
     /**
