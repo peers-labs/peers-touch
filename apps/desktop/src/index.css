@@ -77,45 +77,40 @@ input, textarea, [contenteditable="true"] {
 }
 
 .login-network-shell {
-  display: grid;
-  grid-template-columns: minmax(320px, 480px) minmax(400px, auto);
+  position: relative;
+  display: flex;
   align-items: center;
-  justify-content: center;
-  gap: clamp(32px, 7vw, 96px);
+  justify-content: flex-end;
   width: 100%;
   height: 100%;
-  padding: clamp(28px, 5vw, 72px);
+  padding: clamp(28px, 6vw, 96px);
   overflow: hidden;
   background:
-    radial-gradient(circle at 20% 18%, rgba(102, 126, 234, 0.14), transparent 34%),
-    radial-gradient(circle at 84% 78%, rgba(32, 214, 232, 0.1), transparent 30%),
+    radial-gradient(circle at 22% 20%, rgba(102, 126, 234, 0.12), transparent 42%),
+    radial-gradient(circle at 82% 76%, rgba(32, 214, 232, 0.1), transparent 40%),
     linear-gradient(145deg, #f9fbff, #f3f6ff 58%, #edf2ff);
 }
 
-.login-network-intro {
-  width: min(100%, 440px);
-  justify-self: end;
+.login-network-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
 }
 
 .login-card-region {
+  position: relative;
+  z-index: 1;
   display: flex;
-  justify-content: flex-start;
+  justify-content: flex-end;
   min-width: 0;
 }
 
 .pt-network-intro {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 390 / 548;
-  min-height: 420px;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
-  border: 1px solid rgba(100, 133, 200, 0.16);
-  border-radius: 34px;
-  background:
-    radial-gradient(circle at 74% 28%, rgba(32, 214, 232, 0.16), transparent 28%),
-    radial-gradient(circle at 22% 72%, rgba(83, 125, 255, 0.14), transparent 30%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(245, 248, 255, 0.62));
-  box-shadow: inset 0 0 70px rgba(83, 125, 255, 0.08), 0 24px 80px rgba(39, 61, 105, 0.1);
+  background: transparent;
 }
 
 .pt-network-intro::before {
@@ -123,28 +118,28 @@ input, textarea, [contenteditable="true"] {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(120deg, transparent, rgba(255, 255, 255, 0.75), transparent),
-    linear-gradient(90deg, rgba(83, 125, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(rgba(83, 125, 255, 0.038) 1px, transparent 1px);
-  background-size: 220px 100%, 36px 36px, 36px 36px;
-  opacity: 0.72;
-  animation: pt-network-quiet-sweep 9s ease-in-out infinite;
+    linear-gradient(90deg, rgba(83, 125, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(rgba(83, 125, 255, 0.032) 1px, transparent 1px);
+  background-size: 48px 48px, 48px 48px;
+  opacity: 0.6;
+  mask-image: radial-gradient(circle at 42% 50%, #000 30%, transparent 78%);
+  -webkit-mask-image: radial-gradient(circle at 42% 50%, #000 30%, transparent 78%);
 }
 
 .pt-network-intro__header {
   position: absolute;
-  top: 18px;
-  left: 18px;
+  top: clamp(24px, 4vh, 48px);
+  left: clamp(28px, 4vw, 64px);
   z-index: 3;
   display: flex;
   align-items: center;
-  min-height: 30px;
-  padding: 0 12px;
+  min-height: 32px;
+  padding: 0 14px;
   border: 1px solid rgba(83, 125, 255, 0.16);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.64);
   color: rgba(9, 19, 38, 0.58);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -157,27 +152,32 @@ input, textarea, [contenteditable="true"] {
   z-index: 2;
   width: 100%;
   height: 100%;
-  overflow: visible;
 }
 
 .pt-network-intro__edge {
   fill: none;
   stroke: rgba(72, 104, 160, 0.22);
-  stroke-width: 1.35;
+  stroke-width: 1.6;
   stroke-linecap: round;
   stroke-dasharray: 6 10;
   animation: pt-network-edge-flow 12s linear infinite;
 }
 
 .pt-network-intro__edge--hot {
-  stroke: rgba(62, 199, 225, 0.62);
-  stroke-width: 1.8;
+  stroke: rgba(62, 199, 225, 0.6);
+  stroke-width: 2;
   filter: drop-shadow(0 0 5px rgba(32, 214, 232, 0.36));
 }
 
 .pt-network-intro__data {
   opacity: 0.96;
   filter: drop-shadow(0 0 8px currentColor) drop-shadow(0 8px 14px rgba(58, 87, 145, 0.12));
+}
+
+.pt-network-intro__data-glyph {
+  transform: scale(1.9);
+  transform-box: fill-box;
+  transform-origin: center;
 }
 
 .pt-network-intro__data--blue {
@@ -217,23 +217,23 @@ input, textarea, [contenteditable="true"] {
 }
 
 .pt-network-intro__node-hit {
-  fill: rgba(255, 255, 255, 0.78);
+  fill: rgba(255, 255, 255, 0.82);
   stroke: rgba(83, 125, 255, 0.24);
-  stroke-width: 1.2;
-  filter: drop-shadow(0 12px 22px rgba(58, 87, 145, 0.14));
+  stroke-width: 1.4;
+  filter: drop-shadow(0 14px 26px rgba(58, 87, 145, 0.14));
 }
 
 .pt-network-intro__node-halo {
   fill: none;
   stroke: rgba(83, 125, 255, 0.16);
-  stroke-width: 1.2;
+  stroke-width: 1.4;
   transform-origin: center;
   animation: pt-network-halo 4.2s ease-out infinite;
 }
 
 .pt-network-intro__node-label {
   fill: rgba(9, 19, 38, 0.78);
-  font-size: 11px;
+  font-size: 19px;
   font-weight: 900;
   letter-spacing: 0.055em;
   text-anchor: middle;
@@ -242,9 +242,9 @@ input, textarea, [contenteditable="true"] {
 
 .pt-network-intro__node-sub {
   fill: rgba(9, 19, 38, 0.42);
-  font-size: 8.5px;
+  font-size: 13px;
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-anchor: middle;
   text-transform: uppercase;
 }
@@ -278,11 +278,6 @@ input, textarea, [contenteditable="true"] {
   stroke-width: 1.2;
   transform-origin: center;
   animation: pt-network-swap-flash 6.2s ease-out infinite;
-}
-
-@keyframes pt-network-quiet-sweep {
-  0%, 100% { background-position: -260px 0, 0 0, 0 0; }
-  50% { background-position: 260px 0, 18px 18px, 18px 18px; }
 }
 
 @keyframes pt-network-edge-flow {
@@ -323,24 +318,20 @@ input, textarea, [contenteditable="true"] {
 
 @media (max-width: 980px) {
   .login-network-shell {
-    grid-template-columns: minmax(0, 1fr);
-    align-content: center;
-    gap: 24px;
-    padding: 28px;
-  }
-
-  .login-network-intro {
-    width: min(100%, 400px);
-    justify-self: center;
+    justify-content: center;
+    padding: 24px;
   }
 
   .login-card-region {
     justify-content: center;
   }
 
-  .pt-network-intro {
-    min-height: 260px;
-    max-height: 36vh;
+  .pt-network-intro__node-label {
+    font-size: 22px;
+  }
+
+  .pt-network-intro__node-sub {
+    font-size: 15px;
   }
 }
 

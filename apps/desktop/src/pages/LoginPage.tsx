@@ -769,7 +769,9 @@ export function LoginPage({
     service: t('auth.network.service'),
     station: t('auth.network.station'),
     bob: t('auth.network.bob'),
+    carol: t('auth.network.carol'),
     agent: t('auth.network.agent'),
+    storage: t('auth.network.storage'),
     joining: t('auth.network.joining'),
     yourStation: t('auth.network.yourStation'),
     messageFlow: t('auth.network.messageFlow'),
@@ -1704,7 +1706,7 @@ export function LoginPage({
 
   return (
     <div className="login-network-shell">
-      <div className="login-network-intro">
+      <div className="login-network-backdrop" aria-hidden="true">
         <StationNetworkIntro
           selectedStationName={selectedStationName}
           labels={networkIntroLabels}
