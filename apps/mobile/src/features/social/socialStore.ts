@@ -293,6 +293,22 @@ export const useSocialStore = create<SocialState>((set, get) => ({
         : sessions,
       peerOnline: { ...seedPresenceFromSessions(sessions, state.currentUserDid), ...state.peerOnline },
     }));
+    await Promise.allSettled(sessions.slice(0, 20).map(async (session) => {
+      if ((get().messages[session.ulid] ?? []).length > 0) return;
+      const inlineLastMessage = session.lastMessage ? normalizeMessage(session.lastMessage) : null;
+      const messages = inlineLastMessage
+        ? [inlineLastMessage]
+        : session.lastMessageUlid
+          ? (await api.listMessages(session.ulid, undefined, 1)).messages?.map(normalizeMessage) ?? []
+          : [];
+      if (messages.length === 0) return;
+      const decrypted = await decryptVisibleMessages(get(), session.ulid, messages);
+      if (decrypted.length === 0) return;
+      set((state) => {
+        if ((state.messages[session.ulid] ?? []).length > 0) return state;
+        return { messages: { ...state.messages, [session.ulid]: decrypted } };
+      });
+    }));
   },
 
   refreshBlockedUsers: async () => {

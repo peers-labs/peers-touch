@@ -29,6 +29,14 @@ export interface StationLoginInput {
   password: string;
 }
 
+export interface RememberedLoginAccount {
+  stationUrl: string;
+  email: string;
+  actorId: string;
+  displayName: string;
+  lastUsedAt: number;
+}
+
 export const ACCESS_GATE_TYPE_AUTH_LOGIN = 2;
 export const ACCESS_GATE_TYPE_INVITE_CODE = 5;
 export const ACCESS_DECISION_ACTION_REQUIRED = 2;
@@ -151,6 +159,7 @@ interface RawAccessGate {
 }
 
 const AUTH_SESSION_KEY = 'peers-touch.mobile.auth-session.v1';
+const AUTH_ACCOUNT_HISTORY_KEY = 'peers-touch.mobile.auth-accounts.v1';
 
 // Locale keys used as error identifiers. Callers should translate with t().
 export const AUTH_ERROR_KEYS = {
@@ -356,6 +365,43 @@ export async function clearAuthSession(): Promise<void> {
   await removeSecureStorageValue(AUTH_SESSION_KEY);
 }
 
+export async function loadRememberedLoginAccounts(stationUrl?: string): Promise<RememberedLoginAccount[]> {
+  const raw = await getSecureStorageValue(AUTH_ACCOUNT_HISTORY_KEY);
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<RememberedLoginAccount>[];
+    const normalized = parsed
+      .map(normalizeRememberedAccount)
+      .filter((account): account is RememberedLoginAccount => Boolean(account?.stationUrl && account.email))
+      .sort((a, b) => b.lastUsedAt - a.lastUsedAt);
+    const normalizedStationUrl = stationUrl?.replace(/\/+$/, '');
+    return normalizedStationUrl
+      ? normalized.filter((account) => account.stationUrl === normalizedStationUrl)
+      : normalized;
+  } catch {
+    return [];
+  }
+}
+
+export async function rememberLoginAccount(session: MobileAuthSession, email: string): Promise<void> {
+  const account = normalizeRememberedAccount({
+    stationUrl: session.stationUrl,
+    email,
+    actorId: String(session.actor?.id || session.actor?.actorId || session.actor?.actor_id || ''),
+    displayName: session.actor?.displayName || session.actor?.display_name || session.actor?.username || email,
+    lastUsedAt: Date.now(),
+  });
+  if (!account) return;
+
+  const current = await loadRememberedLoginAccounts();
+  const next = [
+    account,
+    ...current.filter((item) => !(item.stationUrl === account.stationUrl && item.email === account.email)),
+  ].slice(0, 12);
+  await setSecureStorageValue(AUTH_ACCOUNT_HISTORY_KEY, JSON.stringify(next));
+}
+
 async function persistAuthSession(session: MobileAuthSession): Promise<string | undefined> {
   try {
     await setSecureStorageValue(AUTH_SESSION_KEY, JSON.stringify(session));
@@ -365,6 +411,20 @@ async function persistAuthSession(session: MobileAuthSession): Promise<string | 
     if (typeof error === 'string') return error;
     return JSON.stringify(error);
   }
+}
+
+function normalizeRememberedAccount(input: Partial<RememberedLoginAccount> | undefined): RememberedLoginAccount | null {
+  if (!input) return null;
+  const stationUrl = String(input.stationUrl ?? '').replace(/\/+$/, '');
+  const email = String(input.email ?? '').trim();
+  if (!stationUrl || !email) return null;
+  return {
+    stationUrl,
+    email,
+    actorId: String(input.actorId ?? ''),
+    displayName: String(input.displayName ?? email),
+    lastUsedAt: Number(input.lastUsedAt ?? 0),
+  };
 }
 
 export function isAccessGranted(decision: AccessDecision | null): boolean {

@@ -46,7 +46,11 @@ export function projectConversations(input: {
   return input.sessions
     .map((session) => {
       const peerDid = peerDidFromSession(session, input.currentUserDid);
-      const lastMessage = input.messages[session.ulid]?.at(-1);
+      const loadedLastMessage = input.messages[session.ulid]?.at(-1);
+      const sessionLastMessage = session.lastMessage && isVisibleFriendMessage(session.lastMessage)
+        ? session.lastMessage
+        : undefined;
+      const lastMessage = loadedLastMessage ?? sessionLastMessage;
       return {
         session,
         peerDid,

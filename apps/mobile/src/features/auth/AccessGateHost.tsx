@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Card, Input, Typography } from 'antd';
 import { ArrowLeft, KeyRound, LockKeyhole, Server, ShieldAlert } from 'lucide-react';
 
@@ -12,6 +12,7 @@ import {
   isLoginGate,
   parseGateFields,
   type AccessDecision,
+  type RememberedLoginAccount,
   type StationLoginInput,
 } from './authSession';
 
@@ -23,6 +24,7 @@ export function AccessGateHost({
   stationUrl,
   error,
   loading,
+  rememberedAccounts,
   onBack,
   onLogin,
   onInviteCode,
@@ -32,6 +34,7 @@ export function AccessGateHost({
   stationUrl: string;
   error: string | null;
   loading: boolean;
+  rememberedAccounts: RememberedLoginAccount[];
   onBack: () => void;
   onLogin: (input: Omit<StationLoginInput, 'stationUrl'>) => Promise<void>;
   onInviteCode: (code: string) => Promise<void>;
@@ -58,6 +61,11 @@ export function AccessGateHost({
 
   const canLogin = Boolean(showLogin && email.trim() && password);
   const canSubmitInvite = Boolean(showInviteCode && inviteCode.trim());
+
+  useEffect(() => {
+    if (email.trim() || rememberedAccounts.length === 0) return;
+    setEmail(rememberedAccounts[0].email);
+  }, [email, rememberedAccounts]);
 
   async function submitLogin() {
     if (!canLogin || loading || blocked) return;
@@ -131,6 +139,24 @@ export function AccessGateHost({
 
         {showLogin ? (
           <div className="auth-fields">
+            {rememberedAccounts.length > 0 ? (
+              <div className="auth-account-history" aria-label={t('mobile.auth.recentAccounts')}>
+                <Text type="secondary">{t('mobile.auth.recentAccounts')}</Text>
+                <div className="auth-account-list">
+                  {rememberedAccounts.map((account) => (
+                    <button
+                      key={`${account.stationUrl}:${account.email}`}
+                      type="button"
+                      className={`auth-account-chip ${account.email === email ? 'active' : ''}`}
+                      onClick={() => setEmail(account.email)}
+                    >
+                      <span>{account.displayName || account.email}</span>
+                      <small>{account.email}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <Input
               value={email}
               placeholder={t('mobile.auth.email')}

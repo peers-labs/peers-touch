@@ -358,6 +358,62 @@ select,
   gap: 10px;
 }
 
+.auth-account-history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth-account-history > .ant-typography {
+  font-size: 12px;
+}
+
+.auth-account-list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.auth-account-chip {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 1px;
+  max-width: 176px;
+  padding: 8px 10px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.86);
+  color: rgba(15, 23, 42, 0.86);
+  text-align: left;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.auth-account-chip.active {
+  border-color: rgba(102, 126, 234, 0.38);
+  background: rgba(102, 126, 234, 0.1);
+}
+
+.auth-account-chip span,
+.auth-account-chip small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auth-account-chip span {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.auth-account-chip small {
+  color: rgba(15, 23, 42, 0.46);
+  font-size: 11px;
+}
+
 .auth-fields .ant-input,
 .auth-fields .ant-input-affix-wrapper {
   min-height: 44px;
@@ -1074,6 +1130,25 @@ select,
   height: 48px;
   border-radius: 14px !important;
   font-size: 17px;
+}
+
+.conversation-avatar-frame {
+  position: relative;
+  display: inline-flex;
+  width: 48px;
+  height: 48px;
+}
+
+.conversation-online-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: #52c41a;
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.16);
 }
 
 .conversation-item .ant-list-item-meta-title,
