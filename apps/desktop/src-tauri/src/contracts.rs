@@ -1099,11 +1099,6 @@ pub struct FriendChatSyncMessagesInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatOnlineInput {
-    pub did: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendChatPendingInput {
     pub limit: Option<u32>,
 }

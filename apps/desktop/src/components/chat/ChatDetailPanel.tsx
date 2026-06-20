@@ -447,13 +447,6 @@ function getFriendPeerAvatar(session: FriendChatSession | undefined, currentUser
   return session.participantBAvatar || session.participantAAvatar || '';
 }
 
-function getFriendPeerOnlineSnapshot(session: FriendChatSession | undefined, peerDid: string): boolean | null {
-  if (!session || !peerDid) return null;
-  if (session.participantADid === peerDid) return session.participantAOnline;
-  if (session.participantBDid === peerDid) return session.participantBOnline;
-  return null;
-}
-
 export function ChatDetailPanel() {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
@@ -519,9 +512,8 @@ export function ChatDetailPanel() {
     : getFriendPeerName(activeFriendSession, currentUserDid);
   const displayName = currentName || t('chat.social.sessionList.unknown');
   const peerAvatar = getFriendPeerAvatar(activeFriendSession, currentUserDid);
-  const peerPresenceSnapshot = getFriendPeerOnlineSnapshot(activeFriendSession, peerDid);
-  const peerPresenceKnown = peerDid ? (peerDid in peerOnline || peerPresenceSnapshot !== null) : false;
-  const peerIsOnline = peerDid in peerOnline ? peerOnline[peerDid] : peerPresenceSnapshot;
+  const peerPresenceKnown = peerDid ? peerDid in peerOnline : false;
+  const peerIsOnline = peerDid in peerOnline ? peerOnline[peerDid] : null;
   const localStateKey = activeUlid ? `${activeTab}:${activeUlid}` : '';
   const activeLocalState = localStateKey ? conversationLocalState[localStateKey] : undefined;
   const activeMessages = activeUlid ? (messages[activeUlid] || []) : [];

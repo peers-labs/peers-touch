@@ -9,7 +9,6 @@ import {
   projectChatNotificationUnreadCount,
   pruneChatTypingPeers,
   resolveChatMessageReceiptStatus,
-  seedChatPresenceFromParticipants,
   type ChatAttachmentLike,
   type ChatMessageMutationInput,
   type ChatMessageMutationKind,
@@ -52,7 +51,7 @@ export function projectConversations(input: {
         peerDid,
         peerName: peerNameFromSession(session, input.currentUserDid),
         peerAvatar: peerAvatarFromSession(session, input.currentUserDid),
-        peerOnline: input.peerOnline[peerDid] ?? peerOnlineFromSession(session, input.currentUserDid),
+        peerOnline: input.peerOnline[peerDid] ?? false,
         unread: unreadFromSession(session, input.currentUserDid),
         lastMessage,
       };
@@ -158,13 +157,6 @@ export function applyMessageMutationToList(
   });
 }
 
-export function seedPresenceFromSessions(sessions: FriendChatSession[], currentUserDid: string | null): Record<string, boolean> {
-  return seedChatPresenceFromParticipants(sessions, (session) => [{
-    actorId: peerDidFromSession(session, currentUserDid),
-    online: peerOnlineFromSession(session, currentUserDid),
-  }]);
-}
-
 export function applyPresenceToMap(
   presence: Record<string, boolean>,
   actorId: string,
@@ -202,11 +194,6 @@ function peerNameFromSession(session: FriendChatSession, currentUserDid: string 
 function peerAvatarFromSession(session: FriendChatSession, currentUserDid: string | null): string {
   if (session.participantADid === currentUserDid) return session.participantBAvatar;
   return session.participantAAvatar;
-}
-
-function peerOnlineFromSession(session: FriendChatSession, currentUserDid: string | null): boolean {
-  if (session.participantADid === currentUserDid) return session.participantBOnline;
-  return session.participantAOnline;
 }
 
 function unreadFromSession(session: FriendChatSession, currentUserDid: string | null): number {

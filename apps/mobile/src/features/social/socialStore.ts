@@ -40,7 +40,6 @@ import {
   projectUnreadNotificationCount,
   projectUnreadNotifications,
   pruneTypingPeers,
-  seedPresenceFromSessions,
   visibleFriendMessages,
 } from './socialProjection';
 import {
@@ -289,7 +288,6 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       sessions: activeSessionUlid && currentUserDid
         ? clearSessionUnreadForActor(sessions, activeSessionUlid, currentUserDid)
         : sessions,
-      peerOnline: { ...seedPresenceFromSessions(sessions, state.currentUserDid), ...state.peerOnline },
     }));
   },
 
