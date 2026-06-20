@@ -19,7 +19,6 @@ import {
   EditFriendMessageResponseSchema,
   DeleteFriendMessageResponseSchema,
   SyncMessagesResponseSchema,
-  OnlineResponseSchema,
   GetPendingResponseSchema,
   GetStatsResponseSchema,
   SendFriendRequestResponseSchema,
@@ -96,7 +95,6 @@ export type {
   GetMessagesResponse,
   SendMessageResponse,
   SyncMessagesResponse,
-  OnlineResponse,
   GetPendingResponse,
   PendingMessageInfo,
   GetStatsResponse,
@@ -3614,25 +3612,6 @@ export const api = {
 
   friendChatSyncMessages: (messagesJson: string) =>
     invokeRustProto('friend_chat_sync_messages', SyncMessagesResponseSchema, { session_ulid: '', messages_json: messagesJson }),
-
-  friendChatGoOnline: (did?: string) =>
-    invokeRustProto('friend_chat_go_online', OnlineResponseSchema, { did }),
-
-  friendChatGoOffline: (did?: string) =>
-    invokeRustProto('friend_chat_go_offline', OnlineResponseSchema, { did }),
-
-  /**
-   * Start the long-lived presence SSE supervisor for the current
-   * window's actor. Idempotent; the Rust side replaces any in-flight
-   * supervisor for the same actor. While running, station emits
-   * `presence:peer-changed` Tauri events for every online/offline flip.
-   */
-  friendChatPresenceStart: () =>
-    invokeRustDataFromStatus<void, { actor_id: string }>('friend_chat_presence_start'),
-
-  /** Cancel the presence supervisor for the current actor. */
-  friendChatPresenceStop: () =>
-    invokeRustDataFromStatus<void, { actor_id: string | null }>('friend_chat_presence_stop'),
 
   /**
    * Start the unified realtime SSE consumer for the current actor.

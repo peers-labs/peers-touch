@@ -48,8 +48,6 @@ export interface FriendChatSession {
   participantAAvatar: string;
   participantBDisplayName: string;
   participantBAvatar: string;
-  participantAOnline: boolean;
-  participantBOnline: boolean;
 }
 
 export interface FriendChatMessage {

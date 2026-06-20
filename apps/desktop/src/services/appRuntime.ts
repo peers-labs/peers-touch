@@ -1,6 +1,5 @@
 import { installIdentityChangedBridge } from './identity_event';
 import { installPresenceBridge, teardownPresenceBridge } from './presence';
-import { installPeerPresenceBridge, teardownPeerPresenceBridge } from './peerPresence';
 import { installEventStreamBridge, teardownEventStreamBridge } from './eventStream';
 import { installSessionKickBridge, teardownSessionKickBridge } from './sessionKick';
 import { installMediaRuntime, teardownMediaRuntime } from './mediaRuntime';
@@ -15,7 +14,7 @@ import { momentsRuntime } from '../runtimes/momentsRuntime';
 import { log } from '../utils/logger';
 
 // Register kernel-managed runtimes once. The legacy bridges
-// (presence, peerPresence, eventStream, mediaRuntime,
+// (presence, eventStream, mediaRuntime,
 // navigationBadgeProjection, identity event) still install inline
 // below because they are not yet wrapped by `RuntimeDescriptor`s; that
 // migration is incremental (see plan §3 / §6).
@@ -64,7 +63,6 @@ export function installAppRuntime(): void {
   installMediaRuntime();
 
   void installPresenceBridge();
-  void installPeerPresenceBridge();
   void installEventStreamBridge();
   void installSessionKickBridge();
 
@@ -85,7 +83,6 @@ export function teardownAppRuntime(): void {
   teardownNavigationBadgeProjection();
   teardownSessionKickBridge();
   teardownEventStreamBridge();
-  teardownPeerPresenceBridge();
   teardownPresenceBridge();
 
   log.info('appRuntime', 'runtime torn down');
