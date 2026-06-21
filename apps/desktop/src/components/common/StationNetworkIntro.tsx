@@ -24,6 +24,10 @@ interface StationNetworkIntroLabels {
     station: string;
     /** Connector word for the physical relay, e.g. "via". */
     via: string;
+    /** Noun naming the relay role so the hop reads as a relay, not a person. */
+    relay: string;
+    /** Generic label for an unnamed peer in the wider network. */
+    peer: string;
   };
 }
 
@@ -196,13 +200,34 @@ export function StationNetworkIntro({ labels }: StationNetworkIntroProps) {
         {/* Physical-layer reveal: the logical peer-to-peer link is shown faint,
             while the real payload hops through a relay. Only while hovering. */}
         {reveal ? (
-          <RelayReveal from={NODES[reveal.from]} to={NODES[reveal.to]} relay={labels.relays[reveal.relay]} />
+          <RelayReveal
+            from={NODES[reveal.from]}
+            to={NODES[reveal.to]}
+            relay={labels.relays[reveal.relay]}
+            relayRole={labels.card.relay}
+          />
         ) : null}
 
-        {/* Content travelling between people: messages, photos, clips, files. */}
-        {FLOWS.map((flow, i) => (
-          <Flow key={`flow-${i}`} edge={flow.edge} kind={flow.kind} rev={flow.rev} phase0={flow.phase0} span={flow.span} />
-        ))}
+        {/* Content travelling between people: messages, photos, clips, files.
+            The hovered flow freezes at its relay so the payload sits still and
+            its route card can be read. */}
+        {FLOWS.map((flow, i) => {
+          const paused = hover?.kind === 'flow' && hover.flow === i;
+          const freeze = paused && flow.route
+            ? relayPoint(NODES[flow.route.from], NODES[flow.route.to])
+            : null;
+          return (
+            <Flow
+              key={`flow-${i}`}
+              edge={flow.edge}
+              kind={flow.kind}
+              rev={flow.rev}
+              phase0={flow.phase0}
+              span={flow.span}
+              freeze={freeze}
+            />
+          );
+        })}
 
         {/* Invisible wide hit areas along the interactive ties — hovering the
             connection reveals its route, even as the chip keeps moving. */}
@@ -238,7 +263,7 @@ export function StationNetworkIntro({ labels }: StationNetworkIntroProps) {
   );
 }
 
-function RelayReveal({ from, to, relay }: { from: Node; to: Node; relay: string }) {
+function RelayReveal({ from, to, relay, relayRole }: { from: Node; to: Node; relay: string; relayRole: string }) {
   const r = relayPoint(from, to);
   return (
     <g className="pt-network-intro__relay">
@@ -250,7 +275,10 @@ function RelayReveal({ from, to, relay }: { from: Node; to: Node; relay: string 
       <g transform={`translate(${f(r.x)} ${f(r.y)})`}>
         <circle className="pt-network-intro__relay-halo" r="15" />
         <rect className="pt-network-intro__relay-core" x="-3.4" y="-3.4" width="6.8" height="6.8" rx="1.2" transform="rotate(45)" />
-        <text className="pt-network-intro__relay-label" x="0" y="26" textAnchor="middle">{relay}</text>
+        {/* Role first, then name, so the node reads unmistakably as a relay
+            rather than just another person in the field. */}
+        <text className="pt-network-intro__relay-role" x="0" y="26" textAnchor="middle">{relayRole}</text>
+        <text className="pt-network-intro__relay-label" x="0" y="40" textAnchor="middle">{relay}</text>
       </g>
     </g>
   );
@@ -327,7 +355,15 @@ function HoverCard({
 
   if (hover.kind === 'node') {
     const node = NODES[hover.node];
-    if (!node.name) return null;
+    if (!node.name) {
+      // Unnamed peers stay quiet in the field, but hovering still reveals that
+      // they are a real member of the wider network — never a dead point.
+      return (
+        <div className="pt-network-intro__card" style={style}>
+          <div className="pt-network-intro__card-name">{labels.card.peer}</div>
+        </div>
+      );
+    }
     const person = labels.people[node.name];
     return (
       <div className="pt-network-intro__card" style={style}>
@@ -348,7 +384,9 @@ function HoverCard({
       <div className="pt-network-intro__card-route">
         {labels.people[from.name].name} <span className="pt-network-intro__card-arrow">{'->'}</span> {labels.people[to.name].name}
       </div>
-      <div className="pt-network-intro__card-via">{labels.card.via} {labels.relays[flow.route.relay]}</div>
+      <div className="pt-network-intro__card-via">
+        {labels.card.via} {labels.relays[flow.route.relay]} <span className="pt-network-intro__card-relay-tag">{labels.card.relay}</span>
+      </div>
     </div>
   );
 }
@@ -359,13 +397,29 @@ function Flow({
   rev,
   phase0,
   span,
+  freeze,
 }: {
   edge: number;
   kind: FlowKind;
   rev?: boolean;
   phase0: number;
   span: number;
+  freeze?: Node | null;
 }) {
+  // While hovered, the chip parks on its relay and stays fully visible so the
+  // payload reads as a held, inspectable object rather than a passing blur.
+  if (freeze) {
+    return (
+      <g className="pt-network-intro__flow pt-network-intro__flow--held" transform={`translate(${f(freeze.x)} ${f(freeze.y)})`}>
+        <g className="pt-network-intro__chip">
+          <circle className="pt-network-intro__chip-bg" r="13" filter="url(#pt-glow)" />
+          <circle className="pt-network-intro__chip-disc" r="13" />
+          <FlowIcon kind={kind} />
+        </g>
+      </g>
+    );
+  }
+
   const start = phase0;
   const end = phase0 + span;
   const e = 0.03;
