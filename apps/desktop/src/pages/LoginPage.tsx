@@ -736,6 +736,8 @@ export function LoginPage({
     card: {
       station: t('auth.network.card.station'),
       via: t('auth.network.card.via'),
+      relay: t('auth.network.card.relay'),
+      peer: t('auth.network.card.peer'),
     },
   }), [t]);
 
@@ -1054,6 +1056,19 @@ export function LoginPage({
               radius={12}
               border={`3px solid ${token.colorBgContainer}`}
             />
+            {/* Unlock progress lives on the avatar as a translucent cover so the
+                spinner never reflows the PIN inputs below (no layout jitter). */}
+            {pinLoading && (
+              <div
+                style={{
+                  position: 'absolute', inset: 0, borderRadius: 12,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'rgba(255, 255, 255, 0.9)',
+                }}
+              >
+                <Spin size="small" />
+              </div>
+            )}
           </div>
 
           <h3 style={{ fontSize: 16, fontWeight: 600, color: token.colorText, margin: '0 0 4px' }}>
@@ -1100,10 +1115,6 @@ export function LoginPage({
                 <Text type="danger" style={{ fontSize: 12, marginTop: 10, textAlign: 'center' }}>
                   {pinError}
                 </Text>
-              )}
-
-              {pinLoading && (
-                <Spin size="small" style={{ marginTop: 12 }} />
               )}
             </>
           )}
