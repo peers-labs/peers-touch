@@ -22,6 +22,8 @@ interface MomentsFeedViewProps {
   onOpenPost: (postId: string) => void;
   onAuthorClick: (actorId: string) => void;
   onComposerPublished?: (postId: string) => void;
+  composerOpen?: boolean;
+  onCloseComposer?: () => void;
 }
 
 export function MomentsFeedView({
@@ -29,6 +31,8 @@ export function MomentsFeedView({
   onOpenPost,
   onAuthorClick,
   onComposerPublished,
+  composerOpen = false,
+  onCloseComposer,
 }: MomentsFeedViewProps) {
   const { t } = useTranslation('moments');
   const feed = useMomentsStore((s) => s.feeds.home);
@@ -55,9 +59,16 @@ export function MomentsFeedView({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <SocialScopeHint>{t('moments.feedContext.homeDescription')}</SocialScopeHint>
 
-      <SocialComposer title={t('moments.compose.title')} hint={t('moments.compose.privacyHint')}>
-        <MomentComposer onPublished={onComposerPublished} />
-      </SocialComposer>
+      {composerOpen && (
+        <SocialComposer
+          title={t('moments.compose.title')}
+          hint={t('moments.compose.privacyHint')}
+          onClose={onCloseComposer}
+          closeLabel={t('moments.compose.close')}
+        >
+          <MomentComposer onPublished={onComposerPublished} />
+        </SocialComposer>
+      )}
 
       {showInitialState && (
         <SocialEmptyState
