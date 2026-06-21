@@ -153,6 +153,18 @@ input, textarea, [contenteditable="true"] {
   stroke-linecap: round;
 }
 
+/* Relay bridges read slightly lighter than direct peer federation links. */
+.pt-network-intro__edge--relay {
+  stroke: rgba(102, 126, 234, 0.13);
+  stroke-dasharray: 2 7;
+}
+
+/* Ownership tethers (actor/storage under a Station) are the quietest. */
+.pt-network-intro__edge--attach {
+  stroke: rgba(28, 34, 56, 0.1);
+  stroke-width: 1.1;
+}
+
 .pt-network-intro__data {
   color: #667eea;
   opacity: 0.6;
@@ -194,6 +206,26 @@ input, textarea, [contenteditable="true"] {
   font-weight: 600;
   letter-spacing: 0.05em;
   text-anchor: middle;
+}
+
+/* Sub-nodes (actor/storage owned by a Station) are visibly smaller and quieter
+ * so they never read as federation peers. */
+.pt-network-intro__node--child .pt-network-intro__node-hit {
+  fill: rgba(255, 255, 255, 0.55);
+  stroke: rgba(28, 34, 56, 0.12);
+}
+
+.pt-network-intro__node-label--child {
+  fill: rgba(28, 34, 56, 0.55);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Infra nodes (relay / mobile client) sit between peers and sub-nodes. */
+.pt-network-intro__node--infra .pt-network-intro__node-hit {
+  fill: rgba(255, 255, 255, 0.62);
+  stroke: rgba(102, 126, 234, 0.14);
+  stroke-dasharray: 4 4;
 }
 
 .pt-network-intro__node--selected .pt-network-intro__node-hit {
