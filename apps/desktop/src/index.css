@@ -153,6 +153,14 @@ input, textarea, [contenteditable="true"] {
   fill: rgba(102, 126, 234, 0.9);
 }
 
+/* A person's name — quiet, legible, never shouting over the auth card. */
+.pt-network-intro__label {
+  fill: rgba(60, 66, 110, 0.62);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
 /* An expression travelling between people. The light IS the connection. */
 .pt-network-intro__flow-halo {
   fill: rgba(118, 90, 162, 0.5);
