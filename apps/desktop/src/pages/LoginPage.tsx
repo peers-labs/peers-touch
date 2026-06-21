@@ -785,6 +785,14 @@ export function LoginPage({
   const panelOpen = !!connectProvider && loginState === 'logged_out';
   const hasSignedInUser = hasValidRestoredUser;
   const cardMinHeight = loginCardMinHeight(loginState, !!expiredAccount);
+  const networkIntroLabels = useMemo(() => ({
+    title: t('auth.network.title'),
+    alice: t('auth.network.alice'),
+    bob: t('auth.network.bob'),
+    carol: t('auth.network.carol'),
+    dana: t('auth.network.dana'),
+    evan: t('auth.network.evan'),
+  }), [t]);
 
   useEffect(() => {
     if (!panelOpen) return;
@@ -1776,7 +1784,7 @@ export function LoginPage({
   return (
     <div className="login-network-shell">
       <div className="login-network-backdrop" aria-hidden="true">
-        <StationNetworkIntro title={t('auth.network.title')} />
+        <StationNetworkIntro labels={networkIntroLabels} />
       </div>
       <div className="login-card-region">
         {cardContent}

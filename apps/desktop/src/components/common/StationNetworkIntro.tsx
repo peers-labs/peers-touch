@@ -1,6 +1,14 @@
-interface StationNetworkIntroProps {
-  /** Used only as an accessible label; never rendered as visible text. */
+interface StationNetworkIntroLabels {
   title: string;
+  alice: string;
+  bob: string;
+  carol: string;
+  dana: string;
+  evan: string;
+}
+
+interface StationNetworkIntroProps {
+  labels: StationNetworkIntroLabels;
 }
 
 const VIEW_W = 1440;
@@ -9,26 +17,28 @@ const VIEW_H = 900;
 // whole field breathes and drifts in sync without per-element offsets.
 const PERIOD = '16s';
 
-// A loose, abstract field of light — people, felt rather than labeled. There is
-// deliberately no center and no text: a healthy decentralized social graph is an
-// organic constellation, weighted to the left so it never crowds the auth card.
+// A loose, organic field of people — a decentralized social graph with no
+// center, weighted to the left so it never crowds the auth card. The larger
+// points carry a name; the smaller ones are quiet peers in the wider network.
 interface Node {
   x: number;
   y: number;
   /** Relative weight of the soft halo / core. */
   s: number;
+  /** Optional person label key — only larger, prominent nodes are named. */
+  name?: keyof Omit<StationNetworkIntroLabels, 'title'>;
 }
 
 const NODES: Node[] = [
-  { x: 232, y: 286, s: 1.15 },
+  { x: 232, y: 286, s: 1.15, name: 'alice' },
   { x: 168, y: 512, s: 0.85 },
-  { x: 366, y: 408, s: 1.35 },
+  { x: 366, y: 408, s: 1.35, name: 'carol' },
   { x: 444, y: 196, s: 0.78 },
-  { x: 318, y: 672, s: 0.95 },
-  { x: 540, y: 548, s: 1.05 },
+  { x: 318, y: 672, s: 0.95, name: 'dana' },
+  { x: 540, y: 548, s: 1.05, name: 'bob' },
   { x: 632, y: 320, s: 0.82 },
   { x: 566, y: 762, s: 0.7 },
-  { x: 724, y: 596, s: 0.9 },
+  { x: 724, y: 596, s: 0.9, name: 'evan' },
   { x: 812, y: 432, s: 0.66 },
 ];
 
@@ -69,15 +79,15 @@ function edgePath(a: Node, b: Node): string {
 
 const f = (n: number) => Number(n.toFixed(4)).toString();
 
-export function StationNetworkIntro({ title }: StationNetworkIntroProps) {
+export function StationNetworkIntro({ labels }: StationNetworkIntroProps) {
   return (
-    <section className="pt-network-intro" aria-label={title}>
+    <section className="pt-network-intro" aria-label={labels.title}>
       <svg
         className="pt-network-intro__mesh"
         viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
         preserveAspectRatio="xMidYMid slice"
         role="img"
-        aria-label={title}
+        aria-label={labels.title}
       >
         <defs>
           <radialGradient id="pt-node-halo" cx="50%" cy="50%" r="50%">
@@ -111,16 +121,16 @@ export function StationNetworkIntro({ title }: StationNetworkIntroProps) {
           <Flow key={`flow-${i}`} edge={flow.edge} rev={flow.rev} phase0={flow.phase0} span={flow.span} />
         ))}
 
-        {/* The people — felt as soft points of light, not labels. */}
+        {/* The people — soft points of light; the prominent ones carry a name. */}
         {NODES.map((node, i) => (
-          <NodeMark key={`node-${i}`} node={node} index={i} />
+          <NodeMark key={`node-${i}`} node={node} index={i} labels={labels} />
         ))}
       </svg>
     </section>
   );
 }
 
-function NodeMark({ node, index }: { node: Node; index: number }) {
+function NodeMark({ node, index, labels }: { node: Node; index: number; labels: StationNetworkIntroLabels }) {
   // Stagger the breathing so the field shimmers gently instead of pulsing as one.
   const begin = `${((index * 1.7) % 9).toFixed(2)}s`;
   return (
@@ -138,6 +148,11 @@ function NodeMark({ node, index }: { node: Node; index: number }) {
         />
       </circle>
       <circle className="pt-network-intro__core" r={2.4 * node.s} />
+      {node.name ? (
+        <text className="pt-network-intro__label" x={0} y={20 * node.s + 8} textAnchor="middle">
+          {labels[node.name]}
+        </text>
+      ) : null}
     </g>
   );
 }
