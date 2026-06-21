@@ -19,10 +19,8 @@ import {
 import { UserSquareAvatar } from '../components/common/UserSquareAvatar';
 import { PlatformLogo } from '../components/common/PlatformLogo';
 import { StationNetworkIntro } from '../components/common/StationNetworkIntro';
-import { STATION_ACTIVE_CHANGED_EVENT, type StationActiveChangedDetail } from '../components/common/stationRegistryEvents';
 import { BRANDING } from '../branding';
 import type { SessionUser } from '../types/navigation';
-import { log } from '../utils/logger';
 
 const { Text } = Typography;
 
@@ -81,17 +79,6 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
-function stationDisplayName(entryLabel?: string, stationUrl?: string): string {
-  if (entryLabel) return entryLabel;
-  if (!stationUrl) return '';
-
-  try {
-    return new URL(stationUrl).hostname;
-  } catch {
-    return stationUrl;
-  }
-}
-
 export function LoginPage({
   onComplete,
   onLoginWithOAuthBridge,
@@ -136,7 +123,6 @@ export function LoginPage({
   const [connectProvider, setConnectProvider] = useState<OAuth2ProviderSummary | null>(null);
   const [authState, setAuthState] = useState<AuthState>('idle');
   const [authError, setAuthError] = useState('');
-  const [activeStationName, setActiveStationName] = useState('');
   const [arrowTop, setArrowTop] = useState(0);
   const buttonRefs = useRef<Record<string, HTMLElement | null>>({});
   const cardRef = useRef<HTMLDivElement>(null);
@@ -187,39 +173,6 @@ export function LoginPage({
   useEffect(() => {
     loadAll();
   }, [loadAll]);
-
-  useEffect(() => {
-    if (embedded) return;
-
-    let cancelled = false;
-
-    async function loadActiveStationName() {
-      try {
-        const result = await api.stationList();
-        if (cancelled) return;
-
-        const activeUrl = result.active_url ?? '';
-        const activeEntry = result.entries?.find(entry => entry.url === activeUrl);
-        setActiveStationName(stationDisplayName(activeEntry?.label, activeUrl));
-      } catch (err) {
-        log.warn('LoginPage', 'Failed to load active station for network intro', { error: err });
-      }
-    }
-
-    void loadActiveStationName();
-
-    function handleActiveStationChanged(event: Event) {
-      const detail = (event as CustomEvent<StationActiveChangedDetail>).detail;
-      setActiveStationName(stationDisplayName(detail?.label, detail?.url));
-    }
-
-    window.addEventListener(STATION_ACTIVE_CHANGED_EVENT, handleActiveStationChanged);
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener(STATION_ACTIVE_CHANGED_EVENT, handleActiveStationChanged);
-    };
-  }, [embedded]);
 
   // Guard: if welcome_back is reached without a valid session, redirect to login form
   useEffect(() => {
@@ -832,17 +785,6 @@ export function LoginPage({
   const panelOpen = !!connectProvider && loginState === 'logged_out';
   const hasSignedInUser = hasValidRestoredUser;
   const cardMinHeight = loginCardMinHeight(loginState, !!expiredAccount);
-  const networkIntroLabels = useMemo(() => ({
-    title: t('auth.network.title'),
-    alice: t('auth.network.alice'),
-    bob: t('auth.network.bob'),
-    carol: t('auth.network.carol'),
-    dana: t('auth.network.dana'),
-    evan: t('auth.network.evan'),
-    joining: t('auth.network.joining'),
-    yourStation: t('auth.network.yourStation'),
-  }), [t]);
-  const selectedStationName = activeStationName || t('auth.network.defaultStationName');
 
   useEffect(() => {
     if (!panelOpen) return;
@@ -1834,10 +1776,7 @@ export function LoginPage({
   return (
     <div className="login-network-shell">
       <div className="login-network-backdrop" aria-hidden="true">
-        <StationNetworkIntro
-          selectedStationName={selectedStationName}
-          labels={networkIntroLabels}
-        />
+        <StationNetworkIntro title={t('auth.network.title')} />
       </div>
       <div className="login-card-region">
         {cardContent}
