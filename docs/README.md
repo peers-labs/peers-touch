@@ -172,6 +172,7 @@
 ### 4.1 架构层真源
 
 - 项目整体架构：`global/architecture.md`
+- 状态机目录（全端 FSM 汇总索引）：`architecture/state-machines/README.md`
 - Station 与 Desktop 边界：`architecture/boundaries/station-desktop-scope-boundary.md`
 - Desktop 运行时关系：`architecture/runtime/desktop-runtime-architecture.md`
 - 统一 Handler 架构：`architecture/runtime/unified-handler-architecture.md`
@@ -275,6 +276,10 @@
 
 - `context/`
 - `meta/INDEX.md`
+
+### 我想看系统里有哪些状态机
+
+- `architecture/state-machines/README.md`（前后端全端 FSM 汇总，含状态/触发/Owner/设计索引）
 
 ### 我想看通知系统
 
