@@ -129,6 +129,7 @@
   "moments.compose.attachPoll": "投票",
   "moments.compose.publish": "发布",
   "moments.compose.cancel": "取消",
+  "moments.compose.close": "关闭",
   "moments.compose.published": "已发布",
   "moments.compose.emptyError": "请先输入内容",
   "moments.compose.imagePickHint": "还可以再添加 {{remaining}} 张（最多 {{max}} 张）",

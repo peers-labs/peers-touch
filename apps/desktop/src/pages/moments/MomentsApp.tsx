@@ -46,6 +46,7 @@ export function MomentsApp() {
   const { t } = useTranslation('moments');
   const { token } = theme.useToken();
   const [view, setView] = useState<MomentsView>({ kind: 'tab', tab: 'feed' });
+  const [composerOpen, setComposerOpen] = useState(false);
   const [layoutWidth, setLayoutWidth] = useState(1080);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
@@ -109,6 +110,7 @@ export function MomentsApp() {
   }, []);
 
   const openComposer = useCallback(() => {
+    setComposerOpen(true);
     if (activeTab !== 'feed') {
       setView({ kind: 'tab', tab: 'feed' });
       window.requestAnimationFrame(scrollFeedTop);
@@ -116,6 +118,10 @@ export function MomentsApp() {
     }
     scrollFeedTop();
   }, [activeTab, scrollFeedTop]);
+
+  const closeComposer = useCallback(() => {
+    setComposerOpen(false);
+  }, []);
 
   const tabs = useMemo(
     () => [
@@ -181,7 +187,13 @@ export function MomentsApp() {
             viewerActorId={me?.id}
             onOpenPost={goDetail}
             onAuthorClick={goUser}
-            onComposerPublished={scrollFeedTop}
+            composerOpen={composerOpen}
+            onCloseComposer={closeComposer}
+            onComposerPublished={(postId) => {
+              setComposerOpen(false);
+              scrollFeedTop();
+              void postId;
+            }}
           />
         );
       case 'explore':
