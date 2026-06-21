@@ -40,6 +40,12 @@ const NODES: Node[] = [
   { x: 566, y: 762, s: 0.7 },
   { x: 724, y: 596, s: 0.9, name: 'evan' },
   { x: 812, y: 432, s: 0.66 },
+  // Peers around the auth card — they fill the quiet corners so the field
+  // reads as a whole network rather than a left-side cluster.
+  { x: 1015, y: 142, s: 0.74 },
+  { x: 1296, y: 158, s: 0.6 },
+  { x: 1150, y: 812, s: 0.72 },
+  { x: 1342, y: 826, s: 0.58 },
 ];
 
 // Quiet weak ties — Granovetter's threads that let expression cross communities.
@@ -47,21 +53,28 @@ const NODES: Node[] = [
 const EDGES: Array<[number, number]> = [
   [0, 2], [0, 3], [2, 3], [2, 1], [1, 4], [2, 5],
   [3, 6], [6, 5], [5, 8], [5, 7], [4, 7], [6, 9], [8, 9], [2, 6],
+  // Ties reaching the peers around the card.
+  [6, 10], [9, 10], [10, 11], [9, 11], [8, 12], [9, 13], [12, 13],
 ];
 
-// A few expressions travelling between people. Each rides one edge, slowly,
-// fading in and out so the field feels alive rather than busy.
+// Content travelling between people — a message, a photo, a clip, a file. The
+// payload itself is the federation/relay in motion; we show what people share,
+// not the pipes that carry it.
+type FlowKind = 'msg' | 'img' | 'video' | 'file';
 interface Flow {
   edge: number;
+  kind: FlowKind;
   rev?: boolean;
   phase0: number;
   span: number;
 }
 const FLOWS: Flow[] = [
-  { edge: 0, phase0: 0.04, span: 0.26 },
-  { edge: 5, phase0: 0.22, span: 0.3 },
-  { edge: 9, phase0: 0.46, span: 0.26, rev: true },
-  { edge: 12, phase0: 0.64, span: 0.3 },
+  { edge: 0, kind: 'msg', phase0: 0.0, span: 0.3 },
+  { edge: 5, kind: 'img', phase0: 0.16, span: 0.32 },
+  { edge: 15, kind: 'video', phase0: 0.34, span: 0.32 },
+  { edge: 18, kind: 'file', phase0: 0.52, span: 0.32 },
+  { edge: 11, kind: 'msg', phase0: 0.68, span: 0.3, rev: true },
+  { edge: 20, kind: 'img', phase0: 0.42, span: 0.26 },
 ];
 
 function edgePath(a: Node, b: Node): string {
@@ -116,9 +129,9 @@ export function StationNetworkIntro({ labels }: StationNetworkIntroProps) {
           <use key={`edge-${i}`} className="pt-network-intro__tie" href={`#pt-edge-${i}`} />
         ))}
 
-        {/* Expressions travelling between people. */}
+        {/* Content travelling between people: messages, photos, clips, files. */}
         {FLOWS.map((flow, i) => (
-          <Flow key={`flow-${i}`} edge={flow.edge} rev={flow.rev} phase0={flow.phase0} span={flow.span} />
+          <Flow key={`flow-${i}`} edge={flow.edge} kind={flow.kind} rev={flow.rev} phase0={flow.phase0} span={flow.span} />
         ))}
 
         {/* The people — soft points of light; the prominent ones carry a name. */}
@@ -159,26 +172,31 @@ function NodeMark({ node, index, labels }: { node: Node; index: number; labels: 
 
 function Flow({
   edge,
+  kind,
   rev,
   phase0,
   span,
 }: {
   edge: number;
+  kind: FlowKind;
   rev?: boolean;
   phase0: number;
   span: number;
 }) {
   const start = phase0;
   const end = phase0 + span;
-  const e = 0.02;
+  const e = 0.03;
   const motionKeyTimes = `0;${f(start)};${f(end)};1`;
   const motionKeyPoints = rev ? '1;1;0;0' : '0;0;1;1';
   const opacityKeyTimes = `0;${f(start)};${f(start + e)};${f(end - e)};${f(end)};1`;
-  const opacityValues = '0;0;0.9;0.9;0;0';
+  const opacityValues = '0;0;1;1;0;0';
   return (
-    <g className="pt-network-intro__flow" filter="url(#pt-glow)">
-      <circle className="pt-network-intro__flow-halo" r="5" />
-      <circle className="pt-network-intro__flow-core" r="1.8" />
+    <g className="pt-network-intro__flow">
+      <g className="pt-network-intro__chip">
+        <circle className="pt-network-intro__chip-bg" r="13" filter="url(#pt-glow)" />
+        <circle className="pt-network-intro__chip-disc" r="13" />
+        <FlowIcon kind={kind} />
+      </g>
       <animateMotion
         dur={PERIOD}
         repeatCount="indefinite"
@@ -191,4 +209,41 @@ function Flow({
       <animate attributeName="opacity" dur={PERIOD} repeatCount="indefinite" keyTimes={opacityKeyTimes} values={opacityValues} />
     </g>
   );
+}
+
+// Minimal line glyphs (stroke-based) for the kinds of content people share.
+// Centred on the origin so they ride the path cleanly.
+function FlowIcon({ kind }: { kind: FlowKind }) {
+  switch (kind) {
+    case 'msg':
+      return (
+        <path
+          className="pt-network-intro__glyph"
+          d="M-5.5 -4 H5.5 a1.5 1.5 0 0 1 1.5 1.5 V2 a1.5 1.5 0 0 1 -1.5 1.5 H-1.5 L-4.5 6 V3.5 H-5.5 a1.5 1.5 0 0 1 -1.5 -1.5 V-2.5 a1.5 1.5 0 0 1 1.5 -1.5 Z"
+        />
+      );
+    case 'img':
+      return (
+        <g className="pt-network-intro__glyph">
+          <rect x="-6" y="-5" width="12" height="10" rx="1.6" />
+          <circle cx="-2.2" cy="-1.4" r="1.3" fill="currentColor" stroke="none" />
+          <path d="M-6 3 L-1.5 -1 L1.5 1.5 L4 -1 L6 1.5" />
+        </g>
+      );
+    case 'video':
+      return (
+        <g className="pt-network-intro__glyph">
+          <rect x="-6.5" y="-4.5" width="9.5" height="9" rx="1.6" />
+          <path d="M3 -1.6 L6.8 -4 V4 L3 1.6 Z" />
+        </g>
+      );
+    case 'file':
+    default:
+      return (
+        <path
+          className="pt-network-intro__glyph"
+          d="M-4 -6 H1.6 L4 -3.6 V6 H-4 Z M1.6 -6 V-3.6 H4 M-1.8 -0.6 H1.8 M-1.8 2 H1.8"
+        />
+      );
+  }
 }
