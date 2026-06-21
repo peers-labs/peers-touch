@@ -772,6 +772,8 @@ export function LoginPage({
     carol: t('auth.network.carol'),
     agent: t('auth.network.agent'),
     storage: t('auth.network.storage'),
+    mobile: t('auth.network.mobile'),
+    client: t('auth.network.client'),
     joining: t('auth.network.joining'),
     yourStation: t('auth.network.yourStation'),
     messageFlow: t('auth.network.messageFlow'),
