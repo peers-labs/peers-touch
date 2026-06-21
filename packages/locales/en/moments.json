@@ -129,6 +129,7 @@
   "moments.compose.attachPoll": "Poll",
   "moments.compose.publish": "Publish",
   "moments.compose.cancel": "Cancel",
+  "moments.compose.close": "Close",
   "moments.compose.published": "Posted",
   "moments.compose.emptyError": "Write something first",
   "moments.compose.imagePickHint": "Add up to {{remaining}} more (max {{max}})",

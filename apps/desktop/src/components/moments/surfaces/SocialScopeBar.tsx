@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import { Button } from '@lobehub/ui';
-import { Segmented, Typography, theme } from 'antd';
+import { Segmented, Tooltip, Typography, theme } from 'antd';
 import { Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -55,6 +55,7 @@ export function SocialScopeBar({
   compact,
 }: SocialScopeBarProps) {
   const { t } = useTranslation('moments');
+  const { token } = theme.useToken();
 
   const defaultTitle = title ?? t('moments.title');
   const defaultSubtitle = subtitle ?? t('moments.subtitle');
@@ -98,16 +99,21 @@ export function SocialScopeBar({
           />
         )}
         {primaryAction && (
-          <Button
-            type="primary"
-            size={compact ? 'small' : 'middle'}
-            icon={<Plus size={compact ? 12 : 14} />}
-            onClick={primaryAction.onClick}
-            disabled={primaryAction.disabled}
-            style={{ minHeight: compact ? 28 : 32 }}
-          >
-            {primaryAction.label}
-          </Button>
+          <Tooltip title={primaryAction.label}>
+            <Button
+              type="text"
+              shape="circle"
+              size={compact ? 'small' : 'middle'}
+              icon={<Plus size={compact ? 16 : 18} />}
+              onClick={primaryAction.onClick}
+              disabled={primaryAction.disabled}
+              aria-label={primaryAction.label}
+              style={{
+                color: token.colorTextSecondary,
+                minHeight: compact ? 28 : 32,
+              }}
+            />
+          </Tooltip>
         )}
         {extra}
       </div>
