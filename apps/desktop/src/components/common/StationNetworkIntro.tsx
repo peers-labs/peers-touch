@@ -1,10 +1,30 @@
+import { useRef, useState } from 'react';
+
+type PersonKey = 'alice' | 'bob' | 'carol' | 'dana' | 'evan';
+type FlowKind = 'msg' | 'img' | 'video' | 'file';
+
+interface PersonLabel {
+  /** Localized display name, e.g. "Mira". */
+  name: string;
+  /** Federation handle, e.g. "mira". */
+  handle: string;
+  /** Home station name, e.g. "aspen". */
+  station: string;
+}
+
 interface StationNetworkIntroLabels {
   title: string;
-  alice: string;
-  bob: string;
-  carol: string;
-  dana: string;
-  evan: string;
+  people: Record<PersonKey, PersonLabel>;
+  /** Relay key -> display name, e.g. { fern: "fern" }. */
+  relays: Record<string, string>;
+  /** Content kind -> localized label, e.g. { msg: "Message" }. */
+  kinds: Record<FlowKind, string>;
+  card: {
+    /** Field label for a station, e.g. "Station". */
+    station: string;
+    /** Connector word for the physical relay, e.g. "via". */
+    via: string;
+  };
 }
 
 interface StationNetworkIntroProps {
@@ -26,7 +46,7 @@ interface Node {
   /** Relative weight of the soft halo / core. */
   s: number;
   /** Optional person label key — only larger, prominent nodes are named. */
-  name?: keyof Omit<StationNetworkIntroLabels, 'title'>;
+  name?: PersonKey;
 }
 
 const NODES: Node[] = [
@@ -55,26 +75,33 @@ const EDGES: Array<[number, number]> = [
   [3, 6], [6, 5], [5, 8], [5, 7], [4, 7], [6, 9], [8, 9], [2, 6],
   // Ties reaching the peers around the card.
   [6, 10], [9, 10], [10, 11], [9, 11], [8, 12], [9, 13], [12, 13],
+  // A tie between two named people so Sam joins the named conversation.
+  [2, 4],
 ];
 
 // Content travelling between people — a message, a photo, a clip, a file. The
-// payload itself is the federation/relay in motion; we show what people share,
-// not the pipes that carry it.
-type FlowKind = 'msg' | 'img' | 'video' | 'file';
+// payload itself is the federation in motion; we show what people share.
+//
+// `route` marks an interactive flow between two named people. Logically people
+// connect peer-to-peer, but physically the payload hops through a relay — that
+// hidden hop is revealed on hover. Ambient flows (no route) only carry motion.
 interface Flow {
   edge: number;
   kind: FlowKind;
   rev?: boolean;
   phase0: number;
   span: number;
+  route?: { from: number; to: number; relay: string };
 }
+
 const FLOWS: Flow[] = [
-  { edge: 0, kind: 'msg', phase0: 0.0, span: 0.3 },
-  { edge: 5, kind: 'img', phase0: 0.16, span: 0.32 },
-  { edge: 15, kind: 'video', phase0: 0.34, span: 0.32 },
-  { edge: 18, kind: 'file', phase0: 0.52, span: 0.32 },
-  { edge: 11, kind: 'msg', phase0: 0.68, span: 0.3, rev: true },
-  { edge: 20, kind: 'img', phase0: 0.42, span: 0.26 },
+  { edge: 0, kind: 'msg', phase0: 0.0, span: 0.3, route: { from: 0, to: 2, relay: 'fern' } },
+  { edge: 5, kind: 'img', phase0: 0.16, span: 0.32, route: { from: 2, to: 5, relay: 'tide' } },
+  { edge: 8, kind: 'video', phase0: 0.34, span: 0.32, route: { from: 5, to: 8, relay: 'ridge' } },
+  { edge: 21, kind: 'file', phase0: 0.52, span: 0.3, route: { from: 2, to: 4, relay: 'loom' } },
+  // Ambient motion in the quiet corners around the card.
+  { edge: 15, kind: 'img', phase0: 0.42, span: 0.26 },
+  { edge: 18, kind: 'file', phase0: 0.66, span: 0.3 },
 ];
 
 function edgePath(a: Node, b: Node): string {
@@ -90,11 +117,41 @@ function edgePath(a: Node, b: Node): string {
   return `M${a.x} ${a.y} Q${cx} ${cy} ${b.x} ${b.y}`;
 }
 
+// The hidden relay sits to the far side of the direct tie, so the two physical
+// hops (person -> relay -> person) read clearly apart from the logical link.
+function relayPoint(a: Node, b: Node): Node {
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const off = 48;
+  return { x: mx + (dy / len) * off, y: my + (-dx / len) * off, s: 0.7 };
+}
+
 const f = (n: number) => Number(n.toFixed(4)).toString();
 
+type Hover =
+  | { kind: 'node'; node: number }
+  | { kind: 'flow'; flow: number };
+
 export function StationNetworkIntro({ labels }: StationNetworkIntroProps) {
+  const sectionRef = useRef<HTMLElement>(null);
+  const [hover, setHover] = useState<Hover | null>(null);
+  const [cursor, setCursor] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const track = (e: React.MouseEvent) => {
+    const rect = sectionRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setCursor({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  };
+
+  const litNode = hover?.kind === 'node' ? hover.node : null;
+  const hoveredFlow = hover?.kind === 'flow' ? FLOWS[hover.flow] : null;
+  const reveal = hoveredFlow?.route ?? null;
+
   return (
-    <section className="pt-network-intro" aria-label={labels.title}>
+    <section ref={sectionRef} className="pt-network-intro" aria-label={labels.title}>
       <svg
         className="pt-network-intro__mesh"
         viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
@@ -124,26 +181,96 @@ export function StationNetworkIntro({ labels }: StationNetworkIntroProps) {
         <circle className="pt-network-intro__bloom" cx="300" cy="380" r="360" fill="url(#pt-bloom)" />
         <circle className="pt-network-intro__bloom" cx="600" cy="640" r="300" fill="url(#pt-bloom)" />
 
-        {/* Quiet weak ties. */}
-        {EDGES.map((_, i) => (
-          <use key={`edge-${i}`} className="pt-network-intro__tie" href={`#pt-edge-${i}`} />
-        ))}
+        {/* Quiet weak ties. Ties touching the hovered person glow a little. */}
+        {EDGES.map(([a, b], i) => {
+          const lit = litNode !== null && (a === litNode || b === litNode);
+          return (
+            <use
+              key={`edge-${i}`}
+              className={`pt-network-intro__tie${lit ? ' pt-network-intro__tie--lit' : ''}`}
+              href={`#pt-edge-${i}`}
+            />
+          );
+        })}
+
+        {/* Physical-layer reveal: the logical peer-to-peer link is shown faint,
+            while the real payload hops through a relay. Only while hovering. */}
+        {reveal ? (
+          <RelayReveal from={NODES[reveal.from]} to={NODES[reveal.to]} relay={labels.relays[reveal.relay]} />
+        ) : null}
 
         {/* Content travelling between people: messages, photos, clips, files. */}
         {FLOWS.map((flow, i) => (
           <Flow key={`flow-${i}`} edge={flow.edge} kind={flow.kind} rev={flow.rev} phase0={flow.phase0} span={flow.span} />
         ))}
 
+        {/* Invisible wide hit areas along the interactive ties — hovering the
+            connection reveals its route, even as the chip keeps moving. */}
+        {FLOWS.map((flow, i) =>
+          flow.route ? (
+            <use
+              key={`hit-${i}`}
+              className="pt-network-intro__hit"
+              href={`#pt-edge-${flow.edge}`}
+              onMouseEnter={(e) => { track(e); setHover({ kind: 'flow', flow: i }); }}
+              onMouseMove={track}
+              onMouseLeave={() => setHover(null)}
+            />
+          ) : null,
+        )}
+
         {/* The people — soft points of light; the prominent ones carry a name. */}
         {NODES.map((node, i) => (
-          <NodeMark key={`node-${i}`} node={node} index={i} labels={labels} />
+          <NodeMark
+            key={`node-${i}`}
+            node={node}
+            index={i}
+            labels={labels}
+            onEnter={(e) => { track(e); setHover({ kind: 'node', node: i }); }}
+            onMove={track}
+            onLeave={() => setHover(null)}
+          />
         ))}
       </svg>
+
+      <HoverCard hover={hover} cursor={cursor} labels={labels} />
     </section>
   );
 }
 
-function NodeMark({ node, index, labels }: { node: Node; index: number; labels: StationNetworkIntroLabels }) {
+function RelayReveal({ from, to, relay }: { from: Node; to: Node; relay: string }) {
+  const r = relayPoint(from, to);
+  return (
+    <g className="pt-network-intro__relay">
+      {/* The logical, peer-to-peer link — present in the mind, dashed and faint. */}
+      <path className="pt-network-intro__relay-logical" d={edgePath(from, to)} />
+      {/* The physical two-hop path through the relay. */}
+      <path className="pt-network-intro__relay-hop" d={edgePath(from, r)} />
+      <path className="pt-network-intro__relay-hop" d={edgePath(r, to)} />
+      <g transform={`translate(${f(r.x)} ${f(r.y)})`}>
+        <circle className="pt-network-intro__relay-halo" r="15" />
+        <rect className="pt-network-intro__relay-core" x="-3.4" y="-3.4" width="6.8" height="6.8" rx="1.2" transform="rotate(45)" />
+        <text className="pt-network-intro__relay-label" x="0" y="26" textAnchor="middle">{relay}</text>
+      </g>
+    </g>
+  );
+}
+
+function NodeMark({
+  node,
+  index,
+  labels,
+  onEnter,
+  onMove,
+  onLeave,
+}: {
+  node: Node;
+  index: number;
+  labels: StationNetworkIntroLabels;
+  onEnter: (e: React.MouseEvent) => void;
+  onMove: (e: React.MouseEvent) => void;
+  onLeave: () => void;
+}) {
   // Stagger the breathing so the field shimmers gently instead of pulsing as one.
   const begin = `${((index * 1.7) % 9).toFixed(2)}s`;
   return (
@@ -163,10 +290,66 @@ function NodeMark({ node, index, labels }: { node: Node; index: number; labels: 
       <circle className="pt-network-intro__core" r={2.4 * node.s} />
       {node.name ? (
         <text className="pt-network-intro__label" x={0} y={20 * node.s + 8} textAnchor="middle">
-          {labels[node.name]}
+          {labels.people[node.name].name}
         </text>
       ) : null}
+      {/* Generous transparent target so a person is easy to hover. */}
+      <circle
+        className="pt-network-intro__hit-node"
+        r={Math.max(26, 30 * node.s)}
+        onMouseEnter={onEnter}
+        onMouseMove={onMove}
+        onMouseLeave={onLeave}
+      />
     </g>
+  );
+}
+
+function HoverCard({
+  hover,
+  cursor,
+  labels,
+}: {
+  hover: Hover | null;
+  cursor: { x: number; y: number };
+  labels: StationNetworkIntroLabels;
+}) {
+  if (!hover) return null;
+
+  // Flip the card to the left of the cursor when near the right edge so it
+  // never spills past the field; default sits up-and-right of the pointer.
+  const flip = cursor.x > VIEW_W * 0.62;
+  const style: React.CSSProperties = {
+    left: cursor.x,
+    top: cursor.y,
+    transform: flip ? 'translate(-100%, -110%) translateX(-14px)' : 'translate(0, -110%) translateX(14px)',
+  };
+
+  if (hover.kind === 'node') {
+    const node = NODES[hover.node];
+    if (!node.name) return null;
+    const person = labels.people[node.name];
+    return (
+      <div className="pt-network-intro__card" style={style}>
+        <div className="pt-network-intro__card-name">{person.name}</div>
+        <div className="pt-network-intro__card-addr">@{person.handle}@{person.station}</div>
+      </div>
+    );
+  }
+
+  const flow = FLOWS[hover.flow];
+  if (!flow.route) return null;
+  const from = NODES[flow.route.from];
+  const to = NODES[flow.route.to];
+  if (!from.name || !to.name) return null;
+  return (
+    <div className="pt-network-intro__card" style={style}>
+      <div className="pt-network-intro__card-kind">{labels.kinds[flow.kind]}</div>
+      <div className="pt-network-intro__card-route">
+        {labels.people[from.name].name} <span className="pt-network-intro__card-arrow">{'->'}</span> {labels.people[to.name].name}
+      </div>
+      <div className="pt-network-intro__card-via">{labels.card.via} {labels.relays[flow.route.relay]}</div>
+    </div>
   );
 }
 
