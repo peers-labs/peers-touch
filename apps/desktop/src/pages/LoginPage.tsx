@@ -714,11 +714,29 @@ export function LoginPage({
   const cardMinHeight = loginCardMinHeight(loginState, !!expiredAccount);
   const networkIntroLabels = useMemo(() => ({
     title: t('auth.network.title'),
-    alice: t('auth.network.alice'),
-    bob: t('auth.network.bob'),
-    carol: t('auth.network.carol'),
-    dana: t('auth.network.dana'),
-    evan: t('auth.network.evan'),
+    people: {
+      alice: { name: t('auth.network.alice'), handle: t('auth.network.alice.handle'), station: t('auth.network.alice.station') },
+      bob: { name: t('auth.network.bob'), handle: t('auth.network.bob.handle'), station: t('auth.network.bob.station') },
+      carol: { name: t('auth.network.carol'), handle: t('auth.network.carol.handle'), station: t('auth.network.carol.station') },
+      dana: { name: t('auth.network.dana'), handle: t('auth.network.dana.handle'), station: t('auth.network.dana.station') },
+      evan: { name: t('auth.network.evan'), handle: t('auth.network.evan.handle'), station: t('auth.network.evan.station') },
+    },
+    relays: {
+      fern: t('auth.network.relay.fern'),
+      tide: t('auth.network.relay.tide'),
+      ridge: t('auth.network.relay.ridge'),
+      loom: t('auth.network.relay.loom'),
+    },
+    kinds: {
+      msg: t('auth.network.kind.msg'),
+      img: t('auth.network.kind.img'),
+      video: t('auth.network.kind.video'),
+      file: t('auth.network.kind.file'),
+    },
+    card: {
+      station: t('auth.network.card.station'),
+      via: t('auth.network.card.via'),
+    },
   }), [t]);
 
   useEffect(() => {
