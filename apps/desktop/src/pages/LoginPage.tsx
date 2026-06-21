@@ -834,25 +834,13 @@ export function LoginPage({
   const cardMinHeight = loginCardMinHeight(loginState, !!expiredAccount);
   const networkIntroLabels = useMemo(() => ({
     title: t('auth.network.title'),
-    personal: t('auth.network.personal'),
-    actor: t('auth.network.actor'),
-    relay: t('auth.network.relay'),
-    relayLink: t('auth.network.relayLink'),
     alice: t('auth.network.alice'),
-    service: t('auth.network.service'),
-    station: t('auth.network.station'),
     bob: t('auth.network.bob'),
     carol: t('auth.network.carol'),
-    agent: t('auth.network.agent'),
-    storage: t('auth.network.storage'),
-    mobile: t('auth.network.mobile'),
-    client: t('auth.network.client'),
+    dana: t('auth.network.dana'),
+    evan: t('auth.network.evan'),
     joining: t('auth.network.joining'),
     yourStation: t('auth.network.yourStation'),
-    messageFlow: t('auth.network.messageFlow'),
-    imageFlow: t('auth.network.imageFlow'),
-    fileFlow: t('auth.network.fileFlow'),
-    taskFlow: t('auth.network.taskFlow'),
   }), [t]);
   const selectedStationName = activeStationName || t('auth.network.defaultStationName');
 
