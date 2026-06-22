@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { MobileAuthSession } from '../auth/authSession';
 import type { SocialApiErrorContext, StationErrorEnvelope, StationSuccessEnvelope } from '../social/socialTypes';
 import { SocialApiError } from '../social/socialTypes';
+import { readableErrorMessage } from '../../utils/errorMessage';
 import type { KeyBundle } from '../../gen/proto/domain/key_exchange/key_exchange_pb';
 import { userScopeForSession } from './groupE2eeBridge';
 
@@ -51,8 +52,25 @@ export async function openSkdmEnvelopeFromSender(
   senderDid: string,
   sealedBytes: Uint8Array,
 ): Promise<Uint8Array | null> {
-  const payloadB64 = bytesToBase64(sealedBytes);
-  const bundles = await fetchKeyBundles(session, senderDid);
+  return openSignalingEnvelopeFromSender(session, {
+    senderDid,
+    sessionUlid: skdmEnvelopeSession(senderDid),
+    kind: SKDM_ENVELOPE_KIND,
+    sealedBytes,
+  });
+}
+
+export async function openSignalingEnvelopeFromSender(
+  session: MobileAuthSession,
+  input: {
+    senderDid: string;
+    sessionUlid: string;
+    kind: string;
+    sealedBytes: Uint8Array;
+  },
+): Promise<Uint8Array | null> {
+  const payloadB64 = bytesToBase64(input.sealedBytes);
+  const bundles = await fetchKeyBundles(session, input.senderDid);
   for (const bundle of bundles) {
     const ikPub = String(bundle.ikPub || (bundle as Record<string, unknown>).ik_pub || '').trim();
     if (!ikPub) continue;
@@ -61,8 +79,8 @@ export async function openSkdmEnvelopeFromSender(
         input: {
           ...identityScopeInput(session),
           senderIkPub: ikPub,
-          sessionUlid: skdmEnvelopeSession(senderDid),
-          kind: SKDM_ENVELOPE_KIND,
+          sessionUlid: input.sessionUlid,
+          kind: input.kind,
           payloadB64,
         },
       });
@@ -80,16 +98,33 @@ export async function sealSkdmEnvelopeForPeer(
   peerIkPub: string,
   skdmBytes: Uint8Array,
 ): Promise<string> {
+  return bytesToBase64(await sealSignalingEnvelopeForPeer(session, {
+    peerIkPub,
+    sessionUlid: skdmEnvelopeSession(actorDidForSession(session)),
+    kind: SKDM_ENVELOPE_KIND,
+    plaintextBytes: skdmBytes,
+  }));
+}
+
+export async function sealSignalingEnvelopeForPeer(
+  session: MobileAuthSession,
+  input: {
+    peerIkPub: string;
+    sessionUlid: string;
+    kind: string;
+    plaintextBytes: Uint8Array;
+  },
+): Promise<Uint8Array> {
   const output = await invoke<SignalingSealOutput>('signaling_envelope_seal', {
     input: {
       ...identityScopeInput(session),
-      peerIkPub,
-      sessionUlid: skdmEnvelopeSession(actorDidForSession(session)),
-      kind: SKDM_ENVELOPE_KIND,
-      plaintext: bytesToBase64(skdmBytes),
+      peerIkPub: input.peerIkPub,
+      sessionUlid: input.sessionUlid,
+      kind: input.kind,
+      plaintext: bytesToBase64(input.plaintextBytes),
     },
   });
-  return output.payloadB64;
+  return base64ToBytes(output.payloadB64);
 }
 
 export async function fetchKeyBundles(session: MobileAuthSession, did: string): Promise<KeyBundle[]> {
@@ -135,7 +170,7 @@ async function keyExchangeRequest<T = Record<string, unknown>>(
     throw new SocialApiError({
       method: 'POST',
       path: options.path,
-      message: error instanceof Error ? error.message : String(error),
+      message: readableErrorMessage(error),
     });
   });
 

@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-06-03 | **Updated**: 2026-06-03
+> **Created**: 2026-06-03 | **Updated**: 2026-06-06
 > **Owner**: Client Architecture Team
 > **Module**: `apps/desktop/src/runtimes/socialRuntime.ts`, `apps/mobile/src/features/social/`
 
@@ -22,7 +22,9 @@
 | `apps/desktop/src/store/navigationBadges.ts` | chat/navigation badge projection | badge 输入统一来自 social/notification projection |
 | `apps/desktop/src/services/desktop_api.ts` | Desktop BFF API gateway，大量 Station/social 调用 | 收敛错误 envelope、DTO contract、normalizer |
 | `apps/desktop/src/services/eventStream.ts` | Event stream bridge | 保持 generated proto decode，不向页面泄漏 stream |
+| `apps/desktop/src/runtimes/desktopSocialHostAdapter.ts` | Desktop window visibility、focus、network-online、tray/system notification host event adapter | 只转换为标准 `SocialHostEvent`，交给 social runtime，不直接写 projection |
 | `apps/desktop/src/pages/SocialChatPage.tsx` | Chat/contacts UI renderer | 保持 PageDescriptor + pure renderer，不新增 freshness owner |
+| `packages/client-chat-core` | 跨端 chat 纯语义：message type、attachment kind、reply/thread helper、IME-safe enter、composer capability profiles、draft submit guard、display/search/edit/sender helpers、message surface timeline helpers、conversation/thread surface helpers、visual layout contract | Desktop/Mobile 都从这里读取可共享语义与聊天骨架视觉 token，宿主能力仍留在 adapter |
 
 ### 1.2 Mobile 当前映射
 
@@ -35,8 +37,9 @@
 | `apps/mobile/src/features/social/socialStore.ts` | social projection state + user commands | 保持 store owner，补 group/offline/E2EE domain |
 | `apps/mobile/src/features/social/socialRuntime.ts` | reconcile、SSE、presence、typing sweep、external event dispatch | 与 Desktop supervisor 契约对齐 |
 | `apps/mobile/src/features/social/useSocialRuntime.ts` | Auth session 到 runtime lifecycle 的 hook adapter | 保持 thin adapter |
-| `apps/mobile/src/runtimes/mobileNativeEventBridge.ts` | Mobile host events -> `SocialHostEvent` | 补 native plugin emit 后闭环 |
+| `apps/mobile/src/runtimes/mobileNativeEventBridge.ts` | Mobile host events -> `SocialHostEvent` | 使用共享 event helper 归一化 push/deep-link/resume/notification tap，后续补 native plugin emit 闭环 |
 | `apps/mobile/src/pages/ChatPage.tsx`, `ContactsPage.tsx` | UI renderer + command dispatch | 保持不拥有 freshness |
+| `packages/client-chat-core` | 跨端 chat 纯语义：message type、attachment kind、reply/thread helper、IME-safe enter、composer capability profiles、draft submit guard、display/search/edit/sender helpers、message surface timeline helpers、conversation/thread surface helpers、visual layout contract | Mobile 不再为相同语义或聊天骨架视觉 token 维护独立实现 |
 
 ---
 
@@ -70,6 +73,7 @@
 | Group 污染 friend model | 为快速上线把 group message 塞进 friend message | 独立 group projection domain |
 | Normalizer 分散 | 每个组件处理 snake/camel/enum | normalizer boundary + reducer pure input |
 | E2EE 生命周期混乱 | UI 直接读写 key/device 状态 | E2EE projection domain + secure storage adapter |
+| 聊天视觉漂移 | Desktop/Mobile 各自写头像间距、气泡圆角、输入框几何 | `ChatVisualLayoutContract` + `test:chat-visual` |
 
 ---
 
@@ -95,11 +99,14 @@
 
 - Desktop 从 store/service 中拆出显式 normalizer/reducer 边界。
 - Mobile 与 Desktop 对齐 message mutation、receipt、notification、typing、presence reducer 语义。
+- 将 message/reply/thread/attachment/IME/composer capability/display/search/edit/sender/timeline surface/conversation surface/thread surface 等纯语义沉淀到 `packages/client-chat-core`，但不把 Desktop/Mobile 的宿主能力实现或 UI 交互放进共享包。
+- 将头像距离、气泡圆角、hover 工具桥接区、composer 浮动几何等聊天骨架视觉 token 沉淀到共享 contract；平台 renderer 只消费 token。
 
 交付：
 
 - Desktop `socialNormalizers` / `socialProjection` 等等价边界，或共享 package 的候选接口。
 - 双端 reducer case matrix。
+- `packages/client-chat-core` 作为共享语义与视觉骨架 contract 包；Desktop/Mobile 只保留平台 adapter 与 renderer。
 
 ### Phase 3: Host Adapter 闭环
 
@@ -108,6 +115,7 @@
 - Desktop 和 Mobile 都通过 `SocialHostAdapter` 进入 runtime。
 - Mobile native push/deep-link/notification tap 插件 emit 标准事件。
 - Desktop tray/system notification/window focus 转标准事件。
+- `SocialHostEvent` 归一化 helper 进入 `packages/client-chat-core`，双端 adapter 只负责宿主事件采集。
 
 交付：
 
@@ -125,6 +133,7 @@
 交付：
 
 - Mobile group chat parity。
+- `packages/client-chat-core` 提供 `ChatE2eeProjection` 与 `ChatOutboxItem` 纯 reducer，作为双端 E2EE readiness/error 与 offline retry/drain 的共享状态机。
 - 双端 offline retry/reconcile。
 - 双端 E2EE failure/status projection。
 
@@ -132,7 +141,7 @@
 
 ## 4. 兼容策略
 
-- 不一次性抽公共包，先用文档和检查锁住语义。
+- 不一次性抽 runtime 公共包；允许先抽不依赖宿主、不读写 store 的纯语义包。
 - 双端现有 API 可继续工作，但新增接口必须声明所属抽象层。
 - Store 字段可以不同名，但 projection 语义必须能映射。
 - 任何 Station response shape 兼容都只能在 normalizer，不进入 UI。

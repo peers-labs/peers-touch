@@ -1,0 +1,20 @@
+{
+  "note.action.clearSearch": "Clear search",
+  "note.action.createSample": "Create sample",
+  "note.action.delete": "Delete",
+  "note.action.refresh": "Refresh",
+  "note.action.searchSample": "Search sample",
+  "note.detail.identifier": "Note ID",
+  "note.empty": "No notes yet",
+  "note.error.invalidResponse": "Invalid note service response",
+  "note.error.operationFailed": "Operation failed",
+  "note.sample.content": "Created from the official Note applet through Peers-Touch SDK.",
+  "note.sample.searchQuery": "official",
+  "note.sample.title": "Official Note",
+  "note.section.notes": "Notes",
+  "note.section.searchResults": "Search results",
+  "note.status.loading": "Loading",
+  "note.status.ready": "Ready",
+  "note.subtitle": "Independent applet UI backed by its own service",
+  "note.title": "Note"
+}

@@ -1705,6 +1705,9 @@ fn perform_network_request(
     if !path.starts_with('/') || path.contains("..") {
         return Err("network request path must be absolute and sandbox-safe".to_string());
     }
+    if path.contains('?') {
+        return Err("network request query must use params.query".to_string());
+    }
 
     let method = params
         .get("method")
@@ -1734,22 +1737,116 @@ fn perform_network_request(
         ));
     }
 
+    let station_path = resolve_station_service_path(service, path)?;
+    let query = parse_network_query(params)?;
     let body = params.get("body").cloned();
     let http_method = parse_http_method(&method)?;
     match service_override {
         Some(base_url) => station_client::request_json_response_base_url(
             &base_url,
             http_method,
-            path,
+            &station_path,
             &context.token,
-            None,
+            query.as_deref(),
             body,
         ),
-        None => {
-            station_client::request_json_response(http_method, path, &context.token, None, body)
-        }
+        None => station_client::request_json_response(
+            http_method,
+            &station_path,
+            &context.token,
+            query.as_deref(),
+            body,
+        ),
     }
     .map_err(|error| format!("network gateway request failed: {}", error))
+}
+
+fn resolve_station_service_path(
+    service: &AppletGatewayService,
+    path: &str,
+) -> Result<String, String> {
+    let Some(public_prefix) = service.public_path_prefix.as_deref() else {
+        return Ok(path.to_string());
+    };
+    let Some(station_prefix) = service.station_path_prefix.as_deref() else {
+        return Ok(path.to_string());
+    };
+    if !is_safe_service_path_prefix(public_prefix) || !is_safe_service_path_prefix(station_prefix) {
+        return Err(format!("Service {} has unsafe path prefix", service.id));
+    }
+    if path == public_prefix {
+        return Ok(station_prefix.to_string());
+    }
+    let public_slash_prefix = format!("{}/", public_prefix.trim_end_matches('/'));
+    if let Some(suffix) = path.strip_prefix(&public_slash_prefix) {
+        return Ok(format!(
+            "{}/{}",
+            station_prefix.trim_end_matches('/'),
+            suffix
+        ));
+    }
+    if let Some(suffix) = path.strip_prefix(public_prefix) {
+        if suffix.starts_with(':') {
+            return Ok(format!(
+                "{}{}",
+                station_prefix.trim_end_matches('/'),
+                suffix
+            ));
+        }
+    }
+    Ok(path.to_string())
+}
+
+fn is_safe_service_path_prefix(prefix: &str) -> bool {
+    prefix.starts_with('/')
+        && !prefix.ends_with('/')
+        && !prefix.contains("..")
+        && !prefix.contains('\\')
+        && prefix
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '/' | '-' | '_' | ':'))
+}
+
+fn parse_network_query(params: &Value) -> Result<Option<Vec<(&str, String)>>, String> {
+    let Some(query) = params.get("query") else {
+        return Ok(None);
+    };
+    let Some(map) = query.as_object() else {
+        return Err("network request params.query must be an object".to_string());
+    };
+    let mut pairs = Vec::new();
+    for (key, value) in map {
+        if key.trim().is_empty() {
+            return Err("network request query keys must be non-empty".to_string());
+        }
+        match value {
+            Value::String(text) => pairs.push((key.as_str(), text.clone())),
+            Value::Number(number) => pairs.push((key.as_str(), number.to_string())),
+            Value::Bool(flag) => pairs.push((key.as_str(), flag.to_string())),
+            Value::Array(items) => {
+                for item in items {
+                    match item {
+                        Value::String(text) => pairs.push((key.as_str(), text.clone())),
+                        Value::Number(number) => pairs.push((key.as_str(), number.to_string())),
+                        Value::Bool(flag) => pairs.push((key.as_str(), flag.to_string())),
+                        _ => {
+                            return Err(format!(
+                                "network request query {} has unsupported value",
+                                key
+                            ))
+                        }
+                    }
+                }
+            }
+            _ => {
+                return Err(format!(
+                    "network request query {} has unsupported value",
+                    key
+                ))
+            }
+        }
+    }
+    Ok(Some(pairs))
 }
 
 fn sanitize_applet_response_headers(headers: Value) -> Value {
@@ -3475,6 +3572,8 @@ mod tests {
                 binding: "station-resolved".to_string(),
                 allowed_methods: vec!["GET".to_string(), "POST".to_string()],
                 allowed_paths: vec!["/api/v1/*".to_string()],
+                public_path_prefix: None,
+                station_path_prefix: None,
                 streaming: false,
             }],
             skills: vec![crate::contracts::AppletGatewaySkill {
@@ -3483,6 +3582,33 @@ mod tests {
                 streaming: true,
                 executor: None,
             }],
+        }
+    }
+
+    fn note_manifest() -> AppletGatewayManifest {
+        AppletGatewayManifest {
+            id: "peers.note".to_string(),
+            permissions: vec!["network.request".to_string()],
+            services: vec![AppletGatewayService {
+                id: "note".to_string(),
+                kind: "http".to_string(),
+                binding: "station-resolved".to_string(),
+                allowed_methods: vec![
+                    "GET".to_string(),
+                    "POST".to_string(),
+                    "PATCH".to_string(),
+                    "DELETE".to_string(),
+                ],
+                allowed_paths: vec![
+                    "/v1/notes".to_string(),
+                    "/v1/notes/*".to_string(),
+                    "/v1/notes:search".to_string(),
+                ],
+                public_path_prefix: Some("/v1".to_string()),
+                station_path_prefix: Some("/applets/note/v1".to_string()),
+                streaming: false,
+            }],
+            skills: vec![],
         }
     }
 
@@ -3500,6 +3626,22 @@ mod tests {
             action: Some(action.to_string()),
             params,
             manifest,
+        }
+    }
+
+    fn note_invoke(
+        session_id: &str,
+        capability: &str,
+        action: &str,
+        params: Option<Value>,
+    ) -> AppletInvokeInput {
+        AppletInvokeInput {
+            id: "peers.note".to_string(),
+            session_id: session_id.to_string(),
+            capability: capability.to_string(),
+            action: Some(action.to_string()),
+            params,
+            manifest: note_manifest(),
         }
     }
 
@@ -3521,6 +3663,138 @@ mod tests {
             return create;
         }
         applets_invoke(context, input, data_dir)
+    }
+
+    #[test]
+    fn rewrites_note_public_service_path_to_station_mount_path() {
+        let service = note_manifest().services.remove(0);
+
+        assert_eq!(
+            resolve_station_service_path(&service, "/v1/notes").unwrap(),
+            "/applets/note/v1/notes"
+        );
+        assert_eq!(
+            resolve_station_service_path(&service, "/v1/notes/note-1").unwrap(),
+            "/applets/note/v1/notes/note-1"
+        );
+        assert_eq!(
+            resolve_station_service_path(&service, "/v1/notes:search").unwrap(),
+            "/applets/note/v1/notes:search"
+        );
+    }
+
+    #[test]
+    fn rejects_note_network_paths_outside_declared_service_policy() {
+        let result = perform_network_request(
+            &context(),
+            &note_manifest(),
+            &json!({ "service": "note", "path": "/api/v1/notebook", "method": "GET" }),
+            "GET",
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("does not allow path"));
+    }
+
+    #[test]
+    fn parses_note_network_query_without_polluting_path_policy() {
+        let params = json!({
+            "service": "note",
+            "path": "/v1/notes:search",
+            "method": "GET",
+            "query": {
+                "q": "Gateway",
+                "include_deleted": false,
+                "tag": ["work", "draft"]
+            }
+        });
+
+        let query = parse_network_query(&params).unwrap().unwrap();
+
+        assert!(query.contains(&("q", "Gateway".to_string())));
+        assert!(query.contains(&("include_deleted", "false".to_string())));
+        assert!(query.contains(&("tag", "work".to_string())));
+        assert!(query.contains(&("tag", "draft".to_string())));
+        ensure_service_allows(&note_manifest().services[0], "GET", "/v1/notes:search").unwrap();
+    }
+
+    #[test]
+    fn note_gateway_reaches_station_bundled_note_service() {
+        let Ok(base_url) = std::env::var("PEERS_APPLET_NOTE_GATE_BASE_URL") else {
+            return;
+        };
+        let token = std::env::var("PEERS_APPLET_NOTE_GATE_TOKEN")
+            .expect("note product gate token should be provided by the gate server");
+        std::env::set_var("PEERS_APPLET_SERVICE_NOTE", &base_url);
+
+        let gateway_context = AccessContext {
+            actor_id: Some("note-real-product-gate-actor".to_string()),
+            token,
+        };
+        let data_dir = temp_data_dir("note-real-product-gate");
+        let session_id = unique_session_id("session-note-product");
+        let create = applets_invoke_registered(
+            gateway_context.clone(),
+            note_invoke(
+                &session_id,
+                "network",
+                "request",
+                Some(json!({
+                    "service": "note",
+                    "path": "/v1/notes",
+                    "method": "POST",
+                    "body": {
+                        "title": "Gateway Note",
+                        "content": "Created through Desktop Gateway"
+                    }
+                })),
+            ),
+            &data_dir,
+        );
+        assert!(create.ok, "create note failed: {:?}", create.error);
+        let created: Value = serde_json::from_str(&create.data.unwrap().status).unwrap();
+        assert_eq!(created.get("status").and_then(Value::as_u64), Some(201));
+        assert_eq!(
+            created
+                .get("body")
+                .and_then(|body| body.get("item"))
+                .and_then(|note| note.get("title"))
+                .and_then(Value::as_str),
+            Some("Gateway Note")
+        );
+
+        let search = applets_invoke_registered(
+            gateway_context,
+            note_invoke(
+                &session_id,
+                "network",
+                "request",
+                Some(json!({
+                    "service": "note",
+                    "path": "/v1/notes:search",
+                    "method": "GET",
+                    "query": { "q": "Gateway" }
+                })),
+            ),
+            &data_dir,
+        );
+        std::env::remove_var("PEERS_APPLET_SERVICE_NOTE");
+
+        assert!(search.ok, "search note failed: {:?}", search.error);
+        let searched: Value = serde_json::from_str(&search.data.unwrap().status).unwrap();
+        assert_eq!(searched.get("status").and_then(Value::as_u64), Some(200));
+        let items = searched
+            .get("body")
+            .and_then(|body| body.get("items"))
+            .and_then(Value::as_array)
+            .expect("search response should contain notes");
+        assert!(
+            items
+                .iter()
+                .any(|item| item.get("title").and_then(Value::as_str) == Some("Gateway Note")),
+            "search response should include the created note: {:?}",
+            searched
+        );
     }
 
     fn applet_error_code(result: &AppResult<StubPayload>) -> Option<String> {

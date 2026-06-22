@@ -20,7 +20,7 @@ interface PageRouterProps {
 //
 // As pages migrate to the kernel `PageDescriptor` contract they are dropped
 // from this set — `PageHost` (kernel/PageHost.tsx) owns their lifecycle now.
-// Currently kernel-owned: search, chat, settings.
+// Currently kernel-owned: search, chat, settings, moments.
 const KEEP_ALIVE_PAGES = new Set<string>(['agent']);
 
 export function PageRouter({ page, router, navigation }: PageRouterProps) {

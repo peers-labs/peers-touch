@@ -113,6 +113,72 @@ function createComplexManifest(id = 'generic-complex-applet') {
   }
 }
 
+function createNoteManifest() {
+  return {
+    ...createValidManifest('peers.note'),
+    name: 'Note',
+    description: 'Note official applet',
+    author: 'Peers Touch',
+    permissions: [
+      'app.getContext',
+      'lifecycle.reportReady',
+      'network.request',
+      'storage.get',
+      'storage.set',
+      'storage.remove',
+      'ui.showToast',
+      'ui.showLoading',
+      'ui.hideLoading',
+      'ui.showModal',
+      'navigation.navigateTo',
+      'navigation.back',
+      'events.emit',
+      'events.subscribe',
+      'events.unsubscribe',
+      'telemetry.track',
+      'telemetry.reportError',
+    ],
+    targets: ['desktop', 'android', 'ios', 'web'],
+    load: {
+      desktop: {
+        type: 'lynx-web' as const,
+        entry: 'main.lynx.bundle',
+      },
+      android: {
+        type: 'lynx-native' as const,
+        entry: 'main.lynx.bundle',
+      },
+      ios: {
+        type: 'lynx-native' as const,
+        entry: 'main.lynx.bundle',
+      },
+      web: {
+        type: 'lynx-web' as const,
+        entry: 'main.lynx.bundle',
+      },
+    },
+    services: [
+      {
+        id: 'note',
+        kind: 'http' as const,
+        binding: 'station-resolved' as const,
+        allowedMethods: ['GET', 'POST', 'PATCH', 'DELETE'],
+        allowedPaths: ['/v1/notes', '/v1/notes/*', '/v1/notes:search'],
+        publicPathPrefix: '/v1',
+        stationPathPrefix: '/applets/note/v1',
+        streaming: false,
+      },
+    ],
+    skills: [],
+    integrity: {
+      algorithm: 'sha256' as const,
+      files: {
+        'main.lynx.bundle': EMPTY_SHA256,
+      },
+    },
+  }
+}
+
 function indexResponse(manifest: unknown) {
   return {
     ok: true,
@@ -135,7 +201,10 @@ function mockAppletPackage(manifest: unknown, files: Record<string, string> = {}
     if (url === '/applets-dist/index.json') {
       return indexResponse(manifest)
     }
-    const relativePath = url.replace('/applets-dist/generic-complex-applet/', '').replace('/applets-dist/web-search/', '')
+    const relativePath = url
+      .replace('/applets-dist/generic-complex-applet/', '')
+      .replace('/applets-dist/web-search/', '')
+      .replace('/applets-dist/peers.note/', '')
     return fileResponse(files[relativePath] ?? '')
   })
 }
@@ -207,6 +276,21 @@ describe('applet schema validation', () => {
     expect(manifestCheck.value.services?.[0]?.binding).toBe('host-resolved')
     expect(manifestCheck.value.skills?.[0]?.id).toBe('generic-skill')
     expect(manifestCheck.value.integrity?.algorithm).toBe('sha256')
+  })
+
+  it('accepts official applet ids and service bindings', () => {
+    const manifestCheck = parseAppletInfo(createNoteManifest(), 'index.applets[0]')
+    expect(manifestCheck.ok).toBe(true)
+    if (!manifestCheck.ok) return
+
+    expect(manifestCheck.value.id).toBe('peers.note')
+    expect(manifestCheck.value.path).toBe('/applets-dist/peers.note')
+    expect(manifestCheck.value.services?.[0]).toEqual(expect.objectContaining({
+      id: 'note',
+      binding: 'station-resolved',
+      publicPathPrefix: '/v1',
+      stationPathPrefix: '/applets/note/v1',
+    }))
   })
 })
 
@@ -284,6 +368,40 @@ describe('applet runtime loading', () => {
       manifest: expect.objectContaining({
         id: 'generic-complex-applet',
         permissions: expect.arrayContaining(['network.request']),
+      }),
+    })
+  })
+
+  it('loads the official Note applet manifest through the Desktop package reader', async () => {
+    const noteManifest = createNoteManifest()
+    mockAppletPackage(noteManifest)
+    mockAppletCreateSession.mockResolvedValueOnce({
+      ok: true,
+      appletId: 'peers.note',
+      sessionId: 'desktop-session-peers-note',
+    })
+
+    const manager = AppletManager.getInstance()
+    const applets = await manager.scanApplets()
+    expect(applets).toHaveLength(1)
+
+    const loaded = await manager.loadApplet('peers.note')
+    expect(loaded.path).toBe('/applets-dist/peers.note')
+    expect(loaded.load.desktop?.entry).toBe('main.lynx.bundle')
+    expect(loaded.services?.[0]?.id).toBe('note')
+    expect(loaded.services?.[0]?.stationPathPrefix).toBe('/applets/note/v1')
+    expect(manager.getSessionId('peers.note')).toBe('desktop-session-peers-note')
+    expect(mockAppletCreateSession).toHaveBeenCalledWith({
+      id: 'peers.note',
+      manifest: expect.objectContaining({
+        id: 'peers.note',
+        permissions: expect.arrayContaining(['network.request']),
+        services: expect.arrayContaining([
+          expect.objectContaining({
+            id: 'note',
+            binding: 'station-resolved',
+          }),
+        ]),
       }),
     })
   })

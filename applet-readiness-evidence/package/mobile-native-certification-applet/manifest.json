@@ -99,7 +99,7 @@
   "integrity": {
     "algorithm": "sha256",
     "files": {
-      "main.lynx.bundle": "sha256:55fe206d59a0699fc6768cf96e0c55c8564f2026e74579b1736cc742e5be4fa6",
+      "main.lynx.bundle": "sha256:9ae52c960d8b91cdecf02948b00446283875d1293bcfa645748cf027495a0679",
       "schemas/skill.input.json": "sha256:c4d95b9b646af64737800ef34eddcffa4b955b3584b4def475f09a49c3910c43"
     }
   }

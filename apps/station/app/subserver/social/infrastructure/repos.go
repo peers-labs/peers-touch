@@ -15,6 +15,7 @@ import (
 type Repos struct {
 	PublicPosts   domain.PublicPostRepository
 	PrivatePosts  domain.PrivatePostRepository
+	Deliveries    domain.MomentDeliveryRepository
 	AudienceGrant domain.AudienceGrantRepository
 	Comments      domain.CommentRepository
 	Reactions     domain.ReactionRepository
@@ -23,8 +24,9 @@ type Repos struct {
 	// Follows is the broader follow-graph repo used by RelationshipService.
 	// The narrower `domain.FollowRepository` interface is satisfied by
 	// the same instance (Follows implements both).
-	Follows FollowRepository
-	Blocks  BlockGraphRepository
+	Follows    FollowRepository
+	Blocks     BlockGraphRepository
+	Moderation domain.StationModerationRepository
 }
 
 // NewRepos constructs every repo against the supplied *gorm.DB. The
@@ -37,11 +39,13 @@ func NewRepos(gdb *gorm.DB, resolveDID func(context.Context, uint64) (string, er
 	return &Repos{
 		PublicPosts:   NewPublicPostRepository(gdb),
 		PrivatePosts:  NewPrivatePostRepository(gdb, grants, resolveDID),
+		Deliveries:    NewMomentDeliveryRepository(gdb),
 		AudienceGrant: grants,
 		Comments:      NewCommentRepository(gdb),
 		Reactions:     NewReactionRepository(gdb),
 		Circles:       NewCircleRepository(gdb),
 		Follows:       NewFollowRepository(gdb),
 		Blocks:        NewBlockGraphRepository(gdb),
+		Moderation:    NewStationModerationRepository(gdb),
 	}
 }

@@ -30,3 +30,26 @@ message Error {
   string code = 1;    // e.g., "t10001"
   string message = 2;
 }
+
+// EncryptedMediaDescriptor describes client-side media encryption for
+// chat attachments and Moment media. The descriptor is metadata only:
+// clients MUST protect key material by carrying this message inside the
+// surface-specific E2EE envelope when the audience is private. Public
+// plaintext metadata fields on legacy attachment messages are deprecated
+// compatibility mirrors and must not be treated as authoritative.
+message EncryptedMediaDescriptor {
+  bool encrypted = 1;
+  uint32 version = 2;
+  string suite = 3;
+  string key_b64 = 4;
+  string nonce_b64 = 5;
+  string plaintext_sha256_b64 = 6;
+  string ciphertext_sha256_b64 = 7;
+  int64 plaintext_size = 8;
+  int64 ciphertext_size = 9;
+  string chunking = 10;
+  uint32 chunk_size = 11;
+  uint32 chunk_count = 12;
+  uint32 tag_size = 13;
+  string nonce_strategy = 14;
+}
