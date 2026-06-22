@@ -6,6 +6,23 @@
   "layout.nav.contacts": "通讯录",
   "layout.nav.settings": "设置",
 
+  "layout.command.title": "命令面板",
+  "layout.command.placeholder": "搜索命令或快捷键",
+  "layout.command.empty": "没有找到命令",
+  "layout.command.openPaletteWithShortcut": "命令面板（{{shortcut}}）",
+  "layout.command.search": "打开搜索",
+  "layout.command.searchDesc": "跳转到搜索页。",
+  "layout.command.newChat": "新建智能体对话",
+  "layout.command.newChatDesc": "开始一个新的智能体会话。",
+  "layout.command.nextAgent": "切换智能体",
+  "layout.command.nextAgentDesc": "切换到下一个可用智能体。",
+  "layout.command.togglePortal": "切换笔记面板",
+  "layout.command.togglePortalDesc": "打开或关闭智能体笔记面板。",
+  "layout.command.notes": "打开笔记",
+  "layout.command.notesDesc": "跳转到笔记工作区。",
+  "layout.command.settings": "打开设置",
+  "layout.command.settingsDesc": "跳转到应用设置。",
+
   "layout.online.tooltip": "过去 5 分钟内有 {{count}} 位访客在线",
 
   "layout.auth.noAccounts": "暂无已授权账户 — 点击打开账户设置",

@@ -7,9 +7,11 @@
     "build": "node build.js",
     "dev": "node dev-sync.js",
     "build:agent-pilot": "cd agent-pilot && pnpm build",
+    "build:atelier": "cd atelier && pnpm build",
     "build:remote-cli": "cd remote-cli && pnpm build",
     "build:web-search": "cd web-search && pnpm build",
     "dev:agent-pilot": "cd agent-pilot && pnpm dev",
+    "dev:atelier": "cd atelier && pnpm dev",
     "dev:remote-cli": "cd remote-cli && pnpm dev",
     "dev:web-search": "cd web-search && pnpm dev"
   },
