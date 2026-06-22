@@ -37,7 +37,8 @@
 
 | 模块 | 原型路径 | 落地目标 | 对应设计版本 | 状态 | 入口文档 |
 |------|---------|---------|------------|------|---------|
-| atelier | `packages/prototypes/atelier/` | Applet（Lynx）；原型为 React+LobeUI web 展示 | functional-modules §1 | drafting | [prototype/README.md](../atelier/prototype/README.md) |
+| desktop | `packages/prototypes/desktop/` | Desktop 容器外壳（apps/desktop）；原型为 React web 展示 | runtime/desktop-runtime-architecture | drafting | [prototype/README.md](../desktop/prototype/README.md) |
+| atelier | `packages/prototypes/atelier/` | Applet（Lynx），运行在 Desktop 容器内；原型为 React+LobeUI web 展示 | functional-modules §1 | drafting | [prototype/README.md](../atelier/prototype/README.md) |
 
 > 状态取值：`drafting`（搭建中）· `pending-review`（待确认）· `confirmed`（已确认，可落地）· `landed`（已落地）· `superseded`（已废弃）。
 
