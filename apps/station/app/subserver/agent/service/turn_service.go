@@ -45,6 +45,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -62,20 +63,42 @@ import (
 
 // TurnConfig holds per-execution configuration for a single turn.
 type TurnConfig struct {
-	AgentID           string
-	ConversationID    string
-	Identity          string
-	AgentConfigPrompt string
-	Platform          string
-	AvailableTools    []string
-	ContextWindowSize int
-	MaxRetries        int
-	Provider          string
-	Model             string
-	FallbackModel     string // Alternate model for billing/model_not_found fallback recovery.
-	WorkspaceRoot     string
-	RotationStrategy  domain.RotationStrategy
-	Depth             int // Current delegation depth (0 = top-level).
+	AgentID            string
+	ConversationID     string
+	Identity           string
+	AgentConfigPrompt  string
+	Platform           string
+	AvailableTools     []string
+	ContextWindowSize  int
+	MaxRetries         int
+	Provider           string
+	Model              string
+	FallbackModel      string // Alternate model for billing/model_not_found fallback recovery.
+	WorkspaceRoot      string
+	KnowledgeResources []domain.KnowledgeResource
+	RotationStrategy   domain.RotationStrategy
+	Depth              int // Current delegation depth (0 = top-level).
+	EventSink          TurnEventSink
+}
+
+type TurnEventSink func(ctx context.Context, event TurnEvent)
+
+type TurnEvent struct {
+	Type           string `json:"type"`
+	TurnID         string `json:"turnId,omitempty"`
+	ConversationID string `json:"conversationId,omitempty"`
+	AgentID        string `json:"agentId,omitempty"`
+	Stage          string `json:"stage,omitempty"`
+	Text           string `json:"text,omitempty"`
+	ToolCallID     string `json:"toolCallId,omitempty"`
+	ToolName       string `json:"toolName,omitempty"`
+	Arguments      string `json:"arguments,omitempty"`
+	Source         string `json:"source,omitempty"`
+	ServerName     string `json:"serverName,omitempty"`
+	WorkspaceRoot  string `json:"workspaceRoot,omitempty"`
+	Result         string `json:"result,omitempty"`
+	Error          string `json:"error,omitempty"`
+	Iteration      int    `json:"iteration,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -100,6 +123,7 @@ type TurnService struct {
 	reviewService    *ReviewService
 	growthMetrics    *GrowthMetricsService
 	nudgeState       *domain.NudgeState
+	localToolBroker  *LocalToolBroker
 }
 
 func NewTurnService(
@@ -130,7 +154,26 @@ func NewTurnService(
 		reviewService:    reviewService,
 		growthMetrics:    growthMetrics,
 		nudgeState:       domain.NewNudgeState(),
+		localToolBroker:  NewLocalToolBroker(),
 	}
+}
+
+func (s *TurnService) SubmitLocalToolResult(result LocalToolResult) error {
+	return s.localToolBroker.Submit(result)
+}
+
+func (s *TurnService) emitTurnEvent(ctx context.Context, config *TurnConfig, turnID string, event TurnEvent) {
+	if config == nil || config.EventSink == nil {
+		return
+	}
+	event.TurnID = turnID
+	if event.ConversationID == "" {
+		event.ConversationID = config.ConversationID
+	}
+	if event.AgentID == "" {
+		event.AgentID = config.AgentID
+	}
+	config.EventSink(ctx, event)
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +219,10 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 
 	logger.Infof(ctx, "turn started: turn_id=%s agent_id=%s conversation_id=%s",
 		turnID, config.AgentID, config.ConversationID)
+	s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+		Type:  "progress",
+		Stage: "turn_started",
+	})
 
 	// MemoryProvider hook: on_turn_start — notify external backend of new turn.
 	if mp := s.memoryProvider(); mp != nil {
@@ -211,6 +258,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		config.AvailableTools,
 		config.WorkspaceRoot,
 		processedInput,
+		config.KnowledgeResources,
 	)
 	if err != nil {
 		_ = s.failTurn(ctx, config.AgentID, turnID, "prompt assembly failed")
@@ -222,9 +270,19 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	trace.SystemPromptHash = systemPromptHash
 	trace.MemorySnapshotHash = assemblyResult.MemorySnapshotHash
 	trace.SkillIndexHash = assemblyResult.SkillIndexHash
+	trace.KnowledgeChunks = assemblyResult.KnowledgeChunks
 
 	logger.Infof(ctx, "prompt assembled: turn_id=%s prompt_hash=%s skills=%d",
 		turnID, systemPromptHash, assemblyResult.SkillCount)
+	if len(trace.KnowledgeChunks) > 0 {
+		knowledgeChunkPayload, _ := json.Marshal(trace.KnowledgeChunks)
+		s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+			Type:      "progress",
+			Stage:     "knowledge_retrieved",
+			Iteration: len(trace.KnowledgeChunks),
+			Result:    string(knowledgeChunkPayload),
+		})
+	}
 
 	// Step 5 — Load conversation messages.
 	messages, err := s.loadMessages(ctx, config.ConversationID)
@@ -259,14 +317,29 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 
 	// Step 7 — Credential lease + provider call with error recovery loop.
-	assistantResponse, providerCalls, err := s.providerCallWithRetry(
+	s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+		Type:  "progress",
+		Stage: "provider_call_started",
+	})
+	assistantResponse, providerCalls, streamed, err := s.providerCallWithRetry(
 		ctx, config, turnID, trace, assemblyResult.SystemPrompt, messages,
 	)
 	if err != nil {
 		_ = s.failTurn(ctx, config.AgentID, turnID, fmt.Sprintf("provider call failed after retries: %v", err))
+		s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+			Type:  "error",
+			Error: err.Error(),
+		})
 		return nil, err
 	}
 	trace.ProviderCalls = providerCalls
+	if !streamed {
+		s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+			Type:  "text",
+			Text:  assistantResponse,
+			Stage: "provider_call_completed",
+		})
+	}
 
 	// Step 8 — Tool call iteration loop.
 	toolIterations, err := s.processToolCalls(
@@ -274,6 +347,10 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	)
 	if err != nil {
 		_ = s.failTurn(ctx, config.AgentID, turnID, fmt.Sprintf("tool call processing failed: %v", err))
+		s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+			Type:  "error",
+			Error: err.Error(),
+		})
 		return nil, err
 	}
 
@@ -340,6 +417,11 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 
 	logger.Infof(ctx, "turn completed: turn_id=%s iterations=%d", turnID, toolIterations)
+	s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+		Type:      "progress",
+		Stage:     "turn_completed",
+		Iteration: toolIterations,
+	})
 
 	if s.growthMetrics != nil {
 		s.growthMetrics.RecordEvent(ctx, config.AgentID, EventTurnCompleted, CategoryTurn, turnID, fmt.Sprintf("iterations=%d", toolIterations), "success")
@@ -433,6 +515,7 @@ func (s *TurnService) runCompression(
 		config.AvailableTools,
 		config.WorkspaceRoot,
 		messages[len(messages)-1].Content,
+		config.KnowledgeResources,
 	)
 	if freshErr != nil {
 		logger.Warnf(ctx, "post-compression prompt reassembly failed: turn_id=%s err=%v", turnID, freshErr)
@@ -440,6 +523,7 @@ func (s *TurnService) runCompression(
 		*assemblyResult = *freshAssembly
 		trace.MemorySnapshotHash = freshAssembly.MemorySnapshotHash
 		trace.SkillIndexHash = freshAssembly.SkillIndexHash
+		trace.KnowledgeChunks = freshAssembly.KnowledgeChunks
 	}
 
 	// Step 4 — Session Split: mark old conversation as compressed, create
@@ -556,7 +640,7 @@ func (s *TurnService) providerCallWithRetry(
 	trace *domain.TurnTrace,
 	systemPrompt string,
 	messages []domain.Message,
-) (string, []domain.ProviderCallRecord, error) {
+) (string, []domain.ProviderCallRecord, bool, error) {
 
 	maxRetries := config.MaxRetries
 	if maxRetries <= 0 {
@@ -585,10 +669,10 @@ func (s *TurnService) providerCallWithRetry(
 
 			// If no credential is available on a retry, it's fatal.
 			if attempt > 0 {
-				return "", providerCalls, errcode.New(errcode.AgentCredentialFailed,
+				return "", providerCalls, false, errcode.New(errcode.AgentCredentialFailed,
 					http.StatusServiceUnavailable, "no credentials available after rotation", leaseErr)
 			}
-			return "", providerCalls, leaseErr
+			return "", providerCalls, false, leaseErr
 		}
 
 		logger.Infof(ctx, "credential leased: turn_id=%s attempt=%d credential_id=%s",
@@ -602,6 +686,13 @@ func (s *TurnService) providerCallWithRetry(
 			SystemPrompt: systemPrompt,
 			Messages:     messages,
 			ProviderType: config.Provider,
+			DeltaSink: func(deltaCtx context.Context, delta ProviderDelta) {
+				s.emitTurnEvent(deltaCtx, config, turnID, TurnEvent{
+					Type:  delta.Type,
+					Text:  delta.Content,
+					Stage: "provider_delta",
+				})
+			},
 		})
 
 		callDuration := time.Since(callStart)
@@ -631,7 +722,7 @@ func (s *TurnService) providerCallWithRetry(
 		if callErr == nil && resp != nil {
 			logger.Infof(ctx, "provider call success: turn_id=%s attempt=%d model=%s input=%d output=%d latency=%s",
 				turnID, attempt, resp.Model, resp.InputTokens, resp.OutputTokens, callDuration)
-			return resp.Content, providerCalls, nil
+			return resp.Content, providerCalls, resp.Streamed, nil
 		}
 
 		// Error classification and recovery decision.
@@ -686,12 +777,12 @@ func (s *TurnService) providerCallWithRetry(
 
 		// Non-retryable errors terminate the loop immediately.
 		if !classified.Retryable && !classified.ShouldCompress && !classified.ShouldRotateCredential && !classified.ShouldFallback {
-			return "", providerCalls, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
+			return "", providerCalls, false, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
 				fmt.Sprintf("non-retryable provider error: %s", classified.Reason.String()), callErr)
 		}
 	}
 
-	return "", providerCalls, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
+	return "", providerCalls, false, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
 		fmt.Sprintf("provider call exhausted %d retries", maxRetries), nil)
 }
 
@@ -701,7 +792,10 @@ func (s *TurnService) providerCallWithRetry(
 
 // maxToolIterations is the hard upper bound on tool call rounds per turn
 // to prevent infinite loops from adversarial or buggy tool responses.
-const maxToolIterations = 25
+const (
+	maxToolIterations = 25
+	localToolTimeout  = 120 * time.Second
+)
 
 // processToolCalls parses tool_calls from the assistant response, executes
 // them (including delegation), appends results as tool-role messages,
@@ -733,6 +827,14 @@ func (s *TurnService) processToolCalls(
 
 		for _, tc := range toolCalls {
 			callStart := time.Now()
+			callID := generateID("toolcall")
+			s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+				Type:       "tool_call",
+				ToolCallID: callID,
+				ToolName:   tc.ToolName,
+				Arguments:  tc.Arguments,
+				Iteration:  iterations,
+			})
 
 			var toolResult string
 			var toolErr error
@@ -748,7 +850,11 @@ func (s *TurnService) processToolCalls(
 
 			// Delegation: handle delegate_task via DelegationService with
 			// recursive mini turn-loop executor.
-			if tc.ToolName == "delegate_task" {
+			if tc.ToolName == "local_mcp" {
+				toolResult, toolErr = s.executeLocalMCPTool(ctx, config, turnID, callID, tc)
+			} else if isDesktopLocalBuiltinTool(tc.ToolName) {
+				toolResult, toolErr = s.executeDesktopLocalBuiltinTool(ctx, config, turnID, callID, tc)
+			} else if tc.ToolName == "delegate_task" {
 				toolResult, toolErr = s.executeDelegation(ctx, turnID, tc, config)
 			} else {
 				// Central dispatch via ToolRegistryService.
@@ -766,6 +872,17 @@ func (s *TurnService) processToolCalls(
 				resultContent = fmt.Sprintf("[tool_error] %s: %v", tc.ToolName, toolErr)
 				logger.Warnf(ctx, "tool call failed: turn_id=%s tool=%s err=%v", turnID, tc.ToolName, toolErr)
 			}
+			toolEvent := TurnEvent{
+				Type:       "tool_result",
+				ToolCallID: callID,
+				ToolName:   tc.ToolName,
+				Result:     resultContent,
+				Iteration:  iterations,
+			}
+			if toolErr != nil {
+				toolEvent.Error = toolErr.Error()
+			}
+			s.emitTurnEvent(ctx, config, turnID, toolEvent)
 
 			// Track skills loaded for growth attribution.
 			if tc.ToolName == "skill_view" && toolErr == nil {
@@ -813,7 +930,7 @@ func (s *TurnService) processToolCalls(
 		}
 
 		// Re-invoke the provider with tool results appended.
-		nextResponse, _, reCallErr := s.providerCallWithRetry(
+		nextResponse, _, _, reCallErr := s.providerCallWithRetry(
 			ctx, config, turnID, trace, systemPrompt, messages,
 		)
 		if reCallErr != nil {
@@ -830,6 +947,126 @@ func (s *TurnService) processToolCalls(
 	}
 
 	return iterations, nil
+}
+
+func isDesktopLocalBuiltinTool(toolName string) bool {
+	switch toolName {
+	case "local_file_read",
+		"local_workspace_list",
+		"local_clipboard_read",
+		"local_clipboard_write",
+		"local_shell_safe",
+		"oauth_connector_call":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *TurnService) executeLocalMCPTool(
+	ctx context.Context,
+	config *TurnConfig,
+	turnID string,
+	callID string,
+	tc toolCallEntry,
+) (string, error) {
+	var args struct {
+		ServerName      string          `json:"server_name"`
+		ServerNameCamel string          `json:"serverName"`
+		ToolName        string          `json:"tool_name"`
+		ToolNameCamel   string          `json:"toolName"`
+		Arguments       json.RawMessage `json:"arguments"`
+	}
+	if err := json.Unmarshal([]byte(tc.Arguments), &args); err != nil {
+		return "", fmt.Errorf("invalid local_mcp arguments: %w", err)
+	}
+
+	serverName := strings.TrimSpace(args.ServerName)
+	if serverName == "" {
+		serverName = strings.TrimSpace(args.ServerNameCamel)
+	}
+	toolName := strings.TrimSpace(args.ToolName)
+	if toolName == "" {
+		toolName = strings.TrimSpace(args.ToolNameCamel)
+	}
+	if serverName == "" || toolName == "" {
+		return "", fmt.Errorf("local_mcp requires server_name and tool_name")
+	}
+
+	toolArgs := strings.TrimSpace(string(args.Arguments))
+	if toolArgs == "" {
+		toolArgs = "{}"
+	}
+
+	resultCh, cleanup, err := s.localToolBroker.Register(turnID, callID)
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+
+	s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+		Type:       "local_tool_request",
+		Source:     "mcp",
+		ServerName: serverName,
+		ToolCallID: callID,
+		ToolName:   toolName,
+		Arguments:  toolArgs,
+	})
+
+	waitCtx, cancel := context.WithTimeout(ctx, localToolTimeout)
+	defer cancel()
+	select {
+	case result := <-resultCh:
+		if result.IsError {
+			return result.Content, fmt.Errorf("%s", result.Content)
+		}
+		return result.Content, nil
+	case <-waitCtx.Done():
+		return "", fmt.Errorf("local_mcp result wait failed: %w", waitCtx.Err())
+	}
+}
+
+func (s *TurnService) executeDesktopLocalBuiltinTool(
+	ctx context.Context,
+	config *TurnConfig,
+	turnID string,
+	callID string,
+	tc toolCallEntry,
+) (string, error) {
+	toolArgs := strings.TrimSpace(tc.Arguments)
+	if toolArgs == "" {
+		toolArgs = "{}"
+	}
+	if !json.Valid([]byte(toolArgs)) {
+		return "", fmt.Errorf("%s arguments must be valid JSON", tc.ToolName)
+	}
+
+	resultCh, cleanup, err := s.localToolBroker.Register(turnID, callID)
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+
+	s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+		Type:          "local_tool_request",
+		Source:        "builtin",
+		ToolCallID:    callID,
+		ToolName:      tc.ToolName,
+		Arguments:     toolArgs,
+		WorkspaceRoot: config.WorkspaceRoot,
+	})
+
+	waitCtx, cancel := context.WithTimeout(ctx, localToolTimeout)
+	defer cancel()
+	select {
+	case result := <-resultCh:
+		if result.IsError {
+			return result.Content, fmt.Errorf("%s", result.Content)
+		}
+		return result.Content, nil
+	case <-waitCtx.Done():
+		return "", fmt.Errorf("%s result wait failed: %w", tc.ToolName, waitCtx.Err())
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1108,6 +1345,7 @@ func (s *TurnService) saveTurnTrace(ctx context.Context, trace *domain.TurnTrace
 	providerCallsJSON, _ := json.Marshal(trace.ProviderCalls)
 	errorsJSON, _ := json.Marshal(trace.ErrorClassified)
 	delegationJSON, _ := json.Marshal(trace.DelegationResults)
+	knowledgeChunksJSON, _ := json.Marshal(trace.KnowledgeChunks)
 
 	record := &persistence.TurnTrace{
 		ID:                   trace.TraceID,
@@ -1119,6 +1357,7 @@ func (s *TurnService) saveTurnTrace(ctx context.Context, trace *domain.TurnTrace
 		ErrorsClassified:     errorsJSON,
 		CompressionTriggered: trace.CompressionTriggered,
 		DelegationResults:    delegationJSON,
+		KnowledgeChunks:      knowledgeChunksJSON,
 	}
 
 	if trace.SystemPromptHash != "" {

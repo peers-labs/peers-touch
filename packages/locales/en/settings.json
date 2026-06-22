@@ -117,6 +117,7 @@
   "settings.tools.setPrimarySuccess": "Primary search engine set to {{name}}",
   "settings.tools.clearPrimarySuccess": "Primary search engine cleared (auto-detect)",
   "settings.tools.setPrimaryFailed": "Failed to update",
+  "settings.tools.operationFailed": "Tool settings operation failed",
   "settings.tools.toolsTitle": "Tools ({{count}})",
   "settings.tools.columnName": "Name",
   "settings.tools.columnCategory": "Category",
