@@ -828,7 +828,8 @@ pub fn oss_upload_encrypted_attachment_social(
             )
         }
     };
-    let cleanup = application_oss::TempFileCleanup::new(temp_path.clone(), "encrypted social attachment");
+    let cleanup =
+        application_oss::TempFileCleanup::new(temp_path.clone(), "encrypted social attachment");
     let mut plaintext_hasher = Sha256::new();
     let mut ciphertext_hasher = Sha256::new();
     let mut ciphertext_size: u64 = 0;

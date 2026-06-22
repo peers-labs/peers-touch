@@ -456,17 +456,20 @@ pub struct ProviderCreateInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillsListInput {
+    pub agent_id: Option<String>,
     pub source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillsSearchInput {
+    pub agent_id: Option<String>,
     pub q: String,
     pub limit: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillIdInput {
+    pub agent_id: Option<String>,
     pub id: String,
 }
 
@@ -477,12 +480,14 @@ pub struct BuiltinSkillIdInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillCreateInput {
+    pub agent_id: Option<String>,
     pub name: String,
     pub content: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillUpdateInput {
+    pub agent_id: Option<String>,
     pub id: String,
     pub name: Option<String>,
     pub description: Option<String>,
@@ -492,8 +497,24 @@ pub struct SkillUpdateInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillToggleInput {
+    pub agent_id: Option<String>,
     pub id: String,
     pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillVersionsInput {
+    pub agent_id: Option<String>,
+    pub id: String,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillRollbackInput {
+    pub agent_id: Option<String>,
+    pub id: String,
+    pub target_version: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -516,6 +537,14 @@ pub struct McpUpdateInput {
 pub struct McpToggleInput {
     pub name: String,
     pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpExecuteToolInput {
+    pub server_name: String,
+    pub tool_name: String,
+    pub arguments: Option<serde_json::Value>,
+    pub call_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -855,16 +884,25 @@ pub struct AppletGatewaySkill {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillImportAddressInput {
+    pub agent_id: Option<String>,
     pub address: String,
     pub oauth_provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillImportGitHubInput {
+    pub agent_id: Option<String>,
     pub owner: String,
     pub repo: String,
     pub branch: Option<String>,
     pub file_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillImportZipInput {
+    pub agent_id: Option<String>,
+    pub file_name: String,
+    pub data_base64: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -892,6 +930,7 @@ pub struct SkillMarketListInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillMarketDetailInput {
+    pub agent_id: Option<String>,
     pub market_id: String,
     pub file_path: String,
 }
@@ -919,15 +958,35 @@ pub struct AgentDuplicateInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentPackageExportInput {
+    pub id: String,
+    #[serde(default, rename = "include_local_paths", alias = "includeLocalPaths")]
+    pub include_local_paths: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentPackageImportInput {
+    pub package: serde_json::Value,
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSearchInput {
     pub q: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentSelectInput {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentExecuteTurnInput {
+    pub stream_id: Option<String>,
     pub conversation_id: String,
     pub agent_id: String,
     pub user_input: String,
+    pub attachments: Option<Vec<AttachmentInput>>,
     pub provider: Option<String>,
     pub model: Option<String>,
     pub identity: Option<String>,
@@ -935,6 +994,30 @@ pub struct AgentExecuteTurnInput {
     pub workspace_root: Option<String>,
     pub context_window_size: Option<u32>,
     pub max_retries: Option<u32>,
+    pub knowledge_resources: Option<Vec<Value>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTurnStreamCancelInput {
+    pub stream_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentLocalToolRequestInput {
+    pub source: String,
+    pub server_name: Option<String>,
+    pub tool_name: String,
+    pub arguments: Option<serde_json::Value>,
+    pub call_id: Option<String>,
+    pub turn_id: Option<String>,
+    pub workspace_root: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentToolApprovalDecisionInput {
+    pub approval_id: String,
+    pub approved: bool,
+    pub actor: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

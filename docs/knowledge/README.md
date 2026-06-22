@@ -161,6 +161,7 @@ Pick one based on intent:
 ### Playbooks
 
 - [`playbooks/adding-federation-broadcast-topic.md`](playbooks/adding-federation-broadcast-topic.md) — full path for a new relay-mediated broadcast topic.
+- [`playbooks/documenting-large-requirements.md`](playbooks/documenting-large-requirements.md) — required path for module-level demands, architecture work, and large cross-layer feature rebuilds.
 
 ### Reference
 
