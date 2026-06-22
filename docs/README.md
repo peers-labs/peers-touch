@@ -162,6 +162,9 @@
 - Federation 虚拟网络与治理账本：`architecture/federation/README.md`
 - 质量保证闭环：`architecture/quality-framework/README.md`
 - 产品验收框架：`architecture/acceptance-framework/README.md`
+- Agent LobeHub 蓝本重构：`architecture/agent/agent-lobehub-blueprint.md`
+- Atelier 个人 Agent 工作台 × Peers Agent Collaboration：`architecture/atelier/README.md`（文档集，入口 `README.md`）
+- 原型总账（统一登记 + 确认门）：`architecture/prototypes/README.md`
 
 ### 4.2 平台层真源
 
@@ -210,6 +213,9 @@
 - 再按主题看：
   - `client/desktop/global-context-kernel.md`
   - `client/desktop/provider-model-target-architecture.md`
+- Agent / Tool / MCP / Skill 重构：
+  - `architecture/agent/agent-lobehub-blueprint.md`
+  - `architecture/agent/execution-plans/20260616-agent-lobehub-rebuild.md`
 - 写代码前的规范层：
   - `global/coding-guide/desktop/page-component.md`
   - `global/coding-guide/desktop/store.md`
