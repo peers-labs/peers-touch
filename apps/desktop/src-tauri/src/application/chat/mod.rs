@@ -1,3 +1,5 @@
+pub mod streaming;
+
 use crate::application::provider::{remote as provider_remote, state as provider_state};
 use crate::contracts::{
     ChatCompletionInput, ChatConversationInput, ChatListMessagesInput, ChatMarkReadInput,
