@@ -93,6 +93,37 @@ Primary docs entry:
 
 - Start from `docs/README.md` when you need to locate the right source document.
 
+### Large Requirement Documentation Protocol
+
+For any module-level or architecture-level demand, `.trae/documents/` is not sufficient. Agents MUST create or update formal project documentation under `docs/` before or alongside implementation.
+
+This protocol applies when a request includes any of the following:
+
+- New product capability set or major feature rebuild.
+- Cross-layer work touching more than one of Desktop Web, Desktop Rust, Station, Model, packages, or applets.
+- Architecture landing, migration, domain decomposition, runtime ownership, persistence, public API, protocol, or directory boundary changes.
+- Large UI / UX redesign that changes product workflow or module ownership.
+- Benchmark-driven rebuilds from an external project, such as LobeHub-style Agent capability mapping.
+
+Required behavior:
+
+1. Locate the formal docs home from `docs/README.md`.
+2. Write the durable design in the correct `docs/` layer:
+   - Architecture boundary / cross-layer capability → `docs/architecture/<domain>/`
+   - Desktop-only implementation plan → `docs/client/desktop/`
+   - Station-only implementation plan → `docs/station/`
+   - Coding convention → `docs/global/coding-guide/`
+   - Historical research only → `docs/context/`
+3. Add an execution plan under the nearest `execution-plans/` directory when delivery spans multiple phases.
+4. Update the nearest `README.md` so the new document is discoverable.
+5. Keep `.trae/documents/` only as scratch/spec workspace material; if it contains useful decisions, promote them into `docs/`.
+6. Before implementation, report the formal docs paths to the user.
+
+Example:
+
+- Agent LobeHub-style rebuild formal design: `docs/architecture/agent/agent-lobehub-blueprint.md`
+- Its execution plan: `docs/architecture/agent/execution-plans/20260616-agent-lobehub-rebuild.md`
+
 ---
 
 ## 4. Thinking Principles
