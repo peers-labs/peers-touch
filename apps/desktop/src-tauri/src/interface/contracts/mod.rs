@@ -507,6 +507,10 @@ pub struct AppletGatewayService {
     pub allowed_methods: Vec<String>,
     #[serde(rename = "allowedPaths")]
     pub allowed_paths: Vec<String>,
+    #[serde(rename = "publicPathPrefix")]
+    pub public_path_prefix: Option<String>,
+    #[serde(rename = "stationPathPrefix")]
+    pub station_path_prefix: Option<String>,
     #[serde(default)]
     pub streaming: bool,
 }

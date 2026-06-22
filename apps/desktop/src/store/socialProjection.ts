@@ -1,4 +1,15 @@
 import { timestampDate } from '@bufbuild/protobuf/wkt';
+import {
+  applyChatMessageMutationToList,
+  applyChatMessageReceiptToList,
+  applyChatPresenceToMap,
+  applyChatTypingStateToMap,
+  mergeChatMessages,
+  pruneChatTypingPeers,
+  resolveChatMessageReceiptStatus,
+  type ChatMessageMutationInput,
+  type ChatMessageMutationKind,
+} from '@peers-touch/client-chat-core';
 
 import { FriendMessageStatus, type FriendChatMessage } from '../gen/proto/domain/chat/friend_chat_pb';
 import type { GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
@@ -12,6 +23,7 @@ export interface MessagePreview {
 export interface ConversationLocalState {
   hidden?: boolean;
   clearedAt?: number;
+  deletedMessageUlids?: Record<string, true>;
   muted?: boolean;
   sticky?: boolean;
   alertEnabled?: boolean;
@@ -32,14 +44,9 @@ export type SocialMessage = FriendChatMessage | GroupMessage;
 
 export type TypingPeers = Record<string, Record<string, { typing: boolean; lastUpdate: number }>>;
 
-export type MessageMutationKind = 'RECALL' | 'EDIT' | 'DELETE';
+export type MessageMutationKind = ChatMessageMutationKind;
 
-export interface MessageMutationProjection {
-  kind: MessageMutationKind;
-  newContent: string;
-  newCiphertext: Uint8Array;
-  mutatedTsUnixMs: number;
-}
+export interface MessageMutationProjection extends ChatMessageMutationInput {}
 
 export function conversationKey(kind: 'friend' | 'group', ulid: string): string {
   return `${kind}:${ulid}`;
@@ -66,27 +73,21 @@ export function filterClearedMessages(
   kind: 'friend' | 'group',
   ulid: string,
 ): SocialMessage[] {
-  const clearedAt = localState[conversationKey(kind, ulid)]?.clearedAt ?? 0;
-  if (!clearedAt) return messages;
+  const state = localState[conversationKey(kind, ulid)];
+  const clearedAt = state?.clearedAt ?? 0;
+  const deletedMessageUlids = state?.deletedMessageUlids ?? {};
+  const hasDeletedMessages = Object.keys(deletedMessageUlids).length > 0;
+  if (!clearedAt && !hasDeletedMessages) return messages;
   return messages.filter((message) => {
+    if (message.ulid && deletedMessageUlids[message.ulid]) return false;
     const sentMs = messageSentMs(message);
     return sentMs === 0 || sentMs >= clearedAt;
   });
 }
 
 export function mergeConversationMessages(existing: SocialMessage[], incoming: SocialMessage): SocialMessage[] {
-  const byUlid = new Map<string, SocialMessage>();
-  for (const message of existing) {
-    if (message.ulid) byUlid.set(message.ulid, message);
-  }
-  if (incoming.ulid) {
-    byUlid.set(incoming.ulid, incoming);
-  }
-  return Array.from(byUlid.values()).sort((a, b) => {
-    const sentA = messageSentMs(a);
-    const sentB = messageSentMs(b);
-    if (sentA !== sentB) return sentA - sentB;
-    return (a.ulid ?? '').localeCompare(b.ulid ?? '');
+  return mergeChatMessages(existing, incoming, {
+    resolveTimestampMs: messageSentMs,
   });
 }
 
@@ -99,10 +100,19 @@ export function previewFromMessage(message: SocialMessage): MessagePreview {
   };
 }
 
+export function applyPresenceToMap(
+  presence: Record<string, boolean>,
+  actorId: string,
+  online: boolean,
+): Record<string, boolean> | null {
+  return applyChatPresenceToMap(presence, actorId, online);
+}
+
 export function receiptStatus(kind: 'DELIVERED' | 'READ'): FriendMessageStatus | null {
-  if (kind === 'READ') return FriendMessageStatus.READ;
-  if (kind === 'DELIVERED') return FriendMessageStatus.DELIVERED;
-  return null;
+  return resolveChatMessageReceiptStatus(kind, {
+    delivered: FriendMessageStatus.DELIVERED,
+    read: FriendMessageStatus.READ,
+  }) as FriendMessageStatus | null;
 }
 
 export function applyMessageReceiptToList(
@@ -110,20 +120,8 @@ export function applyMessageReceiptToList(
   messageUlid: string,
   kind: 'DELIVERED' | 'READ',
 ): SocialMessage[] | null {
-  if (!messages?.length) return null;
   const target = receiptStatus(kind);
-  if (target == null) return null;
-
-  let mutated = false;
-  const next = messages.map((message) => {
-    const friendMessage = message as FriendChatMessage;
-    if (friendMessage.ulid !== messageUlid) return message;
-    if ((friendMessage.status ?? 0) >= target) return message;
-    mutated = true;
-    return { ...friendMessage, status: target } as FriendChatMessage;
-  });
-
-  return mutated ? next : null;
+  return applyChatMessageReceiptToList(messages, messageUlid, target);
 }
 
 export function applyMessageMutationToList(
@@ -131,48 +129,10 @@ export function applyMessageMutationToList(
   messageUlid: string,
   mutation: MessageMutationProjection,
 ): SocialMessage[] | null {
-  if (!messages?.length) return null;
-  let mutated = false;
-
-  if (mutation.kind === 'DELETE') {
-    const next = messages.filter((message) => {
-      if (message.ulid === messageUlid) {
-        mutated = true;
-        return false;
-      }
-      return true;
-    });
-    return mutated ? next : null;
-  }
-
-  const next = messages.map((message) => {
-    if (message.ulid !== messageUlid) return message;
-    if (!('recalled' in message)) return message;
-
-    if (mutation.kind === 'RECALL') {
-      if ((message as { recalled?: boolean }).recalled === true) return message;
-      mutated = true;
-      return {
-        ...message,
-        recalled: true,
-        content: '',
-        encryptedPayload: new Uint8Array(),
-      } as FriendChatMessage | GroupMessage;
-    }
-
-    mutated = true;
-    const existingEncryptedPayload = (message as { encryptedPayload?: Uint8Array }).encryptedPayload;
-    return {
-      ...message,
-      content: mutation.newContent || message.content,
-      encryptedPayload: mutation.newCiphertext.byteLength > 0
-        ? mutation.newCiphertext
-        : existingEncryptedPayload ?? new Uint8Array(),
-      editedAt: timestampFromUnixMs(mutation.mutatedTsUnixMs) as unknown as FriendChatMessage['editedAt'],
-    } as FriendChatMessage | GroupMessage;
+  return applyChatMessageMutationToList(messages, messageUlid, mutation, {
+    createEditedAt: (unixMs) => timestampFromUnixMs(unixMs) as unknown as FriendChatMessage['editedAt'],
+    canMutateMessage: (message) => 'recalled' in message,
   });
-
-  return mutated ? next : null;
 }
 
 export function applyTypingStateToMap(
@@ -181,44 +141,11 @@ export function applyTypingStateToMap(
   fromActorId: string,
   typing: boolean,
 ): TypingPeers | null {
-  const sessionMap = typingPeers[sessionUlid] ?? {};
-  const previous = sessionMap[fromActorId];
-  if (!typing && !previous) return null;
-
-  const nextEntry = { typing, lastUpdate: Date.now() };
-  return {
-    ...typingPeers,
-    [sessionUlid]: { ...sessionMap, [fromActorId]: nextEntry },
-  };
+  return applyChatTypingStateToMap(typingPeers, sessionUlid, fromActorId, typing);
 }
 
 export function pruneTypingPeers(typingPeers: TypingPeers, staleBefore: number): TypingPeers | null {
-  let mutated = false;
-  const nextSessions: TypingPeers = {};
-
-  for (const [sessionUlid, byActor] of Object.entries(typingPeers)) {
-    let sessionMutated = false;
-    const nextActors: TypingPeers[string] = {};
-    for (const [actorId, entry] of Object.entries(byActor)) {
-      if (entry.typing && entry.lastUpdate < staleBefore) {
-        sessionMutated = true;
-        continue;
-      }
-      if (!entry.typing) {
-        sessionMutated = true;
-        continue;
-      }
-      nextActors[actorId] = entry;
-    }
-    if (sessionMutated) mutated = true;
-    if (Object.keys(nextActors).length > 0) {
-      nextSessions[sessionUlid] = nextActors;
-    } else if (Object.keys(byActor).length > 0) {
-      mutated = true;
-    }
-  }
-
-  return mutated ? nextSessions : null;
+  return pruneChatTypingPeers(typingPeers, staleBefore);
 }
 
 function timestampFromUnixMs(value: number) {

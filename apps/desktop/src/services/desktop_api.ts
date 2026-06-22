@@ -19,7 +19,6 @@ import {
   EditFriendMessageResponseSchema,
   DeleteFriendMessageResponseSchema,
   SyncMessagesResponseSchema,
-  OnlineResponseSchema,
   GetPendingResponseSchema,
   GetStatsResponseSchema,
   SendFriendRequestResponseSchema,
@@ -96,7 +95,6 @@ export type {
   GetMessagesResponse,
   SendMessageResponse,
   SyncMessagesResponse,
-  OnlineResponse,
   GetPendingResponse,
   PendingMessageInfo,
   GetStatsResponse,
@@ -175,12 +173,21 @@ export interface ChatThreadCount {
   unreadCount: number;
 }
 
+export interface DesktopNativeHostEventInput {
+  kind: 'resume' | 'app-resume' | 'tray-open' | 'notification-tap';
+  target?: string;
+  sessionUlid?: string;
+  notificationId?: string;
+  reason?: string;
+}
+
 // Always-quiet (regardless of mode): commands that fire many times per
 // second and would drown out everything else.
 const ALWAYS_QUIET_COMMANDS = new Set([
   'logs_tail',
   'frontend_log',
   'visitor_heartbeat',
+  'oss_upload_attachment_bytes_chat',
   'ice_session_candidates_get',
   'ice_session_candidate_post',
   'ice_session_offer_get',
@@ -202,6 +209,7 @@ const PROD_QUIET_COMMANDS = new Set([
   'friend_chat_sync_from_station_scoped',
   'friend_chat_list_sessions',
   'friend_chat_list_messages',
+  'chat_index_local_messages',
 ]);
 
 function isQuietCommand(command: string): boolean {
@@ -319,6 +327,25 @@ async function invokeAuthCommand<TInput>(
       response.error ?? {
         code: 'INTERNAL_ERROR',
         message: 'auth command failed',
+      },
+    );
+  }
+  return response.data;
+}
+
+/// Drive an interactive access-gate step that returns a Station decision
+/// (rather than a landed session). Shares `AuthCommandException` semantics so
+/// callers handle FORBIDDEN/INVALID_ARGUMENT/UNAUTHORIZED uniformly.
+async function invokeAccessCommand<TInput>(
+  command: string,
+  input?: TInput,
+): Promise<AccessDecisionResponse> {
+  const response = await invokeRustCommand<TInput, AccessDecisionResponse>(command, input);
+  if (!response.ok || !response.data) {
+    throw new AuthCommandException(
+      response.error ?? {
+        code: 'INTERNAL_ERROR',
+        message: 'access command failed',
       },
     );
   }
@@ -448,6 +475,23 @@ export interface ChatUploadAttachmentInput {
   chat_session_id?: string | null;
 }
 
+export interface ChatScreenshotAttachmentInput {
+  bucket: string;
+  visibility: 'public' | 'chat' | 'private';
+  /** Required when `visibility` is `chat`. */
+  chat_session_id?: string | null;
+}
+
+export interface ChatUploadAttachmentBytesInput {
+  filename: string;
+  mime_type: string;
+  bytes: number[];
+  bucket: string;
+  visibility: 'public' | 'chat' | 'private';
+  /** Required when `visibility` is `chat`. */
+  chat_session_id?: string | null;
+}
+
 /**
  * Payload returned by `oss_upload_attachment_chat` /
  * `oss_upload_attachment_social`.
@@ -477,6 +521,27 @@ export interface OssAttachmentUploaded {
   visibility?: string;
 }
 
+export interface SocialEncryptedMediaDescriptorWire {
+  encrypted: true;
+  version: number;
+  suite: string;
+  key_b64: string;
+  nonce_b64: string;
+  plaintext_sha256_b64: string;
+  ciphertext_sha256_b64: string;
+  plaintext_size: number;
+  ciphertext_size: number;
+  chunking?: string;
+  chunk_size?: number;
+  chunk_count?: number;
+  tag_size?: number;
+  nonce_strategy?: string;
+}
+
+export interface SocialEncryptedAttachmentUploaded extends OssAttachmentUploaded {
+  media_encryption: SocialEncryptedMediaDescriptorWire;
+}
+
 /**
  * @deprecated Use `OssAttachmentUploaded`. Kept as alias for
  * downstream callers that have not migrated yet.
@@ -502,14 +567,14 @@ export interface OssCapabilities {
 }
 
 /**
- * Result of `oss_resolve_url`. The renderer should prefer
- * `local_path` (it is served via Tauri's `convertFileSrc`) and fall
- * back to `url` when the attachment is not yet cached or the backend
- * requires signed URLs.
+ * Result of `oss_resolve_url`. The renderer should prefer `data_url`
+ * for inline image previews when present, then `local_path` (served
+ * via Tauri's `convertFileSrc`), and finally `url`.
  */
 export interface OssResolved {
   local_path?: string | null;
   url: string;
+  data_url?: string | null;
   host: string;
   key: string;
 }
@@ -1475,6 +1540,23 @@ export interface AuthLoginInput {
   base_url?: string;
 }
 
+/// Raw Station `AccessDecision`, passed through verbatim by the Rust layer.
+/// The frontend normalizes the wire shape (snake_case keys, string enums).
+export interface AccessDecisionResponse extends TauriStubPayload {
+  decision: unknown;
+}
+
+export interface AccessSubmitInviteInput {
+  attempt_id: string;
+  invite_code: string;
+}
+
+export interface AccessSubmitLoginInput {
+  attempt_id: string;
+  account: string;
+  password: string;
+}
+
 export interface AuthValidateTokenInput {
   token?: string;
 }
@@ -1486,6 +1568,10 @@ export interface SettingsGetInput {
 export interface SettingsSetInput {
   key: string;
   value: any;
+}
+
+export interface ChatScreenshotShortcutRegisterInput {
+  shortcut: string;
 }
 
 export interface ChatListMessagesInput {
@@ -2116,6 +2202,17 @@ export interface ChatSearchLocalResultRow {
   mime_type?: string;
 }
 
+export interface ChatIndexLocalMessageInput {
+  scope: 'friend' | 'group';
+  conversation_id: string;
+  message_id: string;
+  sender_did: string;
+  content: string;
+  reply_to_ulid?: string;
+  thread_root_ulid?: string;
+  sent_at: number;
+}
+
 export interface GroupChatSyncInput {
   group_ulid: string;
   limit?: number;
@@ -2183,6 +2280,15 @@ export const api = {
   authLogin: (input: AuthLoginInput) =>
     invokeAuthCommand<AuthLoginInput>('auth_login', input),
 
+  accessStart: () =>
+    invokeAccessCommand<void>('access_start'),
+
+  accessSubmitInviteCode: (input: AccessSubmitInviteInput) =>
+    invokeAccessCommand<AccessSubmitInviteInput>('access_submit_invite_code', input),
+
+  accessSubmitLogin: (input: AccessSubmitLoginInput) =>
+    invokeAuthCommand<AccessSubmitLoginInput>('access_submit_login', input),
+
   authLogout: () =>
     invokeAuthCommand<void>('auth_logout'),
 
@@ -2203,6 +2309,12 @@ export const api = {
 
   settingsReset: () =>
     invokeRustCommand<void, TauriStubPayload>('settings_reset'),
+
+  chatScreenshotShortcutRegister: (input: ChatScreenshotShortcutRegisterInput) =>
+    invokeRustCommand<ChatScreenshotShortcutRegisterInput, TauriStubPayload>(
+      'chat_screenshot_shortcut_register',
+      input,
+    ),
 
   chatListConversations: () =>
     invokeRustCommand<void, TauriStubPayload>('chat_list_conversations'),
@@ -2297,6 +2409,24 @@ export const api = {
       input,
     ),
 
+  ossUploadAttachmentBytesChat: (input: ChatUploadAttachmentBytesInput) =>
+    invokeRustDataFromStatus<ChatUploadAttachmentBytesInput, OssAttachmentUploaded>(
+      'oss_upload_attachment_bytes_chat',
+      input,
+    ),
+
+  ossUploadEncryptedAttachmentChat: (input: ChatUploadAttachmentInput) =>
+    invokeRustDataFromStatus<ChatUploadAttachmentInput, SocialEncryptedAttachmentUploaded>(
+      'oss_upload_encrypted_attachment_chat',
+      input,
+    ),
+
+  ossCaptureScreenshotChat: (input: ChatScreenshotAttachmentInput) =>
+    invokeRustDataFromStatus<ChatScreenshotAttachmentInput, OssAttachmentUploaded>(
+      'oss_capture_screenshot_chat',
+      input,
+    ),
+
   /**
    * Social/Moments consumer — open a multi-select picker scoped to
    * image MIME types. The `maxCount` cap is enforced at the Tauri
@@ -2333,6 +2463,12 @@ export const api = {
   ossUploadAttachmentSocial: (filePath: string) =>
     invokeRustDataFromStatus<{ file_path: string }, OssAttachmentUploaded>(
       'oss_upload_attachment_social',
+      { file_path: filePath },
+    ),
+
+  ossUploadEncryptedAttachmentSocial: (filePath: string) =>
+    invokeRustDataFromStatus<{ file_path: string }, SocialEncryptedAttachmentUploaded>(
+      'oss_upload_encrypted_attachment_social',
       { file_path: filePath },
     ),
 
@@ -3508,6 +3644,12 @@ export const api = {
       limit: limit ?? 30,
     }),
 
+  chatIndexLocalMessages: (messages: ChatIndexLocalMessageInput[]) =>
+    invokeRustDataFromStatus<{ messages: ChatIndexLocalMessageInput[] }, { indexed_count: number }>(
+      'chat_index_local_messages',
+      { messages },
+    ),
+
   friendChatSync: (sessionUlid: string, limit?: number, maxPages?: number) =>
     invokeRustDataFromStatus<FriendChatSyncInput, { synced_count: number; pages_fetched: number }>(
       'friend_chat_sync_from_station_scoped', { session_ulid: sessionUlid, limit, max_pages: maxPages },
@@ -3515,25 +3657,6 @@ export const api = {
 
   friendChatSyncMessages: (messagesJson: string) =>
     invokeRustProto('friend_chat_sync_messages', SyncMessagesResponseSchema, { session_ulid: '', messages_json: messagesJson }),
-
-  friendChatGoOnline: (did?: string) =>
-    invokeRustProto('friend_chat_go_online', OnlineResponseSchema, { did }),
-
-  friendChatGoOffline: (did?: string) =>
-    invokeRustProto('friend_chat_go_offline', OnlineResponseSchema, { did }),
-
-  /**
-   * Start the long-lived presence SSE supervisor for the current
-   * window's actor. Idempotent; the Rust side replaces any in-flight
-   * supervisor for the same actor. While running, station emits
-   * `presence:peer-changed` Tauri events for every online/offline flip.
-   */
-  friendChatPresenceStart: () =>
-    invokeRustDataFromStatus<void, { actor_id: string }>('friend_chat_presence_start'),
-
-  /** Cancel the presence supervisor for the current actor. */
-  friendChatPresenceStop: () =>
-    invokeRustDataFromStatus<void, { actor_id: string | null }>('friend_chat_presence_stop'),
 
   /**
    * Start the unified realtime SSE consumer for the current actor.
@@ -4029,11 +4152,17 @@ export const api = {
   friendChatListFriendRequests: (status?: number, limit?: number, offset?: number) =>
     invokeRustProto('friend_chat_list_friend_requests', ListFriendRequestsResponseSchema, { status, limit, offset }),
 
-  friendChatBlockUser: (targetDid: string) =>
-    invokeRustProto('friend_chat_block_user', BlockUserResponseSchema, { target_did: targetDid }),
+  friendChatBlockUser: async (targetDid: string) => {
+    const response = await invokeRustProto('friend_chat_block_user', BlockUserResponseSchema, { target_did: targetDid });
+    eventBus.publish(EVENT.RELATIONSHIP_CHANGED, { targetActorId: targetDid, action: 'block' });
+    return response;
+  },
 
-  friendChatUnblockUser: (targetDid: string) =>
-    invokeRustProto('friend_chat_unblock_user', UnblockUserResponseSchema, { target_did: targetDid }),
+  friendChatUnblockUser: async (targetDid: string) => {
+    const response = await invokeRustProto('friend_chat_unblock_user', UnblockUserResponseSchema, { target_did: targetDid });
+    eventBus.publish(EVENT.RELATIONSHIP_CHANGED, { targetActorId: targetDid, action: 'unblock' });
+    return response;
+  },
 
   friendChatListBlockedUsers: (limit = 100, offset = 0) =>
     invokeRustProto('friend_chat_list_blocked_users', ListBlockedUsersResponseSchema, { limit, offset }),
@@ -4076,6 +4205,12 @@ export const api = {
   notificationPreferencesUpdate: (category: number, enabled: boolean, pushEnabled: boolean, soundEnabled: boolean) =>
     invokeRustDataFromStatus<{ category: number; enabled: boolean; push_enabled: boolean; sound_enabled: boolean }, { preference: NotificationPreferenceData }>(
       'notification_preferences_update', { category, enabled, push_enabled: pushEnabled, sound_enabled: soundEnabled },
+    ),
+
+  desktopNativeHostEventEmit: (input: DesktopNativeHostEventInput) =>
+    invokeRustDataFromStatus<DesktopNativeHostEventInput, { emitted: boolean; kind: string }>(
+      'desktop_native_event_emit',
+      input,
     ),
 
   // ── Station registry (dynamic URL picker) ──
@@ -4131,6 +4266,18 @@ export type ChatAttachmentInput = {
   size: number;
   thumbnail_cid?: string;
   visibility?: string;
+  encryption_suite?: string;
+  encryption_key_b64?: string;
+  encryption_nonce_b64?: string;
+  plaintext_sha256_b64?: string;
+  ciphertext_sha256_b64?: string;
+  plaintext_size?: number;
+  ciphertext_size?: number;
+  chunking?: string;
+  chunk_size?: number;
+  chunk_count?: number;
+  tag_size?: number;
+  nonce_strategy?: string;
 };
 
 export interface CryptoKeyBundlePayload {

@@ -75,3 +75,288 @@ input, textarea, [contenteditable="true"] {
 .spin {
   animation: spin 1s linear infinite;
 }
+
+/*
+ * Login shell — Quiet Protocol Minimalism.
+ * The federated mesh is a calm backdrop in the brand accent only; the auth card
+ * is the dominant surface. No decorative multi-color glow, no swaying motion.
+ */
+.login-network-shell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  height: 100%;
+  padding: clamp(28px, 6vw, 96px);
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 30% 32%, rgba(102, 126, 234, 0.08), transparent 46%),
+    linear-gradient(150deg, #fbfcff, #f5f7fd 60%, #eef1fb);
+}
+
+.login-network-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  /* The mesh is explorable: people and connections respond to hover. The
+   * decorative layers inside opt back out of pointer events themselves. */
+}
+
+.login-card-region {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.pt-network-intro {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: transparent;
+  /* The opaque auth card already covers whatever sits behind it, so the field
+   * can extend across the full width; only a whisper-soft fade at the far edge. */
+  mask-image: linear-gradient(90deg, #000 90%, rgba(0, 0, 0, 0.7) 100%);
+  -webkit-mask-image: linear-gradient(90deg, #000 90%, rgba(0, 0, 0, 0.7) 100%);
+}
+
+.pt-network-intro__mesh {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+}
+
+/* Soft ambient depth — barely-there bloom that gives the field a sense of space. */
+.pt-network-intro__bloom {
+  opacity: 0.8;
+}
+
+/*
+ * Weak ties between people. Granovetter's weak ties are exactly what makes a
+ * decentralized social graph cohere — quiet, thin, and equal everywhere.
+ */
+.pt-network-intro__tie {
+  fill: none;
+  stroke: rgba(102, 126, 234, 0.10);
+  stroke-width: 1;
+  stroke-linecap: round;
+  transition: stroke 0.35s ease;
+}
+
+/* A tie touching the hovered person glows, so a hover reads as "this person
+ * and the people they reach", not just an isolated dot. */
+.pt-network-intro__tie--lit {
+  stroke: rgba(102, 126, 234, 0.34);
+}
+
+/* Wide, invisible hover targets so a thin tie or a moving chip is still easy
+ * to pick up. They carry the pointer events; nothing else in the mesh does. */
+.pt-network-intro__hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 28;
+  stroke-linecap: round;
+  cursor: pointer;
+}
+
+.pt-network-intro__hit-node {
+  fill: transparent;
+  cursor: pointer;
+}
+
+/*
+ * Physical-layer reveal. Logically people connect peer-to-peer; physically the
+ * payload hops through a relay. On hover we dim the logical link to a dashed
+ * whisper and draw the real two-hop path through the relay node.
+ */
+.pt-network-intro__relay-logical {
+  fill: none;
+  stroke: rgba(102, 126, 234, 0.16);
+  stroke-width: 1;
+  stroke-dasharray: 3 5;
+  stroke-linecap: round;
+}
+
+.pt-network-intro__relay-hop {
+  fill: none;
+  stroke: rgba(118, 90, 162, 0.42);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.pt-network-intro__relay-halo {
+  fill: rgba(118, 90, 162, 0.14);
+  stroke: rgba(118, 90, 162, 0.34);
+  stroke-width: 1;
+}
+
+.pt-network-intro__relay-core {
+  fill: rgba(118, 90, 162, 0.9);
+}
+
+.pt-network-intro__relay-role {
+  fill: rgba(118, 90, 162, 0.92);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pt-network-intro__relay-label {
+  fill: rgba(82, 64, 120, 0.7);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* The on-hover metadata card — a calm frosted chip that names a person or
+ * describes a piece of content in motion. Restrained: identity, not telemetry. */
+.pt-network-intro__card {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(102, 126, 234, 0.18);
+  box-shadow: 0 8px 24px rgba(60, 66, 110, 0.12);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  white-space: nowrap;
+  line-height: 1.35;
+}
+
+.pt-network-intro__card-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(40, 44, 78, 0.92);
+}
+
+.pt-network-intro__card-addr {
+  font-size: 12px;
+  color: rgba(102, 126, 234, 0.9);
+  font-feature-settings: 'tnum';
+}
+
+.pt-network-intro__card-kind {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(102, 126, 234, 0.85);
+}
+
+.pt-network-intro__card-route {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(40, 44, 78, 0.92);
+}
+
+.pt-network-intro__card-arrow {
+  color: rgba(102, 126, 234, 0.6);
+  margin: 0 2px;
+}
+
+.pt-network-intro__card-via {
+  font-size: 12px;
+  color: rgba(82, 64, 120, 0.78);
+}
+
+/* A small role tag so the relay name in the route card reads as a relay,
+ * not as another person the payload was sent to. */
+.pt-network-intro__card-relay-tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: rgba(118, 90, 162, 0.14);
+  color: rgba(82, 64, 120, 0.9);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+/* A person — a soft point of light, felt rather than labeled. No boxes, no text. */
+.pt-network-intro__halo {
+  /* fill comes from the radial gradient; animation handled inline */
+}
+
+.pt-network-intro__core {
+  fill: rgba(102, 126, 234, 0.9);
+}
+
+/* A person's name — quiet, legible, never shouting over the auth card. */
+.pt-network-intro__label {
+  fill: rgba(60, 66, 110, 0.62);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+/* Content travelling between people — a message, photo, clip or file. The
+ * payload itself is the federation in motion; we show what people share. */
+.pt-network-intro__chip-bg {
+  fill: rgba(102, 126, 234, 0.18);
+}
+
+/* The hovered payload sits still on its relay — slightly stronger so it reads
+ * as a held, inspectable object rather than a fading pulse. */
+.pt-network-intro__flow--held .pt-network-intro__chip-bg {
+  fill: rgba(102, 126, 234, 0.28);
+}
+
+.pt-network-intro__flow--held .pt-network-intro__chip-disc {
+  stroke: rgba(102, 126, 234, 0.5);
+}
+
+.pt-network-intro__chip-disc {
+  fill: rgba(255, 255, 255, 0.92);
+  stroke: rgba(102, 126, 234, 0.28);
+  stroke-width: 1;
+}
+
+.pt-network-intro__glyph {
+  fill: none;
+  stroke: #667eea;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: #667eea;
+}
+
+@media (max-width: 980px) {
+  .login-network-shell {
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .login-card-region {
+    justify-content: center;
+  }
+
+  /* On narrow windows the card dominates; fade the mesh further back. */
+  .pt-network-intro {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pt-network-intro * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition: none !important;
+  }
+
+  /* Drop the moving light; the calm field of people remains. Hovering a
+   * person or a tie still reveals its card and relay — exploration is static,
+   * not animated. */
+  .pt-network-intro__flow {
+    display: none;
+  }
+}

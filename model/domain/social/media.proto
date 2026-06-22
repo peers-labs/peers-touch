@@ -3,6 +3,7 @@ syntax = "proto3";
 package peers_touch.model.social.v1;
 
 import "google/protobuf/timestamp.proto";
+import "domain/common/common.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
 
@@ -12,6 +13,8 @@ message UploadMediaRequest {
   string mime_type = 3;
   MediaUploadType type = 4;
   optional string alt_text = 5;
+  peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 6;
+  repeated AudienceKeyEnvelope audience_key_envelopes = 7;
 }
 
 message UploadMediaResponse {
@@ -23,6 +26,16 @@ message UploadMediaResponse {
   int32 height = 6;
   int32 duration_seconds = 7;
   MediaProcessingStatus status = 8;
+  peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;
+  repeated AudienceKeyEnvelope audience_key_envelopes = 10;
+}
+
+message AudienceKeyEnvelope {
+  string recipient_did = 1;
+  string device_id = 2;
+  string key_id = 3;
+  bytes encrypted_key = 4;
+  string suite = 5;
 }
 
 enum MediaUploadType {
@@ -51,6 +64,7 @@ message GetMediaResponse {
   int32 height = 6;
   MediaProcessingStatus status = 7;
   google.protobuf.Timestamp created_at = 8;
+  peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;
 }
 
 message DeleteMediaRequest {

@@ -38,6 +38,7 @@ apps/desktop/
 │   │   ├── runtime.ts         # RuntimeDescriptor + registry
 │   │   ├── page.ts            # PageDescriptor + registry
 │   │   ├── boot.ts            # BootPipeline phases + scheduleIdle
+│   │   ├── identityRuntime.ts # Framework-level identity lifecycle runtime
 │   │   ├── PageHost.tsx       # Mounts pages from descriptors
 │   │   ├── usePrefetch.ts     # One-shot page-local prefetch
 │   │   └── events/            # AppEventBus (catalog / bus / browser)

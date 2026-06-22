@@ -471,8 +471,8 @@ particular:
 
 - `friend_chat.handleSendMessage` calls
   `EventBus.Publish(receiverID, MessageEnvelope{...})` after persisting.
-- `friend_chat.handleOnline` / `handleOffline` call
-  `EventBus.Publish(friendsOf(actor), PresenceFlip{...})`.
+- `presence` publishes `PresenceFlip{...}` after authenticated actor
+  heartbeat/offline lease transitions.
 - Future federation gateway: when an inbound federated event arrives,
   it calls `EventBus.Publish(localActor, ...)` exactly as if a local
   subsystem had emitted it.
@@ -482,10 +482,10 @@ particular:
 
 - `apps/station/app/subserver/friend_chat/handler.go::handlePresenceStream`
   and the per-feature presence SSE — replaced by `events` subserver.
-- The `s.online` map's role as a "should I queue this in pending" flag
-  is replaced by "does this actor have any live SSE subscriber". The
-  pending queue itself remains as the cold-recovery path (§2.5 case 2)
-  but stops being the everyday delivery mechanism.
+- Chat-owned `s.online` reachability state is removed. Actor presence is
+  owned by `apps/station/app/subserver/presence` and represented by
+  authenticated leases. The pending queue remains as the cold-recovery
+  path (§2.5 case 2) but no longer defines actor presence.
 - The legacy `signaling` subserver
   (`apps/station/frame/core/plugin/native/subserver/signaling/`) and
   its 14 endpoints (`/api/v1/ice/session/{new,offer,answer,candidate,...}`,
@@ -533,8 +533,8 @@ particular:
 - `socialChat.ts`: subscribes to `realtime.message` → triggers
   `friendChatSync(session_ulid) + loadMessages` (or, when ciphertext is
   inlined, decrypts and inserts directly).
-- `peerPresence.ts`: subscribes to `realtime.presence` → updates
-  per-friend online state.
+- `socialChat` runtime projection consumes `realtime.presence` and
+  updates per-friend online state.
 - (Future) `calls.ts`: subscribes to `realtime.signaling` → drives
   `RTCPeerConnection`.
 
@@ -547,9 +547,9 @@ particular:
   voice/video and may be renamed to clarify scope.
 - `apps/desktop/src/pages/SocialChatPage.tsx`'s 60-second polling
   `setInterval` — removed.
-- `apps/desktop/src/services/peerPresence.ts`'s standalone SSE
-  connection to `/friend-chat/presence/stream` — replaced by
-  subscription to `realtime.presence` on the unified bus.
+- Feature-specific presence bridges and SSE endpoints are removed;
+  presence flips arrive only through `realtime.presence` on the unified
+  bus.
 - `friendChatP2p.ts`'s HTTP-polling signaling
   (`pollCandidates`, `iceSessionAnswerGet` retry loops) — replaced by
   `CallSignal` events.
