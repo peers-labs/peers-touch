@@ -19,10 +19,14 @@
 //      added toAnthropicMessages producing [{"type":"text","text":"..."}].
 //   3. OpenAI URL builder double-appended /v1/chat/completions when baseURL
 //      already contained the full path — added HasSuffix guard.
+// 2026-06-17 — Agent rebuild P0-1: added provider-token streaming parity for
+//   Ollama NDJSON and Anthropic Messages SSE, both feeding the shared
+//   ProviderDeltaSink used by the TurnService event stream.
 
 package service
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -69,6 +73,14 @@ type ProviderCallRequest struct {
 	Messages     []domain.Message
 	UserID       string
 	ProviderType string // "ollama", "openai", "anthropic", or empty for auto-detect
+	DeltaSink    ProviderDeltaSink
+}
+
+type ProviderDeltaSink func(ctx context.Context, delta ProviderDelta)
+
+type ProviderDelta struct {
+	Type    string
+	Content string
 }
 
 // ProviderCallResponse captures the structured result of an LLM call,
@@ -81,6 +93,7 @@ type ProviderCallResponse struct {
 	OutputTokens int
 	CacheHit     bool
 	FinishReason string
+	Streamed     bool
 }
 
 // ProviderHTTPError wraps HTTP-level errors from LLM provider APIs,
@@ -88,8 +101,9 @@ type ProviderCallResponse struct {
 //
 // Changelog:
 // 2026-04-11 — Added: provider HTTP status was not checked after Do(),
-//   causing ErrorClassifier's HTTP-status-based classification (Priority 1)
-//   to never trigger. This type propagates the raw status code upward.
+//
+//	causing ErrorClassifier's HTTP-status-based classification (Priority 1)
+//	to never trigger. This type propagates the raw status code upward.
 type ProviderHTTPError struct {
 	StatusCode int
 	Body       string
@@ -191,7 +205,7 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 		if baseURL == "" {
 			baseURL = "http://127.0.0.1:11434"
 		}
-		resp, err = s.callOllama(ctx, baseURL, model, req.SystemPrompt, req.Messages)
+		resp, err = s.callOllama(ctx, baseURL, model, req.SystemPrompt, req.Messages, req.DeltaSink)
 
 	case providerTypeAnthropic:
 		if baseURL == "" {
@@ -204,7 +218,7 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 			cachingResult = s.cachingService.Apply(ctx, req.SystemPrompt, req.Messages, providerType)
 		}
 
-		resp, err = s.callAnthropic(ctx, baseURL, apiKey, model, req.SystemPrompt, req.Messages, cachingResult)
+		resp, err = s.callAnthropic(ctx, baseURL, apiKey, model, req.SystemPrompt, req.Messages, cachingResult, req.DeltaSink)
 
 	default:
 		// OpenAI-compatible is the default fallback.
@@ -212,7 +226,7 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 			return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
 				"provider base_url is empty for openai-compatible provider", nil)
 		}
-		resp, err = s.callOpenAI(ctx, baseURL, apiKey, model, req.SystemPrompt, req.Messages)
+		resp, err = s.callOpenAI(ctx, baseURL, apiKey, model, req.SystemPrompt, req.Messages, req.DeltaSink)
 	}
 
 	if err != nil {
@@ -305,6 +319,7 @@ func (s *ProviderService) callOllama(
 	baseURL, model string,
 	systemPrompt string,
 	messages []domain.Message,
+	deltaSink ProviderDeltaSink,
 ) (*ProviderCallResponse, error) {
 
 	endpoint := strings.TrimRight(baseURL, "/") + "/api/chat"
@@ -323,6 +338,10 @@ func (s *ProviderService) callOllama(
 		"model":    model,
 		"messages": apiMessages,
 		"stream":   false,
+	}
+	if deltaSink != nil {
+		payload["stream"] = true
+		return s.callOllamaStream(ctx, endpoint, payload, deltaSink)
 	}
 
 	body, _ := json.Marshal(payload)
@@ -386,6 +405,109 @@ func (s *ProviderService) callOllama(
 	}, nil
 }
 
+func (s *ProviderService) callOllamaStream(
+	ctx context.Context,
+	endpoint string,
+	payload map[string]any,
+	deltaSink ProviderDeltaSink,
+) (*ProviderCallResponse, error) {
+	body, _ := json.Marshal(payload)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, &ProviderHTTPError{
+			StatusCode: resp.StatusCode,
+			Body:       string(bodyBytes),
+			Provider:   "ollama",
+		}
+	}
+
+	var content strings.Builder
+	var model string
+	var finishReason string
+	var inputTokens int
+	var outputTokens int
+	scanner := bufio.NewScanner(io.LimitReader(resp.Body, maxResponseBytes))
+	scanner.Buffer(make([]byte, 0, 64*1024), maxResponseBytes)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		delta, parsedModel, parsedFinishReason, promptEvalCount, evalCount, ok := parseOllamaStreamDelta(line)
+		if parsedModel != "" {
+			model = parsedModel
+		}
+		if parsedFinishReason != "" {
+			finishReason = parsedFinishReason
+		}
+		if promptEvalCount > 0 {
+			inputTokens = promptEvalCount
+		}
+		if evalCount > 0 {
+			outputTokens = evalCount
+		}
+		if !ok || delta.Content == "" {
+			continue
+		}
+		content.WriteString(delta.Content)
+		deltaSink(ctx, delta)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(content.String()) == "" {
+		return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
+			"empty ollama stream response", nil)
+	}
+
+	return &ProviderCallResponse{
+		Content:      content.String(),
+		Model:        model,
+		InputTokens:  inputTokens,
+		OutputTokens: outputTokens,
+		FinishReason: finishReason,
+		Streamed:     true,
+	}, nil
+}
+
+func parseOllamaStreamDelta(data string) (ProviderDelta, string, string, int, int, bool) {
+	var parsed struct {
+		Model   string `json:"model"`
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+		Response        string `json:"response"`
+		Done            bool   `json:"done"`
+		DoneReason      string `json:"done_reason"`
+		PromptEvalCount int    `json:"prompt_eval_count"`
+		EvalCount       int    `json:"eval_count"`
+	}
+	if err := json.Unmarshal([]byte(data), &parsed); err != nil {
+		return ProviderDelta{}, "", "", 0, 0, false
+	}
+	content := parsed.Message.Content
+	if content == "" {
+		content = parsed.Response
+	}
+	if content == "" {
+		return ProviderDelta{}, parsed.Model, parsed.DoneReason, parsed.PromptEvalCount, parsed.EvalCount, false
+	}
+	return ProviderDelta{Type: "text", Content: content}, parsed.Model, parsed.DoneReason, parsed.PromptEvalCount, parsed.EvalCount, true
+}
+
 // ---------------------------------------------------------------------------
 // OpenAI-compatible endpoint
 // ---------------------------------------------------------------------------
@@ -396,6 +518,7 @@ func (s *ProviderService) callOpenAI(
 	baseURL, apiKey, model string,
 	systemPrompt string,
 	messages []domain.Message,
+	deltaSink ProviderDeltaSink,
 ) (*ProviderCallResponse, error) {
 
 	// Build endpoint URL, append /v1/chat/completions if not already present.
@@ -422,6 +545,10 @@ func (s *ProviderService) callOpenAI(
 	payload := map[string]any{
 		"model":    model,
 		"messages": apiMessages,
+	}
+	if deltaSink != nil {
+		payload["stream"] = true
+		return s.callOpenAIStream(ctx, endpointBase, apiKey, payload, deltaSink)
 	}
 
 	body, _ := json.Marshal(payload)
@@ -486,6 +613,106 @@ func (s *ProviderService) callOpenAI(
 	}, nil
 }
 
+func (s *ProviderService) callOpenAIStream(
+	ctx context.Context,
+	endpoint, apiKey string,
+	payload map[string]any,
+	deltaSink ProviderDeltaSink,
+) (*ProviderCallResponse, error) {
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, &ProviderHTTPError{
+			StatusCode: resp.StatusCode,
+			Body:       string(bodyBytes),
+			Provider:   "openai",
+		}
+	}
+
+	var content strings.Builder
+	var model string
+	var finishReason string
+	scanner := bufio.NewScanner(io.LimitReader(resp.Body, maxResponseBytes))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, ":") {
+			continue
+		}
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "[DONE]" {
+			break
+		}
+		delta, parsedModel, parsedFinishReason, ok := parseOpenAIStreamDelta(data)
+		if parsedModel != "" {
+			model = parsedModel
+		}
+		if parsedFinishReason != "" {
+			finishReason = parsedFinishReason
+		}
+		if !ok || delta.Content == "" {
+			continue
+		}
+		content.WriteString(delta.Content)
+		deltaSink(ctx, delta)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(content.String()) == "" {
+		return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
+			"empty openai-compatible stream response", nil)
+	}
+	return &ProviderCallResponse{
+		Content:      content.String(),
+		Model:        model,
+		FinishReason: finishReason,
+		Streamed:     true,
+	}, nil
+}
+
+func parseOpenAIStreamDelta(data string) (ProviderDelta, string, string, bool) {
+	var parsed struct {
+		Model   string `json:"model"`
+		Choices []struct {
+			Delta struct {
+				Content          string `json:"content"`
+				ReasoningContent string `json:"reasoning_content"`
+			} `json:"delta"`
+			FinishReason string `json:"finish_reason"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal([]byte(data), &parsed); err != nil || len(parsed.Choices) == 0 {
+		return ProviderDelta{}, "", "", false
+	}
+	choice := parsed.Choices[0]
+	if choice.Delta.ReasoningContent != "" {
+		return ProviderDelta{Type: "thinking", Content: choice.Delta.ReasoningContent}, parsed.Model, choice.FinishReason, true
+	}
+	if choice.Delta.Content != "" {
+		return ProviderDelta{Type: "text", Content: choice.Delta.Content}, parsed.Model, choice.FinishReason, true
+	}
+	return ProviderDelta{}, parsed.Model, choice.FinishReason, false
+}
+
 // ---------------------------------------------------------------------------
 // Anthropic endpoint
 // ---------------------------------------------------------------------------
@@ -498,6 +725,7 @@ func (s *ProviderService) callAnthropic(
 	systemPrompt string,
 	messages []domain.Message,
 	cachingResult *PromptCachingResult,
+	deltaSink ProviderDeltaSink,
 ) (*ProviderCallResponse, error) {
 
 	endpoint := strings.TrimRight(baseURL, "/") + "/v1/messages"
@@ -520,6 +748,10 @@ func (s *ProviderService) callAnthropic(
 			body["system"] = systemPrompt
 		}
 		body["messages"] = s.toAnthropicMessages(messages)
+	}
+	if deltaSink != nil {
+		body["stream"] = true
+		return s.callAnthropicStream(ctx, endpoint, apiKey, body, deltaSink)
 	}
 
 	payload, _ := json.Marshal(body)
@@ -587,6 +819,131 @@ func (s *ProviderService) callAnthropic(
 	}, nil
 }
 
+func (s *ProviderService) callAnthropicStream(
+	ctx context.Context,
+	endpoint, apiKey string,
+	body map[string]any,
+	deltaSink ProviderDeltaSink,
+) (*ProviderCallResponse, error) {
+	payload, _ := json.Marshal(body)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("anthropic-version", anthropicAPIVersion)
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, &ProviderHTTPError{
+			StatusCode: resp.StatusCode,
+			Body:       string(bodyBytes),
+			Provider:   "anthropic",
+		}
+	}
+
+	var content strings.Builder
+	var model string
+	var finishReason string
+	var inputTokens int
+	var outputTokens int
+	scanner := bufio.NewScanner(io.LimitReader(resp.Body, maxResponseBytes))
+	scanner.Buffer(make([]byte, 0, 64*1024), maxResponseBytes)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, ":") {
+			continue
+		}
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		delta, parsedModel, parsedFinishReason, parsedInputTokens, parsedOutputTokens, ok := parseAnthropicStreamDelta(data)
+		if parsedModel != "" {
+			model = parsedModel
+		}
+		if parsedFinishReason != "" {
+			finishReason = parsedFinishReason
+		}
+		if parsedInputTokens > 0 {
+			inputTokens = parsedInputTokens
+		}
+		if parsedOutputTokens > 0 {
+			outputTokens = parsedOutputTokens
+		}
+		if !ok || delta.Content == "" {
+			continue
+		}
+		content.WriteString(delta.Content)
+		deltaSink(ctx, delta)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(content.String()) == "" {
+		return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
+			"empty anthropic stream response", nil)
+	}
+
+	return &ProviderCallResponse{
+		Content:      content.String(),
+		Model:        model,
+		InputTokens:  inputTokens,
+		OutputTokens: outputTokens,
+		FinishReason: finishReason,
+		Streamed:     true,
+	}, nil
+}
+
+func parseAnthropicStreamDelta(data string) (ProviderDelta, string, string, int, int, bool) {
+	var parsed struct {
+		Type    string `json:"type"`
+		Message struct {
+			Model string `json:"model"`
+			Usage struct {
+				InputTokens  int `json:"input_tokens"`
+				OutputTokens int `json:"output_tokens"`
+			} `json:"usage"`
+		} `json:"message"`
+		Delta struct {
+			Type       string `json:"type"`
+			Text       string `json:"text"`
+			StopReason string `json:"stop_reason"`
+			Thinking   string `json:"thinking"`
+		} `json:"delta"`
+		Usage struct {
+			OutputTokens int `json:"output_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal([]byte(data), &parsed); err != nil {
+		return ProviderDelta{}, "", "", 0, 0, false
+	}
+	switch parsed.Type {
+	case "message_start":
+		return ProviderDelta{}, parsed.Message.Model, "", parsed.Message.Usage.InputTokens, parsed.Message.Usage.OutputTokens, false
+	case "content_block_delta":
+		if parsed.Delta.Type == "thinking_delta" && parsed.Delta.Thinking != "" {
+			return ProviderDelta{Type: "thinking", Content: parsed.Delta.Thinking}, "", "", 0, 0, true
+		}
+		if parsed.Delta.Text != "" {
+			return ProviderDelta{Type: "text", Content: parsed.Delta.Text}, "", "", 0, 0, true
+		}
+	case "message_delta":
+		return ProviderDelta{}, "", parsed.Delta.StopReason, 0, parsed.Usage.OutputTokens, false
+	}
+	return ProviderDelta{}, "", "", 0, 0, false
+}
+
 // ---------------------------------------------------------------------------
 // Message conversion helpers
 // ---------------------------------------------------------------------------
@@ -629,8 +986,9 @@ func (s *ProviderService) toAPIMessages(messages []domain.Message) []map[string]
 //
 // Changelog:
 // 2026-04-11 — Added: the previous code used toAPIMessages for non-cached
-//   Anthropic calls, producing {"role","content":string} which is incompatible
-//   with the Anthropic Messages API's required content-block format (Bug 2).
+//
+//	Anthropic calls, producing {"role","content":string} which is incompatible
+//	with the Anthropic Messages API's required content-block format (Bug 2).
 func (s *ProviderService) toAnthropicMessages(messages []domain.Message) []map[string]any {
 	out := make([]map[string]any, 0, len(messages))
 
