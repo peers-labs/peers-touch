@@ -75,9 +75,9 @@ Use `make relay-check` only when the user explicitly wants health-check only.
 
 ```bash
 # Profile management
-make profile-init PROFILE=<name> SLOT=<n>   # Create new profile
-make profile PROFILE=<name>                 # Activate profile
-make profiles                               # List all profiles
+make profiles                               # Bootstrap/list profiles and deploy envs
+make profile <name>                         # Activate profile
+make profile-init <name> SLOT=<n>           # Create new profile
 make config                                 # Show active config
 
 # Services
@@ -211,11 +211,11 @@ These variables are passed to Station at startup.
 
 When the user says "set up environment for X" or "I want to debug against Y":
 
-1. **Check existing profiles**: `make profiles`
+1. **Bootstrap/check existing profiles**: `make profiles`
 2. **Decide**: create new or reuse existing profile
-3. **Create if needed**: `make profile-init PROFILE=<name> SLOT=<n>`
+3. **Create if needed**: `make profile-init <name> SLOT=<n>`
 4. **Edit profile** if non-default config needed (remote station, relay, etc.)
-5. **Activate**: `make profile PROFILE=<name>`
+5. **Activate**: `make profile <name>`
 6. **Verify**: `make config` to confirm
 7. **Report**: tell user they can now `make desktop` / `make mobile` / `make station`
 
@@ -295,6 +295,7 @@ Source modes:
 
 - `.local/` is its own git repo (gitignored by main repo, versioned separately)
 - Profiles and deploy envs are tracked in `.local/` repo
+- `make profiles` and `make profile <name>` bootstrap missing profiles/deploy envs from the shared `.local/` used by sibling worktrees.
 - Runtime artifacts (pids/logs/data) and active pointers are gitignored within `.local/`
 - Each worktree has its own active profile pointer (keyed by worktree basename)
 - Multiple worktrees share one `.local/` via symlink; pids/logs/data are profile-scoped

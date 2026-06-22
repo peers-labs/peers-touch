@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-06-03 | **Updated**: 2026-06-03
+> **Created**: 2026-06-03 | **Updated**: 2026-06-07
 > **Owner**: Client Architecture Team
 > **Module**: `apps/desktop/src/runtimes/socialRuntime.ts`, `apps/mobile/src/features/social/`
 
@@ -58,6 +58,7 @@ Peers-Touch 的社交能力需要在 Desktop 与 Mobile 上长期共同演进。
 | [integration.md](./integration.md) | 当前 Desktop/Mobile 文件映射、差异矩阵、迁移策略 |
 | [execution-plans/phase-1-runtime-alignment.md](./execution-plans/phase-1-runtime-alignment.md) | 第一阶段落地计划 |
 | [execution-plans/20260604-social-chat-product-closure.md](./execution-plans/20260604-social-chat-product-closure.md) | 社交/聊天产品闭环最终形态、四大能力域、长任务执行路径 |
+| [execution-plans/20260607-client-chat-framework-standardization.md](./execution-plans/20260607-client-chat-framework-standardization.md) | 本轮 chat framework 标准化执行追踪：已完成、待完成、验证日志 |
 
 ---
 

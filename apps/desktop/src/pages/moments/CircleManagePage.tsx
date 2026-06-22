@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Button, Tag } from '@lobehub/ui';
 import {
-  Button,
   Card,
   Empty,
   Input,
@@ -9,7 +9,6 @@ import {
   Modal,
   Popconfirm,
   Space,
-  Tag,
   Typography,
   message,
 } from 'antd';
@@ -44,36 +43,20 @@ export function CircleManageView() {
   const circles = useMomentsStore((s) => s.circles);
   const circlesLoading = useMomentsStore((s) => s.circlesLoading);
   const circleMembers = useMomentsStore((s) => s.circleMembers);
-  const listMyCircles = useMomentsStore((s) => s.listMyCircles);
   const createCircle = useMomentsStore((s) => s.createCircle);
   const renameCircle = useMomentsStore((s) => s.renameCircle);
   const deleteCircle = useMomentsStore((s) => s.deleteCircle);
-  const loadCircleMembers = useMomentsStore((s) => s.loadCircleMembers);
   const addCircleMember = useMomentsStore((s) => s.addCircleMember);
   const removeCircleMember = useMomentsStore((s) => s.removeCircleMember);
 
   const [editing, setEditing] = useState<CircleEditState | null>(null);
   const [memberInput, setMemberInput] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    listMyCircles().catch(() => {});
-  }, [listMyCircles]);
-
-  // Pre-load member lists so the inline preview shows without a
-  // round-trip per row.
-  useEffect(() => {
-    for (const c of circles) {
-      const id = String(c.id ?? '');
-      if (!id || circleMembers[id]) continue;
-      loadCircleMembers(id).catch(() => {});
-    }
-  }, [circles, circleMembers, loadCircleMembers]);
-
   const handleSave = async () => {
     if (!editing) return;
     const name = editing.name.trim();
     if (!name) {
-      message.warning(t('moments.circle.nameRequired', { defaultValue: 'Name required' }));
+      message.warning(t('moments.circle.nameRequired'));
       return;
     }
     try {
@@ -84,8 +67,8 @@ export function CircleManageView() {
       }
       message.success(
         editing.circleId
-          ? t('moments.circle.renamed', { defaultValue: 'Renamed' })
-          : t('moments.circle.created', { defaultValue: 'Created' }),
+          ? t('moments.circle.renamed')
+          : t('moments.circle.created'),
       );
       setEditing(null);
     } catch (err) {
@@ -96,7 +79,7 @@ export function CircleManageView() {
   const handleAddMember = async (circleId: string) => {
     const did = (memberInput[circleId] ?? '').trim();
     if (!did) {
-      message.warning(t('moments.circle.memberDidRequired', { defaultValue: 'Enter a DID' }));
+      message.warning(t('moments.circle.memberDidRequired'));
       return;
     }
     try {
@@ -109,7 +92,10 @@ export function CircleManageView() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16, justifyContent: 'space-between', width: '100%' }}>
+      <Space
+        wrap
+        style={{ marginBottom: 16, justifyContent: 'space-between', width: '100%' }}
+      >
         <Text strong style={{ fontSize: 16 }}>
           {t('moments.action.manageCircles')}
         </Text>
@@ -133,7 +119,7 @@ export function CircleManageView() {
           <Card
             key={id}
             size="small"
-            style={{ marginBottom: 12 }}
+            style={{ marginBottom: 10, borderRadius: 16 }}
             title={
               <Space>
                 <UsersRound size={14} />
@@ -198,7 +184,7 @@ export function CircleManageView() {
                         )
                       }
                     >
-                      {t('moments.circle.remove', { defaultValue: 'Remove' })}
+                      {t('moments.circle.remove')}
                     </Button>,
                   ]}
                 >
@@ -208,7 +194,7 @@ export function CircleManageView() {
               locale={{
                 emptyText: (
                   <Text type="secondary" style={{ fontSize: 12 }}>
-                    {t('moments.circle.noMembers', { defaultValue: 'No members yet' })}
+                    {t('moments.circle.noMembers')}
                   </Text>
                 ),
               }}
@@ -216,15 +202,13 @@ export function CircleManageView() {
             />
             <Space.Compact style={{ width: '100%', marginTop: 8 }}>
               <Input
-                placeholder={t('moments.circle.addMemberPlaceholder', {
-                  defaultValue: 'did:peers:...',
-                })}
+                placeholder={t('moments.circle.addMemberPlaceholder')}
                 value={memberInput[id] ?? ''}
                 onChange={(e) => setMemberInput((m) => ({ ...m, [id]: e.target.value }))}
                 onPressEnter={() => handleAddMember(id)}
               />
               <Button onClick={() => handleAddMember(id)}>
-                {t('moments.circle.addMember', { defaultValue: 'Add' })}
+                {t('moments.circle.addMember')}
               </Button>
             </Space.Compact>
           </Card>

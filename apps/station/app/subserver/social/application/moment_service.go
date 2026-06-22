@@ -47,6 +47,7 @@ type MomentService struct {
 	groups    domain.GroupMembershipChecker
 	media     domain.MediaResolver
 	reactions *ReactionService
+	publisher *MomentEventPublisher
 }
 
 // NewMomentService wires the moment service against the supplied
@@ -62,12 +63,17 @@ func NewMomentService(
 	groups domain.GroupMembershipChecker,
 	media domain.MediaResolver,
 	reactions *ReactionService,
+	publishers ...*MomentEventPublisher,
 ) *MomentService {
 	if media == nil {
 		// Defensive: callers should always supply a resolver, but
 		// preserve the P1 behavior (accept everything) rather than
 		// panic if the wiring forgets to plumb it through.
 		media = NewNoopMediaResolver()
+	}
+	var publisher *MomentEventPublisher
+	if len(publishers) > 0 {
+		publisher = publishers[0]
 	}
 	return &MomentService{
 		db:        gdb,
@@ -77,6 +83,7 @@ func NewMomentService(
 		groups:    groups,
 		media:     media,
 		reactions: reactions,
+		publisher: publisher,
 	}
 }
 
@@ -182,6 +189,9 @@ func (s *MomentService) CreateMoment(ctx context.Context, req *model.CreatePostR
 		"author_id", authorID,
 		"audience_kind", req.Audience.Kind.String(),
 		"is_public", domainPost.IsPublic())
+	if s.publisher != nil {
+		s.publisher.PublishCreated(ctx, domainPost.ID, authorID, req.Audience)
+	}
 	return out, nil
 }
 
@@ -200,12 +210,19 @@ func (s *MomentService) validateAttachmentCIDs(ctx context.Context, req *model.C
 		if img == nil {
 			return fmt.Errorf("IMAGE post requires CreateImagePostRequest content")
 		}
-		if n := len(img.ImageIds); n == 0 {
+		imageIDs, err := imageIDsFromCreateRequest(img)
+		if err != nil {
+			return err
+		}
+		if n := len(imageIDs); n == 0 {
 			return fmt.Errorf("IMAGE post requires at least one image_id")
 		} else if n > maxImagesPerPost {
 			return fmt.Errorf("IMAGE post supports at most %d images, got %d", maxImagesPerPost, n)
 		}
-		return s.media.ValidateCIDs(ctx, img.ImageIds)
+		if err := validatePrivateImageMediaEncryption(req.Audience, img); err != nil {
+			return err
+		}
+		return s.media.ValidateCIDs(ctx, imageIDs)
 
 	case model.PostType_VIDEO:
 		// Video is deferred to a later iteration (see plan D3) but the
@@ -226,6 +243,56 @@ func (s *MomentService) validateAttachmentCIDs(ctx context.Context, req *model.C
 			return fmt.Errorf("LOCATION post supports at most %d images, got %d", maxImagesPerPost, n)
 		}
 		return s.media.ValidateCIDs(ctx, loc.ImageIds)
+	}
+	return nil
+}
+
+func imageIDsFromCreateRequest(img *model.CreateImagePostRequest) ([]string, error) {
+	if img == nil {
+		return nil, nil
+	}
+	if len(img.ImageIds) > 0 && len(img.Images) > 0 {
+		return nil, fmt.Errorf("IMAGE post accepts either image_ids or images, not both")
+	}
+	if len(img.ImageIds) > 0 {
+		return img.ImageIds, nil
+	}
+	ids := make([]string, 0, len(img.Images))
+	for _, image := range img.Images {
+		if image == nil {
+			continue
+		}
+		if image.Id != "" {
+			ids = append(ids, image.Id)
+		} else if image.Url != "" {
+			ids = append(ids, image.Url)
+		}
+	}
+	return ids, nil
+}
+
+func validatePrivateImageMediaEncryption(audience *model.Audience, img *model.CreateImagePostRequest) error {
+	if audience == nil || audience.Kind == model.Audience_PUBLIC {
+		return nil
+	}
+	if len(audience.GetKeyEnvelopes()) == 0 {
+		return fmt.Errorf("non-public IMAGE post requires audience key envelopes")
+	}
+	if img == nil || len(img.Images) == 0 {
+		return fmt.Errorf("non-public IMAGE post requires encrypted image attachments")
+	}
+	for _, image := range img.Images {
+		if image == nil || image.MediaEncryption == nil || !image.MediaEncryption.Encrypted {
+			return fmt.Errorf("non-public IMAGE post requires encrypted image attachments")
+		}
+		if image.MediaEncryption.GetKeyB64() != "" {
+			return fmt.Errorf("non-public IMAGE post rejects inline media key material")
+		}
+	}
+	for _, envelope := range audience.GetKeyEnvelopes() {
+		if envelope == nil || envelope.GetRecipientDid() == "" || envelope.GetDeviceId() == "" || envelope.GetKeyId() == "" || len(envelope.GetEncryptedKey()) == 0 || envelope.GetSuite() == "" {
+			return fmt.Errorf("non-public IMAGE post has incomplete audience key envelope")
+		}
 	}
 	return nil
 }
@@ -301,8 +368,91 @@ func (s *MomentService) persistInTx(ctx context.Context, p *domain.Post) error {
 				return fmt.Errorf("audience grants: %w", err)
 			}
 		}
+		deliveries, err := s.buildMomentDeliveries(ctx, txRepos, p)
+		if err != nil {
+			return fmt.Errorf("build moment deliveries: %w", err)
+		}
+		if err := txRepos.Deliveries.Upsert(ctx, deliveries); err != nil {
+			return fmt.Errorf("moment deliveries: %w", err)
+		}
 		return nil
 	})
+}
+
+func (s *MomentService) buildMomentDeliveries(ctx context.Context, repos *infrastructure.Repos, p *domain.Post) ([]domain.MomentDelivery, error) {
+	if p == nil || p.IsPublic() || p.Audience == nil {
+		return nil, nil
+	}
+
+	recipients := map[uint64]struct{}{p.AuthorID: {}}
+	switch p.Audience.Kind {
+	case model.Audience_SELF:
+		// Author-only delivery is already seeded above.
+
+	case model.Audience_FOLLOWERS:
+		followers, err := repos.Follows.FollowerActorIDs(ctx, p.AuthorID)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range followers {
+			recipients[id] = struct{}{}
+		}
+
+	case model.Audience_CUSTOM_ALLOW:
+		ids, err := s.resolver.ResolveDIDs(ctx, p.Audience.ActorDids)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range ids {
+			if id != 0 {
+				recipients[id] = struct{}{}
+			}
+		}
+
+	case model.Audience_CUSTOM_DENY:
+		if p.Audience.BaseKind != model.Audience_FOLLOWERS {
+			break
+		}
+		followers, err := repos.Follows.FollowerActorIDs(ctx, p.AuthorID)
+		if err != nil {
+			return nil, err
+		}
+		denied := make(map[uint64]struct{})
+		ids, err := s.resolver.ResolveDIDs(ctx, p.Audience.ActorDids)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range ids {
+			if id != 0 {
+				denied[id] = struct{}{}
+			}
+		}
+		for _, id := range followers {
+			if _, blocked := denied[id]; !blocked {
+				recipients[id] = struct{}{}
+			}
+		}
+
+	case model.Audience_CIRCLE, model.Audience_GROUP:
+		// Real CIRCLE/GROUP fan-out waits for the ActorResolver and
+		// GroupMembershipChecker contracts to expose durable local IDs.
+		// Until then, author delivery preserves self-device consistency.
+	}
+
+	deliveries := make([]domain.MomentDelivery, 0, len(recipients))
+	for viewerID := range recipients {
+		if viewerID == 0 {
+			continue
+		}
+		deliveries = append(deliveries, domain.MomentDelivery{
+			ViewerID:     viewerID,
+			PostID:       p.ID,
+			AuthorID:     p.AuthorID,
+			AudienceKind: p.Audience.Kind.String(),
+			DeliveredAt:  p.CreatedAt,
+		})
+	}
+	return deliveries, nil
 }
 
 // GetMoment returns a single moment with the viewer-bound visibility
@@ -326,6 +476,11 @@ func (s *MomentService) GetMoment(ctx context.Context, postIDStr string, viewerI
 		if ok, _ := domain.CanRead(viewer, p.AuthorID, p.Audience, p.IsDeleted()); !ok {
 			return nil, nil
 		}
+		if blocked, err := actorStationModerated(ctx, s.repos.Moderation, p.AuthorID); err != nil {
+			return nil, err
+		} else if blocked {
+			return nil, nil
+		}
 		return s.hydratePost(ctx, p, viewerID)
 	}
 
@@ -345,6 +500,11 @@ func (s *MomentService) GetMoment(ctx context.Context, postIDStr string, viewerI
 	if ok, _ := domain.CanRead(viewer, priv.AuthorID, priv.Audience, priv.IsDeleted()); !ok {
 		return nil, nil
 	}
+	if blocked, err := actorStationModerated(ctx, s.repos.Moderation, priv.AuthorID); err != nil {
+		return nil, err
+	} else if blocked {
+		return nil, nil
+	}
 	return s.hydratePost(ctx, priv, viewerID)
 }
 
@@ -357,6 +517,19 @@ func (s *MomentService) DeleteMoment(ctx context.Context, postIDStr string, auth
 	if postID == 0 {
 		return fmt.Errorf("invalid post_id %q", postIDStr)
 	}
+	owned, err := s.repos.PublicPosts.GetByID(ctx, postID)
+	if err != nil {
+		return err
+	}
+	if owned == nil {
+		owned, err = s.repos.PrivatePosts.GetByID(ctx, postID, authorID)
+		if err != nil {
+			return err
+		}
+	}
+	if owned == nil || owned.AuthorID != authorID {
+		return nil
+	}
 	if err := s.repos.PublicPosts.Delete(ctx, postID, authorID); err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
@@ -367,7 +540,15 @@ func (s *MomentService) DeleteMoment(ctx context.Context, postIDStr string, auth
 			return err
 		}
 	}
+	if s.repos.Deliveries != nil {
+		if err := s.repos.Deliveries.RevokePost(ctx, postID); err != nil {
+			logger.Warn(ctx, "moment.delete: delivery revoke failed", "post_id", postID, "error", err)
+		}
+	}
 	logger.Info(ctx, "moment.deleted", "post_id", postID, "author_id", authorID)
+	if s.publisher != nil {
+		s.publisher.PublishDeleted(ctx, postID, authorID)
+	}
 	return nil
 }
 
@@ -380,6 +561,11 @@ func (s *MomentService) ListByAuthor(ctx context.Context, authorID, viewerID uin
 	}
 	if limit <= 0 || limit > 100 {
 		limit = 20
+	}
+	if blocked, err := actorStationModerated(ctx, s.repos.Moderation, authorID); err != nil {
+		return nil, "", false, err
+	} else if blocked {
+		return nil, "", false, nil
 	}
 
 	pubPosts, err := s.repos.PublicPosts.ListByAuthor(ctx, authorID, c, limit+1)
@@ -509,7 +695,7 @@ func (s *MomentService) hydratePostWith(ctx context.Context, p *domain.Post, vie
 	}
 
 	if s.reactions != nil {
-		summaries, err := s.reactions.Aggregate(ctx, p.ID, viewerID)
+		summaries, err := s.reactions.Aggregate(ctx, p.ID, p.AuthorID, viewerID)
 		if err == nil && len(summaries) > 0 {
 			out.Reactions = s.conv.SummariesToProto(summaries)
 		}

@@ -122,13 +122,13 @@ public final class PostOuterClass {
             }
           };
 
-    public static com.google.protobuf.Internal.EnumVerifier 
+    public static com.google.protobuf.Internal.EnumVerifier
         internalGetVerifier() {
       return PostTypeVerifier.INSTANCE;
     }
 
-    private static final class PostTypeVerifier implements 
-         com.google.protobuf.Internal.EnumVerifier { 
+    private static final class PostTypeVerifier implements
+         com.google.protobuf.Internal.EnumVerifier {
             static final com.google.protobuf.Internal.EnumVerifier
                 INSTANCE = new PostTypeVerifier();
             @java.lang.Override
@@ -221,13 +221,13 @@ public final class PostOuterClass {
             }
           };
 
-    public static com.google.protobuf.Internal.EnumVerifier 
+    public static com.google.protobuf.Internal.EnumVerifier
         internalGetVerifier() {
       return PostVisibilityVerifier.INSTANCE;
     }
 
-    private static final class PostVisibilityVerifier implements 
-         com.google.protobuf.Internal.EnumVerifier { 
+    private static final class PostVisibilityVerifier implements
+         com.google.protobuf.Internal.EnumVerifier {
             static final com.google.protobuf.Internal.EnumVerifier
                 INSTANCE = new PostVisibilityVerifier();
             @java.lang.Override
@@ -338,13 +338,13 @@ public final class PostOuterClass {
             }
           };
 
-    public static com.google.protobuf.Internal.EnumVerifier 
+    public static com.google.protobuf.Internal.EnumVerifier
         internalGetVerifier() {
       return VideoQualityVerifier.INSTANCE;
     }
 
-    private static final class VideoQualityVerifier implements 
-         com.google.protobuf.Internal.EnumVerifier { 
+    private static final class VideoQualityVerifier implements
+         com.google.protobuf.Internal.EnumVerifier {
             static final com.google.protobuf.Internal.EnumVerifier
                 INSTANCE = new VideoQualityVerifier();
             @java.lang.Override
@@ -437,13 +437,13 @@ public final class PostOuterClass {
             }
           };
 
-    public static com.google.protobuf.Internal.EnumVerifier 
+    public static com.google.protobuf.Internal.EnumVerifier
         internalGetVerifier() {
       return TimelineTypeVerifier.INSTANCE;
     }
 
-    private static final class TimelineTypeVerifier implements 
-         com.google.protobuf.Internal.EnumVerifier { 
+    private static final class TimelineTypeVerifier implements
+         com.google.protobuf.Internal.EnumVerifier {
             static final com.google.protobuf.Internal.EnumVerifier
                 INSTANCE = new TimelineTypeVerifier();
             @java.lang.Override
@@ -535,13 +535,13 @@ public final class PostOuterClass {
             }
           };
 
-    public static com.google.protobuf.Internal.EnumVerifier 
+    public static com.google.protobuf.Internal.EnumVerifier
         internalGetVerifier() {
       return TimelineSortVerifier.INSTANCE;
     }
 
-    private static final class TimelineSortVerifier implements 
-         com.google.protobuf.Internal.EnumVerifier { 
+    private static final class TimelineSortVerifier implements
+         com.google.protobuf.Internal.EnumVerifier {
             static final com.google.protobuf.Internal.EnumVerifier
                 INSTANCE = new TimelineSortVerifier();
             @java.lang.Override
@@ -667,13 +667,13 @@ public final class PostOuterClass {
             }
           };
 
-    public static com.google.protobuf.Internal.EnumVerifier 
+    public static com.google.protobuf.Internal.EnumVerifier
         internalGetVerifier() {
       return ReactionKindVerifier.INSTANCE;
     }
 
-    private static final class ReactionKindVerifier implements 
-         com.google.protobuf.Internal.EnumVerifier { 
+    private static final class ReactionKindVerifier implements
+         com.google.protobuf.Internal.EnumVerifier {
             static final com.google.protobuf.Internal.EnumVerifier
                 INSTANCE = new ReactionKindVerifier();
             @java.lang.Override
@@ -937,7 +937,7 @@ public final class PostOuterClass {
      *
      * <code>repeated .peers_touch.model.social.v1.ReactionSummary reactions = 51;</code>
      */
-    java.util.List<peers_touch.model.social.v1.PostOuterClass.ReactionSummary> 
+    java.util.List<peers_touch.model.social.v1.PostOuterClass.ReactionSummary>
         getReactionsList();
     /**
      * <pre>
@@ -971,7 +971,7 @@ public final class PostOuterClass {
      *
      * <code>repeated .peers_touch.model.social.v1.Mention typed_mentions = 52;</code>
      */
-    java.util.List<peers_touch.model.social.v1.PostOuterClass.Mention> 
+    java.util.List<peers_touch.model.social.v1.PostOuterClass.Mention>
         getTypedMentionsList();
     /**
      * <pre>
@@ -1398,7 +1398,7 @@ public final class PostOuterClass {
      * @param value The isDeleted to set.
      */
     private void setIsDeleted(boolean value) {
-      
+
       isDeleted_ = value;
     }
     /**
@@ -2067,7 +2067,7 @@ public final class PostOuterClass {
      *
      * <code>repeated .peers_touch.model.social.v1.ReactionSummary reactions = 51;</code>
      */
-    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.ReactionSummaryOrBuilder> 
+    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.ReactionSummaryOrBuilder>
         getReactionsOrBuilderList() {
       return reactions_;
     }
@@ -2234,7 +2234,7 @@ public final class PostOuterClass {
      *
      * <code>repeated .peers_touch.model.social.v1.Mention typed_mentions = 52;</code>
      */
-    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.MentionOrBuilder> 
+    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.MentionOrBuilder>
         getTypedMentionsOrBuilderList() {
       return typedMentions_;
     }
@@ -3985,7 +3985,7 @@ public final class PostOuterClass {
      * @param value The likesCount to set.
      */
     private void setLikesCount(long value) {
-      
+
       likesCount_ = value;
     }
     /**
@@ -4011,7 +4011,7 @@ public final class PostOuterClass {
      * @param value The commentsCount to set.
      */
     private void setCommentsCount(long value) {
-      
+
       commentsCount_ = value;
     }
     /**
@@ -4037,7 +4037,7 @@ public final class PostOuterClass {
      * @param value The repostsCount to set.
      */
     private void setRepostsCount(long value) {
-      
+
       repostsCount_ = value;
     }
     /**
@@ -4063,7 +4063,7 @@ public final class PostOuterClass {
      * @param value The viewsCount to set.
      */
     private void setViewsCount(long value) {
-      
+
       viewsCount_ = value;
     }
     /**
@@ -4700,7 +4700,7 @@ public final class PostOuterClass {
      * @param value The isFollowing to set.
      */
     private void setIsFollowing(boolean value) {
-      
+
       isFollowing_ = value;
     }
     /**
@@ -5524,7 +5524,7 @@ public final class PostOuterClass {
      * @param value The isLiked to set.
      */
     private void setIsLiked(boolean value) {
-      
+
       isLiked_ = value;
     }
     /**
@@ -5550,7 +5550,7 @@ public final class PostOuterClass {
      * @param value The isReposted to set.
      */
     private void setIsReposted(boolean value) {
-      
+
       isReposted_ = value;
     }
     /**
@@ -5576,7 +5576,7 @@ public final class PostOuterClass {
      * @param value The isBookmarked to set.
      */
     private void setIsBookmarked(boolean value) {
-      
+
       isBookmarked_ = value;
     }
     /**
@@ -6588,7 +6588,7 @@ public final class PostOuterClass {
     /**
      * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 2;</code>
      */
-    java.util.List<peers_touch.model.social.v1.PostOuterClass.ImageAttachment> 
+    java.util.List<peers_touch.model.social.v1.PostOuterClass.ImageAttachment>
         getImagesList();
     /**
      * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 2;</code>
@@ -6723,7 +6723,7 @@ public final class PostOuterClass {
     /**
      * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 2;</code>
      */
-    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.ImageAttachmentOrBuilder> 
+    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.ImageAttachmentOrBuilder>
         getImagesOrBuilderList() {
       return images_;
     }
@@ -10554,7 +10554,7 @@ public final class PostOuterClass {
     /**
      * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
      */
-    java.util.List<peers_touch.model.social.v1.PostOuterClass.ImageAttachment> 
+    java.util.List<peers_touch.model.social.v1.PostOuterClass.ImageAttachment>
         getImagesList();
     /**
      * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
@@ -10738,7 +10738,7 @@ public final class PostOuterClass {
     /**
      * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
      */
-    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.ImageAttachmentOrBuilder> 
+    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.ImageAttachmentOrBuilder>
         getImagesOrBuilderList() {
       return images_;
     }
@@ -11654,6 +11654,17 @@ public final class PostOuterClass {
      */
     com.google.protobuf.ByteString
         getAltTextBytes();
+
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     * @return Whether the mediaEncryption field is set.
+     */
+    boolean hasMediaEncryption();
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     * @return The mediaEncryption.
+     */
+    peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption();
   }
   /**
    * Protobuf type {@code peers_touch.model.social.v1.ImageAttachment}
@@ -11670,6 +11681,7 @@ public final class PostOuterClass {
       blurhash_ = "";
       altText_ = "";
     }
+    private int bitField0_;
     public static final int ID_FIELD_NUMBER = 1;
     private java.lang.String id_;
     /**
@@ -11829,7 +11841,7 @@ public final class PostOuterClass {
      * @param value The sizeBytes to set.
      */
     private void setSizeBytes(long value) {
-      
+
       sizeBytes_ = value;
     }
     /**
@@ -11855,7 +11867,7 @@ public final class PostOuterClass {
      * @param value The width to set.
      */
     private void setWidth(int value) {
-      
+
       width_ = value;
     }
     /**
@@ -11881,7 +11893,7 @@ public final class PostOuterClass {
      * @param value The height to set.
      */
     private void setHeight(int value) {
-      
+
       height_ = value;
     }
     /**
@@ -11986,6 +11998,54 @@ public final class PostOuterClass {
       checkByteStringIsUtf8(value);
       altText_ = value.toStringUtf8();
 
+    }
+
+    public static final int MEDIA_ENCRYPTION_FIELD_NUMBER = 9;
+    private peers_touch.model.common.v1.Common.EncryptedMediaDescriptor mediaEncryption_;
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    @java.lang.Override
+    public boolean hasMediaEncryption() {
+      return ((bitField0_ & 0x00000001) != 0);
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption() {
+      return mediaEncryption_ == null ? peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.getDefaultInstance() : mediaEncryption_;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+      value.getClass();  // minimal bytecode null check
+      mediaEncryption_ = value;
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+      value.getClass();  // minimal bytecode null check
+      if (mediaEncryption_ != null &&
+          mediaEncryption_ != peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.getDefaultInstance()) {
+        mediaEncryption_ =
+          peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.newBuilder(mediaEncryption_).mergeFrom(value).buildPartial();
+      } else {
+        mediaEncryption_ = value;
+      }
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    private void clearMediaEncryption() {
+      mediaEncryption_ = null;
+      bitField0_ = (bitField0_ & ~0x00000001);
     }
 
     public static peers_touch.model.social.v1.PostOuterClass.ImageAttachment parseFrom(
@@ -12414,6 +12474,53 @@ public final class PostOuterClass {
         return this;
       }
 
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      @java.lang.Override
+      public boolean hasMediaEncryption() {
+        return instance.hasMediaEncryption();
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption() {
+        return instance.getMediaEncryption();
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      public Builder setMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+        copyOnWrite();
+        instance.setMediaEncryption(value);
+        return this;
+        }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      public Builder setMediaEncryption(
+          peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.Builder builderForValue) {
+        copyOnWrite();
+        instance.setMediaEncryption(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      public Builder mergeMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+        copyOnWrite();
+        instance.mergeMediaEncryption(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      public Builder clearMediaEncryption() {  copyOnWrite();
+        instance.clearMediaEncryption();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.ImageAttachment)
     }
     @java.lang.Override
@@ -12430,6 +12537,7 @@ public final class PostOuterClass {
         }
         case BUILD_MESSAGE_INFO: {
             java.lang.Object[] objects = new java.lang.Object[] {
+              "bitField0_",
               "id_",
               "url_",
               "thumbnailUrl_",
@@ -12438,10 +12546,11 @@ public final class PostOuterClass {
               "height_",
               "blurhash_",
               "altText_",
+              "mediaEncryption_",
             };
             java.lang.String info =
-                "\u0000\b\u0000\u0000\u0001\b\b\u0000\u0000\u0000\u0001\u0208\u0002\u0208\u0003\u0208" +
-                "\u0004\u0002\u0005\u0004\u0006\u0004\u0007\u0208\b\u0208";
+                "\u0000\t\u0000\u0001\u0001\t\t\u0000\u0000\u0000\u0001\u0208\u0002\u0208\u0003\u0208" +
+                "\u0004\u0002\u0005\u0004\u0006\u0004\u0007\u0208\b\u0208\t\u1009\u0000";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {
@@ -12586,7 +12695,7 @@ public final class PostOuterClass {
     /**
      * <code>repeated .peers_touch.model.social.v1.VideoVariant variants = 10;</code>
      */
-    java.util.List<peers_touch.model.social.v1.PostOuterClass.VideoVariant> 
+    java.util.List<peers_touch.model.social.v1.PostOuterClass.VideoVariant>
         getVariantsList();
     /**
      * <code>repeated .peers_touch.model.social.v1.VideoVariant variants = 10;</code>
@@ -12596,6 +12705,17 @@ public final class PostOuterClass {
      * <code>repeated .peers_touch.model.social.v1.VideoVariant variants = 10;</code>
      */
     int getVariantsCount();
+
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+     * @return Whether the mediaEncryption field is set.
+     */
+    boolean hasMediaEncryption();
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+     * @return The mediaEncryption.
+     */
+    peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption();
   }
   /**
    * Protobuf type {@code peers_touch.model.social.v1.VideoAttachment}
@@ -12612,6 +12732,7 @@ public final class PostOuterClass {
       blurhash_ = "";
       variants_ = emptyProtobufList();
     }
+    private int bitField0_;
     public static final int ID_FIELD_NUMBER = 1;
     private java.lang.String id_;
     /**
@@ -12771,7 +12892,7 @@ public final class PostOuterClass {
      * @param value The sizeBytes to set.
      */
     private void setSizeBytes(long value) {
-      
+
       sizeBytes_ = value;
     }
     /**
@@ -12797,7 +12918,7 @@ public final class PostOuterClass {
      * @param value The width to set.
      */
     private void setWidth(int value) {
-      
+
       width_ = value;
     }
     /**
@@ -12823,7 +12944,7 @@ public final class PostOuterClass {
      * @param value The height to set.
      */
     private void setHeight(int value) {
-      
+
       height_ = value;
     }
     /**
@@ -12849,7 +12970,7 @@ public final class PostOuterClass {
      * @param value The durationSeconds to set.
      */
     private void setDurationSeconds(int value) {
-      
+
       durationSeconds_ = value;
     }
     /**
@@ -12963,7 +13084,7 @@ public final class PostOuterClass {
     /**
      * <code>repeated .peers_touch.model.social.v1.VideoVariant variants = 10;</code>
      */
-    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.VideoVariantOrBuilder> 
+    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.VideoVariantOrBuilder>
         getVariantsOrBuilderList() {
       return variants_;
     }
@@ -13046,6 +13167,54 @@ public final class PostOuterClass {
     private void removeVariants(int index) {
       ensureVariantsIsMutable();
       variants_.remove(index);
+    }
+
+    public static final int MEDIA_ENCRYPTION_FIELD_NUMBER = 11;
+    private peers_touch.model.common.v1.Common.EncryptedMediaDescriptor mediaEncryption_;
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+     */
+    @java.lang.Override
+    public boolean hasMediaEncryption() {
+      return ((bitField0_ & 0x00000001) != 0);
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption() {
+      return mediaEncryption_ == null ? peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.getDefaultInstance() : mediaEncryption_;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+      value.getClass();  // minimal bytecode null check
+      mediaEncryption_ = value;
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+      value.getClass();  // minimal bytecode null check
+      if (mediaEncryption_ != null &&
+          mediaEncryption_ != peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.getDefaultInstance()) {
+        mediaEncryption_ =
+          peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.newBuilder(mediaEncryption_).mergeFrom(value).buildPartial();
+      } else {
+        mediaEncryption_ = value;
+      }
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+     */
+    private void clearMediaEncryption() {
+      mediaEncryption_ = null;
+      bitField0_ = (bitField0_ & ~0x00000001);
     }
 
     public static peers_touch.model.social.v1.PostOuterClass.VideoAttachment parseFrom(
@@ -13602,6 +13771,53 @@ public final class PostOuterClass {
         return this;
       }
 
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+       */
+      @java.lang.Override
+      public boolean hasMediaEncryption() {
+        return instance.hasMediaEncryption();
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption() {
+        return instance.getMediaEncryption();
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+       */
+      public Builder setMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+        copyOnWrite();
+        instance.setMediaEncryption(value);
+        return this;
+        }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+       */
+      public Builder setMediaEncryption(
+          peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.Builder builderForValue) {
+        copyOnWrite();
+        instance.setMediaEncryption(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+       */
+      public Builder mergeMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+        copyOnWrite();
+        instance.mergeMediaEncryption(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 11;</code>
+       */
+      public Builder clearMediaEncryption() {  copyOnWrite();
+        instance.clearMediaEncryption();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.VideoAttachment)
     }
     @java.lang.Override
@@ -13618,6 +13834,7 @@ public final class PostOuterClass {
         }
         case BUILD_MESSAGE_INFO: {
             java.lang.Object[] objects = new java.lang.Object[] {
+              "bitField0_",
               "id_",
               "url_",
               "thumbnailUrl_",
@@ -13629,10 +13846,12 @@ public final class PostOuterClass {
               "quality_",
               "variants_",
               peers_touch.model.social.v1.PostOuterClass.VideoVariant.class,
+              "mediaEncryption_",
             };
             java.lang.String info =
-                "\u0000\n\u0000\u0000\u0001\n\n\u0000\u0001\u0000\u0001\u0208\u0002\u0208\u0003\u0208" +
-                "\u0004\u0002\u0005\u0004\u0006\u0004\u0007\u0004\b\u0208\t\f\n\u001b";
+                "\u0000\u000b\u0000\u0001\u0001\u000b\u000b\u0000\u0001\u0000\u0001\u0208\u0002\u0208" +
+                "\u0003\u0208\u0004\u0002\u0005\u0004\u0006\u0004\u0007\u0004\b\u0208\t\f\n\u001b" +
+                "\u000b\u1009\u0000";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {
@@ -13808,7 +14027,7 @@ public final class PostOuterClass {
      * @param value The bitrate to set.
      */
     private void setBitrate(int value) {
-      
+
       bitrate_ = value;
     }
     /**
@@ -13882,7 +14101,7 @@ public final class PostOuterClass {
      * @param value The width to set.
      */
     private void setWidth(int value) {
-      
+
       width_ = value;
     }
     /**
@@ -13908,7 +14127,7 @@ public final class PostOuterClass {
      * @param value The height to set.
      */
     private void setHeight(int value) {
-      
+
       height_ = value;
     }
     /**
@@ -15256,7 +15475,7 @@ public final class PostOuterClass {
      * @param value The latitude to set.
      */
     private void setLatitude(double value) {
-      
+
       latitude_ = value;
     }
     /**
@@ -15282,7 +15501,7 @@ public final class PostOuterClass {
      * @param value The longitude to set.
      */
     private void setLongitude(double value) {
-      
+
       longitude_ = value;
     }
     /**
@@ -17730,6 +17949,38 @@ public final class PostOuterClass {
      */
     com.google.protobuf.ByteString
         getImageIdsBytes(int index);
+
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    java.util.List<peers_touch.model.social.v1.PostOuterClass.ImageAttachment>
+        getImagesList();
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    peers_touch.model.social.v1.PostOuterClass.ImageAttachment getImages(int index);
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    int getImagesCount();
   }
   /**
    * Protobuf type {@code peers_touch.model.social.v1.CreateImagePostRequest}
@@ -17742,6 +17993,7 @@ public final class PostOuterClass {
     private CreateImagePostRequest() {
       text_ = "";
       imageIds_ = com.google.protobuf.GeneratedMessageLite.emptyProtobufList();
+      images_ = emptyProtobufList();
     }
     public static final int TEXT_FIELD_NUMBER = 1;
     private java.lang.String text_;
@@ -17884,6 +18136,169 @@ public final class PostOuterClass {
       checkByteStringIsUtf8(value);
       ensureImageIdsIsMutable();
       imageIds_.add(value.toStringUtf8());
+    }
+
+    public static final int IMAGES_FIELD_NUMBER = 3;
+    private com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.PostOuterClass.ImageAttachment> images_;
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    @java.lang.Override
+    public java.util.List<peers_touch.model.social.v1.PostOuterClass.ImageAttachment> getImagesList() {
+      return images_;
+    }
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.ImageAttachmentOrBuilder>
+        getImagesOrBuilderList() {
+      return images_;
+    }
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    @java.lang.Override
+    public int getImagesCount() {
+      return images_.size();
+    }
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.ImageAttachment getImages(int index) {
+      return images_.get(index);
+    }
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    public peers_touch.model.social.v1.PostOuterClass.ImageAttachmentOrBuilder getImagesOrBuilder(
+        int index) {
+      return images_.get(index);
+    }
+    private void ensureImagesIsMutable() {
+      com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.PostOuterClass.ImageAttachment> tmp = images_;
+      if (!tmp.isModifiable()) {
+        images_ =
+            com.google.protobuf.GeneratedMessageLite.mutableCopy(tmp);
+       }
+    }
+
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setImages(
+        int index, peers_touch.model.social.v1.PostOuterClass.ImageAttachment value) {
+      value.getClass();  // minimal bytecode null check
+      ensureImagesIsMutable();
+      images_.set(index, value);
+    }
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addImages(peers_touch.model.social.v1.PostOuterClass.ImageAttachment value) {
+      value.getClass();  // minimal bytecode null check
+      ensureImagesIsMutable();
+      images_.add(value);
+    }
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addImages(
+        int index, peers_touch.model.social.v1.PostOuterClass.ImageAttachment value) {
+      value.getClass();  // minimal bytecode null check
+      ensureImagesIsMutable();
+      images_.add(index, value);
+    }
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    private void addAllImages(
+        java.lang.Iterable<? extends peers_touch.model.social.v1.PostOuterClass.ImageAttachment> values) {
+      ensureImagesIsMutable();
+      com.google.protobuf.AbstractMessageLite.addAll(
+          values, images_);
+    }
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    private void clearImages() {
+      images_ = emptyProtobufList();
+    }
+    /**
+     * <pre>
+     * Typed image attachments for E2EE media publishing. `image_ids` stays
+     * for legacy clients, but new clients SHOULD populate `images` so the
+     * media encryption descriptor survives the create -&gt; hydrate loop.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+     */
+    private void removeImages(int index) {
+      ensureImagesIsMutable();
+      images_.remove(index);
     }
 
     public static peers_touch.model.social.v1.PostOuterClass.CreateImagePostRequest parseFrom(
@@ -18124,6 +18539,180 @@ public final class PostOuterClass {
         return this;
       }
 
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      @java.lang.Override
+      public java.util.List<peers_touch.model.social.v1.PostOuterClass.ImageAttachment> getImagesList() {
+        return java.util.Collections.unmodifiableList(
+            instance.getImagesList());
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      @java.lang.Override
+      public int getImagesCount() {
+        return instance.getImagesCount();
+      }/**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.ImageAttachment getImages(int index) {
+        return instance.getImages(index);
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      public Builder setImages(
+          int index, peers_touch.model.social.v1.PostOuterClass.ImageAttachment value) {
+        copyOnWrite();
+        instance.setImages(index, value);
+        return this;
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      public Builder setImages(
+          int index, peers_touch.model.social.v1.PostOuterClass.ImageAttachment.Builder builderForValue) {
+        copyOnWrite();
+        instance.setImages(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      public Builder addImages(peers_touch.model.social.v1.PostOuterClass.ImageAttachment value) {
+        copyOnWrite();
+        instance.addImages(value);
+        return this;
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      public Builder addImages(
+          int index, peers_touch.model.social.v1.PostOuterClass.ImageAttachment value) {
+        copyOnWrite();
+        instance.addImages(index, value);
+        return this;
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      public Builder addImages(
+          peers_touch.model.social.v1.PostOuterClass.ImageAttachment.Builder builderForValue) {
+        copyOnWrite();
+        instance.addImages(builderForValue.build());
+        return this;
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      public Builder addImages(
+          int index, peers_touch.model.social.v1.PostOuterClass.ImageAttachment.Builder builderForValue) {
+        copyOnWrite();
+        instance.addImages(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      public Builder addAllImages(
+          java.lang.Iterable<? extends peers_touch.model.social.v1.PostOuterClass.ImageAttachment> values) {
+        copyOnWrite();
+        instance.addAllImages(values);
+        return this;
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      public Builder clearImages() {
+        copyOnWrite();
+        instance.clearImages();
+        return this;
+      }
+      /**
+       * <pre>
+       * Typed image attachments for E2EE media publishing. `image_ids` stays
+       * for legacy clients, but new clients SHOULD populate `images` so the
+       * media encryption descriptor survives the create -&gt; hydrate loop.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.ImageAttachment images = 3;</code>
+       */
+      public Builder removeImages(int index) {
+        copyOnWrite();
+        instance.removeImages(index);
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.CreateImagePostRequest)
     }
     @java.lang.Override
@@ -18142,10 +18731,12 @@ public final class PostOuterClass {
             java.lang.Object[] objects = new java.lang.Object[] {
               "text_",
               "imageIds_",
+              "images_",
+              peers_touch.model.social.v1.PostOuterClass.ImageAttachment.class,
             };
             java.lang.String info =
-                "\u0000\u0002\u0000\u0000\u0001\u0002\u0002\u0000\u0001\u0000\u0001\u0208\u0002\u021a" +
-                "";
+                "\u0000\u0003\u0000\u0000\u0001\u0003\u0003\u0000\u0002\u0000\u0001\u0208\u0002\u021a" +
+                "\u0003\u001b";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {
@@ -19298,7 +19889,7 @@ public final class PostOuterClass {
      * @param value The durationHours to set.
      */
     private void setDurationHours(int value) {
-      
+
       durationHours_ = value;
     }
     /**
@@ -19324,7 +19915,7 @@ public final class PostOuterClass {
      * @param value The multipleChoice to set.
      */
     private void setMultipleChoice(boolean value) {
-      
+
       multipleChoice_ = value;
     }
     /**
@@ -22252,7 +22843,7 @@ public final class PostOuterClass {
      * @param value The success to set.
      */
     private void setSuccess(boolean value) {
-      
+
       success_ = value;
     }
     /**
@@ -22771,6 +23362,17 @@ public final class PostOuterClass {
      * @return The post.
      */
     peers_touch.model.social.v1.PostOuterClass.Post getPost();
+
+    /**
+     * <code>.peers_touch.model.social.v1.FeedObjectExplanation explanation = 2;</code>
+     * @return Whether the explanation field is set.
+     */
+    boolean hasExplanation();
+    /**
+     * <code>.peers_touch.model.social.v1.FeedObjectExplanation explanation = 2;</code>
+     * @return The explanation.
+     */
+    peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation getExplanation();
   }
   /**
    * Protobuf type {@code peers_touch.model.social.v1.GetPostResponse}
@@ -22829,6 +23431,54 @@ public final class PostOuterClass {
     private void clearPost() {
       post_ = null;
       bitField0_ = (bitField0_ & ~0x00000001);
+    }
+
+    public static final int EXPLANATION_FIELD_NUMBER = 2;
+    private peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation explanation_;
+    /**
+     * <code>.peers_touch.model.social.v1.FeedObjectExplanation explanation = 2;</code>
+     */
+    @java.lang.Override
+    public boolean hasExplanation() {
+      return ((bitField0_ & 0x00000002) != 0);
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.FeedObjectExplanation explanation = 2;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation getExplanation() {
+      return explanation_ == null ? peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation.getDefaultInstance() : explanation_;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.FeedObjectExplanation explanation = 2;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setExplanation(peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation value) {
+      value.getClass();  // minimal bytecode null check
+      explanation_ = value;
+      bitField0_ |= 0x00000002;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.FeedObjectExplanation explanation = 2;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeExplanation(peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation value) {
+      value.getClass();  // minimal bytecode null check
+      if (explanation_ != null &&
+          explanation_ != peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation.getDefaultInstance()) {
+        explanation_ =
+          peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation.newBuilder(explanation_).mergeFrom(value).buildPartial();
+      } else {
+        explanation_ = value;
+      }
+      bitField0_ |= 0x00000002;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.FeedObjectExplanation explanation = 2;</code>
+     */
+    private void clearExplanation() {
+      explanation_ = null;
+      bitField0_ = (bitField0_ & ~0x00000002);
     }
 
     public static peers_touch.model.social.v1.PostOuterClass.GetPostResponse parseFrom(
@@ -22975,6 +23625,53 @@ public final class PostOuterClass {
         return this;
       }
 
+      /**
+       * <code>.peers_touch.model.social.v1.FeedObjectExplanation explanation = 2;</code>
+       */
+      @java.lang.Override
+      public boolean hasExplanation() {
+        return instance.hasExplanation();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.FeedObjectExplanation explanation = 2;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation getExplanation() {
+        return instance.getExplanation();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.FeedObjectExplanation explanation = 2;</code>
+       */
+      public Builder setExplanation(peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation value) {
+        copyOnWrite();
+        instance.setExplanation(value);
+        return this;
+        }
+      /**
+       * <code>.peers_touch.model.social.v1.FeedObjectExplanation explanation = 2;</code>
+       */
+      public Builder setExplanation(
+          peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation.Builder builderForValue) {
+        copyOnWrite();
+        instance.setExplanation(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.FeedObjectExplanation explanation = 2;</code>
+       */
+      public Builder mergeExplanation(peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation value) {
+        copyOnWrite();
+        instance.mergeExplanation(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.FeedObjectExplanation explanation = 2;</code>
+       */
+      public Builder clearExplanation() {  copyOnWrite();
+        instance.clearExplanation();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.GetPostResponse)
     }
     @java.lang.Override
@@ -22993,9 +23690,11 @@ public final class PostOuterClass {
             java.lang.Object[] objects = new java.lang.Object[] {
               "bitField0_",
               "post_",
+              "explanation_",
             };
             java.lang.String info =
-                "\u0000\u0001\u0000\u0001\u0001\u0001\u0001\u0000\u0000\u0000\u0001\u1009\u0000";
+                "\u0000\u0002\u0000\u0001\u0001\u0002\u0002\u0000\u0000\u0000\u0001\u1009\u0000\u0002" +
+                "\u1009\u0001";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {
@@ -23158,7 +23857,7 @@ public final class PostOuterClass {
      * @param value The limit to set.
      */
     private void setLimit(int value) {
-      
+
       limit_ = value;
     }
     /**
@@ -23523,7 +24222,7 @@ public final class PostOuterClass {
     /**
      * <code>repeated .peers_touch.model.social.v1.Post posts = 1;</code>
      */
-    java.util.List<peers_touch.model.social.v1.PostOuterClass.Post> 
+    java.util.List<peers_touch.model.social.v1.PostOuterClass.Post>
         getPostsList();
     /**
      * <code>repeated .peers_touch.model.social.v1.Post posts = 1;</code>
@@ -23551,6 +24250,20 @@ public final class PostOuterClass {
      * @return The hasMore.
      */
     boolean getHasMore();
+
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    java.util.List<peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation>
+        getExplanationsList();
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation getExplanations(int index);
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    int getExplanationsCount();
   }
   /**
    * Protobuf type {@code peers_touch.model.social.v1.ListPostsResponse}
@@ -23563,6 +24276,7 @@ public final class PostOuterClass {
     private ListPostsResponse() {
       posts_ = emptyProtobufList();
       nextCursor_ = "";
+      explanations_ = emptyProtobufList();
     }
     public static final int POSTS_FIELD_NUMBER = 1;
     private com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.PostOuterClass.Post> posts_;
@@ -23576,7 +24290,7 @@ public final class PostOuterClass {
     /**
      * <code>repeated .peers_touch.model.social.v1.Post posts = 1;</code>
      */
-    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.PostOrBuilder> 
+    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.PostOrBuilder>
         getPostsOrBuilderList() {
       return posts_;
     }
@@ -23724,7 +24438,7 @@ public final class PostOuterClass {
      * @param value The hasMore to set.
      */
     private void setHasMore(boolean value) {
-      
+
       hasMore_ = value;
     }
     /**
@@ -23733,6 +24447,103 @@ public final class PostOuterClass {
     private void clearHasMore() {
 
       hasMore_ = false;
+    }
+
+    public static final int EXPLANATIONS_FIELD_NUMBER = 4;
+    private com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation> explanations_;
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    @java.lang.Override
+    public java.util.List<peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation> getExplanationsList() {
+      return explanations_;
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanationOrBuilder>
+        getExplanationsOrBuilderList() {
+      return explanations_;
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    @java.lang.Override
+    public int getExplanationsCount() {
+      return explanations_.size();
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation getExplanations(int index) {
+      return explanations_.get(index);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    public peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanationOrBuilder getExplanationsOrBuilder(
+        int index) {
+      return explanations_.get(index);
+    }
+    private void ensureExplanationsIsMutable() {
+      com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation> tmp = explanations_;
+      if (!tmp.isModifiable()) {
+        explanations_ =
+            com.google.protobuf.GeneratedMessageLite.mutableCopy(tmp);
+       }
+    }
+
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setExplanations(
+        int index, peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation value) {
+      value.getClass();  // minimal bytecode null check
+      ensureExplanationsIsMutable();
+      explanations_.set(index, value);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addExplanations(peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation value) {
+      value.getClass();  // minimal bytecode null check
+      ensureExplanationsIsMutable();
+      explanations_.add(value);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addExplanations(
+        int index, peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation value) {
+      value.getClass();  // minimal bytecode null check
+      ensureExplanationsIsMutable();
+      explanations_.add(index, value);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    private void addAllExplanations(
+        java.lang.Iterable<? extends peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation> values) {
+      ensureExplanationsIsMutable();
+      com.google.protobuf.AbstractMessageLite.addAll(
+          values, explanations_);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    private void clearExplanations() {
+      explanations_ = emptyProtobufList();
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    private void removeExplanations(int index) {
+      ensureExplanationsIsMutable();
+      explanations_.remove(index);
     }
 
     public static peers_touch.model.social.v1.PostOuterClass.ListPostsResponse parseFrom(
@@ -24011,6 +24822,108 @@ public final class PostOuterClass {
         return this;
       }
 
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      @java.lang.Override
+      public java.util.List<peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation> getExplanationsList() {
+        return java.util.Collections.unmodifiableList(
+            instance.getExplanationsList());
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      @java.lang.Override
+      public int getExplanationsCount() {
+        return instance.getExplanationsCount();
+      }/**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation getExplanations(int index) {
+        return instance.getExplanations(index);
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      public Builder setExplanations(
+          int index, peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation value) {
+        copyOnWrite();
+        instance.setExplanations(index, value);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      public Builder setExplanations(
+          int index, peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation.Builder builderForValue) {
+        copyOnWrite();
+        instance.setExplanations(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      public Builder addExplanations(peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation value) {
+        copyOnWrite();
+        instance.addExplanations(value);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      public Builder addExplanations(
+          int index, peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation value) {
+        copyOnWrite();
+        instance.addExplanations(index, value);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      public Builder addExplanations(
+          peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation.Builder builderForValue) {
+        copyOnWrite();
+        instance.addExplanations(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      public Builder addExplanations(
+          int index, peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation.Builder builderForValue) {
+        copyOnWrite();
+        instance.addExplanations(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      public Builder addAllExplanations(
+          java.lang.Iterable<? extends peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation> values) {
+        copyOnWrite();
+        instance.addAllExplanations(values);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      public Builder clearExplanations() {
+        copyOnWrite();
+        instance.clearExplanations();
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      public Builder removeExplanations(int index) {
+        copyOnWrite();
+        instance.removeExplanations(index);
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.ListPostsResponse)
     }
     @java.lang.Override
@@ -24031,10 +24944,12 @@ public final class PostOuterClass {
               peers_touch.model.social.v1.PostOuterClass.Post.class,
               "nextCursor_",
               "hasMore_",
+              "explanations_",
+              peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation.class,
             };
             java.lang.String info =
-                "\u0000\u0003\u0000\u0000\u0001\u0003\u0003\u0000\u0001\u0000\u0001\u001b\u0002\u0208" +
-                "\u0003\u0007";
+                "\u0000\u0004\u0000\u0000\u0001\u0004\u0004\u0000\u0002\u0000\u0001\u001b\u0002\u0208" +
+                "\u0003\u0007\u0004\u001b";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {
@@ -24357,7 +25272,7 @@ public final class PostOuterClass {
      * @param value The excludeReplies to set.
      */
     private void setExcludeReplies(boolean value) {
-      
+
       excludeReplies_ = value;
     }
     /**
@@ -24383,7 +25298,7 @@ public final class PostOuterClass {
      * @param value The excludeReposts to set.
      */
     private void setExcludeReposts(boolean value) {
-      
+
       excludeReposts_ = value;
     }
     /**
@@ -24979,7 +25894,7 @@ public final class PostOuterClass {
      * @param value The limit to set.
      */
     private void setLimit(int value) {
-      
+
       limit_ = value;
     }
     /**
@@ -25534,7 +26449,7 @@ public final class PostOuterClass {
     /**
      * <code>repeated .peers_touch.model.social.v1.Post posts = 1;</code>
      */
-    java.util.List<peers_touch.model.social.v1.PostOuterClass.Post> 
+    java.util.List<peers_touch.model.social.v1.PostOuterClass.Post>
         getPostsList();
     /**
      * <code>repeated .peers_touch.model.social.v1.Post posts = 1;</code>
@@ -25562,6 +26477,20 @@ public final class PostOuterClass {
      * @return The hasMore.
      */
     boolean getHasMore();
+
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    java.util.List<peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation>
+        getExplanationsList();
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation getExplanations(int index);
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    int getExplanationsCount();
   }
   /**
    * Protobuf type {@code peers_touch.model.social.v1.GetTimelineResponse}
@@ -25574,6 +26503,7 @@ public final class PostOuterClass {
     private GetTimelineResponse() {
       posts_ = emptyProtobufList();
       nextCursor_ = "";
+      explanations_ = emptyProtobufList();
     }
     public static final int POSTS_FIELD_NUMBER = 1;
     private com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.PostOuterClass.Post> posts_;
@@ -25587,7 +26517,7 @@ public final class PostOuterClass {
     /**
      * <code>repeated .peers_touch.model.social.v1.Post posts = 1;</code>
      */
-    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.PostOrBuilder> 
+    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.PostOrBuilder>
         getPostsOrBuilderList() {
       return posts_;
     }
@@ -25735,7 +26665,7 @@ public final class PostOuterClass {
      * @param value The hasMore to set.
      */
     private void setHasMore(boolean value) {
-      
+
       hasMore_ = value;
     }
     /**
@@ -25744,6 +26674,103 @@ public final class PostOuterClass {
     private void clearHasMore() {
 
       hasMore_ = false;
+    }
+
+    public static final int EXPLANATIONS_FIELD_NUMBER = 4;
+    private com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation> explanations_;
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    @java.lang.Override
+    public java.util.List<peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation> getExplanationsList() {
+      return explanations_;
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanationOrBuilder>
+        getExplanationsOrBuilderList() {
+      return explanations_;
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    @java.lang.Override
+    public int getExplanationsCount() {
+      return explanations_.size();
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation getExplanations(int index) {
+      return explanations_.get(index);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    public peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanationOrBuilder getExplanationsOrBuilder(
+        int index) {
+      return explanations_.get(index);
+    }
+    private void ensureExplanationsIsMutable() {
+      com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation> tmp = explanations_;
+      if (!tmp.isModifiable()) {
+        explanations_ =
+            com.google.protobuf.GeneratedMessageLite.mutableCopy(tmp);
+       }
+    }
+
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setExplanations(
+        int index, peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation value) {
+      value.getClass();  // minimal bytecode null check
+      ensureExplanationsIsMutable();
+      explanations_.set(index, value);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addExplanations(peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation value) {
+      value.getClass();  // minimal bytecode null check
+      ensureExplanationsIsMutable();
+      explanations_.add(value);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addExplanations(
+        int index, peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation value) {
+      value.getClass();  // minimal bytecode null check
+      ensureExplanationsIsMutable();
+      explanations_.add(index, value);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    private void addAllExplanations(
+        java.lang.Iterable<? extends peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation> values) {
+      ensureExplanationsIsMutable();
+      com.google.protobuf.AbstractMessageLite.addAll(
+          values, explanations_);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    private void clearExplanations() {
+      explanations_ = emptyProtobufList();
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+     */
+    private void removeExplanations(int index) {
+      ensureExplanationsIsMutable();
+      explanations_.remove(index);
     }
 
     public static peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse parseFrom(
@@ -26022,6 +27049,108 @@ public final class PostOuterClass {
         return this;
       }
 
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      @java.lang.Override
+      public java.util.List<peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation> getExplanationsList() {
+        return java.util.Collections.unmodifiableList(
+            instance.getExplanationsList());
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      @java.lang.Override
+      public int getExplanationsCount() {
+        return instance.getExplanationsCount();
+      }/**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation getExplanations(int index) {
+        return instance.getExplanations(index);
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      public Builder setExplanations(
+          int index, peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation value) {
+        copyOnWrite();
+        instance.setExplanations(index, value);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      public Builder setExplanations(
+          int index, peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation.Builder builderForValue) {
+        copyOnWrite();
+        instance.setExplanations(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      public Builder addExplanations(peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation value) {
+        copyOnWrite();
+        instance.addExplanations(value);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      public Builder addExplanations(
+          int index, peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation value) {
+        copyOnWrite();
+        instance.addExplanations(index, value);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      public Builder addExplanations(
+          peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation.Builder builderForValue) {
+        copyOnWrite();
+        instance.addExplanations(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      public Builder addExplanations(
+          int index, peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation.Builder builderForValue) {
+        copyOnWrite();
+        instance.addExplanations(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      public Builder addAllExplanations(
+          java.lang.Iterable<? extends peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation> values) {
+        copyOnWrite();
+        instance.addAllExplanations(values);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      public Builder clearExplanations() {
+        copyOnWrite();
+        instance.clearExplanations();
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.FeedObjectExplanation explanations = 4;</code>
+       */
+      public Builder removeExplanations(int index) {
+        copyOnWrite();
+        instance.removeExplanations(index);
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.GetTimelineResponse)
     }
     @java.lang.Override
@@ -26042,10 +27171,12 @@ public final class PostOuterClass {
               peers_touch.model.social.v1.PostOuterClass.Post.class,
               "nextCursor_",
               "hasMore_",
+              "explanations_",
+              peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation.class,
             };
             java.lang.String info =
-                "\u0000\u0003\u0000\u0000\u0001\u0003\u0003\u0000\u0001\u0000\u0001\u001b\u0002\u0208" +
-                "\u0003\u0007";
+                "\u0000\u0004\u0000\u0000\u0001\u0004\u0004\u0000\u0002\u0000\u0001\u001b\u0002\u0208" +
+                "\u0003\u0007\u0004\u001b";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {
@@ -26096,6 +27227,9034 @@ public final class PostOuterClass {
     private static volatile com.google.protobuf.Parser<GetTimelineResponse> PARSER;
 
     public static com.google.protobuf.Parser<GetTimelineResponse> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
+  public interface FeedObjectExplanationOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:peers_touch.model.social.v1.FeedObjectExplanation)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>string object_id = 1;</code>
+     * @return The objectId.
+     */
+    java.lang.String getObjectId();
+    /**
+     * <code>string object_id = 1;</code>
+     * @return The bytes for objectId.
+     */
+    com.google.protobuf.ByteString
+        getObjectIdBytes();
+
+    /**
+     * <code>.peers_touch.model.social.v1.ActivitySource source = 2;</code>
+     * @return Whether the source field is set.
+     */
+    boolean hasSource();
+    /**
+     * <code>.peers_touch.model.social.v1.ActivitySource source = 2;</code>
+     * @return The source.
+     */
+    peers_touch.model.social.v1.PostOuterClass.ActivitySource getSource();
+
+    /**
+     * <code>.peers_touch.model.social.v1.RelationshipReason relationship_reason = 3;</code>
+     * @return Whether the relationshipReason field is set.
+     */
+    boolean hasRelationshipReason();
+    /**
+     * <code>.peers_touch.model.social.v1.RelationshipReason relationship_reason = 3;</code>
+     * @return The relationshipReason.
+     */
+    peers_touch.model.social.v1.PostOuterClass.RelationshipReason getRelationshipReason();
+
+    /**
+     * <code>.peers_touch.model.social.v1.AudienceExplanation audience_explanation = 4;</code>
+     * @return Whether the audienceExplanation field is set.
+     */
+    boolean hasAudienceExplanation();
+    /**
+     * <code>.peers_touch.model.social.v1.AudienceExplanation audience_explanation = 4;</code>
+     * @return The audienceExplanation.
+     */
+    peers_touch.model.social.v1.PostOuterClass.AudienceExplanation getAudienceExplanation();
+
+    /**
+     * <code>.peers_touch.model.social.v1.BlockExplanation block_explanation = 5;</code>
+     * @return Whether the blockExplanation field is set.
+     */
+    boolean hasBlockExplanation();
+    /**
+     * <code>.peers_touch.model.social.v1.BlockExplanation block_explanation = 5;</code>
+     * @return The blockExplanation.
+     */
+    peers_touch.model.social.v1.PostOuterClass.BlockExplanation getBlockExplanation();
+  }
+  /**
+   * <pre>
+   * FeedObjectExplanation is a viewer-scoped projection, not intrinsic
+   * post content. It answers the Human federated-social questions the UI
+   * must make visible: where this object came from, why the viewer sees
+   * it, what audience boundary applies, and whether block policy affected
+   * projection.
+   * </pre>
+   *
+   * Protobuf type {@code peers_touch.model.social.v1.FeedObjectExplanation}
+   */
+  public  static final class FeedObjectExplanation extends
+      com.google.protobuf.GeneratedMessageLite<
+          FeedObjectExplanation, FeedObjectExplanation.Builder> implements
+      // @@protoc_insertion_point(message_implements:peers_touch.model.social.v1.FeedObjectExplanation)
+      FeedObjectExplanationOrBuilder {
+    private FeedObjectExplanation() {
+      objectId_ = "";
+    }
+    private int bitField0_;
+    public static final int OBJECT_ID_FIELD_NUMBER = 1;
+    private java.lang.String objectId_;
+    /**
+     * <code>string object_id = 1;</code>
+     * @return The objectId.
+     */
+    @java.lang.Override
+    public java.lang.String getObjectId() {
+      return objectId_;
+    }
+    /**
+     * <code>string object_id = 1;</code>
+     * @return The bytes for objectId.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getObjectIdBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(objectId_);
+    }
+    /**
+     * <code>string object_id = 1;</code>
+     * @param value The objectId to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setObjectId(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      objectId_ = value;
+    }
+    /**
+     * <code>string object_id = 1;</code>
+     */
+    private void clearObjectId() {
+
+      objectId_ = getDefaultInstance().getObjectId();
+    }
+    /**
+     * <code>string object_id = 1;</code>
+     * @param value The bytes for objectId to set.
+     */
+    private void setObjectIdBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      objectId_ = value.toStringUtf8();
+
+    }
+
+    public static final int SOURCE_FIELD_NUMBER = 2;
+    private peers_touch.model.social.v1.PostOuterClass.ActivitySource source_;
+    /**
+     * <code>.peers_touch.model.social.v1.ActivitySource source = 2;</code>
+     */
+    @java.lang.Override
+    public boolean hasSource() {
+      return ((bitField0_ & 0x00000001) != 0);
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.ActivitySource source = 2;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.ActivitySource getSource() {
+      return source_ == null ? peers_touch.model.social.v1.PostOuterClass.ActivitySource.getDefaultInstance() : source_;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.ActivitySource source = 2;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setSource(peers_touch.model.social.v1.PostOuterClass.ActivitySource value) {
+      value.getClass();  // minimal bytecode null check
+      source_ = value;
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.ActivitySource source = 2;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeSource(peers_touch.model.social.v1.PostOuterClass.ActivitySource value) {
+      value.getClass();  // minimal bytecode null check
+      if (source_ != null &&
+          source_ != peers_touch.model.social.v1.PostOuterClass.ActivitySource.getDefaultInstance()) {
+        source_ =
+          peers_touch.model.social.v1.PostOuterClass.ActivitySource.newBuilder(source_).mergeFrom(value).buildPartial();
+      } else {
+        source_ = value;
+      }
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.ActivitySource source = 2;</code>
+     */
+    private void clearSource() {
+      source_ = null;
+      bitField0_ = (bitField0_ & ~0x00000001);
+    }
+
+    public static final int RELATIONSHIP_REASON_FIELD_NUMBER = 3;
+    private peers_touch.model.social.v1.PostOuterClass.RelationshipReason relationshipReason_;
+    /**
+     * <code>.peers_touch.model.social.v1.RelationshipReason relationship_reason = 3;</code>
+     */
+    @java.lang.Override
+    public boolean hasRelationshipReason() {
+      return ((bitField0_ & 0x00000002) != 0);
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.RelationshipReason relationship_reason = 3;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.RelationshipReason getRelationshipReason() {
+      return relationshipReason_ == null ? peers_touch.model.social.v1.PostOuterClass.RelationshipReason.getDefaultInstance() : relationshipReason_;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.RelationshipReason relationship_reason = 3;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setRelationshipReason(peers_touch.model.social.v1.PostOuterClass.RelationshipReason value) {
+      value.getClass();  // minimal bytecode null check
+      relationshipReason_ = value;
+      bitField0_ |= 0x00000002;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.RelationshipReason relationship_reason = 3;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeRelationshipReason(peers_touch.model.social.v1.PostOuterClass.RelationshipReason value) {
+      value.getClass();  // minimal bytecode null check
+      if (relationshipReason_ != null &&
+          relationshipReason_ != peers_touch.model.social.v1.PostOuterClass.RelationshipReason.getDefaultInstance()) {
+        relationshipReason_ =
+          peers_touch.model.social.v1.PostOuterClass.RelationshipReason.newBuilder(relationshipReason_).mergeFrom(value).buildPartial();
+      } else {
+        relationshipReason_ = value;
+      }
+      bitField0_ |= 0x00000002;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.RelationshipReason relationship_reason = 3;</code>
+     */
+    private void clearRelationshipReason() {
+      relationshipReason_ = null;
+      bitField0_ = (bitField0_ & ~0x00000002);
+    }
+
+    public static final int AUDIENCE_EXPLANATION_FIELD_NUMBER = 4;
+    private peers_touch.model.social.v1.PostOuterClass.AudienceExplanation audienceExplanation_;
+    /**
+     * <code>.peers_touch.model.social.v1.AudienceExplanation audience_explanation = 4;</code>
+     */
+    @java.lang.Override
+    public boolean hasAudienceExplanation() {
+      return ((bitField0_ & 0x00000004) != 0);
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.AudienceExplanation audience_explanation = 4;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.AudienceExplanation getAudienceExplanation() {
+      return audienceExplanation_ == null ? peers_touch.model.social.v1.PostOuterClass.AudienceExplanation.getDefaultInstance() : audienceExplanation_;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.AudienceExplanation audience_explanation = 4;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setAudienceExplanation(peers_touch.model.social.v1.PostOuterClass.AudienceExplanation value) {
+      value.getClass();  // minimal bytecode null check
+      audienceExplanation_ = value;
+      bitField0_ |= 0x00000004;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.AudienceExplanation audience_explanation = 4;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeAudienceExplanation(peers_touch.model.social.v1.PostOuterClass.AudienceExplanation value) {
+      value.getClass();  // minimal bytecode null check
+      if (audienceExplanation_ != null &&
+          audienceExplanation_ != peers_touch.model.social.v1.PostOuterClass.AudienceExplanation.getDefaultInstance()) {
+        audienceExplanation_ =
+          peers_touch.model.social.v1.PostOuterClass.AudienceExplanation.newBuilder(audienceExplanation_).mergeFrom(value).buildPartial();
+      } else {
+        audienceExplanation_ = value;
+      }
+      bitField0_ |= 0x00000004;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.AudienceExplanation audience_explanation = 4;</code>
+     */
+    private void clearAudienceExplanation() {
+      audienceExplanation_ = null;
+      bitField0_ = (bitField0_ & ~0x00000004);
+    }
+
+    public static final int BLOCK_EXPLANATION_FIELD_NUMBER = 5;
+    private peers_touch.model.social.v1.PostOuterClass.BlockExplanation blockExplanation_;
+    /**
+     * <code>.peers_touch.model.social.v1.BlockExplanation block_explanation = 5;</code>
+     */
+    @java.lang.Override
+    public boolean hasBlockExplanation() {
+      return ((bitField0_ & 0x00000008) != 0);
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.BlockExplanation block_explanation = 5;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.BlockExplanation getBlockExplanation() {
+      return blockExplanation_ == null ? peers_touch.model.social.v1.PostOuterClass.BlockExplanation.getDefaultInstance() : blockExplanation_;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.BlockExplanation block_explanation = 5;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setBlockExplanation(peers_touch.model.social.v1.PostOuterClass.BlockExplanation value) {
+      value.getClass();  // minimal bytecode null check
+      blockExplanation_ = value;
+      bitField0_ |= 0x00000008;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.BlockExplanation block_explanation = 5;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeBlockExplanation(peers_touch.model.social.v1.PostOuterClass.BlockExplanation value) {
+      value.getClass();  // minimal bytecode null check
+      if (blockExplanation_ != null &&
+          blockExplanation_ != peers_touch.model.social.v1.PostOuterClass.BlockExplanation.getDefaultInstance()) {
+        blockExplanation_ =
+          peers_touch.model.social.v1.PostOuterClass.BlockExplanation.newBuilder(blockExplanation_).mergeFrom(value).buildPartial();
+      } else {
+        blockExplanation_ = value;
+      }
+      bitField0_ |= 0x00000008;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.BlockExplanation block_explanation = 5;</code>
+     */
+    private void clearBlockExplanation() {
+      blockExplanation_ = null;
+      bitField0_ = (bitField0_ & ~0x00000008);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * <pre>
+     * FeedObjectExplanation is a viewer-scoped projection, not intrinsic
+     * post content. It answers the Human federated-social questions the UI
+     * must make visible: where this object came from, why the viewer sees
+     * it, what audience boundary applies, and whether block policy affected
+     * projection.
+     * </pre>
+     *
+     * Protobuf type {@code peers_touch.model.social.v1.FeedObjectExplanation}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation, Builder> implements
+        // @@protoc_insertion_point(builder_implements:peers_touch.model.social.v1.FeedObjectExplanation)
+        peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanationOrBuilder {
+      // Construct using peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>string object_id = 1;</code>
+       * @return The objectId.
+       */
+      @java.lang.Override
+      public java.lang.String getObjectId() {
+        return instance.getObjectId();
+      }
+      /**
+       * <code>string object_id = 1;</code>
+       * @return The bytes for objectId.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getObjectIdBytes() {
+        return instance.getObjectIdBytes();
+      }
+      /**
+       * <code>string object_id = 1;</code>
+       * @param value The objectId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setObjectId(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setObjectId(value);
+        return this;
+      }
+      /**
+       * <code>string object_id = 1;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearObjectId() {
+        copyOnWrite();
+        instance.clearObjectId();
+        return this;
+      }
+      /**
+       * <code>string object_id = 1;</code>
+       * @param value The bytes for objectId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setObjectIdBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setObjectIdBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>.peers_touch.model.social.v1.ActivitySource source = 2;</code>
+       */
+      @java.lang.Override
+      public boolean hasSource() {
+        return instance.hasSource();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.ActivitySource source = 2;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.ActivitySource getSource() {
+        return instance.getSource();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.ActivitySource source = 2;</code>
+       */
+      public Builder setSource(peers_touch.model.social.v1.PostOuterClass.ActivitySource value) {
+        copyOnWrite();
+        instance.setSource(value);
+        return this;
+        }
+      /**
+       * <code>.peers_touch.model.social.v1.ActivitySource source = 2;</code>
+       */
+      public Builder setSource(
+          peers_touch.model.social.v1.PostOuterClass.ActivitySource.Builder builderForValue) {
+        copyOnWrite();
+        instance.setSource(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.ActivitySource source = 2;</code>
+       */
+      public Builder mergeSource(peers_touch.model.social.v1.PostOuterClass.ActivitySource value) {
+        copyOnWrite();
+        instance.mergeSource(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.ActivitySource source = 2;</code>
+       */
+      public Builder clearSource() {  copyOnWrite();
+        instance.clearSource();
+        return this;
+      }
+
+      /**
+       * <code>.peers_touch.model.social.v1.RelationshipReason relationship_reason = 3;</code>
+       */
+      @java.lang.Override
+      public boolean hasRelationshipReason() {
+        return instance.hasRelationshipReason();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.RelationshipReason relationship_reason = 3;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.RelationshipReason getRelationshipReason() {
+        return instance.getRelationshipReason();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.RelationshipReason relationship_reason = 3;</code>
+       */
+      public Builder setRelationshipReason(peers_touch.model.social.v1.PostOuterClass.RelationshipReason value) {
+        copyOnWrite();
+        instance.setRelationshipReason(value);
+        return this;
+        }
+      /**
+       * <code>.peers_touch.model.social.v1.RelationshipReason relationship_reason = 3;</code>
+       */
+      public Builder setRelationshipReason(
+          peers_touch.model.social.v1.PostOuterClass.RelationshipReason.Builder builderForValue) {
+        copyOnWrite();
+        instance.setRelationshipReason(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.RelationshipReason relationship_reason = 3;</code>
+       */
+      public Builder mergeRelationshipReason(peers_touch.model.social.v1.PostOuterClass.RelationshipReason value) {
+        copyOnWrite();
+        instance.mergeRelationshipReason(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.RelationshipReason relationship_reason = 3;</code>
+       */
+      public Builder clearRelationshipReason() {  copyOnWrite();
+        instance.clearRelationshipReason();
+        return this;
+      }
+
+      /**
+       * <code>.peers_touch.model.social.v1.AudienceExplanation audience_explanation = 4;</code>
+       */
+      @java.lang.Override
+      public boolean hasAudienceExplanation() {
+        return instance.hasAudienceExplanation();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.AudienceExplanation audience_explanation = 4;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.AudienceExplanation getAudienceExplanation() {
+        return instance.getAudienceExplanation();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.AudienceExplanation audience_explanation = 4;</code>
+       */
+      public Builder setAudienceExplanation(peers_touch.model.social.v1.PostOuterClass.AudienceExplanation value) {
+        copyOnWrite();
+        instance.setAudienceExplanation(value);
+        return this;
+        }
+      /**
+       * <code>.peers_touch.model.social.v1.AudienceExplanation audience_explanation = 4;</code>
+       */
+      public Builder setAudienceExplanation(
+          peers_touch.model.social.v1.PostOuterClass.AudienceExplanation.Builder builderForValue) {
+        copyOnWrite();
+        instance.setAudienceExplanation(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.AudienceExplanation audience_explanation = 4;</code>
+       */
+      public Builder mergeAudienceExplanation(peers_touch.model.social.v1.PostOuterClass.AudienceExplanation value) {
+        copyOnWrite();
+        instance.mergeAudienceExplanation(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.AudienceExplanation audience_explanation = 4;</code>
+       */
+      public Builder clearAudienceExplanation() {  copyOnWrite();
+        instance.clearAudienceExplanation();
+        return this;
+      }
+
+      /**
+       * <code>.peers_touch.model.social.v1.BlockExplanation block_explanation = 5;</code>
+       */
+      @java.lang.Override
+      public boolean hasBlockExplanation() {
+        return instance.hasBlockExplanation();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.BlockExplanation block_explanation = 5;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.BlockExplanation getBlockExplanation() {
+        return instance.getBlockExplanation();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.BlockExplanation block_explanation = 5;</code>
+       */
+      public Builder setBlockExplanation(peers_touch.model.social.v1.PostOuterClass.BlockExplanation value) {
+        copyOnWrite();
+        instance.setBlockExplanation(value);
+        return this;
+        }
+      /**
+       * <code>.peers_touch.model.social.v1.BlockExplanation block_explanation = 5;</code>
+       */
+      public Builder setBlockExplanation(
+          peers_touch.model.social.v1.PostOuterClass.BlockExplanation.Builder builderForValue) {
+        copyOnWrite();
+        instance.setBlockExplanation(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.BlockExplanation block_explanation = 5;</code>
+       */
+      public Builder mergeBlockExplanation(peers_touch.model.social.v1.PostOuterClass.BlockExplanation value) {
+        copyOnWrite();
+        instance.mergeBlockExplanation(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.BlockExplanation block_explanation = 5;</code>
+       */
+      public Builder clearBlockExplanation() {  copyOnWrite();
+        instance.clearBlockExplanation();
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.FeedObjectExplanation)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"ThrowNull"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "bitField0_",
+              "objectId_",
+              "source_",
+              "relationshipReason_",
+              "audienceExplanation_",
+              "blockExplanation_",
+            };
+            java.lang.String info =
+                "\u0000\u0005\u0000\u0001\u0001\u0005\u0005\u0000\u0000\u0000\u0001\u0208\u0002\u1009" +
+                "\u0000\u0003\u1009\u0001\u0004\u1009\u0002\u0005\u1009\u0003";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation> parser = PARSER;
+          if (parser == null) {
+            synchronized (peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+        }
+        case GET_MEMOIZED_IS_INITIALIZED: {
+          return (byte) 1;
+        }
+        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
+        // So it can do anything. Combine with default case for smaller codegen.
+        case SET_MEMOIZED_IS_INITIALIZED:
+      }
+      // Should never happen. Generates tight code to throw an exception.
+      throw null;
+    }
+
+
+    // @@protoc_insertion_point(class_scope:peers_touch.model.social.v1.FeedObjectExplanation)
+    private static final peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation DEFAULT_INSTANCE;
+    static {
+      FeedObjectExplanation defaultInstance = new FeedObjectExplanation();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        FeedObjectExplanation.class, defaultInstance);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.FeedObjectExplanation getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<FeedObjectExplanation> PARSER;
+
+    public static com.google.protobuf.Parser<FeedObjectExplanation> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
+  public interface ActivitySourceOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:peers_touch.model.social.v1.ActivitySource)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>.peers_touch.model.social.v1.ActivitySource.Kind kind = 1;</code>
+     * @return The enum numeric value on the wire for kind.
+     */
+    int getKindValue();
+    /**
+     * <code>.peers_touch.model.social.v1.ActivitySource.Kind kind = 1;</code>
+     * @return The kind.
+     */
+    peers_touch.model.social.v1.PostOuterClass.ActivitySource.Kind getKind();
+
+    /**
+     * <code>string station_domain = 2;</code>
+     * @return The stationDomain.
+     */
+    java.lang.String getStationDomain();
+    /**
+     * <code>string station_domain = 2;</code>
+     * @return The bytes for stationDomain.
+     */
+    com.google.protobuf.ByteString
+        getStationDomainBytes();
+
+    /**
+     * <code>string station_peer_id = 3;</code>
+     * @return The stationPeerId.
+     */
+    java.lang.String getStationPeerId();
+    /**
+     * <code>string station_peer_id = 3;</code>
+     * @return The bytes for stationPeerId.
+     */
+    com.google.protobuf.ByteString
+        getStationPeerIdBytes();
+  }
+  /**
+   * Protobuf type {@code peers_touch.model.social.v1.ActivitySource}
+   */
+  public  static final class ActivitySource extends
+      com.google.protobuf.GeneratedMessageLite<
+          ActivitySource, ActivitySource.Builder> implements
+      // @@protoc_insertion_point(message_implements:peers_touch.model.social.v1.ActivitySource)
+      ActivitySourceOrBuilder {
+    private ActivitySource() {
+      stationDomain_ = "";
+      stationPeerId_ = "";
+    }
+    /**
+     * Protobuf enum {@code peers_touch.model.social.v1.ActivitySource.Kind}
+     */
+    public enum Kind
+        implements com.google.protobuf.Internal.EnumLite {
+      /**
+       * <code>ACTIVITY_SOURCE_UNSPECIFIED = 0;</code>
+       */
+      ACTIVITY_SOURCE_UNSPECIFIED(0),
+      /**
+       * <code>ACTIVITY_SOURCE_LOCAL = 1;</code>
+       */
+      ACTIVITY_SOURCE_LOCAL(1),
+      /**
+       * <code>ACTIVITY_SOURCE_REMOTE = 2;</code>
+       */
+      ACTIVITY_SOURCE_REMOTE(2),
+      /**
+       * <code>ACTIVITY_SOURCE_UNRESOLVED = 3;</code>
+       */
+      ACTIVITY_SOURCE_UNRESOLVED(3),
+      UNRECOGNIZED(-1),
+      ;
+
+      /**
+       * <code>ACTIVITY_SOURCE_UNSPECIFIED = 0;</code>
+       */
+      public static final int ACTIVITY_SOURCE_UNSPECIFIED_VALUE = 0;
+      /**
+       * <code>ACTIVITY_SOURCE_LOCAL = 1;</code>
+       */
+      public static final int ACTIVITY_SOURCE_LOCAL_VALUE = 1;
+      /**
+       * <code>ACTIVITY_SOURCE_REMOTE = 2;</code>
+       */
+      public static final int ACTIVITY_SOURCE_REMOTE_VALUE = 2;
+      /**
+       * <code>ACTIVITY_SOURCE_UNRESOLVED = 3;</code>
+       */
+      public static final int ACTIVITY_SOURCE_UNRESOLVED_VALUE = 3;
+
+
+      @java.lang.Override
+      public final int getNumber() {
+        if (this == UNRECOGNIZED) {
+          throw new java.lang.IllegalArgumentException(
+              "Can't get the number of an unknown enum value.");
+        }
+        return value;
+      }
+
+      /**
+       * @param value The number of the enum to look for.
+       * @return The enum associated with the given number.
+       * @deprecated Use {@link #forNumber(int)} instead.
+       */
+      @java.lang.Deprecated
+      public static Kind valueOf(int value) {
+        return forNumber(value);
+      }
+
+      public static Kind forNumber(int value) {
+        switch (value) {
+          case 0: return ACTIVITY_SOURCE_UNSPECIFIED;
+          case 1: return ACTIVITY_SOURCE_LOCAL;
+          case 2: return ACTIVITY_SOURCE_REMOTE;
+          case 3: return ACTIVITY_SOURCE_UNRESOLVED;
+          default: return null;
+        }
+      }
+
+      public static com.google.protobuf.Internal.EnumLiteMap<Kind>
+          internalGetValueMap() {
+        return internalValueMap;
+      }
+      private static final com.google.protobuf.Internal.EnumLiteMap<
+          Kind> internalValueMap =
+            new com.google.protobuf.Internal.EnumLiteMap<Kind>() {
+              @java.lang.Override
+              public Kind findValueByNumber(int number) {
+                return Kind.forNumber(number);
+              }
+            };
+
+      public static com.google.protobuf.Internal.EnumVerifier
+          internalGetVerifier() {
+        return KindVerifier.INSTANCE;
+      }
+
+      private static final class KindVerifier implements
+           com.google.protobuf.Internal.EnumVerifier {
+              static final com.google.protobuf.Internal.EnumVerifier
+                  INSTANCE = new KindVerifier();
+              @java.lang.Override
+              public boolean isInRange(int number) {
+                return Kind.forNumber(number) != null;
+              }
+            };
+
+      private final int value;
+
+      private Kind(int value) {
+        this.value = value;
+      }
+
+      // @@protoc_insertion_point(enum_scope:peers_touch.model.social.v1.ActivitySource.Kind)
+    }
+
+    public static final int KIND_FIELD_NUMBER = 1;
+    private int kind_;
+    /**
+     * <code>.peers_touch.model.social.v1.ActivitySource.Kind kind = 1;</code>
+     * @return The enum numeric value on the wire for kind.
+     */
+    @java.lang.Override
+    public int getKindValue() {
+      return kind_;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.ActivitySource.Kind kind = 1;</code>
+     * @return The kind.
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.ActivitySource.Kind getKind() {
+      peers_touch.model.social.v1.PostOuterClass.ActivitySource.Kind result = peers_touch.model.social.v1.PostOuterClass.ActivitySource.Kind.forNumber(kind_);
+      return result == null ? peers_touch.model.social.v1.PostOuterClass.ActivitySource.Kind.UNRECOGNIZED : result;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.ActivitySource.Kind kind = 1;</code>
+     * @param value The enum numeric value on the wire for kind to set.
+     * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+     */
+    private void setKindValue(int value) {
+        kind_ = value;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.ActivitySource.Kind kind = 1;</code>
+     * @param value The kind to set.
+     */
+    private void setKind(peers_touch.model.social.v1.PostOuterClass.ActivitySource.Kind value) {
+      kind_ = value.getNumber();
+
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.ActivitySource.Kind kind = 1;</code>
+     */
+    private void clearKind() {
+
+      kind_ = 0;
+    }
+
+    public static final int STATION_DOMAIN_FIELD_NUMBER = 2;
+    private java.lang.String stationDomain_;
+    /**
+     * <code>string station_domain = 2;</code>
+     * @return The stationDomain.
+     */
+    @java.lang.Override
+    public java.lang.String getStationDomain() {
+      return stationDomain_;
+    }
+    /**
+     * <code>string station_domain = 2;</code>
+     * @return The bytes for stationDomain.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getStationDomainBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(stationDomain_);
+    }
+    /**
+     * <code>string station_domain = 2;</code>
+     * @param value The stationDomain to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setStationDomain(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      stationDomain_ = value;
+    }
+    /**
+     * <code>string station_domain = 2;</code>
+     */
+    private void clearStationDomain() {
+
+      stationDomain_ = getDefaultInstance().getStationDomain();
+    }
+    /**
+     * <code>string station_domain = 2;</code>
+     * @param value The bytes for stationDomain to set.
+     */
+    private void setStationDomainBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      stationDomain_ = value.toStringUtf8();
+
+    }
+
+    public static final int STATION_PEER_ID_FIELD_NUMBER = 3;
+    private java.lang.String stationPeerId_;
+    /**
+     * <code>string station_peer_id = 3;</code>
+     * @return The stationPeerId.
+     */
+    @java.lang.Override
+    public java.lang.String getStationPeerId() {
+      return stationPeerId_;
+    }
+    /**
+     * <code>string station_peer_id = 3;</code>
+     * @return The bytes for stationPeerId.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getStationPeerIdBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(stationPeerId_);
+    }
+    /**
+     * <code>string station_peer_id = 3;</code>
+     * @param value The stationPeerId to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setStationPeerId(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      stationPeerId_ = value;
+    }
+    /**
+     * <code>string station_peer_id = 3;</code>
+     */
+    private void clearStationPeerId() {
+
+      stationPeerId_ = getDefaultInstance().getStationPeerId();
+    }
+    /**
+     * <code>string station_peer_id = 3;</code>
+     * @param value The bytes for stationPeerId to set.
+     */
+    private void setStationPeerIdBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      stationPeerId_ = value.toStringUtf8();
+
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.ActivitySource parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ActivitySource parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ActivitySource parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ActivitySource parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ActivitySource parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ActivitySource parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ActivitySource parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ActivitySource parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.ActivitySource parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.ActivitySource parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ActivitySource parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ActivitySource parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(peers_touch.model.social.v1.PostOuterClass.ActivitySource prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * Protobuf type {@code peers_touch.model.social.v1.ActivitySource}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          peers_touch.model.social.v1.PostOuterClass.ActivitySource, Builder> implements
+        // @@protoc_insertion_point(builder_implements:peers_touch.model.social.v1.ActivitySource)
+        peers_touch.model.social.v1.PostOuterClass.ActivitySourceOrBuilder {
+      // Construct using peers_touch.model.social.v1.PostOuterClass.ActivitySource.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>.peers_touch.model.social.v1.ActivitySource.Kind kind = 1;</code>
+       * @return The enum numeric value on the wire for kind.
+       */
+      @java.lang.Override
+      public int getKindValue() {
+        return instance.getKindValue();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.ActivitySource.Kind kind = 1;</code>
+       * @param value The kind to set.
+       * @return This builder for chaining.
+       */
+      public Builder setKindValue(int value) {
+        copyOnWrite();
+        instance.setKindValue(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.ActivitySource.Kind kind = 1;</code>
+       * @return The kind.
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.ActivitySource.Kind getKind() {
+        return instance.getKind();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.ActivitySource.Kind kind = 1;</code>
+       * @param value The enum numeric value on the wire for kind to set.
+       * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+       * @return This builder for chaining.
+       */
+      public Builder setKind(peers_touch.model.social.v1.PostOuterClass.ActivitySource.Kind value) {
+        copyOnWrite();
+        instance.setKind(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.ActivitySource.Kind kind = 1;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearKind() {
+        copyOnWrite();
+        instance.clearKind();
+        return this;
+      }
+
+      /**
+       * <code>string station_domain = 2;</code>
+       * @return The stationDomain.
+       */
+      @java.lang.Override
+      public java.lang.String getStationDomain() {
+        return instance.getStationDomain();
+      }
+      /**
+       * <code>string station_domain = 2;</code>
+       * @return The bytes for stationDomain.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getStationDomainBytes() {
+        return instance.getStationDomainBytes();
+      }
+      /**
+       * <code>string station_domain = 2;</code>
+       * @param value The stationDomain to set.
+       * @return This builder for chaining.
+       */
+      public Builder setStationDomain(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setStationDomain(value);
+        return this;
+      }
+      /**
+       * <code>string station_domain = 2;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearStationDomain() {
+        copyOnWrite();
+        instance.clearStationDomain();
+        return this;
+      }
+      /**
+       * <code>string station_domain = 2;</code>
+       * @param value The bytes for stationDomain to set.
+       * @return This builder for chaining.
+       */
+      public Builder setStationDomainBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setStationDomainBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string station_peer_id = 3;</code>
+       * @return The stationPeerId.
+       */
+      @java.lang.Override
+      public java.lang.String getStationPeerId() {
+        return instance.getStationPeerId();
+      }
+      /**
+       * <code>string station_peer_id = 3;</code>
+       * @return The bytes for stationPeerId.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getStationPeerIdBytes() {
+        return instance.getStationPeerIdBytes();
+      }
+      /**
+       * <code>string station_peer_id = 3;</code>
+       * @param value The stationPeerId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setStationPeerId(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setStationPeerId(value);
+        return this;
+      }
+      /**
+       * <code>string station_peer_id = 3;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearStationPeerId() {
+        copyOnWrite();
+        instance.clearStationPeerId();
+        return this;
+      }
+      /**
+       * <code>string station_peer_id = 3;</code>
+       * @param value The bytes for stationPeerId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setStationPeerIdBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setStationPeerIdBytes(value);
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.ActivitySource)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"ThrowNull"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new peers_touch.model.social.v1.PostOuterClass.ActivitySource();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "kind_",
+              "stationDomain_",
+              "stationPeerId_",
+            };
+            java.lang.String info =
+                "\u0000\u0003\u0000\u0000\u0001\u0003\u0003\u0000\u0000\u0000\u0001\f\u0002\u0208" +
+                "\u0003\u0208";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<peers_touch.model.social.v1.PostOuterClass.ActivitySource> parser = PARSER;
+          if (parser == null) {
+            synchronized (peers_touch.model.social.v1.PostOuterClass.ActivitySource.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<peers_touch.model.social.v1.PostOuterClass.ActivitySource>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+        }
+        case GET_MEMOIZED_IS_INITIALIZED: {
+          return (byte) 1;
+        }
+        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
+        // So it can do anything. Combine with default case for smaller codegen.
+        case SET_MEMOIZED_IS_INITIALIZED:
+      }
+      // Should never happen. Generates tight code to throw an exception.
+      throw null;
+    }
+
+
+    // @@protoc_insertion_point(class_scope:peers_touch.model.social.v1.ActivitySource)
+    private static final peers_touch.model.social.v1.PostOuterClass.ActivitySource DEFAULT_INSTANCE;
+    static {
+      ActivitySource defaultInstance = new ActivitySource();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        ActivitySource.class, defaultInstance);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.ActivitySource getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<ActivitySource> PARSER;
+
+    public static com.google.protobuf.Parser<ActivitySource> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
+  public interface RelationshipReasonOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:peers_touch.model.social.v1.RelationshipReason)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>.peers_touch.model.social.v1.RelationshipReason.Kind kind = 1;</code>
+     * @return The enum numeric value on the wire for kind.
+     */
+    int getKindValue();
+    /**
+     * <code>.peers_touch.model.social.v1.RelationshipReason.Kind kind = 1;</code>
+     * @return The kind.
+     */
+    peers_touch.model.social.v1.PostOuterClass.RelationshipReason.Kind getKind();
+
+    /**
+     * <code>string actor_id = 2;</code>
+     * @return The actorId.
+     */
+    java.lang.String getActorId();
+    /**
+     * <code>string actor_id = 2;</code>
+     * @return The bytes for actorId.
+     */
+    com.google.protobuf.ByteString
+        getActorIdBytes();
+
+    /**
+     * <code>string circle_id = 3;</code>
+     * @return The circleId.
+     */
+    java.lang.String getCircleId();
+    /**
+     * <code>string circle_id = 3;</code>
+     * @return The bytes for circleId.
+     */
+    com.google.protobuf.ByteString
+        getCircleIdBytes();
+
+    /**
+     * <code>string station_domain = 4;</code>
+     * @return The stationDomain.
+     */
+    java.lang.String getStationDomain();
+    /**
+     * <code>string station_domain = 4;</code>
+     * @return The bytes for stationDomain.
+     */
+    com.google.protobuf.ByteString
+        getStationDomainBytes();
+  }
+  /**
+   * Protobuf type {@code peers_touch.model.social.v1.RelationshipReason}
+   */
+  public  static final class RelationshipReason extends
+      com.google.protobuf.GeneratedMessageLite<
+          RelationshipReason, RelationshipReason.Builder> implements
+      // @@protoc_insertion_point(message_implements:peers_touch.model.social.v1.RelationshipReason)
+      RelationshipReasonOrBuilder {
+    private RelationshipReason() {
+      actorId_ = "";
+      circleId_ = "";
+      stationDomain_ = "";
+    }
+    /**
+     * Protobuf enum {@code peers_touch.model.social.v1.RelationshipReason.Kind}
+     */
+    public enum Kind
+        implements com.google.protobuf.Internal.EnumLite {
+      /**
+       * <code>RELATIONSHIP_REASON_UNSPECIFIED = 0;</code>
+       */
+      RELATIONSHIP_REASON_UNSPECIFIED(0),
+      /**
+       * <code>RELATIONSHIP_REASON_SELF = 1;</code>
+       */
+      RELATIONSHIP_REASON_SELF(1),
+      /**
+       * <code>RELATIONSHIP_REASON_FOLLOWING = 2;</code>
+       */
+      RELATIONSHIP_REASON_FOLLOWING(2),
+      /**
+       * <code>RELATIONSHIP_REASON_FOLLOWER = 3;</code>
+       */
+      RELATIONSHIP_REASON_FOLLOWER(3),
+      /**
+       * <code>RELATIONSHIP_REASON_MUTUAL = 4;</code>
+       */
+      RELATIONSHIP_REASON_MUTUAL(4),
+      /**
+       * <code>RELATIONSHIP_REASON_CIRCLE = 5;</code>
+       */
+      RELATIONSHIP_REASON_CIRCLE(5),
+      /**
+       * <code>RELATIONSHIP_REASON_MENTIONED = 6;</code>
+       */
+      RELATIONSHIP_REASON_MENTIONED(6),
+      /**
+       * <code>RELATIONSHIP_REASON_PUBLIC_FEDERATED = 7;</code>
+       */
+      RELATIONSHIP_REASON_PUBLIC_FEDERATED(7),
+      /**
+       * <code>RELATIONSHIP_REASON_PROFILE_VIEW = 8;</code>
+       */
+      RELATIONSHIP_REASON_PROFILE_VIEW(8),
+      /**
+       * <code>RELATIONSHIP_REASON_UNKNOWN = 9;</code>
+       */
+      RELATIONSHIP_REASON_UNKNOWN(9),
+      UNRECOGNIZED(-1),
+      ;
+
+      /**
+       * <code>RELATIONSHIP_REASON_UNSPECIFIED = 0;</code>
+       */
+      public static final int RELATIONSHIP_REASON_UNSPECIFIED_VALUE = 0;
+      /**
+       * <code>RELATIONSHIP_REASON_SELF = 1;</code>
+       */
+      public static final int RELATIONSHIP_REASON_SELF_VALUE = 1;
+      /**
+       * <code>RELATIONSHIP_REASON_FOLLOWING = 2;</code>
+       */
+      public static final int RELATIONSHIP_REASON_FOLLOWING_VALUE = 2;
+      /**
+       * <code>RELATIONSHIP_REASON_FOLLOWER = 3;</code>
+       */
+      public static final int RELATIONSHIP_REASON_FOLLOWER_VALUE = 3;
+      /**
+       * <code>RELATIONSHIP_REASON_MUTUAL = 4;</code>
+       */
+      public static final int RELATIONSHIP_REASON_MUTUAL_VALUE = 4;
+      /**
+       * <code>RELATIONSHIP_REASON_CIRCLE = 5;</code>
+       */
+      public static final int RELATIONSHIP_REASON_CIRCLE_VALUE = 5;
+      /**
+       * <code>RELATIONSHIP_REASON_MENTIONED = 6;</code>
+       */
+      public static final int RELATIONSHIP_REASON_MENTIONED_VALUE = 6;
+      /**
+       * <code>RELATIONSHIP_REASON_PUBLIC_FEDERATED = 7;</code>
+       */
+      public static final int RELATIONSHIP_REASON_PUBLIC_FEDERATED_VALUE = 7;
+      /**
+       * <code>RELATIONSHIP_REASON_PROFILE_VIEW = 8;</code>
+       */
+      public static final int RELATIONSHIP_REASON_PROFILE_VIEW_VALUE = 8;
+      /**
+       * <code>RELATIONSHIP_REASON_UNKNOWN = 9;</code>
+       */
+      public static final int RELATIONSHIP_REASON_UNKNOWN_VALUE = 9;
+
+
+      @java.lang.Override
+      public final int getNumber() {
+        if (this == UNRECOGNIZED) {
+          throw new java.lang.IllegalArgumentException(
+              "Can't get the number of an unknown enum value.");
+        }
+        return value;
+      }
+
+      /**
+       * @param value The number of the enum to look for.
+       * @return The enum associated with the given number.
+       * @deprecated Use {@link #forNumber(int)} instead.
+       */
+      @java.lang.Deprecated
+      public static Kind valueOf(int value) {
+        return forNumber(value);
+      }
+
+      public static Kind forNumber(int value) {
+        switch (value) {
+          case 0: return RELATIONSHIP_REASON_UNSPECIFIED;
+          case 1: return RELATIONSHIP_REASON_SELF;
+          case 2: return RELATIONSHIP_REASON_FOLLOWING;
+          case 3: return RELATIONSHIP_REASON_FOLLOWER;
+          case 4: return RELATIONSHIP_REASON_MUTUAL;
+          case 5: return RELATIONSHIP_REASON_CIRCLE;
+          case 6: return RELATIONSHIP_REASON_MENTIONED;
+          case 7: return RELATIONSHIP_REASON_PUBLIC_FEDERATED;
+          case 8: return RELATIONSHIP_REASON_PROFILE_VIEW;
+          case 9: return RELATIONSHIP_REASON_UNKNOWN;
+          default: return null;
+        }
+      }
+
+      public static com.google.protobuf.Internal.EnumLiteMap<Kind>
+          internalGetValueMap() {
+        return internalValueMap;
+      }
+      private static final com.google.protobuf.Internal.EnumLiteMap<
+          Kind> internalValueMap =
+            new com.google.protobuf.Internal.EnumLiteMap<Kind>() {
+              @java.lang.Override
+              public Kind findValueByNumber(int number) {
+                return Kind.forNumber(number);
+              }
+            };
+
+      public static com.google.protobuf.Internal.EnumVerifier
+          internalGetVerifier() {
+        return KindVerifier.INSTANCE;
+      }
+
+      private static final class KindVerifier implements
+           com.google.protobuf.Internal.EnumVerifier {
+              static final com.google.protobuf.Internal.EnumVerifier
+                  INSTANCE = new KindVerifier();
+              @java.lang.Override
+              public boolean isInRange(int number) {
+                return Kind.forNumber(number) != null;
+              }
+            };
+
+      private final int value;
+
+      private Kind(int value) {
+        this.value = value;
+      }
+
+      // @@protoc_insertion_point(enum_scope:peers_touch.model.social.v1.RelationshipReason.Kind)
+    }
+
+    public static final int KIND_FIELD_NUMBER = 1;
+    private int kind_;
+    /**
+     * <code>.peers_touch.model.social.v1.RelationshipReason.Kind kind = 1;</code>
+     * @return The enum numeric value on the wire for kind.
+     */
+    @java.lang.Override
+    public int getKindValue() {
+      return kind_;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.RelationshipReason.Kind kind = 1;</code>
+     * @return The kind.
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.RelationshipReason.Kind getKind() {
+      peers_touch.model.social.v1.PostOuterClass.RelationshipReason.Kind result = peers_touch.model.social.v1.PostOuterClass.RelationshipReason.Kind.forNumber(kind_);
+      return result == null ? peers_touch.model.social.v1.PostOuterClass.RelationshipReason.Kind.UNRECOGNIZED : result;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.RelationshipReason.Kind kind = 1;</code>
+     * @param value The enum numeric value on the wire for kind to set.
+     * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+     */
+    private void setKindValue(int value) {
+        kind_ = value;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.RelationshipReason.Kind kind = 1;</code>
+     * @param value The kind to set.
+     */
+    private void setKind(peers_touch.model.social.v1.PostOuterClass.RelationshipReason.Kind value) {
+      kind_ = value.getNumber();
+
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.RelationshipReason.Kind kind = 1;</code>
+     */
+    private void clearKind() {
+
+      kind_ = 0;
+    }
+
+    public static final int ACTOR_ID_FIELD_NUMBER = 2;
+    private java.lang.String actorId_;
+    /**
+     * <code>string actor_id = 2;</code>
+     * @return The actorId.
+     */
+    @java.lang.Override
+    public java.lang.String getActorId() {
+      return actorId_;
+    }
+    /**
+     * <code>string actor_id = 2;</code>
+     * @return The bytes for actorId.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getActorIdBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(actorId_);
+    }
+    /**
+     * <code>string actor_id = 2;</code>
+     * @param value The actorId to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setActorId(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      actorId_ = value;
+    }
+    /**
+     * <code>string actor_id = 2;</code>
+     */
+    private void clearActorId() {
+
+      actorId_ = getDefaultInstance().getActorId();
+    }
+    /**
+     * <code>string actor_id = 2;</code>
+     * @param value The bytes for actorId to set.
+     */
+    private void setActorIdBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      actorId_ = value.toStringUtf8();
+
+    }
+
+    public static final int CIRCLE_ID_FIELD_NUMBER = 3;
+    private java.lang.String circleId_;
+    /**
+     * <code>string circle_id = 3;</code>
+     * @return The circleId.
+     */
+    @java.lang.Override
+    public java.lang.String getCircleId() {
+      return circleId_;
+    }
+    /**
+     * <code>string circle_id = 3;</code>
+     * @return The bytes for circleId.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getCircleIdBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(circleId_);
+    }
+    /**
+     * <code>string circle_id = 3;</code>
+     * @param value The circleId to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setCircleId(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      circleId_ = value;
+    }
+    /**
+     * <code>string circle_id = 3;</code>
+     */
+    private void clearCircleId() {
+
+      circleId_ = getDefaultInstance().getCircleId();
+    }
+    /**
+     * <code>string circle_id = 3;</code>
+     * @param value The bytes for circleId to set.
+     */
+    private void setCircleIdBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      circleId_ = value.toStringUtf8();
+
+    }
+
+    public static final int STATION_DOMAIN_FIELD_NUMBER = 4;
+    private java.lang.String stationDomain_;
+    /**
+     * <code>string station_domain = 4;</code>
+     * @return The stationDomain.
+     */
+    @java.lang.Override
+    public java.lang.String getStationDomain() {
+      return stationDomain_;
+    }
+    /**
+     * <code>string station_domain = 4;</code>
+     * @return The bytes for stationDomain.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getStationDomainBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(stationDomain_);
+    }
+    /**
+     * <code>string station_domain = 4;</code>
+     * @param value The stationDomain to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setStationDomain(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      stationDomain_ = value;
+    }
+    /**
+     * <code>string station_domain = 4;</code>
+     */
+    private void clearStationDomain() {
+
+      stationDomain_ = getDefaultInstance().getStationDomain();
+    }
+    /**
+     * <code>string station_domain = 4;</code>
+     * @param value The bytes for stationDomain to set.
+     */
+    private void setStationDomainBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      stationDomain_ = value.toStringUtf8();
+
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.RelationshipReason parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.RelationshipReason parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.RelationshipReason parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.RelationshipReason parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.RelationshipReason parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.RelationshipReason parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.RelationshipReason parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.RelationshipReason parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.RelationshipReason parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.RelationshipReason parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.RelationshipReason parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.RelationshipReason parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(peers_touch.model.social.v1.PostOuterClass.RelationshipReason prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * Protobuf type {@code peers_touch.model.social.v1.RelationshipReason}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          peers_touch.model.social.v1.PostOuterClass.RelationshipReason, Builder> implements
+        // @@protoc_insertion_point(builder_implements:peers_touch.model.social.v1.RelationshipReason)
+        peers_touch.model.social.v1.PostOuterClass.RelationshipReasonOrBuilder {
+      // Construct using peers_touch.model.social.v1.PostOuterClass.RelationshipReason.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>.peers_touch.model.social.v1.RelationshipReason.Kind kind = 1;</code>
+       * @return The enum numeric value on the wire for kind.
+       */
+      @java.lang.Override
+      public int getKindValue() {
+        return instance.getKindValue();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.RelationshipReason.Kind kind = 1;</code>
+       * @param value The kind to set.
+       * @return This builder for chaining.
+       */
+      public Builder setKindValue(int value) {
+        copyOnWrite();
+        instance.setKindValue(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.RelationshipReason.Kind kind = 1;</code>
+       * @return The kind.
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.RelationshipReason.Kind getKind() {
+        return instance.getKind();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.RelationshipReason.Kind kind = 1;</code>
+       * @param value The enum numeric value on the wire for kind to set.
+       * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+       * @return This builder for chaining.
+       */
+      public Builder setKind(peers_touch.model.social.v1.PostOuterClass.RelationshipReason.Kind value) {
+        copyOnWrite();
+        instance.setKind(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.RelationshipReason.Kind kind = 1;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearKind() {
+        copyOnWrite();
+        instance.clearKind();
+        return this;
+      }
+
+      /**
+       * <code>string actor_id = 2;</code>
+       * @return The actorId.
+       */
+      @java.lang.Override
+      public java.lang.String getActorId() {
+        return instance.getActorId();
+      }
+      /**
+       * <code>string actor_id = 2;</code>
+       * @return The bytes for actorId.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getActorIdBytes() {
+        return instance.getActorIdBytes();
+      }
+      /**
+       * <code>string actor_id = 2;</code>
+       * @param value The actorId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setActorId(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setActorId(value);
+        return this;
+      }
+      /**
+       * <code>string actor_id = 2;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearActorId() {
+        copyOnWrite();
+        instance.clearActorId();
+        return this;
+      }
+      /**
+       * <code>string actor_id = 2;</code>
+       * @param value The bytes for actorId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setActorIdBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setActorIdBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string circle_id = 3;</code>
+       * @return The circleId.
+       */
+      @java.lang.Override
+      public java.lang.String getCircleId() {
+        return instance.getCircleId();
+      }
+      /**
+       * <code>string circle_id = 3;</code>
+       * @return The bytes for circleId.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getCircleIdBytes() {
+        return instance.getCircleIdBytes();
+      }
+      /**
+       * <code>string circle_id = 3;</code>
+       * @param value The circleId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setCircleId(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setCircleId(value);
+        return this;
+      }
+      /**
+       * <code>string circle_id = 3;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearCircleId() {
+        copyOnWrite();
+        instance.clearCircleId();
+        return this;
+      }
+      /**
+       * <code>string circle_id = 3;</code>
+       * @param value The bytes for circleId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setCircleIdBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setCircleIdBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string station_domain = 4;</code>
+       * @return The stationDomain.
+       */
+      @java.lang.Override
+      public java.lang.String getStationDomain() {
+        return instance.getStationDomain();
+      }
+      /**
+       * <code>string station_domain = 4;</code>
+       * @return The bytes for stationDomain.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getStationDomainBytes() {
+        return instance.getStationDomainBytes();
+      }
+      /**
+       * <code>string station_domain = 4;</code>
+       * @param value The stationDomain to set.
+       * @return This builder for chaining.
+       */
+      public Builder setStationDomain(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setStationDomain(value);
+        return this;
+      }
+      /**
+       * <code>string station_domain = 4;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearStationDomain() {
+        copyOnWrite();
+        instance.clearStationDomain();
+        return this;
+      }
+      /**
+       * <code>string station_domain = 4;</code>
+       * @param value The bytes for stationDomain to set.
+       * @return This builder for chaining.
+       */
+      public Builder setStationDomainBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setStationDomainBytes(value);
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.RelationshipReason)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"ThrowNull"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new peers_touch.model.social.v1.PostOuterClass.RelationshipReason();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "kind_",
+              "actorId_",
+              "circleId_",
+              "stationDomain_",
+            };
+            java.lang.String info =
+                "\u0000\u0004\u0000\u0000\u0001\u0004\u0004\u0000\u0000\u0000\u0001\f\u0002\u0208" +
+                "\u0003\u0208\u0004\u0208";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<peers_touch.model.social.v1.PostOuterClass.RelationshipReason> parser = PARSER;
+          if (parser == null) {
+            synchronized (peers_touch.model.social.v1.PostOuterClass.RelationshipReason.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<peers_touch.model.social.v1.PostOuterClass.RelationshipReason>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+        }
+        case GET_MEMOIZED_IS_INITIALIZED: {
+          return (byte) 1;
+        }
+        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
+        // So it can do anything. Combine with default case for smaller codegen.
+        case SET_MEMOIZED_IS_INITIALIZED:
+      }
+      // Should never happen. Generates tight code to throw an exception.
+      throw null;
+    }
+
+
+    // @@protoc_insertion_point(class_scope:peers_touch.model.social.v1.RelationshipReason)
+    private static final peers_touch.model.social.v1.PostOuterClass.RelationshipReason DEFAULT_INSTANCE;
+    static {
+      RelationshipReason defaultInstance = new RelationshipReason();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        RelationshipReason.class, defaultInstance);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.RelationshipReason getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<RelationshipReason> PARSER;
+
+    public static com.google.protobuf.Parser<RelationshipReason> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
+  public interface AudienceExplanationOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:peers_touch.model.social.v1.AudienceExplanation)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>.peers_touch.model.social.v1.Audience.Kind kind = 1;</code>
+     * @return The enum numeric value on the wire for kind.
+     */
+    int getKindValue();
+    /**
+     * <code>.peers_touch.model.social.v1.Audience.Kind kind = 1;</code>
+     * @return The kind.
+     */
+    peers_touch.model.social.v1.PostOuterClass.Audience.Kind getKind();
+
+    /**
+     * <code>string target_id = 2;</code>
+     * @return The targetId.
+     */
+    java.lang.String getTargetId();
+    /**
+     * <code>string target_id = 2;</code>
+     * @return The bytes for targetId.
+     */
+    com.google.protobuf.ByteString
+        getTargetIdBytes();
+
+    /**
+     * <code>bool viewer_is_author = 3;</code>
+     * @return The viewerIsAuthor.
+     */
+    boolean getViewerIsAuthor();
+
+    /**
+     * <code>bool viewer_is_member = 4;</code>
+     * @return The viewerIsMember.
+     */
+    boolean getViewerIsMember();
+
+    /**
+     * <code>bool policy_filtered = 5;</code>
+     * @return The policyFiltered.
+     */
+    boolean getPolicyFiltered();
+  }
+  /**
+   * Protobuf type {@code peers_touch.model.social.v1.AudienceExplanation}
+   */
+  public  static final class AudienceExplanation extends
+      com.google.protobuf.GeneratedMessageLite<
+          AudienceExplanation, AudienceExplanation.Builder> implements
+      // @@protoc_insertion_point(message_implements:peers_touch.model.social.v1.AudienceExplanation)
+      AudienceExplanationOrBuilder {
+    private AudienceExplanation() {
+      targetId_ = "";
+    }
+    public static final int KIND_FIELD_NUMBER = 1;
+    private int kind_;
+    /**
+     * <code>.peers_touch.model.social.v1.Audience.Kind kind = 1;</code>
+     * @return The enum numeric value on the wire for kind.
+     */
+    @java.lang.Override
+    public int getKindValue() {
+      return kind_;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.Audience.Kind kind = 1;</code>
+     * @return The kind.
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.Audience.Kind getKind() {
+      peers_touch.model.social.v1.PostOuterClass.Audience.Kind result = peers_touch.model.social.v1.PostOuterClass.Audience.Kind.forNumber(kind_);
+      return result == null ? peers_touch.model.social.v1.PostOuterClass.Audience.Kind.UNRECOGNIZED : result;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.Audience.Kind kind = 1;</code>
+     * @param value The enum numeric value on the wire for kind to set.
+     * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+     */
+    private void setKindValue(int value) {
+        kind_ = value;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.Audience.Kind kind = 1;</code>
+     * @param value The kind to set.
+     */
+    private void setKind(peers_touch.model.social.v1.PostOuterClass.Audience.Kind value) {
+      kind_ = value.getNumber();
+
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.Audience.Kind kind = 1;</code>
+     */
+    private void clearKind() {
+
+      kind_ = 0;
+    }
+
+    public static final int TARGET_ID_FIELD_NUMBER = 2;
+    private java.lang.String targetId_;
+    /**
+     * <code>string target_id = 2;</code>
+     * @return The targetId.
+     */
+    @java.lang.Override
+    public java.lang.String getTargetId() {
+      return targetId_;
+    }
+    /**
+     * <code>string target_id = 2;</code>
+     * @return The bytes for targetId.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getTargetIdBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(targetId_);
+    }
+    /**
+     * <code>string target_id = 2;</code>
+     * @param value The targetId to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setTargetId(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      targetId_ = value;
+    }
+    /**
+     * <code>string target_id = 2;</code>
+     */
+    private void clearTargetId() {
+
+      targetId_ = getDefaultInstance().getTargetId();
+    }
+    /**
+     * <code>string target_id = 2;</code>
+     * @param value The bytes for targetId to set.
+     */
+    private void setTargetIdBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      targetId_ = value.toStringUtf8();
+
+    }
+
+    public static final int VIEWER_IS_AUTHOR_FIELD_NUMBER = 3;
+    private boolean viewerIsAuthor_;
+    /**
+     * <code>bool viewer_is_author = 3;</code>
+     * @return The viewerIsAuthor.
+     */
+    @java.lang.Override
+    public boolean getViewerIsAuthor() {
+      return viewerIsAuthor_;
+    }
+    /**
+     * <code>bool viewer_is_author = 3;</code>
+     * @param value The viewerIsAuthor to set.
+     */
+    private void setViewerIsAuthor(boolean value) {
+
+      viewerIsAuthor_ = value;
+    }
+    /**
+     * <code>bool viewer_is_author = 3;</code>
+     */
+    private void clearViewerIsAuthor() {
+
+      viewerIsAuthor_ = false;
+    }
+
+    public static final int VIEWER_IS_MEMBER_FIELD_NUMBER = 4;
+    private boolean viewerIsMember_;
+    /**
+     * <code>bool viewer_is_member = 4;</code>
+     * @return The viewerIsMember.
+     */
+    @java.lang.Override
+    public boolean getViewerIsMember() {
+      return viewerIsMember_;
+    }
+    /**
+     * <code>bool viewer_is_member = 4;</code>
+     * @param value The viewerIsMember to set.
+     */
+    private void setViewerIsMember(boolean value) {
+
+      viewerIsMember_ = value;
+    }
+    /**
+     * <code>bool viewer_is_member = 4;</code>
+     */
+    private void clearViewerIsMember() {
+
+      viewerIsMember_ = false;
+    }
+
+    public static final int POLICY_FILTERED_FIELD_NUMBER = 5;
+    private boolean policyFiltered_;
+    /**
+     * <code>bool policy_filtered = 5;</code>
+     * @return The policyFiltered.
+     */
+    @java.lang.Override
+    public boolean getPolicyFiltered() {
+      return policyFiltered_;
+    }
+    /**
+     * <code>bool policy_filtered = 5;</code>
+     * @param value The policyFiltered to set.
+     */
+    private void setPolicyFiltered(boolean value) {
+
+      policyFiltered_ = value;
+    }
+    /**
+     * <code>bool policy_filtered = 5;</code>
+     */
+    private void clearPolicyFiltered() {
+
+      policyFiltered_ = false;
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.AudienceExplanation parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.AudienceExplanation parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.AudienceExplanation parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.AudienceExplanation parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.AudienceExplanation parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.AudienceExplanation parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.AudienceExplanation parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.AudienceExplanation parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.AudienceExplanation parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.AudienceExplanation parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.AudienceExplanation parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.AudienceExplanation parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(peers_touch.model.social.v1.PostOuterClass.AudienceExplanation prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * Protobuf type {@code peers_touch.model.social.v1.AudienceExplanation}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          peers_touch.model.social.v1.PostOuterClass.AudienceExplanation, Builder> implements
+        // @@protoc_insertion_point(builder_implements:peers_touch.model.social.v1.AudienceExplanation)
+        peers_touch.model.social.v1.PostOuterClass.AudienceExplanationOrBuilder {
+      // Construct using peers_touch.model.social.v1.PostOuterClass.AudienceExplanation.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>.peers_touch.model.social.v1.Audience.Kind kind = 1;</code>
+       * @return The enum numeric value on the wire for kind.
+       */
+      @java.lang.Override
+      public int getKindValue() {
+        return instance.getKindValue();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.Audience.Kind kind = 1;</code>
+       * @param value The kind to set.
+       * @return This builder for chaining.
+       */
+      public Builder setKindValue(int value) {
+        copyOnWrite();
+        instance.setKindValue(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.Audience.Kind kind = 1;</code>
+       * @return The kind.
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.Audience.Kind getKind() {
+        return instance.getKind();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.Audience.Kind kind = 1;</code>
+       * @param value The enum numeric value on the wire for kind to set.
+       * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+       * @return This builder for chaining.
+       */
+      public Builder setKind(peers_touch.model.social.v1.PostOuterClass.Audience.Kind value) {
+        copyOnWrite();
+        instance.setKind(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.Audience.Kind kind = 1;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearKind() {
+        copyOnWrite();
+        instance.clearKind();
+        return this;
+      }
+
+      /**
+       * <code>string target_id = 2;</code>
+       * @return The targetId.
+       */
+      @java.lang.Override
+      public java.lang.String getTargetId() {
+        return instance.getTargetId();
+      }
+      /**
+       * <code>string target_id = 2;</code>
+       * @return The bytes for targetId.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getTargetIdBytes() {
+        return instance.getTargetIdBytes();
+      }
+      /**
+       * <code>string target_id = 2;</code>
+       * @param value The targetId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setTargetId(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setTargetId(value);
+        return this;
+      }
+      /**
+       * <code>string target_id = 2;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearTargetId() {
+        copyOnWrite();
+        instance.clearTargetId();
+        return this;
+      }
+      /**
+       * <code>string target_id = 2;</code>
+       * @param value The bytes for targetId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setTargetIdBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setTargetIdBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>bool viewer_is_author = 3;</code>
+       * @return The viewerIsAuthor.
+       */
+      @java.lang.Override
+      public boolean getViewerIsAuthor() {
+        return instance.getViewerIsAuthor();
+      }
+      /**
+       * <code>bool viewer_is_author = 3;</code>
+       * @param value The viewerIsAuthor to set.
+       * @return This builder for chaining.
+       */
+      public Builder setViewerIsAuthor(boolean value) {
+        copyOnWrite();
+        instance.setViewerIsAuthor(value);
+        return this;
+      }
+      /**
+       * <code>bool viewer_is_author = 3;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearViewerIsAuthor() {
+        copyOnWrite();
+        instance.clearViewerIsAuthor();
+        return this;
+      }
+
+      /**
+       * <code>bool viewer_is_member = 4;</code>
+       * @return The viewerIsMember.
+       */
+      @java.lang.Override
+      public boolean getViewerIsMember() {
+        return instance.getViewerIsMember();
+      }
+      /**
+       * <code>bool viewer_is_member = 4;</code>
+       * @param value The viewerIsMember to set.
+       * @return This builder for chaining.
+       */
+      public Builder setViewerIsMember(boolean value) {
+        copyOnWrite();
+        instance.setViewerIsMember(value);
+        return this;
+      }
+      /**
+       * <code>bool viewer_is_member = 4;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearViewerIsMember() {
+        copyOnWrite();
+        instance.clearViewerIsMember();
+        return this;
+      }
+
+      /**
+       * <code>bool policy_filtered = 5;</code>
+       * @return The policyFiltered.
+       */
+      @java.lang.Override
+      public boolean getPolicyFiltered() {
+        return instance.getPolicyFiltered();
+      }
+      /**
+       * <code>bool policy_filtered = 5;</code>
+       * @param value The policyFiltered to set.
+       * @return This builder for chaining.
+       */
+      public Builder setPolicyFiltered(boolean value) {
+        copyOnWrite();
+        instance.setPolicyFiltered(value);
+        return this;
+      }
+      /**
+       * <code>bool policy_filtered = 5;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearPolicyFiltered() {
+        copyOnWrite();
+        instance.clearPolicyFiltered();
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.AudienceExplanation)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"ThrowNull"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new peers_touch.model.social.v1.PostOuterClass.AudienceExplanation();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "kind_",
+              "targetId_",
+              "viewerIsAuthor_",
+              "viewerIsMember_",
+              "policyFiltered_",
+            };
+            java.lang.String info =
+                "\u0000\u0005\u0000\u0000\u0001\u0005\u0005\u0000\u0000\u0000\u0001\f\u0002\u0208" +
+                "\u0003\u0007\u0004\u0007\u0005\u0007";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<peers_touch.model.social.v1.PostOuterClass.AudienceExplanation> parser = PARSER;
+          if (parser == null) {
+            synchronized (peers_touch.model.social.v1.PostOuterClass.AudienceExplanation.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<peers_touch.model.social.v1.PostOuterClass.AudienceExplanation>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+        }
+        case GET_MEMOIZED_IS_INITIALIZED: {
+          return (byte) 1;
+        }
+        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
+        // So it can do anything. Combine with default case for smaller codegen.
+        case SET_MEMOIZED_IS_INITIALIZED:
+      }
+      // Should never happen. Generates tight code to throw an exception.
+      throw null;
+    }
+
+
+    // @@protoc_insertion_point(class_scope:peers_touch.model.social.v1.AudienceExplanation)
+    private static final peers_touch.model.social.v1.PostOuterClass.AudienceExplanation DEFAULT_INSTANCE;
+    static {
+      AudienceExplanation defaultInstance = new AudienceExplanation();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        AudienceExplanation.class, defaultInstance);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.AudienceExplanation getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<AudienceExplanation> PARSER;
+
+    public static com.google.protobuf.Parser<AudienceExplanation> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
+  public interface BlockExplanationOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:peers_touch.model.social.v1.BlockExplanation)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>.peers_touch.model.social.v1.BlockExplanation.Kind kind = 1;</code>
+     * @return The enum numeric value on the wire for kind.
+     */
+    int getKindValue();
+    /**
+     * <code>.peers_touch.model.social.v1.BlockExplanation.Kind kind = 1;</code>
+     * @return The kind.
+     */
+    peers_touch.model.social.v1.PostOuterClass.BlockExplanation.Kind getKind();
+
+    /**
+     * <code>string actor_id = 2;</code>
+     * @return The actorId.
+     */
+    java.lang.String getActorId();
+    /**
+     * <code>string actor_id = 2;</code>
+     * @return The bytes for actorId.
+     */
+    com.google.protobuf.ByteString
+        getActorIdBytes();
+
+    /**
+     * <code>string station_domain = 3;</code>
+     * @return The stationDomain.
+     */
+    java.lang.String getStationDomain();
+    /**
+     * <code>string station_domain = 3;</code>
+     * @return The bytes for stationDomain.
+     */
+    com.google.protobuf.ByteString
+        getStationDomainBytes();
+  }
+  /**
+   * Protobuf type {@code peers_touch.model.social.v1.BlockExplanation}
+   */
+  public  static final class BlockExplanation extends
+      com.google.protobuf.GeneratedMessageLite<
+          BlockExplanation, BlockExplanation.Builder> implements
+      // @@protoc_insertion_point(message_implements:peers_touch.model.social.v1.BlockExplanation)
+      BlockExplanationOrBuilder {
+    private BlockExplanation() {
+      actorId_ = "";
+      stationDomain_ = "";
+    }
+    /**
+     * Protobuf enum {@code peers_touch.model.social.v1.BlockExplanation.Kind}
+     */
+    public enum Kind
+        implements com.google.protobuf.Internal.EnumLite {
+      /**
+       * <code>BLOCK_STATE_UNSPECIFIED = 0;</code>
+       */
+      BLOCK_STATE_UNSPECIFIED(0),
+      /**
+       * <code>BLOCK_STATE_NOT_BLOCKED = 1;</code>
+       */
+      BLOCK_STATE_NOT_BLOCKED(1),
+      /**
+       * <code>BLOCK_STATE_VIEWER_BLOCKED_AUTHOR = 2;</code>
+       */
+      BLOCK_STATE_VIEWER_BLOCKED_AUTHOR(2),
+      /**
+       * <code>BLOCK_STATE_AUTHOR_BLOCKED_VIEWER = 3;</code>
+       */
+      BLOCK_STATE_AUTHOR_BLOCKED_VIEWER(3),
+      /**
+       * <code>BLOCK_STATE_STATION_BLOCKED = 4;</code>
+       */
+      BLOCK_STATE_STATION_BLOCKED(4),
+      UNRECOGNIZED(-1),
+      ;
+
+      /**
+       * <code>BLOCK_STATE_UNSPECIFIED = 0;</code>
+       */
+      public static final int BLOCK_STATE_UNSPECIFIED_VALUE = 0;
+      /**
+       * <code>BLOCK_STATE_NOT_BLOCKED = 1;</code>
+       */
+      public static final int BLOCK_STATE_NOT_BLOCKED_VALUE = 1;
+      /**
+       * <code>BLOCK_STATE_VIEWER_BLOCKED_AUTHOR = 2;</code>
+       */
+      public static final int BLOCK_STATE_VIEWER_BLOCKED_AUTHOR_VALUE = 2;
+      /**
+       * <code>BLOCK_STATE_AUTHOR_BLOCKED_VIEWER = 3;</code>
+       */
+      public static final int BLOCK_STATE_AUTHOR_BLOCKED_VIEWER_VALUE = 3;
+      /**
+       * <code>BLOCK_STATE_STATION_BLOCKED = 4;</code>
+       */
+      public static final int BLOCK_STATE_STATION_BLOCKED_VALUE = 4;
+
+
+      @java.lang.Override
+      public final int getNumber() {
+        if (this == UNRECOGNIZED) {
+          throw new java.lang.IllegalArgumentException(
+              "Can't get the number of an unknown enum value.");
+        }
+        return value;
+      }
+
+      /**
+       * @param value The number of the enum to look for.
+       * @return The enum associated with the given number.
+       * @deprecated Use {@link #forNumber(int)} instead.
+       */
+      @java.lang.Deprecated
+      public static Kind valueOf(int value) {
+        return forNumber(value);
+      }
+
+      public static Kind forNumber(int value) {
+        switch (value) {
+          case 0: return BLOCK_STATE_UNSPECIFIED;
+          case 1: return BLOCK_STATE_NOT_BLOCKED;
+          case 2: return BLOCK_STATE_VIEWER_BLOCKED_AUTHOR;
+          case 3: return BLOCK_STATE_AUTHOR_BLOCKED_VIEWER;
+          case 4: return BLOCK_STATE_STATION_BLOCKED;
+          default: return null;
+        }
+      }
+
+      public static com.google.protobuf.Internal.EnumLiteMap<Kind>
+          internalGetValueMap() {
+        return internalValueMap;
+      }
+      private static final com.google.protobuf.Internal.EnumLiteMap<
+          Kind> internalValueMap =
+            new com.google.protobuf.Internal.EnumLiteMap<Kind>() {
+              @java.lang.Override
+              public Kind findValueByNumber(int number) {
+                return Kind.forNumber(number);
+              }
+            };
+
+      public static com.google.protobuf.Internal.EnumVerifier
+          internalGetVerifier() {
+        return KindVerifier.INSTANCE;
+      }
+
+      private static final class KindVerifier implements
+           com.google.protobuf.Internal.EnumVerifier {
+              static final com.google.protobuf.Internal.EnumVerifier
+                  INSTANCE = new KindVerifier();
+              @java.lang.Override
+              public boolean isInRange(int number) {
+                return Kind.forNumber(number) != null;
+              }
+            };
+
+      private final int value;
+
+      private Kind(int value) {
+        this.value = value;
+      }
+
+      // @@protoc_insertion_point(enum_scope:peers_touch.model.social.v1.BlockExplanation.Kind)
+    }
+
+    public static final int KIND_FIELD_NUMBER = 1;
+    private int kind_;
+    /**
+     * <code>.peers_touch.model.social.v1.BlockExplanation.Kind kind = 1;</code>
+     * @return The enum numeric value on the wire for kind.
+     */
+    @java.lang.Override
+    public int getKindValue() {
+      return kind_;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.BlockExplanation.Kind kind = 1;</code>
+     * @return The kind.
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.BlockExplanation.Kind getKind() {
+      peers_touch.model.social.v1.PostOuterClass.BlockExplanation.Kind result = peers_touch.model.social.v1.PostOuterClass.BlockExplanation.Kind.forNumber(kind_);
+      return result == null ? peers_touch.model.social.v1.PostOuterClass.BlockExplanation.Kind.UNRECOGNIZED : result;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.BlockExplanation.Kind kind = 1;</code>
+     * @param value The enum numeric value on the wire for kind to set.
+     * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+     */
+    private void setKindValue(int value) {
+        kind_ = value;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.BlockExplanation.Kind kind = 1;</code>
+     * @param value The kind to set.
+     */
+    private void setKind(peers_touch.model.social.v1.PostOuterClass.BlockExplanation.Kind value) {
+      kind_ = value.getNumber();
+
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.BlockExplanation.Kind kind = 1;</code>
+     */
+    private void clearKind() {
+
+      kind_ = 0;
+    }
+
+    public static final int ACTOR_ID_FIELD_NUMBER = 2;
+    private java.lang.String actorId_;
+    /**
+     * <code>string actor_id = 2;</code>
+     * @return The actorId.
+     */
+    @java.lang.Override
+    public java.lang.String getActorId() {
+      return actorId_;
+    }
+    /**
+     * <code>string actor_id = 2;</code>
+     * @return The bytes for actorId.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getActorIdBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(actorId_);
+    }
+    /**
+     * <code>string actor_id = 2;</code>
+     * @param value The actorId to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setActorId(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      actorId_ = value;
+    }
+    /**
+     * <code>string actor_id = 2;</code>
+     */
+    private void clearActorId() {
+
+      actorId_ = getDefaultInstance().getActorId();
+    }
+    /**
+     * <code>string actor_id = 2;</code>
+     * @param value The bytes for actorId to set.
+     */
+    private void setActorIdBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      actorId_ = value.toStringUtf8();
+
+    }
+
+    public static final int STATION_DOMAIN_FIELD_NUMBER = 3;
+    private java.lang.String stationDomain_;
+    /**
+     * <code>string station_domain = 3;</code>
+     * @return The stationDomain.
+     */
+    @java.lang.Override
+    public java.lang.String getStationDomain() {
+      return stationDomain_;
+    }
+    /**
+     * <code>string station_domain = 3;</code>
+     * @return The bytes for stationDomain.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getStationDomainBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(stationDomain_);
+    }
+    /**
+     * <code>string station_domain = 3;</code>
+     * @param value The stationDomain to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setStationDomain(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      stationDomain_ = value;
+    }
+    /**
+     * <code>string station_domain = 3;</code>
+     */
+    private void clearStationDomain() {
+
+      stationDomain_ = getDefaultInstance().getStationDomain();
+    }
+    /**
+     * <code>string station_domain = 3;</code>
+     * @param value The bytes for stationDomain to set.
+     */
+    private void setStationDomainBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      stationDomain_ = value.toStringUtf8();
+
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.BlockExplanation parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.BlockExplanation parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.BlockExplanation parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.BlockExplanation parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.BlockExplanation parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.BlockExplanation parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.BlockExplanation parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.BlockExplanation parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.BlockExplanation parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.BlockExplanation parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.BlockExplanation parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.BlockExplanation parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(peers_touch.model.social.v1.PostOuterClass.BlockExplanation prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * Protobuf type {@code peers_touch.model.social.v1.BlockExplanation}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          peers_touch.model.social.v1.PostOuterClass.BlockExplanation, Builder> implements
+        // @@protoc_insertion_point(builder_implements:peers_touch.model.social.v1.BlockExplanation)
+        peers_touch.model.social.v1.PostOuterClass.BlockExplanationOrBuilder {
+      // Construct using peers_touch.model.social.v1.PostOuterClass.BlockExplanation.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>.peers_touch.model.social.v1.BlockExplanation.Kind kind = 1;</code>
+       * @return The enum numeric value on the wire for kind.
+       */
+      @java.lang.Override
+      public int getKindValue() {
+        return instance.getKindValue();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.BlockExplanation.Kind kind = 1;</code>
+       * @param value The kind to set.
+       * @return This builder for chaining.
+       */
+      public Builder setKindValue(int value) {
+        copyOnWrite();
+        instance.setKindValue(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.BlockExplanation.Kind kind = 1;</code>
+       * @return The kind.
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.BlockExplanation.Kind getKind() {
+        return instance.getKind();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.BlockExplanation.Kind kind = 1;</code>
+       * @param value The enum numeric value on the wire for kind to set.
+       * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+       * @return This builder for chaining.
+       */
+      public Builder setKind(peers_touch.model.social.v1.PostOuterClass.BlockExplanation.Kind value) {
+        copyOnWrite();
+        instance.setKind(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.BlockExplanation.Kind kind = 1;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearKind() {
+        copyOnWrite();
+        instance.clearKind();
+        return this;
+      }
+
+      /**
+       * <code>string actor_id = 2;</code>
+       * @return The actorId.
+       */
+      @java.lang.Override
+      public java.lang.String getActorId() {
+        return instance.getActorId();
+      }
+      /**
+       * <code>string actor_id = 2;</code>
+       * @return The bytes for actorId.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getActorIdBytes() {
+        return instance.getActorIdBytes();
+      }
+      /**
+       * <code>string actor_id = 2;</code>
+       * @param value The actorId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setActorId(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setActorId(value);
+        return this;
+      }
+      /**
+       * <code>string actor_id = 2;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearActorId() {
+        copyOnWrite();
+        instance.clearActorId();
+        return this;
+      }
+      /**
+       * <code>string actor_id = 2;</code>
+       * @param value The bytes for actorId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setActorIdBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setActorIdBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string station_domain = 3;</code>
+       * @return The stationDomain.
+       */
+      @java.lang.Override
+      public java.lang.String getStationDomain() {
+        return instance.getStationDomain();
+      }
+      /**
+       * <code>string station_domain = 3;</code>
+       * @return The bytes for stationDomain.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getStationDomainBytes() {
+        return instance.getStationDomainBytes();
+      }
+      /**
+       * <code>string station_domain = 3;</code>
+       * @param value The stationDomain to set.
+       * @return This builder for chaining.
+       */
+      public Builder setStationDomain(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setStationDomain(value);
+        return this;
+      }
+      /**
+       * <code>string station_domain = 3;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearStationDomain() {
+        copyOnWrite();
+        instance.clearStationDomain();
+        return this;
+      }
+      /**
+       * <code>string station_domain = 3;</code>
+       * @param value The bytes for stationDomain to set.
+       * @return This builder for chaining.
+       */
+      public Builder setStationDomainBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setStationDomainBytes(value);
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.BlockExplanation)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"ThrowNull"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new peers_touch.model.social.v1.PostOuterClass.BlockExplanation();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "kind_",
+              "actorId_",
+              "stationDomain_",
+            };
+            java.lang.String info =
+                "\u0000\u0003\u0000\u0000\u0001\u0003\u0003\u0000\u0000\u0000\u0001\f\u0002\u0208" +
+                "\u0003\u0208";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<peers_touch.model.social.v1.PostOuterClass.BlockExplanation> parser = PARSER;
+          if (parser == null) {
+            synchronized (peers_touch.model.social.v1.PostOuterClass.BlockExplanation.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<peers_touch.model.social.v1.PostOuterClass.BlockExplanation>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+        }
+        case GET_MEMOIZED_IS_INITIALIZED: {
+          return (byte) 1;
+        }
+        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
+        // So it can do anything. Combine with default case for smaller codegen.
+        case SET_MEMOIZED_IS_INITIALIZED:
+      }
+      // Should never happen. Generates tight code to throw an exception.
+      throw null;
+    }
+
+
+    // @@protoc_insertion_point(class_scope:peers_touch.model.social.v1.BlockExplanation)
+    private static final peers_touch.model.social.v1.PostOuterClass.BlockExplanation DEFAULT_INSTANCE;
+    static {
+      BlockExplanation defaultInstance = new BlockExplanation();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        BlockExplanation.class, defaultInstance);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.BlockExplanation getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<BlockExplanation> PARSER;
+
+    public static com.google.protobuf.Parser<BlockExplanation> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
+  public interface StationModerationPolicyOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:peers_touch.model.social.v1.StationModerationPolicy)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>string station_domain = 1;</code>
+     * @return The stationDomain.
+     */
+    java.lang.String getStationDomain();
+    /**
+     * <code>string station_domain = 1;</code>
+     * @return The bytes for stationDomain.
+     */
+    com.google.protobuf.ByteString
+        getStationDomainBytes();
+
+    /**
+     * <code>string station_peer_id = 2;</code>
+     * @return The stationPeerId.
+     */
+    java.lang.String getStationPeerId();
+    /**
+     * <code>string station_peer_id = 2;</code>
+     * @return The bytes for stationPeerId.
+     */
+    com.google.protobuf.ByteString
+        getStationPeerIdBytes();
+
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+     * @return The enum numeric value on the wire for kind.
+     */
+    int getKindValue();
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+     * @return The kind.
+     */
+    peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind getKind();
+
+    /**
+     * <code>string reason = 4;</code>
+     * @return The reason.
+     */
+    java.lang.String getReason();
+    /**
+     * <code>string reason = 4;</code>
+     * @return The bytes for reason.
+     */
+    com.google.protobuf.ByteString
+        getReasonBytes();
+
+    /**
+     * <code>string created_by_actor_id = 5;</code>
+     * @return The createdByActorId.
+     */
+    java.lang.String getCreatedByActorId();
+    /**
+     * <code>string created_by_actor_id = 5;</code>
+     * @return The bytes for createdByActorId.
+     */
+    com.google.protobuf.ByteString
+        getCreatedByActorIdBytes();
+
+    /**
+     * <code>.google.protobuf.Timestamp created_at = 6;</code>
+     * @return Whether the createdAt field is set.
+     */
+    boolean hasCreatedAt();
+    /**
+     * <code>.google.protobuf.Timestamp created_at = 6;</code>
+     * @return The createdAt.
+     */
+    google.protobuf.TimestampOuterClass.Timestamp getCreatedAt();
+
+    /**
+     * <code>.google.protobuf.Timestamp updated_at = 7;</code>
+     * @return Whether the updatedAt field is set.
+     */
+    boolean hasUpdatedAt();
+    /**
+     * <code>.google.protobuf.Timestamp updated_at = 7;</code>
+     * @return The updatedAt.
+     */
+    google.protobuf.TimestampOuterClass.Timestamp getUpdatedAt();
+  }
+  /**
+   * Protobuf type {@code peers_touch.model.social.v1.StationModerationPolicy}
+   */
+  public  static final class StationModerationPolicy extends
+      com.google.protobuf.GeneratedMessageLite<
+          StationModerationPolicy, StationModerationPolicy.Builder> implements
+      // @@protoc_insertion_point(message_implements:peers_touch.model.social.v1.StationModerationPolicy)
+      StationModerationPolicyOrBuilder {
+    private StationModerationPolicy() {
+      stationDomain_ = "";
+      stationPeerId_ = "";
+      reason_ = "";
+      createdByActorId_ = "";
+    }
+    /**
+     * Protobuf enum {@code peers_touch.model.social.v1.StationModerationPolicy.Kind}
+     */
+    public enum Kind
+        implements com.google.protobuf.Internal.EnumLite {
+      /**
+       * <code>STATION_MODERATION_POLICY_UNSPECIFIED = 0;</code>
+       */
+      STATION_MODERATION_POLICY_UNSPECIFIED(0),
+      /**
+       * <code>STATION_MODERATION_POLICY_BLOCK = 1;</code>
+       */
+      STATION_MODERATION_POLICY_BLOCK(1),
+      UNRECOGNIZED(-1),
+      ;
+
+      /**
+       * <code>STATION_MODERATION_POLICY_UNSPECIFIED = 0;</code>
+       */
+      public static final int STATION_MODERATION_POLICY_UNSPECIFIED_VALUE = 0;
+      /**
+       * <code>STATION_MODERATION_POLICY_BLOCK = 1;</code>
+       */
+      public static final int STATION_MODERATION_POLICY_BLOCK_VALUE = 1;
+
+
+      @java.lang.Override
+      public final int getNumber() {
+        if (this == UNRECOGNIZED) {
+          throw new java.lang.IllegalArgumentException(
+              "Can't get the number of an unknown enum value.");
+        }
+        return value;
+      }
+
+      /**
+       * @param value The number of the enum to look for.
+       * @return The enum associated with the given number.
+       * @deprecated Use {@link #forNumber(int)} instead.
+       */
+      @java.lang.Deprecated
+      public static Kind valueOf(int value) {
+        return forNumber(value);
+      }
+
+      public static Kind forNumber(int value) {
+        switch (value) {
+          case 0: return STATION_MODERATION_POLICY_UNSPECIFIED;
+          case 1: return STATION_MODERATION_POLICY_BLOCK;
+          default: return null;
+        }
+      }
+
+      public static com.google.protobuf.Internal.EnumLiteMap<Kind>
+          internalGetValueMap() {
+        return internalValueMap;
+      }
+      private static final com.google.protobuf.Internal.EnumLiteMap<
+          Kind> internalValueMap =
+            new com.google.protobuf.Internal.EnumLiteMap<Kind>() {
+              @java.lang.Override
+              public Kind findValueByNumber(int number) {
+                return Kind.forNumber(number);
+              }
+            };
+
+      public static com.google.protobuf.Internal.EnumVerifier
+          internalGetVerifier() {
+        return KindVerifier.INSTANCE;
+      }
+
+      private static final class KindVerifier implements
+           com.google.protobuf.Internal.EnumVerifier {
+              static final com.google.protobuf.Internal.EnumVerifier
+                  INSTANCE = new KindVerifier();
+              @java.lang.Override
+              public boolean isInRange(int number) {
+                return Kind.forNumber(number) != null;
+              }
+            };
+
+      private final int value;
+
+      private Kind(int value) {
+        this.value = value;
+      }
+
+      // @@protoc_insertion_point(enum_scope:peers_touch.model.social.v1.StationModerationPolicy.Kind)
+    }
+
+    private int bitField0_;
+    public static final int STATION_DOMAIN_FIELD_NUMBER = 1;
+    private java.lang.String stationDomain_;
+    /**
+     * <code>string station_domain = 1;</code>
+     * @return The stationDomain.
+     */
+    @java.lang.Override
+    public java.lang.String getStationDomain() {
+      return stationDomain_;
+    }
+    /**
+     * <code>string station_domain = 1;</code>
+     * @return The bytes for stationDomain.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getStationDomainBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(stationDomain_);
+    }
+    /**
+     * <code>string station_domain = 1;</code>
+     * @param value The stationDomain to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setStationDomain(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      stationDomain_ = value;
+    }
+    /**
+     * <code>string station_domain = 1;</code>
+     */
+    private void clearStationDomain() {
+
+      stationDomain_ = getDefaultInstance().getStationDomain();
+    }
+    /**
+     * <code>string station_domain = 1;</code>
+     * @param value The bytes for stationDomain to set.
+     */
+    private void setStationDomainBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      stationDomain_ = value.toStringUtf8();
+
+    }
+
+    public static final int STATION_PEER_ID_FIELD_NUMBER = 2;
+    private java.lang.String stationPeerId_;
+    /**
+     * <code>string station_peer_id = 2;</code>
+     * @return The stationPeerId.
+     */
+    @java.lang.Override
+    public java.lang.String getStationPeerId() {
+      return stationPeerId_;
+    }
+    /**
+     * <code>string station_peer_id = 2;</code>
+     * @return The bytes for stationPeerId.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getStationPeerIdBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(stationPeerId_);
+    }
+    /**
+     * <code>string station_peer_id = 2;</code>
+     * @param value The stationPeerId to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setStationPeerId(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      stationPeerId_ = value;
+    }
+    /**
+     * <code>string station_peer_id = 2;</code>
+     */
+    private void clearStationPeerId() {
+
+      stationPeerId_ = getDefaultInstance().getStationPeerId();
+    }
+    /**
+     * <code>string station_peer_id = 2;</code>
+     * @param value The bytes for stationPeerId to set.
+     */
+    private void setStationPeerIdBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      stationPeerId_ = value.toStringUtf8();
+
+    }
+
+    public static final int KIND_FIELD_NUMBER = 3;
+    private int kind_;
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+     * @return The enum numeric value on the wire for kind.
+     */
+    @java.lang.Override
+    public int getKindValue() {
+      return kind_;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+     * @return The kind.
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind getKind() {
+      peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind result = peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind.forNumber(kind_);
+      return result == null ? peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind.UNRECOGNIZED : result;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+     * @param value The enum numeric value on the wire for kind to set.
+     * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+     */
+    private void setKindValue(int value) {
+        kind_ = value;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+     * @param value The kind to set.
+     */
+    private void setKind(peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind value) {
+      kind_ = value.getNumber();
+
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+     */
+    private void clearKind() {
+
+      kind_ = 0;
+    }
+
+    public static final int REASON_FIELD_NUMBER = 4;
+    private java.lang.String reason_;
+    /**
+     * <code>string reason = 4;</code>
+     * @return The reason.
+     */
+    @java.lang.Override
+    public java.lang.String getReason() {
+      return reason_;
+    }
+    /**
+     * <code>string reason = 4;</code>
+     * @return The bytes for reason.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getReasonBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(reason_);
+    }
+    /**
+     * <code>string reason = 4;</code>
+     * @param value The reason to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setReason(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      reason_ = value;
+    }
+    /**
+     * <code>string reason = 4;</code>
+     */
+    private void clearReason() {
+
+      reason_ = getDefaultInstance().getReason();
+    }
+    /**
+     * <code>string reason = 4;</code>
+     * @param value The bytes for reason to set.
+     */
+    private void setReasonBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      reason_ = value.toStringUtf8();
+
+    }
+
+    public static final int CREATED_BY_ACTOR_ID_FIELD_NUMBER = 5;
+    private java.lang.String createdByActorId_;
+    /**
+     * <code>string created_by_actor_id = 5;</code>
+     * @return The createdByActorId.
+     */
+    @java.lang.Override
+    public java.lang.String getCreatedByActorId() {
+      return createdByActorId_;
+    }
+    /**
+     * <code>string created_by_actor_id = 5;</code>
+     * @return The bytes for createdByActorId.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getCreatedByActorIdBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(createdByActorId_);
+    }
+    /**
+     * <code>string created_by_actor_id = 5;</code>
+     * @param value The createdByActorId to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setCreatedByActorId(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      createdByActorId_ = value;
+    }
+    /**
+     * <code>string created_by_actor_id = 5;</code>
+     */
+    private void clearCreatedByActorId() {
+
+      createdByActorId_ = getDefaultInstance().getCreatedByActorId();
+    }
+    /**
+     * <code>string created_by_actor_id = 5;</code>
+     * @param value The bytes for createdByActorId to set.
+     */
+    private void setCreatedByActorIdBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      createdByActorId_ = value.toStringUtf8();
+
+    }
+
+    public static final int CREATED_AT_FIELD_NUMBER = 6;
+    private google.protobuf.TimestampOuterClass.Timestamp createdAt_;
+    /**
+     * <code>.google.protobuf.Timestamp created_at = 6;</code>
+     */
+    @java.lang.Override
+    public boolean hasCreatedAt() {
+      return ((bitField0_ & 0x00000001) != 0);
+    }
+    /**
+     * <code>.google.protobuf.Timestamp created_at = 6;</code>
+     */
+    @java.lang.Override
+    public google.protobuf.TimestampOuterClass.Timestamp getCreatedAt() {
+      return createdAt_ == null ? google.protobuf.TimestampOuterClass.Timestamp.getDefaultInstance() : createdAt_;
+    }
+    /**
+     * <code>.google.protobuf.Timestamp created_at = 6;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setCreatedAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+      value.getClass();  // minimal bytecode null check
+      createdAt_ = value;
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.google.protobuf.Timestamp created_at = 6;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeCreatedAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+      value.getClass();  // minimal bytecode null check
+      if (createdAt_ != null &&
+          createdAt_ != google.protobuf.TimestampOuterClass.Timestamp.getDefaultInstance()) {
+        createdAt_ =
+          google.protobuf.TimestampOuterClass.Timestamp.newBuilder(createdAt_).mergeFrom(value).buildPartial();
+      } else {
+        createdAt_ = value;
+      }
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.google.protobuf.Timestamp created_at = 6;</code>
+     */
+    private void clearCreatedAt() {
+      createdAt_ = null;
+      bitField0_ = (bitField0_ & ~0x00000001);
+    }
+
+    public static final int UPDATED_AT_FIELD_NUMBER = 7;
+    private google.protobuf.TimestampOuterClass.Timestamp updatedAt_;
+    /**
+     * <code>.google.protobuf.Timestamp updated_at = 7;</code>
+     */
+    @java.lang.Override
+    public boolean hasUpdatedAt() {
+      return ((bitField0_ & 0x00000002) != 0);
+    }
+    /**
+     * <code>.google.protobuf.Timestamp updated_at = 7;</code>
+     */
+    @java.lang.Override
+    public google.protobuf.TimestampOuterClass.Timestamp getUpdatedAt() {
+      return updatedAt_ == null ? google.protobuf.TimestampOuterClass.Timestamp.getDefaultInstance() : updatedAt_;
+    }
+    /**
+     * <code>.google.protobuf.Timestamp updated_at = 7;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setUpdatedAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+      value.getClass();  // minimal bytecode null check
+      updatedAt_ = value;
+      bitField0_ |= 0x00000002;
+    }
+    /**
+     * <code>.google.protobuf.Timestamp updated_at = 7;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeUpdatedAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+      value.getClass();  // minimal bytecode null check
+      if (updatedAt_ != null &&
+          updatedAt_ != google.protobuf.TimestampOuterClass.Timestamp.getDefaultInstance()) {
+        updatedAt_ =
+          google.protobuf.TimestampOuterClass.Timestamp.newBuilder(updatedAt_).mergeFrom(value).buildPartial();
+      } else {
+        updatedAt_ = value;
+      }
+      bitField0_ |= 0x00000002;
+    }
+    /**
+     * <code>.google.protobuf.Timestamp updated_at = 7;</code>
+     */
+    private void clearUpdatedAt() {
+      updatedAt_ = null;
+      bitField0_ = (bitField0_ & ~0x00000002);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * Protobuf type {@code peers_touch.model.social.v1.StationModerationPolicy}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy, Builder> implements
+        // @@protoc_insertion_point(builder_implements:peers_touch.model.social.v1.StationModerationPolicy)
+        peers_touch.model.social.v1.PostOuterClass.StationModerationPolicyOrBuilder {
+      // Construct using peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>string station_domain = 1;</code>
+       * @return The stationDomain.
+       */
+      @java.lang.Override
+      public java.lang.String getStationDomain() {
+        return instance.getStationDomain();
+      }
+      /**
+       * <code>string station_domain = 1;</code>
+       * @return The bytes for stationDomain.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getStationDomainBytes() {
+        return instance.getStationDomainBytes();
+      }
+      /**
+       * <code>string station_domain = 1;</code>
+       * @param value The stationDomain to set.
+       * @return This builder for chaining.
+       */
+      public Builder setStationDomain(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setStationDomain(value);
+        return this;
+      }
+      /**
+       * <code>string station_domain = 1;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearStationDomain() {
+        copyOnWrite();
+        instance.clearStationDomain();
+        return this;
+      }
+      /**
+       * <code>string station_domain = 1;</code>
+       * @param value The bytes for stationDomain to set.
+       * @return This builder for chaining.
+       */
+      public Builder setStationDomainBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setStationDomainBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string station_peer_id = 2;</code>
+       * @return The stationPeerId.
+       */
+      @java.lang.Override
+      public java.lang.String getStationPeerId() {
+        return instance.getStationPeerId();
+      }
+      /**
+       * <code>string station_peer_id = 2;</code>
+       * @return The bytes for stationPeerId.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getStationPeerIdBytes() {
+        return instance.getStationPeerIdBytes();
+      }
+      /**
+       * <code>string station_peer_id = 2;</code>
+       * @param value The stationPeerId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setStationPeerId(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setStationPeerId(value);
+        return this;
+      }
+      /**
+       * <code>string station_peer_id = 2;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearStationPeerId() {
+        copyOnWrite();
+        instance.clearStationPeerId();
+        return this;
+      }
+      /**
+       * <code>string station_peer_id = 2;</code>
+       * @param value The bytes for stationPeerId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setStationPeerIdBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setStationPeerIdBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+       * @return The enum numeric value on the wire for kind.
+       */
+      @java.lang.Override
+      public int getKindValue() {
+        return instance.getKindValue();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+       * @param value The kind to set.
+       * @return This builder for chaining.
+       */
+      public Builder setKindValue(int value) {
+        copyOnWrite();
+        instance.setKindValue(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+       * @return The kind.
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind getKind() {
+        return instance.getKind();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+       * @param value The enum numeric value on the wire for kind to set.
+       * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+       * @return This builder for chaining.
+       */
+      public Builder setKind(peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind value) {
+        copyOnWrite();
+        instance.setKind(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearKind() {
+        copyOnWrite();
+        instance.clearKind();
+        return this;
+      }
+
+      /**
+       * <code>string reason = 4;</code>
+       * @return The reason.
+       */
+      @java.lang.Override
+      public java.lang.String getReason() {
+        return instance.getReason();
+      }
+      /**
+       * <code>string reason = 4;</code>
+       * @return The bytes for reason.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getReasonBytes() {
+        return instance.getReasonBytes();
+      }
+      /**
+       * <code>string reason = 4;</code>
+       * @param value The reason to set.
+       * @return This builder for chaining.
+       */
+      public Builder setReason(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setReason(value);
+        return this;
+      }
+      /**
+       * <code>string reason = 4;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearReason() {
+        copyOnWrite();
+        instance.clearReason();
+        return this;
+      }
+      /**
+       * <code>string reason = 4;</code>
+       * @param value The bytes for reason to set.
+       * @return This builder for chaining.
+       */
+      public Builder setReasonBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setReasonBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string created_by_actor_id = 5;</code>
+       * @return The createdByActorId.
+       */
+      @java.lang.Override
+      public java.lang.String getCreatedByActorId() {
+        return instance.getCreatedByActorId();
+      }
+      /**
+       * <code>string created_by_actor_id = 5;</code>
+       * @return The bytes for createdByActorId.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getCreatedByActorIdBytes() {
+        return instance.getCreatedByActorIdBytes();
+      }
+      /**
+       * <code>string created_by_actor_id = 5;</code>
+       * @param value The createdByActorId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setCreatedByActorId(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setCreatedByActorId(value);
+        return this;
+      }
+      /**
+       * <code>string created_by_actor_id = 5;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearCreatedByActorId() {
+        copyOnWrite();
+        instance.clearCreatedByActorId();
+        return this;
+      }
+      /**
+       * <code>string created_by_actor_id = 5;</code>
+       * @param value The bytes for createdByActorId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setCreatedByActorIdBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setCreatedByActorIdBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>.google.protobuf.Timestamp created_at = 6;</code>
+       */
+      @java.lang.Override
+      public boolean hasCreatedAt() {
+        return instance.hasCreatedAt();
+      }
+      /**
+       * <code>.google.protobuf.Timestamp created_at = 6;</code>
+       */
+      @java.lang.Override
+      public google.protobuf.TimestampOuterClass.Timestamp getCreatedAt() {
+        return instance.getCreatedAt();
+      }
+      /**
+       * <code>.google.protobuf.Timestamp created_at = 6;</code>
+       */
+      public Builder setCreatedAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+        copyOnWrite();
+        instance.setCreatedAt(value);
+        return this;
+        }
+      /**
+       * <code>.google.protobuf.Timestamp created_at = 6;</code>
+       */
+      public Builder setCreatedAt(
+          google.protobuf.TimestampOuterClass.Timestamp.Builder builderForValue) {
+        copyOnWrite();
+        instance.setCreatedAt(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.google.protobuf.Timestamp created_at = 6;</code>
+       */
+      public Builder mergeCreatedAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+        copyOnWrite();
+        instance.mergeCreatedAt(value);
+        return this;
+      }
+      /**
+       * <code>.google.protobuf.Timestamp created_at = 6;</code>
+       */
+      public Builder clearCreatedAt() {  copyOnWrite();
+        instance.clearCreatedAt();
+        return this;
+      }
+
+      /**
+       * <code>.google.protobuf.Timestamp updated_at = 7;</code>
+       */
+      @java.lang.Override
+      public boolean hasUpdatedAt() {
+        return instance.hasUpdatedAt();
+      }
+      /**
+       * <code>.google.protobuf.Timestamp updated_at = 7;</code>
+       */
+      @java.lang.Override
+      public google.protobuf.TimestampOuterClass.Timestamp getUpdatedAt() {
+        return instance.getUpdatedAt();
+      }
+      /**
+       * <code>.google.protobuf.Timestamp updated_at = 7;</code>
+       */
+      public Builder setUpdatedAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+        copyOnWrite();
+        instance.setUpdatedAt(value);
+        return this;
+        }
+      /**
+       * <code>.google.protobuf.Timestamp updated_at = 7;</code>
+       */
+      public Builder setUpdatedAt(
+          google.protobuf.TimestampOuterClass.Timestamp.Builder builderForValue) {
+        copyOnWrite();
+        instance.setUpdatedAt(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.google.protobuf.Timestamp updated_at = 7;</code>
+       */
+      public Builder mergeUpdatedAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+        copyOnWrite();
+        instance.mergeUpdatedAt(value);
+        return this;
+      }
+      /**
+       * <code>.google.protobuf.Timestamp updated_at = 7;</code>
+       */
+      public Builder clearUpdatedAt() {  copyOnWrite();
+        instance.clearUpdatedAt();
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.StationModerationPolicy)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"ThrowNull"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "bitField0_",
+              "stationDomain_",
+              "stationPeerId_",
+              "kind_",
+              "reason_",
+              "createdByActorId_",
+              "createdAt_",
+              "updatedAt_",
+            };
+            java.lang.String info =
+                "\u0000\u0007\u0000\u0001\u0001\u0007\u0007\u0000\u0000\u0000\u0001\u0208\u0002\u0208" +
+                "\u0003\f\u0004\u0208\u0005\u0208\u0006\u1009\u0000\u0007\u1009\u0001";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy> parser = PARSER;
+          if (parser == null) {
+            synchronized (peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+        }
+        case GET_MEMOIZED_IS_INITIALIZED: {
+          return (byte) 1;
+        }
+        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
+        // So it can do anything. Combine with default case for smaller codegen.
+        case SET_MEMOIZED_IS_INITIALIZED:
+      }
+      // Should never happen. Generates tight code to throw an exception.
+      throw null;
+    }
+
+
+    // @@protoc_insertion_point(class_scope:peers_touch.model.social.v1.StationModerationPolicy)
+    private static final peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy DEFAULT_INSTANCE;
+    static {
+      StationModerationPolicy defaultInstance = new StationModerationPolicy();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        StationModerationPolicy.class, defaultInstance);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<StationModerationPolicy> PARSER;
+
+    public static com.google.protobuf.Parser<StationModerationPolicy> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
+  public interface UpsertStationModerationPolicyRequestOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:peers_touch.model.social.v1.UpsertStationModerationPolicyRequest)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+     * @return Whether the policy field is set.
+     */
+    boolean hasPolicy();
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+     * @return The policy.
+     */
+    peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy getPolicy();
+  }
+  /**
+   * Protobuf type {@code peers_touch.model.social.v1.UpsertStationModerationPolicyRequest}
+   */
+  public  static final class UpsertStationModerationPolicyRequest extends
+      com.google.protobuf.GeneratedMessageLite<
+          UpsertStationModerationPolicyRequest, UpsertStationModerationPolicyRequest.Builder> implements
+      // @@protoc_insertion_point(message_implements:peers_touch.model.social.v1.UpsertStationModerationPolicyRequest)
+      UpsertStationModerationPolicyRequestOrBuilder {
+    private UpsertStationModerationPolicyRequest() {
+    }
+    private int bitField0_;
+    public static final int POLICY_FIELD_NUMBER = 1;
+    private peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy policy_;
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+     */
+    @java.lang.Override
+    public boolean hasPolicy() {
+      return ((bitField0_ & 0x00000001) != 0);
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy getPolicy() {
+      return policy_ == null ? peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.getDefaultInstance() : policy_;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setPolicy(peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy value) {
+      value.getClass();  // minimal bytecode null check
+      policy_ = value;
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergePolicy(peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy value) {
+      value.getClass();  // minimal bytecode null check
+      if (policy_ != null &&
+          policy_ != peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.getDefaultInstance()) {
+        policy_ =
+          peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.newBuilder(policy_).mergeFrom(value).buildPartial();
+      } else {
+        policy_ = value;
+      }
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+     */
+    private void clearPolicy() {
+      policy_ = null;
+      bitField0_ = (bitField0_ & ~0x00000001);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * Protobuf type {@code peers_touch.model.social.v1.UpsertStationModerationPolicyRequest}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest, Builder> implements
+        // @@protoc_insertion_point(builder_implements:peers_touch.model.social.v1.UpsertStationModerationPolicyRequest)
+        peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequestOrBuilder {
+      // Construct using peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+       */
+      @java.lang.Override
+      public boolean hasPolicy() {
+        return instance.hasPolicy();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy getPolicy() {
+        return instance.getPolicy();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+       */
+      public Builder setPolicy(peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy value) {
+        copyOnWrite();
+        instance.setPolicy(value);
+        return this;
+        }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+       */
+      public Builder setPolicy(
+          peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Builder builderForValue) {
+        copyOnWrite();
+        instance.setPolicy(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+       */
+      public Builder mergePolicy(peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy value) {
+        copyOnWrite();
+        instance.mergePolicy(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+       */
+      public Builder clearPolicy() {  copyOnWrite();
+        instance.clearPolicy();
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.UpsertStationModerationPolicyRequest)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"ThrowNull"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "bitField0_",
+              "policy_",
+            };
+            java.lang.String info =
+                "\u0000\u0001\u0000\u0001\u0001\u0001\u0001\u0000\u0000\u0000\u0001\u1009\u0000";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest> parser = PARSER;
+          if (parser == null) {
+            synchronized (peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+        }
+        case GET_MEMOIZED_IS_INITIALIZED: {
+          return (byte) 1;
+        }
+        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
+        // So it can do anything. Combine with default case for smaller codegen.
+        case SET_MEMOIZED_IS_INITIALIZED:
+      }
+      // Should never happen. Generates tight code to throw an exception.
+      throw null;
+    }
+
+
+    // @@protoc_insertion_point(class_scope:peers_touch.model.social.v1.UpsertStationModerationPolicyRequest)
+    private static final peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest DEFAULT_INSTANCE;
+    static {
+      UpsertStationModerationPolicyRequest defaultInstance = new UpsertStationModerationPolicyRequest();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        UpsertStationModerationPolicyRequest.class, defaultInstance);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyRequest getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<UpsertStationModerationPolicyRequest> PARSER;
+
+    public static com.google.protobuf.Parser<UpsertStationModerationPolicyRequest> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
+  public interface UpsertStationModerationPolicyResponseOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:peers_touch.model.social.v1.UpsertStationModerationPolicyResponse)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+     * @return Whether the policy field is set.
+     */
+    boolean hasPolicy();
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+     * @return The policy.
+     */
+    peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy getPolicy();
+  }
+  /**
+   * Protobuf type {@code peers_touch.model.social.v1.UpsertStationModerationPolicyResponse}
+   */
+  public  static final class UpsertStationModerationPolicyResponse extends
+      com.google.protobuf.GeneratedMessageLite<
+          UpsertStationModerationPolicyResponse, UpsertStationModerationPolicyResponse.Builder> implements
+      // @@protoc_insertion_point(message_implements:peers_touch.model.social.v1.UpsertStationModerationPolicyResponse)
+      UpsertStationModerationPolicyResponseOrBuilder {
+    private UpsertStationModerationPolicyResponse() {
+    }
+    private int bitField0_;
+    public static final int POLICY_FIELD_NUMBER = 1;
+    private peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy policy_;
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+     */
+    @java.lang.Override
+    public boolean hasPolicy() {
+      return ((bitField0_ & 0x00000001) != 0);
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy getPolicy() {
+      return policy_ == null ? peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.getDefaultInstance() : policy_;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setPolicy(peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy value) {
+      value.getClass();  // minimal bytecode null check
+      policy_ = value;
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergePolicy(peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy value) {
+      value.getClass();  // minimal bytecode null check
+      if (policy_ != null &&
+          policy_ != peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.getDefaultInstance()) {
+        policy_ =
+          peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.newBuilder(policy_).mergeFrom(value).buildPartial();
+      } else {
+        policy_ = value;
+      }
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+     */
+    private void clearPolicy() {
+      policy_ = null;
+      bitField0_ = (bitField0_ & ~0x00000001);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * Protobuf type {@code peers_touch.model.social.v1.UpsertStationModerationPolicyResponse}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse, Builder> implements
+        // @@protoc_insertion_point(builder_implements:peers_touch.model.social.v1.UpsertStationModerationPolicyResponse)
+        peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponseOrBuilder {
+      // Construct using peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+       */
+      @java.lang.Override
+      public boolean hasPolicy() {
+        return instance.hasPolicy();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy getPolicy() {
+        return instance.getPolicy();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+       */
+      public Builder setPolicy(peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy value) {
+        copyOnWrite();
+        instance.setPolicy(value);
+        return this;
+        }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+       */
+      public Builder setPolicy(
+          peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Builder builderForValue) {
+        copyOnWrite();
+        instance.setPolicy(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+       */
+      public Builder mergePolicy(peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy value) {
+        copyOnWrite();
+        instance.mergePolicy(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy policy = 1;</code>
+       */
+      public Builder clearPolicy() {  copyOnWrite();
+        instance.clearPolicy();
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.UpsertStationModerationPolicyResponse)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"ThrowNull"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "bitField0_",
+              "policy_",
+            };
+            java.lang.String info =
+                "\u0000\u0001\u0000\u0001\u0001\u0001\u0001\u0000\u0000\u0000\u0001\u1009\u0000";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse> parser = PARSER;
+          if (parser == null) {
+            synchronized (peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+        }
+        case GET_MEMOIZED_IS_INITIALIZED: {
+          return (byte) 1;
+        }
+        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
+        // So it can do anything. Combine with default case for smaller codegen.
+        case SET_MEMOIZED_IS_INITIALIZED:
+      }
+      // Should never happen. Generates tight code to throw an exception.
+      throw null;
+    }
+
+
+    // @@protoc_insertion_point(class_scope:peers_touch.model.social.v1.UpsertStationModerationPolicyResponse)
+    private static final peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse DEFAULT_INSTANCE;
+    static {
+      UpsertStationModerationPolicyResponse defaultInstance = new UpsertStationModerationPolicyResponse();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        UpsertStationModerationPolicyResponse.class, defaultInstance);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.UpsertStationModerationPolicyResponse getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<UpsertStationModerationPolicyResponse> PARSER;
+
+    public static com.google.protobuf.Parser<UpsertStationModerationPolicyResponse> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
+  public interface DeleteStationModerationPolicyRequestOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:peers_touch.model.social.v1.DeleteStationModerationPolicyRequest)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>string station_domain = 1;</code>
+     * @return The stationDomain.
+     */
+    java.lang.String getStationDomain();
+    /**
+     * <code>string station_domain = 1;</code>
+     * @return The bytes for stationDomain.
+     */
+    com.google.protobuf.ByteString
+        getStationDomainBytes();
+
+    /**
+     * <code>string station_peer_id = 2;</code>
+     * @return The stationPeerId.
+     */
+    java.lang.String getStationPeerId();
+    /**
+     * <code>string station_peer_id = 2;</code>
+     * @return The bytes for stationPeerId.
+     */
+    com.google.protobuf.ByteString
+        getStationPeerIdBytes();
+
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+     * @return The enum numeric value on the wire for kind.
+     */
+    int getKindValue();
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+     * @return The kind.
+     */
+    peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind getKind();
+  }
+  /**
+   * Protobuf type {@code peers_touch.model.social.v1.DeleteStationModerationPolicyRequest}
+   */
+  public  static final class DeleteStationModerationPolicyRequest extends
+      com.google.protobuf.GeneratedMessageLite<
+          DeleteStationModerationPolicyRequest, DeleteStationModerationPolicyRequest.Builder> implements
+      // @@protoc_insertion_point(message_implements:peers_touch.model.social.v1.DeleteStationModerationPolicyRequest)
+      DeleteStationModerationPolicyRequestOrBuilder {
+    private DeleteStationModerationPolicyRequest() {
+      stationDomain_ = "";
+      stationPeerId_ = "";
+    }
+    public static final int STATION_DOMAIN_FIELD_NUMBER = 1;
+    private java.lang.String stationDomain_;
+    /**
+     * <code>string station_domain = 1;</code>
+     * @return The stationDomain.
+     */
+    @java.lang.Override
+    public java.lang.String getStationDomain() {
+      return stationDomain_;
+    }
+    /**
+     * <code>string station_domain = 1;</code>
+     * @return The bytes for stationDomain.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getStationDomainBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(stationDomain_);
+    }
+    /**
+     * <code>string station_domain = 1;</code>
+     * @param value The stationDomain to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setStationDomain(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      stationDomain_ = value;
+    }
+    /**
+     * <code>string station_domain = 1;</code>
+     */
+    private void clearStationDomain() {
+
+      stationDomain_ = getDefaultInstance().getStationDomain();
+    }
+    /**
+     * <code>string station_domain = 1;</code>
+     * @param value The bytes for stationDomain to set.
+     */
+    private void setStationDomainBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      stationDomain_ = value.toStringUtf8();
+
+    }
+
+    public static final int STATION_PEER_ID_FIELD_NUMBER = 2;
+    private java.lang.String stationPeerId_;
+    /**
+     * <code>string station_peer_id = 2;</code>
+     * @return The stationPeerId.
+     */
+    @java.lang.Override
+    public java.lang.String getStationPeerId() {
+      return stationPeerId_;
+    }
+    /**
+     * <code>string station_peer_id = 2;</code>
+     * @return The bytes for stationPeerId.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getStationPeerIdBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(stationPeerId_);
+    }
+    /**
+     * <code>string station_peer_id = 2;</code>
+     * @param value The stationPeerId to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setStationPeerId(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      stationPeerId_ = value;
+    }
+    /**
+     * <code>string station_peer_id = 2;</code>
+     */
+    private void clearStationPeerId() {
+
+      stationPeerId_ = getDefaultInstance().getStationPeerId();
+    }
+    /**
+     * <code>string station_peer_id = 2;</code>
+     * @param value The bytes for stationPeerId to set.
+     */
+    private void setStationPeerIdBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      stationPeerId_ = value.toStringUtf8();
+
+    }
+
+    public static final int KIND_FIELD_NUMBER = 3;
+    private int kind_;
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+     * @return The enum numeric value on the wire for kind.
+     */
+    @java.lang.Override
+    public int getKindValue() {
+      return kind_;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+     * @return The kind.
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind getKind() {
+      peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind result = peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind.forNumber(kind_);
+      return result == null ? peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind.UNRECOGNIZED : result;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+     * @param value The enum numeric value on the wire for kind to set.
+     * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+     */
+    private void setKindValue(int value) {
+        kind_ = value;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+     * @param value The kind to set.
+     */
+    private void setKind(peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind value) {
+      kind_ = value.getNumber();
+
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+     */
+    private void clearKind() {
+
+      kind_ = 0;
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * Protobuf type {@code peers_touch.model.social.v1.DeleteStationModerationPolicyRequest}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest, Builder> implements
+        // @@protoc_insertion_point(builder_implements:peers_touch.model.social.v1.DeleteStationModerationPolicyRequest)
+        peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequestOrBuilder {
+      // Construct using peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>string station_domain = 1;</code>
+       * @return The stationDomain.
+       */
+      @java.lang.Override
+      public java.lang.String getStationDomain() {
+        return instance.getStationDomain();
+      }
+      /**
+       * <code>string station_domain = 1;</code>
+       * @return The bytes for stationDomain.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getStationDomainBytes() {
+        return instance.getStationDomainBytes();
+      }
+      /**
+       * <code>string station_domain = 1;</code>
+       * @param value The stationDomain to set.
+       * @return This builder for chaining.
+       */
+      public Builder setStationDomain(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setStationDomain(value);
+        return this;
+      }
+      /**
+       * <code>string station_domain = 1;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearStationDomain() {
+        copyOnWrite();
+        instance.clearStationDomain();
+        return this;
+      }
+      /**
+       * <code>string station_domain = 1;</code>
+       * @param value The bytes for stationDomain to set.
+       * @return This builder for chaining.
+       */
+      public Builder setStationDomainBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setStationDomainBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string station_peer_id = 2;</code>
+       * @return The stationPeerId.
+       */
+      @java.lang.Override
+      public java.lang.String getStationPeerId() {
+        return instance.getStationPeerId();
+      }
+      /**
+       * <code>string station_peer_id = 2;</code>
+       * @return The bytes for stationPeerId.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getStationPeerIdBytes() {
+        return instance.getStationPeerIdBytes();
+      }
+      /**
+       * <code>string station_peer_id = 2;</code>
+       * @param value The stationPeerId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setStationPeerId(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setStationPeerId(value);
+        return this;
+      }
+      /**
+       * <code>string station_peer_id = 2;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearStationPeerId() {
+        copyOnWrite();
+        instance.clearStationPeerId();
+        return this;
+      }
+      /**
+       * <code>string station_peer_id = 2;</code>
+       * @param value The bytes for stationPeerId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setStationPeerIdBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setStationPeerIdBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+       * @return The enum numeric value on the wire for kind.
+       */
+      @java.lang.Override
+      public int getKindValue() {
+        return instance.getKindValue();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+       * @param value The kind to set.
+       * @return This builder for chaining.
+       */
+      public Builder setKindValue(int value) {
+        copyOnWrite();
+        instance.setKindValue(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+       * @return The kind.
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind getKind() {
+        return instance.getKind();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+       * @param value The enum numeric value on the wire for kind to set.
+       * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+       * @return This builder for chaining.
+       */
+      public Builder setKind(peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind value) {
+        copyOnWrite();
+        instance.setKind(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 3;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearKind() {
+        copyOnWrite();
+        instance.clearKind();
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.DeleteStationModerationPolicyRequest)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"ThrowNull"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "stationDomain_",
+              "stationPeerId_",
+              "kind_",
+            };
+            java.lang.String info =
+                "\u0000\u0003\u0000\u0000\u0001\u0003\u0003\u0000\u0000\u0000\u0001\u0208\u0002\u0208" +
+                "\u0003\f";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest> parser = PARSER;
+          if (parser == null) {
+            synchronized (peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+        }
+        case GET_MEMOIZED_IS_INITIALIZED: {
+          return (byte) 1;
+        }
+        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
+        // So it can do anything. Combine with default case for smaller codegen.
+        case SET_MEMOIZED_IS_INITIALIZED:
+      }
+      // Should never happen. Generates tight code to throw an exception.
+      throw null;
+    }
+
+
+    // @@protoc_insertion_point(class_scope:peers_touch.model.social.v1.DeleteStationModerationPolicyRequest)
+    private static final peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest DEFAULT_INSTANCE;
+    static {
+      DeleteStationModerationPolicyRequest defaultInstance = new DeleteStationModerationPolicyRequest();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        DeleteStationModerationPolicyRequest.class, defaultInstance);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyRequest getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<DeleteStationModerationPolicyRequest> PARSER;
+
+    public static com.google.protobuf.Parser<DeleteStationModerationPolicyRequest> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
+  public interface DeleteStationModerationPolicyResponseOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:peers_touch.model.social.v1.DeleteStationModerationPolicyResponse)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>bool success = 1;</code>
+     * @return The success.
+     */
+    boolean getSuccess();
+  }
+  /**
+   * Protobuf type {@code peers_touch.model.social.v1.DeleteStationModerationPolicyResponse}
+   */
+  public  static final class DeleteStationModerationPolicyResponse extends
+      com.google.protobuf.GeneratedMessageLite<
+          DeleteStationModerationPolicyResponse, DeleteStationModerationPolicyResponse.Builder> implements
+      // @@protoc_insertion_point(message_implements:peers_touch.model.social.v1.DeleteStationModerationPolicyResponse)
+      DeleteStationModerationPolicyResponseOrBuilder {
+    private DeleteStationModerationPolicyResponse() {
+    }
+    public static final int SUCCESS_FIELD_NUMBER = 1;
+    private boolean success_;
+    /**
+     * <code>bool success = 1;</code>
+     * @return The success.
+     */
+    @java.lang.Override
+    public boolean getSuccess() {
+      return success_;
+    }
+    /**
+     * <code>bool success = 1;</code>
+     * @param value The success to set.
+     */
+    private void setSuccess(boolean value) {
+
+      success_ = value;
+    }
+    /**
+     * <code>bool success = 1;</code>
+     */
+    private void clearSuccess() {
+
+      success_ = false;
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * Protobuf type {@code peers_touch.model.social.v1.DeleteStationModerationPolicyResponse}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse, Builder> implements
+        // @@protoc_insertion_point(builder_implements:peers_touch.model.social.v1.DeleteStationModerationPolicyResponse)
+        peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponseOrBuilder {
+      // Construct using peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>bool success = 1;</code>
+       * @return The success.
+       */
+      @java.lang.Override
+      public boolean getSuccess() {
+        return instance.getSuccess();
+      }
+      /**
+       * <code>bool success = 1;</code>
+       * @param value The success to set.
+       * @return This builder for chaining.
+       */
+      public Builder setSuccess(boolean value) {
+        copyOnWrite();
+        instance.setSuccess(value);
+        return this;
+      }
+      /**
+       * <code>bool success = 1;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearSuccess() {
+        copyOnWrite();
+        instance.clearSuccess();
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.DeleteStationModerationPolicyResponse)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"ThrowNull"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "success_",
+            };
+            java.lang.String info =
+                "\u0000\u0001\u0000\u0000\u0001\u0001\u0001\u0000\u0000\u0000\u0001\u0007";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse> parser = PARSER;
+          if (parser == null) {
+            synchronized (peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+        }
+        case GET_MEMOIZED_IS_INITIALIZED: {
+          return (byte) 1;
+        }
+        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
+        // So it can do anything. Combine with default case for smaller codegen.
+        case SET_MEMOIZED_IS_INITIALIZED:
+      }
+      // Should never happen. Generates tight code to throw an exception.
+      throw null;
+    }
+
+
+    // @@protoc_insertion_point(class_scope:peers_touch.model.social.v1.DeleteStationModerationPolicyResponse)
+    private static final peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse DEFAULT_INSTANCE;
+    static {
+      DeleteStationModerationPolicyResponse defaultInstance = new DeleteStationModerationPolicyResponse();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        DeleteStationModerationPolicyResponse.class, defaultInstance);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.DeleteStationModerationPolicyResponse getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<DeleteStationModerationPolicyResponse> PARSER;
+
+    public static com.google.protobuf.Parser<DeleteStationModerationPolicyResponse> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
+  public interface ListStationModerationPoliciesRequestOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:peers_touch.model.social.v1.ListStationModerationPoliciesRequest)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 1;</code>
+     * @return The enum numeric value on the wire for kind.
+     */
+    int getKindValue();
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 1;</code>
+     * @return The kind.
+     */
+    peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind getKind();
+
+    /**
+     * <code>string cursor = 2;</code>
+     * @return The cursor.
+     */
+    java.lang.String getCursor();
+    /**
+     * <code>string cursor = 2;</code>
+     * @return The bytes for cursor.
+     */
+    com.google.protobuf.ByteString
+        getCursorBytes();
+
+    /**
+     * <code>int32 limit = 3;</code>
+     * @return The limit.
+     */
+    int getLimit();
+  }
+  /**
+   * Protobuf type {@code peers_touch.model.social.v1.ListStationModerationPoliciesRequest}
+   */
+  public  static final class ListStationModerationPoliciesRequest extends
+      com.google.protobuf.GeneratedMessageLite<
+          ListStationModerationPoliciesRequest, ListStationModerationPoliciesRequest.Builder> implements
+      // @@protoc_insertion_point(message_implements:peers_touch.model.social.v1.ListStationModerationPoliciesRequest)
+      ListStationModerationPoliciesRequestOrBuilder {
+    private ListStationModerationPoliciesRequest() {
+      cursor_ = "";
+    }
+    public static final int KIND_FIELD_NUMBER = 1;
+    private int kind_;
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 1;</code>
+     * @return The enum numeric value on the wire for kind.
+     */
+    @java.lang.Override
+    public int getKindValue() {
+      return kind_;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 1;</code>
+     * @return The kind.
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind getKind() {
+      peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind result = peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind.forNumber(kind_);
+      return result == null ? peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind.UNRECOGNIZED : result;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 1;</code>
+     * @param value The enum numeric value on the wire for kind to set.
+     * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+     */
+    private void setKindValue(int value) {
+        kind_ = value;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 1;</code>
+     * @param value The kind to set.
+     */
+    private void setKind(peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind value) {
+      kind_ = value.getNumber();
+
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 1;</code>
+     */
+    private void clearKind() {
+
+      kind_ = 0;
+    }
+
+    public static final int CURSOR_FIELD_NUMBER = 2;
+    private java.lang.String cursor_;
+    /**
+     * <code>string cursor = 2;</code>
+     * @return The cursor.
+     */
+    @java.lang.Override
+    public java.lang.String getCursor() {
+      return cursor_;
+    }
+    /**
+     * <code>string cursor = 2;</code>
+     * @return The bytes for cursor.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getCursorBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(cursor_);
+    }
+    /**
+     * <code>string cursor = 2;</code>
+     * @param value The cursor to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setCursor(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      cursor_ = value;
+    }
+    /**
+     * <code>string cursor = 2;</code>
+     */
+    private void clearCursor() {
+
+      cursor_ = getDefaultInstance().getCursor();
+    }
+    /**
+     * <code>string cursor = 2;</code>
+     * @param value The bytes for cursor to set.
+     */
+    private void setCursorBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      cursor_ = value.toStringUtf8();
+
+    }
+
+    public static final int LIMIT_FIELD_NUMBER = 3;
+    private int limit_;
+    /**
+     * <code>int32 limit = 3;</code>
+     * @return The limit.
+     */
+    @java.lang.Override
+    public int getLimit() {
+      return limit_;
+    }
+    /**
+     * <code>int32 limit = 3;</code>
+     * @param value The limit to set.
+     */
+    private void setLimit(int value) {
+
+      limit_ = value;
+    }
+    /**
+     * <code>int32 limit = 3;</code>
+     */
+    private void clearLimit() {
+
+      limit_ = 0;
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * Protobuf type {@code peers_touch.model.social.v1.ListStationModerationPoliciesRequest}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest, Builder> implements
+        // @@protoc_insertion_point(builder_implements:peers_touch.model.social.v1.ListStationModerationPoliciesRequest)
+        peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequestOrBuilder {
+      // Construct using peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 1;</code>
+       * @return The enum numeric value on the wire for kind.
+       */
+      @java.lang.Override
+      public int getKindValue() {
+        return instance.getKindValue();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 1;</code>
+       * @param value The kind to set.
+       * @return This builder for chaining.
+       */
+      public Builder setKindValue(int value) {
+        copyOnWrite();
+        instance.setKindValue(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 1;</code>
+       * @return The kind.
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind getKind() {
+        return instance.getKind();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 1;</code>
+       * @param value The enum numeric value on the wire for kind to set.
+       * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+       * @return This builder for chaining.
+       */
+      public Builder setKind(peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Kind value) {
+        copyOnWrite();
+        instance.setKind(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.StationModerationPolicy.Kind kind = 1;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearKind() {
+        copyOnWrite();
+        instance.clearKind();
+        return this;
+      }
+
+      /**
+       * <code>string cursor = 2;</code>
+       * @return The cursor.
+       */
+      @java.lang.Override
+      public java.lang.String getCursor() {
+        return instance.getCursor();
+      }
+      /**
+       * <code>string cursor = 2;</code>
+       * @return The bytes for cursor.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getCursorBytes() {
+        return instance.getCursorBytes();
+      }
+      /**
+       * <code>string cursor = 2;</code>
+       * @param value The cursor to set.
+       * @return This builder for chaining.
+       */
+      public Builder setCursor(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setCursor(value);
+        return this;
+      }
+      /**
+       * <code>string cursor = 2;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearCursor() {
+        copyOnWrite();
+        instance.clearCursor();
+        return this;
+      }
+      /**
+       * <code>string cursor = 2;</code>
+       * @param value The bytes for cursor to set.
+       * @return This builder for chaining.
+       */
+      public Builder setCursorBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setCursorBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>int32 limit = 3;</code>
+       * @return The limit.
+       */
+      @java.lang.Override
+      public int getLimit() {
+        return instance.getLimit();
+      }
+      /**
+       * <code>int32 limit = 3;</code>
+       * @param value The limit to set.
+       * @return This builder for chaining.
+       */
+      public Builder setLimit(int value) {
+        copyOnWrite();
+        instance.setLimit(value);
+        return this;
+      }
+      /**
+       * <code>int32 limit = 3;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearLimit() {
+        copyOnWrite();
+        instance.clearLimit();
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.ListStationModerationPoliciesRequest)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"ThrowNull"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "kind_",
+              "cursor_",
+              "limit_",
+            };
+            java.lang.String info =
+                "\u0000\u0003\u0000\u0000\u0001\u0003\u0003\u0000\u0000\u0000\u0001\f\u0002\u0208" +
+                "\u0003\u0004";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest> parser = PARSER;
+          if (parser == null) {
+            synchronized (peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+        }
+        case GET_MEMOIZED_IS_INITIALIZED: {
+          return (byte) 1;
+        }
+        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
+        // So it can do anything. Combine with default case for smaller codegen.
+        case SET_MEMOIZED_IS_INITIALIZED:
+      }
+      // Should never happen. Generates tight code to throw an exception.
+      throw null;
+    }
+
+
+    // @@protoc_insertion_point(class_scope:peers_touch.model.social.v1.ListStationModerationPoliciesRequest)
+    private static final peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest DEFAULT_INSTANCE;
+    static {
+      ListStationModerationPoliciesRequest defaultInstance = new ListStationModerationPoliciesRequest();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        ListStationModerationPoliciesRequest.class, defaultInstance);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesRequest getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<ListStationModerationPoliciesRequest> PARSER;
+
+    public static com.google.protobuf.Parser<ListStationModerationPoliciesRequest> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
+  public interface ListStationModerationPoliciesResponseOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:peers_touch.model.social.v1.ListStationModerationPoliciesResponse)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+     */
+    java.util.List<peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy>
+        getPoliciesList();
+    /**
+     * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+     */
+    peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy getPolicies(int index);
+    /**
+     * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+     */
+    int getPoliciesCount();
+
+    /**
+     * <code>string next_cursor = 2;</code>
+     * @return The nextCursor.
+     */
+    java.lang.String getNextCursor();
+    /**
+     * <code>string next_cursor = 2;</code>
+     * @return The bytes for nextCursor.
+     */
+    com.google.protobuf.ByteString
+        getNextCursorBytes();
+
+    /**
+     * <code>bool has_more = 3;</code>
+     * @return The hasMore.
+     */
+    boolean getHasMore();
+  }
+  /**
+   * Protobuf type {@code peers_touch.model.social.v1.ListStationModerationPoliciesResponse}
+   */
+  public  static final class ListStationModerationPoliciesResponse extends
+      com.google.protobuf.GeneratedMessageLite<
+          ListStationModerationPoliciesResponse, ListStationModerationPoliciesResponse.Builder> implements
+      // @@protoc_insertion_point(message_implements:peers_touch.model.social.v1.ListStationModerationPoliciesResponse)
+      ListStationModerationPoliciesResponseOrBuilder {
+    private ListStationModerationPoliciesResponse() {
+      policies_ = emptyProtobufList();
+      nextCursor_ = "";
+    }
+    public static final int POLICIES_FIELD_NUMBER = 1;
+    private com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy> policies_;
+    /**
+     * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+     */
+    @java.lang.Override
+    public java.util.List<peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy> getPoliciesList() {
+      return policies_;
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+     */
+    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.StationModerationPolicyOrBuilder>
+        getPoliciesOrBuilderList() {
+      return policies_;
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+     */
+    @java.lang.Override
+    public int getPoliciesCount() {
+      return policies_.size();
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy getPolicies(int index) {
+      return policies_.get(index);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+     */
+    public peers_touch.model.social.v1.PostOuterClass.StationModerationPolicyOrBuilder getPoliciesOrBuilder(
+        int index) {
+      return policies_.get(index);
+    }
+    private void ensurePoliciesIsMutable() {
+      com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy> tmp = policies_;
+      if (!tmp.isModifiable()) {
+        policies_ =
+            com.google.protobuf.GeneratedMessageLite.mutableCopy(tmp);
+       }
+    }
+
+    /**
+     * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setPolicies(
+        int index, peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy value) {
+      value.getClass();  // minimal bytecode null check
+      ensurePoliciesIsMutable();
+      policies_.set(index, value);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addPolicies(peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy value) {
+      value.getClass();  // minimal bytecode null check
+      ensurePoliciesIsMutable();
+      policies_.add(value);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addPolicies(
+        int index, peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy value) {
+      value.getClass();  // minimal bytecode null check
+      ensurePoliciesIsMutable();
+      policies_.add(index, value);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+     */
+    private void addAllPolicies(
+        java.lang.Iterable<? extends peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy> values) {
+      ensurePoliciesIsMutable();
+      com.google.protobuf.AbstractMessageLite.addAll(
+          values, policies_);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+     */
+    private void clearPolicies() {
+      policies_ = emptyProtobufList();
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+     */
+    private void removePolicies(int index) {
+      ensurePoliciesIsMutable();
+      policies_.remove(index);
+    }
+
+    public static final int NEXT_CURSOR_FIELD_NUMBER = 2;
+    private java.lang.String nextCursor_;
+    /**
+     * <code>string next_cursor = 2;</code>
+     * @return The nextCursor.
+     */
+    @java.lang.Override
+    public java.lang.String getNextCursor() {
+      return nextCursor_;
+    }
+    /**
+     * <code>string next_cursor = 2;</code>
+     * @return The bytes for nextCursor.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getNextCursorBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(nextCursor_);
+    }
+    /**
+     * <code>string next_cursor = 2;</code>
+     * @param value The nextCursor to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setNextCursor(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      nextCursor_ = value;
+    }
+    /**
+     * <code>string next_cursor = 2;</code>
+     */
+    private void clearNextCursor() {
+
+      nextCursor_ = getDefaultInstance().getNextCursor();
+    }
+    /**
+     * <code>string next_cursor = 2;</code>
+     * @param value The bytes for nextCursor to set.
+     */
+    private void setNextCursorBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      nextCursor_ = value.toStringUtf8();
+
+    }
+
+    public static final int HAS_MORE_FIELD_NUMBER = 3;
+    private boolean hasMore_;
+    /**
+     * <code>bool has_more = 3;</code>
+     * @return The hasMore.
+     */
+    @java.lang.Override
+    public boolean getHasMore() {
+      return hasMore_;
+    }
+    /**
+     * <code>bool has_more = 3;</code>
+     * @param value The hasMore to set.
+     */
+    private void setHasMore(boolean value) {
+
+      hasMore_ = value;
+    }
+    /**
+     * <code>bool has_more = 3;</code>
+     */
+    private void clearHasMore() {
+
+      hasMore_ = false;
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * Protobuf type {@code peers_touch.model.social.v1.ListStationModerationPoliciesResponse}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse, Builder> implements
+        // @@protoc_insertion_point(builder_implements:peers_touch.model.social.v1.ListStationModerationPoliciesResponse)
+        peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponseOrBuilder {
+      // Construct using peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+       */
+      @java.lang.Override
+      public java.util.List<peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy> getPoliciesList() {
+        return java.util.Collections.unmodifiableList(
+            instance.getPoliciesList());
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+       */
+      @java.lang.Override
+      public int getPoliciesCount() {
+        return instance.getPoliciesCount();
+      }/**
+       * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy getPolicies(int index) {
+        return instance.getPolicies(index);
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+       */
+      public Builder setPolicies(
+          int index, peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy value) {
+        copyOnWrite();
+        instance.setPolicies(index, value);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+       */
+      public Builder setPolicies(
+          int index, peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Builder builderForValue) {
+        copyOnWrite();
+        instance.setPolicies(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+       */
+      public Builder addPolicies(peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy value) {
+        copyOnWrite();
+        instance.addPolicies(value);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+       */
+      public Builder addPolicies(
+          int index, peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy value) {
+        copyOnWrite();
+        instance.addPolicies(index, value);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+       */
+      public Builder addPolicies(
+          peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Builder builderForValue) {
+        copyOnWrite();
+        instance.addPolicies(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+       */
+      public Builder addPolicies(
+          int index, peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.Builder builderForValue) {
+        copyOnWrite();
+        instance.addPolicies(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+       */
+      public Builder addAllPolicies(
+          java.lang.Iterable<? extends peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy> values) {
+        copyOnWrite();
+        instance.addAllPolicies(values);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+       */
+      public Builder clearPolicies() {
+        copyOnWrite();
+        instance.clearPolicies();
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.StationModerationPolicy policies = 1;</code>
+       */
+      public Builder removePolicies(int index) {
+        copyOnWrite();
+        instance.removePolicies(index);
+        return this;
+      }
+
+      /**
+       * <code>string next_cursor = 2;</code>
+       * @return The nextCursor.
+       */
+      @java.lang.Override
+      public java.lang.String getNextCursor() {
+        return instance.getNextCursor();
+      }
+      /**
+       * <code>string next_cursor = 2;</code>
+       * @return The bytes for nextCursor.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getNextCursorBytes() {
+        return instance.getNextCursorBytes();
+      }
+      /**
+       * <code>string next_cursor = 2;</code>
+       * @param value The nextCursor to set.
+       * @return This builder for chaining.
+       */
+      public Builder setNextCursor(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setNextCursor(value);
+        return this;
+      }
+      /**
+       * <code>string next_cursor = 2;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearNextCursor() {
+        copyOnWrite();
+        instance.clearNextCursor();
+        return this;
+      }
+      /**
+       * <code>string next_cursor = 2;</code>
+       * @param value The bytes for nextCursor to set.
+       * @return This builder for chaining.
+       */
+      public Builder setNextCursorBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setNextCursorBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>bool has_more = 3;</code>
+       * @return The hasMore.
+       */
+      @java.lang.Override
+      public boolean getHasMore() {
+        return instance.getHasMore();
+      }
+      /**
+       * <code>bool has_more = 3;</code>
+       * @param value The hasMore to set.
+       * @return This builder for chaining.
+       */
+      public Builder setHasMore(boolean value) {
+        copyOnWrite();
+        instance.setHasMore(value);
+        return this;
+      }
+      /**
+       * <code>bool has_more = 3;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearHasMore() {
+        copyOnWrite();
+        instance.clearHasMore();
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.ListStationModerationPoliciesResponse)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"ThrowNull"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "policies_",
+              peers_touch.model.social.v1.PostOuterClass.StationModerationPolicy.class,
+              "nextCursor_",
+              "hasMore_",
+            };
+            java.lang.String info =
+                "\u0000\u0003\u0000\u0000\u0001\u0003\u0003\u0000\u0001\u0000\u0001\u001b\u0002\u0208" +
+                "\u0003\u0007";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse> parser = PARSER;
+          if (parser == null) {
+            synchronized (peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+        }
+        case GET_MEMOIZED_IS_INITIALIZED: {
+          return (byte) 1;
+        }
+        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
+        // So it can do anything. Combine with default case for smaller codegen.
+        case SET_MEMOIZED_IS_INITIALIZED:
+      }
+      // Should never happen. Generates tight code to throw an exception.
+      throw null;
+    }
+
+
+    // @@protoc_insertion_point(class_scope:peers_touch.model.social.v1.ListStationModerationPoliciesResponse)
+    private static final peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse DEFAULT_INSTANCE;
+    static {
+      ListStationModerationPoliciesResponse defaultInstance = new ListStationModerationPoliciesResponse();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        ListStationModerationPoliciesResponse.class, defaultInstance);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.ListStationModerationPoliciesResponse getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<ListStationModerationPoliciesResponse> PARSER;
+
+    public static com.google.protobuf.Parser<ListStationModerationPoliciesResponse> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
+  public interface MomentDeliveryOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:peers_touch.model.social.v1.MomentDelivery)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>string id = 1;</code>
+     * @return The id.
+     */
+    java.lang.String getId();
+    /**
+     * <code>string id = 1;</code>
+     * @return The bytes for id.
+     */
+    com.google.protobuf.ByteString
+        getIdBytes();
+
+    /**
+     * <code>string viewer_id = 2;</code>
+     * @return The viewerId.
+     */
+    java.lang.String getViewerId();
+    /**
+     * <code>string viewer_id = 2;</code>
+     * @return The bytes for viewerId.
+     */
+    com.google.protobuf.ByteString
+        getViewerIdBytes();
+
+    /**
+     * <code>string post_id = 3;</code>
+     * @return The postId.
+     */
+    java.lang.String getPostId();
+    /**
+     * <code>string post_id = 3;</code>
+     * @return The bytes for postId.
+     */
+    com.google.protobuf.ByteString
+        getPostIdBytes();
+
+    /**
+     * <code>string author_id = 4;</code>
+     * @return The authorId.
+     */
+    java.lang.String getAuthorId();
+    /**
+     * <code>string author_id = 4;</code>
+     * @return The bytes for authorId.
+     */
+    com.google.protobuf.ByteString
+        getAuthorIdBytes();
+
+    /**
+     * <code>.peers_touch.model.social.v1.Audience.Kind audience_kind = 5;</code>
+     * @return The enum numeric value on the wire for audienceKind.
+     */
+    int getAudienceKindValue();
+    /**
+     * <code>.peers_touch.model.social.v1.Audience.Kind audience_kind = 5;</code>
+     * @return The audienceKind.
+     */
+    peers_touch.model.social.v1.PostOuterClass.Audience.Kind getAudienceKind();
+
+    /**
+     * <code>.google.protobuf.Timestamp delivered_at = 6;</code>
+     * @return Whether the deliveredAt field is set.
+     */
+    boolean hasDeliveredAt();
+    /**
+     * <code>.google.protobuf.Timestamp delivered_at = 6;</code>
+     * @return The deliveredAt.
+     */
+    google.protobuf.TimestampOuterClass.Timestamp getDeliveredAt();
+
+    /**
+     * <code>.google.protobuf.Timestamp revoked_at = 7;</code>
+     * @return Whether the revokedAt field is set.
+     */
+    boolean hasRevokedAt();
+    /**
+     * <code>.google.protobuf.Timestamp revoked_at = 7;</code>
+     * @return The revokedAt.
+     */
+    google.protobuf.TimestampOuterClass.Timestamp getRevokedAt();
+  }
+  /**
+   * <pre>
+   * MomentDelivery is the durable viewer-scoped inbox entry for HOME
+   * timeline projection. PUBLIC Moments are intentionally excluded from
+   * delivery rows and remain served by the public feed path.
+   * </pre>
+   *
+   * Protobuf type {@code peers_touch.model.social.v1.MomentDelivery}
+   */
+  public  static final class MomentDelivery extends
+      com.google.protobuf.GeneratedMessageLite<
+          MomentDelivery, MomentDelivery.Builder> implements
+      // @@protoc_insertion_point(message_implements:peers_touch.model.social.v1.MomentDelivery)
+      MomentDeliveryOrBuilder {
+    private MomentDelivery() {
+      id_ = "";
+      viewerId_ = "";
+      postId_ = "";
+      authorId_ = "";
+    }
+    private int bitField0_;
+    public static final int ID_FIELD_NUMBER = 1;
+    private java.lang.String id_;
+    /**
+     * <code>string id = 1;</code>
+     * @return The id.
+     */
+    @java.lang.Override
+    public java.lang.String getId() {
+      return id_;
+    }
+    /**
+     * <code>string id = 1;</code>
+     * @return The bytes for id.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getIdBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(id_);
+    }
+    /**
+     * <code>string id = 1;</code>
+     * @param value The id to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setId(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      id_ = value;
+    }
+    /**
+     * <code>string id = 1;</code>
+     */
+    private void clearId() {
+
+      id_ = getDefaultInstance().getId();
+    }
+    /**
+     * <code>string id = 1;</code>
+     * @param value The bytes for id to set.
+     */
+    private void setIdBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      id_ = value.toStringUtf8();
+
+    }
+
+    public static final int VIEWER_ID_FIELD_NUMBER = 2;
+    private java.lang.String viewerId_;
+    /**
+     * <code>string viewer_id = 2;</code>
+     * @return The viewerId.
+     */
+    @java.lang.Override
+    public java.lang.String getViewerId() {
+      return viewerId_;
+    }
+    /**
+     * <code>string viewer_id = 2;</code>
+     * @return The bytes for viewerId.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getViewerIdBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(viewerId_);
+    }
+    /**
+     * <code>string viewer_id = 2;</code>
+     * @param value The viewerId to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setViewerId(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      viewerId_ = value;
+    }
+    /**
+     * <code>string viewer_id = 2;</code>
+     */
+    private void clearViewerId() {
+
+      viewerId_ = getDefaultInstance().getViewerId();
+    }
+    /**
+     * <code>string viewer_id = 2;</code>
+     * @param value The bytes for viewerId to set.
+     */
+    private void setViewerIdBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      viewerId_ = value.toStringUtf8();
+
+    }
+
+    public static final int POST_ID_FIELD_NUMBER = 3;
+    private java.lang.String postId_;
+    /**
+     * <code>string post_id = 3;</code>
+     * @return The postId.
+     */
+    @java.lang.Override
+    public java.lang.String getPostId() {
+      return postId_;
+    }
+    /**
+     * <code>string post_id = 3;</code>
+     * @return The bytes for postId.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getPostIdBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(postId_);
+    }
+    /**
+     * <code>string post_id = 3;</code>
+     * @param value The postId to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setPostId(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      postId_ = value;
+    }
+    /**
+     * <code>string post_id = 3;</code>
+     */
+    private void clearPostId() {
+
+      postId_ = getDefaultInstance().getPostId();
+    }
+    /**
+     * <code>string post_id = 3;</code>
+     * @param value The bytes for postId to set.
+     */
+    private void setPostIdBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      postId_ = value.toStringUtf8();
+
+    }
+
+    public static final int AUTHOR_ID_FIELD_NUMBER = 4;
+    private java.lang.String authorId_;
+    /**
+     * <code>string author_id = 4;</code>
+     * @return The authorId.
+     */
+    @java.lang.Override
+    public java.lang.String getAuthorId() {
+      return authorId_;
+    }
+    /**
+     * <code>string author_id = 4;</code>
+     * @return The bytes for authorId.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getAuthorIdBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(authorId_);
+    }
+    /**
+     * <code>string author_id = 4;</code>
+     * @param value The authorId to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setAuthorId(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      authorId_ = value;
+    }
+    /**
+     * <code>string author_id = 4;</code>
+     */
+    private void clearAuthorId() {
+
+      authorId_ = getDefaultInstance().getAuthorId();
+    }
+    /**
+     * <code>string author_id = 4;</code>
+     * @param value The bytes for authorId to set.
+     */
+    private void setAuthorIdBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      authorId_ = value.toStringUtf8();
+
+    }
+
+    public static final int AUDIENCE_KIND_FIELD_NUMBER = 5;
+    private int audienceKind_;
+    /**
+     * <code>.peers_touch.model.social.v1.Audience.Kind audience_kind = 5;</code>
+     * @return The enum numeric value on the wire for audienceKind.
+     */
+    @java.lang.Override
+    public int getAudienceKindValue() {
+      return audienceKind_;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.Audience.Kind audience_kind = 5;</code>
+     * @return The audienceKind.
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.Audience.Kind getAudienceKind() {
+      peers_touch.model.social.v1.PostOuterClass.Audience.Kind result = peers_touch.model.social.v1.PostOuterClass.Audience.Kind.forNumber(audienceKind_);
+      return result == null ? peers_touch.model.social.v1.PostOuterClass.Audience.Kind.UNRECOGNIZED : result;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.Audience.Kind audience_kind = 5;</code>
+     * @param value The enum numeric value on the wire for audienceKind to set.
+     * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+     */
+    private void setAudienceKindValue(int value) {
+        audienceKind_ = value;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.Audience.Kind audience_kind = 5;</code>
+     * @param value The audienceKind to set.
+     */
+    private void setAudienceKind(peers_touch.model.social.v1.PostOuterClass.Audience.Kind value) {
+      audienceKind_ = value.getNumber();
+
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.Audience.Kind audience_kind = 5;</code>
+     */
+    private void clearAudienceKind() {
+
+      audienceKind_ = 0;
+    }
+
+    public static final int DELIVERED_AT_FIELD_NUMBER = 6;
+    private google.protobuf.TimestampOuterClass.Timestamp deliveredAt_;
+    /**
+     * <code>.google.protobuf.Timestamp delivered_at = 6;</code>
+     */
+    @java.lang.Override
+    public boolean hasDeliveredAt() {
+      return ((bitField0_ & 0x00000001) != 0);
+    }
+    /**
+     * <code>.google.protobuf.Timestamp delivered_at = 6;</code>
+     */
+    @java.lang.Override
+    public google.protobuf.TimestampOuterClass.Timestamp getDeliveredAt() {
+      return deliveredAt_ == null ? google.protobuf.TimestampOuterClass.Timestamp.getDefaultInstance() : deliveredAt_;
+    }
+    /**
+     * <code>.google.protobuf.Timestamp delivered_at = 6;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setDeliveredAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+      value.getClass();  // minimal bytecode null check
+      deliveredAt_ = value;
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.google.protobuf.Timestamp delivered_at = 6;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeDeliveredAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+      value.getClass();  // minimal bytecode null check
+      if (deliveredAt_ != null &&
+          deliveredAt_ != google.protobuf.TimestampOuterClass.Timestamp.getDefaultInstance()) {
+        deliveredAt_ =
+          google.protobuf.TimestampOuterClass.Timestamp.newBuilder(deliveredAt_).mergeFrom(value).buildPartial();
+      } else {
+        deliveredAt_ = value;
+      }
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.google.protobuf.Timestamp delivered_at = 6;</code>
+     */
+    private void clearDeliveredAt() {
+      deliveredAt_ = null;
+      bitField0_ = (bitField0_ & ~0x00000001);
+    }
+
+    public static final int REVOKED_AT_FIELD_NUMBER = 7;
+    private google.protobuf.TimestampOuterClass.Timestamp revokedAt_;
+    /**
+     * <code>.google.protobuf.Timestamp revoked_at = 7;</code>
+     */
+    @java.lang.Override
+    public boolean hasRevokedAt() {
+      return ((bitField0_ & 0x00000002) != 0);
+    }
+    /**
+     * <code>.google.protobuf.Timestamp revoked_at = 7;</code>
+     */
+    @java.lang.Override
+    public google.protobuf.TimestampOuterClass.Timestamp getRevokedAt() {
+      return revokedAt_ == null ? google.protobuf.TimestampOuterClass.Timestamp.getDefaultInstance() : revokedAt_;
+    }
+    /**
+     * <code>.google.protobuf.Timestamp revoked_at = 7;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setRevokedAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+      value.getClass();  // minimal bytecode null check
+      revokedAt_ = value;
+      bitField0_ |= 0x00000002;
+    }
+    /**
+     * <code>.google.protobuf.Timestamp revoked_at = 7;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeRevokedAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+      value.getClass();  // minimal bytecode null check
+      if (revokedAt_ != null &&
+          revokedAt_ != google.protobuf.TimestampOuterClass.Timestamp.getDefaultInstance()) {
+        revokedAt_ =
+          google.protobuf.TimestampOuterClass.Timestamp.newBuilder(revokedAt_).mergeFrom(value).buildPartial();
+      } else {
+        revokedAt_ = value;
+      }
+      bitField0_ |= 0x00000002;
+    }
+    /**
+     * <code>.google.protobuf.Timestamp revoked_at = 7;</code>
+     */
+    private void clearRevokedAt() {
+      revokedAt_ = null;
+      bitField0_ = (bitField0_ & ~0x00000002);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.MomentDelivery parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.MomentDelivery parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.MomentDelivery parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.MomentDelivery parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.MomentDelivery parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.MomentDelivery parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.MomentDelivery parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.MomentDelivery parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.MomentDelivery parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.MomentDelivery parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.MomentDelivery parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.MomentDelivery parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(peers_touch.model.social.v1.PostOuterClass.MomentDelivery prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * <pre>
+     * MomentDelivery is the durable viewer-scoped inbox entry for HOME
+     * timeline projection. PUBLIC Moments are intentionally excluded from
+     * delivery rows and remain served by the public feed path.
+     * </pre>
+     *
+     * Protobuf type {@code peers_touch.model.social.v1.MomentDelivery}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          peers_touch.model.social.v1.PostOuterClass.MomentDelivery, Builder> implements
+        // @@protoc_insertion_point(builder_implements:peers_touch.model.social.v1.MomentDelivery)
+        peers_touch.model.social.v1.PostOuterClass.MomentDeliveryOrBuilder {
+      // Construct using peers_touch.model.social.v1.PostOuterClass.MomentDelivery.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>string id = 1;</code>
+       * @return The id.
+       */
+      @java.lang.Override
+      public java.lang.String getId() {
+        return instance.getId();
+      }
+      /**
+       * <code>string id = 1;</code>
+       * @return The bytes for id.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getIdBytes() {
+        return instance.getIdBytes();
+      }
+      /**
+       * <code>string id = 1;</code>
+       * @param value The id to set.
+       * @return This builder for chaining.
+       */
+      public Builder setId(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setId(value);
+        return this;
+      }
+      /**
+       * <code>string id = 1;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearId() {
+        copyOnWrite();
+        instance.clearId();
+        return this;
+      }
+      /**
+       * <code>string id = 1;</code>
+       * @param value The bytes for id to set.
+       * @return This builder for chaining.
+       */
+      public Builder setIdBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setIdBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string viewer_id = 2;</code>
+       * @return The viewerId.
+       */
+      @java.lang.Override
+      public java.lang.String getViewerId() {
+        return instance.getViewerId();
+      }
+      /**
+       * <code>string viewer_id = 2;</code>
+       * @return The bytes for viewerId.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getViewerIdBytes() {
+        return instance.getViewerIdBytes();
+      }
+      /**
+       * <code>string viewer_id = 2;</code>
+       * @param value The viewerId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setViewerId(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setViewerId(value);
+        return this;
+      }
+      /**
+       * <code>string viewer_id = 2;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearViewerId() {
+        copyOnWrite();
+        instance.clearViewerId();
+        return this;
+      }
+      /**
+       * <code>string viewer_id = 2;</code>
+       * @param value The bytes for viewerId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setViewerIdBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setViewerIdBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string post_id = 3;</code>
+       * @return The postId.
+       */
+      @java.lang.Override
+      public java.lang.String getPostId() {
+        return instance.getPostId();
+      }
+      /**
+       * <code>string post_id = 3;</code>
+       * @return The bytes for postId.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getPostIdBytes() {
+        return instance.getPostIdBytes();
+      }
+      /**
+       * <code>string post_id = 3;</code>
+       * @param value The postId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setPostId(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setPostId(value);
+        return this;
+      }
+      /**
+       * <code>string post_id = 3;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearPostId() {
+        copyOnWrite();
+        instance.clearPostId();
+        return this;
+      }
+      /**
+       * <code>string post_id = 3;</code>
+       * @param value The bytes for postId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setPostIdBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setPostIdBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string author_id = 4;</code>
+       * @return The authorId.
+       */
+      @java.lang.Override
+      public java.lang.String getAuthorId() {
+        return instance.getAuthorId();
+      }
+      /**
+       * <code>string author_id = 4;</code>
+       * @return The bytes for authorId.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getAuthorIdBytes() {
+        return instance.getAuthorIdBytes();
+      }
+      /**
+       * <code>string author_id = 4;</code>
+       * @param value The authorId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setAuthorId(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setAuthorId(value);
+        return this;
+      }
+      /**
+       * <code>string author_id = 4;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearAuthorId() {
+        copyOnWrite();
+        instance.clearAuthorId();
+        return this;
+      }
+      /**
+       * <code>string author_id = 4;</code>
+       * @param value The bytes for authorId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setAuthorIdBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setAuthorIdBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>.peers_touch.model.social.v1.Audience.Kind audience_kind = 5;</code>
+       * @return The enum numeric value on the wire for audienceKind.
+       */
+      @java.lang.Override
+      public int getAudienceKindValue() {
+        return instance.getAudienceKindValue();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.Audience.Kind audience_kind = 5;</code>
+       * @param value The audienceKind to set.
+       * @return This builder for chaining.
+       */
+      public Builder setAudienceKindValue(int value) {
+        copyOnWrite();
+        instance.setAudienceKindValue(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.Audience.Kind audience_kind = 5;</code>
+       * @return The audienceKind.
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.Audience.Kind getAudienceKind() {
+        return instance.getAudienceKind();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.Audience.Kind audience_kind = 5;</code>
+       * @param value The enum numeric value on the wire for audienceKind to set.
+       * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+       * @return This builder for chaining.
+       */
+      public Builder setAudienceKind(peers_touch.model.social.v1.PostOuterClass.Audience.Kind value) {
+        copyOnWrite();
+        instance.setAudienceKind(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.Audience.Kind audience_kind = 5;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearAudienceKind() {
+        copyOnWrite();
+        instance.clearAudienceKind();
+        return this;
+      }
+
+      /**
+       * <code>.google.protobuf.Timestamp delivered_at = 6;</code>
+       */
+      @java.lang.Override
+      public boolean hasDeliveredAt() {
+        return instance.hasDeliveredAt();
+      }
+      /**
+       * <code>.google.protobuf.Timestamp delivered_at = 6;</code>
+       */
+      @java.lang.Override
+      public google.protobuf.TimestampOuterClass.Timestamp getDeliveredAt() {
+        return instance.getDeliveredAt();
+      }
+      /**
+       * <code>.google.protobuf.Timestamp delivered_at = 6;</code>
+       */
+      public Builder setDeliveredAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+        copyOnWrite();
+        instance.setDeliveredAt(value);
+        return this;
+        }
+      /**
+       * <code>.google.protobuf.Timestamp delivered_at = 6;</code>
+       */
+      public Builder setDeliveredAt(
+          google.protobuf.TimestampOuterClass.Timestamp.Builder builderForValue) {
+        copyOnWrite();
+        instance.setDeliveredAt(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.google.protobuf.Timestamp delivered_at = 6;</code>
+       */
+      public Builder mergeDeliveredAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+        copyOnWrite();
+        instance.mergeDeliveredAt(value);
+        return this;
+      }
+      /**
+       * <code>.google.protobuf.Timestamp delivered_at = 6;</code>
+       */
+      public Builder clearDeliveredAt() {  copyOnWrite();
+        instance.clearDeliveredAt();
+        return this;
+      }
+
+      /**
+       * <code>.google.protobuf.Timestamp revoked_at = 7;</code>
+       */
+      @java.lang.Override
+      public boolean hasRevokedAt() {
+        return instance.hasRevokedAt();
+      }
+      /**
+       * <code>.google.protobuf.Timestamp revoked_at = 7;</code>
+       */
+      @java.lang.Override
+      public google.protobuf.TimestampOuterClass.Timestamp getRevokedAt() {
+        return instance.getRevokedAt();
+      }
+      /**
+       * <code>.google.protobuf.Timestamp revoked_at = 7;</code>
+       */
+      public Builder setRevokedAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+        copyOnWrite();
+        instance.setRevokedAt(value);
+        return this;
+        }
+      /**
+       * <code>.google.protobuf.Timestamp revoked_at = 7;</code>
+       */
+      public Builder setRevokedAt(
+          google.protobuf.TimestampOuterClass.Timestamp.Builder builderForValue) {
+        copyOnWrite();
+        instance.setRevokedAt(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.google.protobuf.Timestamp revoked_at = 7;</code>
+       */
+      public Builder mergeRevokedAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+        copyOnWrite();
+        instance.mergeRevokedAt(value);
+        return this;
+      }
+      /**
+       * <code>.google.protobuf.Timestamp revoked_at = 7;</code>
+       */
+      public Builder clearRevokedAt() {  copyOnWrite();
+        instance.clearRevokedAt();
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.MomentDelivery)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"ThrowNull"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new peers_touch.model.social.v1.PostOuterClass.MomentDelivery();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "bitField0_",
+              "id_",
+              "viewerId_",
+              "postId_",
+              "authorId_",
+              "audienceKind_",
+              "deliveredAt_",
+              "revokedAt_",
+            };
+            java.lang.String info =
+                "\u0000\u0007\u0000\u0001\u0001\u0007\u0007\u0000\u0000\u0000\u0001\u0208\u0002\u0208" +
+                "\u0003\u0208\u0004\u0208\u0005\f\u0006\u1009\u0000\u0007\u1009\u0001";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<peers_touch.model.social.v1.PostOuterClass.MomentDelivery> parser = PARSER;
+          if (parser == null) {
+            synchronized (peers_touch.model.social.v1.PostOuterClass.MomentDelivery.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<peers_touch.model.social.v1.PostOuterClass.MomentDelivery>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+        }
+        case GET_MEMOIZED_IS_INITIALIZED: {
+          return (byte) 1;
+        }
+        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
+        // So it can do anything. Combine with default case for smaller codegen.
+        case SET_MEMOIZED_IS_INITIALIZED:
+      }
+      // Should never happen. Generates tight code to throw an exception.
+      throw null;
+    }
+
+
+    // @@protoc_insertion_point(class_scope:peers_touch.model.social.v1.MomentDelivery)
+    private static final peers_touch.model.social.v1.PostOuterClass.MomentDelivery DEFAULT_INSTANCE;
+    static {
+      MomentDelivery defaultInstance = new MomentDelivery();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        MomentDelivery.class, defaultInstance);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.MomentDelivery getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<MomentDelivery> PARSER;
+
+    public static com.google.protobuf.Parser<MomentDelivery> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
+  public interface SyncMomentsProjectionRequestOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:peers_touch.model.social.v1.SyncMomentsProjectionRequest)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>string home_cursor = 1;</code>
+     * @return The homeCursor.
+     */
+    java.lang.String getHomeCursor();
+    /**
+     * <code>string home_cursor = 1;</code>
+     * @return The bytes for homeCursor.
+     */
+    com.google.protobuf.ByteString
+        getHomeCursorBytes();
+
+    /**
+     * <code>string public_cursor = 2;</code>
+     * @return The publicCursor.
+     */
+    java.lang.String getPublicCursor();
+    /**
+     * <code>string public_cursor = 2;</code>
+     * @return The bytes for publicCursor.
+     */
+    com.google.protobuf.ByteString
+        getPublicCursorBytes();
+
+    /**
+     * <code>int32 limit = 3;</code>
+     * @return The limit.
+     */
+    int getLimit();
+
+    /**
+     * <code>.peers_touch.model.social.v1.TimelineSort public_sort = 4;</code>
+     * @return The enum numeric value on the wire for publicSort.
+     */
+    int getPublicSortValue();
+    /**
+     * <code>.peers_touch.model.social.v1.TimelineSort public_sort = 4;</code>
+     * @return The publicSort.
+     */
+    peers_touch.model.social.v1.PostOuterClass.TimelineSort getPublicSort();
+
+    /**
+     * <code>string reason = 5;</code>
+     * @return The reason.
+     */
+    java.lang.String getReason();
+    /**
+     * <code>string reason = 5;</code>
+     * @return The bytes for reason.
+     */
+    com.google.protobuf.ByteString
+        getReasonBytes();
+  }
+  /**
+   * <pre>
+   * SyncMomentsProjectionRequest is the runtime reconcile entrypoint.
+   * Cursors are optional; an empty cursor asks Station for a fresh
+   * authoritative snapshot of the viewer-owned projections.
+   * </pre>
+   *
+   * Protobuf type {@code peers_touch.model.social.v1.SyncMomentsProjectionRequest}
+   */
+  public  static final class SyncMomentsProjectionRequest extends
+      com.google.protobuf.GeneratedMessageLite<
+          SyncMomentsProjectionRequest, SyncMomentsProjectionRequest.Builder> implements
+      // @@protoc_insertion_point(message_implements:peers_touch.model.social.v1.SyncMomentsProjectionRequest)
+      SyncMomentsProjectionRequestOrBuilder {
+    private SyncMomentsProjectionRequest() {
+      homeCursor_ = "";
+      publicCursor_ = "";
+      reason_ = "";
+    }
+    public static final int HOME_CURSOR_FIELD_NUMBER = 1;
+    private java.lang.String homeCursor_;
+    /**
+     * <code>string home_cursor = 1;</code>
+     * @return The homeCursor.
+     */
+    @java.lang.Override
+    public java.lang.String getHomeCursor() {
+      return homeCursor_;
+    }
+    /**
+     * <code>string home_cursor = 1;</code>
+     * @return The bytes for homeCursor.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getHomeCursorBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(homeCursor_);
+    }
+    /**
+     * <code>string home_cursor = 1;</code>
+     * @param value The homeCursor to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setHomeCursor(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      homeCursor_ = value;
+    }
+    /**
+     * <code>string home_cursor = 1;</code>
+     */
+    private void clearHomeCursor() {
+
+      homeCursor_ = getDefaultInstance().getHomeCursor();
+    }
+    /**
+     * <code>string home_cursor = 1;</code>
+     * @param value The bytes for homeCursor to set.
+     */
+    private void setHomeCursorBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      homeCursor_ = value.toStringUtf8();
+
+    }
+
+    public static final int PUBLIC_CURSOR_FIELD_NUMBER = 2;
+    private java.lang.String publicCursor_;
+    /**
+     * <code>string public_cursor = 2;</code>
+     * @return The publicCursor.
+     */
+    @java.lang.Override
+    public java.lang.String getPublicCursor() {
+      return publicCursor_;
+    }
+    /**
+     * <code>string public_cursor = 2;</code>
+     * @return The bytes for publicCursor.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getPublicCursorBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(publicCursor_);
+    }
+    /**
+     * <code>string public_cursor = 2;</code>
+     * @param value The publicCursor to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setPublicCursor(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      publicCursor_ = value;
+    }
+    /**
+     * <code>string public_cursor = 2;</code>
+     */
+    private void clearPublicCursor() {
+
+      publicCursor_ = getDefaultInstance().getPublicCursor();
+    }
+    /**
+     * <code>string public_cursor = 2;</code>
+     * @param value The bytes for publicCursor to set.
+     */
+    private void setPublicCursorBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      publicCursor_ = value.toStringUtf8();
+
+    }
+
+    public static final int LIMIT_FIELD_NUMBER = 3;
+    private int limit_;
+    /**
+     * <code>int32 limit = 3;</code>
+     * @return The limit.
+     */
+    @java.lang.Override
+    public int getLimit() {
+      return limit_;
+    }
+    /**
+     * <code>int32 limit = 3;</code>
+     * @param value The limit to set.
+     */
+    private void setLimit(int value) {
+
+      limit_ = value;
+    }
+    /**
+     * <code>int32 limit = 3;</code>
+     */
+    private void clearLimit() {
+
+      limit_ = 0;
+    }
+
+    public static final int PUBLIC_SORT_FIELD_NUMBER = 4;
+    private int publicSort_;
+    /**
+     * <code>.peers_touch.model.social.v1.TimelineSort public_sort = 4;</code>
+     * @return The enum numeric value on the wire for publicSort.
+     */
+    @java.lang.Override
+    public int getPublicSortValue() {
+      return publicSort_;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.TimelineSort public_sort = 4;</code>
+     * @return The publicSort.
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.TimelineSort getPublicSort() {
+      peers_touch.model.social.v1.PostOuterClass.TimelineSort result = peers_touch.model.social.v1.PostOuterClass.TimelineSort.forNumber(publicSort_);
+      return result == null ? peers_touch.model.social.v1.PostOuterClass.TimelineSort.UNRECOGNIZED : result;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.TimelineSort public_sort = 4;</code>
+     * @param value The enum numeric value on the wire for publicSort to set.
+     * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+     */
+    private void setPublicSortValue(int value) {
+        publicSort_ = value;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.TimelineSort public_sort = 4;</code>
+     * @param value The publicSort to set.
+     */
+    private void setPublicSort(peers_touch.model.social.v1.PostOuterClass.TimelineSort value) {
+      publicSort_ = value.getNumber();
+
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.TimelineSort public_sort = 4;</code>
+     */
+    private void clearPublicSort() {
+
+      publicSort_ = 0;
+    }
+
+    public static final int REASON_FIELD_NUMBER = 5;
+    private java.lang.String reason_;
+    /**
+     * <code>string reason = 5;</code>
+     * @return The reason.
+     */
+    @java.lang.Override
+    public java.lang.String getReason() {
+      return reason_;
+    }
+    /**
+     * <code>string reason = 5;</code>
+     * @return The bytes for reason.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getReasonBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(reason_);
+    }
+    /**
+     * <code>string reason = 5;</code>
+     * @param value The reason to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setReason(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      reason_ = value;
+    }
+    /**
+     * <code>string reason = 5;</code>
+     */
+    private void clearReason() {
+
+      reason_ = getDefaultInstance().getReason();
+    }
+    /**
+     * <code>string reason = 5;</code>
+     * @param value The bytes for reason to set.
+     */
+    private void setReasonBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      reason_ = value.toStringUtf8();
+
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * <pre>
+     * SyncMomentsProjectionRequest is the runtime reconcile entrypoint.
+     * Cursors are optional; an empty cursor asks Station for a fresh
+     * authoritative snapshot of the viewer-owned projections.
+     * </pre>
+     *
+     * Protobuf type {@code peers_touch.model.social.v1.SyncMomentsProjectionRequest}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest, Builder> implements
+        // @@protoc_insertion_point(builder_implements:peers_touch.model.social.v1.SyncMomentsProjectionRequest)
+        peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequestOrBuilder {
+      // Construct using peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>string home_cursor = 1;</code>
+       * @return The homeCursor.
+       */
+      @java.lang.Override
+      public java.lang.String getHomeCursor() {
+        return instance.getHomeCursor();
+      }
+      /**
+       * <code>string home_cursor = 1;</code>
+       * @return The bytes for homeCursor.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getHomeCursorBytes() {
+        return instance.getHomeCursorBytes();
+      }
+      /**
+       * <code>string home_cursor = 1;</code>
+       * @param value The homeCursor to set.
+       * @return This builder for chaining.
+       */
+      public Builder setHomeCursor(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setHomeCursor(value);
+        return this;
+      }
+      /**
+       * <code>string home_cursor = 1;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearHomeCursor() {
+        copyOnWrite();
+        instance.clearHomeCursor();
+        return this;
+      }
+      /**
+       * <code>string home_cursor = 1;</code>
+       * @param value The bytes for homeCursor to set.
+       * @return This builder for chaining.
+       */
+      public Builder setHomeCursorBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setHomeCursorBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string public_cursor = 2;</code>
+       * @return The publicCursor.
+       */
+      @java.lang.Override
+      public java.lang.String getPublicCursor() {
+        return instance.getPublicCursor();
+      }
+      /**
+       * <code>string public_cursor = 2;</code>
+       * @return The bytes for publicCursor.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getPublicCursorBytes() {
+        return instance.getPublicCursorBytes();
+      }
+      /**
+       * <code>string public_cursor = 2;</code>
+       * @param value The publicCursor to set.
+       * @return This builder for chaining.
+       */
+      public Builder setPublicCursor(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setPublicCursor(value);
+        return this;
+      }
+      /**
+       * <code>string public_cursor = 2;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearPublicCursor() {
+        copyOnWrite();
+        instance.clearPublicCursor();
+        return this;
+      }
+      /**
+       * <code>string public_cursor = 2;</code>
+       * @param value The bytes for publicCursor to set.
+       * @return This builder for chaining.
+       */
+      public Builder setPublicCursorBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setPublicCursorBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>int32 limit = 3;</code>
+       * @return The limit.
+       */
+      @java.lang.Override
+      public int getLimit() {
+        return instance.getLimit();
+      }
+      /**
+       * <code>int32 limit = 3;</code>
+       * @param value The limit to set.
+       * @return This builder for chaining.
+       */
+      public Builder setLimit(int value) {
+        copyOnWrite();
+        instance.setLimit(value);
+        return this;
+      }
+      /**
+       * <code>int32 limit = 3;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearLimit() {
+        copyOnWrite();
+        instance.clearLimit();
+        return this;
+      }
+
+      /**
+       * <code>.peers_touch.model.social.v1.TimelineSort public_sort = 4;</code>
+       * @return The enum numeric value on the wire for publicSort.
+       */
+      @java.lang.Override
+      public int getPublicSortValue() {
+        return instance.getPublicSortValue();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.TimelineSort public_sort = 4;</code>
+       * @param value The publicSort to set.
+       * @return This builder for chaining.
+       */
+      public Builder setPublicSortValue(int value) {
+        copyOnWrite();
+        instance.setPublicSortValue(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.TimelineSort public_sort = 4;</code>
+       * @return The publicSort.
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.TimelineSort getPublicSort() {
+        return instance.getPublicSort();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.TimelineSort public_sort = 4;</code>
+       * @param value The enum numeric value on the wire for publicSort to set.
+       * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+       * @return This builder for chaining.
+       */
+      public Builder setPublicSort(peers_touch.model.social.v1.PostOuterClass.TimelineSort value) {
+        copyOnWrite();
+        instance.setPublicSort(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.TimelineSort public_sort = 4;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearPublicSort() {
+        copyOnWrite();
+        instance.clearPublicSort();
+        return this;
+      }
+
+      /**
+       * <code>string reason = 5;</code>
+       * @return The reason.
+       */
+      @java.lang.Override
+      public java.lang.String getReason() {
+        return instance.getReason();
+      }
+      /**
+       * <code>string reason = 5;</code>
+       * @return The bytes for reason.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getReasonBytes() {
+        return instance.getReasonBytes();
+      }
+      /**
+       * <code>string reason = 5;</code>
+       * @param value The reason to set.
+       * @return This builder for chaining.
+       */
+      public Builder setReason(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setReason(value);
+        return this;
+      }
+      /**
+       * <code>string reason = 5;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearReason() {
+        copyOnWrite();
+        instance.clearReason();
+        return this;
+      }
+      /**
+       * <code>string reason = 5;</code>
+       * @param value The bytes for reason to set.
+       * @return This builder for chaining.
+       */
+      public Builder setReasonBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setReasonBytes(value);
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.SyncMomentsProjectionRequest)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"ThrowNull"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "homeCursor_",
+              "publicCursor_",
+              "limit_",
+              "publicSort_",
+              "reason_",
+            };
+            java.lang.String info =
+                "\u0000\u0005\u0000\u0000\u0001\u0005\u0005\u0000\u0000\u0000\u0001\u0208\u0002\u0208" +
+                "\u0003\u0004\u0004\f\u0005\u0208";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest> parser = PARSER;
+          if (parser == null) {
+            synchronized (peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+        }
+        case GET_MEMOIZED_IS_INITIALIZED: {
+          return (byte) 1;
+        }
+        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
+        // So it can do anything. Combine with default case for smaller codegen.
+        case SET_MEMOIZED_IS_INITIALIZED:
+      }
+      // Should never happen. Generates tight code to throw an exception.
+      throw null;
+    }
+
+
+    // @@protoc_insertion_point(class_scope:peers_touch.model.social.v1.SyncMomentsProjectionRequest)
+    private static final peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest DEFAULT_INSTANCE;
+    static {
+      SyncMomentsProjectionRequest defaultInstance = new SyncMomentsProjectionRequest();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        SyncMomentsProjectionRequest.class, defaultInstance);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionRequest getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<SyncMomentsProjectionRequest> PARSER;
+
+    public static com.google.protobuf.Parser<SyncMomentsProjectionRequest> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
+  public interface SyncMomentsProjectionResponseOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:peers_touch.model.social.v1.SyncMomentsProjectionResponse)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>.peers_touch.model.social.v1.GetTimelineResponse home_timeline = 1;</code>
+     * @return Whether the homeTimeline field is set.
+     */
+    boolean hasHomeTimeline();
+    /**
+     * <code>.peers_touch.model.social.v1.GetTimelineResponse home_timeline = 1;</code>
+     * @return The homeTimeline.
+     */
+    peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse getHomeTimeline();
+
+    /**
+     * <code>.peers_touch.model.social.v1.GetTimelineResponse public_timeline = 2;</code>
+     * @return Whether the publicTimeline field is set.
+     */
+    boolean hasPublicTimeline();
+    /**
+     * <code>.peers_touch.model.social.v1.GetTimelineResponse public_timeline = 2;</code>
+     * @return The publicTimeline.
+     */
+    peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse getPublicTimeline();
+
+    /**
+     * <code>string sync_token = 3;</code>
+     * @return The syncToken.
+     */
+    java.lang.String getSyncToken();
+    /**
+     * <code>string sync_token = 3;</code>
+     * @return The bytes for syncToken.
+     */
+    com.google.protobuf.ByteString
+        getSyncTokenBytes();
+
+    /**
+     * <code>.google.protobuf.Timestamp synced_at = 4;</code>
+     * @return Whether the syncedAt field is set.
+     */
+    boolean hasSyncedAt();
+    /**
+     * <code>.google.protobuf.Timestamp synced_at = 4;</code>
+     * @return The syncedAt.
+     */
+    google.protobuf.TimestampOuterClass.Timestamp getSyncedAt();
+  }
+  /**
+   * Protobuf type {@code peers_touch.model.social.v1.SyncMomentsProjectionResponse}
+   */
+  public  static final class SyncMomentsProjectionResponse extends
+      com.google.protobuf.GeneratedMessageLite<
+          SyncMomentsProjectionResponse, SyncMomentsProjectionResponse.Builder> implements
+      // @@protoc_insertion_point(message_implements:peers_touch.model.social.v1.SyncMomentsProjectionResponse)
+      SyncMomentsProjectionResponseOrBuilder {
+    private SyncMomentsProjectionResponse() {
+      syncToken_ = "";
+    }
+    private int bitField0_;
+    public static final int HOME_TIMELINE_FIELD_NUMBER = 1;
+    private peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse homeTimeline_;
+    /**
+     * <code>.peers_touch.model.social.v1.GetTimelineResponse home_timeline = 1;</code>
+     */
+    @java.lang.Override
+    public boolean hasHomeTimeline() {
+      return ((bitField0_ & 0x00000001) != 0);
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.GetTimelineResponse home_timeline = 1;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse getHomeTimeline() {
+      return homeTimeline_ == null ? peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse.getDefaultInstance() : homeTimeline_;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.GetTimelineResponse home_timeline = 1;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setHomeTimeline(peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse value) {
+      value.getClass();  // minimal bytecode null check
+      homeTimeline_ = value;
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.GetTimelineResponse home_timeline = 1;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeHomeTimeline(peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse value) {
+      value.getClass();  // minimal bytecode null check
+      if (homeTimeline_ != null &&
+          homeTimeline_ != peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse.getDefaultInstance()) {
+        homeTimeline_ =
+          peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse.newBuilder(homeTimeline_).mergeFrom(value).buildPartial();
+      } else {
+        homeTimeline_ = value;
+      }
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.GetTimelineResponse home_timeline = 1;</code>
+     */
+    private void clearHomeTimeline() {
+      homeTimeline_ = null;
+      bitField0_ = (bitField0_ & ~0x00000001);
+    }
+
+    public static final int PUBLIC_TIMELINE_FIELD_NUMBER = 2;
+    private peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse publicTimeline_;
+    /**
+     * <code>.peers_touch.model.social.v1.GetTimelineResponse public_timeline = 2;</code>
+     */
+    @java.lang.Override
+    public boolean hasPublicTimeline() {
+      return ((bitField0_ & 0x00000002) != 0);
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.GetTimelineResponse public_timeline = 2;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse getPublicTimeline() {
+      return publicTimeline_ == null ? peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse.getDefaultInstance() : publicTimeline_;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.GetTimelineResponse public_timeline = 2;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setPublicTimeline(peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse value) {
+      value.getClass();  // minimal bytecode null check
+      publicTimeline_ = value;
+      bitField0_ |= 0x00000002;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.GetTimelineResponse public_timeline = 2;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergePublicTimeline(peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse value) {
+      value.getClass();  // minimal bytecode null check
+      if (publicTimeline_ != null &&
+          publicTimeline_ != peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse.getDefaultInstance()) {
+        publicTimeline_ =
+          peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse.newBuilder(publicTimeline_).mergeFrom(value).buildPartial();
+      } else {
+        publicTimeline_ = value;
+      }
+      bitField0_ |= 0x00000002;
+    }
+    /**
+     * <code>.peers_touch.model.social.v1.GetTimelineResponse public_timeline = 2;</code>
+     */
+    private void clearPublicTimeline() {
+      publicTimeline_ = null;
+      bitField0_ = (bitField0_ & ~0x00000002);
+    }
+
+    public static final int SYNC_TOKEN_FIELD_NUMBER = 3;
+    private java.lang.String syncToken_;
+    /**
+     * <code>string sync_token = 3;</code>
+     * @return The syncToken.
+     */
+    @java.lang.Override
+    public java.lang.String getSyncToken() {
+      return syncToken_;
+    }
+    /**
+     * <code>string sync_token = 3;</code>
+     * @return The bytes for syncToken.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getSyncTokenBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(syncToken_);
+    }
+    /**
+     * <code>string sync_token = 3;</code>
+     * @param value The syncToken to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setSyncToken(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      syncToken_ = value;
+    }
+    /**
+     * <code>string sync_token = 3;</code>
+     */
+    private void clearSyncToken() {
+
+      syncToken_ = getDefaultInstance().getSyncToken();
+    }
+    /**
+     * <code>string sync_token = 3;</code>
+     * @param value The bytes for syncToken to set.
+     */
+    private void setSyncTokenBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      syncToken_ = value.toStringUtf8();
+
+    }
+
+    public static final int SYNCED_AT_FIELD_NUMBER = 4;
+    private google.protobuf.TimestampOuterClass.Timestamp syncedAt_;
+    /**
+     * <code>.google.protobuf.Timestamp synced_at = 4;</code>
+     */
+    @java.lang.Override
+    public boolean hasSyncedAt() {
+      return ((bitField0_ & 0x00000004) != 0);
+    }
+    /**
+     * <code>.google.protobuf.Timestamp synced_at = 4;</code>
+     */
+    @java.lang.Override
+    public google.protobuf.TimestampOuterClass.Timestamp getSyncedAt() {
+      return syncedAt_ == null ? google.protobuf.TimestampOuterClass.Timestamp.getDefaultInstance() : syncedAt_;
+    }
+    /**
+     * <code>.google.protobuf.Timestamp synced_at = 4;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setSyncedAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+      value.getClass();  // minimal bytecode null check
+      syncedAt_ = value;
+      bitField0_ |= 0x00000004;
+    }
+    /**
+     * <code>.google.protobuf.Timestamp synced_at = 4;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeSyncedAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+      value.getClass();  // minimal bytecode null check
+      if (syncedAt_ != null &&
+          syncedAt_ != google.protobuf.TimestampOuterClass.Timestamp.getDefaultInstance()) {
+        syncedAt_ =
+          google.protobuf.TimestampOuterClass.Timestamp.newBuilder(syncedAt_).mergeFrom(value).buildPartial();
+      } else {
+        syncedAt_ = value;
+      }
+      bitField0_ |= 0x00000004;
+    }
+    /**
+     * <code>.google.protobuf.Timestamp synced_at = 4;</code>
+     */
+    private void clearSyncedAt() {
+      syncedAt_ = null;
+      bitField0_ = (bitField0_ & ~0x00000004);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * Protobuf type {@code peers_touch.model.social.v1.SyncMomentsProjectionResponse}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse, Builder> implements
+        // @@protoc_insertion_point(builder_implements:peers_touch.model.social.v1.SyncMomentsProjectionResponse)
+        peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponseOrBuilder {
+      // Construct using peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>.peers_touch.model.social.v1.GetTimelineResponse home_timeline = 1;</code>
+       */
+      @java.lang.Override
+      public boolean hasHomeTimeline() {
+        return instance.hasHomeTimeline();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.GetTimelineResponse home_timeline = 1;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse getHomeTimeline() {
+        return instance.getHomeTimeline();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.GetTimelineResponse home_timeline = 1;</code>
+       */
+      public Builder setHomeTimeline(peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse value) {
+        copyOnWrite();
+        instance.setHomeTimeline(value);
+        return this;
+        }
+      /**
+       * <code>.peers_touch.model.social.v1.GetTimelineResponse home_timeline = 1;</code>
+       */
+      public Builder setHomeTimeline(
+          peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse.Builder builderForValue) {
+        copyOnWrite();
+        instance.setHomeTimeline(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.GetTimelineResponse home_timeline = 1;</code>
+       */
+      public Builder mergeHomeTimeline(peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse value) {
+        copyOnWrite();
+        instance.mergeHomeTimeline(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.GetTimelineResponse home_timeline = 1;</code>
+       */
+      public Builder clearHomeTimeline() {  copyOnWrite();
+        instance.clearHomeTimeline();
+        return this;
+      }
+
+      /**
+       * <code>.peers_touch.model.social.v1.GetTimelineResponse public_timeline = 2;</code>
+       */
+      @java.lang.Override
+      public boolean hasPublicTimeline() {
+        return instance.hasPublicTimeline();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.GetTimelineResponse public_timeline = 2;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse getPublicTimeline() {
+        return instance.getPublicTimeline();
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.GetTimelineResponse public_timeline = 2;</code>
+       */
+      public Builder setPublicTimeline(peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse value) {
+        copyOnWrite();
+        instance.setPublicTimeline(value);
+        return this;
+        }
+      /**
+       * <code>.peers_touch.model.social.v1.GetTimelineResponse public_timeline = 2;</code>
+       */
+      public Builder setPublicTimeline(
+          peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse.Builder builderForValue) {
+        copyOnWrite();
+        instance.setPublicTimeline(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.GetTimelineResponse public_timeline = 2;</code>
+       */
+      public Builder mergePublicTimeline(peers_touch.model.social.v1.PostOuterClass.GetTimelineResponse value) {
+        copyOnWrite();
+        instance.mergePublicTimeline(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.social.v1.GetTimelineResponse public_timeline = 2;</code>
+       */
+      public Builder clearPublicTimeline() {  copyOnWrite();
+        instance.clearPublicTimeline();
+        return this;
+      }
+
+      /**
+       * <code>string sync_token = 3;</code>
+       * @return The syncToken.
+       */
+      @java.lang.Override
+      public java.lang.String getSyncToken() {
+        return instance.getSyncToken();
+      }
+      /**
+       * <code>string sync_token = 3;</code>
+       * @return The bytes for syncToken.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getSyncTokenBytes() {
+        return instance.getSyncTokenBytes();
+      }
+      /**
+       * <code>string sync_token = 3;</code>
+       * @param value The syncToken to set.
+       * @return This builder for chaining.
+       */
+      public Builder setSyncToken(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setSyncToken(value);
+        return this;
+      }
+      /**
+       * <code>string sync_token = 3;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearSyncToken() {
+        copyOnWrite();
+        instance.clearSyncToken();
+        return this;
+      }
+      /**
+       * <code>string sync_token = 3;</code>
+       * @param value The bytes for syncToken to set.
+       * @return This builder for chaining.
+       */
+      public Builder setSyncTokenBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setSyncTokenBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>.google.protobuf.Timestamp synced_at = 4;</code>
+       */
+      @java.lang.Override
+      public boolean hasSyncedAt() {
+        return instance.hasSyncedAt();
+      }
+      /**
+       * <code>.google.protobuf.Timestamp synced_at = 4;</code>
+       */
+      @java.lang.Override
+      public google.protobuf.TimestampOuterClass.Timestamp getSyncedAt() {
+        return instance.getSyncedAt();
+      }
+      /**
+       * <code>.google.protobuf.Timestamp synced_at = 4;</code>
+       */
+      public Builder setSyncedAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+        copyOnWrite();
+        instance.setSyncedAt(value);
+        return this;
+        }
+      /**
+       * <code>.google.protobuf.Timestamp synced_at = 4;</code>
+       */
+      public Builder setSyncedAt(
+          google.protobuf.TimestampOuterClass.Timestamp.Builder builderForValue) {
+        copyOnWrite();
+        instance.setSyncedAt(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.google.protobuf.Timestamp synced_at = 4;</code>
+       */
+      public Builder mergeSyncedAt(google.protobuf.TimestampOuterClass.Timestamp value) {
+        copyOnWrite();
+        instance.mergeSyncedAt(value);
+        return this;
+      }
+      /**
+       * <code>.google.protobuf.Timestamp synced_at = 4;</code>
+       */
+      public Builder clearSyncedAt() {  copyOnWrite();
+        instance.clearSyncedAt();
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.SyncMomentsProjectionResponse)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"ThrowNull"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "bitField0_",
+              "homeTimeline_",
+              "publicTimeline_",
+              "syncToken_",
+              "syncedAt_",
+            };
+            java.lang.String info =
+                "\u0000\u0004\u0000\u0001\u0001\u0004\u0004\u0000\u0000\u0000\u0001\u1009\u0000\u0002" +
+                "\u1009\u0001\u0003\u0208\u0004\u1009\u0002";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse> parser = PARSER;
+          if (parser == null) {
+            synchronized (peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+        }
+        case GET_MEMOIZED_IS_INITIALIZED: {
+          return (byte) 1;
+        }
+        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
+        // So it can do anything. Combine with default case for smaller codegen.
+        case SET_MEMOIZED_IS_INITIALIZED:
+      }
+      // Should never happen. Generates tight code to throw an exception.
+      throw null;
+    }
+
+
+    // @@protoc_insertion_point(class_scope:peers_touch.model.social.v1.SyncMomentsProjectionResponse)
+    private static final peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse DEFAULT_INSTANCE;
+    static {
+      SyncMomentsProjectionResponse defaultInstance = new SyncMomentsProjectionResponse();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        SyncMomentsProjectionResponse.class, defaultInstance);
+    }
+
+    public static peers_touch.model.social.v1.PostOuterClass.SyncMomentsProjectionResponse getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<SyncMomentsProjectionResponse> PARSER;
+
+    public static com.google.protobuf.Parser<SyncMomentsProjectionResponse> parser() {
       return DEFAULT_INSTANCE.getParserForType();
     }
   }
@@ -26420,7 +36579,7 @@ public final class PostOuterClass {
      * @param value The postsCount to set.
      */
     private void setPostsCount(long value) {
-      
+
       postsCount_ = value;
     }
     /**
@@ -26461,7 +36620,7 @@ public final class PostOuterClass {
      * @param value The commentsCount to set.
      */
     private void setCommentsCount(long value) {
-      
+
       commentsCount_ = value;
     }
     /**
@@ -26502,7 +36661,7 @@ public final class PostOuterClass {
      * @param value The reactionsGivenCount to set.
      */
     private void setReactionsGivenCount(long value) {
-      
+
       reactionsGivenCount_ = value;
     }
     /**
@@ -26543,7 +36702,7 @@ public final class PostOuterClass {
      * @param value The commentsReceivedCount to set.
      */
     private void setCommentsReceivedCount(long value) {
-      
+
       commentsReceivedCount_ = value;
     }
     /**
@@ -26584,7 +36743,7 @@ public final class PostOuterClass {
      * @param value The reactionsReceivedCount to set.
      */
     private void setReactionsReceivedCount(long value) {
-      
+
       reactionsReceivedCount_ = value;
     }
     /**
@@ -26623,7 +36782,7 @@ public final class PostOuterClass {
      * @param value The followingCount to set.
      */
     private void setFollowingCount(long value) {
-      
+
       followingCount_ = value;
     }
     /**
@@ -26661,7 +36820,7 @@ public final class PostOuterClass {
      * @param value The followersCount to set.
      */
     private void setFollowersCount(long value) {
-      
+
       followersCount_ = value;
     }
     /**
@@ -26701,7 +36860,7 @@ public final class PostOuterClass {
      * @param value The circlesCount to set.
      */
     private void setCirclesCount(long value) {
-      
+
       circlesCount_ = value;
     }
     /**
@@ -28045,6 +38204,38 @@ public final class PostOuterClass {
      * @return The baseKind.
      */
     peers_touch.model.social.v1.PostOuterClass.Audience.Kind getBaseKind();
+
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    java.util.List<peers_touch.model.social.v1.Media.AudienceKeyEnvelope>
+        getKeyEnvelopesList();
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    peers_touch.model.social.v1.Media.AudienceKeyEnvelope getKeyEnvelopes(int index);
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    int getKeyEnvelopesCount();
   }
   /**
    * <pre>
@@ -28080,6 +38271,7 @@ public final class PostOuterClass {
       AudienceOrBuilder {
     private Audience() {
       actorDids_ = com.google.protobuf.GeneratedMessageLite.emptyProtobufList();
+      keyEnvelopes_ = emptyProtobufList();
     }
     /**
      * Protobuf enum {@code peers_touch.model.social.v1.Audience.Kind}
@@ -28201,13 +38393,13 @@ public final class PostOuterClass {
               }
             };
 
-      public static com.google.protobuf.Internal.EnumVerifier 
+      public static com.google.protobuf.Internal.EnumVerifier
           internalGetVerifier() {
         return KindVerifier.INSTANCE;
       }
 
-      private static final class KindVerifier implements 
-           com.google.protobuf.Internal.EnumVerifier { 
+      private static final class KindVerifier implements
+           com.google.protobuf.Internal.EnumVerifier {
               static final com.google.protobuf.Internal.EnumVerifier
                   INSTANCE = new KindVerifier();
               @java.lang.Override
@@ -28291,7 +38483,7 @@ public final class PostOuterClass {
      * @param value The targetId to set.
      */
     private void setTargetId(long value) {
-      
+
       targetId_ = value;
     }
     /**
@@ -28508,6 +38700,169 @@ public final class PostOuterClass {
     private void clearBaseKind() {
 
       baseKind_ = 0;
+    }
+
+    public static final int KEY_ENVELOPES_FIELD_NUMBER = 5;
+    private com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> keyEnvelopes_;
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    @java.lang.Override
+    public java.util.List<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> getKeyEnvelopesList() {
+      return keyEnvelopes_;
+    }
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    public java.util.List<? extends peers_touch.model.social.v1.Media.AudienceKeyEnvelopeOrBuilder>
+        getKeyEnvelopesOrBuilderList() {
+      return keyEnvelopes_;
+    }
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    @java.lang.Override
+    public int getKeyEnvelopesCount() {
+      return keyEnvelopes_.size();
+    }
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.Media.AudienceKeyEnvelope getKeyEnvelopes(int index) {
+      return keyEnvelopes_.get(index);
+    }
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    public peers_touch.model.social.v1.Media.AudienceKeyEnvelopeOrBuilder getKeyEnvelopesOrBuilder(
+        int index) {
+      return keyEnvelopes_.get(index);
+    }
+    private void ensureKeyEnvelopesIsMutable() {
+      com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> tmp = keyEnvelopes_;
+      if (!tmp.isModifiable()) {
+        keyEnvelopes_ =
+            com.google.protobuf.GeneratedMessageLite.mutableCopy(tmp);
+       }
+    }
+
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setKeyEnvelopes(
+        int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+      value.getClass();  // minimal bytecode null check
+      ensureKeyEnvelopesIsMutable();
+      keyEnvelopes_.set(index, value);
+    }
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addKeyEnvelopes(peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+      value.getClass();  // minimal bytecode null check
+      ensureKeyEnvelopesIsMutable();
+      keyEnvelopes_.add(value);
+    }
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addKeyEnvelopes(
+        int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+      value.getClass();  // minimal bytecode null check
+      ensureKeyEnvelopesIsMutable();
+      keyEnvelopes_.add(index, value);
+    }
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    private void addAllKeyEnvelopes(
+        java.lang.Iterable<? extends peers_touch.model.social.v1.Media.AudienceKeyEnvelope> values) {
+      ensureKeyEnvelopesIsMutable();
+      com.google.protobuf.AbstractMessageLite.addAll(
+          values, keyEnvelopes_);
+    }
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    private void clearKeyEnvelopes() {
+      keyEnvelopes_ = emptyProtobufList();
+    }
+    /**
+     * <pre>
+     * Key envelopes are audience-specific and intentionally separate from
+     * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+     * sealed keys so Station can authorize fanout without reading media keys.
+     * </pre>
+     *
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+     */
+    private void removeKeyEnvelopes(int index) {
+      ensureKeyEnvelopesIsMutable();
+      keyEnvelopes_.remove(index);
     }
 
     public static peers_touch.model.social.v1.PostOuterClass.Audience parseFrom(
@@ -28923,6 +39278,180 @@ public final class PostOuterClass {
         return this;
       }
 
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      @java.lang.Override
+      public java.util.List<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> getKeyEnvelopesList() {
+        return java.util.Collections.unmodifiableList(
+            instance.getKeyEnvelopesList());
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      @java.lang.Override
+      public int getKeyEnvelopesCount() {
+        return instance.getKeyEnvelopesCount();
+      }/**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.Media.AudienceKeyEnvelope getKeyEnvelopes(int index) {
+        return instance.getKeyEnvelopes(index);
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      public Builder setKeyEnvelopes(
+          int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+        copyOnWrite();
+        instance.setKeyEnvelopes(index, value);
+        return this;
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      public Builder setKeyEnvelopes(
+          int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope.Builder builderForValue) {
+        copyOnWrite();
+        instance.setKeyEnvelopes(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      public Builder addKeyEnvelopes(peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+        copyOnWrite();
+        instance.addKeyEnvelopes(value);
+        return this;
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      public Builder addKeyEnvelopes(
+          int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+        copyOnWrite();
+        instance.addKeyEnvelopes(index, value);
+        return this;
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      public Builder addKeyEnvelopes(
+          peers_touch.model.social.v1.Media.AudienceKeyEnvelope.Builder builderForValue) {
+        copyOnWrite();
+        instance.addKeyEnvelopes(builderForValue.build());
+        return this;
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      public Builder addKeyEnvelopes(
+          int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope.Builder builderForValue) {
+        copyOnWrite();
+        instance.addKeyEnvelopes(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      public Builder addAllKeyEnvelopes(
+          java.lang.Iterable<? extends peers_touch.model.social.v1.Media.AudienceKeyEnvelope> values) {
+        copyOnWrite();
+        instance.addAllKeyEnvelopes(values);
+        return this;
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      public Builder clearKeyEnvelopes() {
+        copyOnWrite();
+        instance.clearKeyEnvelopes();
+        return this;
+      }
+      /**
+       * <pre>
+       * Key envelopes are audience-specific and intentionally separate from
+       * media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
+       * sealed keys so Station can authorize fanout without reading media keys.
+       * </pre>
+       *
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;</code>
+       */
+      public Builder removeKeyEnvelopes(int index) {
+        copyOnWrite();
+        instance.removeKeyEnvelopes(index);
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.Audience)
     }
     @java.lang.Override
@@ -28943,10 +39472,12 @@ public final class PostOuterClass {
               "targetId_",
               "actorDids_",
               "baseKind_",
+              "keyEnvelopes_",
+              peers_touch.model.social.v1.Media.AudienceKeyEnvelope.class,
             };
             java.lang.String info =
-                "\u0000\u0004\u0000\u0000\u0001\u0004\u0004\u0000\u0001\u0000\u0001\f\u0002\u0003" +
-                "\u0003\u021a\u0004\f";
+                "\u0000\u0005\u0000\u0000\u0001\u0005\u0005\u0000\u0002\u0000\u0001\f\u0002\u0003" +
+                "\u0003\u021a\u0004\f\u0005\u001b";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {
@@ -29104,7 +39635,7 @@ public final class PostOuterClass {
      * @param value The count to set.
      */
     private void setCount(long value) {
-      
+
       count_ = value;
     }
     /**
@@ -29138,7 +39669,7 @@ public final class PostOuterClass {
      * @param value The reactedByViewer to set.
      */
     private void setReactedByViewer(boolean value) {
-      
+
       reactedByViewer_ = value;
     }
     /**
@@ -29567,7 +40098,7 @@ public final class PostOuterClass {
      * @param value The offset to set.
      */
     private void setOffset(int value) {
-      
+
       offset_ = value;
     }
     /**
@@ -29593,7 +40124,7 @@ public final class PostOuterClass {
      * @param value The length to set.
      */
     private void setLength(int value) {
-      
+
       length_ = value;
     }
     /**
@@ -30403,7 +40934,7 @@ public final class PostOuterClass {
      *
      * <code>repeated .peers_touch.model.social.v1.ReactionSummary reactions = 2;</code>
      */
-    java.util.List<peers_touch.model.social.v1.PostOuterClass.ReactionSummary> 
+    java.util.List<peers_touch.model.social.v1.PostOuterClass.ReactionSummary>
         getReactionsList();
     /**
      * <pre>
@@ -30450,7 +40981,7 @@ public final class PostOuterClass {
      * @param value The success to set.
      */
     private void setSuccess(boolean value) {
-      
+
       success_ = value;
     }
     /**
@@ -30483,7 +41014,7 @@ public final class PostOuterClass {
      *
      * <code>repeated .peers_touch.model.social.v1.ReactionSummary reactions = 2;</code>
      */
-    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.ReactionSummaryOrBuilder> 
+    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.ReactionSummaryOrBuilder>
         getReactionsOrBuilderList() {
       return reactions_;
     }
@@ -31388,7 +41919,7 @@ public final class PostOuterClass {
     /**
      * <code>repeated .peers_touch.model.social.v1.ReactionSummary reactions = 2;</code>
      */
-    java.util.List<peers_touch.model.social.v1.PostOuterClass.ReactionSummary> 
+    java.util.List<peers_touch.model.social.v1.PostOuterClass.ReactionSummary>
         getReactionsList();
     /**
      * <code>repeated .peers_touch.model.social.v1.ReactionSummary reactions = 2;</code>
@@ -31425,7 +41956,7 @@ public final class PostOuterClass {
      * @param value The success to set.
      */
     private void setSuccess(boolean value) {
-      
+
       success_ = value;
     }
     /**
@@ -31448,7 +41979,7 @@ public final class PostOuterClass {
     /**
      * <code>repeated .peers_touch.model.social.v1.ReactionSummary reactions = 2;</code>
      */
-    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.ReactionSummaryOrBuilder> 
+    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.ReactionSummaryOrBuilder>
         getReactionsOrBuilderList() {
       return reactions_;
     }
@@ -32076,7 +42607,7 @@ public final class PostOuterClass {
      * @param value The limit to set.
      */
     private void setLimit(int value) {
-      
+
       limit_ = value;
     }
     /**
@@ -32462,7 +42993,7 @@ public final class PostOuterClass {
     /**
      * <code>repeated .peers_touch.model.social.v1.ListReactionsResponse.Entry entries = 1;</code>
      */
-    java.util.List<peers_touch.model.social.v1.PostOuterClass.ListReactionsResponse.Entry> 
+    java.util.List<peers_touch.model.social.v1.PostOuterClass.ListReactionsResponse.Entry>
         getEntriesList();
     /**
      * <code>repeated .peers_touch.model.social.v1.ListReactionsResponse.Entry entries = 1;</code>
@@ -33018,7 +43549,7 @@ public final class PostOuterClass {
     /**
      * <code>repeated .peers_touch.model.social.v1.ListReactionsResponse.Entry entries = 1;</code>
      */
-    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.ListReactionsResponse.EntryOrBuilder> 
+    public java.util.List<? extends peers_touch.model.social.v1.PostOuterClass.ListReactionsResponse.EntryOrBuilder>
         getEntriesOrBuilderList() {
       return entries_;
     }
@@ -33166,7 +43697,7 @@ public final class PostOuterClass {
      * @param value The hasMore to set.
      */
     private void setHasMore(boolean value) {
-      
+
       hasMore_ = value;
     }
     /**

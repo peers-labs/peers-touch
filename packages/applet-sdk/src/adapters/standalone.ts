@@ -141,7 +141,16 @@ export class StandaloneBridgeAdapter implements BridgeAdapter {
     if (!service || !path) {
       throw new AppletError(AppletErrorCode.NetworkError, 'network.request requires service and path parameters');
     }
-    const url = `${service.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
+    const url = new URL(`${service.replace(/\/$/, '')}/${path.replace(/^\//, '')}`);
+    const query = params?.query as Record<string, string | number | boolean | Array<string | number | boolean>> | undefined;
+    if (query) {
+      for (const [key, value] of Object.entries(query)) {
+        const values = Array.isArray(value) ? value : [value];
+        for (const item of values) {
+          url.searchParams.append(key, String(item));
+        }
+      }
+    }
 
     const method = (params?.method as string) ?? 'GET';
     const headers = (params?.headers as Record<string, string>) ?? {};

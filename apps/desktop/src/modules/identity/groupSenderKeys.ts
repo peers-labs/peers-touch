@@ -439,8 +439,11 @@ export async function ensureSkdmDistributed(
  */
 export async function encryptForGroup(groupUlid: string, plaintext: string): Promise<string> {
   const bytes = new TextEncoder().encode(plaintext);
-  const b64 = bytesToBase64(bytes);
-  const r = await api.cryptoGroupEncrypt(groupUlid, b64);
+  return encryptBytesForGroup(groupUlid, bytes);
+}
+
+export async function encryptBytesForGroup(groupUlid: string, plaintext: Uint8Array): Promise<string> {
+  const r = await api.cryptoGroupEncrypt(groupUlid, bytesToBase64(plaintext));
   return r.encrypted_payload_b64;
 }
 
@@ -458,20 +461,40 @@ export async function decryptFromGroup(
   encryptedPayloadB64: string,
 ): Promise<{ plaintext: string; senderDid: string; senderKeyId: number; counter: number }> {
   try {
-    const r = await api.cryptoGroupDecrypt(groupUlid, encryptedPayloadB64);
-    const bytes = base64ToBytes(r.plaintext_b64);
+    const { bytes, ...metadata } = await decryptBytesFromGroup(groupUlid, encryptedPayloadB64);
     const plaintext = new TextDecoder().decode(bytes);
     return {
       plaintext,
-      senderDid: r.sender_did,
-      senderKeyId: r.sender_key_id,
-      counter: r.counter,
+      senderDid: metadata.senderDid,
+      senderKeyId: metadata.senderKeyId,
+      counter: metadata.counter,
     };
   } catch (err) {
     // The Rust side returns ErrorCode::NotFound with message
     // "No sender chain ..." in this case. We don't have a typed
     // error here so we string-match -- best-effort, the missing
     // SKDM path is the only NotFound this command emits.
+    const msg = (err as Error)?.message ?? String(err);
+    if (msg.toLowerCase().includes('no sender chain')) {
+      throw new MissingSkdmError(groupUlid, null);
+    }
+    throw err;
+  }
+}
+
+export async function decryptBytesFromGroup(
+  groupUlid: string,
+  encryptedPayloadB64: string,
+): Promise<{ bytes: Uint8Array; senderDid: string; senderKeyId: number; counter: number }> {
+  try {
+    const r = await api.cryptoGroupDecrypt(groupUlid, encryptedPayloadB64);
+    return {
+      bytes: base64ToBytes(r.plaintext_b64),
+      senderDid: r.sender_did,
+      senderKeyId: r.sender_key_id,
+      counter: r.counter,
+    };
+  } catch (err) {
     const msg = (err as Error)?.message ?? String(err);
     if (msg.toLowerCase().includes('no sender chain')) {
       throw new MissingSkdmError(groupUlid, null);
