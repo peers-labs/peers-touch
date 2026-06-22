@@ -4148,7 +4148,7 @@ java.lang.String defaultValue) {
      *
      * <code>string content = 5 [deprecated = true];</code>
      * @deprecated peers_touch.model.chat.v1.GroupMessage.content is deprecated.
-     *     See domain/chat/group_chat.proto;l=91
+     *     See domain/chat/group_chat.proto;l=92
      * @return The content.
      */
     @java.lang.Deprecated java.lang.String getContent();
@@ -4164,7 +4164,7 @@ java.lang.String defaultValue) {
      *
      * <code>string content = 5 [deprecated = true];</code>
      * @deprecated peers_touch.model.chat.v1.GroupMessage.content is deprecated.
-     *     See domain/chat/group_chat.proto;l=91
+     *     See domain/chat/group_chat.proto;l=92
      * @return The bytes for content.
      */
     @java.lang.Deprecated com.google.protobuf.ByteString
@@ -4606,7 +4606,7 @@ java.lang.String defaultValue) {
      *
      * <code>string content = 5 [deprecated = true];</code>
      * @deprecated peers_touch.model.chat.v1.GroupMessage.content is deprecated.
-     *     See domain/chat/group_chat.proto;l=91
+     *     See domain/chat/group_chat.proto;l=92
      * @return The content.
      */
     @java.lang.Override
@@ -4625,7 +4625,7 @@ java.lang.String defaultValue) {
      *
      * <code>string content = 5 [deprecated = true];</code>
      * @deprecated peers_touch.model.chat.v1.GroupMessage.content is deprecated.
-     *     See domain/chat/group_chat.proto;l=91
+     *     See domain/chat/group_chat.proto;l=92
      * @return The bytes for content.
      */
     @java.lang.Override
@@ -5756,7 +5756,7 @@ java.lang.String defaultValue) {
        *
        * <code>string content = 5 [deprecated = true];</code>
        * @deprecated peers_touch.model.chat.v1.GroupMessage.content is deprecated.
-       *     See domain/chat/group_chat.proto;l=91
+       *     See domain/chat/group_chat.proto;l=92
        * @return The content.
        */
       @java.lang.Override
@@ -5775,7 +5775,7 @@ java.lang.String defaultValue) {
        *
        * <code>string content = 5 [deprecated = true];</code>
        * @deprecated peers_touch.model.chat.v1.GroupMessage.content is deprecated.
-       *     See domain/chat/group_chat.proto;l=91
+       *     See domain/chat/group_chat.proto;l=92
        * @return The bytes for content.
        */
       @java.lang.Override
@@ -5795,7 +5795,7 @@ java.lang.String defaultValue) {
        *
        * <code>string content = 5 [deprecated = true];</code>
        * @deprecated peers_touch.model.chat.v1.GroupMessage.content is deprecated.
-       *     See domain/chat/group_chat.proto;l=91
+       *     See domain/chat/group_chat.proto;l=92
        * @param value The content to set.
        * @return This builder for chaining.
        */
@@ -5817,7 +5817,7 @@ java.lang.String defaultValue) {
        *
        * <code>string content = 5 [deprecated = true];</code>
        * @deprecated peers_touch.model.chat.v1.GroupMessage.content is deprecated.
-       *     See domain/chat/group_chat.proto;l=91
+       *     See domain/chat/group_chat.proto;l=92
        * @return This builder for chaining.
        */
       @java.lang.Deprecated public Builder clearContent() {
@@ -5837,7 +5837,7 @@ java.lang.String defaultValue) {
        *
        * <code>string content = 5 [deprecated = true];</code>
        * @deprecated peers_touch.model.chat.v1.GroupMessage.content is deprecated.
-       *     See domain/chat/group_chat.proto;l=91
+       *     See domain/chat/group_chat.proto;l=92
        * @param value The bytes for content to set.
        * @return This builder for chaining.
        */
@@ -8393,6 +8393,697 @@ java.lang.String defaultValue) {
     }
   }
 
+  public interface ChatEncryptedMessagePayloadOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:peers_touch.model.chat.v1.ChatEncryptedMessagePayload)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>uint32 version = 1;</code>
+     * @return The version.
+     */
+    int getVersion();
+
+    /**
+     * <code>string text = 2;</code>
+     * @return The text.
+     */
+    java.lang.String getText();
+    /**
+     * <code>string text = 2;</code>
+     * @return The bytes for text.
+     */
+    com.google.protobuf.ByteString
+        getTextBytes();
+
+    /**
+     * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+     */
+    java.util.List<peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment> 
+        getAttachmentsList();
+    /**
+     * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+     */
+    peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment getAttachments(int index);
+    /**
+     * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+     */
+    int getAttachmentsCount();
+
+    /**
+     * <code>.peers_touch.model.chat.v1.GroupMessageType message_type = 4;</code>
+     * @return The enum numeric value on the wire for messageType.
+     */
+    int getMessageTypeValue();
+    /**
+     * <code>.peers_touch.model.chat.v1.GroupMessageType message_type = 4;</code>
+     * @return The messageType.
+     */
+    peers_touch.model.chat.v1.GroupChat.GroupMessageType getMessageType();
+  }
+  /**
+   * <pre>
+   * ChatEncryptedMessagePayload is the plaintext that goes into the
+   * Sender-Keys cipher before it becomes GroupCiphertext.ciphertext.
+   * It is a protobuf message by design: clients may decode it after
+   * E2EE decrypt, while Station only stores the outer opaque
+   * encrypted_payload bytes and must never parse this structure.
+   * </pre>
+   *
+   * Protobuf type {@code peers_touch.model.chat.v1.ChatEncryptedMessagePayload}
+   */
+  public  static final class ChatEncryptedMessagePayload extends
+      com.google.protobuf.GeneratedMessageLite<
+          ChatEncryptedMessagePayload, ChatEncryptedMessagePayload.Builder> implements
+      // @@protoc_insertion_point(message_implements:peers_touch.model.chat.v1.ChatEncryptedMessagePayload)
+      ChatEncryptedMessagePayloadOrBuilder {
+    private ChatEncryptedMessagePayload() {
+      text_ = "";
+      attachments_ = emptyProtobufList();
+    }
+    public static final int VERSION_FIELD_NUMBER = 1;
+    private int version_;
+    /**
+     * <code>uint32 version = 1;</code>
+     * @return The version.
+     */
+    @java.lang.Override
+    public int getVersion() {
+      return version_;
+    }
+    /**
+     * <code>uint32 version = 1;</code>
+     * @param value The version to set.
+     */
+    private void setVersion(int value) {
+      
+      version_ = value;
+    }
+    /**
+     * <code>uint32 version = 1;</code>
+     */
+    private void clearVersion() {
+
+      version_ = 0;
+    }
+
+    public static final int TEXT_FIELD_NUMBER = 2;
+    private java.lang.String text_;
+    /**
+     * <code>string text = 2;</code>
+     * @return The text.
+     */
+    @java.lang.Override
+    public java.lang.String getText() {
+      return text_;
+    }
+    /**
+     * <code>string text = 2;</code>
+     * @return The bytes for text.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getTextBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(text_);
+    }
+    /**
+     * <code>string text = 2;</code>
+     * @param value The text to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setText(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      text_ = value;
+    }
+    /**
+     * <code>string text = 2;</code>
+     */
+    private void clearText() {
+
+      text_ = getDefaultInstance().getText();
+    }
+    /**
+     * <code>string text = 2;</code>
+     * @param value The bytes for text to set.
+     */
+    private void setTextBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      text_ = value.toStringUtf8();
+
+    }
+
+    public static final int ATTACHMENTS_FIELD_NUMBER = 3;
+    private com.google.protobuf.Internal.ProtobufList<peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment> attachments_;
+    /**
+     * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+     */
+    @java.lang.Override
+    public java.util.List<peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment> getAttachmentsList() {
+      return attachments_;
+    }
+    /**
+     * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+     */
+    public java.util.List<? extends peers_touch.model.chat.v1.GroupChat.GroupMessageAttachmentOrBuilder> 
+        getAttachmentsOrBuilderList() {
+      return attachments_;
+    }
+    /**
+     * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+     */
+    @java.lang.Override
+    public int getAttachmentsCount() {
+      return attachments_.size();
+    }
+    /**
+     * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment getAttachments(int index) {
+      return attachments_.get(index);
+    }
+    /**
+     * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+     */
+    public peers_touch.model.chat.v1.GroupChat.GroupMessageAttachmentOrBuilder getAttachmentsOrBuilder(
+        int index) {
+      return attachments_.get(index);
+    }
+    private void ensureAttachmentsIsMutable() {
+      com.google.protobuf.Internal.ProtobufList<peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment> tmp = attachments_;
+      if (!tmp.isModifiable()) {
+        attachments_ =
+            com.google.protobuf.GeneratedMessageLite.mutableCopy(tmp);
+       }
+    }
+
+    /**
+     * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setAttachments(
+        int index, peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment value) {
+      value.getClass();  // minimal bytecode null check
+      ensureAttachmentsIsMutable();
+      attachments_.set(index, value);
+    }
+    /**
+     * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addAttachments(peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment value) {
+      value.getClass();  // minimal bytecode null check
+      ensureAttachmentsIsMutable();
+      attachments_.add(value);
+    }
+    /**
+     * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addAttachments(
+        int index, peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment value) {
+      value.getClass();  // minimal bytecode null check
+      ensureAttachmentsIsMutable();
+      attachments_.add(index, value);
+    }
+    /**
+     * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+     */
+    private void addAllAttachments(
+        java.lang.Iterable<? extends peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment> values) {
+      ensureAttachmentsIsMutable();
+      com.google.protobuf.AbstractMessageLite.addAll(
+          values, attachments_);
+    }
+    /**
+     * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+     */
+    private void clearAttachments() {
+      attachments_ = emptyProtobufList();
+    }
+    /**
+     * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+     */
+    private void removeAttachments(int index) {
+      ensureAttachmentsIsMutable();
+      attachments_.remove(index);
+    }
+
+    public static final int MESSAGE_TYPE_FIELD_NUMBER = 4;
+    private int messageType_;
+    /**
+     * <code>.peers_touch.model.chat.v1.GroupMessageType message_type = 4;</code>
+     * @return The enum numeric value on the wire for messageType.
+     */
+    @java.lang.Override
+    public int getMessageTypeValue() {
+      return messageType_;
+    }
+    /**
+     * <code>.peers_touch.model.chat.v1.GroupMessageType message_type = 4;</code>
+     * @return The messageType.
+     */
+    @java.lang.Override
+    public peers_touch.model.chat.v1.GroupChat.GroupMessageType getMessageType() {
+      peers_touch.model.chat.v1.GroupChat.GroupMessageType result = peers_touch.model.chat.v1.GroupChat.GroupMessageType.forNumber(messageType_);
+      return result == null ? peers_touch.model.chat.v1.GroupChat.GroupMessageType.UNRECOGNIZED : result;
+    }
+    /**
+     * <code>.peers_touch.model.chat.v1.GroupMessageType message_type = 4;</code>
+     * @param value The enum numeric value on the wire for messageType to set.
+     * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+     */
+    private void setMessageTypeValue(int value) {
+        messageType_ = value;
+    }
+    /**
+     * <code>.peers_touch.model.chat.v1.GroupMessageType message_type = 4;</code>
+     * @param value The messageType to set.
+     */
+    private void setMessageType(peers_touch.model.chat.v1.GroupChat.GroupMessageType value) {
+      messageType_ = value.getNumber();
+
+    }
+    /**
+     * <code>.peers_touch.model.chat.v1.GroupMessageType message_type = 4;</code>
+     */
+    private void clearMessageType() {
+
+      messageType_ = 0;
+    }
+
+    public static peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * <pre>
+     * ChatEncryptedMessagePayload is the plaintext that goes into the
+     * Sender-Keys cipher before it becomes GroupCiphertext.ciphertext.
+     * It is a protobuf message by design: clients may decode it after
+     * E2EE decrypt, while Station only stores the outer opaque
+     * encrypted_payload bytes and must never parse this structure.
+     * </pre>
+     *
+     * Protobuf type {@code peers_touch.model.chat.v1.ChatEncryptedMessagePayload}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload, Builder> implements
+        // @@protoc_insertion_point(builder_implements:peers_touch.model.chat.v1.ChatEncryptedMessagePayload)
+        peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayloadOrBuilder {
+      // Construct using peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>uint32 version = 1;</code>
+       * @return The version.
+       */
+      @java.lang.Override
+      public int getVersion() {
+        return instance.getVersion();
+      }
+      /**
+       * <code>uint32 version = 1;</code>
+       * @param value The version to set.
+       * @return This builder for chaining.
+       */
+      public Builder setVersion(int value) {
+        copyOnWrite();
+        instance.setVersion(value);
+        return this;
+      }
+      /**
+       * <code>uint32 version = 1;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearVersion() {
+        copyOnWrite();
+        instance.clearVersion();
+        return this;
+      }
+
+      /**
+       * <code>string text = 2;</code>
+       * @return The text.
+       */
+      @java.lang.Override
+      public java.lang.String getText() {
+        return instance.getText();
+      }
+      /**
+       * <code>string text = 2;</code>
+       * @return The bytes for text.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getTextBytes() {
+        return instance.getTextBytes();
+      }
+      /**
+       * <code>string text = 2;</code>
+       * @param value The text to set.
+       * @return This builder for chaining.
+       */
+      public Builder setText(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setText(value);
+        return this;
+      }
+      /**
+       * <code>string text = 2;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearText() {
+        copyOnWrite();
+        instance.clearText();
+        return this;
+      }
+      /**
+       * <code>string text = 2;</code>
+       * @param value The bytes for text to set.
+       * @return This builder for chaining.
+       */
+      public Builder setTextBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setTextBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+       */
+      @java.lang.Override
+      public java.util.List<peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment> getAttachmentsList() {
+        return java.util.Collections.unmodifiableList(
+            instance.getAttachmentsList());
+      }
+      /**
+       * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+       */
+      @java.lang.Override
+      public int getAttachmentsCount() {
+        return instance.getAttachmentsCount();
+      }/**
+       * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment getAttachments(int index) {
+        return instance.getAttachments(index);
+      }
+      /**
+       * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+       */
+      public Builder setAttachments(
+          int index, peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment value) {
+        copyOnWrite();
+        instance.setAttachments(index, value);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+       */
+      public Builder setAttachments(
+          int index, peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment.Builder builderForValue) {
+        copyOnWrite();
+        instance.setAttachments(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+       */
+      public Builder addAttachments(peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment value) {
+        copyOnWrite();
+        instance.addAttachments(value);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+       */
+      public Builder addAttachments(
+          int index, peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment value) {
+        copyOnWrite();
+        instance.addAttachments(index, value);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+       */
+      public Builder addAttachments(
+          peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment.Builder builderForValue) {
+        copyOnWrite();
+        instance.addAttachments(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+       */
+      public Builder addAttachments(
+          int index, peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment.Builder builderForValue) {
+        copyOnWrite();
+        instance.addAttachments(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+       */
+      public Builder addAllAttachments(
+          java.lang.Iterable<? extends peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment> values) {
+        copyOnWrite();
+        instance.addAllAttachments(values);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+       */
+      public Builder clearAttachments() {
+        copyOnWrite();
+        instance.clearAttachments();
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.chat.v1.GroupMessageAttachment attachments = 3;</code>
+       */
+      public Builder removeAttachments(int index) {
+        copyOnWrite();
+        instance.removeAttachments(index);
+        return this;
+      }
+
+      /**
+       * <code>.peers_touch.model.chat.v1.GroupMessageType message_type = 4;</code>
+       * @return The enum numeric value on the wire for messageType.
+       */
+      @java.lang.Override
+      public int getMessageTypeValue() {
+        return instance.getMessageTypeValue();
+      }
+      /**
+       * <code>.peers_touch.model.chat.v1.GroupMessageType message_type = 4;</code>
+       * @param value The messageType to set.
+       * @return This builder for chaining.
+       */
+      public Builder setMessageTypeValue(int value) {
+        copyOnWrite();
+        instance.setMessageTypeValue(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.chat.v1.GroupMessageType message_type = 4;</code>
+       * @return The messageType.
+       */
+      @java.lang.Override
+      public peers_touch.model.chat.v1.GroupChat.GroupMessageType getMessageType() {
+        return instance.getMessageType();
+      }
+      /**
+       * <code>.peers_touch.model.chat.v1.GroupMessageType message_type = 4;</code>
+       * @param value The enum numeric value on the wire for messageType to set.
+       * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+       * @return This builder for chaining.
+       */
+      public Builder setMessageType(peers_touch.model.chat.v1.GroupChat.GroupMessageType value) {
+        copyOnWrite();
+        instance.setMessageType(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.chat.v1.GroupMessageType message_type = 4;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearMessageType() {
+        copyOnWrite();
+        instance.clearMessageType();
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:peers_touch.model.chat.v1.ChatEncryptedMessagePayload)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"ThrowNull"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "version_",
+              "text_",
+              "attachments_",
+              peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment.class,
+              "messageType_",
+            };
+            java.lang.String info =
+                "\u0000\u0004\u0000\u0000\u0001\u0004\u0004\u0000\u0001\u0000\u0001\u000b\u0002\u0208" +
+                "\u0003\u001b\u0004\f";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload> parser = PARSER;
+          if (parser == null) {
+            synchronized (peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+        }
+        case GET_MEMOIZED_IS_INITIALIZED: {
+          return (byte) 1;
+        }
+        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
+        // So it can do anything. Combine with default case for smaller codegen.
+        case SET_MEMOIZED_IS_INITIALIZED:
+      }
+      // Should never happen. Generates tight code to throw an exception.
+      throw null;
+    }
+
+
+    // @@protoc_insertion_point(class_scope:peers_touch.model.chat.v1.ChatEncryptedMessagePayload)
+    private static final peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload DEFAULT_INSTANCE;
+    static {
+      ChatEncryptedMessagePayload defaultInstance = new ChatEncryptedMessagePayload();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        ChatEncryptedMessagePayload.class, defaultInstance);
+    }
+
+    public static peers_touch.model.chat.v1.GroupChat.ChatEncryptedMessagePayload getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<ChatEncryptedMessagePayload> PARSER;
+
+    public static com.google.protobuf.Parser<ChatEncryptedMessagePayload> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
   public interface GroupMessageAttachmentOrBuilder extends
       // @@protoc_insertion_point(interface_extends:peers_touch.model.chat.v1.GroupMessageAttachment)
       com.google.protobuf.MessageLiteOrBuilder {
@@ -8484,6 +9175,101 @@ java.lang.String defaultValue) {
      */
     com.google.protobuf.ByteString
         getVisibilityBytes();
+
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 14;</code>
+     * @return Whether the mediaEncryption field is set.
+     */
+    boolean hasMediaEncryption();
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 14;</code>
+     * @return The mediaEncryption.
+     */
+    peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption();
+
+    /**
+     * <pre>
+     * Deprecated compatibility mirrors for older generated clients. New
+     * clients must populate/read `media_encryption` inside the encrypted
+     * chat payload so Station never sees attachment key material.
+     * </pre>
+     *
+     * <code>string encryption_suite = 7;</code>
+     * @return The encryptionSuite.
+     */
+    java.lang.String getEncryptionSuite();
+    /**
+     * <pre>
+     * Deprecated compatibility mirrors for older generated clients. New
+     * clients must populate/read `media_encryption` inside the encrypted
+     * chat payload so Station never sees attachment key material.
+     * </pre>
+     *
+     * <code>string encryption_suite = 7;</code>
+     * @return The bytes for encryptionSuite.
+     */
+    com.google.protobuf.ByteString
+        getEncryptionSuiteBytes();
+
+    /**
+     * <code>string encryption_key_b64 = 8;</code>
+     * @return The encryptionKeyB64.
+     */
+    java.lang.String getEncryptionKeyB64();
+    /**
+     * <code>string encryption_key_b64 = 8;</code>
+     * @return The bytes for encryptionKeyB64.
+     */
+    com.google.protobuf.ByteString
+        getEncryptionKeyB64Bytes();
+
+    /**
+     * <code>string encryption_nonce_b64 = 9;</code>
+     * @return The encryptionNonceB64.
+     */
+    java.lang.String getEncryptionNonceB64();
+    /**
+     * <code>string encryption_nonce_b64 = 9;</code>
+     * @return The bytes for encryptionNonceB64.
+     */
+    com.google.protobuf.ByteString
+        getEncryptionNonceB64Bytes();
+
+    /**
+     * <code>string plaintext_sha256_b64 = 10;</code>
+     * @return The plaintextSha256B64.
+     */
+    java.lang.String getPlaintextSha256B64();
+    /**
+     * <code>string plaintext_sha256_b64 = 10;</code>
+     * @return The bytes for plaintextSha256B64.
+     */
+    com.google.protobuf.ByteString
+        getPlaintextSha256B64Bytes();
+
+    /**
+     * <code>string ciphertext_sha256_b64 = 11;</code>
+     * @return The ciphertextSha256B64.
+     */
+    java.lang.String getCiphertextSha256B64();
+    /**
+     * <code>string ciphertext_sha256_b64 = 11;</code>
+     * @return The bytes for ciphertextSha256B64.
+     */
+    com.google.protobuf.ByteString
+        getCiphertextSha256B64Bytes();
+
+    /**
+     * <code>int64 plaintext_size = 12;</code>
+     * @return The plaintextSize.
+     */
+    long getPlaintextSize();
+
+    /**
+     * <code>int64 ciphertext_size = 13;</code>
+     * @return The ciphertextSize.
+     */
+    long getCiphertextSize();
   }
   /**
    * Protobuf type {@code peers_touch.model.chat.v1.GroupMessageAttachment}
@@ -8499,7 +9285,13 @@ java.lang.String defaultValue) {
       mimeType_ = "";
       thumbnailCid_ = "";
       visibility_ = "";
+      encryptionSuite_ = "";
+      encryptionKeyB64_ = "";
+      encryptionNonceB64_ = "";
+      plaintextSha256B64_ = "";
+      ciphertextSha256B64_ = "";
     }
+    private int bitField0_;
     public static final int CID_FIELD_NUMBER = 1;
     private java.lang.String cid_;
     /**
@@ -8819,6 +9611,376 @@ java.lang.String defaultValue) {
       checkByteStringIsUtf8(value);
       visibility_ = value.toStringUtf8();
 
+    }
+
+    public static final int MEDIA_ENCRYPTION_FIELD_NUMBER = 14;
+    private peers_touch.model.common.v1.Common.EncryptedMediaDescriptor mediaEncryption_;
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 14;</code>
+     */
+    @java.lang.Override
+    public boolean hasMediaEncryption() {
+      return ((bitField0_ & 0x00000001) != 0);
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 14;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption() {
+      return mediaEncryption_ == null ? peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.getDefaultInstance() : mediaEncryption_;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 14;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+      value.getClass();  // minimal bytecode null check
+      mediaEncryption_ = value;
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 14;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+      value.getClass();  // minimal bytecode null check
+      if (mediaEncryption_ != null &&
+          mediaEncryption_ != peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.getDefaultInstance()) {
+        mediaEncryption_ =
+          peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.newBuilder(mediaEncryption_).mergeFrom(value).buildPartial();
+      } else {
+        mediaEncryption_ = value;
+      }
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 14;</code>
+     */
+    private void clearMediaEncryption() {
+      mediaEncryption_ = null;
+      bitField0_ = (bitField0_ & ~0x00000001);
+    }
+
+    public static final int ENCRYPTION_SUITE_FIELD_NUMBER = 7;
+    private java.lang.String encryptionSuite_;
+    /**
+     * <pre>
+     * Deprecated compatibility mirrors for older generated clients. New
+     * clients must populate/read `media_encryption` inside the encrypted
+     * chat payload so Station never sees attachment key material.
+     * </pre>
+     *
+     * <code>string encryption_suite = 7;</code>
+     * @return The encryptionSuite.
+     */
+    @java.lang.Override
+    public java.lang.String getEncryptionSuite() {
+      return encryptionSuite_;
+    }
+    /**
+     * <pre>
+     * Deprecated compatibility mirrors for older generated clients. New
+     * clients must populate/read `media_encryption` inside the encrypted
+     * chat payload so Station never sees attachment key material.
+     * </pre>
+     *
+     * <code>string encryption_suite = 7;</code>
+     * @return The bytes for encryptionSuite.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getEncryptionSuiteBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(encryptionSuite_);
+    }
+    /**
+     * <pre>
+     * Deprecated compatibility mirrors for older generated clients. New
+     * clients must populate/read `media_encryption` inside the encrypted
+     * chat payload so Station never sees attachment key material.
+     * </pre>
+     *
+     * <code>string encryption_suite = 7;</code>
+     * @param value The encryptionSuite to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setEncryptionSuite(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      encryptionSuite_ = value;
+    }
+    /**
+     * <pre>
+     * Deprecated compatibility mirrors for older generated clients. New
+     * clients must populate/read `media_encryption` inside the encrypted
+     * chat payload so Station never sees attachment key material.
+     * </pre>
+     *
+     * <code>string encryption_suite = 7;</code>
+     */
+    private void clearEncryptionSuite() {
+
+      encryptionSuite_ = getDefaultInstance().getEncryptionSuite();
+    }
+    /**
+     * <pre>
+     * Deprecated compatibility mirrors for older generated clients. New
+     * clients must populate/read `media_encryption` inside the encrypted
+     * chat payload so Station never sees attachment key material.
+     * </pre>
+     *
+     * <code>string encryption_suite = 7;</code>
+     * @param value The bytes for encryptionSuite to set.
+     */
+    private void setEncryptionSuiteBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      encryptionSuite_ = value.toStringUtf8();
+
+    }
+
+    public static final int ENCRYPTION_KEY_B64_FIELD_NUMBER = 8;
+    private java.lang.String encryptionKeyB64_;
+    /**
+     * <code>string encryption_key_b64 = 8;</code>
+     * @return The encryptionKeyB64.
+     */
+    @java.lang.Override
+    public java.lang.String getEncryptionKeyB64() {
+      return encryptionKeyB64_;
+    }
+    /**
+     * <code>string encryption_key_b64 = 8;</code>
+     * @return The bytes for encryptionKeyB64.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getEncryptionKeyB64Bytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(encryptionKeyB64_);
+    }
+    /**
+     * <code>string encryption_key_b64 = 8;</code>
+     * @param value The encryptionKeyB64 to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setEncryptionKeyB64(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      encryptionKeyB64_ = value;
+    }
+    /**
+     * <code>string encryption_key_b64 = 8;</code>
+     */
+    private void clearEncryptionKeyB64() {
+
+      encryptionKeyB64_ = getDefaultInstance().getEncryptionKeyB64();
+    }
+    /**
+     * <code>string encryption_key_b64 = 8;</code>
+     * @param value The bytes for encryptionKeyB64 to set.
+     */
+    private void setEncryptionKeyB64Bytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      encryptionKeyB64_ = value.toStringUtf8();
+
+    }
+
+    public static final int ENCRYPTION_NONCE_B64_FIELD_NUMBER = 9;
+    private java.lang.String encryptionNonceB64_;
+    /**
+     * <code>string encryption_nonce_b64 = 9;</code>
+     * @return The encryptionNonceB64.
+     */
+    @java.lang.Override
+    public java.lang.String getEncryptionNonceB64() {
+      return encryptionNonceB64_;
+    }
+    /**
+     * <code>string encryption_nonce_b64 = 9;</code>
+     * @return The bytes for encryptionNonceB64.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getEncryptionNonceB64Bytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(encryptionNonceB64_);
+    }
+    /**
+     * <code>string encryption_nonce_b64 = 9;</code>
+     * @param value The encryptionNonceB64 to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setEncryptionNonceB64(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      encryptionNonceB64_ = value;
+    }
+    /**
+     * <code>string encryption_nonce_b64 = 9;</code>
+     */
+    private void clearEncryptionNonceB64() {
+
+      encryptionNonceB64_ = getDefaultInstance().getEncryptionNonceB64();
+    }
+    /**
+     * <code>string encryption_nonce_b64 = 9;</code>
+     * @param value The bytes for encryptionNonceB64 to set.
+     */
+    private void setEncryptionNonceB64Bytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      encryptionNonceB64_ = value.toStringUtf8();
+
+    }
+
+    public static final int PLAINTEXT_SHA256_B64_FIELD_NUMBER = 10;
+    private java.lang.String plaintextSha256B64_;
+    /**
+     * <code>string plaintext_sha256_b64 = 10;</code>
+     * @return The plaintextSha256B64.
+     */
+    @java.lang.Override
+    public java.lang.String getPlaintextSha256B64() {
+      return plaintextSha256B64_;
+    }
+    /**
+     * <code>string plaintext_sha256_b64 = 10;</code>
+     * @return The bytes for plaintextSha256B64.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getPlaintextSha256B64Bytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(plaintextSha256B64_);
+    }
+    /**
+     * <code>string plaintext_sha256_b64 = 10;</code>
+     * @param value The plaintextSha256B64 to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setPlaintextSha256B64(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      plaintextSha256B64_ = value;
+    }
+    /**
+     * <code>string plaintext_sha256_b64 = 10;</code>
+     */
+    private void clearPlaintextSha256B64() {
+
+      plaintextSha256B64_ = getDefaultInstance().getPlaintextSha256B64();
+    }
+    /**
+     * <code>string plaintext_sha256_b64 = 10;</code>
+     * @param value The bytes for plaintextSha256B64 to set.
+     */
+    private void setPlaintextSha256B64Bytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      plaintextSha256B64_ = value.toStringUtf8();
+
+    }
+
+    public static final int CIPHERTEXT_SHA256_B64_FIELD_NUMBER = 11;
+    private java.lang.String ciphertextSha256B64_;
+    /**
+     * <code>string ciphertext_sha256_b64 = 11;</code>
+     * @return The ciphertextSha256B64.
+     */
+    @java.lang.Override
+    public java.lang.String getCiphertextSha256B64() {
+      return ciphertextSha256B64_;
+    }
+    /**
+     * <code>string ciphertext_sha256_b64 = 11;</code>
+     * @return The bytes for ciphertextSha256B64.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getCiphertextSha256B64Bytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(ciphertextSha256B64_);
+    }
+    /**
+     * <code>string ciphertext_sha256_b64 = 11;</code>
+     * @param value The ciphertextSha256B64 to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setCiphertextSha256B64(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      ciphertextSha256B64_ = value;
+    }
+    /**
+     * <code>string ciphertext_sha256_b64 = 11;</code>
+     */
+    private void clearCiphertextSha256B64() {
+
+      ciphertextSha256B64_ = getDefaultInstance().getCiphertextSha256B64();
+    }
+    /**
+     * <code>string ciphertext_sha256_b64 = 11;</code>
+     * @param value The bytes for ciphertextSha256B64 to set.
+     */
+    private void setCiphertextSha256B64Bytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      ciphertextSha256B64_ = value.toStringUtf8();
+
+    }
+
+    public static final int PLAINTEXT_SIZE_FIELD_NUMBER = 12;
+    private long plaintextSize_;
+    /**
+     * <code>int64 plaintext_size = 12;</code>
+     * @return The plaintextSize.
+     */
+    @java.lang.Override
+    public long getPlaintextSize() {
+      return plaintextSize_;
+    }
+    /**
+     * <code>int64 plaintext_size = 12;</code>
+     * @param value The plaintextSize to set.
+     */
+    private void setPlaintextSize(long value) {
+      
+      plaintextSize_ = value;
+    }
+    /**
+     * <code>int64 plaintext_size = 12;</code>
+     */
+    private void clearPlaintextSize() {
+
+      plaintextSize_ = 0L;
+    }
+
+    public static final int CIPHERTEXT_SIZE_FIELD_NUMBER = 13;
+    private long ciphertextSize_;
+    /**
+     * <code>int64 ciphertext_size = 13;</code>
+     * @return The ciphertextSize.
+     */
+    @java.lang.Override
+    public long getCiphertextSize() {
+      return ciphertextSize_;
+    }
+    /**
+     * <code>int64 ciphertext_size = 13;</code>
+     * @param value The ciphertextSize to set.
+     */
+    private void setCiphertextSize(long value) {
+      
+      ciphertextSize_ = value;
+    }
+    /**
+     * <code>int64 ciphertext_size = 13;</code>
+     */
+    private void clearCiphertextSize() {
+
+      ciphertextSize_ = 0L;
     }
 
     public static peers_touch.model.chat.v1.GroupChat.GroupMessageAttachment parseFrom(
@@ -9246,6 +10408,384 @@ java.lang.String defaultValue) {
         return this;
       }
 
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 14;</code>
+       */
+      @java.lang.Override
+      public boolean hasMediaEncryption() {
+        return instance.hasMediaEncryption();
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 14;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption() {
+        return instance.getMediaEncryption();
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 14;</code>
+       */
+      public Builder setMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+        copyOnWrite();
+        instance.setMediaEncryption(value);
+        return this;
+        }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 14;</code>
+       */
+      public Builder setMediaEncryption(
+          peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.Builder builderForValue) {
+        copyOnWrite();
+        instance.setMediaEncryption(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 14;</code>
+       */
+      public Builder mergeMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+        copyOnWrite();
+        instance.mergeMediaEncryption(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 14;</code>
+       */
+      public Builder clearMediaEncryption() {  copyOnWrite();
+        instance.clearMediaEncryption();
+        return this;
+      }
+
+      /**
+       * <pre>
+       * Deprecated compatibility mirrors for older generated clients. New
+       * clients must populate/read `media_encryption` inside the encrypted
+       * chat payload so Station never sees attachment key material.
+       * </pre>
+       *
+       * <code>string encryption_suite = 7;</code>
+       * @return The encryptionSuite.
+       */
+      @java.lang.Override
+      public java.lang.String getEncryptionSuite() {
+        return instance.getEncryptionSuite();
+      }
+      /**
+       * <pre>
+       * Deprecated compatibility mirrors for older generated clients. New
+       * clients must populate/read `media_encryption` inside the encrypted
+       * chat payload so Station never sees attachment key material.
+       * </pre>
+       *
+       * <code>string encryption_suite = 7;</code>
+       * @return The bytes for encryptionSuite.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getEncryptionSuiteBytes() {
+        return instance.getEncryptionSuiteBytes();
+      }
+      /**
+       * <pre>
+       * Deprecated compatibility mirrors for older generated clients. New
+       * clients must populate/read `media_encryption` inside the encrypted
+       * chat payload so Station never sees attachment key material.
+       * </pre>
+       *
+       * <code>string encryption_suite = 7;</code>
+       * @param value The encryptionSuite to set.
+       * @return This builder for chaining.
+       */
+      public Builder setEncryptionSuite(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setEncryptionSuite(value);
+        return this;
+      }
+      /**
+       * <pre>
+       * Deprecated compatibility mirrors for older generated clients. New
+       * clients must populate/read `media_encryption` inside the encrypted
+       * chat payload so Station never sees attachment key material.
+       * </pre>
+       *
+       * <code>string encryption_suite = 7;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearEncryptionSuite() {
+        copyOnWrite();
+        instance.clearEncryptionSuite();
+        return this;
+      }
+      /**
+       * <pre>
+       * Deprecated compatibility mirrors for older generated clients. New
+       * clients must populate/read `media_encryption` inside the encrypted
+       * chat payload so Station never sees attachment key material.
+       * </pre>
+       *
+       * <code>string encryption_suite = 7;</code>
+       * @param value The bytes for encryptionSuite to set.
+       * @return This builder for chaining.
+       */
+      public Builder setEncryptionSuiteBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setEncryptionSuiteBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string encryption_key_b64 = 8;</code>
+       * @return The encryptionKeyB64.
+       */
+      @java.lang.Override
+      public java.lang.String getEncryptionKeyB64() {
+        return instance.getEncryptionKeyB64();
+      }
+      /**
+       * <code>string encryption_key_b64 = 8;</code>
+       * @return The bytes for encryptionKeyB64.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getEncryptionKeyB64Bytes() {
+        return instance.getEncryptionKeyB64Bytes();
+      }
+      /**
+       * <code>string encryption_key_b64 = 8;</code>
+       * @param value The encryptionKeyB64 to set.
+       * @return This builder for chaining.
+       */
+      public Builder setEncryptionKeyB64(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setEncryptionKeyB64(value);
+        return this;
+      }
+      /**
+       * <code>string encryption_key_b64 = 8;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearEncryptionKeyB64() {
+        copyOnWrite();
+        instance.clearEncryptionKeyB64();
+        return this;
+      }
+      /**
+       * <code>string encryption_key_b64 = 8;</code>
+       * @param value The bytes for encryptionKeyB64 to set.
+       * @return This builder for chaining.
+       */
+      public Builder setEncryptionKeyB64Bytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setEncryptionKeyB64Bytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string encryption_nonce_b64 = 9;</code>
+       * @return The encryptionNonceB64.
+       */
+      @java.lang.Override
+      public java.lang.String getEncryptionNonceB64() {
+        return instance.getEncryptionNonceB64();
+      }
+      /**
+       * <code>string encryption_nonce_b64 = 9;</code>
+       * @return The bytes for encryptionNonceB64.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getEncryptionNonceB64Bytes() {
+        return instance.getEncryptionNonceB64Bytes();
+      }
+      /**
+       * <code>string encryption_nonce_b64 = 9;</code>
+       * @param value The encryptionNonceB64 to set.
+       * @return This builder for chaining.
+       */
+      public Builder setEncryptionNonceB64(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setEncryptionNonceB64(value);
+        return this;
+      }
+      /**
+       * <code>string encryption_nonce_b64 = 9;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearEncryptionNonceB64() {
+        copyOnWrite();
+        instance.clearEncryptionNonceB64();
+        return this;
+      }
+      /**
+       * <code>string encryption_nonce_b64 = 9;</code>
+       * @param value The bytes for encryptionNonceB64 to set.
+       * @return This builder for chaining.
+       */
+      public Builder setEncryptionNonceB64Bytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setEncryptionNonceB64Bytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string plaintext_sha256_b64 = 10;</code>
+       * @return The plaintextSha256B64.
+       */
+      @java.lang.Override
+      public java.lang.String getPlaintextSha256B64() {
+        return instance.getPlaintextSha256B64();
+      }
+      /**
+       * <code>string plaintext_sha256_b64 = 10;</code>
+       * @return The bytes for plaintextSha256B64.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getPlaintextSha256B64Bytes() {
+        return instance.getPlaintextSha256B64Bytes();
+      }
+      /**
+       * <code>string plaintext_sha256_b64 = 10;</code>
+       * @param value The plaintextSha256B64 to set.
+       * @return This builder for chaining.
+       */
+      public Builder setPlaintextSha256B64(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setPlaintextSha256B64(value);
+        return this;
+      }
+      /**
+       * <code>string plaintext_sha256_b64 = 10;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearPlaintextSha256B64() {
+        copyOnWrite();
+        instance.clearPlaintextSha256B64();
+        return this;
+      }
+      /**
+       * <code>string plaintext_sha256_b64 = 10;</code>
+       * @param value The bytes for plaintextSha256B64 to set.
+       * @return This builder for chaining.
+       */
+      public Builder setPlaintextSha256B64Bytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setPlaintextSha256B64Bytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string ciphertext_sha256_b64 = 11;</code>
+       * @return The ciphertextSha256B64.
+       */
+      @java.lang.Override
+      public java.lang.String getCiphertextSha256B64() {
+        return instance.getCiphertextSha256B64();
+      }
+      /**
+       * <code>string ciphertext_sha256_b64 = 11;</code>
+       * @return The bytes for ciphertextSha256B64.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getCiphertextSha256B64Bytes() {
+        return instance.getCiphertextSha256B64Bytes();
+      }
+      /**
+       * <code>string ciphertext_sha256_b64 = 11;</code>
+       * @param value The ciphertextSha256B64 to set.
+       * @return This builder for chaining.
+       */
+      public Builder setCiphertextSha256B64(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setCiphertextSha256B64(value);
+        return this;
+      }
+      /**
+       * <code>string ciphertext_sha256_b64 = 11;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearCiphertextSha256B64() {
+        copyOnWrite();
+        instance.clearCiphertextSha256B64();
+        return this;
+      }
+      /**
+       * <code>string ciphertext_sha256_b64 = 11;</code>
+       * @param value The bytes for ciphertextSha256B64 to set.
+       * @return This builder for chaining.
+       */
+      public Builder setCiphertextSha256B64Bytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setCiphertextSha256B64Bytes(value);
+        return this;
+      }
+
+      /**
+       * <code>int64 plaintext_size = 12;</code>
+       * @return The plaintextSize.
+       */
+      @java.lang.Override
+      public long getPlaintextSize() {
+        return instance.getPlaintextSize();
+      }
+      /**
+       * <code>int64 plaintext_size = 12;</code>
+       * @param value The plaintextSize to set.
+       * @return This builder for chaining.
+       */
+      public Builder setPlaintextSize(long value) {
+        copyOnWrite();
+        instance.setPlaintextSize(value);
+        return this;
+      }
+      /**
+       * <code>int64 plaintext_size = 12;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearPlaintextSize() {
+        copyOnWrite();
+        instance.clearPlaintextSize();
+        return this;
+      }
+
+      /**
+       * <code>int64 ciphertext_size = 13;</code>
+       * @return The ciphertextSize.
+       */
+      @java.lang.Override
+      public long getCiphertextSize() {
+        return instance.getCiphertextSize();
+      }
+      /**
+       * <code>int64 ciphertext_size = 13;</code>
+       * @param value The ciphertextSize to set.
+       * @return This builder for chaining.
+       */
+      public Builder setCiphertextSize(long value) {
+        copyOnWrite();
+        instance.setCiphertextSize(value);
+        return this;
+      }
+      /**
+       * <code>int64 ciphertext_size = 13;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearCiphertextSize() {
+        copyOnWrite();
+        instance.clearCiphertextSize();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:peers_touch.model.chat.v1.GroupMessageAttachment)
     }
     @java.lang.Override
@@ -9262,16 +10802,26 @@ java.lang.String defaultValue) {
         }
         case BUILD_MESSAGE_INFO: {
             java.lang.Object[] objects = new java.lang.Object[] {
+              "bitField0_",
               "cid_",
               "filename_",
               "mimeType_",
               "size_",
               "thumbnailCid_",
               "visibility_",
+              "encryptionSuite_",
+              "encryptionKeyB64_",
+              "encryptionNonceB64_",
+              "plaintextSha256B64_",
+              "ciphertextSha256B64_",
+              "plaintextSize_",
+              "ciphertextSize_",
+              "mediaEncryption_",
             };
             java.lang.String info =
-                "\u0000\u0006\u0000\u0000\u0001\u0006\u0006\u0000\u0000\u0000\u0001\u0208\u0002\u0208" +
-                "\u0003\u0208\u0004\u0002\u0005\u0208\u0006\u0208";
+                "\u0000\u000e\u0000\u0001\u0001\u000e\u000e\u0000\u0000\u0000\u0001\u0208\u0002\u0208" +
+                "\u0003\u0208\u0004\u0002\u0005\u0208\u0006\u0208\u0007\u0208\b\u0208\t\u0208\n\u0208" +
+                "\u000b\u0208\f\u0002\r\u0002\u000e\u1009\u0000";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {
@@ -19178,7 +20728,7 @@ java.lang.String defaultValue) {
      *
      * <code>string content = 3 [deprecated = true];</code>
      * @deprecated peers_touch.model.chat.v1.SendGroupMessageRequest.content is deprecated.
-     *     See domain/chat/group_chat.proto;l=366
+     *     See domain/chat/group_chat.proto;l=391
      * @return The content.
      */
     @java.lang.Deprecated java.lang.String getContent();
@@ -19189,7 +20739,7 @@ java.lang.String defaultValue) {
      *
      * <code>string content = 3 [deprecated = true];</code>
      * @deprecated peers_touch.model.chat.v1.SendGroupMessageRequest.content is deprecated.
-     *     See domain/chat/group_chat.proto;l=366
+     *     See domain/chat/group_chat.proto;l=391
      * @return The bytes for content.
      */
     @java.lang.Deprecated com.google.protobuf.ByteString
@@ -19287,9 +20837,10 @@ java.lang.String defaultValue) {
    * `encrypted_payload` carries the wire-encoded `GroupCiphertext`
    * (see GroupMessage doc). Required: Station rejects requests whose
    * encrypted_payload is empty, AND requests that populate `content`
-   * (the latter would silently leak the body to Station). Attachments
-   * stay outside the ciphertext envelope -- attachment encryption is
-   * tracked separately in oss-encryption.md.
+   * (the latter would silently leak the body to Station). New E2EE
+   * clients MUST encode user-visible attachment metadata inside
+   * ChatEncryptedMessagePayload before encryption; the top-level
+   * attachments field exists only for legacy/non-E2EE transports.
    * </pre>
    *
    * Protobuf type {@code peers_touch.model.chat.v1.SendGroupMessageRequest}
@@ -19408,7 +20959,7 @@ java.lang.String defaultValue) {
      *
      * <code>string content = 3 [deprecated = true];</code>
      * @deprecated peers_touch.model.chat.v1.SendGroupMessageRequest.content is deprecated.
-     *     See domain/chat/group_chat.proto;l=366
+     *     See domain/chat/group_chat.proto;l=391
      * @return The content.
      */
     @java.lang.Override
@@ -19422,7 +20973,7 @@ java.lang.String defaultValue) {
      *
      * <code>string content = 3 [deprecated = true];</code>
      * @deprecated peers_touch.model.chat.v1.SendGroupMessageRequest.content is deprecated.
-     *     See domain/chat/group_chat.proto;l=366
+     *     See domain/chat/group_chat.proto;l=391
      * @return The bytes for content.
      */
     @java.lang.Override
@@ -19927,9 +21478,10 @@ java.lang.String defaultValue) {
      * `encrypted_payload` carries the wire-encoded `GroupCiphertext`
      * (see GroupMessage doc). Required: Station rejects requests whose
      * encrypted_payload is empty, AND requests that populate `content`
-     * (the latter would silently leak the body to Station). Attachments
-     * stay outside the ciphertext envelope -- attachment encryption is
-     * tracked separately in oss-encryption.md.
+     * (the latter would silently leak the body to Station). New E2EE
+     * clients MUST encode user-visible attachment metadata inside
+     * ChatEncryptedMessagePayload before encryption; the top-level
+     * attachments field exists only for legacy/non-E2EE transports.
      * </pre>
      *
      * Protobuf type {@code peers_touch.model.chat.v1.SendGroupMessageRequest}
@@ -20048,7 +21600,7 @@ java.lang.String defaultValue) {
        *
        * <code>string content = 3 [deprecated = true];</code>
        * @deprecated peers_touch.model.chat.v1.SendGroupMessageRequest.content is deprecated.
-       *     See domain/chat/group_chat.proto;l=366
+       *     See domain/chat/group_chat.proto;l=391
        * @return The content.
        */
       @java.lang.Override
@@ -20062,7 +21614,7 @@ java.lang.String defaultValue) {
        *
        * <code>string content = 3 [deprecated = true];</code>
        * @deprecated peers_touch.model.chat.v1.SendGroupMessageRequest.content is deprecated.
-       *     See domain/chat/group_chat.proto;l=366
+       *     See domain/chat/group_chat.proto;l=391
        * @return The bytes for content.
        */
       @java.lang.Override
@@ -20077,7 +21629,7 @@ java.lang.String defaultValue) {
        *
        * <code>string content = 3 [deprecated = true];</code>
        * @deprecated peers_touch.model.chat.v1.SendGroupMessageRequest.content is deprecated.
-       *     See domain/chat/group_chat.proto;l=366
+       *     See domain/chat/group_chat.proto;l=391
        * @param value The content to set.
        * @return This builder for chaining.
        */
@@ -20094,7 +21646,7 @@ java.lang.String defaultValue) {
        *
        * <code>string content = 3 [deprecated = true];</code>
        * @deprecated peers_touch.model.chat.v1.SendGroupMessageRequest.content is deprecated.
-       *     See domain/chat/group_chat.proto;l=366
+       *     See domain/chat/group_chat.proto;l=391
        * @return This builder for chaining.
        */
       @java.lang.Deprecated public Builder clearContent() {
@@ -20109,7 +21661,7 @@ java.lang.String defaultValue) {
        *
        * <code>string content = 3 [deprecated = true];</code>
        * @deprecated peers_touch.model.chat.v1.SendGroupMessageRequest.content is deprecated.
-       *     See domain/chat/group_chat.proto;l=366
+       *     See domain/chat/group_chat.proto;l=391
        * @param value The bytes for content to set.
        * @return This builder for chaining.
        */

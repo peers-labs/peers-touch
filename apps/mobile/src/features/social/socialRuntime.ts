@@ -1,4 +1,9 @@
 import type { MobileAuthSession } from '../auth/authSession';
+import {
+  socialHostEventTargetsNotifications,
+  type SocialHostEvent,
+  type SocialHostEventKind,
+} from '@peers-touch/client-chat-core';
 import type { GroupE2eeRuntimeController } from '../group/groupE2eeRuntime';
 import type { GroupState } from '../group/groupStore';
 import { isSenderKeyDistributionMessage } from './socialProjection';
@@ -13,34 +18,14 @@ const TYPING_SWEEP_INTERVAL_MS = 2000;
 const EXTERNAL_RECONCILE_DEBOUNCE_MS = 1000;
 const REALTIME_RECONNECT_BASE_MS = 1000;
 const REALTIME_RECONNECT_MAX_MS = 15000;
-
-interface PresenceFrame {
-  actor_id?: string;
-  actorId?: string;
-  did?: string;
-  online?: boolean;
-}
+const PRESENCE_HEARTBEAT_INTERVAL_MS = 30000;
 
 export interface SocialRuntimeController {
   teardown: () => void;
 }
 
-export type SocialRuntimeExternalEventKind =
-  | 'app-resume'
-  | 'network-online'
-  | 'push'
-  | 'deep-link'
-  | 'notification-tap'
-  | 'native-hint';
-
-export interface SocialRuntimeExternalEvent {
-  kind: SocialRuntimeExternalEventKind;
-  target?: string;
-  sessionUlid?: string;
-  notificationId?: string;
-  url?: string;
-  reason?: string;
-}
+export type SocialRuntimeExternalEventKind = SocialHostEventKind;
+export type SocialRuntimeExternalEvent = SocialHostEvent;
 
 interface ActiveSocialRuntime {
   sessionKey: string | null;
@@ -71,11 +56,10 @@ export function startSocialRuntime(
     store.sweepTypingPeers(Date.now() - TYPING_TTL_MS);
   }, TYPING_SWEEP_INTERVAL_MS);
 
-  startPresenceStream(session, abortController.signal, (frame) => {
-    const did = frame.actor_id || frame.actorId || frame.did;
-    if (!did || typeof frame.online !== 'boolean') return;
-    store.setPeerOnline(String(did), frame.online);
-  });
+  void postPresence(session, '/presence/heartbeat', 'runtime_start');
+  const presenceHeartbeatTimer = window.setInterval(() => {
+    if (!cancelled) void postPresence(session, '/presence/heartbeat', 'heartbeat');
+  }, PRESENCE_HEARTBEAT_INTERVAL_MS);
   const realtimeHandlers: Parameters<typeof startRealtimeStream>[2] = {
     onMessage: (sessionUlid, message) => {
       if (isSenderKeyDistributionMessage(message)) {
@@ -118,7 +102,7 @@ export function startSocialRuntime(
       if (cancelled) return;
 
       if (event.sessionUlid) void store.loadMessages(event.sessionUlid);
-      if (event.notificationId || event.target === 'notification') void store.refreshNotifications();
+      if (socialHostEventTargetsNotifications(event)) void store.refreshNotifications();
       void reconcileActiveThreads(store, groupStore, groupE2eeRuntime);
 
       if (externalReconcileTimer) return;
@@ -135,11 +119,29 @@ export function startSocialRuntime(
       cancelled = true;
       window.clearInterval(reconcileTimer);
       window.clearInterval(typingSweepTimer);
+      window.clearInterval(presenceHeartbeatTimer);
       if (externalReconcileTimer) window.clearTimeout(externalReconcileTimer);
+      void postPresence(session, '/presence/offline', 'runtime_teardown');
       abortController.abort();
       if (activeRuntime === runtimeRef) activeRuntime = null;
     },
   };
+}
+
+async function postPresence(session: MobileAuthSession, path: string, reason: string) {
+  try {
+    await fetch(`${session.stationUrl.replace(/\/+$/, '')}${path}`, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        Authorization: `Bearer ${session.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ reason }),
+    });
+  } catch {
+    // Presence is lease-based; the next heartbeat or server-side TTL heals failures.
+  }
 }
 
 async function superviseRealtimeStream(
@@ -235,53 +237,4 @@ function base64ToBytes(value: string): Uint8Array {
   } catch {
     return new Uint8Array();
   }
-}
-
-async function startPresenceStream(
-  session: MobileAuthSession,
-  signal: AbortSignal,
-  onFrame: (frame: PresenceFrame) => void,
-) {
-  try {
-    const response = await fetch(`${session.stationUrl.replace(/\/+$/, '')}/friend-chat/presence/stream`, {
-      cache: 'no-store',
-      headers: {
-        Accept: 'text/event-stream',
-        Authorization: `Bearer ${session.accessToken}`,
-      },
-      signal,
-    });
-    if (!response.ok || !response.body) return;
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (!signal.aborted) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const chunks = buffer.split('\n\n');
-      buffer = chunks.pop() ?? '';
-      chunks.forEach((chunk) => parseSseChunk(chunk).forEach(onFrame));
-    }
-  } catch {
-    // Reconcile polling remains the fallback when the mobile WebView closes the stream.
-  }
-}
-
-function parseSseChunk(chunk: string): PresenceFrame[] {
-  return chunk
-    .split('\n')
-    .filter((line) => line.startsWith('data:'))
-    .map((line) => line.slice(5).trim())
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        return JSON.parse(line) as PresenceFrame;
-      } catch {
-        return null;
-      }
-    })
-    .filter((frame): frame is PresenceFrame => Boolean(frame));
 }

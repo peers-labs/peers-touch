@@ -123,8 +123,6 @@ fn friend_chat_session_to_json(s: &model::chat::FriendChatSession) -> Value {
         "participantAAvatar": s.participant_a_avatar,
         "participantBDisplayName": s.participant_b_display_name,
         "participantBAvatar": s.participant_b_avatar,
-        "participantAOnline": s.participant_a_online,
-        "participantBOnline": s.participant_b_online,
         "lastMessageUlid": s.last_message_ulid,
         "lastMessageAt": ts_millis(&s.last_message_at),
         "unreadCountA": s.unread_count_a,
@@ -170,8 +168,13 @@ fn sync_messages_response_to_value(resp: &model::chat::SyncMessagesResponse) -> 
     })
 }
 
-fn online_response_to_value(resp: &model::chat::OnlineResponse) -> Value {
-    json!({ "status": resp.status })
+fn presence_update_response_to_value(resp: &model::presence::PresenceUpdateResponse) -> Value {
+    json!({
+        "actorId": resp.actor_id,
+        "sessionId": resp.session_id,
+        "state": resp.state,
+        "leaseExpiresAt": ts_millis(&resp.lease_expires_at),
+    })
 }
 
 fn pending_message_info_to_json(p: &model::chat::PendingMessageInfo) -> Value {
@@ -192,7 +195,6 @@ fn get_pending_response_to_value(resp: &model::chat::GetPendingResponse) -> Valu
 
 fn get_stats_response_to_value(resp: &model::chat::GetStatsResponse) -> Value {
     json!({
-        "onlinePeers": resp.online_peers,
         "pendingMessages": resp.pending_messages,
         "status": resp.status,
     })
@@ -518,6 +520,13 @@ pub fn ingest_friend_messages(user_scope: &str, payload: &Value) -> Result<(), S
 
 pub fn ingest_group_messages(user_scope: &str, payload: &Value) -> Result<(), String> {
     local_chat_store::ingest_group_payload(user_scope, payload)
+}
+
+pub fn index_plaintext_messages(
+    user_scope: &str,
+    records: &[LocalChatRecord],
+) -> Result<usize, String> {
+    local_chat_store::upsert_plaintext_records(user_scope, records)
 }
 
 pub fn search_friend_messages(
@@ -1102,26 +1111,30 @@ pub fn sync_friend_messages(
     Ok(sync_messages_response_to_value(&resp))
 }
 
-pub fn friend_chat_online(token: &str) -> StationResult<Value> {
-    let req = model::chat::OnlineRequest { did: String::new() };
+pub fn presence_heartbeat(token: &str, reason: &str) -> StationResult<Value> {
+    let req = model::presence::PresenceHeartbeatRequest {
+        reason: reason.to_string(),
+    };
     let resp = station_client::request_proto::<
-        model::chat::OnlineRequest,
-        model::chat::OnlineResponse,
-    >(Method::POST, "/friend-chat/online", token, None, Some(&req))?;
-    Ok(online_response_to_value(&resp))
+        model::presence::PresenceHeartbeatRequest,
+        model::presence::PresenceUpdateResponse,
+    >(Method::POST, "/presence/heartbeat", token, None, Some(&req))?;
+    Ok(presence_update_response_to_value(&resp))
 }
 
-pub fn friend_chat_offline(token: &str) -> StationResult<Value> {
-    let req = model::chat::OnlineRequest { did: String::new() };
+pub fn presence_offline(token: &str, reason: &str) -> StationResult<Value> {
+    let req = model::presence::PresenceOfflineRequest {
+        reason: reason.to_string(),
+    };
     let resp =
-        station_client::request_proto::<model::chat::OnlineRequest, model::chat::OnlineResponse>(
+        station_client::request_proto::<model::presence::PresenceOfflineRequest, model::presence::PresenceUpdateResponse>(
             Method::POST,
-            "/friend-chat/offline",
+            "/presence/offline",
             token,
             None,
             Some(&req),
         )?;
-    Ok(online_response_to_value(&resp))
+    Ok(presence_update_response_to_value(&resp))
 }
 
 pub fn friend_chat_pending(token: &str) -> StationResult<Value> {

@@ -10,14 +10,16 @@
         status stop restart
 
 LOCAL_DEV_SCRIPTS := tooling/scripts/local-dev
+PROFILE_ARG := $(or $(PROFILE),$(word 2,$(MAKECMDGOALS)))
+SLOT_ARG := $(or $(SLOT),0)
 
 profile:
-	@if [ -z "$(PROFILE)" ]; then echo "Usage: make profile PROFILE=<name>"; exit 1; fi
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/profile.sh activate $(PROFILE)
+	@if [ -z "$(PROFILE_ARG)" ]; then echo "Usage: make profile <name>  or  make profile PROFILE=<name>"; exit 1; fi
+	@/bin/bash $(LOCAL_DEV_SCRIPTS)/profile.sh activate $(PROFILE_ARG)
 
 profile-init:
-	@if [ -z "$(PROFILE)" ]; then echo "Usage: make profile-init PROFILE=<name> [SLOT=0]"; exit 1; fi
-	@SLOT=$(or $(SLOT),0) /bin/bash $(LOCAL_DEV_SCRIPTS)/profile.sh init $(PROFILE)
+	@if [ -z "$(PROFILE_ARG)" ]; then echo "Usage: make profile-init <name> [SLOT=0]  or  make profile-init PROFILE=<name> [SLOT=0]"; exit 1; fi
+	@SLOT=$(SLOT_ARG) /bin/bash $(LOCAL_DEV_SCRIPTS)/profile.sh init $(PROFILE_ARG)
 
 profiles:
 	@/bin/bash $(LOCAL_DEV_SCRIPTS)/profile.sh list
@@ -96,3 +98,11 @@ stop:
 
 restart:
 	@/bin/bash $(LOCAL_DEV_SCRIPTS)/restart.sh all
+
+.DEFAULT:
+	@if [[ "$(firstword $(MAKECMDGOALS))" == "profile" || "$(firstword $(MAKECMDGOALS))" == "profile-init" ]]; then \
+		:; \
+	else \
+		echo "make: *** No rule to make target '$@'."; \
+		exit 2; \
+	fi
