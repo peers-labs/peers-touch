@@ -4,7 +4,7 @@ import { Check, ChevronRight, Settings, Search, X, Eye, Wrench, Sparkles } from 
 import { ProviderIcon } from './settings/ProviderIcon';
 import { Tooltip } from '@lobehub/ui';
 import { Divider, theme } from 'antd';
-import { useChatStore } from '../store/chat';
+import { useAgentStore } from '../store/agent';
 import type { AvailableModel } from '../services/desktop_api';
 import { useTranslation } from 'react-i18next';
 
@@ -31,7 +31,7 @@ export function ModelProviderSelect({
 }: ModelProviderSelectProps) {
   const { t } = useTranslation('provider');
   const { token } = theme.useToken();
-  const { availableModels, defaultModel, loadModels } = useChatStore();
+  const { availableModels, defaultModel, loadModels } = useAgentStore();
   const [searchQuery, setSearchQuery] = useState('');
 
   const effectiveModels = models ?? availableModels;
