@@ -361,7 +361,7 @@ export function AtelierPage() {
   const budgetPct = Math.round((state.budgetSpent / state.budgetCap) * 100);
 
   return (
-    <div style={{ height: '100vh', display: 'flex', backgroundColor: C.bg, color: C.text, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+    <div style={{ height: '100%', display: 'flex', backgroundColor: C.bg, color: C.text, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       {/* ── Left rail ── */}
       {railOpen ? (
         <div
