@@ -10,9 +10,9 @@ import {
   message,
   theme,
 } from 'antd';
-import { Tabs, Input, TextArea, Button } from '@lobehub/ui';
+import { Tabs, Input, TextArea, Button, Tag } from '@lobehub/ui';
 import { Flexbox } from 'react-layout-kit';
-import { User, MessageSquare, Settings2, Cpu, Plus, X, GripVertical } from 'lucide-react';
+import { User, MessageSquare, Settings2, Cpu, Plus, X, GripVertical, FolderOpen, Mic, Volume2 } from 'lucide-react';
 import { api, type Agent, type AgentChatConfig, type AgentParams, parseAgentChatConfig, parseAgentParams } from '../services/desktop_api';
 
 const AVATAR_OPTIONS = ['🤖', '👨‍💻', '🔬', '✍️', '🧠', '🎨', '📊', '🔧', '🌐', '📝', '🎯', '💡', '🛡️', '🚀', '🎓', '🧪', '🏗️', '🎭', '📈', '🔍'];
@@ -110,6 +110,9 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
 
   // Chat preferences state
   const [chatConfig, setChatConfig] = useState<AgentChatConfig>({});
+  const [toolsProfile, setToolsProfile] = useState('standard');
+  const [toolsAllow, setToolsAllow] = useState('');
+  const [toolsDeny, setToolsDeny] = useState('');
 
   // Model params state
   const [params, setParams] = useState<AgentParams>({});
@@ -127,6 +130,9 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
       setTags([]);
     }
     setOpeningMessage(agent.openingMessage || '');
+    setToolsProfile(agent.toolsProfile || 'standard');
+    setToolsAllow(agent.toolsAllow || '');
+    setToolsDeny(agent.toolsDeny || '');
     try {
       setOpeningQuestions(JSON.parse(agent.openingQuestions || '[]'));
     } catch {
@@ -161,6 +167,9 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
         avatar,
         backgroundColor: bgColor,
         tags: JSON.stringify(tags),
+        toolsProfile,
+        toolsAllow,
+        toolsDeny,
         openingMessage,
         openingQuestions: JSON.stringify(openingQuestions),
         chatConfig: JSON.stringify(chatConfig),
@@ -173,7 +182,7 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
     } finally {
       setSaving(false);
     }
-  }, [agent, title, description, avatar, bgColor, tags, openingMessage, openingQuestions, chatConfig, params, enabledParams, onSaved, t]);
+  }, [agent, title, description, avatar, bgColor, tags, toolsProfile, toolsAllow, toolsDeny, openingMessage, openingQuestions, chatConfig, params, enabledParams, onSaved, t]);
 
   const addQuestion = useCallback(() => {
     const q = newQuestion.trim();
@@ -403,6 +412,21 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
               onChange={(v) => setChatConfig((c) => ({ ...c, enableContextCompression: v }))}
             />
           </Flexbox>
+          <Flexbox horizontal align="center" gap={12} style={{ marginBottom: 12, paddingLeft: 16 }}>
+            <Flexbox flex={1}>
+              <span style={{ fontSize: 13, color: token.colorTextSecondary }}>{t('agent.settings.chat.contextWindow')}</span>
+              <span style={{ fontSize: 12, color: token.colorTextDescription }}>{t('agent.settings.chat.contextWindowDesc')}</span>
+            </Flexbox>
+            <InputNumber
+              min={4000}
+              max={1000000}
+              step={1000}
+              value={chatConfig.contextWindowSize ?? 128000}
+              onChange={(v) => v !== null && setChatConfig((c) => ({ ...c, contextWindowSize: v }))}
+              size="small"
+              style={{ width: 110 }}
+            />
+          </Flexbox>
 
           {/* Search Mode */}
           <Flexbox horizontal align="center" justify="space-between" style={{ marginBottom: 12 }}>
@@ -421,6 +445,95 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
                 { value: 'on', label: t('agent.settings.chat.searchMode.always') },
               ]}
             />
+          </Flexbox>
+
+          <Divider style={{ margin: '8px 0' }} />
+
+          <Flexbox gap={10} style={{ marginBottom: 12 }}>
+            <Flexbox horizontal align="center" gap={6}>
+              <Volume2 size={14} style={{ color: token.colorTextSecondary }} />
+              <span style={{ fontSize: 14, fontWeight: 500 }}>{t('agent.settings.voice.ttsTitle')}</span>
+            </Flexbox>
+            <span style={{ fontSize: 12, color: token.colorTextDescription }}>
+              {t('agent.settings.voice.ttsDesc')}
+            </span>
+            <Flexbox horizontal align="center" gap={12}>
+              <Select
+                value={chatConfig.voice?.ttsProvider ?? 'browser'}
+                onChange={(v) => setChatConfig((c) => ({ ...c, voice: { ...c.voice, ttsProvider: v } }))}
+                style={{ width: 140 }}
+                size="small"
+                options={[
+                  { value: 'browser', label: t('agent.settings.voice.provider.browser') },
+                  { value: 'edge', label: t('agent.settings.voice.provider.edge') },
+                  { value: 'openai', label: t('agent.settings.voice.provider.openai') },
+                ]}
+              />
+              <Input
+                value={chatConfig.voice?.ttsVoice ?? ''}
+                onChange={(e) => setChatConfig((c) => ({ ...c, voice: { ...c.voice, ttsVoice: e.target.value } }))}
+                placeholder={t('agent.settings.voice.ttsVoicePlaceholder')}
+                style={{ flex: 1 }}
+              />
+            </Flexbox>
+            <Flexbox horizontal align="center" gap={12}>
+              <span style={{ width: 90, fontSize: 13, color: token.colorTextSecondary }}>{t('agent.settings.voice.ttsSpeed')}</span>
+              <Slider
+                min={0.5}
+                max={2}
+                step={0.1}
+                value={chatConfig.voice?.ttsSpeed ?? 1}
+                onChange={(v) => setChatConfig((c) => ({ ...c, voice: { ...c.voice, ttsSpeed: v } }))}
+                style={{ flex: 1 }}
+              />
+              <Switch
+                checked={chatConfig.voice?.ttsAutoRead ?? false}
+                onChange={(v) => setChatConfig((c) => ({ ...c, voice: { ...c.voice, ttsAutoRead: v } }))}
+                checkedChildren={t('agent.settings.voice.autoReadOn')}
+                unCheckedChildren={t('agent.settings.voice.autoReadOff')}
+              />
+            </Flexbox>
+          </Flexbox>
+
+          <Flexbox gap={10} style={{ marginBottom: 12 }}>
+            <Flexbox horizontal align="center" gap={6}>
+              <Mic size={14} style={{ color: token.colorTextSecondary }} />
+              <span style={{ fontSize: 14, fontWeight: 500 }}>{t('agent.settings.voice.sttTitle')}</span>
+            </Flexbox>
+            <span style={{ fontSize: 12, color: token.colorTextDescription }}>
+              {t('agent.settings.voice.sttDesc')}
+            </span>
+            <Flexbox horizontal align="center" gap={12}>
+              <Select
+                value={chatConfig.voice?.sttProvider ?? 'browser'}
+                onChange={(v) => setChatConfig((c) => ({ ...c, voice: { ...c.voice, sttProvider: v } }))}
+                style={{ width: 140 }}
+                size="small"
+                options={[
+                  { value: 'browser', label: t('agent.settings.voice.provider.browser') },
+                  { value: 'openai', label: t('agent.settings.voice.provider.openai') },
+                ]}
+              />
+              <Select
+                value={chatConfig.voice?.sttLanguage ?? 'auto'}
+                onChange={(v) => setChatConfig((c) => ({ ...c, voice: { ...c.voice, sttLanguage: v } }))}
+                style={{ width: 140 }}
+                size="small"
+                options={[
+                  { value: 'auto', label: t('agent.settings.voice.language.auto') },
+                  { value: 'en-US', label: t('agent.settings.voice.language.en') },
+                  { value: 'zh-CN', label: t('agent.settings.voice.language.zh') },
+                  { value: 'ja-JP', label: t('agent.settings.voice.language.ja') },
+                  { value: 'ko-KR', label: t('agent.settings.voice.language.ko') },
+                ]}
+              />
+              <Switch
+                checked={chatConfig.voice?.sttAutoStop ?? false}
+                onChange={(v) => setChatConfig((c) => ({ ...c, voice: { ...c.voice, sttAutoStop: v } }))}
+                checkedChildren={t('agent.settings.voice.autoStopOn')}
+                unCheckedChildren={t('agent.settings.voice.autoStopOff')}
+              />
+            </Flexbox>
           </Flexbox>
 
           <Divider style={{ margin: '8px 0' }} />
@@ -452,6 +565,106 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
               />
             </Flexbox>
           )}
+
+          <Divider style={{ margin: '8px 0' }} />
+
+          {/* Tool Policy */}
+          <Flexbox gap={8} style={{ marginBottom: 12 }}>
+            <Flexbox horizontal align="center" justify="space-between">
+              <Flexbox>
+                <span style={{ fontSize: 14, fontWeight: 500 }}>{t('agent.settings.chat.toolPolicy')}</span>
+                <span style={{ fontSize: 12, color: token.colorTextDescription }}>{t('agent.settings.chat.toolPolicyDesc')}</span>
+              </Flexbox>
+              <Select
+                value={toolsProfile}
+                onChange={setToolsProfile}
+                style={{ width: 140 }}
+                size="small"
+                options={[
+                  { value: 'none', label: t('agent.settings.chat.toolPolicy.none') },
+                  { value: 'standard', label: t('agent.settings.chat.toolPolicy.standard') },
+                  { value: 'strict', label: t('agent.settings.chat.toolPolicy.strict') },
+                ]}
+              />
+            </Flexbox>
+            <Input
+              value={toolsAllow}
+              onChange={(e) => setToolsAllow(e.target.value)}
+              placeholder={t('agent.settings.chat.toolsAllowPlaceholder')}
+            />
+            <Input
+              value={toolsDeny}
+              onChange={(e) => setToolsDeny(e.target.value)}
+              placeholder={t('agent.settings.chat.toolsDenyPlaceholder')}
+            />
+          </Flexbox>
+
+          <Divider style={{ margin: '8px 0' }} />
+
+          {/* Provider fallback */}
+          <Flexbox horizontal align="center" justify="space-between" style={{ marginBottom: 12 }}>
+            <Flexbox>
+              <span style={{ fontSize: 14, fontWeight: 500 }}>{t('agent.settings.chat.providerFallback')}</span>
+              <span style={{ fontSize: 12, color: token.colorTextDescription }}>{t('agent.settings.chat.providerFallbackDesc')}</span>
+            </Flexbox>
+            <Switch
+              checked={chatConfig.providerFallback?.enabled !== false}
+              onChange={(v) => setChatConfig((c) => ({ ...c, providerFallback: { ...c.providerFallback, enabled: v } }))}
+            />
+          </Flexbox>
+          {chatConfig.providerFallback?.enabled !== false && (
+            <Flexbox horizontal align="center" gap={12} style={{ marginBottom: 12, paddingLeft: 16 }}>
+              <span style={{ flex: 1, fontSize: 13, color: token.colorTextSecondary }}>
+                {t('agent.settings.chat.maxRetries')}
+              </span>
+              <Slider
+                min={0}
+                max={5}
+                value={chatConfig.providerFallback?.maxRetries ?? 3}
+                onChange={(v) => setChatConfig((c) => ({ ...c, providerFallback: { ...c.providerFallback, enabled: true, maxRetries: v } }))}
+                style={{ width: 160 }}
+              />
+              <InputNumber
+                min={0}
+                max={5}
+                value={chatConfig.providerFallback?.maxRetries ?? 3}
+                onChange={(v) => v !== null && setChatConfig((c) => ({ ...c, providerFallback: { ...c.providerFallback, enabled: true, maxRetries: v } }))}
+                size="small"
+                style={{ width: 60 }}
+              />
+            </Flexbox>
+          )}
+
+          <Divider style={{ margin: '8px 0' }} />
+
+          <Flexbox gap={8}>
+            <Flexbox horizontal align="center" gap={6}>
+              <FolderOpen size={14} style={{ color: token.colorTextSecondary }} />
+              <span style={{ fontSize: 14, fontWeight: 500 }}>{t('agent.settings.workspace.title')}</span>
+            </Flexbox>
+            <span style={{ fontSize: 12, color: token.colorTextDescription }}>
+              {t('agent.settings.workspace.desc')}
+            </span>
+            <Input
+              value={chatConfig.workspace?.root ?? ''}
+              onChange={(e) => {
+                const root = e.target.value;
+                setChatConfig((c) => ({
+                  ...c,
+                  workspace: root.trim()
+                    ? { root, policy: 'workspace-only', updatedAt: new Date().toISOString() }
+                    : undefined,
+                }));
+              }}
+              placeholder={t('agent.settings.workspace.rootPlaceholder')}
+            />
+            <Flexbox horizontal align="center" justify="space-between">
+              <span style={{ fontSize: 12, color: token.colorTextDescription }}>
+                {t('agent.settings.workspace.policy')}
+              </span>
+              <Tag>{t('agent.settings.workspace.policy.workspaceOnly')}</Tag>
+            </Flexbox>
+          </Flexbox>
         </Flexbox>
       ),
     },
@@ -541,7 +754,7 @@ export function AgentSettingsModal({ open, agent, onClose, onSaved }: AgentSetti
   ], [
     avatar, bgColor, title, description, tags, token,
     openingMessage, openingQuestions, newQuestion, addQuestion, removeQuestion,
-    chatConfig, params, enabledParams, t,
+    chatConfig, toolsProfile, toolsAllow, toolsDeny, params, enabledParams, t,
   ]);
 
   return (

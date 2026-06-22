@@ -167,3 +167,19 @@ pub async fn chat_completion_once(
         }
     }
 }
+
+#[tauri::command]
+pub async fn chat_completion_stream(
+    app: tauri::AppHandle,
+    input: ChatCompletionInput,
+) -> AppResult<StubPayload> {
+    let stream_id = format!("stream-{}", ulid::Ulid::new().to_string());
+    let stream_id_clone = stream_id.clone();
+    tauri::async_runtime::spawn(async move {
+        application_chat::streaming::chat_completion_stream(app, stream_id_clone, input).await;
+    });
+    AppResult::success(StubPayload {
+        command: "chat_completion_stream".to_string(),
+        status: serde_json::json!({ "stream_id": stream_id }).to_string(),
+    })
+}

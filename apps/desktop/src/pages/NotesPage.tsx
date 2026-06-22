@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox, Center } from 'react-layout-kit';
-import { ActionIcon, Markdown, toast } from '@lobehub/ui';
+import { ActionIcon, toast } from '@lobehub/ui';
 import { theme, Input, Empty, Spin, Popconfirm, Divider } from 'antd';
 import {
   Plus,
@@ -29,8 +29,9 @@ import {
   ArrowLeft,
 } from 'lucide-react';
 import { api, type NotebookDocumentWithTopic } from '../services/desktop_api';
-import { useChatStore } from '../store/chat';
+import { useAgentStore } from '../store/agent';
 import { BuilderPanel } from '../components/BuilderPanel';
+import { LazyMarkdown as Markdown } from '../components/LazyMarkdown';
 
 interface NotesPageProps {
   onNavigateChat?: (sessionKey: string) => void;
@@ -215,7 +216,7 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
 
   const {
     agents, loadAgents,
-  } = useChatStore();
+  } = useAgentStore();
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
