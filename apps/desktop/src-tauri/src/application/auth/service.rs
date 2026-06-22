@@ -1,4 +1,7 @@
-use crate::contracts::{AuthLoginInput, AuthSessionPayload, AuthValidateTokenInput};
+use crate::contracts::{
+    AccessDecisionPayload, AccessSubmitInviteInput, AccessSubmitLoginInput, AuthLoginInput,
+    AuthSessionPayload, AuthValidateTokenInput,
+};
 use crate::domain::auth::session::{
     from_station_response, validate_login_input, validate_token, AuthDomainError, AuthSession,
 };
@@ -80,8 +83,74 @@ fn string_field(value: &Value, snake_case: &str, camel_case: &str) -> String {
         .to_string()
 }
 
-fn start_password_access_attempt() -> Result<String, AppResult<AuthSessionPayload>> {
-    let resp = match station_client::post_json_no_auth(
+/// Performs a no-auth POST to a Station access endpoint and returns the
+/// `data` envelope object. Network and unexpected-shape failures map to a
+/// typed `AppResult` error generic over the caller's payload type.
+fn access_post<T: serde::Serialize>(
+    path: &str,
+    body: Value,
+    err_code: ErrorCode,
+    context: &str,
+) -> Result<Value, AppResult<T>> {
+    let resp = station_client::post_json_no_auth(path, body)
+        .map_err(|error| AppResult::fail(err_code, format!("{}: {}", context, error), None))?;
+    resp.get("data").cloned().ok_or_else(|| {
+        AppResult::fail(
+            err_code,
+            format!("{}: unexpected response from station", context),
+            Some(resp),
+        )
+    })
+}
+
+/// Extract the `AccessDecision` object from a Station access envelope's `data`.
+fn decision_from_data<T: serde::Serialize>(
+    data: &Value,
+    context: &str,
+) -> Result<Value, AppResult<T>> {
+    value_field(data, "decision", "decision")
+        .cloned()
+        .ok_or_else(|| {
+            AppResult::fail(
+                ErrorCode::InternalError,
+                format!("{}: response missing decision", context),
+                Some(data.clone()),
+            )
+        })
+}
+
+/// True when a decision is in the GRANTED terminal state. The Station emits
+/// both a numeric enum (3) and a string name depending on wire encoding, so we
+/// match either.
+fn decision_is_granted(decision: &Value) -> bool {
+    let state = value_field(decision, "state", "state");
+    state.and_then(|v| v.as_i64()) == Some(3)
+        || state.and_then(|v| v.as_str()) == Some("ACCESS_DECISION_STATE_GRANTED")
+}
+
+/// Build a human-readable reason from a non-granted decision: the decision
+/// message if present, otherwise the first non-empty gate blocking reason.
+fn decision_block_reason(decision: &Value) -> String {
+    let message = string_field(decision, "message", "message");
+    if !message.is_empty() {
+        return message;
+    }
+    value_field(decision, "gates", "gates")
+        .and_then(|v| v.as_array())
+        .and_then(|gates| {
+            gates
+                .iter()
+                .filter_map(|gate| value_field(gate, "blocking_reason", "blockingReason"))
+                .filter_map(|v| v.as_str())
+                .find(|v| !v.trim().is_empty())
+        })
+        .unwrap_or("Station access was not granted")
+        .to_string()
+}
+
+/// Start an access attempt and return the Station's initial decision.
+fn start_access_attempt<T: serde::Serialize>() -> Result<Value, AppResult<T>> {
+    let data = access_post::<T>(
         "/actor/access/start",
         json!({
             "station_url": station_client::station_base_url(),
@@ -92,38 +161,20 @@ fn start_password_access_attempt() -> Result<String, AppResult<AuthSessionPayloa
                 "locale": ""
             }
         }),
-    ) {
-        Ok(resp) => resp,
-        Err(error) => {
-            return Err(AppResult::fail(
-                ErrorCode::Unauthorized,
-                format!("Access gate start failed: {}", error),
-                None,
-            ))
-        }
-    };
-
-    let attempt_id = resp
-        .get("data")
-        .and_then(|data| value_field(data, "decision", "decision"))
-        .map(|decision| string_field(decision, "attempt_id", "attemptId"))
-        .filter(|id: &String| !id.is_empty());
-
-    attempt_id.ok_or_else(|| {
-        AppResult::fail(
-            ErrorCode::InternalError,
-            "Access gate start failed: station did not return an attempt",
-            Some(resp),
-        )
-    })
+        ErrorCode::Unauthorized,
+        "Access gate start failed",
+    )?;
+    decision_from_data(&data, "Access gate start failed")
 }
 
-fn submit_password_access_gate(
+/// Submit the login credential gate. On a granted decision returns the
+/// embedded `login_response` object; otherwise surfaces the block reason.
+fn submit_login_gate(
     attempt_id: &str,
     account: &str,
     password: &str,
 ) -> Result<Value, AppResult<AuthSessionPayload>> {
-    let resp = match station_client::post_json_no_auth(
+    let data = access_post::<AuthSessionPayload>(
         "/actor/access/submit",
         json!({
             "attempt_id": attempt_id,
@@ -135,73 +186,89 @@ fn submit_password_access_gate(
                 "device_type": "desktop"
             }
         }),
-    ) {
-        Ok(resp) => resp,
-        Err(error) => {
-            return Err(AppResult::fail(
-                ErrorCode::Unauthorized,
-                format!("Login failed: {}", error),
-                None,
-            ))
-        }
-    };
-
-    let data = resp.get("data").ok_or_else(|| {
-        AppResult::fail(
-            ErrorCode::Unauthorized,
-            "Login failed: unexpected access gate response from station",
-            Some(resp.clone()),
-        )
-    })?;
-    let decision = value_field(data, "decision", "decision").ok_or_else(|| {
-        AppResult::fail(
-            ErrorCode::Unauthorized,
-            "Login failed: access gate response missing decision",
-            Some(resp.clone()),
-        )
-    })?;
-    let decision_state = value_field(decision, "state", "state")
-        .and_then(|v| v.as_i64())
-        .unwrap_or_default();
-    let decision_state_name = value_field(decision, "state", "state")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
-    if decision_state != 3 && decision_state_name != "ACCESS_DECISION_STATE_GRANTED" {
-        let message = string_field(decision, "message", "message");
-        let gate_reason = value_field(decision, "gates", "gates")
-            .and_then(|v| v.as_array())
-            .and_then(|gates| {
-                gates
-                    .iter()
-                    .filter_map(|gate| value_field(gate, "blocking_reason", "blockingReason"))
-                    .filter_map(|v| v.as_str())
-                    .find(|v| !v.trim().is_empty())
-            })
-            .unwrap_or_default()
-            .to_string();
-        let reason = if !message.is_empty() {
-            message
-        } else if !gate_reason.is_empty() {
-            gate_reason
-        } else {
-            "Station access was not granted".to_string()
-        };
+        ErrorCode::Unauthorized,
+        "Login failed",
+    )?;
+    let decision = decision_from_data::<AuthSessionPayload>(&data, "Login failed")?;
+    if !decision_is_granted(&decision) {
         return Err(AppResult::fail(
             ErrorCode::Forbidden,
-            reason,
+            decision_block_reason(&decision),
             Some(json!({ "decision": decision })),
         ));
     }
-
-    value_field(data, "login_response", "loginResponse")
+    value_field(&data, "login_response", "loginResponse")
         .cloned()
         .ok_or_else(|| {
             AppResult::fail(
                 ErrorCode::Unauthorized,
                 "Login failed: access gate response missing login session",
-                Some(resp),
+                Some(data),
             )
         })
+}
+
+/// Start an access attempt and hand the raw decision back to the client so it
+/// can drive the interactive gate chain (invite code, then login).
+pub fn access_start() -> AppResult<AccessDecisionPayload> {
+    match start_access_attempt::<AccessDecisionPayload>() {
+        Ok(decision) => AppResult::success(AccessDecisionPayload {
+            command: "access_start".to_string(),
+            status: "ready".to_string(),
+            decision,
+        }),
+        Err(error) => error,
+    }
+}
+
+/// Redeem a self-service invite code for a live attempt and return the
+/// re-evaluated decision. This never produces a session; the chain advances to
+/// the login gate once the code passes.
+pub fn access_submit_invite_code(
+    input: AccessSubmitInviteInput,
+) -> AppResult<AccessDecisionPayload> {
+    let code = input.invite_code.trim();
+    if code.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "Invite code is required", None);
+    }
+    let data = match access_post::<AccessDecisionPayload>(
+        "/actor/access/submit",
+        json!({
+            "attempt_id": input.attempt_id,
+            "gate_id": "invite.code",
+            "type": 5,
+            "invite_code": code
+        }),
+        ErrorCode::Forbidden,
+        "Invite code rejected",
+    ) {
+        Ok(data) => data,
+        Err(error) => return error,
+    };
+    match decision_from_data::<AccessDecisionPayload>(&data, "Invite code rejected") {
+        Ok(decision) => AppResult::success(AccessDecisionPayload {
+            command: "access_submit_invite_code".to_string(),
+            status: "evaluated".to_string(),
+            decision,
+        }),
+        Err(error) => error,
+    }
+}
+
+/// Submit the login credential gate for a live attempt and, on grant, land the
+/// full desktop session (token persistence, avatar download, account state).
+pub fn access_submit_login(
+    input: AccessSubmitLoginInput,
+    state: &AppState,
+) -> AppResult<AuthSessionPayload> {
+    if let Err(error) = validate_login_input(&input.account, &input.password) {
+        return map_domain_error(error);
+    }
+    let data = match submit_login_gate(&input.attempt_id, &input.account, &input.password) {
+        Ok(data) => data,
+        Err(error) => return error,
+    };
+    finish_login(data, state, "access_submit_login")
 }
 
 pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSessionPayload> {
@@ -209,15 +276,33 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
         return map_domain_error(error);
     }
 
-    let attempt_id = match start_password_access_attempt() {
-        Ok(attempt_id) => attempt_id,
+    let attempt = match start_access_attempt::<AuthSessionPayload>() {
+        Ok(decision) => decision,
         Err(error) => return error,
     };
-    let data = match submit_password_access_gate(&attempt_id, &input.account, &input.password) {
+    let attempt_id = string_field(&attempt, "attempt_id", "attemptId");
+    if attempt_id.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            "Access gate start failed: station did not return an attempt",
+            Some(attempt),
+        );
+    }
+    let data = match submit_login_gate(&attempt_id, &input.account, &input.password) {
         Ok(data) => data,
         Err(error) => return error,
     };
+    finish_login(data, state, "auth_login")
+}
 
+/// Land a granted login: extract the token + actor identity, persist the
+/// session, download the avatar, and return the rich auth payload. Shared by
+/// the one-shot `auth_login` and the interactive `access_submit_login`.
+fn finish_login(
+    data: Value,
+    state: &AppState,
+    command: &str,
+) -> AppResult<AuthSessionPayload> {
     let tokens = value_field(&data, "tokens", "tokens")
         .cloned()
         .unwrap_or(Value::Null);
@@ -307,7 +392,7 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
     mark_account_has_session(&account_id, &session.token);
 
     AppResult::success(AuthSessionPayload {
-        command: "auth_login".to_string(),
+        command: command.to_string(),
         status: "authenticated".to_string(),
         actor_id: Some(actor_id),
         name: Some(name),

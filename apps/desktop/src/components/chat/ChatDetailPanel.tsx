@@ -4,6 +4,10 @@ import { Flexbox } from 'react-layout-kit';
 import { Button, toast } from '@lobehub/ui';
 import { Divider, Modal, Select, theme, Tooltip, Typography } from 'antd';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
+import {
+  chatMediaKindForAttachment,
+  formatChatAttachmentSize,
+} from '@peers-touch/client-chat-core';
 import { FriendshipStatus } from '../../gen/proto/domain/chat/chat_pb';
 import {
   Ban,
@@ -44,7 +48,7 @@ import {
   type GroupMessageAttachment,
 } from '../../gen/proto/domain/chat/group_chat_pb';
 import { SafetyVerificationPanel } from './SafetyVerificationPanel';
-import { useAttachmentUrl } from './useAttachmentUrl';
+import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicProfileCard';
 
 const { Text } = Typography;
@@ -72,35 +76,12 @@ interface DetailAttachmentItem {
   timestampMs: number;
 }
 
-const IMAGE_FILENAME_PATTERN = /\.(apng|avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$/i;
-const VIDEO_FILENAME_PATTERN = /\.(avi|m4v|mkv|mov|mp4|mpeg|mpg|webm)$/i;
 const RECENT_MEDIA_LIMIT = 6;
 const RECENT_FILE_LIMIT = 4;
 
 function getInitial(name: string): string {
   if (!name) return '?';
   return name.charAt(0).toUpperCase();
-}
-
-function isImageAttachment(attachment: DetailAttachment): boolean {
-  const mimeType = attachment.mimeType?.toLowerCase() ?? '';
-  const filename = attachment.filename ?? '';
-  return mimeType.startsWith('image/') || IMAGE_FILENAME_PATTERN.test(filename);
-}
-
-function isVideoAttachment(attachment: DetailAttachment): boolean {
-  const mimeType = attachment.mimeType?.toLowerCase() ?? '';
-  const filename = attachment.filename ?? '';
-  return mimeType.startsWith('video/') || VIDEO_FILENAME_PATTERN.test(filename);
-}
-
-function formatAttachmentSize(size: DetailAttachment['size']): string {
-  const bytes = Number(size);
-  if (!Number.isFinite(bytes) || bytes <= 0) return '';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 function getMessageTimestampMs(message: SocialMessage): number {
@@ -115,8 +96,9 @@ function getCurrentConversationAttachments(messages: SocialMessage[]): DetailAtt
 
     const timestampMs = getMessageTimestampMs(message);
     message.attachments.forEach((attachment, attachmentIndex) => {
-      const isImage = isImageAttachment(attachment);
-      const isVideo = isVideoAttachment(attachment);
+      const mediaKind = chatMediaKindForAttachment(attachment);
+      const isImage = mediaKind === 'image';
+      const isVideo = mediaKind === 'video';
       items.push({
         id: `${message.ulid || messageIndex}:${attachment.cid || attachmentIndex}`,
         attachment,
@@ -238,13 +220,13 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const [previewFailed, setPreviewFailed] = useState(false);
-  const openUrl = useAttachmentUrl(item.attachment.cid);
+  const openUrl = useOssAttachmentUrl(item.attachment.cid);
   const previewCid = item.isImage
     ? (item.attachment.thumbnailCid || item.attachment.cid)
     : item.attachment.thumbnailCid;
-  const previewUrl = useAttachmentUrl(previewCid);
+  const previewUrl = useOssAttachmentUrl(previewCid);
   const filename = item.attachment.filename?.trim() || t('chat.social.detail.unnamedAttachment');
-  const sizeLabel = formatAttachmentSize(item.attachment.size);
+  const sizeLabel = formatChatAttachmentSize(item.attachment.size);
   const canOpen = Boolean(openUrl);
   const isMedia = item.kind === 'media';
   const tooltip = canOpen
@@ -465,13 +447,6 @@ function getFriendPeerAvatar(session: FriendChatSession | undefined, currentUser
   return session.participantBAvatar || session.participantAAvatar || '';
 }
 
-function getFriendPeerOnlineSnapshot(session: FriendChatSession | undefined, peerDid: string): boolean | null {
-  if (!session || !peerDid) return null;
-  if (session.participantADid === peerDid) return session.participantAOnline;
-  if (session.participantBDid === peerDid) return session.participantBOnline;
-  return null;
-}
-
 export function ChatDetailPanel() {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
@@ -537,9 +512,8 @@ export function ChatDetailPanel() {
     : getFriendPeerName(activeFriendSession, currentUserDid);
   const displayName = currentName || t('chat.social.sessionList.unknown');
   const peerAvatar = getFriendPeerAvatar(activeFriendSession, currentUserDid);
-  const peerPresenceSnapshot = getFriendPeerOnlineSnapshot(activeFriendSession, peerDid);
-  const peerPresenceKnown = peerDid ? (peerDid in peerOnline || peerPresenceSnapshot !== null) : false;
-  const peerIsOnline = peerDid in peerOnline ? peerOnline[peerDid] : peerPresenceSnapshot;
+  const peerPresenceKnown = peerDid ? peerDid in peerOnline : false;
+  const peerIsOnline = peerDid in peerOnline ? peerOnline[peerDid] : null;
   const localStateKey = activeUlid ? `${activeTab}:${activeUlid}` : '';
   const activeLocalState = localStateKey ? conversationLocalState[localStateKey] : undefined;
   const activeMessages = activeUlid ? (messages[activeUlid] || []) : [];
@@ -1161,7 +1135,7 @@ function buildChatDetailProfile({
       badges: [encryptionBadge],
       stats: [
         {
-          label: t('chat.social.detail.membersLabel', { defaultValue: 'members' }),
+          label: t('chat.social.detail.membersLabel'),
           value: groupMemberCount,
         },
       ],
@@ -1172,19 +1146,19 @@ function buildChatDetailProfile({
   if (cachedPeerProfile) {
     if (typeof cachedPeerProfile.statuses_count === 'number') {
       stats.push({
-        label: t('chat.social.detail.posts', { defaultValue: 'Posts' }),
+        label: t('chat.social.detail.posts'),
         value: cachedPeerProfile.statuses_count,
       });
     }
     if (typeof cachedPeerProfile.followers_count === 'number') {
       stats.push({
-        label: t('chat.social.detail.followers', { defaultValue: 'Followers' }),
+        label: t('chat.social.detail.followers'),
         value: cachedPeerProfile.followers_count,
       });
     }
     if (typeof cachedPeerProfile.following_count === 'number') {
       stats.push({
-        label: t('chat.social.detail.following', { defaultValue: 'Following' }),
+        label: t('chat.social.detail.following'),
         value: cachedPeerProfile.following_count,
       });
     }

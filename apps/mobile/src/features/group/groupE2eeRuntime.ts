@@ -1,7 +1,17 @@
+import { create, fromBinary } from '@bufbuild/protobuf';
+import {
+  buildChatEncryptedMessagePayload,
+  CHAT_ENCRYPTED_MESSAGE_PAYLOAD_VERSION,
+  encryptedChatTransportMessageType,
+} from '@peers-touch/client-chat-core';
+
 import type { MobileAuthSession } from '../auth/authSession';
+import type { ChatAttachmentInput } from '../social/socialApi';
 import { createSocialApiClient } from '../social/socialApi';
-import type { GroupMember, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
-import { consumeGroupSkdm, decryptGroupPayload, emitGroupSkdm, encryptGroupPlaintext, rotateGroupSenderKey } from './groupE2eeBridge';
+import { readableErrorMessage } from '../social/socialTypes';
+import { ChatEncryptedMessagePayloadSchema, GroupMessageAttachmentSchema, type ChatEncryptedMessagePayload, type GroupMember, type GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
+import { EncryptedMediaDescriptorSchema } from '../../gen/proto/domain/common/common_pb';
+import { consumeGroupSkdm, decryptGroupPayloadBytes, emitGroupSkdm, encryptGroupMessagePayload, rotateGroupSenderKey } from './groupE2eeBridge';
 import { createGroupSkdmLedger, type GroupSkdmLedger, type SkdmLedgerTarget } from './groupE2eeLedger';
 import { ensureMobileKeyBundlePublished, fetchKeyBundles, openSkdmEnvelopeFromSender, sealSkdmEnvelopeForPeer } from './groupKeyExchange';
 import type { GroupState } from './groupStore';
@@ -13,7 +23,7 @@ export interface GroupE2eeRuntimeController {
   canEncryptGroup: (groupUlid: string) => Promise<boolean>;
   repairEncryptedMessages: () => Promise<void>;
   rotateAfterMembershipChange: (groupUlid: string, affectedActorDid: string) => Promise<boolean>;
-  sendEncryptedMessage: (groupUlid: string, plaintext: string) => Promise<boolean>;
+  sendEncryptedMessage: (groupUlid: string, plaintext: string, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<boolean>;
   editEncryptedMessage: (groupUlid: string, messageUlid: string, plaintext: string) => Promise<boolean>;
   teardown: () => void;
 }
@@ -95,15 +105,23 @@ export function startGroupE2eeRuntime(
         return false;
       }
     },
-    sendEncryptedMessage: async (groupUlid, plaintext) => {
-      if (cancelled || !groupUlid || !plaintext.trim()) return false;
+    sendEncryptedMessage: async (groupUlid, plaintext, attachments, messageType) => {
+      if (cancelled || !groupUlid || (!plaintext.trim() && !attachments?.length)) return false;
       try {
         const store = getStore();
         const ready = await canEncryptGroup(groupUlid);
         if (!ready) return false;
-        const encryptedPayload = await encryptGroupPlaintext(session, groupUlid, plaintext);
-        const payload = await store.api?.sendMessage(groupUlid, encryptedPayload);
-        if (payload?.message) await store.ingestRealtimeMessage(groupUlid, payload.message);
+        const encryptedPlaintext = createEncryptedChatPayload({
+          text: plaintext,
+          attachments: attachments ?? [],
+          messageType,
+        });
+        const encryptedPayload = await encryptGroupMessagePayload(session, groupUlid, encryptedPlaintext);
+        const payload = await store.api?.sendMessage(groupUlid, encryptedPayload, [], encryptedChatTransportMessageType());
+        if (payload?.message) {
+          await store.ingestRealtimeMessage(groupUlid, payload.message);
+          store.applyDecryptedMessage(groupUlid, payload.message.ulid, encryptedPlaintext);
+        }
         getStore().setE2eeError(sendErrorKey(groupUlid), null);
         return true;
       } catch (error) {
@@ -117,7 +135,7 @@ export function startGroupE2eeRuntime(
         const store = getStore();
         const ready = await canEncryptGroup(groupUlid);
         if (!ready) return false;
-        const encryptedPayload = await encryptGroupPlaintext(session, groupUlid, plaintext);
+        const encryptedPayload = await encryptGroupMessagePayload(session, groupUlid, createEncryptedChatPayload({ text: plaintext }));
         await store.api?.editMessage(groupUlid, messageUlid, encryptedPayload);
         store.applyMessageMutation(groupUlid, messageUlid, 'EDIT', {
           newContent: plaintext,
@@ -197,12 +215,74 @@ async function repairEncryptedGroupMessages(
   const candidates = encryptedMessageCandidates(getStore());
   for (const candidate of candidates) {
     try {
-      const plaintext = await decryptGroupPayload(session, candidate.groupUlid, candidate.encryptedPayload);
+      const plaintext = await decryptGroupPlaintextProjection(session, candidate.groupUlid, candidate.encryptedPayload);
       getStore().applyDecryptedMessage(candidate.groupUlid, candidate.messageUlid, plaintext);
     } catch (error) {
       getStore().setE2eeError(candidate.messageUlid, errorMessage(error));
     }
   }
+}
+
+async function decryptGroupPlaintextProjection(
+  session: MobileAuthSession,
+  groupUlid: string,
+  encryptedPayload: Uint8Array,
+): Promise<string | ChatEncryptedMessagePayload> {
+  const plaintextBytes = await decryptGroupPayloadBytes(session, groupUlid, encryptedPayload);
+  try {
+    return fromBinary(ChatEncryptedMessagePayloadSchema, plaintextBytes);
+  } catch {
+    return new TextDecoder().decode(plaintextBytes);
+  }
+}
+
+function createEncryptedChatPayload(input: {
+  text?: string;
+  attachments?: ChatAttachmentInput[];
+  messageType?: number;
+}): ChatEncryptedMessagePayload {
+  const payload = buildChatEncryptedMessagePayload(input);
+  return create(ChatEncryptedMessagePayloadSchema, {
+    version: CHAT_ENCRYPTED_MESSAGE_PAYLOAD_VERSION,
+    text: payload.text,
+    messageType: payload.messageType ?? encryptedChatTransportMessageType(),
+    attachments: payload.attachments.map((attachment) => {
+      const mediaEncryption = attachment.encryption_suite
+        ? create(EncryptedMediaDescriptorSchema, {
+          encrypted: true,
+          version: CHAT_ENCRYPTED_MESSAGE_PAYLOAD_VERSION,
+          suite: attachment.encryption_suite,
+          keyB64: attachment.encryption_key_b64 ?? '',
+          nonceB64: attachment.encryption_nonce_b64 ?? '',
+          plaintextSha256B64: attachment.plaintext_sha256_b64 ?? '',
+          ciphertextSha256B64: attachment.ciphertext_sha256_b64 ?? '',
+          plaintextSize: BigInt(attachment.plaintext_size ?? attachment.size),
+          ciphertextSize: BigInt(attachment.ciphertext_size ?? attachment.size),
+          chunking: attachment.chunking ?? '',
+          chunkSize: attachment.chunk_size ?? 0,
+          chunkCount: attachment.chunk_count ?? 0,
+          tagSize: attachment.tag_size ?? 0,
+          nonceStrategy: attachment.nonce_strategy ?? '',
+        })
+        : undefined;
+      return create(GroupMessageAttachmentSchema, {
+        cid: attachment.cid,
+        filename: attachment.filename,
+        mimeType: attachment.mime_type,
+        size: BigInt(attachment.size),
+        thumbnailCid: attachment.thumbnail_cid ?? '',
+        visibility: attachment.visibility ?? '',
+        mediaEncryption,
+        encryptionSuite: '',
+        encryptionKeyB64: '',
+        encryptionNonceB64: '',
+        plaintextSha256B64: attachment.plaintext_sha256_b64 ?? '',
+        ciphertextSha256B64: attachment.ciphertext_sha256_b64 ?? '',
+        plaintextSize: BigInt(attachment.plaintext_size ?? attachment.size),
+        ciphertextSize: BigInt(attachment.ciphertext_size ?? attachment.size),
+      });
+    }),
+  });
 }
 
 function encryptedMessageCandidates(store: GroupState): Array<{
@@ -256,8 +336,7 @@ function rotationErrorKey(groupUlid: string): string {
 }
 
 function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return String(error);
+  return readableErrorMessage(error);
 }
 
 function base64ToBytes(value: string): Uint8Array {

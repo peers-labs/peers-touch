@@ -1784,6 +1784,1414 @@ public final class Common {
     }
   }
 
+  public interface EncryptedMediaDescriptorOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:peers_touch.model.common.v1.EncryptedMediaDescriptor)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>bool encrypted = 1;</code>
+     * @return The encrypted.
+     */
+    boolean getEncrypted();
+
+    /**
+     * <code>uint32 version = 2;</code>
+     * @return The version.
+     */
+    int getVersion();
+
+    /**
+     * <code>string suite = 3;</code>
+     * @return The suite.
+     */
+    java.lang.String getSuite();
+    /**
+     * <code>string suite = 3;</code>
+     * @return The bytes for suite.
+     */
+    com.google.protobuf.ByteString
+        getSuiteBytes();
+
+    /**
+     * <code>string key_b64 = 4;</code>
+     * @return The keyB64.
+     */
+    java.lang.String getKeyB64();
+    /**
+     * <code>string key_b64 = 4;</code>
+     * @return The bytes for keyB64.
+     */
+    com.google.protobuf.ByteString
+        getKeyB64Bytes();
+
+    /**
+     * <code>string nonce_b64 = 5;</code>
+     * @return The nonceB64.
+     */
+    java.lang.String getNonceB64();
+    /**
+     * <code>string nonce_b64 = 5;</code>
+     * @return The bytes for nonceB64.
+     */
+    com.google.protobuf.ByteString
+        getNonceB64Bytes();
+
+    /**
+     * <code>string plaintext_sha256_b64 = 6;</code>
+     * @return The plaintextSha256B64.
+     */
+    java.lang.String getPlaintextSha256B64();
+    /**
+     * <code>string plaintext_sha256_b64 = 6;</code>
+     * @return The bytes for plaintextSha256B64.
+     */
+    com.google.protobuf.ByteString
+        getPlaintextSha256B64Bytes();
+
+    /**
+     * <code>string ciphertext_sha256_b64 = 7;</code>
+     * @return The ciphertextSha256B64.
+     */
+    java.lang.String getCiphertextSha256B64();
+    /**
+     * <code>string ciphertext_sha256_b64 = 7;</code>
+     * @return The bytes for ciphertextSha256B64.
+     */
+    com.google.protobuf.ByteString
+        getCiphertextSha256B64Bytes();
+
+    /**
+     * <code>int64 plaintext_size = 8;</code>
+     * @return The plaintextSize.
+     */
+    long getPlaintextSize();
+
+    /**
+     * <code>int64 ciphertext_size = 9;</code>
+     * @return The ciphertextSize.
+     */
+    long getCiphertextSize();
+
+    /**
+     * <code>string chunking = 10;</code>
+     * @return The chunking.
+     */
+    java.lang.String getChunking();
+    /**
+     * <code>string chunking = 10;</code>
+     * @return The bytes for chunking.
+     */
+    com.google.protobuf.ByteString
+        getChunkingBytes();
+
+    /**
+     * <code>uint32 chunk_size = 11;</code>
+     * @return The chunkSize.
+     */
+    int getChunkSize();
+
+    /**
+     * <code>uint32 chunk_count = 12;</code>
+     * @return The chunkCount.
+     */
+    int getChunkCount();
+
+    /**
+     * <code>uint32 tag_size = 13;</code>
+     * @return The tagSize.
+     */
+    int getTagSize();
+
+    /**
+     * <code>string nonce_strategy = 14;</code>
+     * @return The nonceStrategy.
+     */
+    java.lang.String getNonceStrategy();
+    /**
+     * <code>string nonce_strategy = 14;</code>
+     * @return The bytes for nonceStrategy.
+     */
+    com.google.protobuf.ByteString
+        getNonceStrategyBytes();
+  }
+  /**
+   * <pre>
+   * EncryptedMediaDescriptor describes client-side media encryption for
+   * chat attachments and Moment media. The descriptor is metadata only:
+   * clients MUST protect key material by carrying this message inside the
+   * surface-specific E2EE envelope when the audience is private. Public
+   * plaintext metadata fields on legacy attachment messages are deprecated
+   * compatibility mirrors and must not be treated as authoritative.
+   * </pre>
+   *
+   * Protobuf type {@code peers_touch.model.common.v1.EncryptedMediaDescriptor}
+   */
+  public  static final class EncryptedMediaDescriptor extends
+      com.google.protobuf.GeneratedMessageLite<
+          EncryptedMediaDescriptor, EncryptedMediaDescriptor.Builder> implements
+      // @@protoc_insertion_point(message_implements:peers_touch.model.common.v1.EncryptedMediaDescriptor)
+      EncryptedMediaDescriptorOrBuilder {
+    private EncryptedMediaDescriptor() {
+      suite_ = "";
+      keyB64_ = "";
+      nonceB64_ = "";
+      plaintextSha256B64_ = "";
+      ciphertextSha256B64_ = "";
+      chunking_ = "";
+      nonceStrategy_ = "";
+    }
+    public static final int ENCRYPTED_FIELD_NUMBER = 1;
+    private boolean encrypted_;
+    /**
+     * <code>bool encrypted = 1;</code>
+     * @return The encrypted.
+     */
+    @java.lang.Override
+    public boolean getEncrypted() {
+      return encrypted_;
+    }
+    /**
+     * <code>bool encrypted = 1;</code>
+     * @param value The encrypted to set.
+     */
+    private void setEncrypted(boolean value) {
+      
+      encrypted_ = value;
+    }
+    /**
+     * <code>bool encrypted = 1;</code>
+     */
+    private void clearEncrypted() {
+
+      encrypted_ = false;
+    }
+
+    public static final int VERSION_FIELD_NUMBER = 2;
+    private int version_;
+    /**
+     * <code>uint32 version = 2;</code>
+     * @return The version.
+     */
+    @java.lang.Override
+    public int getVersion() {
+      return version_;
+    }
+    /**
+     * <code>uint32 version = 2;</code>
+     * @param value The version to set.
+     */
+    private void setVersion(int value) {
+      
+      version_ = value;
+    }
+    /**
+     * <code>uint32 version = 2;</code>
+     */
+    private void clearVersion() {
+
+      version_ = 0;
+    }
+
+    public static final int SUITE_FIELD_NUMBER = 3;
+    private java.lang.String suite_;
+    /**
+     * <code>string suite = 3;</code>
+     * @return The suite.
+     */
+    @java.lang.Override
+    public java.lang.String getSuite() {
+      return suite_;
+    }
+    /**
+     * <code>string suite = 3;</code>
+     * @return The bytes for suite.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getSuiteBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(suite_);
+    }
+    /**
+     * <code>string suite = 3;</code>
+     * @param value The suite to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setSuite(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      suite_ = value;
+    }
+    /**
+     * <code>string suite = 3;</code>
+     */
+    private void clearSuite() {
+
+      suite_ = getDefaultInstance().getSuite();
+    }
+    /**
+     * <code>string suite = 3;</code>
+     * @param value The bytes for suite to set.
+     */
+    private void setSuiteBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      suite_ = value.toStringUtf8();
+
+    }
+
+    public static final int KEY_B64_FIELD_NUMBER = 4;
+    private java.lang.String keyB64_;
+    /**
+     * <code>string key_b64 = 4;</code>
+     * @return The keyB64.
+     */
+    @java.lang.Override
+    public java.lang.String getKeyB64() {
+      return keyB64_;
+    }
+    /**
+     * <code>string key_b64 = 4;</code>
+     * @return The bytes for keyB64.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getKeyB64Bytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(keyB64_);
+    }
+    /**
+     * <code>string key_b64 = 4;</code>
+     * @param value The keyB64 to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setKeyB64(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      keyB64_ = value;
+    }
+    /**
+     * <code>string key_b64 = 4;</code>
+     */
+    private void clearKeyB64() {
+
+      keyB64_ = getDefaultInstance().getKeyB64();
+    }
+    /**
+     * <code>string key_b64 = 4;</code>
+     * @param value The bytes for keyB64 to set.
+     */
+    private void setKeyB64Bytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      keyB64_ = value.toStringUtf8();
+
+    }
+
+    public static final int NONCE_B64_FIELD_NUMBER = 5;
+    private java.lang.String nonceB64_;
+    /**
+     * <code>string nonce_b64 = 5;</code>
+     * @return The nonceB64.
+     */
+    @java.lang.Override
+    public java.lang.String getNonceB64() {
+      return nonceB64_;
+    }
+    /**
+     * <code>string nonce_b64 = 5;</code>
+     * @return The bytes for nonceB64.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getNonceB64Bytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(nonceB64_);
+    }
+    /**
+     * <code>string nonce_b64 = 5;</code>
+     * @param value The nonceB64 to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setNonceB64(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      nonceB64_ = value;
+    }
+    /**
+     * <code>string nonce_b64 = 5;</code>
+     */
+    private void clearNonceB64() {
+
+      nonceB64_ = getDefaultInstance().getNonceB64();
+    }
+    /**
+     * <code>string nonce_b64 = 5;</code>
+     * @param value The bytes for nonceB64 to set.
+     */
+    private void setNonceB64Bytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      nonceB64_ = value.toStringUtf8();
+
+    }
+
+    public static final int PLAINTEXT_SHA256_B64_FIELD_NUMBER = 6;
+    private java.lang.String plaintextSha256B64_;
+    /**
+     * <code>string plaintext_sha256_b64 = 6;</code>
+     * @return The plaintextSha256B64.
+     */
+    @java.lang.Override
+    public java.lang.String getPlaintextSha256B64() {
+      return plaintextSha256B64_;
+    }
+    /**
+     * <code>string plaintext_sha256_b64 = 6;</code>
+     * @return The bytes for plaintextSha256B64.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getPlaintextSha256B64Bytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(plaintextSha256B64_);
+    }
+    /**
+     * <code>string plaintext_sha256_b64 = 6;</code>
+     * @param value The plaintextSha256B64 to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setPlaintextSha256B64(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      plaintextSha256B64_ = value;
+    }
+    /**
+     * <code>string plaintext_sha256_b64 = 6;</code>
+     */
+    private void clearPlaintextSha256B64() {
+
+      plaintextSha256B64_ = getDefaultInstance().getPlaintextSha256B64();
+    }
+    /**
+     * <code>string plaintext_sha256_b64 = 6;</code>
+     * @param value The bytes for plaintextSha256B64 to set.
+     */
+    private void setPlaintextSha256B64Bytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      plaintextSha256B64_ = value.toStringUtf8();
+
+    }
+
+    public static final int CIPHERTEXT_SHA256_B64_FIELD_NUMBER = 7;
+    private java.lang.String ciphertextSha256B64_;
+    /**
+     * <code>string ciphertext_sha256_b64 = 7;</code>
+     * @return The ciphertextSha256B64.
+     */
+    @java.lang.Override
+    public java.lang.String getCiphertextSha256B64() {
+      return ciphertextSha256B64_;
+    }
+    /**
+     * <code>string ciphertext_sha256_b64 = 7;</code>
+     * @return The bytes for ciphertextSha256B64.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getCiphertextSha256B64Bytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(ciphertextSha256B64_);
+    }
+    /**
+     * <code>string ciphertext_sha256_b64 = 7;</code>
+     * @param value The ciphertextSha256B64 to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setCiphertextSha256B64(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      ciphertextSha256B64_ = value;
+    }
+    /**
+     * <code>string ciphertext_sha256_b64 = 7;</code>
+     */
+    private void clearCiphertextSha256B64() {
+
+      ciphertextSha256B64_ = getDefaultInstance().getCiphertextSha256B64();
+    }
+    /**
+     * <code>string ciphertext_sha256_b64 = 7;</code>
+     * @param value The bytes for ciphertextSha256B64 to set.
+     */
+    private void setCiphertextSha256B64Bytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      ciphertextSha256B64_ = value.toStringUtf8();
+
+    }
+
+    public static final int PLAINTEXT_SIZE_FIELD_NUMBER = 8;
+    private long plaintextSize_;
+    /**
+     * <code>int64 plaintext_size = 8;</code>
+     * @return The plaintextSize.
+     */
+    @java.lang.Override
+    public long getPlaintextSize() {
+      return plaintextSize_;
+    }
+    /**
+     * <code>int64 plaintext_size = 8;</code>
+     * @param value The plaintextSize to set.
+     */
+    private void setPlaintextSize(long value) {
+      
+      plaintextSize_ = value;
+    }
+    /**
+     * <code>int64 plaintext_size = 8;</code>
+     */
+    private void clearPlaintextSize() {
+
+      plaintextSize_ = 0L;
+    }
+
+    public static final int CIPHERTEXT_SIZE_FIELD_NUMBER = 9;
+    private long ciphertextSize_;
+    /**
+     * <code>int64 ciphertext_size = 9;</code>
+     * @return The ciphertextSize.
+     */
+    @java.lang.Override
+    public long getCiphertextSize() {
+      return ciphertextSize_;
+    }
+    /**
+     * <code>int64 ciphertext_size = 9;</code>
+     * @param value The ciphertextSize to set.
+     */
+    private void setCiphertextSize(long value) {
+      
+      ciphertextSize_ = value;
+    }
+    /**
+     * <code>int64 ciphertext_size = 9;</code>
+     */
+    private void clearCiphertextSize() {
+
+      ciphertextSize_ = 0L;
+    }
+
+    public static final int CHUNKING_FIELD_NUMBER = 10;
+    private java.lang.String chunking_;
+    /**
+     * <code>string chunking = 10;</code>
+     * @return The chunking.
+     */
+    @java.lang.Override
+    public java.lang.String getChunking() {
+      return chunking_;
+    }
+    /**
+     * <code>string chunking = 10;</code>
+     * @return The bytes for chunking.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getChunkingBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(chunking_);
+    }
+    /**
+     * <code>string chunking = 10;</code>
+     * @param value The chunking to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setChunking(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      chunking_ = value;
+    }
+    /**
+     * <code>string chunking = 10;</code>
+     */
+    private void clearChunking() {
+
+      chunking_ = getDefaultInstance().getChunking();
+    }
+    /**
+     * <code>string chunking = 10;</code>
+     * @param value The bytes for chunking to set.
+     */
+    private void setChunkingBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      chunking_ = value.toStringUtf8();
+
+    }
+
+    public static final int CHUNK_SIZE_FIELD_NUMBER = 11;
+    private int chunkSize_;
+    /**
+     * <code>uint32 chunk_size = 11;</code>
+     * @return The chunkSize.
+     */
+    @java.lang.Override
+    public int getChunkSize() {
+      return chunkSize_;
+    }
+    /**
+     * <code>uint32 chunk_size = 11;</code>
+     * @param value The chunkSize to set.
+     */
+    private void setChunkSize(int value) {
+      
+      chunkSize_ = value;
+    }
+    /**
+     * <code>uint32 chunk_size = 11;</code>
+     */
+    private void clearChunkSize() {
+
+      chunkSize_ = 0;
+    }
+
+    public static final int CHUNK_COUNT_FIELD_NUMBER = 12;
+    private int chunkCount_;
+    /**
+     * <code>uint32 chunk_count = 12;</code>
+     * @return The chunkCount.
+     */
+    @java.lang.Override
+    public int getChunkCount() {
+      return chunkCount_;
+    }
+    /**
+     * <code>uint32 chunk_count = 12;</code>
+     * @param value The chunkCount to set.
+     */
+    private void setChunkCount(int value) {
+      
+      chunkCount_ = value;
+    }
+    /**
+     * <code>uint32 chunk_count = 12;</code>
+     */
+    private void clearChunkCount() {
+
+      chunkCount_ = 0;
+    }
+
+    public static final int TAG_SIZE_FIELD_NUMBER = 13;
+    private int tagSize_;
+    /**
+     * <code>uint32 tag_size = 13;</code>
+     * @return The tagSize.
+     */
+    @java.lang.Override
+    public int getTagSize() {
+      return tagSize_;
+    }
+    /**
+     * <code>uint32 tag_size = 13;</code>
+     * @param value The tagSize to set.
+     */
+    private void setTagSize(int value) {
+      
+      tagSize_ = value;
+    }
+    /**
+     * <code>uint32 tag_size = 13;</code>
+     */
+    private void clearTagSize() {
+
+      tagSize_ = 0;
+    }
+
+    public static final int NONCE_STRATEGY_FIELD_NUMBER = 14;
+    private java.lang.String nonceStrategy_;
+    /**
+     * <code>string nonce_strategy = 14;</code>
+     * @return The nonceStrategy.
+     */
+    @java.lang.Override
+    public java.lang.String getNonceStrategy() {
+      return nonceStrategy_;
+    }
+    /**
+     * <code>string nonce_strategy = 14;</code>
+     * @return The bytes for nonceStrategy.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getNonceStrategyBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(nonceStrategy_);
+    }
+    /**
+     * <code>string nonce_strategy = 14;</code>
+     * @param value The nonceStrategy to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setNonceStrategy(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      nonceStrategy_ = value;
+    }
+    /**
+     * <code>string nonce_strategy = 14;</code>
+     */
+    private void clearNonceStrategy() {
+
+      nonceStrategy_ = getDefaultInstance().getNonceStrategy();
+    }
+    /**
+     * <code>string nonce_strategy = 14;</code>
+     * @param value The bytes for nonceStrategy to set.
+     */
+    private void setNonceStrategyBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      nonceStrategy_ = value.toStringUtf8();
+
+    }
+
+    public static peers_touch.model.common.v1.Common.EncryptedMediaDescriptor parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.common.v1.Common.EncryptedMediaDescriptor parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.common.v1.Common.EncryptedMediaDescriptor parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.common.v1.Common.EncryptedMediaDescriptor parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.common.v1.Common.EncryptedMediaDescriptor parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.common.v1.Common.EncryptedMediaDescriptor parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.common.v1.Common.EncryptedMediaDescriptor parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.common.v1.Common.EncryptedMediaDescriptor parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static peers_touch.model.common.v1.Common.EncryptedMediaDescriptor parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static peers_touch.model.common.v1.Common.EncryptedMediaDescriptor parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static peers_touch.model.common.v1.Common.EncryptedMediaDescriptor parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.common.v1.Common.EncryptedMediaDescriptor parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * <pre>
+     * EncryptedMediaDescriptor describes client-side media encryption for
+     * chat attachments and Moment media. The descriptor is metadata only:
+     * clients MUST protect key material by carrying this message inside the
+     * surface-specific E2EE envelope when the audience is private. Public
+     * plaintext metadata fields on legacy attachment messages are deprecated
+     * compatibility mirrors and must not be treated as authoritative.
+     * </pre>
+     *
+     * Protobuf type {@code peers_touch.model.common.v1.EncryptedMediaDescriptor}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          peers_touch.model.common.v1.Common.EncryptedMediaDescriptor, Builder> implements
+        // @@protoc_insertion_point(builder_implements:peers_touch.model.common.v1.EncryptedMediaDescriptor)
+        peers_touch.model.common.v1.Common.EncryptedMediaDescriptorOrBuilder {
+      // Construct using peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>bool encrypted = 1;</code>
+       * @return The encrypted.
+       */
+      @java.lang.Override
+      public boolean getEncrypted() {
+        return instance.getEncrypted();
+      }
+      /**
+       * <code>bool encrypted = 1;</code>
+       * @param value The encrypted to set.
+       * @return This builder for chaining.
+       */
+      public Builder setEncrypted(boolean value) {
+        copyOnWrite();
+        instance.setEncrypted(value);
+        return this;
+      }
+      /**
+       * <code>bool encrypted = 1;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearEncrypted() {
+        copyOnWrite();
+        instance.clearEncrypted();
+        return this;
+      }
+
+      /**
+       * <code>uint32 version = 2;</code>
+       * @return The version.
+       */
+      @java.lang.Override
+      public int getVersion() {
+        return instance.getVersion();
+      }
+      /**
+       * <code>uint32 version = 2;</code>
+       * @param value The version to set.
+       * @return This builder for chaining.
+       */
+      public Builder setVersion(int value) {
+        copyOnWrite();
+        instance.setVersion(value);
+        return this;
+      }
+      /**
+       * <code>uint32 version = 2;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearVersion() {
+        copyOnWrite();
+        instance.clearVersion();
+        return this;
+      }
+
+      /**
+       * <code>string suite = 3;</code>
+       * @return The suite.
+       */
+      @java.lang.Override
+      public java.lang.String getSuite() {
+        return instance.getSuite();
+      }
+      /**
+       * <code>string suite = 3;</code>
+       * @return The bytes for suite.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getSuiteBytes() {
+        return instance.getSuiteBytes();
+      }
+      /**
+       * <code>string suite = 3;</code>
+       * @param value The suite to set.
+       * @return This builder for chaining.
+       */
+      public Builder setSuite(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setSuite(value);
+        return this;
+      }
+      /**
+       * <code>string suite = 3;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearSuite() {
+        copyOnWrite();
+        instance.clearSuite();
+        return this;
+      }
+      /**
+       * <code>string suite = 3;</code>
+       * @param value The bytes for suite to set.
+       * @return This builder for chaining.
+       */
+      public Builder setSuiteBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setSuiteBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string key_b64 = 4;</code>
+       * @return The keyB64.
+       */
+      @java.lang.Override
+      public java.lang.String getKeyB64() {
+        return instance.getKeyB64();
+      }
+      /**
+       * <code>string key_b64 = 4;</code>
+       * @return The bytes for keyB64.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getKeyB64Bytes() {
+        return instance.getKeyB64Bytes();
+      }
+      /**
+       * <code>string key_b64 = 4;</code>
+       * @param value The keyB64 to set.
+       * @return This builder for chaining.
+       */
+      public Builder setKeyB64(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setKeyB64(value);
+        return this;
+      }
+      /**
+       * <code>string key_b64 = 4;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearKeyB64() {
+        copyOnWrite();
+        instance.clearKeyB64();
+        return this;
+      }
+      /**
+       * <code>string key_b64 = 4;</code>
+       * @param value The bytes for keyB64 to set.
+       * @return This builder for chaining.
+       */
+      public Builder setKeyB64Bytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setKeyB64Bytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string nonce_b64 = 5;</code>
+       * @return The nonceB64.
+       */
+      @java.lang.Override
+      public java.lang.String getNonceB64() {
+        return instance.getNonceB64();
+      }
+      /**
+       * <code>string nonce_b64 = 5;</code>
+       * @return The bytes for nonceB64.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getNonceB64Bytes() {
+        return instance.getNonceB64Bytes();
+      }
+      /**
+       * <code>string nonce_b64 = 5;</code>
+       * @param value The nonceB64 to set.
+       * @return This builder for chaining.
+       */
+      public Builder setNonceB64(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setNonceB64(value);
+        return this;
+      }
+      /**
+       * <code>string nonce_b64 = 5;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearNonceB64() {
+        copyOnWrite();
+        instance.clearNonceB64();
+        return this;
+      }
+      /**
+       * <code>string nonce_b64 = 5;</code>
+       * @param value The bytes for nonceB64 to set.
+       * @return This builder for chaining.
+       */
+      public Builder setNonceB64Bytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setNonceB64Bytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string plaintext_sha256_b64 = 6;</code>
+       * @return The plaintextSha256B64.
+       */
+      @java.lang.Override
+      public java.lang.String getPlaintextSha256B64() {
+        return instance.getPlaintextSha256B64();
+      }
+      /**
+       * <code>string plaintext_sha256_b64 = 6;</code>
+       * @return The bytes for plaintextSha256B64.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getPlaintextSha256B64Bytes() {
+        return instance.getPlaintextSha256B64Bytes();
+      }
+      /**
+       * <code>string plaintext_sha256_b64 = 6;</code>
+       * @param value The plaintextSha256B64 to set.
+       * @return This builder for chaining.
+       */
+      public Builder setPlaintextSha256B64(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setPlaintextSha256B64(value);
+        return this;
+      }
+      /**
+       * <code>string plaintext_sha256_b64 = 6;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearPlaintextSha256B64() {
+        copyOnWrite();
+        instance.clearPlaintextSha256B64();
+        return this;
+      }
+      /**
+       * <code>string plaintext_sha256_b64 = 6;</code>
+       * @param value The bytes for plaintextSha256B64 to set.
+       * @return This builder for chaining.
+       */
+      public Builder setPlaintextSha256B64Bytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setPlaintextSha256B64Bytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string ciphertext_sha256_b64 = 7;</code>
+       * @return The ciphertextSha256B64.
+       */
+      @java.lang.Override
+      public java.lang.String getCiphertextSha256B64() {
+        return instance.getCiphertextSha256B64();
+      }
+      /**
+       * <code>string ciphertext_sha256_b64 = 7;</code>
+       * @return The bytes for ciphertextSha256B64.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getCiphertextSha256B64Bytes() {
+        return instance.getCiphertextSha256B64Bytes();
+      }
+      /**
+       * <code>string ciphertext_sha256_b64 = 7;</code>
+       * @param value The ciphertextSha256B64 to set.
+       * @return This builder for chaining.
+       */
+      public Builder setCiphertextSha256B64(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setCiphertextSha256B64(value);
+        return this;
+      }
+      /**
+       * <code>string ciphertext_sha256_b64 = 7;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearCiphertextSha256B64() {
+        copyOnWrite();
+        instance.clearCiphertextSha256B64();
+        return this;
+      }
+      /**
+       * <code>string ciphertext_sha256_b64 = 7;</code>
+       * @param value The bytes for ciphertextSha256B64 to set.
+       * @return This builder for chaining.
+       */
+      public Builder setCiphertextSha256B64Bytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setCiphertextSha256B64Bytes(value);
+        return this;
+      }
+
+      /**
+       * <code>int64 plaintext_size = 8;</code>
+       * @return The plaintextSize.
+       */
+      @java.lang.Override
+      public long getPlaintextSize() {
+        return instance.getPlaintextSize();
+      }
+      /**
+       * <code>int64 plaintext_size = 8;</code>
+       * @param value The plaintextSize to set.
+       * @return This builder for chaining.
+       */
+      public Builder setPlaintextSize(long value) {
+        copyOnWrite();
+        instance.setPlaintextSize(value);
+        return this;
+      }
+      /**
+       * <code>int64 plaintext_size = 8;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearPlaintextSize() {
+        copyOnWrite();
+        instance.clearPlaintextSize();
+        return this;
+      }
+
+      /**
+       * <code>int64 ciphertext_size = 9;</code>
+       * @return The ciphertextSize.
+       */
+      @java.lang.Override
+      public long getCiphertextSize() {
+        return instance.getCiphertextSize();
+      }
+      /**
+       * <code>int64 ciphertext_size = 9;</code>
+       * @param value The ciphertextSize to set.
+       * @return This builder for chaining.
+       */
+      public Builder setCiphertextSize(long value) {
+        copyOnWrite();
+        instance.setCiphertextSize(value);
+        return this;
+      }
+      /**
+       * <code>int64 ciphertext_size = 9;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearCiphertextSize() {
+        copyOnWrite();
+        instance.clearCiphertextSize();
+        return this;
+      }
+
+      /**
+       * <code>string chunking = 10;</code>
+       * @return The chunking.
+       */
+      @java.lang.Override
+      public java.lang.String getChunking() {
+        return instance.getChunking();
+      }
+      /**
+       * <code>string chunking = 10;</code>
+       * @return The bytes for chunking.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getChunkingBytes() {
+        return instance.getChunkingBytes();
+      }
+      /**
+       * <code>string chunking = 10;</code>
+       * @param value The chunking to set.
+       * @return This builder for chaining.
+       */
+      public Builder setChunking(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setChunking(value);
+        return this;
+      }
+      /**
+       * <code>string chunking = 10;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearChunking() {
+        copyOnWrite();
+        instance.clearChunking();
+        return this;
+      }
+      /**
+       * <code>string chunking = 10;</code>
+       * @param value The bytes for chunking to set.
+       * @return This builder for chaining.
+       */
+      public Builder setChunkingBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setChunkingBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>uint32 chunk_size = 11;</code>
+       * @return The chunkSize.
+       */
+      @java.lang.Override
+      public int getChunkSize() {
+        return instance.getChunkSize();
+      }
+      /**
+       * <code>uint32 chunk_size = 11;</code>
+       * @param value The chunkSize to set.
+       * @return This builder for chaining.
+       */
+      public Builder setChunkSize(int value) {
+        copyOnWrite();
+        instance.setChunkSize(value);
+        return this;
+      }
+      /**
+       * <code>uint32 chunk_size = 11;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearChunkSize() {
+        copyOnWrite();
+        instance.clearChunkSize();
+        return this;
+      }
+
+      /**
+       * <code>uint32 chunk_count = 12;</code>
+       * @return The chunkCount.
+       */
+      @java.lang.Override
+      public int getChunkCount() {
+        return instance.getChunkCount();
+      }
+      /**
+       * <code>uint32 chunk_count = 12;</code>
+       * @param value The chunkCount to set.
+       * @return This builder for chaining.
+       */
+      public Builder setChunkCount(int value) {
+        copyOnWrite();
+        instance.setChunkCount(value);
+        return this;
+      }
+      /**
+       * <code>uint32 chunk_count = 12;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearChunkCount() {
+        copyOnWrite();
+        instance.clearChunkCount();
+        return this;
+      }
+
+      /**
+       * <code>uint32 tag_size = 13;</code>
+       * @return The tagSize.
+       */
+      @java.lang.Override
+      public int getTagSize() {
+        return instance.getTagSize();
+      }
+      /**
+       * <code>uint32 tag_size = 13;</code>
+       * @param value The tagSize to set.
+       * @return This builder for chaining.
+       */
+      public Builder setTagSize(int value) {
+        copyOnWrite();
+        instance.setTagSize(value);
+        return this;
+      }
+      /**
+       * <code>uint32 tag_size = 13;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearTagSize() {
+        copyOnWrite();
+        instance.clearTagSize();
+        return this;
+      }
+
+      /**
+       * <code>string nonce_strategy = 14;</code>
+       * @return The nonceStrategy.
+       */
+      @java.lang.Override
+      public java.lang.String getNonceStrategy() {
+        return instance.getNonceStrategy();
+      }
+      /**
+       * <code>string nonce_strategy = 14;</code>
+       * @return The bytes for nonceStrategy.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getNonceStrategyBytes() {
+        return instance.getNonceStrategyBytes();
+      }
+      /**
+       * <code>string nonce_strategy = 14;</code>
+       * @param value The nonceStrategy to set.
+       * @return This builder for chaining.
+       */
+      public Builder setNonceStrategy(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setNonceStrategy(value);
+        return this;
+      }
+      /**
+       * <code>string nonce_strategy = 14;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearNonceStrategy() {
+        copyOnWrite();
+        instance.clearNonceStrategy();
+        return this;
+      }
+      /**
+       * <code>string nonce_strategy = 14;</code>
+       * @param value The bytes for nonceStrategy to set.
+       * @return This builder for chaining.
+       */
+      public Builder setNonceStrategyBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setNonceStrategyBytes(value);
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:peers_touch.model.common.v1.EncryptedMediaDescriptor)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"ThrowNull"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new peers_touch.model.common.v1.Common.EncryptedMediaDescriptor();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "encrypted_",
+              "version_",
+              "suite_",
+              "keyB64_",
+              "nonceB64_",
+              "plaintextSha256B64_",
+              "ciphertextSha256B64_",
+              "plaintextSize_",
+              "ciphertextSize_",
+              "chunking_",
+              "chunkSize_",
+              "chunkCount_",
+              "tagSize_",
+              "nonceStrategy_",
+            };
+            java.lang.String info =
+                "\u0000\u000e\u0000\u0000\u0001\u000e\u000e\u0000\u0000\u0000\u0001\u0007\u0002\u000b" +
+                "\u0003\u0208\u0004\u0208\u0005\u0208\u0006\u0208\u0007\u0208\b\u0002\t\u0002\n\u0208" +
+                "\u000b\u000b\f\u000b\r\u000b\u000e\u0208";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<peers_touch.model.common.v1.Common.EncryptedMediaDescriptor> parser = PARSER;
+          if (parser == null) {
+            synchronized (peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<peers_touch.model.common.v1.Common.EncryptedMediaDescriptor>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+        }
+        case GET_MEMOIZED_IS_INITIALIZED: {
+          return (byte) 1;
+        }
+        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
+        // So it can do anything. Combine with default case for smaller codegen.
+        case SET_MEMOIZED_IS_INITIALIZED:
+      }
+      // Should never happen. Generates tight code to throw an exception.
+      throw null;
+    }
+
+
+    // @@protoc_insertion_point(class_scope:peers_touch.model.common.v1.EncryptedMediaDescriptor)
+    private static final peers_touch.model.common.v1.Common.EncryptedMediaDescriptor DEFAULT_INSTANCE;
+    static {
+      EncryptedMediaDescriptor defaultInstance = new EncryptedMediaDescriptor();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        EncryptedMediaDescriptor.class, defaultInstance);
+    }
+
+    public static peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<EncryptedMediaDescriptor> PARSER;
+
+    public static com.google.protobuf.Parser<EncryptedMediaDescriptor> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
 
   static {
   }

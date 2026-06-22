@@ -1,4 +1,5 @@
 import type { SecureStoragePort } from '../services/platform/mobilePlatform';
+import { readableErrorMessage } from '../utils/errorMessage';
 
 const SMOKE_KEY = 'framework.secure-storage.smoke';
 const SMOKE_VALUE = 'secure-storage-ready';
@@ -26,7 +27,7 @@ export async function runSecureStorageSmoke(
   } catch (error) {
     return {
       status: 'unavailable',
-      reason: error instanceof Error ? error.message : String(error),
+      reason: readableErrorMessage(error),
     };
   }
 }

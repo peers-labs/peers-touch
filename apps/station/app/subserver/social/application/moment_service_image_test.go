@@ -5,8 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
+	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
+	common "github.com/peers-labs/peers-touch/station/frame/core/types"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
@@ -263,5 +264,119 @@ func TestImagePost_RejectsPartialUnknownSet(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "missing.png") {
 		t.Fatalf("expected error to name 'missing.png', got %v", err)
+	}
+}
+
+func TestImagePost_RejectsMixedLegacyAndTypedImages(t *testing.T) {
+	f := newImageFixture(t)
+	ctx := context.Background()
+
+	legacyKey := "mixed/legacy.png"
+	typedKey := "mixed/typed.png"
+	seedOssKey(t, f, legacyKey)
+	seedOssKey(t, f, typedKey)
+	legacyCID := "oss://station.local/" + legacyKey
+	typedCID := "oss://station.local/" + typedKey
+
+	_, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_IMAGE,
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		Content: &model.CreatePostRequest_Image{
+			Image: &model.CreateImagePostRequest{
+				Text:     "mixed images",
+				ImageIds: []string{legacyCID},
+				Images: []*model.ImageAttachment{{
+					Id:  typedCID,
+					Url: typedCID,
+				}},
+			},
+		},
+	}, 700)
+	if err == nil {
+		t.Fatal("expected mixed image_ids/images rejection, got nil")
+	}
+	if !strings.Contains(err.Error(), "either image_ids or images, not both") {
+		t.Fatalf("expected mixed image source rejection, got %v", err)
+	}
+}
+
+func TestImagePost_PrivatePersistsAudienceKeyEnvelopes(t *testing.T) {
+	f := newImageFixture(t)
+	ctx := context.Background()
+
+	key := "private/aaa.png"
+	seedOssKey(t, f, key)
+	cid := "oss://station.local/" + key
+
+	post, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type: model.PostType_IMAGE,
+		Audience: &model.Audience{
+			Kind: model.Audience_SELF,
+			KeyEnvelopes: []*model.AudienceKeyEnvelope{{
+				RecipientDid: "101",
+				DeviceId:     "device-a",
+				KeyId:        cid,
+				EncryptedKey: []byte("sealed-key"),
+				Suite:        "signaling-envelope-x3dh-aes256gcm/media-key-v1",
+			}},
+		},
+		Content: &model.CreatePostRequest_Image{
+			Image: &model.CreateImagePostRequest{
+				Text: "private photo",
+				Images: []*model.ImageAttachment{{
+					Id:  cid,
+					Url: cid,
+					MediaEncryption: &common.EncryptedMediaDescriptor{
+						Encrypted: true,
+						Version:   2,
+						Suite:     "AES-256-GCM-CHUNKED",
+						NonceB64:  "nonce",
+					},
+				}},
+			},
+		},
+	}, 101)
+	if err != nil {
+		t.Fatalf("create private IMAGE: %v", err)
+	}
+	if got := post.GetAudience().GetKeyEnvelopes(); len(got) != 1 || got[0].GetKeyId() != cid {
+		t.Fatalf("expected audience key envelope to round-trip, got %+v", got)
+	}
+}
+
+func TestImagePost_PrivateRejectsInlineMediaKeyMaterial(t *testing.T) {
+	f := newImageFixture(t)
+	ctx := context.Background()
+
+	key := "private/inline.png"
+	seedOssKey(t, f, key)
+	cid := "oss://station.local/" + key
+
+	_, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type: model.PostType_IMAGE,
+		Audience: &model.Audience{
+			Kind: model.Audience_SELF,
+			KeyEnvelopes: []*model.AudienceKeyEnvelope{{
+				RecipientDid: "101", DeviceId: "device-a", KeyId: cid, EncryptedKey: []byte("sealed-key"), Suite: "suite",
+			}},
+		},
+		Content: &model.CreatePostRequest_Image{
+			Image: &model.CreateImagePostRequest{
+				Text: "bad private photo",
+				Images: []*model.ImageAttachment{{
+					Id: cid,
+					MediaEncryption: &common.EncryptedMediaDescriptor{
+						Encrypted: true,
+						KeyB64:    "plaintext-key",
+					},
+				}},
+			},
+		},
+	}, 101)
+	if err == nil {
+		t.Fatal("expected inline key material rejection, got nil")
+	}
+	if !strings.Contains(err.Error(), "rejects inline media key material") {
+		t.Fatalf("expected inline key rejection, got %v", err)
 	}
 }

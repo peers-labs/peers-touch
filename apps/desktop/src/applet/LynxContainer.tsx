@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Alert } from '@lobehub/ui'
-import { Card, Spin } from 'antd'
+import { Button, Card, Collapse, Result, Spin, theme } from 'antd'
+import { RefreshCw, RotateCcw } from 'lucide-react'
 import AppletManager from './AppletManager'
 import LynxHost from './LynxHost'
 import type { AppletHostDeviceRequest, AppletHostNavigationRequest, AppletHostUiRequest } from './lynx-host-element'
@@ -16,7 +16,10 @@ interface LynxContainerProps {
   onNavigationRequest?: (request: AppletHostNavigationRequest) => void
   onUiRequest?: (request: AppletHostUiRequest) => unknown | Promise<unknown>
   onDeviceRequest?: (request: AppletHostDeviceRequest) => unknown | Promise<unknown>
+  onBack?: () => void
 }
+
+const APPLET_READY_TIMEOUT_MS = 8000
 
 /**
  * High-level container that loads an applet by ID and renders it via <lynx-host>.
@@ -31,18 +34,25 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
   onNavigationRequest,
   onUiRequest,
   onDeviceRequest,
+  onBack,
 }) => {
   const { t } = useTranslation('applet')
+  const { token } = theme.useToken()
   const [loading, setLoading] = useState(true)
+  const [ready, setReady] = useState(false)
+  const [timedOut, setTimedOut] = useState(false)
   const [error, setError] = useState<Error | null>(null)
   const [appletInfo, setAppletInfo] = useState<AppletInfo | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [retryKey, setRetryKey] = useState(0)
   const appletManager = AppletManager.getInstance()
 
   useEffect(() => {
     const load = async () => {
       try {
         setLoading(true)
+        setReady(false)
+        setTimedOut(false)
         setError(null)
 
         const info = appletManager.getAppletInfo(appletId)
@@ -74,69 +84,187 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
       void appletManager.unloadApplet(appletId)
       setSessionId(null)
     }
-  }, [appletId, appletManager, onError, t])
+  }, [appletId, appletManager, onError, retryKey, t])
+
+  useEffect(() => {
+    if (loading || error || ready || !sessionId) return undefined
+
+    const timer = window.setTimeout(() => {
+      setTimedOut(true)
+    }, APPLET_READY_TIMEOUT_MS)
+
+    return () => window.clearTimeout(timer)
+  }, [error, loading, ready, sessionId])
+
+  const retry = () => {
+    setRetryKey((current) => current + 1)
+  }
 
   if (loading) {
     return (
       <Card style={{ width, height, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Spin size="large" description={t('applet.runtime.loading')} />
+        <Spin size="large" tip={t('applet.runtime.loading')} />
       </Card>
     )
   }
 
   if (error || !appletInfo || !sessionId) {
     return (
-      <Card style={{ width, height }}>
-        <Alert
-          message={t('applet.runtime.loadFailed')}
-          description={error?.message || t('applet.runtime.unknownError')}
-          type="error"
-          showIcon
-        />
-      </Card>
+      <AppletDisplayFallback
+        width={width}
+        height={height}
+        title={t('applet.runtime.unableToDisplay')}
+        description={t('applet.runtime.loadFailedDescription')}
+        detail={error?.message || t('applet.runtime.unknownError')}
+        onRetry={retry}
+        onBack={onBack}
+      />
     )
   }
 
-  // Resolve bundle URL from platform-specific load config
+  if (timedOut) {
+    return (
+      <AppletDisplayFallback
+        width={width}
+        height={height}
+        title={t('applet.runtime.unableToDisplay')}
+        description={t('applet.runtime.readyTimeoutDescription')}
+        detail={t('applet.runtime.readyTimeoutDetail', { seconds: APPLET_READY_TIMEOUT_MS / 1000 })}
+        onRetry={retry}
+        onBack={onBack}
+      />
+    )
+  }
+
   const desktopLoad = appletInfo.load.desktop
   if (!desktopLoad) {
     return (
-      <Card style={{ width, height }}>
-        <Alert
-          message={t('applet.runtime.unsupportedPlatform')}
-          description={t('applet.runtime.noDesktopLoad', { id: appletId })}
-          type="warning"
-          showIcon
-        />
-      </Card>
+      <AppletDisplayFallback
+        width={width}
+        height={height}
+        title={t('applet.runtime.unsupportedPlatform')}
+        description={t('applet.runtime.noDesktopLoad', { id: appletId })}
+        onRetry={retry}
+        onBack={onBack}
+      />
     )
   }
 
   const bundleUrl = `${appletInfo.path}/${desktopLoad.entry}`
 
   return (
-    <LynxHost
-      appletId={appletId}
-      sessionId={sessionId}
-      url={bundleUrl}
+    <div
       style={{
         width,
         height,
-        border: '1px solid #f0f0f0',
-        borderRadius: '8px',
+        position: 'relative',
+        border: `1px solid ${token.colorBorderSecondary}`,
+        borderRadius: 18,
         overflow: 'hidden',
+        background: token.colorBgContainer,
       }}
-      onLoad={() => {
-        onLoad?.()
+    >
+      {!ready && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 2,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: token.colorBgContainer,
+          }}
+        >
+          <Spin size="large" tip={t('applet.runtime.loading')} />
+        </div>
+      )}
+      <LynxHost
+        key={retryKey}
+        appletId={appletId}
+        sessionId={sessionId}
+        url={bundleUrl}
+        style={{
+          width: '100%',
+          height: '100%',
+          opacity: ready ? 1 : 0,
+          transition: 'opacity 0.2s ease',
+        }}
+        onReady={() => {
+          setReady(true)
+          setTimedOut(false)
+          onLoad?.()
+        }}
+        onError={(hostError) => {
+          setError(hostError)
+          onError?.(hostError)
+        }}
+        onNavigationRequest={onNavigationRequest}
+        onUiRequest={onUiRequest}
+        onDeviceRequest={onDeviceRequest}
+      />
+    </div>
+  )
+}
+
+function AppletDisplayFallback({
+  width,
+  height,
+  title,
+  description,
+  detail,
+  onRetry,
+  onBack,
+}: {
+  width: number | string
+  height: number | string
+  title: string
+  description: string
+  detail?: string
+  onRetry: () => void
+  onBack?: () => void
+}) {
+  const { t } = useTranslation('applet')
+
+  return (
+    <Card
+      style={{
+        width,
+        height,
+        borderRadius: 18,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
       }}
-      onError={(hostError) => {
-        setError(hostError)
-        onError?.(hostError)
-      }}
-      onNavigationRequest={onNavigationRequest}
-      onUiRequest={onUiRequest}
-      onDeviceRequest={onDeviceRequest}
-    />
+      styles={{ body: { width: '100%' } }}
+    >
+      <Result
+        status="warning"
+        title={title}
+        subTitle={description}
+        extra={[
+          <Button key="retry" type="primary" icon={<RefreshCw size={14} />} onClick={onRetry}>
+            {t('applet.runtime.retry')}
+          </Button>,
+          onBack ? (
+            <Button key="back" icon={<RotateCcw size={14} />} onClick={onBack}>
+              {t('applet.runtime.backToHome')}
+            </Button>
+          ) : null,
+        ].filter(Boolean)}
+      >
+        {detail && (
+          <Collapse
+            ghost
+            items={[{
+              key: 'detail',
+              label: t('applet.runtime.errorDetail'),
+              children: <pre style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{detail}</pre>,
+            }]}
+          />
+        )}
+      </Result>
+    </Card>
   )
 }
 

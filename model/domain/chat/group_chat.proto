@@ -3,6 +3,7 @@ syntax = "proto3";
 package peers_touch.model.chat.v1;
 
 import "google/protobuf/timestamp.proto";
+import "domain/common/common.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
 
@@ -189,6 +190,18 @@ message SenderKeyDistributionMessage {
   bytes sender_sig_pub = 6;
 }
 
+// ChatEncryptedMessagePayload is the plaintext that goes into the
+// Sender-Keys cipher before it becomes GroupCiphertext.ciphertext.
+// It is a protobuf message by design: clients may decode it after
+// E2EE decrypt, while Station only stores the outer opaque
+// encrypted_payload bytes and must never parse this structure.
+message ChatEncryptedMessagePayload {
+  uint32 version = 1;
+  string text = 2;
+  repeated GroupMessageAttachment attachments = 3;
+  GroupMessageType message_type = 4;
+}
+
 enum GroupMessageType {
   GROUP_MESSAGE_TYPE_UNSPECIFIED = 0;
   GROUP_MESSAGE_TYPE_TEXT = 1;
@@ -214,6 +227,17 @@ message GroupMessageAttachment {
   // treated as "unknown" by older clients and rendered without
   // a badge; new servers SHOULD always populate it.
   string visibility = 6;
+  peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 14;
+  // Deprecated compatibility mirrors for older generated clients. New
+  // clients must populate/read `media_encryption` inside the encrypted
+  // chat payload so Station never sees attachment key material.
+  string encryption_suite = 7;
+  string encryption_key_b64 = 8;
+  string encryption_nonce_b64 = 9;
+  string plaintext_sha256_b64 = 10;
+  string ciphertext_sha256_b64 = 11;
+  int64 plaintext_size = 12;
+  int64 ciphertext_size = 13;
 }
 
 // ==================== 邀请/申请 ====================
@@ -357,9 +381,10 @@ message RemoveMemberResponse {
 // `encrypted_payload` carries the wire-encoded `GroupCiphertext`
 // (see GroupMessage doc). Required: Station rejects requests whose
 // encrypted_payload is empty, AND requests that populate `content`
-// (the latter would silently leak the body to Station). Attachments
-// stay outside the ciphertext envelope -- attachment encryption is
-// tracked separately in oss-encryption.md.
+// (the latter would silently leak the body to Station). New E2EE
+// clients MUST encode user-visible attachment metadata inside
+// ChatEncryptedMessagePayload before encryption; the top-level
+// attachments field exists only for legacy/non-E2EE transports.
 message SendGroupMessageRequest {
   string group_ulid = 1;
   GroupMessageType type = 2;

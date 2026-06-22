@@ -30,7 +30,7 @@ const DESKTOP_LOAD_TYPES = new Set(['lynx-web'])
 const MOBILE_LOAD_TYPES = new Set(['lynx-native'])
 const STANDALONE_LOAD_TYPES = new Set(['web-spa'])
 const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/
-const APPLET_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/
+const APPLET_ID_PATTERN = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)

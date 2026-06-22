@@ -9,6 +9,10 @@ import { fileURLToPath } from 'node:url'
 const configDir = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 
+function resolveLynxClientInternal(relativePath: string): string {
+  return path.resolve(path.dirname(require.resolve('@lynx-js/web-core/client')), relativePath)
+}
+
 function appletDistPlugin() {
   const sourceDir = path.resolve(configDir, 'applets-dist')
   const targetDir = path.resolve(configDir, 'dist/applets-dist')
@@ -36,6 +40,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': '/src',
+      '@lynx-js/web-core/dist/client/mainthread/TemplateManager.js': resolveLynxClientInternal('mainthread/TemplateManager.js'),
     },
   },
   server: {

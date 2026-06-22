@@ -1,18 +1,18 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Peers Touch Mobile",
+  "productName": "Peers",
   "version": "0.1.0",
   "identifier": "com.peers.touch.mobile",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:4210",
+    "devUrl": "http://127.0.0.1:5173",
     "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build"
   },
   "app": {
     "windows": [
       {
-        "title": "Peers Touch Mobile",
+        "title": "Peers",
         "width": 390,
         "height": 844,
         "minWidth": 320,

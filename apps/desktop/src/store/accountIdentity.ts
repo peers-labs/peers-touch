@@ -1,8 +1,6 @@
 import { create } from 'zustand';
-import { api, type AccountIdentity, type AuthSessionResponse } from '../services/desktop_api';
+import { api, type AccountIdentity } from '../services/desktop_api';
 import { EVENT, eventBus } from '../kernel/events';
-import { markLocalIdentityAction } from '../services/identity_event';
-import { runIdentityPipeline } from '../services/identityPipeline';
 
 const initialState = {
   accounts: [] as AccountIdentity[],
@@ -28,7 +26,20 @@ let loadPromise: Promise<void> | null = null;
 function accountsEqual(a: AccountIdentity[], b: AccountIdentity[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
-    if (a[i].id !== b[i].id || a[i].name !== b[i].name || a[i].avatar_url !== b[i].avatar_url) return false;
+    if (
+      a[i].id !== b[i].id
+      || a[i].provider !== b[i].provider
+      || a[i].provider_user_id !== b[i].provider_user_id
+      || a[i].name !== b[i].name
+      || a[i].email !== b[i].email
+      || a[i].avatar_url !== b[i].avatar_url
+      || a[i].avatar_local_path !== b[i].avatar_local_path
+      || a[i].profile_url !== b[i].profile_url
+      || a[i].created_at !== b[i].created_at
+      || a[i].last_login_at !== b[i].last_login_at
+      || a[i].has_pin !== b[i].has_pin
+      || a[i].has_session !== b[i].has_session
+    ) return false;
   }
   return true;
 }
@@ -73,25 +84,12 @@ export const useAccountIdentityStore = create<AccountIdentityStore>((set, get) =
   },
 
   switchAccount: async (id: string) => {
-    markLocalIdentityAction();
     await api.accountSwitch(id);
-    const restored = await api.authRestoreSession();
-    await runIdentityPipeline({
-      reason: 'switch',
-      actorId: restored.actor_id ?? id,
-      loginMethod: restored.login_method ?? null,
-    });
     await get().load();
   },
 
   unlockWithPin: async (accountId: string, pin: string) => {
-    markLocalIdentityAction();
-    const resp: AuthSessionResponse = await api.accountUnlock(accountId, pin);
-    await runIdentityPipeline({
-      reason: 'unlock',
-      actorId: resp.actor_id ?? null,
-      loginMethod: resp.login_method ?? null,
-    });
+    await api.accountUnlock(accountId, pin);
     await get().load();
   },
 }));

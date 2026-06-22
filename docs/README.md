@@ -13,6 +13,8 @@
   - 去看 `architecture/`
 - **某个平台内部怎么落地**
   - 去看 `client/desktop/`、`client/mobile/`、`station/`
+- **跨端客户端体验怎么保持一致**
+  - 去看 `client/common/`、`client/chat/`
 - **具体代码怎么写才合规**
   - 去看 `global/coding-guide/`
 - **为什么历史上会这样演进**
@@ -111,6 +113,27 @@
 - Desktop 内部 Provider/Model 架构
 - Desktop 平台内部的内核设计
 
+### `client/common/`
+
+放 **Desktop 与 Mobile 共同遵守的客户端通用契约**。
+
+适合放这里的问题：
+
+- 客户端 UX 问题如何从截图/案例沉淀成准则、契约、invariant
+- Peers Touch 客户端 UI Identity、模块 UI ID、跨模块 patterns
+- 通用表单控件、组合控件、共享交互语义
+- 跨端 UI 设计方法论与 AI agent 可执行语言
+
+### `client/chat/`
+
+放 **Desktop 与 Mobile 共同遵守的 Chat / IM 产品体验契约**。
+
+适合放这里的问题：
+
+- Chat 消息结构、边界、操作、状态在双端如何保持一致
+- Mobile 与 Desktop 的 IM 体验哪些必须同语义
+- 消息气泡、MetaRow、ActionAnchor、Composer 的跨端关系
+
 ### `client/mobile/`
 
 放 **Mobile 单端内部** 文档。
@@ -149,6 +172,7 @@
 ### 4.1 架构层真源
 
 - 项目整体架构：`global/architecture.md`
+- 状态机目录（全端 FSM 汇总索引）：`architecture/state-machines/README.md`
 - Station 与 Desktop 边界：`architecture/boundaries/station-desktop-scope-boundary.md`
 - Desktop 运行时关系：`architecture/runtime/desktop-runtime-architecture.md`
 - 统一 Handler 架构：`architecture/runtime/unified-handler-architecture.md`
@@ -164,13 +188,22 @@
 - Federation 虚拟网络与治理账本：`architecture/federation/README.md`
 - 质量保证闭环：`architecture/quality-framework/README.md`
 - 产品验收框架：`architecture/acceptance-framework/README.md`
+- Human 联邦社交活动层：`architecture/federated-social-activity/README.md`
 
 ### 4.2 平台层真源
 
+- 客户端 UX 方法论：`client/common/ux-design-methodology.md`
+- 客户端 UI Identity：`client/common/ui-identity/README.md`
+- 表单控件 UX 契约：`client/common/form-control-ux-contract.md`
 - Desktop 平台总纲：`client/desktop/base.md`
+- Desktop 登录态状态机：`client/desktop/identity-lifecycle.md`
 - Desktop 页面 / 运行时 / 启动契约：`client/desktop/runtime-projections.md`
 - Desktop GlobalContext 内核：`client/desktop/global-context-kernel.md`
+- 跨端 Chat UX 契约：`client/chat/chat-ux-contract.md`
+- Desktop Chat 布局契约：`client/desktop/chat-layout-contract.md`
 - Mobile 平台总纲：`client/mobile/base.md`
+- Mobile Chat 布局契约：`client/mobile/chat-layout-contract.md`
+- Mobile 表单控件布局契约：`client/mobile/form-control-layout-contract.md`
 - Station 平台总纲：`station/base.md`
 
 ### 4.3 规范层真源
@@ -245,6 +278,10 @@
 
 - `context/`
 - `meta/INDEX.md`
+
+### 我想看系统里有哪些状态机
+
+- `architecture/state-machines/README.md`（前后端全端 FSM 汇总，含状态/触发/Owner/设计索引）
 
 ### 我想看通知系统
 

@@ -11,6 +11,68 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 LOCAL_DEV_DIR="$PROJECT_ROOT/.local/dev"
 PROFILES_DIR="$LOCAL_DEV_DIR/profiles"
 ACTIVE_DIR="$LOCAL_DEV_DIR/active"
+LOCAL_ROOT="$PROJECT_ROOT/.local"
+DEPLOY_DIR="$LOCAL_ROOT/deploy"
+
+# Worktrees normally share one .local repo, but older worktrees may have a
+# partial .local directory. Bootstrap missing profile/deploy config from the
+# primary worktree without overwriting local edits.
+find_shared_local_root() {
+  if [[ -n "${PT_SHARED_LOCAL_DIR:-}" && -d "$PT_SHARED_LOCAL_DIR" ]]; then
+    echo "$PT_SHARED_LOCAL_DIR"
+    return 0
+  fi
+
+  local workspace_root
+  workspace_root="$(dirname "$PROJECT_ROOT")"
+
+  local candidate
+  for candidate in \
+    "$workspace_root/peers-touch/.local" \
+    "$workspace_root/peers-ai-agent/.local" \
+    "$workspace_root/peers-touch-applet/.local"; do
+    if [[ "$candidate" != "$LOCAL_ROOT" && -d "$candidate" ]]; then
+      if [[ -d "$candidate/deploy" || -d "$candidate/dev/profiles" ]]; then
+        echo "$candidate"
+        return 0
+      fi
+    fi
+  done
+
+  return 1
+}
+
+copy_missing_files() {
+  local src_dir="$1"
+  local dst_dir="$2"
+
+  [[ -d "$src_dir" ]] || return 0
+  mkdir -p "$dst_dir"
+
+  local src dst
+  for src in "$src_dir"/*; do
+    [[ -f "$src" ]] || continue
+    dst="$dst_dir/$(basename "$src")"
+    if [[ ! -f "$dst" ]]; then
+      cp "$src" "$dst"
+      echo "[INFO] Bootstrapped ${dst#"$LOCAL_ROOT/"}"
+    fi
+  done
+}
+
+ensure_local_assets() {
+  local shared_root
+  shared_root="$(find_shared_local_root || true)"
+  [[ -n "$shared_root" ]] || return 0
+
+  copy_missing_files "$shared_root/dev/profiles" "$PROFILES_DIR"
+  copy_missing_files "$shared_root/deploy/envs" "$DEPLOY_DIR/envs"
+  if [[ -f "$shared_root/deploy/git-server.env" && ! -f "$DEPLOY_DIR/git-server.env" ]]; then
+    mkdir -p "$DEPLOY_DIR"
+    cp "$shared_root/deploy/git-server.env" "$DEPLOY_DIR/git-server.env"
+    echo "[INFO] Bootstrapped deploy/git-server.env"
+  fi
+}
 
 # Worktree ID for per-worktree active profile pointer
 WORKTREE_ID="$(basename "$PROJECT_ROOT")"
@@ -27,6 +89,7 @@ case "$cmd" in
       echo "[ERROR] Usage: profile.sh activate <name>"
       exit 1
     fi
+    ensure_local_assets
     src="$PROFILES_DIR/$name.env"
     if [[ ! -f "$src" ]]; then
       echo "[ERROR] Profile '$name' not found at: $src"
@@ -57,6 +120,7 @@ case "$cmd" in
         exit 0
       fi
     fi
+    ensure_local_assets
 
     station_port=$((18080 + slot * 100))
     desktop_gw=$((3030 + slot * 100))
@@ -107,6 +171,7 @@ EOF
     ;;
 
   list)
+    ensure_local_assets
     echo "Available profiles:"
     if ls "$PROFILES_DIR"/*.env >/dev/null 2>&1; then
       # Get current active profile for this worktree
@@ -126,6 +191,15 @@ EOF
       echo "  (none)"
       echo ""
       echo "  Create one: make profile-init PROFILE=local-a SLOT=0"
+    fi
+    echo ""
+    echo "Deploy envs:"
+    if ls "$DEPLOY_DIR"/envs/*.env >/dev/null 2>&1; then
+      for f in "$DEPLOY_DIR"/envs/*.env; do
+        echo "    $(basename "$f" .env)"
+      done
+    else
+      echo "  (none)"
     fi
     ;;
 

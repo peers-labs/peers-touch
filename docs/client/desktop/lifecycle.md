@@ -1,6 +1,6 @@
 # Desktop Client Lifecycle
 
-> Desktop platform lifecycle source. This document gives the top-level Desktop lifecycle that corresponds to Mobile's lifecycle. Detailed `desktop-web` Page / Runtime / Boot contracts remain in [`runtime-projections.md`](./runtime-projections.md).
+> Desktop platform lifecycle source. This document gives the top-level Desktop lifecycle that corresponds to Mobile's lifecycle. Detailed login/profile/account/avatar identity state is owned by [`identity-lifecycle.md`](./identity-lifecycle.md), and detailed `desktop-web` Page / Runtime / Boot contracts remain in [`runtime-projections.md`](./runtime-projections.md).
 
 ---
 
@@ -16,6 +16,7 @@ Desktop is not a single React page. It is a multi-runtime client made of:
 This document defines the user-visible and runtime lifecycle across those units. It does not redefine:
 
 - Cross-process topology, owned by [`../../architecture/runtime/desktop-runtime-architecture.md`](../../architecture/runtime/desktop-runtime-architecture.md).
+- Desktop identity state machine, owned by [`identity-lifecycle.md`](./identity-lifecycle.md).
 - `desktop-web` kernel contracts, owned by [`runtime-projections.md`](./runtime-projections.md).
 - Access gate architecture, owned by [`../../architecture/access-gates/station-access-gate-architecture.md`](../../architecture/access-gates/station-access-gate-architecture.md).
 

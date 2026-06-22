@@ -88,6 +88,8 @@ export function activateStationEntry(
   url: string,
   status: StationStatusInput = {},
 ): StoredStationRegistry {
+  if (!registry.entries.some((entry) => entry.url === url)) return registry;
+
   const now = Date.now();
   const entries = registry.entries
     .map((entry) => (entry.url === url ? applyStationStatus({ ...entry, lastUsedAt: now }, status) : entry))
@@ -101,14 +103,23 @@ export function updateStationEntryStatus(
   url: string,
   status: StationStatusInput,
 ): StoredStationRegistry {
-  return {
-    ...registry,
-    entries: registry.entries.map((entry) => (entry.url === url ? applyStationStatus(entry, status) : entry)),
-  };
+  let changed = false;
+  const entries = registry.entries.map((entry) => {
+    if (entry.url !== url) return entry;
+
+    const next = applyStationStatus(entry, status);
+    const entryChanged = !isSameStationEntry(entry, next);
+    if (entryChanged) changed = true;
+    return entryChanged ? next : entry;
+  });
+
+  return changed ? { ...registry, entries } : registry;
 }
 
 export function removeStationEntry(registry: StoredStationRegistry, url: string): StoredStationRegistry {
   const entries = registry.entries.filter((entry) => entry.url !== url);
+  if (entries.length === registry.entries.length) return registry;
+
   const activeUrl = registry.activeUrl === url ? entries[0]?.url ?? '' : registry.activeUrl;
   return { activeUrl, entries };
 }
@@ -171,6 +182,17 @@ function applyStationStatus(entry: MobileStationEntry, status: StationStatusInpu
     lastCheckedAt: status.checkedAt ?? entry.lastCheckedAt,
     online: status.online ?? entry.online,
   };
+}
+
+function isSameStationEntry(a: MobileStationEntry, b: MobileStationEntry): boolean {
+  return (
+    a.url === b.url &&
+    a.label === b.label &&
+    a.createdAt === b.createdAt &&
+    a.lastUsedAt === b.lastUsedAt &&
+    a.lastCheckedAt === b.lastCheckedAt &&
+    a.online === b.online
+  );
 }
 
 function isStationEntry(value: unknown): value is MobileStationEntry {

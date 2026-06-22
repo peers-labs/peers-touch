@@ -131,3 +131,25 @@ The feature is complete only when:
   - `cd apps/desktop && pnpm run check && pnpm run test && pnpm run build`
   - `cd apps/mobile && pnpm run check:web`
   - `cd apps/mobile/src-tauri && source ~/.cargo/env && cargo check`
+
+---
+
+## 6. Delivery Status (2026-06-16)
+
+All six phases have landed on `feat/station-access-gate-plugin-system`. Self-service invite code redemption — listed as *out of MVP* in §4 — was pulled into scope and is now shipped on both clients.
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| 1. Contract | done | `model/domain/access_gate/access_gate.proto` with full enum/message set |
+| 2. Station evaluation | done | Registry + orchestrator under `apps/station/frame/touch/accessgate/`; attempt persistence + state machine |
+| 3. Dashboard policy | done | Policy modes + invite-code management UI (`AccessGatesPage.tsx`) |
+| 4. Desktop gate host | done | Interactive chain via three Tauri commands; `LoginPage` renders the invite gate |
+| 5. Mobile gate host | done | `AccessGateHost` renders login + invite.code + blocked states |
+| 6. Verification | partial | Rust `cargo check --lib` + desktop contract tests pass. Full `pnpm run build` / Station `go test` to run in CI; TS proto regeneration (`./model/build.sh`) pending `pnpm install`. |
+
+### Cross-runtime contract notes
+
+The single highest-risk seam is the `AccessDecision` wire format across Go → Rust → TS. It is documented as a hard contract in [`station-access-gate-architecture.md` §13](./station-access-gate-architecture.md#13-wire-format-contract) and enforced by:
+
+- invariant [`docs/knowledge/invariants/access-gate-wire-contract.md`](../../knowledge/invariants/access-gate-wire-contract.md)
+- playbook [`docs/knowledge/playbooks/adding-an-access-gate.md`](../../knowledge/playbooks/adding-an-access-gate.md)

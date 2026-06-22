@@ -26,6 +26,11 @@
 
 - `native-dual-platform.md`（当前作为 Native Plugin 能力层与历史原生双端参考）
 - `lifecycle.md`（Mobile 顶层生命周期：Station selection、Station/Auth gate、runtime bootstrap、foreground/background/resume）
+- `../chat/chat-ux-contract.md`（Desktop 与 Mobile 共同遵守的 Chat / IM 产品体验契约）
+- `chat-layout-contract.md`（Mobile Chat 布局、键盘、安全区、底部输入区、触控菜单边界契约）
+- `../common/ux-design-methodology.md`（客户端 UX 问题从案例沉淀成准则、契约、invariant 的方法论）
+- `../common/form-control-ux-contract.md`（跨端表单控件与组合输入控件体验契约）
+- `form-control-layout-contract.md`（Mobile 表单控件、BottomSheet、触控、安全区边界契约）
 - `applet-container.md`
 - `sync-protocol.md`
 - `execution-plans/implementation-plan-20260403.md`

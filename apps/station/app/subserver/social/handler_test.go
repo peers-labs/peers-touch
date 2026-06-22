@@ -59,11 +59,13 @@ func newHandlerFixture(t *testing.T) *handlerFixture {
 	if err := gdb.AutoMigrate(
 		&db.SocialPublicPost{},
 		&db.SocialPrivatePost{},
+		&db.SocialMomentDelivery{},
 		&db.SocialPrivateAudienceGrant{},
 		&db.SocialComment{},
 		&db.SocialReaction{},
 		&db.SocialCircle{},
 		&db.SocialCircleMember{},
+		&db.SocialStationModerationPolicy{},
 		&db.Follow{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -91,6 +93,7 @@ CREATE TABLE friend_chat_friendships (
 	timelineSvc := application.NewTimelineService(repos, momentSvc, resolver, groups)
 	relationshipSvc := application.NewRelationshipService(repos.Follows, repos.Blocks)
 	statsSvc := application.NewStatsService(gdb, repos)
+	moderationSvc := application.NewModerationService(repos)
 
 	s := &subServer{
 		momentSvc:       momentSvc,
@@ -100,6 +103,7 @@ CREATE TABLE friend_chat_friendships (
 		timelineSvc:     timelineSvc,
 		relationshipSvc: relationshipSvc,
 		statsSvc:        statsSvc,
+		moderationSvc:   moderationSvc,
 	}
 
 	return &handlerFixture{subserver: s, gdb: gdb, repos: repos}

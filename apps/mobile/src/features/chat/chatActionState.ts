@@ -1,6 +1,10 @@
 import type { ChatBackgroundId } from '../social/socialApi';
 import { normalizeChatBackgroundId } from '../social/socialApi';
 import { createMobileActorStorageRuntime } from '../../storage/mobileClientStorage';
+import {
+  chatConversationSuppressesAlerts,
+  visibleChatConversationUnread,
+} from '@peers-touch/client-chat-core';
 
 export type ChatKind = 'friend' | 'group';
 
@@ -58,11 +62,11 @@ export function defaultChatActionState(): ChatActionState {
 type ChatAlertPreference = Pick<ChatActionState, 'muted' | 'alertEnabled'>;
 
 export function chatSuppressesAlerts(state: ChatAlertPreference | undefined): boolean {
-  return Boolean(state?.muted || state?.alertEnabled === false);
+  return chatConversationSuppressesAlerts(state);
 }
 
 export function visibleChatUnread(unread: number, state: ChatAlertPreference | undefined): number {
-  return chatSuppressesAlerts(state) ? 0 : unread;
+  return visibleChatConversationUnread(unread, state);
 }
 
 function storageKey(actorDid: string | null): string {

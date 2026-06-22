@@ -45,7 +45,17 @@ for arch in ${ARCHS:?}; do
       ;;
   esac
 
-  rust_lib="$SRC_TAURI_DIR/target/$rust_target/$profile_dir/libpeers_touch_mobile_lib.a"
+  cargo_target_dir="${CARGO_TARGET_DIR:-$SRC_TAURI_DIR/target}"
+  rust_lib="$cargo_target_dir/$rust_target/$profile_dir/libpeers_touch_mobile_lib.a"
+  if [ ! -f "$rust_lib" ] && [[ "$rust_target" == *-sim ]]; then
+    cargo build \
+      --package peers-touch-mobile \
+      --manifest-path "$SRC_TAURI_DIR/Cargo.toml" \
+      --target "$rust_target" \
+      --features tauri/rustls-tls \
+      --lib \
+      --no-default-features
+  fi
   external_dir="$SRCROOT/Externals/$external_arch/$CONFIGURATION"
   external_lib="$external_dir/libapp.a"
 

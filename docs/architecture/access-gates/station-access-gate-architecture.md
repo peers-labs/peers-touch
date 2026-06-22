@@ -249,3 +249,60 @@ Implementation is complete only when all are true:
 - Mobile renders the same gate chain and blocks `shell` until granted.
 - Invite-only denial is shown consistently on Desktop and Mobile.
 - Switching Station clears the active access attempt and session-scoped projections.
+
+---
+
+## 13. Wire Format Contract
+
+The gate chain crosses three runtimes (Go Station, Rust Desktop kernel, TS clients), so the JSON encoding of `AccessDecision` is a hard contract, not an implementation detail.
+
+### 13.1 Station encoding
+
+Station serializes responses with protojson using:
+
+```go
+protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}
+```
+
+Consequences every client MUST tolerate:
+
+- Keys are **snake_case** (`attempt_id`, `current_gate_id`, `blocking_reason`, `input_schema_json`).
+- Enums serialize as their **string name** (`ACCESS_DECISION_STATE_GRANTED`, `ACCESS_GATE_TYPE_INVITE_CODE`), not the numeric value.
+- All fields are emitted even when zero/empty.
+
+Station accepts requests with `UnmarshalOptions{DiscardUnknown: true}`, so clients may send either snake_case or camelCase keys and either numeric or string enum values.
+
+### 13.2 Client normalization
+
+Because a future Station build (or a proxy) could emit camelCase or numeric enums, clients normalize defensively:
+
+- Mobile: `normalizeDecision` in [`apps/mobile/src/features/auth/authSession.ts`](../../../apps/mobile/src/features/auth/authSession.ts).
+- Desktop: `normalizeDecision` in [`apps/desktop/src/services/accessGate.ts`](../../../apps/desktop/src/services/accessGate.ts).
+
+Both read `snake_case ?? camelCase` for every field and match enums by **both** the numeric constant and the string name. State/type predicates (`isAccessGranted`, `isInviteCodeGate`, …) MUST keep both forms or the chain silently stalls.
+
+### 13.3 Schema-driven gate rendering
+
+The `invite.code` gate carries its form in `input_schema_json`:
+
+```json
+{ "fields": [ { "name": "invite_code", "type": "text", "required": true, "label": "Invite code" } ] }
+```
+
+Clients parse this into a field list (`parseGateFields`) and render the placeholder/label from it, falling back to a localized default. A gate's form can therefore change without a client release.
+
+---
+
+## 14. Delivery Status (2026-06-16)
+
+| Layer | Status | Key artifacts |
+| --- | --- | --- |
+| Proto contract | shipped | `model/domain/access_gate/access_gate.proto` |
+| Station registry + orchestrator | shipped | `apps/station/frame/touch/accessgate/` (`service.go`, `gatekeeper/`, `builtin_gatekeepers.go`) |
+| Attempt persistence + state machine | shipped | `apps/station/frame/touch/accessgate/attempt_store.go` |
+| Self-service invite code | shipped | `apps/station/frame/touch/accessgate/invite_code.go` (transactional row-locked redemption) |
+| Dashboard policy + invite management | shipped | `apps/station/app/subserver/dashboard/web/src/pages/AccessGatesPage.tsx` |
+| Mobile gate host | shipped | `apps/mobile/src/features/auth/AccessGateHost.tsx`, `authSession.ts` |
+| Desktop interactive gate chain | shipped | Rust: `access_start` / `access_submit_invite_code` / `access_submit_login`; TS: `accessGate.ts`, `LoginPage.tsx` |
+
+The desktop chain reuses the existing `LoginPage` as the gate host: an `invite.code` `action_required` decision pauses the login submit, renders the schema-driven invite form, and resumes into the `auth.login` gate once the code passes — symmetric with the mobile `AccessGateHost`.

@@ -23,6 +23,8 @@
   "dependencies": {
     "@bufbuild/protobuf": "^2.10.2",
     "@lobehub/ui": "^5.15.6",
+    "@peers-touch/client-chat-core": "workspace:*",
+    "@peers-touch/client-media-security": "workspace:*",
     "@peers-touch/client-storage": "workspace:*",
     "@tauri-apps/api": "2.0.1",
     "antd": "^6.4.3",

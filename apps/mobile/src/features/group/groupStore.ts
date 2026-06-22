@@ -1,8 +1,14 @@
 import { create } from 'zustand';
+import {
+  clearChatE2eeProjectionStatus,
+  setChatE2eeProjectionStatus,
+  type ChatE2eeProjection,
+} from '@peers-touch/client-chat-core';
 
 import type { MobileAuthSession } from '../auth/authSession';
-import { SocialApiError } from '../social/socialTypes';
-import type { Group, GroupMember, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
+import { SocialApiError, readableErrorMessage } from '../social/socialTypes';
+import type { ChatEncryptedMessagePayload, Group, GroupMember, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
+import type { ChatAttachmentInput } from '../social/socialApi';
 import { createGroupApiClient, type CreateGroupInput, type GroupApiClient, type GroupSettings, type UpdateGroupInput, type UpdateGroupMemberInput, type UpdateGroupSettingsInput } from './groupApi';
 import { normalizeGroup, normalizeGroupMember, normalizeGroupMessage } from './groupNormalizers';
 import {
@@ -22,13 +28,14 @@ export interface GroupState {
   settings: Record<string, GroupSettings>;
   unreadCounts: Record<string, number>;
   e2eeErrors: Record<string, string>;
+  e2eeProjection: ChatE2eeProjection;
   encryptionReady: Record<string, boolean>;
   sendingGroups: Record<string, boolean>;
   activeGroupUlid: string | null;
   loading: boolean;
   error: SocialApiError | null;
   lastReconcileAt: number | null;
-  encryptedSender: ((groupUlid: string, plaintext: string) => Promise<boolean>) | null;
+  encryptedSender: ((groupUlid: string, plaintext: string, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<boolean>) | null;
   encryptedEditor: ((groupUlid: string, messageUlid: string, plaintext: string) => Promise<boolean>) | null;
   encryptionPreparer: ((groupUlid: string) => Promise<boolean>) | null;
   bindSession: (session: MobileAuthSession | null) => void;
@@ -54,14 +61,14 @@ export interface GroupState {
     kind: 'RECALL' | 'EDIT' | 'DELETE',
     payload: { newContent?: string; newCiphertext?: Uint8Array; mutatedTsUnixMs?: number },
   ) => void;
-  applyDecryptedMessage: (groupUlid: string, messageUlid: string, plaintext: string) => void;
+  applyDecryptedMessage: (groupUlid: string, messageUlid: string, plaintext: string | ChatEncryptedMessagePayload) => void;
   setEncryptionReady: (groupUlid: string, ready: boolean) => void;
   setGroupSending: (groupUlid: string, sending: boolean) => void;
-  sendEncryptedMessage: (groupUlid: string, plaintext: string) => Promise<boolean>;
+  sendEncryptedMessage: (groupUlid: string, plaintext: string, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<boolean>;
   editEncryptedMessage: (groupUlid: string, messageUlid: string, plaintext: string) => Promise<boolean>;
   recallMessage: (groupUlid: string, messageUlid: string) => Promise<void>;
   deleteMessage: (groupUlid: string, messageUlid: string) => Promise<void>;
-  bindEncryptedSender: (sender: ((groupUlid: string, plaintext: string) => Promise<boolean>) | null) => void;
+  bindEncryptedSender: (sender: ((groupUlid: string, plaintext: string, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<boolean>) | null) => void;
   bindEncryptedEditor: (editor: ((groupUlid: string, messageUlid: string, plaintext: string) => Promise<boolean>) | null) => void;
   bindEncryptionPreparer: (preparer: ((groupUlid: string) => Promise<boolean>) | null) => void;
   setE2eeError: (messageUlid: string, error: string | null) => void;
@@ -78,6 +85,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   settings: {},
   unreadCounts: {},
   e2eeErrors: {},
+  e2eeProjection: {},
   encryptionReady: {},
   sendingGroups: {},
   activeGroupUlid: null,
@@ -104,7 +112,8 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   reconcile: async () => {
     const { refreshGroups, refreshUnreadCounts } = get();
-    set({ loading: true, error: null });
+    const coldStart = get().groups.length === 0;
+    set({ loading: coldStart, error: null });
     try {
       await refreshGroups();
       await refreshUnreadCounts();
@@ -350,6 +359,11 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   setEncryptionReady: (groupUlid, ready) =>
     set((state) => ({
+      e2eeProjection: setChatE2eeProjectionStatus(
+        state.e2eeProjection,
+        groupUlid,
+        ready ? 'ready' : 'blocked',
+      ),
       encryptionReady: { ...state.encryptionReady, [groupUlid]: ready },
     })),
 
@@ -359,14 +373,14 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       return { sendingGroups: sending ? { ...rest, [groupUlid]: true } : rest };
     }),
 
-  sendEncryptedMessage: async (groupUlid, plaintext) => {
+  sendEncryptedMessage: async (groupUlid, plaintext, attachments, messageType) => {
     const sender = get().encryptedSender;
     if (!sender) return false;
     set((state) => ({
       sendingGroups: { ...state.sendingGroups, [groupUlid]: true },
     }));
     try {
-      return await sender(groupUlid, plaintext);
+      return await sender(groupUlid, plaintext, attachments, messageType);
     } finally {
       get().setGroupSending(groupUlid, false);
     }
@@ -417,6 +431,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     set((state) => {
       const { [messageUlid]: _removed, ...rest } = state.e2eeErrors;
       return {
+        e2eeProjection: error
+          ? setChatE2eeProjectionStatus(state.e2eeProjection, messageUlid, 'error', { error })
+          : clearChatE2eeProjectionStatus(state.e2eeProjection, messageUlid),
         e2eeErrors: error ? { ...rest, [messageUlid]: error } : rest,
       };
     }),
@@ -448,6 +465,7 @@ function emptyGroupState() {
     settings: {},
     unreadCounts: {},
     e2eeErrors: {},
+    e2eeProjection: {},
     encryptionReady: {},
     sendingGroups: {},
     activeGroupUlid: null,
@@ -483,5 +501,5 @@ function requireApi(state: GroupState): GroupApiClient {
 
 function normalizeError(error: unknown): SocialApiError {
   if (error instanceof SocialApiError) return error;
-  return new SocialApiError({ method: 'UNKNOWN', path: 'group-store', message: error instanceof Error ? error.message : String(error) });
+  return new SocialApiError({ method: 'UNKNOWN', path: 'group-store', message: readableErrorMessage(error) });
 }

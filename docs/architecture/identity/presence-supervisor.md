@@ -1,8 +1,9 @@
 # Presence Supervisor
 
-> **Status:** Implemented (PR-presence-1).
+> **Status:** Implemented (global actor presence).
 > **Owner module (Rust):** `apps/desktop/src-tauri/src/{domain,application,interface/tauri_commands}/presence`
 > **Owner module (Frontend):** `apps/desktop/src/{services/presence.ts, hooks/usePresence.ts}`
+> **Owner module (Station):** `apps/station/app/subserver/presence`
 > **Companion design:** [`unified-actor-system.md`](./unified-actor-system.md)
 
 ## 1. Problem
@@ -16,7 +17,7 @@ users as:
 - **No realtime delivery on cold open**: A→B sends a message; B opens the app
   but B's pending queue at station is never drained until B happens to send
   another message and the round-trip pulls A's message back as a side effect.
-- **Network thrash**: every window fired its own `/online` and re-pull on
+- **Network thrash**: every window fired its own presence update and re-pull on
   every focus event, so a brief Cmd-Tab pulse caused 5–20 redundant requests.
 - **No single observable for "I am Online as actor X"**: each module
   reasoned about online-ness from its own subset of signals.
@@ -40,8 +41,9 @@ These were not three bugs to patch — they were one missing layer.
                             │
                             ▼
       ┌──────────────────────────────────────────────┐
-      │  Station HTTP: /online · /pending · /ack ·   │   infrastructure
-      │  /offline  +  friend_chat_sync_from_station   │   (existing helpers)
+      │  Station HTTP: /presence/heartbeat ·          │   infrastructure
+      │  /presence/offline · /pending · /ack +         │   (existing helpers)
+      │  friend_chat_sync_from_station                 │
       └──────────────────────────────────────────────┘
 ```
 
@@ -70,7 +72,8 @@ consumers (UI badges, tests) don't have to handle a third state.
 `Offline → Online` triggers run in this order, on a detached thread so the
 caller never blocks the UI:
 
-1. `POST /friend-chat/online` — tells station we're reachable; failure
+1. `POST /presence/heartbeat` — renews the actor/session presence lease;
+   failure
    short-circuits the rest (kept Offline).
 2. `GET /friend-chat/pending` — drains the in-memory queue station kept
    for us while we were offline.
@@ -84,8 +87,10 @@ caller never blocks the UI:
 5. Emit `presence.transition` Tauri event with `reconciled_count` and
    `affected_sessions`.
 
-`Online → Offline` is symmetric and trivial: `POST /friend-chat/offline`,
-ignore failures, emit transition.
+`Online → Offline` is symmetric and trivial: `POST /presence/offline`,
+ignore failures, emit transition. The Station lease TTL remains the
+authoritative safety net when clients crash or lose the network before
+the best-effort offline request arrives.
 
 ### 2.4 Invariants
 
@@ -98,7 +103,7 @@ ignore failures, emit transition.
 - **Cooldown 3 s** for non-bypassing triggers when the target state
   already matches the current state. Identity-driven and
   shutdown/manual triggers bypass — we must never silently drop a
-  user-initiated logout's `/offline`.
+  user-initiated logout's `/presence/offline`.
 - **Failures don't poison state.** A failed `Online` reconcile leaves
   the actor at `Offline` (next trigger retries) and does *not* update
   `last_reconcile_at` (no cooldown punishment).

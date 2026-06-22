@@ -61,6 +61,16 @@ const (
 	ErrorCode_ERROR_CODE_CREATE_COMMENT_FAILED              ErrorCode = 30015
 	ErrorCode_ERROR_CODE_GET_COMMENTS_FAILED                ErrorCode = 30016
 	ErrorCode_ERROR_CODE_DELETE_COMMENT_FAILED              ErrorCode = 30017
+	ErrorCode_ERROR_CODE_NOTE_ID_REQUIRED                   ErrorCode = 30101
+	ErrorCode_ERROR_CODE_NOTE_NOT_FOUND                     ErrorCode = 30102
+	ErrorCode_ERROR_CODE_NOTE_EMPTY_CONTENT                 ErrorCode = 30103
+	ErrorCode_ERROR_CODE_CREATE_NOTE_FAILED                 ErrorCode = 30104
+	ErrorCode_ERROR_CODE_UPDATE_NOTE_FAILED                 ErrorCode = 30105
+	ErrorCode_ERROR_CODE_DELETE_NOTE_FAILED                 ErrorCode = 30106
+	ErrorCode_ERROR_CODE_RESTORE_NOTE_FAILED                ErrorCode = 30107
+	ErrorCode_ERROR_CODE_SEARCH_NOTES_FAILED                ErrorCode = 30108
+	ErrorCode_ERROR_CODE_LIST_NOTES_FAILED                  ErrorCode = 30109
+	ErrorCode_ERROR_CODE_NOTE_PERMISSION_DENIED             ErrorCode = 30110
 	// ── Federation (40000s) ───────────────────────────────────────
 	// Phase E.bridge — public federation API errors. Distinct range
 	// because these are surface-level errors the Desktop client maps
@@ -118,6 +128,16 @@ var (
 		30015: "ERROR_CODE_CREATE_COMMENT_FAILED",
 		30016: "ERROR_CODE_GET_COMMENTS_FAILED",
 		30017: "ERROR_CODE_DELETE_COMMENT_FAILED",
+		30101: "ERROR_CODE_NOTE_ID_REQUIRED",
+		30102: "ERROR_CODE_NOTE_NOT_FOUND",
+		30103: "ERROR_CODE_NOTE_EMPTY_CONTENT",
+		30104: "ERROR_CODE_CREATE_NOTE_FAILED",
+		30105: "ERROR_CODE_UPDATE_NOTE_FAILED",
+		30106: "ERROR_CODE_DELETE_NOTE_FAILED",
+		30107: "ERROR_CODE_RESTORE_NOTE_FAILED",
+		30108: "ERROR_CODE_SEARCH_NOTES_FAILED",
+		30109: "ERROR_CODE_LIST_NOTES_FAILED",
+		30110: "ERROR_CODE_NOTE_PERMISSION_DENIED",
 		40001: "ERROR_CODE_FEDERATION_HANDLE_REQUIRED",
 		40002: "ERROR_CODE_FEDERATION_INVALID_VISIBILITY",
 		40003: "ERROR_CODE_FEDERATION_TOMBSTONED",
@@ -165,6 +185,16 @@ var (
 		"ERROR_CODE_CREATE_COMMENT_FAILED":              30015,
 		"ERROR_CODE_GET_COMMENTS_FAILED":                30016,
 		"ERROR_CODE_DELETE_COMMENT_FAILED":              30017,
+		"ERROR_CODE_NOTE_ID_REQUIRED":                   30101,
+		"ERROR_CODE_NOTE_NOT_FOUND":                     30102,
+		"ERROR_CODE_NOTE_EMPTY_CONTENT":                 30103,
+		"ERROR_CODE_CREATE_NOTE_FAILED":                 30104,
+		"ERROR_CODE_UPDATE_NOTE_FAILED":                 30105,
+		"ERROR_CODE_DELETE_NOTE_FAILED":                 30106,
+		"ERROR_CODE_RESTORE_NOTE_FAILED":                30107,
+		"ERROR_CODE_SEARCH_NOTES_FAILED":                30108,
+		"ERROR_CODE_LIST_NOTES_FAILED":                  30109,
+		"ERROR_CODE_NOTE_PERMISSION_DENIED":             30110,
 		"ERROR_CODE_FEDERATION_HANDLE_REQUIRED":         40001,
 		"ERROR_CODE_FEDERATION_INVALID_VISIBILITY":      40002,
 		"ERROR_CODE_FEDERATION_TOMBSTONED":              40003,
@@ -274,7 +304,7 @@ const file_domain_error_error_proto_rawDesc = "" +
 	"\adetails\x18\x03 \x03(\v26.peers_touch.model.error.v1.ErrorResponse.DetailsEntryR\adetails\x1a:\n" +
 	"\fDetailsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\xc2\r\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\xb3\x10\n" +
 	"\tErrorCode\x12\x1a\n" +
 	"\x16ERROR_CODE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14ERROR_CODE_UNDEFINED\x10\x01\x122\n" +
@@ -312,7 +342,17 @@ const file_domain_error_error_proto_rawDesc = "" +
 	"\x1eERROR_CODE_COMMENT_ID_REQUIRED\x10\xbe\xea\x01\x12&\n" +
 	" ERROR_CODE_CREATE_COMMENT_FAILED\x10\xbf\xea\x01\x12$\n" +
 	"\x1eERROR_CODE_GET_COMMENTS_FAILED\x10\xc0\xea\x01\x12&\n" +
-	" ERROR_CODE_DELETE_COMMENT_FAILED\x10\xc1\xea\x01\x12+\n" +
+	" ERROR_CODE_DELETE_COMMENT_FAILED\x10\xc1\xea\x01\x12!\n" +
+	"\x1bERROR_CODE_NOTE_ID_REQUIRED\x10\x95\xeb\x01\x12\x1f\n" +
+	"\x19ERROR_CODE_NOTE_NOT_FOUND\x10\x96\xeb\x01\x12#\n" +
+	"\x1dERROR_CODE_NOTE_EMPTY_CONTENT\x10\x97\xeb\x01\x12#\n" +
+	"\x1dERROR_CODE_CREATE_NOTE_FAILED\x10\x98\xeb\x01\x12#\n" +
+	"\x1dERROR_CODE_UPDATE_NOTE_FAILED\x10\x99\xeb\x01\x12#\n" +
+	"\x1dERROR_CODE_DELETE_NOTE_FAILED\x10\x9a\xeb\x01\x12$\n" +
+	"\x1eERROR_CODE_RESTORE_NOTE_FAILED\x10\x9b\xeb\x01\x12$\n" +
+	"\x1eERROR_CODE_SEARCH_NOTES_FAILED\x10\x9c\xeb\x01\x12\"\n" +
+	"\x1cERROR_CODE_LIST_NOTES_FAILED\x10\x9d\xeb\x01\x12'\n" +
+	"!ERROR_CODE_NOTE_PERMISSION_DENIED\x10\x9e\xeb\x01\x12+\n" +
 	"%ERROR_CODE_FEDERATION_HANDLE_REQUIRED\x10\xc1\xb8\x02\x12.\n" +
 	"(ERROR_CODE_FEDERATION_INVALID_VISIBILITY\x10¸\x02\x12&\n" +
 	" ERROR_CODE_FEDERATION_TOMBSTONED\x10ø\x02\x12%\n" +

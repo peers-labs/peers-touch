@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package peers_touch.model.presence.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/presence;presence";
+
+enum PresenceState {
+  PRESENCE_STATE_UNSPECIFIED = 0;
+  PRESENCE_STATE_ONLINE = 1;
+  PRESENCE_STATE_OFFLINE = 2;
+}
+
+message PresenceHeartbeatRequest {
+  string reason = 1;
+}
+
+message PresenceOfflineRequest {
+  string reason = 1;
+}
+
+message PresenceUpdateResponse {
+  string actor_id = 1;
+  string session_id = 2;
+  PresenceState state = 3;
+  google.protobuf.Timestamp lease_expires_at = 4;
+}
+
+message PresenceQueryRequest {
+  repeated string actor_ids = 1;
+}
+
+message PresenceStatus {
+  string actor_id = 1;
+  PresenceState state = 2;
+  google.protobuf.Timestamp last_seen_at = 3;
+  google.protobuf.Timestamp lease_expires_at = 4;
+}
+
+message PresenceQueryResponse {
+  repeated PresenceStatus statuses = 1;
+}

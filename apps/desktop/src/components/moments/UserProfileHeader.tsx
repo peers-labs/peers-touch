@@ -53,6 +53,23 @@ function actorHomeOf(a: any): string | undefined {
   return v && String(v).length > 0 ? String(v) : undefined;
 }
 
+function actorSourceLabel({
+  id,
+  home,
+  selfHome,
+  t,
+}: {
+  id: string;
+  home?: string;
+  selfHome?: string;
+  t: (k: string, options?: Record<string, string>) => string;
+}) {
+  if (!id) return t('moments.source.unresolved');
+  if (home && selfHome && home === selfHome) return t('moments.source.local');
+  if (home) return t('moments.source.station', { station: home });
+  return t('moments.source.unresolved');
+}
+
 export function UserProfileHeader({
   actor,
   viewerActorId,
@@ -64,6 +81,7 @@ export function UserProfileHeader({
 }: UserProfileHeaderProps) {
   const { t } = useTranslation('moments');
   const { token } = theme.useToken();
+  const federationSelf = useFederationStore((s) => s.self);
 
   if (loading || !actor) {
     return (
@@ -96,9 +114,14 @@ export function UserProfileHeader({
   //      is the viewer's own profile, fall back to the federation
   //      runtime self-view. Drops to undefined for everyone else,
   //      which renders just "@username".
-  const federationSelf = useFederationStore((s) => s.self);
   const isSelf = Boolean(viewerActorId && id && viewerActorId === id);
   const home = actorHomeOf(actor) ?? (isSelf ? federationSelf?.homeStationDomain : undefined);
+  const source = actorSourceLabel({
+    id,
+    home,
+    selfHome: federationSelf?.homeStationDomain,
+    t,
+  });
 
   return (
     <div
@@ -107,6 +130,7 @@ export function UserProfileHeader({
         display: 'flex',
         gap: inline ? 12 : 16,
         alignItems: inline ? 'center' : 'flex-start',
+        flexWrap: inline ? 'nowrap' : 'wrap',
         borderBottom: inline ? undefined : `1px solid ${token.colorBorderSecondary}`,
       }}
     >
@@ -116,7 +140,7 @@ export function UserProfileHeader({
         size={inline ? 36 : 64}
         radius={inline ? 9 : 16}
       />
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: '1 1 220px', minWidth: 0 }}>
         {inline ? (
           <Space direction="vertical" size={0}>
             <Text strong>{display}</Text>
@@ -127,6 +151,9 @@ export function UserProfileHeader({
                 fontSize={12}
               />
             )}
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {source}
+            </Text>
           </Space>
         ) : (
           <>
@@ -140,7 +167,13 @@ export function UserProfileHeader({
                 fontSize={13}
               />
             )}
-            <Space size={20} style={{ marginTop: 12 }}>
+            <Text
+              type="secondary"
+              style={{ display: 'block', marginTop: 4, fontSize: 12 }}
+            >
+              {source}
+            </Text>
+            <Space size={20} wrap style={{ marginTop: 12 }}>
               <Text>
                 <Text strong style={{ marginRight: 4 }}>
                   {postCount ?? '—'}

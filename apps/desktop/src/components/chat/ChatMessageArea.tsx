@@ -1,31 +1,39 @@
-import { Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, TextArea, Tooltip, EmojiPicker } from '@lobehub/ui';
-import { Spin, theme, Typography, Empty } from 'antd';
+import { Button, Tooltip } from '@lobehub/ui';
+import { Empty, Spin, theme, Typography } from 'antd';
 import {
-  Send, Inbox, Phone, Video, MoreHorizontal,
-  Paperclip, Check, CheckCheck,
-  Reply, Trash2, Lock, RotateCcw, Pencil, X as XIcon, MessageCircle,
+  Inbox, Phone, Video, MoreHorizontal,
+  Lock,
 } from 'lucide-react';
 import {
-  actorProfileFromSessions,
+  CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN,
+  collectChatThreadPreviewMessages,
+} from '@peers-touch/client-chat-core';
+import {
   peerOfSession,
   socialThreadKey,
   useSocialChatStore,
 } from '../../store/socialChat';
-import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { SearchMessagesModal } from './SearchMessagesModal';
-import { AttachmentItem, type ChatAttachmentVisibilityHint } from './AttachmentItem';
 import { friendChatP2p } from '../../modules/p2p/friendChatP2p';
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import { toast } from '@lobehub/ui';
-import type { FriendChatMessage, FriendMessageStatus } from '../../gen/proto/domain/chat/friend_chat_pb';
-import { FriendMessageStatus as FMS } from '../../gen/proto/domain/chat/friend_chat_pb';
+import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
+import type { FriendChatMessage } from '../../gen/proto/domain/chat/friend_chat_pb';
 import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
-import type { Timestamp } from '@bufbuild/protobuf/wkt';
-import { timestampDate } from '@bufbuild/protobuf/wkt';
+import {
+  isFriendMessage,
+  messageThreadRootUlid,
+  messageTimestampMs,
+  replyPreviewForMessage,
+} from './message/chatMessageModel';
+import {
+  ChatMessageTimeline,
+  loadedThreadReplyCount,
+} from './message/ChatMessageTimeline';
 
 const { Text } = Typography;
 
@@ -46,271 +54,63 @@ function chatBackgroundCss(background: string | undefined, layoutColor: string, 
   }
 }
 
-function isFriendMsg(msg: FriendChatMessage | GroupMessage): msg is FriendChatMessage {
-  return 'sessionUlid' in msg;
-}
-
-function getReplyToUlid(msg: FriendChatMessage | GroupMessage): string {
-  return isFriendMsg(msg) ? msg.replyToUlid : msg.replyToUlid;
-}
-
-function getThreadRootUlid(msg: FriendChatMessage | GroupMessage): string {
-  const threadRoot = (msg as (FriendChatMessage | GroupMessage) & { threadRootUlid?: string }).threadRootUlid || '';
-  return threadRoot || getReplyToUlid(msg);
-}
-
-/**
- * Coerce the wire-format `visibility` string into the badge hint
- * the receiver UI understands. Returns `undefined` for empty /
- * unknown values so the AttachmentItem renders no chip — this is
- * the legacy / "sender did not declare" path.
- */
-function normalizeVisibilityHint(v: string | undefined): ChatAttachmentVisibilityHint | undefined {
-  switch (v) {
-    case 'public':
-    case 'chat':
-    case 'private':
-      return v;
-    default:
-      return undefined;
-  }
-}
-
-function formatMsgTime(ts: Timestamp | undefined): string {
-  if (!ts) return '';
-  const d = timestampDate(ts);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function getMessageTimestampDate(msg: FriendChatMessage | GroupMessage): Date | null {
-  const ts = msg.createdAt ?? msg.sentAt;
-  return ts ? timestampDate(ts) : null;
-}
-
-function getCalendarDayKey(d: Date): string {
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-}
-
-function isSameCalendarDay(a: Date, b: Date): boolean {
-  return getCalendarDayKey(a) === getCalendarDayKey(b);
-}
-
-function shouldShowDateSeparator(
-  msg: FriendChatMessage | GroupMessage,
-  previousMsg: FriendChatMessage | GroupMessage | undefined,
-): boolean {
-  const currentDate = getMessageTimestampDate(msg);
-  if (!currentDate) return false;
-  const previousDate = previousMsg ? getMessageTimestampDate(previousMsg) : null;
-  return !previousDate || !isSameCalendarDay(currentDate, previousDate);
-}
-
-const MESSAGE_TIME_GROUP_GAP_MS = 10 * 60 * 1000;
-
-function hasTimelineGap(
-  msg: FriendChatMessage | GroupMessage,
-  previousMsg: FriendChatMessage | GroupMessage | undefined,
-): boolean {
-  const currentDate = getMessageTimestampDate(msg);
-  const previousDate = previousMsg ? getMessageTimestampDate(previousMsg) : null;
-  if (!currentDate || !previousDate || !isSameCalendarDay(currentDate, previousDate)) return false;
-  return currentDate.getTime() - previousDate.getTime() > MESSAGE_TIME_GROUP_GAP_MS;
-}
-
-function formatDateSeparator(d: Date): string {
-  const now = new Date();
-  const options: Intl.DateTimeFormatOptions = d.getFullYear() === now.getFullYear()
-    ? { month: 'short', day: 'numeric' }
-    : { year: 'numeric', month: 'short', day: 'numeric' };
-  return d.toLocaleDateString([], options);
-}
-
-function ReadReceipt({ status }: { status: FriendMessageStatus }) {
-  const { token } = theme.useToken();
-  if (status === FMS.READ) {
-    return <CheckCheck size={14} style={{ color: token.colorPrimary }} />;
-  }
-  if (status === FMS.DELIVERED) {
-    return <Check size={14} style={{ color: token.colorTextQuaternary }} />;
-  }
-  if (status === FMS.SENT) {
-    return <Check size={14} style={{ color: token.colorTextQuaternary }} />;
-  }
-  return null;
-}
-
-function DateSeparator({ date }: { date: Date }) {
-  const { token } = theme.useToken();
-  return (
-    <Flexbox
-      horizontal
-      align="center"
-      gap={10}
-      style={{
-        alignSelf: 'stretch',
-        margin: '8px 0 6px',
-        padding: '0 4px',
-      }}
-    >
-      <span style={{ flex: 1, height: 1, background: token.colorBorderSecondary }} />
-      <Text
-        type="secondary"
-        style={{
-          padding: '3px 10px',
-          borderRadius: 999,
-          background: token.colorFillQuaternary,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          color: token.colorTextTertiary,
-          fontSize: 11,
-          fontWeight: 500,
-          letterSpacing: 0.2,
-        }}
-      >
-        {formatDateSeparator(date)}
-      </Text>
-      <span style={{ flex: 1, height: 1, background: token.colorBorderSecondary }} />
-    </Flexbox>
-  );
-}
-
-interface HoverActionsProps {
-  isOwn: boolean;
-  /** Whether the [Recall] button should be shown. Recall is gated
-   *  client-side by ownership + friend chat + within the recall
-   *  window — the server still enforces both. We hide the button
-   *  proactively so the user doesn't get a "too late" error after
-   *  clicking. */
-  canRecall: boolean;
-  /** Whether the [Edit] button should be shown. Same gating as
-   *  recall (ownership + friend chat + window) plus "not recalled". */
-  canEdit: boolean;
-  onOpenThread: () => void;
-  onReply: () => void;
-  onDelete: () => void;
-  onRecall: () => void;
-  onEdit: () => void;
-}
-
-function HoverActions({ isOwn, canRecall, canEdit, onOpenThread, onReply, onDelete, onRecall, onEdit }: HoverActionsProps) {
+function ChatDeleteConfirmOverlay({
+  deleting,
+  onCancel,
+  onConfirm,
+}: {
+  deleting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const actionButtonStyle: CSSProperties = {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-  };
+
   return (
     <Flexbox
-      horizontal
-      gap={3}
+      align="center"
+      justify="center"
       style={{
         position: 'absolute',
-        top: 0,
-        [isOwn ? 'left' : 'right']: -8,
-        transform: isOwn ? 'translateX(-100%)' : 'translateX(100%)',
-        opacity: 0,
-        transition: 'opacity 0.15s ease, transform 0.15s ease',
-        pointerEvents: 'none',
-        background: token.colorBgElevated,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        borderRadius: 10,
-        padding: 3,
-        boxShadow: token.boxShadowSecondary,
-        zIndex: 2,
+        inset: 0,
+        zIndex: 20,
+        background: 'rgba(15, 23, 42, 0.18)',
+        padding: 24,
       }}
-      className="msg-hover-actions"
-    >
-      <Tooltip title={t('chat.social.thread.open', 'Open thread')}>
-        <Button
-          type="text"
-          size="small"
-          icon={<MessageCircle size={14} />}
-          onClick={onOpenThread}
-          style={actionButtonStyle}
-        />
-      </Tooltip>
-      <Tooltip title={t('chat.social.messageArea.actionReply', 'Reply')}>
-        <Button
-          type="text"
-          size="small"
-          icon={<Reply size={14} />}
-          onClick={onReply}
-          style={actionButtonStyle}
-        />
-      </Tooltip>
-      {canEdit && (
-        <Tooltip title={t('chat.social.messageArea.actionEdit', 'Edit')}>
-          <Button
-            type="text"
-            size="small"
-            icon={<Pencil size={14} />}
-            onClick={onEdit}
-            style={actionButtonStyle}
-          />
-        </Tooltip>
-      )}
-      {canRecall && (
-        <Tooltip title={t('chat.social.messageArea.actionRecall', 'Recall')}>
-          <Button
-            type="text"
-            size="small"
-            icon={<RotateCcw size={14} />}
-            onClick={onRecall}
-            style={actionButtonStyle}
-          />
-        </Tooltip>
-      )}
-      <Tooltip title={t('chat.social.messageArea.actionDelete', 'Delete')}>
-        <Button
-          type="text"
-          size="small"
-          icon={<Trash2 size={14} />}
-          onClick={onDelete}
-          style={{ ...actionButtonStyle, color: token.colorError }}
-        />
-      </Tooltip>
-    </Flexbox>
-  );
-}
-
-/**
- * Mirrors `application.DefaultMutationWindow` on the Station side.
- * The server is the source of truth — clients only use this to
- * decide whether to *show* the Recall / Edit buttons. The UI's
- * "looks editable" state must always be a strict subset of the
- * server's "actually editable" state, which is why we err on the
- * tighter side here (4 minutes 30s vs server's 5 minutes) so a
- * borderline click cannot 422 the user.
- */
-const FRIEND_RECALL_WINDOW_MS = 4 * 60 * 1000 + 30 * 1000;
-
-function ReplyBlock({ replyToUlid, messages, isOwn }: { replyToUlid: string; messages: (FriendChatMessage | GroupMessage)[]; isOwn: boolean }) {
-  const { token } = theme.useToken();
-  const replyMsg = messages.find((m) => m.ulid === replyToUlid);
-  if (!replyMsg) return null;
-  return (
-    <Flexbox
-      style={{
-        padding: '6px 9px',
-        marginBottom: 8,
-        borderLeft: `3px solid ${isOwn ? 'rgba(255,255,255,0.55)' : token.colorPrimary}`,
-        borderRadius: 8,
-        background: isOwn ? 'rgba(255,255,255,0.14)' : token.colorFillTertiary,
-        fontSize: 11,
-        color: isOwn ? 'rgba(255,255,255,0.8)' : token.colorTextSecondary,
-        maxWidth: '100%',
-        overflow: 'hidden',
+      onClick={() => {
+        if (!deleting) onCancel();
       }}
     >
-      <Text
-        ellipsis
+      <Flexbox
+        gap={14}
         style={{
-          fontSize: 11,
-          color: isOwn ? 'rgba(255,255,255,0.8)' : token.colorTextSecondary,
+          width: 320,
+          maxWidth: '100%',
+          padding: 18,
+          borderRadius: 8,
+          background: token.colorBgElevated,
+          border: `1px solid ${token.colorBorderSecondary}`,
+          boxShadow: token.boxShadowSecondary,
         }}
+        onClick={(event) => event.stopPropagation()}
       >
-        {replyMsg.content}
-      </Text>
+        <Flexbox gap={6}>
+          <Text strong style={{ fontSize: 15 }}>
+            {t('chat.social.messageArea.deleteConfirmTitle')}
+          </Text>
+          <Text type="secondary" style={{ fontSize: 13, lineHeight: 1.45 }}>
+            {t('chat.social.messageArea.deleteConfirmBody')}
+          </Text>
+        </Flexbox>
+        <Flexbox horizontal justify="flex-end" gap={8}>
+          <Button disabled={deleting} onClick={onCancel}>
+            {t('chat.social.messageArea.cancel')}
+          </Button>
+          <Button type="primary" danger loading={deleting} onClick={onConfirm}>
+            {t('chat.social.messageArea.deleteConfirmOk')}
+          </Button>
+        </Flexbox>
+      </Flexbox>
     </Flexbox>
   );
 }
@@ -329,6 +129,8 @@ export function ChatMessageArea() {
   const messageLoadingMore = useSocialChatStore((s) => s.messageLoadingMore);
   const currentUserDid = useSocialChatStore((s) => s.currentUserDid);
   const currentUserProfile = useSocialChatStore((s) => s.currentUserProfile);
+  const groupMembers = useSocialChatStore((s) => s.groupMembers);
+  const loadGroupMembers = useSocialChatStore((s) => s.loadGroupMembers);
   const scrollToMessageUlid = useSocialChatStore((s) => s.scrollToMessageUlid);
   const setScrollToMessageUlid = useSocialChatStore((s) => s.setScrollToMessageUlid);
   const encryptionEnabled = useSocialChatStore((s) => s.encryptionEnabled);
@@ -336,6 +138,7 @@ export function ChatMessageArea() {
   const peerOnline = useSocialChatStore((s) => s.peerOnline);
   const typingPeers = useSocialChatStore((s) => s.typingPeers);
   const threadCounts = useSocialChatStore((s) => s.threadCounts);
+  const threadMessages = useSocialChatStore((s) => s.threadMessages);
   const [inputValue, setInputValue] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [sending, setSending] = useState(false);
@@ -346,12 +149,16 @@ export function ChatMessageArea() {
   // instead of creating a new message. The banner above the input
   // shows the original content + a cancel handle.
   const [editingUlid, setEditingUlid] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<FriendChatMessage | GroupMessage | null>(null);
+  const [deletingMessage, setDeletingMessage] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prependRestoreRef = useRef<{ previousHeight: number } | null>(null);
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
+  const activeKind = activeTab === 'friend' ? 'friend' : 'group';
   const currentMessages = activeUlid ? (messages[activeUlid] || []) : [];
+  const mainTimelineMessages = currentMessages.filter((message) => !messageThreadRootUlid(message));
   const activeBackground = activeUlid ? conversationLocalState[`${activeTab}:${activeUlid}`]?.background : undefined;
 
   const activeFriendPeer = (() => {
@@ -380,12 +187,10 @@ export function ChatMessageArea() {
   // station, separate from whether our P2P channel happens to be up.
   const activePeerDid = activeTab === 'friend' ? activeFriendPeer?.did || null : null;
 
-  // Peer-presence indicator. Truth source: Station's
-  // `/friend-chat/presence/stream` SSE, mirrored into `peerOnline` by
-  // `services/peerPresence.ts`. The seed comes from the
-  // `participant_*_online` snapshot embedded in the sessions list.
+  // Peer-presence indicator. Truth source: Station's PresenceFlip
+  // events carried by the unified `/events/stream` runtime.
   //
-  // Unknown (peer DID never seen by the SSE or the snapshot) renders
+  // Unknown (peer DID never seen by the realtime stream) renders
   // *no* indicator rather than a grey dot — a grey dot would be hard
   // to distinguish from "offline" at a glance, and "we don't know yet"
   // is a real third state.
@@ -395,16 +200,16 @@ export function ChatMessageArea() {
     if (!known) return null;
     const online = peerOnline[activePeerDid];
     const tip = online
-      ? t('chat.social.presence.online', 'Online')
-      : t('chat.social.presence.offline', 'Offline');
+      ? t('chat.social.presence.online')
+      : t('chat.social.presence.offline');
     return (
       <Tooltip title={tip}>
         <span
           aria-label={tip}
           style={{
             display: 'inline-block',
-            width: 8,
-            height: 8,
+            width: 6,
+            height: 6,
             borderRadius: '50%',
             background: online ? token.colorSuccess : token.colorTextQuaternary,
             flexShrink: 0,
@@ -421,6 +226,13 @@ export function ChatMessageArea() {
   }, [activeUlid, loadMessages]);
 
   useEffect(() => {
+    if (activeTab !== 'group' || !activeUlid) return;
+    loadGroupMembers(activeUlid).catch((error) => {
+      log.warn('socialChat', 'message area loadGroupMembers failed', error);
+    });
+  }, [activeTab, activeUlid, loadGroupMembers]);
+
+  useEffect(() => {
     if (prependRestoreRef.current && scrollContainerRef.current) {
       const { previousHeight } = prependRestoreRef.current;
       const container = scrollContainerRef.current;
@@ -429,10 +241,12 @@ export function ChatMessageArea() {
       return;
     }
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [currentMessages.length]);
+  }, [mainTimelineMessages.length]);
 
   useEffect(() => {
     setReplyToUlid(null);
+    setDeleteTarget(null);
+    setDeletingMessage(false);
   }, [activeUlid]);
 
   useEffect(() => {
@@ -590,9 +404,21 @@ export function ChatMessageArea() {
     }
   };
 
-  const handleSend = async () => {
-    if (!inputValue.trim() || !activeUlid) return;
-    const content = inputValue.trim();
+  const stopTypingPulse = () => {
+    const ref = typingThrottleRef.current;
+    if (ref.idleTimer != null) {
+      window.clearTimeout(ref.idleTimer);
+      ref.idleTimer = null;
+    }
+    if (ref.lastTrueAt > 0) {
+      fireTyping(false);
+      ref.lastTrueAt = 0;
+    }
+  };
+
+  const handleSend = async (draft: ChatComposerDraft) => {
+    if ((!draft.text && draft.attachments.length === 0) || !activeUlid) return;
+    const content = draft.text;
     const replyRef = replyToUlid || undefined;
     const editTarget = editingUlid;
     setInputValue('');
@@ -601,17 +427,7 @@ export function ChatMessageArea() {
     setSending(true);
     // Sending implies "stopped composing" — flip the bubble for the
     // peer immediately rather than waiting on the 4s idle timer.
-    {
-      const ref = typingThrottleRef.current;
-      if (ref.idleTimer != null) {
-        window.clearTimeout(ref.idleTimer);
-        ref.idleTimer = null;
-      }
-      if (ref.lastTrueAt > 0) {
-        fireTyping(false);
-        ref.lastTrueAt = 0;
-      }
-    }
+    stopTypingPulse();
     try {
       if (editTarget) {
         // Edit path — works for both friend & group chats now that
@@ -627,7 +443,7 @@ export function ChatMessageArea() {
           }
         } catch (err) {
           log.error('chat', 'edit message failed', err);
-          toast.error(t('chat.social.messageArea.editFailed', 'Edit failed'));
+          toast.error(t('chat.social.messageArea.editFailed'));
         }
         return;
       }
@@ -638,24 +454,26 @@ export function ChatMessageArea() {
             ? session.participantBDid
             : session.participantADid
           : '';
-        await sendFriendMessage(activeUlid, receiverDid, content, undefined, replyRef);
+        await sendFriendMessage(
+          activeUlid,
+          receiverDid,
+          content,
+          draft.messageType,
+          replyRef,
+          draft.attachments.length > 0 ? draft.attachments : undefined,
+        );
       } else {
-        await sendGroupMessage(activeUlid, content, undefined, replyRef);
+        await sendGroupMessage(
+          activeUlid,
+          content,
+          draft.messageType,
+          replyRef,
+          draft.attachments.length > 0 ? draft.attachments : undefined,
+        );
       }
     } finally {
       setSending(false);
     }
-  };
-
-  /**
-   * Resolve the friend message corresponding to a ulid in the
-   * currently-active session. Returns null when the active tab is
-   * Returns the row regardless of chat kind — both FriendChatMessage
-   * and GroupMessage carry the recall / edit-relevant fields after
-   * the unified MessageMutation contract landed.
-   */
-  const findActiveMsg = (ulid: string): FriendChatMessage | GroupMessage | null => {
-    return currentMessages.find((x) => x.ulid === ulid) ?? null;
   };
 
   /** Voice / video calls are only meaningful for friend chats with
@@ -686,14 +504,33 @@ export function ChatMessageArea() {
   const handleRecall = async (msg: FriendChatMessage | GroupMessage) => {
     if (!activeUlid) return;
     try {
-      if (isFriendMsg(msg)) {
+      if (isFriendMessage(msg)) {
         await recallFriendMessage(activeUlid, msg.ulid);
       } else {
         await recallGroupMessage(activeUlid, msg.ulid);
       }
     } catch (err) {
       log.error('chat', 'recall message failed', err);
-      toast.error(t('chat.social.messageArea.recallFailed', 'Recall failed'));
+      toast.error(t('chat.social.messageArea.recallFailed'));
+    }
+  };
+
+  const confirmDeleteMessage = (target: FriendChatMessage | GroupMessage) => {
+    if (!activeUlid) return;
+    setDeleteTarget(target);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!activeUlid || !deleteTarget) return;
+    setDeletingMessage(true);
+    try {
+      await deleteMessage(activeUlid, deleteTarget.ulid, activeKind);
+      setDeleteTarget(null);
+    } catch (e) {
+      log.error('chat', 'deleteMessage failed', e);
+      toast.error(t('chat.social.messageArea.deleteFailed'));
+    } finally {
+      setDeletingMessage(false);
     }
   };
 
@@ -712,75 +549,24 @@ export function ChatMessageArea() {
     setInputValue('');
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
-  // Pick a file via the native dialog → upload through Tauri (which
-  // handles JWT auth and returns a federated `oss://{host}/{key}`
-  // cid) → send as a message attachment. Friend and group flows
-  // share the same upload path; the cid resolution happens lazily on
-  // render via `useAttachmentUrl`.
-  const handleAttachClick = async () => {
-    if (!activeUlid) return;
-    let filePath: string;
-    try {
-      filePath = await api.ossPickAttachmentChat();
-    } catch {
-      return;
-    }
-    if (!filePath) return;
-
-    setSending(true);
-    try {
-      const uploaded = await api.ossUploadAttachmentChat({
-        file_path: filePath,
-        bucket: 'chat',
-        visibility: 'chat',
-        chat_session_id: activeUlid,
-      });
-      if (!uploaded) {
-        toast.error(t('chat.social.messageArea.uploadFailed'));
-        return;
-      }
-      const isImage = uploaded.mime_type?.startsWith('image/');
-      const msgType = isImage ? 2 : 3;
-      const attachment = {
-        cid: uploaded.cid,
-        filename: uploaded.filename,
-        mime_type: uploaded.mime_type,
-        size: uploaded.size,
-        thumbnail_cid: '',
-        // The OSS subserver echoes `visibility` in the upload
-        // response; default to the value we just asked for so the
-        // recipient renders the correct scope chip even when the
-        // server build does not yet populate the field.
-        visibility: uploaded.visibility ?? 'chat',
-      };
-      if (activeTab === 'friend') {
-        const session = sessions.find((s) => s.ulid === activeUlid);
-        const receiverDid = session
-          ? session.participantADid === currentUserDid
-            ? session.participantBDid
-            : session.participantADid
-          : '';
-        await sendFriendMessage(activeUlid, receiverDid, uploaded.filename, msgType, undefined, [attachment]);
-      } else {
-        await sendGroupMessage(activeUlid, uploaded.filename, msgType, undefined, [attachment]);
-      }
-    } catch (err) {
-      log.error('chat', 'file upload failed', err);
-      toast.error(t('chat.social.messageArea.uploadFailed'));
-    } finally {
-      setSending(false);
-    }
-  };
-
   const replyingMsg = replyToUlid ? currentMessages.find((m) => m.ulid === replyToUlid) : null;
-  const canSend = inputValue.trim().length > 0 && !sending;
+  const replyingPreview = replyPreviewForMessage(replyingMsg, {
+    image: t('chat.social.messageArea.attachmentTypeImage'),
+    video: t('chat.social.messageArea.attachmentTypeVideo'),
+    audio: t('chat.social.messageArea.attachmentTypeAudio'),
+    file: t('chat.social.messageArea.attachmentTypeFile'),
+  });
+
+  const threadPreviewMessagesForRoot = (rootUlid: string) => {
+    if (!activeUlid || !rootUlid) return [];
+    const key = socialThreadKey(activeKind, activeUlid, rootUlid);
+    return collectChatThreadPreviewMessages({
+      rootUlid,
+      currentMessages,
+      loadedThreadMessages: threadMessages[key] || [],
+      resolveTimestampMs: messageTimestampMs,
+    });
+  };
 
   if (!activeUlid) {
     return (
@@ -791,26 +577,47 @@ export function ChatMessageArea() {
     );
   }
 
-  const hoverStyle = `
-    .msg-row:hover .msg-hover-actions,
-    .msg-row:focus-within .msg-hover-actions {
-      opacity: 1 !important;
-      pointer-events: auto !important;
-    }
-    .chat-composer-input,
-    .chat-composer-input textarea {
-      background: transparent !important;
-      border: 0 !important;
-      box-shadow: none !important;
-    }
-    .msg-row.highlighted .msg-bubble {
-      box-shadow: 0 0 0 2px ${token.colorPrimaryBorder}, ${token.boxShadowSecondary} !important;
-    }
-  `;
+  const conversationSurfaceBackground = chatBackgroundCss(
+    activeBackground,
+    token.colorBgLayout,
+    token.colorBgContainer,
+  );
+  const headerSubtitle = activeTab === 'friend'
+    ? peerIsTyping
+      ? t('chat.social.messageArea.typing')
+      : ''
+    : subtitle;
 
   return (
-    <Flexbox flex={1} gap={0} style={{ height: '100%', background: token.colorBgLayout }}>
-      <style>{hoverStyle}</style>
+    <Flexbox
+      flex={1}
+      gap={0}
+      style={{
+        height: '100%',
+        background: token.colorBgLayout,
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      <style>
+        {`
+          .chat-message-scroll {
+            scrollbar-width: thin;
+            scrollbar-color: ${token.colorFillSecondary} transparent;
+          }
+          .chat-message-scroll::-webkit-scrollbar {
+            width: 6px;
+            height: 0;
+          }
+          .chat-message-scroll::-webkit-scrollbar-thumb {
+            background: ${token.colorFillSecondary};
+            border-radius: 999px;
+          }
+          .chat-message-scroll::-webkit-scrollbar-track {
+            background: transparent;
+          }
+        `}
+      </style>
       <SearchMessagesModal
         open={showSearch}
         onClose={() => setShowSearch(false)}
@@ -823,7 +630,8 @@ export function ChatMessageArea() {
         align="center"
         justify="space-between"
         style={{
-          padding: '12px 18px',
+          height: 64,
+          padding: '0 18px',
           borderBottom: `1px solid ${token.colorBorderSecondary}`,
           background: token.colorBgContainer,
           flexShrink: 0,
@@ -835,22 +643,18 @@ export function ChatMessageArea() {
               <Flexbox horizontal align="center" gap={6}>
                 <Text strong style={{ fontSize: 14 }}>{currentName}</Text>
                 {peerOnlineIndicator}
+                {encryptionEnabled && (
+                  <Tooltip title={t('chat.social.encryption.enabled')}>
+                    <Lock size={13} style={{ color: token.colorTextTertiary, marginLeft: 2 }} />
+                  </Tooltip>
+                )}
               </Flexbox>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {activeTab === 'friend'
-                  ? peerIsTyping
-                    ? t('chat.social.messageArea.typing')
-                    : activePeerDid && peerOnline[activePeerDid]
-                      ? t('chat.social.detail.online')
-                      : t('chat.social.detail.offline')
-                  : subtitle}
-              </Text>
+              {headerSubtitle && (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {headerSubtitle}
+                </Text>
+              )}
             </Flexbox>
-            {encryptionEnabled && (
-              <Tooltip title={t('chat.social.encryption.enabled')}>
-                <Lock size={14} style={{ color: token.colorSuccess, marginLeft: 4 }} />
-              </Tooltip>
-            )}
           </Flexbox>
         </Flexbox>
         <Flexbox horizontal align="center" gap={4}>
@@ -893,13 +697,15 @@ export function ChatMessageArea() {
       </Flexbox>
 
       <Flexbox
+        className="chat-message-scroll"
         flex={1}
         ref={scrollContainerRef}
         onScroll={handleScroll}
         style={{
-          overflow: 'auto',
-          padding: '18px 28px 20px',
-          background: chatBackgroundCss(activeBackground, token.colorBgLayout, token.colorBgContainer),
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          padding: '18px 20px 18px',
+          background: conversationSurfaceBackground,
         }}
         gap={10}
       >
@@ -908,443 +714,71 @@ export function ChatMessageArea() {
             <Spin size="small" />
           </Flexbox>
         )}
-        {loading && currentMessages.length === 0 ? (
+        {loading && mainTimelineMessages.length === 0 ? (
           <Flexbox align="center" justify="center" flex={1}>
             <Spin />
           </Flexbox>
-        ) : currentMessages.length === 0 ? (
+        ) : mainTimelineMessages.length === 0 ? (
           <Flexbox align="center" justify="center" flex={1}>
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.messageArea.noMessages')} />
           </Flexbox>
         ) : (
-          currentMessages.map((msg, index) => {
-            const previousMsg = currentMessages[index - 1];
-            const messageDate = getMessageTimestampDate(msg);
-            const showDateSeparator = shouldShowDateSeparator(msg, previousMsg);
-            const timelineGap = hasTimelineGap(msg, previousMsg);
-            const isOwn = currentUserDid ? msg.senderDid === currentUserDid : false;
-            const isGroup = !isFriendMsg(msg);
-            const senderProfile = isGroup
-              ? actorProfileFromSessions(
-                sessions,
-                currentUserDid,
-                msg.senderDid,
-                currentUserProfile,
-              )
-              : null;
-            const hasReply = getReplyToUlid(msg) || '';
-            const threadKey = activeUlid ? socialThreadKey(activeTab, activeUlid, msg.ulid) : '';
-            const loadedReplyCount = currentMessages.filter((item) => getThreadRootUlid(item) === msg.ulid).length;
-            const threadSummary = threadKey ? threadCounts[threadKey] : undefined;
-            const threadReplyCount = threadSummary?.replyCount ?? loadedReplyCount;
-            const threadUnreadCount = threadSummary?.unreadCount ?? 0;
-            const isEncryptedPlaceholder = msg.content === '[Encrypted Message]';
-            // Both FriendChatMessage and GroupMessage carry
-            // `recalled` + `editedAt` as of the unified
-            // MessageMutation contract. The UI no longer needs to
-            // branch by chat kind for these flags.
-            const isRecalled = (msg as { recalled?: boolean }).recalled === true;
-            const editedAt = (msg as { editedAt?: FriendChatMessage['editedAt'] }).editedAt;
-            // Mutation gating. Server enforces the same window /
-            // ownership rules; the UI hides buttons that are
-            // guaranteed to fail so we don't 422 the user.
-            const sentMs = msg.sentAt ? timestampDate(msg.sentAt).getTime() : (msg.createdAt ? timestampDate(msg.createdAt).getTime() : 0);
-            const withinWindow = sentMs > 0 && (Date.now() - sentMs) < FRIEND_RECALL_WINDOW_MS;
-            const canRecall = isOwn && !isRecalled && withinWindow;
-            const canEdit = isOwn && !isRecalled && withinWindow && !isEncryptedPlaceholder;
-
-            const bubbleBg = isOwn ? token.colorPrimary : token.colorBgContainer;
-            const bubbleColor = isOwn ? '#fff' : token.colorText;
-            const bubbleRadius: CSSProperties['borderRadius'] = isOwn
-              ? '16px 16px 6px 16px'
-              : '16px 16px 16px 6px';
-            const bubbleBorder = isOwn
-              ? '1px solid transparent'
-              : `1px solid ${token.colorBorderSecondary}`;
-
-            return (
-              <Fragment key={msg.ulid}>
-                {showDateSeparator && messageDate && <DateSeparator date={messageDate} />}
-                <Flexbox
-                  data-message-ulid={msg.ulid}
-                  className={`msg-row ${highlightedMessageUlid === msg.ulid ? 'highlighted' : ''}`}
-                  horizontal
-                  align="flex-end"
-                  style={{
-                    alignSelf: isOwn ? 'flex-end' : 'flex-start',
-                    maxWidth: !isOwn && isGroup ? 'min(82%, 800px)' : 'min(74%, 740px)',
-                    position: 'relative',
-                    marginTop: timelineGap ? 8 : 0,
-                  }}
-                  gap={8}
-                >
-                  {!isOwn && isGroup && (
-                    <UserSquareAvatar
-                      remoteUrl={senderProfile?.avatar}
-                      name={senderProfile?.name || msg.senderDid}
-                      size={30}
-                      style={{ flexShrink: 0 }}
-                    />
-                  )}
-
-                  <Flexbox style={{ position: 'relative', minWidth: 0, maxWidth: '100%' }}>
-                    <HoverActions
-                      isOwn={isOwn}
-                      canRecall={canRecall}
-                      canEdit={canEdit}
-                      onOpenThread={() => openThread(msg.ulid)}
-                      onReply={() => setReplyToUlid(msg.ulid)}
-                      onDelete={async () => {
-                        if (!activeUlid) return;
-                        const kind = activeTab === 'friend' ? 'friend' : 'group';
-                        try {
-                          await deleteMessage(activeUlid, msg.ulid, kind);
-                        } catch (e) {
-                          log.error('chat', 'deleteMessage failed', e);
-                          toast.error(t('chat.social.messageArea.deleteFailed'));
-                        }
-                      }}
-                      onRecall={() => {
-                        const target = findActiveMsg(msg.ulid);
-                        if (target) handleRecall(target);
-                      }}
-                      onEdit={() => {
-                        const target = findActiveMsg(msg.ulid);
-                        if (target) handleStartEdit(target);
-                      }}
-                    />
-
-                    {!isOwn && isGroup && (
-                      <Text
-                        type="secondary"
-                        style={{
-                          fontSize: 11,
-                          marginBottom: 4,
-                          paddingLeft: 4,
-                          color: token.colorTextTertiary,
-                          fontWeight: 500,
-                        }}
-                      >
-                        {senderProfile?.name || msg.senderDid}
-                      </Text>
-                    )}
-
-                  <Flexbox
-                    className="msg-bubble"
-                    style={{
-                      padding: '9px 13px',
-                      borderRadius: bubbleRadius,
-                      // Recalled bubbles use the muted "fill quaternary" surface
-                      // regardless of ownership so the tombstone reads as a
-                      // neutral system-style note rather than an actor message.
-                      background: isRecalled ? token.colorFillQuaternary : bubbleBg,
-                      border: isRecalled ? `1px solid ${token.colorBorderSecondary}` : bubbleBorder,
-                      boxShadow: isOwn ? token.boxShadowTertiary : token.boxShadowSecondary,
-                      color: isRecalled ? token.colorTextSecondary : bubbleColor,
-                      fontSize: 13,
-                      lineHeight: 1.5,
-                      wordBreak: 'break-word',
-                      fontStyle: isRecalled ? 'italic' : 'normal',
-                    }}
-                  >
-                    {hasReply && !isRecalled && (
-                      <ReplyBlock
-                        replyToUlid={hasReply}
-                        messages={currentMessages}
-                        isOwn={isOwn}
-                      />
-                    )}
-                    {isRecalled ? (
-                      <Flexbox horizontal align="center" gap={4}>
-                        <RotateCcw size={12} style={{ color: token.colorTextQuaternary }} />
-                        <Text type="secondary" style={{ fontStyle: 'italic', fontSize: 13 }}>
-                          {isOwn
-                            ? t('chat.social.messageArea.recalledByYou', 'You recalled a message')
-                            : t('chat.social.messageArea.recalledByPeer', 'A message was recalled')}
-                        </Text>
-                      </Flexbox>
-                    ) : isEncryptedPlaceholder ? (
-                      <Flexbox horizontal align="center" gap={4}>
-                        <Lock size={12} style={{ color: token.colorTextQuaternary }} />
-                        <Text type="secondary" style={{ fontStyle: 'italic', fontSize: 13 }}>
-                          {t('chat.social.encryption.encryptedMessage')}
-                        </Text>
-                      </Flexbox>
-                    ) : (
-                      msg.content
-                    )}
-                    {!isRecalled && msg.attachments && msg.attachments.length > 0 && (
-                      <Flexbox gap={6} style={{ marginTop: msg.content ? 8 : 0 }}>
-                        {msg.attachments.map((att, idx) => (
-                          <AttachmentItem
-                            key={idx}
-                            attachment={att}
-                            isOwn={isOwn}
-                            // Receiver-side scope badge: the sender is
-                            // authoritative for visibility (the field
-                            // is populated at upload time and travels
-                            // with the message). When the field is
-                            // empty (legacy senders), receivers see
-                            // their own message scope as the fallback
-                            // and our own messages still default to
-                            // "chat" since that's the only scope the
-                            // current upload UI emits.
-                            visibilityHint={
-                              normalizeVisibilityHint(att.visibility)
-                              ?? (isOwn ? 'chat' : undefined)
-                            }
-                          />
-                        ))}
-                      </Flexbox>
-                    )}
-                  </Flexbox>
-
-                  {threadReplyCount > 0 && !isRecalled && (
-                    <Flexbox horizontal justify={isOwn ? 'flex-end' : 'flex-start'} style={{ marginTop: 6 }}>
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<MessageCircle size={12} />}
-                        onClick={() => openThread(msg.ulid)}
-                        style={{
-                          height: 26,
-                          padding: '0 8px',
-                          borderRadius: 999,
-                          fontSize: 11,
-                          fontWeight: 500,
-                          color: threadUnreadCount > 0 ? token.colorError : token.colorPrimary,
-                          background: threadUnreadCount > 0 ? token.colorErrorBg : token.colorPrimaryBg,
-                        }}
-                      >
-                        {threadUnreadCount > 0
-                          ? t('chat.social.thread.summaryUnread', { count: threadReplyCount, unread: threadUnreadCount })
-                          : t('chat.social.thread.summary', { count: threadReplyCount })}
-                      </Button>
-                    </Flexbox>
-                  )}
-
-                  <Flexbox
-                    horizontal
-                    align="center"
-                    justify={isOwn ? 'flex-end' : 'flex-start'}
-                    gap={5}
-                    style={{ marginTop: 5, paddingLeft: 4, paddingRight: 4 }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 11,
-                        color: token.colorTextTertiary,
-                        lineHeight: 1.2,
-                      }}
-                    >
-                      {formatMsgTime(msg.createdAt ?? msg.sentAt)}
-                    </Text>
-                    {editedAt && !isRecalled && (
-                      <Tooltip title={
-                        t('chat.social.messageArea.editedAtTooltip', {
-                          defaultValue: 'Edited at {{time}}',
-                          time: timestampDate(editedAt).toLocaleString(),
-                        })
-                      }>
-                        <Text
-                          style={{
-                            fontSize: 11,
-                            color: token.colorTextTertiary,
-                            fontStyle: 'italic',
-                            lineHeight: 1.2,
-                          }}
-                        >
-                          {t('chat.social.messageArea.editedTag', '(edited)')}
-                        </Text>
-                      </Tooltip>
-                    )}
-                    {isOwn && isFriendMsg(msg) && !isRecalled && (
-                      <ReadReceipt status={msg.status} />
-                    )}
-                  </Flexbox>
-                </Flexbox>
-                </Flexbox>
-              </Fragment>
-            );
-          })
+          <ChatMessageTimeline
+            activeConversationId={activeUlid}
+            activeKind={activeKind}
+            currentUserDid={currentUserDid}
+            currentUserProfile={currentUserProfile}
+            groupMembers={groupMembers}
+            highlightedMessageUlid={highlightedMessageUlid}
+            messages={mainTimelineMessages}
+            onDelete={confirmDeleteMessage}
+            onEdit={handleStartEdit}
+            onOpenThread={openThread}
+            onRecall={handleRecall}
+            onReply={(messageUlid) => {
+              setEditingUlid(null);
+              setReplyToUlid(messageUlid);
+            }}
+            resolveThreadStats={(message) => {
+              const threadKey = socialThreadKey(activeKind, activeUlid, message.ulid);
+              const threadSummary = threadCounts[threadKey];
+              return {
+                replyCount: threadSummary?.replyCount ?? loadedThreadReplyCount(currentMessages, message.ulid),
+                previewMessages: threadPreviewMessagesForRoot(message.ulid),
+                unreadCount: threadSummary?.unreadCount ?? 0,
+              };
+            }}
+            sessions={sessions}
+          />
         )}
         <div ref={bottomRef} />
       </Flexbox>
 
-      <Flexbox
-        style={{
-          padding: '12px 18px 14px',
-          borderTop: `1px solid ${token.colorBorderSecondary}`,
-          background: token.colorBgContainer,
-          boxShadow: '0 -8px 24px rgba(0,0,0,0.03)',
-          flexShrink: 0,
-        }}
-        gap={10}
-      >
-        {editingUlid && (
-          // Edit-mode banner. Mutually exclusive with the reply
-          // banner — `handleStartEdit` clears any pending reply,
-          // and `handleSend` clears `editingUlid` on submit.
-          <Flexbox
-            horizontal
-            align="center"
-            justify="space-between"
-            style={{
-              padding: '8px 12px',
-              borderRadius: 10,
-              background: token.colorWarningBg,
-              borderLeft: `3px solid ${token.colorWarning}`,
-              boxShadow: token.boxShadowTertiary,
-            }}
-          >
-            <Flexbox style={{ minWidth: 0, flex: 1 }}>
-              <Text style={{ fontSize: 11, color: token.colorWarning, fontWeight: 500 }}>
-                {t('chat.social.messageArea.editingMessage', 'Editing message')}
-              </Text>
-              <Text ellipsis type="secondary" style={{ fontSize: 12 }}>
-                {currentMessages.find((m) => m.ulid === editingUlid)?.content || ''}
-              </Text>
-            </Flexbox>
-            <Button
-              type="text"
-              size="small"
-              icon={<XIcon size={14} />}
-              onClick={cancelEdit}
-              style={{ fontSize: 12, color: token.colorTextSecondary }}
-            >
-              {t('chat.social.messageArea.cancel')}
-            </Button>
-          </Flexbox>
-        )}
+      <ChatComposer
+        activeConversationId={activeUlid}
+        disabled={!activeUlid}
+        editing={Boolean(editingUlid)}
+        surfaceBackground={conversationSurfaceBackground}
+        value={inputValue}
+        onChange={handleInputChange}
+        onBlurInput={stopTypingPulse}
+        onCancelEdit={cancelEdit}
+        onCancelReply={() => setReplyToUlid(null)}
+        onSend={handleSend}
+        replyPreview={replyingPreview}
+        replyPreviewKey={replyToUlid}
+        editPreview={editingUlid ? currentMessages.find((m) => m.ulid === editingUlid)?.content || '' : undefined}
+        sending={sending}
+        capabilities={CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN}
+      />
 
-        {replyingMsg && !editingUlid && (
-          <Flexbox
-            horizontal
-            align="center"
-            justify="space-between"
-            style={{
-              padding: '8px 12px',
-              borderRadius: 10,
-              background: token.colorFillTertiary,
-              borderLeft: `3px solid ${token.colorPrimary}`,
-              boxShadow: token.boxShadowTertiary,
-            }}
-          >
-            <Flexbox style={{ minWidth: 0, flex: 1 }}>
-              <Text style={{ fontSize: 11, color: token.colorPrimary, fontWeight: 500 }}>
-                {t('chat.social.messageArea.replyingTo')}
-              </Text>
-              <Text ellipsis type="secondary" style={{ fontSize: 12 }}>
-                {replyingMsg.content}
-              </Text>
-            </Flexbox>
-            <Button
-              type="text"
-              size="small"
-              onClick={() => setReplyToUlid(null)}
-              style={{ fontSize: 12, color: token.colorTextSecondary }}
-            >
-              {t('chat.social.messageArea.cancel')}
-            </Button>
-          </Flexbox>
-        )}
-
-        <Flexbox
-          horizontal
-          align="flex-end"
-          gap={10}
-          style={{
-            padding: 8,
-            borderRadius: 16,
-            border: `1px solid ${token.colorBorderSecondary}`,
-            background: token.colorBgElevated,
-            boxShadow: token.boxShadowTertiary,
-          }}
-        >
-          {/* Native file picker via Tauri — bypasses the WKWebView
-             input quirks and lets us upload through station_client
-             which already handles JWT auth. */}
-          <Flexbox
-            horizontal
-            align="center"
-            gap={4}
-            style={{
-              padding: 2,
-              borderRadius: 12,
-              background: token.colorFillQuaternary,
-              flexShrink: 0,
-            }}
-          >
-            <Tooltip title={t('chat.social.messageArea.attach', 'Attach file')}>
-              <Button
-                type="text"
-                icon={<Paperclip size={18} />}
-                aria-label={t('chat.social.messageArea.attach', 'Attach file')}
-                style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0 }}
-                onClick={handleAttachClick}
-                disabled={sending}
-              />
-            </Tooltip>
-            <Tooltip title={t('chat.social.messageArea.emoji', 'Emoji')}>
-              <span style={{ display: 'inline-flex', width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
-                <EmojiPicker
-                  size={36}
-                  onChange={(emoji) => setInputValue((prev) => prev + emoji)}
-                />
-              </span>
-            </Tooltip>
-          </Flexbox>
-          <TextArea
-            className="chat-composer-input"
-            value={inputValue}
-            onChange={(e) => handleInputChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onBlur={() => {
-              // Blurring the textarea is the user's "I'm stepping
-              // away" signal. Cancel the idle timer and emit one
-              // final `typing=false` so the peer's bubble clears
-              // without waiting on the GC TTL.
-              const ref = typingThrottleRef.current;
-              if (ref.idleTimer != null) {
-                window.clearTimeout(ref.idleTimer);
-                ref.idleTimer = null;
-              }
-              if (ref.lastTrueAt > 0) {
-                fireTyping(false);
-                ref.lastTrueAt = 0;
-              }
-            }}
-            placeholder={t('chat.social.messageArea.placeholder')}
-            autoSize={{ minRows: 1, maxRows: 4 }}
-            style={{
-              flex: 1,
-              minHeight: 38,
-              padding: '8px 2px',
-              background: 'transparent',
-              border: 0,
-              boxShadow: 'none',
-            }}
-            disabled={sending}
-          />
-          <Tooltip title={canSend ? t('chat.social.messageArea.send', 'Send') : t('chat.social.messageArea.enterMessage', 'Enter a message')}>
-            <Button
-              type="primary"
-              icon={<Send size={16} />}
-              aria-label={t('chat.social.messageArea.send', 'Send')}
-              onClick={handleSend}
-              loading={sending}
-              disabled={!canSend}
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 12,
-                flexShrink: 0,
-                boxShadow: canSend ? token.boxShadowSecondary : 'none',
-              }}
-            />
-          </Tooltip>
-        </Flexbox>
-      </Flexbox>
+      {deleteTarget && (
+        <ChatDeleteConfirmOverlay
+          deleting={deletingMessage}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={handleConfirmDelete}
+        />
+      )}
     </Flexbox>
   );
 }

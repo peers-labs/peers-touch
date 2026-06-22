@@ -1,6 +1,18 @@
 import { create } from 'zustand';
 import { api, type AccountIdentity, type Agent, type ToolInfo } from '../services/desktop_api';
 import { log } from '../utils/logger';
+import {
+  DEFAULT_CHAT_SCREENSHOT_SHORTCUT,
+  normalizeChatScreenshotShortcut,
+} from '../utils/chatScreenshotShortcut';
+
+const CHAT_SCREENSHOT_SHORTCUT_SETTING_KEY = 'settings.chat.screenshotShortcut';
+
+function registerChatScreenshotShortcut(shortcut: string): void {
+  api.chatScreenshotShortcutRegister({ shortcut }).catch((error) => {
+    log.warn('settings', 'Failed to register chat screenshot shortcut', error);
+  });
+}
 
 interface SettingsState {
   agents: Agent[];
@@ -13,10 +25,13 @@ interface SettingsState {
    * "Settings" never triggers an `accountGetActive` round-trip.
    */
   activeAccount: AccountIdentity | null;
+  chatScreenshotShortcut: string;
 
+  loadChatPreferences: () => Promise<void>;
   loadAgents: () => Promise<void>;
   loadTools: () => Promise<void>;
   refreshActiveAccount: () => Promise<void>;
+  setChatScreenshotShortcut: (shortcut: string) => void;
   setCurrentAgent: (name: string) => void;
   updateAgent: (name: string, data: Partial<Agent>) => Promise<void>;
 }
@@ -26,6 +41,22 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   tools: [],
   currentAgent: 'assistant',
   activeAccount: null,
+  chatScreenshotShortcut: DEFAULT_CHAT_SCREENSHOT_SHORTCUT,
+
+  loadChatPreferences: async () => {
+    try {
+      const rustResult = await api.settingsGet({ key: CHAT_SCREENSHOT_SHORTCUT_SETTING_KEY });
+      const value = rustResult.ok
+        ? (rustResult.data as { value?: unknown } | undefined)?.value
+        : undefined;
+      const shortcut = normalizeChatScreenshotShortcut(value);
+      set({ chatScreenshotShortcut: shortcut });
+      registerChatScreenshotShortcut(shortcut);
+    } catch (e) {
+      log.warn('settings', 'Failed to load chat preferences', e);
+      registerChatScreenshotShortcut(DEFAULT_CHAT_SCREENSHOT_SHORTCUT);
+    }
+  },
 
   loadAgents: async () => {
     try {
@@ -64,6 +95,13 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setCurrentAgent: (name: string) => {
     set({ currentAgent: name });
     api.settingsSet({ key: 'settings.currentAgent', value: name }).catch(() => {});
+  },
+
+  setChatScreenshotShortcut: (shortcut: string) => {
+    const normalized = normalizeChatScreenshotShortcut(shortcut);
+    set({ chatScreenshotShortcut: normalized });
+    api.settingsSet({ key: CHAT_SCREENSHOT_SHORTCUT_SETTING_KEY, value: normalized }).catch(() => {});
+    registerChatScreenshotShortcut(normalized);
   },
 
   updateAgent: async (name: string, data: Partial<Agent>) => {

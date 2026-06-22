@@ -3,10 +3,22 @@ import { Button, Card, Typography } from 'antd';
 import { useMobileI18n } from '../../app/mobileI18n';
 import logo from '../../assets/logo.png';
 import { LanguageSwitcher } from '../../components/LanguageSwitcher';
+import { StationNetworkIntro } from '../../components/StationNetworkIntro';
 import { StationSelector } from './StationSelector';
 import type { StationProtocol, StoredStationRegistry } from './stationRegistry';
 
 const { Text, Title } = Typography;
+
+function stationDisplayName(entryLabel?: string, stationUrl?: string): string {
+  if (entryLabel) return entryLabel;
+  if (!stationUrl) return '';
+
+  try {
+    return new URL(stationUrl).hostname;
+  } catch {
+    return stationUrl;
+  }
+}
 
 export function StationLaunchScreen({
   registry,
@@ -29,7 +41,25 @@ export function StationLaunchScreen({
 }) {
   const { t } = useMobileI18n();
   const activeStation = registry.entries.find((entry) => entry.url === registry.activeUrl);
-  const activeStationLabel = activeStation?.label || registry.activeUrl;
+  const activeStationLabel = stationDisplayName(activeStation?.label, registry.activeUrl);
+  const networkIntroLabels = {
+    title: t('auth.network.title'),
+    personal: t('auth.network.personal'),
+    actor: t('auth.network.actor'),
+    relay: t('auth.network.relay'),
+    relayLink: t('auth.network.relayLink'),
+    alice: t('auth.network.alice'),
+    service: t('auth.network.service'),
+    station: t('auth.network.station'),
+    bob: t('auth.network.bob'),
+    agent: t('auth.network.agent'),
+    joining: t('auth.network.joining'),
+    yourStation: t('auth.network.yourStation'),
+    messageFlow: t('auth.network.messageFlow'),
+    imageFlow: t('auth.network.imageFlow'),
+    fileFlow: t('auth.network.fileFlow'),
+    taskFlow: t('auth.network.taskFlow'),
+  };
 
   return (
     <main className="launch-screen">
@@ -45,6 +75,13 @@ export function StationLaunchScreen({
           </Title>
         </div>
       </section>
+
+      <div className="station-network-panel">
+        <StationNetworkIntro
+          selectedStationName={activeStationLabel || t('auth.network.defaultStationName')}
+          labels={networkIntroLabels}
+        />
+      </div>
 
       <Card className="launch-card" bordered={false}>
         <div className="launch-card-content">
@@ -67,7 +104,7 @@ export function StationLaunchScreen({
             {activeStationLabel ? (
               <div className="launch-target">
                 <Text type="secondary">{t('mobile.launch.activeStation')}</Text>
-                <Text strong ellipsis>
+                <Text strong className="mobile-truncate">
                   {activeStationLabel}
                 </Text>
               </div>

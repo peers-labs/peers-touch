@@ -249,6 +249,10 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendGroupMe
 		return nil, server.BadRequest(
 			"encrypted_payload (or attachments) is required")
 	}
+	if groupAttachmentsExposeKeyMaterial(req.Attachments) {
+		return nil, server.BadRequest(
+			"attachment encryption metadata must be carried inside encrypted_payload")
+	}
 	msgType := int32(req.Type)
 	if msgType == 0 {
 		msgType = 1
@@ -1141,6 +1145,22 @@ func groupAttachmentsFromProto(in []*chat.GroupMessageAttachment) []group_chat_d
 		})
 	}
 	return out
+}
+
+func groupAttachmentsExposeKeyMaterial(in []*chat.GroupMessageAttachment) bool {
+	for _, a := range in {
+		if a == nil {
+			continue
+		}
+		media := a.GetMediaEncryption()
+		if media != nil && (media.GetKeyB64() != "" || media.GetNonceB64() != "" || media.GetSuite() != "") {
+			return true
+		}
+		if a.GetEncryptionKeyB64() != "" || a.GetEncryptionNonceB64() != "" || a.GetEncryptionSuite() != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func groupAttachmentsToProto(in []group_chat_domain.Attachment) []*chat.GroupMessageAttachment {

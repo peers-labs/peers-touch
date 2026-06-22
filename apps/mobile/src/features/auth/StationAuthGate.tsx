@@ -5,6 +5,7 @@ import { ArrowLeft, LockKeyhole, Server } from 'lucide-react';
 import { useMobileI18n } from '../../app/mobileI18n';
 import logo from '../../assets/logo.png';
 import { LanguageSwitcher } from '../../components/LanguageSwitcher';
+import { StationNetworkIntro } from '../../components/StationNetworkIntro';
 import type { StationLoginInput } from './authSession';
 
 const { Text, Title } = Typography;
@@ -28,6 +29,24 @@ export function StationAuthGate({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const canLogin = Boolean(email.trim() && password);
+  const networkIntroLabels = {
+    title: t('auth.network.title'),
+    personal: t('auth.network.personal'),
+    actor: t('auth.network.actor'),
+    relay: t('auth.network.relay'),
+    relayLink: t('auth.network.relayLink'),
+    alice: t('auth.network.alice'),
+    service: t('auth.network.service'),
+    station: t('auth.network.station'),
+    bob: t('auth.network.bob'),
+    agent: t('auth.network.agent'),
+    joining: t('auth.network.joining'),
+    yourStation: t('auth.network.yourStation'),
+    messageFlow: t('auth.network.messageFlow'),
+    imageFlow: t('auth.network.imageFlow'),
+    fileFlow: t('auth.network.fileFlow'),
+    taskFlow: t('auth.network.taskFlow'),
+  };
 
   async function submitLogin() {
     if (!canLogin || loading) return;
@@ -49,6 +68,13 @@ export function StationAuthGate({
           </Title>
         </div>
       </section>
+
+      <div className="station-network-panel">
+        <StationNetworkIntro
+          selectedStationName={stationLabel}
+          labels={networkIntroLabels}
+        />
+      </div>
 
       <Card className="auth-gate-card" bordered={false}>
         <div className="auth-station-summary">

@@ -14,6 +14,8 @@ import (
 	keyexchange "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange"
 	notifsubserver "github.com/peers-labs/peers-touch/station/app/subserver/notification"
 	"github.com/peers-labs/peers-touch/station/app/subserver/oauth"
+	officialapplets "github.com/peers-labs/peers-touch/station/app/subserver/official_applets"
+	"github.com/peers-labs/peers-touch/station/app/subserver/presence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard"
@@ -40,13 +42,15 @@ func main() {
 		node.WithPrivateKey("private.pem"),
 		node.Name("peers-touch-station"),
 		server.WithSubServer("debug", actuator.NewDebugSubServer, actuator.WithDebugServerPath("/debug")),
+		server.WithSubServer("events", events.NewEventsSubServer),
+		server.WithSubServer("presence", presence.NewPresenceSubServer),
 		server.WithSubServer("friend_chat", friendchat.NewFriendChatSubServer),
 		server.WithSubServer("key_exchange", keyexchange.NewKeyExchangeSubServer),
 		server.WithSubServer("group_chat", groupchat.NewGroupChatSubServer),
 		server.WithSubServer("oauth", oauth.NewOAuthSubServer),
-		server.WithSubServer("events", events.NewEventsSubServer),
 		server.WithSubServer("social", social.NewSocialSubServer),
 		server.WithSubServer("notification", notifsubserver.NewNotificationSubServer),
+		server.WithSubServer("official_applet_note", officialapplets.NewNoteSubServer),
 		server.WithSubServer("dashboard", dashboard.NewDashboardSubServer),
 	)
 	if err != nil {

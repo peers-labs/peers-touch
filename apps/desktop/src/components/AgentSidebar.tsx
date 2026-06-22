@@ -1,17 +1,15 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { ActionIcon, SearchBar } from '@lobehub/ui';
+import { ActionIcon, Avatar, Block, Center, SearchBar, Text } from '@lobehub/ui';
 import {
   Plus,
   MessageSquarePlus,
   User,
   Search,
   Hash,
-  ChevronsUpDown,
   ChevronRight,
   Trash2,
-  ArrowLeft,
   Pin,
   MoreHorizontal,
   Star,
@@ -103,7 +101,6 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     mergeSessions,
   } = useChatStore();
 
-  const [showAgentPicker, setShowAgentPicker] = useState(false);
   const [agentSessions, setAgentSessions] = useState<Session[]>([]);
   const [searchText, setSearchText] = useState('');
   const [topicSearch, setTopicSearch] = useState('');
@@ -140,7 +137,6 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
   const handleSwitchAgent = useCallback(
     (agent: Agent) => {
       setSelectedAgent(agent.name);
-      setShowAgentPicker(false);
       onAgentChanged?.(agent.name);
 
       api
@@ -214,83 +210,21 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
 
   const totalTopics = agentSessions.length;
 
-  if (showAgentPicker) {
-    return (
+  return (
+    <Flexbox height="100%" style={{ background: token.colorBgContainer }}>
       <AgentPicker
         agents={agents}
         selectedAgent={selectedAgent}
         searchText={searchText}
         onSearchChange={setSearchText}
         onSelect={handleSwitchAgent}
-        onBack={() => setShowAgentPicker(false)}
         onCreate={onCreateAgent}
         token={token}
         t={t}
       />
-    );
-  }
-
-  return (
-    <Flexbox height="100%" style={{ background: token.colorBgLayout }}>
-      {/* Agent Header */}
-      <Flexbox
-        style={{
-          padding: '12px 12px 0',
-          flexShrink: 0,
-        }}
-      >
-        <Flexbox
-          horizontal
-          align="center"
-          gap={8}
-          onClick={() => setShowAgentPicker(true)}
-          style={{
-            padding: '8px 10px',
-            borderRadius: 8,
-            cursor: 'pointer',
-            transition: 'background 0.2s',
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLDivElement).style.background = token.colorFillTertiary;
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLDivElement).style.background = 'transparent';
-          }}
-        >
-          <div
-            style={{
-              width: 28,
-              height: 28,
-              borderRadius: 8,
-              background: 'linear-gradient(135deg, #667eea, #764ba2)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 16,
-              flexShrink: 0,
-            }}
-          >
-            {currentAgent?.avatar || '🤖'}
-          </div>
-          <span
-            style={{
-              flex: 1,
-              fontSize: 14,
-              fontWeight: 600,
-              color: token.colorText,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {currentAgent?.title || currentAgent?.name || selectedAgent || t('agent.sidebar.defaultAgent')}
-          </span>
-          <ChevronsUpDown size={14} style={{ color: token.colorTextTertiary, flexShrink: 0 }} />
-        </Flexbox>
-      </Flexbox>
 
       {/* Nav Actions */}
-      <Flexbox style={{ padding: '4px 12px 8px', flexShrink: 0 }} gap={1}>
+      <Flexbox style={{ padding: '8px', flexShrink: 0, borderBottom: `1px solid ${token.colorBorderSecondary}` }} gap={1}>
         <NavItem
           icon={<MessageSquarePlus size={16} />}
           label={t('agent.sidebar.startNewTopic')}
@@ -325,13 +259,13 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       )}
 
       {/* Topic Section */}
-      <Flexbox flex={1} style={{ overflow: 'auto', padding: '0 8px' }}>
+      <Flexbox flex={1} style={{ overflow: 'auto', padding: '8px' }}>
         {/* Section header */}
         <Flexbox
           horizontal
           align="center"
           justify="space-between"
-          style={{ padding: '4px 8px', marginBottom: 2 }}
+          style={{ padding: '0 8px 6px' }}
         >
           <span style={{ fontSize: 12, fontWeight: 600, color: token.colorTextSecondary }}>
             {t('agent.sidebar.topic')} {totalTopics > 0 ? totalTopics : ''}
@@ -381,32 +315,35 @@ function NavItem({
   token: any;
   style?: React.CSSProperties;
 }) {
-  const [hovered, setHovered] = useState(false);
-
   return (
-    <Flexbox
+    <Block
       horizontal
       align="center"
-      gap={10}
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      clickable
+      gap={8}
+      height={36}
+      paddingInline={4}
+      variant={active ? 'filled' : 'borderless'}
+      onClick={() => onClick?.()}
       style={{
-        padding: '7px 10px',
-        borderRadius: 6,
-        cursor: 'pointer',
-        fontSize: 13,
-        color: active ? token.colorPrimary : token.colorText,
-        background: active ? token.colorPrimaryBg : hovered ? token.colorFillTertiary : 'transparent',
-        transition: 'all 0.15s',
+        color: active ? token.colorText : token.colorTextSecondary,
+        userSelect: 'none',
         ...style,
       }}
     >
-      <span style={{ display: 'flex', color: active ? token.colorPrimary : token.colorTextSecondary }}>
-        {icon}
-      </span>
-      <span>{label}</span>
-    </Flexbox>
+      <Center flex="none" height={28} width={28}>
+        <span style={{ display: 'flex', color: active ? token.colorText : token.colorTextDescription }}>
+          {icon}
+        </span>
+      </Center>
+      <Text
+        color={active ? token.colorText : token.colorTextSecondary}
+        ellipsis={{ tooltipWhenOverflow: true }}
+        style={{ flex: 1 }}
+      >
+        {label}
+      </Text>
+    </Block>
   );
 }
 
@@ -432,14 +369,15 @@ function TopicGroup({
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <div style={{ marginBottom: 2 }}>
+    <div style={{ marginBottom: 4 }}>
       <Flexbox
         horizontal
         align="center"
         gap={4}
         onClick={() => setCollapsed(!collapsed)}
         style={{
-          padding: '4px 8px',
+          minHeight: 28,
+          padding: '0 8px',
           cursor: 'pointer',
         }}
       >
@@ -457,7 +395,7 @@ function TopicGroup({
       </Flexbox>
 
       {!collapsed && (
-        <Flexbox gap={1} style={{ paddingLeft: 4 }}>
+        <Flexbox gap={1}>
           {topics.map((topic) => (
             <TopicItem
               key={topic.key}
@@ -584,17 +522,18 @@ function TopicItem({
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         style={{
-          padding: '6px 8px 6px 12px',
-          borderRadius: 6,
+          minHeight: 36,
+          padding: '4px 8px',
+          borderRadius: 8,
           cursor: 'pointer',
-          background: isActive ? token.colorPrimaryBg : hovered ? token.colorFillTertiary : 'transparent',
-          transition: 'background 0.15s',
+          background: isActive ? token.colorFillSecondary : hovered ? token.colorFillTertiary : 'transparent',
+          transition: 'background 0.18s ease',
         }}
       >
         <Hash
           size={14}
           style={{
-            color: isActive ? token.colorPrimary : token.colorTextTertiary,
+            color: isActive ? token.colorText : token.colorTextDescription,
             flexShrink: 0,
           }}
         />
@@ -624,7 +563,7 @@ function TopicItem({
             style={{
               flex: 1,
               fontSize: 13,
-              color: isActive ? token.colorPrimary : token.colorText,
+              color: isActive ? token.colorText : token.colorTextSecondary,
               fontWeight: isActive ? 500 : 400,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
@@ -662,7 +601,6 @@ function AgentPicker({
   searchText,
   onSearchChange,
   onSelect,
-  onBack,
   onCreate,
   token,
   t,
@@ -672,7 +610,6 @@ function AgentPicker({
   searchText: string;
   onSearchChange: (v: string) => void;
   onSelect: (a: Agent) => void;
-  onBack: () => void;
   onCreate: () => void;
   token: any;
   t: (key: string) => string;
@@ -690,16 +627,18 @@ function AgentPicker({
   const unpinnedAgents = filtered.filter((a) => !a.pinned);
 
   return (
-    <Flexbox height="100%" style={{ background: token.colorBgLayout }}>
-      {/* Header with back button */}
-      <Flexbox horizontal align="center" gap={8} style={{ padding: '12px 12px 4px' }}>
-        <ActionIcon
-          icon={ArrowLeft}
-          size="small"
-          onClick={onBack}
-          title={t('agent.sidebar.back')}
-        />
-        <span style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>{t('agent.sidebar.switchAgent')}</span>
+    <Flexbox
+      gap={8}
+      style={{
+        padding: '8px',
+        flexShrink: 0,
+        borderBottom: `1px solid ${token.colorBorderSecondary}`,
+      }}
+    >
+      <Flexbox horizontal align="center" gap={8} style={{ minHeight: 32, padding: '0 4px' }}>
+        <span style={{ fontSize: 13, fontWeight: 600, flex: 1, color: token.colorTextSecondary }}>
+          {t('agent.sidebar.switchAgent')}
+        </span>
         <ActionIcon
           icon={Plus}
           size="small"
@@ -709,22 +648,30 @@ function AgentPicker({
         />
       </Flexbox>
 
-      <div style={{ padding: '8px 12px' }}>
-        <SearchBar
-          placeholder={t('agent.sidebar.searchAgents')}
-          value={searchText}
-          onChange={(e) => onSearchChange(e.target.value)}
-          allowClear
-        />
-      </div>
+      <SearchBar
+        placeholder={t('agent.sidebar.searchAgents')}
+        value={searchText}
+        onChange={(e) => onSearchChange(e.target.value)}
+        allowClear
+        size="small"
+      />
 
-      <Flexbox flex={1} style={{ overflow: 'auto', padding: '0 8px 8px' }}>
+      <Flexbox
+        gap={1}
+        style={{
+          maxHeight: 236,
+          overflow: 'auto',
+        }}
+      >
         {filtered.length === 0 && (
           <Flexbox
             align="center"
             justify="center"
-            flex={1}
-            style={{ color: token.colorTextQuaternary, padding: 40, fontSize: 13 }}
+            style={{
+              color: token.colorTextQuaternary,
+              padding: '16px 8px',
+              fontSize: 13,
+            }}
           >
             {searchText ? t('agent.sidebar.noMatchingAgents') : t('agent.sidebar.noAgentsYet')}
           </Flexbox>
@@ -741,7 +688,7 @@ function AgentPicker({
         ))}
 
         {pinnedAgents.length > 0 && unpinnedAgents.length > 0 && (
-          <div style={{ height: 1, background: token.colorBorderSecondary, margin: '4px 12px' }} />
+          <div style={{ height: 1, background: token.colorBorderSecondary, margin: '4px 8px' }} />
         )}
 
         {unpinnedAgents.map((agent) => (
@@ -769,72 +716,44 @@ function AgentPickerItem({
   onSelect: () => void;
   token: any;
 }) {
-  const [hovered, setHovered] = useState(false);
-
   return (
-    <Flexbox
+    <Block
       horizontal
       align="center"
-      gap={10}
+      clickable
+      gap={8}
+      height={36}
+      paddingInline={4}
+      variant={isSelected ? 'filled' : 'borderless'}
       onClick={onSelect}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       style={{
-        padding: '8px 12px',
-        borderRadius: 8,
-        cursor: 'pointer',
-        background: isSelected ? token.colorPrimaryBg : hovered ? token.colorFillTertiary : 'transparent',
-        transition: 'background 0.15s',
-        marginBottom: 2,
+        minWidth: 0,
+        userSelect: 'none',
       }}
     >
-      <div
+      <Center flex="none" height={28} width={28}>
+        <Avatar
+          avatar={agent.avatar || '🤖'}
+          background={token.colorBgContainer}
+          emojiScaleWithBackground
+          shape="square"
+          size={22}
+        />
+      </Center>
+      <Text
+        color={isSelected ? token.colorText : token.colorTextSecondary}
+        ellipsis={{ tooltipWhenOverflow: true }}
         style={{
-          width: 32,
-          height: 32,
-          borderRadius: 8,
-          background: isSelected
-            ? 'linear-gradient(135deg, #667eea, #764ba2)'
-            : token.colorFillSecondary,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 16,
-          flexShrink: 0,
+          flex: 1,
+          minWidth: 0,
+          fontWeight: isSelected ? 600 : 400,
         }}
       >
-        {agent.avatar || '🤖'}
-      </div>
-      <Flexbox flex={1} style={{ minWidth: 0 }}>
-        <Flexbox horizontal align="center" gap={4}>
-          <span
-            style={{
-              fontSize: 13,
-              fontWeight: isSelected ? 600 : 400,
-              color: token.colorText,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {agent.title || agent.name}
-          </span>
-          {agent.pinned && (
-            <Pin size={10} style={{ color: token.colorTextQuaternary, flexShrink: 0 }} />
-          )}
-        </Flexbox>
-        <span
-          style={{
-            fontSize: 11,
-            color: token.colorTextDescription,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {agent.description}
-        </span>
-      </Flexbox>
-    </Flexbox>
+        {agent.title || agent.name}
+      </Text>
+      {agent.pinned && (
+        <Pin size={11} style={{ color: token.colorTextQuaternary, flexShrink: 0 }} />
+      )}
+    </Block>
   );
 }

@@ -9,7 +9,7 @@ use crate::domain::storage::database::DatabaseOpenSpec;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -440,6 +440,31 @@ fn upsert_record(conn: &Connection, item: &LocalChatRecord) -> Result<(), String
     Ok(())
 }
 
+pub fn upsert_plaintext_records(
+    user_scope: &str,
+    records: &[LocalChatRecord],
+) -> Result<usize, String> {
+    let conn = open_connection(user_scope)?;
+    let conn = conn.lock();
+    let mut indexed = 0usize;
+    for record in records {
+        if record.message_id.trim().is_empty()
+            || record.conversation_id.trim().is_empty()
+            || record.content.trim().is_empty()
+        {
+            continue;
+        }
+        match record.scope.as_str() {
+            "friend" | "group" => {
+                upsert_record(&conn, record)?;
+                indexed += 1;
+            }
+            _ => {}
+        }
+    }
+    Ok(indexed)
+}
+
 fn json_string(value: &Value, keys: &[&str]) -> String {
     for key in keys {
         if let Some(s) = value.get(*key).and_then(|v| v.as_str()) {
@@ -651,20 +676,33 @@ fn search_local_single(
     query: &str,
     limit: usize,
 ) -> Result<Vec<LocalChatRecord>, String> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+    let fts_query = fts_phrase_query(trimmed);
+    let like_pattern = like_contains_pattern(trimmed);
     let mut out = Vec::new();
-    if let Some(conv) = conversation_id.filter(|c| !c.trim().is_empty()) {
+    let mut seen = HashSet::new();
+    if let Some(fts) = fts_query.as_deref() {
         let mut stmt = conn
             .prepare(
                 "SELECT m.scope, m.conversation_id, m.message_id, m.sender_did, m.content, m.reply_to_ulid, m.thread_root_ulid, m.sent_at
                  FROM chat_messages_fts f
                  JOIN chat_messages m ON m.message_id = f.message_id
-                 WHERE f.scope = ?1 AND m.conversation_id = ?2 AND chat_messages_fts MATCH ?3
+                 WHERE f.scope = ?1
+                   AND (?2 = '' OR m.conversation_id = ?2)
+                   AND chat_messages_fts MATCH ?3
                  ORDER BY m.sent_at DESC
                  LIMIT ?4",
             )
             .map_err(|e| e.to_string())?;
+        let conv = conversation_id
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+            .unwrap_or("");
         let rows = stmt
-            .query_map(params![scope, conv, query, limit as i64], |row| {
+            .query_map(params![scope, conv, fts, limit as i64], |row| {
                 Ok(LocalChatRecord {
                     scope: row.get(0)?,
                     conversation_id: row.get(1)?,
@@ -678,22 +716,29 @@ fn search_local_single(
             })
             .map_err(|e| e.to_string())?;
         for row in rows {
-            out.push(row.map_err(|e| e.to_string())?);
+            let record = row.map_err(|e| e.to_string())?;
+            seen.insert(record.message_id.clone());
+            out.push(record);
         }
-        return Ok(out);
     }
+
     let mut stmt = conn
         .prepare(
             "SELECT m.scope, m.conversation_id, m.message_id, m.sender_did, m.content, m.reply_to_ulid, m.thread_root_ulid, m.sent_at
-             FROM chat_messages_fts f
-             JOIN chat_messages m ON m.message_id = f.message_id
-             WHERE f.scope = ?1 AND chat_messages_fts MATCH ?2
+             FROM chat_messages m
+             WHERE m.scope = ?1
+               AND (?2 = '' OR m.conversation_id = ?2)
+               AND m.content LIKE ?3 ESCAPE '\\'
              ORDER BY m.sent_at DESC
-             LIMIT ?3",
+             LIMIT ?4",
         )
         .map_err(|e| e.to_string())?;
+    let conv = conversation_id
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .unwrap_or("");
     let rows = stmt
-        .query_map(params![scope, query, limit as i64], |row| {
+        .query_map(params![scope, conv, like_pattern, limit as i64], |row| {
             Ok(LocalChatRecord {
                 scope: row.get(0)?,
                 conversation_id: row.get(1)?,
@@ -707,9 +752,38 @@ fn search_local_single(
         })
         .map_err(|e| e.to_string())?;
     for row in rows {
-        out.push(row.map_err(|e| e.to_string())?);
+        let record = row.map_err(|e| e.to_string())?;
+        if seen.insert(record.message_id.clone()) {
+            out.push(record);
+        }
     }
+    out.sort_by(|a, b| b.sent_at.cmp(&a.sent_at));
+    out.truncate(limit);
     Ok(out)
+}
+
+fn fts_phrase_query(query: &str) -> Option<String> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(format!("\"{}\"", trimmed.replace('"', "\"\"")))
+}
+
+fn like_contains_pattern(query: &str) -> String {
+    let mut out = String::with_capacity(query.len() + 2);
+    out.push('%');
+    for ch in query.chars() {
+        match ch {
+            '\\' | '%' | '_' => {
+                out.push('\\');
+                out.push(ch);
+            }
+            _ => out.push(ch),
+        }
+    }
+    out.push('%');
+    out
 }
 
 /// Local FTS search. `scope`: `Some("friend")`, `Some("group")`, or `None` / empty to search both.
@@ -1138,47 +1212,29 @@ pub fn crypto_insert_opks(user_scope: &str, private_keys: &[Vec<u8>]) -> Result<
 /// FTS5 search with optional `scope` (`friend` / `group`) and `conversation_id` filters (empty = no filter).
 pub fn search_local_unified(
     user_scope: &str,
-    fts_query: &str,
+    query: &str,
     scope_filter: &str,
     conversation_id: &str,
     limit: usize,
 ) -> Result<Vec<LocalChatRecord>, String> {
-    let conn = open_connection(user_scope)?;
-    let conn = conn.lock();
-    let mut stmt = conn
-        .prepare(
-            "SELECT m.scope, m.conversation_id, m.message_id, m.sender_did, m.content, m.reply_to_ulid, m.thread_root_ulid, m.sent_at
-             FROM chat_messages_fts f
-             JOIN chat_messages m ON m.message_id = f.message_id
-             WHERE f MATCH ?1
-               AND (?2 = '' OR m.scope = ?2)
-               AND (?3 = '' OR m.conversation_id = ?3)
-             ORDER BY m.sent_at DESC
-             LIMIT ?4",
-        )
-        .map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map(
-            params![fts_query, scope_filter, conversation_id, limit as i64],
-            |row| {
-                Ok(LocalChatRecord {
-                    scope: row.get(0)?,
-                    conversation_id: row.get(1)?,
-                    message_id: row.get(2)?,
-                    sender_did: row.get(3)?,
-                    content: row.get(4)?,
-                    reply_to_ulid: row.get(5)?,
-                    thread_root_ulid: row.get(6)?,
-                    sent_at: row.get(7)?,
-                })
-            },
-        )
-        .map_err(|e| e.to_string())?;
-    let mut out = Vec::new();
-    for row in rows {
-        out.push(row.map_err(|e| e.to_string())?);
-    }
-    Ok(out)
+    let scope = match scope_filter.trim() {
+        "" => None,
+        "friend" => Some("friend"),
+        "group" => Some("group"),
+        other => return Err(format!("unsupported chat search scope: {other}")),
+    };
+    let conversation = conversation_id.trim();
+    search_local(
+        user_scope,
+        scope,
+        if conversation.is_empty() {
+            None
+        } else {
+            Some(conversation)
+        },
+        query,
+        limit,
+    )
 }
 
 pub fn set_sync_cursor(user_scope: &str, scope: &str, cursor: &str) -> Result<(), String> {
@@ -1719,6 +1775,74 @@ mod sender_key_tests {
             .unwrap()
             .unwrap();
         assert!(after.signing_seed.is_some());
+    }
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::*;
+
+    fn unique_scope(tag: &str) -> String {
+        format!(
+            "test-search-{tag}-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        )
+    }
+
+    fn record(message_id: &str, content: &str, sent_at: i64) -> LocalChatRecord {
+        LocalChatRecord {
+            scope: "group".to_string(),
+            conversation_id: "group-1".to_string(),
+            message_id: message_id.to_string(),
+            sender_did: "did:peers:alice".to_string(),
+            content: content.to_string(),
+            reply_to_ulid: String::new(),
+            thread_root_ulid: String::new(),
+            sent_at,
+        }
+    }
+
+    #[test]
+    fn search_local_finds_cjk_substrings() {
+        let scope = unique_scope("cjk");
+        upsert_plaintext_records(
+            scope.as_str(),
+            &[record("m1", "今天这条消息可以被搜索", 1_700_000_000_000)],
+        )
+        .expect("index plaintext");
+
+        let results = search_local(scope.as_str(), Some("group"), Some("group-1"), "消息", 10)
+            .expect("search local");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].message_id, "m1");
+    }
+
+    #[test]
+    fn search_local_treats_sql_wildcards_as_text() {
+        let scope = unique_scope("wildcard");
+        upsert_plaintext_records(
+            scope.as_str(),
+            &[
+                record("m1", "100% ready_about", 1_700_000_000_000),
+                record("m2", "plain unrelated", 1_700_000_001_000),
+            ],
+        )
+        .expect("index plaintext");
+
+        let percent_results = search_local(scope.as_str(), Some("group"), Some("group-1"), "%", 10)
+            .expect("search percent");
+        let underscore_results =
+            search_local(scope.as_str(), Some("group"), Some("group-1"), "_", 10)
+                .expect("search underscore");
+
+        assert_eq!(percent_results.len(), 1);
+        assert_eq!(percent_results[0].message_id, "m1");
+        assert_eq!(underscore_results.len(), 1);
+        assert_eq!(underscore_results[0].message_id, "m1");
     }
 }
 

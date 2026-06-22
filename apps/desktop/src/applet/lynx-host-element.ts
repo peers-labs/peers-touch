@@ -493,6 +493,7 @@ export class LynxHostElement extends HTMLElement {
 
     if (!this.readyEventSent) {
       this.sendEvent('ready', { sessionId: this.sessionId, state: 'active' })
+      this.dispatchEvent(new CustomEvent('ready', { detail: { appletId: this.appletId, sessionId: this.sessionId } }))
       this.readyEventSent = true
     }
     if (!this.visibleEventSent) {

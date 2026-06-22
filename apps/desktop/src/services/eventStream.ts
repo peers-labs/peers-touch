@@ -32,7 +32,12 @@ import { fromBinary } from '@bufbuild/protobuf';
 import { eventBus } from '../kernel/events';
 import { EVENT } from '../kernel/events/catalog';
 import type { RealtimeCallSignalKind } from '../kernel/events/types';
-import { ConversationSettingsChanged_Kind, StreamEventSchema } from '../gen/proto/domain/realtime/event_pb';
+import {
+  ConversationSettingsChanged_Kind,
+  MomentEvent_Kind,
+  StreamEventSchema,
+  type MomentEvent,
+} from '../gen/proto/domain/realtime/event_pb';
 import { api } from './desktop_api';
 import { log } from '../utils/logger';
 
@@ -294,8 +299,53 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
       });
       return;
     }
+    case 'moment':
+      dispatchMomentEvent(eventId, kind.value);
+      return;
     default:
       return;
+  }
+}
+
+function dispatchMomentEvent(eventId: string, event: MomentEvent): void {
+  const occurredAtUnixMs = Number(event.occurredTsUnixMs || 0n);
+  const base = {
+    eventId,
+    postId: event.postId,
+    authorActorId: event.authorActorId || undefined,
+    occurredAtUnixMs,
+  };
+
+  switch (event.kind) {
+    case MomentEvent_Kind.CREATED:
+      eventBus.publish(EVENT.MOMENT_CREATED, {
+        ...base,
+        audience: event.audience || undefined,
+      });
+      return;
+    case MomentEvent_Kind.DELETED:
+      eventBus.publish(EVENT.MOMENT_DELETED, {
+        ...base,
+        deletedByActorId: event.actorId || undefined,
+      });
+      return;
+    case MomentEvent_Kind.COMMENTED:
+      eventBus.publish(EVENT.MOMENT_COMMENTED, {
+        ...base,
+        commentId: event.commentId,
+        commentAuthorActorId: event.actorId || undefined,
+      });
+      return;
+    case MomentEvent_Kind.REACTED:
+      eventBus.publish(EVENT.MOMENT_REACTED, {
+        ...base,
+        reactionActorId: event.actorId || undefined,
+        kind: event.reactionKind || undefined,
+        removed: Boolean(event.removed),
+      });
+      return;
+    default:
+      log.warn('eventStream', 'unknown MomentEvent kind, dropping', { kind: event.kind });
   }
 }
 

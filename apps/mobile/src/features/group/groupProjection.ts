@@ -1,4 +1,14 @@
-import type { Group, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
+import { create } from '@bufbuild/protobuf';
+import {
+  applyChatDecryptedContentToList,
+  applyChatMessageMutationToList,
+  mergeChatMessages,
+  type ChatAttachmentLike,
+  type ChatMessageMutationInput,
+} from '@peers-touch/client-chat-core';
+
+import { GroupMessageAttachmentSchema, type ChatEncryptedMessagePayload, type Group, type GroupMessage, type GroupMessageAttachment } from '../../gen/proto/domain/chat/group_chat_pb';
+import { EncryptedMediaDescriptorSchema } from '../../gen/proto/domain/common/common_pb';
 import { timestampMillis } from './groupNormalizers';
 
 export interface GroupConversation {
@@ -28,13 +38,9 @@ export function projectGroupConversations(input: {
 }
 
 export function mergeGroupMessages(messages: GroupMessage[], incoming: GroupMessage): GroupMessage[] {
-  if (!incoming.ulid) return messages;
-  const byUlid = new Map<string, GroupMessage>();
-  messages.forEach((message) => {
-    if (message.ulid) byUlid.set(message.ulid, message);
+  return mergeChatMessages(messages, incoming, {
+    resolveTimestampMs: (message) => timestampMillis(message.sentAt ?? message.createdAt),
   });
-  byUlid.set(incoming.ulid, incoming);
-  return [...byUlid.values()].sort((a, b) => timestampMillis(a.sentAt ?? a.createdAt) - timestampMillis(b.sentAt ?? b.createdAt));
 }
 
 export function projectGroupMessageDisplay(message: GroupMessage): GroupMessageDisplay {
@@ -47,60 +53,36 @@ export function projectGroupMessageDisplay(message: GroupMessage): GroupMessageD
 export function applyGroupDecryptedContentToList(
   messages: GroupMessage[] | undefined,
   messageUlid: string,
-  plaintext: string,
+  plaintext: string | ChatEncryptedMessagePayload,
 ): GroupMessage[] | null {
-  if (!messages?.length || !plaintext) return null;
+  if (typeof plaintext === 'string') return applyChatDecryptedContentToList(messages, messageUlid, plaintext);
+  if (!messages?.length) return null;
+
+  const nextAttachments = plaintext.attachments.map(groupAttachmentFromChatPayload);
   let changed = false;
-  const next = messages.map((message) => {
-    if (message.ulid !== messageUlid || message.content === plaintext) return message;
+  const nextMessages = messages.map((message) => {
+    if (message.ulid !== messageUlid) return message;
     changed = true;
-    return { ...message, content: plaintext } as GroupMessage;
+    return {
+      ...message,
+      content: plaintext.text,
+      attachments: nextAttachments,
+      type: plaintext.messageType || message.type,
+      encryptedPayload: new Uint8Array(),
+    } as GroupMessage;
   });
-  return changed ? next : null;
+
+  return changed ? nextMessages : null;
 }
 
 export function applyGroupMutationToList(
   messages: GroupMessage[] | undefined,
   messageUlid: string,
-  mutation: {
-    kind: 'RECALL' | 'EDIT' | 'DELETE';
-    newContent?: string;
-    newCiphertext?: Uint8Array;
-    mutatedTsUnixMs?: number;
-  },
+  mutation: ChatMessageMutationInput,
 ): GroupMessage[] | null {
-  if (!messages?.length) return null;
-  let changed = false;
-
-  if (mutation.kind === 'DELETE') {
-    const next = messages.filter((message) => {
-      if (message.ulid === messageUlid) {
-        changed = true;
-        return false;
-      }
-      return true;
-    });
-    return changed ? next : null;
-  }
-
-  const next = messages.map((message) => {
-    if (message.ulid !== messageUlid) return message;
-    if (mutation.kind === 'RECALL') {
-      if (message.recalled) return message;
-      changed = true;
-      return { ...message, content: '', encryptedPayload: new Uint8Array(), recalled: true } as GroupMessage;
-    }
-
-    changed = true;
-    return {
-      ...message,
-      content: mutation.newContent || message.content,
-      encryptedPayload: mutation.newCiphertext?.byteLength ? mutation.newCiphertext : message.encryptedPayload,
-      editedAt: timestampFromUnixMs(mutation.mutatedTsUnixMs ?? Date.now()),
-    } as GroupMessage;
+  return applyChatMessageMutationToList(messages, messageUlid, mutation, {
+    createEditedAt: timestampFromUnixMs,
   });
-
-  return changed ? next : null;
 }
 
 function timestampFromUnixMs(value: number) {
@@ -108,4 +90,40 @@ function timestampFromUnixMs(value: number) {
     seconds: BigInt(Math.floor(value / 1000)),
     nanos: (value % 1000) * 1_000_000,
   };
+}
+
+function groupAttachmentFromChatPayload(attachment: ChatAttachmentLike): GroupMessageAttachment {
+  const size = Number(attachment.size ?? 0);
+  const plaintextSize = Number(attachment.plaintextSize ?? attachment.plaintext_size ?? size);
+  const ciphertextSize = Number(attachment.ciphertextSize ?? attachment.ciphertext_size ?? size);
+  const suite = attachment.encryptionSuite ?? attachment.encryption_suite ?? '';
+  const mediaEncryption = attachment.mediaEncryption ?? attachment.media_encryption ?? (suite
+    ? create(EncryptedMediaDescriptorSchema, {
+      encrypted: true,
+      version: 1,
+      suite,
+      keyB64: attachment.encryptionKeyB64 ?? attachment.encryption_key_b64 ?? '',
+      nonceB64: attachment.encryptionNonceB64 ?? attachment.encryption_nonce_b64 ?? '',
+      plaintextSha256B64: attachment.plaintextSha256B64 ?? attachment.plaintext_sha256_b64 ?? '',
+      ciphertextSha256B64: attachment.ciphertextSha256B64 ?? attachment.ciphertext_sha256_b64 ?? '',
+      plaintextSize: BigInt(Number.isFinite(plaintextSize) && plaintextSize > 0 ? Math.floor(plaintextSize) : 0),
+      ciphertextSize: BigInt(Number.isFinite(ciphertextSize) && ciphertextSize > 0 ? Math.floor(ciphertextSize) : 0),
+    })
+    : undefined);
+  return create(GroupMessageAttachmentSchema, {
+    cid: attachment.cid ?? '',
+    filename: attachment.filename ?? '',
+    mimeType: attachment.mimeType ?? attachment.mime_type ?? '',
+    size: BigInt(Number.isFinite(size) && size > 0 ? Math.floor(size) : 0),
+    thumbnailCid: attachment.thumbnailCid ?? attachment.thumbnail_cid ?? '',
+    visibility: attachment.visibility ?? '',
+    mediaEncryption,
+    encryptionSuite: suite,
+    encryptionKeyB64: attachment.encryptionKeyB64 ?? attachment.encryption_key_b64 ?? '',
+    encryptionNonceB64: attachment.encryptionNonceB64 ?? attachment.encryption_nonce_b64 ?? '',
+    plaintextSha256B64: attachment.plaintextSha256B64 ?? attachment.plaintext_sha256_b64 ?? '',
+    ciphertextSha256B64: attachment.ciphertextSha256B64 ?? attachment.ciphertext_sha256_b64 ?? '',
+    plaintextSize: BigInt(Number.isFinite(plaintextSize) && plaintextSize > 0 ? Math.floor(plaintextSize) : 0),
+    ciphertextSize: BigInt(Number.isFinite(ciphertextSize) && ciphertextSize > 0 ? Math.floor(ciphertextSize) : 0),
+  });
 }
