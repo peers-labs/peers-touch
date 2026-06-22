@@ -155,6 +155,8 @@
 - 统一存储架构：`architecture/storage/unified-runtime-storage-architecture.md`
 - i18n 架构：`architecture/i18n/i18n-architecture.md`
 - 通知系统架构：`architecture/notification/notification-architecture.md`
+- 实时平面：`architecture/realtime/event-stream.md`
+- 语音 / 视频通话架构：`architecture/realtime/voice-video-calls.md`
 - 双端社交 Runtime 架构：`architecture/social-runtime/README.md`
 - 双端社交/聊天产品闭环执行计划：`architecture/social-runtime/execution-plans/20260604-social-chat-product-closure.md`
 - Applet / 小程序运行时架构：`architecture/applet-runtime/README.md`
