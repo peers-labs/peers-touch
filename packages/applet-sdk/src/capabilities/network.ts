@@ -6,6 +6,7 @@ export interface NetworkRequestOptions {
   service: string;
   path: string;
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+  query?: Record<string, string | number | boolean | Array<string | number | boolean>>;
   headers?: Record<string, string>;
   body?: unknown;
   timeoutMs?: number;

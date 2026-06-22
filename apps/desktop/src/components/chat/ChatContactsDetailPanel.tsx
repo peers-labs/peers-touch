@@ -51,11 +51,11 @@ export function ChatContactsDetailPanel({ onMessage }: ChatContactsDetailPanelPr
       return {
         displayName: activeGroup.name || t('chat.social.sessionList.unnamedGroup'),
         did: activeGroup.ulid,
-        relationLabel: t('chat.social.contacts.groupLabel', { defaultValue: 'Group' }),
+        relationLabel: t('chat.social.contacts.groupLabel'),
         relationTone: 'processing',
         stats: [
           {
-            label: t('chat.social.detail.members', { defaultValue: 'members' }),
+            label: t('chat.social.detail.membersLabel'),
             value: Number(activeGroup.memberCount ?? 0),
           },
         ],
@@ -66,7 +66,7 @@ export function ChatContactsDetailPanel({ onMessage }: ChatContactsDetailPanelPr
       displayName: peer.name || t('chat.social.sessionList.unknown'),
       avatar: peer.avatar || '',
       did: peer.did || '',
-      relationLabel: t('chat.social.contacts.friendLabel', { defaultValue: 'Friend' }),
+      relationLabel: t('chat.social.contacts.friendLabel'),
       relationTone: 'success',
     };
     if (!cachedPeer) return sessionFallback;
@@ -169,19 +169,19 @@ function buildStats(
   const stats: { label: string; value: number }[] = [];
   if (typeof remote.statuses_count === 'number') {
     stats.push({
-      label: t('chat.social.detail.posts', { defaultValue: 'Posts' }),
+      label: t('chat.social.detail.posts'),
       value: remote.statuses_count,
     });
   }
   if (typeof remote.followers_count === 'number') {
     stats.push({
-      label: t('chat.social.detail.followers', { defaultValue: 'Followers' }),
+      label: t('chat.social.detail.followers'),
       value: remote.followers_count,
     });
   }
   if (typeof remote.following_count === 'number') {
     stats.push({
-      label: t('chat.social.detail.following', { defaultValue: 'Following' }),
+      label: t('chat.social.detail.following'),
       value: remote.following_count,
     });
   }

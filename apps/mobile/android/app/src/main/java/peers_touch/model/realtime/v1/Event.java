@@ -161,6 +161,17 @@ public final class Event {
      */
     peers_touch.model.realtime.v1.Event.ConversationSettingsChanged getConversationSettingsChanged();
 
+    /**
+     * <code>.peers_touch.model.realtime.v1.MomentEvent moment = 20;</code>
+     * @return Whether the moment field is set.
+     */
+    boolean hasMoment();
+    /**
+     * <code>.peers_touch.model.realtime.v1.MomentEvent moment = 20;</code>
+     * @return The moment.
+     */
+    peers_touch.model.realtime.v1.Event.MomentEvent getMoment();
+
     public peers_touch.model.realtime.v1.Event.StreamEvent.KindCase getKindCase();
   }
   /**
@@ -196,6 +207,7 @@ public final class Event {
       MUTATION(17),
       GROUP_MEMBERSHIP_CHANGE(18),
       CONVERSATION_SETTINGS_CHANGED(19),
+      MOMENT(20),
       KIND_NOT_SET(0);
       private final int value;
       private KindCase(int value) {
@@ -221,6 +233,7 @@ public final class Event {
           case 17: return MUTATION;
           case 18: return GROUP_MEMBERSHIP_CHANGE;
           case 19: return CONVERSATION_SETTINGS_CHANGED;
+          case 20: return MOMENT;
           case 0: return KIND_NOT_SET;
           default: return null;
         }
@@ -347,7 +360,7 @@ public final class Event {
      * @param value The tsUnixMs to set.
      */
     private void setTsUnixMs(long value) {
-      
+
       tsUnixMs_ = value;
     }
     /**
@@ -879,6 +892,58 @@ public final class Event {
      */
     private void clearConversationSettingsChanged() {
       if (kindCase_ == 19) {
+        kindCase_ = 0;
+        kind_ = null;
+      }
+    }
+
+    public static final int MOMENT_FIELD_NUMBER = 20;
+    /**
+     * <code>.peers_touch.model.realtime.v1.MomentEvent moment = 20;</code>
+     */
+    @java.lang.Override
+    public boolean hasMoment() {
+      return kindCase_ == 20;
+    }
+    /**
+     * <code>.peers_touch.model.realtime.v1.MomentEvent moment = 20;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.realtime.v1.Event.MomentEvent getMoment() {
+      if (kindCase_ == 20) {
+         return (peers_touch.model.realtime.v1.Event.MomentEvent) kind_;
+      }
+      return peers_touch.model.realtime.v1.Event.MomentEvent.getDefaultInstance();
+    }
+    /**
+     * <code>.peers_touch.model.realtime.v1.MomentEvent moment = 20;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setMoment(peers_touch.model.realtime.v1.Event.MomentEvent value) {
+      value.getClass();  // minimal bytecode null check
+      kind_ = value;
+      kindCase_ = 20;
+    }
+    /**
+     * <code>.peers_touch.model.realtime.v1.MomentEvent moment = 20;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void mergeMoment(peers_touch.model.realtime.v1.Event.MomentEvent value) {
+      value.getClass();  // minimal bytecode null check
+      if (kindCase_ == 20 &&
+          kind_ != peers_touch.model.realtime.v1.Event.MomentEvent.getDefaultInstance()) {
+        kind_ = peers_touch.model.realtime.v1.Event.MomentEvent.newBuilder((peers_touch.model.realtime.v1.Event.MomentEvent) kind_)
+            .mergeFrom(value).buildPartial();
+      } else {
+        kind_ = value;
+      }
+      kindCase_ = 20;
+    }
+    /**
+     * <code>.peers_touch.model.realtime.v1.MomentEvent moment = 20;</code>
+     */
+    private void clearMoment() {
+      if (kindCase_ == 20) {
         kindCase_ = 0;
         kind_ = null;
       }
@@ -1606,6 +1671,54 @@ public final class Event {
         return this;
       }
 
+      /**
+       * <code>.peers_touch.model.realtime.v1.MomentEvent moment = 20;</code>
+       */
+      @java.lang.Override
+      public boolean hasMoment() {
+        return instance.hasMoment();
+      }
+      /**
+       * <code>.peers_touch.model.realtime.v1.MomentEvent moment = 20;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.realtime.v1.Event.MomentEvent getMoment() {
+        return instance.getMoment();
+      }
+      /**
+       * <code>.peers_touch.model.realtime.v1.MomentEvent moment = 20;</code>
+       */
+      public Builder setMoment(peers_touch.model.realtime.v1.Event.MomentEvent value) {
+        copyOnWrite();
+        instance.setMoment(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.realtime.v1.MomentEvent moment = 20;</code>
+       */
+      public Builder setMoment(
+          peers_touch.model.realtime.v1.Event.MomentEvent.Builder builderForValue) {
+        copyOnWrite();
+        instance.setMoment(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.realtime.v1.MomentEvent moment = 20;</code>
+       */
+      public Builder mergeMoment(peers_touch.model.realtime.v1.Event.MomentEvent value) {
+        copyOnWrite();
+        instance.mergeMoment(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.realtime.v1.MomentEvent moment = 20;</code>
+       */
+      public Builder clearMoment() {
+        copyOnWrite();
+        instance.clearMoment();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:peers_touch.model.realtime.v1.StreamEvent)
     }
     @java.lang.Override
@@ -1636,11 +1749,12 @@ public final class Event {
               peers_touch.model.realtime.v1.Event.MessageMutation.class,
               peers_touch.model.realtime.v1.Event.GroupMembershipChange.class,
               peers_touch.model.realtime.v1.Event.ConversationSettingsChanged.class,
+              peers_touch.model.realtime.v1.Event.MomentEvent.class,
             };
             java.lang.String info =
-                "\u0000\f\u0001\u0000\u0001\u0013\f\u0000\u0000\u0000\u0001\u0208\u0002\u0002\n<\u0000" +
+                "\u0000\r\u0001\u0000\u0001\u0014\r\u0000\u0000\u0000\u0001\u0208\u0002\u0002\n<\u0000" +
                 "\u000b<\u0000\f<\u0000\r<\u0000\u000e<\u0000\u000f<\u0000\u0010<\u0000\u0011<\u0000" +
-                "\u0012<\u0000\u0013<\u0000";
+                "\u0012<\u0000\u0013<\u0000\u0014<\u0000";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {
@@ -2444,7 +2558,7 @@ public final class Event {
      */
     private void setCiphertext(com.google.protobuf.ByteString value) {
       java.lang.Class<?> valueClass = value.getClass();
-  
+
       ciphertext_ = value;
     }
     /**
@@ -2483,7 +2597,7 @@ public final class Event {
      * @param value The sentTsUnixMs to set.
      */
     private void setSentTsUnixMs(long value) {
-      
+
       sentTsUnixMs_ = value;
     }
     /**
@@ -3137,13 +3251,13 @@ public final class Event {
               }
             };
 
-      public static com.google.protobuf.Internal.EnumVerifier 
+      public static com.google.protobuf.Internal.EnumVerifier
           internalGetVerifier() {
         return KindVerifier.INSTANCE;
       }
 
-      private static final class KindVerifier implements 
-           com.google.protobuf.Internal.EnumVerifier { 
+      private static final class KindVerifier implements
+           com.google.protobuf.Internal.EnumVerifier {
               static final com.google.protobuf.Internal.EnumVerifier
                   INSTANCE = new KindVerifier();
               @java.lang.Override
@@ -3885,7 +3999,7 @@ public final class Event {
      * @param value The typing to set.
      */
     private void setTyping(boolean value) {
-      
+
       typing_ = value;
     }
     /**
@@ -4302,7 +4416,7 @@ public final class Event {
      * @param value The online to set.
      */
     private void setOnline(boolean value) {
-      
+
       online_ = value;
     }
     /**
@@ -4784,13 +4898,13 @@ public final class Event {
               }
             };
 
-      public static com.google.protobuf.Internal.EnumVerifier 
+      public static com.google.protobuf.Internal.EnumVerifier
           internalGetVerifier() {
         return KindVerifier.INSTANCE;
       }
 
-      private static final class KindVerifier implements 
-           com.google.protobuf.Internal.EnumVerifier { 
+      private static final class KindVerifier implements
+           com.google.protobuf.Internal.EnumVerifier {
               static final com.google.protobuf.Internal.EnumVerifier
                   INSTANCE = new KindVerifier();
               @java.lang.Override
@@ -4963,7 +5077,7 @@ public final class Event {
      */
     private void setPayload(com.google.protobuf.ByteString value) {
       java.lang.Class<?> valueClass = value.getClass();
-  
+
       payload_ = value;
     }
     /**
@@ -5536,13 +5650,13 @@ public final class Event {
               }
             };
 
-      public static com.google.protobuf.Internal.EnumVerifier 
+      public static com.google.protobuf.Internal.EnumVerifier
           internalGetVerifier() {
         return KindVerifier.INSTANCE;
       }
 
-      private static final class KindVerifier implements 
-           com.google.protobuf.Internal.EnumVerifier { 
+      private static final class KindVerifier implements
+           com.google.protobuf.Internal.EnumVerifier {
               static final com.google.protobuf.Internal.EnumVerifier
                   INSTANCE = new KindVerifier();
               @java.lang.Override
@@ -5763,7 +5877,7 @@ public final class Event {
      */
     private void setNewCiphertext(com.google.protobuf.ByteString value) {
       java.lang.Class<?> valueClass = value.getClass();
-  
+
       newCiphertext_ = value;
     }
     /**
@@ -5849,7 +5963,7 @@ public final class Event {
      * @param value The mutatedTsUnixMs to set.
      */
     private void setMutatedTsUnixMs(long value) {
-      
+
       mutatedTsUnixMs_ = value;
     }
     /**
@@ -6508,6 +6622,14 @@ public final class Event {
        * <code>KIND_LEFT = 3;</code>
        */
       KIND_LEFT(3),
+      /**
+       * <pre>
+       * role or moderation state changed
+       * </pre>
+       *
+       * <code>KIND_UPDATED = 4;</code>
+       */
+      KIND_UPDATED(4),
       UNRECOGNIZED(-1),
       ;
 
@@ -6535,6 +6657,14 @@ public final class Event {
        * <code>KIND_LEFT = 3;</code>
        */
       public static final int KIND_LEFT_VALUE = 3;
+      /**
+       * <pre>
+       * role or moderation state changed
+       * </pre>
+       *
+       * <code>KIND_UPDATED = 4;</code>
+       */
+      public static final int KIND_UPDATED_VALUE = 4;
 
 
       @java.lang.Override
@@ -6562,6 +6692,7 @@ public final class Event {
           case 1: return KIND_ADDED;
           case 2: return KIND_REMOVED;
           case 3: return KIND_LEFT;
+          case 4: return KIND_UPDATED;
           default: return null;
         }
       }
@@ -6579,13 +6710,13 @@ public final class Event {
               }
             };
 
-      public static com.google.protobuf.Internal.EnumVerifier 
+      public static com.google.protobuf.Internal.EnumVerifier
           internalGetVerifier() {
         return KindVerifier.INSTANCE;
       }
 
-      private static final class KindVerifier implements 
-           com.google.protobuf.Internal.EnumVerifier { 
+      private static final class KindVerifier implements
+           com.google.protobuf.Internal.EnumVerifier {
               static final com.google.protobuf.Internal.EnumVerifier
                   INSTANCE = new KindVerifier();
               @java.lang.Override
@@ -6845,7 +6976,7 @@ public final class Event {
      * @param value The changedTsUnixMs to set.
      */
     private void setChangedTsUnixMs(long value) {
-      
+
       changedTsUnixMs_ = value;
     }
     /**
@@ -7448,13 +7579,13 @@ public final class Event {
               }
             };
 
-      public static com.google.protobuf.Internal.EnumVerifier 
+      public static com.google.protobuf.Internal.EnumVerifier
           internalGetVerifier() {
         return KindVerifier.INSTANCE;
       }
 
-      private static final class KindVerifier implements 
-           com.google.protobuf.Internal.EnumVerifier { 
+      private static final class KindVerifier implements
+           com.google.protobuf.Internal.EnumVerifier {
               static final com.google.protobuf.Internal.EnumVerifier
                   INSTANCE = new KindVerifier();
               @java.lang.Override
@@ -7646,7 +7777,7 @@ public final class Event {
      * @param value The changedTsUnixMs to set.
      */
     private void setChangedTsUnixMs(long value) {
-      
+
       changedTsUnixMs_ = value;
     }
     /**
@@ -8028,6 +8159,1212 @@ public final class Event {
     private static volatile com.google.protobuf.Parser<ConversationSettingsChanged> PARSER;
 
     public static com.google.protobuf.Parser<ConversationSettingsChanged> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
+  public interface MomentEventOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:peers_touch.model.realtime.v1.MomentEvent)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>.peers_touch.model.realtime.v1.MomentEvent.Kind kind = 1;</code>
+     * @return The enum numeric value on the wire for kind.
+     */
+    int getKindValue();
+    /**
+     * <code>.peers_touch.model.realtime.v1.MomentEvent.Kind kind = 1;</code>
+     * @return The kind.
+     */
+    peers_touch.model.realtime.v1.Event.MomentEvent.Kind getKind();
+
+    /**
+     * <code>string post_id = 2;</code>
+     * @return The postId.
+     */
+    java.lang.String getPostId();
+    /**
+     * <code>string post_id = 2;</code>
+     * @return The bytes for postId.
+     */
+    com.google.protobuf.ByteString
+        getPostIdBytes();
+
+    /**
+     * <code>string author_actor_id = 3;</code>
+     * @return The authorActorId.
+     */
+    java.lang.String getAuthorActorId();
+    /**
+     * <code>string author_actor_id = 3;</code>
+     * @return The bytes for authorActorId.
+     */
+    com.google.protobuf.ByteString
+        getAuthorActorIdBytes();
+
+    /**
+     * <code>string actor_id = 4;</code>
+     * @return The actorId.
+     */
+    java.lang.String getActorId();
+    /**
+     * <code>string actor_id = 4;</code>
+     * @return The bytes for actorId.
+     */
+    com.google.protobuf.ByteString
+        getActorIdBytes();
+
+    /**
+     * <code>string comment_id = 5;</code>
+     * @return The commentId.
+     */
+    java.lang.String getCommentId();
+    /**
+     * <code>string comment_id = 5;</code>
+     * @return The bytes for commentId.
+     */
+    com.google.protobuf.ByteString
+        getCommentIdBytes();
+
+    /**
+     * <code>string reaction_kind = 6;</code>
+     * @return The reactionKind.
+     */
+    java.lang.String getReactionKind();
+    /**
+     * <code>string reaction_kind = 6;</code>
+     * @return The bytes for reactionKind.
+     */
+    com.google.protobuf.ByteString
+        getReactionKindBytes();
+
+    /**
+     * <code>bool removed = 7;</code>
+     * @return The removed.
+     */
+    boolean getRemoved();
+
+    /**
+     * <code>string audience = 8;</code>
+     * @return The audience.
+     */
+    java.lang.String getAudience();
+    /**
+     * <code>string audience = 8;</code>
+     * @return The bytes for audience.
+     */
+    com.google.protobuf.ByteString
+        getAudienceBytes();
+
+    /**
+     * <code>int64 occurred_ts_unix_ms = 9;</code>
+     * @return The occurredTsUnixMs.
+     */
+    long getOccurredTsUnixMs();
+  }
+  /**
+   * <pre>
+   * MomentEvent notifies a viewer that a Moment they can see changed.
+   * It intentionally carries identifiers and small metadata only; clients
+   * refresh the authoritative Moment/detail projection through the social
+   * API so visibility filtering remains Station-owned.
+   * </pre>
+   *
+   * Protobuf type {@code peers_touch.model.realtime.v1.MomentEvent}
+   */
+  public  static final class MomentEvent extends
+      com.google.protobuf.GeneratedMessageLite<
+          MomentEvent, MomentEvent.Builder> implements
+      // @@protoc_insertion_point(message_implements:peers_touch.model.realtime.v1.MomentEvent)
+      MomentEventOrBuilder {
+    private MomentEvent() {
+      postId_ = "";
+      authorActorId_ = "";
+      actorId_ = "";
+      commentId_ = "";
+      reactionKind_ = "";
+      audience_ = "";
+    }
+    /**
+     * Protobuf enum {@code peers_touch.model.realtime.v1.MomentEvent.Kind}
+     */
+    public enum Kind
+        implements com.google.protobuf.Internal.EnumLite {
+      /**
+       * <code>KIND_UNSPECIFIED = 0;</code>
+       */
+      KIND_UNSPECIFIED(0),
+      /**
+       * <code>CREATED = 1;</code>
+       */
+      CREATED(1),
+      /**
+       * <code>DELETED = 2;</code>
+       */
+      DELETED(2),
+      /**
+       * <code>COMMENTED = 3;</code>
+       */
+      COMMENTED(3),
+      /**
+       * <code>REACTED = 4;</code>
+       */
+      REACTED(4),
+      UNRECOGNIZED(-1),
+      ;
+
+      /**
+       * <code>KIND_UNSPECIFIED = 0;</code>
+       */
+      public static final int KIND_UNSPECIFIED_VALUE = 0;
+      /**
+       * <code>CREATED = 1;</code>
+       */
+      public static final int CREATED_VALUE = 1;
+      /**
+       * <code>DELETED = 2;</code>
+       */
+      public static final int DELETED_VALUE = 2;
+      /**
+       * <code>COMMENTED = 3;</code>
+       */
+      public static final int COMMENTED_VALUE = 3;
+      /**
+       * <code>REACTED = 4;</code>
+       */
+      public static final int REACTED_VALUE = 4;
+
+
+      @java.lang.Override
+      public final int getNumber() {
+        if (this == UNRECOGNIZED) {
+          throw new java.lang.IllegalArgumentException(
+              "Can't get the number of an unknown enum value.");
+        }
+        return value;
+      }
+
+      /**
+       * @param value The number of the enum to look for.
+       * @return The enum associated with the given number.
+       * @deprecated Use {@link #forNumber(int)} instead.
+       */
+      @java.lang.Deprecated
+      public static Kind valueOf(int value) {
+        return forNumber(value);
+      }
+
+      public static Kind forNumber(int value) {
+        switch (value) {
+          case 0: return KIND_UNSPECIFIED;
+          case 1: return CREATED;
+          case 2: return DELETED;
+          case 3: return COMMENTED;
+          case 4: return REACTED;
+          default: return null;
+        }
+      }
+
+      public static com.google.protobuf.Internal.EnumLiteMap<Kind>
+          internalGetValueMap() {
+        return internalValueMap;
+      }
+      private static final com.google.protobuf.Internal.EnumLiteMap<
+          Kind> internalValueMap =
+            new com.google.protobuf.Internal.EnumLiteMap<Kind>() {
+              @java.lang.Override
+              public Kind findValueByNumber(int number) {
+                return Kind.forNumber(number);
+              }
+            };
+
+      public static com.google.protobuf.Internal.EnumVerifier
+          internalGetVerifier() {
+        return KindVerifier.INSTANCE;
+      }
+
+      private static final class KindVerifier implements
+           com.google.protobuf.Internal.EnumVerifier {
+              static final com.google.protobuf.Internal.EnumVerifier
+                  INSTANCE = new KindVerifier();
+              @java.lang.Override
+              public boolean isInRange(int number) {
+                return Kind.forNumber(number) != null;
+              }
+            };
+
+      private final int value;
+
+      private Kind(int value) {
+        this.value = value;
+      }
+
+      // @@protoc_insertion_point(enum_scope:peers_touch.model.realtime.v1.MomentEvent.Kind)
+    }
+
+    public static final int KIND_FIELD_NUMBER = 1;
+    private int kind_;
+    /**
+     * <code>.peers_touch.model.realtime.v1.MomentEvent.Kind kind = 1;</code>
+     * @return The enum numeric value on the wire for kind.
+     */
+    @java.lang.Override
+    public int getKindValue() {
+      return kind_;
+    }
+    /**
+     * <code>.peers_touch.model.realtime.v1.MomentEvent.Kind kind = 1;</code>
+     * @return The kind.
+     */
+    @java.lang.Override
+    public peers_touch.model.realtime.v1.Event.MomentEvent.Kind getKind() {
+      peers_touch.model.realtime.v1.Event.MomentEvent.Kind result = peers_touch.model.realtime.v1.Event.MomentEvent.Kind.forNumber(kind_);
+      return result == null ? peers_touch.model.realtime.v1.Event.MomentEvent.Kind.UNRECOGNIZED : result;
+    }
+    /**
+     * <code>.peers_touch.model.realtime.v1.MomentEvent.Kind kind = 1;</code>
+     * @param value The enum numeric value on the wire for kind to set.
+     * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+     */
+    private void setKindValue(int value) {
+        kind_ = value;
+    }
+    /**
+     * <code>.peers_touch.model.realtime.v1.MomentEvent.Kind kind = 1;</code>
+     * @param value The kind to set.
+     */
+    private void setKind(peers_touch.model.realtime.v1.Event.MomentEvent.Kind value) {
+      kind_ = value.getNumber();
+
+    }
+    /**
+     * <code>.peers_touch.model.realtime.v1.MomentEvent.Kind kind = 1;</code>
+     */
+    private void clearKind() {
+
+      kind_ = 0;
+    }
+
+    public static final int POST_ID_FIELD_NUMBER = 2;
+    private java.lang.String postId_;
+    /**
+     * <code>string post_id = 2;</code>
+     * @return The postId.
+     */
+    @java.lang.Override
+    public java.lang.String getPostId() {
+      return postId_;
+    }
+    /**
+     * <code>string post_id = 2;</code>
+     * @return The bytes for postId.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getPostIdBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(postId_);
+    }
+    /**
+     * <code>string post_id = 2;</code>
+     * @param value The postId to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setPostId(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      postId_ = value;
+    }
+    /**
+     * <code>string post_id = 2;</code>
+     */
+    private void clearPostId() {
+
+      postId_ = getDefaultInstance().getPostId();
+    }
+    /**
+     * <code>string post_id = 2;</code>
+     * @param value The bytes for postId to set.
+     */
+    private void setPostIdBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      postId_ = value.toStringUtf8();
+
+    }
+
+    public static final int AUTHOR_ACTOR_ID_FIELD_NUMBER = 3;
+    private java.lang.String authorActorId_;
+    /**
+     * <code>string author_actor_id = 3;</code>
+     * @return The authorActorId.
+     */
+    @java.lang.Override
+    public java.lang.String getAuthorActorId() {
+      return authorActorId_;
+    }
+    /**
+     * <code>string author_actor_id = 3;</code>
+     * @return The bytes for authorActorId.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getAuthorActorIdBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(authorActorId_);
+    }
+    /**
+     * <code>string author_actor_id = 3;</code>
+     * @param value The authorActorId to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setAuthorActorId(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      authorActorId_ = value;
+    }
+    /**
+     * <code>string author_actor_id = 3;</code>
+     */
+    private void clearAuthorActorId() {
+
+      authorActorId_ = getDefaultInstance().getAuthorActorId();
+    }
+    /**
+     * <code>string author_actor_id = 3;</code>
+     * @param value The bytes for authorActorId to set.
+     */
+    private void setAuthorActorIdBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      authorActorId_ = value.toStringUtf8();
+
+    }
+
+    public static final int ACTOR_ID_FIELD_NUMBER = 4;
+    private java.lang.String actorId_;
+    /**
+     * <code>string actor_id = 4;</code>
+     * @return The actorId.
+     */
+    @java.lang.Override
+    public java.lang.String getActorId() {
+      return actorId_;
+    }
+    /**
+     * <code>string actor_id = 4;</code>
+     * @return The bytes for actorId.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getActorIdBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(actorId_);
+    }
+    /**
+     * <code>string actor_id = 4;</code>
+     * @param value The actorId to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setActorId(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      actorId_ = value;
+    }
+    /**
+     * <code>string actor_id = 4;</code>
+     */
+    private void clearActorId() {
+
+      actorId_ = getDefaultInstance().getActorId();
+    }
+    /**
+     * <code>string actor_id = 4;</code>
+     * @param value The bytes for actorId to set.
+     */
+    private void setActorIdBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      actorId_ = value.toStringUtf8();
+
+    }
+
+    public static final int COMMENT_ID_FIELD_NUMBER = 5;
+    private java.lang.String commentId_;
+    /**
+     * <code>string comment_id = 5;</code>
+     * @return The commentId.
+     */
+    @java.lang.Override
+    public java.lang.String getCommentId() {
+      return commentId_;
+    }
+    /**
+     * <code>string comment_id = 5;</code>
+     * @return The bytes for commentId.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getCommentIdBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(commentId_);
+    }
+    /**
+     * <code>string comment_id = 5;</code>
+     * @param value The commentId to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setCommentId(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      commentId_ = value;
+    }
+    /**
+     * <code>string comment_id = 5;</code>
+     */
+    private void clearCommentId() {
+
+      commentId_ = getDefaultInstance().getCommentId();
+    }
+    /**
+     * <code>string comment_id = 5;</code>
+     * @param value The bytes for commentId to set.
+     */
+    private void setCommentIdBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      commentId_ = value.toStringUtf8();
+
+    }
+
+    public static final int REACTION_KIND_FIELD_NUMBER = 6;
+    private java.lang.String reactionKind_;
+    /**
+     * <code>string reaction_kind = 6;</code>
+     * @return The reactionKind.
+     */
+    @java.lang.Override
+    public java.lang.String getReactionKind() {
+      return reactionKind_;
+    }
+    /**
+     * <code>string reaction_kind = 6;</code>
+     * @return The bytes for reactionKind.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getReactionKindBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(reactionKind_);
+    }
+    /**
+     * <code>string reaction_kind = 6;</code>
+     * @param value The reactionKind to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setReactionKind(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      reactionKind_ = value;
+    }
+    /**
+     * <code>string reaction_kind = 6;</code>
+     */
+    private void clearReactionKind() {
+
+      reactionKind_ = getDefaultInstance().getReactionKind();
+    }
+    /**
+     * <code>string reaction_kind = 6;</code>
+     * @param value The bytes for reactionKind to set.
+     */
+    private void setReactionKindBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      reactionKind_ = value.toStringUtf8();
+
+    }
+
+    public static final int REMOVED_FIELD_NUMBER = 7;
+    private boolean removed_;
+    /**
+     * <code>bool removed = 7;</code>
+     * @return The removed.
+     */
+    @java.lang.Override
+    public boolean getRemoved() {
+      return removed_;
+    }
+    /**
+     * <code>bool removed = 7;</code>
+     * @param value The removed to set.
+     */
+    private void setRemoved(boolean value) {
+
+      removed_ = value;
+    }
+    /**
+     * <code>bool removed = 7;</code>
+     */
+    private void clearRemoved() {
+
+      removed_ = false;
+    }
+
+    public static final int AUDIENCE_FIELD_NUMBER = 8;
+    private java.lang.String audience_;
+    /**
+     * <code>string audience = 8;</code>
+     * @return The audience.
+     */
+    @java.lang.Override
+    public java.lang.String getAudience() {
+      return audience_;
+    }
+    /**
+     * <code>string audience = 8;</code>
+     * @return The bytes for audience.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getAudienceBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(audience_);
+    }
+    /**
+     * <code>string audience = 8;</code>
+     * @param value The audience to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setAudience(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      audience_ = value;
+    }
+    /**
+     * <code>string audience = 8;</code>
+     */
+    private void clearAudience() {
+
+      audience_ = getDefaultInstance().getAudience();
+    }
+    /**
+     * <code>string audience = 8;</code>
+     * @param value The bytes for audience to set.
+     */
+    private void setAudienceBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      audience_ = value.toStringUtf8();
+
+    }
+
+    public static final int OCCURRED_TS_UNIX_MS_FIELD_NUMBER = 9;
+    private long occurredTsUnixMs_;
+    /**
+     * <code>int64 occurred_ts_unix_ms = 9;</code>
+     * @return The occurredTsUnixMs.
+     */
+    @java.lang.Override
+    public long getOccurredTsUnixMs() {
+      return occurredTsUnixMs_;
+    }
+    /**
+     * <code>int64 occurred_ts_unix_ms = 9;</code>
+     * @param value The occurredTsUnixMs to set.
+     */
+    private void setOccurredTsUnixMs(long value) {
+
+      occurredTsUnixMs_ = value;
+    }
+    /**
+     * <code>int64 occurred_ts_unix_ms = 9;</code>
+     */
+    private void clearOccurredTsUnixMs() {
+
+      occurredTsUnixMs_ = 0L;
+    }
+
+    public static peers_touch.model.realtime.v1.Event.MomentEvent parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.realtime.v1.Event.MomentEvent parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.realtime.v1.Event.MomentEvent parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.realtime.v1.Event.MomentEvent parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.realtime.v1.Event.MomentEvent parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.realtime.v1.Event.MomentEvent parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.realtime.v1.Event.MomentEvent parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.realtime.v1.Event.MomentEvent parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static peers_touch.model.realtime.v1.Event.MomentEvent parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static peers_touch.model.realtime.v1.Event.MomentEvent parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static peers_touch.model.realtime.v1.Event.MomentEvent parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.realtime.v1.Event.MomentEvent parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(peers_touch.model.realtime.v1.Event.MomentEvent prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * <pre>
+     * MomentEvent notifies a viewer that a Moment they can see changed.
+     * It intentionally carries identifiers and small metadata only; clients
+     * refresh the authoritative Moment/detail projection through the social
+     * API so visibility filtering remains Station-owned.
+     * </pre>
+     *
+     * Protobuf type {@code peers_touch.model.realtime.v1.MomentEvent}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          peers_touch.model.realtime.v1.Event.MomentEvent, Builder> implements
+        // @@protoc_insertion_point(builder_implements:peers_touch.model.realtime.v1.MomentEvent)
+        peers_touch.model.realtime.v1.Event.MomentEventOrBuilder {
+      // Construct using peers_touch.model.realtime.v1.Event.MomentEvent.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>.peers_touch.model.realtime.v1.MomentEvent.Kind kind = 1;</code>
+       * @return The enum numeric value on the wire for kind.
+       */
+      @java.lang.Override
+      public int getKindValue() {
+        return instance.getKindValue();
+      }
+      /**
+       * <code>.peers_touch.model.realtime.v1.MomentEvent.Kind kind = 1;</code>
+       * @param value The kind to set.
+       * @return This builder for chaining.
+       */
+      public Builder setKindValue(int value) {
+        copyOnWrite();
+        instance.setKindValue(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.realtime.v1.MomentEvent.Kind kind = 1;</code>
+       * @return The kind.
+       */
+      @java.lang.Override
+      public peers_touch.model.realtime.v1.Event.MomentEvent.Kind getKind() {
+        return instance.getKind();
+      }
+      /**
+       * <code>.peers_touch.model.realtime.v1.MomentEvent.Kind kind = 1;</code>
+       * @param value The enum numeric value on the wire for kind to set.
+       * @throws IllegalArgumentException if UNRECOGNIZED is provided.
+       * @return This builder for chaining.
+       */
+      public Builder setKind(peers_touch.model.realtime.v1.Event.MomentEvent.Kind value) {
+        copyOnWrite();
+        instance.setKind(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.realtime.v1.MomentEvent.Kind kind = 1;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearKind() {
+        copyOnWrite();
+        instance.clearKind();
+        return this;
+      }
+
+      /**
+       * <code>string post_id = 2;</code>
+       * @return The postId.
+       */
+      @java.lang.Override
+      public java.lang.String getPostId() {
+        return instance.getPostId();
+      }
+      /**
+       * <code>string post_id = 2;</code>
+       * @return The bytes for postId.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getPostIdBytes() {
+        return instance.getPostIdBytes();
+      }
+      /**
+       * <code>string post_id = 2;</code>
+       * @param value The postId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setPostId(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setPostId(value);
+        return this;
+      }
+      /**
+       * <code>string post_id = 2;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearPostId() {
+        copyOnWrite();
+        instance.clearPostId();
+        return this;
+      }
+      /**
+       * <code>string post_id = 2;</code>
+       * @param value The bytes for postId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setPostIdBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setPostIdBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string author_actor_id = 3;</code>
+       * @return The authorActorId.
+       */
+      @java.lang.Override
+      public java.lang.String getAuthorActorId() {
+        return instance.getAuthorActorId();
+      }
+      /**
+       * <code>string author_actor_id = 3;</code>
+       * @return The bytes for authorActorId.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getAuthorActorIdBytes() {
+        return instance.getAuthorActorIdBytes();
+      }
+      /**
+       * <code>string author_actor_id = 3;</code>
+       * @param value The authorActorId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setAuthorActorId(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setAuthorActorId(value);
+        return this;
+      }
+      /**
+       * <code>string author_actor_id = 3;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearAuthorActorId() {
+        copyOnWrite();
+        instance.clearAuthorActorId();
+        return this;
+      }
+      /**
+       * <code>string author_actor_id = 3;</code>
+       * @param value The bytes for authorActorId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setAuthorActorIdBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setAuthorActorIdBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string actor_id = 4;</code>
+       * @return The actorId.
+       */
+      @java.lang.Override
+      public java.lang.String getActorId() {
+        return instance.getActorId();
+      }
+      /**
+       * <code>string actor_id = 4;</code>
+       * @return The bytes for actorId.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getActorIdBytes() {
+        return instance.getActorIdBytes();
+      }
+      /**
+       * <code>string actor_id = 4;</code>
+       * @param value The actorId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setActorId(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setActorId(value);
+        return this;
+      }
+      /**
+       * <code>string actor_id = 4;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearActorId() {
+        copyOnWrite();
+        instance.clearActorId();
+        return this;
+      }
+      /**
+       * <code>string actor_id = 4;</code>
+       * @param value The bytes for actorId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setActorIdBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setActorIdBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string comment_id = 5;</code>
+       * @return The commentId.
+       */
+      @java.lang.Override
+      public java.lang.String getCommentId() {
+        return instance.getCommentId();
+      }
+      /**
+       * <code>string comment_id = 5;</code>
+       * @return The bytes for commentId.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getCommentIdBytes() {
+        return instance.getCommentIdBytes();
+      }
+      /**
+       * <code>string comment_id = 5;</code>
+       * @param value The commentId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setCommentId(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setCommentId(value);
+        return this;
+      }
+      /**
+       * <code>string comment_id = 5;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearCommentId() {
+        copyOnWrite();
+        instance.clearCommentId();
+        return this;
+      }
+      /**
+       * <code>string comment_id = 5;</code>
+       * @param value The bytes for commentId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setCommentIdBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setCommentIdBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string reaction_kind = 6;</code>
+       * @return The reactionKind.
+       */
+      @java.lang.Override
+      public java.lang.String getReactionKind() {
+        return instance.getReactionKind();
+      }
+      /**
+       * <code>string reaction_kind = 6;</code>
+       * @return The bytes for reactionKind.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getReactionKindBytes() {
+        return instance.getReactionKindBytes();
+      }
+      /**
+       * <code>string reaction_kind = 6;</code>
+       * @param value The reactionKind to set.
+       * @return This builder for chaining.
+       */
+      public Builder setReactionKind(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setReactionKind(value);
+        return this;
+      }
+      /**
+       * <code>string reaction_kind = 6;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearReactionKind() {
+        copyOnWrite();
+        instance.clearReactionKind();
+        return this;
+      }
+      /**
+       * <code>string reaction_kind = 6;</code>
+       * @param value The bytes for reactionKind to set.
+       * @return This builder for chaining.
+       */
+      public Builder setReactionKindBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setReactionKindBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>bool removed = 7;</code>
+       * @return The removed.
+       */
+      @java.lang.Override
+      public boolean getRemoved() {
+        return instance.getRemoved();
+      }
+      /**
+       * <code>bool removed = 7;</code>
+       * @param value The removed to set.
+       * @return This builder for chaining.
+       */
+      public Builder setRemoved(boolean value) {
+        copyOnWrite();
+        instance.setRemoved(value);
+        return this;
+      }
+      /**
+       * <code>bool removed = 7;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearRemoved() {
+        copyOnWrite();
+        instance.clearRemoved();
+        return this;
+      }
+
+      /**
+       * <code>string audience = 8;</code>
+       * @return The audience.
+       */
+      @java.lang.Override
+      public java.lang.String getAudience() {
+        return instance.getAudience();
+      }
+      /**
+       * <code>string audience = 8;</code>
+       * @return The bytes for audience.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getAudienceBytes() {
+        return instance.getAudienceBytes();
+      }
+      /**
+       * <code>string audience = 8;</code>
+       * @param value The audience to set.
+       * @return This builder for chaining.
+       */
+      public Builder setAudience(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setAudience(value);
+        return this;
+      }
+      /**
+       * <code>string audience = 8;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearAudience() {
+        copyOnWrite();
+        instance.clearAudience();
+        return this;
+      }
+      /**
+       * <code>string audience = 8;</code>
+       * @param value The bytes for audience to set.
+       * @return This builder for chaining.
+       */
+      public Builder setAudienceBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setAudienceBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>int64 occurred_ts_unix_ms = 9;</code>
+       * @return The occurredTsUnixMs.
+       */
+      @java.lang.Override
+      public long getOccurredTsUnixMs() {
+        return instance.getOccurredTsUnixMs();
+      }
+      /**
+       * <code>int64 occurred_ts_unix_ms = 9;</code>
+       * @param value The occurredTsUnixMs to set.
+       * @return This builder for chaining.
+       */
+      public Builder setOccurredTsUnixMs(long value) {
+        copyOnWrite();
+        instance.setOccurredTsUnixMs(value);
+        return this;
+      }
+      /**
+       * <code>int64 occurred_ts_unix_ms = 9;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearOccurredTsUnixMs() {
+        copyOnWrite();
+        instance.clearOccurredTsUnixMs();
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:peers_touch.model.realtime.v1.MomentEvent)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"ThrowNull"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new peers_touch.model.realtime.v1.Event.MomentEvent();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "kind_",
+              "postId_",
+              "authorActorId_",
+              "actorId_",
+              "commentId_",
+              "reactionKind_",
+              "removed_",
+              "audience_",
+              "occurredTsUnixMs_",
+            };
+            java.lang.String info =
+                "\u0000\t\u0000\u0000\u0001\t\t\u0000\u0000\u0000\u0001\f\u0002\u0208\u0003\u0208" +
+                "\u0004\u0208\u0005\u0208\u0006\u0208\u0007\u0007\b\u0208\t\u0002";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<peers_touch.model.realtime.v1.Event.MomentEvent> parser = PARSER;
+          if (parser == null) {
+            synchronized (peers_touch.model.realtime.v1.Event.MomentEvent.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<peers_touch.model.realtime.v1.Event.MomentEvent>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+        }
+        case GET_MEMOIZED_IS_INITIALIZED: {
+          return (byte) 1;
+        }
+        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
+        // So it can do anything. Combine with default case for smaller codegen.
+        case SET_MEMOIZED_IS_INITIALIZED:
+      }
+      // Should never happen. Generates tight code to throw an exception.
+      throw null;
+    }
+
+
+    // @@protoc_insertion_point(class_scope:peers_touch.model.realtime.v1.MomentEvent)
+    private static final peers_touch.model.realtime.v1.Event.MomentEvent DEFAULT_INSTANCE;
+    static {
+      MomentEvent defaultInstance = new MomentEvent();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        MomentEvent.class, defaultInstance);
+    }
+
+    public static peers_touch.model.realtime.v1.Event.MomentEvent getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<MomentEvent> PARSER;
+
+    public static com.google.protobuf.Parser<MomentEvent> parser() {
       return DEFAULT_INSTANCE.getParserForType();
     }
   }

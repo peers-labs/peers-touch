@@ -7,8 +7,6 @@ use crate::domain::crypto::{identity_keys, signaling_envelope};
 use crate::error::{MobileError, MobileResult};
 use crate::platform::secure_storage::SecureStorage;
 
-const SKDM_ENVELOPE_KIND: &str = "GROUP_SKDM";
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityScopeInput {
@@ -83,11 +81,6 @@ pub fn signaling_envelope_seal(
 ) -> MobileResult<SignalingSealOutput> {
     let scope = validate_identity_scope(input.user_scope, input.actor_did)?;
     let kind = clean_required(input.kind, "kind is required")?;
-    if kind != SKDM_ENVELOPE_KIND {
-        return Err(MobileError::invalid_input(
-            "unsupported signaling envelope kind",
-        ));
-    }
     let session_ulid = clean_required(input.session_ulid, "sessionUlid is required")?;
     let peer_pub = identity_keys::peer_x25519_pub_from_ed25519("peerIkPub", &input.peer_ik_pub)?;
     let local =
@@ -113,11 +106,6 @@ pub fn signaling_envelope_open(
 ) -> MobileResult<SignalingOpenOutput> {
     let scope = validate_identity_scope(input.user_scope, input.actor_did)?;
     let kind = clean_required(input.kind, "kind is required")?;
-    if kind != SKDM_ENVELOPE_KIND {
-        return Err(MobileError::invalid_input(
-            "unsupported signaling envelope kind",
-        ));
-    }
     let session_ulid = clean_required(input.session_ulid, "sessionUlid is required")?;
     let sender_pub =
         identity_keys::peer_x25519_pub_from_ed25519("senderIkPub", &input.sender_ik_pub)?;

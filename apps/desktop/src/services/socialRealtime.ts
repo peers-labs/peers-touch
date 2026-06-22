@@ -1,4 +1,9 @@
 import { fromBinary } from '@bufbuild/protobuf';
+import {
+  socialHostEventReconcileReason,
+  socialHostEventTargetsNotifications,
+  type SocialHostEvent,
+} from '@peers-touch/client-chat-core';
 
 import { EVENT, eventBus } from '../kernel/events';
 import type {
@@ -35,12 +40,14 @@ const TYPING_SWEEP_INTERVAL_MS = 1_500;
 const COLD_SYNC_LIMIT = 50;
 const COLD_SYNC_MAX_PAGES = 2;
 const SOCIAL_RECONCILE_INTERVAL_MS = 30_000;
+const EXTERNAL_HOST_RECONCILE_DEBOUNCE_MS = 1_000;
 const MAX_SEEN_REALTIME_MESSAGES = 500;
 const MAX_SEEN_SOCIAL_NOTIFICATIONS = 500;
 
 let teardownBridge: (() => void) | null = null;
 let typingSweepTimer: number | null = null;
 let socialReconcileTimer: number | null = null;
+let externalHostReconcileTimer: number | null = null;
 let bootstrappedActorId: string | null = null;
 let bootstrapSequence = 0;
 let realtimeStreamActorId: string | null = null;
@@ -112,6 +119,39 @@ export async function refreshSocialProjection(label: string, includeNotification
   });
 
   return socialRefreshInFlight;
+}
+
+export function dispatchSocialRuntimeHostEvent(event: SocialHostEvent): void {
+  if (!currentAuthenticatedActorId()) return;
+
+  const sessionUlid = event.sessionUlid;
+  if (sessionUlid) {
+    runDetached('host targeted message refresh', async () => {
+      const store = useSocialChatStore.getState();
+      const kind = event.target === 'group' || store.groups.some((group) => group.ulid === sessionUlid)
+        ? 'group'
+        : 'friend';
+      await store.loadMessages(sessionUlid, kind);
+    });
+  }
+
+  if (socialHostEventTargetsNotifications(event)) {
+    runDetached('host notification refresh', async () => {
+      const notifications = useNotificationStore.getState();
+      await Promise.allSettled([
+        notifications.loadNotifications(),
+        notifications.refreshUnreadCounts(),
+      ]);
+    });
+  }
+
+  if (externalHostReconcileTimer) return;
+  externalHostReconcileTimer = window.setTimeout(() => {
+    externalHostReconcileTimer = null;
+    runDetached('host social projection refresh', () => (
+      refreshSocialProjection(socialHostEventReconcileReason(event), socialHostEventTargetsNotifications(event))
+    ));
+  }, EXTERNAL_HOST_RECONCILE_DEBOUNCE_MS);
 }
 
 async function bootstrapSocialProjection(actorId: string, sequence: number): Promise<void> {
@@ -526,6 +566,10 @@ export function installSocialRealtimeBridge(): void {
     unsubs.forEach((unsubscribe) => unsubscribe());
     stopTypingSweep();
     stopSocialReconcile();
+    if (externalHostReconcileTimer) {
+      window.clearTimeout(externalHostReconcileTimer);
+      externalHostReconcileTimer = null;
+    }
     teardownBridge = null;
   };
 
