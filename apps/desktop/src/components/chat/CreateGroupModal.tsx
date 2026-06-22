@@ -26,7 +26,7 @@ interface Contact {
 export function CreateGroupModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const { sessions, currentUserDid, loadGroups } = useSocialChatStore();
+  const { sessions, currentUserDid, loadGroups, selectGroup, setActiveTab } = useSocialChatStore();
   const sessionActorId = useSessionStore((s) => s.currentUser?.actorId ?? null);
   const ownDid = currentUserDid || sessionActorId;
 
@@ -92,8 +92,14 @@ export function CreateGroupModal({ open, onClose }: Props) {
         memberDids.length <= 3
           ? memberDids.map((d) => namesByDid.get(d) ?? d.slice(0, 8)).join(', ')
           : t('chat.social.createGroup.defaultName', { count: memberDids.length + 1 });
-      await api.groupChatCreateGroup(groupName, '', memberDids);
+      const resp = await api.groupChatCreateGroup(groupName, '', memberDids);
       await loadGroups();
+      const newGroupUlid = resp?.group?.ulid;
+      if (newGroupUlid) {
+        setActiveTab('group');
+        selectGroup(newGroupUlid);
+      }
+      toast.success(t('chat.social.createGroup.success'));
       handleClose();
     } catch (err) {
       log.error('chat', 'createGroup failed', err);

@@ -485,6 +485,7 @@
   "chat.social.createGroup.cancel": "取消",
   "chat.social.createGroup.finish": "完成",
   "chat.social.createGroup.defaultName": "群聊（{{count}}人）",
+  "chat.social.createGroup.success": "群聊已创建",
   "chat.social.createGroup.failed": "创建群聊失败，请重试",
 
   "chat.social.findPeople.title": "查找用户",

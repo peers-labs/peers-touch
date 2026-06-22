@@ -487,6 +487,7 @@
   "chat.social.createGroup.cancel": "Cancel",
   "chat.social.createGroup.finish": "Finish",
   "chat.social.createGroup.defaultName": "Group ({{count}})",
+  "chat.social.createGroup.success": "Group created",
   "chat.social.createGroup.failed": "Failed to create group. Please try again.",
 
   "chat.social.findPeople.title": "Find People",
