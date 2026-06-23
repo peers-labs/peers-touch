@@ -141,8 +141,8 @@ func (s *service) CreateGroup(ownerDID, name, description string) domain.Group {
 	}
 }
 
-func (s *service) ListGroups() []domain.Group {
-	items := s.listGroups()
+func (s *service) ListGroups(actorDID string) []domain.Group {
+	items := s.listGroups(actorDID)
 	out := make([]domain.Group, 0, len(items))
 	for _, item := range items {
 		out = append(out, domain.Group{
@@ -749,10 +749,14 @@ func (s *service) createGroup(ownerDID, name, description string) *group {
 	return item
 }
 
-func (s *service) listGroups() []group {
+func (s *service) listGroups(actorDID string) []group {
 	if s.db != nil {
 		var rows []groupModel
-		if err := s.db.Order("updated_at DESC").Find(&rows).Error; err == nil {
+		if err := s.db.
+			Joins("JOIN group_chat_members ON group_chat_members.group_ulid = group_chat_groups.ulid").
+			Where("group_chat_members.actor_did = ?", actorDID).
+			Order("group_chat_groups.updated_at DESC").
+			Find(&rows).Error; err == nil {
 			out := make([]group, 0, len(rows))
 			for _, row := range rows {
 				out = append(out, group{
@@ -770,8 +774,15 @@ func (s *service) listGroups() []group {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]group, 0, len(s.groups))
+	out := make([]group, 0)
 	for _, item := range s.groups {
+		members, ok := s.members[item.ID]
+		if !ok {
+			continue
+		}
+		if _, isMember := members[actorDID]; !isMember {
+			continue
+		}
 		out = append(out, *item)
 	}
 	sort.Slice(out, func(i, j int) bool {
