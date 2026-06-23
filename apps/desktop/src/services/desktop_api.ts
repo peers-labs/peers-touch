@@ -4372,8 +4372,13 @@ export const api = {
   groupChatGetGroup: (groupUlid: string) =>
     invokeRustProto('group_chat_get_group', GetGroupResponseSchema, { group_ulid: groupUlid }),
 
-  groupChatUpdateGroup: (groupUlid: string, name: string, description?: string) =>
-    invokeRustProto('group_chat_update_group', UpdateGroupResponseSchema, { group_ulid: groupUlid, name, description }),
+  groupChatUpdateGroup: (groupUlid: string, name?: string, description?: string, avatarCid?: string) =>
+    invokeRustProto('group_chat_update_group', UpdateGroupResponseSchema, {
+      group_ulid: groupUlid,
+      name,
+      description,
+      avatar_cid: avatarCid,
+    }),
 
   groupChatInviteToGroup: (groupUlid: string, memberDids: string[]) =>
     invokeRustProto('group_chat_invite_to_group', InviteToGroupResponseSchema, { group_ulid: groupUlid, member_dids: memberDids }),
