@@ -23,12 +23,27 @@ import {
 } from 'lucide-react';
 import {
   friendChatP2p,
+  type CallEndReason,
   type CallSnapshot,
 } from '../../modules/p2p/friendChatP2p';
 import { log } from '../../utils/logger';
 import { toast } from '@lobehub/ui';
 
 const { Text, Title } = Typography;
+
+/** Map a terminal call result onto a localized, user-explainable
+ *  message key. Phase 1 acceptance (voice-video-calls.md §11) requires
+ *  rejected / missed / canceled / permission-denied / network-failed to
+ *  be visually distinct; a normal hangup needs no toast. */
+const END_REASON_KEY: Record<CallEndReason, string | null> = {
+  hangup: null,
+  rejected: 'chat.social.call.resultRejected',
+  'no-answer': 'chat.social.call.resultNoAnswer',
+  busy: 'chat.social.call.resultBusy',
+  canceled: null,
+  'media-failed': 'chat.social.call.resultMediaFailed',
+  'network-failed': 'chat.social.call.resultNetworkFailed',
+};
 
 interface ActivePeer {
   myDid: string;
@@ -61,6 +76,13 @@ export function CallSurface() {
   useEffect(() => {
     friendChatP2p.setOnCall((myDid, peerDid, snapshot) => {
       if (snapshot.state === 'idle' || snapshot.state === 'ended') {
+        // Surface a distinct, localized result for non-trivial endings
+        // (declined / missed / busy / permission / network). A clean
+        // hangup or self-cancel needs no toast.
+        if (snapshot.state === 'ended' && snapshot.endReason) {
+          const key = END_REASON_KEY[snapshot.endReason];
+          if (key) toast.error(t(key));
+        }
         setActive((cur) => (cur && cur.peerDid === peerDid ? null : cur));
         return;
       }
@@ -69,7 +91,7 @@ export function CallSurface() {
     return () => {
       friendChatP2p.setOnCall(null);
     };
-  }, []);
+  }, [t]);
 
   // Tick clock for the in-call duration label. Cheap (1Hz).
   useEffect(() => {
