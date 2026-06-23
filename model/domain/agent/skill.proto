@@ -21,6 +21,7 @@ message SkillManifest {
   int32 version = 12;
   google.protobuf.Timestamp created_at = 13;
   google.protobuf.Timestamp updated_at = 14;
+  bool enabled = 15;
 }
 
 message SkillConditions {
@@ -82,6 +83,30 @@ message InstallSkillResponse {
   string verdict = 2;
   SkillScanResult scan_result = 3;
   bool installed = 4;
+}
+
+message UpdateSkillRequest {
+  string agent_id = 1;
+  string skill_id = 2;
+  optional string name = 3;
+  optional string description = 4;
+  optional string content = 5;
+  optional bool enabled = 6;
+}
+
+message UpdateSkillResponse {
+  SkillManifest skill = 1;
+  SkillScanResult scan_result = 2;
+  bool success = 3;
+}
+
+message DeleteSkillRequest {
+  string agent_id = 1;
+  string skill_id = 2;
+}
+
+message DeleteSkillResponse {
+  bool success = 1;
 }
 
 message PatchSkillRequest {
