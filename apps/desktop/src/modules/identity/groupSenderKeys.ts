@@ -403,8 +403,10 @@ export async function ensureSkdmDistributed(
     }
   }
 
-  if (work.length === 0) return;
-
+  // Always ensure the local sender chain exists — this is idempotent and
+  // must happen regardless of whether there are reachable peer devices to
+  // distribute the SKDM to. Without this, `encryptBytesForGroup` will throw
+  // NotFound because no local chain has been minted.
   let skdmBytesB64: string;
   try {
     const r = await api.cryptoGroupSkEmitSkdm(groupUlid);
@@ -413,6 +415,10 @@ export async function ensureSkdmDistributed(
     log.error('groupSenderKeys', 'cryptoGroupSkEmitSkdm failed', err);
     throw err;
   }
+
+  // No reachable peer devices — chain is minted so encryption will work,
+  // but there is nobody to distribute the SKDM to right now.
+  if (work.length === 0) return;
 
   for (const w of work) {
     const ok = await dispatchSkdmToPeerIk(actorId, w.peerDid, w.ikPub, skdmBytesB64);
