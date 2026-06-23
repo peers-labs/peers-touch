@@ -172,6 +172,7 @@ Pick one based on intent:
 - [`playbooks/adding-federation-broadcast-topic.md`](playbooks/adding-federation-broadcast-topic.md) — full path for a new relay-mediated broadcast topic.
 - [`playbooks/ux-case-to-contract.md`](playbooks/ux-case-to-contract.md) — promote concrete UX examples into reusable contracts, platform refinements, invariants, and acceptance matrices.
 - [`playbooks/adding-an-access-gate.md`](playbooks/adding-an-access-gate.md) — proto → Station gatekeeper → Dashboard → Desktop/Mobile renderer for a new access gate.
+- [`playbooks/documenting-large-requirements.md`](playbooks/documenting-large-requirements.md) — required path for module-level demands, architecture work, and large cross-layer feature rebuilds.
 
 ### Reference
 

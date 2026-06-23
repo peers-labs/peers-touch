@@ -1,4 +1,4 @@
-// prompt_assembly_service.go — System Prompt 8-layer assembly service.
+// prompt_assembly_service.go — System Prompt layered assembly service.
 // Created: 2026-04-11 — initial implementation of the 6-layer prompt assembly pipeline.
 // 2026-04-11 — Phase 6: added InjectedTokens and CacheBreakpoints to
 //
@@ -8,6 +8,14 @@
 //
 //	and L8 Platform Hints. Renumbered old L6 Timestamp to L7. Assembly now
 //	composes eight ordered layers per architecture spec §3.2.
+//
+// 2026-06-17 — Agent rebuild P0-1: added local_mcp guidance so Station can
+//
+//	request Desktop-local MCP execution through the local tool bridge.
+//
+// 2026-06-17 — Agent rebuild P1-5: added Desktop-local builtin tool guidance
+//
+//	for schema-first file, clipboard, and safe workspace operations.
 package service
 
 import (
@@ -39,6 +47,17 @@ Before replying, scan the skills below. If one clearly matches your task,
 load it with skill_view(name) and follow its instructions.
 If a skill has issues, fix it with skill_manage(action='patch').`
 
+const localMCPGuidance = `## Local MCP Tools
+Use local_mcp only when a capability must run on the user's Desktop runtime.
+Arguments: server_name, tool_name, arguments. The Desktop local executor returns
+the tool result to this same turn before you continue.`
+
+const localBuiltinGuidance = `## Desktop-local Builtin Tools
+Use local_file_read, local_workspace_list, local_clipboard_read,
+local_clipboard_write, and local_shell_safe only for user-approved Desktop local
+operations. These tools execute in Desktop Rust through the local tool bridge;
+Station remains the turn owner and waits for the result before continuing.`
+
 // contextFileNames lists the files to scan for external knowledge injection,
 // in priority order (first match wins). Per architecture spec §3.2 Layer 6.
 var contextFileNames = []string{
@@ -67,25 +86,28 @@ type PromptAssemblyResult struct {
 	SkillIndexHash     string
 	SkillCount         int
 	InjectedTokens     int
+	KnowledgeChunks    []domain.KnowledgeChunkReference
 }
 
 type PromptAssemblyService struct {
-	memoryService *MemoryService
-	skillService  *SkillService
+	memoryService      *MemoryService
+	skillService       *SkillService
+	knowledgeRetrieval *KnowledgeRetrievalService
 }
 
 func NewPromptAssemblyService(memSvc *MemoryService, skillSvc *SkillService) *PromptAssemblyService {
 	return &PromptAssemblyService{
-		memoryService: memSvc,
-		skillService:  skillSvc,
+		memoryService:      memSvc,
+		skillService:       skillSvc,
+		knowledgeRetrieval: NewKnowledgeRetrievalService(),
 	}
 }
 
-// Assemble builds the final system prompt by composing eight ordered layers:
+// Assemble builds the final system prompt by composing ordered layers:
 //
-//	L1 Identity → L2 Behavioral Guidance → L3 Memory Snapshot →
-//	L4 Skills Index → L5 Agent Config Prompt → L6 Context Files →
-//	L7 Timestamp → L8 Platform Hints
+//		L1 Identity → L2 Behavioral Guidance → L3 Memory Snapshot →
+//	     L4 Skills Index → L5 Agent Config Prompt → L6 Agent Knowledge →
+//	     L7 Context Files → L8 Timestamp → L9 Platform Hints
 func (s *PromptAssemblyService) Assemble(
 	ctx context.Context,
 	agentID string,
@@ -95,6 +117,7 @@ func (s *PromptAssemblyService) Assemble(
 	availableTools []string,
 	workspaceRoot string,
 	userInput string,
+	knowledgeResources []domain.KnowledgeResource,
 ) (*PromptAssemblyResult, error) {
 
 	var layers []string
@@ -131,17 +154,29 @@ func (s *PromptAssemblyService) Assemble(
 		layers = append(layers, agentConfigPrompt)
 	}
 
-	// L6 — Context Files (.hermes.md / AGENTS.md / CLAUDE.md / .cursorrules)
+	// L6 — Agent Knowledge Resources
+	var knowledgeChunks []domain.KnowledgeChunkReference
+	if len(knowledgeResources) > 0 && s.knowledgeRetrieval != nil {
+		retrievalResult, retrievalErr := s.knowledgeRetrieval.Retrieve(ctx, knowledgeResources, userInput)
+		if retrievalErr != nil {
+			logger.Warnf(ctx, "prompt assembly: knowledge retrieval failed for agent %s: %v", agentID, retrievalErr)
+		} else if retrievalResult.PromptBlock != "" {
+			layers = append(layers, retrievalResult.PromptBlock)
+			knowledgeChunks = retrievalResult.Chunks
+		}
+	}
+
+	// L7 — Context Files (.hermes.md / AGENTS.md / CLAUDE.md / .cursorrules)
 	if workspaceRoot != "" {
 		if ctxFileBlock := s.loadContextFile(ctx, workspaceRoot); ctxFileBlock != "" {
 			layers = append(layers, ctxFileBlock)
 		}
 	}
 
-	// L7 — Timestamp + Model Info
+	// L8 — Timestamp + Model Info
 	layers = append(layers, fmt.Sprintf("Current time: %s", time.Now().UTC().Format(time.RFC3339)))
 
-	// L8 — Platform Hints
+	// L9 — Platform Hints
 	if hint, ok := platformHints[platform]; ok {
 		layers = append(layers, hint)
 	}
@@ -157,6 +192,7 @@ func (s *PromptAssemblyService) Assemble(
 		SkillIndexHash:     sha256Hex(skillIndex),
 		SkillCount:         skillCount,
 		InjectedTokens:     len(systemPrompt) / 4,
+		KnowledgeChunks:    knowledgeChunks,
 	}, nil
 }
 
@@ -170,6 +206,20 @@ func (s *PromptAssemblyService) buildGuidanceLayer(availableTools []string) stri
 
 	if hasToolAvailable(availableTools, "skill_view") || hasToolAvailable(availableTools, "skill_manage") {
 		parts = append(parts, skillsGuidance)
+	}
+
+	if hasToolAvailable(availableTools, "local_mcp") {
+		parts = append(parts, localMCPGuidance)
+	}
+
+	if hasAnyToolAvailable(availableTools,
+		"local_file_read",
+		"local_workspace_list",
+		"local_clipboard_read",
+		"local_clipboard_write",
+		"local_shell_safe",
+	) {
+		parts = append(parts, localBuiltinGuidance)
 	}
 
 	return strings.Join(parts, "\n\n")
@@ -230,6 +280,15 @@ func sha256Hex(data string) string {
 func hasToolAvailable(tools []string, name string) bool {
 	for _, t := range tools {
 		if t == name {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAnyToolAvailable(tools []string, names ...string) bool {
+	for _, name := range names {
+		if hasToolAvailable(tools, name) {
 			return true
 		}
 	}

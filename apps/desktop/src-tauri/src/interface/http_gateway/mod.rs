@@ -23,6 +23,7 @@ use crate::state::AppState;
 // -------------------------------------------------------------------------
 use crate::application::account as app_account;
 use crate::application::admin as app_admin;
+use crate::application::agent_turn as app_agent_turn;
 use crate::application::agents as app_agents;
 use crate::application::applets as app_applets;
 use crate::application::auth::service as app_auth;
@@ -1839,6 +1840,22 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         // Agents (no state)
         // =================================================================
         "agents_list" => to_json(app_agents::agents_list("")),
+        "agents_get_selected" => to_json(app_agents::agents_get_selected("")),
+        "agents_set_selected" => {
+            let input = match parse_args::<AgentSelectInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_agents::agents_set_selected("", input))
+        }
+        "agents_get_default" => to_json(app_agents::agents_get_default("")),
+        "agents_set_default" => {
+            let input = match parse_args::<AgentIdInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_agents::agents_set_default("", input))
+        }
         "agents_get" => {
             let input = match parse_args::<AgentIdInput>(args) {
                 Ok(v) => v,
@@ -1874,6 +1891,20 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             };
             to_json(app_agents::agents_duplicate("", input))
         }
+        "agents_export_package" => {
+            let input = match parse_args::<AgentPackageExportInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_agents::agents_export_package("", input))
+        }
+        "agents_import_package" => {
+            let input = match parse_args::<AgentPackageImportInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_agents::agents_import_package("", input))
+        }
         "agents_search" => {
             let input = match parse_args::<AgentSearchInput>(args) {
                 Ok(v) => v,
@@ -1887,6 +1918,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Err(e) => return e,
             };
             to_json(app_agents::agents_list_sessions("", input))
+        }
+        "agent_resolve_local_tool_request" => {
+            let input = match parse_args::<AgentLocalToolRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_agent_turn::agent_resolve_local_tool_request(input))
         }
 
         // =================================================================
@@ -2045,21 +2083,42 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills::skills_list(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills::skills_list(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "skills_search" => {
             let input = match parse_args::<SkillsSearchInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills::skills_search(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills::skills_search(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "skills_get" => {
             let input = match parse_args::<SkillIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills::skills_get(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills::skills_get(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "skills_get_builtin" => {
             let input = match parse_args::<BuiltinSkillIdInput>(args) {
@@ -2073,28 +2132,84 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills::skills_create(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills::skills_create(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "skills_update" => {
             let input = match parse_args::<SkillUpdateInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills::skills_update(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills::skills_update(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "skills_delete" => {
             let input = match parse_args::<SkillIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills::skills_delete(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills::skills_delete(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "skills_toggle" => {
             let input = match parse_args::<SkillToggleInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills::skills_toggle(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills::skills_toggle(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "skills_versions" => {
+            let input = match parse_args::<SkillVersionsInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills::skills_versions(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "skills_rollback" => {
+            let input = match parse_args::<SkillRollbackInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills::skills_rollback(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
 
         // =================================================================
@@ -2105,14 +2220,49 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills_market::skills_import_url(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills_market::skills_import_url(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "skills_import_github" => {
             let input = match parse_args::<SkillImportGitHubInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills_market::skills_import_github(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills_market::skills_import_github(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "skills_import_zip" => {
+            let input = match parse_args::<SkillImportZipInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills_market::skills_import_zip(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "skills_validate_zip" => {
+            let input = match parse_args::<SkillImportZipInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_skills_market::skills_validate_zip(input))
         }
         "skills_market_dir" => to_json(app_skills_market::skills_market_dir()),
         "skills_market_open_dir" => to_json(app_skills_market::skills_market_open_dir()),
@@ -2157,7 +2307,38 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills_market::skills_market_install(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => {
+                    let actor_id = actor_id_from_state(state).unwrap_or_default();
+                    to_json(app_skills_market::skills_market_install(
+                        &actor_id, input, &token,
+                    ))
+                }
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "skills_market_uninstall" => {
+            let input = match parse_args::<SkillMarketDetailInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_bearer_token(state) {
+                Some(token) => {
+                    let actor_id = actor_id_from_state(state).unwrap_or_default();
+                    to_json(app_skills_market::skills_market_uninstall(
+                        &actor_id, input, &token,
+                    ))
+                }
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
 
         // =================================================================
@@ -2385,6 +2566,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Err(e) => return e,
             };
             to_json(app_mcp::mcp_test_server(input))
+        }
+        "mcp_execute_tool" => {
+            let input = match parse_args::<McpExecuteToolInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_mcp::mcp_execute_tool(input))
         }
 
         // =================================================================

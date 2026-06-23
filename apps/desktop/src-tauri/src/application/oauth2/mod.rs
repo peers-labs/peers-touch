@@ -10,8 +10,9 @@ use crate::infrastructure::session_vault;
 use crate::infrastructure::station_client;
 use crate::infrastructure::storage::{self, StorageKind};
 use crate::model::oauth::{OAuthBridgeRequest, OAuthBridgeResponse};
+use crate::application::security::redact_json_value;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
@@ -503,6 +504,100 @@ fn mask_secret(secret: &str) -> String {
     format!("{head}***{}", &tail[tail.len().saturating_sub(3)..])
 }
 
+fn safe_connection_json(conn: &OAuthConnectionState) -> Value {
+    json!({
+        "provider_id": conn.provider_id,
+        "provider_name": conn.provider_name,
+        "user_id": conn.user_id,
+        "user_name": conn.user_name,
+        "email": conn.email,
+        "avatar_url": conn.avatar_url,
+        "profile_url": conn.profile_url,
+        "connected_at": conn.connected_at,
+        "expires_at": conn.expires_at,
+        "scopes": conn.scopes,
+        "status": conn.status,
+    })
+}
+
+fn required_arg_string(arguments: &Value, key: &str) -> Result<String, String> {
+    arguments
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| format!("{key} is required"))
+}
+
+pub fn execute_oauth_connector_tool(
+    arguments: &Value,
+    call_id: Option<&str>,
+) -> Result<Value, String> {
+    let resource = required_arg_string(arguments, "resource")?;
+    let params = arguments
+        .get("params")
+        .map(redact_json_value)
+        .unwrap_or_else(|| json!({}));
+    let connections = read_connections().map_err(|error| {
+        error
+            .error
+            .map(|err| err.message)
+            .unwrap_or_else(|| "failed to read OAuth connections".to_string())
+    })?;
+
+    let output = match resource.as_str() {
+        "connections.list" => {
+            let items = connections
+                .values()
+                .filter(|conn| conn.status == "active")
+                .map(safe_connection_json)
+                .collect::<Vec<_>>();
+            json!({
+                "resource": resource,
+                "connections": items,
+            })
+        }
+        "connection.status" | "connection.profile" => {
+            let provider_id = required_arg_string(arguments, "provider_id")?;
+            let conn = connections
+                .get(&provider_id)
+                .ok_or_else(|| format!("OAuth connection not found for provider: {provider_id}"))?;
+            if conn.status != "active" {
+                return Err(format!(
+                    "OAuth connection is not active for provider: {provider_id}"
+                ));
+            }
+            json!({
+                "resource": resource,
+                "connection": safe_connection_json(conn),
+            })
+        }
+        other => {
+            return Err(format!(
+                "unsupported OAuth connector resource: {other}; supported resources are connections.list, connection.status, connection.profile"
+            ));
+        }
+    };
+
+    Ok(json!({
+        "ok": true,
+        "toolName": "oauth_connector_call",
+        "callId": call_id.unwrap_or_default(),
+        "arguments": redact_json_value(arguments),
+        "output": output,
+        "params": params,
+        "audit": {
+            "source": "builtin",
+            "toolName": "oauth_connector_call",
+            "executionOwner": "desktop-rust",
+            "approvalRequired": true,
+            "secrets": "redacted",
+            "executedAt": unix_to_rfc3339(chrono_like_now_unix())
+        }
+    }))
+}
+
 pub fn oauth2_list_providers() -> AppResult<StubPayload> {
     let connections = try_cmd!(read_connections());
     let mut out = Vec::new();
@@ -927,14 +1022,18 @@ pub fn oauth2_call_resource(input: OAuthResourceInput) -> AppResult<StubPayload>
     if input.resource.trim().is_empty() {
         return invalid_argument("resource is required");
     }
-    success_payload(
-        "oauth2_call_resource",
-        json!({
-            "ok":true,
-            "resource":input.resource,
-            "data":input.params.unwrap_or_else(|| json!({}))
+    let result = match execute_oauth_connector_tool(
+        &json!({
+            "provider_id": input.id.trim(),
+            "resource": input.resource.trim(),
+            "params": input.params.unwrap_or_else(|| json!({}))
         }),
-    )
+        None,
+    ) {
+        Ok(result) => result,
+        Err(error) => return internal_error(error),
+    };
+    success_payload("oauth2_call_resource", result)
 }
 
 pub fn oauth2_reload() -> AppResult<StubPayload> {
@@ -974,4 +1073,72 @@ pub fn oauth2_get_page(input: OAuthIdInput) -> AppResult<StubPayload> {
             "has_credentials": yaml_has_conf && !client_id.is_empty()
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn oauth_connector_redacts_secret_like_arguments_bits_ut() {
+        let redacted = redact_json_value(&json!({
+            "provider_id": "github",
+            "resource": "connection.profile",
+            "params": {
+                "access_token": "gho_raw_token",
+                "nested": {
+                    "client_secret": "raw-secret",
+                    "query": "safe"
+                }
+            }
+        }));
+
+        assert_eq!(
+            redacted
+                .get("params")
+                .and_then(|params| params.get("access_token"))
+                .and_then(Value::as_str),
+            Some("[redacted]")
+        );
+        assert_eq!(
+            redacted
+                .get("params")
+                .and_then(|params| params.get("nested"))
+                .and_then(|nested| nested.get("client_secret"))
+                .and_then(Value::as_str),
+            Some("[redacted]")
+        );
+        assert_eq!(
+            redacted
+                .get("params")
+                .and_then(|params| params.get("nested"))
+                .and_then(|nested| nested.get("query"))
+                .and_then(Value::as_str),
+            Some("safe")
+        );
+    }
+
+    #[test]
+    fn oauth_connector_safe_connection_has_no_token_fields_bits_ut() {
+        let conn = OAuthConnectionState {
+            provider_id: "github".to_string(),
+            provider_name: "GitHub".to_string(),
+            user_id: "u1".to_string(),
+            user_name: "octo".to_string(),
+            email: "octo@example.test".to_string(),
+            avatar_url: String::new(),
+            profile_url: "https://example.test/octo".to_string(),
+            connected_at: "2026-06-17T00:00:00Z".to_string(),
+            expires_at: Some("2026-06-17T01:00:00Z".to_string()),
+            scopes: vec!["read:user".to_string()],
+            status: "active".to_string(),
+        };
+
+        let serialized = safe_connection_json(&conn).to_string();
+
+        assert!(serialized.contains("github"));
+        assert!(!serialized.contains("access_token"));
+        assert!(!serialized.contains("refresh_token"));
+        assert!(!serialized.contains("client_secret"));
+    }
 }

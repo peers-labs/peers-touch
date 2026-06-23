@@ -126,6 +126,7 @@
   "settings.tools.setPrimarySuccess": "首选搜索引擎已设为 {{name}}",
   "settings.tools.clearPrimarySuccess": "已清除首选搜索引擎（自动检测）",
   "settings.tools.setPrimaryFailed": "更新失败",
+  "settings.tools.operationFailed": "工具设置操作失败",
   "settings.tools.toolsTitle": "工具（{{count}}）",
   "settings.tools.columnName": "名称",
   "settings.tools.columnCategory": "分类",

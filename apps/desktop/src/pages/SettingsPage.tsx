@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Tag, Table, Input, Typography, Collapse, Spin, message, theme, Modal } from 'antd';
+import { Alert, Tag, Table, Input, Typography, Collapse, Spin, message, theme, Modal } from 'antd';
 import type { InputRef } from 'antd';
 import { Button } from '@lobehub/ui';
 import {
@@ -1343,6 +1343,7 @@ function ToolsTab() {
   // time the user clicks the Tools tab the cache is typically warm and
   // the panel paints synchronously.
   const tools = useSettingsStore((s) => s.tools);
+  const error = useSettingsStore((s) => s.error);
   const loadTools = useSettingsStore((s) => s.loadTools);
   const { token } = theme.useToken();
   const { t } = useTranslation('settings');
@@ -1464,6 +1465,15 @@ function ToolsTab() {
         icon={<Wrench size={18} />}
         title={t('settings.tools.toolsTitle', { count: tools.length })}
       >
+        {error && (
+          <Alert
+            type="error"
+            showIcon
+            message={t('settings.tools.operationFailed')}
+            description={error}
+            style={{ marginBottom: 12 }}
+          />
+        )}
         <Table
           dataSource={tools}
           columns={toolColumns}
