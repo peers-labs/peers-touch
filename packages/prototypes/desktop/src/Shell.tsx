@@ -322,11 +322,24 @@ function CommandPalette({
   );
 }
 
-export function DesktopShell() {
+/**
+ * Optional overrides so sibling prototypes can reuse this container shell as a
+ * host and mount their own block into a kernel page, instead of building a
+ * parallel chrome. This mirrors how atelier is reused via `workspace:*`:
+ *   - `pages` maps a kernel page id (e.g. `chat`) to a full-bleed renderer;
+ *     unmapped ids fall back to the thin `PagePlaceholder`.
+ *   - `initialPage` selects the landing surface.
+ */
+export interface DesktopShellProps {
+  pages?: Record<string, () => React.ReactNode>;
+  initialPage?: string;
+}
+
+export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   // page mirrors the real router: kernel ids (search/chat/agent/notes/settings)
   // or `applet:<id>` for an applet surface. Default lands on the atelier applet
   // to show the container → applet relationship.
-  const [page, setPage] = useState('applet:atelier');
+  const [page, setPage] = useState(initialPage ?? 'applet:atelier');
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   const navigate = (p: string) => setPage(p);
@@ -349,6 +362,18 @@ export function DesktopShell() {
     ? APPLETS.find((a) => `applet:${a.id}` === page)
     : undefined;
 
+  // Resolve the content body: applet surface > injected kernel page > thin
+  // placeholder. Injected pages let a sibling prototype (e.g. call) mount its
+  // own block into a real kernel page without re-building the chrome.
+  let body: React.ReactNode;
+  if (applet) {
+    body = applet.render();
+  } else if (pages && pages[page]) {
+    body = pages[page]!();
+  } else {
+    body = <PagePlaceholder page={page} />;
+  }
+
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', backgroundColor: T.bg }}>
       <SideNav
@@ -358,7 +383,7 @@ export function DesktopShell() {
         paletteOpen={paletteOpen}
       />
       <div style={{ flex: 1, minWidth: 0, position: 'relative', overflow: 'hidden' }}>
-        {applet ? applet.render() : <PagePlaceholder page={page} />}
+        {body}
       </div>
       <CommandPalette
         open={paletteOpen}
