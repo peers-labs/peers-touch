@@ -222,6 +222,9 @@ export interface CallMediaDevices {
  *   - `canceled`      — the caller canceled their own outgoing ring.
  *   - `media-failed`  — local mic/camera permission or capture failed.
  *   - `network-failed`— the WebRTC connection failed irrecoverably.
+ *   - `handled-elsewhere` — a sibling device of ours answered or declined
+ *                     the same ringing call, so this device silently
+ *                     stops ringing (multi-device convergence, §11).
  */
 export type CallEndReason =
   | 'hangup'
@@ -230,7 +233,8 @@ export type CallEndReason =
   | 'busy'
   | 'canceled'
   | 'media-failed'
-  | 'network-failed';
+  | 'network-failed'
+  | 'handled-elsewhere';
 
 /** Unanswered outgoing/incoming calls auto-terminate after this many ms.
  *  Matches the industry-common 45s ring window (voice-video-calls.md §14). */
@@ -242,6 +246,28 @@ const RING_TIMEOUT_MS = 45_000;
  *  cellular handover without leaving a frozen HUD forever
  *  (voice-video-calls.md §6.5). */
 const RECONNECT_TIMEOUT_MS = 20_000;
+
+/** How often we poll `getStats()` for live call-quality metrics while a
+ *  call is active. 2s is frequent enough to reflect a degrading link
+ *  without flooding the main thread with stats traversals. */
+const QUALITY_PROBE_INTERVAL_MS = 2_000;
+
+/** Coarse, user-facing connection-quality grade derived from packet loss
+ *  and round-trip time. Deliberately a small enum — the HUD shows a
+ *  bars-style indicator, not raw numbers, and we never surface SDP /
+ *  candidate addresses (voice-video-calls.md §10). */
+export type CallQualityLevel = 'good' | 'fair' | 'poor';
+
+/** Diagnostics for an active call, refreshed on the quality probe tick.
+ *  All fields are derived aggregate metrics — none reveal SDP, candidate
+ *  addresses, tokens, or PII (voice-video-calls.md §10, §11). */
+export interface CallQuality {
+  level: CallQualityLevel;
+  /** Smoothed round-trip time in milliseconds, if the browser reports it. */
+  rttMs?: number;
+  /** Inbound packet-loss fraction in [0, 1] over the call so far. */
+  packetLoss?: number;
+}
 
 /** LocalStorage keys for the last device the user picked. We persist the
  *  preference so the next call reuses the same mic/camera instead of
@@ -838,11 +864,26 @@ class FriendChatP2pManager {
       return;
     }
     if (fromActorId === conn.myDid) {
-      // Multi-device echo: Station fans out to both recipient and
-      // sender for chat-message receipts so the sender's *other*
-      // devices stay in sync, but for signaling we drop it because
-      // we already have local descriptions / candidates from the
-      // RTCPeerConnection that produced the outbound signal.
+      // Multi-device echo of our own outbound signal. Station fans out
+      // every signal to the sender's *other* devices too, but those
+      // devices cannot decrypt the payload — the sealed envelope is
+      // addressed to the peer's identity key, not ours. The envelope
+      // metadata (`kind`, `sessionUlid`) is plaintext, though, which is
+      // exactly enough to converge a multi-device ring without ever
+      // touching the ciphertext.
+      //
+      // If *this* device is ringing an incoming call and a sibling
+      // device just sent a CALL_ACCEPT or CALL_REJECT for the same
+      // session, the call has been handled elsewhere — stop ringing
+      // here so the user isn't pestered on every device
+      // (voice-video-calls.md §11 multi-device ringing resolution).
+      if (conn.call.state === 'incoming' && (kind === 'CALL_ACCEPT' || kind === 'CALL_REJECT')) {
+        this.teardownCallLocal(conn, 'handled-elsewhere');
+        return;
+      }
+      // For media signals (OFFER / ANSWER / CANDIDATE) we already hold
+      // the authoritative local descriptions from the RTCPeerConnection
+      // that produced the outbound signal, so the echo is redundant.
       return;
     }
 
