@@ -10,7 +10,7 @@ import (
 
 type Repository interface {
 	CreateGroup(ownerDID, name, description string) domain.Group
-	ListGroups() []domain.Group
+	ListGroups(actorDID string) []domain.Group
 	SendMessage(groupID, senderDID string, messageType int32, content, replyToID, threadRootID string, attachments []domain.Attachment, encryptedPayload []byte) domain.Message
 	ListMessages(groupID, beforeUlid string, limit int) ([]domain.Message, error)
 	ListThreadMessages(groupID, rootUlid, afterUlid string, limit int) ([]domain.Message, error)
@@ -98,8 +98,8 @@ func (s *Service) CreateGroup(ownerDID, name, description string) domain.Group {
 	return s.repo.CreateGroup(ownerDID, name, description)
 }
 
-func (s *Service) ListGroups() []domain.Group {
-	return s.repo.ListGroups()
+func (s *Service) ListGroups(actorDID string) []domain.Group {
+	return s.repo.ListGroups(actorDID)
 }
 
 func (s *Service) SendMessage(groupID, senderDID string, messageType int32, content, replyToID, threadRootID string, attachments []domain.Attachment, encryptedPayload []byte) domain.Message {
