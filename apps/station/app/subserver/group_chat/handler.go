@@ -179,7 +179,7 @@ func (s *subServer) handleList(ctx context.Context, req *chat.ListGroupsRequest)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	items := s.appService.ListGroups()
+	items := s.appService.ListGroups(subject.ID)
 	limit := int(req.Limit)
 	if limit <= 0 || limit > 100 {
 		limit = 50
