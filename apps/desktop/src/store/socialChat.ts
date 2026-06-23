@@ -1742,7 +1742,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         createEncryptedChatPayloadBytes(content, attachments ?? [], type),
       );
       const threadRootUlid = explicitThreadRootUlid;
-      await api.groupChatSendMessage(
+      const sentResponse = await api.groupChatSendMessage(
         groupUlid,
         '',
         type,
@@ -1753,6 +1753,14 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         encryptedPayloadB64,
         threadRootUlid,
       );
+      if (sentResponse.message?.ulid) {
+        setDecryptCache(sentResponse.message.ulid, {
+          content,
+          type: type ?? sentResponse.message.type,
+          attachments: attachments ?? [],
+          cachedAt: Date.now(),
+        });
+      }
       if (threadRootUlid) return;
       await get().loadMessages(groupUlid, 'group').catch((error) => {
         log.warn('socialChat', 'sendGroupMessage: post-send message refresh failed', error);
@@ -2318,11 +2326,14 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
 
   updateConversationLocalState: async (kind, ulid, patch) => {
     const key = conversationKey(kind, ulid);
+    const remotePatch = localStatePatchToRemote(patch);
     try {
-      if (kind === 'friend') {
-        await api.friendChatUpdateSettings(ulid, localStatePatchToRemote(patch));
-      } else {
-        await api.groupChatUpdateSettings(ulid, localStatePatchToRemote(patch));
+      if (Object.keys(remotePatch).length > 0) {
+        if (kind === 'friend') {
+          await api.friendChatUpdateSettings(ulid, remotePatch);
+        } else {
+          await api.groupChatUpdateSettings(ulid, remotePatch);
+        }
       }
     } catch (error) {
       log.error('socialChat', 'update conversation settings failed', { kind, ulid, error });

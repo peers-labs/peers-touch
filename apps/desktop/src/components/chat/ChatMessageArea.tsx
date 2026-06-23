@@ -34,10 +34,19 @@ import {
   ChatMessageTimeline,
   loadedThreadReplyCount,
 } from './message/ChatMessageTimeline';
+import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 
 const { Text } = Typography;
 
-function chatBackgroundCss(background: string | undefined, layoutColor: string, containerColor: string): string {
+function chatBackgroundCss(
+  background: string | undefined,
+  layoutColor: string,
+  containerColor: string,
+  imageUrl?: string,
+): string {
+  if (imageUrl) {
+    return `linear-gradient(rgba(255,255,255,0.72), rgba(255,255,255,0.72)), url("${imageUrl}") center / cover fixed`;
+  }
   switch (background) {
     case 'paper':
       return 'linear-gradient(180deg, rgba(255,251,235,0.9), rgba(254,243,199,0.52))';
@@ -159,7 +168,9 @@ export function ChatMessageArea() {
   const activeKind = activeTab === 'friend' ? 'friend' : 'group';
   const currentMessages = activeUlid ? (messages[activeUlid] || []) : [];
   const mainTimelineMessages = currentMessages.filter((message) => !messageThreadRootUlid(message));
-  const activeBackground = activeUlid ? conversationLocalState[`${activeTab}:${activeUlid}`]?.background : undefined;
+  const activeLocalState = activeUlid ? conversationLocalState[`${activeTab}:${activeUlid}`] : undefined;
+  const activeBackground = activeLocalState?.background;
+  const activeBackgroundImageUrl = useOssAttachmentUrl(activeLocalState?.backgroundImage || undefined);
 
   const activeFriendPeer = (() => {
     if (activeTab !== 'friend' || !activeUlid) return null;
@@ -581,6 +592,7 @@ export function ChatMessageArea() {
     activeBackground,
     token.colorBgLayout,
     token.colorBgContainer,
+    activeBackgroundImageUrl || undefined,
   );
   const headerSubtitle = activeTab === 'friend'
     ? peerIsTyping
