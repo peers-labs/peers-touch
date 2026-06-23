@@ -539,6 +539,21 @@ Go / no-go:
 - No-go for any implementation that restores ICE polling or adds a second
   realtime signaling channel.
 
+### 13.1 Phase 1 hardening status (2026-06-23)
+
+The four hardening gaps that gated the Phase 1 Go decision are landed on
+branch `high-chat`:
+
+| Gap | Area | Status | Where |
+| --- | --- | --- | --- |
+| Runtime ownership | Desktop | Done | Active calls survive friend-chat session switches; only idle connections are torn down (`closeIdleConnections`), and all are closed on page unmount (`friendChatP2p.ts`, `SocialChatPage.tsx`). |
+| Signal authorization | Station | Done | `handlePostSignal` enforces fail-closed friend-relationship authorization via a registered `SignalAuthorizer`; "is friend" = DID-pair session exists (`SessionExistsForPair`) and not blocked (`IsBlockedBetween`). Missing authorizer returns 503. |
+| Unanswered timeout | Desktop | Done | 45s ring timer with a `CallEndReason` state machine; terminal reasons map to localized result toasts. |
+| TURN configurability | Station | Done | `/api/v1/turn/ice-servers` STUN URL list, credential TTL, and credential username are config-backed (`stun-urls` / `credential-ttl` / `credential-username`) with backward-compatible defaults. |
+
+Remaining for full Phase 1 acceptance: end-to-end two-profile call
+verification across Desktop **and** Mobile.
+
 ## 14. Open Decisions
 
 - Should call history be durable chat content in Phase 1, or a Phase 2 system
@@ -549,4 +564,6 @@ Go / no-go:
   camera toggles?
 - Which TURN provider and credential issuance strategy should be used for local
   development, staging, and production?
-- What is the exact timeout for unanswered calls: 30s, 45s, or 60s?
+- What is the exact timeout for unanswered calls: 30s, 45s, or 60s? **Decided:
+  45s** (Desktop `RING_TIMEOUT_MS`), revisit per-platform if Mobile needs a
+  different ring duration.
