@@ -138,7 +138,7 @@ func (r *fakeRepo) CreateGroup(ownerDID, name, description string) domain.Group 
 	return domain.Group{}
 }
 
-func (r *fakeRepo) ListGroups() []domain.Group {
+func (r *fakeRepo) ListGroups(actorDID string) []domain.Group {
 	return nil
 }
 
