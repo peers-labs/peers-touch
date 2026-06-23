@@ -486,6 +486,7 @@
   "chat.social.call.audioBadge": "Voice",
   "chat.social.call.videoBadge": "Video",
   "chat.social.call.connecting": "Connecting…",
+  "chat.social.call.reconnecting": "Reconnecting…",
   "chat.social.call.duration": "{{minutes}}:{{seconds}}",
   "chat.social.call.resultRejected": "Call declined",
   "chat.social.call.resultNoAnswer": "No answer",
