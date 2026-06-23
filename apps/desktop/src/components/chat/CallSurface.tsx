@@ -199,11 +199,15 @@ export function CallSurface() {
     );
   }
 
-  // ── OUTGOING (ringing) + ACTIVE: floating HUD ──
+  // ── OUTGOING (ringing) + ACTIVE + RECONNECTING: floating HUD ──
   // Anchored to the bottom-right so it doesn't cover the chat list
   // (mirrors WhatsApp / Slack patterns). User can keep typing in
   // the chat behind the HUD.
   const isActive = snapshot.state === 'active';
+  const isReconnecting = snapshot.state === 'reconnecting';
+  // The media plane stays mounted across a reconnect — keep the <video>
+  // elements alive and tracks bound so recovery is seamless.
+  const hasMedia = isActive || isReconnecting;
   const elapsed = isActive && snapshot.startedAt ? now - snapshot.startedAt : 0;
 
   return (
@@ -221,9 +225,11 @@ export function CallSurface() {
         overflow: 'hidden',
       }}
     >
-      {/* Remote video (only if isVideo & active). For voice-only or
-          ringing states we show a hero icon instead. */}
-      {isVideo && isActive ? (
+      {/* Remote video (only if isVideo & media plane is up). For
+          voice-only or ringing states we show a hero icon instead.
+          The element stays mounted across a reconnect so recovery is
+          seamless. */}
+      {isVideo && hasMedia ? (
         <video
           ref={remoteVideoRef}
           autoPlay
@@ -250,8 +256,30 @@ export function CallSurface() {
         </Flexbox>
       )}
 
+      {/* Reconnecting banner — overlays the media so the user knows the
+          call is recovering rather than frozen (voice-video-calls.md §6.5). */}
+      {isReconnecting && (
+        <Flexbox
+          align="center"
+          justify="center"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            padding: '6px 12px',
+            background: token.colorWarning,
+            color: token.colorTextLightSolid,
+            fontSize: 12,
+            zIndex: 1,
+          }}
+        >
+          {t('chat.social.call.reconnecting')}
+        </Flexbox>
+      )}
+
       {/* Local self-view PiP — only when video and not muted off. */}
-      {isVideo && isActive && !snapshot.cameraOff && (
+      {isVideo && hasMedia && !snapshot.cameraOff && (
         <video
           ref={localVideoRef}
           autoPlay
@@ -285,14 +313,16 @@ export function CallSurface() {
           <Text type="secondary" style={{ fontSize: 12 }}>
             {isActive
               ? formatDuration(elapsed)
-              : snapshot.state === 'outgoing'
-                ? t('chat.social.call.ringing')
-                : t('chat.social.call.connecting')}
+              : isReconnecting
+                ? t('chat.social.call.reconnecting')
+                : snapshot.state === 'outgoing'
+                  ? t('chat.social.call.ringing')
+                  : t('chat.social.call.connecting')}
           </Text>
         </Flexbox>
 
         <Flexbox horizontal gap={8} justify="center" style={{ marginTop: 4 }}>
-          {isActive && (
+          {hasMedia && (
             <Tooltip title={snapshot.micMuted ? t('chat.social.call.unmuteMic') : t('chat.social.call.muteMic')}>
               <Button
                 shape="circle"
@@ -303,7 +333,7 @@ export function CallSurface() {
             </Tooltip>
           )}
 
-          {isActive && isVideo && (
+          {hasMedia && isVideo && (
             <Tooltip title={snapshot.cameraOff ? t('chat.social.call.cameraOn') : t('chat.social.call.cameraOff')}>
               <Button
                 shape="circle"
@@ -314,7 +344,7 @@ export function CallSurface() {
             </Tooltip>
           )}
 
-          <Tooltip title={isActive ? t('chat.social.call.hangup') : t('chat.social.call.cancel')}>
+          <Tooltip title={hasMedia ? t('chat.social.call.hangup') : t('chat.social.call.cancel')}>
             <Button
               danger
               type="primary"

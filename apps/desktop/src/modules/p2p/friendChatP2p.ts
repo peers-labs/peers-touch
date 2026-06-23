@@ -186,10 +186,11 @@ type ConnKey = string; // `${myDid}::${peerDid}`
 /** Ringing state of an in-flight call on this connection. */
 export type CallStateLifecycle =
   | 'idle'
-  | 'outgoing'   // we sent CALL_REQUEST, waiting for accept/reject
-  | 'incoming'   // peer sent CALL_REQUEST, waiting for our accept/reject
-  | 'active'     // call accepted, media flowing (or about to)
-  | 'ended';     // CALL_END seen — terminal until next startCall
+  | 'outgoing'      // we sent CALL_REQUEST, waiting for accept/reject
+  | 'incoming'      // peer sent CALL_REQUEST, waiting for our accept/reject
+  | 'active'        // call accepted, media flowing (or about to)
+  | 'reconnecting'  // ICE dropped on an active call; attempting recovery
+  | 'ended';        // CALL_END seen — terminal until next startCall
 
 export type CallMediaKind = 'audio' | 'video';
 
@@ -219,6 +220,13 @@ export type CallEndReason =
 /** Unanswered outgoing/incoming calls auto-terminate after this many ms.
  *  Matches the industry-common 45s ring window (voice-video-calls.md §14). */
 const RING_TIMEOUT_MS = 45_000;
+
+/** How long an active call may stay in `reconnecting` before we give up
+ *  and end it with `network-failed`. WebRTC's own ICE timers fire on the
+ *  order of seconds; 20s is a generous bound that covers a brief Wi-Fi /
+ *  cellular handover without leaving a frozen HUD forever
+ *  (voice-video-calls.md §6.5). */
+const RECONNECT_TIMEOUT_MS = 20_000;
 
 export interface CallSnapshot {
   /** Stable per-call identifier — the originator generates a ULID
@@ -276,6 +284,10 @@ interface Conn {
    *  `outgoing` / `incoming`, cleared the moment it is answered or
    *  terminated. `null` when no ring is in flight. */
   ringTimer: ReturnType<typeof setTimeout> | null;
+  /** Pending reconnect-window timeout handle. Armed when an active call
+   *  drops to `reconnecting`, cleared when ICE recovers or the call ends.
+   *  `null` when the call is not reconnecting. */
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
 }
 
 class FriendChatP2pManager {
@@ -336,6 +348,70 @@ class FriendChatP2pManager {
     if (conn.ringTimer !== null) {
       clearTimeout(conn.ringTimer);
       conn.ringTimer = null;
+    }
+  }
+
+  /**
+   * Move an active call into `reconnecting` and attempt to recover the
+   * media path (voice-video-calls.md §6.5).
+   *
+   * We keep local tracks alive and the HUD visible, fire a single ICE
+   * restart from the offerer side (the only side that may renegotiate in
+   * our perfect-negotiation setup), and arm a bounded give-up timer. If
+   * `connectionState` returns to `connected` before the timer fires,
+   * `recoverReconnectingCall` cancels it and restores `active`; otherwise
+   * the call ends with a localized `network-failed`.
+   *
+   * Idempotent: a `disconnected` followed by `failed` (WebRTC emits both)
+   * must not stack timers or fire two restarts.
+   */
+  private enterReconnectingCall(conn: Conn): void {
+    if (conn.call.state === 'reconnecting') return;
+    conn.call = { ...conn.call, state: 'reconnecting' };
+    this.emitCall(conn);
+
+    // Only the offerer may drive renegotiation; the answerer waits for
+    // the restart OFFER to arrive over the (reliable) SSE signaling path.
+    if (conn.isOfferer) {
+      void (async () => {
+        try {
+          const offer = await conn.pc.createOffer({ iceRestart: true });
+          await conn.pc.setLocalDescription(offer);
+          await this.sendSignal(conn, 'OFFER', JSON.stringify({ sdp: offer.sdp || '' }));
+        } catch (error) {
+          log.warn('p2p', 'ICE restart offer failed', error);
+        }
+      })();
+    }
+
+    if (conn.reconnectTimer !== null) return;
+    const callId = conn.call.callId;
+    conn.reconnectTimer = setTimeout(() => {
+      conn.reconnectTimer = null;
+      // Only give up if the very same call is still reconnecting — a late
+      // recovery can race this callback.
+      if (conn.call.callId !== callId) return;
+      if (conn.call.state !== 'reconnecting') return;
+      this.sendSignal(conn, 'CALL_END', JSON.stringify({ callId })).catch(() => {});
+      this.teardownCallLocal(conn, 'network-failed');
+    }, RECONNECT_TIMEOUT_MS);
+  }
+
+  /** ICE recovered while reconnecting: cancel the give-up timer and
+   *  restore the active HUD. The `startedAt` is preserved so the call
+   *  timer keeps counting from the original answer. */
+  private recoverReconnectingCall(conn: Conn): void {
+    this.clearReconnectTimeout(conn);
+    if (conn.call.state !== 'reconnecting') return;
+    conn.call = { ...conn.call, state: 'active' };
+    this.emitCall(conn);
+  }
+
+  /** Cancel a pending reconnect give-up timeout, if any. */
+  private clearReconnectTimeout(conn: Conn): void {
+    if (conn.reconnectTimer !== null) {
+      clearTimeout(conn.reconnectTimer);
+      conn.reconnectTimer = null;
     }
   }
 
@@ -465,6 +541,7 @@ class FriendChatP2pManager {
       call: { callId: '', mediaKind: 'audio', state: 'idle' },
       remoteTrackIds: new Set(),
       ringTimer: null,
+      reconnectTimer: null,
     };
     this.conns.set(key, conn);
 
@@ -522,15 +599,35 @@ class FriendChatP2pManager {
         // (`transport: null` means "connected but path not yet known").
         conn.status = { state: 'connected', signalingSessionId, transport: null };
         this.emitStatus(myDid, peerDid, conn.status);
+        // ICE recovered: if a call was riding through a reconnect window,
+        // restore the active HUD and cancel the give-up timer
+        // (voice-video-calls.md §6.5).
+        if (conn.call.state === 'reconnecting') {
+          this.recoverReconnectingCall(conn);
+        }
+        conn.transportProbeStopped = false;
         this.startTransportProbe(myDid, peerDid, conn);
+      } else if (s === 'disconnected') {
+        // A transient ICE drop on an active call. Keep the UI and local
+        // tracks alive and attempt recovery within a bounded window
+        // before declaring failure (voice-video-calls.md §6.5). Ringing
+        // calls (no media yet) are left for the ring timeout to resolve.
+        if (conn.call.state === 'active') {
+          this.enterReconnectingCall(conn);
+        }
       } else if (s === 'failed') {
+        // ICE failed outright. Try a single ICE restart if we can still
+        // reach TURN; only give up (network-failed) when that path is
+        // exhausted. The restart re-enters `reconnecting` so the timer
+        // bounds the recovery attempt.
+        if (conn.call.state === 'active' || conn.call.state === 'reconnecting') {
+          this.enterReconnectingCall(conn);
+          return;
+        }
         conn.transportProbeStopped = true;
         conn.status = { state: 'failed', detail: 'webrtc connection failed', signalingSessionId };
         this.emitStatus(myDid, peerDid, conn.status);
-        // If a call was riding this connection, surface a localized
-        // network failure instead of leaving a frozen HUD. (ICE restart
-        // recovery is Phase 2 — voice-video-calls.md §6.5.)
-        if (conn.call.state === 'active' || conn.call.state === 'outgoing' || conn.call.state === 'incoming') {
+        if (conn.call.state === 'outgoing' || conn.call.state === 'incoming') {
           this.teardownCallLocal(conn, 'network-failed');
         }
       } else if (s === 'closed') {
@@ -817,8 +914,9 @@ class FriendChatP2pManager {
       const callId = String(json?.callId || '');
       if (callId && callId !== conn.call.callId) return;
       // A remote end while still ringing is a missed call; while active
-      // it is a normal hangup.
-      const reason: CallEndReason = conn.call.state === 'active' ? 'hangup' : 'no-answer';
+      // or reconnecting it is a normal hangup.
+      const reason: CallEndReason =
+        conn.call.state === 'active' || conn.call.state === 'reconnecting' ? 'hangup' : 'no-answer';
       this.teardownCallLocal(conn, reason);
     }
   }
@@ -943,8 +1041,10 @@ class FriendChatP2pManager {
     if (conn.call.state === 'idle' || conn.call.state === 'ended') return;
     const { callId } = conn.call;
     // Canceling an outgoing/incoming ring is distinct from hanging up
-    // an active call, so the UI can show "Canceled" vs "Call ended".
-    const reason: CallEndReason = conn.call.state === 'active' ? 'hangup' : 'canceled';
+    // an active (or reconnecting) call, so the UI can show "Canceled"
+    // vs "Call ended".
+    const reason: CallEndReason =
+      conn.call.state === 'active' || conn.call.state === 'reconnecting' ? 'hangup' : 'canceled';
     await this.sendSignal(conn, 'CALL_END', JSON.stringify({ callId }));
     this.teardownCallLocal(conn, reason);
   }
@@ -984,6 +1084,7 @@ class FriendChatP2pManager {
    *  localized result (declined / missed / network failure / …). */
   private teardownCallLocal(conn: Conn, reason: CallEndReason): void {
     this.clearRingTimeout(conn);
+    this.clearReconnectTimeout(conn);
     if (conn.call.localStream) {
       for (const t of conn.call.localStream.getTracks()) {
         try { t.stop(); } catch { /* best-effort */ }
@@ -1018,7 +1119,7 @@ class FriendChatP2pManager {
   closeIdleConnections() {
     for (const [key, conn] of this.conns) {
       const callState = conn.call.state;
-      if (callState === 'outgoing' || callState === 'incoming' || callState === 'active') {
+      if (callState === 'outgoing' || callState === 'incoming' || callState === 'active' || callState === 'reconnecting') {
         continue;
       }
       conn.transportProbeStopped = true;
@@ -1033,6 +1134,7 @@ class FriendChatP2pManager {
     for (const conn of this.conns.values()) {
       conn.transportProbeStopped = true;
       this.clearRingTimeout(conn);
+      this.clearReconnectTimeout(conn);
       // Stop any in-flight call media first so the camera light
       // turns off promptly even if pc.close() races.
       if (conn.call.localStream) {

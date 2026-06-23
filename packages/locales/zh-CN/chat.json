@@ -486,6 +486,7 @@
   "chat.social.call.audioBadge": "语音",
   "chat.social.call.videoBadge": "视频",
   "chat.social.call.connecting": "正在连接…",
+  "chat.social.call.reconnecting": "正在重连…",
   "chat.social.call.duration": "{{minutes}}:{{seconds}}",
   "chat.social.call.resultRejected": "对方已拒接",
   "chat.social.call.resultNoAnswer": "对方无应答",
