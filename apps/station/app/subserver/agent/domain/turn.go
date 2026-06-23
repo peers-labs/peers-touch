@@ -38,6 +38,47 @@ type TurnTrace struct {
 	CompressionBefore    int
 	CompressionAfter     int
 	DelegationResults    []DelegationResult
+	KnowledgeChunks      []KnowledgeChunkReference
+}
+
+type KnowledgeResourceType string
+
+const (
+	KnowledgeResourceTypeDocument  KnowledgeResourceType = "document"
+	KnowledgeResourceTypeFolder    KnowledgeResourceType = "folder"
+	KnowledgeResourceTypeProject   KnowledgeResourceType = "project"
+	KnowledgeResourceTypeURL       KnowledgeResourceType = "url"
+	KnowledgeResourceTypeNotebook  KnowledgeResourceType = "notebook"
+	KnowledgeResourceTypeWorkspace KnowledgeResourceType = "workspace"
+)
+
+type KnowledgeResourcePolicy string
+
+const (
+	KnowledgeResourcePolicyManual   KnowledgeResourcePolicy = "manual"
+	KnowledgeResourcePolicyAuto     KnowledgeResourcePolicy = "auto"
+	KnowledgeResourcePolicyAlways   KnowledgeResourcePolicy = "always"
+	KnowledgeResourcePolicyDisabled KnowledgeResourcePolicy = "disabled"
+)
+
+type KnowledgeResource struct {
+	ResourceID string
+	AgentID    string
+	Type       KnowledgeResourceType
+	Title      string
+	Source     string
+	Policy     KnowledgeResourcePolicy
+	Status     string
+}
+
+type KnowledgeChunkReference struct {
+	ChunkID        string
+	ResourceID     string
+	ResourceTitle  string
+	Source         string
+	ChunkIndex     int
+	Score          float64
+	ContentPreview string
 }
 
 type ToolCallRecord struct {
