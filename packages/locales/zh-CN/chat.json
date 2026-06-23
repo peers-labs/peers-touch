@@ -487,6 +487,11 @@
   "chat.social.call.videoBadge": "视频",
   "chat.social.call.connecting": "正在连接…",
   "chat.social.call.duration": "{{minutes}}:{{seconds}}",
+  "chat.social.call.resultRejected": "对方已拒接",
+  "chat.social.call.resultNoAnswer": "对方无应答",
+  "chat.social.call.resultBusy": "对方正在通话中",
+  "chat.social.call.resultMediaFailed": "无法访问麦克风或摄像头",
+  "chat.social.call.resultNetworkFailed": "网络连接失败，通话已结束",
 
   "chat.social.messageArea.selectConversation": "选择一个对话开始聊天",
   "chat.social.messageArea.noMessages": "暂无消息",
