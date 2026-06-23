@@ -771,8 +771,9 @@ pub fn group_chat_update_group(
 
     let req = model::chat::UpdateGroupRequest {
         group_ulid: input.group_ulid,
-        name: Some(input.name),
+        name: input.name,
         description: input.description,
+        avatar_cid: input.avatar_cid,
         ..Default::default()
     };
 

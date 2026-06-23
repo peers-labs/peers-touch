@@ -1232,8 +1232,9 @@ pub struct GroupUlidInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupUpdateInput {
     pub group_ulid: String,
-    pub name: String,
+    pub name: Option<String>,
     pub description: Option<String>,
+    pub avatar_cid: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
