@@ -463,6 +463,21 @@ func (r *GormRepo) GetSession(sessionID string) (*domain.Session, error) {
 	return &out, nil
 }
 
+// SessionExistsForPair reports whether a friend chat session already
+// exists between the two actor DIDs. Because accepting a friend
+// request is what creates the session row (see AcceptFriendRequest),
+// the presence of a session is the canonical "these two are friends"
+// signal — there is no separate accepted-friendship row.
+func (r *GormRepo) SessionExistsForPair(actorDID, peerDID string) (bool, error) {
+	var count int64
+	if err := r.db.Model(&SessionModel{}).
+		Where("pair_key = ?", pairKey(actorDID, peerDID)).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func (r *GormRepo) ListSessions(actorDID string, limit, offset int) ([]domain.Session, int, error) {
 	blockedPeers, err := r.blockedPeersFor(actorDID)
 	if err != nil {

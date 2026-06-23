@@ -1,6 +1,8 @@
 package turn
 
 import (
+	"time"
+
 	"github.com/peers-labs/peers-touch/station/frame/core/config"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
@@ -13,11 +15,14 @@ var turnOptions struct {
 			Server struct {
 				Subserver struct {
 					TURN struct {
-						Enabled    bool   `pconf:"enabled"`
-						Port       int    `pconf:"port"`
-						Realm      string `pconf:"realm"`
-						PublicIP   string `pconf:"public-ip"`
-						AuthSecret string `pconf:"auth-secret"`
+						Enabled            bool     `pconf:"enabled"`
+						Port               int      `pconf:"port"`
+						Realm              string   `pconf:"realm"`
+						PublicIP           string   `pconf:"public-ip"`
+						AuthSecret         string   `pconf:"auth-secret"`
+						STUNURLs           []string `pconf:"stun-urls"`
+						CredentialTTL      string   `pconf:"credential-ttl"`
+						CredentialUsername string   `pconf:"credential-username"`
 					} `pconf:"turn"`
 				} `pconf:"subserver"`
 			} `pconf:"server"`
@@ -52,6 +57,20 @@ func (p *turnPlugin) Options() []option.Option {
 
 	if turnOptions.Peers.Node.Server.Subserver.TURN.AuthSecret != "" {
 		opts = append(opts, WithAuthSecret(turnOptions.Peers.Node.Server.Subserver.TURN.AuthSecret))
+	}
+
+	if len(turnOptions.Peers.Node.Server.Subserver.TURN.STUNURLs) > 0 {
+		opts = append(opts, WithSTUNURLs(turnOptions.Peers.Node.Server.Subserver.TURN.STUNURLs))
+	}
+
+	if ttl := turnOptions.Peers.Node.Server.Subserver.TURN.CredentialTTL; ttl != "" {
+		if d, err := time.ParseDuration(ttl); err == nil && d > 0 {
+			opts = append(opts, WithCredentialTTL(d))
+		}
+	}
+
+	if turnOptions.Peers.Node.Server.Subserver.TURN.CredentialUsername != "" {
+		opts = append(opts, WithCredentialUsername(turnOptions.Peers.Node.Server.Subserver.TURN.CredentialUsername))
 	}
 
 	return opts
