@@ -35,7 +35,7 @@ Desktop 与 `station / desktop-rust / desktop-web / desktop-app` 的跨进程关
 ## 产品原型
 
 - [prototype/chat/私聊与群聊系统原型 v1.0/readme.md](./prototype/chat/私聊与群聊系统原型%20v1.0/readme.md) — 私聊 / 群聊系统交互原型
-- [prototype/call/语音视频通话系统原型 v1.0/readme.md](./prototype/call/语音视频通话系统原型%20v1.0/readme.md) — 一对一语音 / 视频通话交互原型（对应 [../../architecture/realtime/voice-video-calls.md](../../architecture/realtime/voice-video-calls.md)）
+- 语音 / 视频通话原型已迁入统一原型工作区：见 [原型总账](../../architecture/prototypes/README.md) 与 [realtime/prototype/README.md](../../architecture/realtime/prototype/README.md)
 
 ## 跨端通用 UX
 

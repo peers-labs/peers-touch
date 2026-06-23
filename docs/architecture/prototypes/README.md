@@ -39,6 +39,7 @@
 |------|---------|---------|------------|------|---------|
 | desktop | `packages/prototypes/desktop/` | Desktop 容器外壳（apps/desktop）；原型为 React web 展示 | runtime/desktop-runtime-architecture | drafting | [prototype/README.md](../desktop/prototype/README.md) |
 | atelier | `packages/prototypes/atelier/` | Applet（Lynx），运行在 Desktop 容器内；原型为 React+LobeUI web 展示 | functional-modules §1 | drafting | [prototype/README.md](../atelier/prototype/README.md) |
+| realtime | `packages/prototypes/call/` | Desktop 好友聊天通话（apps/desktop，CallSurface）；原型为 React web 展示 | realtime/voice-video-calls | confirmed | [prototype/README.md](../realtime/prototype/README.md) |
 
 > 状态取值：`drafting`（搭建中）· `pending-review`（待确认）· `confirmed`（已确认，可落地）· `landed`（已落地）· `superseded`（已废弃）。
 
