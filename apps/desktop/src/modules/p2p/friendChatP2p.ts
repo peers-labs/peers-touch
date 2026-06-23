@@ -194,6 +194,21 @@ export type CallStateLifecycle =
 
 export type CallMediaKind = 'audio' | 'video';
 
+/** A selectable microphone or camera. `label` is the human-readable
+ *  device name (empty until the user has granted a media permission);
+ *  `deviceId` is an opaque handle used only internally — it is never
+ *  surfaced in the UI (voice-video-calls.md §10). */
+export interface CallMediaDevice {
+  deviceId: string;
+  label: string;
+}
+
+/** Available input devices, split by kind for the picker. */
+export interface CallMediaDevices {
+  audioInputs: CallMediaDevice[];
+  videoInputs: CallMediaDevice[];
+}
+
 /**
  * Why a terminal (`ended`) call snapshot ended, so the UI can render a
  * distinct, localized result instead of a generic "call ended". Phase 1
@@ -228,6 +243,50 @@ const RING_TIMEOUT_MS = 45_000;
  *  (voice-video-calls.md §6.5). */
 const RECONNECT_TIMEOUT_MS = 20_000;
 
+/** LocalStorage keys for the last device the user picked. We persist the
+ *  preference so the next call reuses the same mic/camera instead of
+ *  silently reverting to the OS default. Values are opaque deviceIds and
+ *  are never rendered (voice-video-calls.md §10). */
+const PREFERRED_AUDIO_DEVICE_KEY = 'pt.call.preferredAudioDeviceId';
+const PREFERRED_VIDEO_DEVICE_KEY = 'pt.call.preferredVideoDeviceId';
+
+function readPreferredDevice(key: string): string | undefined {
+  try {
+    return window.localStorage.getItem(key) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writePreferredDevice(key: string, deviceId: string | undefined): void {
+  try {
+    if (deviceId) window.localStorage.setItem(key, deviceId);
+    else window.localStorage.removeItem(key);
+  } catch {
+    /* best-effort — a missing preference just falls back to OS default */
+  }
+}
+
+/** Build a `getUserMedia` constraint set honouring an optional preferred
+ *  device. An explicit `deviceId` is requested as `ideal` rather than
+ *  `exact` so a now-unplugged device degrades to the OS default instead
+ *  of throwing `OverconstrainedError`. */
+function buildMediaConstraints(
+  wantVideo: boolean,
+  audioDeviceId?: string,
+  videoDeviceId?: string,
+): MediaStreamConstraints {
+  const audio: MediaTrackConstraints | boolean = audioDeviceId
+    ? { deviceId: { ideal: audioDeviceId } }
+    : true;
+  const video: MediaTrackConstraints | boolean = !wantVideo
+    ? false
+    : videoDeviceId
+      ? { deviceId: { ideal: videoDeviceId } }
+      : true;
+  return { audio, video };
+}
+
 export interface CallSnapshot {
   /** Stable per-call identifier — the originator generates a ULID
    *  in CALL_REQUEST and both ends echo it on every signal. Allows
@@ -249,6 +308,13 @@ export interface CallSnapshot {
   micMuted?: boolean;
   /** True after the user explicitly toggled their camera off. */
   cameraOff?: boolean;
+  /** Device id of the microphone currently captured, if a specific one
+   *  was selected (otherwise the OS default is used). Internal only —
+   *  never rendered. */
+  audioDeviceId?: string;
+  /** Device id of the camera currently captured, if a specific one was
+   *  selected. Internal only — never rendered. */
+  videoDeviceId?: string;
   /** Populated only on the terminal `ended` snapshot so the UI can
    *  render a distinct, localized result (declined / missed / etc.). */
   endReason?: CallEndReason;
@@ -968,14 +1034,15 @@ class FriendChatP2pManager {
       throw new Error('startCall: call already in progress');
     }
     const callId = this.newCallId();
-    conn.call = { callId, mediaKind, state: 'outgoing' };
+    const audioDeviceId = readPreferredDevice(PREFERRED_AUDIO_DEVICE_KEY);
+    const videoDeviceId = readPreferredDevice(PREFERRED_VIDEO_DEVICE_KEY);
+    conn.call = { callId, mediaKind, state: 'outgoing', audioDeviceId, videoDeviceId };
     this.emitCall(conn);
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: mediaKind === 'video',
-      });
+      stream = await navigator.mediaDevices.getUserMedia(
+        buildMediaConstraints(mediaKind === 'video', audioDeviceId, videoDeviceId),
+      );
     } catch (error) {
       this.teardownCallLocal(conn, 'media-failed');
       throw error;
@@ -1003,12 +1070,13 @@ class FriendChatP2pManager {
     // The user answered — stop the unanswered-ring countdown before we
     // pay the getUserMedia round-trip.
     this.clearRingTimeout(conn);
+    const audioDeviceId = readPreferredDevice(PREFERRED_AUDIO_DEVICE_KEY);
+    const videoDeviceId = readPreferredDevice(PREFERRED_VIDEO_DEVICE_KEY);
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: mediaKind === 'video',
-      });
+      stream = await navigator.mediaDevices.getUserMedia(
+        buildMediaConstraints(mediaKind === 'video', audioDeviceId, videoDeviceId),
+      );
     } catch (error) {
       // Acquisition failed — politely reject so the caller doesn't
       // wait for a ring-out.
@@ -1019,7 +1087,14 @@ class FriendChatP2pManager {
     for (const track of stream.getTracks()) {
       conn.pc.addTrack(track, stream);
     }
-    conn.call = { ...conn.call, localStream: stream, state: 'active', startedAt: Date.now() };
+    conn.call = {
+      ...conn.call,
+      localStream: stream,
+      state: 'active',
+      startedAt: Date.now(),
+      audioDeviceId,
+      videoDeviceId,
+    };
     this.emitCall(conn);
     await this.sendSignal(conn, 'CALL_ACCEPT', JSON.stringify({ callId }));
   }
@@ -1073,6 +1148,127 @@ class FriendChatP2pManager {
       t.enabled = !off;
     }
     conn.call = { ...conn.call, cameraOff: off };
+    this.emitCall(conn);
+  }
+
+  /** Enumerate the available microphones and cameras for the device
+   *  picker. Labels are only populated once a media permission has been
+   *  granted (browser privacy rule), so the UI should be tolerant of
+   *  empty labels and fall back to a generic "Microphone N" / "Camera N".
+   *  Returns empty lists if the platform has no media devices API. */
+  async listMediaDevices(): Promise<CallMediaDevices> {
+    if (!navigator.mediaDevices?.enumerateDevices) {
+      return { audioInputs: [], videoInputs: [] };
+    }
+    let devices: MediaDeviceInfo[];
+    try {
+      devices = await navigator.mediaDevices.enumerateDevices();
+    } catch (error) {
+      log.warn('p2p', 'enumerateDevices failed', error);
+      return { audioInputs: [], videoInputs: [] };
+    }
+    const audioInputs: CallMediaDevice[] = [];
+    const videoInputs: CallMediaDevice[] = [];
+    for (const d of devices) {
+      if (!d.deviceId) continue;
+      if (d.kind === 'audioinput') audioInputs.push({ deviceId: d.deviceId, label: d.label });
+      else if (d.kind === 'videoinput') videoInputs.push({ deviceId: d.deviceId, label: d.label });
+    }
+    return { audioInputs, videoInputs };
+  }
+
+  /** Return the persisted device preferences so the picker can show the
+   *  current selection before any call is in flight. */
+  getPreferredDevices(): { audioDeviceId?: string; videoDeviceId?: string } {
+    return {
+      audioDeviceId: readPreferredDevice(PREFERRED_AUDIO_DEVICE_KEY),
+      videoDeviceId: readPreferredDevice(PREFERRED_VIDEO_DEVICE_KEY),
+    };
+  }
+
+  /** Switch the microphone mid-call (or just persist the preference when
+   *  no call is active). Uses `RTCRtpSender.replaceTrack` so the swap is
+   *  seamless — no renegotiation, no peer-visible interruption. Passing
+   *  `undefined` clears the preference back to the OS default. */
+  async switchAudioDevice(myDid: string, peerDid: string, deviceId: string | undefined): Promise<void> {
+    writePreferredDevice(PREFERRED_AUDIO_DEVICE_KEY, deviceId);
+    await this.replaceLocalTrack(myDid, peerDid, 'audio', deviceId);
+  }
+
+  /** Switch the camera mid-call (or persist the preference when idle).
+   *  Same seamless `replaceTrack` path as {@link switchAudioDevice}. */
+  async switchVideoDevice(myDid: string, peerDid: string, deviceId: string | undefined): Promise<void> {
+    writePreferredDevice(PREFERRED_VIDEO_DEVICE_KEY, deviceId);
+    await this.replaceLocalTrack(myDid, peerDid, 'video', deviceId);
+  }
+
+  /**
+   * Re-capture a single input from a new device and hot-swap it into the
+   * live RTCPeerConnection sender and local snapshot stream. No-op when no
+   * media is flowing (the persisted preference takes effect on next call).
+   *
+   * We capture ONLY the requested kind so we never re-prompt for the other
+   * track, then stop the old track to release the previous device. The new
+   * track inherits the current mute/camera-off state so a swap doesn't
+   * silently un-mute the user.
+   */
+  private async replaceLocalTrack(
+    myDid: string,
+    peerDid: string,
+    kind: CallMediaKind,
+    deviceId: string | undefined,
+  ): Promise<void> {
+    const conn = this.conns.get(`${myDid}::${peerDid}`);
+    if (!conn?.call.localStream) return;
+    if (conn.call.state !== 'active' && conn.call.state !== 'reconnecting') return;
+    const wantVideo = kind === 'video';
+    if (wantVideo && conn.call.mediaKind !== 'video') return;
+
+    let captured: MediaStream;
+    try {
+      captured = await navigator.mediaDevices.getUserMedia(
+        wantVideo
+          ? buildMediaConstraints(true, undefined, deviceId)
+          : { audio: deviceId ? { deviceId: { ideal: deviceId } } : true, video: false },
+      );
+    } catch (error) {
+      log.warn('p2p', 'device switch capture failed', error);
+      throw error;
+    }
+    const newTrack = wantVideo
+      ? captured.getVideoTracks()[0]
+      : captured.getAudioTracks()[0];
+    if (!newTrack) {
+      for (const t of captured.getTracks()) { try { t.stop(); } catch { /* best-effort */ } }
+      return;
+    }
+    // Preserve the existing mute / camera-off state on the fresh track.
+    newTrack.enabled = wantVideo ? !conn.call.cameraOff : !conn.call.micMuted;
+
+    const sender = conn.pc.getSenders().find((s) => s.track?.kind === newTrack.kind);
+    if (sender) {
+      try {
+        await sender.replaceTrack(newTrack);
+      } catch (error) {
+        try { newTrack.stop(); } catch { /* best-effort */ }
+        log.warn('p2p', 'replaceTrack failed', error);
+        throw error;
+      }
+    }
+    // Swap the track inside the snapshot's local stream so the self-view
+    // <video> reflects the new device, then stop the superseded track.
+    const oldTrack = wantVideo
+      ? conn.call.localStream.getVideoTracks()[0]
+      : conn.call.localStream.getAudioTracks()[0];
+    if (oldTrack) {
+      conn.call.localStream.removeTrack(oldTrack);
+      try { oldTrack.stop(); } catch { /* best-effort */ }
+    }
+    conn.call.localStream.addTrack(newTrack);
+    conn.call = {
+      ...conn.call,
+      ...(wantVideo ? { videoDeviceId: deviceId } : { audioDeviceId: deviceId }),
+    };
     this.emitCall(conn);
   }
 

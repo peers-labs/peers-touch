@@ -17,13 +17,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Modal, theme, Tooltip, Typography } from 'antd';
+import { Button, Dropdown, Modal, theme, Tooltip, Typography } from 'antd';
+import type { MenuProps } from 'antd';
 import {
-  Camera, CameraOff, Mic, MicOff, Phone, PhoneIncoming, PhoneOff, Video,
+  Camera, CameraOff, Mic, MicOff, Phone, PhoneIncoming, PhoneOff, Settings, Video,
 } from 'lucide-react';
 import {
   friendChatP2p,
   type CallEndReason,
+  type CallMediaDevices,
   type CallSnapshot,
 } from '../../modules/p2p/friendChatP2p';
 import { log } from '../../utils/logger';
@@ -67,6 +69,7 @@ export function CallSurface() {
   // surface more than one at a time.
   const [active, setActive] = useState<ActivePeer | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [devices, setDevices] = useState<CallMediaDevices>({ audioInputs: [], videoInputs: [] });
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -99,6 +102,28 @@ export function CallSurface() {
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [active]);
+
+  // Enumerate input devices for the picker once media is flowing (labels
+  // are only populated after a getUserMedia grant) and refresh on
+  // hot-plug. Skipped entirely while no call is up to avoid surfacing an
+  // empty, label-less list.
+  const hasMediaPlane =
+    !!active && (active.snapshot.state === 'active' || active.snapshot.state === 'reconnecting');
+  useEffect(() => {
+    if (!hasMediaPlane || !navigator.mediaDevices) return;
+    let cancelled = false;
+    const refresh = () => {
+      friendChatP2p.listMediaDevices().then((d) => {
+        if (!cancelled) setDevices(d);
+      });
+    };
+    refresh();
+    navigator.mediaDevices.addEventListener?.('devicechange', refresh);
+    return () => {
+      cancelled = true;
+      navigator.mediaDevices.removeEventListener?.('devicechange', refresh);
+    };
+  }, [hasMediaPlane]);
 
   // Bind media streams to the <video>/<audio> elements whenever the
   // snapshot's stream identity changes. Setting srcObject is
@@ -140,6 +165,20 @@ export function CallSurface() {
 
   const handleHangup = () => {
     friendChatP2p.endCall(myDid, peerDid).catch(() => {});
+  };
+
+  const handleSwitchAudio = (deviceId: string) => {
+    friendChatP2p.switchAudioDevice(myDid, peerDid, deviceId).catch((error) => {
+      log.warn('callSurface', 'switch mic failed', error);
+      toast.error(t('chat.social.call.deviceSwitchFailed'));
+    });
+  };
+
+  const handleSwitchVideo = (deviceId: string) => {
+    friendChatP2p.switchVideoDevice(myDid, peerDid, deviceId).catch((error) => {
+      log.warn('callSurface', 'switch camera failed', error);
+      toast.error(t('chat.social.call.deviceSwitchFailed'));
+    });
   };
 
   // ── INCOMING CALL: full-screen modal ──
@@ -209,6 +248,36 @@ export function CallSurface() {
   // elements alive and tracks bound so recovery is seamless.
   const hasMedia = isActive || isReconnecting;
   const elapsed = isActive && snapshot.startedAt ? now - snapshot.startedAt : 0;
+
+  // Build the device-picker menu. Each input kind becomes a group with a
+  // selectable item per device; the currently-captured device shows a
+  // check. Labels fall back to a generic numbered name when the browser
+  // withholds them (e.g. before any permission grant on this origin).
+  const deviceMenu: MenuProps['items'] = [];
+  if (devices.audioInputs.length > 0) {
+    deviceMenu.push({
+      type: 'group',
+      label: t('chat.social.call.selectMic'),
+      children: devices.audioInputs.map((d, i) => ({
+        key: `audio:${d.deviceId}`,
+        label: d.label || t('chat.social.call.deviceFallbackMic', { index: i + 1 }),
+        onClick: () => handleSwitchAudio(d.deviceId),
+        ...(snapshot.audioDeviceId === d.deviceId ? { icon: <Mic size={14} /> } : {}),
+      })),
+    });
+  }
+  if (isVideo && devices.videoInputs.length > 0) {
+    deviceMenu.push({
+      type: 'group',
+      label: t('chat.social.call.selectCamera'),
+      children: devices.videoInputs.map((d, i) => ({
+        key: `video:${d.deviceId}`,
+        label: d.label || t('chat.social.call.deviceFallbackCamera', { index: i + 1 }),
+        onClick: () => handleSwitchVideo(d.deviceId),
+        ...(snapshot.videoDeviceId === d.deviceId ? { icon: <Camera size={14} /> } : {}),
+      })),
+    });
+  }
 
   return (
     <Flexbox
@@ -342,6 +411,18 @@ export function CallSurface() {
                 onClick={() => friendChatP2p.toggleCamera(myDid, peerDid, !snapshot.cameraOff)}
               />
             </Tooltip>
+          )}
+
+          {hasMedia && deviceMenu.length > 0 && (
+            <Dropdown
+              menu={{ items: deviceMenu }}
+              trigger={['click']}
+              placement="top"
+            >
+              <Tooltip title={t('chat.social.call.devices')}>
+                <Button shape="circle" size="large" icon={<Settings size={18} />} />
+              </Tooltip>
+            </Dropdown>
           )}
 
           <Tooltip title={hasMedia ? t('chat.social.call.hangup') : t('chat.social.call.cancel')}>
