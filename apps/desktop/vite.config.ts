@@ -56,6 +56,47 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('/node_modules/')) return undefined
+
+          if (
+            id.includes('/mermaid/') ||
+            id.includes('/@mermaid-js/') ||
+            id.includes('/cytoscape/') ||
+            id.includes('/dagre-d3-es/')
+          ) {
+            return 'viz-markdown'
+          }
+
+          if (id.includes('/@shikijs/') || id.includes('/shiki/')) {
+            return 'syntax-markdown'
+          }
+
+          if (
+            id.includes('/react-markdown/') ||
+            id.includes('/remark-') ||
+            id.includes('/rehype-') ||
+            id.includes('/hast-util-') ||
+            id.includes('/mdast-util-') ||
+            id.includes('/micromark')
+          ) {
+            return 'markdown-core'
+          }
+
+          if (id.includes('/@lobehub/ui/')) {
+            return 'lobehub-ui'
+          }
+
+          if (id.includes('/antd/') || id.includes('/@ant-design/')) {
+            return 'antd'
+          }
+
+          return undefined
+        },
+      },
+    },
   },
   worker: {
     format: 'es',

@@ -12,6 +12,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { useChatStore, type ChatMessage } from '../store/chat';
+import { useAgentStore } from '../store/agent';
 import { MessageBubble } from './MessageBubble';
 import { ModelProviderSelect } from './ModelProviderSelect';
 import { executeAgentTurn, type Agent, type Session } from '../services/desktop_api';
@@ -25,6 +26,8 @@ export interface BuilderPanelProps {
   welcomeDescription: string;
   welcomeAvatar: string;
   suggestQuestions?: string[];
+  contextSummary?: Array<{ label: string; value: string; ready?: boolean; targetTab?: string }>;
+  onContextItemClick?: (targetTab: string) => void;
   contextPayload?: Record<string, unknown>;
   expand: boolean;
   onExpandChange: (v: boolean) => void;
@@ -36,6 +39,21 @@ export interface BuilderPanelProps {
   onDocumentUpdated?: (docId: string) => void;
   disabled?: boolean;
   disabledMessage?: string;
+}
+
+function buildScopedBuilderRequest(text: string, contextPayload?: Record<string, unknown>) {
+  if (!contextPayload || Object.keys(contextPayload).length === 0) return text;
+  return [
+    'Use the following structured workspace context before answering.',
+    'Return concrete configuration suggestions and mention which checklist item they advance.',
+    '',
+    '```json',
+    JSON.stringify(contextPayload, null, 2),
+    '```',
+    '',
+    'User request:',
+    text,
+  ].join('\n');
 }
 
 function AgentSelector({
@@ -85,6 +103,8 @@ export function BuilderPanel({
   welcomeDescription,
   welcomeAvatar,
   suggestQuestions,
+  contextSummary,
+  onContextItemClick,
   contextPayload,
   expand,
   onExpandChange,
@@ -131,8 +151,10 @@ export function BuilderPanel({
     defaultModel,
     selectedModel,
     selectedProviderId,
-    sessions,
     setSelectedModel,
+  } = useAgentStore();
+  const {
+    sessions,
   } = useChatStore();
 
   const currentModelId = selectedModel || defaultModel;
@@ -166,7 +188,7 @@ export function BuilderPanel({
     let assistantContent = '';
     let modelName = modelOverride || '';
     const controller = executeAgentTurn(
-      text,
+      buildScopedBuilderRequest(text, contextPayload),
       scopedSessionKey,
       currentAgent,
       (event) => {
@@ -318,6 +340,50 @@ export function BuilderPanel({
                 <span style={{ fontSize: 13, color: token.colorTextDescription, textAlign: 'center', maxWidth: 280 }}>
                   {welcomeDescription}
                 </span>
+                {contextSummary && contextSummary.length > 0 && (
+                  <Flexbox gap={6} style={{ width: '100%', maxWidth: 320 }}>
+                    {contextSummary.map((item) => {
+                      const clickable = Boolean(item.targetTab && onContextItemClick);
+                      return (
+                        <Flexbox
+                          key={`${item.label}:${item.value}`}
+                          horizontal
+                          align="center"
+                          justify="space-between"
+                          gap={8}
+                          onClick={
+                            clickable
+                              ? () => onContextItemClick?.(item.targetTab as string)
+                              : undefined
+                          }
+                          style={{
+                            padding: '7px 10px',
+                            borderRadius: 10,
+                            border: `1px solid ${token.colorBorderSecondary}`,
+                            background: item.ready ? token.colorSuccessBg : token.colorWarningBg,
+                            cursor: clickable ? 'pointer' : 'default',
+                          }}
+                        >
+                          <span style={{ fontSize: 12, color: token.colorTextSecondary }}>
+                            {item.label}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: token.colorText,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {item.value}
+                          </span>
+                        </Flexbox>
+                      );
+                    })}
+                  </Flexbox>
+                )}
                 {suggestQuestions && suggestQuestions.length > 0 && (
                   <Flexbox gap={6} style={{ marginTop: 8, width: '100%', maxWidth: 300 }}>
                     {suggestQuestions.map((q) => (
@@ -437,7 +503,7 @@ export function BuilderPanel({
                 </Popover>
                 <div
                   onClick={() => setSearchEnabled(!searchEnabled)}
-                  title={searchEnabled ? t('agent.builder.searchOn') : t('agent.builder.searchOff')}
+                  title={searchEnabled ? t('agent.builder.webSearchOn') : t('agent.builder.webSearchOff')}
                   style={{
                     display: 'flex',
                     alignItems: 'center',

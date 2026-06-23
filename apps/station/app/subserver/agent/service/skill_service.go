@@ -93,6 +93,22 @@ func (s *SkillService) GetSkill(ctx context.Context, agentID, name string) (*dom
 	return &m, nil
 }
 
+// GetSkillByID returns a skill by durable ID for UI/API callers.
+func (s *SkillService) GetSkillByID(ctx context.Context, agentID, skillID string) (*domain.SkillManifest, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	row, err := s.findByID(ctx, db, agentID, skillID)
+	if err != nil {
+		return nil, err
+	}
+
+	m := s.toManifest(row)
+	return &m, nil
+}
+
 // CreateSkill validates content, runs security scan, checks install policy,
 // and persists the skill if allowed.
 func (s *SkillService) CreateSkill(
@@ -243,6 +259,118 @@ func (s *SkillService) DeleteSkill(ctx context.Context, agentID, name string) er
 	return nil
 }
 
+// UpdateSkill mutates durable skill metadata/content by skill ID and preserves
+// Station scan/version authority for content changes.
+func (s *SkillService) UpdateSkill(
+	ctx context.Context,
+	agentID string,
+	skillID string,
+	name *string,
+	description *string,
+	content *string,
+	enabled *bool,
+) (*domain.SkillManifest, *domain.ScanResult, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	row, err := s.findByID(ctx, db, agentID, skillID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	nextName := row.Name
+	if name != nil && strings.TrimSpace(*name) != "" {
+		nextName = strings.TrimSpace(*name)
+	}
+	nextDescription := row.Description
+	if description != nil {
+		nextDescription = *description
+	}
+	nextContent := row.Content
+	contentChanged := false
+	if content != nil {
+		nextContent = *content
+		contentChanged = nextContent != row.Content
+	}
+
+	if err := s.validateContent(nextDescription, nextContent); err != nil {
+		return nil, nil, err
+	}
+
+	updates := map[string]interface{}{
+		"name":        nextName,
+		"description": nextDescription,
+		"updated_at":  time.Now(),
+	}
+	var scanResult *domain.ScanResult
+
+	if contentChanged {
+		trust := domain.TrustLevel(row.TrustLevel)
+		scan := s.guard.ScanContent(nextName, nextContent, trust)
+		policy := domain.ResolveInstallPolicy(trust, scan.Verdict)
+		if policy == domain.InstallPolicyBlock {
+			return nil, scan, errcode.New(
+				errcode.AgentInvalidRequest, 403,
+				fmt.Sprintf("skill '%s' blocked by update policy (verdict=%s)", nextName, scan.Verdict),
+				nil,
+			)
+		}
+		s.recordVersion(ctx, db, row, "update")
+		verdictStr := string(scan.Verdict)
+		updates["content"] = nextContent
+		updates["scan_verdict"] = &verdictStr
+		updates["version"] = row.Version + 1
+		scanResult = scan
+	}
+
+	if enabled != nil {
+		updates["enabled"] = *enabled
+	}
+
+	if err := db.WithContext(ctx).
+		Model(&persistence.Skill{}).
+		Where("id = ? AND agent_id = ?", skillID, agentID).
+		Updates(updates).Error; err != nil {
+		logger.Errorf(ctx, "skill update failed: id=%s, err=%v", skillID, err)
+		return nil, scanResult, errcode.New(errcode.AgentInternal, 500, "failed to update skill", err)
+	}
+
+	updated, err := s.findByID(ctx, db, agentID, skillID)
+	if err != nil {
+		return nil, scanResult, err
+	}
+	m := s.toManifest(updated)
+	s.recordGrowthEvent(ctx, agentID, EventSkillPatched, updated.Name, updated.ID)
+	return &m, scanResult, nil
+}
+
+// DeleteSkillByID removes a skill by durable ID for Desktop UI callers.
+func (s *SkillService) DeleteSkillByID(ctx context.Context, agentID, skillID string) error {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+
+	var row persistence.Skill
+	if err := db.WithContext(ctx).
+		Where("id = ? AND agent_id = ?", skillID, agentID).
+		First(&row).Error; err != nil {
+		return errcode.New(errcode.AgentNotFound, 404,
+			fmt.Sprintf("skill %s not found for agent %s", skillID, agentID), err)
+	}
+
+	if err := db.WithContext(ctx).Delete(&persistence.Skill{}, "id = ? AND agent_id = ?", skillID, agentID).Error; err != nil {
+		logger.Errorf(ctx, "skill delete failed: id=%s, err=%v", skillID, err)
+		return errcode.New(errcode.AgentInternal, 500, "failed to delete skill", err)
+	}
+
+	logger.Infof(ctx, "skill deleted: agent_id=%s id=%s name=%s", agentID, skillID, row.Name)
+	s.recordGrowthEvent(ctx, agentID, EventSkillDeleted, row.Name, row.ID)
+	return nil
+}
+
 // BuildSkillIndex generates a system prompt skills index block with
 // conditional activation filtering based on platform and tool availability.
 // Returns the formatted index string, the count of activated skills, and any error.
@@ -353,9 +481,9 @@ func (s *SkillService) RecordSkillUsage(ctx context.Context, agentID string, ski
 	now := time.Now()
 	for _, name := range skillNames {
 		updates := map[string]interface{}{
-			"view_count":  gorm.Expr("view_count + 1"),
+			"view_count":   gorm.Expr("view_count + 1"),
 			"last_used_at": now,
-			"updated_at":  now,
+			"updated_at":   now,
 		}
 		if turnSucceeded {
 			updates["apply_count"] = gorm.Expr("apply_count + 1")
@@ -447,6 +575,17 @@ func (s *SkillService) toManifest(row *persistence.Skill) domain.SkillManifest {
 	}
 
 	return m
+}
+
+func (s *SkillService) findByID(ctx context.Context, db *gorm.DB, agentID, skillID string) (*persistence.Skill, error) {
+	var row persistence.Skill
+	if err := db.WithContext(ctx).
+		Where("id = ? AND agent_id = ?", skillID, agentID).
+		First(&row).Error; err != nil {
+		return nil, errcode.New(errcode.AgentNotFound, 404,
+			fmt.Sprintf("skill %s not found for agent %s", skillID, agentID), err)
+	}
+	return &row, nil
 }
 
 // fuzzyFind performs a whitespace-normalized search as fallback
