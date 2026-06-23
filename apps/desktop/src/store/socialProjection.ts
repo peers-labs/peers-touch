@@ -28,6 +28,7 @@ export interface ConversationLocalState {
   sticky?: boolean;
   alertEnabled?: boolean;
   background?: ChatBackgroundId;
+  backgroundImage?: string;
 }
 
 export const CHAT_BACKGROUND_OPTIONS = ['default', 'paper', 'mint', 'dusk', 'calm', 'graphite'] as const;
