@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/infrastructure"
 	notifbridge "github.com/peers-labs/peers-touch/station/app/subserver/notification"
@@ -63,6 +64,11 @@ func (s *subServer) Start(ctx context.Context, opts ...option.Option) error {
 	s.status = server.StatusRunning
 	// Wire notification bridge during Start() — notification SubServer is initialized by now.
 	s.service.SetNotifier(notifbridge.NewBridge())
+	// Register the call-signal authorizer with the events subserver so
+	// POST /realtime/signal can enforce the friend-relationship gate
+	// without importing friend_chat (one-way dependency: friend_chat →
+	// events).
+	events.RegisterSignalAuthorizer(signalAuthorizer{service: s.service})
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
@@ -82,6 +88,7 @@ func (s *subServer) Start(ctx context.Context, opts ...option.Option) error {
 
 func (s *subServer) Stop(ctx context.Context) error {
 	_ = ctx
+	events.RegisterSignalAuthorizer(nil)
 	s.status = server.StatusStopped
 	return nil
 }
@@ -92,3 +99,15 @@ func (s *subServer) Address() server.SubserverAddress {
 	return server.SubserverAddress{Address: s.addrs}
 }
 func (s *subServer) Status() server.Status { return s.status }
+
+// signalAuthorizer adapts the friend_chat application service to the
+// events.SignalAuthorizer interface, keeping the events subserver
+// ignorant of the friend_chat domain while reusing the same
+// social-graph gate as messaging.
+type signalAuthorizer struct {
+	service *application.Service
+}
+
+func (a signalAuthorizer) CanSignal(senderActorID, recipientActorID string) (bool, error) {
+	return a.service.CanSignal(senderActorID, recipientActorID)
+}
