@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, toast } from '@lobehub/ui';
-import { Divider, Modal, Select, theme, Tooltip, Typography } from 'antd';
+import { Modal, Select, theme, Tooltip, Typography } from 'antd';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import {
   chatMediaKindForAttachment,
@@ -12,7 +12,7 @@ import { FriendshipStatus } from '../../gen/proto/domain/chat/chat_pb';
 import {
   Ban,
   BellOff,
-  BellRing,
+  Camera,
   ChevronRight,
   ExternalLink,
   FileText,
@@ -22,7 +22,6 @@ import {
   LogOut,
   Paperclip,
   Pin,
-  PinOff,
   RotateCcw,
   Search,
   ShieldCheck,
@@ -53,15 +52,7 @@ import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicPro
 
 const { Text } = Typography;
 
-type DetailActionRowProps = {
-  icon: ReactNode;
-  title: string;
-  description: string;
-  soonLabel?: string;
-  disabled?: boolean;
-  danger?: boolean;
-  onClick?: () => void;
-};
+const DETAIL_HEADER_HEIGHT = 56;
 
 type SocialMessage = FriendChatMessage | GroupMessage;
 type DetailAttachment = FriendMessageAttachment | GroupMessageAttachment;
@@ -140,79 +131,62 @@ function MemberItem({ member, action }: { member: GroupMember; action?: ReactNod
   );
 }
 
-function DetailActionRow({
-  icon,
-  title,
-  description,
-  soonLabel,
-  disabled,
-  danger,
-  onClick,
-}: DetailActionRowProps) {
+function DetailSection({ title, children, gap = 8 }: { title?: string; children: ReactNode; gap?: number }) {
   const { token } = theme.useToken();
-  const iconColor = danger ? token.colorError : token.colorPrimary;
-
   return (
-    <Button
-      type="text"
-      block
-      disabled={disabled}
-      onClick={onClick}
+    <Flexbox gap={gap} style={{ padding: '0 16px', marginBottom: 12 }}>
+      {title && (
+        <Text style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: token.colorTextTertiary }}>
+          {title}
+        </Text>
+      )}
+      <Flexbox
+        gap={gap}
+        style={{
+          padding: 12,
+          borderRadius: 12,
+          background: token.colorFillQuaternary,
+          border: `1px solid ${token.colorBorderSecondary}`,
+        }}
+      >
+        {children}
+      </Flexbox>
+    </Flexbox>
+  );
+}
+
+function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  const { token } = theme.useToken();
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
       style={{
-        height: 'auto',
-        padding: '10px 12px',
-        justifyContent: 'stretch',
-        opacity: disabled ? 0.72 : 1,
+        appearance: 'none',
+        width: 36,
+        height: 20,
+        borderRadius: 10,
+        border: 'none',
+        padding: 2,
+        cursor: 'pointer',
+        background: checked ? token.colorPrimary : token.colorFillSecondary,
+        transition: 'background 0.2s',
+        flexShrink: 0,
       }}
     >
-      <Flexbox horizontal align="center" gap={10} style={{ width: '100%', minWidth: 0 }}>
-        <Flexbox
-          align="center"
-          justify="center"
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 10,
-            background: danger ? token.colorErrorBg : token.colorFillSecondary,
-            color: disabled ? token.colorTextDisabled : iconColor,
-            flexShrink: 0,
-          }}
-        >
-          {icon}
-        </Flexbox>
-        <Flexbox gap={2} style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-          <Text
-            style={{
-              color: disabled ? token.colorTextDisabled : danger ? token.colorError : token.colorText,
-              fontSize: 13,
-              fontWeight: 600,
-            }}
-            ellipsis
-          >
-            {title}
-          </Text>
-          <Text type="secondary" style={{ fontSize: 11 }} ellipsis>
-            {description}
-          </Text>
-        </Flexbox>
-        {soonLabel ? (
-          <Text
-            type="secondary"
-            style={{
-              padding: '2px 6px',
-              borderRadius: 999,
-              background: token.colorFillTertiary,
-              fontSize: 11,
-              flexShrink: 0,
-            }}
-          >
-            {soonLabel}
-          </Text>
-        ) : (
-          <ChevronRight size={15} style={{ color: token.colorTextQuaternary, flexShrink: 0 }} />
-        )}
-      </Flexbox>
-    </Button>
+      <span
+        style={{
+          display: 'block',
+          width: 16,
+          height: 16,
+          borderRadius: 8,
+          background: '#fff',
+          transform: checked ? 'translateX(16px)' : 'translateX(0)',
+          transition: 'transform 0.2s',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+        }}
+      />
+    </button>
   );
 }
 
@@ -472,20 +446,15 @@ export function ChatDetailPanel() {
     ? groups.find((g) => g.ulid === activeUlid)
     : undefined;
 
-  // The verify section is collapsed by default — most users won't
-  // open it on every glance at a chat, and the QR / fetch is
-  // network-bound. Lazy mount also defers the bundle fetch.
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [showAllMembers, setShowAllMembers] = useState(false);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteDids, setInviteDids] = useState<string[]>([]);
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const [peerBlocked, setPeerBlocked] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState('');
 
-  // Resolve the peer DID for friend chats. Group safety numbers
-  // are an N×N problem (each pair has its own number) and we
-  // intentionally defer them until the chat ratchet upgrade —
-  // see docs/architecture/crypto/double-ratchet-migration.md.
   const peerDid = getFriendPeerDid(activeFriendSession, currentUserDid);
   const members: GroupMember[] = isGroup && activeUlid ? (groupMembers[activeUlid] || []) : [];
   const memberDidSet = useMemo(() => new Set(members.map((member) => member.actorDid)), [members]);
@@ -528,6 +497,29 @@ export function ChatDetailPanel() {
   const updateActiveLocalState = (patch: Parameters<typeof updateConversationLocalState>[2]) => {
     if (!activeUlid) return;
     void updateConversationLocalState(activeTab, activeUlid, patch).catch(() => undefined);
+  };
+
+  const handleSaveGroupName = async () => {
+    if (!activeUlid || !editNameValue.trim()) {
+      setEditingName(false);
+      return;
+    }
+    try {
+      await api.groupChatUpdateGroup(activeUlid, editNameValue.trim());
+      await loadGroups();
+      toast.success(t('chat.social.detail.groupNameUpdated'));
+    } catch (error) {
+      log.error('chat', 'update group name failed', { groupUlid: activeUlid, error });
+      toast.error(t('chat.social.detail.groupNameUpdateFailed'));
+    }
+    setEditingName(false);
+  };
+
+  const handleGroupAvatarClick = () => {
+    // Station API for group avatar upload is not yet available.
+    // Show a placeholder toast; the UI entry point is ready for when the
+    // backend supports it.
+    toast.info(t('chat.social.detail.groupAvatarComingSoon'));
   };
 
   const confirmClearHistory = () => {
@@ -660,11 +652,11 @@ export function ChatDetailPanel() {
 
   const openBackgroundModal = () => {
     Modal.confirm({
-      title: t('chat.social.detail.background'),
+      title: t('chat.social.detail.chatBackground'),
       icon: null,
       width: 440,
       content: (
-        <Flexbox gap={8}>
+        <Flexbox gap={12}>
           <Text type="secondary">{t('chat.social.detail.backgroundDesc')}</Text>
           <Select
             value={activeLocalState?.background || 'default'}
@@ -678,59 +670,34 @@ export function ChatDetailPanel() {
             }}
             style={{ width: '100%' }}
           />
+          <Flexbox gap={4}>
+            <Text type="secondary" style={{ fontSize: 12 }}>{t('chat.social.detail.backgroundImageUrl')}</Text>
+            <input
+              placeholder="https://..."
+              defaultValue={activeLocalState?.backgroundImage || ''}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  updateActiveLocalState({ backgroundImage: (e.target as HTMLInputElement).value.trim() });
+                  Modal.destroyAll();
+                }
+              }}
+              style={{
+                width: '100%',
+                padding: '6px 10px',
+                border: `1px solid ${token.colorBorder}`,
+                borderRadius: 6,
+                background: token.colorBgContainer,
+                color: token.colorText,
+                fontSize: 13,
+              }}
+            />
+          </Flexbox>
         </Flexbox>
       ),
       okButtonProps: { style: { display: 'none' } },
       cancelText: t('chat.social.messageArea.cancel'),
     });
   };
-
-  const actionRows: DetailActionRowProps[] = [
-    {
-      icon: <Search size={16} />,
-      title: t('chat.social.detail.searchMessages'),
-      description: t('chat.social.detail.searchMessagesDesc'),
-      onClick: () => window.dispatchEvent(new CustomEvent('peers-chat:open-search')),
-    },
-    {
-      icon: activeLocalState?.muted ? <BellRing size={16} /> : <BellOff size={16} />,
-      title: activeLocalState?.muted ? t('chat.social.detail.unmute') : t('chat.social.detail.notifications'),
-      description: activeLocalState?.muted ? t('chat.social.detail.unmuteDesc') : t('chat.social.detail.notificationsDesc'),
-      onClick: () => updateActiveLocalState({ muted: !activeLocalState?.muted }),
-    },
-    {
-      icon: activeLocalState?.sticky ? <PinOff size={16} /> : <Pin size={16} />,
-      title: activeLocalState?.sticky ? t('chat.social.detail.unpinTop') : t('chat.social.detail.pinTop'),
-      description: activeLocalState?.sticky ? t('chat.social.detail.unpinTopDesc') : t('chat.social.detail.pinTopDesc'),
-      onClick: () => updateActiveLocalState({ sticky: !activeLocalState?.sticky }),
-    },
-    {
-      icon: activeLocalState?.alertEnabled === false ? <BellRing size={16} /> : <BellOff size={16} />,
-      title: activeLocalState?.alertEnabled === false ? t('chat.social.detail.alertsOn') : t('chat.social.detail.alerts'),
-      description: activeLocalState?.alertEnabled === false ? t('chat.social.detail.alertsOnDesc') : t('chat.social.detail.alertsDesc'),
-      onClick: () => updateActiveLocalState({ alertEnabled: activeLocalState?.alertEnabled === false }),
-    },
-    {
-      icon: <ImageIcon size={16} />,
-      title: t('chat.social.detail.background'),
-      description: t('chat.social.detail.backgroundDesc'),
-      onClick: openBackgroundModal,
-    },
-    {
-      icon: <Trash2 size={16} />,
-      title: t('chat.social.detail.clearHistory'),
-      description: t('chat.social.detail.clearHistoryDesc'),
-      danger: true,
-      onClick: confirmClearHistory,
-    },
-    ...(activeLocalState?.clearedAt ? [{
-      icon: <RotateCcw size={16} />,
-      title: t('chat.social.detail.restoreHistory'),
-      description: t('chat.social.detail.restoreHistoryDesc'),
-      onClick: () => updateActiveLocalState({ clearedAt: 0 }),
-    }] : []),
-  ];
-
 
   useEffect(() => {
     if (isGroup && activeUlid) {
@@ -742,11 +709,9 @@ export function ChatDetailPanel() {
     setShowAllMembers(false);
     setInviteModalOpen(false);
     setInviteDids([]);
+    setEditingName(false);
   }, [activeUlid]);
 
-  // Lazy peer profile load — same pattern as ChatContactsDetailPanel.
-  // The cache lives in socialChat (single owner) so this effect just
-  // signals the projection to fetch when a friend chat is selected.
   useEffect(() => {
     if (!isGroup && peerDid) {
       void loadPeerProfile(peerDid);
@@ -780,20 +745,25 @@ export function ChatDetailPanel() {
         width: 320,
         height: '100%',
         background: token.colorBgContainer,
-        overflow: 'auto',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
+      {/* Header */}
       <Flexbox
         horizontal
         align="center"
+        justify="center"
         style={{
+          height: DETAIL_HEADER_HEIGHT,
+          minHeight: DETAIL_HEADER_HEIGHT,
           position: 'relative',
-          padding: '12px 16px',
           borderBottom: `1px solid ${token.colorBorderSecondary}`,
           flexShrink: 0,
         }}
       >
-        <Text strong style={{ width: '100%', textAlign: 'center', fontSize: 15 }}>
+        <Text strong style={{ fontSize: 15 }}>
           {t('chat.social.detail.title')}
         </Text>
         <Button
@@ -804,59 +774,115 @@ export function ChatDetailPanel() {
         />
       </Flexbox>
 
-      <Flexbox style={{ padding: 16 }}>
-        <PublicProfileCard
-          compact
-          profile={buildChatDetailProfile({
-            isGroup,
-            displayName,
-            peerAvatar,
-            peerDid,
-            activeGroup,
-            groupMemberCount,
-            peerPresenceKnown,
-            peerIsOnline,
-            encryptionEnabled,
-            cachedPeerProfile,
-            t,
-          })}
-          avatarNode={isGroup ? (
-            <Flexbox
-              align="center"
-              justify="center"
-              style={{
-                width: 76,
-                height: 76,
-                borderRadius: 18,
-                background: token.colorFillSecondary,
-                color: token.colorTextSecondary,
-              }}
+      {/* Scrollable content */}
+      <Flexbox style={{ flex: 1, overflow: 'auto' }}>
+        {/* Identity section */}
+        {isGroup ? (
+          <Flexbox align="center" gap={12} style={{ padding: '20px 16px 12px' }}>
+            {/* Avatar with edit overlay */}
+            <div
+              style={{ position: 'relative', cursor: canManageGroupMembers ? 'pointer' : 'default' }}
+              onClick={canManageGroupMembers ? handleGroupAvatarClick : undefined}
             >
-              <Users size={34} />
-            </Flexbox>
-          ) : undefined}
-        />
-      </Flexbox>
-
-      <Divider style={{ margin: '0 16px', minWidth: 'auto', width: 'auto' }} />
-
-      {isGroup && (
-        <>
-          <Flexbox style={{ padding: '12px 16px' }} gap={6}>
-            <Flexbox horizontal align="center" justify="space-between" style={{ marginBottom: 4 }}>
-              <Text strong style={{ fontSize: 13 }}>{t('chat.social.detail.members', { count: groupMemberCount })}</Text>
-              <Button
-                type="link"
-                size="small"
-                style={{ fontSize: 12, padding: 0 }}
-                disabled={members.length <= 6}
-                onClick={() => setShowAllMembers((value) => !value)}
+              <Flexbox
+                align="center"
+                justify="center"
+                style={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: 18,
+                  background: token.colorFillSecondary,
+                  color: token.colorTextSecondary,
+                }}
               >
-                {showAllMembers
-                  ? t('chat.social.detail.showLess')
-                  : t('chat.social.detail.seeAll')}
-              </Button>
-            </Flexbox>
+                <Users size={32} />
+              </Flexbox>
+              {canManageGroupMembers && (
+                <Flexbox
+                  align="center"
+                  justify="center"
+                  style={{
+                    position: 'absolute',
+                    bottom: -2,
+                    right: -2,
+                    width: 24,
+                    height: 24,
+                    borderRadius: 12,
+                    background: token.colorPrimary,
+                    color: '#fff',
+                    border: `2px solid ${token.colorBgContainer}`,
+                  }}
+                >
+                  <Camera size={12} />
+                </Flexbox>
+              )}
+            </div>
+            {/* Editable group name */}
+            {editingName ? (
+              <Flexbox horizontal align="center" gap={8}>
+                <input
+                  autoFocus
+                  value={editNameValue}
+                  onChange={(e) => setEditNameValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void handleSaveGroupName();
+                    if (e.key === 'Escape') setEditingName(false);
+                  }}
+                  onBlur={() => void handleSaveGroupName()}
+                  style={{
+                    border: 'none',
+                    borderBottom: `2px solid ${token.colorPrimary}`,
+                    background: 'transparent',
+                    fontSize: 16,
+                    fontWeight: 600,
+                    textAlign: 'center',
+                    outline: 'none',
+                    width: 180,
+                    padding: '2px 4px',
+                    color: token.colorText,
+                  }}
+                />
+              </Flexbox>
+            ) : (
+              <Text
+                strong
+                style={{ fontSize: 16, cursor: canManageGroupMembers ? 'pointer' : 'default' }}
+                onClick={canManageGroupMembers ? () => {
+                  setEditNameValue(activeGroup?.name || '');
+                  setEditingName(true);
+                } : undefined}
+              >
+                {displayName}
+              </Text>
+            )}
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {t('chat.social.detail.membersCount', { count: groupMemberCount })}
+            </Text>
+          </Flexbox>
+        ) : (
+          <Flexbox style={{ padding: '16px 16px 8px' }}>
+            <PublicProfileCard
+              compact
+              profile={buildChatDetailProfile({
+                isGroup,
+                displayName,
+                peerAvatar,
+                peerDid,
+                activeGroup,
+                groupMemberCount,
+                peerPresenceKnown,
+                peerIsOnline,
+                encryptionEnabled,
+                cachedPeerProfile,
+                t,
+              })}
+            />
+          </Flexbox>
+        )}
+
+        {/* Members section (group only) */}
+        {isGroup && (
+          <DetailSection title={t('chat.social.detail.membersLabel')}>
             {members.length > 0 ? (
               (showAllMembers ? members : members.slice(0, 6)).map((m) => {
                 const memberRole = Number(m.role ?? GroupRole.MEMBER);
@@ -905,22 +931,206 @@ export function ChatDetailPanel() {
                 {t('chat.social.detail.membersLoading')}
               </Text>
             )}
-            <Button
-              type="dashed"
-              icon={<UserPlus size={14} />}
-              block
-              size="small"
-              style={{ marginTop: 4 }}
-              disabled={!canManageGroupMembers || inviteCandidates.length === 0}
-              onClick={() => setInviteModalOpen(true)}
-            >
-              {t('chat.social.detail.addMember')}
-            </Button>
-          </Flexbox>
-          <Divider style={{ margin: '0 16px', minWidth: 'auto', width: 'auto' }} />
-        </>
-      )}
+            <Flexbox horizontal align="center" justify="space-between" style={{ marginTop: 4 }}>
+              <Button
+                type="dashed"
+                icon={<UserPlus size={14} />}
+                size="small"
+                disabled={!canManageGroupMembers || inviteCandidates.length === 0}
+                onClick={() => setInviteModalOpen(true)}
+              >
+                {t('chat.social.detail.addMember')}
+              </Button>
+              {members.length > 6 && (
+                <Button
+                  type="link"
+                  size="small"
+                  style={{ fontSize: 12, padding: 0 }}
+                  onClick={() => setShowAllMembers((v) => !v)}
+                >
+                  {showAllMembers ? t('chat.social.detail.showLess') : t('chat.social.detail.seeAll')}
+                </Button>
+              )}
+            </Flexbox>
+          </DetailSection>
+        )}
 
+        {/* Settings section */}
+        <DetailSection title={t('chat.social.detail.settings')}>
+          <Flexbox horizontal align="center" justify="space-between">
+            <Flexbox horizontal align="center" gap={8}>
+              <BellOff size={15} style={{ color: token.colorTextSecondary }} />
+              <Text style={{ fontSize: 13 }}>{t('chat.social.detail.muteNotifications')}</Text>
+            </Flexbox>
+            <Toggle
+              checked={Boolean(activeLocalState?.muted)}
+              onChange={(v) => updateActiveLocalState({ muted: v })}
+            />
+          </Flexbox>
+          <Flexbox horizontal align="center" justify="space-between">
+            <Flexbox horizontal align="center" gap={8}>
+              <Pin size={15} style={{ color: token.colorTextSecondary }} />
+              <Text style={{ fontSize: 13 }}>{t('chat.social.detail.pinConversation')}</Text>
+            </Flexbox>
+            <Toggle
+              checked={Boolean(activeLocalState?.sticky)}
+              onChange={(v) => updateActiveLocalState({ sticky: v })}
+            />
+          </Flexbox>
+          <Flexbox
+            horizontal
+            align="center"
+            justify="space-between"
+            style={{ cursor: 'pointer' }}
+            onClick={openBackgroundModal}
+          >
+            <Flexbox horizontal align="center" gap={8}>
+              <ImageIcon size={15} style={{ color: token.colorTextSecondary }} />
+              <Text style={{ fontSize: 13 }}>{t('chat.social.detail.chatBackground')}</Text>
+            </Flexbox>
+            <ChevronRight size={15} style={{ color: token.colorTextQuaternary }} />
+          </Flexbox>
+          <Flexbox
+            horizontal
+            align="center"
+            justify="space-between"
+            style={{ cursor: 'pointer' }}
+            onClick={() => window.dispatchEvent(new CustomEvent('peers-chat:open-search'))}
+          >
+            <Flexbox horizontal align="center" gap={8}>
+              <Search size={15} style={{ color: token.colorTextSecondary }} />
+              <Text style={{ fontSize: 13 }}>{t('chat.social.detail.searchMessages')}</Text>
+            </Flexbox>
+            <ChevronRight size={15} style={{ color: token.colorTextQuaternary }} />
+          </Flexbox>
+        </DetailSection>
+
+        {/* Shared Content section */}
+        <DetailSection title={t('chat.social.detail.sharedContent')}>
+          <DetailAttachmentSection
+            title={t('chat.social.detail.mediaWithCount', { count: mediaAttachments.length })}
+            emptyLabel={t('chat.social.detail.mediaEmpty')}
+            items={mediaAttachments}
+            limit={RECENT_MEDIA_LIMIT}
+          />
+          <DetailAttachmentSection
+            title={t('chat.social.detail.filesWithCount', { count: fileAttachments.length })}
+            emptyLabel={t('chat.social.detail.filesEmpty')}
+            items={fileAttachments}
+            limit={RECENT_FILE_LIMIT}
+          />
+        </DetailSection>
+
+        {/* Security section */}
+        {encryptionEnabled && (
+          <DetailSection title={t('chat.social.encryption.title')}>
+            <Flexbox horizontal align="center" gap={6}>
+              <Lock size={14} style={{ color: token.colorSuccess }} />
+              <Text strong style={{ fontSize: 13 }}>{t('chat.social.encryption.title')}</Text>
+            </Flexbox>
+            <Text type="secondary" style={{ fontSize: 11 }}>{t('chat.social.encryption.fingerprint')}</Text>
+            <Text type="secondary" style={{ fontSize: 11, fontFamily: 'monospace', wordBreak: 'break-all' }}>
+              {ownFingerprint || '—'}
+            </Text>
+            {!isGroup && peerDid ? (
+              <Button
+                type={verifyOpen ? 'default' : 'primary'}
+                ghost={!verifyOpen}
+                icon={<ShieldCheck size={14} />}
+                size="small"
+                onClick={() => setVerifyOpen((v) => !v)}
+                style={{ marginTop: 4 }}
+              >
+                {verifyOpen
+                  ? t('chat.social.verify.hide')
+                  : t('chat.social.verify.show')}
+              </Button>
+            ) : null}
+            {!isGroup && peerDid && verifyOpen && currentUserDid ? (
+              <SafetyVerificationPanel
+                localActorDid={currentUserDid}
+                localFingerprint={ownFingerprint || ''}
+                peerDid={peerDid}
+              />
+            ) : null}
+            {activeTab === 'friend' ? (
+              <Flexbox gap={4} style={{ marginTop: 4 }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {t('chat.social.encryption.upgradeBody.line3')}
+                </Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {t('chat.social.encryption.upgradeBlocked')}
+                </Text>
+              </Flexbox>
+            ) : null}
+          </DetailSection>
+        )}
+
+        {/* Danger zone */}
+        <DetailSection title={t('chat.social.detail.dangerZone')}>
+          <Button
+            type="text"
+            danger
+            icon={<Trash2 size={14} />}
+            style={{ justifyContent: 'flex-start', height: 36 }}
+            block
+            onClick={confirmClearHistory}
+          >
+            {t('chat.social.detail.clearHistory')}
+          </Button>
+          {activeLocalState?.clearedAt ? (
+            <Button
+              type="text"
+              icon={<RotateCcw size={14} />}
+              style={{ justifyContent: 'flex-start', height: 36 }}
+              block
+              onClick={() => updateActiveLocalState({ clearedAt: 0 })}
+            >
+              {t('chat.social.detail.restoreHistory')}
+            </Button>
+          ) : null}
+          {isGroup ? (
+            <Button
+              type="text"
+              danger
+              icon={<LogOut size={14} />}
+              style={{ justifyContent: 'flex-start', height: 36 }}
+              block
+              onClick={async () => {
+                if (activeUlid) {
+                  try {
+                    await api.groupChatLeaveGroup(activeUlid);
+                    await loadGroups();
+                    selectGroup('');
+                    setShowDetail(false);
+                  } catch (e) {
+                    log.error('chat', 'leave group failed', e);
+                  }
+                }
+              }}
+            >
+              {t('chat.social.detail.leaveGroup')}
+            </Button>
+          ) : (
+            <Button
+              type="text"
+              danger
+              icon={peerBlocked ? <RotateCcw size={14} /> : <Ban size={14} />}
+              style={{ justifyContent: 'flex-start', height: 36 }}
+              block
+              disabled={!peerDid}
+              onClick={peerBlocked ? confirmUnblockUser : confirmBlockUser}
+            >
+              {peerBlocked ? t('chat.social.detail.unblockUser') : t('chat.social.detail.blockUser')}
+            </Button>
+          )}
+        </DetailSection>
+
+        {/* Spacer for scroll padding */}
+        <div style={{ height: 16 }} />
+      </Flexbox>
+
+      {/* Invite modal */}
       <Modal
         title={t('chat.social.detail.addMember')}
         open={inviteModalOpen}
@@ -949,132 +1159,6 @@ export function ChatDetailPanel() {
           />
         </Flexbox>
       </Modal>
-
-      <Flexbox style={{ padding: '12px 16px' }} gap={12}>
-        <Text strong style={{ fontSize: 13 }}>{t('chat.social.detail.sharedContent')}</Text>
-        <DetailAttachmentSection
-          title={t('chat.social.detail.mediaWithCount', { count: mediaAttachments.length })}
-          emptyLabel={t('chat.social.detail.mediaEmpty')}
-          items={mediaAttachments}
-          limit={RECENT_MEDIA_LIMIT}
-        />
-        <DetailAttachmentSection
-          title={t('chat.social.detail.filesWithCount', { count: fileAttachments.length })}
-          emptyLabel={t('chat.social.detail.filesEmpty')}
-          items={fileAttachments}
-          limit={RECENT_FILE_LIMIT}
-        />
-      </Flexbox>
-
-      <Divider style={{ margin: '0 16px', minWidth: 'auto', width: 'auto' }} />
-
-      <Flexbox style={{ padding: '12px 16px' }} gap={8}>
-        <Text strong style={{ fontSize: 13 }}>{t('chat.social.detail.actions')}</Text>
-        <Flexbox
-          gap={2}
-          style={{
-            padding: 4,
-            borderRadius: 16,
-            background: token.colorFillQuaternary,
-            border: `1px solid ${token.colorBorderSecondary}`,
-          }}
-        >
-          {actionRows.map((action) => (
-            <DetailActionRow key={action.title} {...action} />
-          ))}
-        </Flexbox>
-      </Flexbox>
-
-      <Divider style={{ margin: '0 16px', minWidth: 'auto', width: 'auto' }} />
-
-      <Flexbox style={{ padding: '8px 16px 16px' }}>
-        {isGroup ? (
-          <Button
-            type="text"
-            danger
-            icon={<LogOut size={16} />}
-            style={{ justifyContent: 'flex-start', height: 36 }}
-            block
-            onClick={async () => {
-              if (activeUlid) {
-                try {
-                  await api.groupChatLeaveGroup(activeUlid);
-                  await loadGroups();
-                  selectGroup('');
-                  setShowDetail(false);
-                } catch (e) {
-                  log.error('chat', 'leave group failed', e);
-                }
-              }
-            }}
-          >
-            {t('chat.social.detail.leaveGroup')}
-        </Button>
-      ) : (
-        <Button
-          type="text"
-          danger
-          icon={peerBlocked ? <RotateCcw size={16} /> : <Ban size={16} />}
-          style={{ justifyContent: 'flex-start', height: 36 }}
-          block
-          disabled={!peerDid}
-          onClick={peerBlocked ? confirmUnblockUser : confirmBlockUser}
-        >
-          {peerBlocked ? t('chat.social.detail.unblockUser') : t('chat.social.detail.blockUser')}
-          </Button>
-        )}
-      </Flexbox>
-
-      {encryptionEnabled && (
-        <>
-          <Divider style={{ margin: '0 16px', minWidth: 'auto', width: 'auto' }} />
-          <Flexbox style={{ padding: '12px 16px' }} gap={8}>
-            <Flexbox horizontal align="center" gap={6}>
-              <Lock size={14} style={{ color: token.colorSuccess }} />
-              <Text strong style={{ fontSize: 13 }}>{t('chat.social.encryption.title')}</Text>
-            </Flexbox>
-            <Text type="secondary" style={{ fontSize: 11 }}>{t('chat.social.encryption.fingerprint')}</Text>
-            <Text type="secondary" style={{ fontSize: 11, fontFamily: 'monospace', wordBreak: 'break-all' }}>
-              {ownFingerprint || '—'}
-            </Text>
-            {/* Identity verification — only meaningful on friend
-                chats where there is a single peer to compare
-                against. Group safety numbers wait on the chat
-                ratchet upgrade. */}
-            {!isGroup && peerDid ? (
-              <Button
-                type={verifyOpen ? 'default' : 'primary'}
-                ghost={!verifyOpen}
-                icon={<ShieldCheck size={14} />}
-                size="small"
-                onClick={() => setVerifyOpen((v) => !v)}
-                style={{ marginTop: 4 }}
-              >
-                {verifyOpen
-                  ? t('chat.social.verify.hide')
-                  : t('chat.social.verify.show')}
-              </Button>
-            ) : null}
-          </Flexbox>
-          {!isGroup && peerDid && verifyOpen && currentUserDid ? (
-            <SafetyVerificationPanel
-              localActorDid={currentUserDid}
-              localFingerprint={ownFingerprint || ''}
-              peerDid={peerDid}
-            />
-          ) : null}
-          {activeTab === 'friend' ? (
-            <Flexbox style={{ padding: '8px 16px 12px' }} gap={4}>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {t('chat.social.encryption.upgradeBody.line3')}
-              </Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {t('chat.social.encryption.upgradeBlocked')}
-              </Text>
-            </Flexbox>
-          ) : null}
-        </>
-      )}
     </Flexbox>
   );
 }

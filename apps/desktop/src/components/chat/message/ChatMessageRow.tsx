@@ -1,4 +1,4 @@
-import type { CSSProperties, KeyboardEvent } from 'react';
+import { memo, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Tooltip } from '@lobehub/ui';
 import { theme, Typography } from 'antd';
@@ -463,7 +463,7 @@ export function ChatMessageRowInteractionStyle() {
   return <style>{rowInteractionStyle}</style>;
 }
 
-export function ChatMessageRow({
+export const ChatMessageRow = memo(function ChatMessageRow({
   actionVisibility,
   activeConversationId,
   activeKind,
@@ -710,4 +710,4 @@ export function ChatMessageRow({
       )}
     </Flexbox>
   );
-}
+});
