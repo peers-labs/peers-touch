@@ -63,9 +63,9 @@ func (h *SkillHandlers) HandleGetSkill(ctx context.Context, req *model.GetSkillR
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "skill_id is required", nil))
 	}
 
-	manifest, err := h.skillService.GetSkill(ctx, req.GetAgentId(), req.GetSkillId())
+	manifest, err := h.skillService.GetSkillByID(ctx, req.GetAgentId(), req.GetSkillId())
 	if err != nil {
-		logger.Errorf(ctx, "HandleGetSkill failed: agent_id=%s, skill_name=%s, err=%v",
+		logger.Errorf(ctx, "HandleGetSkill failed: agent_id=%s, skill_id=%s, err=%v",
 			req.GetAgentId(), req.GetSkillId(), err)
 		return nil, toHandlerError(err)
 	}
@@ -118,6 +118,55 @@ func (h *SkillHandlers) HandleInstallSkill(ctx context.Context, req *model.Insta
 	return resp, nil
 }
 
+// HandleUpdateSkill updates durable Station-backed skill state.
+func (h *SkillHandlers) HandleUpdateSkill(ctx context.Context, req *model.UpdateSkillRequest) (*model.UpdateSkillResponse, error) {
+	if req.GetAgentId() == "" {
+		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "agent_id is required", nil))
+	}
+	if req.GetSkillId() == "" {
+		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "skill_id is required", nil))
+	}
+
+	manifest, scanResult, err := h.skillService.UpdateSkill(
+		ctx,
+		req.GetAgentId(),
+		req.GetSkillId(),
+		req.Name,
+		req.Description,
+		req.Content,
+		req.Enabled,
+	)
+	if err != nil {
+		logger.Errorf(ctx, "HandleUpdateSkill failed: agent_id=%s skill_id=%s err=%v",
+			req.GetAgentId(), req.GetSkillId(), err)
+		return nil, toHandlerError(err)
+	}
+
+	return &model.UpdateSkillResponse{
+		Skill:      skillManifestToProto(manifest),
+		ScanResult: scanResultToProto(scanResult),
+		Success:    true,
+	}, nil
+}
+
+// HandleDeleteSkill removes a Station-backed skill by durable ID.
+func (h *SkillHandlers) HandleDeleteSkill(ctx context.Context, req *model.DeleteSkillRequest) (*model.DeleteSkillResponse, error) {
+	if req.GetAgentId() == "" {
+		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "agent_id is required", nil))
+	}
+	if req.GetSkillId() == "" {
+		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "skill_id is required", nil))
+	}
+
+	if err := h.skillService.DeleteSkillByID(ctx, req.GetAgentId(), req.GetSkillId()); err != nil {
+		logger.Errorf(ctx, "HandleDeleteSkill failed: agent_id=%s skill_id=%s err=%v",
+			req.GetAgentId(), req.GetSkillId(), err)
+		return nil, toHandlerError(err)
+	}
+
+	return &model.DeleteSkillResponse{Success: true}, nil
+}
+
 func skillManifestToProto(m *domain.SkillManifest) *model.SkillManifest {
 	if m == nil {
 		return nil
@@ -134,6 +183,7 @@ func skillManifestToProto(m *domain.SkillManifest) *model.SkillManifest {
 		TrustLevel:  string(m.TrustLevel),
 		ScanVerdict: string(m.ScanVerdict),
 		Version:     int32(m.Version),
+		Enabled:     m.Enabled,
 	}
 	if m.Conditions != nil {
 		out.Conditions = &model.SkillConditions{

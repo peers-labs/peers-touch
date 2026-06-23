@@ -13,3 +13,4 @@ packages:
   - packages/applet-sdk
   - packages/applet-contract
   - packages/applets/*
+  - packages/prototypes/*

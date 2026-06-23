@@ -5,9 +5,9 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, toast } from '@lobehub/ui';
+import { Button, Tooltip, toast } from '@lobehub/ui';
 import { Alert, Empty, Spin, theme, Typography } from 'antd';
-import { LocateFixed, MessageSquareReply, MessagesSquare, X } from 'lucide-react';
+import { LocateFixed, MessageSquareReply, MessagesSquare, RotateCcw, Trash2, X } from 'lucide-react';
 import {
   CHAT_COMPOSER_CAPABILITIES_DESKTOP_THREAD,
   buildChatThreadSurface,
@@ -25,14 +25,24 @@ import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
 import { ChatMessageContent } from './message/ChatMessageContent';
 import {
   isOwnMessage,
+  isRecalledMessage,
   messageReplyToUlid,
   messageTimestampDate,
+  messageTimestampMs,
   replyPreviewForMessage,
   resolveChatSenderProfile,
   type ChatMessage,
 } from './message/chatMessageModel';
 
 const { Text } = Typography;
+
+/**
+ * Mirrors `application.DefaultMutationWindow` on the Station side and
+ * the same constant in ChatMessageRow. The server is the source of
+ * truth; the UI only hides the Recall button when it is guaranteed
+ * to fail.
+ */
+const FRIEND_RECALL_WINDOW_MS = 4 * 60 * 1000 + 30 * 1000;
 
 function formatThreadTime(message: ChatMessage): string {
   return messageTimestampDate(message)?.toLocaleTimeString([], {
@@ -49,6 +59,8 @@ interface ThreadMessageItemProps {
   groupMembers: ReturnType<typeof useSocialChatStore.getState>['groupMembers'];
   message: ChatMessage;
   messages: ChatMessage[];
+  onDelete?: (message: ChatMessage) => void;
+  onRecall?: (message: ChatMessage) => void;
   onReply?: (message: ChatMessage) => void;
   root?: boolean;
   rootUlid: string;
@@ -63,6 +75,8 @@ function ThreadMessageItem({
   groupMembers,
   message,
   messages,
+  onDelete,
+  onRecall,
   onReply,
   root = false,
   rootUlid,
@@ -80,6 +94,11 @@ function ThreadMessageItem({
     message,
   });
   const isOwn = isOwnMessage(message, currentUserDid);
+  const isRecalled = isRecalledMessage(message);
+  const sentMs = messageTimestampMs(message);
+  const withinWindow = sentMs > 0 && (Date.now() - sentMs) < FRIEND_RECALL_WINDOW_MS;
+  const canRecall = Boolean(onRecall) && isOwn && !isRecalled && withinWindow;
+  const canDelete = Boolean(onDelete) && !isRecalled;
   const replyToUlid = messageReplyToUlid(message);
   const replyPreview = replyPreviewForMessage(
     replyToUlid && replyToUlid !== rootUlid
@@ -123,18 +142,44 @@ function ThreadMessageItem({
               {formatThreadTime(message)}
             </Text>
           </Flexbox>
-          {!root && onReply && (
-            <Button
-              className="thread-reply-action"
-              type="text"
-              size="small"
-              icon={<MessageSquareReply size={13} />}
-              aria-label={t('chat.social.thread.replyToMessage')}
-              title={t('chat.social.thread.replyToMessage')}
-              onClick={() => onReply(message)}
-              style={{ width: 24, height: 24, flexShrink: 0 }}
-            />
-          )}
+          <Flexbox horizontal align="center" gap={2} className="thread-reply-action" style={{ flexShrink: 0 }}>
+            {!root && onReply && (
+              <Tooltip title={t('chat.social.thread.replyToMessage')}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<MessageSquareReply size={13} />}
+                  aria-label={t('chat.social.thread.replyToMessage')}
+                  onClick={() => onReply(message)}
+                  style={{ width: 24, height: 24 }}
+                />
+              </Tooltip>
+            )}
+            {canRecall && (
+              <Tooltip title={t('chat.social.messageArea.actionRecall')}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<RotateCcw size={13} />}
+                  aria-label={t('chat.social.messageArea.actionRecall')}
+                  onClick={() => onRecall?.(message)}
+                  style={{ width: 24, height: 24 }}
+                />
+              </Tooltip>
+            )}
+            {canDelete && (
+              <Tooltip title={t('chat.social.messageArea.actionDelete')}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<Trash2 size={13} />}
+                  aria-label={t('chat.social.messageArea.actionDelete')}
+                  onClick={() => onDelete?.(message)}
+                  style={{ width: 24, height: 24, color: token.colorError }}
+                />
+              </Tooltip>
+            )}
+          </Flexbox>
         </Flexbox>
         {replyPreview && (
           <Text
@@ -193,10 +238,15 @@ export function ChatThreadPanel() {
     sendFriendMessage,
     sendGroupMessage,
     loadGroupMembers,
+    deleteMessage,
+    recallFriendMessage,
+    recallGroupMessage,
   } = useSocialChatStore();
   const [inputValue, setInputValue] = useState('');
   const [sending, setSending] = useState(false);
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
+  const [deletingMessage, setDeletingMessage] = useState(false);
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const activeKind = activeTab === 'friend' ? 'friend' : 'group';
@@ -238,6 +288,8 @@ export function ChatThreadPanel() {
     const handle = window.setTimeout(() => {
       setInputValue('');
       setReplyTarget(null);
+      setDeleteTarget(null);
+      setDeletingMessage(false);
     }, 0);
     return () => window.clearTimeout(handle);
   }, [activeUlid, openThreadRootUlid]);
@@ -304,6 +356,35 @@ export function ChatThreadPanel() {
     setScrollToMessageUlid(rootUlid);
   };
 
+  const handleRecall = async (message: ChatMessage) => {
+    if (!activeUlid) return;
+    try {
+      if (activeKind === 'friend') {
+        await recallFriendMessage(activeUlid, message.ulid);
+      } else {
+        await recallGroupMessage(activeUlid, message.ulid);
+      }
+    } catch (error) {
+      log.error('socialChat', 'thread recall failed', error);
+      toast.error(t('chat.social.messageArea.recallFailed'));
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!activeUlid || !deleteTarget) return;
+    setDeletingMessage(true);
+    try {
+      await deleteMessage(activeUlid, deleteTarget.ulid, activeKind);
+      if (replyTarget?.ulid === deleteTarget.ulid) setReplyTarget(null);
+      setDeleteTarget(null);
+    } catch (error) {
+      log.error('socialChat', 'thread deleteMessage failed', error);
+      toast.error(t('chat.social.messageArea.deleteFailed'));
+    } finally {
+      setDeletingMessage(false);
+    }
+  };
+
   if (!openThreadRootUlid) return null;
 
   const replyPreview = replyPreviewForMessage(replyTarget, {
@@ -321,6 +402,7 @@ export function ChatThreadPanel() {
         background: token.colorBgContainer,
         borderLeft: `1px solid ${token.colorBorderSecondary}`,
         flexShrink: 0,
+        position: 'relative',
       }}
     >
       <style>
@@ -434,6 +516,8 @@ export function ChatThreadPanel() {
                 groupMembers={groupMembers}
                 message={rootMessage}
                 messages={displayMessages}
+                onDelete={setDeleteTarget}
+                onRecall={handleRecall}
                 root
                 rootUlid={rootMessage.ulid}
                 sessions={sessions}
@@ -469,6 +553,8 @@ export function ChatThreadPanel() {
                     groupMembers={groupMembers}
                     message={reply}
                     messages={displayMessages}
+                    onDelete={setDeleteTarget}
+                    onRecall={handleRecall}
                     onReply={setReplyTarget}
                     rootUlid={rootMessage.ulid}
                     sessions={sessions}
@@ -508,6 +594,54 @@ export function ChatThreadPanel() {
             visualSurface="desktop-thread"
           />
         </>
+      )}
+
+      {deleteTarget && (
+        <Flexbox
+          align="center"
+          justify="center"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 20,
+            background: 'rgba(15, 23, 42, 0.18)',
+            padding: 24,
+          }}
+          onClick={() => {
+            if (!deletingMessage) setDeleteTarget(null);
+          }}
+        >
+          <Flexbox
+            gap={14}
+            style={{
+              width: 300,
+              maxWidth: '100%',
+              padding: 18,
+              borderRadius: 8,
+              background: token.colorBgElevated,
+              border: `1px solid ${token.colorBorderSecondary}`,
+              boxShadow: token.boxShadowSecondary,
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Flexbox gap={6}>
+              <Text strong style={{ fontSize: 15 }}>
+                {t('chat.social.messageArea.deleteConfirmTitle')}
+              </Text>
+              <Text type="secondary" style={{ fontSize: 13, lineHeight: 1.45 }}>
+                {t('chat.social.messageArea.deleteConfirmBody')}
+              </Text>
+            </Flexbox>
+            <Flexbox horizontal justify="flex-end" gap={8}>
+              <Button disabled={deletingMessage} onClick={() => setDeleteTarget(null)}>
+                {t('chat.social.messageArea.cancel')}
+              </Button>
+              <Button type="primary" danger loading={deletingMessage} onClick={handleConfirmDelete}>
+                {t('chat.social.messageArea.deleteConfirmOk')}
+              </Button>
+            </Flexbox>
+          </Flexbox>
+        </Flexbox>
       )}
     </Flexbox>
   );

@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/agent/skill.proto.
  */
 export const file_domain_agent_skill: GenFile = /*@__PURE__*/
-  fileDesc("Chhkb21haW4vYWdlbnQvc2tpbGwucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxIvkCCg1Ta2lsbE1hbmlmZXN0EhAKCHNraWxsX2lkGAEgASgJEhAKCGFnZW50X2lkGAIgASgJEgwKBG5hbWUYAyABKAkSEwoLZGVzY3JpcHRpb24YBCABKAkSEAoIY2F0ZWdvcnkYBSABKAkSEQoJcGxhdGZvcm1zGAYgAygJEj8KCmNvbmRpdGlvbnMYByABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ta2lsbENvbmRpdGlvbnMSDwoHY29udGVudBgIIAEoCRIOCgZzb3VyY2UYCSABKAkSEwoLdHJ1c3RfbGV2ZWwYCiABKAkSFAoMc2Nhbl92ZXJkaWN0GAsgASgJEg8KB3ZlcnNpb24YDCABKAUSLgoKY3JlYXRlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgOIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiSAoPU2tpbGxDb25kaXRpb25zEh0KFWZhbGxiYWNrX2Zvcl90b29sc2V0cxgBIAMoCRIWCg5yZXF1aXJlc190b29scxgCIAMoCSKGAQoMU2tpbGxGaW5kaW5nEhIKCnBhdHRlcm5faWQYASABKAkSEAoIc2V2ZXJpdHkYAiABKAkSEAoIY2F0ZWdvcnkYAyABKAkSDAoEZmlsZRgEIAEoCRIMCgRsaW5lGAUgASgFEg0KBW1hdGNoGAYgASgJEhMKC2Rlc2NyaXB0aW9uGAcgASgJItgBCg9Ta2lsbFNjYW5SZXN1bHQSEgoKc2tpbGxfbmFtZRgBIAEoCRIOCgZzb3VyY2UYAiABKAkSEwoLdHJ1c3RfbGV2ZWwYAyABKAkSDwoHdmVyZGljdBgEIAEoCRI6CghmaW5kaW5ncxgFIAMoCzIoLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlNraWxsRmluZGluZxIuCgpzY2FubmVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdzdW1tYXJ5GAcgASgJIjcKEUxpc3RTa2lsbHNSZXF1ZXN0EhAKCGFnZW50X2lkGAEgASgJEhAKCGNhdGVnb3J5GAIgASgJIk8KEkxpc3RTa2lsbHNSZXNwb25zZRI5CgZza2lsbHMYASADKAsyKS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ta2lsbE1hbmlmZXN0IkgKD0dldFNraWxsUmVxdWVzdBIQCghza2lsbF9pZBgBIAEoCRIRCglmaWxlX3BhdGgYAiABKAkSEAoIYWdlbnRfaWQYAyABKAkiYgoQR2V0U2tpbGxSZXNwb25zZRI4CgVza2lsbBgBIAEoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlNraWxsTWFuaWZlc3QSFAoMZmlsZV9jb250ZW50GAIgASgJImsKE0luc3RhbGxTa2lsbFJlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkSDgoGc291cmNlGAIgASgJEgwKBG5hbWUYAyABKAkSDwoHY29udGVudBgEIAEoCRITCgt0cnVzdF9sZXZlbBgFIAEoCSKOAQoUSW5zdGFsbFNraWxsUmVzcG9uc2USEAoIc2tpbGxfaWQYASABKAkSDwoHdmVyZGljdBgCIAEoCRJACgtzY2FuX3Jlc3VsdBgDIAEoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlNraWxsU2NhblJlc3VsdBIRCglpbnN0YWxsZWQYBCABKAgiTQoRUGF0Y2hTa2lsbFJlcXVlc3QSEAoIc2tpbGxfaWQYASABKAkSEgoKb2xkX3N0cmluZxgCIAEoCRISCgpuZXdfc3RyaW5nGAMgASgJIl8KElBhdGNoU2tpbGxSZXNwb25zZRI4CgVza2lsbBgBIAEoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlNraWxsTWFuaWZlc3QSDwoHc3VjY2VzcxgCIAEoCEJLWklnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9hcHAvc3Vic2VydmVyL2FnZW50L21vZGVsO21vZGVsYgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("Chhkb21haW4vYWdlbnQvc2tpbGwucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxIooDCg1Ta2lsbE1hbmlmZXN0EhAKCHNraWxsX2lkGAEgASgJEhAKCGFnZW50X2lkGAIgASgJEgwKBG5hbWUYAyABKAkSEwoLZGVzY3JpcHRpb24YBCABKAkSEAoIY2F0ZWdvcnkYBSABKAkSEQoJcGxhdGZvcm1zGAYgAygJEj8KCmNvbmRpdGlvbnMYByABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ta2lsbENvbmRpdGlvbnMSDwoHY29udGVudBgIIAEoCRIOCgZzb3VyY2UYCSABKAkSEwoLdHJ1c3RfbGV2ZWwYCiABKAkSFAoMc2Nhbl92ZXJkaWN0GAsgASgJEg8KB3ZlcnNpb24YDCABKAUSLgoKY3JlYXRlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgOIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHZW5hYmxlZBgPIAEoCCJICg9Ta2lsbENvbmRpdGlvbnMSHQoVZmFsbGJhY2tfZm9yX3Rvb2xzZXRzGAEgAygJEhYKDnJlcXVpcmVzX3Rvb2xzGAIgAygJIoYBCgxTa2lsbEZpbmRpbmcSEgoKcGF0dGVybl9pZBgBIAEoCRIQCghzZXZlcml0eRgCIAEoCRIQCghjYXRlZ29yeRgDIAEoCRIMCgRmaWxlGAQgASgJEgwKBGxpbmUYBSABKAUSDQoFbWF0Y2gYBiABKAkSEwoLZGVzY3JpcHRpb24YByABKAki2AEKD1NraWxsU2NhblJlc3VsdBISCgpza2lsbF9uYW1lGAEgASgJEg4KBnNvdXJjZRgCIAEoCRITCgt0cnVzdF9sZXZlbBgDIAEoCRIPCgd2ZXJkaWN0GAQgASgJEjoKCGZpbmRpbmdzGAUgAygLMigucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuU2tpbGxGaW5kaW5nEi4KCnNjYW5uZWRfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg8KB3N1bW1hcnkYByABKAkiNwoRTGlzdFNraWxsc1JlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkSEAoIY2F0ZWdvcnkYAiABKAkiTwoSTGlzdFNraWxsc1Jlc3BvbnNlEjkKBnNraWxscxgBIAMoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlNraWxsTWFuaWZlc3QiSAoPR2V0U2tpbGxSZXF1ZXN0EhAKCHNraWxsX2lkGAEgASgJEhEKCWZpbGVfcGF0aBgCIAEoCRIQCghhZ2VudF9pZBgDIAEoCSJiChBHZXRTa2lsbFJlc3BvbnNlEjgKBXNraWxsGAEgASgLMikucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuU2tpbGxNYW5pZmVzdBIUCgxmaWxlX2NvbnRlbnQYAiABKAkiawoTSW5zdGFsbFNraWxsUmVxdWVzdBIQCghhZ2VudF9pZBgBIAEoCRIOCgZzb3VyY2UYAiABKAkSDAoEbmFtZRgDIAEoCRIPCgdjb250ZW50GAQgASgJEhMKC3RydXN0X2xldmVsGAUgASgJIo4BChRJbnN0YWxsU2tpbGxSZXNwb25zZRIQCghza2lsbF9pZBgBIAEoCRIPCgd2ZXJkaWN0GAIgASgJEkAKC3NjYW5fcmVzdWx0GAMgASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuU2tpbGxTY2FuUmVzdWx0EhEKCWluc3RhbGxlZBgEIAEoCCLCAQoSVXBkYXRlU2tpbGxSZXF1ZXN0EhAKCGFnZW50X2lkGAEgASgJEhAKCHNraWxsX2lkGAIgASgJEhEKBG5hbWUYAyABKAlIAIgBARIYCgtkZXNjcmlwdGlvbhgEIAEoCUgBiAEBEhQKB2NvbnRlbnQYBSABKAlIAogBARIUCgdlbmFibGVkGAYgASgISAOIAQFCBwoFX25hbWVCDgoMX2Rlc2NyaXB0aW9uQgoKCF9jb250ZW50QgoKCF9lbmFibGVkIqIBChNVcGRhdGVTa2lsbFJlc3BvbnNlEjgKBXNraWxsGAEgASgLMikucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuU2tpbGxNYW5pZmVzdBJACgtzY2FuX3Jlc3VsdBgCIAEoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlNraWxsU2NhblJlc3VsdBIPCgdzdWNjZXNzGAMgASgIIjgKEkRlbGV0ZVNraWxsUmVxdWVzdBIQCghhZ2VudF9pZBgBIAEoCRIQCghza2lsbF9pZBgCIAEoCSImChNEZWxldGVTa2lsbFJlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiTQoRUGF0Y2hTa2lsbFJlcXVlc3QSEAoIc2tpbGxfaWQYASABKAkSEgoKb2xkX3N0cmluZxgCIAEoCRISCgpuZXdfc3RyaW5nGAMgASgJIl8KElBhdGNoU2tpbGxSZXNwb25zZRI4CgVza2lsbBgBIAEoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlNraWxsTWFuaWZlc3QSDwoHc3VjY2VzcxgCIAEoCEJLWklnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9hcHAvc3Vic2VydmVyL2FnZW50L21vZGVsO21vZGVsYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers_touch.model.agent.v1.SkillManifest
@@ -87,6 +87,11 @@ export type SkillManifest = Message<"peers_touch.model.agent.v1.SkillManifest"> 
    * @generated from field: google.protobuf.Timestamp updated_at = 14;
    */
   updatedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: bool enabled = 15;
+   */
+  enabled: boolean;
 };
 
 /**
@@ -372,6 +377,114 @@ export const InstallSkillResponseSchema: GenMessage<InstallSkillResponse> = /*@_
   messageDesc(file_domain_agent_skill, 9);
 
 /**
+ * @generated from message peers_touch.model.agent.v1.UpdateSkillRequest
+ */
+export type UpdateSkillRequest = Message<"peers_touch.model.agent.v1.UpdateSkillRequest"> & {
+  /**
+   * @generated from field: string agent_id = 1;
+   */
+  agentId: string;
+
+  /**
+   * @generated from field: string skill_id = 2;
+   */
+  skillId: string;
+
+  /**
+   * @generated from field: optional string name = 3;
+   */
+  name?: string | undefined;
+
+  /**
+   * @generated from field: optional string description = 4;
+   */
+  description?: string | undefined;
+
+  /**
+   * @generated from field: optional string content = 5;
+   */
+  content?: string | undefined;
+
+  /**
+   * @generated from field: optional bool enabled = 6;
+   */
+  enabled?: boolean | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.UpdateSkillRequest.
+ * Use `create(UpdateSkillRequestSchema)` to create a new message.
+ */
+export const UpdateSkillRequestSchema: GenMessage<UpdateSkillRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_skill, 10);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.UpdateSkillResponse
+ */
+export type UpdateSkillResponse = Message<"peers_touch.model.agent.v1.UpdateSkillResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.agent.v1.SkillManifest skill = 1;
+   */
+  skill?: SkillManifest | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.agent.v1.SkillScanResult scan_result = 2;
+   */
+  scanResult?: SkillScanResult | undefined;
+
+  /**
+   * @generated from field: bool success = 3;
+   */
+  success: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.UpdateSkillResponse.
+ * Use `create(UpdateSkillResponseSchema)` to create a new message.
+ */
+export const UpdateSkillResponseSchema: GenMessage<UpdateSkillResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_skill, 11);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.DeleteSkillRequest
+ */
+export type DeleteSkillRequest = Message<"peers_touch.model.agent.v1.DeleteSkillRequest"> & {
+  /**
+   * @generated from field: string agent_id = 1;
+   */
+  agentId: string;
+
+  /**
+   * @generated from field: string skill_id = 2;
+   */
+  skillId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.DeleteSkillRequest.
+ * Use `create(DeleteSkillRequestSchema)` to create a new message.
+ */
+export const DeleteSkillRequestSchema: GenMessage<DeleteSkillRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_skill, 12);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.DeleteSkillResponse
+ */
+export type DeleteSkillResponse = Message<"peers_touch.model.agent.v1.DeleteSkillResponse"> & {
+  /**
+   * @generated from field: bool success = 1;
+   */
+  success: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.DeleteSkillResponse.
+ * Use `create(DeleteSkillResponseSchema)` to create a new message.
+ */
+export const DeleteSkillResponseSchema: GenMessage<DeleteSkillResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_skill, 13);
+
+/**
  * @generated from message peers_touch.model.agent.v1.PatchSkillRequest
  */
 export type PatchSkillRequest = Message<"peers_touch.model.agent.v1.PatchSkillRequest"> & {
@@ -396,7 +509,7 @@ export type PatchSkillRequest = Message<"peers_touch.model.agent.v1.PatchSkillRe
  * Use `create(PatchSkillRequestSchema)` to create a new message.
  */
 export const PatchSkillRequestSchema: GenMessage<PatchSkillRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_skill, 10);
+  messageDesc(file_domain_agent_skill, 14);
 
 /**
  * @generated from message peers_touch.model.agent.v1.PatchSkillResponse
@@ -418,5 +531,5 @@ export type PatchSkillResponse = Message<"peers_touch.model.agent.v1.PatchSkillR
  * Use `create(PatchSkillResponseSchema)` to create a new message.
  */
 export const PatchSkillResponseSchema: GenMessage<PatchSkillResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_skill, 11);
+  messageDesc(file_domain_agent_skill, 15);
 
