@@ -32,6 +32,11 @@ Desktop 与 `station / desktop-rust / desktop-web / desktop-app` 的跨进程关
 - [../chat/chat-ux-contract.md](../chat/chat-ux-contract.md) — Desktop 与 Mobile 共同遵守的 Chat / IM 产品体验契约
 - [chat-layout-contract.md](./chat-layout-contract.md) — Desktop 对跨端 Chat 契约的平台化约束
 
+## 产品原型
+
+- [prototype/chat/私聊与群聊系统原型 v1.0/readme.md](./prototype/chat/私聊与群聊系统原型%20v1.0/readme.md) — 私聊 / 群聊系统交互原型
+- [prototype/call/语音视频通话系统原型 v1.0/readme.md](./prototype/call/语音视频通话系统原型%20v1.0/readme.md) — 一对一语音 / 视频通话交互原型（对应 [../../architecture/realtime/voice-video-calls.md](../../architecture/realtime/voice-video-calls.md)）
+
 ## 跨端通用 UX
 
 - [../common/ux-design-methodology.md](../common/ux-design-methodology.md) — 客户端 UX 问题从案例沉淀成准则、契约、invariant 的方法论
