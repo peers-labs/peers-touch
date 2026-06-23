@@ -2,6 +2,9 @@
 
 > Status: Draft for review, 2026-06-22
 >
+> Baseline revision: 2026-06-22, re-verified against the post-merge code on
+> branch `high-chat` (after merging `feat/federation-applet-runtime`).
+>
 > Scope: one-to-one voice and video calls in friend chat. Group calls,
 > recording, screen sharing, live captions, and SFU operation are explicit
 > non-goals for the first delivery.
@@ -24,19 +27,58 @@ parallel realtime subsystem.
 
 ## 2. Existing Baseline
 
-The current repository already contains the foundations needed for this design:
+This section is re-verified against the post-merge code. The repository already
+contains a near-complete one-to-one call skeleton; this design hardens and
+formalizes it rather than building from scratch.
 
-| Area | Existing asset | Role |
+### 2.1 Verified reusable assets
+
+| Area | Existing asset | Verified state |
 | --- | --- | --- |
-| Realtime contract | `docs/architecture/realtime/event-stream.md` | Defines the single SSE stream and reserves WebRTC for media only. |
-| Wire model | `model/domain/realtime/event.proto` | Defines `CallSignal` with offer / answer / ICE / ringing kinds. |
-| Station ingress | `apps/station/app/subserver/events/handler.go` | Implements `POST /realtime/signal` and SSE fan-out. |
-| Desktop signaling bridge | `apps/desktop/src/services/eventStream.ts` | Decodes `StreamEvent.signaling` and emits typed frontend events. |
-| Desktop media manager | `apps/desktop/src/modules/p2p/friendChatP2p.ts` | Owns `RTCPeerConnection`, media tracks, sealed signaling, and call actions. |
-| Desktop surface | `apps/desktop/src/components/chat/CallSurface.tsx` | Renders incoming call modal and in-call floating HUD. |
-| TURN subserver | `apps/station/frame/core/plugin/native/subserver/turn/` | Provides Pion TURN and `/api/v1/turn/ice-servers` for ICE server discovery. |
-| Desktop ICE bridge | `apps/desktop/src-tauri/src/interface/tauri_commands/ice.rs` | Keeps the only allowed ICE bridge: `ice_get_servers -> /api/v1/turn/ice-servers`. |
-| Federation relay | `apps/station/frame/core/plugin/native/subserver/relay/` | Provides Station-to-Station relay / pub-sub infrastructure for federation control-plane events. |
+| Realtime contract | `docs/architecture/realtime/event-stream.md` | Single SSE stream; WebRTC reserved for media only; `CallSignal signaling = 15` and `PresenceFlip presence = 14` live in the same `StreamEvent` oneof. |
+| Wire model | `model/domain/realtime/event.proto` | `CallSignal` is stable: `OFFER / ANSWER / CANDIDATE / HANGUP / CALL_REQUEST / CALL_ACCEPT / CALL_REJECT / CALL_END`. The post-merge `event.proto` additions are `MomentEvent`, unrelated to calls. |
+| Station ingress | `apps/station/app/subserver/events/handler.go` | `POST /realtime/signal` decodes `{recipient_actor_id, session_ulid, kind, payload_b64}`, treats payload as opaque (64 KiB cap), fans out to recipient, and echoes to sender for multi-device. No per-feature SSE endpoint. |
+| Desktop media manager | `apps/desktop/src/modules/p2p/friendChatP2p.ts` | Owns `RTCPeerConnection`, sealed signaling (`signalingEnvelopeSeal/Open`), candidate buffering, `CallSnapshot` state machine (`idle/outgoing/incoming/active/ended`), `startCall/acceptCall/rejectCall/endCall/toggleMic/toggleCamera`, and `direct`/`relay` transport probing via `getStats()`. |
+| Desktop surface | `apps/desktop/src/components/chat/CallSurface.tsx` | Renders ringing modal and in-call HUD, subscribes to the call snapshot; consumed by chat page / message area. |
+| TURN subserver | `apps/station/frame/core/plugin/native/subserver/turn/` | Pion TURN with RFC-5766 short-term credentials (24h TTL); historical password==username bug already fixed. |
+| ICE discovery | `apps/station/.../turn/ice_handler.go` | `/api/v1/turn/ice-servers` returns TURN UDP+TCP URLs from config plus ephemeral credentials. |
+| Desktop ICE bridge | `apps/desktop/src-tauri/src/interface/tauri_commands/ice.rs` | Reduced to a single `ice_get_servers` command; header contract forbids restoring the deleted ICE session polling surface. |
+| Presence subsystem | `apps/station/app/subserver/presence/` + `model/domain/presence/presence.proto` | New DDD subserver: 90s lease, 10s expiry sweep, `PresenceFlip` SSE fan-out; Desktop drives it via `presence_notify` + `PresenceSupervisor` + `host_events`. |
+| Federation relay | `apps/station/.../subserver/relay/` | Station-to-Station tunnel; post-merge adds the single broadcast topic `fed.invalidate.v1`. Unrelated to call media/signaling. |
+
+### 2.2 Assumptions corrected after re-verification
+
+The earlier draft of this section carried assumptions that the post-merge code
+no longer supports:
+
+- **Signaling is not HTTP polling.** Offer/answer/candidate exchange runs through
+  sealed `POST /realtime/signal` + SSE fan-out. The deleted
+  `/api/v1/ice/session/*` and `/api/v1/ice/peer/*` surfaces must stay retired
+  (`ice.rs` enforces this as a code-level contract).
+- **Presence is not `presence_stream.rs`.** That file was removed. Peer-online
+  preconditions now come from the presence subserver (lease + `PresenceFlip`),
+  not from the old ICE peer registry. Call setup should gate on
+  `PresenceStatus` / `PresenceFlip`, not a polling registry.
+- **WebRTC DataChannel does not carry chat text.** Text is SSE-only; inbound DC
+  bytes are intentionally dropped. WebRTC is media/keepalive only.
+- **`desktop_capture.rs` is not media capture.** It only registers the chat
+  screenshot global shortcut. Real audio/video capture is browser
+  `getUserMedia`; there is no Rust-side screen-share capability.
+- **`client-media-security` is not call media security.** It encrypts offline
+  chat attachment blobs (AES-256-GCM), not realtime SRTP/media frames. It is
+  only relevant to a future "save call snapshot as attachment" path.
+
+### 2.3 Net delta vs the previous draft
+
+- The biggest change is positive: the call skeleton (state machine + sealed
+  signaling + ringing protocol + in-call HUD + transport probe) already exists,
+  so Phase 1 is mostly hardening (TURN productionization, signal authorization,
+  runtime ownership), not green-field construction.
+- `eventStream.ts` as the only "signaling bridge" is an oversimplification; the
+  actual media/signaling orchestration lives in `friendChatP2p.ts`. The
+  signaling bridge merely decodes `StreamEvent.signaling` into typed events.
+- The presence subsystem is a new, callable precondition source that the
+  previous draft did not account for.
 
 The implementation plan should refine these assets instead of replacing them.
 
@@ -366,7 +408,7 @@ No Desktop-only signal kind should be introduced.
 
 The Desktop product contract is detailed in:
 
-- `docs/client/desktop/prototype/voice-video-calls/readme.md`
+- `docs/client/desktop/prototype/call/语音视频通话系统原型 v1.0/readme.md`
 
 Architecture-level UX invariants:
 
