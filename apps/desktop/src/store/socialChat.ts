@@ -44,6 +44,7 @@ import {
   FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION,
 } from '../modules/identity/groupSenderKeys';
 import { log } from '../utils/logger';
+import { getDecryptCache, setDecryptCache } from './decryptCache';
 import {
   readDesktopDomainValueSync,
   writeDesktopDomainValueSync,
@@ -959,12 +960,20 @@ async function decodeGroupMessage(
   if (message.recalled || !payloadB64) {
     return message;
   }
+  // Cache hit — skip expensive IPC decrypt
+  const cached = getDecryptCache(message.ulid);
+  if (cached) {
+    return { ...message, content: cached.content, type: cached.type || message.type, attachments: cached.attachments } as GroupMessage;
+  }
   try {
     const out = await decryptBytesFromGroup(groupUlid, payloadB64);
     const payload = decodeEncryptedChatPayloadBytes(out.bytes);
-    return payload
+    const result = payload
       ? applyDecodedChatPayload(message, payload)
       : ({ ...message, content: new TextDecoder().decode(out.bytes) } as GroupMessage);
+    // Cache successful decrypt
+    setDecryptCache(message.ulid, { content: result.content, type: result.type, attachments: result.attachments as unknown[], cachedAt: Date.now() });
+    return result;
   } catch (error) {
     if (error instanceof MissingSkdmError) {
       return { ...message, content: '[Waiting for sender key…]' } as GroupMessage;
@@ -979,9 +988,9 @@ async function decodeGroupMessages(
   messages: GroupMessage[],
   logLabel: string,
 ): Promise<GroupMessage[]> {
-  const decoded: GroupMessage[] = [];
-  for (const message of messages) decoded.push(await decodeGroupMessage(groupUlid, message, logLabel));
-  return decoded;
+  // Concurrent decryption — each message is independent, no need to serialize.
+  // Cache hits resolve instantly (no IPC); cache misses go to Rust in parallel.
+  return Promise.all(messages.map((message) => decodeGroupMessage(groupUlid, message, logLabel)));
 }
 
 async function decodeRealtimeGroupMessage(groupUlid: string, message: GroupMessage): Promise<GroupMessage> {
@@ -996,6 +1005,11 @@ async function decodeFriendMessage(
   if (message.recalled || !message.encryptedPayload || message.encryptedPayload.byteLength === 0 || !peerDid) {
     return message;
   }
+  // Cache hit — skip expensive IPC decrypt
+  const cached = getDecryptCache(message.ulid);
+  if (cached) {
+    return { ...message, content: cached.content, type: cached.type || message.type, attachments: cached.attachments } as FriendChatMessage;
+  }
   try {
     const envelope = decodeFriendEncryptedEnvelope(message.encryptedPayload);
     if (!envelope) return message;
@@ -1008,8 +1022,11 @@ async function decodeFriendMessage(
     );
     try {
       const payload = decodeEncryptedChatPayloadBytes(b64ToBytes(decrypted.plaintext));
-      return payload ? applyDecodedChatPayload(message, payload) : { ...message, content: decrypted.plaintext };
+      const result = payload ? applyDecodedChatPayload(message, payload) : { ...message, content: decrypted.plaintext };
+      setDecryptCache(message.ulid, { content: result.content, type: result.type, attachments: (result as { attachments?: unknown[] }).attachments ?? [], cachedAt: Date.now() });
+      return result;
     } catch {
+      setDecryptCache(message.ulid, { content: decrypted.plaintext, type: message.type, attachments: [], cachedAt: Date.now() });
       return { ...message, content: decrypted.plaintext };
     }
   } catch (error) {
@@ -1023,9 +1040,9 @@ async function decodeFriendMessages(
   peerDid: string,
   messages: FriendChatMessage[],
 ): Promise<FriendChatMessage[]> {
-  const decoded: FriendChatMessage[] = [];
-  for (const message of messages) decoded.push(await decodeFriendMessage(sessionUlid, peerDid, message));
-  return decoded;
+  // Concurrent decryption — Signal ratchet state is keyed per (session, counter)
+  // so parallel decrypts within the same session are safe.
+  return Promise.all(messages.map((message) => decodeFriendMessage(sessionUlid, peerDid, message)));
 }
 
 function isIndexableChatContent(message: SocialMessage): boolean {
@@ -1328,7 +1345,16 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   loadMessages: async (ulid, kind) => {
     if (!hasAuthenticatedActor()) return;
     const activeTab = kind ?? get().activeTab;
-    set({ loading: true });
+    // Fast path: if messages are already loaded for this conversation, render
+    // them immediately without blocking on network+decrypt. A background
+    // refresh still happens to pick up new messages.
+    const existing = get().messages[ulid];
+    if (existing && existing.length > 0) {
+      set({ loading: false });
+      // Background refresh — non-blocking, will merge silently when done
+    } else {
+      set({ loading: true });
+    }
     try {
       let friendPeerDid = '';
       if (activeTab === 'friend') {

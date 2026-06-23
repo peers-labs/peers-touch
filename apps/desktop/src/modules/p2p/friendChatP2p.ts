@@ -250,7 +250,7 @@ const RECONNECT_TIMEOUT_MS = 20_000;
 /** How often we poll `getStats()` for live call-quality metrics while a
  *  call is active. 2s is frequent enough to reflect a degrading link
  *  without flooding the main thread with stats traversals. */
-const QUALITY_PROBE_INTERVAL_MS = 2_000;
+export const QUALITY_PROBE_INTERVAL_MS = 2_000;
 
 /** Coarse, user-facing connection-quality grade derived from packet loss
  *  and round-trip time. Deliberately a small enum — the HUD shows a

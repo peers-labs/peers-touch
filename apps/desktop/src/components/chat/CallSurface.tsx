@@ -45,6 +45,7 @@ const END_REASON_KEY: Record<CallEndReason, string | null> = {
   canceled: null,
   'media-failed': 'chat.social.call.resultMediaFailed',
   'network-failed': 'chat.social.call.resultNetworkFailed',
+  'handled-elsewhere': null,
 };
 
 interface ActivePeer {

@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Dropdown, Input } from '@lobehub/ui';
 import { Badge, Empty, Spin, theme, Typography } from 'antd';
-import { BellOff, Pin, Search, Plus, UserPlus, Users, UsersRound } from 'lucide-react';
+import { BellOff, Pin, Search, Plus, UserPlus, Users, UsersRound, Volume2, VolumeX, CheckCheck, EyeOff, Trash2 } from 'lucide-react';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { useSocialChatStore } from '../../store/socialChat';
 import type { UnifiedConversation } from '../../store/socialChat';
@@ -48,6 +48,10 @@ export function ChatSessionList() {
     selectSession,
     selectGroup,
     getUnifiedConversations,
+    updateConversationLocalState,
+    hideConversation,
+    deleteGroupContact,
+    deleteFriendContact,
   } = useSocialChatStore();
 
   const [searchText, setSearchText] = useState('');
@@ -94,6 +98,69 @@ export function ChatSessionList() {
       setActiveTab('group');
     }
   };
+
+  const buildContextMenu = useCallback((c: UnifiedConversation) => {
+    const localState = conversationLocalState[`${c.type}:${c.ulid}`];
+    const isPinned = Boolean(localState?.sticky);
+    const isMuted = Boolean(localState?.muted);
+
+    return {
+      items: [
+        {
+          key: 'pin',
+          icon: <Pin size={14} />,
+          label: isPinned ? t('chat.social.contextMenu.unpin') : t('chat.social.contextMenu.pin'),
+        },
+        {
+          key: 'mute',
+          icon: isMuted ? <Volume2 size={14} /> : <VolumeX size={14} />,
+          label: isMuted ? t('chat.social.contextMenu.unmute') : t('chat.social.contextMenu.mute'),
+        },
+        ...(c.unread > 0 ? [{
+          key: 'markRead',
+          icon: <CheckCheck size={14} />,
+          label: t('chat.social.contextMenu.markRead'),
+        }] : []),
+        { type: 'divider' as const, key: 'divider-1' },
+        {
+          key: 'hide',
+          icon: <EyeOff size={14} />,
+          label: t('chat.social.contextMenu.hide'),
+        },
+        { type: 'divider' as const, key: 'divider-2' },
+        {
+          key: 'delete',
+          icon: <Trash2 size={14} />,
+          label: t('chat.social.contextMenu.delete'),
+          danger: true,
+        },
+      ],
+      onClick: ({ key }: { key: string }) => {
+        switch (key) {
+          case 'pin':
+            updateConversationLocalState(c.type, c.ulid, { sticky: !isPinned });
+            break;
+          case 'mute':
+            updateConversationLocalState(c.type, c.ulid, { muted: !isMuted });
+            break;
+          case 'markRead':
+            // Mark-read clears unread badge; for friend chats this acks messages.
+            updateConversationLocalState(c.type, c.ulid, { clearedAt: 0 });
+            break;
+          case 'hide':
+            hideConversation(c.type, c.ulid, true);
+            break;
+          case 'delete':
+            if (c.type === 'group') {
+              deleteGroupContact(c.ulid);
+            } else {
+              deleteFriendContact(c.ulid);
+            }
+            break;
+        }
+      },
+    };
+  }, [conversationLocalState, t, updateConversationLocalState, hideConversation, deleteGroupContact, deleteFriendContact]);
 
   const isRowActive = (c: UnifiedConversation) => {
     if (c.type === 'friend') {
@@ -189,8 +256,8 @@ export function ChatSessionList() {
               }
 
               return (
+                <Dropdown key={`${c.type}-${c.ulid}`} menu={buildContextMenu(c)} trigger={['contextMenu']}>
                 <Flexbox
-                  key={`${c.type}-${c.ulid}`}
                   horizontal
                   align="center"
                   gap={10}
@@ -235,6 +302,7 @@ export function ChatSessionList() {
                     </Flexbox>
                   </Flexbox>
                 </Flexbox>
+                </Dropdown>
               );
             })
           )}
