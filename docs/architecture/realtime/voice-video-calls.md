@@ -409,7 +409,7 @@ No Desktop-only signal kind should be introduced.
 The Desktop product contract is detailed in:
 
 - Prototype entry: [`prototype/README.md`](./prototype/README.md)
-  (workspace at `packages/prototypes/call/`, registered in the
+  (workspace at `packages/prototypes/desktop/features/call/`, registered in the
   [prototype ledger](../prototypes/README.md)).
 
 Architecture-level UX invariants:

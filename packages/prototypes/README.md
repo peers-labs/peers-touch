@@ -32,6 +32,24 @@
 - `atelier` 是 desktop 站点内的 applet 原型，不是一级站点。
 - `call` / `social-chat` 是 desktop 站点内的能力原型，不是和 `desktop` 并级的一级模块。
 
+物理目录也必须表达同样的层级：
+
+```text
+packages/prototypes/
+├── portal/
+├── desktop/
+│   ├── shell/
+│   ├── applets/
+│   │   └── atelier/
+│   └── features/
+│       ├── call/
+│       └── social-chat/
+├── mobile/
+│   └── chat/
+└── dashboard/
+    └── station-dashboard/
+```
+
 ---
 
 ## 3. 运行方式
@@ -77,12 +95,12 @@ make run-prototype dashboard
 | 站点 | 原型 ID | 路径 | 说明 |
 |------|---------|------|------|
 | all | `portal` | `packages/prototypes/portal/` | 统一 Prototype Portal，按 `desktop` / `mobile` / `dashboard` 切换站点 |
-| desktop | `desktop-shell` | `packages/prototypes/desktop/` | Desktop 容器外壳原型 |
-| desktop | `atelier` | `packages/prototypes/atelier/` | Desktop 内的 applet 原型 |
-| desktop | `call` | `packages/prototypes/call/` | Desktop Chat/通话能力原型 |
-| desktop | `social-chat` | `packages/prototypes/social-chat/` | Desktop Chat 能力原型 |
-| mobile | `mobile-chat` | `packages/prototypes/mobile/` | Mobile Chat / 跨设备会话体验基准原型 |
-| dashboard | `station-dashboard` | `packages/prototypes/dashboard/` | Station Dashboard 运维台体验基准原型 |
+| desktop | `desktop-shell` | `packages/prototypes/desktop/shell/` | Desktop 容器外壳原型 |
+| desktop | `atelier` | `packages/prototypes/desktop/applets/atelier/` | Desktop 内的 applet 原型 |
+| desktop | `call` | `packages/prototypes/desktop/features/call/` | Desktop Chat/通话能力原型 |
+| desktop | `social-chat` | `packages/prototypes/desktop/features/social-chat/` | Desktop Chat 能力原型 |
+| mobile | `mobile-chat` | `packages/prototypes/mobile/chat/` | Mobile Chat / 跨设备会话体验基准原型 |
+| dashboard | `station-dashboard` | `packages/prototypes/dashboard/station-dashboard/` | Station Dashboard 运维台体验基准原型 |
 
 ---
 

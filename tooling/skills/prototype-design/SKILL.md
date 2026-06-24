@@ -44,10 +44,19 @@ description: "原型设计规范与工作流。当用户要求创建、修改、
 
 ### 4.1 源码位置
 
-所有原型工程集中放在：
+所有原型工程集中放在 `packages/prototypes/` 下，并且物理目录必须跟随一级站点分层：
 
-```
-packages/prototypes/<id>/
+```text
+packages/prototypes/
+├── portal/
+├── desktop/
+│   ├── shell/
+│   ├── applets/<applet-id>/
+│   └── features/<feature-id>/
+├── mobile/
+│   └── <prototype-id>/
+└── dashboard/
+    └── <prototype-id>/
 ```
 
 纳入 pnpm workspace，统一工具链，基础件可跨原型复用。
@@ -60,7 +69,7 @@ mobile             # Mobile 端体验
 dashboard          # Station Dashboard / 管理台 / 运维台
 ```
 
-注意：`atelier` 这类 applet、`call` / `social-chat` 这类局部能力原型，不是一级站点，必须挂在所属站点（例如 `desktop`）下。
+注意：`atelier` 这类 applet、`call` / `social-chat` 这类局部能力原型，不是一级站点，必须挂在所属站点（例如 `desktop/applets/atelier`、`desktop/features/call`）下。
 
 ### 4.2 入口文档
 
@@ -83,7 +92,7 @@ docs/architecture/<module>/prototype/README.md
 
 ## 原型在哪
 
-`packages/prototypes/<id>/`（统一原型工作区；独立 web 工程）
+`packages/prototypes/<site>/<area>/<id>/`（统一原型工作区；独立 web 工程）
 
 ## 落地目标
 
@@ -166,7 +175,7 @@ Prototype Portal 支持 worktree / branch 切换：
 
 当你帮用户创建或修改原型时，完成后检查：
 
-- [ ] 源码在 `packages/prototypes/<id>/`
+- [ ] 源码在 `packages/prototypes/<site>/<area>/<id>/`，物理目录没有把 applet / feature 放成一级站点
 - [ ] `make run-prototype desktop/mobile/dashboard` 能跑，浏览器能打开
 - [ ] `docs/architecture/<module>/prototype/README.md` 已创建/更新
 - [ ] `docs/architecture/prototypes/README.md` 总账已登记
