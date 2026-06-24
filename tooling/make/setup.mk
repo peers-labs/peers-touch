@@ -33,6 +33,43 @@ init-dev:
 
 skill-help:
 	@echo ""
-	@echo "Skills are in tooling/skills/. Run 'make init-dev' to link them."
+	@echo "Skills are in tooling/skills/. Run 'make skills' to install them."
 	@echo "See AGENTS.md §13 for details."
 	@echo ""
+
+# ─── Skills Installation ─────────────────────────────────────────
+.PHONY: skills
+
+skills:
+	@echo ""
+	@echo "Install project skills to IDE environment"
+	@echo "=========================================="
+	@echo ""
+	@echo "Select target IDE:"
+	@echo "  1) trae"
+	@echo "  2) cursor"
+	@echo ""
+	@read -p "Enter choice [1-2]: " choice; \
+	case "$$choice" in \
+	  1) IDE_NAME=trae ;; \
+	  2) IDE_NAME=cursor ;; \
+	  *) echo "Invalid choice. Aborted."; exit 1 ;; \
+	esac; \
+	SKILLS_SRC="$$(pwd)/tooling/skills"; \
+	IDE_DIR="$$(pwd)/.$$IDE_NAME"; \
+	mkdir -p "$$IDE_DIR"; \
+	if [ -L "$$IDE_DIR/skills" ]; then rm "$$IDE_DIR/skills"; fi; \
+	if [ -d "$$IDE_DIR/skills" ]; then \
+	  echo "  Warning: .$$IDE_NAME/skills/ is a real directory, replacing with symlink..."; \
+	  rm -rf "$$IDE_DIR/skills"; \
+	fi; \
+	ln -s "$$SKILLS_SRC" "$$IDE_DIR/skills"; \
+	SKILL_COUNT=$$(find "$$SKILLS_SRC" -maxdepth 1 -mindepth 1 -type d | wc -l | tr -d ' '); \
+	echo ""; \
+	echo "  ✓ Linked: .$$IDE_NAME/skills -> tooling/skills ($$SKILL_COUNT skills)"; \
+	echo ""; \
+	echo "Installed skills:"; \
+	for d in "$$SKILLS_SRC"/*/; do \
+	  [ -f "$$d/SKILL.md" ] && echo "  - $$(basename $$d)"; \
+	done; \
+	echo ""

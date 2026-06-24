@@ -24,6 +24,7 @@ import AppletManager from '../applet/AppletManager';
 import { getModulesWithSidebar } from '../modules/registry';
 import { useAgentStore } from '../store/agent';
 import { useChatStore } from '../store/chat';
+import { useAppletsStore } from '../store/applets';
 import type { Agent } from '../services/desktop_api';
 import type { Page, Navigation, AppletPins, HashRouter } from '../types/navigation';
 
@@ -61,6 +62,7 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
   const { token } = theme.useToken();
   const { agents, selectedAgent, setSelectedAgent } = useAgentStore();
   const { newSession, togglePortal } = useChatStore();
+  const installedAppletIds = useAppletsStore((state) => state.installedAppletIds);
 
   const [sidebarExpand, setSidebarExpand] = useState(true);
   const [agentDrawerOpen, setAgentDrawerOpen] = useState(false);
@@ -264,10 +266,10 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
                   size="large"
                   active={page === m.id}
                   onClick={() => navigation.navigateTo(m.id)}
-                  title={m.sidebarEntry?.title || m.name}
+                  title={m.id === 'applets' ? t('layout.nav.applets') : m.sidebarEntry?.title || m.name}
                 />
               ))}
-            {appletPins.pinnedApplets.map((appletId) => {
+            {appletPins.pinnedApplets.filter((appletId) => installedAppletIds.includes(appletId)).map((appletId) => {
               const info = appletManager.getAppletInfo(appletId);
               if (!info) return null;
               return (
