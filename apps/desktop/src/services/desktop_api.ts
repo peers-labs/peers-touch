@@ -204,6 +204,15 @@ const PROD_QUIET_COMMANDS = new Set([
   'friend_chat_list_messages',
 ]);
 
+const APPLET_AUDIT_FLUSH_COMMANDS = new Set([
+  'applets_create_session',
+  'applets_invoke',
+  'applets_action',
+]);
+const APPLET_AUDIT_FLUSH_DELAY_MS = 1_000;
+let appletAuditFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let appletAuditFlushInFlight = false;
+
 function isQuietCommand(command: string): boolean {
   if (ALWAYS_QUIET_COMMANDS.has(command)) return true;
   if (PROD_QUIET_COMMANDS.has(command)) {
@@ -215,6 +224,34 @@ function isQuietCommand(command: string): boolean {
     return !isDev || userOverride;
   }
   return false;
+}
+
+function scheduleAppletAuditFlush(command: string): void {
+  if (!APPLET_AUDIT_FLUSH_COMMANDS.has(command) || appletAuditFlushTimer) return;
+  appletAuditFlushTimer = setTimeout(() => {
+    appletAuditFlushTimer = null;
+    void flushAppletAuditRecords();
+  }, APPLET_AUDIT_FLUSH_DELAY_MS);
+}
+
+async function flushAppletAuditRecords(): Promise<void> {
+  if (appletAuditFlushInFlight) {
+    scheduleAppletAuditFlush('applets_invoke');
+    return;
+  }
+  appletAuditFlushInFlight = true;
+  try {
+    await invokeRustCommand<Record<string, unknown>, TauriStubPayload>(
+      'applets_store_upload_audit',
+      {},
+    );
+  } catch (error) {
+    log.warn('api', 'applet audit auto flush failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    appletAuditFlushInFlight = false;
+  }
 }
 
 function publishSessionRevoked(payload: SessionRevokedPayload) {
@@ -282,6 +319,7 @@ async function invokeRustCommand<TInput, TData>(
     } else if (!quiet) {
       log.info('api', `← ${command} OK (${elapsed}ms)`);
     }
+    scheduleAppletAuditFlush(command);
     return result;
   } catch (error) {
     const elapsed = Date.now() - start;
@@ -825,6 +863,130 @@ export interface AppletInfo {
   manifest: AppletManifest;
   status: 'installed' | 'active' | 'stopped' | 'error';
   error?: string;
+}
+
+export interface AppletImportDirectoryResult {
+  directory: string;
+  manifest: unknown;
+}
+
+export type AppletStoreSource = 'station' | 'cache';
+
+export interface AppletStoreInfo {
+  id?: string;
+  name?: string;
+  description?: string;
+  iconUrl?: string;
+  icon_url?: string;
+  developerId?: string;
+  developer_id?: string;
+  status?: number | string;
+}
+
+export interface AppletStoreVersion {
+  appletId?: string;
+  applet_id?: string;
+  version?: string;
+  bundleUrl?: string;
+  bundle_url?: string;
+  bundleHash?: string;
+  bundle_hash?: string;
+  status?: number | string;
+  channel?: number | string;
+  manifest?: AppletStoreManifestSnapshot;
+  bundle?: AppletStoreBundleStorage;
+}
+
+export interface AppletStoreManifestSnapshot {
+  manifestJson?: string;
+  manifest_json?: string;
+  targetPlatforms?: string[];
+  target_platforms?: string[];
+  permissions?: string[];
+  capabilities?: string[];
+  integrity?: Record<string, string>;
+  bridgeProtocol?: string;
+  bridge_protocol?: string;
+  runtimeType?: string;
+  runtime_type?: string;
+}
+
+export interface AppletStoreBundleStorage {
+  bundleUri?: string;
+  bundle_uri?: string;
+  bundleSha256?: string;
+  bundle_sha256?: string;
+  bundleSizeBytes?: number | string;
+  bundle_size_bytes?: number | string;
+  assets?: Array<{ path: string; sha256: string; sizeBytes?: number | string; size_bytes?: number | string; contentType?: string; content_type?: string }>;
+}
+
+export interface AppletStoreInstallState {
+  actorId?: string;
+  actor_id?: string;
+  deviceId?: string;
+  device_id?: string;
+  appletId?: string;
+  applet_id?: string;
+  version?: string;
+  channel?: number | string;
+  status?: number | string;
+  statusReason?: string;
+  status_reason?: string;
+}
+
+export interface AppletStoreCatalogItem {
+  info?: AppletStoreInfo;
+  version?: AppletStoreVersion;
+  installState?: AppletStoreInstallState;
+  install_state?: AppletStoreInstallState;
+}
+
+export interface AppletStoreCatalogResponse {
+  items?: AppletStoreCatalogItem[];
+  totalCount?: number;
+  total_count?: number;
+  source?: AppletStoreSource;
+  stale?: boolean;
+  stationUnavailable?: boolean;
+  stationError?: string;
+}
+
+export interface AppletStoreInstalledResponse {
+  states?: AppletStoreInstallState[];
+  source?: AppletStoreSource;
+  stale?: boolean;
+  stationUnavailable?: boolean;
+  stationError?: string;
+}
+
+export interface AppletStoreInstallResponse {
+  state?: AppletStoreInstallState;
+  source?: AppletStoreSource;
+}
+
+export interface AppletStoreGetVersionResponse {
+  version?: AppletStoreVersion;
+  policy?: unknown;
+  source?: AppletStoreSource;
+  stale?: boolean;
+}
+
+export interface AppletStoreUploadAuditResponse {
+  acceptedCount?: number;
+  accepted_count?: number;
+  rejectedAuditIds?: string[];
+  rejected_audit_ids?: string[];
+  source?: AppletStoreSource | 'local';
+}
+
+export interface AppletStoreMaterializeBundleResponse {
+  directory: string;
+  entry: string;
+  filePath?: string;
+  sha256: string;
+  assets?: Array<{ path: string; filePath?: string; sha256: string }>;
+  source?: AppletStoreSource;
 }
 
 export interface StatisticsRankItem {
@@ -1957,6 +2119,11 @@ export interface AppletProductWindowLaunchContext {
   mode?: 'product-shell';
 }
 
+export interface AppletProductWindowRenderedInput {
+  appletId: string;
+  readySource?: 'lifecycle.reportReady' | 'host-render-fallback' | string;
+}
+
 export interface SkillImportAddressInput {
   address: string;
   oauth_provider?: string;
@@ -2770,6 +2937,55 @@ export const api = {
   getApplet: (id: string) =>
     invokeRustDataFromStatus<AppletIdInput, AppletInfo>('applets_get', { id }),
 
+  appletStoreListCatalog: () =>
+    invokeRustDataFromStatus<Record<string, unknown>, AppletStoreCatalogResponse>(
+      'applets_store_list_catalog',
+      { targetPlatform: 'desktop', channel: 'stable', limit: 100, offset: 0 },
+    ),
+
+  appletStoreListInstalled: () =>
+    invokeRustDataFromStatus<Record<string, unknown>, AppletStoreInstalledResponse>(
+      'applets_store_list_installed',
+      { includeDisabled: true },
+    ),
+
+  appletStoreInstall: (appletId: string, channel = 'stable') =>
+    invokeRustDataFromStatus<Record<string, unknown>, AppletStoreInstallResponse>(
+      'applets_store_install',
+      { appletId, channel },
+    ),
+
+  appletStoreUninstall: (appletId: string) =>
+    invokeRustDataFromStatus<Record<string, unknown>, AppletStoreInstallResponse>(
+      'applets_store_uninstall',
+      { appletId },
+    ),
+
+  appletStoreGetVersion: (appletId: string, channel = 'stable') =>
+    invokeRustDataFromStatus<Record<string, unknown>, AppletStoreGetVersionResponse>(
+      'applets_store_get_version',
+      { appletId, channel },
+    ),
+
+  appletStoreMaterializeBundle: (input: {
+    appletId: string;
+    version?: string;
+    bundleUrl: string;
+    bundleSha256?: string;
+    entry: string;
+    assets?: Array<{ path: string; sha256: string }>;
+  }) =>
+    invokeRustDataFromStatus<Record<string, unknown>, AppletStoreMaterializeBundleResponse>(
+      'applets_store_materialize_bundle',
+      input,
+    ),
+
+  appletStoreUploadAudit: () =>
+    invokeRustDataFromStatus<Record<string, unknown>, AppletStoreUploadAuditResponse>(
+      'applets_store_upload_audit',
+      {},
+    ),
+
   activateApplet: (id: string) =>
     invokeRustDataFromStatus<AppletIdInput, { ok: boolean }>('applets_activate', { id }),
 
@@ -2794,11 +3010,20 @@ export const api = {
   appletInvoke: <T = unknown>(input: AppletInvokeInput) =>
     invokeRustDataFromStatus<AppletInvokeInput, T>('applets_invoke', input),
 
+  pickAppletImportDirectory: () =>
+    invokeRustDataFromStatus<void, AppletImportDirectoryResult>('applets_pick_import_directory'),
+
   appletsProductWindowLaunchContext: () =>
     invokeRustDataFromStatus<void, AppletProductWindowLaunchContext>('applets_product_window_launch_context'),
 
   appletsReadinessProbeContext: () =>
     invokeRustDataFromStatus<void, AppletProductWindowLaunchContext>('applets_readiness_probe_context'),
+
+  appletsProductWindowReportRendered: (input: AppletProductWindowRenderedInput) =>
+    invokeRustDataFromStatus<AppletProductWindowRenderedInput, { recorded: boolean; path?: string; reason?: string }>(
+      'applets_product_window_report_rendered',
+      input,
+    ),
 
   // ── Skills API ──
 
