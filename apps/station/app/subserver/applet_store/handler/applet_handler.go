@@ -28,14 +28,6 @@ func (h *AppletHandlers) HandleListApplets(ctx context.Context, req *model.ListA
 		offset = 0
 	}
 
-	// For demo environments, seed mock applets on first run.
-	// Production callers should have real rows already.
-	_, err := h.service.GenerateMockApplets()
-	if err != nil {
-		logger.Error(ctx, "Failed to ensure mock applets", "error", err)
-		return nil, err
-	}
-
 	applets, err := h.service.ListApplets(limit, offset)
 	if err != nil {
 		logger.Error(ctx, "Failed to list applets", "error", err)
@@ -53,6 +45,7 @@ func (h *AppletHandlers) HandleListApplets(ctx context.Context, req *model.ListA
 			DownloadCount: app.DownloadCount,
 			LatestVersion: app.LatestVersionURL,
 			UpdatedAt:     app.UpdatedAt.Unix(),
+			Status:        model.AppletPackageStatus(app.Status),
 		})
 	}
 
@@ -75,7 +68,7 @@ func (h *AppletHandlers) HandleGetAppletDetails(ctx context.Context, req *model.
 	}
 
 	response := &model.GetAppletDetailsResponse{}
-	
+
 	if applet != nil {
 		response.Info = &model.AppletInfo{
 			Id:            applet.ID,
@@ -86,6 +79,7 @@ func (h *AppletHandlers) HandleGetAppletDetails(ctx context.Context, req *model.
 			DownloadCount: applet.DownloadCount,
 			LatestVersion: applet.LatestVersionURL,
 			UpdatedAt:     applet.UpdatedAt.Unix(),
+			Status:        model.AppletPackageStatus(applet.Status),
 		}
 	}
 
@@ -100,9 +94,101 @@ func (h *AppletHandlers) HandleGetAppletDetails(ctx context.Context, req *model.
 			MinSdkVersion: version.MinSDKVersion,
 			Changelog:     version.Changelog,
 			CreatedAt:     version.CreatedAt.Unix(),
+			Status:        model.AppletPackageStatus(version.Status),
+			Channel:       model.AppletReleaseChannel(version.Channel),
 		}
 	}
 
+	return response, nil
+}
+
+func (h *AppletHandlers) HandleListAppletCatalog(ctx context.Context, req *model.ListAppletCatalogRequest) (*model.ListAppletCatalogResponse, error) {
+	response, err := h.service.ListCatalog(req)
+	if err != nil {
+		logger.Error(ctx, "Failed to list applet catalog", "error", err, "actor_id", req.GetActorId())
+		return nil, err
+	}
+	return response, nil
+}
+
+func (h *AppletHandlers) HandleGetAppletVersion(ctx context.Context, req *model.GetAppletVersionRequest) (*model.GetAppletVersionResponse, error) {
+	response, err := h.service.GetAppletVersion(req)
+	if err != nil {
+		logger.Error(ctx, "Failed to get applet version", "error", err, "applet_id", req.GetAppletId(), "version", req.GetVersion())
+		return nil, err
+	}
+	return response, nil
+}
+
+func (h *AppletHandlers) HandlePublishAppletVersion(ctx context.Context, req *model.PublishAppletRequest) (*model.PublishAppletResponse, error) {
+	response, err := h.service.PublishAppletVersion(req)
+	if err != nil {
+		logger.Error(ctx, "Failed to publish applet version", "error", err, "applet_id", req.GetAppletId(), "version", req.GetVersion())
+		return nil, err
+	}
+	return response, nil
+}
+
+func (h *AppletHandlers) HandleInstallApplet(ctx context.Context, req *model.InstallAppletRequest) (*model.InstallAppletResponse, error) {
+	response, err := h.service.InstallApplet(req)
+	if err != nil {
+		logger.Error(ctx, "Failed to install applet", "error", err, "actor_id", req.GetActorId(), "applet_id", req.GetAppletId())
+		return nil, err
+	}
+	return response, nil
+}
+
+func (h *AppletHandlers) HandleUninstallApplet(ctx context.Context, req *model.UninstallAppletRequest) (*model.UninstallAppletResponse, error) {
+	response, err := h.service.UninstallApplet(req)
+	if err != nil {
+		logger.Error(ctx, "Failed to uninstall applet", "error", err, "actor_id", req.GetActorId(), "applet_id", req.GetAppletId())
+		return nil, err
+	}
+	return response, nil
+}
+
+func (h *AppletHandlers) HandleListInstalledApplets(ctx context.Context, req *model.ListInstalledAppletsRequest) (*model.ListInstalledAppletsResponse, error) {
+	response, err := h.service.ListInstalledApplets(req)
+	if err != nil {
+		logger.Error(ctx, "Failed to list installed applets", "error", err, "actor_id", req.GetActorId())
+		return nil, err
+	}
+	return response, nil
+}
+
+func (h *AppletHandlers) HandleRevokeAppletVersion(ctx context.Context, req *model.RevokeAppletVersionRequest) (*model.RevokeAppletVersionResponse, error) {
+	response, err := h.service.RevokeAppletVersion(req)
+	if err != nil {
+		logger.Error(ctx, "Failed to revoke applet version", "error", err, "applet_id", req.GetAppletId(), "version", req.GetVersion())
+		return nil, err
+	}
+	return response, nil
+}
+
+func (h *AppletHandlers) HandleRollbackAppletChannel(ctx context.Context, req *model.RollbackAppletChannelRequest) (*model.RollbackAppletChannelResponse, error) {
+	response, err := h.service.RollbackAppletChannel(req)
+	if err != nil {
+		logger.Error(ctx, "Failed to rollback applet channel", "error", err, "applet_id", req.GetAppletId(), "target_version", req.GetTargetVersion())
+		return nil, err
+	}
+	return response, nil
+}
+
+func (h *AppletHandlers) HandleIngestAppletAudit(ctx context.Context, req *model.IngestAppletAuditRequest) (*model.IngestAppletAuditResponse, error) {
+	response, err := h.service.IngestAppletAudit(req)
+	if err != nil {
+		logger.Error(ctx, "Failed to ingest applet audit", "error", err, "records", len(req.GetRecords()))
+		return nil, err
+	}
+	return response, nil
+}
+
+func (h *AppletHandlers) HandleQueryAppletAudit(ctx context.Context, req *model.QueryAppletAuditRequest) (*model.QueryAppletAuditResponse, error) {
+	response, err := h.service.QueryAppletAudit(req)
+	if err != nil {
+		logger.Error(ctx, "Failed to query applet audit", "error", err, "applet_id", req.GetAppletId())
+		return nil, err
+	}
 	return response, nil
 }
 
