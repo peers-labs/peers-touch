@@ -46,7 +46,7 @@ function chatBackgroundCss(
   imageUrl?: string,
 ): string {
   if (imageUrl) {
-    return 'linear-gradient(rgba(255,255,255,0.72), rgba(255,255,255,0.72)), url("' + imageUrl + '") center / cover fixed';
+    return `linear-gradient(rgba(255,255,255,0.72), rgba(255,255,255,0.72)), url("${imageUrl}") center / cover fixed`;
   }
   switch (background) {
     case 'paper':

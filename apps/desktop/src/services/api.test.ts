@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
+import { create, toBinary } from '@bufbuild/protobuf'
 import { api } from './desktop_api'
+import {
+  DissolveGroupResponseSchema,
+  TransferGroupOwnershipResponseSchema,
+  UpdateMyNicknameResponseSchema,
+} from '../gen/proto/domain/chat/group_chat_pb'
 
 const mockFetch = vi.fn()
 vi.stubGlobal('fetch', mockFetch)
@@ -77,6 +83,64 @@ describe('api.setPreferences', () => {
     await api.setPreferences({ wide_screen: true })
     expect(invoke).toHaveBeenCalledWith('preferences_set', {
       input: { prefs: { wide_screen: true } },
+    })
+  })
+})
+
+describe('api group admin bridge', () => {
+  it('transfers group ownership through the typed Tauri command', async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: Array.from(toBinary(
+        TransferGroupOwnershipResponseSchema,
+        create(TransferGroupOwnershipResponseSchema),
+      )),
+    })
+
+    await api.groupChatTransferOwnership('group-1', 'did:peer:next-owner')
+
+    expect(invoke).toHaveBeenCalledWith('group_chat_transfer_ownership', {
+      input: {
+        group_ulid: 'group-1',
+        next_owner_did: 'did:peer:next-owner',
+      },
+    })
+  })
+
+  it('dissolves a group through the typed Tauri command', async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: Array.from(toBinary(
+        DissolveGroupResponseSchema,
+        create(DissolveGroupResponseSchema, { success: true }),
+      )),
+    })
+
+    await api.groupChatDissolveGroup('group-1')
+
+    expect(invoke).toHaveBeenCalledWith('group_chat_dissolve_group', {
+      input: {
+        group_ulid: 'group-1',
+      },
+    })
+  })
+
+  it('updates my group nickname through the typed Tauri command', async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: Array.from(toBinary(
+        UpdateMyNicknameResponseSchema,
+        create(UpdateMyNicknameResponseSchema),
+      )),
+    })
+
+    await api.groupChatUpdateNickname('group-1', 'Desk Owner')
+
+    expect(invoke).toHaveBeenCalledWith('group_chat_update_nickname', {
+      input: {
+        group_ulid: 'group-1',
+        nickname: 'Desk Owner',
+      },
     })
   })
 })
