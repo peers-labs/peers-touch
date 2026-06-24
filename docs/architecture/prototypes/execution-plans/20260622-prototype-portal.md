@@ -387,4 +387,4 @@ make prototypes-worktree
 | Phase 3 | done | `desktop`、`atelier`、`call`、`social-chat` 已接入 manifest，Portal 已自动发现 |
 | Phase 4 | done | `mobile-chat` 与 `station-dashboard` 已补齐，Portal Live Preview 已基于 manifest 渲染当前站点默认原型 |
 | Phase 5 | done | 已支持 worktree registry、Worktree/Branch selector、远端 iframe preview；外部 target 通过 `VITE_PROTOTYPE_WORKTREES` 注入 |
-| Phase 6 | pending | 等待进一步收敛模块入口反链与真实多 worktree 样例 |
+| Phase 6 | done | prototype-design skill 已同步 worktree registry 规则，各入口文档已更新 |
