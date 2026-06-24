@@ -1,7 +1,8 @@
 import { useEffect, useState, type ComponentType, type CSSProperties } from 'react';
 import { Monitor, PanelsTopLeft, Smartphone } from 'lucide-react';
 import { LOCAL_PROTOTYPES } from './registry/localManifests';
-import type { PrototypeManifest, PrototypeSite } from './registry/types';
+import { WORKTREE_TARGETS } from './registry/worktrees';
+import type { PrototypeManifest, PrototypeSite, PrototypeWorktreeTarget } from './registry/types';
 
 const site = normalizeSite(import.meta.env.VITE_PROTOTYPE_SITE);
 
@@ -28,16 +29,31 @@ function normalizeSite(value: unknown): PrototypeSite {
 }
 
 export function PrototypePortal() {
+  const [targetId, setTargetId] = useState(WORKTREE_TARGETS[0]?.id ?? 'current');
   const meta = SITE_META[site];
   const visible = LOCAL_PROTOTYPES.filter((prototype) => prototype.site === site);
+  const target = WORKTREE_TARGETS.find((item) => item.id === targetId) ?? WORKTREE_TARGETS[0];
+  const localTarget = target.id === 'current';
 
   return (
     <div style={styles.page}>
       <header style={styles.header}>
         <div style={styles.brand}>Peers Touch Prototype Portal</div>
-        <div style={styles.sitePill}>
-          {meta.icon}
-          <span>{site}</span>
+        <div style={styles.headerControls}>
+          <label style={styles.targetPicker}>
+            <span>Worktree</span>
+            <select value={target.id} onChange={(event) => setTargetId(event.target.value)} style={styles.select}>
+              {WORKTREE_TARGETS.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label} / {item.branch}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div style={styles.sitePill}>
+            {meta.icon}
+            <span>{site}</span>
+          </div>
         </div>
       </header>
 
@@ -67,20 +83,70 @@ export function PrototypePortal() {
             <div style={styles.command}>make run-prototype {site}</div>
           </div>
 
-          <div style={styles.grid}>
-            {visible.length > 0 ? (
-              visible.map((prototype) => <PrototypeCard key={prototype.id} prototype={prototype} />)
-            ) : (
-              <div style={styles.empty}>
-                <strong>No prototypes registered for {site} yet.</strong>
-                <span>Add a prototype manifest under packages/prototypes/&lt;id&gt;/ and keep it under the correct first-level site.</span>
-              </div>
-            )}
-          </div>
+          {localTarget ? (
+            <div style={styles.grid}>
+              {visible.length > 0 ? (
+                visible.map((prototype) => <PrototypeCard key={prototype.id} prototype={prototype} />)
+              ) : (
+                <div style={styles.empty}>
+                  <strong>No prototypes registered for {site} yet.</strong>
+                  <span>Add a prototype manifest under packages/prototypes/&lt;id&gt;/ and keep it under the correct first-level site.</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <RemoteTargetCard target={target} site={site} />
+          )}
 
-          {visible[0] ? <PrototypePreview prototype={visible[0]} /> : null}
+          {localTarget ? (
+            visible[0] ? <PrototypePreview prototype={visible[0]} /> : null
+          ) : (
+            <RemoteWorktreePreview target={target} site={site} />
+          )}
         </section>
       </main>
+    </div>
+  );
+}
+
+function RemoteTargetCard({ target, site }: { target: PrototypeWorktreeTarget; site: PrototypeSite }) {
+  const url = target.sites[site];
+
+  return (
+    <article style={styles.remoteCard}>
+      <div style={styles.cardTop}>
+        <span style={styles.cardTitle}>{target.label}</span>
+        <span style={styles.status}>remote</span>
+      </div>
+      <p style={styles.cardText}>
+        Branch `{target.branch}` is rendered from its own running prototype service. Portal uses iframe preview for remote worktrees and never imports their source.
+      </p>
+      <div style={styles.targetMeta}>
+        <span>worktree: {target.worktreePath}</span>
+        <span>{site}: {url ?? 'not configured'}</span>
+      </div>
+    </article>
+  );
+}
+
+function RemoteWorktreePreview({ target, site }: { target: PrototypeWorktreeTarget; site: PrototypeSite }) {
+  const url = target.sites[site];
+
+  return (
+    <div style={styles.preview}>
+      <div style={styles.previewHeader}>
+        <span>Remote Preview</span>
+        <span style={styles.previewMeta}>{target.label} / {target.branch}</span>
+      </div>
+      <div style={styles.previewBody}>
+        {url ? (
+          <iframe title={`${target.label} ${site}`} src={url} style={styles.iframe} />
+        ) : (
+          <div style={styles.previewPlaceholder}>
+            No remote URL configured for {site}. Add it to VITE_PROTOTYPE_WORKTREES.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -172,6 +238,28 @@ const styles: Record<string, CSSProperties> = {
   brand: {
     fontSize: 15,
     fontWeight: 700,
+  },
+  headerControls: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+  },
+  targetPicker: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: 600,
+  },
+  select: {
+    height: 30,
+    borderRadius: 8,
+    border: '1px solid #cbd5e1',
+    background: '#ffffff',
+    color: '#334155',
+    padding: '0 8px',
+    fontSize: 12,
   },
   sitePill: {
     display: 'inline-flex',
@@ -302,6 +390,20 @@ const styles: Record<string, CSSProperties> = {
     color: '#475569',
     fontSize: 13,
   },
+  remoteCard: {
+    background: '#ffffff',
+    border: '1px solid #dbeafe',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+  },
+  targetMeta: {
+    display: 'grid',
+    gap: 4,
+    color: '#475569',
+    fontSize: 11,
+    fontFamily: 'monospace',
+  },
   preview: {
     background: '#ffffff',
     border: '1px solid #e5e7eb',
@@ -335,5 +437,12 @@ const styles: Record<string, CSSProperties> = {
     justifyContent: 'center',
     color: '#64748b',
     fontSize: 13,
+  },
+  iframe: {
+    width: '100%',
+    height: '100%',
+    border: 0,
+    display: 'block',
+    background: '#ffffff',
   },
 };
