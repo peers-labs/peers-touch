@@ -44,7 +44,7 @@
 - 重复造基础件——每个需求各搭一套脚手架/基础组件，AI 实施时没有可直接复用的基准。
 - 落地无门槛——原型未经确认就被当作落地依据，跑偏后返工。
 
-总账解决：**统一追踪 + 复用基准 + 先确认后落地**。配套约定：所有界面原型工程集中放在 `packages/prototypes/<id>/`（统一原型工作区，纳入 pnpm workspace、统一工具链、基础件跨原型复用）；经确认门 `confirmed` 后再搬迁/演进到落地目标工程。
+总账解决：**统一追踪 + 复用基准 + 先确认后落地**。配套约定：所有界面原型工程集中放在 `packages/prototypes/<site>/<area>/<id>/`（统一原型工作区，纳入 pnpm workspace、统一工具链、基础件跨原型复用）；经确认门 `confirmed` 后再搬迁/演进到落地目标工程。
 
 ---
 
@@ -52,12 +52,12 @@
 
 | 站点 | 原型 ID | 归属层级 | 原型路径 | 落地目标 | 对应设计版本 | 状态 | 入口文档 |
 |------|---------|----------|---------|---------|------------|------|---------|
-| desktop | `desktop-shell` | Desktop 一级站点外壳 | `packages/prototypes/desktop/` | Desktop 容器外壳（apps/desktop）；原型为 React web 展示 | runtime/desktop-runtime-architecture | drafting | [prototype/README.md](../desktop/prototype/README.md) |
-| desktop | `atelier` | Desktop 内的 applet 原型，不是一级模块 | `packages/prototypes/atelier/` | Applet（Lynx），运行在 Desktop 容器内；原型为 React+LobeUI web 展示 | atelier/functional-modules §1 | drafting | [prototype/README.md](../atelier/prototype/README.md) |
-| desktop | `call` | Desktop Chat/通话能力原型，不是一级模块 | `packages/prototypes/call/` | Desktop 好友聊天通话（apps/desktop，CallSurface）；原型为 React web 展示 | voice-video-calls | confirmed | [prototype/README.md](../realtime/prototype/README.md)（历史路径，归属 desktop） |
-| desktop | `social-chat` | Desktop Chat 能力原型，不是一级模块 | `packages/prototypes/social-chat/` | Desktop 社交聊天体验；原型为 React web 展示 | social-runtime | drafting | — |
-| mobile | `mobile-chat` | Mobile 一级站点会话体验基准 | `packages/prototypes/mobile/` | Mobile Chat / 跨设备会话体验；原型为 React web 展示 | client/mobile + client/chat | drafting | [base.md](../../client/mobile/base.md) |
-| dashboard | `station-dashboard` | Station Dashboard 一级站点运维台体验基准 | `packages/prototypes/dashboard/` | Station Dashboard / 管理台 / 运维台体验；原型为 React web 展示 | station/base | drafting | [base.md](../../station/base.md) |
+| desktop | `desktop-shell` | Desktop 一级站点外壳 | `packages/prototypes/desktop/shell/` | Desktop 容器外壳（apps/desktop）；原型为 React web 展示 | runtime/desktop-runtime-architecture | drafting | [prototype/README.md](../desktop/prototype/README.md) |
+| desktop | `atelier` | Desktop 内的 applet 原型，不是一级模块 | `packages/prototypes/desktop/applets/atelier/` | Applet（Lynx），运行在 Desktop 容器内；原型为 React+LobeUI web 展示 | atelier/functional-modules §1 | drafting | [prototype/README.md](../atelier/prototype/README.md) |
+| desktop | `call` | Desktop Chat/通话能力原型，不是一级模块 | `packages/prototypes/desktop/features/call/` | Desktop 好友聊天通话（apps/desktop，CallSurface）；原型为 React web 展示 | voice-video-calls | confirmed | [prototype/README.md](../realtime/prototype/README.md)（历史路径，归属 desktop） |
+| desktop | `social-chat` | Desktop Chat 能力原型，不是一级模块 | `packages/prototypes/desktop/features/social-chat/` | Desktop 社交聊天体验；原型为 React web 展示 | social-runtime | drafting | — |
+| mobile | `mobile-chat` | Mobile 一级站点会话体验基准 | `packages/prototypes/mobile/chat/` | Mobile Chat / 跨设备会话体验；原型为 React web 展示 | client/mobile + client/chat | drafting | [base.md](../../client/mobile/base.md) |
+| dashboard | `station-dashboard` | Station Dashboard 一级站点运维台体验基准 | `packages/prototypes/dashboard/station-dashboard/` | Station Dashboard / 管理台 / 运维台体验；原型为 React web 展示 | station/base | drafting | [base.md](../../station/base.md) |
 
 > 状态取值：`drafting`（搭建中）· `pending-review`（待确认）· `confirmed`（已确认，可落地）· `landed`（已落地）· `superseded`（已废弃）。
 > 登记表的一级维度是原型站点（`desktop` / `mobile` / `dashboard`），不是每个原型工程目录；applet、通话、聊天等都必须挂在所属站点下。
