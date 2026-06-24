@@ -327,7 +327,7 @@ Exit criteria:
 - No manual parallel models when proto is the source of truth.
 - No generated-file source edits; change proto source then regenerate.
 - No page-owned freshness for Desktop/Mobile social runtime.
-- Do not touch `apps/mobile/flutter`.
+- Do not reintroduce Flutter / Dart as an active implementation path.
 - Do not ask the user to validate every small step; self-verify and deliver a complete report.
 
 ---
