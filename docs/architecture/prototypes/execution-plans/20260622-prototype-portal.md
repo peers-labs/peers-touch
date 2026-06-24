@@ -53,8 +53,8 @@ docs/architecture/prototypes/README.md
 packages/prototypes/portal/
   可运行的统一 Prototype Portal 前端服务
 
-packages/prototypes/<id>/
-  各模块自维护的原型工程与 manifest
+packages/prototypes/<site>/<area>/<id>/
+  各模块自维护的原型工程与 manifest；物理目录必须跟随 desktop / mobile / dashboard 站点层级
 ```
 
 模块级文档仍保留：
@@ -86,15 +86,29 @@ packages/prototypes/
 │   │       └── RemoteWorktreePreview.tsx
 │   ├── package.json
 │   └── vite.config.ts
-├── atelier/
-│   ├── prototype.manifest.ts
-│   └── src/
 ├── desktop/
-│   ├── prototype.manifest.ts
-│   └── src/
-└── social-chat/
-    ├── prototype.manifest.ts
-    └── src/
+│   ├── shell/
+│   │   ├── prototype.manifest.ts
+│   │   └── src/
+│   ├── applets/
+│   │   └── atelier/
+│   │       ├── prototype.manifest.ts
+│   │       └── src/
+│   └── features/
+│       ├── call/
+│       │   ├── prototype.manifest.ts
+│       │   └── src/
+│       └── social-chat/
+│           ├── prototype.manifest.ts
+│           └── src/
+├── mobile/
+│   └── chat/
+│       ├── prototype.manifest.ts
+│       └── src/
+└── dashboard/
+    └── station-dashboard/
+        ├── prototype.manifest.ts
+        └── src/
 ```
 
 ---

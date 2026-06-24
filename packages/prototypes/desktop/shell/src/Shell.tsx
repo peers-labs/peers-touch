@@ -31,7 +31,7 @@ import {
   UserRoundCog,
   type LucideIcon,
 } from 'lucide-react';
-import { AtelierPage } from '@peers-touch/prototype-atelier';
+import { AtelierPage } from '@peers-touch/prototype-desktop-atelier';
 import { T } from './theme';
 
 /** A pinned applet in the rail (mirrors AppletPins.pinnedApplets). */

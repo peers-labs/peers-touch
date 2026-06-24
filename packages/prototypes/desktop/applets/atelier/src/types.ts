@@ -11,6 +11,7 @@
  * Light shapes for a design prototype; real schema lives in
  * docs/architecture/atelier/data-model.md.
  */
+import type { ReactElement } from 'react';
 
 /** Nine-role power structure (functional-modules §2 M2). */
 export type Role =
@@ -235,5 +236,5 @@ export interface TaskPlugin {
   /** false = placeholder/coming-soon entry in the switcher */
   ready: boolean;
   /** render the left-rail body for this organizer */
-  render(host: TaskHost): JSX.Element;
+  render(host: TaskHost): ReactElement;
 }

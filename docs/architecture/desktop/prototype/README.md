@@ -6,13 +6,13 @@
 > **落地目标**: Desktop 容器外壳（`apps/desktop`）；**原型本身只是 React web 展示**，不碰真实 store / kernel / tauri
 > **总账状态**: drafting（见 [原型总账](../../prototypes/README.md)）
 > **Owner**: Peers-Touch Agent Team
-> **Module**: `packages/prototypes/desktop/`
+> **Module**: `packages/prototypes/desktop/shell/`
 
 ---
 
 ## 原型在哪
 
-源码在 `packages/prototypes/desktop/`（统一原型工作区；独立 web 工程）。本目录只放入口说明，不复制源码（架构文档标准 §5.8）。
+源码在 `packages/prototypes/desktop/shell/`（统一原型工作区；独立 web 工程）。本目录只放入口说明，不复制源码（架构文档标准 §5.8）。
 
 这个原型展示 **peers-touch desktop 容器外壳长什么样**，并演示 **Atelier 本质是跑在容器里的一个 applet**——不是独立全屏 app。容器壳负责全局导航与页面/applet 切换，Atelier 作为左栏 pin 的 applet 进入内容区。
 
@@ -24,7 +24,7 @@ pnpm install        # 首次，monorepo 根装也可
 pnpm dev            # Vite，浏览器打开 localhost:3105
 ```
 
-技术栈：React + Vite + `lucide-react` + 内联样式 DOM，纯前端、mock 驱动，浏览器直接看，不需要任何运行时容器。原型通过 workspace 依赖 `@peers-touch/prototype-atelier`，把 atelier 原型整体作为一个 applet 嵌入内容区（基础件跨原型复用，不重复造）。
+技术栈：React + Vite + `lucide-react` + 内联样式 DOM，纯前端、mock 驱动，浏览器直接看，不需要任何运行时容器。原型通过 workspace 依赖 `@peers-touch/prototype-desktop-atelier`，把 atelier 原型整体作为一个 applet 嵌入内容区（基础件跨原型复用，不重复造）。
 
 ## 形态：容器壳 + applet 内容区（参照真实 apps/desktop）
 
@@ -39,7 +39,7 @@ pnpm dev            # Vite，浏览器打开 localhost:3105
 
 ## Atelier 是容器里的一个 applet
 
-- 左栏 Atelier pin（Blocks 图标）→ 进入 `applet:atelier` → 内容区渲染 `@peers-touch/prototype-atelier` 的 `AtelierPage`。
+- 左栏 Atelier pin（Blocks 图标）→ 进入 `applet:atelier` → 内容区渲染 `@peers-touch/prototype-desktop-atelier` 的 `AtelierPage`。
 - atelier 原型壳由 `height: 100vh` 改为 `height: 100%`，以便自适应嵌入容器内容区。
 - 默认落在 `applet:atelier`，直观体现「容器 → applet」从属关系。
 

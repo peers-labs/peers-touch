@@ -541,7 +541,7 @@ function relayHopPath(fromIndex: number, relay: { x: number; y: number }, toInde
 }
 
 function flowHoldPoint(flow: (typeof flows)[number]) {
-  if (flow.route) {
+  if ('route' in flow) {
     return relayPoint(flow.route.from, flow.route.to);
   }
 
@@ -669,7 +669,8 @@ function SvgNetworkLayer() {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [hoveredFlow, setHoveredFlow] = useState<number | null>(null);
   const [hoveredNode, setHoveredNode] = useState<number | null>(null);
-  const hoveredRoute = hoveredFlow === null ? null : flows[hoveredFlow]?.route;
+  const hoveredFlowData = hoveredFlow === null ? null : flows[hoveredFlow];
+  const hoveredRoute = hoveredFlowData && 'route' in hoveredFlowData ? hoveredFlowData.route : null;
   const hoveredRelay = hoveredRoute ? relayPoint(hoveredRoute.from, hoveredRoute.to) : null;
   const hoveredNodeData = hoveredNode === null ? null : nodes[hoveredNode];
 
@@ -766,7 +767,7 @@ function SvgNetworkLayer() {
               rotate="auto"
               calcMode="linear"
               keyTimes="0;0.08;0.82;1"
-              keyPoints={flow.reverse ? '1;1;0;0' : '0;0;1;1'}
+              keyPoints={'reverse' in flow && flow.reverse ? '1;1;0;0' : '0;0;1;1'}
             >
               <mpath href={`#pt-login-path-${flow.edge}`} />
             </animateMotion>

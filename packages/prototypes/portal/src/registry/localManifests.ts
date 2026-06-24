@@ -5,7 +5,7 @@ type PrototypeManifestModule = {
 };
 
 const manifestModules = import.meta.glob<PrototypeManifestModule>(
-  '../../../*/prototype.manifest.ts',
+  '../../../**/prototype.manifest.ts',
   { eager: true },
 );
 

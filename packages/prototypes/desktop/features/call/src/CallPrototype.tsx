@@ -2,7 +2,7 @@
  * peers-touch Voice / Video Call — interaction prototype.
  *
  * This prototype does NOT build its own app chrome. It REUSES the shared
- * desktop container shell (`@peers-touch/prototype-desktop`) — the same
+ * desktop container shell (`@peers-touch/prototype-desktop-shell`) — the same
  * SideNav + content-area framework the main-worktree prototype standard
  * mandates — and mounts a friend-chat page as the `chat` kernel page, exactly
  * the way atelier is reused as an applet. The call experience is a *block* laid
@@ -17,7 +17,7 @@
  *   idle / outgoing / incoming / active / reconnecting / ended / failed.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DesktopShell } from '@peers-touch/prototype-desktop';
+import { DesktopShell } from '@peers-touch/prototype-desktop-shell';
 import {
   Phone,
   PhoneOff,

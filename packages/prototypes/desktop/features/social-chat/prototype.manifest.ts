@@ -1,4 +1,4 @@
-import type { PrototypeManifest } from '../portal/src/registry/types';
+import type { PrototypeManifest } from '../../../portal/src/registry/types';
 
 const manifest = {
   id: 'social-chat',
@@ -8,7 +8,7 @@ const manifest = {
   kind: 'feature',
   status: 'drafting',
   module: 'social-chat',
-  path: 'packages/prototypes/social-chat/',
+  path: 'packages/prototypes/desktop/features/social-chat/',
   description: 'Desktop social chat capability prototype.',
   order: 40,
   previewExport: 'SocialChatPrototype',

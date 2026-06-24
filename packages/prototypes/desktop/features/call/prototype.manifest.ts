@@ -1,4 +1,4 @@
-import type { PrototypeManifest } from '../portal/src/registry/types';
+import type { PrototypeManifest } from '../../../portal/src/registry/types';
 
 const manifest = {
   id: 'call',
@@ -8,7 +8,7 @@ const manifest = {
   kind: 'feature',
   status: 'confirmed',
   module: 'call',
-  path: 'packages/prototypes/call/',
+  path: 'packages/prototypes/desktop/features/call/',
   docs: 'docs/architecture/realtime/prototype/README.md',
   description: 'Desktop Chat / voice-video call capability prototype.',
   order: 30,

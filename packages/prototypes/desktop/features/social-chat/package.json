@@ -1,5 +1,5 @@
 {
-  "name": "@peers-touch/prototype-social-chat",
+  "name": "@peers-touch/prototype-desktop-social-chat",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@peers-touch/prototype-desktop": "workspace:*",
+    "@peers-touch/prototype-desktop-shell": "workspace:*",
     "lucide-react": "^0.511.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

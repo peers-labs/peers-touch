@@ -1,4 +1,4 @@
-import type { PrototypeManifest } from '../portal/src/registry/types';
+import type { PrototypeManifest } from '../../../portal/src/registry/types';
 
 const manifest = {
   id: 'atelier',
@@ -8,7 +8,7 @@ const manifest = {
   kind: 'applet',
   status: 'drafting',
   module: 'atelier',
-  path: 'packages/prototypes/atelier/',
+  path: 'packages/prototypes/desktop/applets/atelier/',
   docs: 'docs/architecture/atelier/prototype/README.md',
   description: 'Desktop-hosted applet prototype, not a first-level prototype site.',
   order: 20,

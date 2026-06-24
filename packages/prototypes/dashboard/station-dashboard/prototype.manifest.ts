@@ -1,4 +1,4 @@
-import type { PrototypeManifest } from '../portal/src/registry/types';
+import type { PrototypeManifest } from '../../portal/src/registry/types';
 
 const manifest = {
   id: 'station-dashboard',
@@ -8,7 +8,7 @@ const manifest = {
   kind: 'shell',
   status: 'drafting',
   module: 'station-dashboard',
-  path: 'packages/prototypes/dashboard/',
+  path: 'packages/prototypes/dashboard/station-dashboard/',
   docs: 'docs/station/base.md',
   description: 'Station Dashboard operations baseline for stations, federation health, and runtime alerts.',
   order: 10,
@@ -17,4 +17,3 @@ const manifest = {
 } satisfies PrototypeManifest;
 
 export default manifest;
-

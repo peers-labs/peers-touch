@@ -1,4 +1,4 @@
-import { DesktopShell } from '@peers-touch/prototype-desktop';
+import { DesktopShell } from '@peers-touch/prototype-desktop-shell';
 import { useMemo } from 'react';
 import { SocialChatPage } from './pages/SocialChatPage';
 
