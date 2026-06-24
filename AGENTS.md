@@ -29,10 +29,9 @@ peers-touch/
 │   ├── mobile/
 │   │   ├── src/           # mobile-web UI
 │   │   ├── src-tauri/     # mobile-rust capability kernel
-│   │   ├── gen/           # Tauri generated Android/iOS projects
+│   │   ├── src-tauri/gen/ # Tauri generated Android/iOS projects
 │   │   ├── android/       # legacy/native plugin source during migration
 │   │   ├── ios/           # legacy/native plugin source during migration
-│   │   └── flutter/       # ⚠️ DEPRECATED — do not touch
 │   ├── station/
 │   │   ├── app/           # Business logic + subservers (DDD)
 │   │   └── frame/         # Core framework
@@ -305,6 +304,7 @@ Current project skills:
 | `dev-workflow` | Drive a complete development task from planning to PR |
 | `dev-runtime-handoff` | Choose & start the right dev runtime (make targets) for acceptance testing |
 | `architecture-execution-methodology` | Decompose architectural designs into actionable execution plans, domain ownership, and verification systems (referenced from §4.3) |
+| `execution-plan-guardian` | Keep execution, continuation, merge, and readiness reports tied to plan sources, scope boundaries, gates, and evidence |
 | `official-applet-development` | Create, scaffold, implement, and validate official applet product units under `apps/applets/` using the applet architecture contract |
 | `desktop-runtime-projections` | Enforce Page / Runtime / Boot kernel contracts under `apps/desktop/src/{kernel,runtimes,services,store,pages,components}` |
 | `read-before-edit` | Consult `docs/knowledge/` invariants / pitfalls / playbooks whose `owns:` covers the path being edited (referenced from §3.5) |

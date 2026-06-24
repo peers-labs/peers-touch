@@ -34,10 +34,20 @@ import {
   ChatMessageTimeline,
   loadedThreadReplyCount,
 } from './message/ChatMessageTimeline';
+import { ChatDeleteConfirmOverlay } from './ChatDeleteConfirmOverlay';
+import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 
 const { Text } = Typography;
 
-function chatBackgroundCss(background: string | undefined, layoutColor: string, containerColor: string): string {
+function chatBackgroundCss(
+  background: string | undefined,
+  layoutColor: string,
+  containerColor: string,
+  imageUrl?: string,
+): string {
+  if (imageUrl) {
+    return 'linear-gradient(rgba(255,255,255,0.72), rgba(255,255,255,0.72)), url("' + imageUrl + '") center / cover fixed';
+  }
   switch (background) {
     case 'paper':
       return 'linear-gradient(180deg, rgba(255,251,235,0.9), rgba(254,243,199,0.52))';
@@ -52,67 +62,6 @@ function chatBackgroundCss(background: string | undefined, layoutColor: string, 
     default:
       return `linear-gradient(180deg, ${layoutColor} 0%, ${containerColor} 100%)`;
   }
-}
-
-function ChatDeleteConfirmOverlay({
-  deleting,
-  onCancel,
-  onConfirm,
-}: {
-  deleting: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const { token } = theme.useToken();
-  const { t } = useTranslation('chat');
-
-  return (
-    <Flexbox
-      align="center"
-      justify="center"
-      style={{
-        position: 'absolute',
-        inset: 0,
-        zIndex: 20,
-        background: 'rgba(15, 23, 42, 0.18)',
-        padding: 24,
-      }}
-      onClick={() => {
-        if (!deleting) onCancel();
-      }}
-    >
-      <Flexbox
-        gap={14}
-        style={{
-          width: 320,
-          maxWidth: '100%',
-          padding: 18,
-          borderRadius: 8,
-          background: token.colorBgElevated,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          boxShadow: token.boxShadowSecondary,
-        }}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <Flexbox gap={6}>
-          <Text strong style={{ fontSize: 15 }}>
-            {t('chat.social.messageArea.deleteConfirmTitle')}
-          </Text>
-          <Text type="secondary" style={{ fontSize: 13, lineHeight: 1.45 }}>
-            {t('chat.social.messageArea.deleteConfirmBody')}
-          </Text>
-        </Flexbox>
-        <Flexbox horizontal justify="flex-end" gap={8}>
-          <Button disabled={deleting} onClick={onCancel}>
-            {t('chat.social.messageArea.cancel')}
-          </Button>
-          <Button type="primary" danger loading={deleting} onClick={onConfirm}>
-            {t('chat.social.messageArea.deleteConfirmOk')}
-          </Button>
-        </Flexbox>
-      </Flexbox>
-    </Flexbox>
-  );
 }
 
 export function ChatMessageArea() {
@@ -159,7 +108,9 @@ export function ChatMessageArea() {
   const activeKind = activeTab === 'friend' ? 'friend' : 'group';
   const currentMessages = activeUlid ? (messages[activeUlid] || []) : [];
   const mainTimelineMessages = currentMessages.filter((message) => !messageThreadRootUlid(message));
-  const activeBackground = activeUlid ? conversationLocalState[`${activeTab}:${activeUlid}`]?.background : undefined;
+  const activeLocalState = activeUlid ? conversationLocalState[`${activeTab}:${activeUlid}`] : undefined;
+  const activeBackground = activeLocalState?.background;
+  const activeBackgroundImageUrl = useOssAttachmentUrl(activeLocalState?.backgroundImage || undefined);
 
   const activeFriendPeer = (() => {
     if (activeTab !== 'friend' || !activeUlid) return null;
@@ -581,6 +532,7 @@ export function ChatMessageArea() {
     activeBackground,
     token.colorBgLayout,
     token.colorBgContainer,
+    activeBackgroundImageUrl || undefined,
   );
   const headerSubtitle = activeTab === 'friend'
     ? peerIsTyping

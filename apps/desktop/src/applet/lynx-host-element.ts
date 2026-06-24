@@ -135,6 +135,8 @@ export class LynxHostElement extends HTMLElement {
   private visibilityListenersInstalled = false
   private eventPollTimer: PollTimer | null = null
   private mountSequence = 0
+  private pendingEventSubscribers: Array<(event: Record<string, unknown>) => void> = []
+  private queuedEvents: Array<Record<string, unknown>> = []
   navigationHandler?: (request: AppletHostNavigationRequest) => void
   uiHandler?: (request: AppletHostUiRequest) => unknown | Promise<unknown>
   deviceHandler?: (request: AppletHostDeviceRequest) => unknown | Promise<unknown>
@@ -245,6 +247,8 @@ export class LynxHostElement extends HTMLElement {
 
   private destroyLynxView(): void {
     this.stopGatewayEventPolling()
+    this.pendingEventSubscribers = []
+    this.queuedEvents = []
     if (!this.lynxView) return
 
     if (this.visibleEventSent) {
@@ -369,6 +373,11 @@ export class LynxHostElement extends HTMLElement {
         ok: false,
         error: { code: 'INVALID_PARAMS', message: 'Missing "method" in bridge.invoke call' },
       })
+    }
+
+    // Local handler: events.subscribe — SDK long-polls for host→applet events
+    if (method === 'events.subscribe') {
+      return this.handleEventSubscribe(requestId)
     }
 
     try {
@@ -618,7 +627,25 @@ export class LynxHostElement extends HTMLElement {
   // ── Host → Applet communication ──
 
   /**
+   * Handle the SDK's events.subscribe long-poll.
+   * If there's a queued event, resolve immediately; otherwise hold the promise
+   * until sendEvent is called.
+   */
+  private handleEventSubscribe(requestId: string): Promise<Record<string, unknown>> {
+    const queued = this.queuedEvents.shift()
+    if (queued) {
+      return Promise.resolve(this.createBridgeResponse({ requestId, ok: true, result: queued }))
+    }
+    return new Promise<Record<string, unknown>>((resolve) => {
+      this.pendingEventSubscribers.push((event) => {
+        resolve(this.createBridgeResponse({ requestId, ok: true, result: event }))
+      })
+    })
+  }
+
+  /**
    * Send an event to the running applet via Lynx globalEvent.
+   * Also resolves any pending events.subscribe long-poll from the SDK.
    */
   sendEvent(topic: string, payload?: unknown): void {
     if (!this.lynxView) return
@@ -632,6 +659,17 @@ export class LynxHostElement extends HTMLElement {
       event: topic,
       payload,
     }
+
+    // Deliver via bridge long-poll channel (primary path for web-core)
+    const subscriber = this.pendingEventSubscribers.shift()
+    if (subscriber) {
+      subscriber(eventPayload)
+    } else {
+      this.queuedEvents.push(eventPayload)
+    }
+
+    // Also send via sendGlobalEvent for forward-compatibility if web-core
+    // ever implements GlobalEventEmitter in the future
     this.lynxView.sendGlobalEvent('applet.event', [eventPayload] as unknown as LynxSendGlobalEventPayload)
   }
 }

@@ -190,10 +190,9 @@ peers-touch/
 │   ├── mobile/
 │   │   ├── src/            # mobile-web UI
 │   │   ├── src-tauri/      # mobile-rust capability kernel
-│   │   ├── gen/            # Tauri generated mobile projects
+│   │   ├── src-tauri/gen/  # Tauri generated mobile projects
 │   │   ├── android/        # legacy/native plugin source during migration
 │   │   ├── ios/            # legacy/native plugin source during migration
-│   │   └── flutter/        # deprecated, not active implementation
 │   └── station/
 │       ├── app/
 │       └── frame/

@@ -71,6 +71,7 @@ help:
 	@echo "  make help-docker               Docker deployment commands"
 	@echo "  make help-deploy               Remote deploy commands"
 	@echo "  make init-dev                  Initialize dev environment"
+	@echo "  make skills                    Install project skills to IDE (trae/cursor)"
 	@echo ""
 
 help-docker:

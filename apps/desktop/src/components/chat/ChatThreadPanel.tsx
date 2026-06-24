@@ -22,6 +22,7 @@ import {
 import { log } from '../../utils/logger';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
+import { ChatDeleteConfirmOverlay } from './ChatDeleteConfirmOverlay';
 import { ChatMessageContent } from './message/ChatMessageContent';
 import {
   isOwnMessage,
@@ -597,51 +598,11 @@ export function ChatThreadPanel() {
       )}
 
       {deleteTarget && (
-        <Flexbox
-          align="center"
-          justify="center"
-          style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 20,
-            background: 'rgba(15, 23, 42, 0.18)',
-            padding: 24,
-          }}
-          onClick={() => {
-            if (!deletingMessage) setDeleteTarget(null);
-          }}
-        >
-          <Flexbox
-            gap={14}
-            style={{
-              width: 300,
-              maxWidth: '100%',
-              padding: 18,
-              borderRadius: 8,
-              background: token.colorBgElevated,
-              border: `1px solid ${token.colorBorderSecondary}`,
-              boxShadow: token.boxShadowSecondary,
-            }}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <Flexbox gap={6}>
-              <Text strong style={{ fontSize: 15 }}>
-                {t('chat.social.messageArea.deleteConfirmTitle')}
-              </Text>
-              <Text type="secondary" style={{ fontSize: 13, lineHeight: 1.45 }}>
-                {t('chat.social.messageArea.deleteConfirmBody')}
-              </Text>
-            </Flexbox>
-            <Flexbox horizontal justify="flex-end" gap={8}>
-              <Button disabled={deletingMessage} onClick={() => setDeleteTarget(null)}>
-                {t('chat.social.messageArea.cancel')}
-              </Button>
-              <Button type="primary" danger loading={deletingMessage} onClick={handleConfirmDelete}>
-                {t('chat.social.messageArea.deleteConfirmOk')}
-              </Button>
-            </Flexbox>
-          </Flexbox>
-        </Flexbox>
+        <ChatDeleteConfirmOverlay
+          deleting={deletingMessage}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={handleConfirmDelete}
+        />
       )}
     </Flexbox>
   );

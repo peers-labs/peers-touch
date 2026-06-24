@@ -1,30 +1,5 @@
 let runtimeReady: Promise<void> | null = null;
 
-const MTS_PRELOAD_PATCH = Symbol.for('peers-touch.lynx-web-runtime.mts-preload-patch');
-const MTS_PRELOAD_TIMEOUT_MS = 2000;
-const MTS_PRELOAD_RETRY_DELAY_MS = 10;
-
-type LynxTemplateManager = {
-  fetchBundle(
-    url: string,
-    lynxViewInstancePromise: Promise<LynxViewInstanceLike>,
-    transformVW: boolean,
-    transformVH: boolean,
-    transformREM: boolean,
-    overrideConfig?: Record<string, string>,
-  ): Promise<void>;
-};
-
-type LynxViewInstanceLike = {
-  onMTSScriptsLoaded(currentUrl: string, isLazy: boolean): Promise<void>;
-  mainThreadGlobalThis?: Record<string, unknown>;
-  [MTS_PRELOAD_PATCH]?: boolean;
-};
-
-type LynxTemplateManagerModule = {
-  templateManager: LynxTemplateManager;
-};
-
 export function ensureLynxWebRuntime(): Promise<void> {
   if (runtimeReady) {
     return runtimeReady;
@@ -36,73 +11,37 @@ export function ensureLynxWebRuntime(): Promise<void> {
   return runtimeReady;
 }
 
+// Dev and prod both consume web-core through its public contract only: register
+// the runtime and let the <lynx-view url> element drive the dual-thread bundle
+// loading. We must NOT deep-import singleton-carrying modules like TemplateManager.js
+// from a different specifier — that creates duplicate module-level instances.
+//
+// However, we DO pre-import LynxViewInstance.js (a class export, no singleton) to
+// work around a race condition in web-core's TemplateManager:
+//
+// TemplateManager dispatches section messages via async #handleSection (which awaits
+// an instancePromise depending on dynamic import('./LynxViewInstance.js')). The 'done'
+// message handler runs synchronously and moves the bundle from #loadingBundles to
+// #bundles. In Vite dev mode, web-core is excluded from optimizeDeps (Worker/WASM
+// paths require it), so each internal module is served individually via HTTP. If the
+// decode worker finishes before LynxViewInstance.js loads, 'done' preempts pending
+// section handlers — #setLepusCode writes to a deleted map entry, and lepusCode
+// ends up undefined at runtime.
+//
+// Pre-importing LynxViewInstance.js here warms Vite's module cache, ensuring the
+// instancePromise in #handleSection resolves near-instantly (microtask) before any
+// 'done' message arrives.
 async function loadBundledRuntime(): Promise<void> {
   if (!customElements.get('lynx-view')) {
     await import('@lynx-js/web-core/client');
   }
-  await preloadBundledRuntimeMainThread();
-}
-
-async function preloadBundledRuntimeMainThread(): Promise<void> {
-  const templateManagerModule = await import('@lynx-js/web-core/dist/client/mainthread/TemplateManager.js') as LynxTemplateManagerModule;
-  installMTSScriptPreloadPatch(templateManagerModule.templateManager);
-}
-
-function installMTSScriptPreloadPatch(templateManager: LynxTemplateManager): void {
-  if ((templateManager as unknown as LynxViewInstanceLike)[MTS_PRELOAD_PATCH]) return;
-
-  const originalFetchBundle = templateManager.fetchBundle.bind(templateManager);
-  templateManager.fetchBundle = (url, lynxViewInstancePromise, transformVW, transformVH, transformREM, overrideConfig) => {
-    const patchedInstancePromise = lynxViewInstancePromise.then((instance) => {
-      installInstanceMTSScriptPreloadPatch(instance);
-      return instance;
-    });
-    return originalFetchBundle(url, patchedInstancePromise, transformVW, transformVH, transformREM, overrideConfig);
-  };
-  (templateManager as unknown as LynxViewInstanceLike)[MTS_PRELOAD_PATCH] = true;
-}
-
-function installInstanceMTSScriptPreloadPatch(instance: LynxViewInstanceLike): void {
-  if (instance[MTS_PRELOAD_PATCH]) return;
-
-  const originalOnMTSScriptsLoaded = instance.onMTSScriptsLoaded.bind(instance);
-  instance.onMTSScriptsLoaded = async (currentUrl, isLazy) => {
-    installMainThreadLynxCompat(instance);
-    return runWhenMTSScriptsReady(originalOnMTSScriptsLoaded, currentUrl, isLazy);
-  };
-  instance[MTS_PRELOAD_PATCH] = true;
-}
-
-function installMainThreadLynxCompat(instance: LynxViewInstanceLike): void {
-  if (!instance.mainThreadGlobalThis) return;
-  if (typeof instance.mainThreadGlobalThis.getJSModule === 'function') return;
-  instance.mainThreadGlobalThis.getJSModule = () => undefined;
-}
-
-async function runWhenMTSScriptsReady(
-  loadScripts: (currentUrl: string, isLazy: boolean) => Promise<void>,
-  currentUrl: string,
-  isLazy: boolean,
-): Promise<void> {
-  if (isLazy) {
-    return loadScripts(currentUrl, isLazy);
-  }
-
-  const deadline = Date.now() + MTS_PRELOAD_TIMEOUT_MS;
-  let lastError: unknown;
-  while (Date.now() < deadline) {
-    try {
-      return await loadScripts(currentUrl, isLazy);
-    } catch (error) {
-      lastError = error;
-    }
-    await new Promise((resolve) => setTimeout(resolve, MTS_PRELOAD_RETRY_DELAY_MS));
-  }
-
-  if (lastError instanceof Error) {
-    throw new Error(`Lynx Web runtime did not expose a main-thread root script for ${currentUrl}: ${lastError.message}`);
-  }
-  throw new Error(`Lynx Web runtime did not expose a main-thread root script for ${currentUrl}`);
+  // Pre-warm the LynxViewInstance chunk to eliminate TemplateManager race window.
+  // LynxView.js starts a prefetch import('./LynxViewInstance.js') at the top level,
+  // but we need it fully loaded before any <lynx-view url=...> triggers #render().
+  // We re-import the same module using a root-relative path that Vite can resolve
+  // without going through package exports (web-core only exports ./client).
+  // @ts-expect-error — Vite resolves this at runtime; tsc has no declaration for the path.
+  await import(/* @vite-ignore */ '/node_modules/@lynx-js/web-core/dist/client/mainthread/LynxViewInstance.js');
 }
 
 function loadPackagedRuntime(): Promise<void> {

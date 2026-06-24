@@ -1049,6 +1049,11 @@ export interface AppletInfo {
   error?: string;
 }
 
+export interface AppletImportDirectoryResult {
+  directory: string;
+  manifest: unknown;
+}
+
 export interface StatisticsRankItem {
   name: string;
   count: number;
@@ -3358,6 +3363,9 @@ export const api = {
   appletInvoke: <T = unknown>(input: AppletInvokeInput) =>
     invokeRustDataFromStatus<AppletInvokeInput, T>('applets_invoke', input),
 
+  pickAppletImportDirectory: () =>
+    invokeRustDataFromStatus<void, AppletImportDirectoryResult>('applets_pick_import_directory'),
+
   appletsProductWindowLaunchContext: () =>
     invokeRustDataFromStatus<void, AppletProductWindowLaunchContext>('applets_product_window_launch_context'),
 
@@ -4372,8 +4380,13 @@ export const api = {
   groupChatGetGroup: (groupUlid: string) =>
     invokeRustProto('group_chat_get_group', GetGroupResponseSchema, { group_ulid: groupUlid }),
 
-  groupChatUpdateGroup: (groupUlid: string, name: string, description?: string) =>
-    invokeRustProto('group_chat_update_group', UpdateGroupResponseSchema, { group_ulid: groupUlid, name, description }),
+  groupChatUpdateGroup: (groupUlid: string, name?: string, description?: string, avatarCid?: string) =>
+    invokeRustProto('group_chat_update_group', UpdateGroupResponseSchema, {
+      group_ulid: groupUlid,
+      name,
+      description,
+      avatar_cid: avatarCid,
+    }),
 
   groupChatInviteToGroup: (groupUlid: string, memberDids: string[]) =>
     invokeRustProto('group_chat_invite_to_group', InviteToGroupResponseSchema, { group_ulid: groupUlid, member_dids: memberDids }),

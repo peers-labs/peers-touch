@@ -13,7 +13,6 @@ const evidenceDir = path.resolve('applet-readiness-evidence/official-applet/note
 const harnessHtmlPath = path.join(evidenceDir, 'index.html');
 const harnessJsPath = path.join(evidenceDir, 'harness.js');
 const outputPath = path.resolve('applet-readiness-evidence/official-applet/note-desktop-live-smoke.json');
-const desktopNodeModules = path.resolve('apps/desktop/node_modules');
 const staticHits = [];
 
 if (manifest.id !== 'peers.note') {
@@ -442,18 +441,15 @@ async function runChrome(harnessUrl) {
 }
 
 const vitePort = await freePort();
+// Inherit the desktop product Vite config (apps/desktop/vite.config.ts) verbatim:
+// do NOT add web-core/web-elements aliases here. Custom aliases let the same
+// web-core entry resolve under multiple module ids, instantiating two
+// `templateManager` singletons (double bundle fetch + double wasm allocator
+// init) and breaking the lepus handoff. The smoke must exercise the real
+// product resolution path; we only layer a static-asset middleware on top.
 const server = await createServer({
   root: path.resolve('apps/desktop'),
   logLevel: 'silent',
-  resolve: {
-    alias: {
-      '@lynx-js/web-core/client': path.join(desktopNodeModules, '@lynx-js/web-core/dist/client/index.js'),
-      '@lynx-js/web-core/dist/client/mainthread/TemplateManager.js': path.join(desktopNodeModules, '@lynx-js/web-core/dist/client/mainthread/TemplateManager.js'),
-      '@lynx-js/web-core': path.join(desktopNodeModules, '@lynx-js/web-core'),
-      '@lynx-js/web-elements/all': path.join(desktopNodeModules, '@lynx-js/web-elements/dist/elements/all.js'),
-      '@lynx-js/web-elements': path.join(desktopNodeModules, '@lynx-js/web-elements'),
-    },
-  },
   plugins: [{
     name: 'note-desktop-live-smoke-static',
     configureServer(viteServer) {
@@ -524,9 +520,6 @@ const server = await createServer({
     port: vitePort,
     strictPort: false,
     fs: { allow: [rootDir] },
-  },
-  optimizeDeps: {
-    exclude: ['@lynx-js/web-core', '@lynx-js/web-elements'],
   },
 });
 
