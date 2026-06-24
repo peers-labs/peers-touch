@@ -64,7 +64,11 @@ relay-restart:
 	@/bin/bash $(LOCAL_DEV_SCRIPTS)/restart.sh relay
 
 desktop:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/desktop-dev.sh app
+	@if [[ "$(firstword $(MAKECMDGOALS))" == "run-prototype" ]]; then \
+		:; \
+	else \
+		/bin/bash $(LOCAL_DEV_SCRIPTS)/desktop-dev.sh app; \
+	fi
 
 desktop-stop:
 	@/bin/bash $(LOCAL_DEV_SCRIPTS)/stop.sh desktop
@@ -82,7 +86,11 @@ desktop-web-restart:
 	@/bin/bash $(LOCAL_DEV_SCRIPTS)/restart.sh desktop-web
 
 mobile:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/mobile-ios-sim.sh
+	@if [[ "$(firstword $(MAKECMDGOALS))" == "run-prototype" ]]; then \
+		:; \
+	else \
+		/bin/bash $(LOCAL_DEV_SCRIPTS)/mobile-ios-sim.sh; \
+	fi
 
 mobile-stop:
 	@/bin/bash $(LOCAL_DEV_SCRIPTS)/stop.sh mobile
@@ -100,7 +108,7 @@ restart:
 	@/bin/bash $(LOCAL_DEV_SCRIPTS)/restart.sh all
 
 .DEFAULT:
-	@if [[ "$(firstword $(MAKECMDGOALS))" == "profile" || "$(firstword $(MAKECMDGOALS))" == "profile-init" ]]; then \
+	@if [[ "$(firstword $(MAKECMDGOALS))" == "profile" || "$(firstword $(MAKECMDGOALS))" == "profile-init" || "$(firstword $(MAKECMDGOALS))" == "run-prototype" ]]; then \
 		:; \
 	else \
 		echo "make: *** No rule to make target '$@'."; \
