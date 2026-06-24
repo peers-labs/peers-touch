@@ -31,24 +31,34 @@ import {
   DeletePostResponseSchema,
   ListPostsResponseSchema,
   GetTimelineResponseSchema,
+  SyncMomentsProjectionResponseSchema,
   GetMyMomentsStatsResponseSchema,
   ReactToPostResponseSchema,
   UnreactToPostResponseSchema,
+  UpsertStationModerationPolicyResponseSchema,
+  DeleteStationModerationPolicyResponseSchema,
+  ListStationModerationPoliciesResponseSchema,
   ReactionKind,
   TimelineType,
   PostType,
   Audience,
   Mention,
+  StationModerationPolicy_Kind,
   type CreatePostRequest,
   type CreatePostResponse,
   type GetPostResponse,
   type DeletePostResponse,
   type ListPostsResponse,
   type GetTimelineResponse,
+  type SyncMomentsProjectionResponse,
   type GetMyMomentsStatsResponse,
   type Post,
   type ReactToPostResponse,
   type UnreactToPostResponse,
+  type ImageAttachment,
+  type UpsertStationModerationPolicyResponse,
+  type DeleteStationModerationPolicyResponse,
+  type ListStationModerationPoliciesResponse,
 } from '../gen/proto/domain/social/post_pb';
 import {
   CreateCommentResponseSchema,
@@ -87,6 +97,7 @@ import {
   type GetFollowersResponse,
   type GetFollowingResponse,
 } from '../gen/proto/domain/social/relationship_pb';
+import { EVENT, eventBus } from '../kernel/events';
 import { invokeRustProto } from './desktop_api';
 
 // ---------------------------------------------------------------------------
@@ -111,6 +122,8 @@ export interface ImageDraft extends MomentDraftBase {
   text: string;
   /** OSS CIDs (`oss://origin/key`); empty until OSS upload lands. */
   imageIds: string[];
+  /** Typed attachments carrying E2EE media descriptors for new clients. */
+  images?: ImageAttachment[];
 }
 
 export interface RepostDraft extends MomentDraftBase {
@@ -131,9 +144,10 @@ export type MomentDraft = TextDraft | ImageDraft | RepostDraft;
  * lands; tests construct ImageDraft directly to exercise the path.
  */
 export function buildCreatePostRequest(draft: MomentDraft): CreatePostRequest {
-  const req = create(CreatePostRequestSchema, {
+  const base = {
     audience: draft.audience,
-  });
+    ...(draft.replyToPostId ? { replyToPostId: draft.replyToPostId } : {}),
+  };
   // The oneof inner value MUST be a properly-constructed message —
   // bufbuild's `toBinary` rejects bare POJOs because it can't tell
   // which schema to use for the embedded fields.
@@ -142,37 +156,43 @@ export function buildCreatePostRequest(draft: MomentDraft): CreatePostRequest {
   // not the message-type short forms).
   switch (draft.kind) {
     case 'text':
-      req.type = PostType.TEXT;
-      req.content = {
-        case: 'text',
-        value: create(CreateTextPostRequestSchema, { text: draft.text }),
-      } as any;
-      break;
-    case 'image':
-      req.type = PostType.IMAGE;
-      req.content = {
-        case: 'image',
-        value: create(CreateImagePostRequestSchema, {
-          text: draft.text,
-          imageIds: draft.imageIds,
-        }),
-      } as any;
-      break;
+      return create(CreatePostRequestSchema, {
+        ...base,
+        type: PostType.TEXT,
+        content: {
+          case: 'text',
+          value: create(CreateTextPostRequestSchema, { text: draft.text }),
+        },
+      });
+    case 'image': {
+      const typedImages = draft.images ?? [];
+      return create(CreatePostRequestSchema, {
+        ...base,
+        type: PostType.IMAGE,
+        content: {
+          case: 'image',
+          value: create(CreateImagePostRequestSchema, {
+            text: draft.text,
+            imageIds: typedImages.length > 0 ? [] : draft.imageIds,
+            images: typedImages,
+          }),
+        },
+      });
+    }
     case 'repost':
-      req.type = PostType.REPOST;
-      req.content = {
-        case: 'repost',
-        value: create(CreateRepostRequestSchema, {
-          originalPostId: draft.originalPostId,
-          comment: draft.comment,
-        }),
-      } as any;
-      break;
+      return create(CreatePostRequestSchema, {
+        ...base,
+        type: PostType.REPOST,
+        content: {
+          case: 'repost',
+          value: create(CreateRepostRequestSchema, {
+            originalPostId: draft.originalPostId,
+            comment: draft.comment,
+          }),
+        },
+      });
   }
-  if (draft.replyToPostId) {
-    req.replyToPostId = draft.replyToPostId;
-  }
-  return req;
+  throw new Error('socialCreateMoment: unsupported draft kind');
 }
 
 // ---------------------------------------------------------------------------
@@ -197,6 +217,14 @@ export async function socialGetMoment(id: string): Promise<Post | undefined> {
     { id },
   );
   return resp.post;
+}
+
+export async function socialGetMomentResponse(id: string): Promise<GetPostResponse> {
+  return invokeRustProto<{ id: string }, GetPostResponse>(
+    'social_get_moment',
+    GetPostResponseSchema,
+    { id },
+  );
 }
 
 export async function socialDeleteMoment(id: string): Promise<boolean> {
@@ -245,6 +273,31 @@ export async function socialGetTimeline(
     cursor,
     limit,
     sort: sortWire,
+  });
+}
+
+export async function socialSyncMomentsProjection(options?: {
+  homeCursor?: string;
+  publicCursor?: string;
+  limit?: number;
+  publicSort?: TimelineSort;
+  reason?: string;
+}): Promise<SyncMomentsProjectionResponse> {
+  return invokeRustProto<
+    {
+      home_cursor?: string;
+      public_cursor?: string;
+      limit?: number;
+      public_sort?: number;
+      reason?: string;
+    },
+    SyncMomentsProjectionResponse
+  >('social_sync_moments_projection', SyncMomentsProjectionResponseSchema, {
+    home_cursor: options?.homeCursor,
+    public_cursor: options?.publicCursor,
+    limit: options?.limit,
+    public_sort: options?.publicSort === 'hot' ? 1 : 0,
+    reason: options?.reason,
   });
 }
 
@@ -395,6 +448,90 @@ export async function socialGetRelationship(
     GetRelationshipResponseSchema,
     { target_user_id: targetUserId },
   );
+}
+
+// ---------------------------------------------------------------------------
+// Station moderation
+// ---------------------------------------------------------------------------
+
+export interface StationModerationUpsertInput {
+  stationDomain?: string;
+  stationPeerId?: string;
+  kind?: StationModerationPolicy_Kind;
+  reason?: string;
+}
+
+export interface StationModerationDeleteInput {
+  stationDomain?: string;
+  stationPeerId?: string;
+  kind?: StationModerationPolicy_Kind;
+}
+
+export interface StationModerationListInput {
+  kind?: StationModerationPolicy_Kind;
+  cursor?: string;
+  limit?: number;
+}
+
+export async function socialStationModerationUpsert(
+  input: StationModerationUpsertInput,
+): Promise<UpsertStationModerationPolicyResponse> {
+  const response = await invokeRustProto<
+    {
+      station_domain: string;
+      station_peer_id?: string;
+      kind?: number;
+      reason?: string;
+    },
+    UpsertStationModerationPolicyResponse
+  >('social_station_moderation_upsert', UpsertStationModerationPolicyResponseSchema, {
+    station_domain: input.stationDomain ?? '',
+    station_peer_id: input.stationPeerId,
+    kind: input.kind ?? StationModerationPolicy_Kind.STATION_MODERATION_POLICY_BLOCK,
+    reason: input.reason,
+  });
+  eventBus.publish(EVENT.MOMENT_RESYNC_REQUESTED, {
+    reason: 'station_moderation_upsert',
+  });
+  return response;
+}
+
+export async function socialStationModerationDelete(
+  input: StationModerationDeleteInput,
+): Promise<DeleteStationModerationPolicyResponse> {
+  const response = await invokeRustProto<
+    {
+      station_domain?: string;
+      station_peer_id?: string;
+      kind?: number;
+    },
+    DeleteStationModerationPolicyResponse
+  >('social_station_moderation_delete', DeleteStationModerationPolicyResponseSchema, {
+    station_domain: input.stationDomain,
+    station_peer_id: input.stationPeerId,
+    kind: input.kind ?? StationModerationPolicy_Kind.STATION_MODERATION_POLICY_BLOCK,
+  });
+  eventBus.publish(EVENT.MOMENT_RESYNC_REQUESTED, {
+    reason: 'station_moderation_delete',
+  });
+  return response;
+}
+
+export async function socialStationModerationList(
+  input: StationModerationListInput = {},
+): Promise<ListStationModerationPoliciesResponse> {
+  return invokeRustProto<
+    {
+      kind?: number;
+      cursor?: string;
+      limit?: number;
+    },
+    ListStationModerationPoliciesResponse
+  >('social_station_moderation_list', ListStationModerationPoliciesResponseSchema, {
+    kind: input.kind ?? StationModerationPolicy_Kind.STATION_MODERATION_POLICY_BLOCK,
+    cursor: input.cursor,
+    limit: input.limit,
+  });
 }
 
 // ---------------------------------------------------------------------------

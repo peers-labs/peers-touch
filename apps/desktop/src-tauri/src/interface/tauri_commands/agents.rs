@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crate::contracts::{
-    AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentSearchInput, AgentUpdateInput,
-    StubPayload,
+    AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentPackageExportInput,
+    AgentPackageImportInput, AgentSearchInput, AgentSelectInput, AgentUpdateInput, StubPayload,
 };
 use crate::error::AppResult;
 
@@ -19,6 +19,44 @@ fn actor_id_for_cmd(state: &State<'_, Arc<AppState>>, window: &Window) -> String
 pub fn agents_list(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
     let actor_id = actor_id_for_cmd(&state, &window);
     application_agents::agents_list(&actor_id)
+}
+
+#[tauri::command]
+pub fn agents_get_selected(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let actor_id = actor_id_for_cmd(&state, &window);
+    application_agents::agents_get_selected(&actor_id)
+}
+
+#[tauri::command]
+pub fn agents_set_selected(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    input: AgentSelectInput,
+) -> AppResult<StubPayload> {
+    let actor_id = actor_id_for_cmd(&state, &window);
+    application_agents::agents_set_selected(&actor_id, input)
+}
+
+#[tauri::command]
+pub fn agents_get_default(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let actor_id = actor_id_for_cmd(&state, &window);
+    application_agents::agents_get_default(&actor_id)
+}
+
+#[tauri::command]
+pub fn agents_set_default(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    input: AgentIdInput,
+) -> AppResult<StubPayload> {
+    let actor_id = actor_id_for_cmd(&state, &window);
+    application_agents::agents_set_default(&actor_id, input)
 }
 
 #[tauri::command]
@@ -69,6 +107,26 @@ pub fn agents_duplicate(
 ) -> AppResult<StubPayload> {
     let actor_id = actor_id_for_cmd(&state, &window);
     application_agents::agents_duplicate(&actor_id, input)
+}
+
+#[tauri::command]
+pub fn agents_export_package(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    input: AgentPackageExportInput,
+) -> AppResult<StubPayload> {
+    let actor_id = actor_id_for_cmd(&state, &window);
+    application_agents::agents_export_package(&actor_id, input)
+}
+
+#[tauri::command]
+pub fn agents_import_package(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    input: AgentPackageImportInput,
+) -> AppResult<StubPayload> {
+    let actor_id = actor_id_for_cmd(&state, &window);
+    application_agents::agents_import_package(&actor_id, input)
 }
 
 #[tauri::command]

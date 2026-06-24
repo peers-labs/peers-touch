@@ -1,7 +1,7 @@
 import type { MobileAuthSession } from '../auth/authSession';
 import type { SocialApiErrorContext, StationErrorEnvelope, StationSuccessEnvelope } from '../social/socialTypes';
-import { SocialApiError } from '../social/socialTypes';
-import type { ChatBackgroundId } from '../social/socialApi';
+import { SocialApiError, readableErrorMessage } from '../social/socialTypes';
+import type { ChatAttachmentInput, ChatBackgroundId } from '../social/socialApi';
 import { normalizeChatBackgroundId } from '../social/socialApi';
 import type { Group, GroupMember, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 
@@ -84,7 +84,10 @@ export interface GroupApiClient {
   leaveGroup: (groupUlid: string) => Promise<Record<string, unknown>>;
   removeMember: (groupUlid: string, actorDid: string) => Promise<Record<string, unknown>>;
   updateMember: (groupUlid: string, actorDid: string, input: UpdateGroupMemberInput) => Promise<{ member?: GroupMember }>;
-  sendMessage: (groupUlid: string, encryptedPayload: Uint8Array) => Promise<{ message?: GroupMessage }>;
+  updateMyNickname: (groupUlid: string, nickname: string) => Promise<{ member?: GroupMember }>;
+  transferOwnership: (groupUlid: string, nextOwnerDid: string) => Promise<{ group?: Group }>;
+  dissolveGroup: (groupUlid: string) => Promise<Record<string, unknown>>;
+  sendMessage: (groupUlid: string, encryptedPayload: Uint8Array, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<{ message?: GroupMessage }>;
   editMessage: (groupUlid: string, messageUlid: string, encryptedPayload: Uint8Array) => Promise<Record<string, unknown>>;
   recallMessage: (groupUlid: string, messageUlid: string) => Promise<Record<string, unknown>>;
   deleteMessage: (groupUlid: string, messageUlid: string) => Promise<Record<string, unknown>>;
@@ -116,7 +119,7 @@ export function createGroupApiClient(session: MobileAuthSession): GroupApiClient
       throw new SocialApiError({
         method: options.method,
         path: options.path,
-        message: error instanceof Error ? error.message : String(error),
+        message: readableErrorMessage(error),
       });
     }
 
@@ -200,15 +203,34 @@ export function createGroupApiClient(session: MobileAuthSession): GroupApiClient
           ...(input.mutedUntil !== undefined ? { muted_until: new Date(input.mutedUntil).toISOString() } : {}),
         },
       }),
-    sendMessage: (groupUlid, encryptedPayload) =>
+    updateMyNickname: (groupUlid, nickname) =>
+      request({
+        method: 'PUT',
+        path: '/group-chat/member/nickname',
+        body: { group_ulid: groupUlid, nickname },
+      }),
+    transferOwnership: (groupUlid, nextOwnerDid) =>
+      request<{ group?: Group }>({
+        method: 'POST',
+        path: '/group-chat/ownership/transfer',
+        body: { group_ulid: groupUlid, next_owner_did: nextOwnerDid },
+      }),
+    dissolveGroup: (groupUlid) =>
+      request({
+        method: 'POST',
+        path: '/group-chat/dissolve',
+        body: { group_ulid: groupUlid },
+      }),
+    sendMessage: (groupUlid, encryptedPayload, attachments, messageType = 1) =>
       request({
         method: 'POST',
         path: '/group-chat/message/send',
         body: {
           group_ulid: groupUlid,
           content: '',
-          type: 1,
+          type: messageType,
           encrypted_payload: bytesToBase64(encryptedPayload),
+          ...(attachments?.length ? { attachments } : {}),
         },
       }),
     editMessage: (groupUlid, messageUlid, encryptedPayload) =>
@@ -296,12 +318,13 @@ function unwrapPayload<T>(payload: unknown): T {
 
 function buildApiError(method: string, path: string, status: number, payload: unknown): SocialApiError {
   const envelope = (payload && typeof payload === 'object' ? payload : {}) as StationErrorEnvelope;
+  const message = envelope.msg ?? envelope.message ?? envelope.detail ?? 'group api request failed';
   const context: SocialApiErrorContext = {
     method,
     path,
     status,
-    code: envelope.code,
-    message: envelope.msg ?? envelope.message ?? envelope.detail ?? 'group api request failed',
+    code: envelope.code ? readableErrorMessage(envelope.code) : undefined,
+    message: readableErrorMessage(message, 'group api request failed'),
   };
   return new SocialApiError(context);
 }

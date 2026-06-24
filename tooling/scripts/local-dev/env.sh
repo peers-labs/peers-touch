@@ -20,8 +20,8 @@ PROFILE_FILE="$ACTIVE_DIR/$WORKTREE_ID.env"
 
 if [[ ! -f "$PROFILE_FILE" ]]; then
   echo "[ERROR] No active profile for worktree '$WORKTREE_ID'."
-  echo "        Run: make profile PROFILE=<name>"
-  echo "        Available profiles: make profiles"
+  echo "        Run: make profiles"
+  echo "        Then: make profile <name>"
   exit 1
 fi
 

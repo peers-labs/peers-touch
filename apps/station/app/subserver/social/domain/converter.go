@@ -108,7 +108,14 @@ func (c *PostConverter) encodeContent(req *model.CreatePostRequest) (text, attac
 	case model.PostType_IMAGE:
 		if r := req.GetImage(); r != nil {
 			text = r.Text
-			if len(r.ImageIds) > 0 {
+			if len(r.Images) > 0 {
+				b, e := json.Marshal(r.Images)
+				if e != nil {
+					err = fmt.Errorf("encode image attachments: %w", e)
+					return
+				}
+				attachments = string(b)
+			} else if len(r.ImageIds) > 0 {
 				b, e := json.Marshal(r.ImageIds)
 				if e != nil {
 					err = fmt.Errorf("encode image ids: %w", e)
@@ -231,20 +238,21 @@ func (c *PostConverter) DomainToPrivateDB(p *Post) (*db.SocialPrivatePost, []db.
 	}
 	a := p.Audience
 	row := &db.SocialPrivatePost{
-		ID:                 p.ID,
-		AuthorID:           p.AuthorID,
-		Type:               p.Type.String(),
-		AudienceKind:       a.Kind.String(),
-		AudienceTargetID:   a.TargetId,
-		TextBody:           p.TextBody,
-		AttachmentsJSON:    p.AttachmentsJSON,
-		MentionsJSON:       p.MentionsJSON,
-		LinkPreviewJSON:    p.LinkPreviewJSON,
-		ReactionsCountJSON: p.ReactionsCountJSON,
-		RepostOfRef:        p.RepostOfRef,
-		CommentsCount:      p.CommentsCount,
-		ViewsCount:         p.ViewsCount,
-		EditedAt:           p.EditedAt,
+		ID:                       p.ID,
+		AuthorID:                 p.AuthorID,
+		Type:                     p.Type.String(),
+		AudienceKind:             a.Kind.String(),
+		AudienceTargetID:         a.TargetId,
+		AudienceKeyEnvelopesJSON: encodeAudienceKeyEnvelopes(a.KeyEnvelopes),
+		TextBody:                 p.TextBody,
+		AttachmentsJSON:          p.AttachmentsJSON,
+		MentionsJSON:             p.MentionsJSON,
+		LinkPreviewJSON:          p.LinkPreviewJSON,
+		ReactionsCountJSON:       p.ReactionsCountJSON,
+		RepostOfRef:              p.RepostOfRef,
+		CommentsCount:            p.CommentsCount,
+		ViewsCount:               p.ViewsCount,
+		EditedAt:                 p.EditedAt,
 	}
 	if a.Kind == model.Audience_CUSTOM_ALLOW || a.Kind == model.Audience_CUSTOM_DENY {
 		row.AudienceBaseKind = a.BaseKind.String()
@@ -311,6 +319,7 @@ func (c *PostConverter) PrivateDBToDomain(row *db.SocialPrivatePost, grants []db
 		TargetId: row.AudienceTargetID,
 		BaseKind: parseAudienceKind(row.AudienceBaseKind),
 	}
+	a.KeyEnvelopes = decodeAudienceKeyEnvelopes(row.AudienceKeyEnvelopesJSON)
 	if len(grants) > 0 {
 		a.ActorDids = make([]string, 0, len(grants))
 		for _, g := range grants {
@@ -335,6 +344,28 @@ func (c *PostConverter) PrivateDBToDomain(row *db.SocialPrivatePost, grants []db
 		UpdatedAt:          row.UpdatedAt,
 		DeletedAt:          row.DeletedAt,
 	}
+}
+
+func encodeAudienceKeyEnvelopes(envelopes []*model.AudienceKeyEnvelope) string {
+	if len(envelopes) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(envelopes)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+func decodeAudienceKeyEnvelopes(raw string) []*model.AudienceKeyEnvelope {
+	if raw == "" {
+		return nil
+	}
+	var envelopes []*model.AudienceKeyEnvelope
+	if err := json.Unmarshal([]byte(raw), &envelopes); err != nil {
+		return nil
+	}
+	return envelopes
 }
 
 // ---------------------------------------------------------------------------
@@ -391,13 +422,17 @@ func (c *PostConverter) decodeContent(out *model.Post, p *Post) error {
 	case model.PostType_IMAGE:
 		body := &model.ImagePost{Text: p.TextBody}
 		if p.AttachmentsJSON != "" {
-			var ids []string
-			if err := json.Unmarshal([]byte(p.AttachmentsJSON), &ids); err == nil {
+			var images []*model.ImageAttachment
+			if err := json.Unmarshal([]byte(p.AttachmentsJSON), &images); err == nil {
+				body.Images = images
+			} else {
+				var ids []string
+				if legacyErr := json.Unmarshal([]byte(p.AttachmentsJSON), &ids); legacyErr != nil {
+					return fmt.Errorf("decode image attachments: %w", err)
+				}
 				for _, id := range ids {
 					body.Images = append(body.Images, newImageAttachment(id))
 				}
-			} else {
-				return fmt.Errorf("decode image attachments: %w", err)
 			}
 		}
 		out.Content = &model.Post_ImagePost{ImagePost: body}

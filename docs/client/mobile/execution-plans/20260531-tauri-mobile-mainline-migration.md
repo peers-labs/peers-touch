@@ -361,7 +361,7 @@ P0 文档真源迁移
 | `docs/.agent/mobile.md` | Mobile agent guardrail 需要从原生主线改为 Tauri 主线 |
 | `apps/mobile/android` | 从主 UI 工程降级为插件实现来源或迁移参考 |
 | `apps/mobile/ios` | 从主 UI 工程降级为插件实现来源或迁移参考 |
-| `apps/mobile/flutter` | 继续 deprecated，不复活 |
+| `apps/mobile/flutter` | 已移除，不再作为代码路径保留 |
 | `apps/desktop` | 需要抽 shared UI/runtime/API，避免破坏现有 Desktop |
 | `packages` | 需要新增 shared client packages |
 | `model/domain` | 原则不变；如缺协议，仍 proto-first |

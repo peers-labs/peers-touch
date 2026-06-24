@@ -29,10 +29,9 @@ peers-touch/
 │   ├── mobile/
 │   │   ├── src/           # mobile-web UI
 │   │   ├── src-tauri/     # mobile-rust capability kernel
-│   │   ├── gen/           # Tauri generated Android/iOS projects
+│   │   ├── src-tauri/gen/ # Tauri generated Android/iOS projects
 │   │   ├── android/       # legacy/native plugin source during migration
 │   │   ├── ios/           # legacy/native plugin source during migration
-│   │   └── flutter/       # ⚠️ DEPRECATED — do not touch
 │   ├── station/
 │   │   ├── app/           # Business logic + subservers (DDD)
 │   │   └── frame/         # Core framework
@@ -93,6 +92,37 @@ Primary docs entry:
 
 - Start from `docs/README.md` when you need to locate the right source document.
 
+### Large Requirement Documentation Protocol
+
+For any module-level or architecture-level demand, `.trae/documents/` is not sufficient. Agents MUST create or update formal project documentation under `docs/` before or alongside implementation.
+
+This protocol applies when a request includes any of the following:
+
+- New product capability set or major feature rebuild.
+- Cross-layer work touching more than one of Desktop Web, Desktop Rust, Station, Model, packages, or applets.
+- Architecture landing, migration, domain decomposition, runtime ownership, persistence, public API, protocol, or directory boundary changes.
+- Large UI / UX redesign that changes product workflow or module ownership.
+- Benchmark-driven rebuilds from an external project, such as LobeHub-style Agent capability mapping.
+
+Required behavior:
+
+1. Locate the formal docs home from `docs/README.md`.
+2. Write the durable design in the correct `docs/` layer:
+   - Architecture boundary / cross-layer capability → `docs/architecture/<domain>/`
+   - Desktop-only implementation plan → `docs/client/desktop/`
+   - Station-only implementation plan → `docs/station/`
+   - Coding convention → `docs/global/coding-guide/`
+   - Historical research only → `docs/context/`
+3. Add an execution plan under the nearest `execution-plans/` directory when delivery spans multiple phases.
+4. Update the nearest `README.md` so the new document is discoverable.
+5. Keep `.trae/documents/` only as scratch/spec workspace material; if it contains useful decisions, promote them into `docs/`.
+6. Before implementation, report the formal docs paths to the user.
+
+Example:
+
+- Agent LobeHub-style rebuild formal design: `docs/architecture/agent/agent-lobehub-blueprint.md`
+- Its execution plan: `docs/architecture/agent/execution-plans/20260616-agent-lobehub-rebuild.md`
+
 ---
 
 ## 4. Thinking Principles
@@ -102,6 +132,7 @@ Primary docs entry:
 3. **Architecture methodology** — For architecture landing / migration / domain decomposition, **MUST** use `architecture-execution-methodology` skill: `Domain Responsibility → Execution Closure → Dependency Order → Verifiable Delivery`.
 4. **Runtime projection first** — For Desktop bugs involving chat, contacts, notifications, badges, realtime, or store freshness, first identify the owning runtime and its projection contract. Do not patch stale state only with page/component refreshes; read `docs/client/desktop/runtime-projections.md`.
 5. **Page / Runtime / Boot contracts** — When adding or refactoring a Desktop page, projection owner, or startup step, conform to the Page / Runtime / Boot kernel contracts in `docs/client/desktop/runtime-projections.md §6`. Pages are pure renderers (no mount-time fetches); long-lived projections live in `RuntimeDescriptor`s; one-shot section data uses `kernel/usePrefetch`; startup is observable through `kernel/boot.ts` phases.
+6. **UI Identity first** — For any UI/UX design, visual refactor, screenshot review, layout issue, button/style issue, or client UI code change, first read `docs/client/common/ux-design-methodology.md`, `docs/client/common/ui-identity/README.md`, and the closest module contract under `docs/client/common/ui-identity/modules/`. Do not rely on ad-hoc component-library defaults.
 
 ---
 
@@ -273,6 +304,8 @@ Current project skills:
 | `dev-workflow` | Drive a complete development task from planning to PR |
 | `dev-runtime-handoff` | Choose & start the right dev runtime (make targets) for acceptance testing |
 | `architecture-execution-methodology` | Decompose architectural designs into actionable execution plans, domain ownership, and verification systems (referenced from §4.3) |
+| `execution-plan-guardian` | Keep execution, continuation, merge, and readiness reports tied to plan sources, scope boundaries, gates, and evidence |
+| `official-applet-development` | Create, scaffold, implement, and validate official applet product units under `apps/applets/` using the applet architecture contract |
 | `desktop-runtime-projections` | Enforce Page / Runtime / Boot kernel contracts under `apps/desktop/src/{kernel,runtimes,services,store,pages,components}` |
 | `read-before-edit` | Consult `docs/knowledge/` invariants / pitfalls / playbooks whose `owns:` covers the path being edited (referenced from §3.5) |
 | `quality-check` | Produce review-ready evidence from review profiles, acceptance, knowledge, deterministic gates, and test coverage |

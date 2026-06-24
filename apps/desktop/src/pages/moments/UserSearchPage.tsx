@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Empty, Input, List, Spin, Typography } from 'antd';
+import { Input } from '@lobehub/ui';
+import { Empty, List, Spin, Typography } from 'antd';
 import { Search } from 'lucide-react';
 import { useDiscoveryStore, type DiscoveryUser } from '../../store/discovery';
 import { UserProfileHeader } from '../../components/moments/UserProfileHeader';
@@ -32,6 +33,7 @@ function asPostAuthor(u: DiscoveryUser): PostAuthor {
     displayName: u.displayName,
     avatarUrl: u.avatar ?? '',
     isFollowing: false,
+    homeStationDomain: u.homeStationDomain ?? '',
   } as PostAuthor;
 }
 

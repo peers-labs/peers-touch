@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useChatStore } from '../store/chat';
-import { EVENT, eventBus, onWindowKeydown } from '../kernel/events';
+import { EVENT, eventBus } from '../kernel/events';
 import type { ParsedDeepLink } from '../utils/deeplink';
 import type { HashRouter, Navigation, SettingsNavState, Page } from '../types/navigation';
 
@@ -64,15 +64,6 @@ export function useNavigation(router: HashRouter): Navigation {
         case 'documents':
           router.setPage('notes');
           break;
-      }
-    });
-  }, [router.setPage]);
-
-  useEffect(() => {
-    return onWindowKeydown((e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        router.setPage('search');
       }
     });
   }, [router.setPage]);

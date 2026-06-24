@@ -253,6 +253,31 @@ func (s *eventsSubServer) handlePostSignal(ctx context.Context, c *app.RequestCo
 		return
 	}
 
+	// Authorization gate: only friends (sharing a friend chat session,
+	// neither having blocked the other) may signal each other. A
+	// self-signal (multi-device fan-out to one's own actor) is always
+	// allowed. The authorizer is owned by friend_chat and registered
+	// during its boot; a missing authorizer is fail-closed because
+	// signaling has no other security layer behind it.
+	if senderActorID != req.RecipientActorID {
+		authorizer := getSignalAuthorizer()
+		if authorizer == nil {
+			logger.DefaultHelper.Warnf("events: signal authorizer not registered, rejecting signal sender=%s", senderActorID)
+			c.JSON(503, map[string]string{"error": "signal authorization unavailable"})
+			return
+		}
+		allowed, err := authorizer.CanSignal(senderActorID, req.RecipientActorID)
+		if err != nil {
+			logger.DefaultHelper.Warnf("events: signal authorization check failed sender=%s recipient=%s: %v", senderActorID, req.RecipientActorID, err)
+			c.JSON(500, map[string]string{"error": "authorization check failed"})
+			return
+		}
+		if !allowed {
+			c.JSON(403, map[string]string{"error": "not authorized to signal this recipient"})
+			return
+		}
+	}
+
 	// Decode payload purely to length-check it. We never inspect the
 	// plaintext — that is the chat session's per-message ciphertext.
 	payload, err := base64.StdEncoding.DecodeString(req.PayloadB64)

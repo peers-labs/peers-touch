@@ -1,10 +1,10 @@
 # Applet Runtime Architecture — 数据模型与协议
 
 > **Status**: draft
-> **Version**: v1.1
-> **Created**: 2026-05-19 | **Updated**: 2026-06-06
+> **Version**: v1.2
+> **Created**: 2026-05-19 | **Updated**: 2026-06-17
 > **Owner**: Architecture Team
-> **Module**: `apps/desktop/src/applet/`, `apps/mobile/`, `packages/applet-sdk/`, `packages/applets/`
+> **Module**: `apps/applets/`, `apps/desktop/src/applet/`, `apps/mobile/`, `packages/applet-sdk/`, `packages/applet-contract/`
 
 ---
 
@@ -56,6 +56,7 @@ export interface AppletManifest {
     protocol: 'peers-touch.applet.bridge'
   }
   permissions: AppletPermission[]
+  services?: Record<string, AppletServiceDeclaration>
   capabilities?: string[]
   integrity?: {
     algorithm: 'sha256'
@@ -100,7 +101,13 @@ export interface AppletManifest {
   "bridge": {
     "protocol": "peers-touch.applet.bridge"
   },
-  "permissions": ["storage", "network", "config"]
+  "services": {
+    "note": {
+      "kind": "station-subserver",
+      "required": true
+    }
+  },
+  "permissions": ["storage:applet", "network:service:note", "config"]
 }
 ```
 
@@ -111,6 +118,40 @@ export interface AppletManifest {
 - `standalone` 是 applet 集合单体的独立运行出口，不是 Peers-Touch integrated 生产平台；它不证明 Host Gateway、session、权限和审计成立。
 - `harmony` 是预留平台；Host 未实现前必须明确拒载，而不是 fallback 到 Web。
 - 未来如果 Android 和 iOS 的 bundle 需要分化，已天然支持。
+
+### 1.1 Service Declaration
+
+Applet 通过 `services` 声明后端服务依赖。Applet 代码只能使用 service name，不能读取或拼接真实 backend base URL。
+
+```typescript
+export interface AppletServiceDeclaration {
+  kind: 'station-subserver' | 'standalone-service' | 'external-service'
+  required: boolean
+  allowedMethods?: Array<'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'>
+  allowedPaths?: string[]
+  streaming?: boolean
+}
+```
+
+规则：
+
+- `station-subserver` 表示服务可由当前 Station 装配提供。
+- `standalone-service` 表示服务可通过 service discovery 或配置 upstream 提供。
+- `external-service` 仅用于显式允许的外部服务，必须有单独安全评审。
+- `required=true` 的服务不可解析时，Host 必须拒绝启动或进入受限错误态。
+- Gateway 必须按 `service + path + method` 做授权和路由。
+- Applet SDK 不暴露 Station token、service upstream、provider key。
+
+调用示例：
+
+```typescript
+sdk.network.request({
+  service: 'note',
+  method: 'POST',
+  path: '/v1/notes',
+  body: input
+})
+```
 
 ---
 
@@ -241,13 +282,27 @@ Host 通过 Lynx NativeModules 的 event callback 或等价机制向 Applet 推�
 
 ```typescript
 export type CapabilityMethod =
+  | 'app.getContext'
+  | 'lifecycle.reportReady'
   | 'system.getInfo'
   | 'storage.get'
   | 'storage.set'
   | 'storage.remove'
+  | 'storage.clear'
   | 'network.request'
   | 'config.get'
-  | 'notification.show'
+  | 'ui.showToast'
+  | 'ui.showLoading'
+  | 'ui.hideLoading'
+  | 'ui.confirm'
+  | 'navigation.navigateTo'
+  | 'navigation.replace'
+  | 'navigation.back'
+  | 'events.emit'
+  | 'events.subscribe'
+  | 'events.unsubscribe'
+  | 'telemetry.track'
+  | 'telemetry.reportError'
 ```
 
 权限与 method 的关系：
@@ -255,10 +310,13 @@ export type CapabilityMethod =
 | Permission | Allowed methods |
 |------------|-----------------|
 | `system` | `system.getInfo` |
-| `storage` | `storage.get`, `storage.set`, `storage.remove` |
-| `network` | `network.request` |
+| `storage:applet` | `storage.get`, `storage.set`, `storage.remove`, `storage.clear` |
+| `network:service:<service>` | `network.request` for the named service |
 | `config` | `config.get` |
-| `notification` | `notification.show` |
+| `ui:feedback` | `ui.showToast`, `ui.showLoading`, `ui.hideLoading`, `ui.confirm` |
+| `navigation:applet` | `navigation.navigateTo`, `navigation.replace`, `navigation.back` |
+| `events:applet` | `events.emit`, `events.subscribe`, `events.unsubscribe` |
+| `telemetry:track` | `telemetry.track`, `telemetry.reportError` |
 
 Host 可以按策略进一步限制：
 
