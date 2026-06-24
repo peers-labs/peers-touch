@@ -44,10 +44,18 @@ func (h *AppletHandler) Handlers() []server.Handler {
 		),
 		server.NewHTTPHandler("publish-applet", base+"/publish", server.POST, server.HTTPHandlerFunc(h.handlePublish), logIDWrapper),
 		server.NewHTTPHandler("get-bundle", base+"/bundle", server.GET, server.HTTPHandlerFunc(h.handleGetBundle), logIDWrapper),
+		server.NewTypedHandler("publish-applet-version", base+"/publish/typed", server.POST, h.handlers.HandlePublishAppletVersion, logIDWrapper),
+		server.NewTypedHandler("list-applet-catalog", base+"/catalog", server.GET, h.handlers.HandleListAppletCatalog, logIDWrapper),
+		server.NewTypedHandler("get-applet-version", base+"/version", server.GET, h.handlers.HandleGetAppletVersion, logIDWrapper),
+		server.NewTypedHandler("install-applet", base+"/install", server.POST, h.handlers.HandleInstallApplet, logIDWrapper),
+		server.NewTypedHandler("uninstall-applet", base+"/uninstall", server.POST, h.handlers.HandleUninstallApplet, logIDWrapper),
+		server.NewTypedHandler("list-installed-applets", base+"/installed", server.GET, h.handlers.HandleListInstalledApplets, logIDWrapper),
+		server.NewTypedHandler("revoke-applet-version", base+"/revoke", server.POST, h.handlers.HandleRevokeAppletVersion, logIDWrapper),
+		server.NewTypedHandler("rollback-applet-channel", base+"/rollback", server.POST, h.handlers.HandleRollbackAppletChannel, logIDWrapper),
+		server.NewTypedHandler("ingest-applet-audit", base+"/audit/ingest", server.POST, h.handlers.HandleIngestAppletAudit, logIDWrapper),
+		server.NewTypedHandler("query-applet-audit", base+"/audit/query", server.GET, h.handlers.HandleQueryAppletAudit, logIDWrapper),
 	}
 }
-
-
 
 func (h *AppletHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// Simple implementation for demo
@@ -79,16 +87,17 @@ func (h *AppletHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AppletHandler) handleGetBundle(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Query().Get("path")
-	if path == "" {
+	bundlePath := r.URL.Query().Get("path")
+	if bundlePath == "" {
 		http.Error(w, "missing path", http.StatusBadRequest)
 		return
 	}
 
-	// Delegate to service storage logic to serve file
-	// Assuming service exposes a method to open file or we implement it here
-	// For MVP, if storage is local fs, we can use http.ServeFile but need to know the root
-	// Better to add a GetBundle method to service
+	filePath, err := h.service.ResolveBundlePath(bundlePath)
+	if err != nil {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
 
-	http.Error(w, "not implemented yet", http.StatusNotImplemented)
+	http.ServeFile(w, r, filePath)
 }
