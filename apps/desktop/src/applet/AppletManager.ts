@@ -1,6 +1,8 @@
 import { parseAppletIndex, parseAppletInfo, type AppletDiagnostic } from './schema'
 import { type AppletInfo } from './types'
+import { convertFileSrc } from '@tauri-apps/api/core'
 import { api } from '../services/desktop_api'
+import { readDesktopPreferenceSync, writeDesktopPreferenceSync } from '../storage/desktopClientStorage'
 import { log } from '../utils/logger'
 
 export type { AppletInfo } from './types'
@@ -11,6 +13,13 @@ interface AppletInstanceRecord {
   loadedAt: number
   status: 'loaded'
 }
+
+interface ImportedAppletRecord {
+  directory: string
+  manifest: unknown
+}
+
+const IMPORTED_APPLETS_KEY = 'pt.applets.importedCatalog'
 
 class AppletManager {
   private static instance: AppletManager
@@ -74,7 +83,15 @@ class AppletManager {
         normalized.forEach((applet) => {
           this.applets.set(applet.id, applet)
         })
-        return normalized
+        const imported = this.loadImportedApplets()
+        imported.forEach((applet) => {
+          if (this.applets.has(applet.id)) {
+            this.rejectedDiagnostics.set(applet.id, [`imported applet id duplicates an existing applet: ${applet.id}`])
+            return
+          }
+          this.applets.set(applet.id, applet)
+        })
+        return Array.from(this.applets.values())
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -82,7 +99,24 @@ class AppletManager {
       this.printDiagnostics('Failed to scan applets from index.json', this.indexDiagnostics)
     }
     this.applets.clear()
+    this.loadImportedApplets().forEach((applet) => {
+      this.applets.set(applet.id, applet)
+    })
+    if (this.applets.size > 0) {
+      return Array.from(this.applets.values())
+    }
     return []
+  }
+
+  public async importAppletDirectory(): Promise<AppletInfo> {
+    const imported = await api.pickAppletImportDirectory()
+    const applet = this.parseImportedApplet(imported, 'imported.selected')
+    const records = this.readImportedAppletRecords()
+    const nextRecords = records.filter((record) => this.extractImportedAppletId(record.manifest) !== applet.id)
+    nextRecords.push({ directory: imported.directory, manifest: imported.manifest })
+    writeDesktopPreferenceSync(IMPORTED_APPLETS_KEY, nextRecords)
+    this.applets.set(applet.id, applet)
+    return applet
   }
 
   /**
@@ -97,6 +131,10 @@ class AppletManager {
    */
   public getAvailableApplets(): AppletInfo[] {
     return Array.from(this.applets.values())
+  }
+
+  public registerApplet(appletInfo: AppletInfo): void {
+    this.applets.set(appletInfo.id, appletInfo)
   }
 
   /**
@@ -223,6 +261,50 @@ class AppletManager {
   private printDiagnostics(scope: string, issues: string[]): void {
     if (issues.length === 0) return
     log.error('AppletManager', scope, issues)
+  }
+
+  private loadImportedApplets(): AppletInfo[] {
+    const records = this.readImportedAppletRecords()
+    const applets: AppletInfo[] = []
+    records.forEach((record, index) => {
+      try {
+        applets.push(this.parseImportedApplet(record, `imported[${index}]`))
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        const id = this.extractImportedAppletId(record.manifest) || `imported-${index}`
+        this.rejectedDiagnostics.set(id, [message])
+      }
+    })
+    return applets
+  }
+
+  private readImportedAppletRecords(): ImportedAppletRecord[] {
+    const records = readDesktopPreferenceSync<ImportedAppletRecord[]>(IMPORTED_APPLETS_KEY)
+    if (!Array.isArray(records)) return []
+    return records.filter((record) => (
+      record
+      && typeof record === 'object'
+      && typeof record.directory === 'string'
+      && record.directory.length > 0
+      && 'manifest' in record
+    ))
+  }
+
+  private parseImportedApplet(record: ImportedAppletRecord, source: string): AppletInfo {
+    const parsed = parseAppletInfo({
+      ...(record.manifest as Record<string, unknown>),
+      path: convertFileSrc(record.directory),
+    }, source)
+    if (!parsed.ok) {
+      throw new Error(parsed.issues.join('\n'))
+    }
+    return parsed.value
+  }
+
+  private extractImportedAppletId(manifest: unknown): string | undefined {
+    if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return undefined
+    const id = (manifest as { id?: unknown }).id
+    return typeof id === 'string' && id.length > 0 ? id : undefined
   }
 
   private toGatewayManifest(appletInfo: AppletInfo): {

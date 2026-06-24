@@ -321,10 +321,58 @@ pub fn emit_audit(
     tracing::info!(request_id = %request_id, command = %command, applet_id = %target, capability = %capability, actor = %actor, outcome = %outcome, "applet audit log");
 }
 
-#[cfg(test)]
 pub(crate) fn drain_audit_records() -> Vec<AppletAuditRecord> {
     audit_records()
         .lock()
         .map(|mut guard| guard.drain(..).collect())
         .unwrap_or_default()
+}
+
+pub(crate) fn requeue_audit_records(records: Vec<AppletAuditRecord>) {
+    if records.is_empty() {
+        return;
+    }
+    if let Ok(mut guard) = audit_records().lock() {
+        let mut restored = records;
+        restored.append(&mut guard);
+        if restored.len() > 512 {
+            let overflow = restored.len() - 512;
+            restored.drain(0..overflow);
+        }
+        *guard = restored;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn requeue_audit_records_restores_failed_upload_batch_before_new_records() {
+        let _ = drain_audit_records();
+        emit_audit(
+            "audit-original",
+            "applets_invoke",
+            Some("big-a"),
+            "network.request",
+            Some("actor-test"),
+            "ok",
+        );
+        let failed_batch = drain_audit_records();
+
+        emit_audit(
+            "audit-new",
+            "applets_invoke",
+            Some("peers.note"),
+            "network.request",
+            Some("actor-test"),
+            "permission_denied",
+        );
+        requeue_audit_records(failed_batch);
+
+        let restored = drain_audit_records();
+        assert_eq!(restored.len(), 2);
+        assert_eq!(restored[0].request_id, "audit-original");
+        assert_eq!(restored[1].request_id, "audit-new");
+    }
 }

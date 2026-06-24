@@ -16,6 +16,7 @@ import { UserProfilePopover, useUserAvatar } from './UserProfilePopover';
 import { UserSquareAvatar } from './common/UserSquareAvatar';
 import AppletManager from '../applet/AppletManager';
 import { getModulesWithSidebar } from '../modules/registry';
+import { useAppletsStore } from '../store/applets';
 import type { Agent } from '../services/desktop_api';
 import type { Page, Navigation, AppletPins, HashRouter } from '../types/navigation';
 
@@ -30,6 +31,8 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
   const userAvatar = useUserAvatar();
   const appletManager = AppletManager.getInstance();
   const { t } = useTranslation('layout');
+  const installedApplets = useAppletsStore((state) => state.applets);
+  const installedAppletById = new Map(installedApplets.map((info) => [info.manifest.id, info.manifest]));
 
   const [sidebarExpand, setSidebarExpand] = useState(true);
   const [agentDrawerOpen, setAgentDrawerOpen] = useState(false);
@@ -99,11 +102,11 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
                   size="large"
                   active={page === m.id}
                   onClick={() => navigation.navigateTo(m.id)}
-                  title={m.sidebarEntry?.title || m.name}
+                  title={m.id === 'applets' ? t('layout.nav.applets') : m.sidebarEntry?.title || m.name}
                 />
               ))}
-            {appletPins.pinnedApplets.map((appletId) => {
-              const info = appletManager.getAppletInfo(appletId);
+            {appletPins.pinnedApplets.filter((appletId) => installedAppletById.has(appletId)).map((appletId) => {
+              const info = installedAppletById.get(appletId) ?? appletManager.getAppletInfo(appletId);
               if (!info) return null;
               return (
                 <ActionIcon

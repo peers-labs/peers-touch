@@ -4,17 +4,18 @@ import { useOAuth2Store } from '../store/oauth2';
 import { globalContext } from '../kernel/global-context';
 import { api } from '../services/desktop_api';
 import { onSessionRevoked } from '../services/desktop_api';
-import { removeDesktopPreferenceSync } from '../storage/desktopClientStorage';
+import { readDesktopPreferenceSync, removeDesktopPreferenceSync, writeDesktopPreferenceSync } from '../storage/desktopClientStorage';
 import type { AccountIdentity, AppletProductWindowLaunchContext } from '../services/desktop_api';
 import type { AppLifecycle, AppState, SessionUser } from '../types/navigation';
 
-// Warm-resume / auto-login on launch is intentionally disabled.
-// Project policy: every launch (including dev-dual where two windows boot
-// simultaneously) MUST land on the account picker. Even with a single known
-// account the user explicitly selects it. This keeps multi-account isolation
-// observable and prevents two windows in dev-dual from silently materialising
-// as the same identity from a shared on-disk session blob.
+// Warm-resume: if the on-disk session is still valid, skip the account picker
+// and go straight to ready. This is the primary path for single-account users
+// who just want to continue where they left off (especially on applet pages).
+//
+// Multi-account safety: if there are multiple accounts with sessions, or if the
+// only account requires a PIN, we still show the picker.
 const WARM_RESUME_KEY = 'pt.auth.lastActiveAt';
+const LAST_ACTIVE_PAGE_KEY = 'pt.nav.lastActivePage';
 
 /** Clear any leftover warm-resume marker (legacy installs). */
 export function clearWarmResume(): void {
@@ -22,6 +23,21 @@ export function clearWarmResume(): void {
     removeDesktopPreferenceSync(WARM_RESUME_KEY);
   } catch {
     // noop
+  }
+}
+
+/** Persist the current page id so it can be restored on warm resume. */
+export function persistLastActivePage(page: string): void {
+  writeDesktopPreferenceSync(LAST_ACTIVE_PAGE_KEY, page);
+}
+
+/** Read and apply the persisted last-active page into the URL hash. */
+function restoreLastActivePage(): void {
+  const page = readDesktopPreferenceSync<string>(LAST_ACTIVE_PAGE_KEY);
+  if (!page) return;
+  const targetHash = `#/${page}`;
+  if (window.location.hash !== targetHash) {
+    window.history.replaceState(null, '', targetHash);
   }
 }
 
@@ -76,9 +92,6 @@ export function useAppLifecycle(): AppLifecycle {
   const [dataReady, setDataReady] = useState(false);
 
   useEffect(() => {
-    // Drop any legacy warm-resume marker so older clients converge on the
-    // new "always show picker" policy on first launch.
-    clearWarmResume();
     globalContext.bootstrap().catch(() => {});
   }, []);
 
@@ -134,9 +147,9 @@ export function useAppLifecycle(): AppLifecycle {
   }, [state]);
 
   useEffect(() => {
-    // On launch, do NOT auto-restore the in-memory session. We only need the
-    // OAuth2 connections (for the picker UI) and the on-disk identities list
-    // so the user can choose an account explicitly.
+    // On launch, attempt warm resume: if the on-disk session is still valid
+    // and belongs to a single non-PIN account, skip the picker entirely.
+    // This eliminates the "refresh on every launch" issue for single-user setups.
     const oauth2 = useOAuth2Store.getState();
 
     api.appletsProductWindowLaunchContext().catch(() => ({ enabled: false })).then((context) => {
@@ -149,23 +162,57 @@ export function useAppLifecycle(): AppLifecycle {
         return;
       }
 
-      return Promise.all([
-        oauth2.loadAll().catch(() => {}),
-        api.accountListRestorable().catch(() => [] as AccountIdentity[]),
-      ]).then(([, restorableAccounts]) => {
-      // Load all accounts that have restorable sessions. Since the in-memory
-      // session was intentionally NOT restored, treat all non-PIN accounts as
-      // having no live session (they share the global session.json and we
-      // refuse to silently adopt it). PIN-protected accounts keep their flag
-      // because their encrypted_session is independent and unlock requires
-      // explicit PIN entry by the user.
-        if (Array.isArray(restorableAccounts) && restorableAccounts.length > 0) {
-          const accounts = restorableAccounts.map(accountToSessionUser);
-          accounts.forEach(a => { if (!a.hasPin) a.hasSession = false; });
-          setKnownAccounts(accounts);
+      // Try warm resume: restore the existing session without user interaction
+      return useSessionStore.getState().restoreSession().then(() => {
+        const { authenticated, currentUser } = useSessionStore.getState();
+        if (authenticated && currentUser) {
+          // Warm resume succeeded — restore last page and go straight to ready
+          restoreLastActivePage();
+          setRestoredUser({
+            name: currentUser.name || currentUser.actorId || 'User',
+            email: '',
+            accountId: currentUser.actorId,
+            hasPin: false,
+            hasSession: true,
+            provider: currentUser.loginProvider || currentUser.loginMethod,
+          });
+          setDataReady(true);
+          setState('ready');
+
+          // Background profile sync (same as completeLogin)
+          api.syncUserProfile().then((result) => {
+            if (result?.avatar_url) {
+              useSessionStore.getState().updateAvatar(result.avatar_url);
+            }
+          }).catch(() => {});
+          return;
         }
 
-        setDataReady(true);
+        // Session restore failed — fall back to the account picker
+        return Promise.all([
+          oauth2.loadAll().catch(() => {}),
+          api.accountListRestorable().catch(() => [] as AccountIdentity[]),
+        ]).then(([, restorableAccounts]) => {
+          if (Array.isArray(restorableAccounts) && restorableAccounts.length > 0) {
+            const accounts = restorableAccounts.map(accountToSessionUser);
+            accounts.forEach(a => { if (!a.hasPin) a.hasSession = false; });
+            setKnownAccounts(accounts);
+          }
+          setDataReady(true);
+        });
+      }).catch(() => {
+        // restoreSession threw — fall back to picker
+        return Promise.all([
+          oauth2.loadAll().catch(() => {}),
+          api.accountListRestorable().catch(() => [] as AccountIdentity[]),
+        ]).then(([, restorableAccounts]) => {
+          if (Array.isArray(restorableAccounts) && restorableAccounts.length > 0) {
+            const accounts = restorableAccounts.map(accountToSessionUser);
+            accounts.forEach(a => { if (!a.hasPin) a.hasSession = false; });
+            setKnownAccounts(accounts);
+          }
+          setDataReady(true);
+        });
       });
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
