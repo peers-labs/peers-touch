@@ -1250,6 +1250,12 @@ pub struct GroupRemoveMemberInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupTransferOwnershipInput {
+    pub group_ulid: String,
+    pub next_owner_did: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupUpdateMemberInput {
     pub group_ulid: String,
     pub member_did: String,

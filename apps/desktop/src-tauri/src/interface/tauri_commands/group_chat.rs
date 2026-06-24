@@ -7,8 +7,9 @@ use crate::contracts::{
     GroupChatMarkReadInput, GroupChatSendInput, GroupChatSyncInput, GroupChatThreadCountsInput,
     GroupChatThreadInput, GroupChatThreadReadInput, GroupChatUnreadInput, GroupInviteInput,
     GroupJoinInput, GroupMembersInput, GroupMessageActionInput, GroupOfflineMessagesInput,
-    GroupRemoveMemberInput, GroupSearchMessagesInput, GroupUlidInput, GroupUpdateInput,
-    GroupUpdateMemberInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput, StubPayload,
+    GroupRemoveMemberInput, GroupSearchMessagesInput, GroupTransferOwnershipInput, GroupUlidInput,
+    GroupUpdateInput, GroupUpdateMemberInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput,
+    StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -746,7 +747,7 @@ pub fn group_chat_get_group(
     let query = vec![("group_ulid", input.group_ulid)];
     let resp = match station_client::request_proto::<(), model::chat::GetGroupResponse>(
         Method::GET,
-        "/group-chat/group",
+        "/group-chat/info",
         &token,
         Some(&query),
         None::<&()>,
@@ -780,7 +781,7 @@ pub fn group_chat_update_group(
     let resp = match station_client::request_proto::<
         model::chat::UpdateGroupRequest,
         model::chat::UpdateGroupResponse,
-    >(Method::POST, "/group-chat/group/update", &token, None, Some(&req))
+    >(Method::PUT, "/group-chat/update", &token, None, Some(&req))
     {
         Ok(r) => r,
         Err(e) => return station_error_proto(e, "station request failed"),
@@ -838,7 +839,7 @@ pub fn group_chat_join_group(
     let resp = match station_client::request_proto::<
         model::chat::JoinGroupRequest,
         model::chat::JoinGroupResponse,
-    >(Method::POST, "/group-chat/group/join", &token, None, Some(&req))
+    >(Method::POST, "/group-chat/join", &token, None, Some(&req))
     {
         Ok(r) => r,
         Err(e) => return station_error_proto(e, "station request failed"),
@@ -866,7 +867,7 @@ pub fn group_chat_get_members(
 
     let resp = match station_client::request_proto::<(), model::chat::GetGroupMembersResponse>(
         Method::GET,
-        "/group-chat/group/members",
+        "/group-chat/members",
         &token,
         Some(&query),
         None::<&()>,
@@ -953,6 +954,81 @@ pub fn group_chat_update_member(
     >(
         Method::PUT,
         "/group-chat/member/update",
+        &token,
+        None,
+        Some(&req),
+    ) {
+        Ok(resp) => resp,
+        Err(error) => return error.into_app_result("station request failed"),
+    };
+
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn group_chat_transfer_ownership(
+    input: GroupTransferOwnershipInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    if input.group_ulid.trim().is_empty() || input.next_owner_did.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "group_ulid and next_owner_did are required",
+            None,
+        );
+    }
+    let req = model::chat::TransferGroupOwnershipRequest {
+        group_ulid: input.group_ulid,
+        next_owner_did: input.next_owner_did,
+    };
+    let resp = match station_client::request_proto::<
+        model::chat::TransferGroupOwnershipRequest,
+        model::chat::TransferGroupOwnershipResponse,
+    >(
+        Method::POST,
+        "/group-chat/ownership/transfer",
+        &token,
+        None,
+        Some(&req),
+    ) {
+        Ok(resp) => resp,
+        Err(error) => return error.into_app_result("station request failed"),
+    };
+
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn group_chat_dissolve_group(
+    input: GroupUlidInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    if input.group_ulid.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "group_ulid is required",
+            None,
+        );
+    }
+    let req = model::chat::DissolveGroupRequest {
+        group_ulid: input.group_ulid,
+    };
+    let resp = match station_client::request_proto::<
+        model::chat::DissolveGroupRequest,
+        model::chat::DissolveGroupResponse,
+    >(
+        Method::POST,
+        "/group-chat/dissolve",
         &token,
         None,
         Some(&req),

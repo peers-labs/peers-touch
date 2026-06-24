@@ -126,7 +126,13 @@ export type RealtimeMessageMutationKind = 'RECALL' | 'EDIT' | 'DELETE';
  * Group roster change kind, mirrors `GroupMembershipChange.Kind` on the
  * wire. `KIND_UNSPECIFIED` (enum 0) is dropped at the dispatch boundary.
  */
-export type RealtimeGroupMembershipChangeKind = 'ADDED' | 'REMOVED' | 'LEFT' | 'UPDATED';
+export type RealtimeGroupMembershipChangeKind =
+  | 'ADDED'
+  | 'REMOVED'
+  | 'LEFT'
+  | 'UPDATED'
+  | 'TRANSFERRED'
+  | 'DISSOLVED';
 
 export interface RealtimeGroupMembershipChangePayload {
   /** Monotonic SSE envelope id (Last-Event-ID cursor). */

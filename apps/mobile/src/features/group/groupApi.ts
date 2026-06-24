@@ -84,6 +84,9 @@ export interface GroupApiClient {
   leaveGroup: (groupUlid: string) => Promise<Record<string, unknown>>;
   removeMember: (groupUlid: string, actorDid: string) => Promise<Record<string, unknown>>;
   updateMember: (groupUlid: string, actorDid: string, input: UpdateGroupMemberInput) => Promise<{ member?: GroupMember }>;
+  updateMyNickname: (groupUlid: string, nickname: string) => Promise<{ member?: GroupMember }>;
+  transferOwnership: (groupUlid: string, nextOwnerDid: string) => Promise<{ group?: Group }>;
+  dissolveGroup: (groupUlid: string) => Promise<Record<string, unknown>>;
   sendMessage: (groupUlid: string, encryptedPayload: Uint8Array, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<{ message?: GroupMessage }>;
   editMessage: (groupUlid: string, messageUlid: string, encryptedPayload: Uint8Array) => Promise<Record<string, unknown>>;
   recallMessage: (groupUlid: string, messageUlid: string) => Promise<Record<string, unknown>>;
@@ -199,6 +202,24 @@ export function createGroupApiClient(session: MobileAuthSession): GroupApiClient
           ...(input.muted !== undefined ? { muted: input.muted } : {}),
           ...(input.mutedUntil !== undefined ? { muted_until: new Date(input.mutedUntil).toISOString() } : {}),
         },
+      }),
+    updateMyNickname: (groupUlid, nickname) =>
+      request({
+        method: 'PUT',
+        path: '/group-chat/member/nickname',
+        body: { group_ulid: groupUlid, nickname },
+      }),
+    transferOwnership: (groupUlid, nextOwnerDid) =>
+      request<{ group?: Group }>({
+        method: 'POST',
+        path: '/group-chat/ownership/transfer',
+        body: { group_ulid: groupUlid, next_owner_did: nextOwnerDid },
+      }),
+    dissolveGroup: (groupUlid) =>
+      request({
+        method: 'POST',
+        path: '/group-chat/dissolve',
+        body: { group_ulid: groupUlid },
       }),
     sendMessage: (groupUlid, encryptedPayload, attachments, messageType = 1) =>
       request({

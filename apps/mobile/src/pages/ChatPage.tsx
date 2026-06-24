@@ -38,6 +38,7 @@ import {
   type ChatActionState,
 } from '../features/chat/chatActionState';
 import { timestampMillis as groupTimestampMillis } from '../features/group/groupNormalizers';
+import { getMobileGroupMemberControlState } from '../features/group/groupPermissions';
 import { useGroupStore } from '../features/group/groupStore';
 import type { GroupSettings } from '../features/group/groupApi';
 import {
@@ -145,6 +146,8 @@ export function ChatPage() {
   const leaveGroup = useGroupStore((state) => state.leaveGroup);
   const removeGroupMember = useGroupStore((state) => state.removeMember);
   const updateGroupMember = useGroupStore((state) => state.updateMember);
+  const transferGroupOwnership = useGroupStore((state) => state.transferOwnership);
+  const dissolveGroup = useGroupStore((state) => state.dissolveGroup);
   const groupEncryptionReady = useGroupStore((state) => (activeGroupUlid ? Boolean(state.encryptionReady[activeGroupUlid]) : false));
   const groupSending = useGroupStore((state) => (activeGroupUlid ? Boolean(state.sendingGroups[activeGroupUlid]) : false));
   const sendGroupMessage = useGroupStore((state) => state.sendEncryptedMessage);
@@ -485,10 +488,56 @@ export function ChatPage() {
     await updateGroupMember(activeGroupUlid, actorDid, input);
   };
 
+  const confirmTransferGroupOwnership = (member: GroupMember) => {
+    if (!activeGroupUlid || !member.actorDid) return;
+    const groupUlid = activeGroupUlid;
+    const profile = peerProfiles[member.actorDid];
+    const memberName = member.nickname || profile?.displayName || profile?.username || member.actorDid;
+    Modal.confirm({
+      title: t('mobile.group.transferOwnerConfirmTitle'),
+      content: t('mobile.group.transferOwnerConfirmBody', { name: memberName }),
+      okText: t('mobile.group.transferOwner'),
+      cancelText: t('common.action.cancel'),
+      okButtonProps: { danger: true },
+      onOk: () => runChatOperation(
+        () => transferGroupOwnership(groupUlid, member.actorDid),
+        'mobile.group.operationTransferOwnerFailed',
+      ),
+    });
+  };
+
   const leaveActiveGroup = async () => {
     if (!activeGroupUlid) return;
     await leaveGroup(activeGroupUlid);
     setGroupManageOpen(false);
+  };
+
+  const confirmLeaveActiveGroup = () => {
+    if (!activeGroupUlid) return;
+    Modal.confirm({
+      title: t('mobile.group.leaveGroupConfirmTitle'),
+      content: t('mobile.group.leaveGroupConfirmBody'),
+      okText: t('mobile.group.leaveGroup'),
+      cancelText: t('common.action.cancel'),
+      okButtonProps: { danger: true },
+      onOk: () => runChatOperation(leaveActiveGroup, 'mobile.group.operationLeaveFailed'),
+    });
+  };
+
+  const confirmDissolveActiveGroup = () => {
+    if (!activeGroupUlid) return;
+    const groupUlid = activeGroupUlid;
+    Modal.confirm({
+      title: t('mobile.group.dissolveGroupConfirmTitle'),
+      content: t('mobile.group.dissolveGroupConfirmBody'),
+      okText: t('mobile.group.dissolveGroup'),
+      cancelText: t('common.action.cancel'),
+      okButtonProps: { danger: true },
+      onOk: () => runChatOperation(async () => {
+        await dissolveGroup(groupUlid);
+        setGroupManageOpen(false);
+      }, 'mobile.group.operationDissolveFailed'),
+    });
   };
 
   const saveGroupProfile = async () => {
@@ -992,14 +1041,16 @@ export function ChatPage() {
                     const profile = peerProfiles[member.actorDid];
                     const memberName = member.nickname || profile?.displayName || profile?.username || member.actorDid;
                     const memberRole = Number(member.role ?? GroupRole.MEMBER);
-                    const canManageTarget = canManageGroupMembers &&
-                      member.actorDid !== currentUserDid &&
-                      memberRole !== GroupRole.OWNER &&
-                      (myGroupRole === GroupRole.OWNER || memberRole < myGroupRole);
+                    const memberControls = getMobileGroupMemberControlState({
+                      canManageGroupMembers,
+                      isSelf: member.actorDid === currentUserDid,
+                      myGroupRole,
+                      targetRole: memberRole,
+                    });
                     return (
                       <List.Item
                         actions={[
-                          canManageTarget && myGroupRole === GroupRole.OWNER ? (
+                          memberControls.canPromoteOrDemote ? (
                             <Button
                               key="role"
                               size="small"
@@ -1010,7 +1061,16 @@ export function ChatPage() {
                               {memberRole === GroupRole.ADMIN ? t('mobile.group.demoteAdmin') : t('mobile.group.promoteAdmin')}
                             </Button>
                           ) : null,
-                          canManageTarget ? (
+                          memberControls.canTransferOwnership ? (
+                            <Button
+                              key="transfer"
+                              size="small"
+                              onClick={() => confirmTransferGroupOwnership(member)}
+                            >
+                              {t('mobile.group.transferOwner')}
+                            </Button>
+                          ) : null,
+                          memberControls.canMute ? (
                             <Button
                               key="mute"
                               size="small"
@@ -1019,7 +1079,7 @@ export function ChatPage() {
                               {member.muted ? t('mobile.group.unmuteMember') : t('mobile.group.muteMember')}
                             </Button>
                           ) : null,
-                          canManageTarget ? (
+                          memberControls.canRemove ? (
                             <Button
                               key="remove"
                               size="small"
@@ -1070,8 +1130,8 @@ export function ChatPage() {
                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.group.noInviteCandidates')} />
               )}
 
-              <Button danger block onClick={leaveActiveGroup}>
-                {t('mobile.group.leaveGroup')}
+              <Button danger block onClick={myGroupRole === GroupRole.OWNER ? confirmDissolveActiveGroup : confirmLeaveActiveGroup}>
+                {myGroupRole === GroupRole.OWNER ? t('mobile.group.dissolveGroup') : t('mobile.group.leaveGroup')}
               </Button>
             </div>
           </Modal>
