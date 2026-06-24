@@ -10,6 +10,8 @@
   "applet.page.manage": "管理操作在应用内进行",
   "applet.page.launcherTitle": "我的应用",
   "applet.page.launcherDescription": "这里仅展示已安装应用。其它应用需要先导入目录并安装。",
+  "applet.page.stationUnavailableTitle": "Station Applet Store 暂不可用",
+  "applet.page.stationUnavailableDescription": "当前仅展示内置应用和本地开发应用。恢复连接后会刷新 Station 目录与安装状态。",
 
   "applet.card.active": "已启用",
   "applet.card.inactive": "未启用",
@@ -31,6 +33,8 @@
   "applet.toast.installed": "应用已安装",
   "applet.toast.installFailed": "安装失败",
   "applet.toast.noPage": "该应用暂无专属页面",
+  "error.applet.revoked": "该应用版本已被撤销，不能打开。",
+  "error.applet.stationBundleUnavailable": "该 Station 应用已安装，但桌面端包尚未缓存到本地。",
 
   "applet.cap.search": "搜索",
   "applet.cap.tools": "工具",
