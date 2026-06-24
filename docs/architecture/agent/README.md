@@ -37,6 +37,7 @@
 | [agent-memory-architecture.md](./agent-memory-architecture.md) | **Agent Memory 架构** — Memory 分层、存储、检索、反馈与可视化 |
 | [hermes-agent-self-improving-analysis.md](./hermes-agent-self-improving-analysis.md) | **Hermes 参考分析** — hermes-agent 的七层架构、工程实现细节，作为设计参考 |
 | [a2a/](./a2a/) | **A2A 协议集成** — Agent-to-Agent 协议、集成、数据模型、执行阶段 |
+| [orchestration-kernel/](./orchestration-kernel/) | **多 Agent 编排内核** — Policy 驱动的协作内核、Decision/Evidence/Participant/Reduction/Convergence、Workflow/Provider/Policy/Federation 边界 |
 
 ---
 
