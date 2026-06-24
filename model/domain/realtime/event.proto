@@ -39,6 +39,7 @@ message StreamEvent {
     MessageMutation       mutation                 = 17;
     GroupMembershipChange group_membership_change   = 18;
     ConversationSettingsChanged conversation_settings_changed = 19;
+    MomentEvent           moment                   = 20;
   }
 }
 
@@ -183,7 +184,7 @@ message MessageMutation {
 }
 
 // GroupMembershipChange notifies subscribers that a group's roster
-// changed in real time (join, kick, or voluntary leave). Every
+// or lifecycle changed in real time. Every
 // affected actor receives a frame on their SSE stream so clients
 // can refresh cached membership and rotate Sender Keys promptly.
 message GroupMembershipChange {
@@ -199,6 +200,8 @@ message GroupMembershipChange {
     KIND_REMOVED = 2; // an admin kicked them
     KIND_LEFT = 3;    // they left voluntarily
     KIND_UPDATED = 4; // role or moderation state changed
+    KIND_TRANSFERRED = 5; // group ownership moved to actor_did
+    KIND_DISSOLVED = 6;   // group is dissolved by owner
   }
 }
 
@@ -216,6 +219,30 @@ message ConversationSettingsChanged {
     KIND_UNSPECIFIED = 0;
     FRIEND = 1;
     GROUP = 2;
+  }
+}
+
+// MomentEvent notifies a viewer that a Moment they can see changed.
+// It intentionally carries identifiers and small metadata only; clients
+// refresh the authoritative Moment/detail projection through the social
+// API so visibility filtering remains Station-owned.
+message MomentEvent {
+  Kind kind = 1;
+  string post_id = 2;
+  string author_actor_id = 3;
+  string actor_id = 4;
+  string comment_id = 5;
+  string reaction_kind = 6;
+  bool removed = 7;
+  string audience = 8;
+  int64 occurred_ts_unix_ms = 9;
+
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    CREATED = 1;
+    DELETED = 2;
+    COMMENTED = 3;
+    REACTED = 4;
   }
 }
 

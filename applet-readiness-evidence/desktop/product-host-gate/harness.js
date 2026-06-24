@@ -1,5 +1,6 @@
 const protocol = 'peers-touch.applet.bridge';
-const appletId = "external-l3-cert-applet";
+const appletId = "hello-lynx";
+const manifestPermissions = ["system.getInfo","storage.get","storage.set","lifecycle.destroy"];
 const requiredMethods = ["app.getContext","app.getLaunchOptions","lifecycle.reportReady","ui.setNavigationBar","ui.showToast","device.getSafeArea","device.getWindowInfo","device.vibrate","clipboard.setText","clipboard.getText","file.write","file.read","file.list","file.getInfo","storage.set","storage.keys","storage.getInfo","network.request","network.upload","network.download","events.subscribe","events.unsubscribe","events.poll","skills.register","skills.list","tasks.start","agent.stream","ai.chat","telemetry.track"];
 const realHttpGateway = false;
 const realHttpGatewayBaseUrl = "";
@@ -15,6 +16,7 @@ const hostUiRequests = [];
 const hostDeviceRequests = [];
 const eventSubscriptions = new Set();
 let shellSessionLoginMethod = '';
+let appletListProjection = null;
 let skillRegistered = null;
 let taskStarted = false;
 let completedTaskEventDrained = false;
@@ -22,7 +24,7 @@ let activeSessionId = '';
 let mountedHost = null;
 let lynxEventRecorderInstalled = false;
 let hostCommandRecorderInstalled = false;
-const kernelRoute = {"descriptorId":"applet:*","pageKey":"applet:external-l3-cert-applet","dynamic":true};
+const kernelRoute = {"descriptorId":"applet:*","pageKey":"applet:hello-lynx","dynamic":true};
 
 function setStatus(value, detail) {
   status.textContent = value;
@@ -274,6 +276,62 @@ function installHostCommandRecorder() {
   hostCommandRecorderInstalled = true;
 }
 
+function permissionGroup(permission) {
+  const separator = permission.includes('.') ? '.' : ':';
+  return permission.split(separator)[0] || 'unknown';
+}
+
+async function assertProductShellAppletListProjection(useAppletsStore) {
+  const card = await waitUntil(
+    () => document.querySelector('[data-page-descriptor="applets"][data-page="applets"] [data-applet-card="' + appletId + '"]'),
+    5000,
+    'Product shell did not render the applets list card for the manifest',
+  );
+  if (card.getAttribute('data-applet-status') !== 'installed') {
+    throw new Error('Product shell applet list did not project installed status before launch');
+  }
+  if (card.getAttribute('data-applet-opened-this-session') !== 'false') {
+    throw new Error('Product shell applet list used stale opened-session state before launch');
+  }
+  const expectedGroups = ['network', 'tasks', 'agent'].filter((item) => manifestPermissions.some((permission) => permissionGroup(permission) === item));
+  const permissionGroupEvidence = [];
+  for (const group of expectedGroups) {
+    const chip = card.querySelector('[data-applet-permission-group="' + group + '"]');
+    if (!chip) {
+      throw new Error('Product shell applet list did not render permission group: ' + group);
+    }
+    const rawPermissions = chip.getAttribute('data-applet-permissions') || '';
+    const methods = rawPermissions.split(',').filter((permission) => permissionGroup(permission) === group);
+    if (!methods.some((permission) => permission.includes('.'))) {
+      throw new Error('Product shell permission chip did not retain full-method permission evidence for group: ' + group);
+    }
+    permissionGroupEvidence.push({ group, methods });
+  }
+  const open = card.querySelector('[data-applet-open="' + appletId + '"]');
+  if (!(open instanceof HTMLElement)) {
+    throw new Error('Product shell applet list did not expose an open control');
+  }
+  appletListProjection = {
+    appletId,
+    status: card.getAttribute('data-applet-status'),
+    openedThisSession: card.getAttribute('data-applet-opened-this-session'),
+    permissionGroups: permissionGroupEvidence,
+  };
+  open.click();
+  const openedProjection = await waitUntil(() => {
+    const applet = useAppletsStore.getState().applets.find((item) => item.manifest.id === appletId);
+    if (applet?.status === 'active' && applet.lastOpenedAt) {
+      return {
+        status: applet.status,
+        openedThisSession: true,
+        lastOpenedAt: applet.lastOpenedAt,
+      };
+    }
+    return null;
+  }, 5000, 'Product shell store did not project active/opened state after clicking the applet list open control');
+  appletListProjection.afterOpen = openedProjection;
+}
+
 async function mountProductShellRoute() {
   setStatus('IMPORTING_PRODUCT_SHELL');
   const [
@@ -303,7 +361,7 @@ async function mountProductShellRoute() {
   installLynxEventRecorder();
   installHostCommandRecorder();
 
-  window.history.replaceState(null, '', '#/applet:' + appletId);
+  window.history.replaceState(null, '', '#/applets');
   useSessionStore.setState({
     authenticated: true,
     restoring: false,
@@ -339,6 +397,7 @@ async function mountProductShellRoute() {
     ),
   );
 
+  await assertProductShellAppletListProjection(useAppletsStore);
   await waitUntil(() => document.querySelector('[data-page-descriptor="applet:*"][data-page="applet:' + appletId + '"]'), 5000, 'Product shell did not route through PageHost applet:* descriptor');
   return root;
 }
@@ -417,6 +476,14 @@ try {
     throw new Error('Missing product Host SDK calls: ' + missing.join(', '));
   }
 
+  const frontendFailures = invocations
+    .filter((item) => item.command === 'frontend_log')
+    .map((item) => item.input ?? {})
+    .filter((input) => input.level === 'error' || String(input.message ?? '').includes(' FAIL') || String(input.message ?? '').includes(' ERROR'));
+  if (frontendFailures.length > 0) {
+    throw new Error('Product shell emitted frontend failure logs: ' + JSON.stringify(frontendFailures.slice(0, 5)));
+  }
+
   const taskEvent = hostEvents.some((event) => event.name === 'applet.event'
     && JSON.stringify(event.payload).includes('task.event'));
   if (!taskEvent) {
@@ -478,6 +545,7 @@ try {
     sessionId: productSessionId || activeSessionId,
     shellRoute,
     shellSessionLoginMethod,
+    appletListProjection,
     requestCount: seenMethods.size,
     invocations,
     hostEvents,

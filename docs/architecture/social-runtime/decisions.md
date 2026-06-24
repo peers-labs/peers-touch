@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-06-03 | **Updated**: 2026-06-03
+> **Created**: 2026-06-03 | **Updated**: 2026-06-06
 > **Owner**: Client Architecture Team
 > **Module**: `apps/desktop/src/runtimes/socialRuntime.ts`, `apps/mobile/src/features/social/`
 
@@ -13,18 +13,18 @@
 | ID | 决策 | 状态 |
 | --- | --- | --- |
 | D-01 | Station 是跨端社交真源，客户端只做 runtime projection | accepted |
-| D-02 | 双端共享抽象层级，不强制共享同一文件实现 | accepted |
+| D-02 | 双端共享抽象层级，纯语义可进入共享包 | accepted |
 | D-03 | Host Adapter 是唯一平台差异入口 | accepted |
 | D-04 | 页面不能拥有长期社交 freshness | accepted |
 | D-05 | protobuf 使用 generated contract，禁止手写 wire decoder | accepted |
 | D-06 | Group chat 独立 projection domain，不挂靠 friend chat | accepted |
-| D-07 | Offline queue 和 E2EE 作为 projection domain 接入 runtime | proposed |
+| D-07 | Offline queue 和 E2EE 作为 projection domain 接入 runtime | accepted |
 
 ---
 
 ## D-01: Station 是跨端社交真源
 
-**Status**: accepted  
+**Status**: accepted
 **Date**: 2026-06-03
 
 ### Context
@@ -54,9 +54,9 @@ Station 是跨端业务真源。Desktop/Mobile 只维护 runtime projection；�
 
 ---
 
-## D-02: 双端共享抽象层级，不强制共享同一文件实现
+## D-02: 双端共享抽象层级，纯语义可进入共享包
 
-**Status**: accepted  
+**Status**: accepted
 **Date**: 2026-06-03
 
 ### Context
@@ -65,28 +65,29 @@ Desktop 与 Mobile 都是 TypeScript UI，但宿主路径不同：Desktop 经过
 
 ### Decision
 
-双端必须共享同一抽象层级和语义接口，但不要求第一阶段把所有逻辑抽到公共 package。
+双端必须共享同一抽象层级和语义接口。对不依赖 store、runtime、Tauri、DOM、UI 组件的纯 chat 语义，允许沉淀到共享 package；对 runtime supervisor、host adapter、UI renderer，不要求第一阶段共享同一文件实现。
 
 ### Rationale
 
 - 先统一模型和边界，避免为了复用制造跨端错误依赖。
+- message type、attachment kind、reply/thread helper、IME-safe enter、composer capability profiles、draft submit guard、display/search/edit/sender extraction、timeline surface projection、conversation surface projection、thread surface projection 等纯函数没有宿主差异，留在端内只会造成语义漂移。
 - Desktop 当前包含 group、E2EE、P2P 等更多成熟能力；Mobile 当前分层更清晰。两端应互相收敛，而不是单向复制。
 
 ### Alternatives Considered
 
-- 直接抽 `packages/social-runtime`：当前差异未整理完，过早抽包会固化错误边界。
+- 直接抽 `packages/social-runtime`：当前差异未整理完，过早抽 runtime 包会固化错误边界。
 - 继续端内独立演进：会增加长期理解和维护成本。
 
 ### Consequences
 
-- Phase 1 先做架构矩阵、接口契约和防回退规则。
-- Phase 2 再逐步沉淀可共享 reducer/contract。
+- `packages/client-chat-core` 承载跨端纯 chat 语义；Desktop/Mobile 选择共享 composer capability profile，媒体采集、上传、渲染仍留在宿主 adapter 与 renderer。
+- Phase 2 继续沉淀可共享 reducer/contract，但 host adapter 与 renderer 仍按平台实现。
 
 ---
 
 ## D-03: Host Adapter 是唯一平台差异入口
 
-**Status**: accepted  
+**Status**: accepted
 **Date**: 2026-06-03
 
 ### Context
@@ -110,13 +111,14 @@ Desktop 有 tray/system notification/window focus；Mobile 有 push/deep-link/re
 ### Consequences
 
 - Desktop 需要显式化 host adapter。
-- Mobile 已有 `mobileNativeEventBridge.ts`，后续只补 native plugin emit。
+- Desktop host adapter 入口为 `apps/desktop/src/runtimes/desktopSocialHostAdapter.ts`，只把 visibility/focus/network/native host events 转成 `SocialHostEvent`。
+- Mobile `mobileNativeEventBridge.ts` 与 Desktop adapter 使用 `packages/client-chat-core` 的共享 host event helper，后续只补 native plugin emit。
 
 ---
 
 ## D-04: 页面不能拥有长期社交 freshness
 
-**Status**: accepted  
+**Status**: accepted
 **Date**: 2026-06-03
 
 ### Context
@@ -145,7 +147,7 @@ Desktop 有 tray/system notification/window focus；Mobile 有 push/deep-link/re
 
 ## D-05: protobuf 使用 generated contract
 
-**Status**: accepted  
+**Status**: accepted
 **Date**: 2026-06-03
 
 ### Context
@@ -174,7 +176,7 @@ Desktop/Mobile 的 protobuf 解码只能使用 generated code。禁止手写 `Pr
 
 ## D-06: Group chat 独立 projection domain
 
-**Status**: accepted  
+**Status**: accepted
 **Date**: 2026-06-03
 
 ### Context
@@ -202,7 +204,7 @@ Group chat 必须作为独立 projection domain 接入 social runtime，与 frie
 
 ## D-07: Offline queue 和 E2EE 作为 projection domain 接入 runtime
 
-**Status**: proposed  
+**Status**: accepted
 **Date**: 2026-06-03
 
 ### Context
@@ -212,6 +214,12 @@ Offline queue 和 E2EE 都涉及本地状态、Station 协作和跨端一致性�
 ### Decision
 
 Offline queue 和 E2EE 作为独立 projection domain 接入 social runtime。Host secure storage 只保存必要 secret，不成为业务 truth。
+
+Shared projection primitives live in `packages/client-chat-core`:
+
+- `ChatE2eeProjection` tracks readiness/error as pure projection state.
+- `ChatOutboxItem` and outbox reducers track queued/sending/failed retry state.
+- Platform runtimes drain/reconcile these projections; renderers only display projected status.
 
 ### Rationale
 
@@ -225,5 +233,6 @@ Offline queue 和 E2EE 作为独立 projection domain 接入 social runtime。Ho
 
 ### Consequences
 
-- 需要单独数据模型文档或后续 phase 计划。
+- Desktop/Mobile E2EE and offline queue must consume shared projection semantics even when host crypto/storage adapters differ.
 - Desktop 现有 E2EE/group sender key 能力需要拆清 runtime owner 后再迁移到统一抽象。
+- Mobile group E2EE runtime already owns SKDM ledger, repair queue, rotation, and readiness projection; further end-to-end scenarios remain runtime/domain verification, not UI patch work.

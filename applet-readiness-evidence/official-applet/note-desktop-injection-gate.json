@@ -1,0 +1,41 @@
+{
+  "status": "PASS",
+  "evidenceClass": "REAL_PRODUCT_PATH",
+  "appletId": "peers.note",
+  "checkedFiles": [
+    "apps/applets/note/applet.manifest.json",
+    "apps/desktop/applets-dist/index.json",
+    "apps/desktop/applets-dist/peers.note/manifest.json",
+    "apps/desktop/applets-dist/peers.note/main.lynx.bundle"
+  ],
+  "desktopPackage": "apps/desktop/applets-dist/peers.note",
+  "indexed": true,
+  "desktopLoad": {
+    "type": "lynx-web",
+    "entry": "main.lynx.bundle"
+  },
+  "noteService": {
+    "id": "note",
+    "kind": "http",
+    "binding": "station-resolved",
+    "allowedMethods": [
+      "GET",
+      "POST",
+      "PATCH",
+      "DELETE"
+    ],
+    "allowedPaths": [
+      "/v1/notes",
+      "/v1/notes/*",
+      "/v1/notes:search"
+    ],
+    "publicPathPrefix": "/v1",
+    "stationPathPrefix": "/applets/note/v1",
+    "streaming": false
+  },
+  "integrity": {
+    "expected": "sha256:f2cb2f424da1ce766e57aa40d1bb09dd3be8e7bc26cca315b774b42d1b3d304f",
+    "actual": "sha256:f2cb2f424da1ce766e57aa40d1bb09dd3be8e7bc26cca315b774b42d1b3d304f"
+  },
+  "errors": []
+}

@@ -1,51 +1,56 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import type { ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { ActionIcon, SearchBar } from '@lobehub/ui';
+import { ActionIcon, Avatar, Block, Center, SearchBar, Text } from '@lobehub/ui';
 import {
   Plus,
+  Download,
   MessageSquarePlus,
   User,
   Search,
   Hash,
-  ChevronsUpDown,
   ChevronRight,
   Trash2,
-  ArrowLeft,
   Pin,
   MoreHorizontal,
   Star,
   Sparkles,
   Pencil,
   Copy,
+  Undo2,
+  Upload,
+  Loader2,
 } from 'lucide-react';
 import { theme, Modal, Popover } from 'antd';
 import { Dropdown, Input, toast } from '@lobehub/ui';
 import type { MenuProps } from '@lobehub/ui';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '../store/chat';
-import type { Agent, Session } from '../services/desktop_api';
-import { api } from '../services/desktop_api';
+import { useAgentStore } from '../store/agent';
+import { useAgentTopicStore, type AgentTopic } from '../store/agentTopics';
+import { useAgentSearchStore, type AgentMessageSearchResult } from '../store/agentSearch';
+import { api, type Agent, parseAgentChatConfig } from '../services/desktop_api';
 
 interface AgentSidebarProps {
   onEditAgent: (agent: Agent) => void;
   onCreateAgent: () => void;
   onNavigateProfile?: (agentName: string) => void;
   onNavigateChat?: () => void;
+  onNavigateMarketplace?: () => void;
   onAgentChanged?: (agentName: string) => void;
 }
 
-function groupTopicsByDate(sessions: Session[], t: (key: string) => string): { key: string; label: string; items: Session[] }[] {
+function groupTopicsByDate(sessions: AgentTopic[], t: (key: string) => string): { key: string; label: string; items: AgentTopic[] }[] {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterday = new Date(today.getTime() - 86400000);
   const weekAgo = new Date(today.getTime() - 7 * 86400000);
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const groups: Record<string, Session[]> = {};
+  const groups: Record<string, AgentTopic[]> = {};
   const groupOrder: string[] = [];
 
-  const addToGroup = (key: string, session: Session) => {
+  const addToGroup = (key: string, session: AgentTopic) => {
     if (!groups[key]) {
       groups[key] = [];
       groupOrder.push(key);
@@ -89,30 +94,54 @@ function groupTopicsByDate(sessions: Session[], t: (key: string) => string): { k
   }));
 }
 
-export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, onNavigateChat, onAgentChanged }: AgentSidebarProps) {
+export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, onNavigateChat, onNavigateMarketplace, onAgentChanged }: AgentSidebarProps) {
   const { t } = useTranslation('agent');
   const {
     agents,
     loadAgents,
     selectedAgent,
     setSelectedAgent,
+    defaultAgent,
+    setDefaultAgent,
+  } = useAgentStore();
+  const {
     currentSessionKey,
     sessions: storeSessions,
     selectSession,
-    deleteSession,
-    mergeSessions,
   } = useChatStore();
+  const {
+    activeAgentId,
+    topicsByAgentId,
+    loadingAgentIds,
+    loadTopicsForAgent,
+    createDraftTopic,
+    deleteTopic,
+    renameTopic,
+    smartRenameTopic,
+    revertGeneratedTitle,
+    duplicateTopic,
+  } = useAgentTopicStore();
+  const {
+    searching: messageSearching,
+    results: messageSearchResults,
+    searchAgentMessages,
+    resetSearch,
+  } = useAgentSearchStore();
 
-  const [showAgentPicker, setShowAgentPicker] = useState(false);
-  const [agentSessions, setAgentSessions] = useState<Session[]>([]);
   const [searchText, setSearchText] = useState('');
   const [topicSearch, setTopicSearch] = useState('');
   const [showSearch, setShowSearch] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const { token } = theme.useToken();
 
   const currentAgent = useMemo(
     () => agents.find((a) => a.name === selectedAgent),
     [agents, selectedAgent],
+  );
+
+  const agentTopics = useMemo(
+    () => (currentAgent ? topicsByAgentId[currentAgent.id] || [] : []),
+    [currentAgent, topicsByAgentId],
   );
 
   useEffect(() => {
@@ -121,176 +150,194 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
 
   const loadAgentTopics = useCallback(() => {
     if (!currentAgent) {
-      setAgentSessions([]);
       return;
     }
-    api
-      .listAgentSessions(currentAgent.id)
-      .then((sessions) => {
-        setAgentSessions(sessions);
-        mergeSessions(sessions);
-      })
-      .catch(() => setAgentSessions([]));
-  }, [currentAgent, mergeSessions]);
+    void loadTopicsForAgent(currentAgent.id, 'sidebar');
+  }, [currentAgent, loadTopicsForAgent]);
 
   useEffect(() => {
     loadAgentTopics();
   }, [loadAgentTopics]);
 
+  useEffect(() => {
+    if (!showSearch || topicSearch.trim().length < 2) {
+      resetSearch();
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void searchAgentMessages(topicSearch, agentTopics);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [agentTopics, resetSearch, searchAgentMessages, showSearch, topicSearch]);
+
   const handleSwitchAgent = useCallback(
     (agent: Agent) => {
       setSelectedAgent(agent.name);
-      setShowAgentPicker(false);
       onAgentChanged?.(agent.name);
 
-      api
-        .listAgentSessions(agent.id)
-        .then((sessions) => {
-          setAgentSessions(sessions);
-          mergeSessions(sessions);
-          if (sessions.length > 0) {
-            selectSession(sessions[0].key, sessions[0]);
+      loadTopicsForAgent(agent.id, 'switch-agent')
+        .then((topics) => {
+          if (topics.length > 0) {
+            selectSession(topics[0].key, topics[0]);
           } else {
             const key = `agent:${agent.name}:${Date.now()}`;
             selectSession(key);
           }
         })
         .catch(() => {
-          setAgentSessions([]);
           const key = `agent:${agent.name}:${Date.now()}`;
           selectSession(key);
         });
     },
-    [setSelectedAgent, selectSession, mergeSessions, onAgentChanged],
+    [setSelectedAgent, selectSession, loadTopicsForAgent, onAgentChanged],
   );
 
   const handleNewTopic = useCallback(() => {
     const agentName = selectedAgent || 'assistant';
-    const key = `agent:${agentName}:${Date.now()}`;
-    const now = new Date().toISOString();
-    const placeholder: Session = {
-      id: key,
-      key,
-      agent_name: agentName,
-      title: t('agent.sidebar.newTopic'),
-      message_count: 0,
-      created_at: now,
-      updated_at: now,
-    };
-    setAgentSessions((prev) => [placeholder, ...prev]);
-    selectSession(key);
+    const topic = createDraftTopic(currentAgent?.id || activeAgentId || agentName, agentName, t('agent.sidebar.newTopic'));
+    selectSession(topic.key, topic);
     onNavigateChat?.();
-  }, [selectedAgent, selectSession, onNavigateChat]);
+  }, [activeAgentId, createDraftTopic, currentAgent, selectedAgent, selectSession, onNavigateChat, t]);
+
+  const handleExportAgentPackage = useCallback(async () => {
+    if (!currentAgent) return;
+    try {
+      const pkg = await api.exportAgentPackage(currentAgent.id);
+      const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${currentAgent.name || currentAgent.id}.agent.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      toast.success(t('agent.sidebar.toast.agentExported'));
+    } catch (e: any) {
+      toast.error(e.message || t('agent.sidebar.toast.agentExportFailed'));
+    }
+  }, [currentAgent, t]);
+
+  const handleImportAgentPackage = useCallback(async (file: File) => {
+    try {
+      const text = await file.text();
+      const pkg = JSON.parse(text);
+      const imported = await api.importAgentPackage(pkg);
+      await loadAgents();
+      setSelectedAgent(imported.name);
+      toast.success(t('agent.sidebar.toast.agentImported', { name: imported.title || imported.name }));
+    } catch (e: any) {
+      toast.error(e.message || t('agent.sidebar.toast.agentImportFailed'));
+    }
+  }, [loadAgents, setSelectedAgent, t]);
+
+  const handleCloneAgent = useCallback(async () => {
+    if (!currentAgent) return;
+    try {
+      const cloned = await api.duplicateAgent(currentAgent.id, `${currentAgent.name} copy`);
+      await loadAgents();
+      setSelectedAgent(cloned.name);
+      toast.success(t('agent.sidebar.toast.agentCloned', { name: cloned.title || cloned.name }));
+    } catch (e: any) {
+      toast.error(e.message || t('agent.sidebar.toast.agentCloneFailed'));
+    }
+  }, [currentAgent, loadAgents, setSelectedAgent, t]);
+
+  const handleSetDefaultAgent = useCallback(async (agent: Agent) => {
+    try {
+      await setDefaultAgent(agent.id);
+      toast.success(t('agent.sidebar.toast.defaultAgentUpdated', { name: agent.title || agent.name }));
+    } catch (e: any) {
+      toast.error(e.message || t('agent.sidebar.toast.defaultAgentUpdateFailed'));
+    }
+  }, [setDefaultAgent, t]);
+
+  const handleToggleAgentPin = useCallback(async (agent: Agent) => {
+    try {
+      await api.updateAgent(agent.id, { pinned: !agent.pinned });
+      await loadAgents();
+      toast.success(t(agent.pinned ? 'agent.sidebar.toast.agentUnpinned' : 'agent.sidebar.toast.agentPinned', { name: agent.title || agent.name }));
+    } catch (e: any) {
+      toast.error(e.message || t('agent.sidebar.toast.agentPinUpdateFailed'));
+    }
+  }, [loadAgents, t]);
+
+  const handleToggleAgentFavorite = useCallback(async (agent: Agent) => {
+    try {
+      await api.updateAgent(agent.id, { favorite: !agent.favorite });
+      await loadAgents();
+      toast.success(t(agent.favorite ? 'agent.sidebar.toast.agentUnfavorited' : 'agent.sidebar.toast.agentFavorited', { name: agent.title || agent.name }));
+    } catch (e: any) {
+      toast.error(e.message || t('agent.sidebar.toast.agentFavoriteUpdateFailed'));
+    }
+  }, [loadAgents, t]);
 
   const handleDeleteTopic = useCallback(
     async (sessionKey: string) => {
-      await deleteSession(sessionKey);
+      await deleteTopic(sessionKey);
       loadAgentTopics();
     },
-    [deleteSession, loadAgentTopics],
+    [deleteTopic, loadAgentTopics],
   );
 
   const handleSelectTopic = useCallback(
     (key: string) => {
-      // Prefer store session (has model_override from mergeSessionModel) over agentSessions
+      // Prefer store session when it carries model overrides from the chat projection.
       const session =
-        storeSessions.find((s) => s.key === key) ?? agentSessions.find((s) => s.key === key);
+        storeSessions.find((s) => s.key === key) ?? agentTopics.find((s) => s.key === key);
       selectSession(key, session);
       onNavigateChat?.();
     },
-    [agentSessions, storeSessions, selectSession, onNavigateChat],
+    [agentTopics, storeSessions, selectSession, onNavigateChat],
   );
 
   const topicGroups = useMemo(() => {
-    let filtered = agentSessions;
+    let filtered = agentTopics;
     if (topicSearch) {
       const q = topicSearch.toLowerCase();
-      filtered = agentSessions.filter(
+      filtered = agentTopics.filter(
         (s) => (s.title || '').toLowerCase().includes(q) || s.key.toLowerCase().includes(q),
       );
     }
     return groupTopicsByDate(filtered, t);
-  }, [agentSessions, topicSearch, t]);
+  }, [agentTopics, topicSearch, t]);
 
-  const totalTopics = agentSessions.length;
+  const totalTopics = agentTopics.length;
+  const loadingTopics = currentAgent ? !!loadingAgentIds[currentAgent.id] : false;
+  const showMessageResults = showSearch && topicSearch.trim().length >= 2;
 
-  if (showAgentPicker) {
-    return (
+  return (
+    <Flexbox height="100%" style={{ background: token.colorBgContainer }}>
       <AgentPicker
         agents={agents}
         selectedAgent={selectedAgent}
+        defaultAgent={defaultAgent}
         searchText={searchText}
         onSearchChange={setSearchText}
         onSelect={handleSwitchAgent}
-        onBack={() => setShowAgentPicker(false)}
+        onSetDefault={handleSetDefaultAgent}
+        onTogglePin={handleToggleAgentPin}
+        onToggleFavorite={handleToggleAgentFavorite}
         onCreate={onCreateAgent}
+        onClone={handleCloneAgent}
+        onExport={handleExportAgentPackage}
+        onImportClick={() => importInputRef.current?.click()}
+        onNavigateMarketplace={onNavigateMarketplace}
         token={token}
         t={t}
       />
-    );
-  }
-
-  return (
-    <Flexbox height="100%" style={{ background: token.colorBgLayout }}>
-      {/* Agent Header */}
-      <Flexbox
-        style={{
-          padding: '12px 12px 0',
-          flexShrink: 0,
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".json,application/json"
+        style={{ display: 'none' }}
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          event.currentTarget.value = '';
+          if (file) void handleImportAgentPackage(file);
         }}
-      >
-        <Flexbox
-          horizontal
-          align="center"
-          gap={8}
-          onClick={() => setShowAgentPicker(true)}
-          style={{
-            padding: '8px 10px',
-            borderRadius: 8,
-            cursor: 'pointer',
-            transition: 'background 0.2s',
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLDivElement).style.background = token.colorFillTertiary;
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLDivElement).style.background = 'transparent';
-          }}
-        >
-          <div
-            style={{
-              width: 28,
-              height: 28,
-              borderRadius: 8,
-              background: 'linear-gradient(135deg, #667eea, #764ba2)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 16,
-              flexShrink: 0,
-            }}
-          >
-            {currentAgent?.avatar || '🤖'}
-          </div>
-          <span
-            style={{
-              flex: 1,
-              fontSize: 14,
-              fontWeight: 600,
-              color: token.colorText,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {currentAgent?.title || currentAgent?.name || selectedAgent || t('agent.sidebar.defaultAgent')}
-          </span>
-          <ChevronsUpDown size={14} style={{ color: token.colorTextTertiary, flexShrink: 0 }} />
-        </Flexbox>
-      </Flexbox>
+      />
 
       {/* Nav Actions */}
-      <Flexbox style={{ padding: '4px 12px 8px', flexShrink: 0 }} gap={1}>
+      <Flexbox style={{ padding: '8px', flexShrink: 0, borderBottom: `1px solid ${token.colorBorderSecondary}` }} gap={1}>
         <NavItem
           icon={<MessageSquarePlus size={16} />}
           label={t('agent.sidebar.startNewTopic')}
@@ -325,20 +372,33 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       )}
 
       {/* Topic Section */}
-      <Flexbox flex={1} style={{ overflow: 'auto', padding: '0 8px' }}>
+      <Flexbox flex={1} style={{ overflow: 'auto', padding: '8px' }}>
         {/* Section header */}
         <Flexbox
           horizontal
           align="center"
           justify="space-between"
-          style={{ padding: '4px 8px', marginBottom: 2 }}
+          style={{ padding: '0 8px 6px' }}
         >
           <span style={{ fontSize: 12, fontWeight: 600, color: token.colorTextSecondary }}>
             {t('agent.sidebar.topic')} {totalTopics > 0 ? totalTopics : ''}
           </span>
+          {loadingTopics && (
+            <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
+              {t('agent.sidebar.topicSyncing')}
+            </span>
+          )}
         </Flexbox>
 
-        {totalTopics === 0 ? (
+        {showMessageResults ? (
+          <MessageSearchResults
+            results={messageSearchResults}
+            searching={messageSearching}
+            onSelectResult={handleSelectTopic}
+            token={token}
+            t={t}
+          />
+        ) : totalTopics === 0 ? (
           <NavItem
               icon={<MessageSquarePlus size={16} />}
               label={t('agent.sidebar.startNewTopic')}
@@ -356,12 +416,75 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
               onSelectTopic={handleSelectTopic}
               onDeleteTopic={handleDeleteTopic}
               onReload={loadAgentTopics}
+              onRenameTopic={renameTopic}
+              onSmartRenameTopic={smartRenameTopic}
+              onRevertGeneratedTitle={revertGeneratedTitle}
+              onDuplicateTopic={duplicateTopic}
               token={token}
               t={t}
             />
           ))
         )}
       </Flexbox>
+    </Flexbox>
+  );
+}
+
+function MessageSearchResults({
+  results,
+  searching,
+  onSelectResult,
+  token,
+  t,
+}: {
+  results: AgentMessageSearchResult[];
+  searching: boolean;
+  onSelectResult: (key: string) => void;
+  token: any;
+  t: (key: string, options?: Record<string, any>) => string;
+}) {
+  if (searching) {
+    return (
+      <Flexbox horizontal align="center" gap={8} style={{ padding: '10px 8px', color: token.colorTextSecondary, fontSize: 12 }}>
+        <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+        {t('agent.sidebar.searchingMessages')}
+      </Flexbox>
+    );
+  }
+
+  if (results.length === 0) {
+    return (
+      <div style={{ padding: '10px 8px', color: token.colorTextTertiary, fontSize: 12 }}>
+        {t('agent.sidebar.noMessageResults')}
+      </div>
+    );
+  }
+
+  return (
+    <Flexbox gap={4}>
+      <div style={{ padding: '0 8px 6px', color: token.colorTextSecondary, fontSize: 12, fontWeight: 600 }}>
+        {t('agent.sidebar.messageResults', { count: results.length })}
+      </div>
+      {results.map((result) => (
+        <Flexbox
+          key={result.id}
+          onClick={() => onSelectResult(result.topicKey)}
+          gap={3}
+          style={{
+            padding: '8px',
+            borderRadius: 8,
+            cursor: 'pointer',
+            background: token.colorFillQuaternary,
+          }}
+        >
+          <span style={{ fontSize: 12, color: token.colorText, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {result.topicTitle || result.topicKey}
+          </span>
+          <span style={{ fontSize: 11, color: token.colorTextSecondary, lineHeight: 1.35 }}>
+            {result.snippet}
+          </span>
+        </Flexbox>
+      ))}
     </Flexbox>
   );
 }
@@ -381,32 +504,35 @@ function NavItem({
   token: any;
   style?: React.CSSProperties;
 }) {
-  const [hovered, setHovered] = useState(false);
-
   return (
-    <Flexbox
+    <Block
       horizontal
       align="center"
-      gap={10}
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      clickable
+      gap={8}
+      height={36}
+      paddingInline={4}
+      variant={active ? 'filled' : 'borderless'}
+      onClick={() => onClick?.()}
       style={{
-        padding: '7px 10px',
-        borderRadius: 6,
-        cursor: 'pointer',
-        fontSize: 13,
-        color: active ? token.colorPrimary : token.colorText,
-        background: active ? token.colorPrimaryBg : hovered ? token.colorFillTertiary : 'transparent',
-        transition: 'all 0.15s',
+        color: active ? token.colorText : token.colorTextSecondary,
+        userSelect: 'none',
         ...style,
       }}
     >
-      <span style={{ display: 'flex', color: active ? token.colorPrimary : token.colorTextSecondary }}>
-        {icon}
-      </span>
-      <span>{label}</span>
-    </Flexbox>
+      <Center flex="none" height={28} width={28}>
+        <span style={{ display: 'flex', color: active ? token.colorText : token.colorTextDescription }}>
+          {icon}
+        </span>
+      </Center>
+      <Text
+        color={active ? token.colorText : token.colorTextSecondary}
+        ellipsis={{ tooltipWhenOverflow: true }}
+        style={{ flex: 1 }}
+      >
+        {label}
+      </Text>
+    </Block>
   );
 }
 
@@ -417,29 +543,38 @@ function TopicGroup({
   onSelectTopic,
   onDeleteTopic,
   onReload,
+  onRenameTopic,
+  onSmartRenameTopic,
+  onRevertGeneratedTitle,
+  onDuplicateTopic,
   token,
   t,
 }: {
   label: string;
-  topics: Session[];
+  topics: AgentTopic[];
   currentSessionKey: string;
   onSelectTopic: (key: string) => void;
   onDeleteTopic: (key: string) => void;
   onReload: () => void;
+  onRenameTopic: (key: string, title: string) => Promise<void>;
+  onSmartRenameTopic: (key: string) => Promise<{ title: string }>;
+  onRevertGeneratedTitle: (key: string) => Promise<void>;
+  onDuplicateTopic: (key: string) => Promise<void>;
   token: any;
   t: (key: string, options?: Record<string, any>) => string;
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <div style={{ marginBottom: 2 }}>
+    <div style={{ marginBottom: 4 }}>
       <Flexbox
         horizontal
         align="center"
         gap={4}
         onClick={() => setCollapsed(!collapsed)}
         style={{
-          padding: '4px 8px',
+          minHeight: 28,
+          padding: '0 8px',
           cursor: 'pointer',
         }}
       >
@@ -457,7 +592,7 @@ function TopicGroup({
       </Flexbox>
 
       {!collapsed && (
-        <Flexbox gap={1} style={{ paddingLeft: 4 }}>
+        <Flexbox gap={1}>
           {topics.map((topic) => (
             <TopicItem
               key={topic.key}
@@ -466,6 +601,10 @@ function TopicGroup({
               onSelect={() => onSelectTopic(topic.key)}
               onDelete={() => onDeleteTopic(topic.key)}
               onReload={onReload}
+              onRenameTopic={onRenameTopic}
+              onSmartRenameTopic={onSmartRenameTopic}
+              onRevertGeneratedTitle={onRevertGeneratedTitle}
+              onDuplicateTopic={onDuplicateTopic}
               token={token}
               t={t}
             />
@@ -488,14 +627,22 @@ function TopicItem({
   onSelect,
   onDelete,
   onReload,
+  onRenameTopic,
+  onSmartRenameTopic,
+  onRevertGeneratedTitle,
+  onDuplicateTopic,
   token,
   t,
 }: {
-  topic: Session;
+  topic: AgentTopic;
   isActive: boolean;
   onSelect: () => void;
   onDelete: () => void;
   onReload: () => void;
+  onRenameTopic: (key: string, title: string) => Promise<void>;
+  onSmartRenameTopic: (key: string) => Promise<{ title: string }>;
+  onRevertGeneratedTitle: (key: string) => Promise<void>;
+  onDuplicateTopic: (key: string) => Promise<void>;
   token: any;
   t: (key: string, options?: Record<string, any>) => string;
 }) {
@@ -525,33 +672,44 @@ function TopicItem({
     setRenaming(false);
     if (!newTitle || newTitle === (topic.title || '')) return;
     try {
-      await api.renameSession(topic.key, newTitle);
+      await onRenameTopic(topic.key, newTitle);
       onReload();
     } catch (e: any) {
       toast.error(e.message || t('agent.sidebar.toast.renameFailed'));
     }
-  }, [renameTitle, topic.title, topic.key, onReload]);
+  }, [renameTitle, topic.title, topic.key, onRenameTopic, onReload, t]);
 
   const handleSmartRename = useCallback(async () => {
     try {
       toast.loading(t('agent.sidebar.toast.generatingTitle'));
-      const res = await api.smartRenameSession(topic.key);
+      const res = await onSmartRenameTopic(topic.key);
       toast.success(t('agent.sidebar.toast.renamedTo', { title: res.title }));
       onReload();
     } catch (e: any) {
       toast.error(e.message || t('agent.sidebar.toast.smartRenameFailed'));
     }
-  }, [topic.key, onReload]);
+  }, [topic.key, onSmartRenameTopic, onReload, t]);
+
+  const handleUndoGeneratedTitle = useCallback(async (event: MouseEvent) => {
+    event.stopPropagation();
+    try {
+      await onRevertGeneratedTitle(topic.key);
+      toast.success(t('agent.sidebar.toast.titleReverted'));
+      onReload();
+    } catch (e: any) {
+      toast.error(e.message || t('agent.sidebar.toast.renameFailed'));
+    }
+  }, [topic.key, onRevertGeneratedTitle, onReload, t]);
 
   const handleDuplicate = useCallback(async () => {
     try {
-      await api.duplicateSession(topic.key);
+      await onDuplicateTopic(topic.key);
       toast.success(t('agent.sidebar.toast.topicDuplicated'));
       onReload();
     } catch (e: any) {
       toast.error(e.message || t('agent.sidebar.toast.duplicateFailed'));
     }
-  }, [topic.key, onReload]);
+  }, [topic.key, onDuplicateTopic, onReload, t]);
 
   const handleDeleteConfirm = useCallback(() => {
     Modal.confirm({
@@ -584,17 +742,18 @@ function TopicItem({
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         style={{
-          padding: '6px 8px 6px 12px',
-          borderRadius: 6,
+          minHeight: 36,
+          padding: '4px 8px',
+          borderRadius: 8,
           cursor: 'pointer',
-          background: isActive ? token.colorPrimaryBg : hovered ? token.colorFillTertiary : 'transparent',
-          transition: 'background 0.15s',
+          background: isActive ? token.colorFillSecondary : hovered ? token.colorFillTertiary : 'transparent',
+          transition: 'background 0.18s ease',
         }}
       >
         <Hash
           size={14}
           style={{
-            color: isActive ? token.colorPrimary : token.colorTextTertiary,
+            color: isActive ? token.colorText : token.colorTextDescription,
             flexShrink: 0,
           }}
         />
@@ -624,7 +783,7 @@ function TopicItem({
             style={{
               flex: 1,
               fontSize: 13,
-              color: isActive ? token.colorPrimary : token.colorText,
+              color: isActive ? token.colorText : token.colorTextSecondary,
               fontWeight: isActive ? 500 : 400,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
@@ -634,6 +793,35 @@ function TopicItem({
             {topic.title || t('agent.sidebar.newTopic')}
           </span>
         </Popover>
+
+        {topic.titleState === 'generating' && (
+          <span style={{ fontSize: 11, color: token.colorTextTertiary, flexShrink: 0 }}>
+            {t('agent.sidebar.titleState.generating')}
+          </span>
+        )}
+
+        {topic.titleState === 'generated' && topic.previousTitle && (
+          <button
+            type="button"
+            title={t('agent.sidebar.titleState.undoGenerated')}
+            onClick={handleUndoGeneratedTitle}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 3,
+              border: 0,
+              background: 'transparent',
+              color: token.colorPrimary,
+              cursor: 'pointer',
+              fontSize: 11,
+              padding: 0,
+              flexShrink: 0,
+            }}
+          >
+            <Undo2 size={12} />
+            {t('agent.sidebar.titleState.generated')}
+          </button>
+        )}
 
         {(hovered || isActive) && !renaming && (
           <Dropdown menu={{ items: menuItems }} trigger={['click']} placement="bottomRight">
@@ -659,23 +847,37 @@ function TopicItem({
 function AgentPicker({
   agents,
   selectedAgent,
+  defaultAgent,
   searchText,
   onSearchChange,
   onSelect,
-  onBack,
+  onSetDefault,
+  onTogglePin,
+  onToggleFavorite,
   onCreate,
+  onClone,
+  onExport,
+  onImportClick,
+  onNavigateMarketplace,
   token,
   t,
 }: {
   agents: Agent[];
   selectedAgent: string;
+  defaultAgent: string;
   searchText: string;
   onSearchChange: (v: string) => void;
   onSelect: (a: Agent) => void;
-  onBack: () => void;
+  onSetDefault: (a: Agent) => void;
+  onTogglePin: (a: Agent) => void;
+  onToggleFavorite: (a: Agent) => void;
   onCreate: () => void;
+  onClone: () => void;
+  onExport: () => void;
+  onImportClick: () => void;
+  onNavigateMarketplace?: () => void;
   token: any;
-  t: (key: string) => string;
+  t: (key: string, options?: Record<string, any>) => string;
 }) {
   const filtered = searchText
     ? agents.filter(
@@ -690,16 +892,44 @@ function AgentPicker({
   const unpinnedAgents = filtered.filter((a) => !a.pinned);
 
   return (
-    <Flexbox height="100%" style={{ background: token.colorBgLayout }}>
-      {/* Header with back button */}
-      <Flexbox horizontal align="center" gap={8} style={{ padding: '12px 12px 4px' }}>
+    <Flexbox
+      gap={8}
+      style={{
+        padding: '8px',
+        flexShrink: 0,
+        borderBottom: `1px solid ${token.colorBorderSecondary}`,
+      }}
+    >
+      <Flexbox horizontal align="center" gap={8} style={{ minHeight: 32, padding: '0 4px' }}>
+        <span style={{ fontSize: 13, fontWeight: 600, flex: 1, color: token.colorTextSecondary }}>
+          {t('agent.sidebar.switchAgent')}
+        </span>
         <ActionIcon
-          icon={ArrowLeft}
+          icon={Upload}
           size="small"
-          onClick={onBack}
-          title={t('agent.sidebar.back')}
+          onClick={onImportClick}
+          title={t('agent.sidebar.importAgent')}
         />
-        <span style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>{t('agent.sidebar.switchAgent')}</span>
+        {onNavigateMarketplace && (
+          <ActionIcon
+            icon={Sparkles}
+            size="small"
+            onClick={onNavigateMarketplace}
+            title={t('agent.sidebar.marketplace')}
+          />
+        )}
+        <ActionIcon
+          icon={Download}
+          size="small"
+          onClick={onExport}
+          title={t('agent.sidebar.exportAgent')}
+        />
+        <ActionIcon
+          icon={Copy}
+          size="small"
+          onClick={onClone}
+          title={t('agent.sidebar.cloneAgent')}
+        />
         <ActionIcon
           icon={Plus}
           size="small"
@@ -709,22 +939,30 @@ function AgentPicker({
         />
       </Flexbox>
 
-      <div style={{ padding: '8px 12px' }}>
-        <SearchBar
-          placeholder={t('agent.sidebar.searchAgents')}
-          value={searchText}
-          onChange={(e) => onSearchChange(e.target.value)}
-          allowClear
-        />
-      </div>
+      <SearchBar
+        placeholder={t('agent.sidebar.searchAgents')}
+        value={searchText}
+        onChange={(e) => onSearchChange(e.target.value)}
+        allowClear
+        size="small"
+      />
 
-      <Flexbox flex={1} style={{ overflow: 'auto', padding: '0 8px 8px' }}>
+      <Flexbox
+        gap={1}
+        style={{
+          maxHeight: 236,
+          overflow: 'auto',
+        }}
+      >
         {filtered.length === 0 && (
           <Flexbox
             align="center"
             justify="center"
-            flex={1}
-            style={{ color: token.colorTextQuaternary, padding: 40, fontSize: 13 }}
+            style={{
+              color: token.colorTextQuaternary,
+              padding: '16px 8px',
+              fontSize: 13,
+            }}
           >
             {searchText ? t('agent.sidebar.noMatchingAgents') : t('agent.sidebar.noAgentsYet')}
           </Flexbox>
@@ -735,13 +973,18 @@ function AgentPicker({
             key={agent.id}
             agent={agent}
             isSelected={selectedAgent === agent.name}
+            isDefault={defaultAgent === agent.name || agent.isDefault}
             onSelect={() => onSelect(agent)}
+            onSetDefault={() => onSetDefault(agent)}
+            onTogglePin={() => onTogglePin(agent)}
+            onToggleFavorite={() => onToggleFavorite(agent)}
             token={token}
+            t={t}
           />
         ))}
 
         {pinnedAgents.length > 0 && unpinnedAgents.length > 0 && (
-          <div style={{ height: 1, background: token.colorBorderSecondary, margin: '4px 12px' }} />
+          <div style={{ height: 1, background: token.colorBorderSecondary, margin: '4px 8px' }} />
         )}
 
         {unpinnedAgents.map((agent) => (
@@ -749,8 +992,13 @@ function AgentPicker({
             key={agent.id}
             agent={agent}
             isSelected={selectedAgent === agent.name}
+            isDefault={defaultAgent === agent.name || agent.isDefault}
             onSelect={() => onSelect(agent)}
+            onSetDefault={() => onSetDefault(agent)}
+            onTogglePin={() => onTogglePin(agent)}
+            onToggleFavorite={() => onToggleFavorite(agent)}
             token={token}
+            t={t}
           />
         ))}
       </Flexbox>
@@ -761,80 +1009,206 @@ function AgentPicker({
 function AgentPickerItem({
   agent,
   isSelected,
+  isDefault,
   onSelect,
+  onSetDefault,
+  onTogglePin,
+  onToggleFavorite,
   token,
+  t,
 }: {
   agent: Agent;
   isSelected: boolean;
+  isDefault: boolean;
   onSelect: () => void;
+  onSetDefault: () => void;
+  onTogglePin: () => void;
+  onToggleFavorite: () => void;
   token: any;
+  t: (key: string, options?: Record<string, any>) => string;
 }) {
   const [hovered, setHovered] = useState(false);
+  const chatConfig = parseAgentChatConfig(agent);
+  const statusBadges = [
+    chatConfig.memory?.enabled ? t('agent.sidebar.status.memory') : '',
+    agent.toolsProfile && agent.toolsProfile !== 'none' ? t('agent.sidebar.status.tools') : '',
+    chatConfig.workspace?.root ? t('agent.sidebar.status.workspace') : '',
+  ].filter(Boolean);
 
   return (
-    <Flexbox
+    <Block
       horizontal
       align="center"
-      gap={10}
+      clickable
+      gap={8}
+      height={38}
+      paddingInline={4}
+      variant={isSelected ? 'filled' : 'borderless'}
       onClick={onSelect}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        padding: '8px 12px',
-        borderRadius: 8,
-        cursor: 'pointer',
-        background: isSelected ? token.colorPrimaryBg : hovered ? token.colorFillTertiary : 'transparent',
-        transition: 'background 0.15s',
-        marginBottom: 2,
+        minWidth: 0,
+        userSelect: 'none',
       }}
     >
-      <div
+      <Center flex="none" height={28} width={28}>
+        <Avatar
+          avatar={agent.avatar || '🤖'}
+          background={token.colorBgContainer}
+          emojiScaleWithBackground
+          shape="square"
+          size={22}
+        />
+      </Center>
+      <Text
+        color={isSelected ? token.colorText : token.colorTextSecondary}
+        ellipsis={{ tooltipWhenOverflow: true }}
         style={{
-          width: 32,
-          height: 32,
-          borderRadius: 8,
-          background: isSelected
-            ? 'linear-gradient(135deg, #667eea, #764ba2)'
-            : token.colorFillSecondary,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 16,
-          flexShrink: 0,
+          flex: 1,
+          minWidth: 0,
+          fontWeight: isSelected ? 600 : 400,
         }}
       >
-        {agent.avatar || '🤖'}
-      </div>
-      <Flexbox flex={1} style={{ minWidth: 0 }}>
-        <Flexbox horizontal align="center" gap={4}>
-          <span
-            style={{
-              fontSize: 13,
-              fontWeight: isSelected ? 600 : 400,
-              color: token.colorText,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {agent.title || agent.name}
-          </span>
-          {agent.pinned && (
-            <Pin size={10} style={{ color: token.colorTextQuaternary, flexShrink: 0 }} />
-          )}
-        </Flexbox>
+        {agent.title || agent.name}
+      </Text>
+      {statusBadges.length > 0 && (
         <span
+          title={t('agent.sidebar.status.summary', { status: statusBadges.join(' · ') })}
           style={{
-            fontSize: 11,
-            color: token.colorTextDescription,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 3,
+            flexShrink: 0,
           }}
         >
-          {agent.description}
+          {statusBadges.slice(0, 3).map((badge) => (
+            <span
+              key={badge}
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: 3,
+                background: token.colorSuccess,
+              }}
+            />
+          ))}
         </span>
-      </Flexbox>
-    </Flexbox>
+      )}
+      {isDefault && (
+        <span
+          title={t('agent.sidebar.defaultAgent')}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: token.colorWarning,
+            flexShrink: 0,
+          }}
+        >
+          <Sparkles size={12} fill="currentColor" />
+        </span>
+      )}
+      {!isDefault && hovered && (
+        <button
+          type="button"
+          title={t('agent.sidebar.setDefaultAgent')}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSetDefault();
+          }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 20,
+            height: 20,
+            border: 0,
+            borderRadius: 5,
+            background: 'transparent',
+            color: token.colorTextQuaternary,
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          <Sparkles size={12} />
+        </button>
+      )}
+      {(agent.favorite || hovered) && (
+        <button
+          type="button"
+          title={t(agent.favorite ? 'agent.sidebar.unfavoriteAgent' : 'agent.sidebar.favoriteAgent')}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleFavorite();
+          }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 20,
+            height: 20,
+            border: 0,
+            borderRadius: 5,
+            background: 'transparent',
+            color: agent.favorite ? token.colorWarning : token.colorTextQuaternary,
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          <Star size={12} fill={agent.favorite ? 'currentColor' : 'none'} />
+        </button>
+      )}
+      {agent.pinned && (
+        <button
+          type="button"
+          title={t('agent.sidebar.unpinAgent')}
+          onClick={(event) => {
+            event.stopPropagation();
+            onTogglePin();
+          }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 20,
+            height: 20,
+            border: 0,
+            borderRadius: 5,
+            background: 'transparent',
+            color: token.colorPrimary,
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          <Pin size={12} fill="currentColor" />
+        </button>
+      )}
+      {!agent.pinned && hovered && (
+        <button
+          type="button"
+          title={t('agent.sidebar.pinAgent')}
+          onClick={(event) => {
+            event.stopPropagation();
+            onTogglePin();
+          }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 20,
+            height: 20,
+            border: 0,
+            borderRadius: 5,
+            background: 'transparent',
+            color: token.colorTextQuaternary,
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          <Pin size={12} />
+        </button>
+      )}
+    </Block>
   );
 }

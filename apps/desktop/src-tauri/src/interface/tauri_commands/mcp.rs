@@ -1,4 +1,6 @@
-use crate::contracts::{McpCreateInput, McpNameInput, McpToggleInput, McpUpdateInput, StubPayload};
+use crate::contracts::{
+    McpCreateInput, McpExecuteToolInput, McpNameInput, McpToggleInput, McpUpdateInput, StubPayload,
+};
 use crate::error::AppResult;
 
 use crate::application::mcp as application_mcp;
@@ -36,4 +38,9 @@ pub fn mcp_toggle_server(input: McpToggleInput) -> AppResult<StubPayload> {
 #[tauri::command]
 pub fn mcp_test_server(input: McpNameInput) -> AppResult<StubPayload> {
     application_mcp::mcp_test_server(input)
+}
+
+#[tauri::command]
+pub fn mcp_execute_tool(input: McpExecuteToolInput) -> AppResult<StubPayload> {
+    application_mcp::mcp_execute_tool(input)
 }
