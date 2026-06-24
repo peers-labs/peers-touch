@@ -3,7 +3,7 @@ import { useOAuth2Store } from '../store/oauth2';
 import { useSessionStore } from '../store/session';
 import { markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
-import { removeDesktopPreferenceSync } from '../storage/desktopClientStorage';
+import { readDesktopPreferenceSync, removeDesktopPreferenceSync, writeDesktopPreferenceSync } from '../storage/desktopClientStorage';
 import type { AppLifecycle, AppState, SessionUser } from '../types/navigation';
 import { log } from '../utils/logger';
 import { markPhaseEnd, markPhaseStart } from './boot';
@@ -31,6 +31,7 @@ import {
 } from '../services/desktop_api';
 
 const WARM_RESUME_KEY = 'pt.auth.lastActiveAt';
+const LAST_ACTIVE_PAGE_KEY = 'pt.nav.lastActivePage';
 const RENDERER_AUTH_MARKER_KEY = 'pt.identity.rendererAuthenticated';
 
 export function clearWarmResume(): void {
@@ -38,6 +39,19 @@ export function clearWarmResume(): void {
     removeDesktopPreferenceSync(WARM_RESUME_KEY);
   } catch {
     // noop
+  }
+}
+
+export function persistLastActivePage(page: string): void {
+  writeDesktopPreferenceSync(LAST_ACTIVE_PAGE_KEY, page);
+}
+
+function restoreLastActivePage(): void {
+  const page = readDesktopPreferenceSync<string>(LAST_ACTIVE_PAGE_KEY);
+  if (!page) return;
+  const targetHash = `#/${page}`;
+  if (window.location.hash !== targetHash) {
+    window.history.replaceState(null, '', targetHash);
   }
 }
 
@@ -388,6 +402,9 @@ class IdentityRuntime {
 
   private acceptAuthenticatedEdge = async (edge: IdentityAuthenticatedEdge): Promise<void> => {
     markRendererAuthenticated();
+    if (edge.kind !== 'applet_launch') {
+      restoreLastActivePage();
+    }
     this.restoredUser = edge.user;
     this.knownAccounts = [edge.user];
     this.dataReady = true;
