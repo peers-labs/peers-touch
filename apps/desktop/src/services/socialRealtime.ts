@@ -398,7 +398,11 @@ function onGroupMembershipChange(payload: RealtimeGroupMembershipChangePayload):
     const store = useSocialChatStore.getState();
     const did = store.currentUserDid;
 
-    if (payload.kind === 'REMOVED' || payload.kind === 'LEFT') {
+    if (payload.kind === 'DISSOLVED') {
+      if (store.activeGroupUlid === payload.groupUlid) {
+        store.selectGroup('');
+      }
+    } else if (payload.kind === 'REMOVED' || payload.kind === 'LEFT') {
       if (did && payload.actorDid === did) {
         store.selectGroup('');
       } else if (did) {
@@ -408,10 +412,18 @@ function onGroupMembershipChange(payload: RealtimeGroupMembershipChangePayload):
       }
     }
 
+    if (payload.kind === 'TRANSFERRED' && did) {
+      await rotateGroupSenderChain(did, payload.groupUlid).catch((error) => {
+        log.warn('socialRealtime', 'rotateGroupSenderChain failed after ownership transfer', error);
+      });
+    }
+
     await Promise.allSettled([
       store.loadGroups(),
       store.loadGroupUnreadCounts(),
-      payload.kind === 'ADDED' || payload.kind === 'UPDATED' || store.activeGroupUlid === payload.groupUlid
+      payload.kind === 'DISSOLVED'
+        ? Promise.resolve()
+        : payload.kind === 'ADDED' || payload.kind === 'UPDATED' || payload.kind === 'TRANSFERRED' || store.activeGroupUlid === payload.groupUlid
         ? store.loadGroupMembers(payload.groupUlid)
         : Promise.resolve(),
     ]);

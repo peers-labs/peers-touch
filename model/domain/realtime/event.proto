@@ -184,7 +184,7 @@ message MessageMutation {
 }
 
 // GroupMembershipChange notifies subscribers that a group's roster
-// changed in real time (join, kick, or voluntary leave). Every
+// or lifecycle changed in real time. Every
 // affected actor receives a frame on their SSE stream so clients
 // can refresh cached membership and rotate Sender Keys promptly.
 message GroupMembershipChange {
@@ -200,6 +200,8 @@ message GroupMembershipChange {
     KIND_REMOVED = 2; // an admin kicked them
     KIND_LEFT = 3;    // they left voluntarily
     KIND_UPDATED = 4; // role or moderation state changed
+    KIND_TRANSFERRED = 5; // group ownership moved to actor_did
+    KIND_DISSOLVED = 6;   // group is dissolved by owner
   }
 }
 

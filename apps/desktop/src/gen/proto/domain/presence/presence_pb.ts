@@ -171,3 +171,4 @@ export enum PresenceState {
  */
 export const PresenceStateSchema: GenEnum<PresenceState> = /*@__PURE__*/
   enumDesc(file_domain_presence_presence, 0);
+

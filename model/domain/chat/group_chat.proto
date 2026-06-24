@@ -341,6 +341,25 @@ message LeaveGroupResponse {
   bool success = 1;
 }
 
+// 转让群主
+message TransferGroupOwnershipRequest {
+  string group_ulid = 1;
+  string next_owner_did = 2;
+}
+
+message TransferGroupOwnershipResponse {
+  Group group = 1;
+}
+
+// 解散群组
+message DissolveGroupRequest {
+  string group_ulid = 1;
+}
+
+message DissolveGroupResponse {
+  bool success = 1;
+}
+
 // 获取群成员列表
 message GetGroupMembersRequest {
   string group_ulid = 1;

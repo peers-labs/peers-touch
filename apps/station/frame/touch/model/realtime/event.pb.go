@@ -204,6 +204,8 @@ const (
 	GroupMembershipChange_KIND_REMOVED     GroupMembershipChange_Kind = 2 // an admin kicked them
 	GroupMembershipChange_KIND_LEFT        GroupMembershipChange_Kind = 3 // they left voluntarily
 	GroupMembershipChange_KIND_UPDATED     GroupMembershipChange_Kind = 4 // role or moderation state changed
+	GroupMembershipChange_KIND_TRANSFERRED GroupMembershipChange_Kind = 5 // group ownership moved to actor_did
+	GroupMembershipChange_KIND_DISSOLVED   GroupMembershipChange_Kind = 6 // group is dissolved by owner
 )
 
 // Enum value maps for GroupMembershipChange_Kind.
@@ -214,6 +216,8 @@ var (
 		2: "KIND_REMOVED",
 		3: "KIND_LEFT",
 		4: "KIND_UPDATED",
+		5: "KIND_TRANSFERRED",
+		6: "KIND_DISSOLVED",
 	}
 	GroupMembershipChange_Kind_value = map[string]int32{
 		"KIND_UNSPECIFIED": 0,
@@ -221,6 +225,8 @@ var (
 		"KIND_REMOVED":     2,
 		"KIND_LEFT":        3,
 		"KIND_UPDATED":     4,
+		"KIND_TRANSFERRED": 5,
+		"KIND_DISSOLVED":   6,
 	}
 )
 
@@ -1134,7 +1140,7 @@ func (x *MessageMutation) GetMutatedTsUnixMs() int64 {
 }
 
 // GroupMembershipChange notifies subscribers that a group's roster
-// changed in real time (join, kick, or voluntary leave). Every
+// or lifecycle changed in real time. Every
 // affected actor receives a frame on their SSE stream so clients
 // can refresh cached membership and rotate Sender Keys promptly.
 type GroupMembershipChange struct {
@@ -1538,21 +1544,23 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\x06RECALL\x10\x01\x12\b\n" +
 	"\x04EDIT\x10\x02\x12\n" +
 	"\n" +
-	"\x06DELETE\x10\x03\"\xcb\x02\n" +
+	"\x06DELETE\x10\x03\"\xf6\x02\n" +
 	"\x15GroupMembershipChange\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1d\n" +
 	"\n" +
 	"group_ulid\x18\x02 \x01(\tR\tgroupUlid\x12\x1b\n" +
 	"\tactor_did\x18\x03 \x01(\tR\bactorDid\x12M\n" +
 	"\x04kind\x18\x04 \x01(\x0e29.peers_touch.model.realtime.v1.GroupMembershipChange.KindR\x04kind\x12+\n" +
-	"\x12changed_ts_unix_ms\x18\x05 \x01(\x03R\x0fchangedTsUnixMs\"_\n" +
+	"\x12changed_ts_unix_ms\x18\x05 \x01(\x03R\x0fchangedTsUnixMs\"\x89\x01\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
 	"KIND_ADDED\x10\x01\x12\x10\n" +
 	"\fKIND_REMOVED\x10\x02\x12\r\n" +
 	"\tKIND_LEFT\x10\x03\x12\x10\n" +
-	"\fKIND_UPDATED\x10\x04\"\x96\x02\n" +
+	"\fKIND_UPDATED\x10\x04\x12\x14\n" +
+	"\x10KIND_TRANSFERRED\x10\x05\x12\x12\n" +
+	"\x0eKIND_DISSOLVED\x10\x06\"\x96\x02\n" +
 	"\x1bConversationSettingsChanged\x12%\n" +
 	"\x0econtainer_ulid\x18\x01 \x01(\tR\rcontainerUlid\x12S\n" +
 	"\x04kind\x18\x02 \x01(\x0e2?.peers_touch.model.realtime.v1.ConversationSettingsChanged.KindR\x04kind\x12\x19\n" +
