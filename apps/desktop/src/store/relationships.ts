@@ -11,6 +11,7 @@ import type {
   Following,
   Relationship,
 } from '../gen/proto/domain/social/relationship_pb';
+import { EVENT, eventBus } from '../kernel/events';
 import { log } from '../utils/logger';
 
 const TAG = 'relationships-store';
@@ -118,6 +119,7 @@ export const useRelationshipsStore = create<RelationshipsState>((set, get) => ({
           relations: { ...s.relations, [targetActorId]: resp.relationship as Relationship },
         }));
       }
+      eventBus.publish(EVENT.RELATIONSHIP_CHANGED, { targetActorId, action: 'follow' });
     } catch (err) {
       // Roll back the optimistic flip on failure so the UI doesn't
       // show a follow button stuck in the wrong state.
@@ -143,6 +145,7 @@ export const useRelationshipsStore = create<RelationshipsState>((set, get) => ({
     });
     try {
       await socialUnfollow(targetActorId);
+      eventBus.publish(EVENT.RELATIONSHIP_CHANGED, { targetActorId, action: 'unfollow' });
     } catch (err) {
       log.warn(TAG, 'unfollow failed; rolling back', { targetActorId, err: String(err) });
       set((s) => {

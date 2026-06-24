@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useChatStore } from '../store/chat';
+import { useAgentStore } from '../store/agent';
 import { ChatPage } from '../pages/ChatPage';
 import { NotesPage } from '../pages/NotesPage';
 import { AgentProfilePage } from '../pages/AgentProfilePage';
@@ -20,7 +21,7 @@ interface PageRouterProps {
 //
 // As pages migrate to the kernel `PageDescriptor` contract they are dropped
 // from this set — `PageHost` (kernel/PageHost.tsx) owns their lifecycle now.
-// Currently kernel-owned: search, chat, settings.
+// Currently kernel-owned: search, chat, settings, moments.
 const KEEP_ALIVE_PAGES = new Set<string>(['agent']);
 
 export function PageRouter({ page, router, navigation }: PageRouterProps) {
@@ -79,6 +80,11 @@ export function PageRouter({ page, router, navigation }: PageRouterProps) {
             onNavigateSettings={() => navigation.navigateToSettings('providers')}
             onNavigateApplets={() => navigation.navigateToSettings('applets')}
             onNavigateSkills={() => navigation.navigateToSettings('skills')}
+            onNavigateAgentProfile={(agentName) => {
+              router.setProfileAgentName(agentName);
+              window.history.pushState(null, '', `#/agent-profile/${agentName}`);
+              navigation.navigateTo('agent-profile');
+            }}
             onNavigatePages={(docId) => {
               if (docId) {
                 window.history.pushState(null, '', `#/notes/${docId}`);
@@ -117,7 +123,7 @@ function EphemeralPage({ page, router, navigation }: Pick<PageRouterProps, 'page
           agentName={router.profileAgentName}
           onBack={() => navigation.navigateTo('agent')}
           onStartChat={(name) => {
-            useChatStore.getState().setSelectedAgent(name);
+            useAgentStore.getState().setSelectedAgent(name);
             navigation.navigateTo('agent');
           }}
           onNavigateCron={() => navigation.navigateToSettings('cron')}

@@ -118,6 +118,41 @@ public final class KeyExchange {
      */
     com.google.protobuf.ByteString
         getDeviceIdBytes();
+
+    /**
+     * <pre>
+     * Supported encrypted payload wire versions. [0] = legacy chain-only,
+     * [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+     * for backward compatibility.
+     * </pre>
+     *
+     * <code>repeated uint32 supported_versions = 8;</code>
+     * @return A list containing the supportedVersions.
+     */
+    java.util.List<java.lang.Integer> getSupportedVersionsList();
+    /**
+     * <pre>
+     * Supported encrypted payload wire versions. [0] = legacy chain-only,
+     * [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+     * for backward compatibility.
+     * </pre>
+     *
+     * <code>repeated uint32 supported_versions = 8;</code>
+     * @return The count of supportedVersions.
+     */
+    int getSupportedVersionsCount();
+    /**
+     * <pre>
+     * Supported encrypted payload wire versions. [0] = legacy chain-only,
+     * [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+     * for backward compatibility.
+     * </pre>
+     *
+     * <code>repeated uint32 supported_versions = 8;</code>
+     * @param index The index of the element to return.
+     * @return The supportedVersions at the given index.
+     */
+    int getSupportedVersions(int index);
   }
   /**
    * <pre>
@@ -138,6 +173,7 @@ public final class KeyExchange {
       opkIds_ = emptyIntList();
       opkPubs_ = com.google.protobuf.GeneratedMessageLite.emptyProtobufList();
       deviceId_ = "";
+      supportedVersions_ = emptyIntList();
     }
     public static final int IK_PUB_FIELD_NUMBER = 1;
     private java.lang.String ikPub_;
@@ -541,6 +577,119 @@ public final class KeyExchange {
       checkByteStringIsUtf8(value);
       deviceId_ = value.toStringUtf8();
 
+    }
+
+    public static final int SUPPORTED_VERSIONS_FIELD_NUMBER = 8;
+    private com.google.protobuf.Internal.IntList supportedVersions_;
+    /**
+     * <pre>
+     * Supported encrypted payload wire versions. [0] = legacy chain-only,
+     * [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+     * for backward compatibility.
+     * </pre>
+     *
+     * <code>repeated uint32 supported_versions = 8;</code>
+     * @return A list containing the supportedVersions.
+     */
+    @java.lang.Override
+    public java.util.List<java.lang.Integer>
+        getSupportedVersionsList() {
+      return supportedVersions_;
+    }
+    /**
+     * <pre>
+     * Supported encrypted payload wire versions. [0] = legacy chain-only,
+     * [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+     * for backward compatibility.
+     * </pre>
+     *
+     * <code>repeated uint32 supported_versions = 8;</code>
+     * @return The count of supportedVersions.
+     */
+    @java.lang.Override
+    public int getSupportedVersionsCount() {
+      return supportedVersions_.size();
+    }
+    /**
+     * <pre>
+     * Supported encrypted payload wire versions. [0] = legacy chain-only,
+     * [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+     * for backward compatibility.
+     * </pre>
+     *
+     * <code>repeated uint32 supported_versions = 8;</code>
+     * @param index The index of the element to return.
+     * @return The supportedVersions at the given index.
+     */
+    @java.lang.Override
+    public int getSupportedVersions(int index) {
+      return supportedVersions_.getInt(index);
+    }
+    private int supportedVersionsMemoizedSerializedSize = -1;
+    private void ensureSupportedVersionsIsMutable() {
+      com.google.protobuf.Internal.IntList tmp = supportedVersions_;
+      if (!tmp.isModifiable()) {
+        supportedVersions_ =
+            com.google.protobuf.GeneratedMessageLite.mutableCopy(tmp);
+       }
+    }
+    /**
+     * <pre>
+     * Supported encrypted payload wire versions. [0] = legacy chain-only,
+     * [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+     * for backward compatibility.
+     * </pre>
+     *
+     * <code>repeated uint32 supported_versions = 8;</code>
+     * @param index The index to set the value at.
+     * @param value The supportedVersions to set.
+     */
+    private void setSupportedVersions(
+        int index, int value) {
+      ensureSupportedVersionsIsMutable();
+      supportedVersions_.setInt(index, value);
+    }
+    /**
+     * <pre>
+     * Supported encrypted payload wire versions. [0] = legacy chain-only,
+     * [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+     * for backward compatibility.
+     * </pre>
+     *
+     * <code>repeated uint32 supported_versions = 8;</code>
+     * @param value The supportedVersions to add.
+     */
+    private void addSupportedVersions(int value) {
+      ensureSupportedVersionsIsMutable();
+      supportedVersions_.addInt(value);
+    }
+    /**
+     * <pre>
+     * Supported encrypted payload wire versions. [0] = legacy chain-only,
+     * [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+     * for backward compatibility.
+     * </pre>
+     *
+     * <code>repeated uint32 supported_versions = 8;</code>
+     * @param values The supportedVersions to add.
+     */
+    private void addAllSupportedVersions(
+        java.lang.Iterable<? extends java.lang.Integer> values) {
+      ensureSupportedVersionsIsMutable();
+      com.google.protobuf.AbstractMessageLite.addAll(
+          values, supportedVersions_);
+    }
+    /**
+     * <pre>
+     * Supported encrypted payload wire versions. [0] = legacy chain-only,
+     * [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+     * for backward compatibility.
+     * </pre>
+     *
+     * <code>repeated uint32 supported_versions = 8;</code>
+     */
+    private void clearSupportedVersions() {
+      supportedVersions_ = emptyIntList();
     }
 
     public static peers_touch.model.key_exchange.v1.KeyExchange.UploadKeyBundleRequest parseFrom(
@@ -1049,6 +1198,117 @@ public final class KeyExchange {
         return this;
       }
 
+      /**
+       * <pre>
+       * Supported encrypted payload wire versions. [0] = legacy chain-only,
+       * [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+       * for backward compatibility.
+       * </pre>
+       *
+       * <code>repeated uint32 supported_versions = 8;</code>
+       * @return A list containing the supportedVersions.
+       */
+      @java.lang.Override
+      public java.util.List<java.lang.Integer>
+          getSupportedVersionsList() {
+        return java.util.Collections.unmodifiableList(
+            instance.getSupportedVersionsList());
+      }
+      /**
+       * <pre>
+       * Supported encrypted payload wire versions. [0] = legacy chain-only,
+       * [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+       * for backward compatibility.
+       * </pre>
+       *
+       * <code>repeated uint32 supported_versions = 8;</code>
+       * @return The count of supportedVersions.
+       */
+      @java.lang.Override
+      public int getSupportedVersionsCount() {
+        return instance.getSupportedVersionsCount();
+      }
+      /**
+       * <pre>
+       * Supported encrypted payload wire versions. [0] = legacy chain-only,
+       * [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+       * for backward compatibility.
+       * </pre>
+       *
+       * <code>repeated uint32 supported_versions = 8;</code>
+       * @param index The index of the element to return.
+       * @return The supportedVersions at the given index.
+       */
+      @java.lang.Override
+      public int getSupportedVersions(int index) {
+        return instance.getSupportedVersions(index);
+      }
+      /**
+       * <pre>
+       * Supported encrypted payload wire versions. [0] = legacy chain-only,
+       * [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+       * for backward compatibility.
+       * </pre>
+       *
+       * <code>repeated uint32 supported_versions = 8;</code>
+       * @param value The supportedVersions to set.
+       * @return This builder for chaining.
+       */
+      public Builder setSupportedVersions(
+          int index, int value) {
+        copyOnWrite();
+        instance.setSupportedVersions(index, value);
+        return this;
+      }
+      /**
+       * <pre>
+       * Supported encrypted payload wire versions. [0] = legacy chain-only,
+       * [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+       * for backward compatibility.
+       * </pre>
+       *
+       * <code>repeated uint32 supported_versions = 8;</code>
+       * @param value The supportedVersions to add.
+       * @return This builder for chaining.
+       */
+      public Builder addSupportedVersions(int value) {
+        copyOnWrite();
+        instance.addSupportedVersions(value);
+        return this;
+      }
+      /**
+       * <pre>
+       * Supported encrypted payload wire versions. [0] = legacy chain-only,
+       * [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+       * for backward compatibility.
+       * </pre>
+       *
+       * <code>repeated uint32 supported_versions = 8;</code>
+       * @param values The supportedVersions to add.
+       * @return This builder for chaining.
+       */
+      public Builder addAllSupportedVersions(
+          java.lang.Iterable<? extends java.lang.Integer> values) {
+        copyOnWrite();
+        instance.addAllSupportedVersions(values);
+        return this;
+      }
+      /**
+       * <pre>
+       * Supported encrypted payload wire versions. [0] = legacy chain-only,
+       * [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
+       * for backward compatibility.
+       * </pre>
+       *
+       * <code>repeated uint32 supported_versions = 8;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearSupportedVersions() {
+        copyOnWrite();
+        instance.clearSupportedVersions();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:peers_touch.model.key_exchange.v1.UploadKeyBundleRequest)
     }
     @java.lang.Override
@@ -1072,10 +1332,11 @@ public final class KeyExchange {
               "opkIds_",
               "opkPubs_",
               "deviceId_",
+              "supportedVersions_",
             };
             java.lang.String info =
-                "\u0000\u0007\u0000\u0000\u0001\u0007\u0007\u0000\u0002\u0000\u0001\u0208\u0002\u0004" +
-                "\u0003\u0208\u0004\u0208\u0005\'\u0006\u021a\u0007\u0208";
+                "\u0000\b\u0000\u0000\u0001\b\b\u0000\u0003\u0000\u0001\u0208\u0002\u0004\u0003\u0208" +
+                "\u0004\u0208\u0005\'\u0006\u021a\u0007\u0208\b+";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {
@@ -1445,6 +1706,23 @@ public final class KeyExchange {
      * @return The publishedAtUnixMs.
      */
     long getPublishedAtUnixMs();
+
+    /**
+     * <code>repeated uint32 supported_versions = 8;</code>
+     * @return A list containing the supportedVersions.
+     */
+    java.util.List<java.lang.Integer> getSupportedVersionsList();
+    /**
+     * <code>repeated uint32 supported_versions = 8;</code>
+     * @return The count of supportedVersions.
+     */
+    int getSupportedVersionsCount();
+    /**
+     * <code>repeated uint32 supported_versions = 8;</code>
+     * @param index The index of the element to return.
+     * @return The supportedVersions at the given index.
+     */
+    int getSupportedVersions(int index);
   }
   /**
    * <pre>
@@ -1465,6 +1743,7 @@ public final class KeyExchange {
       spkPub_ = "";
       spkSig_ = "";
       opks_ = com.google.protobuf.GeneratedMessageLite.emptyProtobufList();
+      supportedVersions_ = emptyIntList();
     }
     public static final int DID_FIELD_NUMBER = 1;
     private java.lang.String did_;
@@ -1918,6 +2197,77 @@ public final class KeyExchange {
     private void clearPublishedAtUnixMs() {
 
       publishedAtUnixMs_ = 0L;
+    }
+
+    public static final int SUPPORTED_VERSIONS_FIELD_NUMBER = 8;
+    private com.google.protobuf.Internal.IntList supportedVersions_;
+    /**
+     * <code>repeated uint32 supported_versions = 8;</code>
+     * @return A list containing the supportedVersions.
+     */
+    @java.lang.Override
+    public java.util.List<java.lang.Integer>
+        getSupportedVersionsList() {
+      return supportedVersions_;
+    }
+    /**
+     * <code>repeated uint32 supported_versions = 8;</code>
+     * @return The count of supportedVersions.
+     */
+    @java.lang.Override
+    public int getSupportedVersionsCount() {
+      return supportedVersions_.size();
+    }
+    /**
+     * <code>repeated uint32 supported_versions = 8;</code>
+     * @param index The index of the element to return.
+     * @return The supportedVersions at the given index.
+     */
+    @java.lang.Override
+    public int getSupportedVersions(int index) {
+      return supportedVersions_.getInt(index);
+    }
+    private int supportedVersionsMemoizedSerializedSize = -1;
+    private void ensureSupportedVersionsIsMutable() {
+      com.google.protobuf.Internal.IntList tmp = supportedVersions_;
+      if (!tmp.isModifiable()) {
+        supportedVersions_ =
+            com.google.protobuf.GeneratedMessageLite.mutableCopy(tmp);
+       }
+    }
+    /**
+     * <code>repeated uint32 supported_versions = 8;</code>
+     * @param index The index to set the value at.
+     * @param value The supportedVersions to set.
+     */
+    private void setSupportedVersions(
+        int index, int value) {
+      ensureSupportedVersionsIsMutable();
+      supportedVersions_.setInt(index, value);
+    }
+    /**
+     * <code>repeated uint32 supported_versions = 8;</code>
+     * @param value The supportedVersions to add.
+     */
+    private void addSupportedVersions(int value) {
+      ensureSupportedVersionsIsMutable();
+      supportedVersions_.addInt(value);
+    }
+    /**
+     * <code>repeated uint32 supported_versions = 8;</code>
+     * @param values The supportedVersions to add.
+     */
+    private void addAllSupportedVersions(
+        java.lang.Iterable<? extends java.lang.Integer> values) {
+      ensureSupportedVersionsIsMutable();
+      com.google.protobuf.AbstractMessageLite.addAll(
+          values, supportedVersions_);
+    }
+    /**
+     * <code>repeated uint32 supported_versions = 8;</code>
+     */
+    private void clearSupportedVersions() {
+      supportedVersions_ = emptyIntList();
     }
 
     public static peers_touch.model.key_exchange.v1.KeyExchange.KeyBundle parseFrom(
@@ -2479,6 +2829,75 @@ public final class KeyExchange {
         return this;
       }
 
+      /**
+       * <code>repeated uint32 supported_versions = 8;</code>
+       * @return A list containing the supportedVersions.
+       */
+      @java.lang.Override
+      public java.util.List<java.lang.Integer>
+          getSupportedVersionsList() {
+        return java.util.Collections.unmodifiableList(
+            instance.getSupportedVersionsList());
+      }
+      /**
+       * <code>repeated uint32 supported_versions = 8;</code>
+       * @return The count of supportedVersions.
+       */
+      @java.lang.Override
+      public int getSupportedVersionsCount() {
+        return instance.getSupportedVersionsCount();
+      }
+      /**
+       * <code>repeated uint32 supported_versions = 8;</code>
+       * @param index The index of the element to return.
+       * @return The supportedVersions at the given index.
+       */
+      @java.lang.Override
+      public int getSupportedVersions(int index) {
+        return instance.getSupportedVersions(index);
+      }
+      /**
+       * <code>repeated uint32 supported_versions = 8;</code>
+       * @param value The supportedVersions to set.
+       * @return This builder for chaining.
+       */
+      public Builder setSupportedVersions(
+          int index, int value) {
+        copyOnWrite();
+        instance.setSupportedVersions(index, value);
+        return this;
+      }
+      /**
+       * <code>repeated uint32 supported_versions = 8;</code>
+       * @param value The supportedVersions to add.
+       * @return This builder for chaining.
+       */
+      public Builder addSupportedVersions(int value) {
+        copyOnWrite();
+        instance.addSupportedVersions(value);
+        return this;
+      }
+      /**
+       * <code>repeated uint32 supported_versions = 8;</code>
+       * @param values The supportedVersions to add.
+       * @return This builder for chaining.
+       */
+      public Builder addAllSupportedVersions(
+          java.lang.Iterable<? extends java.lang.Integer> values) {
+        copyOnWrite();
+        instance.addAllSupportedVersions(values);
+        return this;
+      }
+      /**
+       * <code>repeated uint32 supported_versions = 8;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearSupportedVersions() {
+        copyOnWrite();
+        instance.clearSupportedVersions();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:peers_touch.model.key_exchange.v1.KeyBundle)
     }
     @java.lang.Override
@@ -2502,10 +2921,11 @@ public final class KeyExchange {
               "spkSig_",
               "opks_",
               "publishedAtUnixMs_",
+              "supportedVersions_",
             };
             java.lang.String info =
-                "\u0000\u0007\u0000\u0000\u0001\u0007\u0007\u0000\u0001\u0000\u0001\u0208\u0002\u0208" +
-                "\u0003\u0208\u0004\u0208\u0005\u0208\u0006\u021a\u0007\u0002";
+                "\u0000\b\u0000\u0000\u0001\b\b\u0000\u0002\u0000\u0001\u0208\u0002\u0208\u0003\u0208" +
+                "\u0004\u0208\u0005\u0208\u0006\u021a\u0007\u0002\b+";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {

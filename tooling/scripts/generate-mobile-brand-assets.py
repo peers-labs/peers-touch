@@ -2,9 +2,25 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 
-from PIL import Image
+try:
+    from PIL import Image
+except ModuleNotFoundError:
+    system_python = Path("/usr/bin/python3")
+    if Path(sys.executable) != system_python and system_python.exists():
+        probe = subprocess.run(
+            [str(system_python), "-c", "import PIL"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if probe.returncode == 0:
+            os.execv(str(system_python), [str(system_python), *sys.argv])
+    raise
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -47,34 +63,31 @@ def normalize_wordmark() -> None:
 
 def build_mobile_icon_from_desktop() -> Image.Image:
     desktop_icon = Image.open(DESKTOP_ICON_SOURCE_PATH).convert("RGBA")
-    content = remove_outer_icon_frame(desktop_icon)
+    content = crop_desktop_icon_body(desktop_icon)
     canvas = Image.new("RGBA", desktop_icon.size, (255, 255, 255, 255))
-    target_size = preserved_desktop_content_size(desktop_icon, content)
-    content.thumbnail(target_size, Image.Resampling.LANCZOS)
+    target_size = mobile_icon_body_size(canvas, content)
+    content = content.resize(target_size, Image.Resampling.LANCZOS)
     x = (canvas.width - content.width) // 2
     y = (canvas.height - content.height) // 2
     canvas.alpha_composite(content, (x, y))
     return canvas
 
 
-def remove_outer_icon_frame(icon: Image.Image) -> Image.Image:
-    bbox = detect_non_frame_bbox(icon)
+def crop_desktop_icon_body(icon: Image.Image) -> Image.Image:
+    bbox = detect_icon_body_bbox(icon)
     return icon.crop(bbox)
 
 
-def detect_non_frame_bbox(icon: Image.Image) -> tuple[int, int, int, int]:
+def detect_icon_body_bbox(icon: Image.Image) -> tuple[int, int, int, int]:
     pixels = icon.load()
     width, height = icon.size
-
-    def is_frame_pixel(x: int, y: int) -> bool:
-        r, g, b, a = pixels[x, y]
-        return a == 0 or (r < 48 and g < 48 and b < 48)
 
     xs: list[int] = []
     ys: list[int] = []
     for y in range(height):
         for x in range(width):
-            if not is_frame_pixel(x, y):
+            r, g, b, a = pixels[x, y]
+            if a > 0 and not is_outer_frame_pixel(r, g, b):
                 xs.append(x)
                 ys.append(y)
 
@@ -90,12 +103,13 @@ def detect_non_frame_bbox(icon: Image.Image) -> tuple[int, int, int, int]:
     )
 
 
-def preserved_desktop_content_size(desktop_icon: Image.Image, content: Image.Image) -> tuple[int, int]:
-    max_edge = int(max(desktop_icon.width, desktop_icon.height) * 0.84)
-    if max(content.width, content.height) <= max_edge:
-        return content.size
+def is_outer_frame_pixel(r: int, g: int, b: int) -> bool:
+    return r < 48 and g < 48 and b < 48
 
-    scale = max_edge / max(content.width, content.height)
+
+def mobile_icon_body_size(canvas: Image.Image, content: Image.Image) -> tuple[int, int]:
+    # Slight bleed makes the desktop card edge sit outside the iOS mask.
+    scale = max(canvas.width / content.width, canvas.height / content.height) * 1.04
     return (int(content.width * scale), int(content.height * scale))
 
 

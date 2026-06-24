@@ -24,9 +24,9 @@ help:
 	@echo "==========="
 	@echo ""
 	@echo "Local Dev (worktree-isolated):"
-	@echo "  make profile PROFILE=<name>    Activate a dev profile"
-	@echo "  make profile-init PROFILE=<name> [SLOT=0]  Create a new profile"
-	@echo "  make profiles                  List available profiles"
+	@echo "  make profile <name>            Activate a dev profile"
+	@echo "  make profile-init <name> [SLOT=0]  Create a new profile"
+	@echo "  make profiles                  Bootstrap/list profiles and deploy envs"
 	@echo "  make config                    Show active profile config"
 	@echo ""
 	@echo "  make station                   Ready Station (local start / remote deploy)"
@@ -71,6 +71,7 @@ help:
 	@echo "  make help-docker               Docker deployment commands"
 	@echo "  make help-deploy               Remote deploy commands"
 	@echo "  make init-dev                  Initialize dev environment"
+	@echo "  make skills                    Install project skills to IDE (trae/cursor)"
 	@echo ""
 
 help-docker:

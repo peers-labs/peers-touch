@@ -1,6 +1,8 @@
 import type { Timestamp } from '@bufbuild/protobuf/wkt';
+import { create } from '@bufbuild/protobuf';
 
-import type { Group, GroupMember, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
+import { GroupMessageAttachmentSchema, type Group, type GroupMember, type GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
+import { EncryptedMediaDescriptorSchema } from '../../gen/proto/domain/common/common_pb';
 
 type RawRecord = Record<string, unknown>;
 
@@ -48,7 +50,7 @@ export function normalizeGroupMessage(raw: Partial<GroupMessage>): GroupMessage 
     senderDid: stringValue(raw.senderDid, record.sender_did),
     type: numberValue(raw.type),
     content: stringValue(raw.content),
-    attachments: Array.isArray(raw.attachments) ? raw.attachments : [],
+    attachments: normalizeGroupAttachments(raw.attachments ?? record.attachments),
     replyToUlid: stringValue(raw.replyToUlid, record.reply_to_ulid),
     threadRootUlid: stringValue(raw.threadRootUlid, record.thread_root_ulid),
     mentionedDids: Array.isArray(raw.mentionedDids) ? raw.mentionedDids.map(String) : [],
@@ -60,6 +62,43 @@ export function normalizeGroupMessage(raw: Partial<GroupMessage>): GroupMessage 
     encryptedPayload: bytesValue(raw.encryptedPayload ?? record.encryptedPayload ?? record.encrypted_payload),
     editedAt: (raw.editedAt ?? record.edited_at) as Timestamp | undefined,
   } as GroupMessage;
+}
+
+function normalizeGroupAttachments(value: unknown): GroupMessage['attachments'] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    const record = (item && typeof item === 'object' ? item : {}) as RawRecord;
+    const suite = stringValue(record.encryptionSuite, record.encryption_suite);
+    const mediaEncryption = record.mediaEncryption ?? record.media_encryption ?? (suite
+      ? create(EncryptedMediaDescriptorSchema, {
+        encrypted: true,
+        version: 1,
+        suite,
+        keyB64: stringValue(record.encryptionKeyB64, record.encryption_key_b64),
+        nonceB64: stringValue(record.encryptionNonceB64, record.encryption_nonce_b64),
+        plaintextSha256B64: stringValue(record.plaintextSha256B64, record.plaintext_sha256_b64),
+        ciphertextSha256B64: stringValue(record.ciphertextSha256B64, record.ciphertext_sha256_b64),
+        plaintextSize: BigInt(numberValue(record.plaintextSize, record.plaintext_size)),
+        ciphertextSize: BigInt(numberValue(record.ciphertextSize, record.ciphertext_size)),
+      })
+      : undefined);
+    return create(GroupMessageAttachmentSchema, {
+      cid: stringValue(record.cid),
+      filename: stringValue(record.filename),
+      mimeType: stringValue(record.mimeType, record.mime_type),
+      size: BigInt(numberValue(record.size)),
+      thumbnailCid: stringValue(record.thumbnailCid, record.thumbnail_cid),
+      visibility: stringValue(record.visibility),
+      mediaEncryption,
+      encryptionSuite: suite,
+      encryptionKeyB64: stringValue(record.encryptionKeyB64, record.encryption_key_b64),
+      encryptionNonceB64: stringValue(record.encryptionNonceB64, record.encryption_nonce_b64),
+      plaintextSha256B64: stringValue(record.plaintextSha256B64, record.plaintext_sha256_b64),
+      ciphertextSha256B64: stringValue(record.ciphertextSha256B64, record.ciphertext_sha256_b64),
+      plaintextSize: BigInt(numberValue(record.plaintextSize, record.plaintext_size)),
+      ciphertextSize: BigInt(numberValue(record.ciphertextSize, record.ciphertext_size)),
+    });
+  }).filter((attachment) => attachment.cid || attachment.filename) as GroupMessage['attachments'];
 }
 
 export function timestampMillis(timestamp?: Timestamp | string): number {

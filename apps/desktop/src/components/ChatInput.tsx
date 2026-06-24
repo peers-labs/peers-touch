@@ -8,9 +8,11 @@ import {
   type KeyboardEvent,
   type ChangeEvent,
   type CSSProperties,
+  type ClipboardEvent,
+  type DragEvent,
 } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { ActionIcon, Popover, Markdown } from '@lobehub/ui';
+import { ActionIcon, Popover } from '@lobehub/ui';
 import { ProviderIcon } from './settings/ProviderIcon';
 import {
   Send,
@@ -46,16 +48,26 @@ import {
   Search,
   Mic,
   MicOff,
+  FileText,
+  RefreshCcw,
 } from 'lucide-react';
 import { theme, Divider, Popconfirm, Slider, Switch, Modal, Tabs, Empty, Progress } from 'antd';
 import { Tag, toast } from '@lobehub/ui';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '../store/chat';
+import type { ChatComposerAttachment } from '../store/chat';
+import { useAgentStore } from '../store/agent';
+import { useSkillStore } from '../store/skill';
 import { ModelProviderSelect } from './ModelProviderSelect';
 import { api, type BuiltinSkillInfo, type SkillListItem } from '../services/desktop_api';
 import { SkillAppletPopoverContent } from './SkillAppletSelector';
 import { estimateTokenCount } from 'tokenx';
 import { log } from '../utils/logger';
+import {
+  useChatAttachmentDrafts,
+  type ChatDraftAttachment,
+} from './chat/composer/useChatAttachmentDrafts';
+import { LazyMarkdown as Markdown } from './LazyMarkdown';
 
 function Action({
   icon, title, onClick, disabled, active, color, style,
@@ -85,12 +97,17 @@ function Action({
   );
 }
 
+function browserSpeechLanguage(language?: string): string {
+  if (!language || language === 'auto') return '';
+  return language;
+}
+
 // ── Model Detail Panel (LobeChat-style) ──────────────────────────────
 
 function ModelDetailPanel({ modelId }: { modelId: string }) {
   const { t } = useTranslation('chat');
   const { token } = theme.useToken();
-  const { availableModels, selectedAgent, agents } = useChatStore();
+  const { availableModels, selectedAgent, agents } = useAgentStore();
   const model = availableModels.find((m) => m.id === modelId);
   const currentAgent = agents.find((a) => a.name === selectedAgent);
   const chatConfig = currentAgent ? (() => { try { return JSON.parse(currentAgent.chatConfig || '{}'); } catch { return {}; } })() : {};
@@ -105,14 +122,14 @@ function ModelDetailPanel({ modelId }: { modelId: string }) {
 
   const updateConfig = (key: string, value: any) => {
     if (!currentAgent) return;
-    useChatStore.getState().updateAgentConfig(currentAgent.name, {
+    useAgentStore.getState().updateAgentConfig(currentAgent.name, {
       chatConfig: { ...chatConfig, [key]: value },
     });
   };
 
   const updateParams = (key: string, value: any) => {
     if (!currentAgent) return;
-    useChatStore.getState().updateAgentConfig(currentAgent.name, {
+    useAgentStore.getState().updateAgentConfig(currentAgent.name, {
       params: { ...agentParams, [key]: value },
     });
   };
@@ -193,7 +210,7 @@ function ModelDetailPanel({ modelId }: { modelId: string }) {
 function SearchControls() {
   const { t } = useTranslation('chat');
   const { token } = theme.useToken();
-  const { enabledAppletIds, toggleApplet } = useChatStore();
+  const { enabledAppletIds, toggleApplet } = useAgentStore();
   const isEnabled = enabledAppletIds.includes('web-search');
   const [useModelSearch, setUseModelSearch] = useState(false);
 
@@ -286,12 +303,29 @@ function useTokenCount(input: string): number {
   return count;
 }
 
+function isSupportedComposerFile(file: File): boolean {
+  const mimeType = file.type || 'application/octet-stream';
+  const name = file.name.toLowerCase();
+  return mimeType.startsWith('image/')
+    || mimeType === 'application/pdf'
+    || mimeType.startsWith('text/')
+    || mimeType === 'application/json'
+    || name.endsWith('.md')
+    || name.endsWith('.csv');
+}
+
+function formatAttachmentSize(size: number): string {
+  if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  if (size >= 1024) return `${Math.round(size / 1024)} KB`;
+  return `${size} B`;
+}
+
 // ── History Controls (persisted to agent chatConfig) ─────────────────
 
 function HistoryControls() {
   const { t } = useTranslation('chat');
   const { token } = theme.useToken();
-  const { selectedAgent, updateAgentConfig, getCurrentAgentChatConfig } = useChatStore();
+  const { selectedAgent, updateAgentConfig, getCurrentAgentChatConfig } = useAgentStore();
   const chatConfig = getCurrentAgentChatConfig();
 
   const [enabled, setEnabled] = useState(chatConfig.enableHistoryCount ?? true);
@@ -332,7 +366,7 @@ function HistoryControls() {
 function MemoryControls() {
   const { t } = useTranslation('chat');
   const { token } = theme.useToken();
-  const { selectedAgent, updateAgentConfig, getCurrentAgentChatConfig } = useChatStore();
+  const { selectedAgent, updateAgentConfig, getCurrentAgentChatConfig } = useAgentStore();
   const chatConfig = getCurrentAgentChatConfig();
   const memCfg = chatConfig.memory ?? {};
 
@@ -434,7 +468,8 @@ function MemoryControls() {
 function TokenDisplay({ inputText }: { inputText: string }) {
   const { t } = useTranslation('chat');
   const { token } = theme.useToken();
-  const { messages, availableModels, selectedModel, defaultModel, agents, selectedAgent } = useChatStore();
+  const { messages } = useChatStore();
+  const { availableModels, selectedModel, defaultModel, agents, selectedAgent } = useAgentStore();
 
   const modelId = selectedModel || defaultModel;
   const modelInfo = availableModels.find((m) => m.id === modelId);
@@ -547,8 +582,7 @@ function SkillsDialog({ open, onClose, onNavigateSkillSettings }: {
 }) {
   const { t } = useTranslation('chat');
   const { token } = theme.useToken();
-  const [skills, setSkills] = useState<SkillListItem[]>([]);
-  const [builtins, setBuiltins] = useState<BuiltinSkillInfo[]>([]);
+  const { skills, builtins, loadSkills, toggleSkill } = useSkillStore();
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [backendResults, setBackendResults] = useState<SkillListItem[] | null>(null);
@@ -559,11 +593,8 @@ function SkillsDialog({ open, onClose, onNavigateSkillSettings }: {
     setLoading(true);
     setSearchQuery('');
     setBackendResults(null);
-    api.listSkills().then((data) => {
-      setSkills(data.skills);
-      setBuiltins(data.builtin);
-    }).catch(() => {}).finally(() => setLoading(false));
-  }, [open]);
+    loadSkills().catch(() => {}).finally(() => setLoading(false));
+  }, [open, loadSkills]);
 
   // Backend BM25 search (debounced 300ms, triggered when query ≥ 2 chars)
   useEffect(() => {
@@ -611,8 +642,7 @@ function SkillsDialog({ open, onClose, onNavigateSkillSettings }: {
 
   const handleToggle = async (id: string, enabled: boolean) => {
     try {
-      await api.toggleSkill(id, enabled);
-      setSkills((prev) => prev.map((s) => s.id === id ? { ...s, enabled } : s));
+      await toggleSkill(id, enabled);
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -865,6 +895,187 @@ export interface ChatInputProps {
   placeholder?: string;
 }
 
+type ComposerReferenceKind = 'command' | 'agent' | 'message';
+
+interface ComposerReference {
+  kind: ComposerReferenceKind;
+  id: string;
+  label: string;
+  token: string;
+}
+
+interface ComposerSuggestion extends ComposerReference {
+  description: string;
+  icon: ReactNode;
+}
+
+function findComposerTrigger(input: string): { kind: ComposerReferenceKind; query: string; start: number; end: number } | null {
+  const match = input.match(/(^|\s)([\/@#])([^\s]*)$/);
+  if (!match) return null;
+  const symbol = match[2];
+  const kind: ComposerReferenceKind = symbol === '/' ? 'command' : symbol === '@' ? 'agent' : 'message';
+  const start = input.length - match[2].length - match[3].length;
+  return { kind, query: match[3].toLowerCase(), start, end: input.length };
+}
+
+function formatMessageSnippet(content: string): string {
+  return content.replace(/\s+/g, ' ').trim().slice(0, 72);
+}
+
+function ComposerSuggestionPanel({
+  suggestions,
+  onSelect,
+}: {
+  suggestions: ComposerSuggestion[];
+  onSelect: (suggestion: ComposerSuggestion) => void;
+}) {
+  const { token } = theme.useToken();
+  if (suggestions.length === 0) return null;
+  return (
+    <Flexbox
+      gap={4}
+      style={{
+        marginBottom: 8,
+        padding: 8,
+        borderRadius: 10,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        background: token.colorFillQuaternary,
+      }}
+    >
+      {suggestions.map((item) => (
+        <button
+          key={`${item.kind}:${item.id}`}
+          type="button"
+          onClick={() => onSelect(item)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            width: '100%',
+            padding: '7px 8px',
+            border: 0,
+            borderRadius: 8,
+            background: token.colorBgContainer,
+            color: token.colorText,
+            cursor: 'pointer',
+            textAlign: 'left',
+          }}
+        >
+          <span style={{ display: 'flex', color: token.colorTextSecondary }}>{item.icon}</span>
+          <Flexbox style={{ minWidth: 0 }}>
+            <span style={{ fontSize: 12, fontWeight: 600 }}>{item.label}</span>
+            <span style={{ fontSize: 11, color: token.colorTextDescription, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {item.description}
+            </span>
+          </Flexbox>
+        </button>
+      ))}
+    </Flexbox>
+  );
+}
+
+function ComposerAttachmentDraft({
+  item,
+  onRemove,
+  onRetry,
+}: {
+  item: ChatDraftAttachment;
+  onRemove: () => void;
+  onRetry: () => void;
+}) {
+  const { t } = useTranslation('chat');
+  const { token } = theme.useToken();
+  const isImage = item.mimeType.startsWith('image/') && item.previewUrl;
+  return (
+    <div
+      style={{
+        position: 'relative',
+        flexShrink: 0,
+        width: isImage ? 76 : 180,
+        minHeight: 76,
+        borderRadius: 10,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        background: token.colorFillQuaternary,
+        overflow: 'hidden',
+      }}
+    >
+      {isImage ? (
+        <img
+          src={item.previewUrl || ''}
+          alt=""
+          style={{ width: '100%', height: 76, objectFit: 'cover', opacity: item.status === 'uploading' ? 0.5 : 1 }}
+        />
+      ) : (
+        <Flexbox horizontal align="center" gap={8} style={{ padding: 10, height: '100%' }}>
+          <FileText size={22} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />
+          <Flexbox style={{ minWidth: 0 }}>
+            <span style={{ fontSize: 12, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {item.name}
+            </span>
+            <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
+              {formatAttachmentSize(item.size)}
+            </span>
+          </Flexbox>
+        </Flexbox>
+      )}
+
+      {item.status === 'uploading' && (
+        <Flexbox align="center" justify="center" style={{ position: 'absolute', inset: 0, fontSize: 11, color: token.colorTextSecondary, background: token.colorBgMask }}>
+          {t('chat.input.attachmentUploading')}
+        </Flexbox>
+      )}
+
+      {item.status === 'failed' && (
+        <button
+          type="button"
+          onClick={onRetry}
+          title={t('chat.input.attachmentRetry')}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            border: 0,
+            background: token.colorErrorBg,
+            color: token.colorError,
+            cursor: 'pointer',
+            fontSize: 12,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 4,
+          }}
+        >
+          <RefreshCcw size={12} />
+          {t('chat.input.attachmentRetry')}
+        </button>
+      )}
+
+      <button
+        type="button"
+        onClick={onRemove}
+        title={t('chat.input.attachmentRemove')}
+        style={{
+          position: 'absolute',
+          top: 4,
+          right: 4,
+          width: 20,
+          height: 20,
+          borderRadius: '50%',
+          border: 'none',
+          background: token.colorError,
+          color: '#fff',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 0,
+        }}
+      >
+        <X size={11} />
+      </button>
+    </div>
+  );
+}
+
 // ── Main ChatInput ───────────────────────────────────────────────────
 
 export function ChatInput({
@@ -893,6 +1104,8 @@ export function ChatInput({
   const [skillsDialogOpen, setSkillsDialogOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [draggingAttachment, setDraggingAttachment] = useState(false);
+  const [composerReferences, setComposerReferences] = useState<ComposerReference[]>([]);
   const recognitionRef = useRef<any>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isComposingRef = useRef(false);
@@ -912,11 +1125,17 @@ export function ChatInput({
       toast.warning(t('chat.input.voice.unsupported'));
       return;
     }
+    const currentVoiceConfig = useAgentStore.getState().getCurrentAgentChatConfig().voice || {};
+    if ((currentVoiceConfig.sttProvider ?? 'browser') !== 'browser') {
+      toast.warning(t('chat.input.voice.providerUnsupported'));
+      return;
+    }
 
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = 'auto';
+    const speechLanguage = browserSpeechLanguage(currentVoiceConfig.sttLanguage);
+    if (speechLanguage) recognition.lang = speechLanguage;
     recognitionRef.current = recognition;
 
     recognition.onresult = (event: any) => {
@@ -925,6 +1144,9 @@ export function ChatInput({
         transcript += event.results[i][0].transcript;
       }
       setInput(transcript);
+      if (currentVoiceConfig.sttAutoStop && event.results?.[event.results.length - 1]?.isFinal) {
+        recognition.stop();
+      }
     };
 
     recognition.onerror = (event: any) => {
@@ -947,20 +1169,48 @@ export function ChatInput({
     }, 1000);
     setIsRecording(true);
     recognition.start();
-  }, [isRecording]);
+  }, [isRecording, t]);
 
   const {
     sendMessage, stopStreaming, isStreaming,
-    pendingImages, addImage, removeImage,
+    messages, saveCurrentTopic, currentSessionKey,
+  } = useChatStore();
+  const {
     selectedModel, defaultModel, enabledAppletIds, availableModels,
     loadModels, loadAgents, loadApplets,
-    getCurrentAgentChatConfig, messages, saveCurrentTopic, currentSessionKey,
-  } = useChatStore();
+    agents,
+    getCurrentAgentChatConfig,
+  } = useAgentStore();
 
   const chatConfig = getCurrentAgentChatConfig();
   const memoryEnabled = chatConfig.memory?.enabled ?? false;
   const historyEnabled = chatConfig.enableHistoryCount ?? true;
   const hasActiveTopic = messages.length > 0;
+  const {
+    drafts,
+    readyAttachments,
+    uploading: attachmentUploading,
+    failed: attachmentFailed,
+    addFiles,
+    clearDrafts,
+    removeDraft,
+    retryDraft,
+  } = useChatAttachmentDrafts({
+    conversationId: currentSessionKey,
+    disabled: isStreaming,
+    editing: false,
+    fallbackName: t('chat.input.attachmentFallbackName'),
+    onUploadFailed: () => toast.error(t('chat.input.attachmentUploadFailed')),
+  });
+
+  const addSupportedFiles = useCallback((files: File[]) => {
+    const supported = files.filter(isSupportedComposerFile);
+    const rejected = files.length - supported.length;
+    if (rejected > 0) {
+      toast.warning(t('chat.input.attachmentUnsupported'));
+    }
+    if (supported.length > 0) addFiles(supported);
+  }, [addFiles, t]);
 
   useEffect(() => {
     const prevKey = prevSessionKeyRef.current;
@@ -969,6 +1219,7 @@ export function ChatInput({
     }
     const next = topicComposerRef.current[currentSessionKey];
     setInput(next?.input ?? '');
+    setComposerReferences([]);
     setCollapseOpen(next?.collapseOpen ?? false);
     setShowTypoBar(next?.showTypoBar ?? false);
     setModelOpen(false);
@@ -987,13 +1238,115 @@ export function ChatInput({
 
   useEffect(() => { loadModels(); loadAgents(); loadApplets(); }, [loadModels, loadAgents, loadApplets]);
 
+  const composerTrigger = useMemo(() => findComposerTrigger(input), [input]);
+
+  const composerSuggestions = useMemo<ComposerSuggestion[]>(() => {
+    if (!composerTrigger) return [];
+    if (composerTrigger.kind === 'command') {
+      const commandSuggestions: ComposerSuggestion[] = [
+        {
+          kind: 'command',
+          id: 'search',
+          token: '/search',
+          label: t('chat.input.command.search'),
+          description: t('chat.input.command.searchDesc'),
+          icon: <Search size={14} />,
+        },
+        {
+          kind: 'command',
+          id: 'memory',
+          token: '/memory',
+          label: t('chat.input.command.memory'),
+          description: t('chat.input.command.memoryDesc'),
+          icon: <BrainCircuit size={14} />,
+        },
+        {
+          kind: 'command',
+          id: 'tool',
+          token: '/tool',
+          label: t('chat.input.command.tool'),
+          description: t('chat.input.command.toolDesc'),
+          icon: <Blocks size={14} />,
+        },
+      ];
+      return commandSuggestions.filter((item) => item.token.slice(1).includes(composerTrigger.query)).slice(0, 5);
+    }
+    if (composerTrigger.kind === 'agent') {
+      return agents
+        .filter((agent) => {
+          const q = composerTrigger.query;
+          return !q || agent.name.toLowerCase().includes(q) || (agent.title || '').toLowerCase().includes(q);
+        })
+        .slice(0, 5)
+        .map((agent) => ({
+          kind: 'agent' as const,
+          id: agent.name,
+          token: `@${agent.name}`,
+          label: agent.title || agent.name,
+          description: agent.description || agent.name,
+          icon: <Sparkles size={14} />,
+        }));
+    }
+    return messages
+      .filter((message) => message.content.trim())
+      .slice(-8)
+      .reverse()
+      .filter((message) => {
+        const q = composerTrigger.query;
+        return !q || message.content.toLowerCase().includes(q);
+      })
+      .slice(0, 5)
+      .map((message) => ({
+        kind: 'message' as const,
+        id: message.id,
+        token: `#${message.id}`,
+        label: t('chat.input.reference.message', { role: message.role }),
+        description: formatMessageSnippet(message.content),
+        icon: <FileText size={14} />,
+      }));
+  }, [agents, composerTrigger, messages, t]);
+
+  const handleSelectComposerSuggestion = useCallback((suggestion: ComposerSuggestion) => {
+    if (!composerTrigger) return;
+    const nextInput = `${input.slice(0, composerTrigger.start)}${suggestion.token} ${input.slice(composerTrigger.end)}`;
+    setInput(nextInput);
+    setComposerReferences((prev) => {
+      const withoutDuplicate = prev.filter((item) => !(item.kind === suggestion.kind && item.id === suggestion.id));
+      return [...withoutDuplicate, {
+        kind: suggestion.kind,
+        id: suggestion.id,
+        label: suggestion.label,
+        token: suggestion.token,
+      }];
+    });
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [composerTrigger, input]);
+
   const handleSend = useCallback(() => {
     const text = input.trim();
-    if ((!text && pendingImages.length === 0) || isStreaming) return;
-    sendMessage(text || '(image)');
+    if ((!text && readyAttachments.length === 0) || isStreaming || attachmentUploading || attachmentFailed) return;
+    const attachments: ChatComposerAttachment[] = drafts
+      .filter((item) => item.status === 'ready' && item.attachment)
+      .map((item) => ({
+        cid: item.attachment!.cid,
+        filename: item.attachment!.filename || item.name,
+        mime_type: item.attachment!.mime_type || item.mimeType,
+        size: item.attachment!.size || item.size,
+        previewUrl: item.previewUrl,
+        attachment: item.attachment,
+      }));
+    const structuredContext = composerReferences.length > 0
+      ? composerReferences.map((item) => `[${item.kind}:${item.id}] ${item.label}`).join('\n')
+      : '';
+    sendMessage(
+      structuredContext ? `${structuredContext}\n\n${text || t('chat.input.attachmentMessageFallback')}` : text || t('chat.input.attachmentMessageFallback'),
+      attachments,
+    );
     setInput('');
+    setComposerReferences([]);
+    clearDrafts();
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
-  }, [input, pendingImages, isStreaming, sendMessage]);
+  }, [attachmentFailed, attachmentUploading, clearDrafts, composerReferences, drafts, input, isStreaming, readyAttachments, sendMessage, t]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key !== 'Enter' || e.shiftKey) return;
@@ -1011,19 +1364,29 @@ export function ChatInput({
   const handleFileSelect = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    Array.from(files).forEach((file) => {
-      if (file.type.startsWith('image/') || file.type === 'application/pdf') addImage(file);
-    });
+    addSupportedFiles(Array.from(files));
     if (fileInputRef.current) fileInputRef.current.value = '';
-  }, [addImage]);
+  }, [addSupportedFiles]);
 
-  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+  const handlePaste = useCallback((e: ClipboardEvent) => {
     const items = e.clipboardData?.items;
     if (!items) return;
+    const files: File[] = [];
     for (const item of Array.from(items)) {
-      if (item.type.startsWith('image/')) { e.preventDefault(); const file = item.getAsFile(); if (file) addImage(file); }
+      const file = item.getAsFile();
+      if (file) files.push(file);
     }
-  }, [addImage]);
+    if (files.length === 0) return;
+    e.preventDefault();
+    addSupportedFiles(files);
+  }, [addSupportedFiles]);
+
+  const handleDrop = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    setDraggingAttachment(false);
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length > 0) addSupportedFiles(files);
+  }, [addSupportedFiles]);
 
   const handleFormatInsert = useCallback((prefix: string, suffix: string, block?: boolean) => {
     const el = textareaRef.current;
@@ -1040,7 +1403,8 @@ export function ChatInput({
     });
   }, [input]);
 
-  const hasContent = input.trim() || pendingImages.length > 0;
+  const hasContent = input.trim() || readyAttachments.length > 0;
+  const sendDisabled = !hasContent || attachmentUploading || attachmentFailed;
   const currentModelId = selectedModel || defaultModel;
   const modelInfo = availableModels.find((m) => m.id === currentModelId);
   const isWebSearchEnabled = enabledAppletIds.includes('web-search');
@@ -1049,26 +1413,58 @@ export function ChatInput({
     <>
       {/* LobeChat-style chat input: padding around container, border-radius, subtle shadow */}
       <Flexbox style={{ padding: '0 16px 16px' }} gap={0}>
-        <Flexbox style={{
-          background: token.colorBgContainer,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          borderRadius: 12,
-          overflow: 'hidden',
-        }} gap={0}>
+        <Flexbox
+          onDragEnter={(e) => {
+            e.preventDefault();
+            setDraggingAttachment(true);
+          }}
+          onDragOver={(e) => e.preventDefault()}
+          onDragLeave={(e) => {
+            if (e.currentTarget === e.target) setDraggingAttachment(false);
+          }}
+          onDrop={handleDrop}
+          style={{
+            background: token.colorBgContainer,
+            border: `1px solid ${draggingAttachment ? token.colorPrimaryBorder : token.colorBorderSecondary}`,
+            borderRadius: 12,
+            overflow: 'hidden',
+            position: 'relative',
+          }}
+          gap={0}
+        >
         {showTypoBar && <TypoBar onInsert={handleFormatInsert} />}
 
         <Flexbox style={{ padding: '8px 12px 8px' }} gap={0}>
-          {/* Pending images */}
-          {pendingImages.length > 0 && (
+          {draggingAttachment && (
+            <Flexbox align="center" justify="center" style={{ position: 'absolute', inset: 0, zIndex: 4, background: token.colorBgMask, color: token.colorTextLightSolid, fontSize: 13, fontWeight: 600 }}>
+              {t('chat.input.dropHint')}
+            </Flexbox>
+          )}
+
+          {drafts.length > 0 && (
             <Flexbox horizontal gap={8} style={{ overflowX: 'auto', paddingBottom: 8 }}>
-              {pendingImages.map((img, i) => (
-                <div key={i} style={{ position: 'relative', flexShrink: 0, borderRadius: 8, overflow: 'hidden' }}>
-                  <img src={img.previewUrl} alt="" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, border: `1px solid ${token.colorBorderSecondary}`, opacity: img.uploading ? 0.5 : 1 }} />
-                  {img.uploading && <Flexbox align="center" justify="center" style={{ position: 'absolute', inset: 0, fontSize: 10, color: token.colorTextSecondary }}>...</Flexbox>}
-                  <button onClick={() => removeImage(i)} style={{ position: 'absolute', top: -4, right: -4, width: 18, height: 18, borderRadius: '50%', border: 'none', background: token.colorError, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
-                    <X size={10} />
-                  </button>
-                </div>
+              {drafts.map((item) => (
+                <ComposerAttachmentDraft
+                  key={item.id}
+                  item={item}
+                  onRemove={() => removeDraft(item.id)}
+                  onRetry={() => retryDraft(item.id)}
+                />
+              ))}
+            </Flexbox>
+          )}
+
+          <ComposerSuggestionPanel
+            suggestions={composerSuggestions}
+            onSelect={handleSelectComposerSuggestion}
+          />
+
+          {composerReferences.length > 0 && (
+            <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap', paddingBottom: 8 }}>
+              {composerReferences.map((item) => (
+                <Tag key={`${item.kind}:${item.id}`}>
+                  {item.token}
+                </Tag>
               ))}
             </Flexbox>
           )}
@@ -1099,7 +1495,7 @@ export function ChatInput({
                     return (
                       <div key="model" style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 24, background: token.colorFillTertiary }}>
                         <Popover open={modelOpen} onOpenChange={setModelOpen} placement="topLeft" trigger="click"
-                          content={<ModelProviderSelect selectedModelId={selectedModel || defaultModel} onSelect={(id, pid) => useChatStore.getState().setSelectedModel(id, pid)} onClose={() => setModelOpen(false)} onNavigateSettings={() => { setModelOpen(false); onNavigateSettings?.(); }} />}
+                          content={<ModelProviderSelect selectedModelId={selectedModel || defaultModel} onSelect={(id, pid) => useAgentStore.getState().setSelectedModel(id, pid)} onClose={() => setModelOpen(false)} onNavigateSettings={() => { setModelOpen(false); onNavigateSettings?.(); }} />}
                           styles={{ content: { padding: 0, minWidth: 280, maxWidth: 360 } }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: 24, cursor: isStreaming ? 'not-allowed' : 'pointer', transition: 'background 0.2s' }}
@@ -1144,7 +1540,7 @@ export function ChatInput({
                   case 'upload':
                     return (
                       <span key="upload">
-                        <input ref={fileInputRef} type="file" accept="image/*,.pdf" multiple onChange={handleFileSelect} style={{ display: 'none' }} />
+                        <input ref={fileInputRef} type="file" accept="image/*,.pdf,.txt,.md,.json,.csv" multiple onChange={handleFileSelect} style={{ display: 'none' }} />
                         <Action icon={<Paperclip size={20} />} title={t('chat.input.uploadFile')} onClick={() => fileInputRef.current?.click()} disabled={isStreaming} />
                       </span>
                     );
@@ -1197,8 +1593,8 @@ export function ChatInput({
               {isStreaming ? (
                 <ActionIcon icon={Square} onClick={stopStreaming} title={t('chat.input.stop')} size={{ blockSize: 36, size: 20 }} style={{ background: token.colorError, color: '#fff', borderRadius: 12 }} />
               ) : (
-                <ActionIcon icon={Send} onClick={handleSend} disabled={!hasContent} title={t('chat.input.send')} size={{ blockSize: 36, size: 20 }}
-                  style={{ background: hasContent ? token.colorPrimary : token.colorFillSecondary, color: hasContent ? '#fff' : token.colorTextQuaternary, borderRadius: 12 }}
+                <ActionIcon icon={Send} onClick={handleSend} disabled={sendDisabled} title={t('chat.input.send')} size={{ blockSize: 36, size: 20 }}
+                  style={{ background: !sendDisabled ? token.colorPrimary : token.colorFillSecondary, color: !sendDisabled ? '#fff' : token.colorTextQuaternary, borderRadius: 12 }}
                 />
               )}
             </Flexbox>

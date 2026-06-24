@@ -1,4 +1,7 @@
-use crate::contracts::{AuthLoginInput, AuthSessionPayload, AuthValidateTokenInput};
+use crate::contracts::{
+    AccessDecisionPayload, AccessSubmitInviteInput, AccessSubmitLoginInput, AuthLoginInput,
+    AuthSessionPayload, AuthValidateTokenInput,
+};
 use crate::domain::identity::{ActiveSession, ActorRef};
 use crate::error::AppResult;
 use crate::infrastructure::identity_event::{self, IdentityChangeReason, IdentityChangedPayload};
@@ -105,6 +108,40 @@ pub fn auth_login(
     window: Window,
 ) -> AppResult<AuthSessionPayload> {
     let result = auth_service::auth_login(input, state.inner());
+    bind_after(state.inner(), &app, &window, &result);
+    broadcast_identity(&app, IdentityChangeReason::Login, &result);
+    result
+}
+
+/// Open an interactive access attempt and return the Station's initial gate
+/// decision. This is a pre-login step in the gate chain — no session is
+/// produced, so no window binding or identity broadcast is performed.
+#[tauri::command]
+pub fn access_start() -> AppResult<AccessDecisionPayload> {
+    auth_service::access_start()
+}
+
+/// Redeem a self-service invite code against a live attempt and return the
+/// re-evaluated decision. Advances the chain toward the login gate; never
+/// produces a session on its own.
+#[tauri::command]
+pub fn access_submit_invite_code(
+    input: AccessSubmitInviteInput,
+) -> AppResult<AccessDecisionPayload> {
+    auth_service::access_submit_invite_code(input)
+}
+
+/// Submit the login credential gate for a live attempt. On grant this lands
+/// the full desktop session, so it reuses the same window binding and identity
+/// broadcast as the one-shot `auth_login`.
+#[tauri::command]
+pub fn access_submit_login(
+    input: AccessSubmitLoginInput,
+    state: State<'_, Arc<AppState>>,
+    app: AppHandle,
+    window: Window,
+) -> AppResult<AuthSessionPayload> {
+    let result = auth_service::access_submit_login(input, state.inner());
     bind_after(state.inner(), &app, &window, &result);
     broadcast_identity(&app, IdentityChangeReason::Login, &result);
     result

@@ -23,6 +23,7 @@ use crate::state::AppState;
 // -------------------------------------------------------------------------
 use crate::application::account as app_account;
 use crate::application::admin as app_admin;
+use crate::application::agent_turn as app_agent_turn;
 use crate::application::agents as app_agents;
 use crate::application::applets as app_applets;
 use crate::application::auth::service as app_auth;
@@ -37,6 +38,7 @@ use crate::application::model_config as app_model_config;
 use crate::application::models as app_models;
 use crate::application::notebook as app_notebook;
 use crate::application::oauth2 as app_oauth2;
+use crate::application::oss as app_oss;
 use crate::application::profile as app_profile;
 use crate::application::provider as app_provider;
 use crate::application::search as app_search;
@@ -49,9 +51,14 @@ use crate::application::tts as app_tts;
 
 // Actor & chat modules use station_client + proto directly
 use crate::infrastructure::station_client;
+use crate::interface::tauri_commands::oss::{
+    capture_screenshot_to_temp_file, safe_temp_filename, validate_chat_upload_scope,
+    OssCaptureScreenshotInput, OssUploadAttachmentBytesInput,
+};
 use crate::model;
 use prost::Message;
 use reqwest::Method;
+use ulid::Ulid;
 
 const DEFAULT_PORT: u16 = 3030;
 const POOL_SIZE: usize = 8;
@@ -433,6 +440,106 @@ fn parse_args<T: serde::de::DeserializeOwned>(args: Value) -> Result<T, Value> {
     })
 }
 
+fn dispatch_oss_upload_attachment_bytes_chat(args: Value, state: &AppState) -> Value {
+    let input = match parse_args::<OssUploadAttachmentBytesInput>(args) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let token = match token_from_state(state) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    if input.bytes.is_empty() {
+        return to_json(AppResult::<StubPayload>::fail(
+            ErrorCode::InvalidArgument,
+            "bytes is required",
+            None,
+        ));
+    }
+
+    let vis = input.visibility.trim().to_ascii_lowercase();
+    let (bucket, visibility, chat_sid) = match validate_chat_upload_scope(
+        input.bucket.as_str(),
+        vis.as_str(),
+        &input.chat_session_id,
+    ) {
+        Ok(scope) => scope,
+        Err(error) => return to_json(error),
+    };
+    let bucket = bucket.to_string();
+    let visibility = visibility.to_string();
+    let chat_sid = chat_sid.map(str::to_string);
+    let filename = safe_temp_filename(input.filename.as_str());
+    let mime_override = input.mime_type.trim().to_string();
+    let temp_path = std::env::temp_dir().join(format!("peers-chat-{}-{}", Ulid::new(), filename));
+
+    if let Err(error) = std::fs::write(&temp_path, input.bytes) {
+        return to_json(AppResult::<StubPayload>::fail(
+            ErrorCode::InternalError,
+            format!("write temp chat attachment: {error}"),
+            None,
+        ));
+    }
+    let cleanup = app_oss::TempFileCleanup::new(temp_path.clone(), "http chat attachment");
+
+    let result = app_oss::upload_attachment_with_mime(
+        temp_path.to_string_lossy().as_ref(),
+        &token,
+        "chat",
+        bucket.as_str(),
+        visibility.as_str(),
+        chat_sid.as_deref(),
+        if mime_override.is_empty() {
+            None
+        } else {
+            Some(mime_override.as_str())
+        },
+    );
+    cleanup.remove_now();
+    to_json(result)
+}
+
+fn dispatch_oss_capture_screenshot_chat(args: Value, state: &AppState) -> Value {
+    let input = match parse_args::<OssCaptureScreenshotInput>(args) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let token = match token_from_state(state) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+
+    let vis = input.visibility.trim().to_ascii_lowercase();
+    let (bucket, visibility, chat_sid) = match validate_chat_upload_scope(
+        input.bucket.as_str(),
+        vis.as_str(),
+        &input.chat_session_id,
+    ) {
+        Ok(scope) => scope,
+        Err(error) => return to_json(error),
+    };
+    let bucket = bucket.to_string();
+    let visibility = visibility.to_string();
+    let chat_sid = chat_sid.map(str::to_string);
+
+    let path = match capture_screenshot_to_temp_file() {
+        Ok(path) => path,
+        Err(error) => return to_json(error),
+    };
+    let cleanup = app_oss::TempFileCleanup::new(path.clone(), "http chat screenshot");
+    let result = app_oss::upload_attachment_with_mime(
+        path.to_string_lossy().as_ref(),
+        &token,
+        "chat",
+        bucket.as_str(),
+        visibility.as_str(),
+        chat_sid.as_deref(),
+        Some("image/png"),
+    );
+    cleanup.remove_now();
+    to_json(result)
+}
+
 /// Debug HTTP gateway: resolve session token from the legacy global session lock.
 fn http_gateway_bearer_token(state: &AppState) -> Option<String> {
     state
@@ -610,6 +717,560 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         },
 
         // =================================================================
+        // Moments / Human social (proto-based)
+        // =================================================================
+        "social_create_moment" => {
+            let input = match parse_args::<SocialCreateMomentInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.payload.is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "payload (CreatePostRequest bytes) is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let req = match model::social::CreatePostRequest::decode(input.payload.as_slice()) {
+                Ok(r) => r,
+                Err(e) => {
+                    return to_json(AppResult::<Vec<u8>>::fail(
+                        ErrorCode::InvalidArgument,
+                        format!("decode CreatePostRequest: {}", e),
+                        None,
+                    ));
+                }
+            };
+            let resp = match station_client::request_proto::<
+                model::social::CreatePostRequest,
+                model::social::CreatePostResponse,
+            >(
+                Method::POST,
+                "/api/v1/social/moments",
+                &token,
+                None,
+                Some(&req),
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("create moment failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_get_moment" => {
+            let input = match parse_args::<SocialGetMomentInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "id is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let path = format!("/api/v1/social/moments/{}", input.id);
+            let resp = match station_client::request_proto::<(), model::social::GetPostResponse>(
+                Method::GET,
+                &path,
+                &token,
+                None,
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("get moment failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_delete_moment" => {
+            let input = match parse_args::<SocialDeleteMomentInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "id is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let path = format!("/api/v1/social/moments/{}", input.id);
+            let resp = match station_client::request_proto::<(), model::social::DeletePostResponse>(
+                Method::DELETE,
+                &path,
+                &token,
+                None,
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("delete moment failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_get_timeline" => {
+            let input = match parse_args::<SocialGetTimelineInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let mut query: Vec<(&str, String)> = vec![("type", input.r#type)];
+            if let Some(cursor) = input.cursor.filter(|v| !v.is_empty()) {
+                query.push(("cursor", cursor));
+            }
+            if let Some(limit) = input.limit {
+                query.push(("limit", limit.to_string()));
+            }
+            if let Some(sort) = input.sort.filter(|v| !v.is_empty()) {
+                query.push(("sort", sort));
+            }
+            let resp = match station_client::request_proto::<(), model::social::GetTimelineResponse>(
+                Method::GET,
+                "/api/v1/social/timeline",
+                &token,
+                Some(&query),
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("get timeline failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_sync_moments_projection" => {
+            let input = match parse_args::<SocialSyncMomentsProjectionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let req = model::social::SyncMomentsProjectionRequest {
+                home_cursor: input.home_cursor.unwrap_or_default(),
+                public_cursor: input.public_cursor.unwrap_or_default(),
+                limit: input.limit.unwrap_or(20),
+                public_sort: input.public_sort.unwrap_or(0),
+                reason: input.reason.unwrap_or_default(),
+            };
+            let resp = match station_client::request_proto::<
+                model::social::SyncMomentsProjectionRequest,
+                model::social::SyncMomentsProjectionResponse,
+            >(
+                Method::POST,
+                "/api/v1/social/moments/sync",
+                &token,
+                None,
+                Some(&req),
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    return to_json(e.into_app_result::<Vec<u8>>("sync moments projection failed"));
+                }
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_list_by_author" => {
+            let input = match parse_args::<SocialListByAuthorInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.user_id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "user_id is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let mut query: Vec<(&str, String)> = Vec::new();
+            if let Some(cursor) = input.cursor.filter(|v| !v.is_empty()) {
+                query.push(("cursor", cursor));
+            }
+            if let Some(limit) = input.limit {
+                query.push(("limit", limit.to_string()));
+            }
+            let path = format!("/api/v1/social/users/{}/posts", input.user_id);
+            let resp = match station_client::request_proto::<(), model::social::ListPostsResponse>(
+                Method::GET,
+                &path,
+                &token,
+                Some(&query),
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("list by author failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_circle_list_mine" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let resp = match station_client::request_proto::<(), model::social::ListMyCirclesResponse>(
+                Method::GET,
+                "/api/v1/social/circles",
+                &token,
+                None,
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("list circles failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_get_my_stats" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let resp = match station_client::request_proto::<
+                (),
+                model::social::GetMyMomentsStatsResponse,
+            >(
+                Method::GET,
+                "/api/v1/social/me/stats",
+                &token,
+                None,
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("get my stats failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_react" => {
+            let input = match parse_args::<SocialReactInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.post_id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "post_id is required",
+                    None,
+                ));
+            }
+            if input.kind == 0 {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "reaction kind is required (REACTION_UNSPECIFIED rejected)",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let req = model::social::ReactToPostRequest {
+                post_id: input.post_id.clone(),
+                kind: input.kind,
+            };
+            let path = format!("/api/v1/social/posts/{}/react", input.post_id);
+            let resp = match station_client::request_proto::<
+                model::social::ReactToPostRequest,
+                model::social::ReactToPostResponse,
+            >(Method::POST, &path, &token, None, Some(&req))
+            {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("react failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_unreact" => {
+            let input = match parse_args::<SocialUnreactInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.post_id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "post_id is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let req = model::social::UnreactToPostRequest {
+                post_id: input.post_id.clone(),
+                kind: input.kind,
+            };
+            let path = format!("/api/v1/social/posts/{}/unreact", input.post_id);
+            let resp = match station_client::request_proto::<
+                model::social::UnreactToPostRequest,
+                model::social::UnreactToPostResponse,
+            >(Method::POST, &path, &token, None, Some(&req))
+            {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("unreact failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_get_comments" => {
+            let input = match parse_args::<SocialGetCommentsInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.post_id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "post_id is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let mut query: Vec<(&str, String)> = Vec::new();
+            if let Some(cursor) = input.cursor.filter(|v| !v.is_empty()) {
+                query.push(("cursor", cursor));
+            }
+            if let Some(limit) = input.limit {
+                query.push(("limit", limit.to_string()));
+            }
+            let path = format!("/api/v1/social/moments/{}/comments", input.post_id);
+            let resp = match station_client::request_proto::<(), model::social::GetCommentsResponse>(
+                Method::GET,
+                &path,
+                &token,
+                Some(&query),
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("get comments failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_create_comment" => {
+            let input = match parse_args::<SocialCreateCommentInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.post_id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "post_id is required",
+                    None,
+                ));
+            }
+            if input.content.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "content is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let req = model::social::CreateCommentRequest {
+                post_id: input.post_id.clone(),
+                content: input.content,
+                reply_to_comment_id: input.reply_to_comment_id.unwrap_or_default(),
+            };
+            let path = format!("/api/v1/social/moments/{}/comments", input.post_id);
+            let resp = match station_client::request_proto::<
+                model::social::CreateCommentRequest,
+                model::social::CreateCommentResponse,
+            >(Method::POST, &path, &token, None, Some(&req))
+            {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("create comment failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_delete_comment" => {
+            let input = match parse_args::<SocialDeleteCommentInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.comment_id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "comment_id is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let path = format!("/api/v1/social/comments/{}", input.comment_id);
+            let resp = match station_client::request_proto::<(), model::social::DeleteCommentResponse>(
+                Method::DELETE,
+                &path,
+                &token,
+                None,
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    return to_json(e.into_app_result::<Vec<u8>>("delete comment failed"));
+                }
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_station_moderation_upsert" => {
+            let input = match parse_args::<SocialStationModerationUpsertInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.station_domain.trim().is_empty()
+                && input
+                    .station_peer_id
+                    .as_deref()
+                    .unwrap_or_default()
+                    .trim()
+                    .is_empty()
+            {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "station_domain or station_peer_id is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let req = model::social::UpsertStationModerationPolicyRequest {
+                policy: Some(model::social::StationModerationPolicy {
+                    station_domain: input.station_domain,
+                    station_peer_id: input.station_peer_id.unwrap_or_default(),
+                    kind: input.kind.unwrap_or(1),
+                    reason: input.reason.unwrap_or_default(),
+                    ..Default::default()
+                }),
+            };
+            let resp = match station_client::request_proto::<
+                model::social::UpsertStationModerationPolicyRequest,
+                model::social::UpsertStationModerationPolicyResponse,
+            >(
+                Method::POST,
+                "/api/v1/social/moderation/stations",
+                &token,
+                None,
+                Some(&req),
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    return to_json(
+                        e.into_app_result::<Vec<u8>>("upsert station moderation failed"),
+                    );
+                }
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_station_moderation_list" => {
+            let input = match parse_args::<SocialStationModerationListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let mut query: Vec<(&str, String)> = Vec::new();
+            if let Some(kind) = input.kind {
+                query.push(("kind", kind.to_string()));
+            }
+            if let Some(cursor) = input.cursor.filter(|v| !v.is_empty()) {
+                query.push(("cursor", cursor));
+            }
+            if let Some(limit) = input.limit {
+                query.push(("limit", limit.to_string()));
+            }
+            let resp = match station_client::request_proto::<
+                (),
+                model::social::ListStationModerationPoliciesResponse,
+            >(
+                Method::GET,
+                "/api/v1/social/moderation/stations",
+                &token,
+                Some(&query),
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    return to_json(
+                        e.into_app_result::<Vec<u8>>("list station moderation policies failed"),
+                    );
+                }
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_station_moderation_delete" => {
+            let input = match parse_args::<SocialStationModerationDeleteInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let station_domain = input.station_domain.unwrap_or_default();
+            let station_peer_id = input.station_peer_id.unwrap_or_default();
+            if station_domain.trim().is_empty() && station_peer_id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "station_domain or station_peer_id is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let query = vec![
+                ("station_domain", station_domain),
+                ("station_peer_id", station_peer_id),
+                ("kind", input.kind.unwrap_or(1).to_string()),
+            ];
+            let resp = match station_client::request_proto::<
+                (),
+                model::social::DeleteStationModerationPolicyResponse,
+            >(
+                Method::DELETE,
+                "/api/v1/social/moderation/stations",
+                &token,
+                Some(&query),
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    return to_json(
+                        e.into_app_result::<Vec<u8>>("delete station moderation failed"),
+                    );
+                }
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+
+        // =================================================================
+        // OSS (state-dependent)
+        // =================================================================
+        "oss_upload_attachment_bytes_chat" => {
+            dispatch_oss_upload_attachment_bytes_chat(args, state)
+        }
+        "oss_capture_screenshot_chat" => dispatch_oss_capture_screenshot_chat(args, state),
+
+        // =================================================================
         // Actor (state-dependent, proto-based)
         // =================================================================
         "actor_search_actors" => {
@@ -630,7 +1291,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             ) {
                 Ok(r) => r,
                 Err(e) => {
-                    return to_json(e.into_app_result::<StubPayload>("Station request failed"))
+                    return to_json(e.into_app_result::<StubPayload>("Station request failed"));
                 }
             };
             let items: Vec<Value> = resp
@@ -663,7 +1324,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             ) {
                 Ok(r) => r,
                 Err(e) => {
-                    return to_json(e.into_app_result::<StubPayload>("Station request failed"))
+                    return to_json(e.into_app_result::<StubPayload>("Station request failed"));
                 }
             };
             to_json(to_stub(
@@ -1179,6 +1840,22 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         // Agents (no state)
         // =================================================================
         "agents_list" => to_json(app_agents::agents_list("")),
+        "agents_get_selected" => to_json(app_agents::agents_get_selected("")),
+        "agents_set_selected" => {
+            let input = match parse_args::<AgentSelectInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_agents::agents_set_selected("", input))
+        }
+        "agents_get_default" => to_json(app_agents::agents_get_default("")),
+        "agents_set_default" => {
+            let input = match parse_args::<AgentIdInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_agents::agents_set_default("", input))
+        }
         "agents_get" => {
             let input = match parse_args::<AgentIdInput>(args) {
                 Ok(v) => v,
@@ -1214,6 +1891,20 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             };
             to_json(app_agents::agents_duplicate("", input))
         }
+        "agents_export_package" => {
+            let input = match parse_args::<AgentPackageExportInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_agents::agents_export_package("", input))
+        }
+        "agents_import_package" => {
+            let input = match parse_args::<AgentPackageImportInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_agents::agents_import_package("", input))
+        }
         "agents_search" => {
             let input = match parse_args::<AgentSearchInput>(args) {
                 Ok(v) => v,
@@ -1227,6 +1918,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Err(e) => return e,
             };
             to_json(app_agents::agents_list_sessions("", input))
+        }
+        "agent_resolve_local_tool_request" => {
+            let input = match parse_args::<AgentLocalToolRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_agent_turn::agent_resolve_local_tool_request(input))
         }
 
         // =================================================================
@@ -1385,21 +2083,42 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills::skills_list(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills::skills_list(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "skills_search" => {
             let input = match parse_args::<SkillsSearchInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills::skills_search(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills::skills_search(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "skills_get" => {
             let input = match parse_args::<SkillIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills::skills_get(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills::skills_get(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "skills_get_builtin" => {
             let input = match parse_args::<BuiltinSkillIdInput>(args) {
@@ -1413,28 +2132,84 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills::skills_create(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills::skills_create(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "skills_update" => {
             let input = match parse_args::<SkillUpdateInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills::skills_update(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills::skills_update(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "skills_delete" => {
             let input = match parse_args::<SkillIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills::skills_delete(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills::skills_delete(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "skills_toggle" => {
             let input = match parse_args::<SkillToggleInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills::skills_toggle(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills::skills_toggle(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "skills_versions" => {
+            let input = match parse_args::<SkillVersionsInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills::skills_versions(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "skills_rollback" => {
+            let input = match parse_args::<SkillRollbackInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills::skills_rollback(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
 
         // =================================================================
@@ -1445,14 +2220,49 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills_market::skills_import_url(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills_market::skills_import_url(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
         "skills_import_github" => {
             let input = match parse_args::<SkillImportGitHubInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills_market::skills_import_github(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills_market::skills_import_github(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "skills_import_zip" => {
+            let input = match parse_args::<SkillImportZipInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_bearer_token(state) {
+                Some(token) => to_json(app_skills_market::skills_import_zip(input, &token)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "skills_validate_zip" => {
+            let input = match parse_args::<SkillImportZipInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_skills_market::skills_validate_zip(input))
         }
         "skills_market_dir" => to_json(app_skills_market::skills_market_dir()),
         "skills_market_open_dir" => to_json(app_skills_market::skills_market_open_dir()),
@@ -1497,7 +2307,38 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills_market::skills_market_install(input))
+            match http_gateway_bearer_token(state) {
+                Some(token) => {
+                    let actor_id = actor_id_from_state(state).unwrap_or_default();
+                    to_json(app_skills_market::skills_market_install(
+                        &actor_id, input, &token,
+                    ))
+                }
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "skills_market_uninstall" => {
+            let input = match parse_args::<SkillMarketDetailInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_bearer_token(state) {
+                Some(token) => {
+                    let actor_id = actor_id_from_state(state).unwrap_or_default();
+                    to_json(app_skills_market::skills_market_uninstall(
+                        &actor_id, input, &token,
+                    ))
+                }
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
         }
 
         // =================================================================
@@ -1725,6 +2566,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Err(e) => return e,
             };
             to_json(app_mcp::mcp_test_server(input))
+        }
+        "mcp_execute_tool" => {
+            let input = match parse_args::<McpExecuteToolInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_mcp::mcp_execute_tool(input))
         }
 
         // =================================================================
@@ -2604,54 +3452,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Err(e) => e,
             }
         }
-        "friend_chat_go_online" => {
-            let input = match parse_args::<FriendChatOnlineInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let body = match &input.did {
-                Some(did) => json!({"did": did}),
-                None => json!({}),
-            };
-            match station_request_json(
-                Method::POST,
-                "/friend-chat/online",
-                &token,
-                None,
-                Some(body),
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_go_online", data)),
-                Err(e) => e,
-            }
-        }
-        "friend_chat_go_offline" => {
-            let input = match parse_args::<FriendChatOnlineInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let body = match &input.did {
-                Some(did) => json!({"did": did}),
-                None => json!({}),
-            };
-            match station_request_json(
-                Method::POST,
-                "/friend-chat/offline",
-                &token,
-                None,
-                Some(body),
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_go_offline", data)),
-                Err(e) => e,
-            }
-        }
         "friend_chat_get_pending" => {
             let input = match parse_args::<FriendChatPendingInput>(args) {
                 Ok(v) => v,
@@ -3385,7 +4185,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             ) {
                 Ok(r) => r,
                 Err(e) => {
-                    return to_json(e.into_app_result::<StubPayload>("Station request failed"))
+                    return to_json(e.into_app_result::<StubPayload>("Station request failed"));
                 }
             };
             let group_json = match resp.group {
@@ -3509,7 +4309,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             ) {
                 Ok(r) => r,
                 Err(e) => {
-                    return to_json(e.into_app_result::<StubPayload>("Station request failed"))
+                    return to_json(e.into_app_result::<StubPayload>("Station request failed"));
                 }
             };
             to_json(to_stub(
@@ -4280,7 +5080,7 @@ fn dispatch_friend_sync_from_station(args: Value, state: &AppState) -> Value {
                 ErrorCode::InternalError,
                 "get cursor failed",
                 Some(json!({"reason": reason})),
-            ))
+            ));
         }
     };
     let page_limit = input.limit.unwrap_or(100);
@@ -4366,7 +5166,7 @@ fn dispatch_group_sync_from_station(args: Value, state: &AppState) -> Value {
                 ErrorCode::InternalError,
                 "get cursor failed",
                 Some(json!({"reason": reason})),
-            ))
+            ));
         }
     };
     let page_limit = input.limit.unwrap_or(100);

@@ -14,6 +14,7 @@ tauri-build = { version = "2.0.1", features = [] }
 [dependencies]
 tauri = { version = "2.0.1", features = ["protocol-asset"] }
 tauri-plugin-deep-link = "2.0.1"
+tauri-plugin-global-shortcut = "2.0.1"
 tiny_http = "0.12"
 threadpool = "1.8"
 serde = { version = "1", features = ["derive"] }
@@ -21,7 +22,7 @@ serde_json = "1"
 serde_yaml = "0.9"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 urlencoding = "2"
-reqwest = { version = "0.12", features = ["blocking", "json", "multipart", "rustls-tls"] }
+reqwest = { version = "0.12", features = ["blocking", "json", "multipart", "rustls-tls", "stream"] }
 rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
 keyring = "3"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
@@ -34,6 +35,7 @@ hkdf = "0.12"
 sha2 = "0.10"
 hex = "0.4"
 base64 = "0.22"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 rand = "0.8"
 zeroize = { version = "1", features = ["derive"] }
 prost = { version = "0.14.3", features = ["derive"] }
@@ -43,6 +45,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 rfd = "0.15"
 tokio = { version = "1", features = ["rt"] }
+futures-lite = "2"
 ulid = "1.1"
 
 [features]

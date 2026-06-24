@@ -40,6 +40,8 @@ export interface AppletServiceDeclaration {
   binding: 'host-resolved' | 'station-resolved' | 'dev-override'
   allowedMethods: string[]
   allowedPaths: string[]
+  publicPathPrefix?: string
+  stationPathPrefix?: string
   streaming?: boolean
 }
 

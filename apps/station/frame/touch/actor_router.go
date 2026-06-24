@@ -41,6 +41,9 @@ const (
 	// RouterURLAccessDecision returns the current access decision for an attempt.
 	RouterURLAccessDecision RouterPath = "/access/decision"
 
+	// RouterURLAccessAttemptCancel cancels a live access gate attempt.
+	RouterURLAccessAttemptCancel RouterPath = "/access/cancel"
+
 	// RouterURLActorChangePassword Client change password
 	RouterURLActorChangePassword RouterPath = "/change-password"
 

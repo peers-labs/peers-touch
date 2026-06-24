@@ -1,8 +1,14 @@
 import { create } from 'zustand';
+import {
+  clearChatE2eeProjectionStatus,
+  setChatE2eeProjectionStatus,
+  type ChatE2eeProjection,
+} from '@peers-touch/client-chat-core';
 
 import type { MobileAuthSession } from '../auth/authSession';
-import { SocialApiError } from '../social/socialTypes';
-import type { Group, GroupMember, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
+import { SocialApiError, readableErrorMessage } from '../social/socialTypes';
+import type { ChatEncryptedMessagePayload, Group, GroupMember, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
+import type { ChatAttachmentInput } from '../social/socialApi';
 import { createGroupApiClient, type CreateGroupInput, type GroupApiClient, type GroupSettings, type UpdateGroupInput, type UpdateGroupMemberInput, type UpdateGroupSettingsInput } from './groupApi';
 import { normalizeGroup, normalizeGroupMember, normalizeGroupMessage } from './groupNormalizers';
 import {
@@ -22,13 +28,14 @@ export interface GroupState {
   settings: Record<string, GroupSettings>;
   unreadCounts: Record<string, number>;
   e2eeErrors: Record<string, string>;
+  e2eeProjection: ChatE2eeProjection;
   encryptionReady: Record<string, boolean>;
   sendingGroups: Record<string, boolean>;
   activeGroupUlid: string | null;
   loading: boolean;
   error: SocialApiError | null;
   lastReconcileAt: number | null;
-  encryptedSender: ((groupUlid: string, plaintext: string) => Promise<boolean>) | null;
+  encryptedSender: ((groupUlid: string, plaintext: string, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<boolean>) | null;
   encryptedEditor: ((groupUlid: string, messageUlid: string, plaintext: string) => Promise<boolean>) | null;
   encryptionPreparer: ((groupUlid: string) => Promise<boolean>) | null;
   bindSession: (session: MobileAuthSession | null) => void;
@@ -43,10 +50,13 @@ export interface GroupState {
   loadMembers: (groupUlid: string) => Promise<void>;
   loadSettings: (groupUlid: string) => Promise<void>;
   updateMySettings: (groupUlid: string, input: UpdateGroupSettingsInput) => Promise<void>;
+  updateMyNickname: (groupUlid: string, nickname: string) => Promise<void>;
   inviteMembers: (groupUlid: string, inviteeDids: string[]) => Promise<void>;
   leaveGroup: (groupUlid: string) => Promise<void>;
   removeMember: (groupUlid: string, actorDid: string) => Promise<void>;
   updateMember: (groupUlid: string, actorDid: string, input: UpdateGroupMemberInput) => Promise<void>;
+  transferOwnership: (groupUlid: string, nextOwnerDid: string) => Promise<void>;
+  dissolveGroup: (groupUlid: string) => Promise<void>;
   ingestRealtimeMessage: (groupUlid: string, message: GroupMessage) => Promise<void>;
   applyMessageMutation: (
     groupUlid: string,
@@ -54,14 +64,14 @@ export interface GroupState {
     kind: 'RECALL' | 'EDIT' | 'DELETE',
     payload: { newContent?: string; newCiphertext?: Uint8Array; mutatedTsUnixMs?: number },
   ) => void;
-  applyDecryptedMessage: (groupUlid: string, messageUlid: string, plaintext: string) => void;
+  applyDecryptedMessage: (groupUlid: string, messageUlid: string, plaintext: string | ChatEncryptedMessagePayload) => void;
   setEncryptionReady: (groupUlid: string, ready: boolean) => void;
   setGroupSending: (groupUlid: string, sending: boolean) => void;
-  sendEncryptedMessage: (groupUlid: string, plaintext: string) => Promise<boolean>;
+  sendEncryptedMessage: (groupUlid: string, plaintext: string, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<boolean>;
   editEncryptedMessage: (groupUlid: string, messageUlid: string, plaintext: string) => Promise<boolean>;
   recallMessage: (groupUlid: string, messageUlid: string) => Promise<void>;
   deleteMessage: (groupUlid: string, messageUlid: string) => Promise<void>;
-  bindEncryptedSender: (sender: ((groupUlid: string, plaintext: string) => Promise<boolean>) | null) => void;
+  bindEncryptedSender: (sender: ((groupUlid: string, plaintext: string, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<boolean>) | null) => void;
   bindEncryptedEditor: (editor: ((groupUlid: string, messageUlid: string, plaintext: string) => Promise<boolean>) | null) => void;
   bindEncryptionPreparer: (preparer: ((groupUlid: string) => Promise<boolean>) | null) => void;
   setE2eeError: (messageUlid: string, error: string | null) => void;
@@ -78,6 +88,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   settings: {},
   unreadCounts: {},
   e2eeErrors: {},
+  e2eeProjection: {},
   encryptionReady: {},
   sendingGroups: {},
   activeGroupUlid: null,
@@ -104,7 +115,8 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   reconcile: async () => {
     const { refreshGroups, refreshUnreadCounts } = get();
-    set({ loading: true, error: null });
+    const coldStart = get().groups.length === 0;
+    set({ loading: coldStart, error: null });
     try {
       await refreshGroups();
       await refreshUnreadCounts();
@@ -245,6 +257,27 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
+  updateMyNickname: async (groupUlid, nickname) => {
+    const api = requireApi(get());
+    try {
+      const payload = await api.updateMyNickname(groupUlid, nickname);
+      if (payload.member) {
+        const member = normalizeGroupMember(payload.member);
+        set((state) => ({
+          members: {
+            ...state.members,
+            [groupUlid]: upsertGroupMember(state.members[groupUlid] ?? [], member),
+          },
+        }));
+      } else {
+        await get().loadMembers(groupUlid);
+      }
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
+    }
+  },
+
   inviteMembers: async (groupUlid, inviteeDids) => {
     if (!inviteeDids.length) return;
     const api = requireApi(get());
@@ -262,22 +295,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const api = requireApi(get());
     try {
       await api.leaveGroup(groupUlid);
-      set((state) => {
-        const { [groupUlid]: _members, ...members } = state.members;
-        const { [groupUlid]: _messages, ...messages } = state.messages;
-        const { [groupUlid]: _settings, ...settings } = state.settings;
-        const { [groupUlid]: _unread, ...unreadCounts } = state.unreadCounts;
-        const { [groupUlid]: _ready, ...encryptionReady } = state.encryptionReady;
-        return {
-          groups: state.groups.filter((group) => group.ulid !== groupUlid),
-          members,
-          messages,
-          settings,
-          unreadCounts,
-          encryptionReady,
-          activeGroupUlid: state.activeGroupUlid === groupUlid ? null : state.activeGroupUlid,
-        };
-      });
+      set((state) => removeGroupFromState(state, groupUlid));
     } catch (error) {
       set({ error: normalizeError(error) });
       throw error;
@@ -317,6 +335,34 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
+  transferOwnership: async (groupUlid, nextOwnerDid) => {
+    const api = requireApi(get());
+    try {
+      const payload = await api.transferOwnership(groupUlid, nextOwnerDid);
+      if (payload.group) {
+        const group = normalizeGroup(payload.group);
+        set((state) => ({ groups: mergeGroups(state.groups, group) }));
+      } else {
+        await get().refreshGroups();
+      }
+      await get().loadMembers(groupUlid);
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
+    }
+  },
+
+  dissolveGroup: async (groupUlid) => {
+    const api = requireApi(get());
+    try {
+      await api.dissolveGroup(groupUlid);
+      set((state) => removeGroupFromState(state, groupUlid));
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
+    }
+  },
+
   ingestRealtimeMessage: async (groupUlid, message) => {
     const normalized = normalizeGroupMessage(message);
     set((state) => ({
@@ -350,6 +396,11 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   setEncryptionReady: (groupUlid, ready) =>
     set((state) => ({
+      e2eeProjection: setChatE2eeProjectionStatus(
+        state.e2eeProjection,
+        groupUlid,
+        ready ? 'ready' : 'blocked',
+      ),
       encryptionReady: { ...state.encryptionReady, [groupUlid]: ready },
     })),
 
@@ -359,14 +410,14 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       return { sendingGroups: sending ? { ...rest, [groupUlid]: true } : rest };
     }),
 
-  sendEncryptedMessage: async (groupUlid, plaintext) => {
+  sendEncryptedMessage: async (groupUlid, plaintext, attachments, messageType) => {
     const sender = get().encryptedSender;
     if (!sender) return false;
     set((state) => ({
       sendingGroups: { ...state.sendingGroups, [groupUlid]: true },
     }));
     try {
-      return await sender(groupUlid, plaintext);
+      return await sender(groupUlid, plaintext, attachments, messageType);
     } finally {
       get().setGroupSending(groupUlid, false);
     }
@@ -417,6 +468,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     set((state) => {
       const { [messageUlid]: _removed, ...rest } = state.e2eeErrors;
       return {
+        e2eeProjection: error
+          ? setChatE2eeProjectionStatus(state.e2eeProjection, messageUlid, 'error', { error })
+          : clearChatE2eeProjectionStatus(state.e2eeProjection, messageUlid),
         e2eeErrors: error ? { ...rest, [messageUlid]: error } : rest,
       };
     }),
@@ -448,6 +502,7 @@ function emptyGroupState() {
     settings: {},
     unreadCounts: {},
     e2eeErrors: {},
+    e2eeProjection: {},
     encryptionReady: {},
     sendingGroups: {},
     activeGroupUlid: null,
@@ -474,6 +529,23 @@ function upsertGroupMember(members: GroupMember[], incoming: GroupMember): Group
     : [...members, incoming];
 }
 
+function removeGroupFromState(state: GroupState, groupUlid: string) {
+  const { [groupUlid]: _members, ...members } = state.members;
+  const { [groupUlid]: _messages, ...messages } = state.messages;
+  const { [groupUlid]: _settings, ...settings } = state.settings;
+  const { [groupUlid]: _unread, ...unreadCounts } = state.unreadCounts;
+  const { [groupUlid]: _ready, ...encryptionReady } = state.encryptionReady;
+  return {
+    groups: state.groups.filter((group) => group.ulid !== groupUlid),
+    members,
+    messages,
+    settings,
+    unreadCounts,
+    encryptionReady,
+    activeGroupUlid: state.activeGroupUlid === groupUlid ? null : state.activeGroupUlid,
+  };
+}
+
 function requireApi(state: GroupState): GroupApiClient {
   if (!state.api) {
     throw new SocialApiError({ method: 'GET', path: '/group-chat', message: 'group api is not bound' });
@@ -483,5 +555,5 @@ function requireApi(state: GroupState): GroupApiClient {
 
 function normalizeError(error: unknown): SocialApiError {
   if (error instanceof SocialApiError) return error;
-  return new SocialApiError({ method: 'UNKNOWN', path: 'group-store', message: error instanceof Error ? error.message : String(error) });
+  return new SocialApiError({ method: 'UNKNOWN', path: 'group-store', message: readableErrorMessage(error) });
 }

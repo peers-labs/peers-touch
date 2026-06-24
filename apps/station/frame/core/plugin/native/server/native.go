@@ -232,7 +232,7 @@ func (r *request) Method() server.Method {
 
 // Path returns the request path.
 func (r *request) Path() string {
-	return r.r.URL.Path
+        return r.r.URL.RequestURI()
 }
 
 // Body reads and returns the request body.

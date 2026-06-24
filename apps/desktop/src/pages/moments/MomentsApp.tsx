@@ -1,11 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Segmented, Space, theme } from 'antd';
-import { Flexbox } from 'react-layout-kit';
-import { Plus, Search, Sparkles, UsersRound } from 'lucide-react';
-import { PageHeader } from '../../components/PageHeader';
-import { MomentComposer } from '../../components/moments/MomentComposer';
-import { MomentsStatsPanel } from '../../components/moments/MomentsStatsPanel';
+import { Button, Card, Tag, theme } from 'antd';
+import {
+  ShieldCheck,
+} from 'lucide-react';
 import { MomentsFeedView } from './MomentsFeedPage';
 import { MomentsExploreView } from './MomentsExplorePage';
 import { MomentDetailView } from './MomentDetailPage';
@@ -13,24 +11,29 @@ import { MomentsUserView } from './MomentsUserPage';
 import { UserSearchView } from './UserSearchPage';
 import { CircleManageView } from './CircleManagePage';
 import { useDiscoveryStore } from '../../store/discovery';
+import {
+  ensureMomentDetailProjection,
+  ensureUserMomentsProjection,
+} from '../../runtimes/momentsRuntime';
+import { useMomentsStore } from '../../store/moments';
+import {
+  SocialContentRail,
+  SocialScopeBar,
+  SocialSection,
+} from '../../components/moments/surfaces';
 
 // MomentsApp — the single page registered in the module registry.
 //
-// Why an internal tab bar (vs. distinct top-level routes):
-//   - The host router uses a flat `Page` enum. Adding nested
-//     Moments routes would mean teaching the router about
-//     hierarchical paths — out of scope for P2.
-//   - Tab-style navigation matches Twitter / Mastodon UX where
-//     "Home / Explore / Search / Profile / Circles" all live in
-//     the same shell with shared header chrome.
-//
-// Internal navigation contract:
-//   - Feed / Explore / Search / Circles are the four main "tabs".
-//   - Detail and User are pushed views: clicking on a post / author
-//     anywhere in the app sets `view = { kind: 'detail', postId }`
-//     or `{ kind: 'user', actorId }` and renders that sub-page in
-//     place of the tab content. A back button returns to the
-//     previously-active tab.
+// UI Identity refactor notes:
+//   - The page header (title + tabs + primary CTA) is rendered
+//     through SocialScopeBar. They share one group — no more
+//     "tabs and button look like different component systems".
+//   - The main column is SocialContentRail. It owns width, padding,
+//     vertical rhythm. Child pages render their content directly
+//     inside it.
+//   - Context sidebar (ShieldCheck block) and Circles panel keep
+//     using antd Card but with token-aligned styling — the visual
+//     surface is a separate concern from the content rail.
 
 type MainTab = 'feed' | 'explore' | 'search' | 'circles';
 
@@ -44,44 +47,55 @@ export function MomentsApp() {
   const { token } = theme.useToken();
   const [view, setView] = useState<MomentsView>({ kind: 'tab', tab: 'feed' });
   const [composerOpen, setComposerOpen] = useState(false);
-  // statsKey is bumped after a successful compose so the
-  // MomentsStatsPanel re-fetches fresh counters without
-  // requiring a global refresh.
-  const [statsKey, setStatsKey] = useState(0);
+  const [layoutWidth, setLayoutWidth] = useState(1080);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
 
   const me = useDiscoveryStore((s) => s.me);
-  const loadMe = useDiscoveryStore((s) => s.loadMe);
-
-  // Cheap-cached identity fetch — required by FollowButton self-hide
-  // and by user-page "is this me?" checks. Failure is non-fatal.
-  useEffect(() => {
-    if (!me) loadMe().catch(() => {});
-  }, [me, loadMe]);
+  const circles = useMomentsStore((s) => s.circles);
+  const circleMembers = useMomentsStore((s) => s.circleMembers);
 
   const activeTab: MainTab =
     view.kind === 'tab' ? view.tab : view.from;
+  const isNarrow = layoutWidth < 960;
+  const isCompact = layoutWidth < 700;
+
+  useEffect(() => {
+    const target = scrollerRef.current;
+    if (!target) return;
+
+    const updateWidth = () => setLayoutWidth(target.clientWidth);
+    updateWidth();
+
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, []);
 
   const goTab = useCallback((tab: MainTab) => {
     setView({ kind: 'tab', tab });
   }, []);
 
   const goDetail = useCallback(
-    (postId: string) =>
+    (postId: string) => {
+      void ensureMomentDetailProjection(postId);
       setView((prev) => ({
         kind: 'detail',
         postId,
         from: prev.kind === 'tab' ? prev.tab : prev.from,
-      })),
+      }));
+    },
     [],
   );
 
   const goUser = useCallback(
-    (actorId: string) =>
+    (actorId: string) => {
+      void ensureUserMomentsProjection(actorId);
       setView((prev) => ({
         kind: 'user',
         actorId,
         from: prev.kind === 'tab' ? prev.tab : prev.from,
-      })),
+      }));
+    },
     [],
   );
 
@@ -91,44 +105,59 @@ export function MomentsApp() {
     );
   }, []);
 
-  const headerActions = useMemo(
-    () => (
-      <Space>
-        <Button
-          type="primary"
-          icon={<Plus size={14} />}
-          onClick={() => setComposerOpen(true)}
-        >
-          {t('moments.action.compose')}
-        </Button>
-      </Space>
-    ),
+  const scrollFeedTop = useCallback(() => {
+    scrollerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const openComposer = useCallback(() => {
+    setComposerOpen(true);
+    if (activeTab !== 'feed') {
+      setView({ kind: 'tab', tab: 'feed' });
+      window.requestAnimationFrame(scrollFeedTop);
+      return;
+    }
+    scrollFeedTop();
+  }, [activeTab, scrollFeedTop]);
+
+  const closeComposer = useCallback(() => {
+    setComposerOpen(false);
+  }, []);
+
+  const tabs = useMemo(
+    () => [
+      { value: 'feed', label: t('moments.tab.feed') },
+      { value: 'explore', label: t('moments.tab.explore') },
+      { value: 'search', label: t('moments.tab.search') },
+      { value: 'circles', label: t('moments.tab.circle') },
+    ],
     [t],
   );
 
-  const tabBar = useMemo(
-    () => (
-      <Segmented
-        value={activeTab}
-        onChange={(v) => goTab(v as MainTab)}
-        options={[
-          { value: 'feed', label: t('moments.tab.feed'), icon: <Sparkles size={14} /> },
-          { value: 'explore', label: t('moments.tab.explore') },
-          {
-            value: 'search',
-            label: t('moments.tab.search', { defaultValue: t('moments.action.search') }),
-            icon: <Search size={14} />,
-          },
-          {
-            value: 'circles',
-            label: t('moments.tab.circle'),
-            icon: <UsersRound size={14} />,
-          },
-        ]}
-      />
-    ),
-    [activeTab, goTab, t],
-  );
+  const activeContext = useMemo(() => {
+    switch (activeTab) {
+      case 'explore':
+        return {
+          title: t('moments.context.federatedTitle'),
+          description: t('moments.context.federatedDescription'),
+        };
+      case 'search':
+        return {
+          title: t('moments.context.searchTitle'),
+          description: t('moments.context.searchDescription'),
+        };
+      case 'circles':
+        return {
+          title: t('moments.context.circlesTitle'),
+          description: t('moments.context.circlesDescription'),
+        };
+      case 'feed':
+      default:
+        return {
+          title: t('moments.context.homeTitle'),
+          description: t('moments.context.homeDescription'),
+        };
+    }
+  }, [activeTab, t]);
 
   const content = (() => {
     if (view.kind === 'detail') {
@@ -158,6 +187,13 @@ export function MomentsApp() {
             viewerActorId={me?.id}
             onOpenPost={goDetail}
             onAuthorClick={goUser}
+            composerOpen={composerOpen}
+            onCloseComposer={closeComposer}
+            onComposerPublished={(postId) => {
+              setComposerOpen(false);
+              scrollFeedTop();
+              void postId;
+            }}
           />
         );
       case 'explore':
@@ -182,39 +218,166 @@ export function MomentsApp() {
     }
   })();
 
+  const contextPanel = (
+    <Card
+      styles={{
+        body: { padding: isCompact ? 12 : 14 },
+      }}
+      style={{
+        borderRadius: 14,
+        borderColor: token.colorBorderSecondary,
+        boxShadow: 'none',
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <ShieldCheck size={16} color={token.colorPrimary} />
+          <span style={{ fontWeight: 600, fontSize: 13 }}>{activeContext.title}</span>
+        </div>
+        <span style={{ fontSize: 12.5, lineHeight: 1.6, color: token.colorTextSecondary }}>
+          {activeContext.description}
+        </span>
+        {!isCompact && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            <Tag
+              color={activeTab === 'feed' ? 'blue' : 'default'}
+              style={{ margin: 0, borderRadius: 999 }}
+            >
+              {t('moments.filter.following')}
+            </Tag>
+            <Tag
+              color={activeTab === 'circles' ? 'blue' : 'default'}
+              style={{ margin: 0, borderRadius: 999 }}
+            >
+              {t('moments.filter.circles')}
+            </Tag>
+            <Tag
+              color={activeTab === 'explore' ? 'blue' : 'default'}
+              style={{ margin: 0, borderRadius: 999 }}
+            >
+              {t('moments.filter.remotePublic')}
+            </Tag>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+
+  const circlesPanel = (
+    <Card
+      styles={{ body: { padding: 14 } }}
+      style={{ borderRadius: 14, borderColor: token.colorBorderSecondary, boxShadow: 'none' }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontWeight: 600, fontSize: 13 }}>{t('moments.sidebar.circlesTitle')}</span>
+          <Button type="link" size="small" onClick={() => goTab('circles')}>
+            {t('moments.action.manageCircles')}
+          </Button>
+        </div>
+        {circles.length === 0 ? (
+          <span style={{ fontSize: 12.5, color: token.colorTextSecondary }}>
+            {t('moments.placeholder.circleEmpty')}
+          </span>
+        ) : (
+          circles.slice(0, 4).map((circle) => (
+            <div
+              key={String(circle.id)}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+            >
+              <span
+                style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  maxWidth: 180,
+                }}
+              >
+                {circle.name}
+              </span>
+              <span style={{ fontSize: 12, color: token.colorTextSecondary }}>
+                {t('moments.circle.memberCount', {
+                  count: circleMembers[String(circle.id)]?.length ?? 0,
+                })}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+    </Card>
+  );
+
   return (
-    <Flexbox flex={1} style={{ background: token.colorBgLayout, minHeight: 0 }}>
-      <PageHeader
-        title={t('moments.title')}
-        subtitle={t('moments.subtitle')}
-        icon={<Sparkles size={20} color={token.colorPrimary} />}
-        actions={headerActions}
-        extra={tabBar}
-      />
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        background: token.colorBgLayout,
+        minHeight: 0,
+      }}
+    >
       <div
+        ref={scrollerRef}
         style={{
           flex: 1,
           overflowY: 'auto',
-          padding: '16px 24px',
+          padding: isCompact ? '14px 12px 28px' : '18px 24px 32px',
           minHeight: 0,
         }}
       >
-        <div style={{ maxWidth: 720, margin: '0 auto' }}>
-          {/* Stats panel is hidden on push-views (detail / user) so
-              the user's attention stays on the focused content; it
-              reappears the moment they navigate back to a tab. */}
-          {view.kind === 'tab' && <MomentsStatsPanel refreshKey={statsKey} />}
-          {content}
+        <div style={{ maxWidth: isNarrow ? 720 : 1080, margin: '0 auto' }}>
+          <SocialScopeBar
+            tabs={tabs}
+            activeTab={activeTab}
+            onTabChange={(v) => goTab(v as MainTab)}
+            primaryAction={{
+              label: t('moments.action.compose'),
+              onClick: openComposer,
+            }}
+            compact={isCompact}
+          />
+
+          {isNarrow && (
+            <SocialSection tone="soft">{contextPanel}</SocialSection>
+          )}
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isNarrow
+                ? 'minmax(0, 1fr)'
+                : 'minmax(0, 700px) minmax(240px, 280px)',
+              alignItems: 'start',
+              gap: 16,
+            }}
+          >
+            <main
+              style={{
+                minWidth: 0,
+                maxWidth: isNarrow ? 700 : undefined,
+                width: '100%',
+                margin: isNarrow ? '0 auto' : undefined,
+              }}
+            >
+              <SocialContentRail narrow={isNarrow} compact={isCompact}>
+                {content}
+              </SocialContentRail>
+            </main>
+            <aside
+              style={{
+                position: 'sticky',
+                top: 18,
+                display: isNarrow ? 'none' : 'flex',
+                flexDirection: 'column',
+                gap: 12,
+              }}
+            >
+              {contextPanel}
+              {circlesPanel}
+            </aside>
+          </div>
         </div>
       </div>
-      <MomentComposer
-        open={composerOpen}
-        onClose={() => setComposerOpen(false)}
-        onPublished={() => {
-          setStatsKey((k) => k + 1);
-          goTab('feed');
-        }}
-      />
-    </Flexbox>
+    </div>
   );
 }

@@ -1,20 +1,11 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-
 import {
-  dispatchSocialRuntimeExternalEvent,
-  type SocialRuntimeExternalEventKind,
-} from '../features/social/socialRuntime';
+  buildSocialHostEvent,
+  type SocialHostEventPayloadLike,
+} from '@peers-touch/client-chat-core';
 
-interface NativeRuntimeEventPayload {
-  kind?: string;
-  target?: string;
-  sessionUlid?: string;
-  session_ulid?: string;
-  notificationId?: string;
-  notification_id?: string;
-  reason?: string;
-  url?: string;
-}
+import { dispatchSocialRuntimeExternalEvent } from '../features/social/socialRuntime';
+import { readableErrorMessage } from '../utils/errorMessage';
 
 interface NativeRuntimeEventErrorPayload {
   operation?: string;
@@ -33,7 +24,7 @@ export function installMobileNativeEventBridge(): () => void {
   const unlisteners: UnlistenFn[] = [];
 
   NATIVE_EVENT_NAMES.forEach((eventName) => {
-    listen<NativeRuntimeEventPayload>(eventName, (event) => {
+    listen<SocialHostEventPayloadLike>(eventName, (event) => {
       if (!disposed) dispatchNativePayload(eventName, event.payload);
     })
       .then((unlisten) => {
@@ -83,24 +74,8 @@ export function installMobileNativeEventBridge(): () => void {
   };
 }
 
-function dispatchNativePayload(eventName: string, payload: NativeRuntimeEventPayload | null | undefined) {
-  const kind = normalizeEventKind(eventName, payload?.kind);
-  dispatchSocialRuntimeExternalEvent({
-    kind,
-    target: payload?.target,
-    sessionUlid: payload?.sessionUlid ?? payload?.session_ulid,
-    notificationId: payload?.notificationId ?? payload?.notification_id,
-    url: payload?.url,
-    reason: payload?.reason,
-  });
-}
-
-function normalizeEventKind(eventName: string, rawKind?: string): SocialRuntimeExternalEventKind {
-  if (rawKind === 'push' || eventName === 'mobile:push') return 'push';
-  if (rawKind === 'deep-link' || eventName === 'mobile:deep-link') return 'deep-link';
-  if (rawKind === 'notification-tap' || eventName === 'mobile:notification-tap') return 'notification-tap';
-  if (rawKind === 'resume' || eventName === 'mobile:resume') return 'app-resume';
-  return 'native-hint';
+function dispatchNativePayload(eventName: string, payload: SocialHostEventPayloadLike | null | undefined) {
+  dispatchSocialRuntimeExternalEvent(buildSocialHostEvent(eventName, payload));
 }
 
 function reportBridgeError(operation: string, error: unknown) {
@@ -108,7 +83,7 @@ function reportBridgeError(operation: string, error: unknown) {
     new CustomEvent('mobile-native-event-bridge:error', {
       detail: {
         operation,
-        message: error instanceof Error ? error.message : String(error),
+        message: readableErrorMessage(error),
       },
     }),
   );

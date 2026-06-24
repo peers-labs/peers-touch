@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Tag, Table, Input, Typography, Collapse, Spin, message, theme, Modal } from 'antd';
+import { Alert, Tag, Table, Input, Typography, Collapse, Spin, message, theme, Modal } from 'antd';
+import type { InputRef } from 'antd';
 import { Button } from '@lobehub/ui';
 import {
   Settings, Bot, Wrench, HelpCircle,
@@ -24,9 +25,14 @@ import { getModulesWithSettings } from '../modules/registry';
 import { PageHeader } from '../components/PageHeader';
 import { LanguageSwitcher } from '../components/common/LanguageSwitcher';
 import { log } from '../utils/logger';
-import { SettingsContainer, SettingsSection, SettingsItemCard } from '../components/settings/SettingsLayout';
+import { SettingsContainer, SettingsSection, SettingsItemCard, SettingsRow } from '../components/settings/SettingsLayout';
 import { FederationTab } from '../components/settings/FederationTab';
 import { usePrefetch } from '../kernel/usePrefetch';
+import {
+  DEFAULT_CHAT_SCREENSHOT_SHORTCUT,
+  chatScreenshotShortcutFromKeyboardEvent,
+  formatChatScreenshotShortcut,
+} from '../utils/chatScreenshotShortcut';
 
 const { Text } = Typography;
 
@@ -1230,6 +1236,70 @@ function SecuritySection() {
 
 // --- General Tab ---
 
+function ChatShortcutSettingsSection() {
+  const { t } = useTranslation('settings');
+  const shortcut = useSettingsStore((s) => s.chatScreenshotShortcut);
+  const setShortcut = useSettingsStore((s) => s.setChatScreenshotShortcut);
+  const inputRef = useRef<InputRef>(null);
+  const [recording, setRecording] = useState(false);
+
+  const handleShortcutKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (!recording) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.key === 'Escape') {
+      setRecording(false);
+      return;
+    }
+    const nextShortcut = chatScreenshotShortcutFromKeyboardEvent(event);
+    if (!nextShortcut) return;
+    setShortcut(nextShortcut);
+    setRecording(false);
+    message.success(t('settings.general.chatShortcutSaved'));
+  };
+
+  useEffect(() => {
+    if (recording) inputRef.current?.focus();
+  }, [recording]);
+
+  return (
+    <SettingsSection
+      icon={<MessageSquare size={18} />}
+      title={t('settings.general.chatTitle')}
+      subtitle={t('settings.general.chatDescription')}
+    >
+      <SettingsRow
+        label={t('settings.general.screenshotShortcutLabel')}
+        description={t('settings.general.screenshotShortcutDescription')}
+      >
+        <Flexbox horizontal align="center" gap={8}>
+          <Input
+            ref={inputRef}
+            readOnly
+            value={recording
+              ? t('settings.general.screenshotShortcutRecording')
+              : formatChatScreenshotShortcut(shortcut)}
+            onKeyDown={handleShortcutKeyDown}
+            style={{ width: 190 }}
+          />
+          <Button size="small" onClick={() => setRecording(true)}>
+            {recording ? t('settings.general.screenshotShortcutListening') : t('settings.general.screenshotShortcutRecord')}
+          </Button>
+          <Button
+            size="small"
+            onClick={() => {
+              setShortcut(DEFAULT_CHAT_SCREENSHOT_SHORTCUT);
+              message.success(t('settings.general.chatShortcutSaved'));
+            }}
+          >
+            {t('settings.general.screenshotShortcutReset')}
+          </Button>
+        </Flexbox>
+      </SettingsRow>
+    </SettingsSection>
+  );
+}
+
 function GeneralTab() {
   // Agents are bootstrapped + reconciled by `runtimes/settingsRuntime.ts`;
   // the page reads them synchronously from the store. No mount-time
@@ -1251,6 +1321,8 @@ function GeneralTab() {
 
       <SecuritySection />
 
+      <ChatShortcutSettingsSection />
+
       <SettingsSection
         icon={<Bot size={18} />}
         title={t('settings.general.agentsTitle')}
@@ -1271,6 +1343,7 @@ function ToolsTab() {
   // time the user clicks the Tools tab the cache is typically warm and
   // the panel paints synchronously.
   const tools = useSettingsStore((s) => s.tools);
+  const error = useSettingsStore((s) => s.error);
   const loadTools = useSettingsStore((s) => s.loadTools);
   const { token } = theme.useToken();
   const { t } = useTranslation('settings');
@@ -1392,6 +1465,15 @@ function ToolsTab() {
         icon={<Wrench size={18} />}
         title={t('settings.tools.toolsTitle', { count: tools.length })}
       >
+        {error && (
+          <Alert
+            type="error"
+            showIcon
+            message={t('settings.tools.operationFailed')}
+            description={error}
+            style={{ marginBottom: 12 }}
+          />
+        )}
         <Table
           dataSource={tools}
           columns={toolColumns}

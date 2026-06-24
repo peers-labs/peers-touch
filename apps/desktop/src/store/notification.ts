@@ -1,10 +1,19 @@
 import { create } from 'zustand';
+import {
+  applyAllChatNotificationsRead,
+  applyChatNotificationsRead,
+  deleteChatNotifications,
+  mergeChatNotifications,
+} from '@peers-touch/client-chat-core';
+
 import { api, isUnauthorizedError, type NotificationData, type NotificationUnreadCountsResponse } from '../services/desktop_api';
 import { currentAuthenticatedActorId } from './session';
 import { log } from '../utils/logger';
 
 const POLL_INTERVAL = 15_000;
 const MAX_ITEMS = 200;
+const NOTIFICATION_STATUS_UNREAD = 1;
+const NOTIFICATION_STATUS_READ = 2;
 
 interface NotificationStore {
   notifications: NotificationData[];
@@ -68,7 +77,10 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     try {
       const resp = await api.notificationList(undefined, undefined, nextCursor, 20);
       set((prev) => ({
-        notifications: [...prev.notifications, ...(resp.notifications || [])].slice(0, MAX_ITEMS),
+        notifications: mergeChatNotifications(prev.notifications, resp.notifications || [], {
+          resolveCreatedAt: notificationCreatedAtMs,
+          limit: MAX_ITEMS,
+        }),
         hasMore: !!resp.nextCursor,
         nextCursor: resp.nextCursor || '',
         loading: false,
@@ -105,10 +117,8 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     try {
       await api.notificationMarkRead(ids);
       set((prev) => ({
-        notifications: prev.notifications.map((n) =>
-          ids.includes(n.id) ? { ...n, status: 2, readAt: new Date().toISOString() } : n,
-        ),
-        unreadTotal: Math.max(0, prev.unreadTotal - ids.length),
+        notifications: applyChatNotificationsRead(prev.notifications, ids, NOTIFICATION_STATUS_READ, new Date().toISOString()),
+        unreadTotal: Math.max(0, prev.unreadTotal - countUnreadTargets(prev.notifications, ids)),
       }));
     } catch (err) {
       if (isUnauthorizedError(err)) return;
@@ -121,10 +131,12 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     try {
       await api.notificationMarkAllRead(category);
       set((prev) => ({
-        notifications: prev.notifications.map((n) => {
-          if (category && n.category !== category) return n;
-          return { ...n, status: 2, readAt: new Date().toISOString() };
-        }),
+        notifications: applyAllChatNotificationsRead(
+          prev.notifications,
+          NOTIFICATION_STATUS_READ,
+          new Date().toISOString(),
+          category || undefined,
+        ),
         unreadTotal: category ? prev.unreadTotal : 0,
         unreadByCategory: category
           ? { ...prev.unreadByCategory, [category]: 0 }
@@ -141,7 +153,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     try {
       await api.notificationDelete(ids);
       set((prev) => ({
-        notifications: prev.notifications.filter((n) => !ids.includes(n.id)),
+        notifications: deleteChatNotifications(prev.notifications, ids),
       }));
       get().refreshUnreadCounts();
     } catch (err) {
@@ -176,3 +188,15 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     }
   },
 }));
+
+function notificationCreatedAtMs(notification: NotificationData): number {
+  const parsed = Date.parse(notification.createdAt);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function countUnreadTargets(notifications: NotificationData[], ids: string[]): number {
+  const targetIds = new Set(ids);
+  return notifications.filter((notification) =>
+    targetIds.has(notification.id) && notification.status === NOTIFICATION_STATUS_UNREAD,
+  ).length;
+}

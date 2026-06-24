@@ -279,6 +279,31 @@ public final class Media {
      */
     com.google.protobuf.ByteString
         getAltTextBytes();
+
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 6;</code>
+     * @return Whether the mediaEncryption field is set.
+     */
+    boolean hasMediaEncryption();
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 6;</code>
+     * @return The mediaEncryption.
+     */
+    peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption();
+
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+     */
+    java.util.List<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> 
+        getAudienceKeyEnvelopesList();
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+     */
+    peers_touch.model.social.v1.Media.AudienceKeyEnvelope getAudienceKeyEnvelopes(int index);
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+     */
+    int getAudienceKeyEnvelopesCount();
   }
   /**
    * Protobuf type {@code peers_touch.model.social.v1.UploadMediaRequest}
@@ -293,6 +318,7 @@ public final class Media {
       filename_ = "";
       mimeType_ = "";
       altText_ = "";
+      audienceKeyEnvelopes_ = emptyProtobufList();
     }
     private int bitField0_;
     public static final int DATA_FIELD_NUMBER = 1;
@@ -515,6 +541,151 @@ public final class Media {
       checkByteStringIsUtf8(value);
       altText_ = value.toStringUtf8();
       bitField0_ |= 0x00000001;
+    }
+
+    public static final int MEDIA_ENCRYPTION_FIELD_NUMBER = 6;
+    private peers_touch.model.common.v1.Common.EncryptedMediaDescriptor mediaEncryption_;
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 6;</code>
+     */
+    @java.lang.Override
+    public boolean hasMediaEncryption() {
+      return ((bitField0_ & 0x00000002) != 0);
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 6;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption() {
+      return mediaEncryption_ == null ? peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.getDefaultInstance() : mediaEncryption_;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 6;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+      value.getClass();  // minimal bytecode null check
+      mediaEncryption_ = value;
+      bitField0_ |= 0x00000002;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 6;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+      value.getClass();  // minimal bytecode null check
+      if (mediaEncryption_ != null &&
+          mediaEncryption_ != peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.getDefaultInstance()) {
+        mediaEncryption_ =
+          peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.newBuilder(mediaEncryption_).mergeFrom(value).buildPartial();
+      } else {
+        mediaEncryption_ = value;
+      }
+      bitField0_ |= 0x00000002;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 6;</code>
+     */
+    private void clearMediaEncryption() {
+      mediaEncryption_ = null;
+      bitField0_ = (bitField0_ & ~0x00000002);
+    }
+
+    public static final int AUDIENCE_KEY_ENVELOPES_FIELD_NUMBER = 7;
+    private com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> audienceKeyEnvelopes_;
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+     */
+    @java.lang.Override
+    public java.util.List<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> getAudienceKeyEnvelopesList() {
+      return audienceKeyEnvelopes_;
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+     */
+    public java.util.List<? extends peers_touch.model.social.v1.Media.AudienceKeyEnvelopeOrBuilder> 
+        getAudienceKeyEnvelopesOrBuilderList() {
+      return audienceKeyEnvelopes_;
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+     */
+    @java.lang.Override
+    public int getAudienceKeyEnvelopesCount() {
+      return audienceKeyEnvelopes_.size();
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.Media.AudienceKeyEnvelope getAudienceKeyEnvelopes(int index) {
+      return audienceKeyEnvelopes_.get(index);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+     */
+    public peers_touch.model.social.v1.Media.AudienceKeyEnvelopeOrBuilder getAudienceKeyEnvelopesOrBuilder(
+        int index) {
+      return audienceKeyEnvelopes_.get(index);
+    }
+    private void ensureAudienceKeyEnvelopesIsMutable() {
+      com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> tmp = audienceKeyEnvelopes_;
+      if (!tmp.isModifiable()) {
+        audienceKeyEnvelopes_ =
+            com.google.protobuf.GeneratedMessageLite.mutableCopy(tmp);
+       }
+    }
+
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setAudienceKeyEnvelopes(
+        int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+      value.getClass();  // minimal bytecode null check
+      ensureAudienceKeyEnvelopesIsMutable();
+      audienceKeyEnvelopes_.set(index, value);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addAudienceKeyEnvelopes(peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+      value.getClass();  // minimal bytecode null check
+      ensureAudienceKeyEnvelopesIsMutable();
+      audienceKeyEnvelopes_.add(value);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addAudienceKeyEnvelopes(
+        int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+      value.getClass();  // minimal bytecode null check
+      ensureAudienceKeyEnvelopesIsMutable();
+      audienceKeyEnvelopes_.add(index, value);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+     */
+    private void addAllAudienceKeyEnvelopes(
+        java.lang.Iterable<? extends peers_touch.model.social.v1.Media.AudienceKeyEnvelope> values) {
+      ensureAudienceKeyEnvelopesIsMutable();
+      com.google.protobuf.AbstractMessageLite.addAll(
+          values, audienceKeyEnvelopes_);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+     */
+    private void clearAudienceKeyEnvelopes() {
+      audienceKeyEnvelopes_ = emptyProtobufList();
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+     */
+    private void removeAudienceKeyEnvelopes(int index) {
+      ensureAudienceKeyEnvelopesIsMutable();
+      audienceKeyEnvelopes_.remove(index);
     }
 
     public static peers_touch.model.social.v1.Media.UploadMediaRequest parseFrom(
@@ -844,6 +1015,155 @@ public final class Media {
         return this;
       }
 
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 6;</code>
+       */
+      @java.lang.Override
+      public boolean hasMediaEncryption() {
+        return instance.hasMediaEncryption();
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 6;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption() {
+        return instance.getMediaEncryption();
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 6;</code>
+       */
+      public Builder setMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+        copyOnWrite();
+        instance.setMediaEncryption(value);
+        return this;
+        }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 6;</code>
+       */
+      public Builder setMediaEncryption(
+          peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.Builder builderForValue) {
+        copyOnWrite();
+        instance.setMediaEncryption(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 6;</code>
+       */
+      public Builder mergeMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+        copyOnWrite();
+        instance.mergeMediaEncryption(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 6;</code>
+       */
+      public Builder clearMediaEncryption() {  copyOnWrite();
+        instance.clearMediaEncryption();
+        return this;
+      }
+
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+       */
+      @java.lang.Override
+      public java.util.List<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> getAudienceKeyEnvelopesList() {
+        return java.util.Collections.unmodifiableList(
+            instance.getAudienceKeyEnvelopesList());
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+       */
+      @java.lang.Override
+      public int getAudienceKeyEnvelopesCount() {
+        return instance.getAudienceKeyEnvelopesCount();
+      }/**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.Media.AudienceKeyEnvelope getAudienceKeyEnvelopes(int index) {
+        return instance.getAudienceKeyEnvelopes(index);
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+       */
+      public Builder setAudienceKeyEnvelopes(
+          int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+        copyOnWrite();
+        instance.setAudienceKeyEnvelopes(index, value);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+       */
+      public Builder setAudienceKeyEnvelopes(
+          int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope.Builder builderForValue) {
+        copyOnWrite();
+        instance.setAudienceKeyEnvelopes(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+       */
+      public Builder addAudienceKeyEnvelopes(peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+        copyOnWrite();
+        instance.addAudienceKeyEnvelopes(value);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+       */
+      public Builder addAudienceKeyEnvelopes(
+          int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+        copyOnWrite();
+        instance.addAudienceKeyEnvelopes(index, value);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+       */
+      public Builder addAudienceKeyEnvelopes(
+          peers_touch.model.social.v1.Media.AudienceKeyEnvelope.Builder builderForValue) {
+        copyOnWrite();
+        instance.addAudienceKeyEnvelopes(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+       */
+      public Builder addAudienceKeyEnvelopes(
+          int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope.Builder builderForValue) {
+        copyOnWrite();
+        instance.addAudienceKeyEnvelopes(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+       */
+      public Builder addAllAudienceKeyEnvelopes(
+          java.lang.Iterable<? extends peers_touch.model.social.v1.Media.AudienceKeyEnvelope> values) {
+        copyOnWrite();
+        instance.addAllAudienceKeyEnvelopes(values);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+       */
+      public Builder clearAudienceKeyEnvelopes() {
+        copyOnWrite();
+        instance.clearAudienceKeyEnvelopes();
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;</code>
+       */
+      public Builder removeAudienceKeyEnvelopes(int index) {
+        copyOnWrite();
+        instance.removeAudienceKeyEnvelopes(index);
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.UploadMediaRequest)
     }
     @java.lang.Override
@@ -866,10 +1186,13 @@ public final class Media {
               "mimeType_",
               "type_",
               "altText_",
+              "mediaEncryption_",
+              "audienceKeyEnvelopes_",
+              peers_touch.model.social.v1.Media.AudienceKeyEnvelope.class,
             };
             java.lang.String info =
-                "\u0000\u0005\u0000\u0001\u0001\u0005\u0005\u0000\u0000\u0000\u0001\n\u0002\u0208" +
-                "\u0003\u0208\u0004\f\u0005\u1208\u0000";
+                "\u0000\u0007\u0000\u0001\u0001\u0007\u0007\u0000\u0001\u0000\u0001\n\u0002\u0208" +
+                "\u0003\u0208\u0004\f\u0005\u1208\u0000\u0006\u1009\u0001\u0007\u001b";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {
@@ -998,6 +1321,31 @@ public final class Media {
      * @return The status.
      */
     peers_touch.model.social.v1.Media.MediaProcessingStatus getStatus();
+
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     * @return Whether the mediaEncryption field is set.
+     */
+    boolean hasMediaEncryption();
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     * @return The mediaEncryption.
+     */
+    peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption();
+
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+     */
+    java.util.List<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> 
+        getAudienceKeyEnvelopesList();
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+     */
+    peers_touch.model.social.v1.Media.AudienceKeyEnvelope getAudienceKeyEnvelopes(int index);
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+     */
+    int getAudienceKeyEnvelopesCount();
   }
   /**
    * Protobuf type {@code peers_touch.model.social.v1.UploadMediaResponse}
@@ -1011,7 +1359,9 @@ public final class Media {
       mediaId_ = "";
       url_ = "";
       thumbnailUrl_ = "";
+      audienceKeyEnvelopes_ = emptyProtobufList();
     }
+    private int bitField0_;
     public static final int MEDIA_ID_FIELD_NUMBER = 1;
     private java.lang.String mediaId_;
     /**
@@ -1301,6 +1651,151 @@ public final class Media {
     private void clearStatus() {
 
       status_ = 0;
+    }
+
+    public static final int MEDIA_ENCRYPTION_FIELD_NUMBER = 9;
+    private peers_touch.model.common.v1.Common.EncryptedMediaDescriptor mediaEncryption_;
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    @java.lang.Override
+    public boolean hasMediaEncryption() {
+      return ((bitField0_ & 0x00000001) != 0);
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption() {
+      return mediaEncryption_ == null ? peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.getDefaultInstance() : mediaEncryption_;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+      value.getClass();  // minimal bytecode null check
+      mediaEncryption_ = value;
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+      value.getClass();  // minimal bytecode null check
+      if (mediaEncryption_ != null &&
+          mediaEncryption_ != peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.getDefaultInstance()) {
+        mediaEncryption_ =
+          peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.newBuilder(mediaEncryption_).mergeFrom(value).buildPartial();
+      } else {
+        mediaEncryption_ = value;
+      }
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    private void clearMediaEncryption() {
+      mediaEncryption_ = null;
+      bitField0_ = (bitField0_ & ~0x00000001);
+    }
+
+    public static final int AUDIENCE_KEY_ENVELOPES_FIELD_NUMBER = 10;
+    private com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> audienceKeyEnvelopes_;
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+     */
+    @java.lang.Override
+    public java.util.List<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> getAudienceKeyEnvelopesList() {
+      return audienceKeyEnvelopes_;
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+     */
+    public java.util.List<? extends peers_touch.model.social.v1.Media.AudienceKeyEnvelopeOrBuilder> 
+        getAudienceKeyEnvelopesOrBuilderList() {
+      return audienceKeyEnvelopes_;
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+     */
+    @java.lang.Override
+    public int getAudienceKeyEnvelopesCount() {
+      return audienceKeyEnvelopes_.size();
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.social.v1.Media.AudienceKeyEnvelope getAudienceKeyEnvelopes(int index) {
+      return audienceKeyEnvelopes_.get(index);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+     */
+    public peers_touch.model.social.v1.Media.AudienceKeyEnvelopeOrBuilder getAudienceKeyEnvelopesOrBuilder(
+        int index) {
+      return audienceKeyEnvelopes_.get(index);
+    }
+    private void ensureAudienceKeyEnvelopesIsMutable() {
+      com.google.protobuf.Internal.ProtobufList<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> tmp = audienceKeyEnvelopes_;
+      if (!tmp.isModifiable()) {
+        audienceKeyEnvelopes_ =
+            com.google.protobuf.GeneratedMessageLite.mutableCopy(tmp);
+       }
+    }
+
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setAudienceKeyEnvelopes(
+        int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+      value.getClass();  // minimal bytecode null check
+      ensureAudienceKeyEnvelopesIsMutable();
+      audienceKeyEnvelopes_.set(index, value);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addAudienceKeyEnvelopes(peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+      value.getClass();  // minimal bytecode null check
+      ensureAudienceKeyEnvelopesIsMutable();
+      audienceKeyEnvelopes_.add(value);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void addAudienceKeyEnvelopes(
+        int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+      value.getClass();  // minimal bytecode null check
+      ensureAudienceKeyEnvelopesIsMutable();
+      audienceKeyEnvelopes_.add(index, value);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+     */
+    private void addAllAudienceKeyEnvelopes(
+        java.lang.Iterable<? extends peers_touch.model.social.v1.Media.AudienceKeyEnvelope> values) {
+      ensureAudienceKeyEnvelopesIsMutable();
+      com.google.protobuf.AbstractMessageLite.addAll(
+          values, audienceKeyEnvelopes_);
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+     */
+    private void clearAudienceKeyEnvelopes() {
+      audienceKeyEnvelopes_ = emptyProtobufList();
+    }
+    /**
+     * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+     */
+    private void removeAudienceKeyEnvelopes(int index) {
+      ensureAudienceKeyEnvelopesIsMutable();
+      audienceKeyEnvelopes_.remove(index);
     }
 
     public static peers_touch.model.social.v1.Media.UploadMediaResponse parseFrom(
@@ -1706,6 +2201,155 @@ public final class Media {
         return this;
       }
 
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      @java.lang.Override
+      public boolean hasMediaEncryption() {
+        return instance.hasMediaEncryption();
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption() {
+        return instance.getMediaEncryption();
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      public Builder setMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+        copyOnWrite();
+        instance.setMediaEncryption(value);
+        return this;
+        }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      public Builder setMediaEncryption(
+          peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.Builder builderForValue) {
+        copyOnWrite();
+        instance.setMediaEncryption(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      public Builder mergeMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+        copyOnWrite();
+        instance.mergeMediaEncryption(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      public Builder clearMediaEncryption() {  copyOnWrite();
+        instance.clearMediaEncryption();
+        return this;
+      }
+
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+       */
+      @java.lang.Override
+      public java.util.List<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> getAudienceKeyEnvelopesList() {
+        return java.util.Collections.unmodifiableList(
+            instance.getAudienceKeyEnvelopesList());
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+       */
+      @java.lang.Override
+      public int getAudienceKeyEnvelopesCount() {
+        return instance.getAudienceKeyEnvelopesCount();
+      }/**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.social.v1.Media.AudienceKeyEnvelope getAudienceKeyEnvelopes(int index) {
+        return instance.getAudienceKeyEnvelopes(index);
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+       */
+      public Builder setAudienceKeyEnvelopes(
+          int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+        copyOnWrite();
+        instance.setAudienceKeyEnvelopes(index, value);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+       */
+      public Builder setAudienceKeyEnvelopes(
+          int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope.Builder builderForValue) {
+        copyOnWrite();
+        instance.setAudienceKeyEnvelopes(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+       */
+      public Builder addAudienceKeyEnvelopes(peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+        copyOnWrite();
+        instance.addAudienceKeyEnvelopes(value);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+       */
+      public Builder addAudienceKeyEnvelopes(
+          int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope value) {
+        copyOnWrite();
+        instance.addAudienceKeyEnvelopes(index, value);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+       */
+      public Builder addAudienceKeyEnvelopes(
+          peers_touch.model.social.v1.Media.AudienceKeyEnvelope.Builder builderForValue) {
+        copyOnWrite();
+        instance.addAudienceKeyEnvelopes(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+       */
+      public Builder addAudienceKeyEnvelopes(
+          int index, peers_touch.model.social.v1.Media.AudienceKeyEnvelope.Builder builderForValue) {
+        copyOnWrite();
+        instance.addAudienceKeyEnvelopes(index,
+            builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+       */
+      public Builder addAllAudienceKeyEnvelopes(
+          java.lang.Iterable<? extends peers_touch.model.social.v1.Media.AudienceKeyEnvelope> values) {
+        copyOnWrite();
+        instance.addAllAudienceKeyEnvelopes(values);
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+       */
+      public Builder clearAudienceKeyEnvelopes() {
+        copyOnWrite();
+        instance.clearAudienceKeyEnvelopes();
+        return this;
+      }
+      /**
+       * <code>repeated .peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;</code>
+       */
+      public Builder removeAudienceKeyEnvelopes(int index) {
+        copyOnWrite();
+        instance.removeAudienceKeyEnvelopes(index);
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.UploadMediaResponse)
     }
     @java.lang.Override
@@ -1722,6 +2366,7 @@ public final class Media {
         }
         case BUILD_MESSAGE_INFO: {
             java.lang.Object[] objects = new java.lang.Object[] {
+              "bitField0_",
               "mediaId_",
               "url_",
               "thumbnailUrl_",
@@ -1730,10 +2375,13 @@ public final class Media {
               "height_",
               "durationSeconds_",
               "status_",
+              "mediaEncryption_",
+              "audienceKeyEnvelopes_",
+              peers_touch.model.social.v1.Media.AudienceKeyEnvelope.class,
             };
             java.lang.String info =
-                "\u0000\b\u0000\u0000\u0001\b\b\u0000\u0000\u0000\u0001\u0208\u0002\u0208\u0003\u0208" +
-                "\u0004\u0002\u0005\u0004\u0006\u0004\u0007\u0004\b\f";
+                "\u0000\n\u0000\u0001\u0001\n\n\u0000\u0001\u0000\u0001\u0208\u0002\u0208\u0003\u0208" +
+                "\u0004\u0002\u0005\u0004\u0006\u0004\u0007\u0004\b\f\t\u1009\u0000\n\u001b";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {
@@ -1784,6 +2432,698 @@ public final class Media {
     private static volatile com.google.protobuf.Parser<UploadMediaResponse> PARSER;
 
     public static com.google.protobuf.Parser<UploadMediaResponse> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
+  public interface AudienceKeyEnvelopeOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:peers_touch.model.social.v1.AudienceKeyEnvelope)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>string recipient_did = 1;</code>
+     * @return The recipientDid.
+     */
+    java.lang.String getRecipientDid();
+    /**
+     * <code>string recipient_did = 1;</code>
+     * @return The bytes for recipientDid.
+     */
+    com.google.protobuf.ByteString
+        getRecipientDidBytes();
+
+    /**
+     * <code>string device_id = 2;</code>
+     * @return The deviceId.
+     */
+    java.lang.String getDeviceId();
+    /**
+     * <code>string device_id = 2;</code>
+     * @return The bytes for deviceId.
+     */
+    com.google.protobuf.ByteString
+        getDeviceIdBytes();
+
+    /**
+     * <code>string key_id = 3;</code>
+     * @return The keyId.
+     */
+    java.lang.String getKeyId();
+    /**
+     * <code>string key_id = 3;</code>
+     * @return The bytes for keyId.
+     */
+    com.google.protobuf.ByteString
+        getKeyIdBytes();
+
+    /**
+     * <code>bytes encrypted_key = 4;</code>
+     * @return The encryptedKey.
+     */
+    com.google.protobuf.ByteString getEncryptedKey();
+
+    /**
+     * <code>string suite = 5;</code>
+     * @return The suite.
+     */
+    java.lang.String getSuite();
+    /**
+     * <code>string suite = 5;</code>
+     * @return The bytes for suite.
+     */
+    com.google.protobuf.ByteString
+        getSuiteBytes();
+  }
+  /**
+   * Protobuf type {@code peers_touch.model.social.v1.AudienceKeyEnvelope}
+   */
+  public  static final class AudienceKeyEnvelope extends
+      com.google.protobuf.GeneratedMessageLite<
+          AudienceKeyEnvelope, AudienceKeyEnvelope.Builder> implements
+      // @@protoc_insertion_point(message_implements:peers_touch.model.social.v1.AudienceKeyEnvelope)
+      AudienceKeyEnvelopeOrBuilder {
+    private AudienceKeyEnvelope() {
+      recipientDid_ = "";
+      deviceId_ = "";
+      keyId_ = "";
+      encryptedKey_ = com.google.protobuf.ByteString.EMPTY;
+      suite_ = "";
+    }
+    public static final int RECIPIENT_DID_FIELD_NUMBER = 1;
+    private java.lang.String recipientDid_;
+    /**
+     * <code>string recipient_did = 1;</code>
+     * @return The recipientDid.
+     */
+    @java.lang.Override
+    public java.lang.String getRecipientDid() {
+      return recipientDid_;
+    }
+    /**
+     * <code>string recipient_did = 1;</code>
+     * @return The bytes for recipientDid.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getRecipientDidBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(recipientDid_);
+    }
+    /**
+     * <code>string recipient_did = 1;</code>
+     * @param value The recipientDid to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setRecipientDid(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      recipientDid_ = value;
+    }
+    /**
+     * <code>string recipient_did = 1;</code>
+     */
+    private void clearRecipientDid() {
+
+      recipientDid_ = getDefaultInstance().getRecipientDid();
+    }
+    /**
+     * <code>string recipient_did = 1;</code>
+     * @param value The bytes for recipientDid to set.
+     */
+    private void setRecipientDidBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      recipientDid_ = value.toStringUtf8();
+
+    }
+
+    public static final int DEVICE_ID_FIELD_NUMBER = 2;
+    private java.lang.String deviceId_;
+    /**
+     * <code>string device_id = 2;</code>
+     * @return The deviceId.
+     */
+    @java.lang.Override
+    public java.lang.String getDeviceId() {
+      return deviceId_;
+    }
+    /**
+     * <code>string device_id = 2;</code>
+     * @return The bytes for deviceId.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getDeviceIdBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(deviceId_);
+    }
+    /**
+     * <code>string device_id = 2;</code>
+     * @param value The deviceId to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setDeviceId(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      deviceId_ = value;
+    }
+    /**
+     * <code>string device_id = 2;</code>
+     */
+    private void clearDeviceId() {
+
+      deviceId_ = getDefaultInstance().getDeviceId();
+    }
+    /**
+     * <code>string device_id = 2;</code>
+     * @param value The bytes for deviceId to set.
+     */
+    private void setDeviceIdBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      deviceId_ = value.toStringUtf8();
+
+    }
+
+    public static final int KEY_ID_FIELD_NUMBER = 3;
+    private java.lang.String keyId_;
+    /**
+     * <code>string key_id = 3;</code>
+     * @return The keyId.
+     */
+    @java.lang.Override
+    public java.lang.String getKeyId() {
+      return keyId_;
+    }
+    /**
+     * <code>string key_id = 3;</code>
+     * @return The bytes for keyId.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getKeyIdBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(keyId_);
+    }
+    /**
+     * <code>string key_id = 3;</code>
+     * @param value The keyId to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setKeyId(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      keyId_ = value;
+    }
+    /**
+     * <code>string key_id = 3;</code>
+     */
+    private void clearKeyId() {
+
+      keyId_ = getDefaultInstance().getKeyId();
+    }
+    /**
+     * <code>string key_id = 3;</code>
+     * @param value The bytes for keyId to set.
+     */
+    private void setKeyIdBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      keyId_ = value.toStringUtf8();
+
+    }
+
+    public static final int ENCRYPTED_KEY_FIELD_NUMBER = 4;
+    private com.google.protobuf.ByteString encryptedKey_;
+    /**
+     * <code>bytes encrypted_key = 4;</code>
+     * @return The encryptedKey.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString getEncryptedKey() {
+      return encryptedKey_;
+    }
+    /**
+     * <code>bytes encrypted_key = 4;</code>
+     * @param value The encryptedKey to set.
+     */
+    private void setEncryptedKey(com.google.protobuf.ByteString value) {
+      java.lang.Class<?> valueClass = value.getClass();
+  
+      encryptedKey_ = value;
+    }
+    /**
+     * <code>bytes encrypted_key = 4;</code>
+     */
+    private void clearEncryptedKey() {
+
+      encryptedKey_ = getDefaultInstance().getEncryptedKey();
+    }
+
+    public static final int SUITE_FIELD_NUMBER = 5;
+    private java.lang.String suite_;
+    /**
+     * <code>string suite = 5;</code>
+     * @return The suite.
+     */
+    @java.lang.Override
+    public java.lang.String getSuite() {
+      return suite_;
+    }
+    /**
+     * <code>string suite = 5;</code>
+     * @return The bytes for suite.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getSuiteBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(suite_);
+    }
+    /**
+     * <code>string suite = 5;</code>
+     * @param value The suite to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setSuite(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      suite_ = value;
+    }
+    /**
+     * <code>string suite = 5;</code>
+     */
+    private void clearSuite() {
+
+      suite_ = getDefaultInstance().getSuite();
+    }
+    /**
+     * <code>string suite = 5;</code>
+     * @param value The bytes for suite to set.
+     */
+    private void setSuiteBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      suite_ = value.toStringUtf8();
+
+    }
+
+    public static peers_touch.model.social.v1.Media.AudienceKeyEnvelope parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.Media.AudienceKeyEnvelope parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.Media.AudienceKeyEnvelope parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.Media.AudienceKeyEnvelope parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.Media.AudienceKeyEnvelope parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static peers_touch.model.social.v1.Media.AudienceKeyEnvelope parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.Media.AudienceKeyEnvelope parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.Media.AudienceKeyEnvelope parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static peers_touch.model.social.v1.Media.AudienceKeyEnvelope parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static peers_touch.model.social.v1.Media.AudienceKeyEnvelope parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static peers_touch.model.social.v1.Media.AudienceKeyEnvelope parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static peers_touch.model.social.v1.Media.AudienceKeyEnvelope parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(peers_touch.model.social.v1.Media.AudienceKeyEnvelope prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * Protobuf type {@code peers_touch.model.social.v1.AudienceKeyEnvelope}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          peers_touch.model.social.v1.Media.AudienceKeyEnvelope, Builder> implements
+        // @@protoc_insertion_point(builder_implements:peers_touch.model.social.v1.AudienceKeyEnvelope)
+        peers_touch.model.social.v1.Media.AudienceKeyEnvelopeOrBuilder {
+      // Construct using peers_touch.model.social.v1.Media.AudienceKeyEnvelope.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>string recipient_did = 1;</code>
+       * @return The recipientDid.
+       */
+      @java.lang.Override
+      public java.lang.String getRecipientDid() {
+        return instance.getRecipientDid();
+      }
+      /**
+       * <code>string recipient_did = 1;</code>
+       * @return The bytes for recipientDid.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getRecipientDidBytes() {
+        return instance.getRecipientDidBytes();
+      }
+      /**
+       * <code>string recipient_did = 1;</code>
+       * @param value The recipientDid to set.
+       * @return This builder for chaining.
+       */
+      public Builder setRecipientDid(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setRecipientDid(value);
+        return this;
+      }
+      /**
+       * <code>string recipient_did = 1;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearRecipientDid() {
+        copyOnWrite();
+        instance.clearRecipientDid();
+        return this;
+      }
+      /**
+       * <code>string recipient_did = 1;</code>
+       * @param value The bytes for recipientDid to set.
+       * @return This builder for chaining.
+       */
+      public Builder setRecipientDidBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setRecipientDidBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string device_id = 2;</code>
+       * @return The deviceId.
+       */
+      @java.lang.Override
+      public java.lang.String getDeviceId() {
+        return instance.getDeviceId();
+      }
+      /**
+       * <code>string device_id = 2;</code>
+       * @return The bytes for deviceId.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getDeviceIdBytes() {
+        return instance.getDeviceIdBytes();
+      }
+      /**
+       * <code>string device_id = 2;</code>
+       * @param value The deviceId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setDeviceId(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setDeviceId(value);
+        return this;
+      }
+      /**
+       * <code>string device_id = 2;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearDeviceId() {
+        copyOnWrite();
+        instance.clearDeviceId();
+        return this;
+      }
+      /**
+       * <code>string device_id = 2;</code>
+       * @param value The bytes for deviceId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setDeviceIdBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setDeviceIdBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string key_id = 3;</code>
+       * @return The keyId.
+       */
+      @java.lang.Override
+      public java.lang.String getKeyId() {
+        return instance.getKeyId();
+      }
+      /**
+       * <code>string key_id = 3;</code>
+       * @return The bytes for keyId.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getKeyIdBytes() {
+        return instance.getKeyIdBytes();
+      }
+      /**
+       * <code>string key_id = 3;</code>
+       * @param value The keyId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setKeyId(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setKeyId(value);
+        return this;
+      }
+      /**
+       * <code>string key_id = 3;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearKeyId() {
+        copyOnWrite();
+        instance.clearKeyId();
+        return this;
+      }
+      /**
+       * <code>string key_id = 3;</code>
+       * @param value The bytes for keyId to set.
+       * @return This builder for chaining.
+       */
+      public Builder setKeyIdBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setKeyIdBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>bytes encrypted_key = 4;</code>
+       * @return The encryptedKey.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString getEncryptedKey() {
+        return instance.getEncryptedKey();
+      }
+      /**
+       * <code>bytes encrypted_key = 4;</code>
+       * @param value The encryptedKey to set.
+       * @return This builder for chaining.
+       */
+      public Builder setEncryptedKey(com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setEncryptedKey(value);
+        return this;
+      }
+      /**
+       * <code>bytes encrypted_key = 4;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearEncryptedKey() {
+        copyOnWrite();
+        instance.clearEncryptedKey();
+        return this;
+      }
+
+      /**
+       * <code>string suite = 5;</code>
+       * @return The suite.
+       */
+      @java.lang.Override
+      public java.lang.String getSuite() {
+        return instance.getSuite();
+      }
+      /**
+       * <code>string suite = 5;</code>
+       * @return The bytes for suite.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getSuiteBytes() {
+        return instance.getSuiteBytes();
+      }
+      /**
+       * <code>string suite = 5;</code>
+       * @param value The suite to set.
+       * @return This builder for chaining.
+       */
+      public Builder setSuite(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setSuite(value);
+        return this;
+      }
+      /**
+       * <code>string suite = 5;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearSuite() {
+        copyOnWrite();
+        instance.clearSuite();
+        return this;
+      }
+      /**
+       * <code>string suite = 5;</code>
+       * @param value The bytes for suite to set.
+       * @return This builder for chaining.
+       */
+      public Builder setSuiteBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setSuiteBytes(value);
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.AudienceKeyEnvelope)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"ThrowNull"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new peers_touch.model.social.v1.Media.AudienceKeyEnvelope();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "recipientDid_",
+              "deviceId_",
+              "keyId_",
+              "encryptedKey_",
+              "suite_",
+            };
+            java.lang.String info =
+                "\u0000\u0005\u0000\u0000\u0001\u0005\u0005\u0000\u0000\u0000\u0001\u0208\u0002\u0208" +
+                "\u0003\u0208\u0004\n\u0005\u0208";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<peers_touch.model.social.v1.Media.AudienceKeyEnvelope> parser = PARSER;
+          if (parser == null) {
+            synchronized (peers_touch.model.social.v1.Media.AudienceKeyEnvelope.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<peers_touch.model.social.v1.Media.AudienceKeyEnvelope>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+        }
+        case GET_MEMOIZED_IS_INITIALIZED: {
+          return (byte) 1;
+        }
+        // SET_MEMOIZED_IS_INITIALIZED is never called for this message.
+        // So it can do anything. Combine with default case for smaller codegen.
+        case SET_MEMOIZED_IS_INITIALIZED:
+      }
+      // Should never happen. Generates tight code to throw an exception.
+      throw null;
+    }
+
+
+    // @@protoc_insertion_point(class_scope:peers_touch.model.social.v1.AudienceKeyEnvelope)
+    private static final peers_touch.model.social.v1.Media.AudienceKeyEnvelope DEFAULT_INSTANCE;
+    static {
+      AudienceKeyEnvelope defaultInstance = new AudienceKeyEnvelope();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        AudienceKeyEnvelope.class, defaultInstance);
+    }
+
+    public static peers_touch.model.social.v1.Media.AudienceKeyEnvelope getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<AudienceKeyEnvelope> PARSER;
+
+    public static com.google.protobuf.Parser<AudienceKeyEnvelope> parser() {
       return DEFAULT_INSTANCE.getParserForType();
     }
   }
@@ -2162,6 +3502,17 @@ public final class Media {
      * @return The createdAt.
      */
     google.protobuf.TimestampOuterClass.Timestamp getCreatedAt();
+
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     * @return Whether the mediaEncryption field is set.
+     */
+    boolean hasMediaEncryption();
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     * @return The mediaEncryption.
+     */
+    peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption();
   }
   /**
    * Protobuf type {@code peers_touch.model.social.v1.GetMediaResponse}
@@ -2488,6 +3839,54 @@ public final class Media {
     private void clearCreatedAt() {
       createdAt_ = null;
       bitField0_ = (bitField0_ & ~0x00000001);
+    }
+
+    public static final int MEDIA_ENCRYPTION_FIELD_NUMBER = 9;
+    private peers_touch.model.common.v1.Common.EncryptedMediaDescriptor mediaEncryption_;
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    @java.lang.Override
+    public boolean hasMediaEncryption() {
+      return ((bitField0_ & 0x00000002) != 0);
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    @java.lang.Override
+    public peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption() {
+      return mediaEncryption_ == null ? peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.getDefaultInstance() : mediaEncryption_;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+      value.getClass();  // minimal bytecode null check
+      mediaEncryption_ = value;
+      bitField0_ |= 0x00000002;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+      value.getClass();  // minimal bytecode null check
+      if (mediaEncryption_ != null &&
+          mediaEncryption_ != peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.getDefaultInstance()) {
+        mediaEncryption_ =
+          peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.newBuilder(mediaEncryption_).mergeFrom(value).buildPartial();
+      } else {
+        mediaEncryption_ = value;
+      }
+      bitField0_ |= 0x00000002;
+    }
+    /**
+     * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+     */
+    private void clearMediaEncryption() {
+      mediaEncryption_ = null;
+      bitField0_ = (bitField0_ & ~0x00000002);
     }
 
     public static peers_touch.model.social.v1.Media.GetMediaResponse parseFrom(
@@ -2912,6 +4311,53 @@ public final class Media {
         return this;
       }
 
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      @java.lang.Override
+      public boolean hasMediaEncryption() {
+        return instance.hasMediaEncryption();
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      @java.lang.Override
+      public peers_touch.model.common.v1.Common.EncryptedMediaDescriptor getMediaEncryption() {
+        return instance.getMediaEncryption();
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      public Builder setMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+        copyOnWrite();
+        instance.setMediaEncryption(value);
+        return this;
+        }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      public Builder setMediaEncryption(
+          peers_touch.model.common.v1.Common.EncryptedMediaDescriptor.Builder builderForValue) {
+        copyOnWrite();
+        instance.setMediaEncryption(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      public Builder mergeMediaEncryption(peers_touch.model.common.v1.Common.EncryptedMediaDescriptor value) {
+        copyOnWrite();
+        instance.mergeMediaEncryption(value);
+        return this;
+      }
+      /**
+       * <code>.peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;</code>
+       */
+      public Builder clearMediaEncryption() {  copyOnWrite();
+        instance.clearMediaEncryption();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:peers_touch.model.social.v1.GetMediaResponse)
     }
     @java.lang.Override
@@ -2937,10 +4383,11 @@ public final class Media {
               "height_",
               "status_",
               "createdAt_",
+              "mediaEncryption_",
             };
             java.lang.String info =
-                "\u0000\b\u0000\u0001\u0001\b\b\u0000\u0000\u0000\u0001\u0208\u0002\u0208\u0003\u0208" +
-                "\u0004\u0002\u0005\u0004\u0006\u0004\u0007\f\b\u1009\u0000";
+                "\u0000\t\u0000\u0001\u0001\t\t\u0000\u0000\u0000\u0001\u0208\u0002\u0208\u0003\u0208" +
+                "\u0004\u0002\u0005\u0004\u0006\u0004\u0007\f\b\u1009\u0000\t\u1009\u0001";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         case GET_DEFAULT_INSTANCE: {

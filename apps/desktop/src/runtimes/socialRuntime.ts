@@ -16,11 +16,15 @@
 // the explicit goal of this step.
 
 import {
+  dispatchSocialRuntimeHostEvent,
   installSocialRealtimeBridge,
   refreshSocialProjection,
   teardownSocialRealtimeBridge,
 } from '../services/socialRealtime';
 import type { RuntimeDescriptor } from '../kernel/runtime';
+import { installDesktopSocialHostAdapter } from './desktopSocialHostAdapter';
+
+let teardownHostAdapter: (() => void) | null = null;
 
 export const socialRuntime: RuntimeDescriptor = {
   id: 'social',
@@ -30,8 +34,13 @@ export const socialRuntime: RuntimeDescriptor = {
   scope: 'app',
   install(): void {
     installSocialRealtimeBridge();
+    if (!teardownHostAdapter) {
+      teardownHostAdapter = installDesktopSocialHostAdapter(dispatchSocialRuntimeHostEvent);
+    }
   },
   teardown(): void {
+    teardownHostAdapter?.();
+    teardownHostAdapter = null;
     teardownSocialRealtimeBridge();
   },
   async bootstrap(): Promise<void> {

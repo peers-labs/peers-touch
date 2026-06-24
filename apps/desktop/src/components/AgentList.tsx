@@ -5,6 +5,7 @@ import { Plus, Pin, Trash2, MessageSquare, ChevronRight, Settings2 } from 'lucid
 import { theme, Popconfirm } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '../store/chat';
+import { useAgentStore } from '../store/agent';
 import type { Agent, Session } from '../services/desktop_api';
 import { api } from '../services/desktop_api';
 
@@ -19,6 +20,8 @@ export function AgentList({ onCreateAgent, onEditAgent }: AgentListProps) {
     loadAgents,
     selectedAgent,
     setSelectedAgent,
+  } = useAgentStore();
+  const {
     sessions,
     currentSessionKey,
     selectSession,

@@ -154,9 +154,10 @@ peers-touch/
 ├── apps/
 │   ├── desktop/
 │   ├── mobile/
-│   │   ├── android/
-│   │   ├── ios/
-│   │   └── flutter/        # deprecated
+│   │   ├── src/            # mobile-web UI
+│   │   ├── src-tauri/      # Rust capability kernel + Tauri generated projects
+│   │   ├── android/        # legacy/native plugin source during migration
+│   │   └── ios/            # legacy/native plugin source during migration
 │   └── station/
 │       ├── app/
 │       └── frame/

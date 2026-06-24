@@ -14,7 +14,7 @@ pub fn run() {
         .manage(SecureStorage::new())
         .invoke_handler(commands::handlers())
         .build(tauri::generate_context!())
-        .expect("failed to build Peers Touch Mobile")
+        .expect("failed to build Peers")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Resumed) {
                 if let Err(error) = native_events::emit_resume(app, "tauri-run-event") {

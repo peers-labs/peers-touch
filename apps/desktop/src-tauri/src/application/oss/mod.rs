@@ -31,7 +31,9 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read};
+use std::path::PathBuf;
 
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -82,8 +84,50 @@ pub struct OssResolved {
     /// `host + file_endpoint`; for signed backends it carries the
     /// signed query.
     pub url: String,
+    /// Inline image data for renderer previews when the local cache
+    /// path cannot be served with a reliable image content type.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_url: Option<String>,
     pub host: String,
     pub key: String,
+}
+
+const INLINE_IMAGE_MAX_BYTES: u64 = 8 * 1024 * 1024;
+
+pub struct TempFileCleanup {
+    path: PathBuf,
+    label: &'static str,
+    active: bool,
+}
+
+impl TempFileCleanup {
+    pub fn new(path: PathBuf, label: &'static str) -> Self {
+        Self {
+            path,
+            label,
+            active: true,
+        }
+    }
+
+    pub fn remove_now(mut self) {
+        self.remove();
+    }
+
+    fn remove(&mut self) {
+        if !self.active {
+            return;
+        }
+        self.active = false;
+        if let Err(error) = std::fs::remove_file(&self.path) {
+            tracing::warn!(error = %error, path = %self.path.display(), label = self.label, "Failed to remove temp file");
+        }
+    }
+}
+
+impl Drop for TempFileCleanup {
+    fn drop(&mut self) {
+        self.remove();
+    }
 }
 
 /// Unified OSS upload entry point used by both the chat and Moments
@@ -99,6 +143,26 @@ pub fn upload_attachment(
     bucket: &str,
     visibility: &str,
     chat_session_id: Option<&str>,
+) -> AppResult<StubPayload> {
+    upload_attachment_with_mime(
+        file_path,
+        token,
+        consumer,
+        bucket,
+        visibility,
+        chat_session_id,
+        None,
+    )
+}
+
+pub fn upload_attachment_with_mime(
+    file_path: &str,
+    token: &str,
+    consumer: &str,
+    bucket: &str,
+    visibility: &str,
+    chat_session_id: Option<&str>,
+    mime_override: Option<&str>,
 ) -> AppResult<StubPayload> {
     if file_path.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "file_path is required", None);
@@ -132,7 +196,11 @@ pub fn upload_attachment(
         .and_then(|s| s.to_str())
         .unwrap_or("")
         .to_string();
-    let mime = guess_mime_from_path(file_path);
+    let mime = mime_override
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| guess_mime_from_path(file_path));
 
     if let Some(c) = caps.as_ref() {
         if c.supports_presigned_upload(file_size) {
@@ -292,7 +360,7 @@ pub fn oss_resolve_url(
                 ErrorCode::InvalidArgument,
                 format!("invalid oss uri: {e}"),
                 None,
-            )
+            );
         }
     };
 
@@ -325,6 +393,7 @@ pub fn oss_resolve_url(
         return success(OssResolved {
             local_path: None,
             url,
+            data_url: None,
             host: caps.host,
             key: uri.key,
         });
@@ -360,11 +429,41 @@ pub fn oss_resolve_url(
     };
 
     success(OssResolved {
+        data_url: local_path.as_deref().and_then(data_url_for_cached_image),
         local_path,
         url,
         host: caps.host,
         key: uri.key,
     })
+}
+
+fn data_url_for_cached_image(path: &str) -> Option<String> {
+    let meta = std::fs::metadata(path).ok()?;
+    if !meta.is_file() || meta.len() == 0 || meta.len() > INLINE_IMAGE_MAX_BYTES {
+        return None;
+    }
+    let bytes = std::fs::read(path).ok()?;
+    let mime = image_mime_from_bytes(&bytes)?;
+    Some(format!("data:{};base64,{}", mime, B64.encode(bytes)))
+}
+
+fn image_mime_from_bytes(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) {
+        return Some("image/png");
+    }
+    if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return Some("image/jpeg");
+    }
+    if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        return Some("image/gif");
+    }
+    if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        return Some("image/webp");
+    }
+    if bytes.starts_with(b"BM") {
+        return Some("image/bmp");
+    }
+    None
 }
 
 fn success(payload: OssResolved) -> AppResult<StubPayload> {
@@ -919,7 +1018,7 @@ pub fn oss_invalidate_cache(uri: &str) -> AppResult<StubPayload> {
                 ErrorCode::InvalidArgument,
                 format!("invalid oss uri: {e}"),
                 None,
-            )
+            );
         }
     };
     if let Err(err) = oss_cache::attachment_invalidate(&parsed) {

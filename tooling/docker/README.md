@@ -96,6 +96,11 @@ GitHub Actions workflow [`deploy-station.yml`](../../.github/workflows/deploy-st
 - **Single Dockerfile**, single image. The `relay` profile and the `station`
   profile share `station.Dockerfile`; the role is determined by
   `apps/station/app/conf/sub_relay.yml` at runtime, not at build time.
+- **Official applet service closure**: Station may bundle official applet
+  services via local Go module `replace` directives. The Docker build context
+  therefore includes `apps/applets/` so `apps/station/app/go.mod` can resolve
+  `../../applets/<id>/service` inside the builder without applet-specific
+  Dockerfile edits.
 - **Healthcheck endpoint**: `/sub-oss/healthz` (public probe). The compose
   healthcheck and the CI verify step both consume this endpoint.
 - **Same-host coexistence**: `pt-station-2` and `pt-station-relay-only`

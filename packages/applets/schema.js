@@ -145,6 +145,8 @@ function validateServices(rawManifest, source, diagnostics) {
     })
     const allowedPaths = assertStringArray(service.allowedPaths, `${path}.allowedPaths`, diagnostics)
     if (allowedPaths.length === 0) diagnostics.push(`${path}.allowedPaths must contain at least one path`)
+    if (service.publicPathPrefix !== undefined) assertNonEmptyString(service.publicPathPrefix, `${path}.publicPathPrefix`, diagnostics)
+    if (service.stationPathPrefix !== undefined) assertNonEmptyString(service.stationPathPrefix, `${path}.stationPathPrefix`, diagnostics)
   })
   return rawManifest.services
 }

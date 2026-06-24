@@ -19,7 +19,6 @@ import {
   EditFriendMessageResponseSchema,
   DeleteFriendMessageResponseSchema,
   SyncMessagesResponseSchema,
-  OnlineResponseSchema,
   GetPendingResponseSchema,
   GetStatsResponseSchema,
   SendFriendRequestResponseSchema,
@@ -43,6 +42,8 @@ import {
   InviteToGroupResponseSchema,
   JoinGroupResponseSchema,
   LeaveGroupResponseSchema,
+  TransferGroupOwnershipResponseSchema,
+  DissolveGroupResponseSchema,
   GetGroupMembersResponseSchema,
   RemoveMemberResponseSchema,
   UpdateMemberResponseSchema,
@@ -96,7 +97,6 @@ export type {
   GetMessagesResponse,
   SendMessageResponse,
   SyncMessagesResponse,
-  OnlineResponse,
   GetPendingResponse,
   PendingMessageInfo,
   GetStatsResponse,
@@ -118,6 +118,8 @@ export type {
   InviteToGroupResponse,
   JoinGroupResponse,
   LeaveGroupResponse,
+  TransferGroupOwnershipResponse,
+  DissolveGroupResponse,
   GetGroupMembersResponse,
   RemoveMemberResponse,
   UpdateMemberResponse,
@@ -175,12 +177,21 @@ export interface ChatThreadCount {
   unreadCount: number;
 }
 
+export interface DesktopNativeHostEventInput {
+  kind: 'resume' | 'app-resume' | 'tray-open' | 'notification-tap';
+  target?: string;
+  sessionUlid?: string;
+  notificationId?: string;
+  reason?: string;
+}
+
 // Always-quiet (regardless of mode): commands that fire many times per
 // second and would drown out everything else.
 const ALWAYS_QUIET_COMMANDS = new Set([
   'logs_tail',
   'frontend_log',
   'visitor_heartbeat',
+  'oss_upload_attachment_bytes_chat',
   'ice_session_candidates_get',
   'ice_session_candidate_post',
   'ice_session_offer_get',
@@ -202,6 +213,7 @@ const PROD_QUIET_COMMANDS = new Set([
   'friend_chat_sync_from_station_scoped',
   'friend_chat_list_sessions',
   'friend_chat_list_messages',
+  'chat_index_local_messages',
 ]);
 
 function isQuietCommand(command: string): boolean {
@@ -319,6 +331,25 @@ async function invokeAuthCommand<TInput>(
       response.error ?? {
         code: 'INTERNAL_ERROR',
         message: 'auth command failed',
+      },
+    );
+  }
+  return response.data;
+}
+
+/// Drive an interactive access-gate step that returns a Station decision
+/// (rather than a landed session). Shares `AuthCommandException` semantics so
+/// callers handle FORBIDDEN/INVALID_ARGUMENT/UNAUTHORIZED uniformly.
+async function invokeAccessCommand<TInput>(
+  command: string,
+  input?: TInput,
+): Promise<AccessDecisionResponse> {
+  const response = await invokeRustCommand<TInput, AccessDecisionResponse>(command, input);
+  if (!response.ok || !response.data) {
+    throw new AuthCommandException(
+      response.error ?? {
+        code: 'INTERNAL_ERROR',
+        message: 'access command failed',
       },
     );
   }
@@ -448,6 +479,23 @@ export interface ChatUploadAttachmentInput {
   chat_session_id?: string | null;
 }
 
+export interface ChatScreenshotAttachmentInput {
+  bucket: string;
+  visibility: 'public' | 'chat' | 'private';
+  /** Required when `visibility` is `chat`. */
+  chat_session_id?: string | null;
+}
+
+export interface ChatUploadAttachmentBytesInput {
+  filename: string;
+  mime_type: string;
+  bytes: number[];
+  bucket: string;
+  visibility: 'public' | 'chat' | 'private';
+  /** Required when `visibility` is `chat`. */
+  chat_session_id?: string | null;
+}
+
 /**
  * Payload returned by `oss_upload_attachment_chat` /
  * `oss_upload_attachment_social`.
@@ -477,6 +525,27 @@ export interface OssAttachmentUploaded {
   visibility?: string;
 }
 
+export interface SocialEncryptedMediaDescriptorWire {
+  encrypted: true;
+  version: number;
+  suite: string;
+  key_b64: string;
+  nonce_b64: string;
+  plaintext_sha256_b64: string;
+  ciphertext_sha256_b64: string;
+  plaintext_size: number;
+  ciphertext_size: number;
+  chunking?: string;
+  chunk_size?: number;
+  chunk_count?: number;
+  tag_size?: number;
+  nonce_strategy?: string;
+}
+
+export interface SocialEncryptedAttachmentUploaded extends OssAttachmentUploaded {
+  media_encryption: SocialEncryptedMediaDescriptorWire;
+}
+
 /**
  * @deprecated Use `OssAttachmentUploaded`. Kept as alias for
  * downstream callers that have not migrated yet.
@@ -502,14 +571,14 @@ export interface OssCapabilities {
 }
 
 /**
- * Result of `oss_resolve_url`. The renderer should prefer
- * `local_path` (it is served via Tauri's `convertFileSrc`) and fall
- * back to `url` when the attachment is not yet cached or the backend
- * requires signed URLs.
+ * Result of `oss_resolve_url`. The renderer should prefer `data_url`
+ * for inline image previews when present, then `local_path` (served
+ * via Tauri's `convertFileSrc`), and finally `url`.
  */
 export interface OssResolved {
   local_path?: string | null;
   url: string;
+  data_url?: string | null;
   host: string;
   key: string;
 }
@@ -657,6 +726,44 @@ export interface AgentMemoryConfig {
   effort?: 'low' | 'medium' | 'high';
 }
 
+export interface AgentWorkspaceConfig {
+  root?: string;
+  policy?: 'workspace-only';
+  updatedAt?: string;
+}
+
+export interface AgentProviderFallbackConfig {
+  enabled?: boolean;
+  maxRetries?: number;
+}
+
+export interface AgentVoiceConfig {
+  ttsProvider?: 'browser' | 'edge' | 'openai';
+  ttsVoice?: string;
+  ttsSpeed?: number;
+  ttsAutoRead?: boolean;
+  sttProvider?: 'browser' | 'openai';
+  sttLanguage?: string;
+  sttAutoStop?: boolean;
+}
+
+export type AgentKnowledgeResourceType = 'document' | 'folder' | 'project' | 'url' | 'notebook' | 'workspace';
+export type AgentKnowledgeResourcePolicy = 'manual' | 'auto' | 'always' | 'disabled';
+export type AgentKnowledgeResourceStatus = 'bound' | 'pending_index' | 'indexed' | 'error';
+
+export interface AgentKnowledgeResource {
+  id: string;
+  type: AgentKnowledgeResourceType;
+  title: string;
+  source: string;
+  policy: AgentKnowledgeResourcePolicy;
+  status: AgentKnowledgeResourceStatus;
+  lastIndexedAt?: string;
+  error?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface AgentChatConfig {
   historyCount?: number;
   enableHistoryCount?: boolean;
@@ -666,9 +773,16 @@ export interface AgentChatConfig {
   enableStreaming?: boolean;
   enableContextCompression?: boolean;
   compressionModelId?: string;
+  contextWindowSize?: number;
   searchMode?: 'off' | 'auto' | 'on';
   useModelBuiltinSearch?: boolean;
   memory?: AgentMemoryConfig;
+  providerFallback?: AgentProviderFallbackConfig;
+  workspace?: AgentWorkspaceConfig;
+  voice?: AgentVoiceConfig;
+  mcpServers?: string[];
+  tools?: string[];
+  skills?: string[];
 }
 
 export interface Agent {
@@ -686,10 +800,13 @@ export interface Agent {
   toolsAllow: string;
   toolsDeny: string;
   pinned: boolean;
+  favorite: boolean;
+  sortOrder: number;
   openingMessage: string;
   openingQuestions: string;
   chatConfig: string;
   params: string;
+  knowledgeResources: string;
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
@@ -706,11 +823,59 @@ export interface AgentCreate {
   provider?: string;
   tags?: string;
   toolsProfile?: string;
+  toolsAllow?: string;
+  toolsDeny?: string;
   pinned?: boolean;
+  favorite?: boolean;
+  sortOrder?: number;
   openingMessage?: string;
   openingQuestions?: string;
   chatConfig?: string;
   params?: string;
+  knowledgeResources?: string;
+}
+
+export interface AgentPackage {
+  schemaVersion: 'peers.agent.package.v1';
+  exportedAt: string;
+  source: {
+    agentId: string;
+    name: string;
+    packageType?: 'agent';
+    exportedFrom?: 'desktop' | string;
+    sharePolicy?: {
+      includeLocalPaths?: boolean;
+      secrets?: 'redacted' | string;
+    };
+    redactions?: string[];
+  };
+  agent: Agent;
+  providerPreset: {
+    provider: string;
+    model: string;
+    params: AgentParams;
+  };
+  bindings: {
+    mcpServers: string[];
+    tools: string[];
+    skills: string[];
+  };
+  opening: {
+    message: string;
+    questions: string;
+  };
+  chatBehavior: AgentChatConfig;
+}
+
+export interface AgentPackageImportInput {
+  package: AgentPackage | Record<string, unknown>;
+  name?: string;
+}
+
+export interface AgentListResult {
+  agents: Agent[];
+  selectedAgent?: string;
+  defaultAgent?: string;
 }
 
 export function parseAgentChatConfig(agent: Agent): AgentChatConfig {
@@ -723,10 +888,67 @@ export function parseAgentParams(agent: Agent): AgentParams {
   try { return JSON.parse(agent.params); } catch { return {}; }
 }
 
+function normalizeKnowledgeResource(raw: unknown): AgentKnowledgeResource | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const item = raw as Partial<AgentKnowledgeResource>;
+  const source = typeof item.source === 'string' ? item.source.trim() : '';
+  if (!source) return null;
+  const id = typeof item.id === 'string' && item.id.trim()
+    ? item.id.trim()
+    : `knowledge:${Date.now()}:${source}`;
+  const typeValues: AgentKnowledgeResourceType[] = ['document', 'folder', 'project', 'url', 'notebook', 'workspace'];
+  const policyValues: AgentKnowledgeResourcePolicy[] = ['manual', 'auto', 'always', 'disabled'];
+  const statusValues: AgentKnowledgeResourceStatus[] = ['bound', 'pending_index', 'indexed', 'error'];
+  const type = typeValues.includes(item.type as AgentKnowledgeResourceType)
+    ? item.type as AgentKnowledgeResourceType
+    : 'document';
+  const policy = policyValues.includes(item.policy as AgentKnowledgeResourcePolicy)
+    ? item.policy as AgentKnowledgeResourcePolicy
+    : 'manual';
+  const status = statusValues.includes(item.status as AgentKnowledgeResourceStatus)
+    ? item.status as AgentKnowledgeResourceStatus
+    : 'bound';
+  return {
+    id,
+    type,
+    title: typeof item.title === 'string' && item.title.trim() ? item.title.trim() : source,
+    source,
+    policy,
+    status,
+    lastIndexedAt: typeof item.lastIndexedAt === 'string' ? item.lastIndexedAt : '',
+    error: typeof item.error === 'string' ? item.error : '',
+    createdAt: typeof item.createdAt === 'string' ? item.createdAt : '',
+    updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : '',
+  };
+}
+
+export function parseAgentKnowledgeResources(agent: Agent): AgentKnowledgeResource[] {
+  if (!agent.knowledgeResources) return [];
+  try {
+    const parsed = JSON.parse(agent.knowledgeResources);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map(normalizeKnowledgeResource)
+      .filter((item): item is AgentKnowledgeResource => Boolean(item));
+  } catch {
+    return [];
+  }
+}
+
 export interface ToolInfo {
   name: string;
   category: string;
   needs_approval: boolean;
+  enabled?: boolean;
+  source?: 'builtin' | 'mcp' | string;
+  serverName?: string;
+  transport?: 'stdio' | 'http' | 'sse';
+  displayName?: string;
+  description?: string;
+  executable?: boolean;
+  executionOwner?: 'desktop-rust' | 'station' | string;
+  riskLevel?: 'low' | 'medium' | 'high' | string;
+  schema?: Record<string, unknown>;
 }
 
 export interface AvailableModel {
@@ -740,6 +962,10 @@ export interface AvailableModel {
   function_call?: boolean;
   vision?: boolean;
   reasoning?: boolean;
+  search?: boolean;
+  image_output?: boolean;
+  video?: boolean;
+  protocol_override?: string;
 }
 
 export interface ProviderListItem {
@@ -825,6 +1051,11 @@ export interface AppletInfo {
   manifest: AppletManifest;
   status: 'installed' | 'active' | 'stopped' | 'error';
   error?: string;
+}
+
+export interface AppletImportDirectoryResult {
+  directory: string;
+  manifest: unknown;
 }
 
 export interface StatisticsRankItem {
@@ -919,11 +1150,93 @@ export interface SkillListItem {
   metaTitle: string;
   metaTags: string[];
   source: string;
+  trustLevel?: string;
+  scanVerdict?: string;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
   useCount: number;
   lastUsedAt?: string;
+}
+
+export interface SkillResourceNode {
+  id: string;
+  name: string;
+  path: string;
+  kind: 'directory' | 'file' | 'section';
+  role?: string;
+  mime?: string;
+  bytes: number;
+  lineCount: number;
+  sha256?: string;
+  loadedAtRuntime: boolean;
+  loadTrigger: string;
+  summary?: string;
+  children?: SkillResourceNode[];
+}
+
+export interface SkillResourceTree {
+  root: SkillResourceNode;
+  resources: SkillResourceNode[];
+}
+
+export interface SkillRuntimeLoad {
+  systemPrompt: {
+    policy: string;
+    loadedResources: string[];
+    description: string;
+  };
+  skillView: {
+    policy: string;
+    toolName: string;
+    loadedResources: string[];
+    bytes: number;
+    lineCount: number;
+    sha256: string;
+  };
+  runtimeTrace: {
+    skillId: string;
+    version: number;
+    enabled: boolean;
+    trustLevel: string;
+    scanVerdict: string;
+  };
+}
+
+export interface SkillVersionItem {
+  version_id?: string;
+  versionId?: string;
+  skill_id?: string;
+  skillId?: string;
+  agent_id?: string;
+  agentId?: string;
+  version: number;
+  trigger: string;
+  created_at?: string;
+  createdAt?: string;
+}
+
+export interface SkillVersionsOutput {
+  versions: SkillVersionItem[];
+  total: number;
+  rollbackPolicy?: {
+    owner: string;
+    reversible: boolean;
+    preRollbackSnapshot?: string;
+  };
+}
+
+export interface SkillVersionsInput {
+  agent_id?: string;
+  id: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface SkillRollbackInput {
+  agent_id?: string;
+  id: string;
+  target_version: number;
 }
 
 export interface SkillRecord extends SkillListItem {
@@ -940,6 +1253,8 @@ export interface SkillRecord extends SkillListItem {
   agentOnly: string[];
   sourceUri: string;
   zipFileHash: string;
+  resourceTree?: SkillResourceTree;
+  runtimeLoad?: SkillRuntimeLoad;
 }
 
 export interface SkillImportResult {
@@ -963,6 +1278,16 @@ export interface SkillZipValidation {
   error?: string;
 }
 
+async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
+}
+
 // ── Skill Market types ──
 
 export interface MarketSource {
@@ -980,22 +1305,33 @@ export interface MarketSummary extends MarketSource {
 }
 
 export interface MarketSkillEntry {
+  marketId?: string;
   identifier: string;
   name: string;
   description: string;
   filePath: string;
   installed: boolean;
+  installedSkillId?: string;
+  installedAt?: string;
+  scanVerdict?: string;
+  version?: string;
+  author?: string;
+  license?: string;
+  keywords?: string[];
+  trustLevel?: string;
+  riskLevel?: string;
+  packageType?: string;
+  source?: string;
 }
 
 export interface MarketSkillDetail extends MarketSkillEntry {
   content: string;
-  version: string;
-  author: string;
   authorUrl: string;
-  license: string;
-  keywords: string[];
   avatar: string;
   tags: string[];
+  publisher: string;
+  homepage: string;
+  repository: string;
 }
 
 // ── MCP Server types ──
@@ -1004,12 +1340,15 @@ export interface MCPServerItem {
   name: string;
   title: string;
   description: string;
-  type: string;
+  type: 'stdio' | 'http' | 'sse';
   source: string;
   enabled: boolean;
   metaAvatar: string;
   metaTags: string[];
   toolCount: number;
+  status?: 'unknown' | 'connected' | 'failed';
+  lastTestedAt?: string;
+  lastError?: string;
 }
 
 export interface MCPServerRecord {
@@ -1017,7 +1356,7 @@ export interface MCPServerRecord {
   title: string;
   description: string;
   version: string;
-  type: string;
+  type: 'stdio' | 'http' | 'sse';
   command: string;
   args: string[];
   env: Record<string, string>;
@@ -1026,7 +1365,7 @@ export interface MCPServerRecord {
   authType: string;
   authToken: string;
   authAccessToken: string;
-  configSchema: any;
+  configSchema: Record<string, unknown>;
   settings: Record<string, string>;
   metaAvatar: string;
   metaTags: string[];
@@ -1034,6 +1373,10 @@ export interface MCPServerRecord {
   homepage: string;
   repository: string;
   enabled: boolean;
+  status?: 'unknown' | 'connected' | 'failed';
+  lastTestedAt?: string;
+  lastError?: string;
+  tools?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -1475,6 +1818,23 @@ export interface AuthLoginInput {
   base_url?: string;
 }
 
+/// Raw Station `AccessDecision`, passed through verbatim by the Rust layer.
+/// The frontend normalizes the wire shape (snake_case keys, string enums).
+export interface AccessDecisionResponse extends TauriStubPayload {
+  decision: unknown;
+}
+
+export interface AccessSubmitInviteInput {
+  attempt_id: string;
+  invite_code: string;
+}
+
+export interface AccessSubmitLoginInput {
+  attempt_id: string;
+  account: string;
+  password: string;
+}
+
 export interface AuthValidateTokenInput {
   token?: string;
 }
@@ -1486,6 +1846,10 @@ export interface SettingsGetInput {
 export interface SettingsSetInput {
   key: string;
   value: any;
+}
+
+export interface ChatScreenshotShortcutRegisterInput {
+  shortcut: string;
 }
 
 export interface ChatListMessagesInput {
@@ -1664,15 +2028,18 @@ export interface ChatCompletionInput {
 }
 
 export interface SkillsListInput {
+  agent_id?: string;
   source?: string;
 }
 
 export interface SkillsSearchInput {
+  agent_id?: string;
   q: string;
   limit?: number;
 }
 
 export interface SkillIdInput {
+  agent_id?: string;
   id: string;
 }
 
@@ -1681,11 +2048,13 @@ export interface BuiltinSkillIdInput {
 }
 
 export interface SkillCreateInput {
+  agent_id?: string;
   name: string;
   content: string;
 }
 
 export interface SkillUpdateInput {
+  agent_id?: string;
   id: string;
   name?: string;
   description?: string;
@@ -1694,6 +2063,7 @@ export interface SkillUpdateInput {
 }
 
 export interface SkillToggleInput {
+  agent_id?: string;
   id: string;
   enabled: boolean;
 }
@@ -1714,6 +2084,105 @@ export interface McpUpdateInput {
 export interface McpToggleInput {
   name: string;
   enabled: boolean;
+}
+
+export interface McpExecuteToolInput {
+  server_name: string;
+  tool_name: string;
+  arguments?: Record<string, unknown>;
+  call_id?: string;
+}
+
+export interface McpToolExecutionResult {
+  ok: boolean;
+  serverName: string;
+  toolName: string;
+  callId: string;
+  arguments: Record<string, unknown>;
+  durationMs: number;
+  output?: unknown;
+  error?: string;
+  audit: {
+    source: 'mcp';
+    serverName: string;
+    toolName: string;
+    transport: 'stdio' | 'http' | 'sse';
+    executedAt: string;
+  };
+}
+
+export interface AgentLocalToolRequestInput {
+  source: 'mcp' | string;
+  server_name?: string;
+  tool_name: string;
+  arguments?: Record<string, unknown>;
+  call_id?: string;
+  turn_id?: string;
+  workspace_root?: string;
+}
+
+export interface AgentToolApprovalDecisionInput {
+  approval_id: string;
+  approved: boolean;
+  actor?: string;
+}
+
+export interface AgentLocalToolResultEvent {
+  type: 'tool_result';
+  turnId: string;
+  callId: string;
+  source: string;
+  serverName: string;
+  toolName: string;
+  status: 'success' | 'error';
+  data: unknown;
+  trace: {
+    owner: 'desktop-rust';
+    bridge: string;
+    audit: Record<string, unknown>;
+  };
+}
+
+export interface AgentExecuteTurnInput {
+  stream_id?: string;
+  conversation_id: string;
+  agent_id: string;
+  user_input: string;
+  attachments?: ChatAttachmentInput[];
+  provider?: string;
+  model?: string;
+  identity?: string;
+  platform?: string;
+  workspace_root?: string;
+  context_window_size?: number;
+  max_retries?: number;
+  knowledge_resources?: AgentExecuteTurnKnowledgeResource[];
+}
+
+function createAgentTurnStreamId(): string {
+  const randomId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `agent-turn-${randomId}`;
+}
+
+export interface AgentExecuteTurnKnowledgeResource {
+  resource_id: string;
+  agent_id: string;
+  type: number;
+  title: string;
+  source: string;
+  policy: number;
+  status: number;
+  last_indexed_at?: string;
+}
+
+export interface AgentTurnStreamCancelInput {
+  stream_id: string;
+}
+
+export interface AgentTurnStreamPayload {
+  streamId: string;
+  event: string;
+  data: Record<string, unknown>;
 }
 
 export interface CronIdInput {
@@ -1958,15 +2427,23 @@ export interface AppletProductWindowLaunchContext {
 }
 
 export interface SkillImportAddressInput {
+  agent_id?: string;
   address: string;
   oauth_provider?: string;
 }
 
 export interface SkillImportGitHubInput {
+  agent_id?: string;
   owner: string;
   repo: string;
   branch?: string;
   file_path?: string;
+}
+
+export interface SkillImportZipInput {
+  agent_id?: string;
+  file_name: string;
+  data_base64: string;
 }
 
 export interface SkillMarketIdInput {
@@ -1989,12 +2466,15 @@ export interface SkillMarketListInput {
 }
 
 export interface SkillMarketDetailInput {
+  agent_id?: string;
   market_id: string;
   file_path: string;
 }
 
 export interface AgentIdInput {
   id: string;
+  include_local_paths?: boolean;
+  includeLocalPaths?: boolean;
 }
 
 export interface AgentCreateInput {
@@ -2013,6 +2493,10 @@ export interface AgentDuplicateInput {
 
 export interface AgentSearchInput {
   q: string;
+}
+
+export interface AgentSelectInput {
+  name: string;
 }
 
 export interface SearchPrimaryInput {
@@ -2116,6 +2600,17 @@ export interface ChatSearchLocalResultRow {
   mime_type?: string;
 }
 
+export interface ChatIndexLocalMessageInput {
+  scope: 'friend' | 'group';
+  conversation_id: string;
+  message_id: string;
+  sender_did: string;
+  content: string;
+  reply_to_ulid?: string;
+  thread_root_ulid?: string;
+  sent_at: number;
+}
+
 export interface GroupChatSyncInput {
   group_ulid: string;
   limit?: number;
@@ -2183,6 +2678,15 @@ export const api = {
   authLogin: (input: AuthLoginInput) =>
     invokeAuthCommand<AuthLoginInput>('auth_login', input),
 
+  accessStart: () =>
+    invokeAccessCommand<void>('access_start'),
+
+  accessSubmitInviteCode: (input: AccessSubmitInviteInput) =>
+    invokeAccessCommand<AccessSubmitInviteInput>('access_submit_invite_code', input),
+
+  accessSubmitLogin: (input: AccessSubmitLoginInput) =>
+    invokeAuthCommand<AccessSubmitLoginInput>('access_submit_login', input),
+
   authLogout: () =>
     invokeAuthCommand<void>('auth_logout'),
 
@@ -2203,6 +2707,12 @@ export const api = {
 
   settingsReset: () =>
     invokeRustCommand<void, TauriStubPayload>('settings_reset'),
+
+  chatScreenshotShortcutRegister: (input: ChatScreenshotShortcutRegisterInput) =>
+    invokeRustCommand<ChatScreenshotShortcutRegisterInput, TauriStubPayload>(
+      'chat_screenshot_shortcut_register',
+      input,
+    ),
 
   chatListConversations: () =>
     invokeRustCommand<void, TauriStubPayload>('chat_list_conversations'),
@@ -2297,6 +2807,24 @@ export const api = {
       input,
     ),
 
+  ossUploadAttachmentBytesChat: (input: ChatUploadAttachmentBytesInput) =>
+    invokeRustDataFromStatus<ChatUploadAttachmentBytesInput, OssAttachmentUploaded>(
+      'oss_upload_attachment_bytes_chat',
+      input,
+    ),
+
+  ossUploadEncryptedAttachmentChat: (input: ChatUploadAttachmentInput) =>
+    invokeRustDataFromStatus<ChatUploadAttachmentInput, SocialEncryptedAttachmentUploaded>(
+      'oss_upload_encrypted_attachment_chat',
+      input,
+    ),
+
+  ossCaptureScreenshotChat: (input: ChatScreenshotAttachmentInput) =>
+    invokeRustDataFromStatus<ChatScreenshotAttachmentInput, OssAttachmentUploaded>(
+      'oss_capture_screenshot_chat',
+      input,
+    ),
+
   /**
    * Social/Moments consumer — open a multi-select picker scoped to
    * image MIME types. The `maxCount` cap is enforced at the Tauri
@@ -2333,6 +2861,12 @@ export const api = {
   ossUploadAttachmentSocial: (filePath: string) =>
     invokeRustDataFromStatus<{ file_path: string }, OssAttachmentUploaded>(
       'oss_upload_attachment_social',
+      { file_path: filePath },
+    ),
+
+  ossUploadEncryptedAttachmentSocial: (filePath: string) =>
+    invokeRustDataFromStatus<{ file_path: string }, SocialEncryptedAttachmentUploaded>(
+      'oss_upload_encrypted_attachment_social',
       { file_path: filePath },
     ),
 
@@ -2504,6 +3038,25 @@ export const api = {
   listAgents: () =>
     invokeRustDataFromStatus<void, { agents: Agent[] }>('agents_list').then((r) => r.agents),
 
+  listAgentsWithMeta: () =>
+    invokeRustDataFromStatus<void, AgentListResult>('agents_list'),
+
+  getSelectedAgent: () =>
+    invokeRustDataFromStatus<void, { selectedAgent: string }>('agents_get_selected')
+      .then((r) => r.selectedAgent),
+
+  setSelectedAgent: (name: string) =>
+    invokeRustDataFromStatus<AgentSelectInput, { selectedAgent: string }>(
+      'agents_set_selected',
+      { name },
+    ),
+
+  getDefaultAgent: () =>
+    invokeRustDataFromStatus<void, { defaultAgent: string; agent: Agent }>('agents_get_default'),
+
+  setDefaultAgent: (id: string) =>
+    invokeRustDataFromStatus<AgentIdInput, { defaultAgent: string }>('agents_set_default', { id }),
+
   getAgent: (id: string) => invokeRustDataFromStatus<AgentIdInput, Agent>('agents_get', { id }),
 
   createAgent: (data: AgentCreate) =>
@@ -2517,6 +3070,19 @@ export const api = {
 
   duplicateAgent: (id: string, name: string) =>
     invokeRustDataFromStatus<AgentDuplicateInput, Agent>('agents_duplicate', { id, name }),
+
+  exportAgentPackage: (id: string, options?: { includeLocalPaths?: boolean }) =>
+    invokeRustDataFromStatus<AgentIdInput, { package: AgentPackage }>('agents_export_package', {
+      id,
+      includeLocalPaths: Boolean(options?.includeLocalPaths),
+    })
+      .then((r) => r.package),
+
+  importAgentPackage: (pkg: AgentPackage | Record<string, unknown>, name?: string) =>
+    invokeRustDataFromStatus<AgentPackageImportInput, Agent>('agents_import_package', {
+      package: pkg,
+      name,
+    }),
 
   searchAgents: (q: string) =>
     invokeRustDataFromStatus<AgentSearchInput, { agents: Agent[] }>('agents_search', { q }).then((r) => r.agents),
@@ -2553,6 +3119,13 @@ export const api = {
           type: model.type || 'chat',
           context_window: Number(model.context_window || 0),
           enabled: Boolean(model.enabled !== false),
+          function_call: Boolean(model.function_call),
+          vision: Boolean(model.vision),
+          reasoning: Boolean(model.reasoning),
+          search: Boolean(model.search),
+          image_output: Boolean(model.image_output),
+          video: Boolean(model.video),
+          protocol_override: model.protocol_override || p.protocol_override || undefined,
         }));
       }
       const cfg = parseJSONSafe(p.config_json);
@@ -2794,6 +3367,9 @@ export const api = {
   appletInvoke: <T = unknown>(input: AppletInvokeInput) =>
     invokeRustDataFromStatus<AppletInvokeInput, T>('applets_invoke', input),
 
+  pickAppletImportDirectory: () =>
+    invokeRustDataFromStatus<void, AppletImportDirectoryResult>('applets_pick_import_directory'),
+
   appletsProductWindowLaunchContext: () =>
     invokeRustDataFromStatus<void, AppletProductWindowLaunchContext>('applets_product_window_launch_context'),
 
@@ -2836,6 +3412,19 @@ export const api = {
   toggleSkill: (id: string, enabled: boolean) =>
     invokeRustDataFromStatus<SkillToggleInput, { ok: boolean }>('skills_toggle', { id, enabled }),
 
+  listSkillVersions: (id: string, limit = 20, offset = 0) =>
+    invokeRustDataFromStatus<SkillVersionsInput, SkillVersionsOutput>('skills_versions', {
+      id,
+      limit,
+      offset,
+    }),
+
+  rollbackSkill: (id: string, targetVersion: number) =>
+    invokeRustDataFromStatus<SkillRollbackInput, { ok: boolean }>('skills_rollback', {
+      id,
+      target_version: targetVersion,
+    }),
+
   importSkillFromAddress: (address: string, oauthProvider?: string) =>
     invokeRustDataFromStatus<SkillImportAddressInput, SkillImportBatchResult>('skills_import_url', {
       address,
@@ -2851,31 +3440,17 @@ export const api = {
     }),
 
   importSkillFromZIP: async (file: File): Promise<SkillImportResult> => {
-    const formData = new FormData();
-    formData.append('file', file);
-    const res = await fetch(`${BASE_URL}/skills/import/zip`, {
-      method: 'POST',
-      body: formData,
+    return invokeRustDataFromStatus<SkillImportZipInput, SkillImportResult>('skills_import_zip', {
+      file_name: file.name,
+      data_base64: await fileToBase64(file),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || res.statusText);
-    }
-    return res.json();
   },
 
   validateSkillZIP: async (file: File): Promise<SkillZipValidation> => {
-    const formData = new FormData();
-    formData.append('file', file);
-    const res = await fetch(`${BASE_URL}/skills/import/zip/validate`, {
-      method: 'POST',
-      body: formData,
+    return invokeRustDataFromStatus<SkillImportZipInput, SkillZipValidation>('skills_validate_zip', {
+      file_name: file.name,
+      data_base64: await fileToBase64(file),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || res.statusText);
-    }
-    return res.json();
   },
 
   // ── Skill Market API ──
@@ -2920,6 +3495,15 @@ export const api = {
       file_path: filePath,
     }),
 
+  uninstallMarketSkill: (marketId: string, filePath: string) =>
+    invokeRustDataFromStatus<SkillMarketDetailInput, { ok: boolean; skillId: string }>(
+      'skills_market_uninstall',
+      {
+        market_id: marketId,
+        file_path: filePath,
+      },
+    ),
+
   // ── MCP Servers API ──
 
   listMCPServers: () =>
@@ -2942,6 +3526,46 @@ export const api = {
 
   testMCPServer: (name: string) =>
     invokeRustDataFromStatus<McpNameInput, { ok: boolean; error?: string; tools?: string[] }>('mcp_test_server', { name }),
+
+  executeMCPTool: (
+    serverName: string,
+    toolName: string,
+    args: Record<string, unknown>,
+    callId?: string,
+  ) =>
+    invokeRustDataFromStatus<McpExecuteToolInput, McpToolExecutionResult>('mcp_execute_tool', {
+      server_name: serverName,
+      tool_name: toolName,
+      arguments: args,
+      call_id: callId,
+    }),
+
+  resolveAgentLocalToolRequest: (input: AgentLocalToolRequestInput) =>
+    invokeRustDataFromStatus<AgentLocalToolRequestInput, AgentLocalToolResultEvent>(
+      'agent_resolve_local_tool_request',
+      input,
+    ),
+
+  startAgentTurnStream: (input: AgentExecuteTurnInput) =>
+    invokeRustDataFromStatus<AgentExecuteTurnInput, { stream_id: string }>(
+      'agent_execute_turn_stream',
+      input,
+    ),
+
+  cancelAgentTurnStream: (streamId: string) =>
+    invokeRustDataFromStatus<AgentTurnStreamCancelInput, { stream_id: string; stopped: boolean }>(
+      'agent_cancel_turn_stream',
+      { stream_id: streamId },
+    ),
+
+  decideAgentToolApproval: (input: AgentToolApprovalDecisionInput) =>
+    invokeRustDataFromStatus<AgentToolApprovalDecisionInput, {
+      ok: boolean;
+      approvalId: string;
+      approved: boolean;
+      actor: string;
+      decidedAt: string;
+    }>('agent_decide_tool_approval', input),
 
   // ── Cron Jobs API ──
 
@@ -3508,6 +4132,12 @@ export const api = {
       limit: limit ?? 30,
     }),
 
+  chatIndexLocalMessages: (messages: ChatIndexLocalMessageInput[]) =>
+    invokeRustDataFromStatus<{ messages: ChatIndexLocalMessageInput[] }, { indexed_count: number }>(
+      'chat_index_local_messages',
+      { messages },
+    ),
+
   friendChatSync: (sessionUlid: string, limit?: number, maxPages?: number) =>
     invokeRustDataFromStatus<FriendChatSyncInput, { synced_count: number; pages_fetched: number }>(
       'friend_chat_sync_from_station_scoped', { session_ulid: sessionUlid, limit, max_pages: maxPages },
@@ -3515,25 +4145,6 @@ export const api = {
 
   friendChatSyncMessages: (messagesJson: string) =>
     invokeRustProto('friend_chat_sync_messages', SyncMessagesResponseSchema, { session_ulid: '', messages_json: messagesJson }),
-
-  friendChatGoOnline: (did?: string) =>
-    invokeRustProto('friend_chat_go_online', OnlineResponseSchema, { did }),
-
-  friendChatGoOffline: (did?: string) =>
-    invokeRustProto('friend_chat_go_offline', OnlineResponseSchema, { did }),
-
-  /**
-   * Start the long-lived presence SSE supervisor for the current
-   * window's actor. Idempotent; the Rust side replaces any in-flight
-   * supervisor for the same actor. While running, station emits
-   * `presence:peer-changed` Tauri events for every online/offline flip.
-   */
-  friendChatPresenceStart: () =>
-    invokeRustDataFromStatus<void, { actor_id: string }>('friend_chat_presence_start'),
-
-  /** Cancel the presence supervisor for the current actor. */
-  friendChatPresenceStop: () =>
-    invokeRustDataFromStatus<void, { actor_id: string | null }>('friend_chat_presence_stop'),
 
   /**
    * Start the unified realtime SSE consumer for the current actor.
@@ -3773,8 +4384,13 @@ export const api = {
   groupChatGetGroup: (groupUlid: string) =>
     invokeRustProto('group_chat_get_group', GetGroupResponseSchema, { group_ulid: groupUlid }),
 
-  groupChatUpdateGroup: (groupUlid: string, name: string, description?: string) =>
-    invokeRustProto('group_chat_update_group', UpdateGroupResponseSchema, { group_ulid: groupUlid, name, description }),
+  groupChatUpdateGroup: (groupUlid: string, name?: string, description?: string, avatarCid?: string) =>
+    invokeRustProto('group_chat_update_group', UpdateGroupResponseSchema, {
+      group_ulid: groupUlid,
+      name,
+      description,
+      avatar_cid: avatarCid,
+    }),
 
   groupChatInviteToGroup: (groupUlid: string, memberDids: string[]) =>
     invokeRustProto('group_chat_invite_to_group', InviteToGroupResponseSchema, { group_ulid: groupUlid, member_dids: memberDids }),
@@ -3784,6 +4400,15 @@ export const api = {
 
   groupChatLeaveGroup: (groupUlid: string) =>
     invokeRustProto('group_chat_leave_group', LeaveGroupResponseSchema, { group_ulid: groupUlid }),
+
+  groupChatTransferOwnership: (groupUlid: string, nextOwnerDid: string) =>
+    invokeRustProto('group_chat_transfer_ownership', TransferGroupOwnershipResponseSchema, {
+      group_ulid: groupUlid,
+      next_owner_did: nextOwnerDid,
+    }),
+
+  groupChatDissolveGroup: (groupUlid: string) =>
+    invokeRustProto('group_chat_dissolve_group', DissolveGroupResponseSchema, { group_ulid: groupUlid }),
 
   groupChatGetMembers: (groupUlid: string, limit?: number, offset?: number) =>
     invokeRustProto('group_chat_get_members', GetGroupMembersResponseSchema, { group_ulid: groupUlid, limit, offset }),
@@ -4029,11 +4654,17 @@ export const api = {
   friendChatListFriendRequests: (status?: number, limit?: number, offset?: number) =>
     invokeRustProto('friend_chat_list_friend_requests', ListFriendRequestsResponseSchema, { status, limit, offset }),
 
-  friendChatBlockUser: (targetDid: string) =>
-    invokeRustProto('friend_chat_block_user', BlockUserResponseSchema, { target_did: targetDid }),
+  friendChatBlockUser: async (targetDid: string) => {
+    const response = await invokeRustProto('friend_chat_block_user', BlockUserResponseSchema, { target_did: targetDid });
+    eventBus.publish(EVENT.RELATIONSHIP_CHANGED, { targetActorId: targetDid, action: 'block' });
+    return response;
+  },
 
-  friendChatUnblockUser: (targetDid: string) =>
-    invokeRustProto('friend_chat_unblock_user', UnblockUserResponseSchema, { target_did: targetDid }),
+  friendChatUnblockUser: async (targetDid: string) => {
+    const response = await invokeRustProto('friend_chat_unblock_user', UnblockUserResponseSchema, { target_did: targetDid });
+    eventBus.publish(EVENT.RELATIONSHIP_CHANGED, { targetActorId: targetDid, action: 'unblock' });
+    return response;
+  },
 
   friendChatListBlockedUsers: (limit = 100, offset = 0) =>
     invokeRustProto('friend_chat_list_blocked_users', ListBlockedUsersResponseSchema, { limit, offset }),
@@ -4076,6 +4707,12 @@ export const api = {
   notificationPreferencesUpdate: (category: number, enabled: boolean, pushEnabled: boolean, soundEnabled: boolean) =>
     invokeRustDataFromStatus<{ category: number; enabled: boolean; push_enabled: boolean; sound_enabled: boolean }, { preference: NotificationPreferenceData }>(
       'notification_preferences_update', { category, enabled, push_enabled: pushEnabled, sound_enabled: soundEnabled },
+    ),
+
+  desktopNativeHostEventEmit: (input: DesktopNativeHostEventInput) =>
+    invokeRustDataFromStatus<DesktopNativeHostEventInput, { emitted: boolean; kind: string }>(
+      'desktop_native_event_emit',
+      input,
     ),
 
   // ── Station registry (dynamic URL picker) ──
@@ -4131,6 +4768,18 @@ export type ChatAttachmentInput = {
   size: number;
   thumbnail_cid?: string;
   visibility?: string;
+  encryption_suite?: string;
+  encryption_key_b64?: string;
+  encryption_nonce_b64?: string;
+  plaintext_sha256_b64?: string;
+  ciphertext_sha256_b64?: string;
+  plaintext_size?: number;
+  ciphertext_size?: number;
+  chunking?: string;
+  chunk_size?: number;
+  chunk_count?: number;
+  tag_size?: number;
+  nonce_strategy?: string;
 };
 
 export interface CryptoKeyBundlePayload {
@@ -4355,8 +5004,9 @@ export function streamChat(
   log.info('api', 'streamChat started', { sessionKey, model });
   (async () => {
     try {
-      const payload = await invokeRustDataFromStatus<ChatCompletionInput, { text: string; model?: string; provider_id?: string }>(
-        'chat_completion_once',
+      const { listen } = await import('@tauri-apps/api/event');
+      const result = await invokeRustDataFromStatus<ChatCompletionInput, { stream_id: string }>(
+        'chat_completion_stream',
         {
           session_id: sessionKey,
           provider_id: providerId || '',
@@ -4364,16 +5014,56 @@ export function streamChat(
           message,
         },
       );
-      if (controller.signal.aborted) {
-        return;
+      const streamId = result?.stream_id;
+      if (!streamId) {
+        throw new Error('Failed to start stream: no stream_id returned');
       }
-      const text = payload?.text || '';
-      if (text) {
-        onEvent({ event: 'text', data: { content: text } });
-      }
-      onEvent({ event: 'done', data: { model: payload?.model || model || '' } });
-      log.info('api', 'streamChat complete');
-      onDone();
+
+      const unlisten = await listen<{
+        streamId: string;
+        event: string;
+        content?: string;
+        model?: string;
+        error?: string;
+        toolCallId?: string;
+        toolCallName?: string;
+        toolCallArgs?: string;
+      }>('chat:stream-event', (tauriEvent) => {
+        const payload = tauriEvent.payload;
+        if (payload.streamId !== streamId) return;
+        if (controller.signal.aborted) {
+          unlisten();
+          return;
+        }
+
+        const data: Record<string, string> = {};
+        if (payload.content) data.content = payload.content;
+        if (payload.model) data.model = payload.model;
+        if (payload.error) data.error = payload.error;
+        if (payload.toolCallId) data.id = payload.toolCallId;
+        if (payload.toolCallName) data.name = payload.toolCallName;
+        if (payload.toolCallArgs) data.args = payload.toolCallArgs;
+
+        if (payload.event === 'thinking' && payload.content?.endsWith('\n__done__')) {
+          data.content = payload.content.replace('\n__done__', '');
+          data.done = 'true';
+        }
+
+        onEvent({ event: payload.event, data });
+
+        if (payload.event === 'done') {
+          unlisten();
+          log.info('api', 'streamChat complete');
+          onDone();
+        } else if (payload.event === 'error') {
+          unlisten();
+          onError(new Error(payload.error || 'Unknown stream error'));
+        }
+      });
+
+      controller.signal.addEventListener('abort', () => {
+        unlisten();
+      });
     } catch (err: any) {
       if (err?.name !== 'AbortError') {
         log.error('api', 'streamChat error', { error: err.message || String(err) });
@@ -4382,6 +5072,81 @@ export function streamChat(
     }
   })();
 
+  return controller;
+}
+
+export function streamAgentTurn(
+  input: AgentExecuteTurnInput,
+  onEvent: (event: StreamEvent) => void,
+  onDone: () => void,
+  onError: (err: Error) => void,
+): AbortController {
+  const controller = new AbortController();
+  log.info('api', 'streamAgentTurn started', { conversationId: input.conversation_id, agentId: input.agent_id });
+  (async () => {
+    let unlisten: (() => void) | undefined;
+    try {
+      const { listen } = await import('@tauri-apps/api/event');
+      const streamId = input.stream_id || createAgentTurnStreamId();
+
+      unlisten = await listen<AgentTurnStreamPayload>('agent:turn-stream-event', (tauriEvent) => {
+        const payload = tauriEvent.payload;
+        if (payload.streamId !== streamId) return;
+        if (controller.signal.aborted) {
+          unlisten?.();
+          return;
+        }
+
+        const data: Record<string, string> = {};
+        Object.entries(payload.data || {}).forEach(([key, value]) => {
+          if (typeof value === 'string') {
+            data[key] = value;
+          } else if (value !== undefined && value !== null) {
+            data[key] = JSON.stringify(value);
+          }
+        });
+        if (typeof payload.data?.text === 'string') data.content = payload.data.text;
+        if (typeof payload.data?.result === 'string') data.content = payload.data.result;
+        if (typeof payload.data?.toolCallId === 'string') data.id = payload.data.toolCallId;
+        if (typeof payload.data?.toolName === 'string') data.name = payload.data.toolName;
+        if (typeof payload.data?.arguments === 'string') data.args = payload.data.arguments;
+        if (typeof payload.data?.stage === 'string') data.message = payload.data.stage;
+
+        onEvent({ event: payload.event, data });
+        if (payload.event === 'done') {
+          unlisten?.();
+          onDone();
+        }
+        if (payload.event === 'error') {
+          unlisten?.();
+          onError(new Error(data.error || 'agent.error.streamFailed'));
+        }
+      });
+
+      const result = await api.startAgentTurnStream({ ...input, stream_id: streamId });
+      if (result?.stream_id !== streamId) {
+        unlisten();
+        throw new Error('agent.error.streamIdMismatch');
+      }
+      if (controller.signal.aborted) {
+        api.cancelAgentTurnStream(streamId).catch((error) => {
+          log.warn('api', 'streamAgentTurn cancel failed', { error: String(error) });
+        });
+        unlisten();
+        return;
+      }
+
+      controller.signal.addEventListener('abort', () => {
+        api.cancelAgentTurnStream(streamId).catch((error) => {
+          log.warn('api', 'streamAgentTurn cancel failed', { error: String(error) });
+        });
+        unlisten?.();
+      }, { once: true });
+    } catch (err: unknown) {
+      unlisten?.();
+      onError(err instanceof Error ? err : new Error(String(err)));
+    }
+  })();
   return controller;
 }
 

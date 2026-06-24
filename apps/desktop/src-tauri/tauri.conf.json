@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Peers Touch Desktop",
+  "productName": "Peers",
   "version": "0.1.0",
   "identifier": "com.peers.touch.desktop",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Peers Touch Desktop",
+        "title": "Peers",
         "decorations": true,
         "width": 1200,
         "height": 800,

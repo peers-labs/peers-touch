@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Blocks, Pin, PinOff } from 'lucide-react';
-import { Empty, Modal, Spin, message, theme, Typography } from 'antd';
+import { Blocks, Pin, PinOff, X } from 'lucide-react';
+import { Empty, Modal, Spin, message, theme } from 'antd';
 import { Button, Tag } from '@lobehub/ui';
 import { PageHeader } from '../components/PageHeader';
 import LynxContainer from '../applet/LynxContainer';
@@ -10,8 +10,6 @@ import { useAppletsStore } from '../store/applets';
 import { usePageContext } from '../kernel/usePageContext';
 import type { AppletHostDeviceRequest, AppletHostNavigationRequest, AppletHostUiRequest } from '../applet/lynx-host-element';
 import type { Page } from '../types/navigation';
-
-const { Text } = Typography;
 
 interface Props {
   appletId: string;
@@ -25,6 +23,7 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
   const { token } = theme.useToken();
   const [navigationTitle, setNavigationTitle] = useState<string | null>(null);
   const loading = useAppletsStore((state) => state.loading);
+  const unloadApplet = useAppletsStore((state) => state.unloadApplet);
   const applet = useAppletsStore((state) => state.applets.find((item) => item.manifest.id === appletId)?.manifest);
   const allDiagnostics = useAppletsStore((state) => state.diagnostics);
   const diagnostics = useMemo(
@@ -105,6 +104,11 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
     return { ok: false, reason: 'unsupported' };
   }, []);
 
+  const handleClose = useCallback(() => {
+    void unloadApplet(appletId);
+    navigation.navigateTo('applets');
+  }, [appletId, navigation, unloadApplet]);
+
   if (loading) {
     return (
       <Flexbox align="center" justify="center" style={{ height: '100%' }}>
@@ -147,16 +151,21 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
                 {pinned ? t('applet.runtime.unpin') : t('applet.runtime.pin')}
               </Button>
             )}
+            <Button
+              size="small"
+              onClick={handleClose}
+              icon={<X size={14} />}
+            >
+              {t('applet.runtime.close')}
+            </Button>
           </Flexbox>
         )}
       />
-      <Flexbox style={{ flex: 1, padding: 16 }} gap={8}>
-        <Text type="secondary" style={{ fontSize: 12, color: token.colorTextTertiary }}>
-          {t('applet.runtime.source', { id: appletId })}
-        </Text>
+      <Flexbox style={{ flex: 1, padding: 16, background: token.colorBgLayout }}>
         <LynxContainer
           appletId={appletId}
           height="100%"
+          onBack={handleClose}
           onNavigationRequest={handleNavigationRequest}
           onUiRequest={handleUiRequest}
           onDeviceRequest={handleDeviceRequest}

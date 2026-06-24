@@ -2,12 +2,15 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { ActionIcon, DraggablePanel, Markdown, Tag, Input } from '@lobehub/ui';
+import { ActionIcon, DraggablePanel, Tag, Input } from '@lobehub/ui';
 import { ModelIcon } from '@lobehub/icons';
 import { theme, Empty } from 'antd';
+import type { MessageArtifact } from '../store/chat';
 import { useChatStore } from '../store/chat';
+import { useAgentStore } from '../store/agent';
 import { MessageBubble } from '../components/MessageBubble';
 import { ChatInput } from '../components/ChatInput';
+import { LazyMarkdown as Markdown } from '../components/LazyMarkdown';
 import { useUserAvatar } from '../components/UserProfilePopover';
 import {
   FileText,
@@ -26,32 +29,41 @@ import {
   PanelRightClose,
   ArrowLeft,
   Save,
+  Copy,
+  Download,
+  Code2,
+  Braces,
+  Workflow,
+  UserRoundCog,
 } from 'lucide-react';
 import { parseAgentChatConfig, api } from '../services/desktop_api';
 
-export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkills, onNavigatePages }: {
+export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkills, onNavigateAgentProfile, onNavigatePages }: {
   onNavigateSettings?: () => void;
   onNavigateApplets?: () => void;
   onNavigateSkills?: () => void;
+  onNavigateAgentProfile?: (agentName: string) => void;
   onNavigatePages?: (docId?: string) => void;
 }) {
+  const {
+    selectedModel,
+    availableModels,
+    defaultModel,
+    enabledAppletIds,
+    selectedAgent,
+    agents,
+  } = useAgentStore();
   const {
     messages,
     currentSessionKey,
     selectSession,
     sendMessage,
-    selectedModel,
-    availableModels,
-    defaultModel,
-    enabledAppletIds,
     showPortal,
     togglePortal,
     portalDocuments,
     portalLoading,
     deleteDocument,
     createDocument,
-    selectedAgent,
-    agents,
     isStreaming,
   } = useChatStore();
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -62,6 +74,7 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
   const [editingDoc, setEditingDoc] = useState<import('../services/desktop_api').NotebookDocument | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
+  const [activeArtifact, setActiveArtifact] = useState<MessageArtifact | null>(null);
 
   const currentModelId = selectedModel || defaultModel;
   const currentModel = availableModels.find((m) => m.id === currentModelId);
@@ -95,6 +108,14 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
     setPortalView('list');
     setEditingDoc(null);
   }, [editingDoc, handleSaveDocument]);
+
+  const handleUseDocumentInChat = useCallback((doc: import('../services/desktop_api').NotebookDocument, title: string, content: string) => {
+    const prompt = t('chat.editor.useDocumentPrompt', {
+      title: title || doc.title || t('chat.notebook.untitled'),
+      content: content || t('chat.editor.noContent'),
+    });
+    sendMessage(prompt);
+  }, [sendMessage, t]);
 
   const loadDocuments = useChatStore((s) => s.loadDocuments);
 
@@ -214,6 +235,7 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
               chatConfig={agentChatConfig}
               modelName={currentModel?.display_name || currentModelId}
               onSend={sendMessage}
+              onConfigure={() => onNavigateAgentProfile?.(currentAgent.name)}
             />
           ) : (
             <>
@@ -223,6 +245,7 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
                   message={msg}
                   userAvatar={userAvatar}
                   agentAvatar={currentAgent?.avatar}
+                  onOpenArtifact={setActiveArtifact}
                 />
               ))}
               <div ref={bottomRef} />
@@ -259,6 +282,7 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
             onBack={handleBackToList}
             onClose={togglePortal}
             onOpenFullPage={(docId) => onNavigatePages?.(docId)}
+            onUseInChat={handleUseDocumentInChat}
           />
         ) : (
           <NotebookPanel
@@ -271,8 +295,214 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
           />
         )}
       </DraggablePanel>
+
+      <DraggablePanel
+        placement="right"
+        defaultSize={{ width: 460 }}
+        minWidth={360}
+        maxWidth={720}
+        expand={!!activeArtifact}
+        onExpandChange={(expand) => { if (!expand) setActiveArtifact(null); }}
+        style={{ display: 'flex', flexDirection: 'column' }}
+      >
+        {activeArtifact && (
+          <ArtifactPanel
+            artifact={activeArtifact}
+            onClose={() => setActiveArtifact(null)}
+          />
+        )}
+      </DraggablePanel>
     </Flexbox>
   );
+}
+
+function artifactFileName(artifact: MessageArtifact): string {
+  const extensionByLanguage: Record<string, string> = {
+    javascript: 'js',
+    json: 'json',
+    markdown: 'md',
+    mermaid: 'mmd',
+    plaintext: 'txt',
+    python: 'py',
+    rust: 'rs',
+    shell: 'sh',
+    sh: 'sh',
+    typescript: 'ts',
+    yaml: 'yml',
+    yml: 'yml',
+  };
+  const language = artifact.language?.trim().toLowerCase() || 'text';
+  const extension = extensionByLanguage[language] || language.replace(/[^a-z0-9]+/g, '-') || 'txt';
+  return `agent-artifact-${artifact.messageId.slice(0, 8)}.${extension}`;
+}
+
+function exportArtifact(artifact: MessageArtifact) {
+  const blob = new Blob([artifact.content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = artifactFileName(artifact);
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function artifactPanelIcon(kind: MessageArtifact['kind']) {
+  if (kind === 'diagram') return Workflow;
+  if (kind === 'structured') return Braces;
+  if (kind === 'code') return Code2;
+  return FileText;
+}
+
+function ArtifactPanel({
+  artifact,
+  onClose,
+}: {
+  artifact: MessageArtifact;
+  onClose: () => void;
+}) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
+  const ArtifactIcon = artifactPanelIcon(artifact.kind);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(artifact.content);
+  }, [artifact.content]);
+
+  const handleExport = useCallback(() => {
+    exportArtifact(artifact);
+  }, [artifact]);
+
+  const handleSource = useCallback(() => {
+    document.getElementById(`agent-message-${artifact.messageId}`)?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+    });
+  }, [artifact.messageId]);
+
+  return (
+    <Flexbox flex={1} style={{ height: '100%' }}>
+      <Flexbox
+        horizontal
+        align="center"
+        justify="space-between"
+        style={{
+          padding: '10px 12px',
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
+          flexShrink: 0,
+        }}
+      >
+        <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0 }}>
+          <ArtifactIcon size={16} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />
+          <Flexbox style={{ minWidth: 0 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {t('chat.artifact.panel.title')}
+            </span>
+            <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
+              {t('chat.artifact.panel.source', { id: artifact.messageId.slice(0, 8) })}
+            </span>
+          </Flexbox>
+        </Flexbox>
+        <Flexbox horizontal align="center" gap={2}>
+          <ActionIcon
+            icon={Copy}
+            size="small"
+            title={t('chat.artifact.panel.copy')}
+            onClick={handleCopy}
+          />
+          <ActionIcon
+            icon={Download}
+            size="small"
+            title={t('chat.artifact.panel.export')}
+            onClick={handleExport}
+          />
+          <ActionIcon
+            icon={ChevronRight}
+            size="small"
+            title={t('chat.artifact.panel.sourceAction')}
+            onClick={handleSource}
+          />
+          <ActionIcon
+            icon={PanelRightClose}
+            size="small"
+            title={t('chat.artifact.panel.close')}
+            onClick={onClose}
+          />
+        </Flexbox>
+      </Flexbox>
+
+      <Flexbox horizontal gap={6} style={{ padding: '8px 12px', borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+        <Tag bordered={false} style={{ margin: 0 }}>
+          {t(`chat.message.artifact.kind.${artifact.kind}`)}
+        </Tag>
+        {artifact.language && (
+          <Tag bordered={false} style={{ margin: 0 }}>
+            {artifact.language}
+          </Tag>
+        )}
+      </Flexbox>
+
+      <Flexbox flex={1} style={{ overflow: 'auto', padding: 16, minHeight: 0 }}>
+        {artifact.kind === 'document' ? (
+          <Markdown variant="chat" fontSize={14}>
+            {artifact.content}
+          </Markdown>
+        ) : (
+          <pre
+            className="selectable"
+            style={{
+              margin: 0,
+              width: '100%',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              fontSize: 12,
+              lineHeight: 1.6,
+              color: token.colorText,
+              background: token.colorFillQuaternary,
+              border: `1px solid ${token.colorBorderSecondary}`,
+              borderRadius: 10,
+              padding: 12,
+            }}
+          >
+            {artifact.content}
+          </pre>
+        )}
+      </Flexbox>
+    </Flexbox>
+  );
+}
+
+function normalizeOpeningQuestions(values: unknown[]): string[] {
+  const questions = values
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return Array.from(new Set(questions)).slice(0, 6);
+}
+
+function parseOpeningQuestions(raw?: string): string[] {
+  const source = raw?.trim();
+  if (!source) return [];
+
+  try {
+    const parsed = JSON.parse(source);
+    if (Array.isArray(parsed)) return normalizeOpeningQuestions(parsed);
+    if (typeof parsed === 'string') return normalizeOpeningQuestions(parsed.split(/\r?\n/));
+  } catch {
+    return normalizeOpeningQuestions(source.split(/\r?\n/));
+  }
+
+  return [];
+}
+
+function parseKnowledgeResourceCount(raw?: string): number {
+  if (!raw) return 0;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
 }
 
 function WelcomeScreen({
@@ -280,155 +510,243 @@ function WelcomeScreen({
   chatConfig,
   modelName,
   onSend,
+  onConfigure,
 }: {
-  agent: { name: string; title?: string; avatar?: string; description?: string; openingMessage?: string; openingQuestions?: string; systemPrompt?: string };
+  agent: { name: string; title?: string; avatar?: string; description?: string; openingMessage?: string; openingQuestions?: string; systemPrompt?: string; knowledgeResources?: string };
   chatConfig: any;
   modelName: string;
   onSend: (msg: string) => void;
+  onConfigure?: () => void;
 }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
 
-  let questions: string[] = [];
-  try {
-    questions = JSON.parse(agent.openingQuestions || '[]');
-  } catch {
-    questions = [];
-  }
-
   const title = agent.title || agent.name;
   const avatar = agent.avatar || '🤖';
-  const welcomeText = agent.openingMessage || agent.description || t('chat.welcome.fallbackText');
+  const questions = parseOpeningQuestions(agent.openingQuestions);
+  const welcomeText = agent.openingMessage?.trim() || agent.description?.trim() || t('chat.welcome.fallbackText');
 
   const hasTools = true;
   const hasMemory = chatConfig?.memory?.enabled;
+  const workspaceRoot = chatConfig?.workspace?.root || chatConfig?.workspaceRoot || '';
+  const knowledgeCount = parseKnowledgeResourceCount(agent.knowledgeResources);
+  const capabilityCards = [
+    {
+      key: 'model',
+      icon: <Code2 size={16} />,
+      title: t('chat.welcome.capability.model'),
+      value: modelName,
+      tone: '#2563eb',
+    },
+    {
+      key: 'tools',
+      icon: <Wrench size={16} />,
+      title: t('chat.welcome.capability.tools'),
+      value: hasTools ? t('chat.welcome.capability.ready') : t('chat.welcome.capability.notConfigured'),
+      tone: '#7c3aed',
+    },
+    {
+      key: 'memory',
+      icon: <Brain size={16} />,
+      title: t('chat.welcome.capability.memory'),
+      value: hasMemory ? t('chat.welcome.capability.enabled') : t('chat.welcome.capability.disabled'),
+      tone: '#059669',
+    },
+    {
+      key: 'workspace',
+      icon: <BookOpen size={16} />,
+      title: t('chat.welcome.capability.workspace'),
+      value: workspaceRoot ? t('chat.welcome.capability.bound') : t('chat.welcome.capability.notConfigured'),
+      tone: '#d97706',
+    },
+  ];
 
   return (
     <Flexbox
       flex={1}
       align="center"
       justify="center"
-      gap={24}
-      style={{ padding: '0 24px' }}
+      gap={18}
+      style={{ padding: '24px', width: '100%' }}
     >
-      {/* Agent info card - LobeChat style */}
       <Flexbox
-        align="center"
-        gap={12}
+        horizontal
+        gap={18}
         style={{
-          padding: '32px 40px 24px',
-          borderRadius: 16,
-          background: token.colorBgElevated,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          maxWidth: 520,
+          maxWidth: 920,
           width: '100%',
+          padding: 18,
+          borderRadius: 24,
+          background:
+            'radial-gradient(circle at top left, rgba(99,102,241,0.16), transparent 34%), radial-gradient(circle at bottom right, rgba(14,165,233,0.12), transparent 30%), ' + token.colorBgElevated,
+          border: `1px solid ${token.colorBorderSecondary}`,
+          boxShadow: '0 24px 80px rgba(15, 23, 42, 0.08)',
         }}
       >
-        <div
-          style={{
-            width: 56,
-            height: 56,
-            borderRadius: 16,
-            background: 'linear-gradient(135deg, #667eea, #764ba2)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 28,
-          }}
-        >
-          {avatar}
-        </div>
-        <h2
-          style={{
-            fontSize: 20,
-            fontWeight: 700,
-            color: token.colorText,
-            margin: 0,
-          }}
-        >
-          {title}
-        </h2>
-
-        {/* Active features - similar to LobeChat */}
-        <Flexbox gap={6} style={{ width: '100%' }}>
-          {hasTools && (
-            <Flexbox
-              horizontal
-              align="center"
-              gap={8}
+        <Flexbox flex={1} gap={16} style={{ minWidth: 0 }}>
+          <Flexbox horizontal align="center" gap={14}>
+            <div
               style={{
-                padding: '6px 12px',
-                borderRadius: 8,
-                background: token.colorFillTertiary,
-                fontSize: 13,
-                color: token.colorTextSecondary,
+                width: 72,
+                height: 72,
+                borderRadius: 24,
+                background: 'linear-gradient(135deg, #2563eb, #7c3aed 48%, #db2777)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 36,
+                boxShadow: '0 16px 42px rgba(79, 70, 229, 0.26)',
               }}
             >
-              <CheckCircle size={14} style={{ color: token.colorSuccess }} />
-              <span>{t('chat.welcome.activateTools')}</span>
-              <Wrench size={12} style={{ color: token.colorTextTertiary }} />
-              <span style={{ color: token.colorTextDescription }}>{t('chat.welcome.builtIn')}</span>
-              {hasMemory && (
-                <>
-                  <Brain size={12} style={{ color: token.colorTextTertiary, marginLeft: 4 }} />
-                  <span style={{ color: token.colorTextDescription }}>{t('chat.welcome.memory')}</span>
-                </>
-              )}
-              <ChevronRight size={12} style={{ color: token.colorTextQuaternary, marginLeft: 'auto' }} />
+              {avatar}
+            </div>
+            <Flexbox gap={6} style={{ minWidth: 0 }}>
+              <Flexbox horizontal align="center" gap={6}>
+                <Tag style={{ margin: 0 }}>{t('chat.welcome.heroKicker')}</Tag>
+                {knowledgeCount > 0 && (
+                  <Tag style={{ margin: 0 }}>
+                    {t('chat.welcome.knowledgeCount', { count: knowledgeCount })}
+                  </Tag>
+                )}
+              </Flexbox>
+              <h2 style={{ fontSize: 28, fontWeight: 800, color: token.colorText, margin: 0, letterSpacing: -0.4 }}>
+                {title}
+              </h2>
+              <div style={{ fontSize: 14, color: token.colorTextSecondary, lineHeight: 1.7, maxWidth: 560 }}>
+                <Markdown variant="chat" fontSize={14}>
+                  {welcomeText}
+                </Markdown>
+              </div>
             </Flexbox>
-          )}
+          </Flexbox>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+            {capabilityCards.map((item) => (
+              <CapabilityCard
+                key={item.key}
+                icon={item.icon}
+                title={item.title}
+                value={item.value}
+                tone={item.tone}
+              />
+            ))}
+          </div>
         </Flexbox>
 
-        <p
+        <Flexbox
+          gap={10}
           style={{
-            fontSize: 14,
-            color: token.colorTextSecondary,
-            margin: 0,
-            textAlign: 'center',
-            lineHeight: 1.6,
+            width: 220,
+            padding: 14,
+            borderRadius: 18,
+            background: token.colorBgContainer,
+            border: `1px solid ${token.colorBorderSecondary}`,
           }}
         >
-          {welcomeText}
-        </p>
-
-        {/* Model tag */}
-        <Tag
-          style={{
-            margin: 0,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            padding: '2px 10px',
-            borderRadius: 4,
-            fontSize: 11,
-            color: token.colorTextDescription,
-          }}
-        >
-          <ModelIcon model={modelName} size={12} />
-          {modelName}
-        </Tag>
+          <Flexbox horizontal align="center" gap={8}>
+            <CheckCircle size={16} style={{ color: token.colorSuccess }} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: token.colorText }}>
+              {t('chat.welcome.runtimeTitle')}
+            </span>
+          </Flexbox>
+          <span style={{ fontSize: 12, lineHeight: 1.6, color: token.colorTextSecondary }}>
+            {t('chat.welcome.runtimeDesc')}
+          </span>
+          <Tag style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: 4, width: 'fit-content' }}>
+            <ModelIcon model={modelName} size={12} />
+            {modelName}
+          </Tag>
+          <button
+            type="button"
+            onClick={onConfigure}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+              width: '100%',
+              marginTop: 2,
+              padding: '8px 10px',
+              borderRadius: 12,
+              border: `1px solid ${token.colorBorderSecondary}`,
+              background: token.colorFillQuaternary,
+              color: token.colorText,
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 600,
+            }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <UserRoundCog size={14} />
+              {t('chat.welcome.configureAgent')}
+            </span>
+            <ChevronRight size={13} style={{ color: token.colorTextTertiary }} />
+          </button>
+        </Flexbox>
       </Flexbox>
 
-      {/* Quick actions */}
       {questions.length > 0 ? (
-        <Flexbox horizontal gap={10} wrap="wrap" justify="center" style={{ maxWidth: 520 }}>
-          {questions.map((q, i) => (
-            <QuickAction
-              key={i}
-              icon={<Sparkles size={14} />}
-              label={q}
-              onClick={() => onSend(q)}
-            />
-          ))}
+        <Flexbox align="center" gap={10} style={{ maxWidth: 920, width: '100%' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: token.colorTextDescription }}>
+            {t('chat.welcome.starterQuestions')}
+          </span>
+          <Flexbox horizontal gap={10} wrap="wrap" justify="center">
+            {questions.map((q, i) => (
+              <QuickAction
+                key={`${q}-${i}`}
+                icon={<Sparkles size={14} />}
+                label={q}
+                onClick={() => onSend(q)}
+              />
+            ))}
+          </Flexbox>
         </Flexbox>
       ) : (
-        <Flexbox horizontal gap={10} wrap="wrap" justify="center" style={{ maxWidth: 520 }}>
-          <QuickAction icon={<FileText size={14} />} label={t('chat.welcome.quickAction.readFile')} onClick={() => onSend(t('chat.welcome.quickAction.readFilePrompt'))} />
-          <QuickAction icon={<Terminal size={14} />} label={t('chat.welcome.quickAction.runCommand')} onClick={() => onSend(t('chat.welcome.quickAction.runCommandPrompt'))} />
-          <QuickAction icon={<Globe size={14} />} label={t('chat.welcome.quickAction.webSearch')} onClick={() => onSend(t('chat.welcome.quickAction.webSearchPrompt'))} />
-          <QuickAction icon={<Sparkles size={14} />} label={t('chat.welcome.quickAction.summarize')} onClick={() => onSend(t('chat.welcome.quickAction.summarizePrompt'))} />
+        <Flexbox align="center" gap={10} style={{ maxWidth: 920, width: '100%' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: token.colorTextDescription }}>
+            {t('chat.welcome.defaultActions')}
+          </span>
+          <Flexbox horizontal gap={10} wrap="wrap" justify="center">
+            <QuickAction icon={<FileText size={14} />} label={t('chat.welcome.quickAction.readFile')} onClick={() => onSend(t('chat.welcome.quickAction.readFilePrompt'))} />
+            <QuickAction icon={<Terminal size={14} />} label={t('chat.welcome.quickAction.runCommand')} onClick={() => onSend(t('chat.welcome.quickAction.runCommandPrompt'))} />
+            <QuickAction icon={<Globe size={14} />} label={t('chat.welcome.quickAction.webSearch')} onClick={() => onSend(t('chat.welcome.quickAction.webSearchPrompt'))} />
+            <QuickAction icon={<Sparkles size={14} />} label={t('chat.welcome.quickAction.summarize')} onClick={() => onSend(t('chat.welcome.quickAction.summarizePrompt'))} />
+          </Flexbox>
         </Flexbox>
       )}
+    </Flexbox>
+  );
+}
+
+function CapabilityCard({
+  icon,
+  title,
+  value,
+  tone,
+}: {
+  icon: ReactNode;
+  title: string;
+  value: string;
+  tone: string;
+}) {
+  const { token } = theme.useToken();
+  return (
+    <Flexbox
+      gap={6}
+      style={{
+        padding: '10px 12px',
+        borderRadius: 14,
+        background: token.colorBgContainer,
+        border: `1px solid ${token.colorBorderSecondary}`,
+      }}
+    >
+      <Flexbox horizontal align="center" gap={7}>
+        <span style={{ display: 'flex', color: tone }}>{icon}</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: token.colorText }}>{title}</span>
+      </Flexbox>
+      <span style={{ fontSize: 12, color: token.colorTextSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {value}
+      </span>
     </Flexbox>
   );
 }
@@ -652,6 +970,7 @@ function DocumentEditor({
   onBack,
   onClose,
   onOpenFullPage,
+  onUseInChat,
 }: {
   doc: import('../services/desktop_api').NotebookDocument;
   title: string;
@@ -662,6 +981,7 @@ function DocumentEditor({
   onBack: () => void;
   onClose: () => void;
   onOpenFullPage?: (docId: string) => void;
+  onUseInChat?: (doc: import('../services/desktop_api').NotebookDocument, title: string, content: string) => void;
 }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
@@ -695,6 +1015,14 @@ function DocumentEditor({
             title={t('chat.editor.save')}
             onClick={onSave}
           />
+          {onUseInChat && (
+            <ActionIcon
+              icon={FileText}
+              size="small"
+              title={t('chat.editor.useInChat')}
+              onClick={() => onUseInChat(doc, title, content)}
+            />
+          )}
           {onOpenFullPage && (
             <ActionIcon
               icon={Maximize2}

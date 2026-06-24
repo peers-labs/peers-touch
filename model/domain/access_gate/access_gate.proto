@@ -115,6 +115,14 @@ message GetAccessDecisionResponse {
   AccessDecision decision = 1;
 }
 
+message CancelAccessAttemptRequest {
+  string attempt_id = 1;
+}
+
+message CancelAccessAttemptResponse {
+  bool cancelled = 1;
+}
+
 message AccessPolicy {
   AccessPolicyMode mode = 1;
   repeated string allowed_emails = 2;
@@ -122,6 +130,13 @@ message AccessPolicy {
   repeated int64 allowed_actor_ids = 4;
   google.protobuf.Timestamp updated_at = 5;
   string updated_by = 6;
+  // Ordered set of gate types the Station evaluates for an attempt. Empty means
+  // the Station applies its built-in default chain. Removing a gate type here
+  // disables that gate flow on every client without a client release.
+  repeated AccessGateType enabled_gates = 7;
+  // When true the Station offers self-service invite-code redemption as a gate
+  // (invite.code) in addition to administrator-managed allowlist entries.
+  bool self_service_invite = 8;
 }
 
 message UpdateAccessPolicyRequest {
@@ -130,4 +145,50 @@ message UpdateAccessPolicyRequest {
 
 message UpdateAccessPolicyResponse {
   AccessPolicy policy = 1;
+}
+
+// InviteCode is a Station-issued, administrator-managed credential that lets a
+// holder pass the invite.code gate. Codes are owned by the Station Dashboard;
+// clients never create or list them.
+message InviteCode {
+  string id = 1;
+  string code = 2;
+  string note = 3;
+  int32 max_uses = 4;
+  int32 used_count = 5;
+  bool revoked = 6;
+  string created_by = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp expires_at = 9;
+  google.protobuf.Timestamp last_used_at = 10;
+}
+
+message CreateInviteCodeRequest {
+  // Optional explicit code. When empty the Station generates a random code.
+  string code = 1;
+  string note = 2;
+  // Maximum redemptions. Zero or negative means unlimited.
+  int32 max_uses = 3;
+  // Optional expiry. Unset means the code never expires.
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message CreateInviteCodeResponse {
+  InviteCode invite_code = 1;
+}
+
+message ListInviteCodesRequest {
+  bool include_revoked = 1;
+}
+
+message ListInviteCodesResponse {
+  repeated InviteCode invite_codes = 1;
+}
+
+message RevokeInviteCodeRequest {
+  string id = 1;
+}
+
+message RevokeInviteCodeResponse {
+  InviteCode invite_code = 1;
 }

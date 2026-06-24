@@ -1,0 +1,14 @@
+{
+  "service": "note",
+  "routes": {
+    "stationPrefix": "/applets/note/v1",
+    "publicPrefix": "/v1"
+  },
+  "deployment": {
+    "stationBundled": true,
+    "standalone": "planned"
+  },
+  "health": {
+    "path": "/healthz"
+  }
+}

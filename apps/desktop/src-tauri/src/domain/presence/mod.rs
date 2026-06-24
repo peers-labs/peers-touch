@@ -128,6 +128,22 @@ impl PresenceTrigger {
         }
     }
 
+    pub fn as_wire(self) -> &'static str {
+        match self {
+            PresenceTrigger::AppLaunch => "app_launch",
+            PresenceTrigger::AppForeground => "app_foreground",
+            PresenceTrigger::AppBackground => "app_background",
+            PresenceTrigger::AppShutdown => "app_shutdown",
+            PresenceTrigger::IdentityRestored => "identity_restored",
+            PresenceTrigger::IdentitySwitched => "identity_switched",
+            PresenceTrigger::IdentityLoggedOut => "identity_logged_out",
+            PresenceTrigger::NetworkOnline => "network_online",
+            PresenceTrigger::NetworkOffline => "network_offline",
+            PresenceTrigger::Heartbeat => "heartbeat",
+            PresenceTrigger::Manual => "manual",
+        }
+    }
+
     /// Whether this trigger demands the actor become **Online** (vs.
     /// **Offline**). Pure function over the trigger variant; consulted by
     /// the supervisor when picking a target state.

@@ -4,6 +4,7 @@ package peers_touch.model.chat.v1;
 
 import "google/protobuf/timestamp.proto";
 import "domain/chat/chat.proto";
+import "domain/common/common.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
 
@@ -22,11 +23,6 @@ message FriendChatSession {
   string participant_a_avatar = 11;
   string participant_b_display_name = 12;
   string participant_b_avatar = 13;
-  // Initial presence snapshot for each participant. Populated by the
-  // session list endpoint from the in-memory online map; clients should
-  // subscribe to /friend-chat/presence/stream (SSE) for live updates.
-  bool participant_a_online = 14;
-  bool participant_b_online = 15;
 }
 
 message FriendChatMessage {
@@ -110,6 +106,7 @@ message FriendMessageAttachment {
   // treated as "unknown" by older clients and rendered without
   // a badge; new servers SHOULD always populate it.
   string visibility = 6;
+  peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 7;
 }
 
 message MessageEnvelope {
@@ -289,15 +286,6 @@ message MessageAckResponse {
   // Empty success response
 }
 
-// Online/Offline status
-message OnlineRequest {
-  string did = 1;
-}
-
-message OnlineResponse {
-  string status = 1;
-}
-
 // Pending offline messages
 message GetPendingRequest {
   int32 limit = 1;
@@ -321,9 +309,8 @@ message GetStatsRequest {
 }
 
 message GetStatsResponse {
-  int32 online_peers = 1;
-  int64 pending_messages = 2;
-  string status = 3;
+  int64 pending_messages = 1;
+  string status = 2;
 }
 
 // ============================================================================

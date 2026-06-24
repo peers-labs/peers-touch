@@ -1,16 +1,14 @@
 use crate::application::chat_storage;
-use crate::application::presence_stream;
 use crate::application::session_resolver;
 use crate::contracts::{
     AttachmentInput, ChatKeyRotateInput, ChatLocalSearchInput, ChatScopeCursorGetInput,
     ChatScopeCursorSetInput, FriendChatAcceptFriendRequestInput, FriendChatAckInput,
     FriendChatBlockUserInput, FriendChatCreateSessionInput, FriendChatDeleteInput,
     FriendChatEditInput, FriendChatListBlockedUsersInput, FriendChatListFriendRequestsInput,
-    FriendChatListInput, FriendChatListMessagesInput, FriendChatOnlineInput,
-    FriendChatPendingInput, FriendChatRecallInput, FriendChatRejectFriendRequestInput,
-    FriendChatSendFriendRequestInput, FriendChatSendInput, FriendChatSyncInput,
-    FriendChatSyncMessagesInput, FriendChatThreadCountsInput, FriendChatThreadInput,
-    FriendChatThreadReadInput, FriendConversationSettingsInput,
+    FriendChatListInput, FriendChatListMessagesInput, FriendChatPendingInput, FriendChatRecallInput,
+    FriendChatRejectFriendRequestInput, FriendChatSendFriendRequestInput, FriendChatSendInput,
+    FriendChatSyncInput, FriendChatSyncMessagesInput, FriendChatThreadCountsInput,
+    FriendChatThreadInput, FriendChatThreadReadInput, FriendConversationSettingsInput,
     FriendConversationSettingsUpdateInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
@@ -23,7 +21,7 @@ use prost::Message;
 use reqwest::Method;
 use serde_json::{json, Value};
 use std::sync::Arc;
-use tauri::{AppHandle, State, Window};
+use tauri::{State, Window};
 
 fn token_from_state(
     state: &State<'_, Arc<AppState>>,
@@ -274,6 +272,7 @@ fn map_attachments(inputs: &[AttachmentInput]) -> Vec<model_chat::FriendMessageA
             // input means "unknown", which the renderer treats as
             // unbadged.
             visibility: a.visibility.clone().unwrap_or_default(),
+            media_encryption: None,
         })
         .collect()
 }
@@ -867,110 +866,6 @@ pub fn friend_chat_sync_messages(
     >(
         Method::POST,
         "/friend-chat/message/sync",
-        &token,
-        None,
-        Some(&req),
-    ) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "station request failed"),
-    };
-    AppResult::success(resp.encode_to_vec())
-}
-
-/// Notify station that the user is online for friend-chat.
-#[tauri::command]
-pub fn friend_chat_go_online(
-    input: FriendChatOnlineInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
-        Ok(token) => token,
-        Err(error) => return error,
-    };
-
-    let req = model_chat::OnlineRequest {
-        did: input.did.unwrap_or_default(),
-    };
-    let resp = match station_client::request_proto::<
-        model_chat::OnlineRequest,
-        model_chat::OnlineResponse,
-    >(
-        Method::POST,
-        "/friend-chat/online",
-        &token,
-        None,
-        Some(&req),
-    ) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "station request failed"),
-    };
-    AppResult::success(resp.encode_to_vec())
-}
-
-/// Start the long-lived presence SSE supervisor for the *current
-/// window's* actor. Idempotent: if a supervisor for the same actor is
-/// already running, it is cancelled and replaced.
-///
-/// The frontend should invoke this once per session (right after the
-/// session is unlocked) and call `friend_chat_presence_stop` on
-/// logout. While the supervisor is running, `presence:peer-changed`
-/// Tauri events are emitted on every flip.
-#[tauri::command]
-pub fn friend_chat_presence_start(
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-    app: AppHandle,
-) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state, &window) {
-        Ok(token) => token,
-        Err(error) => return error,
-    };
-    let Some(actor_id) = actor_id_from_state(&state, &window) else {
-        return AppResult::fail(ErrorCode::Unauthorized, "no active actor", None);
-    };
-    presence_stream::start(app, actor_id.clone(), token);
-    to_stub(
-        "friend_chat_presence_start",
-        json!({ "actor_id": actor_id }),
-    )
-}
-
-/// Cancel the presence supervisor for the current window's actor.
-/// Idempotent — safe to call when no supervisor is running.
-#[tauri::command]
-pub fn friend_chat_presence_stop(
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    if let Some(actor_id) = actor_id_from_state(&state, &window) {
-        presence_stream::stop(&actor_id);
-        return to_stub("friend_chat_presence_stop", json!({ "actor_id": actor_id }));
-    }
-    to_stub("friend_chat_presence_stop", json!({ "actor_id": null }))
-}
-
-/// Notify station that the user is offline for friend-chat.
-#[tauri::command]
-pub fn friend_chat_go_offline(
-    input: FriendChatOnlineInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
-        Ok(token) => token,
-        Err(error) => return error,
-    };
-
-    let req = model_chat::OnlineRequest {
-        did: input.did.unwrap_or_default(),
-    };
-    let resp = match station_client::request_proto::<
-        model_chat::OnlineRequest,
-        model_chat::OnlineResponse,
-    >(
-        Method::POST,
-        "/friend-chat/offline",
         &token,
         None,
         Some(&req),

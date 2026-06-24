@@ -13,7 +13,7 @@ Cross-end architecture source:
 Read this before changing:
 
 - `apps/desktop/src/kernel/runtime.ts`, `kernel/page.ts`, `kernel/boot.ts`, `kernel/PageHost.tsx`, `kernel/usePrefetch.ts`
-- `apps/desktop/src/runtimes/socialRuntime.ts`, `searchRuntime.ts`, `settingsRuntime.ts`
+- `apps/desktop/src/runtimes/socialRuntime.ts`, `momentsRuntime.ts`, `searchRuntime.ts`, `settingsRuntime.ts`
 - `apps/desktop/src/services/socialRealtime.ts`
 - `apps/desktop/src/services/appRuntime.ts`
 - `apps/desktop/src/store/socialChat.ts`
@@ -30,6 +30,7 @@ Inside `desktop-web`, long-lived runtimes own projection freshness:
 | Runtime | Owns |
 |---|---|
 | `socialRealtime` | Chat/contact/social projections, realtime event consumption, cold sync, periodic reconciliation |
+| `momentsRuntime` | Moments HOME / Explore / Circles projection bootstrap, periodic reconciliation, and actor-scoped reset |
 | `notification` store | Notification list, unread counts, notification presentation state |
 | `navigationBadges` | Cross-surface unread and badge projection |
 | Page components | Rendering, selection, local interaction state only |
@@ -60,6 +61,19 @@ If a feature only refreshes on component mount, tab switch, or button click, the
 Friend request handling specifically belongs here. A notification saying "User B sent a friend request" must cause the social projection to refresh friend requests and related counters without waiting for Contacts to remount.
 
 Peer public profile is also part of this projection. The chat layer needs the rich public profile (display name, bio, avatar/header, region, tags, links, counts) of any peer it can converse with. The cache lives in `socialChat.peerProfiles` and is filled by `loadPeerProfile(did)`; UI panels (Contacts detail, Chat detail) call it lazily on view, while authoritative invalidation must come from the runtime — when an `actor.profile.updated` realtime signal lands (or, until then, on supervisor resync) `socialRealtime` must call `loadPeerProfile(did, true)` for every peer currently visible in `sessions`/`groupMembers` so the next render sees the new profile.
+
+## 4.1 Moments Runtime Contract
+
+`momentsRuntime` is responsible for the first runtime-owned Moments projection slice:
+
+- observe authenticated actor edges and reset actor-scoped Moments / Discovery state on identity switch;
+- bootstrap the viewer identity, HOME feed, PUBLIC Explore feed, circles, and circle member previews;
+- refresh detail projection when the user opens a Moment (`post + comments`);
+- refresh author projection when the user opens an actor page (`author feed + followers/following`);
+- periodically reconcile the same projection until Station projection events and cursor sync land;
+- consume Desktop eventBus Moment events (`moment.created`, `moment.deleted`, `moment.commented`, `moment.reacted`, `moment.resync_requested`) and refresh affected projections while keeping periodic reconcile as the missed-event safety net;
+- keep HOME / Explore / Circle / Detail / User pages as pure readers for first-screen data;
+- allow explicit user actions (`Load more`, sort switch, comment submit) to call store actions, because those are interaction-driven pagination/write flows rather than mount-time projection freshness.
 
 ## 5. Implementation Pattern
 
@@ -95,7 +109,7 @@ interface RuntimeDescriptor {
 
 - A runtime is the SINGLE owner of one domain's projection store(s). No two runtimes own overlapping fields.
 - `install` runs once at boot. `bootstrap` runs once per `(actorId, runtime)` pair; the registry guards against duplicate concurrent bootstraps via per-runtime sequence numbers.
-- `app`-scope runtimes (search, settings, social) do not depend on the active actor; their data either is identity-independent (search sources) or is itself the source of truth for the active actor (settings, social).
+- `app`-scope runtimes (search, settings, social, moments) do not depend on the active actor at install time; their data either is identity-independent, is itself the source of truth for the active actor, or observes authenticated actor edges through its own bridge logic.
 - `session`-scope runtimes are created by registering a descriptor with `scope: 'session'`; the BootPipeline calls their `bootstrap`/`teardown` on the authenticated-actor edge.
 - Runtime entries live in `apps/desktop/src/runtimes/*Runtime.ts` and are registered through `services/appRuntime.ts → registerKernelRuntimes`.
 
@@ -157,6 +171,7 @@ Prefetch is **not** a substitute for a runtime — runtimes own *long-lived* pro
 | `settings` | `pages/SettingsPage.descriptor.tsx` | `settings` | migrated |
 | `applets` | `pages/AppletsPage.descriptor.tsx` | `applets` | migrated |
 | `applet:*` | `pages/AppletRuntimePage.descriptor.tsx` | `applets` | migrated dynamic route |
+| `moments` | `pages/moments/MomentsApp.descriptor.tsx` | `moments` | migrated |
 | `agent`, `notes`, `agent-profile` | — | — | legacy `PageRouter` fallback |
 
 New pages that fit the contract should ship as descriptors from day one. Adding a page to the legacy `PageRouter` requires an explicit reason in the PR description.

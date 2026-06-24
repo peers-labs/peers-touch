@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Badge } from 'antd';
-import { MessageCircle, Users, Settings } from 'lucide-react';
+import { Image, MessageCircle, Users, Settings } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
 import { ChatPage } from '../pages/ChatPage';
 import { ContactsPage } from '../pages/ContactsPage';
+import { MomentsPage } from '../pages/MomentsPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { useAuthStore } from '../features/auth/authStore';
 import type { MobileAuthSession } from '../features/auth/authSession';
@@ -18,7 +19,7 @@ import {
 import { projectGroupConversations } from '../features/group/groupProjection';
 import { useGroupStore } from '../features/group/groupStore';
 
-type TabId = 'chat' | 'contacts' | 'settings';
+type TabId = 'chat' | 'moments' | 'contacts' | 'settings';
 
 interface TabDef {
   id: TabId;
@@ -28,6 +29,7 @@ interface TabDef {
 
 const tabs: TabDef[] = [
   { id: 'chat', labelKey: 'mobile.tab.chat', icon: MessageCircle },
+  { id: 'moments', labelKey: 'mobile.tab.moments', icon: Image },
   { id: 'contacts', labelKey: 'mobile.tab.contacts', icon: Users },
   { id: 'settings', labelKey: 'mobile.tab.settings', icon: Settings },
 ];
@@ -36,6 +38,8 @@ function renderPage(tabId: TabId, props: MobileShellProps, authSession: MobileAu
   switch (tabId) {
     case 'chat':
       return <ChatPage />;
+    case 'moments':
+      return <MomentsPage />;
     case 'contacts':
       return <ContactsPage onOpenChat={onOpenChat} />;
     case 'settings':
@@ -62,12 +66,14 @@ export function MobileShell(props: MobileShellProps) {
   const [activeTab, setActiveTab] = useState<TabId>('chat');
   useSocialRuntime(authSession);
 
+  const activeSessionUlid = useSocialStore((state) => state.activeSessionUlid);
   const sessions = useSocialStore((state) => state.sessions);
   const messages = useSocialStore((state) => state.messages);
   const currentUserDid = useSocialStore((state) => state.currentUserDid);
   const peerOnline = useSocialStore((state) => state.peerOnline);
   const friendRequests = useSocialStore((state) => state.friendRequests);
   const friendConversationSettings = useSocialStore((state) => state.conversationSettings);
+  const activeGroupUlid = useGroupStore((state) => state.activeGroupUlid);
   const groups = useGroupStore((state) => state.groups);
   const groupMessages = useGroupStore((state) => state.messages);
   const groupUnreadCounts = useGroupStore((state) => state.unreadCounts);
@@ -104,12 +110,13 @@ export function MobileShell(props: MobileShellProps) {
   const switchTab = (tabId: TabId) => {
     setActiveTab(tabId);
   };
+  const hideTabbar = activeTab === 'chat' && Boolean(activeSessionUlid || activeGroupUlid);
 
   return (
-    <div className="mobile-shell">
+    <div className={`mobile-shell ${hideTabbar ? 'tabbar-hidden' : ''}`}>
       <div className="mobile-content">{renderPage(activeTab, props, authSession, () => switchTab('chat'))}</div>
 
-      <nav className="mobile-tabbar">
+      {!hideTabbar ? <nav className="mobile-tabbar">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -128,7 +135,7 @@ export function MobileShell(props: MobileShellProps) {
             </button>
           );
         })}
-      </nav>
+      </nav> : null}
     </div>
   );
 }

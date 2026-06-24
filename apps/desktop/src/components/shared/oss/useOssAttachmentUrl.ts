@@ -10,52 +10,57 @@
 // Strategy:
 //   1. Hit the in-memory cache.
 //   2. Otherwise call `api.ossResolveUrl(cid)`.
-//   3. Prefer `local_path` (served via Tauri's `convertFileSrc`) — it
-//      keeps the WebView from going to network for already-cached
-//      attachments. Fall back to the absolute `url` when no local
-//      mirror is available.
+//   3. Prefer inline image data when Rust can safely provide it, then
+//      `local_path` (served via Tauri's `convertFileSrc`). Fall back to
+//      the absolute `url` when no local mirror is available.
 //
-// Originally lived under `components/chat/useAttachmentUrl.ts`. Moved
-// to `components/shared/oss/` in P3 because Moments image rendering
-// uses the exact same logic; the chat-side path now re-exports this
-// for backward compatibility (P3 commit C1).
-
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import {
+  clientMediaEncryptionDescriptorFromAttachment,
+  decryptClientMediaBlob,
+} from '@peers-touch/client-media-security';
 import { api } from '../../../services/desktop_api';
+import { openMomentMediaKeyFromAudience } from '../../../services/momentAudienceKeys';
+import type { Audience } from '../../../gen/proto/domain/social/post_pb';
+import {
+  clearInflightOssAttachmentUrl,
+  getCachedOssAttachmentUrl,
+  getInflightOssAttachmentUrl,
+  setCachedOssAttachmentUrl,
+  setInflightOssAttachmentUrl,
+} from '../../../services/ossAttachmentUrlCache';
 
 type Resolved = { src: string } | null;
 
-const cache = new Map<string, Resolved>();
-const inflight = new Map<string, Promise<Resolved>>();
-
 async function resolve(cid: string): Promise<Resolved> {
   if (!cid) return null;
-  if (cache.has(cid)) return cache.get(cid) ?? null;
-  if (inflight.has(cid)) return inflight.get(cid)!;
+  const cached = getCachedOssAttachmentUrl(cid);
+  if (cached !== undefined) return cached;
+  const inflight = getInflightOssAttachmentUrl(cid);
+  if (inflight) return inflight;
 
   const promise = (async (): Promise<Resolved> => {
     try {
       const data = await api.ossResolveUrl(cid);
       if (!data) {
-        cache.set(cid, null);
+        setCachedOssAttachmentUrl(cid, null);
         return null;
       }
-      const src = data.local_path
-        ? convertFileSrc(data.local_path)
-        : data.url;
+      const src = data.data_url
+        || (data.local_path ? convertFileSrc(data.local_path) : data.url);
       const value: Resolved = src ? { src } : null;
-      cache.set(cid, value);
+      setCachedOssAttachmentUrl(cid, value);
       return value;
     } catch {
       // Don't poison the cache on transient failures — leave the entry
       // unset so the next render retries on its own.
       return null;
     } finally {
-      inflight.delete(cid);
+      clearInflightOssAttachmentUrl(cid);
     }
   })();
-  inflight.set(cid, promise);
+  setInflightOssAttachmentUrl(cid, promise);
   return promise;
 }
 
@@ -64,7 +69,7 @@ export function useOssAttachmentUrl(
 ): string | null {
   const [src, setSrc] = useState<string | null>(() => {
     if (!cid) return null;
-    return cache.get(cid)?.src ?? null;
+    return getCachedOssAttachmentUrl(cid)?.src ?? null;
   });
 
   useEffect(() => {
@@ -84,9 +89,65 @@ export function useOssAttachmentUrl(
   return src;
 }
 
-/**
- * @deprecated Renamed to `useOssAttachmentUrl`. The chat-side
- * `useAttachmentUrl` re-exports this; new code should import from
- * `components/shared/oss/useOssAttachmentUrl`.
- */
-export const useAttachmentUrl = useOssAttachmentUrl;
+export function useDecryptedOssAttachmentUrl(
+  attachment: {
+    readonly cid?: string;
+    readonly mimeType?: string;
+    readonly mime_type?: string;
+    readonly audience?: Audience | null;
+    readonly authorDid?: string | null;
+  } & Parameters<typeof clientMediaEncryptionDescriptorFromAttachment>[0],
+): string | null {
+  const sourceUrl = useOssAttachmentUrl(attachment.cid);
+  const descriptor = useMemo(
+    () => clientMediaEncryptionDescriptorFromAttachment(attachment),
+    [attachment],
+  );
+  const [decryptedUrl, setDecryptedUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!sourceUrl || (!descriptor && !attachment.mediaEncryption && !attachment.media_encryption)) {
+      setDecryptedUrl(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    (async () => {
+      const mediaDescriptor = descriptor ?? clientMediaEncryptionDescriptorFromAttachment(
+        attachment,
+        await openMomentMediaKeyFromAudience({
+          cid: attachment.cid ?? '',
+          audience: attachment.audience,
+          authorDid: attachment.authorDid,
+        }) ?? undefined,
+      );
+      if (!mediaDescriptor) {
+        if (!cancelled) setDecryptedUrl(null);
+        return;
+      }
+      const response = await fetch(sourceUrl, { cache: 'no-store' });
+      const ciphertext = await response.blob();
+      const plaintext = await decryptClientMediaBlob({
+        ciphertext,
+        descriptor: mediaDescriptor,
+        mimeType: attachment.mimeType ?? attachment.mime_type ?? 'application/octet-stream',
+      });
+      objectUrl = URL.createObjectURL(plaintext);
+      if (cancelled) {
+        URL.revokeObjectURL(objectUrl);
+        return;
+      }
+      setDecryptedUrl(objectUrl);
+    })().catch(() => {
+      if (!cancelled) setDecryptedUrl(null);
+    });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [attachment, descriptor, sourceUrl]);
+
+  return (descriptor || attachment.mediaEncryption || attachment.media_encryption) ? decryptedUrl : sourceUrl;
+}

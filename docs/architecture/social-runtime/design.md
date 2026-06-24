@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-06-03 | **Updated**: 2026-06-03
+> **Created**: 2026-06-03 | **Updated**: 2026-06-07
 > **Owner**: Client Architecture Team
 > **Module**: `apps/desktop/src/runtimes/socialRuntime.ts`, `apps/mobile/src/features/social/`
 
@@ -10,20 +10,23 @@
 
 ## 1. 核心原则
 
-1. **同一业务抽象，不同宿主 adapter**  
+1. **同一业务抽象，不同宿主 adapter**
    Desktop 与 Mobile 可以有不同宿主入口，但不能有不同社交领域模型。
 
-2. **Station truth, client projection**  
+2. **Station truth, client projection**
    好友、会话、消息、通知、profile、presence 的权威状态来自 Station；客户端只维护可恢复、可重放、可 reconcile 的 projection。
 
-3. **Runtime owns freshness**  
+3. **Runtime owns freshness**
    社交 freshness 属于 runtime supervisor，不属于页面 mount、tab click、drawer open 或按钮回调。
 
-4. **Generated contracts first**  
+4. **Generated contracts first**
    protobuf 只能来自 `model/domain/` 生成物；禁止手写 protobuf wire decoder、field number map 或端侧平行模型。
 
-5. **Pure projection before UI**  
+5. **Pure projection before UI**
    merge、bucket、receipt、mutation、typing prune、badge 计算必须先在 reducer/store 层闭合，UI 只读 projection。
+
+6. **Shared visual contract, platform renderer**
+   聊天骨架视觉语义（头像尺寸、头像与消息距离、气泡圆角、hover 工具桥接区、输入框浮动几何）必须来自共享 contract；Desktop/Mobile 只能在 renderer 或宿主 adapter 中消费这些 token，不能各自重新定义一套同义布局。
 
 ---
 
@@ -150,6 +153,8 @@ type SocialHostEvent =
   | { kind: 'deep-link'; url: string };
 ```
 
+Current shared event contract lives in `packages/client-chat-core` so Desktop and Mobile normalize host payloads with the same pure helpers before entering their runtime supervisors.
+
 Desktop adapter 来源：
 
 - window focus / visibility。
@@ -164,6 +169,27 @@ Mobile adapter 来源：
 - deep-link / universal link / app link。
 - notification tap。
 
+### 3.5 Chat Visual Layout Contract
+
+`packages/client-chat-core` owns the pure `ChatVisualLayoutContract`.
+
+It covers stable chat geometry:
+
+- message avatar size/radius/gap;
+- own/peer/group row max width;
+- own/peer bubble radius and padding;
+- media-only bubble padding;
+- hover action bridge hit area;
+- composer outer padding, radius, shadow, input height, and tool button size;
+- whether a host composer exposes attachment tools.
+
+Rules:
+
+- The contract is pure data/functions. It must not import React, DOM, Tauri, CSS files, proto, store, or i18n.
+- Desktop and Mobile renderers may map contract values into inline style or CSS variables.
+- Host-specific visual treatment is allowed only after the shared semantic token is chosen.
+- New chat surfaces must pick an explicit `ChatVisualSurface` instead of hardcoding independent geometry.
+
 ---
 
 ## 4. 组件关系
@@ -176,7 +202,7 @@ Mobile adapter 来源：
 | Projection Reducer | 部分在 `store/socialChat.ts` 和 `services/socialRealtime.ts` | `socialProjection.ts` | 双端 reducer 语义对齐，避免页面计算长期状态 |
 | Projection Store | `store/socialChat.ts`, `store/notification.ts`, `store/navigationBadges.ts` | `socialStore.ts` | 可多 store，但 owner 和字段不得重叠 |
 | Runtime Supervisor | `runtimes/socialRuntime.ts` + `services/socialRealtime.ts` | `socialRuntime.ts` + `useSocialRuntime.ts` | supervisor 负责 streams/timers/reconcile/teardown |
-| Host Adapter | Desktop window/tray/system notification 入口待显式化 | `mobileNativeEventBridge.ts` | 平台差异只进入 adapter |
+| Host Adapter | `runtimes/desktopSocialHostAdapter.ts` | `mobileNativeEventBridge.ts` | 平台差异只进入 adapter，进入 runtime 前统一成 `SocialHostEvent` |
 | UI Renderer | `SocialChatPage`, chat components, `NotificationBell` | `ChatPage`, `ContactsPage`, `MobileNotificationCenter` | UI 不拥有 freshness |
 
 ---

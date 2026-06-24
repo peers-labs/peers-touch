@@ -18,6 +18,7 @@ type TurnTrace struct {
 	CompressionBefore    *int            `gorm:"type:integer"`
 	CompressionAfter     *int            `gorm:"type:integer"`
 	DelegationResults    json.RawMessage `gorm:"type:jsonb;column:delegation_results"`
+	KnowledgeChunks      json.RawMessage `gorm:"type:jsonb;column:knowledge_chunks"`
 
 	// Relations
 	Turn AgentTurn `gorm:"foreignKey:TurnID;references:ID"`

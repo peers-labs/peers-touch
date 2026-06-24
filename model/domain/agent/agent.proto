@@ -56,6 +56,7 @@ message TurnTrace {
   repeated ClassifiedErrorEvent errors_classified = 10;
   CompressionEvent compression_event = 11;
   repeated DelegationResult delegation_results = 12;
+  repeated KnowledgeChunkReference knowledge_chunks = 13;
 }
 
 enum FailoverReason {
@@ -132,6 +133,56 @@ message Conversation {
   google.protobuf.Timestamp updated_at = 13;
 }
 
+enum KnowledgeResourceType {
+  KNOWLEDGE_RESOURCE_TYPE_UNSPECIFIED = 0;
+  KNOWLEDGE_RESOURCE_TYPE_DOCUMENT = 1;
+  KNOWLEDGE_RESOURCE_TYPE_FOLDER = 2;
+  KNOWLEDGE_RESOURCE_TYPE_PROJECT = 3;
+  KNOWLEDGE_RESOURCE_TYPE_URL = 4;
+  KNOWLEDGE_RESOURCE_TYPE_NOTEBOOK = 5;
+  KNOWLEDGE_RESOURCE_TYPE_WORKSPACE = 6;
+}
+
+enum KnowledgeResourcePolicy {
+  KNOWLEDGE_RESOURCE_POLICY_UNSPECIFIED = 0;
+  KNOWLEDGE_RESOURCE_POLICY_MANUAL = 1;
+  KNOWLEDGE_RESOURCE_POLICY_AUTO = 2;
+  KNOWLEDGE_RESOURCE_POLICY_ALWAYS = 3;
+  KNOWLEDGE_RESOURCE_POLICY_DISABLED = 4;
+}
+
+enum KnowledgeResourceStatus {
+  KNOWLEDGE_RESOURCE_STATUS_UNSPECIFIED = 0;
+  KNOWLEDGE_RESOURCE_STATUS_BOUND = 1;
+  KNOWLEDGE_RESOURCE_STATUS_PENDING_INDEX = 2;
+  KNOWLEDGE_RESOURCE_STATUS_INDEXED = 3;
+  KNOWLEDGE_RESOURCE_STATUS_ERROR = 4;
+}
+
+message KnowledgeResource {
+  string resource_id = 1;
+  string agent_id = 2;
+  KnowledgeResourceType type = 3;
+  string title = 4;
+  string source = 5;
+  KnowledgeResourcePolicy policy = 6;
+  KnowledgeResourceStatus status = 7;
+  string last_indexed_at = 8;
+  string error = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+}
+
+message KnowledgeChunkReference {
+  string chunk_id = 1;
+  string resource_id = 2;
+  string resource_title = 3;
+  string source = 4;
+  int32 chunk_index = 5;
+  double score = 6;
+  string content_preview = 7;
+}
+
 enum MessageRole {
   MESSAGE_ROLE_UNSPECIFIED = 0;
   MESSAGE_ROLE_SYSTEM = 1;
@@ -169,6 +220,7 @@ message ExecuteTurnRequest {
   optional string workspace_root = 10;
   optional int32 context_window_size = 11;
   optional int32 max_retries = 12;
+  repeated KnowledgeResource knowledge_resources = 13;
 }
 
 message ExecuteTurnResponse {

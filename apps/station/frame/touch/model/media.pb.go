@@ -7,6 +7,7 @@
 package model
 
 import (
+	types "github.com/peers-labs/peers-touch/station/frame/core/types"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -124,14 +125,16 @@ func (MediaProcessingStatus) EnumDescriptor() ([]byte, []int) {
 }
 
 type UploadMediaRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
-	Filename      string                 `protobuf:"bytes,2,opt,name=filename,proto3" json:"filename,omitempty"`
-	MimeType      string                 `protobuf:"bytes,3,opt,name=mime_type,json=mimeType,proto3" json:"mime_type,omitempty"`
-	Type          MediaUploadType        `protobuf:"varint,4,opt,name=type,proto3,enum=peers_touch.model.social.v1.MediaUploadType" json:"type,omitempty"`
-	AltText       *string                `protobuf:"bytes,5,opt,name=alt_text,json=altText,proto3,oneof" json:"alt_text,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                protoimpl.MessageState          `protogen:"open.v1"`
+	Data                 []byte                          `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	Filename             string                          `protobuf:"bytes,2,opt,name=filename,proto3" json:"filename,omitempty"`
+	MimeType             string                          `protobuf:"bytes,3,opt,name=mime_type,json=mimeType,proto3" json:"mime_type,omitempty"`
+	Type                 MediaUploadType                 `protobuf:"varint,4,opt,name=type,proto3,enum=peers_touch.model.social.v1.MediaUploadType" json:"type,omitempty"`
+	AltText              *string                         `protobuf:"bytes,5,opt,name=alt_text,json=altText,proto3,oneof" json:"alt_text,omitempty"`
+	MediaEncryption      *types.EncryptedMediaDescriptor `protobuf:"bytes,6,opt,name=media_encryption,json=mediaEncryption,proto3" json:"media_encryption,omitempty"`
+	AudienceKeyEnvelopes []*AudienceKeyEnvelope          `protobuf:"bytes,7,rep,name=audience_key_envelopes,json=audienceKeyEnvelopes,proto3" json:"audience_key_envelopes,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *UploadMediaRequest) Reset() {
@@ -199,18 +202,34 @@ func (x *UploadMediaRequest) GetAltText() string {
 	return ""
 }
 
+func (x *UploadMediaRequest) GetMediaEncryption() *types.EncryptedMediaDescriptor {
+	if x != nil {
+		return x.MediaEncryption
+	}
+	return nil
+}
+
+func (x *UploadMediaRequest) GetAudienceKeyEnvelopes() []*AudienceKeyEnvelope {
+	if x != nil {
+		return x.AudienceKeyEnvelopes
+	}
+	return nil
+}
+
 type UploadMediaResponse struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	MediaId         string                 `protobuf:"bytes,1,opt,name=media_id,json=mediaId,proto3" json:"media_id,omitempty"`
-	Url             string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
-	ThumbnailUrl    string                 `protobuf:"bytes,3,opt,name=thumbnail_url,json=thumbnailUrl,proto3" json:"thumbnail_url,omitempty"`
-	SizeBytes       int64                  `protobuf:"varint,4,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
-	Width           int32                  `protobuf:"varint,5,opt,name=width,proto3" json:"width,omitempty"`
-	Height          int32                  `protobuf:"varint,6,opt,name=height,proto3" json:"height,omitempty"`
-	DurationSeconds int32                  `protobuf:"varint,7,opt,name=duration_seconds,json=durationSeconds,proto3" json:"duration_seconds,omitempty"`
-	Status          MediaProcessingStatus  `protobuf:"varint,8,opt,name=status,proto3,enum=peers_touch.model.social.v1.MediaProcessingStatus" json:"status,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state                protoimpl.MessageState          `protogen:"open.v1"`
+	MediaId              string                          `protobuf:"bytes,1,opt,name=media_id,json=mediaId,proto3" json:"media_id,omitempty"`
+	Url                  string                          `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	ThumbnailUrl         string                          `protobuf:"bytes,3,opt,name=thumbnail_url,json=thumbnailUrl,proto3" json:"thumbnail_url,omitempty"`
+	SizeBytes            int64                           `protobuf:"varint,4,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	Width                int32                           `protobuf:"varint,5,opt,name=width,proto3" json:"width,omitempty"`
+	Height               int32                           `protobuf:"varint,6,opt,name=height,proto3" json:"height,omitempty"`
+	DurationSeconds      int32                           `protobuf:"varint,7,opt,name=duration_seconds,json=durationSeconds,proto3" json:"duration_seconds,omitempty"`
+	Status               MediaProcessingStatus           `protobuf:"varint,8,opt,name=status,proto3,enum=peers_touch.model.social.v1.MediaProcessingStatus" json:"status,omitempty"`
+	MediaEncryption      *types.EncryptedMediaDescriptor `protobuf:"bytes,9,opt,name=media_encryption,json=mediaEncryption,proto3" json:"media_encryption,omitempty"`
+	AudienceKeyEnvelopes []*AudienceKeyEnvelope          `protobuf:"bytes,10,rep,name=audience_key_envelopes,json=audienceKeyEnvelopes,proto3" json:"audience_key_envelopes,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *UploadMediaResponse) Reset() {
@@ -299,6 +318,96 @@ func (x *UploadMediaResponse) GetStatus() MediaProcessingStatus {
 	return MediaProcessingStatus_PENDING
 }
 
+func (x *UploadMediaResponse) GetMediaEncryption() *types.EncryptedMediaDescriptor {
+	if x != nil {
+		return x.MediaEncryption
+	}
+	return nil
+}
+
+func (x *UploadMediaResponse) GetAudienceKeyEnvelopes() []*AudienceKeyEnvelope {
+	if x != nil {
+		return x.AudienceKeyEnvelopes
+	}
+	return nil
+}
+
+type AudienceKeyEnvelope struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RecipientDid  string                 `protobuf:"bytes,1,opt,name=recipient_did,json=recipientDid,proto3" json:"recipient_did,omitempty"`
+	DeviceId      string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	KeyId         string                 `protobuf:"bytes,3,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	EncryptedKey  []byte                 `protobuf:"bytes,4,opt,name=encrypted_key,json=encryptedKey,proto3" json:"encrypted_key,omitempty"`
+	Suite         string                 `protobuf:"bytes,5,opt,name=suite,proto3" json:"suite,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AudienceKeyEnvelope) Reset() {
+	*x = AudienceKeyEnvelope{}
+	mi := &file_domain_social_media_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AudienceKeyEnvelope) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AudienceKeyEnvelope) ProtoMessage() {}
+
+func (x *AudienceKeyEnvelope) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_media_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AudienceKeyEnvelope.ProtoReflect.Descriptor instead.
+func (*AudienceKeyEnvelope) Descriptor() ([]byte, []int) {
+	return file_domain_social_media_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *AudienceKeyEnvelope) GetRecipientDid() string {
+	if x != nil {
+		return x.RecipientDid
+	}
+	return ""
+}
+
+func (x *AudienceKeyEnvelope) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *AudienceKeyEnvelope) GetKeyId() string {
+	if x != nil {
+		return x.KeyId
+	}
+	return ""
+}
+
+func (x *AudienceKeyEnvelope) GetEncryptedKey() []byte {
+	if x != nil {
+		return x.EncryptedKey
+	}
+	return nil
+}
+
+func (x *AudienceKeyEnvelope) GetSuite() string {
+	if x != nil {
+		return x.Suite
+	}
+	return ""
+}
+
 type GetMediaRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	MediaId       string                 `protobuf:"bytes,1,opt,name=media_id,json=mediaId,proto3" json:"media_id,omitempty"`
@@ -308,7 +417,7 @@ type GetMediaRequest struct {
 
 func (x *GetMediaRequest) Reset() {
 	*x = GetMediaRequest{}
-	mi := &file_domain_social_media_proto_msgTypes[2]
+	mi := &file_domain_social_media_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -320,7 +429,7 @@ func (x *GetMediaRequest) String() string {
 func (*GetMediaRequest) ProtoMessage() {}
 
 func (x *GetMediaRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_media_proto_msgTypes[2]
+	mi := &file_domain_social_media_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -333,7 +442,7 @@ func (x *GetMediaRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMediaRequest.ProtoReflect.Descriptor instead.
 func (*GetMediaRequest) Descriptor() ([]byte, []int) {
-	return file_domain_social_media_proto_rawDescGZIP(), []int{2}
+	return file_domain_social_media_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *GetMediaRequest) GetMediaId() string {
@@ -344,22 +453,23 @@ func (x *GetMediaRequest) GetMediaId() string {
 }
 
 type GetMediaResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	MediaId       string                 `protobuf:"bytes,1,opt,name=media_id,json=mediaId,proto3" json:"media_id,omitempty"`
-	Url           string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
-	ThumbnailUrl  string                 `protobuf:"bytes,3,opt,name=thumbnail_url,json=thumbnailUrl,proto3" json:"thumbnail_url,omitempty"`
-	SizeBytes     int64                  `protobuf:"varint,4,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
-	Width         int32                  `protobuf:"varint,5,opt,name=width,proto3" json:"width,omitempty"`
-	Height        int32                  `protobuf:"varint,6,opt,name=height,proto3" json:"height,omitempty"`
-	Status        MediaProcessingStatus  `protobuf:"varint,7,opt,name=status,proto3,enum=peers_touch.model.social.v1.MediaProcessingStatus" json:"status,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState          `protogen:"open.v1"`
+	MediaId         string                          `protobuf:"bytes,1,opt,name=media_id,json=mediaId,proto3" json:"media_id,omitempty"`
+	Url             string                          `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	ThumbnailUrl    string                          `protobuf:"bytes,3,opt,name=thumbnail_url,json=thumbnailUrl,proto3" json:"thumbnail_url,omitempty"`
+	SizeBytes       int64                           `protobuf:"varint,4,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	Width           int32                           `protobuf:"varint,5,opt,name=width,proto3" json:"width,omitempty"`
+	Height          int32                           `protobuf:"varint,6,opt,name=height,proto3" json:"height,omitempty"`
+	Status          MediaProcessingStatus           `protobuf:"varint,7,opt,name=status,proto3,enum=peers_touch.model.social.v1.MediaProcessingStatus" json:"status,omitempty"`
+	CreatedAt       *timestamppb.Timestamp          `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	MediaEncryption *types.EncryptedMediaDescriptor `protobuf:"bytes,9,opt,name=media_encryption,json=mediaEncryption,proto3" json:"media_encryption,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *GetMediaResponse) Reset() {
 	*x = GetMediaResponse{}
-	mi := &file_domain_social_media_proto_msgTypes[3]
+	mi := &file_domain_social_media_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -371,7 +481,7 @@ func (x *GetMediaResponse) String() string {
 func (*GetMediaResponse) ProtoMessage() {}
 
 func (x *GetMediaResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_media_proto_msgTypes[3]
+	mi := &file_domain_social_media_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -384,7 +494,7 @@ func (x *GetMediaResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMediaResponse.ProtoReflect.Descriptor instead.
 func (*GetMediaResponse) Descriptor() ([]byte, []int) {
-	return file_domain_social_media_proto_rawDescGZIP(), []int{3}
+	return file_domain_social_media_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetMediaResponse) GetMediaId() string {
@@ -443,6 +553,13 @@ func (x *GetMediaResponse) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *GetMediaResponse) GetMediaEncryption() *types.EncryptedMediaDescriptor {
+	if x != nil {
+		return x.MediaEncryption
+	}
+	return nil
+}
+
 type DeleteMediaRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	MediaId       string                 `protobuf:"bytes,1,opt,name=media_id,json=mediaId,proto3" json:"media_id,omitempty"`
@@ -452,7 +569,7 @@ type DeleteMediaRequest struct {
 
 func (x *DeleteMediaRequest) Reset() {
 	*x = DeleteMediaRequest{}
-	mi := &file_domain_social_media_proto_msgTypes[4]
+	mi := &file_domain_social_media_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -464,7 +581,7 @@ func (x *DeleteMediaRequest) String() string {
 func (*DeleteMediaRequest) ProtoMessage() {}
 
 func (x *DeleteMediaRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_media_proto_msgTypes[4]
+	mi := &file_domain_social_media_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -477,7 +594,7 @@ func (x *DeleteMediaRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteMediaRequest.ProtoReflect.Descriptor instead.
 func (*DeleteMediaRequest) Descriptor() ([]byte, []int) {
-	return file_domain_social_media_proto_rawDescGZIP(), []int{4}
+	return file_domain_social_media_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *DeleteMediaRequest) GetMediaId() string {
@@ -496,7 +613,7 @@ type DeleteMediaResponse struct {
 
 func (x *DeleteMediaResponse) Reset() {
 	*x = DeleteMediaResponse{}
-	mi := &file_domain_social_media_proto_msgTypes[5]
+	mi := &file_domain_social_media_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -508,7 +625,7 @@ func (x *DeleteMediaResponse) String() string {
 func (*DeleteMediaResponse) ProtoMessage() {}
 
 func (x *DeleteMediaResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_media_proto_msgTypes[5]
+	mi := &file_domain_social_media_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -521,7 +638,7 @@ func (x *DeleteMediaResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteMediaResponse.ProtoReflect.Descriptor instead.
 func (*DeleteMediaResponse) Descriptor() ([]byte, []int) {
-	return file_domain_social_media_proto_rawDescGZIP(), []int{5}
+	return file_domain_social_media_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *DeleteMediaResponse) GetSuccess() bool {
@@ -535,14 +652,16 @@ var File_domain_social_media_proto protoreflect.FileDescriptor
 
 const file_domain_social_media_proto_rawDesc = "" +
 	"\n" +
-	"\x19domain/social/media.proto\x12\x1bpeers_touch.model.social.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd0\x01\n" +
+	"\x19domain/social/media.proto\x12\x1bpeers_touch.model.social.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1adomain/common/common.proto\"\x9a\x03\n" +
 	"\x12UploadMediaRequest\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\x12\x1a\n" +
 	"\bfilename\x18\x02 \x01(\tR\bfilename\x12\x1b\n" +
 	"\tmime_type\x18\x03 \x01(\tR\bmimeType\x12@\n" +
 	"\x04type\x18\x04 \x01(\x0e2,.peers_touch.model.social.v1.MediaUploadTypeR\x04type\x12\x1e\n" +
-	"\balt_text\x18\x05 \x01(\tH\x00R\aaltText\x88\x01\x01B\v\n" +
-	"\t_alt_text\"\xab\x02\n" +
+	"\balt_text\x18\x05 \x01(\tH\x00R\aaltText\x88\x01\x01\x12`\n" +
+	"\x10media_encryption\x18\x06 \x01(\v25.peers_touch.model.common.v1.EncryptedMediaDescriptorR\x0fmediaEncryption\x12f\n" +
+	"\x16audience_key_envelopes\x18\a \x03(\v20.peers_touch.model.social.v1.AudienceKeyEnvelopeR\x14audienceKeyEnvelopesB\v\n" +
+	"\t_alt_text\"\xf5\x03\n" +
 	"\x13UploadMediaResponse\x12\x19\n" +
 	"\bmedia_id\x18\x01 \x01(\tR\amediaId\x12\x10\n" +
 	"\x03url\x18\x02 \x01(\tR\x03url\x12#\n" +
@@ -552,9 +671,18 @@ const file_domain_social_media_proto_rawDesc = "" +
 	"\x05width\x18\x05 \x01(\x05R\x05width\x12\x16\n" +
 	"\x06height\x18\x06 \x01(\x05R\x06height\x12)\n" +
 	"\x10duration_seconds\x18\a \x01(\x05R\x0fdurationSeconds\x12J\n" +
-	"\x06status\x18\b \x01(\x0e22.peers_touch.model.social.v1.MediaProcessingStatusR\x06status\",\n" +
+	"\x06status\x18\b \x01(\x0e22.peers_touch.model.social.v1.MediaProcessingStatusR\x06status\x12`\n" +
+	"\x10media_encryption\x18\t \x01(\v25.peers_touch.model.common.v1.EncryptedMediaDescriptorR\x0fmediaEncryption\x12f\n" +
+	"\x16audience_key_envelopes\x18\n" +
+	" \x03(\v20.peers_touch.model.social.v1.AudienceKeyEnvelopeR\x14audienceKeyEnvelopes\"\xa9\x01\n" +
+	"\x13AudienceKeyEnvelope\x12#\n" +
+	"\rrecipient_did\x18\x01 \x01(\tR\frecipientDid\x12\x1b\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x15\n" +
+	"\x06key_id\x18\x03 \x01(\tR\x05keyId\x12#\n" +
+	"\rencrypted_key\x18\x04 \x01(\fR\fencryptedKey\x12\x14\n" +
+	"\x05suite\x18\x05 \x01(\tR\x05suite\",\n" +
 	"\x0fGetMediaRequest\x12\x19\n" +
-	"\bmedia_id\x18\x01 \x01(\tR\amediaId\"\xb8\x02\n" +
+	"\bmedia_id\x18\x01 \x01(\tR\amediaId\"\x9a\x03\n" +
 	"\x10GetMediaResponse\x12\x19\n" +
 	"\bmedia_id\x18\x01 \x01(\tR\amediaId\x12\x10\n" +
 	"\x03url\x18\x02 \x01(\tR\x03url\x12#\n" +
@@ -565,7 +693,8 @@ const file_domain_social_media_proto_rawDesc = "" +
 	"\x06height\x18\x06 \x01(\x05R\x06height\x12J\n" +
 	"\x06status\x18\a \x01(\x0e22.peers_touch.model.social.v1.MediaProcessingStatusR\x06status\x129\n" +
 	"\n" +
-	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"/\n" +
+	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12`\n" +
+	"\x10media_encryption\x18\t \x01(\v25.peers_touch.model.common.v1.EncryptedMediaDescriptorR\x0fmediaEncryption\"/\n" +
 	"\x12DeleteMediaRequest\x12\x19\n" +
 	"\bmedia_id\x18\x01 \x01(\tR\amediaId\"/\n" +
 	"\x13DeleteMediaResponse\x12\x18\n" +
@@ -595,28 +724,35 @@ func file_domain_social_media_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_social_media_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_domain_social_media_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_domain_social_media_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_domain_social_media_proto_goTypes = []any{
-	(MediaUploadType)(0),          // 0: peers_touch.model.social.v1.MediaUploadType
-	(MediaProcessingStatus)(0),    // 1: peers_touch.model.social.v1.MediaProcessingStatus
-	(*UploadMediaRequest)(nil),    // 2: peers_touch.model.social.v1.UploadMediaRequest
-	(*UploadMediaResponse)(nil),   // 3: peers_touch.model.social.v1.UploadMediaResponse
-	(*GetMediaRequest)(nil),       // 4: peers_touch.model.social.v1.GetMediaRequest
-	(*GetMediaResponse)(nil),      // 5: peers_touch.model.social.v1.GetMediaResponse
-	(*DeleteMediaRequest)(nil),    // 6: peers_touch.model.social.v1.DeleteMediaRequest
-	(*DeleteMediaResponse)(nil),   // 7: peers_touch.model.social.v1.DeleteMediaResponse
-	(*timestamppb.Timestamp)(nil), // 8: google.protobuf.Timestamp
+	(MediaUploadType)(0),                   // 0: peers_touch.model.social.v1.MediaUploadType
+	(MediaProcessingStatus)(0),             // 1: peers_touch.model.social.v1.MediaProcessingStatus
+	(*UploadMediaRequest)(nil),             // 2: peers_touch.model.social.v1.UploadMediaRequest
+	(*UploadMediaResponse)(nil),            // 3: peers_touch.model.social.v1.UploadMediaResponse
+	(*AudienceKeyEnvelope)(nil),            // 4: peers_touch.model.social.v1.AudienceKeyEnvelope
+	(*GetMediaRequest)(nil),                // 5: peers_touch.model.social.v1.GetMediaRequest
+	(*GetMediaResponse)(nil),               // 6: peers_touch.model.social.v1.GetMediaResponse
+	(*DeleteMediaRequest)(nil),             // 7: peers_touch.model.social.v1.DeleteMediaRequest
+	(*DeleteMediaResponse)(nil),            // 8: peers_touch.model.social.v1.DeleteMediaResponse
+	(*types.EncryptedMediaDescriptor)(nil), // 9: peers_touch.model.common.v1.EncryptedMediaDescriptor
+	(*timestamppb.Timestamp)(nil),          // 10: google.protobuf.Timestamp
 }
 var file_domain_social_media_proto_depIdxs = []int32{
-	0, // 0: peers_touch.model.social.v1.UploadMediaRequest.type:type_name -> peers_touch.model.social.v1.MediaUploadType
-	1, // 1: peers_touch.model.social.v1.UploadMediaResponse.status:type_name -> peers_touch.model.social.v1.MediaProcessingStatus
-	1, // 2: peers_touch.model.social.v1.GetMediaResponse.status:type_name -> peers_touch.model.social.v1.MediaProcessingStatus
-	8, // 3: peers_touch.model.social.v1.GetMediaResponse.created_at:type_name -> google.protobuf.Timestamp
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	0,  // 0: peers_touch.model.social.v1.UploadMediaRequest.type:type_name -> peers_touch.model.social.v1.MediaUploadType
+	9,  // 1: peers_touch.model.social.v1.UploadMediaRequest.media_encryption:type_name -> peers_touch.model.common.v1.EncryptedMediaDescriptor
+	4,  // 2: peers_touch.model.social.v1.UploadMediaRequest.audience_key_envelopes:type_name -> peers_touch.model.social.v1.AudienceKeyEnvelope
+	1,  // 3: peers_touch.model.social.v1.UploadMediaResponse.status:type_name -> peers_touch.model.social.v1.MediaProcessingStatus
+	9,  // 4: peers_touch.model.social.v1.UploadMediaResponse.media_encryption:type_name -> peers_touch.model.common.v1.EncryptedMediaDescriptor
+	4,  // 5: peers_touch.model.social.v1.UploadMediaResponse.audience_key_envelopes:type_name -> peers_touch.model.social.v1.AudienceKeyEnvelope
+	1,  // 6: peers_touch.model.social.v1.GetMediaResponse.status:type_name -> peers_touch.model.social.v1.MediaProcessingStatus
+	10, // 7: peers_touch.model.social.v1.GetMediaResponse.created_at:type_name -> google.protobuf.Timestamp
+	9,  // 8: peers_touch.model.social.v1.GetMediaResponse.media_encryption:type_name -> peers_touch.model.common.v1.EncryptedMediaDescriptor
+	9,  // [9:9] is the sub-list for method output_type
+	9,  // [9:9] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_domain_social_media_proto_init() }
@@ -631,7 +767,7 @@ func file_domain_social_media_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_social_media_proto_rawDesc), len(file_domain_social_media_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   6,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

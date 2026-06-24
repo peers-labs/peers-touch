@@ -3,6 +3,7 @@ module github.com/peers-labs/peers-touch/station/app
 go 1.24.6
 
 replace (
+        github.com/peers-labs/peers-touch/apps/applets/note/service => ../../applets/note/service
 	github.com/peers-labs/peers-touch/station/frame => ../../station/frame
 	github.com/peers-labs/peers-touch/station/frame/core/plugin/native => ../../station/frame/core/plugin/native
 	github.com/peers-labs/peers-touch/station/frame/core/plugin/native/store => ../../station/frame/core/plugin/native/store
@@ -16,6 +17,7 @@ require (
 	github.com/jackc/pgx/v5 v5.7.2
 	github.com/libp2p/go-libp2p v0.45.0
 	github.com/oklog/ulid/v2 v2.1.1
+        github.com/peers-labs/peers-touch/apps/applets/note/service v0.0.0
 	github.com/peers-labs/peers-touch/station/frame v0.0.0-20250612165025-f866ebda0623
 	github.com/peers-labs/peers-touch/station/frame/core/plugin/native v0.0.0-20251202181316-4ea307e60e21
 	github.com/peers-labs/peers-touch/station/frame/core/plugin/store/rds/postgres v0.0.0-00010101000000-000000000000

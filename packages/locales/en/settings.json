@@ -97,6 +97,15 @@
 
   "settings.general.languageTitle": "Language",
   "settings.general.languageDescription": "Choose the display language for the application. Changes take effect immediately.",
+  "settings.general.chatTitle": "Chat",
+  "settings.general.chatDescription": "Configure chat composer interaction preferences.",
+  "settings.general.screenshotShortcutLabel": "Screenshot shortcut",
+  "settings.general.screenshotShortcutDescription": "Press this shortcut in the chat composer to start a screenshot capture.",
+  "settings.general.screenshotShortcutRecord": "Record",
+  "settings.general.screenshotShortcutListening": "Press shortcut",
+  "settings.general.screenshotShortcutRecording": "Press a new shortcut…",
+  "settings.general.screenshotShortcutReset": "Reset",
+  "settings.general.chatShortcutSaved": "Chat shortcut saved",
   "settings.general.agentsTitle": "Agents",
   "settings.general.noAgents": "No agents configured. The default assistant agent will be used.",
 
@@ -117,6 +126,7 @@
   "settings.tools.setPrimarySuccess": "Primary search engine set to {{name}}",
   "settings.tools.clearPrimarySuccess": "Primary search engine cleared (auto-detect)",
   "settings.tools.setPrimaryFailed": "Failed to update",
+  "settings.tools.operationFailed": "Tool settings operation failed",
   "settings.tools.toolsTitle": "Tools ({{count}})",
   "settings.tools.columnName": "Name",
   "settings.tools.columnCategory": "Category",

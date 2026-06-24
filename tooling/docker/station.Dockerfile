@@ -41,14 +41,16 @@ ENV GOTOOLCHAIN=local
 
 WORKDIR /src
 
-# Cache dependencies first
-# Directory layout mirrors local: /src/station/{app,frame} so replace directives
-# (../../station/frame) resolve correctly from /src/station/app/
+# Cache dependencies first.
+# Directory layout mirrors local replace targets from /src/station/app:
+# - ../../station/frame -> /src/station/frame
+# - ../../applets/<id>/service -> /src/applets/<id>/service
 COPY apps/station/app/go.mod apps/station/app/go.sum ./station/app/
 COPY apps/station/frame/go.mod apps/station/frame/go.sum ./station/frame/
 COPY apps/station/frame/core/plugin/native/go.mod apps/station/frame/core/plugin/native/go.sum ./station/frame/core/plugin/native/
 COPY apps/station/frame/core/plugin/store/rds/postgres/go.mod apps/station/frame/core/plugin/store/rds/postgres/go.sum ./station/frame/core/plugin/store/rds/postgres/
 COPY apps/station/frame/core/plugin/store/rds/sqlite/go.mod apps/station/frame/core/plugin/store/rds/sqlite/go.sum ./station/frame/core/plugin/store/rds/sqlite/
+COPY apps/applets/ ./applets/
 
 WORKDIR /src/station/app
 RUN go mod download
@@ -58,6 +60,7 @@ WORKDIR /src
 # Copy full source
 COPY apps/station/app/ ./station/app/
 COPY apps/station/frame/ ./station/frame/
+COPY apps/applets/ ./applets/
 
 # Build — CGO_ENABLED=0 produces a static binary; GOARCH detected automatically.
 WORKDIR /src/station/app

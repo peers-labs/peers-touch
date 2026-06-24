@@ -22,7 +22,7 @@ pub struct GroupCryptoEncryptInput {
     user_scope: String,
     actor_did: String,
     group_ulid: String,
-    plaintext: String,
+    plaintext_bytes: Vec<u8>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,7 +70,7 @@ pub struct EncryptOutput {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DecryptOutput {
-    plaintext: String,
+    plaintext_bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -164,14 +164,13 @@ pub fn crypto_group_encrypt(
     input: GroupCryptoEncryptInput,
 ) -> MobileResult<EncryptOutput> {
     let scope = validate_scope(input.user_scope, input.actor_did, input.group_ulid)?;
-    let plaintext = input.plaintext.into_bytes();
     let mut chain = ensure_local_chain(
         &storage,
         &scope.user_scope,
         &scope.group_ulid,
         &scope.actor_did,
     )?;
-    let wire = sender_keys::encrypt(&mut chain, &plaintext).map_err(crypto_error)?;
+    let wire = sender_keys::encrypt(&mut chain, &input.plaintext_bytes).map_err(crypto_error)?;
     sender_key_store::save_group_sender_chain(&storage, &scope.user_scope, &chain)?;
     Ok(EncryptOutput {
         group_ulid: scope.group_ulid,
@@ -235,9 +234,9 @@ pub fn crypto_group_decrypt(
         &outcome.new_skipped,
         consumed_counter,
     )?;
-    let plaintext = String::from_utf8(outcome.plaintext)
-        .map_err(|error| MobileError::crypto(format!("group plaintext is not utf-8: {error}")))?;
-    Ok(DecryptOutput { plaintext })
+    Ok(DecryptOutput {
+        plaintext_bytes: outcome.plaintext,
+    })
 }
 
 struct ValidScope {

@@ -167,11 +167,11 @@ function startControlledUpstream() {
   const server = createServer(async (req, res) => {
     requests.push({ method: req.method, url: req.url });
     const parsed = new URL(req.url ?? '/', 'http://127.0.0.1');
-    if (parsed.pathname === '/events/stream' || parsed.pathname === '/friend-chat/presence/stream') {
+    if (parsed.pathname === '/events/stream') {
       writeSse(res);
       return;
     }
-    if (parsed.pathname === '/friend-chat/online') {
+    if (parsed.pathname === '/presence/heartbeat') {
       await readBody(req);
       writeProto(res, protoString(1, 'online'));
       return;

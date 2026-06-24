@@ -124,9 +124,21 @@ export function SocialChatPage() {
     });
 
     return () => {
-      friendChatP2p.closeAll();
+      // Conversation switch: recycle only idle transport-readiness
+      // connections. A ringing / active call must survive navigation
+      // (peer B can call while the user reads peer C) — see
+      // docs/architecture/realtime/voice-video-calls.md §7. Full
+      // teardown belongs to the dedicated page-unmount effect below.
+      friendChatP2p.closeIdleConnections();
     };
   }, [currentUserDid, activePeerDid, setFriendP2pStatus]);
+
+  // --- Page unmount: full teardown of every connection and any live call ---
+  useEffect(() => {
+    return () => {
+      friendChatP2p.closeAll();
+    };
+  }, []);
 
   const subNavItems: { key: ChatSubPage; icon: typeof MessageCircle; label: string }[] = [
     { key: 'chats', icon: MessageCircle, label: t('chat.social.subNav.chats') },
