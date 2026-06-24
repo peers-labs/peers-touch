@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { log } from '@/utils/logger';
 import { Flexbox } from 'react-layout-kit';
 import {
-  Card, Modal, Switch, Empty,
+  Alert, Card, Modal, Switch, Empty,
   Typography, Select, message, Popconfirm, Spin, theme,
 } from 'antd';
 import { Button, Input, Tag, Tooltip } from '@lobehub/ui';
@@ -12,36 +12,30 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api, type MCPServerItem, type MCPServerRecord } from '../services/desktop_api';
+import { useMCPStore } from '../store/mcp';
 import { SettingsContainer } from './settings/SettingsLayout';
 
 const { Text, Title } = Typography;
+type MCPTransport = MCPServerRecord['type'];
+
+function transportColor(type: MCPTransport) {
+  if (type === 'stdio') return 'purple';
+  if (type === 'sse') return 'blue';
+  return 'cyan';
+}
 
 export function MCPTab() {
   const { t } = useTranslation('provider');
   const { token } = theme.useToken();
-  const [servers, setServers] = useState<MCPServerItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { servers, loading, error, loadServers, createServer, toggleServer, deleteServer } = useMCPStore();
   const [addModal, setAddModal] = useState(false);
   const [detailName, setDetailName] = useState<string | null>(null);
-
-  const loadServers = useCallback(async () => {
-    setLoading(true);
-    try {
-      const list = await api.listMCPServers();
-      setServers(list);
-    } catch (e: any) {
-      message.error(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   useEffect(() => { loadServers(); }, [loadServers]);
 
   const handleToggle = async (name: string, enabled: boolean) => {
     try {
-      await api.toggleMCPServer(name, enabled);
-      setServers((prev) => prev.map((s) => s.name === name ? { ...s, enabled } : s));
+      await toggleServer(name, enabled);
       message.success(enabled ? t('provider.mcp.serverEnabled') : t('provider.mcp.serverDisabled'));
     } catch (e: any) {
       message.error(e.message);
@@ -50,8 +44,7 @@ export function MCPTab() {
 
   const handleDelete = async (name: string) => {
     try {
-      await api.deleteMCPServer(name);
-      setServers((prev) => prev.filter((s) => s.name !== name));
+      await deleteServer(name);
       message.success(t('provider.mcp.serverDeleted'));
     } catch (e: any) {
       message.error(e.message);
@@ -90,6 +83,15 @@ export function MCPTab() {
         </Button>
       </Flexbox>
 
+      {error && (
+        <Alert
+          type="error"
+          showIcon
+          message={t('provider.mcp.operationFailed')}
+          description={error}
+        />
+      )}
+
       {loading ? (
         <Flexbox align="center" style={{ padding: 48 }}>
           <Spin />
@@ -114,7 +116,8 @@ export function MCPTab() {
 
       {addModal && (
         <AddMCPServerModal
-          onDone={() => { setAddModal(false); loadServers(); }}
+          onCreate={createServer}
+          onDone={() => { setAddModal(false); }}
           onCancel={() => setAddModal(false)}
         />
       )}
@@ -172,7 +175,7 @@ function MCPServerCard({
             <Flexbox horizontal gap={6} align="center">
               <Text strong>{server.title || server.name}</Text>
               <Tag
-                color={server.type === 'stdio' ? 'purple' : 'cyan'}
+                color={transportColor(server.type)}
                 style={{ fontSize: 11, margin: 0 }}
               >
                 {server.type}
@@ -218,16 +221,18 @@ function MCPServerCard({
 }
 
 function AddMCPServerModal({
+  onCreate,
   onDone,
   onCancel,
 }: {
+  onCreate: (data: Partial<MCPServerRecord>) => Promise<void>;
   onDone: () => void;
   onCancel: () => void;
 }) {
   const { t } = useTranslation('provider');
   const [name, setName] = useState('');
   const [title, setTitle] = useState('');
-  const [type, setType] = useState<'stdio' | 'http'>('stdio');
+  const [type, setType] = useState<MCPTransport>('stdio');
   const [command, setCommand] = useState('');
   const [args, setArgs] = useState('');
   const [url, setUrl] = useState('');
@@ -243,7 +248,7 @@ function AddMCPServerModal({
       message.warning(t('provider.mcp.add.commandRequired'));
       return;
     }
-    if (type === 'http' && !url.trim()) {
+    if ((type === 'http' || type === 'sse') && !url.trim()) {
       message.warning(t('provider.mcp.add.urlRequired'));
       return;
     }
@@ -254,7 +259,7 @@ function AddMCPServerModal({
         ? args.split(/\s+/).filter(Boolean)
         : [];
 
-      await api.createMCPServer({
+      await onCreate({
         name: name.trim(),
         title: title.trim(),
         description: description.trim(),
@@ -309,6 +314,7 @@ function AddMCPServerModal({
             options={[
               { value: 'stdio', label: 'stdio' },
               { value: 'http', label: 'HTTP' },
+              { value: 'sse', label: 'SSE' },
             ]}
           />
         </Flexbox>
@@ -386,7 +392,7 @@ function MCPServerDetailModal({
     >
       <Flexbox gap={12} style={{ paddingBlock: 8 }}>
         <Flexbox horizontal gap={8} wrap="wrap">
-          <Tag color={server.type === 'stdio' ? 'purple' : 'cyan'}>{server.type}</Tag>
+          <Tag color={transportColor(server.type)}>{server.type}</Tag>
           {server.version && <Tag>v{server.version}</Tag>}
           <Tag color={server.enabled ? 'green' : 'default'}>
             {server.enabled ? t('provider.mcp.detail.enabled') : t('provider.mcp.detail.disabled')}

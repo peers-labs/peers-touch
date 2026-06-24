@@ -30,6 +30,8 @@ Do **not** use this file as the place to redefine Desktop architecture, module b
 
 - [Desktop Base](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/desktop/base.md)
 - [Desktop README](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/desktop/README.md)
+- [Client UI Identity](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/common/ui-identity/README.md)
+- [Client UX Design Methodology](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/common/ux-design-methodology.md)
 - [Desktop Client Lifecycle](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/desktop/lifecycle.md)
 - [Desktop Runtime Projections — Page / Runtime / Boot kernel contracts (single source of truth)](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/desktop/runtime-projections.md)
 - [Desktop Global Context Kernel](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/client/desktop/global-context-kernel.md)
@@ -49,7 +51,8 @@ Do **not** use this file as the place to redefine Desktop architecture, module b
 
 - UI runtime is `desktop-web -> desktop-rust -> station`; do not bypass `desktop-rust` when the architecture says it is the required bridge.
 - Use generated proto/domain contracts; do not introduce manual parallel models.
-- Desktop UI uses LobeUI first; use antd only when necessary and consistent with existing design.
+- Desktop UI uses LobeUI first; use antd only when necessary and normalized into `docs/client/common/ui-identity/`.
+- For UI/UX design, visual refactor, screenshot review, layout/boundary/button/style issues, or edits under Desktop UI paths, read `docs/client/common/ui-identity/README.md`, the closest module UI ID, and relevant pattern docs before proposing or editing UI.
 - TypeScript uses strict typing; do not introduce `any` unless the user explicitly accepts it.
 - Rust commands return `AppResult<T>`; do not panic for normal error paths.
 - Logging must go through project loggers; do not use `console.*`, `println!`, or `eprintln!`.

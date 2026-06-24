@@ -1,6 +1,9 @@
 package domain
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // PublicPostRepository accesses `social_public_posts` exclusively. Its
 // signatures take no `viewerID` because public posts are visible to
@@ -133,6 +136,24 @@ type AudienceGrantRepository interface {
 	HasDenyGrant(ctx context.Context, postID uint64, actorDID string) (bool, error)
 }
 
+type MomentDelivery struct {
+	ID           uint64
+	ViewerID     uint64
+	PostID       uint64
+	AuthorID     uint64
+	AudienceKind string
+	DeliveredAt  time.Time
+	RevokedAt    *time.Time
+}
+
+// MomentDeliveryRepository persists viewer-scoped HOME inbox rows for
+// private Moments. It is the durable counterpart to realtime fan-out.
+type MomentDeliveryRepository interface {
+	Upsert(ctx context.Context, deliveries []MomentDelivery) error
+	ListInbox(ctx context.Context, viewerID uint64, c Cursor, limit int) ([]MomentDelivery, error)
+	RevokePost(ctx context.Context, postID uint64) error
+}
+
 // CommentRepository persists `social_comments`. Comments are stored in a
 // single table for both post classes (with `PostClass` denormalized) so
 // cursor pagination doesn't need a UNION across two tables.
@@ -150,6 +171,7 @@ type CommentRepository interface {
 type ReactionRepository interface {
 	Add(ctx context.Context, r *Reaction) error
 	Remove(ctx context.Context, postID, actorID uint64, kind ReactionKindStr) error
+	ListByPost(ctx context.Context, postID uint64) ([]Reaction, error)
 	Aggregate(ctx context.Context, postID uint64) ([]ReactionSummary, error)
 	IsReactedByViewer(ctx context.Context, postID, viewerID uint64, kind ReactionKindStr) (bool, error)
 
@@ -204,4 +226,15 @@ type FollowRepository interface {
 	FollowerActorIDs(ctx context.Context, authorID uint64) ([]uint64, error)
 
 	IsFollowing(ctx context.Context, followerID, followingID uint64) (bool, error)
+}
+
+// StationModerationRepository persists Station-scoped trust policy.
+// Unlike actor block, this is not a social relationship edge; it is a
+// Station policy source consumed by feed projection and action gates.
+type StationModerationRepository interface {
+	Upsert(ctx context.Context, policy *StationModerationPolicy) error
+	Delete(ctx context.Context, stationDomain, stationPeerID string, kind StationModerationPolicyKind) error
+	List(ctx context.Context, kind StationModerationPolicyKind, c Cursor, limit int) ([]*StationModerationPolicy, error)
+	IsBlockedStation(ctx context.Context, stationDomain, stationPeerID string) (bool, error)
+	ListBlockedStations(ctx context.Context) (map[string]*StationModerationPolicy, error)
 }

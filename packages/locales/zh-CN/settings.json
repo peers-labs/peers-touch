@@ -97,6 +97,15 @@
 
   "settings.general.languageTitle": "语言",
   "settings.general.languageDescription": "选择应用程序的显示语言。更改后立即生效。",
+  "settings.general.chatTitle": "聊天",
+  "settings.general.chatDescription": "配置聊天输入区的交互偏好。",
+  "settings.general.screenshotShortcutLabel": "截图快捷键",
+  "settings.general.screenshotShortcutDescription": "在聊天输入区按下该快捷键即可发起截图。",
+  "settings.general.screenshotShortcutRecord": "录制",
+  "settings.general.screenshotShortcutListening": "按下快捷键",
+  "settings.general.screenshotShortcutRecording": "按下新的快捷键…",
+  "settings.general.screenshotShortcutReset": "重置",
+  "settings.general.chatShortcutSaved": "聊天快捷键已保存",
   "settings.general.agentsTitle": "智能体",
   "settings.general.noAgents": "尚未配置任何智能体，将使用默认助手。",
 
@@ -117,6 +126,7 @@
   "settings.tools.setPrimarySuccess": "首选搜索引擎已设为 {{name}}",
   "settings.tools.clearPrimarySuccess": "已清除首选搜索引擎（自动检测）",
   "settings.tools.setPrimaryFailed": "更新失败",
+  "settings.tools.operationFailed": "工具设置操作失败",
   "settings.tools.toolsTitle": "工具（{{count}}）",
   "settings.tools.columnName": "名称",
   "settings.tools.columnCategory": "分类",

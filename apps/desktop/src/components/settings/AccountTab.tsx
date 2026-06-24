@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Tooltip, toast } from '@lobehub/ui';
-import { useSessionStore } from '../../store/session';
 import {
   Empty,
   Input,
@@ -30,9 +29,10 @@ import {
 import { Button } from '@lobehub/ui';
 import { api, type AccountProfile, type AccountProfileLink, type Friend } from '../../services/desktop_api';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
-import { useAccountIdentityStore } from '../../store/accountIdentity';
+import { identityRuntime } from '../../kernel/identityRuntime';
 import { useTranslation } from 'react-i18next';
 import { SettingsContainer, SettingsSection } from './SettingsLayout';
+import { log } from '../../utils/logger';
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
@@ -375,6 +375,10 @@ export function AccountTab() {
 
   const timezoneOptions = useMemo(() => buildTimezoneOptions(t), [t]);
 
+  const syncCurrentProfileIdentity = async (fallbackAvatar?: string) => {
+    await identityRuntime.refreshCurrentProfile(fallbackAvatar);
+  };
+
   const loadProfile = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
@@ -382,15 +386,9 @@ export function AccountTab() {
       setProfile(next);
 
       if (next.avatar) {
-        api.accountSyncAvatar(next.avatar).then(() => {
-          return api.syncUserProfile();
-        }).then((result) => {
-          if (result?.avatar_url) {
-            useSessionStore.getState().updateAvatar(result.avatar_url);
-          }
-        }).catch(() => {});
-        useAccountIdentityStore.getState().load();
-        useSessionStore.getState().updateAvatar(next.avatar);
+        syncCurrentProfileIdentity(next.avatar).catch((error) => {
+          log.warn('settings', 'account profile identity sync failed', error);
+        });
       }
     } catch (error: any) {
       if (!silent) toast.error(error?.message || t('provider.account.failedToLoad'));
@@ -479,19 +477,7 @@ export function AccountTab() {
       setProfile(next);
 
       if (next.avatar) {
-        // Warm the local cache and refresh identity store; the avatar component
-        // will render the cached file as soon as resolveLocal returns.
-        api.accountSyncAvatar(next.avatar).then(() => {
-          return api.syncUserProfile();
-        }).then((result) => {
-          if (result?.avatar_url) {
-            useSessionStore.getState().updateAvatar(result.avatar_url);
-          }
-        }).catch((error: any) => {
-          toast.error(error?.message || t('provider.account.avatarHeader.failedToUploadAvatar'));
-        });
-        useAccountIdentityStore.getState().load();
-        useSessionStore.getState().updateAvatar(next.avatar);
+        await syncCurrentProfileIdentity(next.avatar);
       }
 
       toast.success(t('provider.account.avatarHeader.avatarUpdated'));

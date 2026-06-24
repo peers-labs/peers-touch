@@ -5,6 +5,7 @@ import type { DomainCacheRepository } from '@peers-touch/client-storage';
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
 import { createMobileClientStorageRuntime } from '../storage/mobileClientStorage';
+import { readableErrorMessage } from '../utils/errorMessage';
 
 export type AvatarAssetStatus = 'empty' | 'cached' | 'loading' | 'ready' | 'failed';
 
@@ -250,5 +251,5 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return readableErrorMessage(error);
 }

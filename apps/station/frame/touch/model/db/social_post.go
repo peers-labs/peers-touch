@@ -34,10 +34,10 @@ type SocialPublicPost struct {
 	// Body fields. Text-only posts use TextBody only; richer posts add
 	// JSON-encoded payloads. Stored as `text` columns (not `jsonb`) for
 	// SQLite compatibility — D1.A constraint.
-	TextBody         string `gorm:"column:text_body;type:text"`
-	AttachmentsJSON  string `gorm:"column:attachments_json;type:text"`
-	MentionsJSON     string `gorm:"column:mentions_json;type:text"`
-	LinkPreviewJSON  string `gorm:"column:link_preview_json;type:text"`
+	TextBody           string `gorm:"column:text_body;type:text"`
+	AttachmentsJSON    string `gorm:"column:attachments_json;type:text"`
+	MentionsJSON       string `gorm:"column:mentions_json;type:text"`
+	LinkPreviewJSON    string `gorm:"column:link_preview_json;type:text"`
 	ReactionsCountJSON string `gorm:"column:reactions_count_json;type:text"`
 
 	// RepostOfRef is `oss://{station}/post/{id}` form so cross-station
@@ -91,10 +91,15 @@ type SocialPrivatePost struct {
 	// the deny list makes it not-public). Empty for non-CUSTOM_*.
 	AudienceBaseKind string `gorm:"column:audience_base_kind;type:varchar(16)"`
 
-	TextBody         string `gorm:"column:text_body;type:text"`
-	AttachmentsJSON  string `gorm:"column:attachments_json;type:text"`
-	MentionsJSON     string `gorm:"column:mentions_json;type:text"`
-	LinkPreviewJSON  string `gorm:"column:link_preview_json;type:text"`
+	// AudienceKeyEnvelopesJSON stores sealed per-recipient media keys for
+	// private image Moments. Station persists and fan-outs these opaque
+	// envelopes but never sees plaintext media keys.
+	AudienceKeyEnvelopesJSON string `gorm:"column:audience_key_envelopes_json;type:text"`
+
+	TextBody           string `gorm:"column:text_body;type:text"`
+	AttachmentsJSON    string `gorm:"column:attachments_json;type:text"`
+	MentionsJSON       string `gorm:"column:mentions_json;type:text"`
+	LinkPreviewJSON    string `gorm:"column:link_preview_json;type:text"`
 	ReactionsCountJSON string `gorm:"column:reactions_count_json;type:text"`
 
 	RepostOfRef string `gorm:"column:repost_of_ref;type:varchar(255);index:idx_spri_repost"`

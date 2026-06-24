@@ -45,6 +45,7 @@ export const settingsRuntime: RuntimeDescriptor = {
     await Promise.allSettled([
       store.refreshActiveAccount(),
       store.loadAgents(),
+      store.loadChatPreferences(),
     ]);
   },
   async reconcile(): Promise<void> {
@@ -52,6 +53,7 @@ export const settingsRuntime: RuntimeDescriptor = {
     await Promise.allSettled([
       store.refreshActiveAccount(),
       store.loadAgents(),
+      store.loadChatPreferences(),
     ]);
   },
 };

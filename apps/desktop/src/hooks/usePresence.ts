@@ -97,15 +97,8 @@ export function usePresence(): void {
       if (startedActorRef.current === actorId) return;
       startedActorRef.current = actorId;
       fire('app_launch');
-      // Start the peer-presence SSE supervisor on the same edge as
-      // `app_launch`. The Rust side is idempotent: a duplicate `start`
-      // cancels the previous supervisor and replaces it.
-      void api.friendChatPresenceStart().catch((error) => {
-        log.warn('presence', 'friendChatPresenceStart failed', error);
-      });
-
-      // Open the unified realtime SSE stream on the same edge. This
-      // is global chat infrastructure, not page-owned state.
+      // Open the unified realtime SSE stream on the same edge. Presence
+      // flips are carried by StreamEvent.PresenceFlip on this channel.
       void api.realtimeStreamStart().catch((error) => {
         log.warn('presence', 'realtimeStreamStart failed', error);
       });

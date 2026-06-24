@@ -3,8 +3,10 @@ import { invoke } from '@tauri-apps/api/core';
 
 import type { MobileAuthSession } from '../auth/authSession';
 import {
+  ChatEncryptedMessagePayloadSchema,
   GroupCiphertextSchema,
   SenderKeyDistributionMessageSchema,
+  type ChatEncryptedMessagePayload,
   type GroupCiphertext,
   type SenderKeyDistributionMessage,
 } from '../../gen/proto/domain/chat/group_chat_pb';
@@ -45,7 +47,7 @@ interface EncryptOutput {
 }
 
 interface DecryptOutput {
-  plaintext: string;
+  plaintextBytes: number[];
 }
 
 export async function emitGroupSkdm(session: MobileAuthSession, groupUlid: string): Promise<Uint8Array> {
@@ -85,10 +87,26 @@ export async function encryptGroupPlaintext(
   groupUlid: string,
   plaintext: string,
 ): Promise<Uint8Array> {
+  return encryptGroupPlaintextBytes(session, groupUlid, new TextEncoder().encode(plaintext));
+}
+
+export async function encryptGroupMessagePayload(
+  session: MobileAuthSession,
+  groupUlid: string,
+  payload: ChatEncryptedMessagePayload,
+): Promise<Uint8Array> {
+  return encryptGroupPlaintextBytes(session, groupUlid, toBinary(ChatEncryptedMessagePayloadSchema, payload));
+}
+
+async function encryptGroupPlaintextBytes(
+  session: MobileAuthSession,
+  groupUlid: string,
+  plaintextBytes: Uint8Array,
+): Promise<Uint8Array> {
   const output = await invoke<EncryptOutput>('crypto_group_encrypt', {
     input: {
       ...scopeInput(session, groupUlid),
-      plaintext,
+      plaintextBytes: numbersFromBytes(plaintextBytes),
     },
   });
   return toBinary(GroupCiphertextSchema, groupCiphertextFromView(output.wire));
@@ -99,6 +117,27 @@ export async function decryptGroupPayload(
   groupUlid: string,
   encryptedPayload: Uint8Array,
 ): Promise<string> {
+  return new TextDecoder().decode(await decryptGroupPayloadBytes(session, groupUlid, encryptedPayload));
+}
+
+export async function decryptGroupMessagePayload(
+  session: MobileAuthSession,
+  groupUlid: string,
+  encryptedPayload: Uint8Array,
+): Promise<ChatEncryptedMessagePayload | null> {
+  const plaintextBytes = await decryptGroupPayloadBytes(session, groupUlid, encryptedPayload);
+  try {
+    return fromBinary(ChatEncryptedMessagePayloadSchema, plaintextBytes);
+  } catch {
+    return null;
+  }
+}
+
+export async function decryptGroupPayloadBytes(
+  session: MobileAuthSession,
+  groupUlid: string,
+  encryptedPayload: Uint8Array,
+): Promise<Uint8Array> {
   const wire = fromBinary(GroupCiphertextSchema, encryptedPayload);
   const output = await invoke<DecryptOutput>('crypto_group_decrypt', {
     input: {
@@ -107,7 +146,7 @@ export async function decryptGroupPayload(
       wire: groupCiphertextToView(wire),
     },
   });
-  return output.plaintext;
+  return bytesFromNumbers(output.plaintextBytes);
 }
 
 export function userScopeForSession(session: MobileAuthSession): string {

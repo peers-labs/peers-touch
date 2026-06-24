@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox, Center } from 'react-layout-kit';
-import { Alert, Markdown } from '@lobehub/ui';
+import { Alert } from '@lobehub/ui';
 import { Spin, theme } from 'antd';
 import { Bot, User } from 'lucide-react';
+import { LazyMarkdown as Markdown } from '../components/LazyMarkdown';
 
 interface SharedMessage {
   id: string;
