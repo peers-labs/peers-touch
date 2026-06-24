@@ -145,6 +145,69 @@ describe('api group admin bridge', () => {
   })
 })
 
+describe('api group sender-key bridge', () => {
+  beforeEach(() => {
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command: 'crypto_group',
+        status: JSON.stringify({
+          group_ulid: 'group-1',
+          sender_did: 'did:peer:alice',
+          sender_key_id: 1,
+          skdm_b64: 'skdm',
+          encrypted_payload_b64: 'ciphertext',
+          plaintext_b64: 'plaintext',
+          counter: 1,
+        }),
+      },
+    })
+  })
+
+  it('emits SKDM with Tauri camelCase args', async () => {
+    await api.cryptoGroupSkEmitSkdm('group-1')
+
+    expect(invoke).toHaveBeenCalledWith('crypto_group_sk_emit_skdm', {
+      groupUlid: 'group-1',
+    })
+  })
+
+  it('encrypts group payload with Tauri camelCase args', async () => {
+    await api.cryptoGroupEncrypt('group-1', 'plaintext')
+
+    expect(invoke).toHaveBeenCalledWith('crypto_group_encrypt', {
+      groupUlid: 'group-1',
+      plaintextB64: 'plaintext',
+    })
+  })
+
+  it('decrypts group payload with Tauri camelCase args', async () => {
+    await api.cryptoGroupDecrypt('group-1', 'ciphertext')
+
+    expect(invoke).toHaveBeenCalledWith('crypto_group_decrypt', {
+      groupUlid: 'group-1',
+      encryptedPayloadB64: 'ciphertext',
+    })
+  })
+
+  it('consumes SKDM with Tauri camelCase args', async () => {
+    await api.cryptoGroupSkConsumeSkdm('did:peer:alice', 'skdm')
+
+    expect(invoke).toHaveBeenCalledWith('crypto_group_sk_consume_skdm', {
+      claimedSenderDid: 'did:peer:alice',
+      skdmB64: 'skdm',
+    })
+  })
+
+  it('rotates group sender key with Tauri camelCase args', async () => {
+    await api.cryptoGroupSkRotate('group-1')
+
+    expect(invoke).toHaveBeenCalledWith('crypto_group_sk_rotate', {
+      groupUlid: 'group-1',
+    })
+  })
+})
+
 describe('api.listApplets', () => {
   it('returns applets array', async () => {
     vi.mocked(invoke).mockResolvedValue({

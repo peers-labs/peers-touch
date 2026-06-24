@@ -4566,7 +4566,7 @@ export const api = {
       sender_did: string;
       sender_key_id: number;
       skdm_b64: string;
-    }>('crypto_group_sk_emit_skdm', { group_ulid: groupUlid }),
+    }>('crypto_group_sk_emit_skdm', { groupUlid }),
 
   cryptoGroupSkConsumeSkdm: (claimedSenderDid: string, skdmB64: string) =>
     invokeAppResultStub<{
@@ -4574,8 +4574,8 @@ export const api = {
       sender_did: string;
       sender_key_id: number;
     }>('crypto_group_sk_consume_skdm', {
-      claimed_sender_did: claimedSenderDid,
-      skdm_b64: skdmB64,
+      claimedSenderDid,
+      skdmB64,
     }),
 
   // Force-rotate the local sender chain for `groupUlid`. After this
@@ -4588,7 +4588,7 @@ export const api = {
       group_ulid: string;
       sender_did: string;
       sender_key_id: number;
-    }>('crypto_group_sk_rotate', { group_ulid: groupUlid }),
+    }>('crypto_group_sk_rotate', { groupUlid }),
 
   cryptoGroupEncrypt: (groupUlid: string, plaintextB64: string) =>
     invokeAppResultStub<{
@@ -4596,8 +4596,8 @@ export const api = {
       sender_key_id: number;
       counter: number;
     }>('crypto_group_encrypt', {
-      group_ulid: groupUlid,
-      plaintext_b64: plaintextB64,
+      groupUlid,
+      plaintextB64,
     }),
 
   cryptoGroupDecrypt: (groupUlid: string, encryptedPayloadB64: string) =>
@@ -4607,8 +4607,8 @@ export const api = {
       sender_key_id: number;
       counter: number;
     }>('crypto_group_decrypt', {
-      group_ulid: groupUlid,
-      encrypted_payload_b64: encryptedPayloadB64,
+      groupUlid,
+      encryptedPayloadB64,
     }),
 
   keyExchangeUploadBundle: (bundle: CryptoKeyBundlePayload) =>
