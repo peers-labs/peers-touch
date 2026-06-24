@@ -242,6 +242,160 @@ func (x *Error) GetMessage() string {
 	return ""
 }
 
+// EncryptedMediaDescriptor describes client-side media encryption for
+// chat attachments and Moment media. The descriptor is metadata only:
+// clients MUST protect key material by carrying this message inside the
+// surface-specific E2EE envelope when the audience is private. Public
+// plaintext metadata fields on legacy attachment messages are deprecated
+// compatibility mirrors and must not be treated as authoritative.
+type EncryptedMediaDescriptor struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Encrypted           bool                   `protobuf:"varint,1,opt,name=encrypted,proto3" json:"encrypted,omitempty"`
+	Version             uint32                 `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	Suite               string                 `protobuf:"bytes,3,opt,name=suite,proto3" json:"suite,omitempty"`
+	KeyB64              string                 `protobuf:"bytes,4,opt,name=key_b64,json=keyB64,proto3" json:"key_b64,omitempty"`
+	NonceB64            string                 `protobuf:"bytes,5,opt,name=nonce_b64,json=nonceB64,proto3" json:"nonce_b64,omitempty"`
+	PlaintextSha256B64  string                 `protobuf:"bytes,6,opt,name=plaintext_sha256_b64,json=plaintextSha256B64,proto3" json:"plaintext_sha256_b64,omitempty"`
+	CiphertextSha256B64 string                 `protobuf:"bytes,7,opt,name=ciphertext_sha256_b64,json=ciphertextSha256B64,proto3" json:"ciphertext_sha256_b64,omitempty"`
+	PlaintextSize       int64                  `protobuf:"varint,8,opt,name=plaintext_size,json=plaintextSize,proto3" json:"plaintext_size,omitempty"`
+	CiphertextSize      int64                  `protobuf:"varint,9,opt,name=ciphertext_size,json=ciphertextSize,proto3" json:"ciphertext_size,omitempty"`
+	Chunking            string                 `protobuf:"bytes,10,opt,name=chunking,proto3" json:"chunking,omitempty"`
+	ChunkSize           uint32                 `protobuf:"varint,11,opt,name=chunk_size,json=chunkSize,proto3" json:"chunk_size,omitempty"`
+	ChunkCount          uint32                 `protobuf:"varint,12,opt,name=chunk_count,json=chunkCount,proto3" json:"chunk_count,omitempty"`
+	TagSize             uint32                 `protobuf:"varint,13,opt,name=tag_size,json=tagSize,proto3" json:"tag_size,omitempty"`
+	NonceStrategy       string                 `protobuf:"bytes,14,opt,name=nonce_strategy,json=nonceStrategy,proto3" json:"nonce_strategy,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *EncryptedMediaDescriptor) Reset() {
+	*x = EncryptedMediaDescriptor{}
+	mi := &file_domain_common_common_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EncryptedMediaDescriptor) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EncryptedMediaDescriptor) ProtoMessage() {}
+
+func (x *EncryptedMediaDescriptor) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_common_common_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EncryptedMediaDescriptor.ProtoReflect.Descriptor instead.
+func (*EncryptedMediaDescriptor) Descriptor() ([]byte, []int) {
+	return file_domain_common_common_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *EncryptedMediaDescriptor) GetEncrypted() bool {
+	if x != nil {
+		return x.Encrypted
+	}
+	return false
+}
+
+func (x *EncryptedMediaDescriptor) GetVersion() uint32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *EncryptedMediaDescriptor) GetSuite() string {
+	if x != nil {
+		return x.Suite
+	}
+	return ""
+}
+
+func (x *EncryptedMediaDescriptor) GetKeyB64() string {
+	if x != nil {
+		return x.KeyB64
+	}
+	return ""
+}
+
+func (x *EncryptedMediaDescriptor) GetNonceB64() string {
+	if x != nil {
+		return x.NonceB64
+	}
+	return ""
+}
+
+func (x *EncryptedMediaDescriptor) GetPlaintextSha256B64() string {
+	if x != nil {
+		return x.PlaintextSha256B64
+	}
+	return ""
+}
+
+func (x *EncryptedMediaDescriptor) GetCiphertextSha256B64() string {
+	if x != nil {
+		return x.CiphertextSha256B64
+	}
+	return ""
+}
+
+func (x *EncryptedMediaDescriptor) GetPlaintextSize() int64 {
+	if x != nil {
+		return x.PlaintextSize
+	}
+	return 0
+}
+
+func (x *EncryptedMediaDescriptor) GetCiphertextSize() int64 {
+	if x != nil {
+		return x.CiphertextSize
+	}
+	return 0
+}
+
+func (x *EncryptedMediaDescriptor) GetChunking() string {
+	if x != nil {
+		return x.Chunking
+	}
+	return ""
+}
+
+func (x *EncryptedMediaDescriptor) GetChunkSize() uint32 {
+	if x != nil {
+		return x.ChunkSize
+	}
+	return 0
+}
+
+func (x *EncryptedMediaDescriptor) GetChunkCount() uint32 {
+	if x != nil {
+		return x.ChunkCount
+	}
+	return 0
+}
+
+func (x *EncryptedMediaDescriptor) GetTagSize() uint32 {
+	if x != nil {
+		return x.TagSize
+	}
+	return 0
+}
+
+func (x *EncryptedMediaDescriptor) GetNonceStrategy() string {
+	if x != nil {
+		return x.NonceStrategy
+	}
+	return ""
+}
+
 var File_domain_common_common_proto protoreflect.FileDescriptor
 
 const file_domain_common_common_proto_rawDesc = "" +
@@ -260,7 +414,25 @@ const file_domain_common_common_proto_rawDesc = "" +
 	"\x04data\x18\x03 \x01(\v2\x14.google.protobuf.AnyR\x04data\"5\n" +
 	"\x05Error\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessageBBZ@github.com/peers-labs/peers-touch/station/frame/core/types;typesb\x06proto3"
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xf2\x03\n" +
+	"\x18EncryptedMediaDescriptor\x12\x1c\n" +
+	"\tencrypted\x18\x01 \x01(\bR\tencrypted\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\rR\aversion\x12\x14\n" +
+	"\x05suite\x18\x03 \x01(\tR\x05suite\x12\x17\n" +
+	"\akey_b64\x18\x04 \x01(\tR\x06keyB64\x12\x1b\n" +
+	"\tnonce_b64\x18\x05 \x01(\tR\bnonceB64\x120\n" +
+	"\x14plaintext_sha256_b64\x18\x06 \x01(\tR\x12plaintextSha256B64\x122\n" +
+	"\x15ciphertext_sha256_b64\x18\a \x01(\tR\x13ciphertextSha256B64\x12%\n" +
+	"\x0eplaintext_size\x18\b \x01(\x03R\rplaintextSize\x12'\n" +
+	"\x0fciphertext_size\x18\t \x01(\x03R\x0eciphertextSize\x12\x1a\n" +
+	"\bchunking\x18\n" +
+	" \x01(\tR\bchunking\x12\x1d\n" +
+	"\n" +
+	"chunk_size\x18\v \x01(\rR\tchunkSize\x12\x1f\n" +
+	"\vchunk_count\x18\f \x01(\rR\n" +
+	"chunkCount\x12\x19\n" +
+	"\btag_size\x18\r \x01(\rR\atagSize\x12%\n" +
+	"\x0enonce_strategy\x18\x0e \x01(\tR\rnonceStrategyBBZ@github.com/peers-labs/peers-touch/station/frame/core/types;typesb\x06proto3"
 
 var (
 	file_domain_common_common_proto_rawDescOnce sync.Once
@@ -274,16 +446,17 @@ func file_domain_common_common_proto_rawDescGZIP() []byte {
 	return file_domain_common_common_proto_rawDescData
 }
 
-var file_domain_common_common_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_domain_common_common_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_domain_common_common_proto_goTypes = []any{
-	(*PageQuery)(nil),     // 0: peers_touch.model.common.v1.PageQuery
-	(*PageData)(nil),      // 1: peers_touch.model.common.v1.PageData
-	(*PeersResponse)(nil), // 2: peers_touch.model.common.v1.PeersResponse
-	(*Error)(nil),         // 3: peers_touch.model.common.v1.Error
-	(*anypb.Any)(nil),     // 4: google.protobuf.Any
+	(*PageQuery)(nil),                // 0: peers_touch.model.common.v1.PageQuery
+	(*PageData)(nil),                 // 1: peers_touch.model.common.v1.PageData
+	(*PeersResponse)(nil),            // 2: peers_touch.model.common.v1.PeersResponse
+	(*Error)(nil),                    // 3: peers_touch.model.common.v1.Error
+	(*EncryptedMediaDescriptor)(nil), // 4: peers_touch.model.common.v1.EncryptedMediaDescriptor
+	(*anypb.Any)(nil),                // 5: google.protobuf.Any
 }
 var file_domain_common_common_proto_depIdxs = []int32{
-	4, // 0: peers_touch.model.common.v1.PeersResponse.data:type_name -> google.protobuf.Any
+	5, // 0: peers_touch.model.common.v1.PeersResponse.data:type_name -> google.protobuf.Any
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -302,7 +475,7 @@ func file_domain_common_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_common_common_proto_rawDesc), len(file_domain_common_common_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

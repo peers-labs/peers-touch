@@ -1,27 +1,46 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
+  Divider,
+  Drawer,
   Form,
+  message,
   Select,
   Switch,
+  Tabs,
+  theme,
   Typography,
-  message,
-  Drawer,
 } from 'antd';
-import { Input, Button, TextArea } from '@lobehub/ui';
+import { Bot, Brain, Code2, Database, Rocket, Search, ShieldCheck, Sparkles, Wrench } from 'lucide-react';
+import { Input, Button, Tag, TextArea } from '@lobehub/ui';
 import { Flexbox } from 'react-layout-kit';
 import { api, type Agent, type AgentCreate } from '../services/desktop_api';
-import { useChatStore } from '../store/chat';
+import { useAgentStore } from '../store/agent';
 import { useTranslation } from 'react-i18next';
 
 const { Text } = Typography;
 
 const AVATAR_OPTIONS = ['🤖', '👨‍💻', '🔬', '✍️', '🧠', '🎨', '📊', '🔧', '🌐', '📝', '🎯', '💡', '🛡️', '🚀', '🎓', '🧪'];
 
+type AgentTemplateKey = 'research' | 'coding' | 'operator';
+
+interface AgentTemplate {
+  key: AgentTemplateKey;
+  icon: ReactNode;
+  avatar: string;
+  name: string;
+  title: string;
+  description: string;
+  systemPrompt: string;
+  openingMessage: string;
+  openingQuestions: string[];
+  toolsProfile: 'standard' | 'minimal' | 'all';
+}
+
 interface AgentSettingsDrawerProps {
   open: boolean;
   editingAgent: Agent | null;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (agent: Agent) => void;
 }
 
 export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: AgentSettingsDrawerProps) {
@@ -29,7 +48,12 @@ export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: Ag
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState('🤖');
-  const { loadAgents } = useChatStore();
+  const { token } = theme.useToken();
+  const { loadAgents } = useAgentStore();
+  const previewTitle = Form.useWatch('title', form);
+  const previewDescription = Form.useWatch('description', form);
+  const previewModel = Form.useWatch('model', form);
+  const previewToolsProfile = Form.useWatch('toolsProfile', form);
 
   useEffect(() => {
     if (open) {
@@ -67,8 +91,9 @@ export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: Ag
         ? questionsText.split('\n').map((q: string) => q.trim()).filter(Boolean)
         : [];
 
+      let savedAgent: Agent;
       if (editingAgent) {
-        await api.updateAgent(editingAgent.id, {
+        savedAgent = await api.updateAgent(editingAgent.id, {
           title: values.title,
           description: values.description,
           avatar: selectedAvatar,
@@ -93,11 +118,11 @@ export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: Ag
           openingQuestions: JSON.stringify(questionsArray),
           pinned: values.pinned || false,
         };
-        await api.createAgent(data);
+        savedAgent = await api.createAgent(data);
         message.success(t('agent.drawer.toast.created'));
       }
-      loadAgents();
-      onSaved();
+      await loadAgents();
+      onSaved(savedAgent);
     } catch (err: any) {
       if (err.errorFields) return;
       message.error(err.message);
@@ -107,13 +132,67 @@ export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: Ag
   };
 
   const isBuiltIn = editingAgent?.isDefault;
+  const templates: AgentTemplate[] = [
+    {
+      key: 'research',
+      icon: <Search size={16} />,
+      avatar: '🔬',
+      name: 'research-analyst',
+      title: t('agent.drawer.template.research.title'),
+      description: t('agent.drawer.template.research.description'),
+      systemPrompt: t('agent.drawer.template.research.prompt'),
+      openingMessage: t('agent.drawer.template.research.opening'),
+      openingQuestions: templateQuestions(t('agent.drawer.template.research.questions')),
+      toolsProfile: 'standard',
+    },
+    {
+      key: 'coding',
+      icon: <Code2 size={16} />,
+      avatar: '👨‍💻',
+      name: 'coding-copilot',
+      title: t('agent.drawer.template.coding.title'),
+      description: t('agent.drawer.template.coding.description'),
+      systemPrompt: t('agent.drawer.template.coding.prompt'),
+      openingMessage: t('agent.drawer.template.coding.opening'),
+      openingQuestions: templateQuestions(t('agent.drawer.template.coding.questions')),
+      toolsProfile: 'all',
+    },
+    {
+      key: 'operator',
+      icon: <Rocket size={16} />,
+      avatar: '🚀',
+      name: 'workflow-operator',
+      title: t('agent.drawer.template.operator.title'),
+      description: t('agent.drawer.template.operator.description'),
+      systemPrompt: t('agent.drawer.template.operator.prompt'),
+      openingMessage: t('agent.drawer.template.operator.opening'),
+      openingQuestions: templateQuestions(t('agent.drawer.template.operator.questions')),
+      toolsProfile: 'standard',
+    },
+  ];
+
+  const applyTemplate = (template: AgentTemplate) => {
+    if (!editingAgent) {
+      form.setFieldsValue({ name: template.name });
+    }
+    form.setFieldsValue({
+      title: template.title,
+      description: template.description,
+      systemPrompt: template.systemPrompt,
+      openingMessage: template.openingMessage,
+      openingQuestions: template.openingQuestions.join('\n'),
+      toolsProfile: template.toolsProfile,
+      pinned: true,
+    });
+    setSelectedAvatar(template.avatar);
+  };
 
   return (
     <Drawer
       title={editingAgent ? t('agent.drawer.titleEdit') : t('agent.drawer.titleCreate')}
       open={open}
       onClose={onClose}
-      size="default"
+      width={760}
       extra={
         <Button type="primary" loading={saving} onClick={handleSubmit}>
           {editingAgent ? t('agent.drawer.save') : t('agent.drawer.create')}
@@ -121,121 +200,294 @@ export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: Ag
       }
     >
       <Form form={form} layout="vertical" size="middle">
-        {/* Avatar picker */}
-        <Form.Item label={t('agent.drawer.avatar')}>
-          <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap' }}>
-            {AVATAR_OPTIONS.map((emoji) => (
+        <Flexbox gap={16}>
+          <Flexbox
+            gap={14}
+            style={{
+              padding: 18,
+              borderRadius: 18,
+              color: '#fff',
+              background:
+                'radial-gradient(circle at top left, rgba(255,255,255,0.28), transparent 32%), linear-gradient(135deg, #1d4ed8 0%, #7c3aed 54%, #db2777 100%)',
+              boxShadow: '0 18px 50px rgba(79, 70, 229, 0.22)',
+            }}
+          >
+            <Flexbox horizontal align="center" gap={14}>
               <div
-                key={emoji}
-                onClick={() => setSelectedAvatar(emoji)}
                 style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 10,
+                  width: 64,
+                  height: 64,
+                  borderRadius: 20,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: 20,
-                  cursor: 'pointer',
-                  border: selectedAvatar === emoji ? '2px solid #667eea' : '2px solid transparent',
-                  background: selectedAvatar === emoji ? '#f0f5ff' : '#f5f5f5',
-                  transition: 'all 0.15s',
+                  fontSize: 32,
+                  background: 'rgba(255,255,255,0.18)',
+                  border: '1px solid rgba(255,255,255,0.28)',
                 }}
               >
-                {emoji}
+                {selectedAvatar}
               </div>
-            ))}
+              <Flexbox gap={4} style={{ minWidth: 0 }}>
+                <Flexbox horizontal align="center" gap={8}>
+                  <Tag style={{ margin: 0, color: '#fff', borderColor: 'rgba(255,255,255,0.36)', background: 'rgba(255,255,255,0.16)' }}>
+                    {t('agent.drawer.workbenchBadge')}
+                  </Tag>
+                  {isBuiltIn && (
+                    <Tag style={{ margin: 0, color: '#fff', borderColor: 'rgba(255,255,255,0.36)', background: 'rgba(255,255,255,0.16)' }}>
+                      {t('agent.profile.builtIn')}
+                    </Tag>
+                  )}
+                </Flexbox>
+                <span style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.2 }}>
+                  {previewTitle || t('agent.drawer.previewTitle')}
+                </span>
+                <span style={{ fontSize: 13, lineHeight: 1.5, color: 'rgba(255,255,255,0.78)' }}>
+                  {previewDescription || t('agent.drawer.previewDescription')}
+                </span>
+              </Flexbox>
+            </Flexbox>
+
+            <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
+              <CapabilityPill icon={<Bot size={13} />} label={previewModel || t('agent.drawer.defaultModel')} />
+              <CapabilityPill icon={<Wrench size={13} />} label={t(`agent.drawer.toolAccess.${previewToolsProfile || 'standard'}`)} />
+              <CapabilityPill icon={<Brain size={13} />} label={t('agent.drawer.previewMemory')} />
+              <CapabilityPill icon={<ShieldCheck size={13} />} label={t('agent.drawer.previewApproval')} />
+            </Flexbox>
           </Flexbox>
-        </Form.Item>
 
-        {/* Name (slug) — only for create */}
-        {!editingAgent && (
-          <Form.Item
-            name="name"
-            label={t('agent.drawer.nameSlug')}
-            rules={[
-              { required: true, message: t('agent.drawer.nameRequired') },
-              { pattern: /^[a-z][a-z0-9-]*$/, message: t('agent.drawer.namePattern') },
+          {!editingAgent && (
+            <Flexbox gap={10}>
+              <Flexbox horizontal align="center" justify="space-between">
+                <Flexbox gap={2}>
+                  <Text strong>{t('agent.drawer.template.title')}</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{t('agent.drawer.template.description')}</Text>
+                </Flexbox>
+                <Sparkles size={16} style={{ color: token.colorPrimary }} />
+              </Flexbox>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                {templates.map((template) => (
+                  <button
+                    key={template.key}
+                    type="button"
+                    onClick={() => applyTemplate(template)}
+                    style={{
+                      border: `1px solid ${token.colorBorderSecondary}`,
+                      borderRadius: 14,
+                      padding: 12,
+                      minHeight: 112,
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      background: token.colorBgContainer,
+                      color: token.colorText,
+                    }}
+                  >
+                    <Flexbox gap={8}>
+                      <Flexbox horizontal align="center" gap={8}>
+                        <span style={{ display: 'flex', color: token.colorPrimary }}>{template.icon}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700 }}>{template.title}</span>
+                      </Flexbox>
+                      <span style={{ fontSize: 12, color: token.colorTextSecondary, lineHeight: 1.5 }}>
+                        {template.description}
+                      </span>
+                    </Flexbox>
+                  </button>
+                ))}
+              </div>
+            </Flexbox>
+          )}
+
+          <Tabs
+            items={[
+              {
+                key: 'identity',
+                label: t('agent.drawer.tab.identity'),
+                children: (
+                  <Flexbox gap={14}>
+                    <Form.Item label={t('agent.drawer.avatar')}>
+                      <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap' }}>
+                        {AVATAR_OPTIONS.map((emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => setSelectedAvatar(emoji)}
+                            style={{
+                              width: 40,
+                              height: 40,
+                              borderRadius: 12,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: 20,
+                              cursor: 'pointer',
+                              border: selectedAvatar === emoji ? `2px solid ${token.colorPrimary}` : `1px solid ${token.colorBorderSecondary}`,
+                              background: selectedAvatar === emoji ? token.colorPrimaryBg : token.colorFillQuaternary,
+                              transition: 'all 0.15s',
+                            }}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </Flexbox>
+                    </Form.Item>
+
+                    {!editingAgent && (
+                      <Form.Item
+                        name="name"
+                        label={t('agent.drawer.nameSlug')}
+                        rules={[
+                          { required: true, message: t('agent.drawer.nameRequired') },
+                          { pattern: /^[a-z][a-z0-9-]*$/, message: t('agent.drawer.namePattern') },
+                        ]}
+                        extra={t('agent.drawer.nameExtra')}
+                      >
+                        <Input placeholder={t('agent.drawer.namePlaceholder')} />
+                      </Form.Item>
+                    )}
+
+                    <Form.Item name="title" label={t('agent.drawer.displayName')} rules={[{ required: true }]}>
+                      <Input placeholder={t('agent.drawer.displayNamePlaceholder')} />
+                    </Form.Item>
+
+                    <Form.Item name="description" label={t('agent.drawer.description')}>
+                      <Input placeholder={t('agent.drawer.descriptionPlaceholder')} />
+                    </Form.Item>
+
+                    <Flexbox horizontal align="center" justify="space-between" style={{ padding: 12, borderRadius: 12, background: token.colorFillQuaternary }}>
+                      <Flexbox>
+                        <Text style={{ fontSize: 14 }}>{t('agent.drawer.pinToSidebar')}</Text>
+                        <Text type="secondary" style={{ fontSize: 12 }}>{t('agent.drawer.pinToSidebarDesc')}</Text>
+                      </Flexbox>
+                      <Form.Item name="pinned" valuePropName="checked" style={{ marginBottom: 0 }}>
+                        <Switch />
+                      </Form.Item>
+                    </Flexbox>
+                  </Flexbox>
+                ),
+              },
+              {
+                key: 'prompt',
+                label: t('agent.drawer.tab.prompt'),
+                children: (
+                  <Flexbox gap={14}>
+                    <Form.Item
+                      name="systemPrompt"
+                      label={t('agent.drawer.systemPrompt')}
+                      extra={t('agent.drawer.systemPromptExtra')}
+                    >
+                      <TextArea
+                        rows={10}
+                        placeholder={t('agent.drawer.systemPromptPlaceholder')}
+                        style={{ fontFamily: 'monospace', fontSize: 13, lineHeight: 1.6 }}
+                      />
+                    </Form.Item>
+                  </Flexbox>
+                ),
+              },
+              {
+                key: 'runtime',
+                label: t('agent.drawer.tab.runtime'),
+                children: (
+                  <Flexbox gap={14}>
+                    <Form.Item
+                      name="model"
+                      label={t('agent.drawer.modelOverride')}
+                      extra={t('agent.drawer.modelOverrideExtra')}
+                    >
+                      <Input placeholder={t('agent.drawer.modelOverridePlaceholder')} />
+                    </Form.Item>
+
+                    <Form.Item name="toolsProfile" label={t('agent.drawer.toolAccess')}>
+                      <Select
+                        options={[
+                          { label: t('agent.drawer.toolAccess.standard'), value: 'standard' },
+                          { label: t('agent.drawer.toolAccess.minimal'), value: 'minimal' },
+                          { label: t('agent.drawer.toolAccess.all'), value: 'all' },
+                        ]}
+                      />
+                    </Form.Item>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+                      <CapabilityCard icon={<Wrench size={16} />} title={t('agent.drawer.capability.tools')} desc={t('agent.drawer.capability.toolsDesc')} />
+                      <CapabilityCard icon={<Database size={16} />} title={t('agent.drawer.capability.knowledge')} desc={t('agent.drawer.capability.knowledgeDesc')} />
+                      <CapabilityCard icon={<Brain size={16} />} title={t('agent.drawer.capability.memory')} desc={t('agent.drawer.capability.memoryDesc')} />
+                      <CapabilityCard icon={<ShieldCheck size={16} />} title={t('agent.drawer.capability.approval')} desc={t('agent.drawer.capability.approvalDesc')} />
+                    </div>
+                  </Flexbox>
+                ),
+              },
+              {
+                key: 'opening',
+                label: t('agent.drawer.tab.opening'),
+                children: (
+                  <Flexbox gap={14}>
+                    <Form.Item name="openingMessage" label={t('agent.drawer.welcomeMessage')}>
+                      <Input placeholder={t('agent.drawer.welcomeMessagePlaceholder')} />
+                    </Form.Item>
+
+                    <Form.Item
+                      name="openingQuestions"
+                      label={t('agent.drawer.suggestedQuestions')}
+                      extra={t('agent.drawer.suggestedQuestionsExtra')}
+                    >
+                      <TextArea rows={5} placeholder={t('agent.drawer.suggestedQuestionsPlaceholder')} />
+                    </Form.Item>
+                  </Flexbox>
+                ),
+              },
             ]}
-            extra={t('agent.drawer.nameExtra')}
-          >
-            <Input placeholder="my-agent" />
-          </Form.Item>
-        )}
-
-        {/* Display name */}
-        <Form.Item name="title" label={t('agent.drawer.displayName')} rules={[{ required: true }]}>
-          <Input placeholder="My Custom Agent" />
-        </Form.Item>
-
-        <Form.Item name="description" label={t('agent.drawer.description')}>
-          <Input placeholder={t('agent.drawer.descriptionPlaceholder')} />
-        </Form.Item>
-
-        {/* System Prompt */}
-        <Form.Item
-          name="systemPrompt"
-          label={t('agent.drawer.systemPrompt')}
-          extra={t('agent.drawer.systemPromptExtra')}
-        >
-          <TextArea
-            rows={6}
-            placeholder={t('agent.drawer.systemPromptPlaceholder')}
-            style={{ fontFamily: 'monospace', fontSize: 13 }}
           />
-        </Form.Item>
 
-        {/* Model */}
-        <Form.Item
-          name="model"
-          label={t('agent.drawer.modelOverride')}
-          extra={t('agent.drawer.modelOverrideExtra')}
-        >
-          <Input placeholder={t('agent.drawer.modelOverridePlaceholder')} />
-        </Form.Item>
+          <Divider style={{ margin: '0 0 4px' }} />
 
-        {/* Tools Profile */}
-        <Form.Item name="toolsProfile" label={t('agent.drawer.toolAccess')}>
-          <Select
-            options={[
-              { label: t('agent.drawer.toolAccess.standard'), value: 'standard' },
-              { label: t('agent.drawer.toolAccess.minimal'), value: 'minimal' },
-              { label: t('agent.drawer.toolAccess.all'), value: 'all' },
-            ]}
-          />
-        </Form.Item>
-
-        <Form.Item name="openingMessage" label={t('agent.drawer.welcomeMessage')}>
-          <Input placeholder={t('agent.drawer.welcomeMessagePlaceholder')} />
-        </Form.Item>
-
-        {/* Opening Questions */}
-        <Form.Item
-          name="openingQuestions"
-          label={t('agent.drawer.suggestedQuestions')}
-          extra={t('agent.drawer.suggestedQuestionsExtra')}
-        >
-          <TextArea rows={3} placeholder={"Help me write code\nSearch the web\nAnalyze a file"} />
-        </Form.Item>
-
-        {/* Pinned */}
-        <Flexbox horizontal align="center" justify="space-between" style={{ marginBottom: 16 }}>
-          <Flexbox>
-            <Text style={{ fontSize: 14 }}>{t('agent.drawer.pinToSidebar')}</Text>
-            <Text type="secondary" style={{ fontSize: 12 }}>{t('agent.drawer.pinToSidebarDesc')}</Text>
-          </Flexbox>
-          <Form.Item name="pinned" valuePropName="checked" style={{ marginBottom: 0 }}>
-            <Switch />
-          </Form.Item>
-        </Flexbox>
-
-        {isBuiltIn && (
-          <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
-            {t('agent.drawer.builtInNote')}
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {isBuiltIn ? t('agent.drawer.builtInNote') : t('agent.drawer.workbenchFooter')}
           </Text>
-        )}
+        </Flexbox>
       </Form>
     </Drawer>
+  );
+}
+
+function CapabilityPill({ icon, label }: { icon: ReactNode; label: string }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '5px 10px',
+        borderRadius: 999,
+        fontSize: 12,
+        color: 'rgba(255,255,255,0.9)',
+        background: 'rgba(255,255,255,0.14)',
+        border: '1px solid rgba(255,255,255,0.22)',
+      }}
+    >
+      {icon}
+      {label}
+    </span>
+  );
+}
+
+function CapabilityCard({ icon, title, desc }: { icon: ReactNode; title: string; desc: string }) {
+  const { token } = theme.useToken();
+  return (
+    <Flexbox
+      gap={6}
+      style={{
+        padding: 12,
+        borderRadius: 12,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        background: token.colorBgContainer,
+      }}
+    >
+      <Flexbox horizontal align="center" gap={8}>
+        <span style={{ display: 'flex', color: token.colorPrimary }}>{icon}</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: token.colorText }}>{title}</span>
+      </Flexbox>
+      <span style={{ fontSize: 12, color: token.colorTextSecondary, lineHeight: 1.5 }}>{desc}</span>
+    </Flexbox>
   );
 }
 
@@ -246,4 +498,11 @@ function parseJsonArray(json: string): string[] {
   } catch {
     return [];
   }
+}
+
+function templateQuestions(raw: string): string[] {
+  return raw
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean);
 }

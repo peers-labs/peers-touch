@@ -35,7 +35,7 @@ check_pattern() {
 
 check_pattern \
   "Social runtime boundary violation: UI pages/components must not open realtime or presence streams directly." \
-  '/events/stream|/friend-chat/presence/stream|EventSource\(' \
+  '/events/stream|/presence/heartbeat|/presence/offline|EventSource\(' \
   "${DESKTOP_UI_DIRS[@]}" "${MOBILE_UI_DIRS[@]}"
 
 check_pattern \

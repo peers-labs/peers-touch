@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Popover } from '@lobehub/ui';
@@ -10,10 +10,10 @@ import {
   Settings2,
   ChevronRight,
 } from 'lucide-react';
-import { api, type BuiltinSkillInfo, type SkillListItem } from '../services/desktop_api';
-import { useChatStore } from '../store/chat';
+import type { BuiltinSkillInfo, SkillListItem } from '../services/desktop_api';
+import { useAgentStore } from '../store/agent';
+import { useSkillStore } from '../store/skill';
 import { useTranslation } from 'react-i18next';
-import { resolveI18nValue } from '../i18n/index';
 
 function SelectorRow({
   icon,
@@ -84,36 +84,12 @@ function SelectorRow({
 }
 
 function useSkillAppletState() {
-  const [skills, setSkills] = useState<SkillListItem[]>([]);
-  const [builtins, setBuiltins] = useState<BuiltinSkillInfo[]>([]);
-  const { applets, enabledAppletIds, toggleApplet } = useChatStore();
+  const { skills, builtins, loadSkills, toggleSkill } = useSkillStore();
+  const { applets, enabledAppletIds, toggleApplet } = useAgentStore();
 
   useEffect(() => {
-    api
-      .listSkills()
-      .then((data) => {
-        setSkills(data.skills.map((s) => ({
-          ...s,
-          name: resolveI18nValue(s.name),
-          description: resolveI18nValue(s.description),
-        })));
-        setBuiltins(data.builtin.map((b) => ({
-          ...b,
-          name: resolveI18nValue(b.name),
-          description: resolveI18nValue(b.description),
-        })));
-      })
-      .catch(() => {});
-  }, []);
-
-  const toggleSkill = useCallback(async (id: string, enabled: boolean) => {
-    try {
-      await api.toggleSkill(id, enabled);
-      setSkills((prev) => prev.map((s) => (s.id === id ? { ...s, enabled } : s)));
-    } catch {
-      // silent
-    }
-  }, []);
+    void loadSkills();
+  }, [loadSkills]);
 
   return { skills, builtins, applets, enabledAppletIds, toggleApplet, toggleSkill };
 }

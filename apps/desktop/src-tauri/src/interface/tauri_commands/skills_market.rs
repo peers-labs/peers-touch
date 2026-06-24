@@ -1,19 +1,73 @@
+use crate::application::session_resolver;
 use crate::contracts::{
-    SkillImportAddressInput, SkillImportGitHubInput, SkillMarketAddInput, SkillMarketDetailInput,
-    SkillMarketIdInput, SkillMarketListInput, SkillMarketSyncInput, StubPayload,
+    SkillImportAddressInput, SkillImportGitHubInput, SkillImportZipInput, SkillMarketAddInput,
+    SkillMarketDetailInput, SkillMarketIdInput, SkillMarketListInput, SkillMarketSyncInput,
+    StubPayload,
 };
-use crate::error::AppResult;
+use crate::error::{AppResult, ErrorCode};
+use crate::state::AppState;
+use std::sync::Arc;
+use tauri::{State, Window};
 
 use crate::application::skills_market as application_skills_market;
 
-#[tauri::command]
-pub fn skills_import_url(input: SkillImportAddressInput) -> AppResult<StubPayload> {
-    application_skills_market::skills_import_url(input)
+fn token_or_unauthorized(
+    state: &State<'_, Arc<AppState>>,
+    window: &Window,
+) -> Result<String, AppResult<StubPayload>> {
+    let token = session_resolver::token_for_window(state.inner(), window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return Err(AppResult::fail(
+            ErrorCode::Unauthorized,
+            "authentication required",
+            None,
+        ));
+    }
+    Ok(token)
 }
 
 #[tauri::command]
-pub fn skills_import_github(input: SkillImportGitHubInput) -> AppResult<StubPayload> {
-    application_skills_market::skills_import_github(input)
+pub fn skills_import_url(
+    input: SkillImportAddressInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match token_or_unauthorized(&state, &window) {
+        Ok(token) => token,
+        Err(result) => return result,
+    };
+    application_skills_market::skills_import_url(input, &token)
+}
+
+#[tauri::command]
+pub fn skills_import_github(
+    input: SkillImportGitHubInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match token_or_unauthorized(&state, &window) {
+        Ok(token) => token,
+        Err(result) => return result,
+    };
+    application_skills_market::skills_import_github(input, &token)
+}
+
+#[tauri::command]
+pub fn skills_import_zip(
+    input: SkillImportZipInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match token_or_unauthorized(&state, &window) {
+        Ok(token) => token,
+        Err(result) => return result,
+    };
+    application_skills_market::skills_import_zip(input, &token)
+}
+
+#[tauri::command]
+pub fn skills_validate_zip(input: SkillImportZipInput) -> AppResult<StubPayload> {
+    application_skills_market::skills_validate_zip(input)
 }
 
 #[tauri::command]
@@ -57,6 +111,31 @@ pub fn skills_market_detail(input: SkillMarketDetailInput) -> AppResult<StubPayl
 }
 
 #[tauri::command]
-pub fn skills_market_install(input: SkillMarketDetailInput) -> AppResult<StubPayload> {
-    application_skills_market::skills_market_install(input)
+pub fn skills_market_install(
+    input: SkillMarketDetailInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match token_or_unauthorized(&state, &window) {
+        Ok(token) => token,
+        Err(result) => return result,
+    };
+    let actor_id =
+        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    application_skills_market::skills_market_install(&actor_id, input, &token)
+}
+
+#[tauri::command]
+pub fn skills_market_uninstall(
+    input: SkillMarketDetailInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match token_or_unauthorized(&state, &window) {
+        Ok(token) => token,
+        Err(result) => return result,
+    };
+    let actor_id =
+        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    application_skills_market::skills_market_uninstall(&actor_id, input, &token)
 }

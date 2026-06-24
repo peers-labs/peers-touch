@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-06-03 | **Updated**: 2026-06-03
+> **Created**: 2026-06-03 | **Updated**: 2026-06-07
 > **Owner**: Client Architecture Team
 > **Module**: `apps/desktop/src/runtimes/socialRuntime.ts`, `apps/mobile/src/features/social/`
 
@@ -32,6 +32,8 @@
 | Desktop projection 分层 | `socialChat` store 与纯 projection reducer 分离 | 已新增 `apps/desktop/src/store/socialProjection.ts`，承载 message merge、receipt、mutation、typing GC、local-clear 过滤等纯状态机 |
 | Desktop normalizer 分层 | `socialChat` store 与 Station response 兼容逻辑分离 | 已新增 `apps/desktop/src/store/socialNormalizers.ts`，先承载 friend session、friend request、presence seed 归一化 |
 | Mobile Host Adapter 入口 | Rust kernel 统一 emit native host event | 已补 `mobile_native_event_emit` command 与 `native_events` push/deep-link/notification-tap/resume 标准 payload，Web bridge 保留 deep-link `url` 字段 |
+| Shared Host Adapter contract | `SocialHostEvent` 标准事件 helper | 已沉淀到 `packages/client-chat-core`，Desktop/Mobile adapter 共用 payload normalize / notification target / reconcile reason helper |
+| Desktop Host Adapter 入口 | window/tray/system notification host event adapter | 已新增 `apps/desktop/src/runtimes/desktopSocialHostAdapter.ts` 并由 `runtimes/socialRuntime.ts` 安装，host event 只进入 runtime external event |
 | Mobile group domain | 独立 group API / normalizer / projection / store / runtime / renderer | 已新增 `apps/mobile/src/features/group/`，使用 generated group proto 类型，不复用 friend chat bucket，并已接入 realtime group message / membership / mutation / resync；Chat/Contacts UI 已只读接入 group projection |
 | Mobile group E2EE domain | Sender Keys 执行计划与防回退入口 | 已新增 `20260603-mobile-group-e2ee-domain.md`，明确 Rust kernel / Web bridge / runtime / projection 分层，并把 group E2EE proto/页面边界加入 guardrail |
 
@@ -127,6 +129,20 @@
 - 后续 iOS/Android 插件只接系统 API，不直接写业务 projection，统一调用 kernel event outlet。
 - Mobile E2EE/offline queue 不在页面补逻辑，必须建 domain。
 
+### Step 5.5: Shared/Desktop Host Adapter
+
+- 已将 `SocialHostEvent`、payload normalize、notification targeting、reconcile reason helper 放入 `packages/client-chat-core`。
+- Mobile `mobileNativeEventBridge.ts` 改为使用共享 helper，不再端内维护同义事件类型。
+- Desktop 新增 `desktopSocialHostAdapter.ts`，覆盖：
+  - document visibility visible；
+  - window focus；
+  - browser online；
+  - `desktop:resume`；
+  - `desktop:tray-open`；
+  - `desktop:notification-tap`。
+- Desktop `socialRuntime.ts` 安装 adapter，并把 event 投递给 `socialRealtime.dispatchSocialRuntimeHostEvent`。
+- Desktop runtime external event 只触发 targeted message refresh、notification refresh 和 debounced `refreshSocialProjection`，不从 host adapter 直接写业务 projection。
+
 ### Step 6: Mobile group E2EE domain
 
 - 已新增 Mobile group E2EE domain 执行计划：`20260603-mobile-group-e2ee-domain.md`。
@@ -221,6 +237,6 @@
 Phase 1 完成后进入：
 
 1. Projection/Normalizer 收敛：先对齐 receipt、mutation、typing、presence、notification。
-2. Host Adapter 闭环：补 Desktop host adapter 和 Mobile native plugin emit。
+2. Host Adapter 闭环：补 iOS/Android native plugin emit 与 Desktop native tray/system notification event emit。
 3. Group domain：Mobile 追齐 Desktop group chat，但按独立 domain 实现。
 4. Offline/E2EE domain：从架构设计进入实现计划，不做页面补丁。

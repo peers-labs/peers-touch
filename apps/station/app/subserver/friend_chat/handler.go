@@ -10,9 +10,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/presence"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth"
-	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
-	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -99,14 +98,7 @@ type listFriendThreadMessagesResponse struct {
 
 func (s *subServer) Handlers() []server.Handler {
 	logIDWrapper := serverwrapper.LogID()
-	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	hertzJWTWrapper := hertzadapter.RequireJWT(provider)
 	return []server.Handler{
-		// Presence stream — Hertz native handler, same shape as /events/stream.
-		// Clients open this once and receive PresenceEvent JSON for every
-		// online/offline transition (plus an initial snapshot of currently
-		// online DIDs). Filtering by friend graph is done client-side.
-		server.NewHertzHandler("fc-presence-stream", "/friend-chat/presence/stream", server.GET, s.handlePresenceStream, hertzJWTWrapper),
 		server.NewTypedHandler("fc-session-create", "/friend-chat/session/create", server.POST, s.handleCreateSession, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-sessions", "/friend-chat/sessions", server.GET, s.handleGetSessions, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-settings", "/friend-chat/settings", server.GET, s.handleGetConversationSettings, logIDWrapper, s.jwtWrapper),
@@ -122,8 +114,6 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("fc-message-recall", "/friend-chat/message/recall", server.POST, s.handleRecallMessage, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-message-edit", "/friend-chat/message/edit", server.POST, s.handleEditMessage, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-message-delete", "/friend-chat/message/delete", server.POST, s.handleDeleteMessage, logIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("fc-online", "/friend-chat/online", server.POST, s.handleOnline, logIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("fc-offline", "/friend-chat/offline", server.POST, s.handleOffline, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-pending", "/friend-chat/pending", server.GET, s.handleGetPending, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-stats", "/friend-chat/stats", server.GET, s.handleStats, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("fc-friend-request-send", "/friend-chat/friend-request/send", server.POST, s.handleSendFriendRequest, logIDWrapper, s.jwtWrapper),
@@ -250,32 +240,18 @@ func (s *subServer) handleGetSessions(ctx context.Context, req *chat.GetSessions
 	}
 	profiles := s.repo.BatchLoadActorSummaries(idSlice)
 
-	// Snapshot the online map once so all sessions in this response see a
-	// consistent view (avoids two participants in the same response
-	// disagreeing because of an online flip mid-loop).
-	s.mu.RLock()
-	onlineSnapshot := make(map[string]struct{}, len(s.online))
-	for did := range s.online {
-		onlineSnapshot[did] = struct{}{}
-	}
-	s.mu.RUnlock()
-
 	out := make([]*chat.FriendChatSession, 0, len(items))
 	for _, item := range items {
-		_, aOnline := onlineSnapshot[item.ParticipantADID]
-		_, bOnline := onlineSnapshot[item.ParticipantBDID]
 		sess := &chat.FriendChatSession{
-			Ulid:               item.ID,
-			ParticipantADid:    item.ParticipantADID,
-			ParticipantBDid:    item.ParticipantBDID,
-			LastMessageUlid:    item.LastMessageID,
-			LastMessageAt:      timestamppb.New(item.LastMessageAt),
-			UnreadCountA:       item.UnreadCountA,
-			UnreadCountB:       item.UnreadCountB,
-			CreatedAt:          timestamppb.New(item.CreatedAt),
-			UpdatedAt:          timestamppb.New(item.UpdatedAt),
-			ParticipantAOnline: aOnline,
-			ParticipantBOnline: bOnline,
+			Ulid:            item.ID,
+			ParticipantADid: item.ParticipantADID,
+			ParticipantBDid: item.ParticipantBDID,
+			LastMessageUlid: item.LastMessageID,
+			LastMessageAt:   timestamppb.New(item.LastMessageAt),
+			UnreadCountA:    item.UnreadCountA,
+			UnreadCountB:    item.UnreadCountB,
+			CreatedAt:       timestamppb.New(item.CreatedAt),
+			UpdatedAt:       timestamppb.New(item.UpdatedAt),
 		}
 		if p, ok := profiles[item.ParticipantADID]; ok {
 			sess.ParticipantADisplayName = p.DisplayName
@@ -306,6 +282,9 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendMessage
 	if req.Content == "" && len(req.Attachments) == 0 && !hasEnc {
 		return nil, server.BadRequest("content or attachments are required")
 	}
+	if friendAttachmentsExposeKeyMaterial(req.Attachments) {
+		return nil, server.BadRequest("attachment encryption metadata must be carried inside encrypted_payload")
+	}
 	content := req.Content
 	if hasEnc && strings.TrimSpace(content) == "" {
 		content = "[Encrypted Message]"
@@ -326,7 +305,7 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendMessage
 		return nil, server.InternalErrorWithCause("failed to send message", err)
 	}
 	s.mu.Lock()
-	_, isOnline := s.online[req.ReceiverDid]
+	isOnline := presence.IsActorOnline(req.ReceiverDid)
 	relayStatus := "delivered"
 	if !isOnline {
 		relayStatus = "queued"
@@ -1001,53 +980,6 @@ func (s *subServer) handleSyncMessages(ctx context.Context, req *chat.SyncMessag
 	return &chat.SyncMessagesResponse{Synced: synced, Failed: failed}, nil
 }
 
-func (s *subServer) handleOnline(ctx context.Context, req *chat.OnlineRequest) (*chat.OnlineResponse, error) {
-	subject := auth.GetSubject(ctx)
-	if subject == nil {
-		return nil, server.Unauthorized("authentication required")
-	}
-	did := subject.ID
-	if req.Did != "" {
-		did = req.Did
-	}
-	if did == "" {
-		return nil, server.BadRequest("did is required")
-	}
-	// Only publish a presence change on the rising edge so reconnect storms
-	// (every visibilitychange triggers /online) don't fan out a broadcast
-	// per ping.
-	s.mu.Lock()
-	_, wasOnline := s.online[did]
-	s.online[did] = timestamppb.Now().GetSeconds()
-	s.mu.Unlock()
-	if !wasOnline {
-		s.publishPresence(did, true)
-	}
-	return &chat.OnlineResponse{Status: "online"}, nil
-}
-
-func (s *subServer) handleOffline(ctx context.Context, req *chat.OnlineRequest) (*chat.OnlineResponse, error) {
-	subject := auth.GetSubject(ctx)
-	if subject == nil {
-		return nil, server.Unauthorized("authentication required")
-	}
-	did := subject.ID
-	if req.Did != "" {
-		did = req.Did
-	}
-	if did == "" {
-		return nil, server.BadRequest("did is required")
-	}
-	s.mu.Lock()
-	_, wasOnline := s.online[did]
-	delete(s.online, did)
-	s.mu.Unlock()
-	if wasOnline {
-		s.publishPresence(did, false)
-	}
-	return &chat.OnlineResponse{Status: "offline"}, nil
-}
-
 func (s *subServer) handleGetPending(ctx context.Context, req *chat.GetPendingRequest) (*chat.GetPendingResponse, error) {
 	subject := auth.GetSubject(ctx)
 	if subject == nil {
@@ -1079,14 +1011,12 @@ func (s *subServer) handleGetPending(ctx context.Context, req *chat.GetPendingRe
 func (s *subServer) handleStats(ctx context.Context, req *chat.GetStatsRequest) (*chat.GetStatsResponse, error) {
 	_ = req
 	s.mu.RLock()
-	onlineCount := len(s.online)
 	pendingCount := int64(0)
 	for _, items := range s.pending {
 		pendingCount += int64(len(items))
 	}
 	s.mu.RUnlock()
 	return &chat.GetStatsResponse{
-		OnlinePeers:     int32(onlineCount),
 		PendingMessages: pendingCount,
 		Status:          string(s.status),
 	}, nil
@@ -1374,6 +1304,19 @@ func friendAttachmentsFromProto(in []*chat.FriendMessageAttachment) []domain.Att
 		})
 	}
 	return out
+}
+
+func friendAttachmentsExposeKeyMaterial(in []*chat.FriendMessageAttachment) bool {
+	for _, a := range in {
+		if a == nil || a.GetMediaEncryption() == nil {
+			continue
+		}
+		media := a.GetMediaEncryption()
+		if media.GetKeyB64() != "" || media.GetNonceB64() != "" || media.GetSuite() != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func friendAttachmentsToProto(in []domain.Attachment) []*chat.FriendMessageAttachment {
