@@ -1,4 +1,4 @@
-import type { PrototypeManifest } from '../portal/src/registry/types';
+import type { PrototypeManifest } from '../../portal/src/registry/types';
 
 const manifest = {
   id: 'mobile-chat',
@@ -8,7 +8,7 @@ const manifest = {
   kind: 'shell',
   status: 'drafting',
   module: 'mobile',
-  path: 'packages/prototypes/mobile/',
+  path: 'packages/prototypes/mobile/chat/',
   docs: 'docs/client/mobile/base.md',
   description: 'Mobile chat shell baseline for cross-device conversations and agent summaries.',
   order: 10,
@@ -17,4 +17,3 @@ const manifest = {
 } satisfies PrototypeManifest;
 
 export default manifest;
-
