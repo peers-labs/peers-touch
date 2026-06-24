@@ -499,17 +499,17 @@ export type InviteCode = Message<"peers_touch.model.access_gate.v1.InviteCode"> 
   /**
    * @generated from field: google.protobuf.Timestamp created_at = 8;
    */
-  createdAt?: Timestamp;
+  createdAt?: Timestamp | undefined;
 
   /**
    * @generated from field: google.protobuf.Timestamp expires_at = 9;
    */
-  expiresAt?: Timestamp;
+  expiresAt?: Timestamp | undefined;
 
   /**
    * @generated from field: google.protobuf.Timestamp last_used_at = 10;
    */
-  lastUsedAt?: Timestamp;
+  lastUsedAt?: Timestamp | undefined;
 };
 
 /**
@@ -547,7 +547,7 @@ export type CreateInviteCodeRequest = Message<"peers_touch.model.access_gate.v1.
    *
    * @generated from field: google.protobuf.Timestamp expires_at = 4;
    */
-  expiresAt?: Timestamp;
+  expiresAt?: Timestamp | undefined;
 };
 
 /**
@@ -564,7 +564,7 @@ export type CreateInviteCodeResponse = Message<"peers_touch.model.access_gate.v1
   /**
    * @generated from field: peers_touch.model.access_gate.v1.InviteCode invite_code = 1;
    */
-  inviteCode?: InviteCode;
+  inviteCode?: InviteCode | undefined;
 };
 
 /**
@@ -632,7 +632,7 @@ export type RevokeInviteCodeResponse = Message<"peers_touch.model.access_gate.v1
   /**
    * @generated from field: peers_touch.model.access_gate.v1.InviteCode invite_code = 1;
    */
-  inviteCode?: InviteCode;
+  inviteCode?: InviteCode | undefined;
 };
 
 /**

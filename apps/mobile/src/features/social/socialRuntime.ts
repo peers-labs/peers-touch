@@ -213,8 +213,11 @@ async function routeGroupMembershipChange(
 ) {
   try {
     await groupStore?.refreshGroups();
-    if (groupStore?.activeGroupUlid === groupUlid) await groupStore.loadMembers(groupUlid);
-    if (kind === 'REMOVED' || kind === 'LEFT') {
+    if (kind === 'DISSOLVED' && groupStore?.activeGroupUlid === groupUlid) {
+      await groupStore.selectGroup(null);
+    }
+    if (kind !== 'DISSOLVED' && groupStore?.activeGroupUlid === groupUlid) await groupStore.loadMembers(groupUlid);
+    if (kind === 'REMOVED' || kind === 'LEFT' || kind === 'TRANSFERRED') {
       await groupE2eeRuntime?.rotateAfterMembershipChange(groupUlid, actorDid);
     }
   } catch {

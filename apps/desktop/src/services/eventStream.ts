@@ -350,8 +350,9 @@ function dispatchMomentEvent(eventId: string, event: MomentEvent): void {
 }
 
 // Inverse of GroupMembershipChange.Kind enum. Align with proto:
-// KIND_UNSPECIFIED=0, KIND_ADDED=1, KIND_REMOVED=2, KIND_LEFT=3, KIND_UPDATED=4.
-function groupMembershipKindFromEnum(value: number): 'ADDED' | 'REMOVED' | 'LEFT' | 'UPDATED' | null {
+// KIND_UNSPECIFIED=0, KIND_ADDED=1, KIND_REMOVED=2, KIND_LEFT=3,
+// KIND_UPDATED=4, KIND_TRANSFERRED=5, KIND_DISSOLVED=6.
+function groupMembershipKindFromEnum(value: number): 'ADDED' | 'REMOVED' | 'LEFT' | 'UPDATED' | 'TRANSFERRED' | 'DISSOLVED' | null {
   switch (value) {
     case 1:
       return 'ADDED';
@@ -361,6 +362,10 @@ function groupMembershipKindFromEnum(value: number): 'ADDED' | 'REMOVED' | 'LEFT
       return 'LEFT';
     case 4:
       return 'UPDATED';
+    case 5:
+      return 'TRANSFERRED';
+    case 6:
+      return 'DISSOLVED';
     default:
       return null;
   }
