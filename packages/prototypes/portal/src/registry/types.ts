@@ -25,3 +25,12 @@ export type PrototypeManifest = {
   previewExport?: string;
   entry: () => Promise<PrototypeEntryModule>;
 };
+
+export type PrototypeWorktreeTarget = {
+  id: string;
+  label: string;
+  branch: string;
+  worktreePath: string;
+  portalUrl?: string;
+  sites: Partial<Record<PrototypeSite, string>>;
+};
