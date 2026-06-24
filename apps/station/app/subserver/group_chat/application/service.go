@@ -23,6 +23,8 @@ type Repository interface {
 	AddMember(groupID, actorDID, inviterDID string) (*domain.Member, bool)
 	UpdateMember(groupID, actorDID string, role *int32, muted *bool, mutedUntil *time.Time) (*domain.Member, bool)
 	RemoveMember(groupID, actorDID string) bool
+	TransferOwnership(groupID, currentOwnerDID, nextOwnerDID string) (*domain.Group, bool)
+	DissolveGroup(groupID string) bool
 	UpdateGroup(groupID string, name, description *string, muted *bool) (*domain.Group, bool)
 	ListMembers(groupID string, limit, offset int) ([]domain.Member, int)
 	CreateInvitation(groupID, inviterDID, inviteeDID string) domain.Invitation
@@ -61,6 +63,8 @@ var (
 	ErrOwnerCannotLeave     = errors.New("owner cannot leave group")
 	ErrCannotRemoveOwner    = errors.New("cannot remove owner")
 	ErrInvalidRole          = errors.New("invalid role")
+	ErrInvalidOwnerTransfer = errors.New("invalid owner transfer")
+	ErrMemberMuted          = errors.New("member is muted")
 	ErrMessageNotFound      = errors.New("message not found")
 	ErrMutationWindowClosed = errors.New("mutation window closed")
 	ErrAlreadyRecalled      = errors.New("message already recalled")
@@ -81,6 +85,16 @@ func isOwner(role int32) bool {
 
 func isAssignableRole(role int32) bool {
 	return role == domain.GroupRoleMember || role == domain.GroupRoleAdmin
+}
+
+func isMemberMuted(member *domain.Member, now time.Time) bool {
+	if member == nil {
+		return false
+	}
+	if member.MutedUntil.After(now) {
+		return true
+	}
+	return member.Muted && member.MutedUntil.IsZero()
 }
 
 func NewService(repo Repository) *Service {
@@ -106,7 +120,25 @@ func (s *Service) SendMessage(groupID, senderDID string, messageType int32, cont
 	return s.repo.SendMessage(groupID, senderDID, messageType, content, replyToID, threadRootID, attachments, encryptedPayload)
 }
 
+func (s *Service) SendMessageByActor(actorDID, groupID string, messageType int32, content, replyToID, threadRootID string, attachments []domain.Attachment, encryptedPayload []byte) (domain.Message, error) {
+	member, ok := s.repo.GetMember(groupID, actorDID)
+	if !ok {
+		return domain.Message{}, ErrNotMember
+	}
+	if isMemberMuted(member, time.Now()) {
+		return domain.Message{}, ErrMemberMuted
+	}
+	return s.repo.SendMessage(groupID, actorDID, messageType, content, replyToID, threadRootID, attachments, encryptedPayload), nil
+}
+
 func (s *Service) ListMessages(groupID, beforeUlid string, limit int) ([]domain.Message, error) {
+	return s.repo.ListMessages(groupID, beforeUlid, limit)
+}
+
+func (s *Service) ListMessagesByActor(actorDID, groupID, beforeUlid string, limit int) ([]domain.Message, error) {
+	if _, ok := s.repo.GetMember(groupID, actorDID); !ok {
+		return nil, ErrNotMember
+	}
 	return s.repo.ListMessages(groupID, beforeUlid, limit)
 }
 
@@ -159,6 +191,14 @@ func (s *Service) UpdateMember(groupID, actorDID string, role *int32, muted *boo
 
 func (s *Service) RemoveMember(groupID, actorDID string) bool {
 	return s.repo.RemoveMember(groupID, actorDID)
+}
+
+func (s *Service) TransferOwnership(groupID, currentOwnerDID, nextOwnerDID string) (*domain.Group, bool) {
+	return s.repo.TransferOwnership(groupID, currentOwnerDID, nextOwnerDID)
+}
+
+func (s *Service) DissolveGroup(groupID string) bool {
+	return s.repo.DissolveGroup(groupID)
 }
 
 func (s *Service) UpdateGroup(groupID string, name, description *string, muted *bool) (*domain.Group, bool) {
@@ -251,6 +291,45 @@ func (s *Service) LeaveByActor(actorDID, groupID string) error {
 	}
 	if !s.repo.RemoveMember(groupID, actorDID) {
 		return ErrNotMember
+	}
+	return nil
+}
+
+func (s *Service) TransferOwnershipByActor(actorDID, groupID, nextOwnerDID string) (*domain.Group, error) {
+	operator, ok := s.repo.GetMember(groupID, actorDID)
+	if !ok {
+		return nil, ErrNotMember
+	}
+	if !isOwner(operator.Role) {
+		return nil, ErrPermissionDenied
+	}
+	if actorDID == nextOwnerDID || strings.TrimSpace(nextOwnerDID) == "" {
+		return nil, ErrInvalidOwnerTransfer
+	}
+	target, ok := s.repo.GetMember(groupID, nextOwnerDID)
+	if !ok {
+		return nil, ErrMemberNotFound
+	}
+	if isOwner(target.Role) {
+		return nil, ErrInvalidOwnerTransfer
+	}
+	group, ok := s.repo.TransferOwnership(groupID, actorDID, nextOwnerDID)
+	if !ok {
+		return nil, ErrGroupNotFound
+	}
+	return group, nil
+}
+
+func (s *Service) DissolveGroupByActor(actorDID, groupID string) error {
+	member, ok := s.repo.GetMember(groupID, actorDID)
+	if !ok {
+		return ErrNotMember
+	}
+	if !isOwner(member.Role) {
+		return ErrPermissionDenied
+	}
+	if !s.repo.DissolveGroup(groupID) {
+		return ErrGroupNotFound
 	}
 	return nil
 }
