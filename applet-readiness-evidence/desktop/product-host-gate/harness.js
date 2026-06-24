@@ -1,10 +1,12 @@
 const protocol = 'peers-touch.applet.bridge';
-const appletId = "hello-lynx";
-const manifestPermissions = ["system.getInfo","storage.get","storage.set","lifecycle.destroy"];
+const appletId = "big-a";
+const manifestPermissions = ["network.request","config.get","system.getInfo"];
 const requiredMethods = ["app.getContext","app.getLaunchOptions","lifecycle.reportReady","ui.setNavigationBar","ui.showToast","device.getSafeArea","device.getWindowInfo","device.vibrate","clipboard.setText","clipboard.getText","file.write","file.read","file.list","file.getInfo","storage.set","storage.keys","storage.getInfo","network.request","network.upload","network.download","events.subscribe","events.unsubscribe","events.poll","skills.register","skills.list","tasks.start","agent.stream","ai.chat","telemetry.track"];
 const realHttpGateway = false;
 const realHttpGatewayBaseUrl = "";
 const shellRoute = false;
+const productAppMode = true;
+const expectText = "多维力量分析";
 const status = document.getElementById('status');
 const mount = document.getElementById('mount');
 const invocations = [];
@@ -24,7 +26,7 @@ let activeSessionId = '';
 let mountedHost = null;
 let lynxEventRecorderInstalled = false;
 let hostCommandRecorderInstalled = false;
-const kernelRoute = {"descriptorId":"applet:*","pageKey":"applet:hello-lynx","dynamic":true};
+const kernelRoute = {"descriptorId":"applet:*","pageKey":"applet:big-a","dynamic":true};
 
 function setStatus(value, detail) {
   status.textContent = value;
@@ -465,14 +467,21 @@ try {
 
   await waitUntil(() => {
     const state = viewStateFor(host);
-    return state.pageExists && state.shadowText.includes('pass') ? state : null;
-  }, 10000, 'Product lynx-host did not render pass');
+    if (!state.pageExists) return null;
+    if (productAppMode) {
+      const renderedText = state.shadowText.trim();
+      if (!renderedText) return null;
+      if (expectText && !state.shadowText.includes(expectText)) return null;
+      return state;
+    }
+    return state.shadowText.includes('pass') ? state : null;
+  }, 10000, productAppMode ? 'Product lynx-host did not render expected product app content' : 'Product lynx-host did not render pass');
 
   const seenMethods = new Set(invocations
     .filter((item) => item.command === 'applets_invoke')
     .map((item) => String(item.input.capability ?? '') + (item.input.action ? '.' + item.input.action : '')));
   const missing = requiredMethods.filter((method) => !seenMethods.has(method));
-  if (missing.length > 0) {
+  if (!productAppMode && missing.length > 0) {
     throw new Error('Missing product Host SDK calls: ' + missing.join(', '));
   }
 
@@ -486,38 +495,40 @@ try {
 
   const taskEvent = hostEvents.some((event) => event.name === 'applet.event'
     && JSON.stringify(event.payload).includes('task.event'));
-  if (!taskEvent) {
+  if (!productAppMode && !taskEvent) {
     throw new Error('Product Host did not dispatch Gateway task.event through lynx-view');
   }
   const showEvent = hostEvents.some((event) => event.name === 'applet.event'
     && JSON.stringify(event.payload).includes('"topic":"show"'));
-  if (!showEvent) {
+  if (!productAppMode && !showEvent) {
     throw new Error('Product Host did not dispatch lifecycle.show through lynx-view after reportReady');
   }
-  if (!hostUiRequests.some((request) => request.action === 'showToast')) {
+  if (!productAppMode && !hostUiRequests.some((request) => request.action === 'showToast')) {
     throw new Error('Product Host did not execute Gateway-authorized ui.showToast as a Host UI command');
   }
-  if (!hostDeviceRequests.some((request) => request.action === 'getWindowInfo') ||
-    !hostDeviceRequests.some((request) => request.action === 'getSafeArea')) {
+  if (!productAppMode && (!hostDeviceRequests.some((request) => request.action === 'getWindowInfo') ||
+    !hostDeviceRequests.some((request) => request.action === 'getSafeArea'))) {
     throw new Error('Product Host did not execute Gateway-authorized device commands in the Host');
   }
 
-  Object.defineProperty(document, 'hidden', { configurable: true, value: true });
-  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
-  document.dispatchEvent(new Event('visibilitychange'));
-  const pauseEvent = await waitUntil(() => hostEvents.some((event) => event.name === 'applet.event'
-    && JSON.stringify(event.payload).includes('"topic":"pause"')), 2000, 'Product Host did not map document hidden state to lifecycle.pause');
-  if (!pauseEvent) {
-    throw new Error('Product Host did not emit lifecycle.pause for document hidden state');
-  }
+  if (!productAppMode) {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    const pauseEvent = await waitUntil(() => hostEvents.some((event) => event.name === 'applet.event'
+      && JSON.stringify(event.payload).includes('"topic":"pause"')), 2000, 'Product Host did not map document hidden state to lifecycle.pause');
+    if (!pauseEvent) {
+      throw new Error('Product Host did not emit lifecycle.pause for document hidden state');
+    }
 
-  Object.defineProperty(document, 'hidden', { configurable: true, value: false });
-  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
-  document.dispatchEvent(new Event('visibilitychange'));
-  const resumeEvent = await waitUntil(() => hostEvents.some((event) => event.name === 'applet.event'
-    && JSON.stringify(event.payload).includes('"topic":"resume"')), 2000, 'Product Host did not map document visible state to lifecycle.resume');
-  if (!resumeEvent) {
-    throw new Error('Product Host did not emit lifecycle.resume for document visible state');
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    const resumeEvent = await waitUntil(() => hostEvents.some((event) => event.name === 'applet.event'
+      && JSON.stringify(event.payload).includes('"topic":"resume"')), 2000, 'Product Host did not map document visible state to lifecycle.resume');
+    if (!resumeEvent) {
+      throw new Error('Product Host did not emit lifecycle.resume for document visible state');
+    }
   }
 
   if (shellRoute) {
@@ -533,10 +544,10 @@ try {
     && JSON.stringify(event.payload).includes('destroy'));
   const hideEvent = hostEvents.some((event) => event.name === 'applet.event'
     && JSON.stringify(event.payload).includes('"topic":"hide"'));
-  if (!hideEvent) {
+  if (!productAppMode && !hideEvent) {
     throw new Error('Product Host did not emit lifecycle.hide before unmount');
   }
-  if (!destroyEvent) {
+  if (!productAppMode && !destroyEvent) {
     throw new Error('Product Host did not emit destroy event before unmount');
   }
 
@@ -544,6 +555,8 @@ try {
     appletId,
     sessionId: productSessionId || activeSessionId,
     shellRoute,
+    productAppMode,
+    expectedTextMatched: Boolean(expectText),
     shellSessionLoginMethod,
     appletListProjection,
     requestCount: seenMethods.size,

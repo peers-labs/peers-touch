@@ -2,11 +2,13 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { toast } from '@lobehub/ui';
-import { Typography, Spin, Empty, theme } from 'antd';
+import { Typography, Spin, Empty, Button, Alert, theme } from 'antd';
 import {
   Bot,
   ChartCandlestick,
+  Download,
   NotebookPen,
+  PackageOpen,
   Search,
   Sparkles,
   TerminalSquare,
@@ -35,7 +37,10 @@ const OFFICIAL_IDENTITY: Record<string, { icon: React.ReactNode; label: string }
   'big-a': { icon: <ChartCandlestick size={31} strokeWidth={2.1} />, label: 'A' },
 };
 
-function errorMessage(error: unknown, fallback: string): string {
+function errorMessage(error: unknown, fallback: string, t?: (key: string) => string): string {
+  if (error instanceof Error && error.message.startsWith('error.applet.') && t) {
+    return t(error.message);
+  }
   return error instanceof Error ? error.message : fallback;
 }
 
@@ -82,8 +87,12 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
   const { t } = useTranslation('applet');
   const { token } = theme.useToken();
   const applets = useAppletsStore((state) => state.applets);
+  const catalogApplets = useAppletsStore((state) => state.catalogApplets);
   const loading = useAppletsStore((state) => state.loading);
+  const stationUnavailable = useAppletsStore((state) => state.stationUnavailable);
   const loadApplet = useAppletsStore((state) => state.loadApplet);
+  const installApplet = useAppletsStore((state) => state.installApplet);
+  const importAppletDirectory = useAppletsStore((state) => state.importAppletDirectory);
   const recentApplets = useMemo(
     () => applets
       .filter((info) => info.lastOpenedAt || info.status === 'active')
@@ -97,9 +106,27 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
       await loadApplet(id);
       onNavigate?.(`applet:${id}`);
     } catch (error) {
-      toast.error(errorMessage(error, t('applet.toast.failedToActivate')));
+      toast.error(errorMessage(error, t('applet.toast.failedToActivate'), t));
     }
   }, [loadApplet, onNavigate, t]);
+
+  const handleInstall = useCallback(async (id: string) => {
+    try {
+      await installApplet(id);
+      toast.success(t('applet.toast.installed'));
+    } catch (error) {
+      toast.error(errorMessage(error, t('applet.toast.installFailed')));
+    }
+  }, [installApplet, t]);
+
+  const handleImport = useCallback(async () => {
+    try {
+      await importAppletDirectory();
+      toast.success(t('applet.toast.imported'));
+    } catch (error) {
+      toast.error(errorMessage(error, t('applet.toast.importFailed')));
+    }
+  }, [importAppletDirectory, t]);
 
   if (loading) {
     return (
@@ -128,16 +155,30 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
       />
 
       <Flexbox gap={28} style={{ padding: '32px 56px 56px', maxWidth: 1120, width: '100%', margin: '0 auto' }}>
-        <Flexbox gap={8} style={{ maxWidth: 620 }}>
-          <Text strong style={{ fontSize: 28, lineHeight: '34px', letterSpacing: -0.6 }}>
-            {t('applet.page.launcherTitle')}
-          </Text>
-          <Text type="secondary" style={{ fontSize: 14, lineHeight: '22px' }}>
-            {t('applet.page.launcherDescription')}
-          </Text>
+        <Flexbox horizontal align="flex-start" justify="space-between" gap={24}>
+          <Flexbox gap={8} style={{ maxWidth: 620 }}>
+            <Text strong style={{ fontSize: 28, lineHeight: '34px', letterSpacing: -0.6 }}>
+              {t('applet.page.launcherTitle')}
+            </Text>
+            <Text type="secondary" style={{ fontSize: 14, lineHeight: '22px' }}>
+              {t('applet.page.launcherDescription')}
+            </Text>
+          </Flexbox>
+          <Button type="primary" icon={<Download size={16} />} onClick={handleImport}>
+            {t('applet.page.importDirectory')}
+          </Button>
         </Flexbox>
 
-        {applets.length === 0 ? (
+        {stationUnavailable && (
+          <Alert
+            type="warning"
+            showIcon
+            message={t('applet.page.stationUnavailableTitle')}
+            description={t('applet.page.stationUnavailableDescription')}
+          />
+        )}
+
+        {applets.length === 0 && catalogApplets.length === 0 ? (
           <Flexbox
             align="center"
             justify="center"
@@ -156,12 +197,23 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
                 title={t('applet.page.recent')}
                 applets={recentApplets}
                 onOpen={handleOpen}
+                actionLabel={t('applet.card.open')}
+              />
+            )}
+            {applets.length > 0 && (
+              <AppletSection
+                title={t('applet.page.mine')}
+                applets={applets}
+                onOpen={handleOpen}
+                actionLabel={t('applet.card.open')}
               />
             )}
             <AppletSection
-              title={t('applet.page.mine')}
-              applets={applets}
-              onOpen={handleOpen}
+              title={t('applet.page.box')}
+              applets={catalogApplets}
+              onOpen={handleInstall}
+              actionLabel={t('applet.card.install')}
+              emptyDescription={t('applet.page.boxEmpty')}
             />
           </>
         )}
@@ -174,10 +226,14 @@ function AppletSection({
   title,
   applets,
   onOpen,
+  actionLabel,
+  emptyDescription,
 }: {
   title: string;
   applets: RuntimeAppletInfo[];
   onOpen: (id: string) => void;
+  actionLabel: string;
+  emptyDescription?: string;
 }) {
   const { token } = theme.useToken();
 
@@ -195,21 +251,28 @@ function AppletSection({
       <Flexbox horizontal align="center" justify="space-between">
         <Text strong style={{ fontSize: 15, letterSpacing: -0.2 }}>{title}</Text>
       </Flexbox>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(104px, 1fr))',
-          gap: '24px 18px',
-        }}
-      >
-        {applets.map((info) => (
-          <AppletIconTile
-            key={info.manifest.id}
-            info={info}
-            onOpen={() => onOpen(info.manifest.id)}
-          />
-        ))}
-      </div>
+      {applets.length === 0 ? (
+        <Flexbox align="center" justify="center" style={{ minHeight: 168 }}>
+          <Empty image={<PackageOpen size={36} />} description={emptyDescription} />
+        </Flexbox>
+      ) : (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(104px, 1fr))',
+            gap: '24px 18px',
+          }}
+        >
+          {applets.map((info) => (
+            <AppletIconTile
+              key={info.manifest.id}
+              info={info}
+              onOpen={() => onOpen(info.manifest.id)}
+              actionLabel={actionLabel}
+            />
+          ))}
+        </div>
+      )}
     </Flexbox>
   );
 }
@@ -217,15 +280,18 @@ function AppletSection({
 function AppletIconTile({
   info,
   onOpen,
+  actionLabel,
 }: {
   info: RuntimeAppletInfo;
   onOpen: () => void;
+  actionLabel: string;
 }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('applet');
   const [iconAssetFailed, setIconAssetFailed] = useState(false);
   const identity = appletIdentity(info);
   const isActive = info.status === 'active';
+  const isRevoked = info.status === 'revoked';
   const shouldUseAsset = Boolean(identity.assetUrl && !iconAssetFailed);
 
   return (
@@ -233,32 +299,35 @@ function AppletIconTile({
       type="button"
       data-applet-open={info.manifest.id}
       data-applet-status={info.status}
+      data-applet-source={info.source}
       data-applet-opened-this-session={info.lastOpenedAt ? 'true' : 'false'}
       onClick={onOpen}
+      disabled={isRevoked}
       style={{
         border: 0,
         background: 'transparent',
         borderRadius: 24,
         padding: '10px 6px',
-        cursor: 'pointer',
+        cursor: isRevoked ? 'not-allowed' : 'pointer',
+        opacity: isRevoked ? 0.56 : 1,
         minWidth: 0,
         outline: 'none',
         transition: 'transform 160ms ease, background 160ms ease',
       }}
-      aria-label={info.manifest.name}
+      aria-label={`${actionLabel} ${info.manifest.name}`}
       onMouseEnter={(event) => {
         event.currentTarget.style.background = token.colorFillQuaternary;
-        event.currentTarget.style.transform = 'translateY(-2px)';
+        if (!isRevoked) event.currentTarget.style.transform = 'translateY(-2px)';
       }}
       onMouseLeave={(event) => {
         event.currentTarget.style.background = 'transparent';
         event.currentTarget.style.transform = 'translateY(0)';
       }}
       onMouseDown={(event) => {
-        event.currentTarget.style.transform = 'translateY(0) scale(0.98)';
+        if (!isRevoked) event.currentTarget.style.transform = 'translateY(0) scale(0.98)';
       }}
       onMouseUp={(event) => {
-        event.currentTarget.style.transform = 'translateY(-2px) scale(1)';
+        if (!isRevoked) event.currentTarget.style.transform = 'translateY(-2px) scale(1)';
       }}
       onFocus={(event) => {
         event.currentTarget.style.background = token.colorFillQuaternary;

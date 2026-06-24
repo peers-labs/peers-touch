@@ -788,6 +788,79 @@ pub struct AppletIdInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppletStoreListCatalogInput {
+    #[serde(rename = "deviceId")]
+    pub device_id: Option<String>,
+    #[serde(rename = "targetPlatform")]
+    pub target_platform: Option<String>,
+    pub channel: Option<String>,
+    #[serde(rename = "searchKeyword")]
+    pub search_keyword: Option<String>,
+    pub limit: Option<i32>,
+    pub offset: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppletStoreListInstalledInput {
+    #[serde(rename = "deviceId")]
+    pub device_id: Option<String>,
+    #[serde(rename = "includeDisabled")]
+    pub include_disabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppletStoreInstallInput {
+    #[serde(rename = "deviceId")]
+    pub device_id: Option<String>,
+    #[serde(rename = "appletId")]
+    pub applet_id: String,
+    pub version: Option<String>,
+    pub channel: Option<String>,
+    pub config: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppletStoreUninstallInput {
+    #[serde(rename = "deviceId")]
+    pub device_id: Option<String>,
+    #[serde(rename = "appletId")]
+    pub applet_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppletStoreGetVersionInput {
+    #[serde(rename = "appletId")]
+    pub applet_id: String,
+    pub version: Option<String>,
+    pub channel: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppletStoreMaterializeBundleInput {
+    #[serde(rename = "appletId")]
+    pub applet_id: String,
+    pub version: Option<String>,
+    #[serde(rename = "bundleUrl")]
+    pub bundle_url: String,
+    #[serde(rename = "bundleSha256")]
+    pub bundle_sha256: Option<String>,
+    pub entry: Option<String>,
+    pub assets: Option<Vec<AppletStoreBundleAssetInput>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppletStoreBundleAssetInput {
+    pub path: String,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppletStoreUploadAuditInput {
+    #[serde(rename = "deviceId")]
+    pub device_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppletConfigSetInput {
     pub id: String,
     pub config: serde_json::Value,

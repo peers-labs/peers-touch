@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getModule } from '../modules/registry';
 import { onWindowPopState } from '../kernel/events';
+import { persistLastActivePage } from './useAppLifecycle';
 import type { HashRouter, Page } from '../types/navigation';
 import { CORE_PAGE_LIST, DEFAULT_READY_PAGE } from '../types/navigation';
 
@@ -34,6 +35,7 @@ export function useHashRouter(): HashRouter {
   const setPage = useCallback((p: Page) => {
     setPageRaw(p);
     window.history.pushState(null, '', `#/${p}`);
+    persistLastActivePage(p);
   }, []);
 
   const resetToDefaultPage = useCallback(() => {
@@ -45,6 +47,7 @@ export function useHashRouter(): HashRouter {
     return onWindowPopState(() => {
       const p = parsePageFromHash();
       setPageRaw(p);
+      persistLastActivePage(p);
       if (p === 'agent-profile') {
         setProfileAgentName(parseAgentNameFromHash());
       }

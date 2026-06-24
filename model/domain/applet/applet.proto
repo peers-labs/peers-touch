@@ -5,6 +5,43 @@ package peers_touch.domain.applet;
 
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/applet_store/model";
 
+enum AppletPackageStatus {
+  APPLET_PACKAGE_STATUS_UNSPECIFIED = 0;
+  APPLET_PACKAGE_STATUS_DRAFT = 1;
+  APPLET_PACKAGE_STATUS_PUBLISHED = 2;
+  APPLET_PACKAGE_STATUS_DEPRECATED = 3;
+  APPLET_PACKAGE_STATUS_REVOKED = 4;
+}
+
+enum AppletInstallStatus {
+  APPLET_INSTALL_STATUS_UNSPECIFIED = 0;
+  APPLET_INSTALL_STATUS_INSTALLED = 1;
+  APPLET_INSTALL_STATUS_UNINSTALLED = 2;
+  APPLET_INSTALL_STATUS_DISABLED = 3;
+  APPLET_INSTALL_STATUS_REVOKED = 4;
+  APPLET_INSTALL_STATUS_UPDATE_AVAILABLE = 5;
+}
+
+enum AppletReleaseChannel {
+  APPLET_RELEASE_CHANNEL_UNSPECIFIED = 0;
+  APPLET_RELEASE_CHANNEL_STABLE = 1;
+  APPLET_RELEASE_CHANNEL_BETA = 2;
+  APPLET_RELEASE_CHANNEL_DEV = 3;
+}
+
+enum AppletPolicyDecision {
+  APPLET_POLICY_DECISION_UNSPECIFIED = 0;
+  APPLET_POLICY_DECISION_ALLOW = 1;
+  APPLET_POLICY_DECISION_DENY = 2;
+  APPLET_POLICY_DECISION_REQUIRE_USER_GESTURE = 3;
+}
+
+enum AppletAuditDecision {
+  APPLET_AUDIT_DECISION_UNSPECIFIED = 0;
+  APPLET_AUDIT_DECISION_ALLOWED = 1;
+  APPLET_AUDIT_DECISION_DENIED = 2;
+}
+
 // AppletInfo represents the public information of an applet
 message AppletInfo {
   string id = 1;
@@ -15,6 +52,8 @@ message AppletInfo {
   int64 download_count = 6;
   string latest_version = 7;
   int64 updated_at = 8; // Unix timestamp
+  AppletPackageStatus status = 9;
+  repeated AppletReleaseChannel channels = 10;
 }
 
 // AppletVersionInfo represents details of a specific version
@@ -28,6 +67,109 @@ message AppletVersionInfo {
   string min_sdk_version = 7;
   string changelog = 8;
   int64 created_at = 9; // Unix timestamp
+  AppletPackageStatus status = 10;
+  AppletReleaseChannel channel = 11;
+  ManifestSnapshot manifest = 12;
+  BundleStorage bundle = 13;
+}
+
+message ManifestSnapshot {
+  string manifest_json = 1;
+  repeated string target_platforms = 2;
+  repeated string permissions = 3;
+  repeated string capabilities = 4;
+  map<string, string> integrity = 5;
+  repeated AppletServicePolicy services = 6;
+  string bridge_protocol = 7;
+  string runtime_type = 8;
+}
+
+message BundleAssetIntegrity {
+  string path = 1;
+  string sha256 = 2;
+  int64 size_bytes = 3;
+  string content_type = 4;
+}
+
+message BundleStorage {
+  string bundle_uri = 1;
+  string bundle_sha256 = 2;
+  int64 bundle_size_bytes = 3;
+  repeated BundleAssetIntegrity assets = 4;
+  string storage_backend = 5;
+}
+
+message AppletCapabilityPolicy {
+  string capability = 1;
+  repeated string methods = 2;
+  AppletPolicyDecision decision = 3;
+  string reason = 4;
+  int64 max_payload_bytes = 5;
+  int32 timeout_ms = 6;
+  int32 quota_per_minute = 7;
+}
+
+message AppletServicePolicy {
+  string service_id = 1;
+  string kind = 2;
+  repeated string allowed_methods = 3;
+  repeated string allowed_paths = 4;
+  bool streaming = 5;
+  string station_path_prefix = 6;
+  AppletPolicyDecision decision = 7;
+}
+
+message AppletPolicySet {
+  string policy_id = 1;
+  string applet_id = 2;
+  string version = 3;
+  repeated AppletCapabilityPolicy capability_policies = 4;
+  repeated AppletServicePolicy service_policies = 5;
+  int64 created_at = 6; // Unix timestamp
+}
+
+message AppletVersionChannel {
+  AppletReleaseChannel channel = 1;
+  string version = 2;
+  int32 rollout_percent = 3;
+  bool enabled = 4;
+  string rollback_version = 5;
+  int64 updated_at = 6; // Unix timestamp
+}
+
+message AppletCatalogItem {
+  AppletInfo info = 1;
+  AppletVersionInfo version = 2;
+  AppletInstallState install_state = 3;
+  repeated AppletVersionChannel channels = 4;
+}
+
+message AppletInstallState {
+  string actor_id = 1;
+  string device_id = 2;
+  string applet_id = 3;
+  string version = 4;
+  AppletReleaseChannel channel = 5;
+  AppletInstallStatus status = 6;
+  map<string, string> config = 7;
+  int64 installed_at = 8; // Unix timestamp
+  int64 updated_at = 9; // Unix timestamp
+  string status_reason = 10;
+}
+
+message AppletAuditRecord {
+  string audit_id = 1;
+  string actor_id = 2;
+  string device_id = 3;
+  string applet_id = 4;
+  string version = 5;
+  string session_id = 6;
+  string capability = 7;
+  string method = 8;
+  AppletAuditDecision decision = 9;
+  string reason = 10;
+  map<string, string> metadata = 11;
+  int64 recorded_at = 12; // Unix timestamp
 }
 
 // Request to list applets
@@ -35,6 +177,11 @@ message ListAppletsRequest {
   int32 limit = 1;
   int32 offset = 2;
   string search_keyword = 3; // Optional
+  string actor_id = 4;
+  string device_id = 5;
+  string target_platform = 6;
+  AppletReleaseChannel channel = 7;
+  bool include_installed_state = 8;
 }
 
 // Response for listing applets
@@ -52,6 +199,8 @@ message GetAppletDetailsRequest {
 message GetAppletDetailsResponse {
   AppletInfo info = 1;
   AppletVersionInfo latest_version = 2;
+  repeated AppletVersionChannel channels = 3;
+  AppletInstallState install_state = 4;
 }
 
 // Request to publish/update applet (Metadata part)
@@ -62,10 +211,124 @@ message PublishAppletRequest {
   string version = 3;
   string min_sdk_version = 4;
   string changelog = 5;
+  string applet_id = 6;
+  string owner_id = 7;
+  AppletReleaseChannel channel = 8;
+  ManifestSnapshot manifest = 9;
+  BundleStorage bundle = 10;
+  AppletPolicySet policy = 11;
 }
 
 message PublishAppletResponse {
   string applet_id = 1;
   string version_id = 2;
   bool is_new_applet = 3;
+  AppletVersionInfo version = 4;
+}
+
+message ListAppletCatalogRequest {
+  string actor_id = 1;
+  string device_id = 2;
+  string target_platform = 3;
+  AppletReleaseChannel channel = 4;
+  string search_keyword = 5;
+  int32 limit = 6;
+  int32 offset = 7;
+}
+
+message ListAppletCatalogResponse {
+  repeated AppletCatalogItem items = 1;
+  int64 total_count = 2;
+}
+
+message GetAppletVersionRequest {
+  string applet_id = 1;
+  string version = 2;
+  AppletReleaseChannel channel = 3;
+}
+
+message GetAppletVersionResponse {
+  AppletVersionInfo version = 1;
+  AppletPolicySet policy = 2;
+}
+
+message InstallAppletRequest {
+  string actor_id = 1;
+  string device_id = 2;
+  string applet_id = 3;
+  string version = 4;
+  AppletReleaseChannel channel = 5;
+  map<string, string> config = 6;
+}
+
+message InstallAppletResponse {
+  AppletInstallState state = 1;
+}
+
+message UninstallAppletRequest {
+  string actor_id = 1;
+  string device_id = 2;
+  string applet_id = 3;
+}
+
+message UninstallAppletResponse {
+  AppletInstallState state = 1;
+}
+
+message ListInstalledAppletsRequest {
+  string actor_id = 1;
+  string device_id = 2;
+  bool include_disabled = 3;
+}
+
+message ListInstalledAppletsResponse {
+  repeated AppletInstallState states = 1;
+}
+
+message RevokeAppletVersionRequest {
+  string applet_id = 1;
+  string version = 2;
+  string reason = 3;
+  string operator_id = 4;
+}
+
+message RevokeAppletVersionResponse {
+  AppletVersionInfo version = 1;
+}
+
+message RollbackAppletChannelRequest {
+  string applet_id = 1;
+  AppletReleaseChannel channel = 2;
+  string target_version = 3;
+  string reason = 4;
+  string operator_id = 5;
+}
+
+message RollbackAppletChannelResponse {
+  AppletVersionChannel channel = 1;
+}
+
+message IngestAppletAuditRequest {
+  repeated AppletAuditRecord records = 1;
+}
+
+message IngestAppletAuditResponse {
+  int32 accepted_count = 1;
+  repeated string rejected_audit_ids = 2;
+}
+
+message QueryAppletAuditRequest {
+  string actor_id = 1;
+  string device_id = 2;
+  string applet_id = 3;
+  string session_id = 4;
+  int64 start_time = 5; // Unix timestamp
+  int64 end_time = 6; // Unix timestamp
+  int32 limit = 7;
+  int32 offset = 8;
+}
+
+message QueryAppletAuditResponse {
+  repeated AppletAuditRecord records = 1;
+  int64 total_count = 2;
 }

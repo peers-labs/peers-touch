@@ -1,5 +1,5 @@
 const protocol = 'peers-touch.applet.bridge';
-const appletId = "generic-complex-applet";
+const appletId = "big-a";
 const sessionId = 'desktop-runtime-gate-session';
 const requiredMethods = ["app.getContext","app.getLaunchOptions","lifecycle.reportReady","ui.setNavigationBar","ui.showToast","device.getSafeArea","device.getWindowInfo","device.vibrate","clipboard.setText","clipboard.getText","file.write","file.read","file.list","file.getInfo","storage.set","storage.keys","storage.getInfo","network.request","network.upload","network.download","events.subscribe","events.unsubscribe","skills.register","skills.list","skills.invoke","tasks.start","agent.stream","ai.chat","telemetry.track"];
 const status = document.getElementById('status');
@@ -201,7 +201,7 @@ view.onNativeModulesCall = (methodName, data, moduleName) => {
 view.style.width = '800px';
 view.style.height = '600px';
 document.body.appendChild(view);
-view.url = "/applets-dist/generic-complex-applet/main.lynx.bundle";
+view.url = "/applets-dist/big-a/main.lynx.bundle";
 
 setTimeout(() => {
   const seen = new Set(requests.map((request) => request.method));

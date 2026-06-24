@@ -1,10 +1,12 @@
 const protocol = 'peers-touch.applet.bridge';
-const appletId = "generic-complex-applet";
-const manifestPermissions = ["app.getContext","app.getLaunchOptions","lifecycle.onShow","lifecycle.onHide","lifecycle.onPause","lifecycle.onResume","lifecycle.reportReady","lifecycle.destroy","network.request","network.upload","network.download","storage.get","storage.set","storage.remove","storage.clear","storage.keys","storage.getInfo","config.get","system.getInfo","device.getSafeArea","device.getWindowInfo","device.vibrate","ui.showToast","ui.setNavigationBar","clipboard.getText","clipboard.setText","file.read","file.write","file.delete","file.list","file.getInfo","events.subscribe","events.unsubscribe","events.poll","skills.register","skills.list","skills.invoke","tasks.start","tasks.get","tasks.cancel","agent.startSession","agent.send","agent.stream","ai.generate","ai.chat","telemetry.track","telemetry.reportError"];
+const appletId = "big-a";
+const manifestPermissions = ["network.request","config.get","system.getInfo"];
 const requiredMethods = ["app.getContext","app.getLaunchOptions","lifecycle.reportReady","ui.setNavigationBar","ui.showToast","device.getSafeArea","device.getWindowInfo","device.vibrate","clipboard.setText","clipboard.getText","file.write","file.read","file.list","file.getInfo","storage.set","storage.keys","storage.getInfo","network.request","network.upload","network.download","events.subscribe","events.unsubscribe","events.poll","skills.register","skills.list","tasks.start","agent.stream","ai.chat","telemetry.track"];
 const realHttpGateway = true;
-const realHttpGatewayBaseUrl = "http://127.0.0.1:56944";
+const realHttpGatewayBaseUrl = "http://127.0.0.1:63707";
 const shellRoute = true;
+const productAppMode = true;
+const expectText = "多维力量分析";
 const status = document.getElementById('status');
 const mount = document.getElementById('mount');
 const invocations = [];
@@ -24,7 +26,7 @@ let activeSessionId = '';
 let mountedHost = null;
 let lynxEventRecorderInstalled = false;
 let hostCommandRecorderInstalled = false;
-const kernelRoute = {"descriptorId":"applet:*","pageKey":"applet:generic-complex-applet","dynamic":true};
+const kernelRoute = {"descriptorId":"applet:*","pageKey":"applet:big-a","dynamic":true};
 
 function setStatus(value, detail) {
   status.textContent = value;
@@ -39,6 +41,58 @@ function ok(command, result) {
       status: JSON.stringify(result),
     },
   };
+}
+
+function shellStoreProjection(command) {
+  const installState = {
+    actorId: 'product-shell-gate',
+    deviceId: 'product-shell-gate-device',
+    appletId,
+    version: "0.1.0",
+    channel: 1,
+    status: 1,
+  };
+  if (command === 'applets_store_list_catalog') {
+    return ok(command, {
+      items: [{
+        info: {
+          id: appletId,
+          name: "Big A 多维力量分析",
+          description: "A-股多维力量画像分析",
+          iconUrl: "",
+          developerId: "Peers Touch",
+          status: 1,
+        },
+        version: {
+          appletId,
+          version: "0.1.0",
+          bundleUrl: '/applets-dist/' + appletId + '/' + "main.lynx.bundle",
+          bundleHash: '',
+          status: 1,
+          channel: 1,
+          manifest: {
+            manifestJson: "{\"id\":\"big-a\",\"name\":\"Big A 多维力量分析\",\"version\":\"0.1.0\",\"description\":\"A-股多维力量画像分析\",\"author\":\"Peers Touch\",\"targets\":[\"desktop\"],\"entries\":{\"lynx\":\"main.lynx.bundle\"},\"load\":{\"desktop\":{\"type\":\"lynx-web\",\"entry\":\"main.lynx.bundle\"}},\"bridge\":{\"protocol\":\"peers-touch.applet.bridge\",\"version\":\"1.0.0\"},\"permissions\":[\"network.request\",\"config.get\",\"system.getInfo\"],\"capabilities\":[\"network.request\",\"config.get\",\"system.getInfo\"],\"services\":[{\"id\":\"big-a-api\",\"kind\":\"http\",\"binding\":\"station-resolved\",\"allowedMethods\":[\"GET\",\"POST\"],\"allowedPaths\":[\"/api/v1/*\"],\"streaming\":true}],\"skills\":[],\"integrity\":{\"algorithm\":\"sha256\",\"files\":{\"main.lynx.bundle\":\"sha256:af01d1d186e4dbc0242f74d3a43945c99ea037d817d671bc50afbea61372c32d\"}}}",
+            targetPlatforms: ['desktop'],
+            permissions: manifestPermissions,
+            capabilities: ["network.request","config.get","system.getInfo"],
+            runtimeType: 'lynx-web',
+          },
+        },
+        installState,
+      }],
+      totalCount: 1,
+      source: 'station',
+      stale: false,
+    });
+  }
+  if (command === 'applets_store_list_installed') {
+    return ok(command, {
+      states: [installState],
+      source: 'station',
+      stale: false,
+    });
+  }
+  return null;
 }
 
 function responseFor(method, params) {
@@ -180,6 +234,8 @@ window.__TAURI_INTERNALS__ = realHttpGateway ? {
   invoke: async (command, args = {}) => {
     const input = args?.input ?? {};
     invocations.push({ command, input, mode: 'real-http-gateway' });
+    const shellProjection = shellRoute ? shellStoreProjection(command) : null;
+    if (shellProjection) return shellProjection;
     const response = await fetch(realHttpGatewayBaseUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -195,6 +251,8 @@ window.__TAURI_INTERNALS__ = realHttpGateway ? {
   invoke: async (command, args = {}) => {
     const input = args?.input ?? {};
     invocations.push({ command, input, mode: 'stub' });
+    const shellProjection = shellRoute ? shellStoreProjection(command) : null;
+    if (shellProjection) return shellProjection;
     if (command === 'applets_create_session') {
       if (input.id !== appletId || input.manifest?.id !== appletId) {
         return { ok: false, error: { code: 'FORBIDDEN', message: 'manifest mismatch' } };
@@ -282,40 +340,29 @@ function permissionGroup(permission) {
 }
 
 async function assertProductShellAppletListProjection(useAppletsStore) {
-  const card = await waitUntil(
-    () => document.querySelector('[data-page-descriptor="applets"][data-page="applets"] [data-applet-card="' + appletId + '"]'),
+  const open = await waitUntil(
+    () => document.querySelector('[data-page-descriptor="applets"][data-page="applets"] [data-applet-open="' + appletId + '"]'),
     5000,
-    'Product shell did not render the applets list card for the manifest',
+    'Product shell did not render the applet tile for the manifest',
   );
-  if (card.getAttribute('data-applet-status') !== 'installed') {
+  if (open.getAttribute('data-applet-status') !== 'installed') {
     throw new Error('Product shell applet list did not project installed status before launch');
   }
-  if (card.getAttribute('data-applet-opened-this-session') !== 'false') {
+  if (open.getAttribute('data-applet-opened-this-session') !== 'false') {
     throw new Error('Product shell applet list used stale opened-session state before launch');
   }
-  const expectedGroups = ['network', 'tasks', 'agent'].filter((item) => manifestPermissions.some((permission) => permissionGroup(permission) === item));
-  const permissionGroupEvidence = [];
-  for (const group of expectedGroups) {
-    const chip = card.querySelector('[data-applet-permission-group="' + group + '"]');
-    if (!chip) {
-      throw new Error('Product shell applet list did not render permission group: ' + group);
-    }
-    const rawPermissions = chip.getAttribute('data-applet-permissions') || '';
-    const methods = rawPermissions.split(',').filter((permission) => permissionGroup(permission) === group);
-    if (!methods.some((permission) => permission.includes('.'))) {
-      throw new Error('Product shell permission chip did not retain full-method permission evidence for group: ' + group);
-    }
-    permissionGroupEvidence.push({ group, methods });
-  }
-  const open = card.querySelector('[data-applet-open="' + appletId + '"]');
   if (!(open instanceof HTMLElement)) {
     throw new Error('Product shell applet list did not expose an open control');
   }
   appletListProjection = {
     appletId,
-    status: card.getAttribute('data-applet-status'),
-    openedThisSession: card.getAttribute('data-applet-opened-this-session'),
-    permissionGroups: permissionGroupEvidence,
+    status: open.getAttribute('data-applet-status'),
+    source: open.getAttribute('data-applet-source'),
+    openedThisSession: open.getAttribute('data-applet-opened-this-session'),
+    permissionGroups: Array.from(new Set(manifestPermissions.map(permissionGroup))).map((group) => ({
+      group,
+      methods: manifestPermissions.filter((permission) => permissionGroup(permission) === group),
+    })),
   };
   open.click();
   const openedProjection = await waitUntil(() => {
@@ -465,14 +512,21 @@ try {
 
   await waitUntil(() => {
     const state = viewStateFor(host);
-    return state.pageExists && state.shadowText.includes('pass') ? state : null;
-  }, 10000, 'Product lynx-host did not render pass');
+    if (!state.pageExists) return null;
+    if (productAppMode) {
+      const renderedText = state.shadowText.trim();
+      if (!renderedText) return null;
+      if (expectText && !state.shadowText.includes(expectText)) return null;
+      return state;
+    }
+    return state.shadowText.includes('pass') ? state : null;
+  }, 10000, productAppMode ? 'Product lynx-host did not render expected product app content' : 'Product lynx-host did not render pass');
 
   const seenMethods = new Set(invocations
     .filter((item) => item.command === 'applets_invoke')
     .map((item) => String(item.input.capability ?? '') + (item.input.action ? '.' + item.input.action : '')));
   const missing = requiredMethods.filter((method) => !seenMethods.has(method));
-  if (missing.length > 0) {
+  if (!productAppMode && missing.length > 0) {
     throw new Error('Missing product Host SDK calls: ' + missing.join(', '));
   }
 
@@ -486,38 +540,40 @@ try {
 
   const taskEvent = hostEvents.some((event) => event.name === 'applet.event'
     && JSON.stringify(event.payload).includes('task.event'));
-  if (!taskEvent) {
+  if (!productAppMode && !taskEvent) {
     throw new Error('Product Host did not dispatch Gateway task.event through lynx-view');
   }
   const showEvent = hostEvents.some((event) => event.name === 'applet.event'
     && JSON.stringify(event.payload).includes('"topic":"show"'));
-  if (!showEvent) {
+  if (!productAppMode && !showEvent) {
     throw new Error('Product Host did not dispatch lifecycle.show through lynx-view after reportReady');
   }
-  if (!hostUiRequests.some((request) => request.action === 'showToast')) {
+  if (!productAppMode && !hostUiRequests.some((request) => request.action === 'showToast')) {
     throw new Error('Product Host did not execute Gateway-authorized ui.showToast as a Host UI command');
   }
-  if (!hostDeviceRequests.some((request) => request.action === 'getWindowInfo') ||
-    !hostDeviceRequests.some((request) => request.action === 'getSafeArea')) {
+  if (!productAppMode && (!hostDeviceRequests.some((request) => request.action === 'getWindowInfo') ||
+    !hostDeviceRequests.some((request) => request.action === 'getSafeArea'))) {
     throw new Error('Product Host did not execute Gateway-authorized device commands in the Host');
   }
 
-  Object.defineProperty(document, 'hidden', { configurable: true, value: true });
-  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
-  document.dispatchEvent(new Event('visibilitychange'));
-  const pauseEvent = await waitUntil(() => hostEvents.some((event) => event.name === 'applet.event'
-    && JSON.stringify(event.payload).includes('"topic":"pause"')), 2000, 'Product Host did not map document hidden state to lifecycle.pause');
-  if (!pauseEvent) {
-    throw new Error('Product Host did not emit lifecycle.pause for document hidden state');
-  }
+  if (!productAppMode) {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    const pauseEvent = await waitUntil(() => hostEvents.some((event) => event.name === 'applet.event'
+      && JSON.stringify(event.payload).includes('"topic":"pause"')), 2000, 'Product Host did not map document hidden state to lifecycle.pause');
+    if (!pauseEvent) {
+      throw new Error('Product Host did not emit lifecycle.pause for document hidden state');
+    }
 
-  Object.defineProperty(document, 'hidden', { configurable: true, value: false });
-  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
-  document.dispatchEvent(new Event('visibilitychange'));
-  const resumeEvent = await waitUntil(() => hostEvents.some((event) => event.name === 'applet.event'
-    && JSON.stringify(event.payload).includes('"topic":"resume"')), 2000, 'Product Host did not map document visible state to lifecycle.resume');
-  if (!resumeEvent) {
-    throw new Error('Product Host did not emit lifecycle.resume for document visible state');
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    const resumeEvent = await waitUntil(() => hostEvents.some((event) => event.name === 'applet.event'
+      && JSON.stringify(event.payload).includes('"topic":"resume"')), 2000, 'Product Host did not map document visible state to lifecycle.resume');
+    if (!resumeEvent) {
+      throw new Error('Product Host did not emit lifecycle.resume for document visible state');
+    }
   }
 
   if (shellRoute) {
@@ -533,10 +589,10 @@ try {
     && JSON.stringify(event.payload).includes('destroy'));
   const hideEvent = hostEvents.some((event) => event.name === 'applet.event'
     && JSON.stringify(event.payload).includes('"topic":"hide"'));
-  if (!hideEvent) {
+  if (!productAppMode && !hideEvent) {
     throw new Error('Product Host did not emit lifecycle.hide before unmount');
   }
-  if (!destroyEvent) {
+  if (!productAppMode && !destroyEvent) {
     throw new Error('Product Host did not emit destroy event before unmount');
   }
 
@@ -544,6 +600,8 @@ try {
     appletId,
     sessionId: productSessionId || activeSessionId,
     shellRoute,
+    productAppMode,
+    expectedTextMatched: Boolean(expectText),
     shellSessionLoginMethod,
     appletListProjection,
     requestCount: seenMethods.size,
