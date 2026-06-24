@@ -50,10 +50,13 @@ export interface GroupState {
   loadMembers: (groupUlid: string) => Promise<void>;
   loadSettings: (groupUlid: string) => Promise<void>;
   updateMySettings: (groupUlid: string, input: UpdateGroupSettingsInput) => Promise<void>;
+  updateMyNickname: (groupUlid: string, nickname: string) => Promise<void>;
   inviteMembers: (groupUlid: string, inviteeDids: string[]) => Promise<void>;
   leaveGroup: (groupUlid: string) => Promise<void>;
   removeMember: (groupUlid: string, actorDid: string) => Promise<void>;
   updateMember: (groupUlid: string, actorDid: string, input: UpdateGroupMemberInput) => Promise<void>;
+  transferOwnership: (groupUlid: string, nextOwnerDid: string) => Promise<void>;
+  dissolveGroup: (groupUlid: string) => Promise<void>;
   ingestRealtimeMessage: (groupUlid: string, message: GroupMessage) => Promise<void>;
   applyMessageMutation: (
     groupUlid: string,
@@ -254,6 +257,27 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
+  updateMyNickname: async (groupUlid, nickname) => {
+    const api = requireApi(get());
+    try {
+      const payload = await api.updateMyNickname(groupUlid, nickname);
+      if (payload.member) {
+        const member = normalizeGroupMember(payload.member);
+        set((state) => ({
+          members: {
+            ...state.members,
+            [groupUlid]: upsertGroupMember(state.members[groupUlid] ?? [], member),
+          },
+        }));
+      } else {
+        await get().loadMembers(groupUlid);
+      }
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
+    }
+  },
+
   inviteMembers: async (groupUlid, inviteeDids) => {
     if (!inviteeDids.length) return;
     const api = requireApi(get());
@@ -271,22 +295,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const api = requireApi(get());
     try {
       await api.leaveGroup(groupUlid);
-      set((state) => {
-        const { [groupUlid]: _members, ...members } = state.members;
-        const { [groupUlid]: _messages, ...messages } = state.messages;
-        const { [groupUlid]: _settings, ...settings } = state.settings;
-        const { [groupUlid]: _unread, ...unreadCounts } = state.unreadCounts;
-        const { [groupUlid]: _ready, ...encryptionReady } = state.encryptionReady;
-        return {
-          groups: state.groups.filter((group) => group.ulid !== groupUlid),
-          members,
-          messages,
-          settings,
-          unreadCounts,
-          encryptionReady,
-          activeGroupUlid: state.activeGroupUlid === groupUlid ? null : state.activeGroupUlid,
-        };
-      });
+      set((state) => removeGroupFromState(state, groupUlid));
     } catch (error) {
       set({ error: normalizeError(error) });
       throw error;
@@ -320,6 +329,34 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       } else {
         await get().loadMembers(groupUlid);
       }
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
+    }
+  },
+
+  transferOwnership: async (groupUlid, nextOwnerDid) => {
+    const api = requireApi(get());
+    try {
+      const payload = await api.transferOwnership(groupUlid, nextOwnerDid);
+      if (payload.group) {
+        const group = normalizeGroup(payload.group);
+        set((state) => ({ groups: mergeGroups(state.groups, group) }));
+      } else {
+        await get().refreshGroups();
+      }
+      await get().loadMembers(groupUlid);
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
+    }
+  },
+
+  dissolveGroup: async (groupUlid) => {
+    const api = requireApi(get());
+    try {
+      await api.dissolveGroup(groupUlid);
+      set((state) => removeGroupFromState(state, groupUlid));
     } catch (error) {
       set({ error: normalizeError(error) });
       throw error;
@@ -490,6 +527,23 @@ function upsertGroupMember(members: GroupMember[], incoming: GroupMember): Group
   return exists
     ? members.map((member) => (member.actorDid === incoming.actorDid ? { ...member, ...incoming } : member))
     : [...members, incoming];
+}
+
+function removeGroupFromState(state: GroupState, groupUlid: string) {
+  const { [groupUlid]: _members, ...members } = state.members;
+  const { [groupUlid]: _messages, ...messages } = state.messages;
+  const { [groupUlid]: _settings, ...settings } = state.settings;
+  const { [groupUlid]: _unread, ...unreadCounts } = state.unreadCounts;
+  const { [groupUlid]: _ready, ...encryptionReady } = state.encryptionReady;
+  return {
+    groups: state.groups.filter((group) => group.ulid !== groupUlid),
+    members,
+    messages,
+    settings,
+    unreadCounts,
+    encryptionReady,
+    activeGroupUlid: state.activeGroupUlid === groupUlid ? null : state.activeGroupUlid,
+  };
 }
 
 function requireApi(state: GroupState): GroupApiClient {
