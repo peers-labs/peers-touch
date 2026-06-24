@@ -21,6 +21,272 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type AppletPackageStatus int32
+
+const (
+	AppletPackageStatus_APPLET_PACKAGE_STATUS_UNSPECIFIED AppletPackageStatus = 0
+	AppletPackageStatus_APPLET_PACKAGE_STATUS_DRAFT       AppletPackageStatus = 1
+	AppletPackageStatus_APPLET_PACKAGE_STATUS_PUBLISHED   AppletPackageStatus = 2
+	AppletPackageStatus_APPLET_PACKAGE_STATUS_DEPRECATED  AppletPackageStatus = 3
+	AppletPackageStatus_APPLET_PACKAGE_STATUS_REVOKED     AppletPackageStatus = 4
+)
+
+// Enum value maps for AppletPackageStatus.
+var (
+	AppletPackageStatus_name = map[int32]string{
+		0: "APPLET_PACKAGE_STATUS_UNSPECIFIED",
+		1: "APPLET_PACKAGE_STATUS_DRAFT",
+		2: "APPLET_PACKAGE_STATUS_PUBLISHED",
+		3: "APPLET_PACKAGE_STATUS_DEPRECATED",
+		4: "APPLET_PACKAGE_STATUS_REVOKED",
+	}
+	AppletPackageStatus_value = map[string]int32{
+		"APPLET_PACKAGE_STATUS_UNSPECIFIED": 0,
+		"APPLET_PACKAGE_STATUS_DRAFT":       1,
+		"APPLET_PACKAGE_STATUS_PUBLISHED":   2,
+		"APPLET_PACKAGE_STATUS_DEPRECATED":  3,
+		"APPLET_PACKAGE_STATUS_REVOKED":     4,
+	}
+)
+
+func (x AppletPackageStatus) Enum() *AppletPackageStatus {
+	p := new(AppletPackageStatus)
+	*p = x
+	return p
+}
+
+func (x AppletPackageStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AppletPackageStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_applet_applet_proto_enumTypes[0].Descriptor()
+}
+
+func (AppletPackageStatus) Type() protoreflect.EnumType {
+	return &file_domain_applet_applet_proto_enumTypes[0]
+}
+
+func (x AppletPackageStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AppletPackageStatus.Descriptor instead.
+func (AppletPackageStatus) EnumDescriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{0}
+}
+
+type AppletInstallStatus int32
+
+const (
+	AppletInstallStatus_APPLET_INSTALL_STATUS_UNSPECIFIED      AppletInstallStatus = 0
+	AppletInstallStatus_APPLET_INSTALL_STATUS_INSTALLED        AppletInstallStatus = 1
+	AppletInstallStatus_APPLET_INSTALL_STATUS_UNINSTALLED      AppletInstallStatus = 2
+	AppletInstallStatus_APPLET_INSTALL_STATUS_DISABLED         AppletInstallStatus = 3
+	AppletInstallStatus_APPLET_INSTALL_STATUS_REVOKED          AppletInstallStatus = 4
+	AppletInstallStatus_APPLET_INSTALL_STATUS_UPDATE_AVAILABLE AppletInstallStatus = 5
+)
+
+// Enum value maps for AppletInstallStatus.
+var (
+	AppletInstallStatus_name = map[int32]string{
+		0: "APPLET_INSTALL_STATUS_UNSPECIFIED",
+		1: "APPLET_INSTALL_STATUS_INSTALLED",
+		2: "APPLET_INSTALL_STATUS_UNINSTALLED",
+		3: "APPLET_INSTALL_STATUS_DISABLED",
+		4: "APPLET_INSTALL_STATUS_REVOKED",
+		5: "APPLET_INSTALL_STATUS_UPDATE_AVAILABLE",
+	}
+	AppletInstallStatus_value = map[string]int32{
+		"APPLET_INSTALL_STATUS_UNSPECIFIED":      0,
+		"APPLET_INSTALL_STATUS_INSTALLED":        1,
+		"APPLET_INSTALL_STATUS_UNINSTALLED":      2,
+		"APPLET_INSTALL_STATUS_DISABLED":         3,
+		"APPLET_INSTALL_STATUS_REVOKED":          4,
+		"APPLET_INSTALL_STATUS_UPDATE_AVAILABLE": 5,
+	}
+)
+
+func (x AppletInstallStatus) Enum() *AppletInstallStatus {
+	p := new(AppletInstallStatus)
+	*p = x
+	return p
+}
+
+func (x AppletInstallStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AppletInstallStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_applet_applet_proto_enumTypes[1].Descriptor()
+}
+
+func (AppletInstallStatus) Type() protoreflect.EnumType {
+	return &file_domain_applet_applet_proto_enumTypes[1]
+}
+
+func (x AppletInstallStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AppletInstallStatus.Descriptor instead.
+func (AppletInstallStatus) EnumDescriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{1}
+}
+
+type AppletReleaseChannel int32
+
+const (
+	AppletReleaseChannel_APPLET_RELEASE_CHANNEL_UNSPECIFIED AppletReleaseChannel = 0
+	AppletReleaseChannel_APPLET_RELEASE_CHANNEL_STABLE      AppletReleaseChannel = 1
+	AppletReleaseChannel_APPLET_RELEASE_CHANNEL_BETA        AppletReleaseChannel = 2
+	AppletReleaseChannel_APPLET_RELEASE_CHANNEL_DEV         AppletReleaseChannel = 3
+)
+
+// Enum value maps for AppletReleaseChannel.
+var (
+	AppletReleaseChannel_name = map[int32]string{
+		0: "APPLET_RELEASE_CHANNEL_UNSPECIFIED",
+		1: "APPLET_RELEASE_CHANNEL_STABLE",
+		2: "APPLET_RELEASE_CHANNEL_BETA",
+		3: "APPLET_RELEASE_CHANNEL_DEV",
+	}
+	AppletReleaseChannel_value = map[string]int32{
+		"APPLET_RELEASE_CHANNEL_UNSPECIFIED": 0,
+		"APPLET_RELEASE_CHANNEL_STABLE":      1,
+		"APPLET_RELEASE_CHANNEL_BETA":        2,
+		"APPLET_RELEASE_CHANNEL_DEV":         3,
+	}
+)
+
+func (x AppletReleaseChannel) Enum() *AppletReleaseChannel {
+	p := new(AppletReleaseChannel)
+	*p = x
+	return p
+}
+
+func (x AppletReleaseChannel) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AppletReleaseChannel) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_applet_applet_proto_enumTypes[2].Descriptor()
+}
+
+func (AppletReleaseChannel) Type() protoreflect.EnumType {
+	return &file_domain_applet_applet_proto_enumTypes[2]
+}
+
+func (x AppletReleaseChannel) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AppletReleaseChannel.Descriptor instead.
+func (AppletReleaseChannel) EnumDescriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{2}
+}
+
+type AppletPolicyDecision int32
+
+const (
+	AppletPolicyDecision_APPLET_POLICY_DECISION_UNSPECIFIED          AppletPolicyDecision = 0
+	AppletPolicyDecision_APPLET_POLICY_DECISION_ALLOW                AppletPolicyDecision = 1
+	AppletPolicyDecision_APPLET_POLICY_DECISION_DENY                 AppletPolicyDecision = 2
+	AppletPolicyDecision_APPLET_POLICY_DECISION_REQUIRE_USER_GESTURE AppletPolicyDecision = 3
+)
+
+// Enum value maps for AppletPolicyDecision.
+var (
+	AppletPolicyDecision_name = map[int32]string{
+		0: "APPLET_POLICY_DECISION_UNSPECIFIED",
+		1: "APPLET_POLICY_DECISION_ALLOW",
+		2: "APPLET_POLICY_DECISION_DENY",
+		3: "APPLET_POLICY_DECISION_REQUIRE_USER_GESTURE",
+	}
+	AppletPolicyDecision_value = map[string]int32{
+		"APPLET_POLICY_DECISION_UNSPECIFIED":          0,
+		"APPLET_POLICY_DECISION_ALLOW":                1,
+		"APPLET_POLICY_DECISION_DENY":                 2,
+		"APPLET_POLICY_DECISION_REQUIRE_USER_GESTURE": 3,
+	}
+)
+
+func (x AppletPolicyDecision) Enum() *AppletPolicyDecision {
+	p := new(AppletPolicyDecision)
+	*p = x
+	return p
+}
+
+func (x AppletPolicyDecision) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AppletPolicyDecision) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_applet_applet_proto_enumTypes[3].Descriptor()
+}
+
+func (AppletPolicyDecision) Type() protoreflect.EnumType {
+	return &file_domain_applet_applet_proto_enumTypes[3]
+}
+
+func (x AppletPolicyDecision) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AppletPolicyDecision.Descriptor instead.
+func (AppletPolicyDecision) EnumDescriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{3}
+}
+
+type AppletAuditDecision int32
+
+const (
+	AppletAuditDecision_APPLET_AUDIT_DECISION_UNSPECIFIED AppletAuditDecision = 0
+	AppletAuditDecision_APPLET_AUDIT_DECISION_ALLOWED     AppletAuditDecision = 1
+	AppletAuditDecision_APPLET_AUDIT_DECISION_DENIED      AppletAuditDecision = 2
+)
+
+// Enum value maps for AppletAuditDecision.
+var (
+	AppletAuditDecision_name = map[int32]string{
+		0: "APPLET_AUDIT_DECISION_UNSPECIFIED",
+		1: "APPLET_AUDIT_DECISION_ALLOWED",
+		2: "APPLET_AUDIT_DECISION_DENIED",
+	}
+	AppletAuditDecision_value = map[string]int32{
+		"APPLET_AUDIT_DECISION_UNSPECIFIED": 0,
+		"APPLET_AUDIT_DECISION_ALLOWED":     1,
+		"APPLET_AUDIT_DECISION_DENIED":      2,
+	}
+)
+
+func (x AppletAuditDecision) Enum() *AppletAuditDecision {
+	p := new(AppletAuditDecision)
+	*p = x
+	return p
+}
+
+func (x AppletAuditDecision) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AppletAuditDecision) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_applet_applet_proto_enumTypes[4].Descriptor()
+}
+
+func (AppletAuditDecision) Type() protoreflect.EnumType {
+	return &file_domain_applet_applet_proto_enumTypes[4]
+}
+
+func (x AppletAuditDecision) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AppletAuditDecision.Descriptor instead.
+func (AppletAuditDecision) EnumDescriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{4}
+}
+
 // AppletInfo represents the public information of an applet
 type AppletInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -32,6 +298,8 @@ type AppletInfo struct {
 	DownloadCount int64                  `protobuf:"varint,6,opt,name=download_count,json=downloadCount,proto3" json:"download_count,omitempty"`
 	LatestVersion string                 `protobuf:"bytes,7,opt,name=latest_version,json=latestVersion,proto3" json:"latest_version,omitempty"`
 	UpdatedAt     int64                  `protobuf:"varint,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"` // Unix timestamp
+	Status        AppletPackageStatus    `protobuf:"varint,9,opt,name=status,proto3,enum=peers_touch.domain.applet.AppletPackageStatus" json:"status,omitempty"`
+	Channels      []AppletReleaseChannel `protobuf:"varint,10,rep,packed,name=channels,proto3,enum=peers_touch.domain.applet.AppletReleaseChannel" json:"channels,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -122,6 +390,20 @@ func (x *AppletInfo) GetUpdatedAt() int64 {
 	return 0
 }
 
+func (x *AppletInfo) GetStatus() AppletPackageStatus {
+	if x != nil {
+		return x.Status
+	}
+	return AppletPackageStatus_APPLET_PACKAGE_STATUS_UNSPECIFIED
+}
+
+func (x *AppletInfo) GetChannels() []AppletReleaseChannel {
+	if x != nil {
+		return x.Channels
+	}
+	return nil
+}
+
 // AppletVersionInfo represents details of a specific version
 type AppletVersionInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -134,6 +416,10 @@ type AppletVersionInfo struct {
 	MinSdkVersion string                 `protobuf:"bytes,7,opt,name=min_sdk_version,json=minSdkVersion,proto3" json:"min_sdk_version,omitempty"`
 	Changelog     string                 `protobuf:"bytes,8,opt,name=changelog,proto3" json:"changelog,omitempty"`
 	CreatedAt     int64                  `protobuf:"varint,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"` // Unix timestamp
+	Status        AppletPackageStatus    `protobuf:"varint,10,opt,name=status,proto3,enum=peers_touch.domain.applet.AppletPackageStatus" json:"status,omitempty"`
+	Channel       AppletReleaseChannel   `protobuf:"varint,11,opt,name=channel,proto3,enum=peers_touch.domain.applet.AppletReleaseChannel" json:"channel,omitempty"`
+	Manifest      *ManifestSnapshot      `protobuf:"bytes,12,opt,name=manifest,proto3" json:"manifest,omitempty"`
+	Bundle        *BundleStorage         `protobuf:"bytes,13,opt,name=bundle,proto3" json:"bundle,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -231,19 +517,964 @@ func (x *AppletVersionInfo) GetCreatedAt() int64 {
 	return 0
 }
 
-// Request to list applets
-type ListAppletsRequest struct {
+func (x *AppletVersionInfo) GetStatus() AppletPackageStatus {
+	if x != nil {
+		return x.Status
+	}
+	return AppletPackageStatus_APPLET_PACKAGE_STATUS_UNSPECIFIED
+}
+
+func (x *AppletVersionInfo) GetChannel() AppletReleaseChannel {
+	if x != nil {
+		return x.Channel
+	}
+	return AppletReleaseChannel_APPLET_RELEASE_CHANNEL_UNSPECIFIED
+}
+
+func (x *AppletVersionInfo) GetManifest() *ManifestSnapshot {
+	if x != nil {
+		return x.Manifest
+	}
+	return nil
+}
+
+func (x *AppletVersionInfo) GetBundle() *BundleStorage {
+	if x != nil {
+		return x.Bundle
+	}
+	return nil
+}
+
+type ManifestSnapshot struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ManifestJson    string                 `protobuf:"bytes,1,opt,name=manifest_json,json=manifestJson,proto3" json:"manifest_json,omitempty"`
+	TargetPlatforms []string               `protobuf:"bytes,2,rep,name=target_platforms,json=targetPlatforms,proto3" json:"target_platforms,omitempty"`
+	Permissions     []string               `protobuf:"bytes,3,rep,name=permissions,proto3" json:"permissions,omitempty"`
+	Capabilities    []string               `protobuf:"bytes,4,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	Integrity       map[string]string      `protobuf:"bytes,5,rep,name=integrity,proto3" json:"integrity,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Services        []*AppletServicePolicy `protobuf:"bytes,6,rep,name=services,proto3" json:"services,omitempty"`
+	BridgeProtocol  string                 `protobuf:"bytes,7,opt,name=bridge_protocol,json=bridgeProtocol,proto3" json:"bridge_protocol,omitempty"`
+	RuntimeType     string                 `protobuf:"bytes,8,opt,name=runtime_type,json=runtimeType,proto3" json:"runtime_type,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ManifestSnapshot) Reset() {
+	*x = ManifestSnapshot{}
+	mi := &file_domain_applet_applet_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ManifestSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ManifestSnapshot) ProtoMessage() {}
+
+func (x *ManifestSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ManifestSnapshot.ProtoReflect.Descriptor instead.
+func (*ManifestSnapshot) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ManifestSnapshot) GetManifestJson() string {
+	if x != nil {
+		return x.ManifestJson
+	}
+	return ""
+}
+
+func (x *ManifestSnapshot) GetTargetPlatforms() []string {
+	if x != nil {
+		return x.TargetPlatforms
+	}
+	return nil
+}
+
+func (x *ManifestSnapshot) GetPermissions() []string {
+	if x != nil {
+		return x.Permissions
+	}
+	return nil
+}
+
+func (x *ManifestSnapshot) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+func (x *ManifestSnapshot) GetIntegrity() map[string]string {
+	if x != nil {
+		return x.Integrity
+	}
+	return nil
+}
+
+func (x *ManifestSnapshot) GetServices() []*AppletServicePolicy {
+	if x != nil {
+		return x.Services
+	}
+	return nil
+}
+
+func (x *ManifestSnapshot) GetBridgeProtocol() string {
+	if x != nil {
+		return x.BridgeProtocol
+	}
+	return ""
+}
+
+func (x *ManifestSnapshot) GetRuntimeType() string {
+	if x != nil {
+		return x.RuntimeType
+	}
+	return ""
+}
+
+type BundleAssetIntegrity struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Limit         int32                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
-	Offset        int32                  `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
-	SearchKeyword string                 `protobuf:"bytes,3,opt,name=search_keyword,json=searchKeyword,proto3" json:"search_keyword,omitempty"` // Optional
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Sha256        string                 `protobuf:"bytes,2,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	SizeBytes     int64                  `protobuf:"varint,3,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	ContentType   string                 `protobuf:"bytes,4,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
+func (x *BundleAssetIntegrity) Reset() {
+	*x = BundleAssetIntegrity{}
+	mi := &file_domain_applet_applet_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BundleAssetIntegrity) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BundleAssetIntegrity) ProtoMessage() {}
+
+func (x *BundleAssetIntegrity) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BundleAssetIntegrity.ProtoReflect.Descriptor instead.
+func (*BundleAssetIntegrity) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *BundleAssetIntegrity) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *BundleAssetIntegrity) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
+}
+
+func (x *BundleAssetIntegrity) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *BundleAssetIntegrity) GetContentType() string {
+	if x != nil {
+		return x.ContentType
+	}
+	return ""
+}
+
+type BundleStorage struct {
+	state           protoimpl.MessageState  `protogen:"open.v1"`
+	BundleUri       string                  `protobuf:"bytes,1,opt,name=bundle_uri,json=bundleUri,proto3" json:"bundle_uri,omitempty"`
+	BundleSha256    string                  `protobuf:"bytes,2,opt,name=bundle_sha256,json=bundleSha256,proto3" json:"bundle_sha256,omitempty"`
+	BundleSizeBytes int64                   `protobuf:"varint,3,opt,name=bundle_size_bytes,json=bundleSizeBytes,proto3" json:"bundle_size_bytes,omitempty"`
+	Assets          []*BundleAssetIntegrity `protobuf:"bytes,4,rep,name=assets,proto3" json:"assets,omitempty"`
+	StorageBackend  string                  `protobuf:"bytes,5,opt,name=storage_backend,json=storageBackend,proto3" json:"storage_backend,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *BundleStorage) Reset() {
+	*x = BundleStorage{}
+	mi := &file_domain_applet_applet_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BundleStorage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BundleStorage) ProtoMessage() {}
+
+func (x *BundleStorage) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BundleStorage.ProtoReflect.Descriptor instead.
+func (*BundleStorage) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *BundleStorage) GetBundleUri() string {
+	if x != nil {
+		return x.BundleUri
+	}
+	return ""
+}
+
+func (x *BundleStorage) GetBundleSha256() string {
+	if x != nil {
+		return x.BundleSha256
+	}
+	return ""
+}
+
+func (x *BundleStorage) GetBundleSizeBytes() int64 {
+	if x != nil {
+		return x.BundleSizeBytes
+	}
+	return 0
+}
+
+func (x *BundleStorage) GetAssets() []*BundleAssetIntegrity {
+	if x != nil {
+		return x.Assets
+	}
+	return nil
+}
+
+func (x *BundleStorage) GetStorageBackend() string {
+	if x != nil {
+		return x.StorageBackend
+	}
+	return ""
+}
+
+type AppletCapabilityPolicy struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Capability      string                 `protobuf:"bytes,1,opt,name=capability,proto3" json:"capability,omitempty"`
+	Methods         []string               `protobuf:"bytes,2,rep,name=methods,proto3" json:"methods,omitempty"`
+	Decision        AppletPolicyDecision   `protobuf:"varint,3,opt,name=decision,proto3,enum=peers_touch.domain.applet.AppletPolicyDecision" json:"decision,omitempty"`
+	Reason          string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	MaxPayloadBytes int64                  `protobuf:"varint,5,opt,name=max_payload_bytes,json=maxPayloadBytes,proto3" json:"max_payload_bytes,omitempty"`
+	TimeoutMs       int32                  `protobuf:"varint,6,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
+	QuotaPerMinute  int32                  `protobuf:"varint,7,opt,name=quota_per_minute,json=quotaPerMinute,proto3" json:"quota_per_minute,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *AppletCapabilityPolicy) Reset() {
+	*x = AppletCapabilityPolicy{}
+	mi := &file_domain_applet_applet_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppletCapabilityPolicy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppletCapabilityPolicy) ProtoMessage() {}
+
+func (x *AppletCapabilityPolicy) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppletCapabilityPolicy.ProtoReflect.Descriptor instead.
+func (*AppletCapabilityPolicy) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *AppletCapabilityPolicy) GetCapability() string {
+	if x != nil {
+		return x.Capability
+	}
+	return ""
+}
+
+func (x *AppletCapabilityPolicy) GetMethods() []string {
+	if x != nil {
+		return x.Methods
+	}
+	return nil
+}
+
+func (x *AppletCapabilityPolicy) GetDecision() AppletPolicyDecision {
+	if x != nil {
+		return x.Decision
+	}
+	return AppletPolicyDecision_APPLET_POLICY_DECISION_UNSPECIFIED
+}
+
+func (x *AppletCapabilityPolicy) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *AppletCapabilityPolicy) GetMaxPayloadBytes() int64 {
+	if x != nil {
+		return x.MaxPayloadBytes
+	}
+	return 0
+}
+
+func (x *AppletCapabilityPolicy) GetTimeoutMs() int32 {
+	if x != nil {
+		return x.TimeoutMs
+	}
+	return 0
+}
+
+func (x *AppletCapabilityPolicy) GetQuotaPerMinute() int32 {
+	if x != nil {
+		return x.QuotaPerMinute
+	}
+	return 0
+}
+
+type AppletServicePolicy struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	ServiceId         string                 `protobuf:"bytes,1,opt,name=service_id,json=serviceId,proto3" json:"service_id,omitempty"`
+	Kind              string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	AllowedMethods    []string               `protobuf:"bytes,3,rep,name=allowed_methods,json=allowedMethods,proto3" json:"allowed_methods,omitempty"`
+	AllowedPaths      []string               `protobuf:"bytes,4,rep,name=allowed_paths,json=allowedPaths,proto3" json:"allowed_paths,omitempty"`
+	Streaming         bool                   `protobuf:"varint,5,opt,name=streaming,proto3" json:"streaming,omitempty"`
+	StationPathPrefix string                 `protobuf:"bytes,6,opt,name=station_path_prefix,json=stationPathPrefix,proto3" json:"station_path_prefix,omitempty"`
+	Decision          AppletPolicyDecision   `protobuf:"varint,7,opt,name=decision,proto3,enum=peers_touch.domain.applet.AppletPolicyDecision" json:"decision,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *AppletServicePolicy) Reset() {
+	*x = AppletServicePolicy{}
+	mi := &file_domain_applet_applet_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppletServicePolicy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppletServicePolicy) ProtoMessage() {}
+
+func (x *AppletServicePolicy) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppletServicePolicy.ProtoReflect.Descriptor instead.
+func (*AppletServicePolicy) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *AppletServicePolicy) GetServiceId() string {
+	if x != nil {
+		return x.ServiceId
+	}
+	return ""
+}
+
+func (x *AppletServicePolicy) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *AppletServicePolicy) GetAllowedMethods() []string {
+	if x != nil {
+		return x.AllowedMethods
+	}
+	return nil
+}
+
+func (x *AppletServicePolicy) GetAllowedPaths() []string {
+	if x != nil {
+		return x.AllowedPaths
+	}
+	return nil
+}
+
+func (x *AppletServicePolicy) GetStreaming() bool {
+	if x != nil {
+		return x.Streaming
+	}
+	return false
+}
+
+func (x *AppletServicePolicy) GetStationPathPrefix() string {
+	if x != nil {
+		return x.StationPathPrefix
+	}
+	return ""
+}
+
+func (x *AppletServicePolicy) GetDecision() AppletPolicyDecision {
+	if x != nil {
+		return x.Decision
+	}
+	return AppletPolicyDecision_APPLET_POLICY_DECISION_UNSPECIFIED
+}
+
+type AppletPolicySet struct {
+	state              protoimpl.MessageState    `protogen:"open.v1"`
+	PolicyId           string                    `protobuf:"bytes,1,opt,name=policy_id,json=policyId,proto3" json:"policy_id,omitempty"`
+	AppletId           string                    `protobuf:"bytes,2,opt,name=applet_id,json=appletId,proto3" json:"applet_id,omitempty"`
+	Version            string                    `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
+	CapabilityPolicies []*AppletCapabilityPolicy `protobuf:"bytes,4,rep,name=capability_policies,json=capabilityPolicies,proto3" json:"capability_policies,omitempty"`
+	ServicePolicies    []*AppletServicePolicy    `protobuf:"bytes,5,rep,name=service_policies,json=servicePolicies,proto3" json:"service_policies,omitempty"`
+	CreatedAt          int64                     `protobuf:"varint,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"` // Unix timestamp
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *AppletPolicySet) Reset() {
+	*x = AppletPolicySet{}
+	mi := &file_domain_applet_applet_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppletPolicySet) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppletPolicySet) ProtoMessage() {}
+
+func (x *AppletPolicySet) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppletPolicySet.ProtoReflect.Descriptor instead.
+func (*AppletPolicySet) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *AppletPolicySet) GetPolicyId() string {
+	if x != nil {
+		return x.PolicyId
+	}
+	return ""
+}
+
+func (x *AppletPolicySet) GetAppletId() string {
+	if x != nil {
+		return x.AppletId
+	}
+	return ""
+}
+
+func (x *AppletPolicySet) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *AppletPolicySet) GetCapabilityPolicies() []*AppletCapabilityPolicy {
+	if x != nil {
+		return x.CapabilityPolicies
+	}
+	return nil
+}
+
+func (x *AppletPolicySet) GetServicePolicies() []*AppletServicePolicy {
+	if x != nil {
+		return x.ServicePolicies
+	}
+	return nil
+}
+
+func (x *AppletPolicySet) GetCreatedAt() int64 {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return 0
+}
+
+type AppletVersionChannel struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Channel         AppletReleaseChannel   `protobuf:"varint,1,opt,name=channel,proto3,enum=peers_touch.domain.applet.AppletReleaseChannel" json:"channel,omitempty"`
+	Version         string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	RolloutPercent  int32                  `protobuf:"varint,3,opt,name=rollout_percent,json=rolloutPercent,proto3" json:"rollout_percent,omitempty"`
+	Enabled         bool                   `protobuf:"varint,4,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	RollbackVersion string                 `protobuf:"bytes,5,opt,name=rollback_version,json=rollbackVersion,proto3" json:"rollback_version,omitempty"`
+	UpdatedAt       int64                  `protobuf:"varint,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"` // Unix timestamp
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *AppletVersionChannel) Reset() {
+	*x = AppletVersionChannel{}
+	mi := &file_domain_applet_applet_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppletVersionChannel) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppletVersionChannel) ProtoMessage() {}
+
+func (x *AppletVersionChannel) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppletVersionChannel.ProtoReflect.Descriptor instead.
+func (*AppletVersionChannel) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *AppletVersionChannel) GetChannel() AppletReleaseChannel {
+	if x != nil {
+		return x.Channel
+	}
+	return AppletReleaseChannel_APPLET_RELEASE_CHANNEL_UNSPECIFIED
+}
+
+func (x *AppletVersionChannel) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *AppletVersionChannel) GetRolloutPercent() int32 {
+	if x != nil {
+		return x.RolloutPercent
+	}
+	return 0
+}
+
+func (x *AppletVersionChannel) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *AppletVersionChannel) GetRollbackVersion() string {
+	if x != nil {
+		return x.RollbackVersion
+	}
+	return ""
+}
+
+func (x *AppletVersionChannel) GetUpdatedAt() int64 {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return 0
+}
+
+type AppletCatalogItem struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Info          *AppletInfo             `protobuf:"bytes,1,opt,name=info,proto3" json:"info,omitempty"`
+	Version       *AppletVersionInfo      `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	InstallState  *AppletInstallState     `protobuf:"bytes,3,opt,name=install_state,json=installState,proto3" json:"install_state,omitempty"`
+	Channels      []*AppletVersionChannel `protobuf:"bytes,4,rep,name=channels,proto3" json:"channels,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppletCatalogItem) Reset() {
+	*x = AppletCatalogItem{}
+	mi := &file_domain_applet_applet_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppletCatalogItem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppletCatalogItem) ProtoMessage() {}
+
+func (x *AppletCatalogItem) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppletCatalogItem.ProtoReflect.Descriptor instead.
+func (*AppletCatalogItem) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *AppletCatalogItem) GetInfo() *AppletInfo {
+	if x != nil {
+		return x.Info
+	}
+	return nil
+}
+
+func (x *AppletCatalogItem) GetVersion() *AppletVersionInfo {
+	if x != nil {
+		return x.Version
+	}
+	return nil
+}
+
+func (x *AppletCatalogItem) GetInstallState() *AppletInstallState {
+	if x != nil {
+		return x.InstallState
+	}
+	return nil
+}
+
+func (x *AppletCatalogItem) GetChannels() []*AppletVersionChannel {
+	if x != nil {
+		return x.Channels
+	}
+	return nil
+}
+
+type AppletInstallState struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	DeviceId      string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	AppletId      string                 `protobuf:"bytes,3,opt,name=applet_id,json=appletId,proto3" json:"applet_id,omitempty"`
+	Version       string                 `protobuf:"bytes,4,opt,name=version,proto3" json:"version,omitempty"`
+	Channel       AppletReleaseChannel   `protobuf:"varint,5,opt,name=channel,proto3,enum=peers_touch.domain.applet.AppletReleaseChannel" json:"channel,omitempty"`
+	Status        AppletInstallStatus    `protobuf:"varint,6,opt,name=status,proto3,enum=peers_touch.domain.applet.AppletInstallStatus" json:"status,omitempty"`
+	Config        map[string]string      `protobuf:"bytes,7,rep,name=config,proto3" json:"config,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	InstalledAt   int64                  `protobuf:"varint,8,opt,name=installed_at,json=installedAt,proto3" json:"installed_at,omitempty"` // Unix timestamp
+	UpdatedAt     int64                  `protobuf:"varint,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`       // Unix timestamp
+	StatusReason  string                 `protobuf:"bytes,10,opt,name=status_reason,json=statusReason,proto3" json:"status_reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppletInstallState) Reset() {
+	*x = AppletInstallState{}
+	mi := &file_domain_applet_applet_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppletInstallState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppletInstallState) ProtoMessage() {}
+
+func (x *AppletInstallState) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppletInstallState.ProtoReflect.Descriptor instead.
+func (*AppletInstallState) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *AppletInstallState) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *AppletInstallState) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *AppletInstallState) GetAppletId() string {
+	if x != nil {
+		return x.AppletId
+	}
+	return ""
+}
+
+func (x *AppletInstallState) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *AppletInstallState) GetChannel() AppletReleaseChannel {
+	if x != nil {
+		return x.Channel
+	}
+	return AppletReleaseChannel_APPLET_RELEASE_CHANNEL_UNSPECIFIED
+}
+
+func (x *AppletInstallState) GetStatus() AppletInstallStatus {
+	if x != nil {
+		return x.Status
+	}
+	return AppletInstallStatus_APPLET_INSTALL_STATUS_UNSPECIFIED
+}
+
+func (x *AppletInstallState) GetConfig() map[string]string {
+	if x != nil {
+		return x.Config
+	}
+	return nil
+}
+
+func (x *AppletInstallState) GetInstalledAt() int64 {
+	if x != nil {
+		return x.InstalledAt
+	}
+	return 0
+}
+
+func (x *AppletInstallState) GetUpdatedAt() int64 {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return 0
+}
+
+func (x *AppletInstallState) GetStatusReason() string {
+	if x != nil {
+		return x.StatusReason
+	}
+	return ""
+}
+
+type AppletAuditRecord struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AuditId       string                 `protobuf:"bytes,1,opt,name=audit_id,json=auditId,proto3" json:"audit_id,omitempty"`
+	ActorId       string                 `protobuf:"bytes,2,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	DeviceId      string                 `protobuf:"bytes,3,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	AppletId      string                 `protobuf:"bytes,4,opt,name=applet_id,json=appletId,proto3" json:"applet_id,omitempty"`
+	Version       string                 `protobuf:"bytes,5,opt,name=version,proto3" json:"version,omitempty"`
+	SessionId     string                 `protobuf:"bytes,6,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Capability    string                 `protobuf:"bytes,7,opt,name=capability,proto3" json:"capability,omitempty"`
+	Method        string                 `protobuf:"bytes,8,opt,name=method,proto3" json:"method,omitempty"`
+	Decision      AppletAuditDecision    `protobuf:"varint,9,opt,name=decision,proto3,enum=peers_touch.domain.applet.AppletAuditDecision" json:"decision,omitempty"`
+	Reason        string                 `protobuf:"bytes,10,opt,name=reason,proto3" json:"reason,omitempty"`
+	Metadata      map[string]string      `protobuf:"bytes,11,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	RecordedAt    int64                  `protobuf:"varint,12,opt,name=recorded_at,json=recordedAt,proto3" json:"recorded_at,omitempty"` // Unix timestamp
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppletAuditRecord) Reset() {
+	*x = AppletAuditRecord{}
+	mi := &file_domain_applet_applet_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppletAuditRecord) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppletAuditRecord) ProtoMessage() {}
+
+func (x *AppletAuditRecord) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppletAuditRecord.ProtoReflect.Descriptor instead.
+func (*AppletAuditRecord) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *AppletAuditRecord) GetAuditId() string {
+	if x != nil {
+		return x.AuditId
+	}
+	return ""
+}
+
+func (x *AppletAuditRecord) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *AppletAuditRecord) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *AppletAuditRecord) GetAppletId() string {
+	if x != nil {
+		return x.AppletId
+	}
+	return ""
+}
+
+func (x *AppletAuditRecord) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *AppletAuditRecord) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *AppletAuditRecord) GetCapability() string {
+	if x != nil {
+		return x.Capability
+	}
+	return ""
+}
+
+func (x *AppletAuditRecord) GetMethod() string {
+	if x != nil {
+		return x.Method
+	}
+	return ""
+}
+
+func (x *AppletAuditRecord) GetDecision() AppletAuditDecision {
+	if x != nil {
+		return x.Decision
+	}
+	return AppletAuditDecision_APPLET_AUDIT_DECISION_UNSPECIFIED
+}
+
+func (x *AppletAuditRecord) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *AppletAuditRecord) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *AppletAuditRecord) GetRecordedAt() int64 {
+	if x != nil {
+		return x.RecordedAt
+	}
+	return 0
+}
+
+// Request to list applets
+type ListAppletsRequest struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Limit                 int32                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
+	Offset                int32                  `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
+	SearchKeyword         string                 `protobuf:"bytes,3,opt,name=search_keyword,json=searchKeyword,proto3" json:"search_keyword,omitempty"` // Optional
+	ActorId               string                 `protobuf:"bytes,4,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	DeviceId              string                 `protobuf:"bytes,5,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	TargetPlatform        string                 `protobuf:"bytes,6,opt,name=target_platform,json=targetPlatform,proto3" json:"target_platform,omitempty"`
+	Channel               AppletReleaseChannel   `protobuf:"varint,7,opt,name=channel,proto3,enum=peers_touch.domain.applet.AppletReleaseChannel" json:"channel,omitempty"`
+	IncludeInstalledState bool                   `protobuf:"varint,8,opt,name=include_installed_state,json=includeInstalledState,proto3" json:"include_installed_state,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
 func (x *ListAppletsRequest) Reset() {
 	*x = ListAppletsRequest{}
-	mi := &file_domain_applet_applet_proto_msgTypes[2]
+	mi := &file_domain_applet_applet_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -255,7 +1486,7 @@ func (x *ListAppletsRequest) String() string {
 func (*ListAppletsRequest) ProtoMessage() {}
 
 func (x *ListAppletsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_applet_applet_proto_msgTypes[2]
+	mi := &file_domain_applet_applet_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -268,7 +1499,7 @@ func (x *ListAppletsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAppletsRequest.ProtoReflect.Descriptor instead.
 func (*ListAppletsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_applet_applet_proto_rawDescGZIP(), []int{2}
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListAppletsRequest) GetLimit() int32 {
@@ -292,6 +1523,41 @@ func (x *ListAppletsRequest) GetSearchKeyword() string {
 	return ""
 }
 
+func (x *ListAppletsRequest) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *ListAppletsRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *ListAppletsRequest) GetTargetPlatform() string {
+	if x != nil {
+		return x.TargetPlatform
+	}
+	return ""
+}
+
+func (x *ListAppletsRequest) GetChannel() AppletReleaseChannel {
+	if x != nil {
+		return x.Channel
+	}
+	return AppletReleaseChannel_APPLET_RELEASE_CHANNEL_UNSPECIFIED
+}
+
+func (x *ListAppletsRequest) GetIncludeInstalledState() bool {
+	if x != nil {
+		return x.IncludeInstalledState
+	}
+	return false
+}
+
 // Response for listing applets
 type ListAppletsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -303,7 +1569,7 @@ type ListAppletsResponse struct {
 
 func (x *ListAppletsResponse) Reset() {
 	*x = ListAppletsResponse{}
-	mi := &file_domain_applet_applet_proto_msgTypes[3]
+	mi := &file_domain_applet_applet_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -315,7 +1581,7 @@ func (x *ListAppletsResponse) String() string {
 func (*ListAppletsResponse) ProtoMessage() {}
 
 func (x *ListAppletsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_applet_applet_proto_msgTypes[3]
+	mi := &file_domain_applet_applet_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -328,7 +1594,7 @@ func (x *ListAppletsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAppletsResponse.ProtoReflect.Descriptor instead.
 func (*ListAppletsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_applet_applet_proto_rawDescGZIP(), []int{3}
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListAppletsResponse) GetApplets() []*AppletInfo {
@@ -355,7 +1621,7 @@ type GetAppletDetailsRequest struct {
 
 func (x *GetAppletDetailsRequest) Reset() {
 	*x = GetAppletDetailsRequest{}
-	mi := &file_domain_applet_applet_proto_msgTypes[4]
+	mi := &file_domain_applet_applet_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -367,7 +1633,7 @@ func (x *GetAppletDetailsRequest) String() string {
 func (*GetAppletDetailsRequest) ProtoMessage() {}
 
 func (x *GetAppletDetailsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_applet_applet_proto_msgTypes[4]
+	mi := &file_domain_applet_applet_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -380,7 +1646,7 @@ func (x *GetAppletDetailsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAppletDetailsRequest.ProtoReflect.Descriptor instead.
 func (*GetAppletDetailsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_applet_applet_proto_rawDescGZIP(), []int{4}
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *GetAppletDetailsRequest) GetAppletId() string {
@@ -392,16 +1658,18 @@ func (x *GetAppletDetailsRequest) GetAppletId() string {
 
 // Response for applet details
 type GetAppletDetailsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Info          *AppletInfo            `protobuf:"bytes,1,opt,name=info,proto3" json:"info,omitempty"`
-	LatestVersion *AppletVersionInfo     `protobuf:"bytes,2,opt,name=latest_version,json=latestVersion,proto3" json:"latest_version,omitempty"`
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Info          *AppletInfo             `protobuf:"bytes,1,opt,name=info,proto3" json:"info,omitempty"`
+	LatestVersion *AppletVersionInfo      `protobuf:"bytes,2,opt,name=latest_version,json=latestVersion,proto3" json:"latest_version,omitempty"`
+	Channels      []*AppletVersionChannel `protobuf:"bytes,3,rep,name=channels,proto3" json:"channels,omitempty"`
+	InstallState  *AppletInstallState     `protobuf:"bytes,4,opt,name=install_state,json=installState,proto3" json:"install_state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetAppletDetailsResponse) Reset() {
 	*x = GetAppletDetailsResponse{}
-	mi := &file_domain_applet_applet_proto_msgTypes[5]
+	mi := &file_domain_applet_applet_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -413,7 +1681,7 @@ func (x *GetAppletDetailsResponse) String() string {
 func (*GetAppletDetailsResponse) ProtoMessage() {}
 
 func (x *GetAppletDetailsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_applet_applet_proto_msgTypes[5]
+	mi := &file_domain_applet_applet_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -426,7 +1694,7 @@ func (x *GetAppletDetailsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAppletDetailsResponse.ProtoReflect.Descriptor instead.
 func (*GetAppletDetailsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_applet_applet_proto_rawDescGZIP(), []int{5}
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GetAppletDetailsResponse) GetInfo() *AppletInfo {
@@ -443,6 +1711,20 @@ func (x *GetAppletDetailsResponse) GetLatestVersion() *AppletVersionInfo {
 	return nil
 }
 
+func (x *GetAppletDetailsResponse) GetChannels() []*AppletVersionChannel {
+	if x != nil {
+		return x.Channels
+	}
+	return nil
+}
+
+func (x *GetAppletDetailsResponse) GetInstallState() *AppletInstallState {
+	if x != nil {
+		return x.InstallState
+	}
+	return nil
+}
+
 // Request to publish/update applet (Metadata part)
 // File upload is handled separately via multipart/form-data
 type PublishAppletRequest struct {
@@ -452,13 +1734,19 @@ type PublishAppletRequest struct {
 	Version       string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
 	MinSdkVersion string                 `protobuf:"bytes,4,opt,name=min_sdk_version,json=minSdkVersion,proto3" json:"min_sdk_version,omitempty"`
 	Changelog     string                 `protobuf:"bytes,5,opt,name=changelog,proto3" json:"changelog,omitempty"`
+	AppletId      string                 `protobuf:"bytes,6,opt,name=applet_id,json=appletId,proto3" json:"applet_id,omitempty"`
+	OwnerId       string                 `protobuf:"bytes,7,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
+	Channel       AppletReleaseChannel   `protobuf:"varint,8,opt,name=channel,proto3,enum=peers_touch.domain.applet.AppletReleaseChannel" json:"channel,omitempty"`
+	Manifest      *ManifestSnapshot      `protobuf:"bytes,9,opt,name=manifest,proto3" json:"manifest,omitempty"`
+	Bundle        *BundleStorage         `protobuf:"bytes,10,opt,name=bundle,proto3" json:"bundle,omitempty"`
+	Policy        *AppletPolicySet       `protobuf:"bytes,11,opt,name=policy,proto3" json:"policy,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PublishAppletRequest) Reset() {
 	*x = PublishAppletRequest{}
-	mi := &file_domain_applet_applet_proto_msgTypes[6]
+	mi := &file_domain_applet_applet_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -470,7 +1758,7 @@ func (x *PublishAppletRequest) String() string {
 func (*PublishAppletRequest) ProtoMessage() {}
 
 func (x *PublishAppletRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_applet_applet_proto_msgTypes[6]
+	mi := &file_domain_applet_applet_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -483,7 +1771,7 @@ func (x *PublishAppletRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishAppletRequest.ProtoReflect.Descriptor instead.
 func (*PublishAppletRequest) Descriptor() ([]byte, []int) {
-	return file_domain_applet_applet_proto_rawDescGZIP(), []int{6}
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *PublishAppletRequest) GetName() string {
@@ -521,18 +1809,61 @@ func (x *PublishAppletRequest) GetChangelog() string {
 	return ""
 }
 
+func (x *PublishAppletRequest) GetAppletId() string {
+	if x != nil {
+		return x.AppletId
+	}
+	return ""
+}
+
+func (x *PublishAppletRequest) GetOwnerId() string {
+	if x != nil {
+		return x.OwnerId
+	}
+	return ""
+}
+
+func (x *PublishAppletRequest) GetChannel() AppletReleaseChannel {
+	if x != nil {
+		return x.Channel
+	}
+	return AppletReleaseChannel_APPLET_RELEASE_CHANNEL_UNSPECIFIED
+}
+
+func (x *PublishAppletRequest) GetManifest() *ManifestSnapshot {
+	if x != nil {
+		return x.Manifest
+	}
+	return nil
+}
+
+func (x *PublishAppletRequest) GetBundle() *BundleStorage {
+	if x != nil {
+		return x.Bundle
+	}
+	return nil
+}
+
+func (x *PublishAppletRequest) GetPolicy() *AppletPolicySet {
+	if x != nil {
+		return x.Policy
+	}
+	return nil
+}
+
 type PublishAppletResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AppletId      string                 `protobuf:"bytes,1,opt,name=applet_id,json=appletId,proto3" json:"applet_id,omitempty"`
 	VersionId     string                 `protobuf:"bytes,2,opt,name=version_id,json=versionId,proto3" json:"version_id,omitempty"`
 	IsNewApplet   bool                   `protobuf:"varint,3,opt,name=is_new_applet,json=isNewApplet,proto3" json:"is_new_applet,omitempty"`
+	Version       *AppletVersionInfo     `protobuf:"bytes,4,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PublishAppletResponse) Reset() {
 	*x = PublishAppletResponse{}
-	mi := &file_domain_applet_applet_proto_msgTypes[7]
+	mi := &file_domain_applet_applet_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -544,7 +1875,7 @@ func (x *PublishAppletResponse) String() string {
 func (*PublishAppletResponse) ProtoMessage() {}
 
 func (x *PublishAppletResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_applet_applet_proto_msgTypes[7]
+	mi := &file_domain_applet_applet_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -557,7 +1888,7 @@ func (x *PublishAppletResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishAppletResponse.ProtoReflect.Descriptor instead.
 func (*PublishAppletResponse) Descriptor() ([]byte, []int) {
-	return file_domain_applet_applet_proto_rawDescGZIP(), []int{7}
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *PublishAppletResponse) GetAppletId() string {
@@ -581,11 +1912,1090 @@ func (x *PublishAppletResponse) GetIsNewApplet() bool {
 	return false
 }
 
+func (x *PublishAppletResponse) GetVersion() *AppletVersionInfo {
+	if x != nil {
+		return x.Version
+	}
+	return nil
+}
+
+type ListAppletCatalogRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ActorId        string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	DeviceId       string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	TargetPlatform string                 `protobuf:"bytes,3,opt,name=target_platform,json=targetPlatform,proto3" json:"target_platform,omitempty"`
+	Channel        AppletReleaseChannel   `protobuf:"varint,4,opt,name=channel,proto3,enum=peers_touch.domain.applet.AppletReleaseChannel" json:"channel,omitempty"`
+	SearchKeyword  string                 `protobuf:"bytes,5,opt,name=search_keyword,json=searchKeyword,proto3" json:"search_keyword,omitempty"`
+	Limit          int32                  `protobuf:"varint,6,opt,name=limit,proto3" json:"limit,omitempty"`
+	Offset         int32                  `protobuf:"varint,7,opt,name=offset,proto3" json:"offset,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ListAppletCatalogRequest) Reset() {
+	*x = ListAppletCatalogRequest{}
+	mi := &file_domain_applet_applet_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAppletCatalogRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAppletCatalogRequest) ProtoMessage() {}
+
+func (x *ListAppletCatalogRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAppletCatalogRequest.ProtoReflect.Descriptor instead.
+func (*ListAppletCatalogRequest) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ListAppletCatalogRequest) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *ListAppletCatalogRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *ListAppletCatalogRequest) GetTargetPlatform() string {
+	if x != nil {
+		return x.TargetPlatform
+	}
+	return ""
+}
+
+func (x *ListAppletCatalogRequest) GetChannel() AppletReleaseChannel {
+	if x != nil {
+		return x.Channel
+	}
+	return AppletReleaseChannel_APPLET_RELEASE_CHANNEL_UNSPECIFIED
+}
+
+func (x *ListAppletCatalogRequest) GetSearchKeyword() string {
+	if x != nil {
+		return x.SearchKeyword
+	}
+	return ""
+}
+
+func (x *ListAppletCatalogRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *ListAppletCatalogRequest) GetOffset() int32 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+type ListAppletCatalogResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Items         []*AppletCatalogItem   `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	TotalCount    int64                  `protobuf:"varint,2,opt,name=total_count,json=totalCount,proto3" json:"total_count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAppletCatalogResponse) Reset() {
+	*x = ListAppletCatalogResponse{}
+	mi := &file_domain_applet_applet_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAppletCatalogResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAppletCatalogResponse) ProtoMessage() {}
+
+func (x *ListAppletCatalogResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAppletCatalogResponse.ProtoReflect.Descriptor instead.
+func (*ListAppletCatalogResponse) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ListAppletCatalogResponse) GetItems() []*AppletCatalogItem {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+func (x *ListAppletCatalogResponse) GetTotalCount() int64 {
+	if x != nil {
+		return x.TotalCount
+	}
+	return 0
+}
+
+type GetAppletVersionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AppletId      string                 `protobuf:"bytes,1,opt,name=applet_id,json=appletId,proto3" json:"applet_id,omitempty"`
+	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	Channel       AppletReleaseChannel   `protobuf:"varint,3,opt,name=channel,proto3,enum=peers_touch.domain.applet.AppletReleaseChannel" json:"channel,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAppletVersionRequest) Reset() {
+	*x = GetAppletVersionRequest{}
+	mi := &file_domain_applet_applet_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAppletVersionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAppletVersionRequest) ProtoMessage() {}
+
+func (x *GetAppletVersionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAppletVersionRequest.ProtoReflect.Descriptor instead.
+func (*GetAppletVersionRequest) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *GetAppletVersionRequest) GetAppletId() string {
+	if x != nil {
+		return x.AppletId
+	}
+	return ""
+}
+
+func (x *GetAppletVersionRequest) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *GetAppletVersionRequest) GetChannel() AppletReleaseChannel {
+	if x != nil {
+		return x.Channel
+	}
+	return AppletReleaseChannel_APPLET_RELEASE_CHANNEL_UNSPECIFIED
+}
+
+type GetAppletVersionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       *AppletVersionInfo     `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	Policy        *AppletPolicySet       `protobuf:"bytes,2,opt,name=policy,proto3" json:"policy,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAppletVersionResponse) Reset() {
+	*x = GetAppletVersionResponse{}
+	mi := &file_domain_applet_applet_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAppletVersionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAppletVersionResponse) ProtoMessage() {}
+
+func (x *GetAppletVersionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAppletVersionResponse.ProtoReflect.Descriptor instead.
+func (*GetAppletVersionResponse) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *GetAppletVersionResponse) GetVersion() *AppletVersionInfo {
+	if x != nil {
+		return x.Version
+	}
+	return nil
+}
+
+func (x *GetAppletVersionResponse) GetPolicy() *AppletPolicySet {
+	if x != nil {
+		return x.Policy
+	}
+	return nil
+}
+
+type InstallAppletRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	DeviceId      string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	AppletId      string                 `protobuf:"bytes,3,opt,name=applet_id,json=appletId,proto3" json:"applet_id,omitempty"`
+	Version       string                 `protobuf:"bytes,4,opt,name=version,proto3" json:"version,omitempty"`
+	Channel       AppletReleaseChannel   `protobuf:"varint,5,opt,name=channel,proto3,enum=peers_touch.domain.applet.AppletReleaseChannel" json:"channel,omitempty"`
+	Config        map[string]string      `protobuf:"bytes,6,rep,name=config,proto3" json:"config,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InstallAppletRequest) Reset() {
+	*x = InstallAppletRequest{}
+	mi := &file_domain_applet_applet_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InstallAppletRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InstallAppletRequest) ProtoMessage() {}
+
+func (x *InstallAppletRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InstallAppletRequest.ProtoReflect.Descriptor instead.
+func (*InstallAppletRequest) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *InstallAppletRequest) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *InstallAppletRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *InstallAppletRequest) GetAppletId() string {
+	if x != nil {
+		return x.AppletId
+	}
+	return ""
+}
+
+func (x *InstallAppletRequest) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *InstallAppletRequest) GetChannel() AppletReleaseChannel {
+	if x != nil {
+		return x.Channel
+	}
+	return AppletReleaseChannel_APPLET_RELEASE_CHANNEL_UNSPECIFIED
+}
+
+func (x *InstallAppletRequest) GetConfig() map[string]string {
+	if x != nil {
+		return x.Config
+	}
+	return nil
+}
+
+type InstallAppletResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         *AppletInstallState    `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InstallAppletResponse) Reset() {
+	*x = InstallAppletResponse{}
+	mi := &file_domain_applet_applet_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InstallAppletResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InstallAppletResponse) ProtoMessage() {}
+
+func (x *InstallAppletResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InstallAppletResponse.ProtoReflect.Descriptor instead.
+func (*InstallAppletResponse) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *InstallAppletResponse) GetState() *AppletInstallState {
+	if x != nil {
+		return x.State
+	}
+	return nil
+}
+
+type UninstallAppletRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	DeviceId      string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	AppletId      string                 `protobuf:"bytes,3,opt,name=applet_id,json=appletId,proto3" json:"applet_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UninstallAppletRequest) Reset() {
+	*x = UninstallAppletRequest{}
+	mi := &file_domain_applet_applet_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UninstallAppletRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UninstallAppletRequest) ProtoMessage() {}
+
+func (x *UninstallAppletRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UninstallAppletRequest.ProtoReflect.Descriptor instead.
+func (*UninstallAppletRequest) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *UninstallAppletRequest) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *UninstallAppletRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *UninstallAppletRequest) GetAppletId() string {
+	if x != nil {
+		return x.AppletId
+	}
+	return ""
+}
+
+type UninstallAppletResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         *AppletInstallState    `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UninstallAppletResponse) Reset() {
+	*x = UninstallAppletResponse{}
+	mi := &file_domain_applet_applet_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UninstallAppletResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UninstallAppletResponse) ProtoMessage() {}
+
+func (x *UninstallAppletResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UninstallAppletResponse.ProtoReflect.Descriptor instead.
+func (*UninstallAppletResponse) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *UninstallAppletResponse) GetState() *AppletInstallState {
+	if x != nil {
+		return x.State
+	}
+	return nil
+}
+
+type ListInstalledAppletsRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ActorId         string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	DeviceId        string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	IncludeDisabled bool                   `protobuf:"varint,3,opt,name=include_disabled,json=includeDisabled,proto3" json:"include_disabled,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ListInstalledAppletsRequest) Reset() {
+	*x = ListInstalledAppletsRequest{}
+	mi := &file_domain_applet_applet_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListInstalledAppletsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListInstalledAppletsRequest) ProtoMessage() {}
+
+func (x *ListInstalledAppletsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListInstalledAppletsRequest.ProtoReflect.Descriptor instead.
+func (*ListInstalledAppletsRequest) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ListInstalledAppletsRequest) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *ListInstalledAppletsRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *ListInstalledAppletsRequest) GetIncludeDisabled() bool {
+	if x != nil {
+		return x.IncludeDisabled
+	}
+	return false
+}
+
+type ListInstalledAppletsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	States        []*AppletInstallState  `protobuf:"bytes,1,rep,name=states,proto3" json:"states,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListInstalledAppletsResponse) Reset() {
+	*x = ListInstalledAppletsResponse{}
+	mi := &file_domain_applet_applet_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListInstalledAppletsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListInstalledAppletsResponse) ProtoMessage() {}
+
+func (x *ListInstalledAppletsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListInstalledAppletsResponse.ProtoReflect.Descriptor instead.
+func (*ListInstalledAppletsResponse) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *ListInstalledAppletsResponse) GetStates() []*AppletInstallState {
+	if x != nil {
+		return x.States
+	}
+	return nil
+}
+
+type RevokeAppletVersionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AppletId      string                 `protobuf:"bytes,1,opt,name=applet_id,json=appletId,proto3" json:"applet_id,omitempty"`
+	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	OperatorId    string                 `protobuf:"bytes,4,opt,name=operator_id,json=operatorId,proto3" json:"operator_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeAppletVersionRequest) Reset() {
+	*x = RevokeAppletVersionRequest{}
+	mi := &file_domain_applet_applet_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeAppletVersionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeAppletVersionRequest) ProtoMessage() {}
+
+func (x *RevokeAppletVersionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeAppletVersionRequest.ProtoReflect.Descriptor instead.
+func (*RevokeAppletVersionRequest) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *RevokeAppletVersionRequest) GetAppletId() string {
+	if x != nil {
+		return x.AppletId
+	}
+	return ""
+}
+
+func (x *RevokeAppletVersionRequest) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *RevokeAppletVersionRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *RevokeAppletVersionRequest) GetOperatorId() string {
+	if x != nil {
+		return x.OperatorId
+	}
+	return ""
+}
+
+type RevokeAppletVersionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       *AppletVersionInfo     `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeAppletVersionResponse) Reset() {
+	*x = RevokeAppletVersionResponse{}
+	mi := &file_domain_applet_applet_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeAppletVersionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeAppletVersionResponse) ProtoMessage() {}
+
+func (x *RevokeAppletVersionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeAppletVersionResponse.ProtoReflect.Descriptor instead.
+func (*RevokeAppletVersionResponse) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *RevokeAppletVersionResponse) GetVersion() *AppletVersionInfo {
+	if x != nil {
+		return x.Version
+	}
+	return nil
+}
+
+type RollbackAppletChannelRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AppletId      string                 `protobuf:"bytes,1,opt,name=applet_id,json=appletId,proto3" json:"applet_id,omitempty"`
+	Channel       AppletReleaseChannel   `protobuf:"varint,2,opt,name=channel,proto3,enum=peers_touch.domain.applet.AppletReleaseChannel" json:"channel,omitempty"`
+	TargetVersion string                 `protobuf:"bytes,3,opt,name=target_version,json=targetVersion,proto3" json:"target_version,omitempty"`
+	Reason        string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	OperatorId    string                 `protobuf:"bytes,5,opt,name=operator_id,json=operatorId,proto3" json:"operator_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RollbackAppletChannelRequest) Reset() {
+	*x = RollbackAppletChannelRequest{}
+	mi := &file_domain_applet_applet_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RollbackAppletChannelRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RollbackAppletChannelRequest) ProtoMessage() {}
+
+func (x *RollbackAppletChannelRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RollbackAppletChannelRequest.ProtoReflect.Descriptor instead.
+func (*RollbackAppletChannelRequest) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *RollbackAppletChannelRequest) GetAppletId() string {
+	if x != nil {
+		return x.AppletId
+	}
+	return ""
+}
+
+func (x *RollbackAppletChannelRequest) GetChannel() AppletReleaseChannel {
+	if x != nil {
+		return x.Channel
+	}
+	return AppletReleaseChannel_APPLET_RELEASE_CHANNEL_UNSPECIFIED
+}
+
+func (x *RollbackAppletChannelRequest) GetTargetVersion() string {
+	if x != nil {
+		return x.TargetVersion
+	}
+	return ""
+}
+
+func (x *RollbackAppletChannelRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *RollbackAppletChannelRequest) GetOperatorId() string {
+	if x != nil {
+		return x.OperatorId
+	}
+	return ""
+}
+
+type RollbackAppletChannelResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Channel       *AppletVersionChannel  `protobuf:"bytes,1,opt,name=channel,proto3" json:"channel,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RollbackAppletChannelResponse) Reset() {
+	*x = RollbackAppletChannelResponse{}
+	mi := &file_domain_applet_applet_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RollbackAppletChannelResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RollbackAppletChannelResponse) ProtoMessage() {}
+
+func (x *RollbackAppletChannelResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RollbackAppletChannelResponse.ProtoReflect.Descriptor instead.
+func (*RollbackAppletChannelResponse) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *RollbackAppletChannelResponse) GetChannel() *AppletVersionChannel {
+	if x != nil {
+		return x.Channel
+	}
+	return nil
+}
+
+type IngestAppletAuditRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Records       []*AppletAuditRecord   `protobuf:"bytes,1,rep,name=records,proto3" json:"records,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IngestAppletAuditRequest) Reset() {
+	*x = IngestAppletAuditRequest{}
+	mi := &file_domain_applet_applet_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IngestAppletAuditRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IngestAppletAuditRequest) ProtoMessage() {}
+
+func (x *IngestAppletAuditRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IngestAppletAuditRequest.ProtoReflect.Descriptor instead.
+func (*IngestAppletAuditRequest) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *IngestAppletAuditRequest) GetRecords() []*AppletAuditRecord {
+	if x != nil {
+		return x.Records
+	}
+	return nil
+}
+
+type IngestAppletAuditResponse struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	AcceptedCount    int32                  `protobuf:"varint,1,opt,name=accepted_count,json=acceptedCount,proto3" json:"accepted_count,omitempty"`
+	RejectedAuditIds []string               `protobuf:"bytes,2,rep,name=rejected_audit_ids,json=rejectedAuditIds,proto3" json:"rejected_audit_ids,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *IngestAppletAuditResponse) Reset() {
+	*x = IngestAppletAuditResponse{}
+	mi := &file_domain_applet_applet_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IngestAppletAuditResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IngestAppletAuditResponse) ProtoMessage() {}
+
+func (x *IngestAppletAuditResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IngestAppletAuditResponse.ProtoReflect.Descriptor instead.
+func (*IngestAppletAuditResponse) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *IngestAppletAuditResponse) GetAcceptedCount() int32 {
+	if x != nil {
+		return x.AcceptedCount
+	}
+	return 0
+}
+
+func (x *IngestAppletAuditResponse) GetRejectedAuditIds() []string {
+	if x != nil {
+		return x.RejectedAuditIds
+	}
+	return nil
+}
+
+type QueryAppletAuditRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	DeviceId      string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	AppletId      string                 `protobuf:"bytes,3,opt,name=applet_id,json=appletId,proto3" json:"applet_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,4,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	StartTime     int64                  `protobuf:"varint,5,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"` // Unix timestamp
+	EndTime       int64                  `protobuf:"varint,6,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`       // Unix timestamp
+	Limit         int32                  `protobuf:"varint,7,opt,name=limit,proto3" json:"limit,omitempty"`
+	Offset        int32                  `protobuf:"varint,8,opt,name=offset,proto3" json:"offset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *QueryAppletAuditRequest) Reset() {
+	*x = QueryAppletAuditRequest{}
+	mi := &file_domain_applet_applet_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QueryAppletAuditRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QueryAppletAuditRequest) ProtoMessage() {}
+
+func (x *QueryAppletAuditRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QueryAppletAuditRequest.ProtoReflect.Descriptor instead.
+func (*QueryAppletAuditRequest) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *QueryAppletAuditRequest) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *QueryAppletAuditRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *QueryAppletAuditRequest) GetAppletId() string {
+	if x != nil {
+		return x.AppletId
+	}
+	return ""
+}
+
+func (x *QueryAppletAuditRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *QueryAppletAuditRequest) GetStartTime() int64 {
+	if x != nil {
+		return x.StartTime
+	}
+	return 0
+}
+
+func (x *QueryAppletAuditRequest) GetEndTime() int64 {
+	if x != nil {
+		return x.EndTime
+	}
+	return 0
+}
+
+func (x *QueryAppletAuditRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *QueryAppletAuditRequest) GetOffset() int32 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+type QueryAppletAuditResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Records       []*AppletAuditRecord   `protobuf:"bytes,1,rep,name=records,proto3" json:"records,omitempty"`
+	TotalCount    int64                  `protobuf:"varint,2,opt,name=total_count,json=totalCount,proto3" json:"total_count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *QueryAppletAuditResponse) Reset() {
+	*x = QueryAppletAuditResponse{}
+	mi := &file_domain_applet_applet_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QueryAppletAuditResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QueryAppletAuditResponse) ProtoMessage() {}
+
+func (x *QueryAppletAuditResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_applet_applet_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QueryAppletAuditResponse.ProtoReflect.Descriptor instead.
+func (*QueryAppletAuditResponse) Descriptor() ([]byte, []int) {
+	return file_domain_applet_applet_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *QueryAppletAuditResponse) GetRecords() []*AppletAuditRecord {
+	if x != nil {
+		return x.Records
+	}
+	return nil
+}
+
+func (x *QueryAppletAuditResponse) GetTotalCount() int64 {
+	if x != nil {
+		return x.TotalCount
+	}
+	return 0
+}
+
 var File_domain_applet_applet_proto protoreflect.FileDescriptor
 
 const file_domain_applet_applet_proto_rawDesc = "" +
 	"\n" +
-	"\x1adomain/applet/applet.proto\x12\x19peers_touch.domain.applet\"\xfd\x01\n" +
+	"\x1adomain/applet/applet.proto\x12\x19peers_touch.domain.applet\"\x92\x03\n" +
 	"\n" +
 	"AppletInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
@@ -596,7 +3006,10 @@ const file_domain_applet_applet_proto_rawDesc = "" +
 	"\x0edownload_count\x18\x06 \x01(\x03R\rdownloadCount\x12%\n" +
 	"\x0elatest_version\x18\a \x01(\tR\rlatestVersion\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\b \x01(\x03R\tupdatedAt\"\xa0\x02\n" +
+	"updated_at\x18\b \x01(\x03R\tupdatedAt\x12F\n" +
+	"\x06status\x18\t \x01(\x0e2..peers_touch.domain.applet.AppletPackageStatusR\x06status\x12K\n" +
+	"\bchannels\x18\n" +
+	" \x03(\x0e2/.peers_touch.domain.applet.AppletReleaseChannelR\bchannels\"\xbe\x04\n" +
 	"\x11AppletVersionInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tapplet_id\x18\x02 \x01(\tR\bappletId\x12\x18\n" +
@@ -610,31 +3023,261 @@ const file_domain_applet_applet_proto_rawDesc = "" +
 	"\x0fmin_sdk_version\x18\a \x01(\tR\rminSdkVersion\x12\x1c\n" +
 	"\tchangelog\x18\b \x01(\tR\tchangelog\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\t \x01(\x03R\tcreatedAt\"i\n" +
+	"created_at\x18\t \x01(\x03R\tcreatedAt\x12F\n" +
+	"\x06status\x18\n" +
+	" \x01(\x0e2..peers_touch.domain.applet.AppletPackageStatusR\x06status\x12I\n" +
+	"\achannel\x18\v \x01(\x0e2/.peers_touch.domain.applet.AppletReleaseChannelR\achannel\x12G\n" +
+	"\bmanifest\x18\f \x01(\v2+.peers_touch.domain.applet.ManifestSnapshotR\bmanifest\x12@\n" +
+	"\x06bundle\x18\r \x01(\v2(.peers_touch.domain.applet.BundleStorageR\x06bundle\"\xd8\x03\n" +
+	"\x10ManifestSnapshot\x12#\n" +
+	"\rmanifest_json\x18\x01 \x01(\tR\fmanifestJson\x12)\n" +
+	"\x10target_platforms\x18\x02 \x03(\tR\x0ftargetPlatforms\x12 \n" +
+	"\vpermissions\x18\x03 \x03(\tR\vpermissions\x12\"\n" +
+	"\fcapabilities\x18\x04 \x03(\tR\fcapabilities\x12X\n" +
+	"\tintegrity\x18\x05 \x03(\v2:.peers_touch.domain.applet.ManifestSnapshot.IntegrityEntryR\tintegrity\x12J\n" +
+	"\bservices\x18\x06 \x03(\v2..peers_touch.domain.applet.AppletServicePolicyR\bservices\x12'\n" +
+	"\x0fbridge_protocol\x18\a \x01(\tR\x0ebridgeProtocol\x12!\n" +
+	"\fruntime_type\x18\b \x01(\tR\vruntimeType\x1a<\n" +
+	"\x0eIntegrityEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x84\x01\n" +
+	"\x14BundleAssetIntegrity\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x16\n" +
+	"\x06sha256\x18\x02 \x01(\tR\x06sha256\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x03 \x01(\x03R\tsizeBytes\x12!\n" +
+	"\fcontent_type\x18\x04 \x01(\tR\vcontentType\"\xf1\x01\n" +
+	"\rBundleStorage\x12\x1d\n" +
+	"\n" +
+	"bundle_uri\x18\x01 \x01(\tR\tbundleUri\x12#\n" +
+	"\rbundle_sha256\x18\x02 \x01(\tR\fbundleSha256\x12*\n" +
+	"\x11bundle_size_bytes\x18\x03 \x01(\x03R\x0fbundleSizeBytes\x12G\n" +
+	"\x06assets\x18\x04 \x03(\v2/.peers_touch.domain.applet.BundleAssetIntegrityR\x06assets\x12'\n" +
+	"\x0fstorage_backend\x18\x05 \x01(\tR\x0estorageBackend\"\xac\x02\n" +
+	"\x16AppletCapabilityPolicy\x12\x1e\n" +
+	"\n" +
+	"capability\x18\x01 \x01(\tR\n" +
+	"capability\x12\x18\n" +
+	"\amethods\x18\x02 \x03(\tR\amethods\x12K\n" +
+	"\bdecision\x18\x03 \x01(\x0e2/.peers_touch.domain.applet.AppletPolicyDecisionR\bdecision\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\x12*\n" +
+	"\x11max_payload_bytes\x18\x05 \x01(\x03R\x0fmaxPayloadBytes\x12\x1d\n" +
+	"\n" +
+	"timeout_ms\x18\x06 \x01(\x05R\ttimeoutMs\x12(\n" +
+	"\x10quota_per_minute\x18\a \x01(\x05R\x0equotaPerMinute\"\xb1\x02\n" +
+	"\x13AppletServicePolicy\x12\x1d\n" +
+	"\n" +
+	"service_id\x18\x01 \x01(\tR\tserviceId\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12'\n" +
+	"\x0fallowed_methods\x18\x03 \x03(\tR\x0eallowedMethods\x12#\n" +
+	"\rallowed_paths\x18\x04 \x03(\tR\fallowedPaths\x12\x1c\n" +
+	"\tstreaming\x18\x05 \x01(\bR\tstreaming\x12.\n" +
+	"\x13station_path_prefix\x18\x06 \x01(\tR\x11stationPathPrefix\x12K\n" +
+	"\bdecision\x18\a \x01(\x0e2/.peers_touch.domain.applet.AppletPolicyDecisionR\bdecision\"\xc3\x02\n" +
+	"\x0fAppletPolicySet\x12\x1b\n" +
+	"\tpolicy_id\x18\x01 \x01(\tR\bpolicyId\x12\x1b\n" +
+	"\tapplet_id\x18\x02 \x01(\tR\bappletId\x12\x18\n" +
+	"\aversion\x18\x03 \x01(\tR\aversion\x12b\n" +
+	"\x13capability_policies\x18\x04 \x03(\v21.peers_touch.domain.applet.AppletCapabilityPolicyR\x12capabilityPolicies\x12Y\n" +
+	"\x10service_policies\x18\x05 \x03(\v2..peers_touch.domain.applet.AppletServicePolicyR\x0fservicePolicies\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x06 \x01(\x03R\tcreatedAt\"\x88\x02\n" +
+	"\x14AppletVersionChannel\x12I\n" +
+	"\achannel\x18\x01 \x01(\x0e2/.peers_touch.domain.applet.AppletReleaseChannelR\achannel\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12'\n" +
+	"\x0frollout_percent\x18\x03 \x01(\x05R\x0erolloutPercent\x12\x18\n" +
+	"\aenabled\x18\x04 \x01(\bR\aenabled\x12)\n" +
+	"\x10rollback_version\x18\x05 \x01(\tR\x0frollbackVersion\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\x06 \x01(\x03R\tupdatedAt\"\xb7\x02\n" +
+	"\x11AppletCatalogItem\x129\n" +
+	"\x04info\x18\x01 \x01(\v2%.peers_touch.domain.applet.AppletInfoR\x04info\x12F\n" +
+	"\aversion\x18\x02 \x01(\v2,.peers_touch.domain.applet.AppletVersionInfoR\aversion\x12R\n" +
+	"\rinstall_state\x18\x03 \x01(\v2-.peers_touch.domain.applet.AppletInstallStateR\finstallState\x12K\n" +
+	"\bchannels\x18\x04 \x03(\v2/.peers_touch.domain.applet.AppletVersionChannelR\bchannels\"\x8b\x04\n" +
+	"\x12AppletInstallState\x12\x19\n" +
+	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1b\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x1b\n" +
+	"\tapplet_id\x18\x03 \x01(\tR\bappletId\x12\x18\n" +
+	"\aversion\x18\x04 \x01(\tR\aversion\x12I\n" +
+	"\achannel\x18\x05 \x01(\x0e2/.peers_touch.domain.applet.AppletReleaseChannelR\achannel\x12F\n" +
+	"\x06status\x18\x06 \x01(\x0e2..peers_touch.domain.applet.AppletInstallStatusR\x06status\x12Q\n" +
+	"\x06config\x18\a \x03(\v29.peers_touch.domain.applet.AppletInstallState.ConfigEntryR\x06config\x12!\n" +
+	"\finstalled_at\x18\b \x01(\x03R\vinstalledAt\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\t \x01(\x03R\tupdatedAt\x12#\n" +
+	"\rstatus_reason\x18\n" +
+	" \x01(\tR\fstatusReason\x1a9\n" +
+	"\vConfigEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8e\x04\n" +
+	"\x11AppletAuditRecord\x12\x19\n" +
+	"\baudit_id\x18\x01 \x01(\tR\aauditId\x12\x19\n" +
+	"\bactor_id\x18\x02 \x01(\tR\aactorId\x12\x1b\n" +
+	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x12\x1b\n" +
+	"\tapplet_id\x18\x04 \x01(\tR\bappletId\x12\x18\n" +
+	"\aversion\x18\x05 \x01(\tR\aversion\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x06 \x01(\tR\tsessionId\x12\x1e\n" +
+	"\n" +
+	"capability\x18\a \x01(\tR\n" +
+	"capability\x12\x16\n" +
+	"\x06method\x18\b \x01(\tR\x06method\x12J\n" +
+	"\bdecision\x18\t \x01(\x0e2..peers_touch.domain.applet.AppletAuditDecisionR\bdecision\x12\x16\n" +
+	"\x06reason\x18\n" +
+	" \x01(\tR\x06reason\x12V\n" +
+	"\bmetadata\x18\v \x03(\v2:.peers_touch.domain.applet.AppletAuditRecord.MetadataEntryR\bmetadata\x12\x1f\n" +
+	"\vrecorded_at\x18\f \x01(\x03R\n" +
+	"recordedAt\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xcd\x02\n" +
 	"\x12ListAppletsRequest\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x16\n" +
 	"\x06offset\x18\x02 \x01(\x05R\x06offset\x12%\n" +
-	"\x0esearch_keyword\x18\x03 \x01(\tR\rsearchKeyword\"w\n" +
+	"\x0esearch_keyword\x18\x03 \x01(\tR\rsearchKeyword\x12\x19\n" +
+	"\bactor_id\x18\x04 \x01(\tR\aactorId\x12\x1b\n" +
+	"\tdevice_id\x18\x05 \x01(\tR\bdeviceId\x12'\n" +
+	"\x0ftarget_platform\x18\x06 \x01(\tR\x0etargetPlatform\x12I\n" +
+	"\achannel\x18\a \x01(\x0e2/.peers_touch.domain.applet.AppletReleaseChannelR\achannel\x126\n" +
+	"\x17include_installed_state\x18\b \x01(\bR\x15includeInstalledState\"w\n" +
 	"\x13ListAppletsResponse\x12?\n" +
 	"\aapplets\x18\x01 \x03(\v2%.peers_touch.domain.applet.AppletInfoR\aapplets\x12\x1f\n" +
 	"\vtotal_count\x18\x02 \x01(\x03R\n" +
 	"totalCount\"6\n" +
 	"\x17GetAppletDetailsRequest\x12\x1b\n" +
-	"\tapplet_id\x18\x01 \x01(\tR\bappletId\"\xaa\x01\n" +
+	"\tapplet_id\x18\x01 \x01(\tR\bappletId\"\xcb\x02\n" +
 	"\x18GetAppletDetailsResponse\x129\n" +
 	"\x04info\x18\x01 \x01(\v2%.peers_touch.domain.applet.AppletInfoR\x04info\x12S\n" +
-	"\x0elatest_version\x18\x02 \x01(\v2,.peers_touch.domain.applet.AppletVersionInfoR\rlatestVersion\"\xac\x01\n" +
+	"\x0elatest_version\x18\x02 \x01(\v2,.peers_touch.domain.applet.AppletVersionInfoR\rlatestVersion\x12K\n" +
+	"\bchannels\x18\x03 \x03(\v2/.peers_touch.domain.applet.AppletVersionChannelR\bchannels\x12R\n" +
+	"\rinstall_state\x18\x04 \x01(\v2-.peers_touch.domain.applet.AppletInstallStateR\finstallState\"\xfe\x03\n" +
 	"\x14PublishAppletRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12&\n" +
 	"\x0fmin_sdk_version\x18\x04 \x01(\tR\rminSdkVersion\x12\x1c\n" +
-	"\tchangelog\x18\x05 \x01(\tR\tchangelog\"w\n" +
+	"\tchangelog\x18\x05 \x01(\tR\tchangelog\x12\x1b\n" +
+	"\tapplet_id\x18\x06 \x01(\tR\bappletId\x12\x19\n" +
+	"\bowner_id\x18\a \x01(\tR\aownerId\x12I\n" +
+	"\achannel\x18\b \x01(\x0e2/.peers_touch.domain.applet.AppletReleaseChannelR\achannel\x12G\n" +
+	"\bmanifest\x18\t \x01(\v2+.peers_touch.domain.applet.ManifestSnapshotR\bmanifest\x12@\n" +
+	"\x06bundle\x18\n" +
+	" \x01(\v2(.peers_touch.domain.applet.BundleStorageR\x06bundle\x12B\n" +
+	"\x06policy\x18\v \x01(\v2*.peers_touch.domain.applet.AppletPolicySetR\x06policy\"\xbf\x01\n" +
 	"\x15PublishAppletResponse\x12\x1b\n" +
 	"\tapplet_id\x18\x01 \x01(\tR\bappletId\x12\x1d\n" +
 	"\n" +
 	"version_id\x18\x02 \x01(\tR\tversionId\x12\"\n" +
-	"\ris_new_applet\x18\x03 \x01(\bR\visNewAppletBLZJgithub.com/peers-labs/peers-touch/station/app/subserver/applet_store/modelb\x06proto3"
+	"\ris_new_applet\x18\x03 \x01(\bR\visNewApplet\x12F\n" +
+	"\aversion\x18\x04 \x01(\v2,.peers_touch.domain.applet.AppletVersionInfoR\aversion\"\x9b\x02\n" +
+	"\x18ListAppletCatalogRequest\x12\x19\n" +
+	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1b\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12'\n" +
+	"\x0ftarget_platform\x18\x03 \x01(\tR\x0etargetPlatform\x12I\n" +
+	"\achannel\x18\x04 \x01(\x0e2/.peers_touch.domain.applet.AppletReleaseChannelR\achannel\x12%\n" +
+	"\x0esearch_keyword\x18\x05 \x01(\tR\rsearchKeyword\x12\x14\n" +
+	"\x05limit\x18\x06 \x01(\x05R\x05limit\x12\x16\n" +
+	"\x06offset\x18\a \x01(\x05R\x06offset\"\x80\x01\n" +
+	"\x19ListAppletCatalogResponse\x12B\n" +
+	"\x05items\x18\x01 \x03(\v2,.peers_touch.domain.applet.AppletCatalogItemR\x05items\x12\x1f\n" +
+	"\vtotal_count\x18\x02 \x01(\x03R\n" +
+	"totalCount\"\x9b\x01\n" +
+	"\x17GetAppletVersionRequest\x12\x1b\n" +
+	"\tapplet_id\x18\x01 \x01(\tR\bappletId\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12I\n" +
+	"\achannel\x18\x03 \x01(\x0e2/.peers_touch.domain.applet.AppletReleaseChannelR\achannel\"\xa6\x01\n" +
+	"\x18GetAppletVersionResponse\x12F\n" +
+	"\aversion\x18\x01 \x01(\v2,.peers_touch.domain.applet.AppletVersionInfoR\aversion\x12B\n" +
+	"\x06policy\x18\x02 \x01(\v2*.peers_touch.domain.applet.AppletPolicySetR\x06policy\"\xe0\x02\n" +
+	"\x14InstallAppletRequest\x12\x19\n" +
+	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1b\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x1b\n" +
+	"\tapplet_id\x18\x03 \x01(\tR\bappletId\x12\x18\n" +
+	"\aversion\x18\x04 \x01(\tR\aversion\x12I\n" +
+	"\achannel\x18\x05 \x01(\x0e2/.peers_touch.domain.applet.AppletReleaseChannelR\achannel\x12S\n" +
+	"\x06config\x18\x06 \x03(\v2;.peers_touch.domain.applet.InstallAppletRequest.ConfigEntryR\x06config\x1a9\n" +
+	"\vConfigEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\\\n" +
+	"\x15InstallAppletResponse\x12C\n" +
+	"\x05state\x18\x01 \x01(\v2-.peers_touch.domain.applet.AppletInstallStateR\x05state\"m\n" +
+	"\x16UninstallAppletRequest\x12\x19\n" +
+	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1b\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x1b\n" +
+	"\tapplet_id\x18\x03 \x01(\tR\bappletId\"^\n" +
+	"\x17UninstallAppletResponse\x12C\n" +
+	"\x05state\x18\x01 \x01(\v2-.peers_touch.domain.applet.AppletInstallStateR\x05state\"\x80\x01\n" +
+	"\x1bListInstalledAppletsRequest\x12\x19\n" +
+	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1b\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12)\n" +
+	"\x10include_disabled\x18\x03 \x01(\bR\x0fincludeDisabled\"e\n" +
+	"\x1cListInstalledAppletsResponse\x12E\n" +
+	"\x06states\x18\x01 \x03(\v2-.peers_touch.domain.applet.AppletInstallStateR\x06states\"\x8c\x01\n" +
+	"\x1aRevokeAppletVersionRequest\x12\x1b\n" +
+	"\tapplet_id\x18\x01 \x01(\tR\bappletId\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\x12\x1f\n" +
+	"\voperator_id\x18\x04 \x01(\tR\n" +
+	"operatorId\"e\n" +
+	"\x1bRevokeAppletVersionResponse\x12F\n" +
+	"\aversion\x18\x01 \x01(\v2,.peers_touch.domain.applet.AppletVersionInfoR\aversion\"\xe6\x01\n" +
+	"\x1cRollbackAppletChannelRequest\x12\x1b\n" +
+	"\tapplet_id\x18\x01 \x01(\tR\bappletId\x12I\n" +
+	"\achannel\x18\x02 \x01(\x0e2/.peers_touch.domain.applet.AppletReleaseChannelR\achannel\x12%\n" +
+	"\x0etarget_version\x18\x03 \x01(\tR\rtargetVersion\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\x12\x1f\n" +
+	"\voperator_id\x18\x05 \x01(\tR\n" +
+	"operatorId\"j\n" +
+	"\x1dRollbackAppletChannelResponse\x12I\n" +
+	"\achannel\x18\x01 \x01(\v2/.peers_touch.domain.applet.AppletVersionChannelR\achannel\"b\n" +
+	"\x18IngestAppletAuditRequest\x12F\n" +
+	"\arecords\x18\x01 \x03(\v2,.peers_touch.domain.applet.AppletAuditRecordR\arecords\"p\n" +
+	"\x19IngestAppletAuditResponse\x12%\n" +
+	"\x0eaccepted_count\x18\x01 \x01(\x05R\racceptedCount\x12,\n" +
+	"\x12rejected_audit_ids\x18\x02 \x03(\tR\x10rejectedAuditIds\"\xf5\x01\n" +
+	"\x17QueryAppletAuditRequest\x12\x19\n" +
+	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1b\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x1b\n" +
+	"\tapplet_id\x18\x03 \x01(\tR\bappletId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x04 \x01(\tR\tsessionId\x12\x1d\n" +
+	"\n" +
+	"start_time\x18\x05 \x01(\x03R\tstartTime\x12\x19\n" +
+	"\bend_time\x18\x06 \x01(\x03R\aendTime\x12\x14\n" +
+	"\x05limit\x18\a \x01(\x05R\x05limit\x12\x16\n" +
+	"\x06offset\x18\b \x01(\x05R\x06offset\"\x83\x01\n" +
+	"\x18QueryAppletAuditResponse\x12F\n" +
+	"\arecords\x18\x01 \x03(\v2,.peers_touch.domain.applet.AppletAuditRecordR\arecords\x12\x1f\n" +
+	"\vtotal_count\x18\x02 \x01(\x03R\n" +
+	"totalCount*\xcb\x01\n" +
+	"\x13AppletPackageStatus\x12%\n" +
+	"!APPLET_PACKAGE_STATUS_UNSPECIFIED\x10\x00\x12\x1f\n" +
+	"\x1bAPPLET_PACKAGE_STATUS_DRAFT\x10\x01\x12#\n" +
+	"\x1fAPPLET_PACKAGE_STATUS_PUBLISHED\x10\x02\x12$\n" +
+	" APPLET_PACKAGE_STATUS_DEPRECATED\x10\x03\x12!\n" +
+	"\x1dAPPLET_PACKAGE_STATUS_REVOKED\x10\x04*\xfb\x01\n" +
+	"\x13AppletInstallStatus\x12%\n" +
+	"!APPLET_INSTALL_STATUS_UNSPECIFIED\x10\x00\x12#\n" +
+	"\x1fAPPLET_INSTALL_STATUS_INSTALLED\x10\x01\x12%\n" +
+	"!APPLET_INSTALL_STATUS_UNINSTALLED\x10\x02\x12\"\n" +
+	"\x1eAPPLET_INSTALL_STATUS_DISABLED\x10\x03\x12!\n" +
+	"\x1dAPPLET_INSTALL_STATUS_REVOKED\x10\x04\x12*\n" +
+	"&APPLET_INSTALL_STATUS_UPDATE_AVAILABLE\x10\x05*\xa2\x01\n" +
+	"\x14AppletReleaseChannel\x12&\n" +
+	"\"APPLET_RELEASE_CHANNEL_UNSPECIFIED\x10\x00\x12!\n" +
+	"\x1dAPPLET_RELEASE_CHANNEL_STABLE\x10\x01\x12\x1f\n" +
+	"\x1bAPPLET_RELEASE_CHANNEL_BETA\x10\x02\x12\x1e\n" +
+	"\x1aAPPLET_RELEASE_CHANNEL_DEV\x10\x03*\xb2\x01\n" +
+	"\x14AppletPolicyDecision\x12&\n" +
+	"\"APPLET_POLICY_DECISION_UNSPECIFIED\x10\x00\x12 \n" +
+	"\x1cAPPLET_POLICY_DECISION_ALLOW\x10\x01\x12\x1f\n" +
+	"\x1bAPPLET_POLICY_DECISION_DENY\x10\x02\x12/\n" +
+	"+APPLET_POLICY_DECISION_REQUIRE_USER_GESTURE\x10\x03*\x81\x01\n" +
+	"\x13AppletAuditDecision\x12%\n" +
+	"!APPLET_AUDIT_DECISION_UNSPECIFIED\x10\x00\x12!\n" +
+	"\x1dAPPLET_AUDIT_DECISION_ALLOWED\x10\x01\x12 \n" +
+	"\x1cAPPLET_AUDIT_DECISION_DENIED\x10\x02BLZJgithub.com/peers-labs/peers-touch/station/app/subserver/applet_store/modelb\x06proto3"
 
 var (
 	file_domain_applet_applet_proto_rawDescOnce sync.Once
@@ -648,26 +3291,110 @@ func file_domain_applet_applet_proto_rawDescGZIP() []byte {
 	return file_domain_applet_applet_proto_rawDescData
 }
 
-var file_domain_applet_applet_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_domain_applet_applet_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_domain_applet_applet_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
 var file_domain_applet_applet_proto_goTypes = []any{
-	(*AppletInfo)(nil),               // 0: peers_touch.domain.applet.AppletInfo
-	(*AppletVersionInfo)(nil),        // 1: peers_touch.domain.applet.AppletVersionInfo
-	(*ListAppletsRequest)(nil),       // 2: peers_touch.domain.applet.ListAppletsRequest
-	(*ListAppletsResponse)(nil),      // 3: peers_touch.domain.applet.ListAppletsResponse
-	(*GetAppletDetailsRequest)(nil),  // 4: peers_touch.domain.applet.GetAppletDetailsRequest
-	(*GetAppletDetailsResponse)(nil), // 5: peers_touch.domain.applet.GetAppletDetailsResponse
-	(*PublishAppletRequest)(nil),     // 6: peers_touch.domain.applet.PublishAppletRequest
-	(*PublishAppletResponse)(nil),    // 7: peers_touch.domain.applet.PublishAppletResponse
+	(AppletPackageStatus)(0),              // 0: peers_touch.domain.applet.AppletPackageStatus
+	(AppletInstallStatus)(0),              // 1: peers_touch.domain.applet.AppletInstallStatus
+	(AppletReleaseChannel)(0),             // 2: peers_touch.domain.applet.AppletReleaseChannel
+	(AppletPolicyDecision)(0),             // 3: peers_touch.domain.applet.AppletPolicyDecision
+	(AppletAuditDecision)(0),              // 4: peers_touch.domain.applet.AppletAuditDecision
+	(*AppletInfo)(nil),                    // 5: peers_touch.domain.applet.AppletInfo
+	(*AppletVersionInfo)(nil),             // 6: peers_touch.domain.applet.AppletVersionInfo
+	(*ManifestSnapshot)(nil),              // 7: peers_touch.domain.applet.ManifestSnapshot
+	(*BundleAssetIntegrity)(nil),          // 8: peers_touch.domain.applet.BundleAssetIntegrity
+	(*BundleStorage)(nil),                 // 9: peers_touch.domain.applet.BundleStorage
+	(*AppletCapabilityPolicy)(nil),        // 10: peers_touch.domain.applet.AppletCapabilityPolicy
+	(*AppletServicePolicy)(nil),           // 11: peers_touch.domain.applet.AppletServicePolicy
+	(*AppletPolicySet)(nil),               // 12: peers_touch.domain.applet.AppletPolicySet
+	(*AppletVersionChannel)(nil),          // 13: peers_touch.domain.applet.AppletVersionChannel
+	(*AppletCatalogItem)(nil),             // 14: peers_touch.domain.applet.AppletCatalogItem
+	(*AppletInstallState)(nil),            // 15: peers_touch.domain.applet.AppletInstallState
+	(*AppletAuditRecord)(nil),             // 16: peers_touch.domain.applet.AppletAuditRecord
+	(*ListAppletsRequest)(nil),            // 17: peers_touch.domain.applet.ListAppletsRequest
+	(*ListAppletsResponse)(nil),           // 18: peers_touch.domain.applet.ListAppletsResponse
+	(*GetAppletDetailsRequest)(nil),       // 19: peers_touch.domain.applet.GetAppletDetailsRequest
+	(*GetAppletDetailsResponse)(nil),      // 20: peers_touch.domain.applet.GetAppletDetailsResponse
+	(*PublishAppletRequest)(nil),          // 21: peers_touch.domain.applet.PublishAppletRequest
+	(*PublishAppletResponse)(nil),         // 22: peers_touch.domain.applet.PublishAppletResponse
+	(*ListAppletCatalogRequest)(nil),      // 23: peers_touch.domain.applet.ListAppletCatalogRequest
+	(*ListAppletCatalogResponse)(nil),     // 24: peers_touch.domain.applet.ListAppletCatalogResponse
+	(*GetAppletVersionRequest)(nil),       // 25: peers_touch.domain.applet.GetAppletVersionRequest
+	(*GetAppletVersionResponse)(nil),      // 26: peers_touch.domain.applet.GetAppletVersionResponse
+	(*InstallAppletRequest)(nil),          // 27: peers_touch.domain.applet.InstallAppletRequest
+	(*InstallAppletResponse)(nil),         // 28: peers_touch.domain.applet.InstallAppletResponse
+	(*UninstallAppletRequest)(nil),        // 29: peers_touch.domain.applet.UninstallAppletRequest
+	(*UninstallAppletResponse)(nil),       // 30: peers_touch.domain.applet.UninstallAppletResponse
+	(*ListInstalledAppletsRequest)(nil),   // 31: peers_touch.domain.applet.ListInstalledAppletsRequest
+	(*ListInstalledAppletsResponse)(nil),  // 32: peers_touch.domain.applet.ListInstalledAppletsResponse
+	(*RevokeAppletVersionRequest)(nil),    // 33: peers_touch.domain.applet.RevokeAppletVersionRequest
+	(*RevokeAppletVersionResponse)(nil),   // 34: peers_touch.domain.applet.RevokeAppletVersionResponse
+	(*RollbackAppletChannelRequest)(nil),  // 35: peers_touch.domain.applet.RollbackAppletChannelRequest
+	(*RollbackAppletChannelResponse)(nil), // 36: peers_touch.domain.applet.RollbackAppletChannelResponse
+	(*IngestAppletAuditRequest)(nil),      // 37: peers_touch.domain.applet.IngestAppletAuditRequest
+	(*IngestAppletAuditResponse)(nil),     // 38: peers_touch.domain.applet.IngestAppletAuditResponse
+	(*QueryAppletAuditRequest)(nil),       // 39: peers_touch.domain.applet.QueryAppletAuditRequest
+	(*QueryAppletAuditResponse)(nil),      // 40: peers_touch.domain.applet.QueryAppletAuditResponse
+	nil,                                   // 41: peers_touch.domain.applet.ManifestSnapshot.IntegrityEntry
+	nil,                                   // 42: peers_touch.domain.applet.AppletInstallState.ConfigEntry
+	nil,                                   // 43: peers_touch.domain.applet.AppletAuditRecord.MetadataEntry
+	nil,                                   // 44: peers_touch.domain.applet.InstallAppletRequest.ConfigEntry
 }
 var file_domain_applet_applet_proto_depIdxs = []int32{
-	0, // 0: peers_touch.domain.applet.ListAppletsResponse.applets:type_name -> peers_touch.domain.applet.AppletInfo
-	0, // 1: peers_touch.domain.applet.GetAppletDetailsResponse.info:type_name -> peers_touch.domain.applet.AppletInfo
-	1, // 2: peers_touch.domain.applet.GetAppletDetailsResponse.latest_version:type_name -> peers_touch.domain.applet.AppletVersionInfo
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0,  // 0: peers_touch.domain.applet.AppletInfo.status:type_name -> peers_touch.domain.applet.AppletPackageStatus
+	2,  // 1: peers_touch.domain.applet.AppletInfo.channels:type_name -> peers_touch.domain.applet.AppletReleaseChannel
+	0,  // 2: peers_touch.domain.applet.AppletVersionInfo.status:type_name -> peers_touch.domain.applet.AppletPackageStatus
+	2,  // 3: peers_touch.domain.applet.AppletVersionInfo.channel:type_name -> peers_touch.domain.applet.AppletReleaseChannel
+	7,  // 4: peers_touch.domain.applet.AppletVersionInfo.manifest:type_name -> peers_touch.domain.applet.ManifestSnapshot
+	9,  // 5: peers_touch.domain.applet.AppletVersionInfo.bundle:type_name -> peers_touch.domain.applet.BundleStorage
+	41, // 6: peers_touch.domain.applet.ManifestSnapshot.integrity:type_name -> peers_touch.domain.applet.ManifestSnapshot.IntegrityEntry
+	11, // 7: peers_touch.domain.applet.ManifestSnapshot.services:type_name -> peers_touch.domain.applet.AppletServicePolicy
+	8,  // 8: peers_touch.domain.applet.BundleStorage.assets:type_name -> peers_touch.domain.applet.BundleAssetIntegrity
+	3,  // 9: peers_touch.domain.applet.AppletCapabilityPolicy.decision:type_name -> peers_touch.domain.applet.AppletPolicyDecision
+	3,  // 10: peers_touch.domain.applet.AppletServicePolicy.decision:type_name -> peers_touch.domain.applet.AppletPolicyDecision
+	10, // 11: peers_touch.domain.applet.AppletPolicySet.capability_policies:type_name -> peers_touch.domain.applet.AppletCapabilityPolicy
+	11, // 12: peers_touch.domain.applet.AppletPolicySet.service_policies:type_name -> peers_touch.domain.applet.AppletServicePolicy
+	2,  // 13: peers_touch.domain.applet.AppletVersionChannel.channel:type_name -> peers_touch.domain.applet.AppletReleaseChannel
+	5,  // 14: peers_touch.domain.applet.AppletCatalogItem.info:type_name -> peers_touch.domain.applet.AppletInfo
+	6,  // 15: peers_touch.domain.applet.AppletCatalogItem.version:type_name -> peers_touch.domain.applet.AppletVersionInfo
+	15, // 16: peers_touch.domain.applet.AppletCatalogItem.install_state:type_name -> peers_touch.domain.applet.AppletInstallState
+	13, // 17: peers_touch.domain.applet.AppletCatalogItem.channels:type_name -> peers_touch.domain.applet.AppletVersionChannel
+	2,  // 18: peers_touch.domain.applet.AppletInstallState.channel:type_name -> peers_touch.domain.applet.AppletReleaseChannel
+	1,  // 19: peers_touch.domain.applet.AppletInstallState.status:type_name -> peers_touch.domain.applet.AppletInstallStatus
+	42, // 20: peers_touch.domain.applet.AppletInstallState.config:type_name -> peers_touch.domain.applet.AppletInstallState.ConfigEntry
+	4,  // 21: peers_touch.domain.applet.AppletAuditRecord.decision:type_name -> peers_touch.domain.applet.AppletAuditDecision
+	43, // 22: peers_touch.domain.applet.AppletAuditRecord.metadata:type_name -> peers_touch.domain.applet.AppletAuditRecord.MetadataEntry
+	2,  // 23: peers_touch.domain.applet.ListAppletsRequest.channel:type_name -> peers_touch.domain.applet.AppletReleaseChannel
+	5,  // 24: peers_touch.domain.applet.ListAppletsResponse.applets:type_name -> peers_touch.domain.applet.AppletInfo
+	5,  // 25: peers_touch.domain.applet.GetAppletDetailsResponse.info:type_name -> peers_touch.domain.applet.AppletInfo
+	6,  // 26: peers_touch.domain.applet.GetAppletDetailsResponse.latest_version:type_name -> peers_touch.domain.applet.AppletVersionInfo
+	13, // 27: peers_touch.domain.applet.GetAppletDetailsResponse.channels:type_name -> peers_touch.domain.applet.AppletVersionChannel
+	15, // 28: peers_touch.domain.applet.GetAppletDetailsResponse.install_state:type_name -> peers_touch.domain.applet.AppletInstallState
+	2,  // 29: peers_touch.domain.applet.PublishAppletRequest.channel:type_name -> peers_touch.domain.applet.AppletReleaseChannel
+	7,  // 30: peers_touch.domain.applet.PublishAppletRequest.manifest:type_name -> peers_touch.domain.applet.ManifestSnapshot
+	9,  // 31: peers_touch.domain.applet.PublishAppletRequest.bundle:type_name -> peers_touch.domain.applet.BundleStorage
+	12, // 32: peers_touch.domain.applet.PublishAppletRequest.policy:type_name -> peers_touch.domain.applet.AppletPolicySet
+	6,  // 33: peers_touch.domain.applet.PublishAppletResponse.version:type_name -> peers_touch.domain.applet.AppletVersionInfo
+	2,  // 34: peers_touch.domain.applet.ListAppletCatalogRequest.channel:type_name -> peers_touch.domain.applet.AppletReleaseChannel
+	14, // 35: peers_touch.domain.applet.ListAppletCatalogResponse.items:type_name -> peers_touch.domain.applet.AppletCatalogItem
+	2,  // 36: peers_touch.domain.applet.GetAppletVersionRequest.channel:type_name -> peers_touch.domain.applet.AppletReleaseChannel
+	6,  // 37: peers_touch.domain.applet.GetAppletVersionResponse.version:type_name -> peers_touch.domain.applet.AppletVersionInfo
+	12, // 38: peers_touch.domain.applet.GetAppletVersionResponse.policy:type_name -> peers_touch.domain.applet.AppletPolicySet
+	2,  // 39: peers_touch.domain.applet.InstallAppletRequest.channel:type_name -> peers_touch.domain.applet.AppletReleaseChannel
+	44, // 40: peers_touch.domain.applet.InstallAppletRequest.config:type_name -> peers_touch.domain.applet.InstallAppletRequest.ConfigEntry
+	15, // 41: peers_touch.domain.applet.InstallAppletResponse.state:type_name -> peers_touch.domain.applet.AppletInstallState
+	15, // 42: peers_touch.domain.applet.UninstallAppletResponse.state:type_name -> peers_touch.domain.applet.AppletInstallState
+	15, // 43: peers_touch.domain.applet.ListInstalledAppletsResponse.states:type_name -> peers_touch.domain.applet.AppletInstallState
+	6,  // 44: peers_touch.domain.applet.RevokeAppletVersionResponse.version:type_name -> peers_touch.domain.applet.AppletVersionInfo
+	2,  // 45: peers_touch.domain.applet.RollbackAppletChannelRequest.channel:type_name -> peers_touch.domain.applet.AppletReleaseChannel
+	13, // 46: peers_touch.domain.applet.RollbackAppletChannelResponse.channel:type_name -> peers_touch.domain.applet.AppletVersionChannel
+	16, // 47: peers_touch.domain.applet.IngestAppletAuditRequest.records:type_name -> peers_touch.domain.applet.AppletAuditRecord
+	16, // 48: peers_touch.domain.applet.QueryAppletAuditResponse.records:type_name -> peers_touch.domain.applet.AppletAuditRecord
+	49, // [49:49] is the sub-list for method output_type
+	49, // [49:49] is the sub-list for method input_type
+	49, // [49:49] is the sub-list for extension type_name
+	49, // [49:49] is the sub-list for extension extendee
+	0,  // [0:49] is the sub-list for field type_name
 }
 
 func init() { file_domain_applet_applet_proto_init() }
@@ -680,13 +3407,14 @@ func file_domain_applet_applet_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_applet_applet_proto_rawDesc), len(file_domain_applet_applet_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   8,
+			NumEnums:      5,
+			NumMessages:   40,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_domain_applet_applet_proto_goTypes,
 		DependencyIndexes: file_domain_applet_applet_proto_depIdxs,
+		EnumInfos:         file_domain_applet_applet_proto_enumTypes,
 		MessageInfos:      file_domain_applet_applet_proto_msgTypes,
 	}.Build()
 	File_domain_applet_applet_proto = out.File
