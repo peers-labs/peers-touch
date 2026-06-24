@@ -1,6 +1,12 @@
 import { create } from 'zustand';
+import {
+  bumpChatUnreadCounter,
+  chatUnreadForParticipant,
+  clearChatUnreadCounter,
+  sumChatUnreadCounters,
+} from '@peers-touch/client-chat-core';
+
 import { useSocialChatStore } from './socialChat';
-import type { FriendChatSession } from '../gen/proto/domain/chat/friend_chat_pb';
 import { log } from '../utils/logger';
 import { conversationKey, visibleConversationUnread } from './socialProjection';
 
@@ -58,15 +64,6 @@ function initialState(): Pick<
 
 // ── Store ──
 
-function friendUnreadForViewer(session: FriendChatSession, viewerDid: string | null): number {
-  if (!viewerDid) {
-    return Math.max(session.unreadCountA ?? 0, session.unreadCountB ?? 0);
-  }
-  if (session.participantADid === viewerDid) return session.unreadCountA ?? 0;
-  if (session.participantBDid === viewerDid) return session.unreadCountB ?? 0;
-  return Math.max(session.unreadCountA ?? 0, session.unreadCountB ?? 0);
-}
-
 export const useNavigationBadgeStore = create<NavigationBadgeState>((set) => ({
   ...initialState(),
 
@@ -76,29 +73,21 @@ export const useNavigationBadgeStore = create<NavigationBadgeState>((set) => ({
 
   bumpChatUnread: (sessionUlid) => {
     set((state) => {
-      const prev = state.chatUnreadBySessions[sessionUlid] ?? 0;
-      const chatUnreadBySessions = {
-        ...state.chatUnreadBySessions,
-        [sessionUlid]: prev + 1,
-      };
-      const chatUnreadTotal = Object.values(chatUnreadBySessions).reduce(
-        (sum, count) => sum + count,
-        0,
-      );
+      const chatUnreadBySessions = bumpChatUnreadCounter(state.chatUnreadBySessions, sessionUlid);
+      if (!chatUnreadBySessions) return state;
+      const chatUnreadTotal = sumChatUnreadCounters(chatUnreadBySessions);
       return { chatUnreadBySessions, chatUnreadTotal };
     });
   },
 
   clearChatUnread: (sessionUlid) => {
     set((state) => {
-      if (!state.chatUnreadBySessions[sessionUlid]) return state;
-
-      const { [sessionUlid]: _, ...rest } = state.chatUnreadBySessions;
-      const chatUnreadTotal = Object.values(rest).reduce(
-        (sum, count) => sum + count,
-        0,
-      );
-      return { chatUnreadBySessions: rest, chatUnreadTotal };
+      const chatUnreadBySessions = clearChatUnreadCounter(state.chatUnreadBySessions, sessionUlid);
+      if (!chatUnreadBySessions) return state;
+      return {
+        chatUnreadBySessions,
+        chatUnreadTotal: sumChatUnreadCounters(chatUnreadBySessions),
+      };
     });
   },
 
@@ -110,7 +99,7 @@ export const useNavigationBadgeStore = create<NavigationBadgeState>((set) => ({
     let friendTotal = 0;
     for (const session of socialState.sessions) {
       friendTotal += visibleConversationUnread(
-        friendUnreadForViewer(session, viewerDid),
+        chatUnreadForParticipant(session, viewerDid),
         socialState.conversationLocalState[conversationKey('friend', session.ulid)],
       );
     }
@@ -130,7 +119,7 @@ export const useNavigationBadgeStore = create<NavigationBadgeState>((set) => ({
     const chatUnreadBySessions: Record<string, number> = {};
     for (const session of socialState.sessions) {
       const count = visibleConversationUnread(
-        friendUnreadForViewer(session, viewerDid),
+        chatUnreadForParticipant(session, viewerDid),
         socialState.conversationLocalState[conversationKey('friend', session.ulid)],
       );
       if (count > 0) {

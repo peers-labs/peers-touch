@@ -1,10 +1,10 @@
 # Applet Runtime Architecture — 模块布局
 
 > **Status**: draft
-> **Version**: v1.1
-> **Created**: 2026-05-19 | **Updated**: 2026-06-06
+> **Version**: v1.2
+> **Created**: 2026-05-19 | **Updated**: 2026-06-17
 > **Owner**: Architecture Team
-> **Module**: `apps/desktop/src/applet/`, `apps/mobile/`, `packages/applet-sdk/`, `packages/applets/`
+> **Module**: `apps/applets/`, `apps/desktop/src/applet/`, `apps/mobile/`, `packages/applet-sdk/`, `packages/applet-contract/`
 
 ---
 
@@ -13,6 +13,13 @@
 ```text
 peers-touch/
 ├── apps/
+│   ├── applets/                         # Official applet product units
+│   │   └── <applet-id>/
+│   │       ├── frontend/                # Lynx / ReactLynx applet frontend
+│   │       ├── service/                 # DDD applet service
+│   │       ├── contracts/               # Contract docs and generated-reference docs
+│   │       ├── docs/
+│   │       └── tests/
 │   ├── desktop/
 │   │   ├── src/
 │   │   │   ├── applet/                 # Desktop Lynx Host + manifest scanning
@@ -30,12 +37,47 @@ peers-touch/
 ├── packages/
 │   ├── applet-sdk/                     # Cross-platform SDK used by applets
 │   ├── applet-contract/                # Shared manifest/bridge/capability types
-│   └── applets/                        # Built-in applets build pipeline
+│   └── applets/                        # Generic package/build tooling and non-product fixtures
 ├── apps/web/ or web host module         # Future formal Web Host if/when repo path exists
 └── docs/architecture/applet-runtime/   # This architecture source
 ```
 
 Applet package producer 不属于 Peers-Touch 架构输入。Peers-Touch 只接收符合 `applet-contract` 的 applet package。
+
+官方 applet 属于 Peers-Touch 自有产品单元，源码集中在 `apps/applets/<applet-id>/`。Host 仍然只消费构建产物和 manifest，不能 import 官方 applet 的前端或服务内部代码。
+
+---
+
+## 1.1 Official Applet Product Unit
+
+标准目录：
+
+```text
+apps/applets/<applet-id>/
+├── README.md
+├── applet.manifest.json
+├── service.manifest.json
+├── frontend/
+├── service/
+├── contracts/
+├── docs/
+└── tests/
+```
+
+职责：
+
+- `frontend/`：Applet UI 和 applet-side application code，只依赖 `@peers-touch/applet-sdk` 获取 Host capability。
+- `service/`：Applet 后端服务，按 DDD 分层，支持 Station-bundled subserver 和可选 standalone。
+- `contracts/`：记录 proto 引用、HTTP 映射、service binding、错误模型；不替代 `model/domain/**.proto`。
+- `docs/`：业务与运维说明。
+- `tests/`：package、service、Gateway、Host smoke 和 forbidden scan。
+
+禁止：
+
+- Desktop/Mobile 直接 import `apps/applets/<applet-id>/frontend/src`。
+- Desktop/Mobile 拥有 applet 业务 service/store/page。
+- Station 主程序吸收 applet domain/application。
+- Applet 前端直接访问 raw backend URL。
 
 ---
 

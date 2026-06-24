@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, message } from 'antd';
+import { Button } from '@lobehub/ui';
+import { message } from 'antd';
 import { UserMinus, UserPlus } from 'lucide-react';
 import { useRelationshipsStore } from '../../store/relationships';
 

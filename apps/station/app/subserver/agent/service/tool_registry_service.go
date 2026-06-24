@@ -3,6 +3,14 @@
 //   schema management, and dispatch. Registers concrete handlers for:
 //   memory, skills_list, skill_view, skill_manage, delegate_task.
 //   Each handler bridges tool_call JSON arguments to the corresponding domain service.
+// 2026-06-17 — Agent rebuild P0-1: registered local_mcp as the Station-visible
+//   placeholder for Desktop-local MCP execution. TurnService intercepts it and
+//   routes execution through the Desktop Rust local tool bridge.
+// 2026-06-17 — Agent rebuild P1-5: registered schema-first Desktop-local builtin
+//   tool placeholders for file, clipboard, and safe workspace operations.
+// 2026-06-17 — Agent rebuild P5-4: registered OAuth connector access as a
+//   Desktop-local approved tool so Station owns tool planning while Rust owns
+//   credential-adjacent execution and redaction.
 
 package service
 
@@ -42,8 +50,95 @@ func NewToolRegistryService(
 	r.registerSkillsListTool(skillSvc)
 	r.registerSkillViewTool(skillSvc)
 	r.registerSkillManageTool(skillSvc)
+	r.registerLocalMCPTool()
+	r.registerDesktopLocalBuiltinTools()
 
 	return r
+}
+
+func (r *ToolRegistryService) registerLocalMCPTool() {
+	schema := json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "server_name": {
+      "type": "string",
+      "description": "Configured local MCP server name"
+    },
+    "tool_name": {
+      "type": "string",
+      "description": "MCP tool name to execute on the local desktop"
+    },
+    "arguments": {
+      "type": "object",
+      "description": "Arguments passed to the MCP tool"
+    }
+  },
+  "required": ["server_name", "tool_name"]
+}`)
+
+	r.Register(&domain.ToolDefinition{
+		Name:        "local_mcp",
+		Description: "Execute a Desktop-local MCP tool through the secure local tool bridge.",
+		JSONSchema:  schema,
+		Handler: func(ctx context.Context, meta *domain.ToolCallMeta, raw json.RawMessage) (*domain.ToolResult, error) {
+			return &domain.ToolResult{
+				Content: "local_mcp is executed by the Agent turn loop local tool bridge",
+			}, nil
+		},
+	})
+}
+
+func (r *ToolRegistryService) registerDesktopLocalBuiltinTools() {
+	specs := []struct {
+		name        string
+		description string
+		schema      string
+	}{
+		{
+			name:        "local_file_read",
+			description: "Read a UTF-8 file from the approved Desktop workspace after user approval.",
+			schema:      `{"type":"object","properties":{"path":{"type":"string","description":"File path relative to the approved workspace"},"max_bytes":{"type":"integer","minimum":1,"maximum":200000}},"required":["path"]}`,
+		},
+		{
+			name:        "local_workspace_list",
+			description: "List files in a directory inside the approved Desktop workspace after user approval.",
+			schema:      `{"type":"object","properties":{"path":{"type":"string","description":"Directory path relative to the approved workspace"},"limit":{"type":"integer","minimum":1,"maximum":200}},"required":["path"]}`,
+		},
+		{
+			name:        "local_clipboard_read",
+			description: "Read plain text from the Desktop clipboard after user approval.",
+			schema:      `{"type":"object","properties":{}}`,
+		},
+		{
+			name:        "local_clipboard_write",
+			description: "Write plain text into the Desktop clipboard after user approval.",
+			schema:      `{"type":"object","properties":{"text":{"type":"string","maxLength":200000}},"required":["text"]}`,
+		},
+		{
+			name:        "local_shell_safe",
+			description: "Run an allow-listed Desktop workspace operation without arbitrary shell execution.",
+			schema:      `{"type":"object","properties":{"operation":{"type":"string","enum":["pwd","list_dir"]},"path":{"type":"string"}},"required":["operation"]}`,
+		},
+		{
+			name:        "oauth_connector_call",
+			description: "Read approved OAuth connector state through Desktop Rust without exposing credentials.",
+			schema:      `{"type":"object","properties":{"provider_id":{"type":"string","description":"OAuth provider id, such as github, google, or lark"},"resource":{"type":"string","enum":["connections.list","connection.status","connection.profile"],"description":"Safe OAuth connector resource to read"},"params":{"type":"object","description":"Optional resource parameters; secret-like fields are redacted"}},"required":["resource"]}`,
+		},
+	}
+
+	for _, spec := range specs {
+		schema := json.RawMessage(spec.schema)
+		r.Register(&domain.ToolDefinition{
+			Name:        spec.name,
+			Description: spec.description,
+			JSONSchema:  schema,
+			Handler: func(ctx context.Context, meta *domain.ToolCallMeta, raw json.RawMessage) (*domain.ToolResult, error) {
+				return &domain.ToolResult{
+					Content: "desktop-local builtin tools are executed by the Agent turn loop local tool bridge",
+				}, nil
+			},
+		})
+	}
 }
 
 // Register adds or replaces a tool definition.
