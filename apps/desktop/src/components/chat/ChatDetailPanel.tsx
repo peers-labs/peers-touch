@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, toast } from '@lobehub/ui';
-import { Modal, Select, theme, Tooltip, Typography } from 'antd';
+import { Modal, Select, Tag, theme, Tooltip, Typography } from 'antd';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import {
   chatMediaKindForAttachment,
@@ -30,7 +30,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useSocialChatStore } from '../../store/socialChat';
+import { groupAvatarRemoteUrl, useSocialChatStore } from '../../store/socialChat';
 import { CHAT_BACKGROUND_OPTIONS } from '../../store/socialProjection';
 import { api, type AccountProfile } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
@@ -49,6 +49,7 @@ import {
 import { SafetyVerificationPanel } from './SafetyVerificationPanel';
 import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicProfileCard';
+import { getGroupMemberControlState } from './chatGroupPermissions';
 
 const { Text } = Typography;
 
@@ -69,10 +70,17 @@ interface DetailAttachmentItem {
 
 const RECENT_MEDIA_LIMIT = 6;
 const RECENT_FILE_LIMIT = 4;
+type GroupMemberLike = Pick<GroupMember, 'actorDid' | 'nickname' | 'role' | 'muted'>;
 
 function getInitial(name: string): string {
   if (!name) return '?';
   return name.charAt(0).toUpperCase();
+}
+
+function groupRoleLabel(role: number, t: (key: string) => string): string {
+  if (role >= GroupRole.OWNER) return t('chat.social.detail.roleOwner');
+  if (role >= GroupRole.ADMIN) return t('chat.social.detail.roleAdmin');
+  return t('chat.social.detail.roleMember');
 }
 
 function getMessageTimestampMs(message: SocialMessage): number {
@@ -104,9 +112,11 @@ function getCurrentConversationAttachments(messages: SocialMessage[]): DetailAtt
   return items.sort((a, b) => b.timestampMs - a.timestampMs);
 }
 
-function MemberItem({ member, action }: { member: GroupMember; action?: ReactNode }) {
+function MemberItem({ member, action, lockedReason }: { member: GroupMemberLike; action?: ReactNode; lockedReason?: string }) {
   const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
   const name = member.nickname || member.actorDid.slice(0, 16);
+  const role = Number(member.role ?? GroupRole.MEMBER);
   return (
     <Flexbox horizontal align="center" gap={10} style={{ padding: '6px 0' }}>
       <Flexbox
@@ -125,7 +135,28 @@ function MemberItem({ member, action }: { member: GroupMember; action?: ReactNod
       >
         {getInitial(name)}
       </Flexbox>
-      <Text ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>{name}</Text>
+      <Flexbox gap={3} style={{ flex: 1, minWidth: 0 }}>
+        <Text ellipsis style={{ fontSize: 13 }}>{name}</Text>
+        <Flexbox horizontal gap={4} align="center">
+          <Tag
+            bordered={false}
+            color={role >= GroupRole.OWNER ? 'gold' : role >= GroupRole.ADMIN ? 'blue' : 'default'}
+            style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: '18px' }}
+          >
+            {groupRoleLabel(role, t)}
+          </Tag>
+          {member.muted ? (
+            <Tag bordered={false} color="warning" style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: '18px' }}>
+              {t('chat.social.detail.memberMuted')}
+            </Tag>
+          ) : null}
+        </Flexbox>
+      </Flexbox>
+      {!action && lockedReason ? (
+        <Tooltip title={lockedReason}>
+          <Lock size={13} style={{ color: token.colorTextQuaternary, flexShrink: 0 }} />
+        </Tooltip>
+      ) : null}
       {action}
     </Flexbox>
   );
@@ -445,6 +476,8 @@ export function ChatDetailPanel() {
   const activeGroup: Group | undefined = isGroup
     ? groups.find((g) => g.ulid === activeUlid)
     : undefined;
+  const groupAvatarUrl = useOssAttachmentUrl(activeGroup?.avatarCid || undefined)
+    || groupAvatarRemoteUrl(activeGroup);
 
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [showAllMembers, setShowAllMembers] = useState(false);
@@ -454,9 +487,23 @@ export function ChatDetailPanel() {
   const [peerBlocked, setPeerBlocked] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState('');
+  const [editingMyNickname, setEditingMyNickname] = useState(false);
+  const [editMyNicknameValue, setEditMyNicknameValue] = useState('');
 
   const peerDid = getFriendPeerDid(activeFriendSession, currentUserDid);
   const members: GroupMember[] = isGroup && activeUlid ? (groupMembers[activeUlid] || []) : [];
+  const myGroupMember = currentUserDid ? members.find((member) => member.actorDid === currentUserDid) : undefined;
+  const myGroupNickname = myGroupMember?.nickname?.trim() || '';
+  const displayMembers: GroupMemberLike[] = members.length > 0
+    ? members
+    : activeGroup?.ownerDid
+      ? [{
+          actorDid: activeGroup.ownerDid,
+          nickname: '',
+          role: GroupRole.OWNER,
+          muted: false,
+        }]
+      : [];
   const memberDidSet = useMemo(() => new Set(members.map((member) => member.actorDid)), [members]);
   const inviteCandidates = useMemo(
     () => sessions
@@ -470,12 +517,23 @@ export function ChatDetailPanel() {
     [currentUserDid, memberDidSet, sessions],
   );
   const groupMemberCount = isGroup ? (activeGroup?.memberCount || members.length) : 0;
-  const myGroupMember = members.find((member) => member.actorDid === currentUserDid);
   const myGroupRole = activeGroup?.ownerDid === currentUserDid ? GroupRole.OWNER : Number(myGroupMember?.role ?? 0);
   const canManageGroupMembers = Boolean(
     activeGroup?.ownerDid === currentUserDid ||
     myGroupRole >= GroupRole.ADMIN,
   );
+  const isGroupOwner = isGroup && myGroupRole === GroupRole.OWNER;
+  const myGroupRoleLabel = groupRoleLabel(myGroupRole, t);
+  const groupPermissionTitle = isGroupOwner
+    ? t('chat.social.detail.permissionOwnerTitle')
+    : myGroupRole >= GroupRole.ADMIN
+      ? t('chat.social.detail.permissionAdminTitle')
+      : t('chat.social.detail.permissionMemberTitle');
+  const groupPermissionBody = isGroupOwner
+    ? t('chat.social.detail.permissionOwnerBody')
+    : myGroupRole >= GroupRole.ADMIN
+      ? t('chat.social.detail.permissionAdminBody')
+      : t('chat.social.detail.permissionMemberBody');
   const currentName = isGroup
     ? (activeGroup?.name || t('chat.social.sessionList.unnamedGroup'))
     : getFriendPeerName(activeFriendSession, currentUserDid);
@@ -515,11 +573,68 @@ export function ChatDetailPanel() {
     setEditingName(false);
   };
 
-  const handleGroupAvatarClick = () => {
-    // Station API for group avatar upload is not yet available.
-    // Show a placeholder toast; the UI entry point is ready for when the
-    // backend supports it.
-    toast.info(t('chat.social.detail.groupAvatarComingSoon'));
+  const handleSaveMyNickname = async () => {
+    if (!activeUlid) {
+      setEditingMyNickname(false);
+      return;
+    }
+    const nextNickname = editMyNicknameValue.trim();
+    try {
+      await api.groupChatUpdateNickname(activeUlid, nextNickname);
+      await loadGroupMembers(activeUlid);
+      toast.success(t('chat.social.detail.myNicknameUpdated'));
+    } catch (error) {
+      log.error('chat', 'update group nickname failed', { groupUlid: activeUlid, error });
+      toast.error(t('chat.social.detail.myNicknameUpdateFailed'));
+    }
+    setEditingMyNickname(false);
+  };
+
+  const handleGroupAvatarClick = async () => {
+    if (!activeUlid || !canManageGroupMembers) return;
+    let filePath: string;
+    try {
+      filePath = await api.pickImageFile();
+    } catch {
+      return;
+    }
+    try {
+      const uploaded = await api.ossUploadAttachmentSocial(filePath);
+      await api.groupChatUpdateGroup(
+        activeUlid,
+        activeGroup?.name || displayName,
+        activeGroup?.description || undefined,
+        uploaded.cid,
+      );
+      await loadGroups();
+      toast.success(t('chat.social.detail.groupAvatarUpdated'));
+    } catch (error) {
+      log.error('chat', 'update group avatar failed', { groupUlid: activeUlid, error });
+      toast.error(t('chat.social.detail.groupAvatarUpdateFailed'));
+    }
+  };
+
+  const handleUploadBackgroundImage = async () => {
+    if (!activeUlid) return;
+    let filePath: string;
+    try {
+      filePath = await api.pickImageFile();
+    } catch {
+      return;
+    }
+    try {
+      const uploaded = await api.ossUploadAttachmentChat({
+        file_path: filePath,
+        bucket: 'chat-backgrounds',
+        visibility: 'private',
+        chat_session_id: null,
+      });
+      await updateConversationLocalState(activeTab, activeUlid, { backgroundImage: uploaded.cid });
+      toast.success(t('chat.social.detail.backgroundImageUpdated'));
+    } catch (error) {
+      log.error('chat', 'update chat background image failed', { kind: activeTab, ulid: activeUlid, error });
+      toast.error(t('chat.social.detail.backgroundImageUpdateFailed'));
+    }
   };
 
   const confirmClearHistory = () => {
@@ -650,6 +765,76 @@ export function ChatDetailPanel() {
     void updateGroupMember(member, { muted: !member.muted });
   };
 
+  const confirmTransferGroupOwnership = (member: GroupMember) => {
+    if (!activeUlid || !member.actorDid) return;
+    const memberName = member.nickname || member.actorDid;
+    Modal.confirm({
+      title: t('chat.social.detail.transferOwnerConfirmTitle'),
+      content: t('chat.social.detail.transferOwnerConfirmBody', { name: memberName }),
+      okText: t('chat.social.detail.transferOwner'),
+      cancelText: t('chat.social.messageArea.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await api.groupChatTransferOwnership(activeUlid, member.actorDid);
+          await Promise.allSettled([loadGroupMembers(activeUlid), loadGroups()]);
+          toast.success(t('chat.social.detail.transferOwnerSuccess'));
+        } catch (error) {
+          log.error('chat', 'transfer group ownership failed', { groupUlid: activeUlid, nextOwnerDid: member.actorDid, error });
+          toast.error(t('chat.social.detail.transferOwnerFailed'));
+          throw error;
+        }
+      },
+    });
+  };
+
+  const confirmLeaveGroup = () => {
+    if (!activeUlid) return;
+    Modal.confirm({
+      title: t('chat.social.detail.leaveGroupConfirmTitle'),
+      content: t('chat.social.detail.leaveGroupConfirmBody'),
+      okText: t('chat.social.detail.leaveGroup'),
+      cancelText: t('chat.social.messageArea.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await api.groupChatLeaveGroup(activeUlid);
+          await loadGroups();
+          selectGroup('');
+          setShowDetail(false);
+        } catch (error) {
+          log.error('chat', 'leave group failed', { groupUlid: activeUlid, error });
+          toast.error(t('chat.social.detail.leaveGroupFailed'));
+          throw error;
+        }
+      },
+    });
+  };
+
+  const confirmDissolveGroup = () => {
+    if (!activeUlid) return;
+    Modal.confirm({
+      title: t('chat.social.detail.dissolveGroupConfirmTitle'),
+      content: t('chat.social.detail.dissolveGroupConfirmBody'),
+      okText: t('chat.social.detail.dissolveGroup'),
+      cancelText: t('chat.social.messageArea.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await api.groupChatDissolveGroup(activeUlid);
+          await loadGroups();
+          selectGroup('');
+          setShowDetail(false);
+          toast.success(t('chat.social.detail.dissolveGroupSuccess'));
+        } catch (error) {
+          log.error('chat', 'dissolve group failed', { groupUlid: activeUlid, error });
+          toast.error(t('chat.social.detail.dissolveGroupFailed'));
+          throw error;
+        }
+      },
+    });
+  };
+
   const openBackgroundModal = () => {
     Modal.confirm({
       title: t('chat.social.detail.chatBackground'),
@@ -670,28 +855,29 @@ export function ChatDetailPanel() {
             }}
             style={{ width: '100%' }}
           />
-          <Flexbox gap={4}>
-            <Text type="secondary" style={{ fontSize: 12 }}>{t('chat.social.detail.backgroundImageUrl')}</Text>
-            <input
-              placeholder="https://..."
-              defaultValue={activeLocalState?.backgroundImage || ''}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  updateActiveLocalState({ backgroundImage: (e.target as HTMLInputElement).value.trim() });
-                  Modal.destroyAll();
-                }
+          <Button
+            block
+            icon={<ImageIcon size={14} />}
+            onClick={() => {
+              Modal.destroyAll();
+              void handleUploadBackgroundImage();
+            }}
+          >
+            {t('chat.social.detail.uploadBackgroundImage')}
+          </Button>
+          {activeLocalState?.backgroundImage ? (
+            <Button
+              block
+              type="text"
+              danger
+              onClick={() => {
+                updateActiveLocalState({ backgroundImage: '' });
+                Modal.destroyAll();
               }}
-              style={{
-                width: '100%',
-                padding: '6px 10px',
-                border: `1px solid ${token.colorBorder}`,
-                borderRadius: 6,
-                background: token.colorBgContainer,
-                color: token.colorText,
-                fontSize: 13,
-              }}
-            />
-          </Flexbox>
+            >
+              {t('chat.social.detail.clearBackgroundImage')}
+            </Button>
+          ) : null}
         </Flexbox>
       ),
       okButtonProps: { style: { display: 'none' } },
@@ -710,6 +896,7 @@ export function ChatDetailPanel() {
     setInviteModalOpen(false);
     setInviteDids([]);
     setEditingName(false);
+    setEditingMyNickname(false);
   }, [activeUlid]);
 
   useEffect(() => {
@@ -793,9 +980,18 @@ export function ChatDetailPanel() {
                   borderRadius: 18,
                   background: token.colorFillSecondary,
                   color: token.colorTextSecondary,
+                  overflow: 'hidden',
                 }}
               >
-                <Users size={32} />
+                {groupAvatarUrl ? (
+                  <img
+                    src={groupAvatarUrl}
+                    alt={displayName}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                  />
+                ) : (
+                  <Users size={32} />
+                )}
               </Flexbox>
               {canManageGroupMembers && (
                 <Flexbox
@@ -880,44 +1076,76 @@ export function ChatDetailPanel() {
           </Flexbox>
         )}
 
+        {isGroup ? (
+          <DetailSection title={t('chat.social.detail.permissionLabel')} gap={10}>
+            <Flexbox horizontal align="center" justify="space-between" gap={10}>
+              <Flexbox gap={3} style={{ minWidth: 0 }}>
+                <Text strong style={{ fontSize: 13 }}>{groupPermissionTitle}</Text>
+                <Text type="secondary" style={{ fontSize: 12, lineHeight: 1.45 }}>
+                  {groupPermissionBody}
+                </Text>
+              </Flexbox>
+              <Tag
+                bordered={false}
+                color={isGroupOwner ? 'gold' : myGroupRole >= GroupRole.ADMIN ? 'blue' : 'default'}
+                style={{ marginInlineEnd: 0, flexShrink: 0 }}
+              >
+                {myGroupRoleLabel}
+              </Tag>
+            </Flexbox>
+          </DetailSection>
+        ) : null}
+
         {/* Members section (group only) */}
         {isGroup && (
           <DetailSection title={t('chat.social.detail.membersLabel')}>
-            {members.length > 0 ? (
-              (showAllMembers ? members : members.slice(0, 6)).map((m) => {
+            {displayMembers.length > 0 ? (
+              (showAllMembers ? displayMembers : displayMembers.slice(0, 6)).map((m) => {
                 const memberRole = Number(m.role ?? GroupRole.MEMBER);
-                const canManageTarget = canManageGroupMembers
-                  && m.actorDid !== currentUserDid
-                  && memberRole !== GroupRole.OWNER
-                  && (myGroupRole === GroupRole.OWNER || memberRole < myGroupRole);
+                const targetIsSelf = m.actorDid === currentUserDid;
+                const controlState = getGroupMemberControlState({
+                  canManageGroupMembers,
+                  isSelf: targetIsSelf,
+                  membersLoaded: members.length > 0,
+                  myGroupRole,
+                  targetRole: memberRole,
+                });
+                const managedMember = members.find((member) => member.actorDid === m.actorDid);
+                const lockedReason = controlState.lockedReasonKey ? t(controlState.lockedReasonKey) : undefined;
                 return (
                   <MemberItem
                     key={m.actorDid}
                     member={m}
-                    action={canManageTarget ? (
+                    lockedReason={lockedReason}
+                    action={controlState.canManageTarget && managedMember ? (
                       <Flexbox horizontal gap={4}>
                         {myGroupRole === GroupRole.OWNER ? (
-                          <Button
-                            type="text"
-                            size="small"
-                            onClick={() => confirmUpdateGroupMemberRole(
-                              m,
-                              memberRole === GroupRole.ADMIN ? GroupRole.MEMBER : GroupRole.ADMIN,
-                            )}
-                          >
-                            {memberRole === GroupRole.ADMIN
-                              ? t('chat.social.detail.demoteAdmin')
-                              : t('chat.social.detail.promoteAdmin')}
-                          </Button>
+                          <>
+                            <Button
+                              type="text"
+                              size="small"
+                              onClick={() => confirmUpdateGroupMemberRole(
+                                managedMember,
+                                memberRole === GroupRole.ADMIN ? GroupRole.MEMBER : GroupRole.ADMIN,
+                              )}
+                            >
+                              {memberRole === GroupRole.ADMIN
+                                ? t('chat.social.detail.demoteAdmin')
+                                : t('chat.social.detail.promoteAdmin')}
+                            </Button>
+                            <Button type="text" size="small" onClick={() => confirmTransferGroupOwnership(managedMember)}>
+                              {t('chat.social.detail.transferOwner')}
+                            </Button>
+                          </>
                         ) : null}
-                        <Button type="text" size="small" onClick={() => toggleGroupMemberMuted(m)}>
+                        <Button type="text" size="small" onClick={() => toggleGroupMemberMuted(managedMember)}>
                           {m.muted ? t('chat.social.detail.unmuteMember') : t('chat.social.detail.muteMember')}
                         </Button>
                         <Button
                           type="text"
                           size="small"
                           danger
-                          onClick={() => confirmRemoveGroupMember(m)}
+                          onClick={() => confirmRemoveGroupMember(managedMember)}
                         >
                           {t('chat.social.detail.removeMember')}
                         </Button>
@@ -941,7 +1169,7 @@ export function ChatDetailPanel() {
               >
                 {t('chat.social.detail.addMember')}
               </Button>
-              {members.length > 6 && (
+              {displayMembers.length > 6 && (
                 <Button
                   type="link"
                   size="small"
@@ -957,6 +1185,54 @@ export function ChatDetailPanel() {
 
         {/* Settings section */}
         <DetailSection title={t('chat.social.detail.settings')}>
+          {isGroup ? (
+            <Flexbox horizontal align="center" justify="space-between" gap={10}>
+              <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0, flex: 1 }}>
+                <Users size={15} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />
+                <Flexbox gap={1} style={{ minWidth: 0, flex: 1 }}>
+                  <Text style={{ fontSize: 13 }}>{t('chat.social.detail.myGroupNickname')}</Text>
+                  {editingMyNickname ? (
+                    <input
+                      autoFocus
+                      value={editMyNicknameValue}
+                      placeholder={t('chat.social.detail.myGroupNicknamePlaceholder')}
+                      onChange={(event) => setEditMyNicknameValue(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') void handleSaveMyNickname();
+                        if (event.key === 'Escape') setEditingMyNickname(false);
+                      }}
+                      onBlur={() => void handleSaveMyNickname()}
+                      style={{
+                        border: 'none',
+                        borderBottom: `1px solid ${token.colorPrimary}`,
+                        background: 'transparent',
+                        color: token.colorText,
+                        fontSize: 12,
+                        outline: 'none',
+                        padding: '2px 0',
+                      }}
+                    />
+                  ) : (
+                    <Text type="secondary" ellipsis style={{ fontSize: 12 }}>
+                      {myGroupNickname || t('chat.social.detail.myGroupNicknameUnset')}
+                    </Text>
+                  )}
+                </Flexbox>
+              </Flexbox>
+              {!editingMyNickname ? (
+                <Button
+                  size="small"
+                  type="text"
+                  onClick={() => {
+                    setEditMyNicknameValue(myGroupNickname);
+                    setEditingMyNickname(true);
+                  }}
+                >
+                  {t('chat.social.detail.edit')}
+                </Button>
+              ) : null}
+            </Flexbox>
+          ) : null}
           <Flexbox horizontal align="center" justify="space-between">
             <Flexbox horizontal align="center" gap={8}>
               <BellOff size={15} style={{ color: token.colorTextSecondary }} />
@@ -1093,23 +1369,12 @@ export function ChatDetailPanel() {
             <Button
               type="text"
               danger
-              icon={<LogOut size={14} />}
+              icon={isGroupOwner ? <Trash2 size={14} /> : <LogOut size={14} />}
               style={{ justifyContent: 'flex-start', height: 36 }}
               block
-              onClick={async () => {
-                if (activeUlid) {
-                  try {
-                    await api.groupChatLeaveGroup(activeUlid);
-                    await loadGroups();
-                    selectGroup('');
-                    setShowDetail(false);
-                  } catch (e) {
-                    log.error('chat', 'leave group failed', e);
-                  }
-                }
-              }}
+              onClick={isGroupOwner ? confirmDissolveGroup : confirmLeaveGroup}
             >
-              {t('chat.social.detail.leaveGroup')}
+              {isGroupOwner ? t('chat.social.detail.dissolveGroup') : t('chat.social.detail.leaveGroup')}
             </Button>
           ) : (
             <Button
