@@ -2,15 +2,15 @@
 // @generated from file domain/applet/applet.proto (package peers_touch.domain.applet, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file domain/applet/applet.proto.
  */
 export const file_domain_applet_applet: GenFile = /*@__PURE__*/
-  fileDesc("Chpkb21haW4vYXBwbGV0L2FwcGxldC5wcm90bxIZcGVlcnNfdG91Y2guZG9tYWluLmFwcGxldCKnAQoKQXBwbGV0SW5mbxIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEhAKCGljb25fdXJsGAQgASgJEhQKDGRldmVsb3Blcl9pZBgFIAEoCRIWCg5kb3dubG9hZF9jb3VudBgGIAEoAxIWCg5sYXRlc3RfdmVyc2lvbhgHIAEoCRISCgp1cGRhdGVkX2F0GAggASgDIsEBChFBcHBsZXRWZXJzaW9uSW5mbxIKCgJpZBgBIAEoCRIRCglhcHBsZXRfaWQYAiABKAkSDwoHdmVyc2lvbhgDIAEoCRISCgpidW5kbGVfdXJsGAQgASgJEhMKC2J1bmRsZV9oYXNoGAUgASgJEhMKC2J1bmRsZV9zaXplGAYgASgDEhcKD21pbl9zZGtfdmVyc2lvbhgHIAEoCRIRCgljaGFuZ2Vsb2cYCCABKAkSEgoKY3JlYXRlZF9hdBgJIAEoAyJLChJMaXN0QXBwbGV0c1JlcXVlc3QSDQoFbGltaXQYASABKAUSDgoGb2Zmc2V0GAIgASgFEhYKDnNlYXJjaF9rZXl3b3JkGAMgASgJImIKE0xpc3RBcHBsZXRzUmVzcG9uc2USNgoHYXBwbGV0cxgBIAMoCzIlLnBlZXJzX3RvdWNoLmRvbWFpbi5hcHBsZXQuQXBwbGV0SW5mbxITCgt0b3RhbF9jb3VudBgCIAEoAyIsChdHZXRBcHBsZXREZXRhaWxzUmVxdWVzdBIRCglhcHBsZXRfaWQYASABKAkilQEKGEdldEFwcGxldERldGFpbHNSZXNwb25zZRIzCgRpbmZvGAEgASgLMiUucGVlcnNfdG91Y2guZG9tYWluLmFwcGxldC5BcHBsZXRJbmZvEkQKDmxhdGVzdF92ZXJzaW9uGAIgASgLMiwucGVlcnNfdG91Y2guZG9tYWluLmFwcGxldC5BcHBsZXRWZXJzaW9uSW5mbyJ2ChRQdWJsaXNoQXBwbGV0UmVxdWVzdBIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEg8KB3ZlcnNpb24YAyABKAkSFwoPbWluX3Nka192ZXJzaW9uGAQgASgJEhEKCWNoYW5nZWxvZxgFIAEoCSJVChVQdWJsaXNoQXBwbGV0UmVzcG9uc2USEQoJYXBwbGV0X2lkGAEgASgJEhIKCnZlcnNpb25faWQYAiABKAkSFQoNaXNfbmV3X2FwcGxldBgDIAEoCEJMWkpnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9hcHAvc3Vic2VydmVyL2FwcGxldF9zdG9yZS9tb2RlbGIGcHJvdG8z");
+  fileDesc("Chpkb21haW4vYXBwbGV0L2FwcGxldC5wcm90bxIZcGVlcnNfdG91Y2guZG9tYWluLmFwcGxldCKqAgoKQXBwbGV0SW5mbxIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEhAKCGljb25fdXJsGAQgASgJEhQKDGRldmVsb3Blcl9pZBgFIAEoCRIWCg5kb3dubG9hZF9jb3VudBgGIAEoAxIWCg5sYXRlc3RfdmVyc2lvbhgHIAEoCRISCgp1cGRhdGVkX2F0GAggASgDEj4KBnN0YXR1cxgJIAEoDjIuLnBlZXJzX3RvdWNoLmRvbWFpbi5hcHBsZXQuQXBwbGV0UGFja2FnZVN0YXR1cxJBCghjaGFubmVscxgKIAMoDjIvLnBlZXJzX3RvdWNoLmRvbWFpbi5hcHBsZXQuQXBwbGV0UmVsZWFzZUNoYW5uZWwivAMKEUFwcGxldFZlcnNpb25JbmZvEgoKAmlkGAEgASgJEhEKCWFwcGxldF9pZBgCIAEoCRIPCgd2ZXJzaW9uGAMgASgJEhIKCmJ1bmRsZV91cmwYBCABKAkSEwoLYnVuZGxlX2hhc2gYBSABKAkSEwoLYnVuZGxlX3NpemUYBiABKAMSFwoPbWluX3Nka192ZXJzaW9uGAcgASgJEhEKCWNoYW5nZWxvZxgIIAEoCRISCgpjcmVhdGVkX2F0GAkgASgDEj4KBnN0YXR1cxgKIAEoDjIuLnBlZXJzX3RvdWNoLmRvbWFpbi5hcHBsZXQuQXBwbGV0UGFja2FnZVN0YXR1cxJACgdjaGFubmVsGAsgASgOMi8ucGVlcnNfdG91Y2guZG9tYWluLmFwcGxldC5BcHBsZXRSZWxlYXNlQ2hhbm5lbBI9CghtYW5pZmVzdBgMIAEoCzIrLnBlZXJzX3RvdWNoLmRvbWFpbi5hcHBsZXQuTWFuaWZlc3RTbmFwc2hvdBI4CgZidW5kbGUYDSABKAsyKC5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkJ1bmRsZVN0b3JhZ2Ui4AIKEE1hbmlmZXN0U25hcHNob3QSFQoNbWFuaWZlc3RfanNvbhgBIAEoCRIYChB0YXJnZXRfcGxhdGZvcm1zGAIgAygJEhMKC3Blcm1pc3Npb25zGAMgAygJEhQKDGNhcGFiaWxpdGllcxgEIAMoCRJNCglpbnRlZ3JpdHkYBSADKAsyOi5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0Lk1hbmlmZXN0U25hcHNob3QuSW50ZWdyaXR5RW50cnkSQAoIc2VydmljZXMYBiADKAsyLi5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkFwcGxldFNlcnZpY2VQb2xpY3kSFwoPYnJpZGdlX3Byb3RvY29sGAcgASgJEhQKDHJ1bnRpbWVfdHlwZRgIIAEoCRowCg5JbnRlZ3JpdHlFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIl4KFEJ1bmRsZUFzc2V0SW50ZWdyaXR5EgwKBHBhdGgYASABKAkSDgoGc2hhMjU2GAIgASgJEhIKCnNpemVfYnl0ZXMYAyABKAMSFAoMY29udGVudF90eXBlGAQgASgJIq8BCg1CdW5kbGVTdG9yYWdlEhIKCmJ1bmRsZV91cmkYASABKAkSFQoNYnVuZGxlX3NoYTI1NhgCIAEoCRIZChFidW5kbGVfc2l6ZV9ieXRlcxgDIAEoAxI/CgZhc3NldHMYBCADKAsyLy5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkJ1bmRsZUFzc2V0SW50ZWdyaXR5EhcKD3N0b3JhZ2VfYmFja2VuZBgFIAEoCSLZAQoWQXBwbGV0Q2FwYWJpbGl0eVBvbGljeRISCgpjYXBhYmlsaXR5GAEgASgJEg8KB21ldGhvZHMYAiADKAkSQQoIZGVjaXNpb24YAyABKA4yLy5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkFwcGxldFBvbGljeURlY2lzaW9uEg4KBnJlYXNvbhgEIAEoCRIZChFtYXhfcGF5bG9hZF9ieXRlcxgFIAEoAxISCgp0aW1lb3V0X21zGAYgASgFEhgKEHF1b3RhX3Blcl9taW51dGUYByABKAUi2gEKE0FwcGxldFNlcnZpY2VQb2xpY3kSEgoKc2VydmljZV9pZBgBIAEoCRIMCgRraW5kGAIgASgJEhcKD2FsbG93ZWRfbWV0aG9kcxgDIAMoCRIVCg1hbGxvd2VkX3BhdGhzGAQgAygJEhEKCXN0cmVhbWluZxgFIAEoCBIbChNzdGF0aW9uX3BhdGhfcHJlZml4GAYgASgJEkEKCGRlY2lzaW9uGAcgASgOMi8ucGVlcnNfdG91Y2guZG9tYWluLmFwcGxldC5BcHBsZXRQb2xpY3lEZWNpc2lvbiL2AQoPQXBwbGV0UG9saWN5U2V0EhEKCXBvbGljeV9pZBgBIAEoCRIRCglhcHBsZXRfaWQYAiABKAkSDwoHdmVyc2lvbhgDIAEoCRJOChNjYXBhYmlsaXR5X3BvbGljaWVzGAQgAygLMjEucGVlcnNfdG91Y2guZG9tYWluLmFwcGxldC5BcHBsZXRDYXBhYmlsaXR5UG9saWN5EkgKEHNlcnZpY2VfcG9saWNpZXMYBSADKAsyLi5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkFwcGxldFNlcnZpY2VQb2xpY3kSEgoKY3JlYXRlZF9hdBgGIAEoAyLBAQoUQXBwbGV0VmVyc2lvbkNoYW5uZWwSQAoHY2hhbm5lbBgBIAEoDjIvLnBlZXJzX3RvdWNoLmRvbWFpbi5hcHBsZXQuQXBwbGV0UmVsZWFzZUNoYW5uZWwSDwoHdmVyc2lvbhgCIAEoCRIXCg9yb2xsb3V0X3BlcmNlbnQYAyABKAUSDwoHZW5hYmxlZBgEIAEoCBIYChByb2xsYmFja192ZXJzaW9uGAUgASgJEhIKCnVwZGF0ZWRfYXQYBiABKAMikAIKEUFwcGxldENhdGFsb2dJdGVtEjMKBGluZm8YASABKAsyJS5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkFwcGxldEluZm8SPQoHdmVyc2lvbhgCIAEoCzIsLnBlZXJzX3RvdWNoLmRvbWFpbi5hcHBsZXQuQXBwbGV0VmVyc2lvbkluZm8SRAoNaW5zdGFsbF9zdGF0ZRgDIAEoCzItLnBlZXJzX3RvdWNoLmRvbWFpbi5hcHBsZXQuQXBwbGV0SW5zdGFsbFN0YXRlEkEKCGNoYW5uZWxzGAQgAygLMi8ucGVlcnNfdG91Y2guZG9tYWluLmFwcGxldC5BcHBsZXRWZXJzaW9uQ2hhbm5lbCKaAwoSQXBwbGV0SW5zdGFsbFN0YXRlEhAKCGFjdG9yX2lkGAEgASgJEhEKCWRldmljZV9pZBgCIAEoCRIRCglhcHBsZXRfaWQYAyABKAkSDwoHdmVyc2lvbhgEIAEoCRJACgdjaGFubmVsGAUgASgOMi8ucGVlcnNfdG91Y2guZG9tYWluLmFwcGxldC5BcHBsZXRSZWxlYXNlQ2hhbm5lbBI+CgZzdGF0dXMYBiABKA4yLi5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkFwcGxldEluc3RhbGxTdGF0dXMSSQoGY29uZmlnGAcgAygLMjkucGVlcnNfdG91Y2guZG9tYWluLmFwcGxldC5BcHBsZXRJbnN0YWxsU3RhdGUuQ29uZmlnRW50cnkSFAoMaW5zdGFsbGVkX2F0GAggASgDEhIKCnVwZGF0ZWRfYXQYCSABKAMSFQoNc3RhdHVzX3JlYXNvbhgKIAEoCRotCgtDb25maWdFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIowDChFBcHBsZXRBdWRpdFJlY29yZBIQCghhdWRpdF9pZBgBIAEoCRIQCghhY3Rvcl9pZBgCIAEoCRIRCglkZXZpY2VfaWQYAyABKAkSEQoJYXBwbGV0X2lkGAQgASgJEg8KB3ZlcnNpb24YBSABKAkSEgoKc2Vzc2lvbl9pZBgGIAEoCRISCgpjYXBhYmlsaXR5GAcgASgJEg4KBm1ldGhvZBgIIAEoCRJACghkZWNpc2lvbhgJIAEoDjIuLnBlZXJzX3RvdWNoLmRvbWFpbi5hcHBsZXQuQXBwbGV0QXVkaXREZWNpc2lvbhIOCgZyZWFzb24YCiABKAkSTAoIbWV0YWRhdGEYCyADKAsyOi5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkFwcGxldEF1ZGl0UmVjb3JkLk1ldGFkYXRhRW50cnkSEwoLcmVjb3JkZWRfYXQYDCABKAMaLwoNTWV0YWRhdGFFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIuwBChJMaXN0QXBwbGV0c1JlcXVlc3QSDQoFbGltaXQYASABKAUSDgoGb2Zmc2V0GAIgASgFEhYKDnNlYXJjaF9rZXl3b3JkGAMgASgJEhAKCGFjdG9yX2lkGAQgASgJEhEKCWRldmljZV9pZBgFIAEoCRIXCg90YXJnZXRfcGxhdGZvcm0YBiABKAkSQAoHY2hhbm5lbBgHIAEoDjIvLnBlZXJzX3RvdWNoLmRvbWFpbi5hcHBsZXQuQXBwbGV0UmVsZWFzZUNoYW5uZWwSHwoXaW5jbHVkZV9pbnN0YWxsZWRfc3RhdGUYCCABKAgiYgoTTGlzdEFwcGxldHNSZXNwb25zZRI2CgdhcHBsZXRzGAEgAygLMiUucGVlcnNfdG91Y2guZG9tYWluLmFwcGxldC5BcHBsZXRJbmZvEhMKC3RvdGFsX2NvdW50GAIgASgDIiwKF0dldEFwcGxldERldGFpbHNSZXF1ZXN0EhEKCWFwcGxldF9pZBgBIAEoCSKeAgoYR2V0QXBwbGV0RGV0YWlsc1Jlc3BvbnNlEjMKBGluZm8YASABKAsyJS5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkFwcGxldEluZm8SRAoObGF0ZXN0X3ZlcnNpb24YAiABKAsyLC5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkFwcGxldFZlcnNpb25JbmZvEkEKCGNoYW5uZWxzGAMgAygLMi8ucGVlcnNfdG91Y2guZG9tYWluLmFwcGxldC5BcHBsZXRWZXJzaW9uQ2hhbm5lbBJECg1pbnN0YWxsX3N0YXRlGAQgASgLMi0ucGVlcnNfdG91Y2guZG9tYWluLmFwcGxldC5BcHBsZXRJbnN0YWxsU3RhdGUikgMKFFB1Ymxpc2hBcHBsZXRSZXF1ZXN0EgwKBG5hbWUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSDwoHdmVyc2lvbhgDIAEoCRIXCg9taW5fc2RrX3ZlcnNpb24YBCABKAkSEQoJY2hhbmdlbG9nGAUgASgJEhEKCWFwcGxldF9pZBgGIAEoCRIQCghvd25lcl9pZBgHIAEoCRJACgdjaGFubmVsGAggASgOMi8ucGVlcnNfdG91Y2guZG9tYWluLmFwcGxldC5BcHBsZXRSZWxlYXNlQ2hhbm5lbBI9CghtYW5pZmVzdBgJIAEoCzIrLnBlZXJzX3RvdWNoLmRvbWFpbi5hcHBsZXQuTWFuaWZlc3RTbmFwc2hvdBI4CgZidW5kbGUYCiABKAsyKC5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkJ1bmRsZVN0b3JhZ2USOgoGcG9saWN5GAsgASgLMioucGVlcnNfdG91Y2guZG9tYWluLmFwcGxldC5BcHBsZXRQb2xpY3lTZXQilAEKFVB1Ymxpc2hBcHBsZXRSZXNwb25zZRIRCglhcHBsZXRfaWQYASABKAkSEgoKdmVyc2lvbl9pZBgCIAEoCRIVCg1pc19uZXdfYXBwbGV0GAMgASgIEj0KB3ZlcnNpb24YBCABKAsyLC5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkFwcGxldFZlcnNpb25JbmZvItEBChhMaXN0QXBwbGV0Q2F0YWxvZ1JlcXVlc3QSEAoIYWN0b3JfaWQYASABKAkSEQoJZGV2aWNlX2lkGAIgASgJEhcKD3RhcmdldF9wbGF0Zm9ybRgDIAEoCRJACgdjaGFubmVsGAQgASgOMi8ucGVlcnNfdG91Y2guZG9tYWluLmFwcGxldC5BcHBsZXRSZWxlYXNlQ2hhbm5lbBIWCg5zZWFyY2hfa2V5d29yZBgFIAEoCRINCgVsaW1pdBgGIAEoBRIOCgZvZmZzZXQYByABKAUibQoZTGlzdEFwcGxldENhdGFsb2dSZXNwb25zZRI7CgVpdGVtcxgBIAMoCzIsLnBlZXJzX3RvdWNoLmRvbWFpbi5hcHBsZXQuQXBwbGV0Q2F0YWxvZ0l0ZW0SEwoLdG90YWxfY291bnQYAiABKAMifwoXR2V0QXBwbGV0VmVyc2lvblJlcXVlc3QSEQoJYXBwbGV0X2lkGAEgASgJEg8KB3ZlcnNpb24YAiABKAkSQAoHY2hhbm5lbBgDIAEoDjIvLnBlZXJzX3RvdWNoLmRvbWFpbi5hcHBsZXQuQXBwbGV0UmVsZWFzZUNoYW5uZWwilQEKGEdldEFwcGxldFZlcnNpb25SZXNwb25zZRI9Cgd2ZXJzaW9uGAEgASgLMiwucGVlcnNfdG91Y2guZG9tYWluLmFwcGxldC5BcHBsZXRWZXJzaW9uSW5mbxI6CgZwb2xpY3kYAiABKAsyKi5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkFwcGxldFBvbGljeVNldCKdAgoUSW5zdGFsbEFwcGxldFJlcXVlc3QSEAoIYWN0b3JfaWQYASABKAkSEQoJZGV2aWNlX2lkGAIgASgJEhEKCWFwcGxldF9pZBgDIAEoCRIPCgd2ZXJzaW9uGAQgASgJEkAKB2NoYW5uZWwYBSABKA4yLy5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkFwcGxldFJlbGVhc2VDaGFubmVsEksKBmNvbmZpZxgGIAMoCzI7LnBlZXJzX3RvdWNoLmRvbWFpbi5hcHBsZXQuSW5zdGFsbEFwcGxldFJlcXVlc3QuQ29uZmlnRW50cnkaLQoLQ29uZmlnRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASJVChVJbnN0YWxsQXBwbGV0UmVzcG9uc2USPAoFc3RhdGUYASABKAsyLS5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkFwcGxldEluc3RhbGxTdGF0ZSJQChZVbmluc3RhbGxBcHBsZXRSZXF1ZXN0EhAKCGFjdG9yX2lkGAEgASgJEhEKCWRldmljZV9pZBgCIAEoCRIRCglhcHBsZXRfaWQYAyABKAkiVwoXVW5pbnN0YWxsQXBwbGV0UmVzcG9uc2USPAoFc3RhdGUYASABKAsyLS5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkFwcGxldEluc3RhbGxTdGF0ZSJcChtMaXN0SW5zdGFsbGVkQXBwbGV0c1JlcXVlc3QSEAoIYWN0b3JfaWQYASABKAkSEQoJZGV2aWNlX2lkGAIgASgJEhgKEGluY2x1ZGVfZGlzYWJsZWQYAyABKAgiXQocTGlzdEluc3RhbGxlZEFwcGxldHNSZXNwb25zZRI9CgZzdGF0ZXMYASADKAsyLS5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkFwcGxldEluc3RhbGxTdGF0ZSJlChpSZXZva2VBcHBsZXRWZXJzaW9uUmVxdWVzdBIRCglhcHBsZXRfaWQYASABKAkSDwoHdmVyc2lvbhgCIAEoCRIOCgZyZWFzb24YAyABKAkSEwoLb3BlcmF0b3JfaWQYBCABKAkiXAobUmV2b2tlQXBwbGV0VmVyc2lvblJlc3BvbnNlEj0KB3ZlcnNpb24YASABKAsyLC5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkFwcGxldFZlcnNpb25JbmZvIrABChxSb2xsYmFja0FwcGxldENoYW5uZWxSZXF1ZXN0EhEKCWFwcGxldF9pZBgBIAEoCRJACgdjaGFubmVsGAIgASgOMi8ucGVlcnNfdG91Y2guZG9tYWluLmFwcGxldC5BcHBsZXRSZWxlYXNlQ2hhbm5lbBIWCg50YXJnZXRfdmVyc2lvbhgDIAEoCRIOCgZyZWFzb24YBCABKAkSEwoLb3BlcmF0b3JfaWQYBSABKAkiYQodUm9sbGJhY2tBcHBsZXRDaGFubmVsUmVzcG9uc2USQAoHY2hhbm5lbBgBIAEoCzIvLnBlZXJzX3RvdWNoLmRvbWFpbi5hcHBsZXQuQXBwbGV0VmVyc2lvbkNoYW5uZWwiWQoYSW5nZXN0QXBwbGV0QXVkaXRSZXF1ZXN0Ej0KB3JlY29yZHMYASADKAsyLC5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkFwcGxldEF1ZGl0UmVjb3JkIk8KGUluZ2VzdEFwcGxldEF1ZGl0UmVzcG9uc2USFgoOYWNjZXB0ZWRfY291bnQYASABKAUSGgoScmVqZWN0ZWRfYXVkaXRfaWRzGAIgAygJIqoBChdRdWVyeUFwcGxldEF1ZGl0UmVxdWVzdBIQCghhY3Rvcl9pZBgBIAEoCRIRCglkZXZpY2VfaWQYAiABKAkSEQoJYXBwbGV0X2lkGAMgASgJEhIKCnNlc3Npb25faWQYBCABKAkSEgoKc3RhcnRfdGltZRgFIAEoAxIQCghlbmRfdGltZRgGIAEoAxINCgVsaW1pdBgHIAEoBRIOCgZvZmZzZXQYCCABKAUibgoYUXVlcnlBcHBsZXRBdWRpdFJlc3BvbnNlEj0KB3JlY29yZHMYASADKAsyLC5wZWVyc190b3VjaC5kb21haW4uYXBwbGV0LkFwcGxldEF1ZGl0UmVjb3JkEhMKC3RvdGFsX2NvdW50GAIgASgDKssBChNBcHBsZXRQYWNrYWdlU3RhdHVzEiUKIUFQUExFVF9QQUNLQUdFX1NUQVRVU19VTlNQRUNJRklFRBAAEh8KG0FQUExFVF9QQUNLQUdFX1NUQVRVU19EUkFGVBABEiMKH0FQUExFVF9QQUNLQUdFX1NUQVRVU19QVUJMSVNIRUQQAhIkCiBBUFBMRVRfUEFDS0FHRV9TVEFUVVNfREVQUkVDQVRFRBADEiEKHUFQUExFVF9QQUNLQUdFX1NUQVRVU19SRVZPS0VEEAQq+wEKE0FwcGxldEluc3RhbGxTdGF0dXMSJQohQVBQTEVUX0lOU1RBTExfU1RBVFVTX1VOU1BFQ0lGSUVEEAASIwofQVBQTEVUX0lOU1RBTExfU1RBVFVTX0lOU1RBTExFRBABEiUKIUFQUExFVF9JTlNUQUxMX1NUQVRVU19VTklOU1RBTExFRBACEiIKHkFQUExFVF9JTlNUQUxMX1NUQVRVU19ESVNBQkxFRBADEiEKHUFQUExFVF9JTlNUQUxMX1NUQVRVU19SRVZPS0VEEAQSKgomQVBQTEVUX0lOU1RBTExfU1RBVFVTX1VQREFURV9BVkFJTEFCTEUQBSqiAQoUQXBwbGV0UmVsZWFzZUNoYW5uZWwSJgoiQVBQTEVUX1JFTEVBU0VfQ0hBTk5FTF9VTlNQRUNJRklFRBAAEiEKHUFQUExFVF9SRUxFQVNFX0NIQU5ORUxfU1RBQkxFEAESHwobQVBQTEVUX1JFTEVBU0VfQ0hBTk5FTF9CRVRBEAISHgoaQVBQTEVUX1JFTEVBU0VfQ0hBTk5FTF9ERVYQAyqyAQoUQXBwbGV0UG9saWN5RGVjaXNpb24SJgoiQVBQTEVUX1BPTElDWV9ERUNJU0lPTl9VTlNQRUNJRklFRBAAEiAKHEFQUExFVF9QT0xJQ1lfREVDSVNJT05fQUxMT1cQARIfChtBUFBMRVRfUE9MSUNZX0RFQ0lTSU9OX0RFTlkQAhIvCitBUFBMRVRfUE9MSUNZX0RFQ0lTSU9OX1JFUVVJUkVfVVNFUl9HRVNUVVJFEAMqgQEKE0FwcGxldEF1ZGl0RGVjaXNpb24SJQohQVBQTEVUX0FVRElUX0RFQ0lTSU9OX1VOU1BFQ0lGSUVEEAASIQodQVBQTEVUX0FVRElUX0RFQ0lTSU9OX0FMTE9XRUQQARIgChxBUFBMRVRfQVVESVRfREVDSVNJT05fREVOSUVEEAJCTFpKZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9hcHBsZXRfc3RvcmUvbW9kZWxiBnByb3RvMw");
 
 /**
  * AppletInfo represents the public information of an applet
@@ -59,6 +59,16 @@ export type AppletInfo = Message<"peers_touch.domain.applet.AppletInfo"> & {
    * @generated from field: int64 updated_at = 8;
    */
   updatedAt: bigint;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletPackageStatus status = 9;
+   */
+  status: AppletPackageStatus;
+
+  /**
+   * @generated from field: repeated peers_touch.domain.applet.AppletReleaseChannel channels = 10;
+   */
+  channels: AppletReleaseChannel[];
 };
 
 /**
@@ -120,6 +130,26 @@ export type AppletVersionInfo = Message<"peers_touch.domain.applet.AppletVersion
    * @generated from field: int64 created_at = 9;
    */
   createdAt: bigint;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletPackageStatus status = 10;
+   */
+  status: AppletPackageStatus;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletReleaseChannel channel = 11;
+   */
+  channel: AppletReleaseChannel;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.ManifestSnapshot manifest = 12;
+   */
+  manifest?: ManifestSnapshot | undefined;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.BundleStorage bundle = 13;
+   */
+  bundle?: BundleStorage | undefined;
 };
 
 /**
@@ -128,6 +158,481 @@ export type AppletVersionInfo = Message<"peers_touch.domain.applet.AppletVersion
  */
 export const AppletVersionInfoSchema: GenMessage<AppletVersionInfo> = /*@__PURE__*/
   messageDesc(file_domain_applet_applet, 1);
+
+/**
+ * @generated from message peers_touch.domain.applet.ManifestSnapshot
+ */
+export type ManifestSnapshot = Message<"peers_touch.domain.applet.ManifestSnapshot"> & {
+  /**
+   * @generated from field: string manifest_json = 1;
+   */
+  manifestJson: string;
+
+  /**
+   * @generated from field: repeated string target_platforms = 2;
+   */
+  targetPlatforms: string[];
+
+  /**
+   * @generated from field: repeated string permissions = 3;
+   */
+  permissions: string[];
+
+  /**
+   * @generated from field: repeated string capabilities = 4;
+   */
+  capabilities: string[];
+
+  /**
+   * @generated from field: map<string, string> integrity = 5;
+   */
+  integrity: { [key: string]: string };
+
+  /**
+   * @generated from field: repeated peers_touch.domain.applet.AppletServicePolicy services = 6;
+   */
+  services: AppletServicePolicy[];
+
+  /**
+   * @generated from field: string bridge_protocol = 7;
+   */
+  bridgeProtocol: string;
+
+  /**
+   * @generated from field: string runtime_type = 8;
+   */
+  runtimeType: string;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.ManifestSnapshot.
+ * Use `create(ManifestSnapshotSchema)` to create a new message.
+ */
+export const ManifestSnapshotSchema: GenMessage<ManifestSnapshot> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 2);
+
+/**
+ * @generated from message peers_touch.domain.applet.BundleAssetIntegrity
+ */
+export type BundleAssetIntegrity = Message<"peers_touch.domain.applet.BundleAssetIntegrity"> & {
+  /**
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * @generated from field: string sha256 = 2;
+   */
+  sha256: string;
+
+  /**
+   * @generated from field: int64 size_bytes = 3;
+   */
+  sizeBytes: bigint;
+
+  /**
+   * @generated from field: string content_type = 4;
+   */
+  contentType: string;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.BundleAssetIntegrity.
+ * Use `create(BundleAssetIntegritySchema)` to create a new message.
+ */
+export const BundleAssetIntegritySchema: GenMessage<BundleAssetIntegrity> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 3);
+
+/**
+ * @generated from message peers_touch.domain.applet.BundleStorage
+ */
+export type BundleStorage = Message<"peers_touch.domain.applet.BundleStorage"> & {
+  /**
+   * @generated from field: string bundle_uri = 1;
+   */
+  bundleUri: string;
+
+  /**
+   * @generated from field: string bundle_sha256 = 2;
+   */
+  bundleSha256: string;
+
+  /**
+   * @generated from field: int64 bundle_size_bytes = 3;
+   */
+  bundleSizeBytes: bigint;
+
+  /**
+   * @generated from field: repeated peers_touch.domain.applet.BundleAssetIntegrity assets = 4;
+   */
+  assets: BundleAssetIntegrity[];
+
+  /**
+   * @generated from field: string storage_backend = 5;
+   */
+  storageBackend: string;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.BundleStorage.
+ * Use `create(BundleStorageSchema)` to create a new message.
+ */
+export const BundleStorageSchema: GenMessage<BundleStorage> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 4);
+
+/**
+ * @generated from message peers_touch.domain.applet.AppletCapabilityPolicy
+ */
+export type AppletCapabilityPolicy = Message<"peers_touch.domain.applet.AppletCapabilityPolicy"> & {
+  /**
+   * @generated from field: string capability = 1;
+   */
+  capability: string;
+
+  /**
+   * @generated from field: repeated string methods = 2;
+   */
+  methods: string[];
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletPolicyDecision decision = 3;
+   */
+  decision: AppletPolicyDecision;
+
+  /**
+   * @generated from field: string reason = 4;
+   */
+  reason: string;
+
+  /**
+   * @generated from field: int64 max_payload_bytes = 5;
+   */
+  maxPayloadBytes: bigint;
+
+  /**
+   * @generated from field: int32 timeout_ms = 6;
+   */
+  timeoutMs: number;
+
+  /**
+   * @generated from field: int32 quota_per_minute = 7;
+   */
+  quotaPerMinute: number;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.AppletCapabilityPolicy.
+ * Use `create(AppletCapabilityPolicySchema)` to create a new message.
+ */
+export const AppletCapabilityPolicySchema: GenMessage<AppletCapabilityPolicy> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 5);
+
+/**
+ * @generated from message peers_touch.domain.applet.AppletServicePolicy
+ */
+export type AppletServicePolicy = Message<"peers_touch.domain.applet.AppletServicePolicy"> & {
+  /**
+   * @generated from field: string service_id = 1;
+   */
+  serviceId: string;
+
+  /**
+   * @generated from field: string kind = 2;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: repeated string allowed_methods = 3;
+   */
+  allowedMethods: string[];
+
+  /**
+   * @generated from field: repeated string allowed_paths = 4;
+   */
+  allowedPaths: string[];
+
+  /**
+   * @generated from field: bool streaming = 5;
+   */
+  streaming: boolean;
+
+  /**
+   * @generated from field: string station_path_prefix = 6;
+   */
+  stationPathPrefix: string;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletPolicyDecision decision = 7;
+   */
+  decision: AppletPolicyDecision;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.AppletServicePolicy.
+ * Use `create(AppletServicePolicySchema)` to create a new message.
+ */
+export const AppletServicePolicySchema: GenMessage<AppletServicePolicy> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 6);
+
+/**
+ * @generated from message peers_touch.domain.applet.AppletPolicySet
+ */
+export type AppletPolicySet = Message<"peers_touch.domain.applet.AppletPolicySet"> & {
+  /**
+   * @generated from field: string policy_id = 1;
+   */
+  policyId: string;
+
+  /**
+   * @generated from field: string applet_id = 2;
+   */
+  appletId: string;
+
+  /**
+   * @generated from field: string version = 3;
+   */
+  version: string;
+
+  /**
+   * @generated from field: repeated peers_touch.domain.applet.AppletCapabilityPolicy capability_policies = 4;
+   */
+  capabilityPolicies: AppletCapabilityPolicy[];
+
+  /**
+   * @generated from field: repeated peers_touch.domain.applet.AppletServicePolicy service_policies = 5;
+   */
+  servicePolicies: AppletServicePolicy[];
+
+  /**
+   * Unix timestamp
+   *
+   * @generated from field: int64 created_at = 6;
+   */
+  createdAt: bigint;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.AppletPolicySet.
+ * Use `create(AppletPolicySetSchema)` to create a new message.
+ */
+export const AppletPolicySetSchema: GenMessage<AppletPolicySet> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 7);
+
+/**
+ * @generated from message peers_touch.domain.applet.AppletVersionChannel
+ */
+export type AppletVersionChannel = Message<"peers_touch.domain.applet.AppletVersionChannel"> & {
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletReleaseChannel channel = 1;
+   */
+  channel: AppletReleaseChannel;
+
+  /**
+   * @generated from field: string version = 2;
+   */
+  version: string;
+
+  /**
+   * @generated from field: int32 rollout_percent = 3;
+   */
+  rolloutPercent: number;
+
+  /**
+   * @generated from field: bool enabled = 4;
+   */
+  enabled: boolean;
+
+  /**
+   * @generated from field: string rollback_version = 5;
+   */
+  rollbackVersion: string;
+
+  /**
+   * Unix timestamp
+   *
+   * @generated from field: int64 updated_at = 6;
+   */
+  updatedAt: bigint;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.AppletVersionChannel.
+ * Use `create(AppletVersionChannelSchema)` to create a new message.
+ */
+export const AppletVersionChannelSchema: GenMessage<AppletVersionChannel> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 8);
+
+/**
+ * @generated from message peers_touch.domain.applet.AppletCatalogItem
+ */
+export type AppletCatalogItem = Message<"peers_touch.domain.applet.AppletCatalogItem"> & {
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletInfo info = 1;
+   */
+  info?: AppletInfo | undefined;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletVersionInfo version = 2;
+   */
+  version?: AppletVersionInfo | undefined;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletInstallState install_state = 3;
+   */
+  installState?: AppletInstallState | undefined;
+
+  /**
+   * @generated from field: repeated peers_touch.domain.applet.AppletVersionChannel channels = 4;
+   */
+  channels: AppletVersionChannel[];
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.AppletCatalogItem.
+ * Use `create(AppletCatalogItemSchema)` to create a new message.
+ */
+export const AppletCatalogItemSchema: GenMessage<AppletCatalogItem> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 9);
+
+/**
+ * @generated from message peers_touch.domain.applet.AppletInstallState
+ */
+export type AppletInstallState = Message<"peers_touch.domain.applet.AppletInstallState"> & {
+  /**
+   * @generated from field: string actor_id = 1;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string device_id = 2;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: string applet_id = 3;
+   */
+  appletId: string;
+
+  /**
+   * @generated from field: string version = 4;
+   */
+  version: string;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletReleaseChannel channel = 5;
+   */
+  channel: AppletReleaseChannel;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletInstallStatus status = 6;
+   */
+  status: AppletInstallStatus;
+
+  /**
+   * @generated from field: map<string, string> config = 7;
+   */
+  config: { [key: string]: string };
+
+  /**
+   * Unix timestamp
+   *
+   * @generated from field: int64 installed_at = 8;
+   */
+  installedAt: bigint;
+
+  /**
+   * Unix timestamp
+   *
+   * @generated from field: int64 updated_at = 9;
+   */
+  updatedAt: bigint;
+
+  /**
+   * @generated from field: string status_reason = 10;
+   */
+  statusReason: string;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.AppletInstallState.
+ * Use `create(AppletInstallStateSchema)` to create a new message.
+ */
+export const AppletInstallStateSchema: GenMessage<AppletInstallState> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 10);
+
+/**
+ * @generated from message peers_touch.domain.applet.AppletAuditRecord
+ */
+export type AppletAuditRecord = Message<"peers_touch.domain.applet.AppletAuditRecord"> & {
+  /**
+   * @generated from field: string audit_id = 1;
+   */
+  auditId: string;
+
+  /**
+   * @generated from field: string actor_id = 2;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string device_id = 3;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: string applet_id = 4;
+   */
+  appletId: string;
+
+  /**
+   * @generated from field: string version = 5;
+   */
+  version: string;
+
+  /**
+   * @generated from field: string session_id = 6;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: string capability = 7;
+   */
+  capability: string;
+
+  /**
+   * @generated from field: string method = 8;
+   */
+  method: string;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletAuditDecision decision = 9;
+   */
+  decision: AppletAuditDecision;
+
+  /**
+   * @generated from field: string reason = 10;
+   */
+  reason: string;
+
+  /**
+   * @generated from field: map<string, string> metadata = 11;
+   */
+  metadata: { [key: string]: string };
+
+  /**
+   * Unix timestamp
+   *
+   * @generated from field: int64 recorded_at = 12;
+   */
+  recordedAt: bigint;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.AppletAuditRecord.
+ * Use `create(AppletAuditRecordSchema)` to create a new message.
+ */
+export const AppletAuditRecordSchema: GenMessage<AppletAuditRecord> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 11);
 
 /**
  * Request to list applets
@@ -151,6 +656,31 @@ export type ListAppletsRequest = Message<"peers_touch.domain.applet.ListAppletsR
    * @generated from field: string search_keyword = 3;
    */
   searchKeyword: string;
+
+  /**
+   * @generated from field: string actor_id = 4;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string device_id = 5;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: string target_platform = 6;
+   */
+  targetPlatform: string;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletReleaseChannel channel = 7;
+   */
+  channel: AppletReleaseChannel;
+
+  /**
+   * @generated from field: bool include_installed_state = 8;
+   */
+  includeInstalledState: boolean;
 };
 
 /**
@@ -158,7 +688,7 @@ export type ListAppletsRequest = Message<"peers_touch.domain.applet.ListAppletsR
  * Use `create(ListAppletsRequestSchema)` to create a new message.
  */
 export const ListAppletsRequestSchema: GenMessage<ListAppletsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_applet_applet, 2);
+  messageDesc(file_domain_applet_applet, 12);
 
 /**
  * Response for listing applets
@@ -182,7 +712,7 @@ export type ListAppletsResponse = Message<"peers_touch.domain.applet.ListApplets
  * Use `create(ListAppletsResponseSchema)` to create a new message.
  */
 export const ListAppletsResponseSchema: GenMessage<ListAppletsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_applet_applet, 3);
+  messageDesc(file_domain_applet_applet, 13);
 
 /**
  * Request to get applet details
@@ -201,7 +731,7 @@ export type GetAppletDetailsRequest = Message<"peers_touch.domain.applet.GetAppl
  * Use `create(GetAppletDetailsRequestSchema)` to create a new message.
  */
 export const GetAppletDetailsRequestSchema: GenMessage<GetAppletDetailsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_applet_applet, 4);
+  messageDesc(file_domain_applet_applet, 14);
 
 /**
  * Response for applet details
@@ -218,6 +748,16 @@ export type GetAppletDetailsResponse = Message<"peers_touch.domain.applet.GetApp
    * @generated from field: peers_touch.domain.applet.AppletVersionInfo latest_version = 2;
    */
   latestVersion?: AppletVersionInfo | undefined;
+
+  /**
+   * @generated from field: repeated peers_touch.domain.applet.AppletVersionChannel channels = 3;
+   */
+  channels: AppletVersionChannel[];
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletInstallState install_state = 4;
+   */
+  installState?: AppletInstallState | undefined;
 };
 
 /**
@@ -225,7 +765,7 @@ export type GetAppletDetailsResponse = Message<"peers_touch.domain.applet.GetApp
  * Use `create(GetAppletDetailsResponseSchema)` to create a new message.
  */
 export const GetAppletDetailsResponseSchema: GenMessage<GetAppletDetailsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_applet_applet, 5);
+  messageDesc(file_domain_applet_applet, 15);
 
 /**
  * Request to publish/update applet (Metadata part)
@@ -258,6 +798,36 @@ export type PublishAppletRequest = Message<"peers_touch.domain.applet.PublishApp
    * @generated from field: string changelog = 5;
    */
   changelog: string;
+
+  /**
+   * @generated from field: string applet_id = 6;
+   */
+  appletId: string;
+
+  /**
+   * @generated from field: string owner_id = 7;
+   */
+  ownerId: string;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletReleaseChannel channel = 8;
+   */
+  channel: AppletReleaseChannel;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.ManifestSnapshot manifest = 9;
+   */
+  manifest?: ManifestSnapshot | undefined;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.BundleStorage bundle = 10;
+   */
+  bundle?: BundleStorage | undefined;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletPolicySet policy = 11;
+   */
+  policy?: AppletPolicySet | undefined;
 };
 
 /**
@@ -265,7 +835,7 @@ export type PublishAppletRequest = Message<"peers_touch.domain.applet.PublishApp
  * Use `create(PublishAppletRequestSchema)` to create a new message.
  */
 export const PublishAppletRequestSchema: GenMessage<PublishAppletRequest> = /*@__PURE__*/
-  messageDesc(file_domain_applet_applet, 6);
+  messageDesc(file_domain_applet_applet, 16);
 
 /**
  * @generated from message peers_touch.domain.applet.PublishAppletResponse
@@ -285,6 +855,11 @@ export type PublishAppletResponse = Message<"peers_touch.domain.applet.PublishAp
    * @generated from field: bool is_new_applet = 3;
    */
   isNewApplet: boolean;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletVersionInfo version = 4;
+   */
+  version?: AppletVersionInfo | undefined;
 };
 
 /**
@@ -292,5 +867,655 @@ export type PublishAppletResponse = Message<"peers_touch.domain.applet.PublishAp
  * Use `create(PublishAppletResponseSchema)` to create a new message.
  */
 export const PublishAppletResponseSchema: GenMessage<PublishAppletResponse> = /*@__PURE__*/
-  messageDesc(file_domain_applet_applet, 7);
+  messageDesc(file_domain_applet_applet, 17);
+
+/**
+ * @generated from message peers_touch.domain.applet.ListAppletCatalogRequest
+ */
+export type ListAppletCatalogRequest = Message<"peers_touch.domain.applet.ListAppletCatalogRequest"> & {
+  /**
+   * @generated from field: string actor_id = 1;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string device_id = 2;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: string target_platform = 3;
+   */
+  targetPlatform: string;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletReleaseChannel channel = 4;
+   */
+  channel: AppletReleaseChannel;
+
+  /**
+   * @generated from field: string search_keyword = 5;
+   */
+  searchKeyword: string;
+
+  /**
+   * @generated from field: int32 limit = 6;
+   */
+  limit: number;
+
+  /**
+   * @generated from field: int32 offset = 7;
+   */
+  offset: number;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.ListAppletCatalogRequest.
+ * Use `create(ListAppletCatalogRequestSchema)` to create a new message.
+ */
+export const ListAppletCatalogRequestSchema: GenMessage<ListAppletCatalogRequest> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 18);
+
+/**
+ * @generated from message peers_touch.domain.applet.ListAppletCatalogResponse
+ */
+export type ListAppletCatalogResponse = Message<"peers_touch.domain.applet.ListAppletCatalogResponse"> & {
+  /**
+   * @generated from field: repeated peers_touch.domain.applet.AppletCatalogItem items = 1;
+   */
+  items: AppletCatalogItem[];
+
+  /**
+   * @generated from field: int64 total_count = 2;
+   */
+  totalCount: bigint;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.ListAppletCatalogResponse.
+ * Use `create(ListAppletCatalogResponseSchema)` to create a new message.
+ */
+export const ListAppletCatalogResponseSchema: GenMessage<ListAppletCatalogResponse> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 19);
+
+/**
+ * @generated from message peers_touch.domain.applet.GetAppletVersionRequest
+ */
+export type GetAppletVersionRequest = Message<"peers_touch.domain.applet.GetAppletVersionRequest"> & {
+  /**
+   * @generated from field: string applet_id = 1;
+   */
+  appletId: string;
+
+  /**
+   * @generated from field: string version = 2;
+   */
+  version: string;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletReleaseChannel channel = 3;
+   */
+  channel: AppletReleaseChannel;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.GetAppletVersionRequest.
+ * Use `create(GetAppletVersionRequestSchema)` to create a new message.
+ */
+export const GetAppletVersionRequestSchema: GenMessage<GetAppletVersionRequest> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 20);
+
+/**
+ * @generated from message peers_touch.domain.applet.GetAppletVersionResponse
+ */
+export type GetAppletVersionResponse = Message<"peers_touch.domain.applet.GetAppletVersionResponse"> & {
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletVersionInfo version = 1;
+   */
+  version?: AppletVersionInfo | undefined;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletPolicySet policy = 2;
+   */
+  policy?: AppletPolicySet | undefined;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.GetAppletVersionResponse.
+ * Use `create(GetAppletVersionResponseSchema)` to create a new message.
+ */
+export const GetAppletVersionResponseSchema: GenMessage<GetAppletVersionResponse> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 21);
+
+/**
+ * @generated from message peers_touch.domain.applet.InstallAppletRequest
+ */
+export type InstallAppletRequest = Message<"peers_touch.domain.applet.InstallAppletRequest"> & {
+  /**
+   * @generated from field: string actor_id = 1;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string device_id = 2;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: string applet_id = 3;
+   */
+  appletId: string;
+
+  /**
+   * @generated from field: string version = 4;
+   */
+  version: string;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletReleaseChannel channel = 5;
+   */
+  channel: AppletReleaseChannel;
+
+  /**
+   * @generated from field: map<string, string> config = 6;
+   */
+  config: { [key: string]: string };
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.InstallAppletRequest.
+ * Use `create(InstallAppletRequestSchema)` to create a new message.
+ */
+export const InstallAppletRequestSchema: GenMessage<InstallAppletRequest> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 22);
+
+/**
+ * @generated from message peers_touch.domain.applet.InstallAppletResponse
+ */
+export type InstallAppletResponse = Message<"peers_touch.domain.applet.InstallAppletResponse"> & {
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletInstallState state = 1;
+   */
+  state?: AppletInstallState | undefined;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.InstallAppletResponse.
+ * Use `create(InstallAppletResponseSchema)` to create a new message.
+ */
+export const InstallAppletResponseSchema: GenMessage<InstallAppletResponse> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 23);
+
+/**
+ * @generated from message peers_touch.domain.applet.UninstallAppletRequest
+ */
+export type UninstallAppletRequest = Message<"peers_touch.domain.applet.UninstallAppletRequest"> & {
+  /**
+   * @generated from field: string actor_id = 1;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string device_id = 2;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: string applet_id = 3;
+   */
+  appletId: string;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.UninstallAppletRequest.
+ * Use `create(UninstallAppletRequestSchema)` to create a new message.
+ */
+export const UninstallAppletRequestSchema: GenMessage<UninstallAppletRequest> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 24);
+
+/**
+ * @generated from message peers_touch.domain.applet.UninstallAppletResponse
+ */
+export type UninstallAppletResponse = Message<"peers_touch.domain.applet.UninstallAppletResponse"> & {
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletInstallState state = 1;
+   */
+  state?: AppletInstallState | undefined;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.UninstallAppletResponse.
+ * Use `create(UninstallAppletResponseSchema)` to create a new message.
+ */
+export const UninstallAppletResponseSchema: GenMessage<UninstallAppletResponse> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 25);
+
+/**
+ * @generated from message peers_touch.domain.applet.ListInstalledAppletsRequest
+ */
+export type ListInstalledAppletsRequest = Message<"peers_touch.domain.applet.ListInstalledAppletsRequest"> & {
+  /**
+   * @generated from field: string actor_id = 1;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string device_id = 2;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: bool include_disabled = 3;
+   */
+  includeDisabled: boolean;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.ListInstalledAppletsRequest.
+ * Use `create(ListInstalledAppletsRequestSchema)` to create a new message.
+ */
+export const ListInstalledAppletsRequestSchema: GenMessage<ListInstalledAppletsRequest> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 26);
+
+/**
+ * @generated from message peers_touch.domain.applet.ListInstalledAppletsResponse
+ */
+export type ListInstalledAppletsResponse = Message<"peers_touch.domain.applet.ListInstalledAppletsResponse"> & {
+  /**
+   * @generated from field: repeated peers_touch.domain.applet.AppletInstallState states = 1;
+   */
+  states: AppletInstallState[];
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.ListInstalledAppletsResponse.
+ * Use `create(ListInstalledAppletsResponseSchema)` to create a new message.
+ */
+export const ListInstalledAppletsResponseSchema: GenMessage<ListInstalledAppletsResponse> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 27);
+
+/**
+ * @generated from message peers_touch.domain.applet.RevokeAppletVersionRequest
+ */
+export type RevokeAppletVersionRequest = Message<"peers_touch.domain.applet.RevokeAppletVersionRequest"> & {
+  /**
+   * @generated from field: string applet_id = 1;
+   */
+  appletId: string;
+
+  /**
+   * @generated from field: string version = 2;
+   */
+  version: string;
+
+  /**
+   * @generated from field: string reason = 3;
+   */
+  reason: string;
+
+  /**
+   * @generated from field: string operator_id = 4;
+   */
+  operatorId: string;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.RevokeAppletVersionRequest.
+ * Use `create(RevokeAppletVersionRequestSchema)` to create a new message.
+ */
+export const RevokeAppletVersionRequestSchema: GenMessage<RevokeAppletVersionRequest> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 28);
+
+/**
+ * @generated from message peers_touch.domain.applet.RevokeAppletVersionResponse
+ */
+export type RevokeAppletVersionResponse = Message<"peers_touch.domain.applet.RevokeAppletVersionResponse"> & {
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletVersionInfo version = 1;
+   */
+  version?: AppletVersionInfo | undefined;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.RevokeAppletVersionResponse.
+ * Use `create(RevokeAppletVersionResponseSchema)` to create a new message.
+ */
+export const RevokeAppletVersionResponseSchema: GenMessage<RevokeAppletVersionResponse> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 29);
+
+/**
+ * @generated from message peers_touch.domain.applet.RollbackAppletChannelRequest
+ */
+export type RollbackAppletChannelRequest = Message<"peers_touch.domain.applet.RollbackAppletChannelRequest"> & {
+  /**
+   * @generated from field: string applet_id = 1;
+   */
+  appletId: string;
+
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletReleaseChannel channel = 2;
+   */
+  channel: AppletReleaseChannel;
+
+  /**
+   * @generated from field: string target_version = 3;
+   */
+  targetVersion: string;
+
+  /**
+   * @generated from field: string reason = 4;
+   */
+  reason: string;
+
+  /**
+   * @generated from field: string operator_id = 5;
+   */
+  operatorId: string;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.RollbackAppletChannelRequest.
+ * Use `create(RollbackAppletChannelRequestSchema)` to create a new message.
+ */
+export const RollbackAppletChannelRequestSchema: GenMessage<RollbackAppletChannelRequest> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 30);
+
+/**
+ * @generated from message peers_touch.domain.applet.RollbackAppletChannelResponse
+ */
+export type RollbackAppletChannelResponse = Message<"peers_touch.domain.applet.RollbackAppletChannelResponse"> & {
+  /**
+   * @generated from field: peers_touch.domain.applet.AppletVersionChannel channel = 1;
+   */
+  channel?: AppletVersionChannel | undefined;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.RollbackAppletChannelResponse.
+ * Use `create(RollbackAppletChannelResponseSchema)` to create a new message.
+ */
+export const RollbackAppletChannelResponseSchema: GenMessage<RollbackAppletChannelResponse> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 31);
+
+/**
+ * @generated from message peers_touch.domain.applet.IngestAppletAuditRequest
+ */
+export type IngestAppletAuditRequest = Message<"peers_touch.domain.applet.IngestAppletAuditRequest"> & {
+  /**
+   * @generated from field: repeated peers_touch.domain.applet.AppletAuditRecord records = 1;
+   */
+  records: AppletAuditRecord[];
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.IngestAppletAuditRequest.
+ * Use `create(IngestAppletAuditRequestSchema)` to create a new message.
+ */
+export const IngestAppletAuditRequestSchema: GenMessage<IngestAppletAuditRequest> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 32);
+
+/**
+ * @generated from message peers_touch.domain.applet.IngestAppletAuditResponse
+ */
+export type IngestAppletAuditResponse = Message<"peers_touch.domain.applet.IngestAppletAuditResponse"> & {
+  /**
+   * @generated from field: int32 accepted_count = 1;
+   */
+  acceptedCount: number;
+
+  /**
+   * @generated from field: repeated string rejected_audit_ids = 2;
+   */
+  rejectedAuditIds: string[];
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.IngestAppletAuditResponse.
+ * Use `create(IngestAppletAuditResponseSchema)` to create a new message.
+ */
+export const IngestAppletAuditResponseSchema: GenMessage<IngestAppletAuditResponse> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 33);
+
+/**
+ * @generated from message peers_touch.domain.applet.QueryAppletAuditRequest
+ */
+export type QueryAppletAuditRequest = Message<"peers_touch.domain.applet.QueryAppletAuditRequest"> & {
+  /**
+   * @generated from field: string actor_id = 1;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string device_id = 2;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: string applet_id = 3;
+   */
+  appletId: string;
+
+  /**
+   * @generated from field: string session_id = 4;
+   */
+  sessionId: string;
+
+  /**
+   * Unix timestamp
+   *
+   * @generated from field: int64 start_time = 5;
+   */
+  startTime: bigint;
+
+  /**
+   * Unix timestamp
+   *
+   * @generated from field: int64 end_time = 6;
+   */
+  endTime: bigint;
+
+  /**
+   * @generated from field: int32 limit = 7;
+   */
+  limit: number;
+
+  /**
+   * @generated from field: int32 offset = 8;
+   */
+  offset: number;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.QueryAppletAuditRequest.
+ * Use `create(QueryAppletAuditRequestSchema)` to create a new message.
+ */
+export const QueryAppletAuditRequestSchema: GenMessage<QueryAppletAuditRequest> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 34);
+
+/**
+ * @generated from message peers_touch.domain.applet.QueryAppletAuditResponse
+ */
+export type QueryAppletAuditResponse = Message<"peers_touch.domain.applet.QueryAppletAuditResponse"> & {
+  /**
+   * @generated from field: repeated peers_touch.domain.applet.AppletAuditRecord records = 1;
+   */
+  records: AppletAuditRecord[];
+
+  /**
+   * @generated from field: int64 total_count = 2;
+   */
+  totalCount: bigint;
+};
+
+/**
+ * Describes the message peers_touch.domain.applet.QueryAppletAuditResponse.
+ * Use `create(QueryAppletAuditResponseSchema)` to create a new message.
+ */
+export const QueryAppletAuditResponseSchema: GenMessage<QueryAppletAuditResponse> = /*@__PURE__*/
+  messageDesc(file_domain_applet_applet, 35);
+
+/**
+ * @generated from enum peers_touch.domain.applet.AppletPackageStatus
+ */
+export enum AppletPackageStatus {
+  /**
+   * @generated from enum value: APPLET_PACKAGE_STATUS_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: APPLET_PACKAGE_STATUS_DRAFT = 1;
+   */
+  DRAFT = 1,
+
+  /**
+   * @generated from enum value: APPLET_PACKAGE_STATUS_PUBLISHED = 2;
+   */
+  PUBLISHED = 2,
+
+  /**
+   * @generated from enum value: APPLET_PACKAGE_STATUS_DEPRECATED = 3;
+   */
+  DEPRECATED = 3,
+
+  /**
+   * @generated from enum value: APPLET_PACKAGE_STATUS_REVOKED = 4;
+   */
+  REVOKED = 4,
+}
+
+/**
+ * Describes the enum peers_touch.domain.applet.AppletPackageStatus.
+ */
+export const AppletPackageStatusSchema: GenEnum<AppletPackageStatus> = /*@__PURE__*/
+  enumDesc(file_domain_applet_applet, 0);
+
+/**
+ * @generated from enum peers_touch.domain.applet.AppletInstallStatus
+ */
+export enum AppletInstallStatus {
+  /**
+   * @generated from enum value: APPLET_INSTALL_STATUS_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: APPLET_INSTALL_STATUS_INSTALLED = 1;
+   */
+  INSTALLED = 1,
+
+  /**
+   * @generated from enum value: APPLET_INSTALL_STATUS_UNINSTALLED = 2;
+   */
+  UNINSTALLED = 2,
+
+  /**
+   * @generated from enum value: APPLET_INSTALL_STATUS_DISABLED = 3;
+   */
+  DISABLED = 3,
+
+  /**
+   * @generated from enum value: APPLET_INSTALL_STATUS_REVOKED = 4;
+   */
+  REVOKED = 4,
+
+  /**
+   * @generated from enum value: APPLET_INSTALL_STATUS_UPDATE_AVAILABLE = 5;
+   */
+  UPDATE_AVAILABLE = 5,
+}
+
+/**
+ * Describes the enum peers_touch.domain.applet.AppletInstallStatus.
+ */
+export const AppletInstallStatusSchema: GenEnum<AppletInstallStatus> = /*@__PURE__*/
+  enumDesc(file_domain_applet_applet, 1);
+
+/**
+ * @generated from enum peers_touch.domain.applet.AppletReleaseChannel
+ */
+export enum AppletReleaseChannel {
+  /**
+   * @generated from enum value: APPLET_RELEASE_CHANNEL_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: APPLET_RELEASE_CHANNEL_STABLE = 1;
+   */
+  STABLE = 1,
+
+  /**
+   * @generated from enum value: APPLET_RELEASE_CHANNEL_BETA = 2;
+   */
+  BETA = 2,
+
+  /**
+   * @generated from enum value: APPLET_RELEASE_CHANNEL_DEV = 3;
+   */
+  DEV = 3,
+}
+
+/**
+ * Describes the enum peers_touch.domain.applet.AppletReleaseChannel.
+ */
+export const AppletReleaseChannelSchema: GenEnum<AppletReleaseChannel> = /*@__PURE__*/
+  enumDesc(file_domain_applet_applet, 2);
+
+/**
+ * @generated from enum peers_touch.domain.applet.AppletPolicyDecision
+ */
+export enum AppletPolicyDecision {
+  /**
+   * @generated from enum value: APPLET_POLICY_DECISION_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: APPLET_POLICY_DECISION_ALLOW = 1;
+   */
+  ALLOW = 1,
+
+  /**
+   * @generated from enum value: APPLET_POLICY_DECISION_DENY = 2;
+   */
+  DENY = 2,
+
+  /**
+   * @generated from enum value: APPLET_POLICY_DECISION_REQUIRE_USER_GESTURE = 3;
+   */
+  REQUIRE_USER_GESTURE = 3,
+}
+
+/**
+ * Describes the enum peers_touch.domain.applet.AppletPolicyDecision.
+ */
+export const AppletPolicyDecisionSchema: GenEnum<AppletPolicyDecision> = /*@__PURE__*/
+  enumDesc(file_domain_applet_applet, 3);
+
+/**
+ * @generated from enum peers_touch.domain.applet.AppletAuditDecision
+ */
+export enum AppletAuditDecision {
+  /**
+   * @generated from enum value: APPLET_AUDIT_DECISION_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: APPLET_AUDIT_DECISION_ALLOWED = 1;
+   */
+  ALLOWED = 1,
+
+  /**
+   * @generated from enum value: APPLET_AUDIT_DECISION_DENIED = 2;
+   */
+  DENIED = 2,
+}
+
+/**
+ * Describes the enum peers_touch.domain.applet.AppletAuditDecision.
+ */
+export const AppletAuditDecisionSchema: GenEnum<AppletAuditDecision> = /*@__PURE__*/
+  enumDesc(file_domain_applet_applet, 4);
 

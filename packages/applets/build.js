@@ -62,6 +62,47 @@ function run(command, args, options = {}) {
   return result
 }
 
+function jsString(value) {
+  return JSON.stringify(value)
+}
+
+async function writeLynxWebBuildConfig(appletDir, appletName) {
+  const configDir = path.join(appletDir, '.peers-touch-build')
+  await fs.mkdir(configDir, { recursive: true })
+  const configPath = path.join(configDir, 'rspeedy.web.config.ts')
+  const content = `import { defineConfig } from '@lynx-js/rspeedy'
+import { pluginReactLynx } from '@lynx-js/react-rsbuild-plugin'
+
+export default defineConfig({
+  plugins: [pluginReactLynx()],
+  environments: {
+    web: {},
+  },
+  source: {
+    entry: ${jsString(path.join(appletDir, 'src/index.tsx'))},
+  },
+  output: {
+    distPath: {
+      root: ${jsString(path.join(appletDir, 'dist'))},
+    },
+    filename: 'main.lynx.bundle',
+    filenameHash: false,
+  },
+})
+`
+  await fs.writeFile(configPath, content)
+  return configPath
+}
+
+async function buildLynxWebApplet(appletDir, appletName) {
+  const configPath = await writeLynxWebBuildConfig(appletDir, appletName)
+  try {
+    run('pnpm', ['exec', 'rspeedy', 'build', '--config', configPath], { cwd: appletDir, stdio: 'inherit' })
+  } finally {
+    await fs.rm(path.dirname(configPath), { recursive: true, force: true })
+  }
+}
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -130,6 +171,18 @@ function toCanonicalManifest(source, integrityFiles) {
     services: source.services ?? [],
     skills: source.skills ?? [],
     integrity: { algorithm: 'sha256', files: integrityFiles },
+  }
+}
+
+async function assertLynxWebBundleFormat(packageDir, manifest, sourceLabel) {
+  const entry = manifest.load?.desktop?.entry ?? manifest.entries?.lynx
+  if (manifest.load?.desktop?.type !== 'lynx-web' || !entry) {
+    return
+  }
+  const bundle = await fs.readFile(path.join(packageDir, entry))
+  const magic = bundle.subarray(0, 8).toString('utf8')
+  if (magic !== 'SDRAWROF') {
+    throw new Error(`${sourceLabel} produced an invalid lynx-web bundle: ${entry} must start with SDRAWROF`)
   }
 }
 
@@ -205,17 +258,21 @@ async function getAppletDirs() {
 
 async function getExternalLynxAppletDirs() {
   const dirs = []
+  const seen = new Set()
   for (const root of config.externalLynxAppletRoots) {
+    const normalizedRoot = path.resolve(root)
+    if (seen.has(normalizedRoot)) continue
+    seen.add(normalizedRoot)
     let entries = []
     try {
-      entries = await fs.readdir(root, { withFileTypes: true })
+      entries = await fs.readdir(normalizedRoot, { withFileTypes: true })
     } catch (error) {
       if (error.code === 'ENOENT') continue
       throw error
     }
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith('.')) continue
-      const lynxDir = path.join(root, entry.name, 'lynx')
+      const lynxDir = path.join(normalizedRoot, entry.name, 'lynx')
       try {
         await fs.access(path.join(lynxDir, 'applet.json'))
         dirs.push(lynxDir)
@@ -310,7 +367,7 @@ async function buildCanonicalLynxApplet(appletDir) {
       throw new Error(`${appletName}/applet.json must declare id and load.desktop.entry`)
     }
 
-    run('pnpm', ['run', 'build'], { cwd: appletDir, stdio: 'inherit' })
+    await buildLynxWebApplet(appletDir, appletName)
 
     for (const outputDir of config.outputDirs) {
       const targetDir = path.join(outputDir, appletId)
@@ -320,6 +377,7 @@ async function buildCanonicalLynxApplet(appletDir) {
 
       const manifest = toCanonicalLynxManifest(appletJson, entry, await integrityForFiles(targetDir))
       assertCanonicalManifest(manifest, `${appletName}/applet.json`)
+      await assertLynxWebBundleFormat(targetDir, manifest, `${appletName}/applet.json`)
       await fs.writeFile(path.join(targetDir, 'manifest.json'), JSON.stringify(manifest, null, 2))
       await fs.writeFile(path.join(targetDir, 'applet.json'), JSON.stringify(manifest, null, 2))
 
