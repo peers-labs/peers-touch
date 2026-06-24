@@ -6,6 +6,7 @@
 
 1. [ux-design-methodology.md](./ux-design-methodology.md) — 从具体 UX 问题抽象为准则、契约、invariant 的方法论。
 2. [ui-identity/README.md](./ui-identity/README.md) — Peers Touch 客户端通用 UI Identity、模块 UI ID、跨模块 patterns。
+   补充阅读：[ui-identity/new-identity.md](./ui-identity/new-identity.md) — 新的 UI Identity 总纲草案，聚焦“统一但平”与“引导 + 发散”的重构方向。
 3. [form-control-ux-contract.md](./form-control-ux-contract.md) — 跨端表单控件与组合输入控件体验契约。
 4. [base.md](./base.md) — 跨平台共享策略。
 5. [globalcontext.md](./globalcontext.md) — GlobalContext 相关共享说明。
