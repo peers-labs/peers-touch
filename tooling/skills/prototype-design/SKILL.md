@@ -136,6 +136,15 @@ drafting → pending-review → confirmed → landed
 
 原型"当时版本快照"由 git 仓库本身承载（与当前开发分支保持一致），不堆 tag、不复制 `v1/ v2/` 目录副本。总账只记当前对应的设计版本与状态。
 
+### 5.4 Worktree / Branch 预览
+
+Prototype Portal 支持 worktree / branch 切换：
+
+- 当前 worktree 由 `make run-prototype desktop/mobile/dashboard` 自动注入分支名和 worktree 路径。
+- 其他 worktree 必须自己启动原型服务，再通过 `VITE_PROTOTYPE_WORKTREES` JSON registry 注入 Portal。
+- 跨 worktree 只能用 iframe 预览对应 URL，禁止直接 import 其他 worktree 的源码。
+- registry 的站点 key 只能是 `desktop` / `mobile` / `dashboard`。
+
 ---
 
 ## 6. 关键纪律
@@ -166,6 +175,7 @@ drafting → pending-review → confirmed → landed
 - [ ] 未碰 Lynx / applet SDK / 非 web 运行时
 - [ ] mock 数据驱动，未依赖后端接口
 - [ ] 原型登记在正确一级站点下（`desktop` / `mobile` / `dashboard`），没有把 applet 或局部能力登记成一级模块
+- [ ] 跨 worktree / branch 预览使用 registry + iframe，没有直接引用其他 worktree 源码
 
 ---
 
