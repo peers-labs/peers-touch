@@ -160,7 +160,7 @@ type PrototypeSite = 'desktop' | 'mobile' | 'dashboard';
 
 > Portal 不直接 import 其他 worktree 的源码。每个 worktree 自己运行原型服务，Portal 只保存 registry，并用 iframe 展示。
 
-建议 registry 结构：
+当前 registry 结构：
 
 ```ts
 type PrototypeWorktreeTarget = {
@@ -187,6 +187,12 @@ type PrototypeWorktreeTarget = {
   }
 }
 ```
+
+配置方式：
+
+- 当前 worktree 由 `make run-prototype <site>` 自动注入 `VITE_PROTOTYPE_BRANCH` 与 `VITE_PROTOTYPE_WORKTREE_PATH`。
+- 外部 worktree 通过 `VITE_PROTOTYPE_WORKTREES` 注入 JSON 数组。
+- Portal 顶栏提供 Worktree/Branch selector；选择 `current` 时使用当前 worktree 的 manifest 直接 render，选择外部 target 时使用对应 `sites[site]` URL 的 iframe。
 
 ### 5.5 统一入口 UI
 
@@ -380,5 +386,5 @@ make prototypes-worktree
 | Phase 2 | done | 最小 Portal 已可通过 `make run-prototype desktop/mobile/dashboard` 运行 |
 | Phase 3 | done | `desktop`、`atelier`、`call`、`social-chat` 已接入 manifest，Portal 已自动发现 |
 | Phase 4 | done | `mobile-chat` 与 `station-dashboard` 已补齐，Portal Live Preview 已基于 manifest 渲染当前站点默认原型 |
-| Phase 5 | pending | 等待 worktree registry 与跨分支 iframe preview |
-| Phase 6 | pending | 等待实现后收敛文档与 skill |
+| Phase 5 | done | 已支持 worktree registry、Worktree/Branch selector、远端 iframe preview；外部 target 通过 `VITE_PROTOTYPE_WORKTREES` 注入 |
+| Phase 6 | pending | 等待进一步收敛模块入口反链与真实多 worktree 样例 |
