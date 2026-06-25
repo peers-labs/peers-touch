@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/ai_chat/provider.proto.
  */
 export const file_domain_ai_chat_provider: GenFile = /*@__PURE__*/
-  fileDesc("Ch1kb21haW4vYWlfY2hhdC9wcm92aWRlci5wcm90bxIccGVlcnNfdG91Y2gubW9kZWwuYWlfY2hhdC52MSL4AgoIUHJvdmlkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIVCg1wZWVyc191c2VyX2lkGAMgASgJEgwKBHNvcnQYBCABKAUSDwoHZW5hYmxlZBgFIAEoCBITCgtjaGVja19tb2RlbBgGIAEoCRIMCgRsb2dvGAcgASgJEhMKC2Rlc2NyaXB0aW9uGAggASgJEhIKCmtleV92YXVsdHMYCSABKAkSEwoLc291cmNlX3R5cGUYCiABKAkSFQoNc2V0dGluZ3NfanNvbhgLIAEoCRITCgtjb25maWdfanNvbhgMIAEoCRIvCgthY2Nlc3NlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKY3JlYXRlZF9hdBgOIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgPIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiiQEKDFByb3ZpZGVyVmlldxIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEgwKBGxvZ28YBCABKAkSEwoLc291cmNlX3R5cGUYBSABKAkSDwoHZW5hYmxlZBgGIAEoCBIWCg5kaXNwbGF5X3N0YXR1cxgHIAEoCSKGAQoMUHJvdmlkZXJJbmZvEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSDAoEbG9nbxgEIAEoCRITCgtzb3VyY2VfdHlwZRgFIAEoCRIPCgdlbmFibGVkGAYgASgIEhMKC3NjaGVtYV9qc29uGAcgASgJIogBChVDcmVhdGVQcm92aWRlclJlcXVlc3QSDAoEbmFtZRgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRIMCgRsb2dvGAMgASgJEhIKCmtleV92YXVsdHMYBCABKAkSFQoNc2V0dGluZ3NfanNvbhgFIAEoCRITCgtjb25maWdfanNvbhgGIAEoCSJSChZDcmVhdGVQcm92aWRlclJlc3BvbnNlEjgKCHByb3ZpZGVyGAEgASgLMiYucGVlcnNfdG91Y2gubW9kZWwuYWlfY2hhdC52MS5Qcm92aWRlciKnAgoVVXBkYXRlUHJvdmlkZXJSZXF1ZXN0EgoKAmlkGAEgASgJEhEKBG5hbWUYAiABKAlIAIgBARIYCgtkZXNjcmlwdGlvbhgDIAEoCUgBiAEBEhEKBGxvZ28YBCABKAlIAogBARIUCgdlbmFibGVkGAUgASgISAOIAQESFwoKa2V5X3ZhdWx0cxgGIAEoCUgEiAEBEhoKDXNldHRpbmdzX2pzb24YByABKAlIBYgBARIYCgtjb25maWdfanNvbhgIIAEoCUgGiAEBQgcKBV9uYW1lQg4KDF9kZXNjcmlwdGlvbkIHCgVfbG9nb0IKCghfZW5hYmxlZEINCgtfa2V5X3ZhdWx0c0IQCg5fc2V0dGluZ3NfanNvbkIOCgxfY29uZmlnX2pzb24iUgoWVXBkYXRlUHJvdmlkZXJSZXNwb25zZRI4Cghwcm92aWRlchgBIAEoCzImLnBlZXJzX3RvdWNoLm1vZGVsLmFpX2NoYXQudjEuUHJvdmlkZXIiIwoVRGVsZXRlUHJvdmlkZXJSZXF1ZXN0EgoKAmlkGAEgASgJIikKFkRlbGV0ZVByb3ZpZGVyUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCIgChJHZXRQcm92aWRlclJlcXVlc3QSCgoCaWQYASABKAkiTwoTR2V0UHJvdmlkZXJSZXNwb25zZRI4Cghwcm92aWRlchgBIAEoCzImLnBlZXJzX3RvdWNoLm1vZGVsLmFpX2NoYXQudjEuUHJvdmlkZXIiVAoUTGlzdFByb3ZpZGVyc1JlcXVlc3QSEwoLcGFnZV9udW1iZXIYASABKAUSEQoJcGFnZV9zaXplGAIgASgFEhQKDGVuYWJsZWRfb25seRgDIAEoCCKJAQoVTGlzdFByb3ZpZGVyc1Jlc3BvbnNlEjkKCXByb3ZpZGVycxgBIAMoCzImLnBlZXJzX3RvdWNoLm1vZGVsLmFpX2NoYXQudjEuUHJvdmlkZXISDQoFdG90YWwYAiABKAMSEwoLcGFnZV9udW1iZXIYAyABKAUSEQoJcGFnZV9zaXplGAQgASgFIiEKE1Rlc3RQcm92aWRlclJlcXVlc3QSCgoCaWQYASABKAkiMwoUVGVzdFByb3ZpZGVyUmVzcG9uc2USCgoCb2sYASABKAgSDwoHbWVzc2FnZRgCIAEoCSpBCgxQcm92aWRlclR5cGUSCgoGb3BlbmFpEAASCgoGb2xsYW1hEAESDAoIZGVlcHNlZWsQAhILCgZjdXN0b20Q6QdCTVpLZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9haV9jaGF0L21vZGVsO21vZGVsYgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("Ch1kb21haW4vYWlfY2hhdC9wcm92aWRlci5wcm90bxIccGVlcnNfdG91Y2gubW9kZWwuYWlfY2hhdC52MSK1AwoIUHJvdmlkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIVCg1wZWVyc191c2VyX2lkGAMgASgJEgwKBHNvcnQYBCABKAUSDwoHZW5hYmxlZBgFIAEoCBITCgtjaGVja19tb2RlbBgGIAEoCRIMCgRsb2dvGAcgASgJEhMKC2Rlc2NyaXB0aW9uGAggASgJEhIKCmtleV92YXVsdHMYCSABKAkSEwoLc291cmNlX3R5cGUYCiABKAkSFQoNc2V0dGluZ3NfanNvbhgLIAEoCRITCgtjb25maWdfanNvbhgMIAEoCRIvCgthY2Nlc3NlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKY3JlYXRlZF9hdBgOIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgPIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMcnVudGltZV9raW5kGBAgASgJEhMKC2NsaV9jb21tYW5kGBEgASgJEhAKCHByb3RvY29sGBIgASgJIokBCgxQcm92aWRlclZpZXcSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRIMCgRsb2dvGAQgASgJEhMKC3NvdXJjZV90eXBlGAUgASgJEg8KB2VuYWJsZWQYBiABKAgSFgoOZGlzcGxheV9zdGF0dXMYByABKAkihgEKDFByb3ZpZGVySW5mbxIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEgwKBGxvZ28YBCABKAkSEwoLc291cmNlX3R5cGUYBSABKAkSDwoHZW5hYmxlZBgGIAEoCBITCgtzY2hlbWFfanNvbhgHIAEoCSLFAQoVQ3JlYXRlUHJvdmlkZXJSZXF1ZXN0EgwKBG5hbWUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSDAoEbG9nbxgDIAEoCRISCgprZXlfdmF1bHRzGAQgASgJEhUKDXNldHRpbmdzX2pzb24YBSABKAkSEwoLY29uZmlnX2pzb24YBiABKAkSFAoMcnVudGltZV9raW5kGAcgASgJEhMKC2NsaV9jb21tYW5kGAggASgJEhAKCHByb3RvY29sGAkgASgJIlIKFkNyZWF0ZVByb3ZpZGVyUmVzcG9uc2USOAoIcHJvdmlkZXIYASABKAsyJi5wZWVyc190b3VjaC5tb2RlbC5haV9jaGF0LnYxLlByb3ZpZGVyIqEDChVVcGRhdGVQcm92aWRlclJlcXVlc3QSCgoCaWQYASABKAkSEQoEbmFtZRgCIAEoCUgAiAEBEhgKC2Rlc2NyaXB0aW9uGAMgASgJSAGIAQESEQoEbG9nbxgEIAEoCUgCiAEBEhQKB2VuYWJsZWQYBSABKAhIA4gBARIXCgprZXlfdmF1bHRzGAYgASgJSASIAQESGgoNc2V0dGluZ3NfanNvbhgHIAEoCUgFiAEBEhgKC2NvbmZpZ19qc29uGAggASgJSAaIAQESGQoMcnVudGltZV9raW5kGAkgASgJSAeIAQESGAoLY2xpX2NvbW1hbmQYCiABKAlICIgBARIVCghwcm90b2NvbBgLIAEoCUgJiAEBQgcKBV9uYW1lQg4KDF9kZXNjcmlwdGlvbkIHCgVfbG9nb0IKCghfZW5hYmxlZEINCgtfa2V5X3ZhdWx0c0IQCg5fc2V0dGluZ3NfanNvbkIOCgxfY29uZmlnX2pzb25CDwoNX3J1bnRpbWVfa2luZEIOCgxfY2xpX2NvbW1hbmRCCwoJX3Byb3RvY29sIlIKFlVwZGF0ZVByb3ZpZGVyUmVzcG9uc2USOAoIcHJvdmlkZXIYASABKAsyJi5wZWVyc190b3VjaC5tb2RlbC5haV9jaGF0LnYxLlByb3ZpZGVyIiMKFURlbGV0ZVByb3ZpZGVyUmVxdWVzdBIKCgJpZBgBIAEoCSIpChZEZWxldGVQcm92aWRlclJlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiIAoSR2V0UHJvdmlkZXJSZXF1ZXN0EgoKAmlkGAEgASgJIk8KE0dldFByb3ZpZGVyUmVzcG9uc2USOAoIcHJvdmlkZXIYASABKAsyJi5wZWVyc190b3VjaC5tb2RlbC5haV9jaGF0LnYxLlByb3ZpZGVyIlQKFExpc3RQcm92aWRlcnNSZXF1ZXN0EhMKC3BhZ2VfbnVtYmVyGAEgASgFEhEKCXBhZ2Vfc2l6ZRgCIAEoBRIUCgxlbmFibGVkX29ubHkYAyABKAgiiQEKFUxpc3RQcm92aWRlcnNSZXNwb25zZRI5Cglwcm92aWRlcnMYASADKAsyJi5wZWVyc190b3VjaC5tb2RlbC5haV9jaGF0LnYxLlByb3ZpZGVyEg0KBXRvdGFsGAIgASgDEhMKC3BhZ2VfbnVtYmVyGAMgASgFEhEKCXBhZ2Vfc2l6ZRgEIAEoBSIhChNUZXN0UHJvdmlkZXJSZXF1ZXN0EgoKAmlkGAEgASgJIjMKFFRlc3RQcm92aWRlclJlc3BvbnNlEgoKAm9rGAEgASgIEg8KB21lc3NhZ2UYAiABKAkqQQoMUHJvdmlkZXJUeXBlEgoKBm9wZW5haRAAEgoKBm9sbGFtYRABEgwKCGRlZXBzZWVrEAISCwoGY3VzdG9tEOkHQk1aS2dpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2FwcC9zdWJzZXJ2ZXIvYWlfY2hhdC9tb2RlbDttb2RlbGIGcHJvdG8z", [file_google_protobuf_timestamp]);
 
 /**
  * =================================================
@@ -121,6 +121,27 @@ export type Provider = Message<"peers_touch.model.ai_chat.v1.Provider"> & {
    * @generated from field: google.protobuf.Timestamp updated_at = 15;
    */
   updatedAt?: Timestamp | undefined;
+
+  /**
+   * 运行时类型：remote / local / cli。CLI 由 Desktop runtime 执行，Station 不执行本地命令。
+   *
+   * @generated from field: string runtime_kind = 16;
+   */
+  runtimeKind: string;
+
+  /**
+   * CLI provider 的非交互命令模板，仅作为配置同步字段。
+   *
+   * @generated from field: string cli_command = 17;
+   */
+  cliCommand: string;
+
+  /**
+   * openai / anthropic / ollama / cli 等协议标记。
+   *
+   * @generated from field: string protocol = 18;
+   */
+  protocol: string;
 };
 
 /**
@@ -269,6 +290,21 @@ export type CreateProviderRequest = Message<"peers_touch.model.ai_chat.v1.Create
    * @generated from field: string config_json = 6;
    */
   configJson: string;
+
+  /**
+   * @generated from field: string runtime_kind = 7;
+   */
+  runtimeKind: string;
+
+  /**
+   * @generated from field: string cli_command = 8;
+   */
+  cliCommand: string;
+
+  /**
+   * @generated from field: string protocol = 9;
+   */
+  protocol: string;
 };
 
 /**
@@ -338,6 +374,21 @@ export type UpdateProviderRequest = Message<"peers_touch.model.ai_chat.v1.Update
    * @generated from field: optional string config_json = 8;
    */
   configJson?: string | undefined;
+
+  /**
+   * @generated from field: optional string runtime_kind = 9;
+   */
+  runtimeKind?: string | undefined;
+
+  /**
+   * @generated from field: optional string cli_command = 10;
+   */
+  cliCommand?: string | undefined;
+
+  /**
+   * @generated from field: optional string protocol = 11;
+   */
+  protocol?: string | undefined;
 };
 
 /**

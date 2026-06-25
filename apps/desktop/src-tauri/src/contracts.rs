@@ -436,6 +436,9 @@ pub struct ProviderUpdateInput {
     pub enabled: bool,
     pub key_vaults: Option<String>,
     pub config_json: Option<String>,
+    pub runtime_kind: Option<String>,
+    pub cli_command: Option<String>,
+    pub protocol: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -452,6 +455,9 @@ pub struct ProviderCreateInput {
     pub logo: String,
     pub key_vaults: String,
     pub config_json: String,
+    pub runtime_kind: Option<String>,
+    pub cli_command: Option<String>,
+    pub protocol: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -545,6 +551,10 @@ pub struct McpExecuteToolInput {
     pub tool_name: String,
     pub arguments: Option<serde_json::Value>,
     pub call_id: Option<String>,
+    #[serde(default)]
+    pub workspace_root: Option<String>,
+    #[serde(default)]
+    pub allowed_roots: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -989,7 +999,14 @@ pub struct AgentExecuteTurnInput {
     pub attachments: Option<Vec<AttachmentInput>>,
     pub provider: Option<String>,
     pub model: Option<String>,
+    pub cli_command: Option<String>,
+    pub workspace_mode: Option<String>,
+    pub runtime_backend: Option<String>,
+    pub rootfs_path: Option<String>,
+    pub allowed_roots: Option<Vec<String>>,
     pub identity: Option<String>,
+    pub agent_config_prompt: Option<String>,
+    pub effort: Option<String>,
     pub platform: Option<String>,
     pub workspace_root: Option<String>,
     pub context_window_size: Option<u32>,
@@ -1003,6 +1020,20 @@ pub struct AgentTurnStreamCancelInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTurnTraceListInput {
+    pub agent_id: String,
+    pub conversation_id: Option<String>,
+    pub page: Option<i32>,
+    pub page_size: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTurnTraceGetInput {
+    pub trace_id: Option<String>,
+    pub turn_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentLocalToolRequestInput {
     pub source: String,
     pub server_name: Option<String>,
@@ -1011,6 +1042,7 @@ pub struct AgentLocalToolRequestInput {
     pub call_id: Option<String>,
     pub turn_id: Option<String>,
     pub workspace_root: Option<String>,
+    pub allowed_roots: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1018,6 +1050,19 @@ pub struct AgentToolApprovalDecisionInput {
     pub approval_id: String,
     pub approved: bool,
     pub actor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentWorkspaceInfoInput {
+    pub agent_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentWorkspaceCleanInput {
+    pub agent_id: String,
+    pub scope: String,
+    #[serde(default)]
+    pub retention_days: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -7,6 +7,7 @@ interface MCPState extends RevalidationState {
   servers: MCPServerItem[];
   loadServers: () => Promise<void>;
   createServer: (data: Partial<MCPServerRecord>) => Promise<void>;
+  updateServer: (name: string, data: Partial<MCPServerRecord>) => Promise<void>;
   toggleServer: (name: string, enabled: boolean) => Promise<void>;
   deleteServer: (name: string) => Promise<void>;
 }
@@ -59,6 +60,27 @@ export const useMCPStore = create<MCPState>((set, get) => ({
     } catch (error) {
       const message = toStoreError(error);
       log.error('mcp', 'Failed to create MCP server', { name, error: message });
+      set({ servers: previous, error: message });
+      throw error;
+    } finally {
+      set((state) => ({ pendingMutations: endMutation(state.pendingMutations, mutationKey) }));
+    }
+  },
+
+  updateServer: async (name: string, data: Partial<MCPServerRecord>) => {
+    const previous = get().servers;
+    const mutationKey = `update:${name}`;
+    set((state) => ({
+      servers: state.servers.map((server) => server.name === name ? { ...server, ...data, title: data.title || server.title, description: data.description || server.description } : server),
+      error: null,
+      pendingMutations: beginMutation(state.pendingMutations, mutationKey),
+    }));
+    try {
+      await mcpService.update(name, data);
+      await get().loadServers();
+    } catch (error) {
+      const message = toStoreError(error);
+      log.error('mcp', 'Failed to update MCP server', { name, error: message });
       set({ servers: previous, error: message });
       throw error;
     } finally {

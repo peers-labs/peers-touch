@@ -20,6 +20,7 @@ interface SettingsState extends RevalidationState {
   loadTools: () => Promise<void>;
   refreshActiveAccount: () => Promise<void>;
   setCurrentAgent: (name: string) => void;
+  setDefaultAgent: (id: string) => Promise<void>;
   updateAgent: (name: string, data: Partial<Agent>) => Promise<void>;
 }
 
@@ -86,6 +87,39 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       log.error('settings', 'Failed to persist current agent', { name, error: message });
       set({ error: message });
     });
+  },
+
+  setDefaultAgent: async (id: string) => {
+    const previousAgents = get().agents;
+    const target = previousAgents.find((agent) => agent.id === id);
+    if (!target) return;
+    const mutationKey = `agent-default:${id}`;
+    set((state) => ({
+      agents: state.agents.map((agent) => ({
+        ...agent,
+        isDefault: agent.id === id,
+      })),
+      error: null,
+      pendingMutations: beginMutation(state.pendingMutations, mutationKey),
+    }));
+    try {
+      const result = await api.setDefaultAgent(id);
+      set((state) => ({
+        agents: state.agents.map((agent) => ({
+          ...agent,
+          isDefault: agent.name === result.defaultAgent,
+        })),
+        currentAgent: result.defaultAgent,
+        lastLoadedAt: Date.now(),
+      }));
+    } catch (e) {
+      const message = toStoreError(e);
+      log.error('settings', 'Failed to persist default agent', { id, error: message });
+      set({ agents: previousAgents, error: message });
+      throw e;
+    } finally {
+      set((state) => ({ pendingMutations: endMutation(state.pendingMutations, mutationKey) }));
+    }
   },
 
   updateAgent: async (name: string, data: Partial<Agent>) => {
