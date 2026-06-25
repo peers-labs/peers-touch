@@ -6,7 +6,11 @@ import { log } from '../utils/logger';
 import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
 import { readDesktopPreferenceSync } from '../storage/desktopClientStorage';
-import type { SessionRevokedPayload, RealtimeCallSignalKind } from '../kernel/events/types';
+import type {
+  AgentTurnStreamEventPayload,
+  RealtimeCallSignalKind,
+  SessionRevokedPayload,
+} from '../kernel/events/types';
 import {
   GetSessionsResponseSchema,
   CreateSessionResponseSchema,
@@ -71,6 +75,10 @@ import {
 import {
   FederationHealthViewSchema,
 } from '../gen/proto/domain/federation/federation_health_pb';
+import type {
+  GetTurnTraceResponse,
+  ListTurnTracesResponse,
+} from '../gen/proto/domain/agent/agent_pb';
 export {
   FederationVisibility,
   FederationVisibilityRequestSchema,
@@ -771,8 +779,20 @@ export interface Agent {
   avatar: string;
   backgroundColor: string;
   systemPrompt: string;
+  soulMd: string;
+  agentsMd: string;
   model: string;
   provider: string;
+  effort: string;
+  visibility: string;
+  isolationEnabled: boolean;
+  isolationMode: string;
+  isolationRetentionDays: number;
+  workspaceMode: string;
+  runtimeBackend: string;
+  rootfsPath: string;
+  allowedRoots: string;
+  cliCommand: string;
   tags: string;
   toolsProfile: string;
   toolsAllow: string;
@@ -797,8 +817,20 @@ export interface AgentCreate {
   avatar?: string;
   backgroundColor?: string;
   systemPrompt?: string;
+  soulMd?: string;
+  agentsMd?: string;
   model?: string;
   provider?: string;
+  effort?: string;
+  visibility?: string;
+  isolationEnabled?: boolean;
+  isolationMode?: string;
+  isolationRetentionDays?: number;
+  workspaceMode?: string;
+  runtimeBackend?: string;
+  rootfsPath?: string;
+  allowedRoots?: string;
+  cliCommand?: string;
   tags?: string;
   toolsProfile?: string;
   toolsAllow?: string;
@@ -811,6 +843,19 @@ export interface AgentCreate {
   chatConfig?: string;
   params?: string;
   knowledgeResources?: string;
+}
+
+export type AgentWorkspaceCleanScope = 'tasks' | 'artifacts' | 'logs' | 'all_workspace';
+
+export interface AgentWorkspaceInfo {
+  agent_id: string;
+  workspace_root: string;
+  profile_dir: string;
+  total_bytes: number;
+  workspace_bytes: number;
+  profile_bytes: number;
+  task_count: number;
+  last_modified_at?: string;
 }
 
 export interface AgentPackage {
@@ -944,6 +989,8 @@ export interface AvailableModel {
   image_output?: boolean;
   video?: boolean;
   protocol_override?: string;
+  runtime_kind?: 'cli' | 'direct';
+  cli_command?: string;
 }
 
 export interface ProviderListItem {
@@ -954,6 +1001,7 @@ export interface ProviderListItem {
   enabled: boolean;
   builtin: boolean;
   has_api_key: boolean;
+  runtime_kind: 'cli' | 'direct';
 }
 
 export interface ModelItem {
@@ -1924,6 +1972,9 @@ export interface ProviderUpdateInput {
   enabled: boolean;
   key_vaults?: string;
   config_json?: string;
+  runtime_kind?: string;
+  cli_command?: string;
+  protocol?: string;
 }
 
 export interface ProviderCheckInput {
@@ -1938,6 +1989,9 @@ export interface ProviderCreateInput {
   logo: string;
   key_vaults: string;
   config_json: string;
+  runtime_kind?: string;
+  cli_command?: string;
+  protocol?: string;
 }
 
 export interface ProviderModelAddInput {
@@ -2043,6 +2097,8 @@ export interface McpExecuteToolInput {
   tool_name: string;
   arguments?: Record<string, unknown>;
   call_id?: string;
+  workspace_root?: string;
+  allowed_roots?: string[];
 }
 
 export interface McpToolExecutionResult {
@@ -2059,6 +2115,9 @@ export interface McpToolExecutionResult {
     serverName: string;
     toolName: string;
     transport: 'stdio' | 'http' | 'sse';
+    workspaceRoot?: string;
+    allowedRootCount?: number;
+    policyDecision?: 'allow' | 'deny';
     executedAt: string;
   };
 }
@@ -2071,6 +2130,7 @@ export interface AgentLocalToolRequestInput {
   call_id?: string;
   turn_id?: string;
   workspace_root?: string;
+  allowed_roots?: string[];
 }
 
 export interface AgentToolApprovalDecisionInput {
@@ -2103,7 +2163,14 @@ export interface AgentExecuteTurnInput {
   attachments?: ChatAttachmentInput[];
   provider?: string;
   model?: string;
+  cli_command?: string;
+  workspace_mode?: string;
+  runtime_backend?: string;
+  rootfs_path?: string;
+  allowed_roots?: string[];
   identity?: string;
+  agent_config_prompt?: string;
+  effort?: string;
   platform?: string;
   workspace_root?: string;
   context_window_size?: number;
@@ -2129,6 +2196,18 @@ export interface AgentExecuteTurnKnowledgeResource {
 
 export interface AgentTurnStreamCancelInput {
   stream_id: string;
+}
+
+export interface AgentTurnTraceListInput {
+  agent_id: string;
+  conversation_id?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export interface AgentTurnTraceGetInput {
+  trace_id?: string;
+  turn_id?: string;
 }
 
 export interface AgentTurnStreamPayload {
@@ -3021,6 +3100,42 @@ export const api = {
       r.sessions.map((s) => ({ ...s, agent_name: s.agent_name ?? s.agent_id ?? '' })),
     ),
 
+  getAgentWorkspaceInfo: (agentId: string) =>
+    invokeRustDataFromStatus<{ agent_id: string }, AgentWorkspaceInfo>(
+      'agent_workspace_info',
+      { agent_id: agentId },
+    ),
+
+  cleanAgentWorkspace: (agentId: string, scope: AgentWorkspaceCleanScope, retentionDays?: number) =>
+    invokeRustDataFromStatus<
+      { agent_id: string; scope: string; retention_days?: number },
+      { freed_bytes: number }
+    >('agent_workspace_clean', {
+      agent_id: agentId,
+      scope,
+      retention_days: retentionDays,
+    }),
+
+  listAgentTurnTraces: (agentId: string, options?: { conversationId?: string; page?: number; pageSize?: number }) =>
+    invokeRustDataFromStatus<AgentTurnTraceListInput, ListTurnTracesResponse>(
+      'agent_turn_trace_list',
+      {
+        agent_id: agentId,
+        conversation_id: options?.conversationId,
+        page: options?.page,
+        page_size: options?.pageSize,
+      },
+    ),
+
+  getAgentTurnTrace: (input: { traceId?: string; turnId?: string }) =>
+    invokeRustDataFromStatus<AgentTurnTraceGetInput, GetTurnTraceResponse>(
+      'agent_turn_trace_get',
+      {
+        trace_id: input.traceId,
+        turn_id: input.turnId,
+      },
+    ),
+
   listTools: () =>
     invokeRustDataFromStatus<void, { tools: ToolInfo[] }>('tools_list').then((r) => r.tools),
 
@@ -3035,6 +3150,10 @@ export const api = {
   listAvailableModels: async () => {
     const r = await invokeRustDataFromStatus<void, { providers?: any[] }>('provider_list_available_models');
     const models: AvailableModel[] = (r.providers || []).flatMap((p) => {
+      const cfg = parseJSONSafe(p.config_json);
+      const runtimeKind = String(cfg.runtime_kind || cfg.runtimeKind || cfg.runtime || '').trim().toLowerCase();
+      const cliCommand = String(cfg.cli_command || cfg.cliCommand || '').trim();
+      const normalizedRuntimeKind = runtimeKind === 'cli' || cliCommand ? 'cli' : 'direct';
       const providerModels = Array.isArray(p.models) ? p.models : [];
       if (providerModels.length > 0) {
         return providerModels.map((model: any) => ({
@@ -3052,9 +3171,10 @@ export const api = {
           image_output: Boolean(model.image_output),
           video: Boolean(model.video),
           protocol_override: model.protocol_override || p.protocol_override || undefined,
+          runtime_kind: normalizedRuntimeKind,
+          cli_command: cliCommand || undefined,
         }));
       }
-      const cfg = parseJSONSafe(p.config_json);
       const fallbackId = p.check_model || cfg.default_model || `${p.id}:default`;
       return [{
         id: fallbackId,
@@ -3064,6 +3184,8 @@ export const api = {
         type: 'chat',
         context_window: 0,
         enabled: true,
+        runtime_kind: normalizedRuntimeKind,
+        cli_command: cliCommand || undefined,
       }];
     });
     return { models, default: models[0]?.id || '' };
@@ -4844,7 +4966,10 @@ function parseJSONSafe(input?: string): Record<string, any> {
 }
 
 function mapAIChatProviderToListItem(item: any): ProviderListItem {
+  const cfg = parseJSONSafe(item.config_json);
   const keyVaults = parseJSONSafe(item.key_vaults);
+  const runtimeKind = String(cfg.runtime_kind || cfg.runtimeKind || cfg.runtime || '').trim().toLowerCase();
+  const hasCliCommand = Boolean(String(cfg.cli_command || cfg.cliCommand || '').trim());
   return {
     id: item.id,
     name: item.name || '',
@@ -4853,6 +4978,7 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
     enabled: Boolean(item.enabled),
     builtin: Boolean(item.builtin),
     has_api_key: Boolean(keyVaults.api_key || keyVaults.key || ''),
+    runtime_kind: runtimeKind === 'cli' || hasCliCommand ? 'cli' : 'direct',
   };
 }
 
@@ -5028,6 +5154,14 @@ export function streamAgentTurn(
         if (typeof payload.data?.arguments === 'string') data.args = payload.data.arguments;
         if (typeof payload.data?.stage === 'string') data.message = payload.data.stage;
 
+        eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+          streamId,
+          conversationId: input.conversation_id,
+          agentId: input.agent_id,
+          event: payload.event,
+          data,
+          timestampMs: Date.now(),
+        } satisfies AgentTurnStreamEventPayload);
         onEvent({ event: payload.event, data });
         if (payload.event === 'done') {
           unlisten?.();

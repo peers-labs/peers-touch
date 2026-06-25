@@ -6,6 +6,9 @@ pub enum SettingKey {
     Locale,
     TelemetryEnabled,
     CurrentAgent,
+    AgentDefaultProvider,
+    AgentDefaultModel,
+    AgentDefaultEffort,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,6 +24,9 @@ pub fn parse_key(key: &str) -> Result<SettingKey, String> {
         "locale" => Ok(SettingKey::Locale),
         "telemetry_enabled" => Ok(SettingKey::TelemetryEnabled),
         "settings.currentAgent" => Ok(SettingKey::CurrentAgent),
+        "settings.agent.defaultProvider" => Ok(SettingKey::AgentDefaultProvider),
+        "settings.agent.defaultModel" => Ok(SettingKey::AgentDefaultModel),
+        "settings.agent.defaultEffort" => Ok(SettingKey::AgentDefaultEffort),
         _ => Err("unsupported setting key".to_string()),
     }
 }
@@ -31,6 +37,9 @@ pub fn key_name(key: SettingKey) -> &'static str {
         SettingKey::Locale => "locale",
         SettingKey::TelemetryEnabled => "telemetry_enabled",
         SettingKey::CurrentAgent => "settings.currentAgent",
+        SettingKey::AgentDefaultProvider => "settings.agent.defaultProvider",
+        SettingKey::AgentDefaultModel => "settings.agent.defaultModel",
+        SettingKey::AgentDefaultEffort => "settings.agent.defaultEffort",
     }
 }
 
@@ -40,6 +49,9 @@ pub fn default_value(key: SettingKey) -> Value {
         SettingKey::Locale => Value::String("zh-CN".to_string()),
         SettingKey::TelemetryEnabled => Value::Bool(false),
         SettingKey::CurrentAgent => Value::String("assistant".to_string()),
+        SettingKey::AgentDefaultProvider => Value::String("".to_string()),
+        SettingKey::AgentDefaultModel => Value::String("".to_string()),
+        SettingKey::AgentDefaultEffort => Value::String("medium".to_string()),
     }
 }
 
@@ -61,6 +73,18 @@ pub fn default_settings() -> Vec<(String, Value)> {
             key_name(SettingKey::CurrentAgent).to_string(),
             default_value(SettingKey::CurrentAgent),
         ),
+        (
+            key_name(SettingKey::AgentDefaultProvider).to_string(),
+            default_value(SettingKey::AgentDefaultProvider),
+        ),
+        (
+            key_name(SettingKey::AgentDefaultModel).to_string(),
+            default_value(SettingKey::AgentDefaultModel),
+        ),
+        (
+            key_name(SettingKey::AgentDefaultEffort).to_string(),
+            default_value(SettingKey::AgentDefaultEffort),
+        ),
     ]
 }
 
@@ -68,7 +92,11 @@ pub fn side_effect(key: SettingKey) -> SettingSideEffect {
     match key {
         SettingKey::Theme => SettingSideEffect::ThemeChanged,
         SettingKey::Locale => SettingSideEffect::LocaleChanged,
-        SettingKey::TelemetryEnabled | SettingKey::CurrentAgent => SettingSideEffect::None,
+        SettingKey::TelemetryEnabled
+        | SettingKey::CurrentAgent
+        | SettingKey::AgentDefaultProvider
+        | SettingKey::AgentDefaultModel
+        | SettingKey::AgentDefaultEffort => SettingSideEffect::None,
     }
 }
 
@@ -115,6 +143,28 @@ pub fn validate_value(key: SettingKey, value: &Value) -> Result<Value, String> {
                 return Err("settings.currentAgent is too long".to_string());
             }
             Ok(Value::String(name.to_string()))
+        }
+        SettingKey::AgentDefaultProvider | SettingKey::AgentDefaultModel => {
+            let value = value
+                .as_str()
+                .ok_or_else(|| "agent default setting must be string".to_string())?
+                .trim();
+            if value.len() > 256 {
+                return Err("agent default setting is too long".to_string());
+            }
+            Ok(Value::String(value.to_string()))
+        }
+        SettingKey::AgentDefaultEffort => {
+            let effort = value
+                .as_str()
+                .ok_or_else(|| "settings.agent.defaultEffort must be string".to_string())?
+                .trim();
+            if !matches!(effort, "low" | "medium" | "high") {
+                return Err(
+                    "settings.agent.defaultEffort must be one of low|medium|high".to_string(),
+                );
+            }
+            Ok(Value::String(effort.to_string()))
         }
     }
 }
