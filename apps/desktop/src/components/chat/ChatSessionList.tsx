@@ -1,12 +1,14 @@
 import { useMemo, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Dropdown, Input, toast } from '@lobehub/ui';
+import { Button, Dropdown, Input } from '@lobehub/ui';
 import { Badge, Empty, theme, Typography } from 'antd';
 import { BellOff, Pin, Search, Plus, UserPlus, Users, UsersRound, Volume2, VolumeX, CheckCheck, EyeOff, Trash2 } from 'lucide-react';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { useSocialChatStore } from '../../store/socialChat';
 import type { UnifiedConversation } from '../../store/socialChat';
+import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
+import { presentError } from '../../services/errorPresenter';
 import { CreateGroupModal } from './CreateGroupModal';
 import { FindPeopleModal } from './FindPeopleModal';
 
@@ -140,14 +142,20 @@ export function ChatSessionList() {
             try {
               await updateConversationLocalState(c.type, c.ulid, { sticky: !isPinned });
             } catch (error) {
-              toast.error(error instanceof Error ? error.message : t('chat.social.contextMenu.actionFailed', { defaultValue: 'Action failed.' }));
+              presentError(error, {
+                mapper: mapChatError,
+                context: { operation: 'conversationAction' },
+              });
             }
             break;
           case 'mute':
             try {
               await updateConversationLocalState(c.type, c.ulid, { muted: !isMuted });
             } catch (error) {
-              toast.error(error instanceof Error ? error.message : t('chat.social.contextMenu.actionFailed', { defaultValue: 'Action failed.' }));
+              presentError(error, {
+                mapper: mapChatError,
+                context: { operation: 'conversationAction' },
+              });
             }
             break;
           case 'markRead':
@@ -155,7 +163,10 @@ export function ChatSessionList() {
             try {
               await updateConversationLocalState(c.type, c.ulid, { clearedAt: 0 });
             } catch (error) {
-              toast.error(error instanceof Error ? error.message : t('chat.social.contextMenu.actionFailed', { defaultValue: 'Action failed.' }));
+              presentError(error, {
+                mapper: mapChatError,
+                context: { operation: 'conversationAction' },
+              });
             }
             break;
           case 'hide':
@@ -169,7 +180,10 @@ export function ChatSessionList() {
                 await deleteFriendContact(c.ulid);
               }
             } catch (error) {
-              toast.error(error instanceof Error ? error.message : t('chat.social.contextMenu.deleteFailed', { defaultValue: 'Delete failed.' }));
+              presentError(error, {
+                mapper: mapChatError,
+                context: { operation: 'delete' },
+              });
             }
             break;
           }
