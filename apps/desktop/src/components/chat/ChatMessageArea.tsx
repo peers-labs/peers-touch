@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Tooltip } from '@lobehub/ui';
+import { Button, Tooltip, toast } from '@lobehub/ui';
 import { Empty, Spin, theme, Typography } from 'antd';
 import {
   Inbox, Phone, Video, MoreHorizontal,
@@ -20,7 +20,8 @@ import { SearchMessagesModal } from './SearchMessagesModal';
 import { friendChatP2p } from '../../modules/p2p/friendChatP2p';
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
-import { toast } from '@lobehub/ui';
+import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
+import { presentError, type PresentedError } from '../../services/errorPresenter';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
 import type { FriendChatMessage } from '../../gen/proto/domain/chat/friend_chat_pb';
 import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
@@ -35,20 +36,10 @@ import {
   loadedThreadReplyCount,
 } from './message/ChatMessageTimeline';
 import { ChatDeleteConfirmOverlay } from './ChatDeleteConfirmOverlay';
+import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
 import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 
 const { Text } = Typography;
-
-function messageFromError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function isLocalCryptoStoreError(error: unknown): boolean {
-  const message = messageFromError(error);
-  return message.includes('open_database failed')
-    || message.includes('database key verification failed')
-    || message.includes('corrupted database');
-}
 
 function chatBackgroundCss(
   background: string | undefined,
@@ -111,6 +102,7 @@ export function ChatMessageArea() {
   const [editingUlid, setEditingUlid] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FriendChatMessage | GroupMessage | null>(null);
   const [deletingMessage, setDeletingMessage] = useState(false);
+  const [composerError, setComposerError] = useState<PresentedError | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prependRestoreRef = useRef<{ previousHeight: number } | null>(null);
@@ -209,6 +201,7 @@ export function ChatMessageArea() {
     setReplyToUlid(null);
     setDeleteTarget(null);
     setDeletingMessage(false);
+    setComposerError(null);
   }, [activeUlid]);
 
   useEffect(() => {
@@ -386,6 +379,7 @@ export function ChatMessageArea() {
     setInputValue('');
     setReplyToUlid(null);
     setEditingUlid(null);
+    setComposerError(null);
     setSending(true);
     // Sending implies "stopped composing" — flip the bubble for the
     // peer immediately rather than waiting on the 4s idle timer.
@@ -437,15 +431,12 @@ export function ChatMessageArea() {
       log.error('chat', 'composer send failed', err);
       setInputValue(content);
       setReplyToUlid(replyRef ?? null);
-      if (isLocalCryptoStoreError(err)) {
-        toast.error(t('chat.social.messageArea.localCryptoStoreFailed', {
-          defaultValue: 'Local encrypted chat storage cannot be opened. Please restart or reset local chat data before sending encrypted group messages.',
-        }));
-      } else {
-        toast.error(messageFromError(err) || t('chat.social.messageArea.sendFailed', {
-          defaultValue: 'Message failed to send.',
-        }));
-      }
+      const presentedError = presentError(err, {
+        mode: 'toast',
+        mapper: mapChatError,
+        context: { operation: 'send' },
+      });
+      if (!presentedError.recoverable) setComposerError(presentedError);
     } finally {
       setSending(false);
     }
@@ -725,6 +716,12 @@ export function ChatMessageArea() {
         )}
         <div ref={bottomRef} />
       </Flexbox>
+
+      {composerError && (
+        <Flexbox style={{ padding: '0 16px 12px', background: conversationSurfaceBackground }}>
+          <PresentedErrorAlert error={composerError} onClose={() => setComposerError(null)} />
+        </Flexbox>
+      )}
 
       <ChatComposer
         activeConversationId={activeUlid}

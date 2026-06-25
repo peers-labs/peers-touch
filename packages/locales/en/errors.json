@@ -74,16 +74,24 @@
 
   "error.chat.completionFailed": "Chat completion failed",
   "error.chat.conversationNotFound": "Conversation not found",
+  "error.chat.conversationActionFailed": "Conversation action failed",
+  "error.chat.conversationUnavailable": "This conversation is unavailable. Refresh and try again.",
+  "error.chat.deleteFailed": "Failed to delete conversation",
+  "error.chat.editFailed": "Failed to edit message",
   "error.chat.getCursorFailed": "Failed to get cursor",
   "error.chat.getKeyVersionFailed": "Failed to get key version",
   "error.chat.groupRequired": "Group ID is required",
+  "error.chat.localCryptoStoreUnavailable": "Local encrypted chat storage is unavailable. Restart the app or rebuild local chat data before retrying.",
   "error.chat.localSearchFailed": "Local search failed",
   "error.chat.messageNotFound": "Message not found",
   "error.chat.nextVersionPositive": "Version must be positive",
+  "error.chat.permissionDenied": "You do not have permission for this action, or you are no longer in this group.",
   "error.chat.queryRequired": "Search query is required",
   "error.chat.rotateKeyFailed": "Failed to rotate key",
   "error.chat.scopeAndCursorRequired": "Scope and cursor are required",
   "error.chat.scopeRequired": "Scope is required",
+  "error.chat.sendFailed": "Failed to send message",
+  "error.chat.senderKeySyncing": "Group encryption keys are still syncing. Try again shortly.",
   "error.chat.setCursorFailed": "Failed to set cursor",
 
   "error.command.notImplemented": "Command not implemented",
@@ -129,6 +137,8 @@
   "error.profile.updateFailed": "Failed to update profile",
   "error.profile.uploadFailed": "Failed to upload file",
   "error.profile.uploadRolledBack": "Upload rolled back",
+
+  "error.presentation.title": "Action failed",
 
   "error.provider.baseUrlRequired": "Base URL is required",
   "error.provider.disabled": "Provider is disabled",
