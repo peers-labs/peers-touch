@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Alert, Tag, Table, Input, Typography, Collapse, Spin, message, theme, Modal } from 'antd';
+import { Alert, Tag, Table, Input, Typography, Collapse, Spin, message, theme, Modal, Popover, Select } from 'antd';
 import type { InputRef } from 'antd';
 import { Button } from '@lobehub/ui';
 import {
@@ -19,7 +19,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { useSettingsStore } from '../store/settings';
 import { useProviderStore } from '../store/provider';
-import { api, type AppletInfo, type HelpCategoryGroup, type SearchProviderInfo, type StatisticsData } from '../services/desktop_api';
+import { api, type Agent, type AppletInfo, type AvailableModel, type HelpCategoryGroup, type SearchProviderInfo, type StatisticsData } from '../services/desktop_api';
 import { hasSettingsPanel, getAppletFrontend } from '../applets/registry';
 import { getModulesWithSettings } from '../modules/registry';
 import { PageHeader } from '../components/PageHeader';
@@ -27,6 +27,7 @@ import { LanguageSwitcher } from '../components/common/LanguageSwitcher';
 import { log } from '../utils/logger';
 import { SettingsContainer, SettingsSection, SettingsItemCard, SettingsRow } from '../components/settings/SettingsLayout';
 import { FederationTab } from '../components/settings/FederationTab';
+import { ModelProviderSelect } from '../components/ModelProviderSelect';
 import { usePrefetch } from '../kernel/usePrefetch';
 import {
   DEFAULT_CHAT_SCREENSHOT_SHORTCUT,
@@ -1300,12 +1301,63 @@ function ChatShortcutSettingsSection() {
   );
 }
 
+function settingResultString(result: unknown): string {
+  const value = (result as { data?: { value?: unknown }; value?: unknown })?.data?.value
+    ?? (result as { value?: unknown })?.value;
+  return typeof value === 'string' ? value : '';
+}
+
 function GeneralTab() {
   // Agents are bootstrapped + reconciled by `runtimes/settingsRuntime.ts`;
   // the page reads them synchronously from the store. No mount-time
   // fetch — runtime ownership is single.
   const agents = useSettingsStore((s) => s.agents);
   const { t } = useTranslation('settings');
+  const { value: modelResult } = usePrefetch('settings.agent.models', () => api.listAvailableModels());
+  const models = modelResult?.models ?? [];
+  const [defaultProvider, setDefaultProvider] = useState('');
+  const [defaultModel, setDefaultModel] = useState('');
+  const [defaultEffort, setDefaultEffort] = useState('medium');
+  const [agentVisibilityFilter, setAgentVisibilityFilter] = useState('all');
+  const providerOptions = Array.from(
+    new Map(
+      models.map((model) => [
+        model.provider_id || model.provider_name,
+        {
+          label: model.provider_name || model.provider_id,
+          value: model.provider_id || model.provider_name,
+        },
+      ]),
+    ).values(),
+  ).filter((option) => option.value);
+  const defaultModelOptions = models
+    .filter((model) => !defaultProvider || model.provider_id === defaultProvider)
+    .map((model) => ({ label: model.display_name || model.id, value: model.id }));
+  const visibleAgents = agentVisibilityFilter === 'all'
+    ? agents
+    : agents.filter((agent) => (agent.visibility || 'private') === agentVisibilityFilter);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      api.settingsGet({ key: 'settings.agent.defaultProvider' }).catch(() => ({ value: '' })),
+      api.settingsGet({ key: 'settings.agent.defaultModel' }).catch(() => ({ value: '' })),
+      api.settingsGet({ key: 'settings.agent.defaultEffort' }).catch(() => ({ value: 'medium' })),
+    ]).then(([provider, model, effort]) => {
+      if (cancelled) return;
+      setDefaultProvider(settingResultString(provider));
+      setDefaultModel(settingResultString(model));
+      setDefaultEffort(settingResultString(effort) || 'medium');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const saveAgentDefault = async (key: string, value: string) => {
+    await api.settingsSet({ key, value });
+    message.success(t('settings.general.agentDefaultsSaved'));
+  };
 
   return (
     <SettingsContainer>
@@ -1319,6 +1371,56 @@ function GeneralTab() {
         <></>
       </SettingsSection>
 
+      <SettingsSection
+        icon={<Cpu size={18} />}
+        title={t('settings.general.agentDefaultsTitle')}
+        subtitle={t('settings.general.agentDefaultsDescription')}
+      >
+        <Flexbox gap={12}>
+          <Select
+            allowClear
+            value={defaultProvider || undefined}
+            placeholder={t('settings.general.defaultProvider')}
+            options={providerOptions}
+            onChange={async (value) => {
+              const nextProvider = value || '';
+              setDefaultProvider(nextProvider);
+              setDefaultModel('');
+              await saveAgentDefault('settings.agent.defaultProvider', nextProvider);
+              await saveAgentDefault('settings.agent.defaultModel', '');
+            }}
+          />
+          <Select
+            allowClear
+            showSearch
+            value={defaultModel || undefined}
+            placeholder={t('settings.general.defaultModel')}
+            options={defaultModelOptions}
+            onChange={async (value) => {
+              const nextModel = value || '';
+              setDefaultModel(nextModel);
+              await saveAgentDefault('settings.agent.defaultModel', nextModel);
+            }}
+            filterOption={(input, option) =>
+              String(option?.label || '').toLowerCase().includes(input.toLowerCase())
+            }
+          />
+          <Select
+            value={defaultEffort}
+            placeholder={t('settings.general.defaultEffort')}
+            options={[
+              { label: t('settings.agent.effort.low'), value: 'low' },
+              { label: t('settings.agent.effort.medium'), value: 'medium' },
+              { label: t('settings.agent.effort.high'), value: 'high' },
+            ]}
+            onChange={async (value) => {
+              setDefaultEffort(value);
+              await saveAgentDefault('settings.agent.defaultEffort', value);
+            }}
+          />
+        </Flexbox>
+      </SettingsSection>
+
       <SecuritySection />
 
       <ChatShortcutSettingsSection />
@@ -1326,11 +1428,25 @@ function GeneralTab() {
       <SettingsSection
         icon={<Bot size={18} />}
         title={t('settings.general.agentsTitle')}
+        extra={
+          <Select
+            size="small"
+            value={agentVisibilityFilter}
+            style={{ minWidth: 140 }}
+            options={[
+              { label: t('settings.agent.visibility.all'), value: 'all' },
+              { label: t('settings.agent.visibility.private'), value: 'private' },
+              { label: t('settings.agent.visibility.workspace'), value: 'workspace' },
+              { label: t('settings.agent.visibility.public'), value: 'public' },
+            ]}
+            onChange={setAgentVisibilityFilter}
+          />
+        }
       >
-        {agents.length === 0 ? (
+        {visibleAgents.length === 0 ? (
           <Text type="secondary">{t('settings.general.noAgents')}</Text>
         ) : (
-          agents.map((agent) => <AgentCard key={agent.name} agent={agent} />)
+          visibleAgents.map((agent) => <AgentCard key={agent.name} agent={agent} models={models} />)
         )}
       </SettingsSection>
     </SettingsContainer>
@@ -1711,12 +1827,15 @@ function DangerZoneResetOnboarding() {
 
 function AgentCard({
   agent,
+  models,
 }: {
-  agent: { name: string; title?: string; description: string; model: string; systemPrompt?: string; system_prompt?: string };
+  agent: Agent;
+  models: AvailableModel[];
 }) {
   const [editing, setEditing] = useState(false);
   const [desc, setDesc] = useState(agent.description);
-  const { updateAgent } = useSettingsStore();
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const { setDefaultAgent, updateAgent } = useSettingsStore();
   const { token } = theme.useToken();
   const { t } = useTranslation('settings');
 
@@ -1725,9 +1844,34 @@ function AgentCard({
     setEditing(false);
   };
 
+  const handleDefault = async () => {
+    await setDefaultAgent(agent.id);
+    message.success(t('settings.agent.defaultSaved'));
+  };
+
+  const handleModelSelect = async (model: string, provider: string) => {
+    await updateAgent(agent.name, { model, provider });
+    setModelPickerOpen(false);
+    message.success(t('settings.agent.modelSaved'));
+  };
+
+  const handleEffortChange = async (effort: string) => {
+    await updateAgent(agent.name, { effort });
+    message.success(t('settings.agent.effortSaved'));
+  };
+
+  const handleVisibilityChange = async (visibility: string) => {
+    await updateAgent(agent.name, { visibility });
+    message.success(t('settings.agent.visibilitySaved'));
+  };
+
+  const selectedModel = models.find((model) => model.id === agent.model && model.provider_id === agent.provider)
+    ?? models.find((model) => model.id === agent.model);
+  const modelLabel = selectedModel?.display_name || agent.model || t('settings.agent.defaultModel');
+
   return (
     <Flexbox
-      gap={8}
+      gap={10}
       style={{
         padding: 16,
         borderRadius: 8,
@@ -1737,24 +1881,73 @@ function AgentCard({
     >
       <Flexbox horizontal justify="space-between" align="center">
         <Flexbox horizontal gap={8} align="center">
-          <Text strong style={{ fontSize: 15 }}>{agent.name}</Text>
-          <Tag>{agent.model || t('settings.agent.defaultModel')}</Tag>
+          <Text strong style={{ fontSize: 15 }}>{agent.title || agent.name}</Text>
+          {agent.isDefault && <Tag color="green">{t('settings.agent.defaultAgent')}</Tag>}
+          <Tag>{modelLabel}</Tag>
+          <Tag>{t(`settings.agent.effort.${agent.effort || 'medium'}`)}</Tag>
+          <Tag>{t(`settings.agent.visibility.${agent.visibility || 'private'}`)}</Tag>
         </Flexbox>
-        {editing ? (
-          <Flexbox horizontal gap={4}>
-            <Button type="primary" size="small" onClick={handleSave}>{t('settings.agent.save')}</Button>
-            <Button size="small" onClick={() => setEditing(false)}>{t('settings.agent.cancel')}</Button>
-          </Flexbox>
-        ) : (
-          <Button size="small" onClick={() => setEditing(true)}>{t('settings.agent.edit')}</Button>
-        )}
+        <Flexbox horizontal gap={4}>
+          {!agent.isDefault && (
+            <Button size="small" onClick={handleDefault}>{t('settings.agent.setDefault')}</Button>
+          )}
+          {editing ? (
+            <>
+              <Button type="primary" size="small" onClick={handleSave}>{t('settings.agent.save')}</Button>
+              <Button size="small" onClick={() => setEditing(false)}>{t('settings.agent.cancel')}</Button>
+            </>
+          ) : (
+            <Button size="small" onClick={() => setEditing(true)}>{t('settings.agent.edit')}</Button>
+          )}
+        </Flexbox>
       </Flexbox>
       {editing ? (
-        <Input
-          value={desc}
-          onChange={(e) => setDesc(e.target.value)}
-          placeholder={t('settings.agent.descriptionPlaceholder')}
-        />
+        <Flexbox gap={10}>
+          <Input
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+            placeholder={t('settings.agent.descriptionPlaceholder')}
+          />
+          <Flexbox horizontal gap={8} wrap="wrap" align="center">
+            <Popover
+              open={modelPickerOpen}
+              onOpenChange={setModelPickerOpen}
+              trigger="click"
+              placement="bottomLeft"
+              content={(
+                <ModelProviderSelect
+                  models={models}
+                  selectedModelId={agent.model}
+                  onSelect={handleModelSelect}
+                  onClose={() => setModelPickerOpen(false)}
+                />
+              )}
+            >
+              <Button size="small">{modelLabel}</Button>
+            </Popover>
+            <Select
+              size="small"
+              value={agent.effort || 'medium'}
+              style={{ width: 132 }}
+              onChange={handleEffortChange}
+              options={[
+                { value: 'low', label: t('settings.agent.effort.low') },
+                { value: 'medium', label: t('settings.agent.effort.medium') },
+                { value: 'high', label: t('settings.agent.effort.high') },
+              ]}
+            />
+            <Select
+              size="small"
+              value={agent.visibility || 'private'}
+              style={{ width: 132 }}
+              onChange={handleVisibilityChange}
+              options={[
+                { value: 'private', label: t('settings.agent.visibility.private') },
+                { value: 'workspace', label: t('settings.agent.visibility.workspace') },
+              ]}
+            />
+          </Flexbox>
+        </Flexbox>
       ) : (
         <Text type="secondary">{agent.description || t('settings.agent.noDescription')}</Text>
       )}
