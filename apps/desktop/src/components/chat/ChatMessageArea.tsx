@@ -39,6 +39,17 @@ import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 
 const { Text } = Typography;
 
+function messageFromError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isLocalCryptoStoreError(error: unknown): boolean {
+  const message = messageFromError(error);
+  return message.includes('open_database failed')
+    || message.includes('database key verification failed')
+    || message.includes('corrupted database');
+}
+
 function chatBackgroundCss(
   background: string | undefined,
   layoutColor: string,
@@ -68,7 +79,7 @@ export function ChatMessageArea() {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const {
-    activeTab, activeSessionUlid, activeGroupUlid, messages, loading,
+    activeTab, activeSessionUlid, activeGroupUlid, messages,
     sessions, groups, loadMessages, loadOlderMessages, sendFriendMessage, sendGroupMessage, toggleDetail,
     deleteMessage, recallFriendMessage, editFriendMessage,
     recallGroupMessage, editGroupMessage, openThread,
@@ -422,6 +433,19 @@ export function ChatMessageArea() {
           draft.attachments.length > 0 ? draft.attachments : undefined,
         );
       }
+    } catch (err) {
+      log.error('chat', 'composer send failed', err);
+      setInputValue(content);
+      setReplyToUlid(replyRef ?? null);
+      if (isLocalCryptoStoreError(err)) {
+        toast.error(t('chat.social.messageArea.localCryptoStoreFailed', {
+          defaultValue: 'Local encrypted chat storage cannot be opened. Please restart or reset local chat data before sending encrypted group messages.',
+        }));
+      } else {
+        toast.error(messageFromError(err) || t('chat.social.messageArea.sendFailed', {
+          defaultValue: 'Message failed to send.',
+        }));
+      }
     } finally {
       setSending(false);
     }
@@ -666,11 +690,7 @@ export function ChatMessageArea() {
             <Spin size="small" />
           </Flexbox>
         )}
-        {loading && mainTimelineMessages.length === 0 ? (
-          <Flexbox align="center" justify="center" flex={1}>
-            <Spin />
-          </Flexbox>
-        ) : mainTimelineMessages.length === 0 ? (
+        {mainTimelineMessages.length === 0 ? (
           <Flexbox align="center" justify="center" flex={1}>
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.messageArea.noMessages')} />
           </Flexbox>

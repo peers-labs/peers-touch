@@ -145,6 +145,59 @@ describe('api group admin bridge', () => {
   })
 })
 
+describe('api friend crypto bridge', () => {
+  beforeEach(() => {
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command: 'crypto_friend',
+        status: JSON.stringify({
+          ephemeral_key: 'ephemeral',
+          established: true,
+          ciphertext: 'ciphertext',
+          counter: 1,
+          plaintext: 'plaintext',
+        }),
+      },
+    })
+  })
+
+  it('initializes sessions with Tauri camelCase args', async () => {
+    await api.cryptoInitSession('session-1', 'did:peer:bob', 'ik', 'spk', 'sig', 'opk')
+
+    expect(invoke).toHaveBeenCalledWith('crypto_init_session', {
+      sessionId: 'session-1',
+      peerDid: 'did:peer:bob',
+      peerIkPub: 'ik',
+      peerSpkPub: 'spk',
+      peerSpkSig: 'sig',
+      peerOpkPub: 'opk',
+    })
+  })
+
+  it('encrypts friend payloads with Tauri camelCase args', async () => {
+    await api.cryptoEncryptMessage('session-1', 'did:peer:bob', 'plaintext')
+
+    expect(invoke).toHaveBeenCalledWith('crypto_encrypt_message', {
+      sessionId: 'session-1',
+      peerDid: 'did:peer:bob',
+      plaintext: 'plaintext',
+    })
+  })
+
+  it('decrypts friend payloads with Tauri camelCase args', async () => {
+    await api.cryptoDecryptMessage('session-1', 'did:peer:bob', 'ciphertext', 1, 'ephemeral')
+
+    expect(invoke).toHaveBeenCalledWith('crypto_decrypt_message', {
+      sessionId: 'session-1',
+      peerDid: 'did:peer:bob',
+      ciphertext: 'ciphertext',
+      counter: 1,
+      ephemeralKey: 'ephemeral',
+    })
+  })
+})
+
 describe('api group sender-key bridge', () => {
   beforeEach(() => {
     vi.mocked(invoke).mockResolvedValue({
