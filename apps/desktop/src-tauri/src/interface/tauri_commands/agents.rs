@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
+use crate::application::agent_workspace::{self, WorkspaceCleanScope};
 use crate::contracts::{
     AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentPackageExportInput,
-    AgentPackageImportInput, AgentSearchInput, AgentSelectInput, AgentUpdateInput, StubPayload,
+    AgentPackageImportInput, AgentSearchInput, AgentSelectInput, AgentUpdateInput,
+    AgentWorkspaceCleanInput, AgentWorkspaceInfoInput, StubPayload,
 };
-use crate::error::AppResult;
+use crate::error::{AppResult, ErrorCode};
 
 use crate::application::agents as application_agents;
 use crate::application::session_resolver;
@@ -147,4 +149,54 @@ pub fn agents_list_sessions(
 ) -> AppResult<StubPayload> {
     let actor_id = actor_id_for_cmd(&state, &window);
     application_agents::agents_list_sessions(&actor_id, input)
+}
+
+#[tauri::command]
+pub fn agent_workspace_info(input: AgentWorkspaceInfoInput) -> AppResult<StubPayload> {
+    let agent_id = input.agent_id.trim();
+    if agent_id.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "agent_id is required", None);
+    }
+    match agent_workspace::workspace_info(agent_id) {
+        Ok(info) => match serde_json::to_string(&info) {
+            Ok(status) => AppResult::success(StubPayload {
+                command: "agent_workspace_info".to_string(),
+                status,
+            }),
+            Err(error) => AppResult::fail(ErrorCode::InternalError, error.to_string(), None),
+        },
+        Err(error) => AppResult::fail(ErrorCode::InternalError, error, None),
+    }
+}
+
+#[tauri::command]
+pub fn agent_workspace_clean(input: AgentWorkspaceCleanInput) -> AppResult<StubPayload> {
+    let agent_id = input.agent_id.trim();
+    if agent_id.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "agent_id is required", None);
+    }
+    let scope = match WorkspaceCleanScope::from_str(input.scope.trim()) {
+        Ok(scope) => scope,
+        Err(error) => {
+            return AppResult::fail(ErrorCode::InvalidArgument, error, None);
+        }
+    };
+
+    let result = if scope == WorkspaceCleanScope::Tasks {
+        if let Some(retention_days) = input.retention_days {
+            agent_workspace::clean_expired_tasks(agent_id, retention_days)
+        } else {
+            agent_workspace::clean_workspace(agent_id, scope)
+        }
+    } else {
+        agent_workspace::clean_workspace(agent_id, scope)
+    };
+
+    match result {
+        Ok(freed_bytes) => AppResult::success(StubPayload {
+            command: "agent_workspace_clean".to_string(),
+            status: serde_json::json!({ "freed_bytes": freed_bytes }).to_string(),
+        }),
+        Err(error) => AppResult::fail(ErrorCode::InternalError, error, None),
+    }
 }

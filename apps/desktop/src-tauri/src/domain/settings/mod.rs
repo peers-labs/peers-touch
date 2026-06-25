@@ -7,6 +7,9 @@ pub enum SettingKey {
     TelemetryEnabled,
     CurrentAgent,
     ChatScreenshotShortcut,
+    AgentDefaultProvider,
+    AgentDefaultModel,
+    AgentDefaultEffort,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,6 +26,9 @@ pub fn parse_key(key: &str) -> Result<SettingKey, String> {
         "telemetry_enabled" => Ok(SettingKey::TelemetryEnabled),
         "settings.currentAgent" => Ok(SettingKey::CurrentAgent),
         "settings.chat.screenshotShortcut" => Ok(SettingKey::ChatScreenshotShortcut),
+        "settings.agent.defaultProvider" => Ok(SettingKey::AgentDefaultProvider),
+        "settings.agent.defaultModel" => Ok(SettingKey::AgentDefaultModel),
+        "settings.agent.defaultEffort" => Ok(SettingKey::AgentDefaultEffort),
         _ => Err("unsupported setting key".to_string()),
     }
 }
@@ -34,6 +40,9 @@ pub fn key_name(key: SettingKey) -> &'static str {
         SettingKey::TelemetryEnabled => "telemetry_enabled",
         SettingKey::CurrentAgent => "settings.currentAgent",
         SettingKey::ChatScreenshotShortcut => "settings.chat.screenshotShortcut",
+        SettingKey::AgentDefaultProvider => "settings.agent.defaultProvider",
+        SettingKey::AgentDefaultModel => "settings.agent.defaultModel",
+        SettingKey::AgentDefaultEffort => "settings.agent.defaultEffort",
     }
 }
 
@@ -44,6 +53,9 @@ pub fn default_value(key: SettingKey) -> Value {
         SettingKey::TelemetryEnabled => Value::Bool(false),
         SettingKey::CurrentAgent => Value::String("assistant".to_string()),
         SettingKey::ChatScreenshotShortcut => Value::String("Mod+Shift+A".to_string()),
+        SettingKey::AgentDefaultProvider => Value::String("".to_string()),
+        SettingKey::AgentDefaultModel => Value::String("".to_string()),
+        SettingKey::AgentDefaultEffort => Value::String("medium".to_string()),
     }
 }
 
@@ -69,6 +81,18 @@ pub fn default_settings() -> Vec<(String, Value)> {
             key_name(SettingKey::ChatScreenshotShortcut).to_string(),
             default_value(SettingKey::ChatScreenshotShortcut),
         ),
+        (
+            key_name(SettingKey::AgentDefaultProvider).to_string(),
+            default_value(SettingKey::AgentDefaultProvider),
+        ),
+        (
+            key_name(SettingKey::AgentDefaultModel).to_string(),
+            default_value(SettingKey::AgentDefaultModel),
+        ),
+        (
+            key_name(SettingKey::AgentDefaultEffort).to_string(),
+            default_value(SettingKey::AgentDefaultEffort),
+        ),
     ]
 }
 
@@ -78,7 +102,10 @@ pub fn side_effect(key: SettingKey) -> SettingSideEffect {
         SettingKey::Locale => SettingSideEffect::LocaleChanged,
         SettingKey::TelemetryEnabled
         | SettingKey::CurrentAgent
-        | SettingKey::ChatScreenshotShortcut => SettingSideEffect::None,
+        | SettingKey::ChatScreenshotShortcut
+        | SettingKey::AgentDefaultProvider
+        | SettingKey::AgentDefaultModel
+        | SettingKey::AgentDefaultEffort => SettingSideEffect::None,
     }
 }
 
@@ -138,6 +165,28 @@ pub fn validate_value(key: SettingKey, value: &Value) -> Result<Value, String> {
                 return Err("settings.chat.screenshotShortcut is too long".to_string());
             }
             Ok(Value::String(shortcut.to_string()))
+        }
+        SettingKey::AgentDefaultProvider | SettingKey::AgentDefaultModel => {
+            let value = value
+                .as_str()
+                .ok_or_else(|| "agent default setting must be string".to_string())?
+                .trim();
+            if value.len() > 256 {
+                return Err("agent default setting is too long".to_string());
+            }
+            Ok(Value::String(value.to_string()))
+        }
+        SettingKey::AgentDefaultEffort => {
+            let effort = value
+                .as_str()
+                .ok_or_else(|| "settings.agent.defaultEffort must be string".to_string())?
+                .trim();
+            if !matches!(effort, "low" | "medium" | "high") {
+                return Err(
+                    "settings.agent.defaultEffort must be one of low|medium|high".to_string(),
+                );
+            }
+            Ok(Value::String(effort.to_string()))
         }
     }
 }
