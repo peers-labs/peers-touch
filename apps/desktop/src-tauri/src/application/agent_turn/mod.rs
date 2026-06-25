@@ -4,10 +4,10 @@
 // `TypedHandler` protobuf mode requires `proto.Message` request types. Keep JSON until the
 // subserver handler and proto definitions are aligned with the desktop contract.
 // TODO(agent): align `agent.proto` + Station `HandleExecuteTurn` with the full turn payload, then use `request_proto`.
-use crate::application::{mcp, tools};
+use crate::application::{agent_workspace, mcp, tools};
 use crate::contracts::{
     AgentExecuteTurnInput, AgentLocalToolRequestInput, AgentToolApprovalDecisionInput,
-    McpExecuteToolInput, StubPayload,
+    AgentTurnTraceGetInput, AgentTurnTraceListInput, McpExecuteToolInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -17,7 +17,9 @@ use reqwest::Method;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{Read, Write};
+use std::path::Path;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -128,7 +130,15 @@ struct AgentTurnStreamEventPayload {
     data: Value,
 }
 
-pub fn agent_execute_turn(input: AgentExecuteTurnInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_execute_turn(mut input: AgentExecuteTurnInput, token: &str) -> AppResult<StubPayload> {
+    if let Err(error) = apply_resolved_agent_workspace(&mut input) {
+        return AppResult::fail(ErrorCode::InternalError, error, None);
+    }
+    let cli_command = input.cli_command.clone().unwrap_or_default();
+    if !cli_command.trim().is_empty() {
+        return execute_cli_turn(input);
+    }
+
     tracing::info!(
         command = "agent_execute_turn",
         agent_id = %input.agent_id,
@@ -142,7 +152,10 @@ pub fn agent_execute_turn(input: AgentExecuteTurnInput, token: &str) -> AppResul
         "user_input": input.user_input,
         "provider": input.provider.unwrap_or_default(),
         "model": input.model.unwrap_or_default(),
+        "cliCommand": input.cli_command.unwrap_or_default(),
         "identity": input.identity.unwrap_or_default(),
+        "agentConfigPrompt": input.agent_config_prompt.unwrap_or_default(),
+        "effort": input.effort.unwrap_or_else(|| "medium".to_string()),
         "platform": input.platform.unwrap_or("desktop".to_string()),
         "workspace_root": input.workspace_root.unwrap_or_default(),
         "context_window_size": input.context_window_size.unwrap_or(128000),
@@ -168,15 +181,105 @@ pub fn agent_execute_turn(input: AgentExecuteTurnInput, token: &str) -> AppResul
     }
 }
 
+pub fn agent_turn_trace_list(
+    input: AgentTurnTraceListInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let agent_id = input.agent_id.trim().to_string();
+    if agent_id.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "agent_id is required", None);
+    }
+    let body = json!({
+        "agent_id": agent_id,
+        "conversation_id": input.conversation_id.unwrap_or_default(),
+        "page": input.page.unwrap_or(1),
+        "page_size": input.page_size.unwrap_or(20),
+    });
+
+    match station_client::request_json(
+        Method::POST,
+        "/agent/turn/trace/list",
+        token,
+        None,
+        Some(body),
+    ) {
+        Ok(result) => success_payload("agent_turn_trace_list", result),
+        Err(err) => {
+            tracing::error!(command = "agent_turn_trace_list", error = %err, "Turn trace list query failed");
+            err.into_app_result("Failed to list agent turn traces")
+        }
+    }
+}
+
+pub fn agent_turn_trace_get(input: AgentTurnTraceGetInput, token: &str) -> AppResult<StubPayload> {
+    let trace_id = input.trace_id.unwrap_or_default().trim().to_string();
+    let turn_id = input.turn_id.unwrap_or_default().trim().to_string();
+    if trace_id.is_empty() && turn_id.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "trace_id or turn_id is required",
+            None,
+        );
+    }
+    let body = json!({
+        "trace_id": trace_id,
+        "turn_id": turn_id,
+    });
+
+    match station_client::request_json(
+        Method::POST,
+        "/agent/turn/trace/get",
+        token,
+        None,
+        Some(body),
+    ) {
+        Ok(result) => success_payload("agent_turn_trace_get", result),
+        Err(err) => {
+            tracing::error!(command = "agent_turn_trace_get", error = %err, "Turn trace get query failed");
+            err.into_app_result("Failed to get agent turn trace")
+        }
+    }
+}
+
 pub fn agent_execute_turn_stream(
     app: AppHandle,
     stream_id: String,
-    input: AgentExecuteTurnInput,
+    mut input: AgentExecuteTurnInput,
     token: String,
     cancel_flag: Arc<AtomicBool>,
 ) {
+    if let Err(error) = apply_resolved_agent_workspace(&mut input) {
+        emit_turn_stream_event(
+            &app,
+            &stream_id,
+            "error",
+            json!({
+                "type": "error",
+                "error": error
+            }),
+        );
+        return;
+    }
+    if input
+        .cli_command
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_some()
+    {
+        execute_cli_turn_stream(&app, &stream_id, input, &cancel_flag);
+        return;
+    }
+    let agent_allowed_roots = input.allowed_roots.clone();
     let body = build_turn_request_body(input, true);
-    let result = stream_station_turn(&app, &stream_id, &body, &token, &cancel_flag);
+    let result = stream_station_turn(
+        &app,
+        &stream_id,
+        &body,
+        agent_allowed_roots.as_deref(),
+        &token,
+        &cancel_flag,
+    );
     if let Err(error) = result {
         emit_turn_stream_event(
             &app,
@@ -231,6 +334,8 @@ pub fn agent_resolve_local_tool_request(
             } else {
                 Some(call_id.clone())
             },
+            workspace_root: input.workspace_root.clone(),
+            allowed_roots: input.allowed_roots.clone(),
         });
         let Some(payload) = execution.data else {
             return AppResult {
@@ -290,6 +395,7 @@ pub fn agent_resolve_local_tool_request(
             &tool_name,
             arguments,
             input.workspace_root.as_deref(),
+            input.allowed_roots.as_deref(),
             if call_id.is_empty() {
                 None
             } else {
@@ -333,7 +439,10 @@ fn build_turn_request_body(input: AgentExecuteTurnInput, stream: bool) -> Value 
         "stream": stream,
         "provider": input.provider.unwrap_or_default(),
         "model": input.model.unwrap_or_default(),
+        "cliCommand": input.cli_command.unwrap_or_default(),
         "identity": input.identity.unwrap_or_default(),
+        "agentConfigPrompt": input.agent_config_prompt.unwrap_or_default(),
+        "effort": input.effort.unwrap_or_else(|| "medium".to_string()),
         "platform": input.platform.unwrap_or("desktop".to_string()),
         "workspace_root": input.workspace_root.unwrap_or_default(),
         "context_window_size": input.context_window_size.unwrap_or(128000),
@@ -342,10 +451,321 @@ fn build_turn_request_body(input: AgentExecuteTurnInput, stream: bool) -> Value 
     })
 }
 
+fn apply_resolved_agent_workspace(input: &mut AgentExecuteTurnInput) -> Result<(), String> {
+    let workspace = agent_workspace::resolve_agent_workspace(input)?;
+    input.workspace_root = Some(workspace.path.to_string_lossy().to_string());
+    Ok(())
+}
+
+fn execute_cli_turn(input: AgentExecuteTurnInput) -> AppResult<StubPayload> {
+    let command_line = input.cli_command.clone().unwrap_or_default();
+    tracing::info!(
+        command = "agent_execute_turn",
+        agent_id = %input.agent_id,
+        provider = %input.provider.clone().unwrap_or_default(),
+        model = %input.model.clone().unwrap_or_default(),
+        "Executing agent turn via local CLI provider"
+    );
+    match run_cli_command(&input, &command_line) {
+        Ok(output) => success_payload(
+            "agent_execute_turn",
+            json!({
+                "result": output,
+                "provider": input.provider.unwrap_or_else(|| "cli".to_string()),
+                "model": input.model.unwrap_or_else(|| "cli".to_string()),
+                "executionOwner": "desktop-rust"
+            }),
+        ),
+        Err(error) => {
+            tracing::error!(command = "agent_execute_turn", error = %error, "CLI provider turn failed");
+            AppResult::fail(ErrorCode::InternalError, error, None)
+        }
+    }
+}
+
+fn execute_cli_turn_stream(
+    app: &AppHandle,
+    stream_id: &str,
+    input: AgentExecuteTurnInput,
+    cancel_flag: &AtomicBool,
+) {
+    if cancel_flag.load(Ordering::SeqCst) {
+        return;
+    }
+    emit_turn_stream_event(
+        app,
+        stream_id,
+        "progress",
+        json!({
+            "type": "progress",
+            "stage": "cli_provider_started",
+            "message": "agent.progress.cliProviderStarted"
+        }),
+    );
+    let provider = input.provider.clone().unwrap_or_else(|| "cli".to_string());
+    let model = input.model.clone().unwrap_or_else(|| "cli".to_string());
+    let command_line = input.cli_command.clone().unwrap_or_default();
+    match run_cli_command(&input, &command_line) {
+        Ok(output) => {
+            if cancel_flag.load(Ordering::SeqCst) {
+                return;
+            }
+            if !output.is_empty() {
+                emit_turn_stream_event(
+                    app,
+                    stream_id,
+                    "text",
+                    json!({
+                        "type": "text",
+                        "text": output
+                    }),
+                );
+            }
+            emit_turn_stream_event(
+                app,
+                stream_id,
+                "done",
+                json!({
+                    "type": "done",
+                    "provider": provider,
+                    "model": model,
+                    "executionOwner": "desktop-rust"
+                }),
+            );
+        }
+        Err(error) => {
+            tracing::error!(command = "agent_execute_turn_stream", error = %error, "CLI provider stream failed");
+            emit_turn_stream_event(
+                app,
+                stream_id,
+                "error",
+                json!({
+                    "type": "error",
+                    "error": error
+                }),
+            );
+        }
+    }
+}
+
+fn run_cli_command(input: &AgentExecuteTurnInput, command_line: &str) -> Result<String, String> {
+    let parts = normalize_cli_command(command_line)?;
+    let Some((program, args)) = parts.split_first() else {
+        return Err("CLI command is empty".to_string());
+    };
+    let prompt = build_cli_prompt(input);
+    let workspace_root = input
+        .workspace_root
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let Some(workspace_root) = workspace_root else {
+        return Err("agent workspace_root is required for CLI execution".to_string());
+    };
+    if !Path::new(&workspace_root).is_dir() {
+        return Err("agent workspace_root does not exist".to_string());
+    }
+
+    let mut command = if input.runtime_backend.as_deref() == Some("proot") {
+        build_proot_command(input, &workspace_root, program, args)?
+    } else {
+        let mut command = Command::new(program);
+        command.args(args).current_dir(&workspace_root);
+        command
+    };
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env("PEERS_TOUCH_AGENT_ID", &input.agent_id)
+        .env("PEERS_TOUCH_CONVERSATION_ID", &input.conversation_id)
+        .env(
+            "PEERS_TOUCH_PROVIDER",
+            input.provider.as_deref().unwrap_or("cli"),
+        )
+        .env("PEERS_TOUCH_MODEL", input.model.as_deref().unwrap_or("cli"))
+        .env(
+            "PEERS_TOUCH_EFFORT",
+            input.effort.as_deref().unwrap_or("medium"),
+        )
+        .env("PEERS_TOUCH_CLI_ADAPTER", cli_adapter_name(program))
+        .env("PEERS_TOUCH_AGENT_WORKSPACE", &workspace_root);
+    if let Some(allowed_roots) = input.allowed_roots.as_ref() {
+        if !allowed_roots.is_empty() {
+            command.env("PEERS_TOUCH_ALLOWED_ROOTS", allowed_roots.join(":"));
+        }
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("failed to start CLI provider: {error}"))?;
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin
+            .write_all(prompt.as_bytes())
+            .map_err(|error| format!("failed to write prompt to CLI provider: {error}"))?;
+    }
+    let output = child
+        .wait_with_output()
+        .map_err(|error| format!("failed to wait for CLI provider: {error}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if !output.status.success() {
+        let code = output
+            .status
+            .code()
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "signal".to_string());
+        return Err(format!(
+            "CLI provider exited with status {code}: {}",
+            if stderr.is_empty() { stdout } else { stderr }
+        ));
+    }
+    Ok(stdout)
+}
+
+fn normalize_cli_command(command_line: &str) -> Result<Vec<String>, String> {
+    let parts = split_command_line(command_line)?;
+    if parts.len() != 1 {
+        return Ok(parts);
+    }
+    let program = parts[0].trim();
+    let executable_name = Path::new(program)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(program)
+        .to_ascii_lowercase();
+    match executable_name.as_str() {
+        "codex" => split_command_line("codex exec --skip-git-repo-check -"),
+        "claude" => split_command_line("claude -p"),
+        "trae" => split_command_line("trae -p"),
+        _ => Ok(parts),
+    }
+}
+
+fn cli_adapter_name(program: &str) -> &'static str {
+    let executable_name = Path::new(program)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(program)
+        .to_ascii_lowercase();
+    match executable_name.as_str() {
+        "codex" => "codex",
+        "claude" => "claude",
+        "trae" => "trae",
+        _ => "custom",
+    }
+}
+
+fn build_proot_command(
+    input: &AgentExecuteTurnInput,
+    workspace_root: &str,
+    program: &str,
+    args: &[String],
+) -> Result<Command, String> {
+    if !cfg!(target_os = "linux") {
+        return Err("PRoot backend is only supported on Linux hosts".to_string());
+    }
+    if !agent_workspace::proot_available() {
+        return Err("PRoot backend is selected but proot is not available in PATH".to_string());
+    }
+    let rootfs_path = input
+        .rootfs_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "PRoot backend requires rootfs_path".to_string())?;
+    if !Path::new(rootfs_path).is_dir() {
+        return Err("PRoot rootfs_path does not exist".to_string());
+    }
+
+    let mut command = Command::new("proot");
+    command
+        .arg("-R")
+        .arg(rootfs_path)
+        .arg("-b")
+        .arg(format!("{workspace_root}:/workspace"))
+        .arg("-w")
+        .arg("/workspace")
+        .arg(program)
+        .args(args);
+    Ok(command)
+}
+
+fn build_cli_prompt(input: &AgentExecuteTurnInput) -> String {
+    let mut sections = Vec::new();
+    if let Some(identity) = input
+        .identity
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        sections.push(format!("# SOUL.md\n{identity}"));
+    }
+    if let Some(instructions) = input
+        .agent_config_prompt
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        sections.push(format!("# AGENTS.md\n{instructions}"));
+    }
+    sections.push(format!("# User\n{}", input.user_input.trim()));
+    sections.join("\n\n")
+}
+
+fn split_command_line(command_line: &str) -> Result<Vec<String>, String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for ch in command_line.chars() {
+        if escaped {
+            current.push(ch);
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if let Some(active_quote) = quote {
+            if ch == active_quote {
+                quote = None;
+            } else {
+                current.push(ch);
+            }
+            continue;
+        }
+        if ch == '\'' || ch == '"' {
+            quote = Some(ch);
+            continue;
+        }
+        if ch.is_whitespace() {
+            if !current.is_empty() {
+                parts.push(current.clone());
+                current.clear();
+            }
+            continue;
+        }
+        current.push(ch);
+    }
+    if escaped {
+        current.push('\\');
+    }
+    if quote.is_some() {
+        return Err("CLI command has an unterminated quote".to_string());
+    }
+    if !current.is_empty() {
+        parts.push(current);
+    }
+    Ok(parts)
+}
+
 fn stream_station_turn(
     app: &AppHandle,
     stream_id: &str,
     body: &Value,
+    agent_allowed_roots: Option<&[String]>,
     token: &str,
     cancel_flag: &AtomicBool,
 ) -> Result<(), String> {
@@ -396,9 +816,14 @@ fn stream_station_turn(
             if let Some((event, data)) = parse_sse_frame(&frame) {
                 if event == "local_tool_request" {
                     emit_turn_stream_event(app, stream_id, &event, data.clone());
-                    if let Err(error) =
-                        resolve_and_submit_local_tool_request(app, stream_id, &client, token, &data)
-                    {
+                    if let Err(error) = resolve_and_submit_local_tool_request(
+                        app,
+                        stream_id,
+                        &client,
+                        token,
+                        &data,
+                        agent_allowed_roots,
+                    ) {
                         emit_turn_stream_event(
                             app,
                             stream_id,
@@ -429,6 +854,7 @@ fn resolve_and_submit_local_tool_request(
     client: &Client,
     token: &str,
     data: &Value,
+    agent_allowed_roots: Option<&[String]>,
 ) -> Result<(), String> {
     let turn_id = string_field(data, "turnId")
         .ok_or_else(|| "local tool request missing turnId".to_string())?;
@@ -440,6 +866,9 @@ fn resolve_and_submit_local_tool_request(
     let server_name = string_field(data, "serverName");
     let source = string_field(data, "source").unwrap_or_else(|| "mcp".to_string());
     let workspace_root = string_field(data, "workspaceRoot");
+    let allowed_roots = string_array_field(data, "allowedRoots")
+        .or_else(|| string_array_field(data, "allowed_roots"))
+        .or_else(|| agent_allowed_roots.map(|roots| roots.to_vec()));
     let approval_id = format!("{}:{}", turn_id, call_id);
     let approval = match wait_for_tool_approval(
         app,
@@ -491,6 +920,7 @@ fn resolve_and_submit_local_tool_request(
         call_id: Some(call_id.clone()),
         turn_id: Some(turn_id.clone()),
         workspace_root,
+        allowed_roots,
     };
     let result = agent_resolve_local_tool_request(input);
     let (content, is_error) = match result.data {
@@ -612,6 +1042,24 @@ fn string_field(data: &Value, key: &str) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
+}
+
+fn string_array_field(data: &Value, key: &str) -> Option<Vec<String>> {
+    let value = data.get(key)?;
+    let parsed = if let Some(raw) = value.as_str() {
+        serde_json::from_str::<Value>(raw).ok()?
+    } else {
+        value.clone()
+    };
+    let values = parsed
+        .as_array()?
+        .iter()
+        .filter_map(Value::as_str)
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    Some(values)
 }
 
 fn value_field(data: &Value, key: &str) -> Option<Value> {
@@ -773,6 +1221,7 @@ mod tests {
             call_id: Some("call_1".to_string()),
             turn_id: Some("turn_1".to_string()),
             workspace_root: None,
+            allowed_roots: None,
         });
 
         let payload = result.data.expect("result payload should be present");
@@ -846,6 +1295,27 @@ mod tests {
         }));
 
         assert_eq!(content, "allowed");
+    }
+
+    #[test]
+    fn normalize_cli_command_expands_codex_adapter() {
+        let parts = normalize_cli_command("codex").expect("codex adapter should normalize");
+
+        assert_eq!(parts, vec!["codex", "exec", "--skip-git-repo-check", "-"]);
+    }
+
+    #[test]
+    fn normalize_cli_command_keeps_custom_command_args() {
+        let parts = normalize_cli_command("codex exec --model gpt-5 -")
+            .expect("custom command should parse");
+
+        assert_eq!(parts, vec!["codex", "exec", "--model", "gpt-5", "-"]);
+    }
+
+    #[test]
+    fn cli_adapter_name_detects_known_program() {
+        assert_eq!(cli_adapter_name("/usr/local/bin/claude"), "claude");
+        assert_eq!(cli_adapter_name("custom-agent"), "custom");
     }
 
     #[test]
