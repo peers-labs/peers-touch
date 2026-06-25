@@ -325,6 +325,13 @@ export function ProviderDetail() {
             )}
             <Flexbox horizontal align="center" gap={8}>
               <Title level={5} style={{ margin: 0, fontSize: 16 }}>{detail.name}</Title>
+              <Tag
+                bordered={false}
+                color={detail.runtime_kind === 'cli' ? 'purple' : 'blue'}
+                style={{ margin: 0, fontSize: 11, lineHeight: '16px', paddingInline: 6 }}
+              >
+                {t(`provider.runtime.${detail.runtime_kind}`)}
+              </Tag>
               {isUnconfigured && (
                 <Tag
                   bordered={false}
