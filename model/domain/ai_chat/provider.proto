@@ -35,6 +35,9 @@ message Provider {
   google.protobuf.Timestamp accessed_at = 13;
   google.protobuf.Timestamp created_at = 14;
   google.protobuf.Timestamp updated_at = 15;
+  string runtime_kind = 16;            // 运行时类型：remote / local / cli。CLI 由 Desktop runtime 执行，Station 不执行本地命令。
+  string cli_command = 17;             // CLI provider 的非交互命令模板，仅作为配置同步字段。
+  string protocol = 18;                // openai / anthropic / ollama / cli 等协议标记。
 }
 
 // =================================================
@@ -72,6 +75,9 @@ message CreateProviderRequest {
   string key_vaults = 4;
   string settings_json = 5;
   string config_json = 6;
+  string runtime_kind = 7;
+  string cli_command = 8;
+  string protocol = 9;
 }
 
 message CreateProviderResponse {
@@ -87,6 +93,9 @@ message UpdateProviderRequest {
   optional string key_vaults = 6;
   optional string settings_json = 7;
   optional string config_json = 8;
+  optional string runtime_kind = 9;
+  optional string cli_command = 10;
+  optional string protocol = 11;
 }
 
 message UpdateProviderResponse {

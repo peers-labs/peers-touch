@@ -41,6 +41,18 @@ type TurnTrace struct {
 	KnowledgeChunks      []KnowledgeChunkReference
 }
 
+type TurnTraceEntry struct {
+	Turn  Turn
+	Trace TurnTrace
+}
+
+type TurnTraceListOptions struct {
+	AgentID        string
+	ConversationID string
+	Page           int
+	PageSize       int
+}
+
 type KnowledgeResourceType string
 
 const (

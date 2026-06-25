@@ -160,6 +160,10 @@ struct ProviderPreset {
     api_key_url: String,
     default_base_url: String,
     #[serde(default)]
+    runtime_kind: String,
+    #[serde(default)]
+    cli_command: String,
+    #[serde(default)]
     api_key: String,
     models: Vec<ModelPreset>,
 }
@@ -211,15 +215,25 @@ impl ProviderStore {
                     .map(|model| model.id.clone())
                     .or_else(|| models.first().map(|model| model.id.clone()))
                     .unwrap_or_else(|| "default".to_string());
-                let config_json = json!({
+                let runtime_kind = if preset.runtime_kind.trim().is_empty() {
+                    "direct"
+                } else {
+                    preset.runtime_kind.trim()
+                };
+                let mut config_json = json!({
                     "base_url": preset.default_base_url,
                     "default_model": check_model,
                     "protocol": preset.protocol,
                     "discovery": preset.discovery,
                     "home_url": preset.home_url,
-                    "api_key_url": preset.api_key_url
-                })
-                .to_string();
+                    "api_key_url": preset.api_key_url,
+                    "runtime_kind": runtime_kind
+                });
+                if !preset.cli_command.trim().is_empty() {
+                    config_json["cli_command"] =
+                        serde_json::Value::String(preset.cli_command.trim().to_string());
+                }
+                let config_json = config_json.to_string();
                 let key_vaults = if preset.api_key.is_empty() {
                     "{\"api_key\":\"\"}".to_string()
                 } else {

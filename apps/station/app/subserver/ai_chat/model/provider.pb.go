@@ -96,6 +96,9 @@ type Provider struct {
 	AccessedAt    *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=accessed_at,json=accessedAt,proto3" json:"accessed_at,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	RuntimeKind   string                 `protobuf:"bytes,16,opt,name=runtime_kind,json=runtimeKind,proto3" json:"runtime_kind,omitempty"` // 运行时类型：remote / local / cli。CLI 由 Desktop runtime 执行，Station 不执行本地命令。
+	CliCommand    string                 `protobuf:"bytes,17,opt,name=cli_command,json=cliCommand,proto3" json:"cli_command,omitempty"`    // CLI provider 的非交互命令模板，仅作为配置同步字段。
+	Protocol      string                 `protobuf:"bytes,18,opt,name=protocol,proto3" json:"protocol,omitempty"`                          // openai / anthropic / ollama / cli 等协议标记。
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -233,6 +236,27 @@ func (x *Provider) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *Provider) GetRuntimeKind() string {
+	if x != nil {
+		return x.RuntimeKind
+	}
+	return ""
+}
+
+func (x *Provider) GetCliCommand() string {
+	if x != nil {
+		return x.CliCommand
+	}
+	return ""
+}
+
+func (x *Provider) GetProtocol() string {
+	if x != nil {
+		return x.Protocol
+	}
+	return ""
 }
 
 // =================================================
@@ -435,6 +459,9 @@ type CreateProviderRequest struct {
 	KeyVaults     string                 `protobuf:"bytes,4,opt,name=key_vaults,json=keyVaults,proto3" json:"key_vaults,omitempty"`
 	SettingsJson  string                 `protobuf:"bytes,5,opt,name=settings_json,json=settingsJson,proto3" json:"settings_json,omitempty"`
 	ConfigJson    string                 `protobuf:"bytes,6,opt,name=config_json,json=configJson,proto3" json:"config_json,omitempty"`
+	RuntimeKind   string                 `protobuf:"bytes,7,opt,name=runtime_kind,json=runtimeKind,proto3" json:"runtime_kind,omitempty"`
+	CliCommand    string                 `protobuf:"bytes,8,opt,name=cli_command,json=cliCommand,proto3" json:"cli_command,omitempty"`
+	Protocol      string                 `protobuf:"bytes,9,opt,name=protocol,proto3" json:"protocol,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -511,6 +538,27 @@ func (x *CreateProviderRequest) GetConfigJson() string {
 	return ""
 }
 
+func (x *CreateProviderRequest) GetRuntimeKind() string {
+	if x != nil {
+		return x.RuntimeKind
+	}
+	return ""
+}
+
+func (x *CreateProviderRequest) GetCliCommand() string {
+	if x != nil {
+		return x.CliCommand
+	}
+	return ""
+}
+
+func (x *CreateProviderRequest) GetProtocol() string {
+	if x != nil {
+		return x.Protocol
+	}
+	return ""
+}
+
 type CreateProviderResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Provider      *Provider              `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
@@ -565,6 +613,9 @@ type UpdateProviderRequest struct {
 	KeyVaults     *string                `protobuf:"bytes,6,opt,name=key_vaults,json=keyVaults,proto3,oneof" json:"key_vaults,omitempty"`
 	SettingsJson  *string                `protobuf:"bytes,7,opt,name=settings_json,json=settingsJson,proto3,oneof" json:"settings_json,omitempty"`
 	ConfigJson    *string                `protobuf:"bytes,8,opt,name=config_json,json=configJson,proto3,oneof" json:"config_json,omitempty"`
+	RuntimeKind   *string                `protobuf:"bytes,9,opt,name=runtime_kind,json=runtimeKind,proto3,oneof" json:"runtime_kind,omitempty"`
+	CliCommand    *string                `protobuf:"bytes,10,opt,name=cli_command,json=cliCommand,proto3,oneof" json:"cli_command,omitempty"`
+	Protocol      *string                `protobuf:"bytes,11,opt,name=protocol,proto3,oneof" json:"protocol,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -651,6 +702,27 @@ func (x *UpdateProviderRequest) GetSettingsJson() string {
 func (x *UpdateProviderRequest) GetConfigJson() string {
 	if x != nil && x.ConfigJson != nil {
 		return *x.ConfigJson
+	}
+	return ""
+}
+
+func (x *UpdateProviderRequest) GetRuntimeKind() string {
+	if x != nil && x.RuntimeKind != nil {
+		return *x.RuntimeKind
+	}
+	return ""
+}
+
+func (x *UpdateProviderRequest) GetCliCommand() string {
+	if x != nil && x.CliCommand != nil {
+		return *x.CliCommand
+	}
+	return ""
+}
+
+func (x *UpdateProviderRequest) GetProtocol() string {
+	if x != nil && x.Protocol != nil {
+		return *x.Protocol
 	}
 	return ""
 }
@@ -1103,7 +1175,7 @@ var File_domain_ai_chat_provider_proto protoreflect.FileDescriptor
 
 const file_domain_ai_chat_provider_proto_rawDesc = "" +
 	"\n" +
-	"\x1ddomain/ai_chat/provider.proto\x12\x1cpeers_touch.model.ai_chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x90\x04\n" +
+	"\x1ddomain/ai_chat/provider.proto\x12\x1cpeers_touch.model.ai_chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf0\x04\n" +
 	"\bProvider\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\"\n" +
@@ -1127,7 +1199,11 @@ const file_domain_ai_chat_provider_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xca\x01\n" +
+	"updated_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12!\n" +
+	"\fruntime_kind\x18\x10 \x01(\tR\vruntimeKind\x12\x1f\n" +
+	"\vcli_command\x18\x11 \x01(\tR\n" +
+	"cliCommand\x12\x1a\n" +
+	"\bprotocol\x18\x12 \x01(\tR\bprotocol\"\xca\x01\n" +
 	"\fProviderView\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -1146,7 +1222,7 @@ const file_domain_ai_chat_provider_proto_rawDesc = "" +
 	"sourceType\x12\x18\n" +
 	"\aenabled\x18\x06 \x01(\bR\aenabled\x12\x1f\n" +
 	"\vschema_json\x18\a \x01(\tR\n" +
-	"schemaJson\"\xc6\x01\n" +
+	"schemaJson\"\xa6\x02\n" +
 	"\x15CreateProviderRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x12\n" +
@@ -1155,9 +1231,13 @@ const file_domain_ai_chat_provider_proto_rawDesc = "" +
 	"key_vaults\x18\x04 \x01(\tR\tkeyVaults\x12#\n" +
 	"\rsettings_json\x18\x05 \x01(\tR\fsettingsJson\x12\x1f\n" +
 	"\vconfig_json\x18\x06 \x01(\tR\n" +
-	"configJson\"\\\n" +
+	"configJson\x12!\n" +
+	"\fruntime_kind\x18\a \x01(\tR\vruntimeKind\x12\x1f\n" +
+	"\vcli_command\x18\b \x01(\tR\n" +
+	"cliCommand\x12\x1a\n" +
+	"\bprotocol\x18\t \x01(\tR\bprotocol\"\\\n" +
 	"\x16CreateProviderResponse\x12B\n" +
-	"\bprovider\x18\x01 \x01(\v2&.peers_touch.model.ai_chat.v1.ProviderR\bprovider\"\xf2\x02\n" +
+	"\bprovider\x18\x01 \x01(\v2&.peers_touch.model.ai_chat.v1.ProviderR\bprovider\"\x8f\x04\n" +
 	"\x15UpdateProviderRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\x04name\x18\x02 \x01(\tH\x00R\x04name\x88\x01\x01\x12%\n" +
@@ -1168,7 +1248,12 @@ const file_domain_ai_chat_provider_proto_rawDesc = "" +
 	"key_vaults\x18\x06 \x01(\tH\x04R\tkeyVaults\x88\x01\x01\x12(\n" +
 	"\rsettings_json\x18\a \x01(\tH\x05R\fsettingsJson\x88\x01\x01\x12$\n" +
 	"\vconfig_json\x18\b \x01(\tH\x06R\n" +
-	"configJson\x88\x01\x01B\a\n" +
+	"configJson\x88\x01\x01\x12&\n" +
+	"\fruntime_kind\x18\t \x01(\tH\aR\vruntimeKind\x88\x01\x01\x12$\n" +
+	"\vcli_command\x18\n" +
+	" \x01(\tH\bR\n" +
+	"cliCommand\x88\x01\x01\x12\x1f\n" +
+	"\bprotocol\x18\v \x01(\tH\tR\bprotocol\x88\x01\x01B\a\n" +
 	"\x05_nameB\x0e\n" +
 	"\f_descriptionB\a\n" +
 	"\x05_logoB\n" +
@@ -1176,7 +1261,10 @@ const file_domain_ai_chat_provider_proto_rawDesc = "" +
 	"\b_enabledB\r\n" +
 	"\v_key_vaultsB\x10\n" +
 	"\x0e_settings_jsonB\x0e\n" +
-	"\f_config_json\"\\\n" +
+	"\f_config_jsonB\x0f\n" +
+	"\r_runtime_kindB\x0e\n" +
+	"\f_cli_commandB\v\n" +
+	"\t_protocol\"\\\n" +
 	"\x16UpdateProviderResponse\x12B\n" +
 	"\bprovider\x18\x01 \x01(\v2&.peers_touch.model.ai_chat.v1.ProviderR\bprovider\"'\n" +
 	"\x15DeleteProviderRequest\x12\x0e\n" +

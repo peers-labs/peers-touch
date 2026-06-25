@@ -6,13 +6,23 @@ use crate::infrastructure::storage::{self, StorageKind};
 use serde_json::{json, Value};
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::PathBuf;
+use std::net::IpAddr;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{mpsc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 const MCP_TEST_TIMEOUT: Duration = Duration::from_secs(8);
+const MCP_RESERVED_ENV_PREFIX: &str = "PEERS_TOUCH_";
+const MCP_MAX_FRAME_BYTES: usize = 8 * 1024 * 1024;
+const MCP_MAX_HTTP_RESPONSE_BYTES: u64 = 8 * 1024 * 1024;
+
+#[derive(Clone, Default)]
+struct McpToolExecutionPolicy {
+    workspace_root: Option<PathBuf>,
+    allowed_roots: Vec<PathBuf>,
+}
 
 #[derive(Clone)]
 struct McpServerRecord {
@@ -285,6 +295,129 @@ fn value_string_map(data: &Value, key: &str) -> Vec<(String, String)> {
         .unwrap_or_default()
 }
 
+fn validate_stdio_execution_policy(
+    command: &str,
+    args: &[String],
+    env: &[(String, String)],
+) -> Result<(), String> {
+    let command = command.trim();
+    if command.is_empty() {
+        return Err("stdio MCP command is required".to_string());
+    }
+    reject_control_chars("stdio MCP command", command)?;
+    let executable = std::path::Path::new(command)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(command)
+        .to_ascii_lowercase();
+    if matches!(
+        executable.as_str(),
+        "sh" | "bash" | "zsh" | "fish" | "cmd" | "powershell" | "pwsh"
+    ) {
+        return Err("stdio MCP command must not execute through a shell".to_string());
+    }
+    for arg in args {
+        reject_control_chars("stdio MCP argument", arg)?;
+    }
+    for (key, value) in env {
+        if key.trim().is_empty() {
+            return Err("stdio MCP env key must not be empty".to_string());
+        }
+        reject_control_chars("stdio MCP env key", key)?;
+        reject_control_chars("stdio MCP env value", value)?;
+        if key.contains('=') {
+            return Err("stdio MCP env key must not contain '='".to_string());
+        }
+        if key
+            .to_ascii_uppercase()
+            .starts_with(MCP_RESERVED_ENV_PREFIX)
+        {
+            return Err(format!(
+                "stdio MCP env key must not override reserved {MCP_RESERVED_ENV_PREFIX} variables"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_http_execution_policy(
+    url: &str,
+    headers: &[(String, String)],
+) -> Result<reqwest::Url, String> {
+    let parsed = reqwest::Url::parse(url).map_err(|error| format!("invalid MCP URL: {error}"))?;
+    if parsed.username() != "" || parsed.password().is_some() {
+        return Err("MCP URL must not embed credentials".to_string());
+    }
+    let scheme = parsed.scheme();
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "MCP URL must include a host".to_string())?;
+    let is_loopback = is_loopback_host(host);
+    match scheme {
+        "https" => {}
+        "http" if is_loopback => {}
+        "http" => return Err("HTTP MCP transport only allows http for loopback hosts".to_string()),
+        _ => return Err("MCP URL scheme must be https or loopback http".to_string()),
+    }
+    if is_blocked_literal_ip(host) && !is_loopback {
+        return Err("MCP URL must not target private, link-local, or metadata IPs".to_string());
+    }
+    for (key, value) in headers {
+        if key.trim().is_empty() {
+            return Err("MCP header name must not be empty".to_string());
+        }
+        reject_control_chars("MCP header name", key)?;
+        reject_control_chars("MCP header value", value)?;
+    }
+    Ok(parsed)
+}
+
+fn reject_control_chars(label: &str, value: &str) -> Result<(), String> {
+    if value
+        .chars()
+        .any(|ch| ch == '\0' || ch == '\n' || ch == '\r')
+    {
+        return Err(format!("{label} must not contain control characters"));
+    }
+    Ok(())
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    host.parse::<IpAddr>()
+        .map(|ip| ip.is_loopback())
+        .unwrap_or(false)
+}
+
+fn is_blocked_literal_ip(host: &str) -> bool {
+    let Ok(ip) = host.parse::<IpAddr>() else {
+        return false;
+    };
+    match ip {
+        IpAddr::V4(ip) => {
+            let octets = ip.octets();
+            ip.is_private()
+                || ip.is_link_local()
+                || ip.is_broadcast()
+                || ip.is_unspecified()
+                || matches!(
+                    octets,
+                    [192, 0, 2, _] | [198, 51, 100, _] | [203, 0, 113, _]
+                )
+                || octets == [169, 254, 169, 254]
+        }
+        IpAddr::V6(ip) => {
+            let segments = ip.segments();
+            ip.is_unspecified()
+                || ip.is_unique_local()
+                || ip.is_unicast_link_local()
+                || (segments[0] == 0x2001 && segments[1] == 0x0db8)
+        }
+    }
+}
+
 pub fn mcp_list_servers() -> AppResult<StubPayload> {
     let guard = match mcp_store().lock() {
         Ok(guard) => guard,
@@ -530,7 +663,15 @@ pub fn mcp_execute_tool(input: McpExecuteToolInput) -> AppResult<StubPayload> {
     };
     let started_at = SystemTime::now();
     let arguments = input.arguments.unwrap_or_else(|| json!({}));
-    let result = execute_tool_on_server(&record.data, tool_name, arguments.clone());
+    let policy = match mcp_execution_policy(
+        input.workspace_root.as_deref(),
+        input.allowed_roots.as_deref(),
+    ) {
+        Ok(policy) => policy,
+        Err(error) => return invalid_argument(&error),
+    };
+    let result = validate_tool_arguments_policy(&arguments, &policy)
+        .and_then(|_| execute_tool_on_server(&record.data, tool_name, arguments.clone(), &policy));
     let duration_ms = started_at
         .elapsed()
         .unwrap_or_else(|_| Duration::from_millis(0))
@@ -551,6 +692,9 @@ pub fn mcp_execute_tool(input: McpExecuteToolInput) -> AppResult<StubPayload> {
                     "serverName": server_name,
                     "toolName": tool_name,
                     "transport": value_string(&record.data, "type"),
+                    "workspaceRoot": policy.workspace_root.as_ref().map(|path| path.display().to_string()).unwrap_or_default(),
+                    "allowedRootCount": policy.allowed_roots.len(),
+                    "policyDecision": "allow",
                     "executedAt": now_rfc3339()
                 }
             }),
@@ -570,6 +714,9 @@ pub fn mcp_execute_tool(input: McpExecuteToolInput) -> AppResult<StubPayload> {
                     "serverName": server_name,
                     "toolName": tool_name,
                     "transport": value_string(&record.data, "type"),
+                    "workspaceRoot": policy.workspace_root.as_ref().map(|path| path.display().to_string()).unwrap_or_default(),
+                    "allowedRootCount": policy.allowed_roots.len(),
+                    "policyDecision": "deny",
                     "executedAt": now_rfc3339()
                 }
             }),
@@ -647,13 +794,132 @@ fn extract_tools(response: &Value) -> Result<Vec<String>, String> {
         .collect())
 }
 
+fn mcp_execution_policy(
+    workspace_root: Option<&str>,
+    allowed_roots: Option<&[String]>,
+) -> Result<McpToolExecutionPolicy, String> {
+    let Some(raw_workspace_root) = workspace_root
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(McpToolExecutionPolicy::default());
+    };
+    let workspace_root = canonicalize_policy_root(raw_workspace_root, "workspace_root")?;
+    let mut roots = vec![workspace_root.clone()];
+    for raw_root in allowed_roots.into_iter().flatten() {
+        let raw_root = raw_root.trim();
+        if raw_root.is_empty() {
+            continue;
+        }
+        let root = canonicalize_policy_root(raw_root, "allowed_roots")?;
+        if !roots.iter().any(|existing| existing == &root) {
+            roots.push(root);
+        }
+    }
+    Ok(McpToolExecutionPolicy {
+        workspace_root: Some(workspace_root),
+        allowed_roots: roots,
+    })
+}
+
+fn canonicalize_policy_root(raw_path: &str, label: &str) -> Result<PathBuf, String> {
+    reject_control_chars(label, raw_path)?;
+    let path = Path::new(raw_path);
+    if !path.is_absolute() {
+        return Err(format!("{label} must be an absolute path"));
+    }
+    path.canonicalize()
+        .map_err(|error| format!("failed to canonicalize {label}: {error}"))
+}
+
+fn validate_tool_arguments_policy(
+    value: &Value,
+    policy: &McpToolExecutionPolicy,
+) -> Result<(), String> {
+    let Some(workspace_root) = &policy.workspace_root else {
+        return Ok(());
+    };
+    match value {
+        Value::String(raw) => validate_potential_path_argument(raw, workspace_root, policy),
+        Value::Array(items) => {
+            for item in items {
+                validate_tool_arguments_policy(item, policy)?;
+            }
+            Ok(())
+        }
+        Value::Object(map) => {
+            for item in map.values() {
+                validate_tool_arguments_policy(item, policy)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn validate_potential_path_argument(
+    raw_value: &str,
+    workspace_root: &Path,
+    policy: &McpToolExecutionPolicy,
+) -> Result<(), String> {
+    let value = raw_value.trim();
+    if value.is_empty() || value.contains("://") || value.starts_with("i18n:") {
+        return Ok(());
+    }
+    let candidate = Path::new(value);
+    let looks_path_like = candidate.is_absolute()
+        || value.starts_with("./")
+        || value.starts_with("../")
+        || value.contains('/')
+        || value.contains('\\');
+    if !looks_path_like {
+        return Ok(());
+    }
+    let joined = if candidate.is_absolute() {
+        candidate.to_path_buf()
+    } else {
+        workspace_root.join(candidate)
+    };
+    let resolved = canonicalize_existing_or_parent(&joined)?;
+    if policy
+        .allowed_roots
+        .iter()
+        .any(|root| resolved.starts_with(root))
+    {
+        return Ok(());
+    }
+    Err(format!(
+        "MCP tool argument path is outside allowed roots: {}",
+        joined.display()
+    ))
+}
+
+fn canonicalize_existing_or_parent(path: &Path) -> Result<PathBuf, String> {
+    if path.exists() {
+        return path
+            .canonicalize()
+            .map_err(|error| format!("failed to canonicalize MCP argument path: {error}"));
+    }
+    let mut current = path;
+    while let Some(parent) = current.parent() {
+        if parent.exists() {
+            return parent
+                .canonicalize()
+                .map_err(|error| format!("failed to canonicalize MCP argument parent: {error}"));
+        }
+        current = parent;
+    }
+    Err("MCP argument path has no existing parent".to_string())
+}
+
 fn execute_tool_on_server(
     data: &Value,
     tool_name: &str,
     arguments: Value,
+    policy: &McpToolExecutionPolicy,
 ) -> Result<Value, String> {
     match value_string(data, "type").as_str() {
-        "stdio" => execute_stdio_tool(data, tool_name, arguments),
+        "stdio" => execute_stdio_tool(data, tool_name, arguments, policy),
         "http" => execute_http_like_tool(data, tool_name, arguments, false),
         "sse" => execute_http_like_tool(data, tool_name, arguments, true),
         other => Err(format!("unsupported MCP transport: {other}")),
@@ -662,14 +928,12 @@ fn execute_tool_on_server(
 
 fn probe_stdio_server(data: &Value) -> Result<Vec<String>, String> {
     let command = value_string(data, "command");
-    if command.is_empty() {
-        return Err("stdio MCP command is required".to_string());
-    }
     let args = value_string_array(data, "args");
     let env = value_string_map(data, "env");
+    validate_stdio_execution_policy(&command, &args, &env)?;
     let mut child = Command::new(command)
-        .args(args)
-        .envs(env)
+        .args(&args)
+        .envs(env.iter().map(|(key, value)| (key, value)))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -705,19 +969,40 @@ fn probe_stdio_server(data: &Value) -> Result<Vec<String>, String> {
     result
 }
 
-fn execute_stdio_tool(data: &Value, tool_name: &str, arguments: Value) -> Result<Value, String> {
+fn execute_stdio_tool(
+    data: &Value,
+    tool_name: &str,
+    arguments: Value,
+    policy: &McpToolExecutionPolicy,
+) -> Result<Value, String> {
     let command = value_string(data, "command");
-    if command.is_empty() {
-        return Err("stdio MCP command is required".to_string());
-    }
     let args = value_string_array(data, "args");
     let env = value_string_map(data, "env");
-    let mut child = Command::new(command)
-        .args(args)
-        .envs(env)
+    validate_stdio_execution_policy(&command, &args, &env)?;
+    let mut command_builder = Command::new(command);
+    command_builder
+        .args(&args)
+        .env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .envs(env.iter().map(|(key, value)| (key, value)))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    if let Some(workspace_root) = &policy.workspace_root {
+        command_builder
+            .current_dir(workspace_root)
+            .env("PEERS_TOUCH_AGENT_WORKSPACE", workspace_root)
+            .env(
+                "PEERS_TOUCH_ALLOWED_ROOTS",
+                policy
+                    .allowed_roots
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(":"),
+            );
+    }
+    let mut child = command_builder
         .spawn()
         .map_err(|error| format!("failed to spawn stdio MCP server: {error}"))?;
 
@@ -799,6 +1084,9 @@ fn read_stdio_frame(reader: &mut impl BufRead) -> Result<Value, String> {
         }
     }
     let len = content_length.ok_or_else(|| "MCP frame missing Content-Length".to_string())?;
+    if len > MCP_MAX_FRAME_BYTES {
+        return Err(format!("MCP frame exceeds {MCP_MAX_FRAME_BYTES} bytes"));
+    }
     let mut body = vec![0_u8; len];
     reader
         .read_exact(&mut body)
@@ -811,8 +1099,11 @@ fn probe_http_like_server(data: &Value, expect_sse: bool) -> Result<Vec<String>,
     if url.is_empty() {
         return Err("HTTP/SSE MCP URL is required".to_string());
     }
+    let headers = value_string_map(data, "headers");
+    validate_http_execution_policy(&url, &headers)?;
     let client = reqwest::blocking::Client::builder()
         .timeout(MCP_TEST_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|error| format!("failed to create MCP HTTP client: {error}"))?;
     let initialize = post_json_rpc(&client, data, &url, initialize_request(1), expect_sse)?;
@@ -834,8 +1125,11 @@ fn execute_http_like_tool(
     if url.is_empty() {
         return Err("HTTP/SSE MCP URL is required".to_string());
     }
+    let headers = value_string_map(data, "headers");
+    validate_http_execution_policy(&url, &headers)?;
     let client = reqwest::blocking::Client::builder()
         .timeout(MCP_TEST_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|error| format!("failed to create MCP HTTP client: {error}"))?;
     let initialize = post_json_rpc(&client, data, &url, initialize_request(1), expect_sse)?;
@@ -860,8 +1154,10 @@ fn post_json_rpc(
     body: Value,
     expect_sse: bool,
 ) -> Result<Value, String> {
+    let headers = value_string_map(data, "headers");
+    let parsed_url = validate_http_execution_policy(url, &headers)?;
     let mut request = client
-        .post(url)
+        .post(parsed_url)
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .header(
             reqwest::header::ACCEPT,
@@ -872,7 +1168,7 @@ fn post_json_rpc(
             },
         )
         .json(&body);
-    for (key, value) in value_string_map(data, "headers") {
+    for (key, value) in headers {
         request = request.header(key, value);
     }
     let auth_type = value_string(data, "authType");
@@ -896,9 +1192,16 @@ fn post_json_rpc(
         .and_then(|value| value.to_str().ok())
         .unwrap_or("")
         .to_string();
-    let text = response
-        .text()
+    let mut text = String::new();
+    response
+        .take(MCP_MAX_HTTP_RESPONSE_BYTES + 1)
+        .read_to_string(&mut text)
         .map_err(|error| format!("failed to read MCP HTTP response: {error}"))?;
+    if text.len() as u64 > MCP_MAX_HTTP_RESPONSE_BYTES {
+        return Err(format!(
+            "MCP HTTP response exceeds {MCP_MAX_HTTP_RESPONSE_BYTES} bytes"
+        ));
+    }
     if !status.is_success() {
         return Err(format!(
             "MCP HTTP request failed with status {status}: {text}"
@@ -965,6 +1268,106 @@ mod tests {
         });
         let err = normalize_mcp_value(&mut data).expect_err("unknown transport should fail");
         assert!(err.contains("stdio, http, or sse"));
+    }
+
+    #[test]
+    fn stdio_execution_policy_rejects_shell_wrappers() {
+        let err = validate_stdio_execution_policy("sh", &["-c".to_string()], &[])
+            .expect_err("shell wrappers should be rejected");
+
+        assert!(err.contains("shell"));
+    }
+
+    #[test]
+    fn stdio_execution_policy_rejects_reserved_env() {
+        let err = validate_stdio_execution_policy(
+            "python3",
+            &[],
+            &[("PEERS_TOUCH_AGENT_ID".to_string(), "override".to_string())],
+        )
+        .expect_err("reserved env should be rejected");
+
+        assert!(err.contains("reserved"));
+    }
+
+    #[test]
+    fn http_execution_policy_allows_loopback_http() {
+        let parsed =
+            validate_http_execution_policy("http://127.0.0.1:3030/mcp", &[]).expect("loopback ok");
+
+        assert_eq!(parsed.scheme(), "http");
+    }
+
+    #[test]
+    fn http_execution_policy_rejects_public_http() {
+        let err = validate_http_execution_policy("http://example.com/mcp", &[])
+            .expect_err("public http should be rejected");
+
+        assert!(err.contains("loopback"));
+    }
+
+    #[test]
+    fn http_execution_policy_rejects_private_literal_ip() {
+        let err = validate_http_execution_policy("https://192.168.1.10/mcp", &[])
+            .expect_err("private literal IP should be rejected");
+
+        assert!(err.contains("private"));
+    }
+
+    #[test]
+    fn http_execution_policy_rejects_header_injection() {
+        let err = validate_http_execution_policy(
+            "https://example.com/mcp",
+            &[("X-Test\nInjected".to_string(), "value".to_string())],
+        )
+        .expect_err("header control chars should be rejected");
+
+        assert!(err.contains("control"));
+    }
+
+    #[test]
+    fn mcp_tool_policy_allows_workspace_relative_paths() {
+        let workspace = std::env::temp_dir().join(format!(
+            "peers-touch-mcp-policy-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_else(|_| Duration::from_secs(0))
+                .as_nanos()
+        ));
+        fs::create_dir_all(&workspace).expect("workspace should be created");
+        let policy = mcp_execution_policy(
+            Some(&workspace.to_string_lossy()),
+            Some(&Vec::<String>::new()),
+        )
+        .expect("policy should build");
+
+        validate_tool_arguments_policy(&json!({ "path": "notes/today.md" }), &policy)
+            .expect("workspace-relative paths should be allowed");
+
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn mcp_tool_policy_rejects_absolute_paths_outside_allowed_roots() {
+        let workspace = std::env::temp_dir().join(format!(
+            "peers-touch-mcp-policy-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_else(|_| Duration::from_secs(0))
+                .as_nanos()
+        ));
+        fs::create_dir_all(&workspace).expect("workspace should be created");
+        let policy = mcp_execution_policy(
+            Some(&workspace.to_string_lossy()),
+            Some(&Vec::<String>::new()),
+        )
+        .expect("policy should build");
+
+        let err = validate_tool_arguments_policy(&json!({ "path": "/etc/hosts" }), &policy)
+            .expect_err("absolute path outside roots should be rejected");
+        assert!(err.contains("outside allowed roots"));
+
+        let _ = fs::remove_dir_all(workspace);
     }
 
     #[test]
@@ -1047,6 +1450,7 @@ mod tests {
             }),
             "stdio_fixture_tool",
             json!({ "query": "alpha" }),
+            &McpToolExecutionPolicy::default(),
         )
         .expect("stdio MCP fixture tool should execute");
 
@@ -1074,6 +1478,7 @@ mod tests {
             }),
             "http_fixture_tool",
             json!({ "query": "beta" }),
+            &McpToolExecutionPolicy::default(),
         )
         .expect("HTTP MCP fixture tool should execute");
 
@@ -1101,6 +1506,7 @@ mod tests {
             }),
             "sse_fixture_tool",
             json!({ "query": "gamma" }),
+            &McpToolExecutionPolicy::default(),
         )
         .expect("SSE MCP fixture tool should execute");
 

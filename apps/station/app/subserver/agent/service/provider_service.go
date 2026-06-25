@@ -52,6 +52,7 @@ const (
 	providerTypeOllama    = "ollama"
 	providerTypeOpenAI    = "openai"
 	providerTypeAnthropic = "anthropic"
+	providerRuntimeCLI    = "cli"
 
 	anthropicAPIVersion = "2023-06-01"
 	defaultMaxTokens    = 4096
@@ -73,6 +74,7 @@ type ProviderCallRequest struct {
 	Messages     []domain.Message
 	UserID       string
 	ProviderType string // "ollama", "openai", "anthropic", or empty for auto-detect
+	Effort       string // reasoning effort: "low" | "medium" | "high"
 	DeltaSink    ProviderDeltaSink
 }
 
@@ -178,6 +180,11 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 	if err != nil {
 		return nil, err
 	}
+	if strings.EqualFold(strings.TrimSpace(provider.RuntimeKind), providerRuntimeCLI) ||
+		strings.EqualFold(strings.TrimSpace(provider.SourceType), providerRuntimeCLI) {
+		return nil, errcode.New(errcode.AgentSecurityViolation, http.StatusForbidden,
+			"cli provider execution is owned by Desktop runtime", nil)
+	}
 
 	// Step 2 — Extract base_url and api_key from provider record.
 	baseURL, apiKey := s.extractConfig(provider.Config, provider.KeyVaults)
@@ -226,7 +233,7 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 			return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
 				"provider base_url is empty for openai-compatible provider", nil)
 		}
-		resp, err = s.callOpenAI(ctx, baseURL, apiKey, model, req.SystemPrompt, req.Messages, req.DeltaSink)
+		resp, err = s.callOpenAI(ctx, baseURL, apiKey, model, req.SystemPrompt, req.Messages, req.Effort, req.DeltaSink)
 	}
 
 	if err != nil {
@@ -518,6 +525,7 @@ func (s *ProviderService) callOpenAI(
 	baseURL, apiKey, model string,
 	systemPrompt string,
 	messages []domain.Message,
+	effort string,
 	deltaSink ProviderDeltaSink,
 ) (*ProviderCallResponse, error) {
 
@@ -545,6 +553,9 @@ func (s *ProviderService) callOpenAI(
 	payload := map[string]any{
 		"model":    model,
 		"messages": apiMessages,
+	}
+	if effort != "" && effort != "medium" {
+		payload["reasoning_effort"] = effort
 	}
 	if deltaSink != nil {
 		payload["stream"] = true

@@ -133,6 +133,85 @@ message Conversation {
   google.protobuf.Timestamp updated_at = 13;
 }
 
+enum AgentVisibility {
+  AGENT_VISIBILITY_UNSPECIFIED = 0;
+  AGENT_VISIBILITY_PRIVATE = 1;
+  AGENT_VISIBILITY_WORKSPACE = 2;
+}
+
+message Agent {
+  string agent_id = 1;
+  string name = 2;
+  string title = 3;
+  string description = 4;
+  string provider_id = 5;
+  string model_name = 6;
+  string effort = 7;
+  AgentVisibility visibility = 8;
+  string owner_actor_id = 9;
+  string config_json = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+}
+
+message ListAgentsRequest {
+  AgentVisibility visibility = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+}
+
+message ListAgentsResponse {
+  repeated Agent agents = 1;
+  int32 total = 2;
+}
+
+message GetAgentRequest {
+  string agent_id = 1;
+}
+
+message GetAgentResponse {
+  Agent agent = 1;
+}
+
+message CreateAgentRequest {
+  string name = 1;
+  string title = 2;
+  string description = 3;
+  string provider_id = 4;
+  string model_name = 5;
+  string effort = 6;
+  AgentVisibility visibility = 7;
+  string config_json = 8;
+}
+
+message CreateAgentResponse {
+  Agent agent = 1;
+}
+
+message UpdateAgentRequest {
+  string agent_id = 1;
+  string name = 2;
+  string title = 3;
+  string description = 4;
+  string provider_id = 5;
+  string model_name = 6;
+  string effort = 7;
+  AgentVisibility visibility = 8;
+  string config_json = 9;
+}
+
+message UpdateAgentResponse {
+  Agent agent = 1;
+}
+
+message DeleteAgentRequest {
+  string agent_id = 1;
+}
+
+message DeleteAgentResponse {
+  bool success = 1;
+}
+
 enum KnowledgeResourceType {
   KNOWLEDGE_RESOURCE_TYPE_UNSPECIFIED = 0;
   KNOWLEDGE_RESOURCE_TYPE_DOCUMENT = 1;
@@ -221,12 +300,41 @@ message ExecuteTurnRequest {
   optional int32 context_window_size = 11;
   optional int32 max_retries = 12;
   repeated KnowledgeResource knowledge_resources = 13;
+  // Reasoning effort level: "low" | "medium" | "high".
+  // Passed through to LLM providers as reasoning_effort where supported.
+  optional string effort = 14;
 }
 
 message ExecuteTurnResponse {
   Turn turn = 1;
   TurnTrace trace = 2;
   AgentMessage response_message = 3;
+}
+
+message TurnTraceEntry {
+  Turn turn = 1;
+  TurnTrace trace = 2;
+}
+
+message ListTurnTracesRequest {
+  string agent_id = 1;
+  string conversation_id = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+
+message ListTurnTracesResponse {
+  repeated TurnTraceEntry entries = 1;
+  int32 total = 2;
+}
+
+message GetTurnTraceRequest {
+  string trace_id = 1;
+  string turn_id = 2;
+}
+
+message GetTurnTraceResponse {
+  TurnTraceEntry entry = 1;
 }
 
 // ============================================================================

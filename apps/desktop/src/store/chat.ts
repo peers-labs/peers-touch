@@ -446,6 +446,16 @@ function buildAgentTurnInput(
     contextWindowSize?: number;
     maxRetries?: number;
     knowledgeResources?: AgentExecuteTurnKnowledgeResource[];
+    identity?: string;
+    agentConfigPrompt?: string;
+    effort?: string;
+    provider?: string;
+    model?: string;
+    cliCommand?: string;
+    workspaceMode?: string;
+    runtimeBackend?: string;
+    rootfsPath?: string;
+    allowedRoots?: string[];
   },
 ) {
   return {
@@ -453,8 +463,16 @@ function buildAgentTurnInput(
     agent_id: agentId,
     user_input: userInput,
     attachments: attachments.map((item) => item.attachment).filter((item): item is ChatAttachmentInput => Boolean(item)),
-    provider: providerId || undefined,
-    model,
+    provider: providerId || runtimeConfig?.provider || undefined,
+    model: model || runtimeConfig?.model || undefined,
+    cli_command: runtimeConfig?.cliCommand || undefined,
+    workspace_mode: runtimeConfig?.workspaceMode || undefined,
+    runtime_backend: runtimeConfig?.runtimeBackend || undefined,
+    rootfs_path: runtimeConfig?.rootfsPath || undefined,
+    allowed_roots: runtimeConfig?.allowedRoots,
+    identity: runtimeConfig?.identity || undefined,
+    agent_config_prompt: runtimeConfig?.agentConfigPrompt || undefined,
+    effort: runtimeConfig?.effort || undefined,
     platform: 'desktop',
     workspace_root: runtimeConfig?.workspaceRoot || undefined,
     context_window_size: runtimeConfig?.contextWindowSize,
@@ -468,6 +486,16 @@ function getAgentRuntimeConfig(agentName: string): {
   contextWindowSize?: number;
   maxRetries?: number;
   knowledgeResources?: AgentExecuteTurnKnowledgeResource[];
+  identity?: string;
+  agentConfigPrompt?: string;
+  effort?: string;
+  provider?: string;
+  model?: string;
+  cliCommand?: string;
+  workspaceMode?: string;
+  runtimeBackend?: string;
+  rootfsPath?: string;
+  allowedRoots?: string[];
 } {
   const agent = useAgentStore.getState().agents.find((item) => item.name === agentName);
   return buildAgentRuntimeConfig(agent);
