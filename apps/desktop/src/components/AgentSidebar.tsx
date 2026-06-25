@@ -888,6 +888,7 @@ function AgentPicker({
 
   const pinnedAgents = filtered.filter((a) => a.pinned);
   const unpinnedAgents = filtered.filter((a) => !a.pinned);
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <Flexbox
@@ -899,9 +900,38 @@ function AgentPicker({
       }}
     >
       <Flexbox horizontal align="center" gap={8} style={{ minHeight: 32, padding: '0 4px' }}>
-        <span style={{ fontSize: 13, fontWeight: 600, flex: 1, color: token.colorTextSecondary }}>
+        <button
+          type="button"
+          title={t(collapsed ? 'agent.sidebar.expandAgents' : 'agent.sidebar.collapseAgents')}
+          onClick={() => setCollapsed(!collapsed)}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            flex: 1,
+            minWidth: 0,
+            border: 0,
+            background: 'transparent',
+            color: token.colorTextSecondary,
+            cursor: 'pointer',
+            padding: 0,
+            font: 'inherit',
+            textAlign: 'left',
+          }}
+        >
+          <ChevronRight
+            size={13}
+            style={{
+              color: token.colorTextQuaternary,
+              transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)',
+              transition: 'transform 0.15s ease',
+              flexShrink: 0,
+            }}
+          />
+          <span style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {t('agent.sidebar.switchAgent')}
-        </span>
+          </span>
+        </button>
         <ActionIcon
           icon={Upload}
           size="small"
@@ -937,69 +967,73 @@ function AgentPicker({
         />
       </Flexbox>
 
-      <SearchBar
-        placeholder={t('agent.sidebar.searchAgents')}
-        value={searchText}
-        onChange={(e) => onSearchChange(e.target.value)}
-        allowClear
-        size="small"
-      />
+      {!collapsed && (
+        <>
+          <SearchBar
+            placeholder={t('agent.sidebar.searchAgents')}
+            value={searchText}
+            onChange={(e) => onSearchChange(e.target.value)}
+            allowClear
+            size="small"
+          />
 
-      <Flexbox
-        gap={1}
-        style={{
-          maxHeight: 236,
-          overflow: 'auto',
-        }}
-      >
-        {filtered.length === 0 && (
           <Flexbox
-            align="center"
-            justify="center"
+            gap={1}
             style={{
-              color: token.colorTextQuaternary,
-              padding: '16px 8px',
-              fontSize: 13,
+              maxHeight: 236,
+              overflow: 'auto',
             }}
           >
-            {searchText ? t('agent.sidebar.noMatchingAgents') : t('agent.sidebar.noAgentsYet')}
+            {filtered.length === 0 && (
+              <Flexbox
+                align="center"
+                justify="center"
+                style={{
+                  color: token.colorTextQuaternary,
+                  padding: '16px 8px',
+                  fontSize: 13,
+                }}
+              >
+                {searchText ? t('agent.sidebar.noMatchingAgents') : t('agent.sidebar.noAgentsYet')}
+              </Flexbox>
+            )}
+
+            {pinnedAgents.map((agent) => (
+              <AgentPickerItem
+                key={agent.id}
+                agent={agent}
+                isSelected={selectedAgent === agent.name}
+                isDefault={defaultAgent === agent.name || agent.isDefault}
+                onSelect={() => onSelect(agent)}
+                onSetDefault={() => onSetDefault(agent)}
+                onTogglePin={() => onTogglePin(agent)}
+                onToggleFavorite={() => onToggleFavorite(agent)}
+                token={token}
+                t={t}
+              />
+            ))}
+
+            {pinnedAgents.length > 0 && unpinnedAgents.length > 0 && (
+              <div style={{ height: 1, background: token.colorBorderSecondary, margin: '4px 8px' }} />
+            )}
+
+            {unpinnedAgents.map((agent) => (
+              <AgentPickerItem
+                key={agent.id}
+                agent={agent}
+                isSelected={selectedAgent === agent.name}
+                isDefault={defaultAgent === agent.name || agent.isDefault}
+                onSelect={() => onSelect(agent)}
+                onSetDefault={() => onSetDefault(agent)}
+                onTogglePin={() => onTogglePin(agent)}
+                onToggleFavorite={() => onToggleFavorite(agent)}
+                token={token}
+                t={t}
+              />
+            ))}
           </Flexbox>
-        )}
-
-        {pinnedAgents.map((agent) => (
-          <AgentPickerItem
-            key={agent.id}
-            agent={agent}
-            isSelected={selectedAgent === agent.name}
-            isDefault={defaultAgent === agent.name || agent.isDefault}
-            onSelect={() => onSelect(agent)}
-            onSetDefault={() => onSetDefault(agent)}
-            onTogglePin={() => onTogglePin(agent)}
-            onToggleFavorite={() => onToggleFavorite(agent)}
-            token={token}
-            t={t}
-          />
-        ))}
-
-        {pinnedAgents.length > 0 && unpinnedAgents.length > 0 && (
-          <div style={{ height: 1, background: token.colorBorderSecondary, margin: '4px 8px' }} />
-        )}
-
-        {unpinnedAgents.map((agent) => (
-          <AgentPickerItem
-            key={agent.id}
-            agent={agent}
-            isSelected={selectedAgent === agent.name}
-            isDefault={defaultAgent === agent.name || agent.isDefault}
-            onSelect={() => onSelect(agent)}
-            onSetDefault={() => onSetDefault(agent)}
-            onTogglePin={() => onTogglePin(agent)}
-            onToggleFavorite={() => onToggleFavorite(agent)}
-            token={token}
-            t={t}
-          />
-        ))}
-      </Flexbox>
+        </>
+      )}
     </Flexbox>
   );
 }
