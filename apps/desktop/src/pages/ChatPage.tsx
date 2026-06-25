@@ -24,7 +24,6 @@ import {
   Plus,
   Wrench,
   Brain,
-  CheckCircle,
   ChevronRight,
   PanelRightClose,
   ArrowLeft,
@@ -35,8 +34,11 @@ import {
   Braces,
   Workflow,
   UserRoundCog,
+  Share2,
+  RefreshCw,
 } from 'lucide-react';
 import { parseAgentChatConfig, api } from '../services/desktop_api';
+import type { Agent } from '../services/desktop_api';
 
 export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkills, onNavigateAgentProfile, onNavigatePages }: {
   onNavigateSettings?: () => void;
@@ -135,7 +137,7 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
   );
 
   const agentChatConfig = useMemo(
-    () => ('chatConfig' in currentAgent ? parseAgentChatConfig(currentAgent as any) : {}),
+    () => ('chatConfig' in currentAgent ? parseAgentChatConfig(currentAgent as Agent) : {}),
     [currentAgent],
   );
 
@@ -152,71 +154,28 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
 
   return (
     <Flexbox horizontal flex={1} height="100%" style={{ position: 'relative' }}>
-      {/* Main chat area */}
-      <Flexbox flex={1} height="100%" style={{ minWidth: 0, overflow: 'hidden' }}>
-        {/* Header bar - LobeChat style with model + feature tags */}
-        <Flexbox
-          horizontal
-          align="center"
-          justify="space-between"
-          style={{
-            height: 48,
-            padding: '0 16px',
-            borderBottom: `1px solid ${token.colorBorderSecondary}`,
-            flexShrink: 0,
-          }}
-        >
-          {/* Left: Model + Feature tags */}
-          <Flexbox horizontal align="center" gap={6}>
-            <Tag
-              style={{
-                margin: 0,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-                padding: '2px 10px 2px 6px',
-                borderRadius: 6,
-                cursor: 'pointer',
-                border: `1px solid ${token.colorBorderSecondary}`,
-                background: token.colorBgContainer,
-              }}
-            >
-              <ModelIcon model={currentModelId} size={16} />
-              <span style={{ fontSize: 12, fontWeight: 500, color: token.colorText }}>
-                {currentModel?.display_name || currentModelId}
-              </span>
-            </Tag>
+      {/* Main Agent Chat area */}
+      <Flexbox
+        flex={1}
+        height="100%"
+        style={{
+          minWidth: 0,
+          overflow: 'hidden',
+          background: `radial-gradient(circle at top right, ${token.colorInfoBg} 0, transparent 32%), ${token.colorBgLayout}`,
+        }}
+      >
+        <AgentChatHeader
+          agent={currentAgent as AgentChatAgentView}
+          chatConfig={agentChatConfig}
+          modelName={currentModel?.display_name || currentModelId}
+          modelId={currentModelId}
+          webSearchEnabled={isWebSearchEnabled}
+          notebookOpen={showPortal}
+          onOpenNotebook={togglePortal}
+          onOpenProfile={() => onNavigateAgentProfile?.(currentAgent.name)}
+        />
 
-            {isWebSearchEnabled && (
-              <Tag
-                icon={<Globe size={11} />}
-                color="blue"
-                style={{
-                  margin: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  fontSize: 12,
-                }}
-              >
-                Web search
-            </Tag>
-            )}
-          </Flexbox>
-
-          {/* Right: Actions */}
-          <Flexbox horizontal align="center" gap={4}>
-            <ActionIcon
-              icon={FilePen}
-              size="small"
-              active={showPortal}
-              title={t('chat.header.notebook')}
-              onClick={togglePortal}
-            />
-          </Flexbox>
-        </Flexbox>
-
-        {/* Chat content — messages start from top; welcome screen is centered */}
+        {/* Conversation pane: one vertical scroll container above the composer. */}
         <Flexbox
           flex={1}
           align="center"
@@ -229,36 +188,40 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
               padding: isEmpty ? '0 24px' : '0 16px 24px',
             }}
           >
-          {isEmpty ? (
-            <WelcomeScreen
-              agent={currentAgent as any}
-              chatConfig={agentChatConfig}
-              modelName={currentModel?.display_name || currentModelId}
-              onSend={sendMessage}
-              onConfigure={() => onNavigateAgentProfile?.(currentAgent.name)}
-            />
-          ) : (
-            <>
-              {messages.map((msg) => (
-                <MessageBubble
-                  key={msg.id}
-                  message={msg}
-                  userAvatar={userAvatar}
-                  agentAvatar={currentAgent?.avatar}
-                  onOpenArtifact={setActiveArtifact}
-                />
-              ))}
-              <div ref={bottomRef} />
-            </>
-          )}
+            {isEmpty ? (
+              <WelcomeScreen
+                agent={currentAgent as AgentChatAgentView}
+                chatConfig={agentChatConfig}
+                modelName={currentModel?.display_name || currentModelId}
+                modelId={currentModelId}
+                onSend={sendMessage}
+              />
+            ) : (
+              <>
+                {messages.map((msg) => (
+                  <MessageBubble
+                    key={msg.id}
+                    message={msg}
+                    userAvatar={userAvatar}
+                    agentAvatar={currentAgent?.avatar}
+                    onOpenArtifact={setActiveArtifact}
+                  />
+                ))}
+                <div ref={bottomRef} />
+              </>
+            )}
           </Flexbox>
         </Flexbox>
 
-        <ChatInput
-          onNavigateSettings={onNavigateSettings}
-          onNavigateApplets={onNavigateApplets}
-          onNavigateSkills={onNavigateSkills}
-        />
+        <Flexbox align="center" style={{ flexShrink: 0, padding: '0 28px 22px' }}>
+          <div style={{ width: 'min(780px, 100%)' }}>
+            <ChatInput
+              onNavigateSettings={onNavigateSettings}
+              onNavigateApplets={onNavigateApplets}
+              onNavigateSkills={onNavigateSkills}
+            />
+          </div>
+        </Flexbox>
       </Flexbox>
 
       {/* Portal / Notebook panel */}
@@ -495,28 +458,152 @@ function parseOpeningQuestions(raw?: string): string[] {
   return [];
 }
 
-function parseKnowledgeResourceCount(raw?: string): number {
-  if (!raw) return 0;
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.length : 0;
-  } catch {
-    return 0;
-  }
+type AgentChatAgentView = {
+  name: string;
+  title?: string;
+  avatar?: string;
+  description?: string;
+  openingMessage?: string;
+  openingQuestions?: string;
+  systemPrompt?: string;
+  knowledgeResources?: string;
+  provider?: string;
+  model?: string;
+  effort?: string;
+  cliCommand?: string;
+  toolsProfile?: string;
+};
+
+type AgentChatConfigView = {
+  memory?: { enabled?: boolean };
+  workspace?: { root?: string };
+  workspaceRoot?: string;
+  tools?: string[];
+  skills?: string[];
+  mcpServers?: string[];
+  searchMode?: string;
+};
+
+function AgentChatHeader({
+  agent,
+  chatConfig,
+  modelName,
+  modelId,
+  webSearchEnabled,
+  notebookOpen,
+  onOpenNotebook,
+  onOpenProfile,
+}: {
+  agent: AgentChatAgentView;
+  chatConfig: AgentChatConfigView;
+  modelName: string;
+  modelId: string;
+  webSearchEnabled: boolean;
+  notebookOpen: boolean;
+  onOpenNotebook: () => void;
+  onOpenProfile?: () => void;
+}) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
+  const title = agent.title || agent.name;
+  const description = agent.description?.trim() || t('chat.agentHeader.fallbackDescription');
+  const providerLabel = agent.provider?.trim() || t('chat.agentHeader.providerFallback');
+  const runtimeLabel = agent.cliCommand?.trim() ? t('chat.agentHeader.runtimeCli') : providerLabel;
+  const effort = agent.effort?.trim();
+  const hasTools = Boolean(agent.toolsProfile && agent.toolsProfile !== 'none') || (chatConfig.tools?.length ?? 0) > 0 || (chatConfig.skills?.length ?? 0) > 0 || (chatConfig.mcpServers?.length ?? 0) > 0;
+
+  return (
+    <Flexbox style={{ flexShrink: 0, padding: '16px 28px 0' }}>
+      <Flexbox
+        horizontal
+        align="center"
+        justify="space-between"
+        gap={16}
+        style={{
+          width: '100%',
+          minHeight: 64,
+          padding: '14px 16px',
+          borderRadius: 18,
+          background: token.colorBgContainer,
+          border: `1px solid ${token.colorBorderSecondary}`,
+          boxShadow: '0 18px 60px rgba(15, 23, 42, 0.07)',
+        }}
+      >
+        <Flexbox horizontal align="center" gap={13} style={{ minWidth: 0 }}>
+          <div
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: 13,
+              background: 'linear-gradient(135deg, #6366f1, #8b5cf6 52%, #ec4899)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 23,
+              boxShadow: '0 12px 30px rgba(99, 102, 241, 0.22)',
+              flexShrink: 0,
+            }}
+          >
+            {agent.avatar || '🤖'}
+          </div>
+
+          <Flexbox gap={4} style={{ minWidth: 0 }}>
+            <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0 }}>
+              <strong style={{ fontSize: 16, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {title}
+              </strong>
+              <Tag style={{ margin: 0, borderRadius: 999, fontSize: 11 }}>
+                <ModelIcon model={modelId} size={12} />
+                {modelName}
+              </Tag>
+              <Tag style={{ margin: 0, borderRadius: 999, fontSize: 11 }}>
+                {runtimeLabel}
+              </Tag>
+              {effort && (
+                <Tag style={{ margin: 0, borderRadius: 999, fontSize: 11 }}>
+                  {t('chat.agentHeader.effort', { effort })}
+                </Tag>
+              )}
+            </Flexbox>
+            <span style={{ color: token.colorTextSecondary, fontSize: 12, lineHeight: 1.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {description}
+            </span>
+          </Flexbox>
+        </Flexbox>
+
+        <Flexbox horizontal align="center" gap={6} style={{ flexShrink: 0 }}>
+          {hasTools && (
+            <Tag color="success" style={{ margin: 0, borderRadius: 999, fontSize: 11 }}>
+              {t('chat.agentHeader.toolsEnabled')}
+            </Tag>
+          )}
+          {webSearchEnabled && (
+            <Tag color="blue" style={{ margin: 0, borderRadius: 999, fontSize: 11 }}>
+              {t('chat.header.webSearch')}
+            </Tag>
+          )}
+          <ActionIcon icon={UserRoundCog} size="small" title={t('chat.agentHeader.openProfile')} onClick={onOpenProfile} />
+          <ActionIcon icon={FilePen} size="small" active={notebookOpen} title={t('chat.header.notebook')} onClick={onOpenNotebook} />
+          <ActionIcon icon={Share2} size="small" title={t('chat.header.share')} onClick={() => {}} />
+          <ActionIcon icon={RefreshCw} size="small" title={t('chat.agentHeader.refresh')} onClick={() => {}} />
+        </Flexbox>
+      </Flexbox>
+    </Flexbox>
+  );
 }
 
 function WelcomeScreen({
   agent,
   chatConfig,
   modelName,
+  modelId,
   onSend,
-  onConfigure,
 }: {
-  agent: { name: string; title?: string; avatar?: string; description?: string; openingMessage?: string; openingQuestions?: string; systemPrompt?: string; knowledgeResources?: string };
-  chatConfig: any;
+  agent: AgentChatAgentView;
+  chatConfig: AgentChatConfigView;
   modelName: string;
+  modelId: string;
   onSend: (msg: string) => void;
-  onConfigure?: () => void;
 }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
@@ -525,228 +612,137 @@ function WelcomeScreen({
   const avatar = agent.avatar || '🤖';
   const questions = parseOpeningQuestions(agent.openingQuestions);
   const welcomeText = agent.openingMessage?.trim() || agent.description?.trim() || t('chat.welcome.fallbackText');
-
-  const hasTools = true;
-  const hasMemory = chatConfig?.memory?.enabled;
-  const workspaceRoot = chatConfig?.workspace?.root || chatConfig?.workspaceRoot || '';
-  const knowledgeCount = parseKnowledgeResourceCount(agent.knowledgeResources);
-  const capabilityCards = [
-    {
-      key: 'model',
-      icon: <Code2 size={16} />,
-      title: t('chat.welcome.capability.model'),
-      value: modelName,
-      tone: '#2563eb',
-    },
+  const workspaceRoot = chatConfig.workspace?.root || chatConfig.workspaceRoot || '';
+  const hasMemory = Boolean(chatConfig.memory?.enabled);
+  const hasTools = Boolean(agent.toolsProfile && agent.toolsProfile !== 'none') || (chatConfig.tools?.length ?? 0) > 0 || (chatConfig.skills?.length ?? 0) > 0 || (chatConfig.mcpServers?.length ?? 0) > 0;
+  const statusItems = [
     {
       key: 'tools',
-      icon: <Wrench size={16} />,
-      title: t('chat.welcome.capability.tools'),
-      value: hasTools ? t('chat.welcome.capability.ready') : t('chat.welcome.capability.notConfigured'),
-      tone: '#7c3aed',
+      icon: <Wrench size={12} />,
+      label: hasTools ? t('chat.welcome.status.toolsEnabled') : t('chat.welcome.status.toolsReady'),
+    },
+    {
+      key: 'runtime',
+      icon: <Terminal size={12} />,
+      label: agent.cliCommand?.trim() ? t('chat.agentHeader.runtimeCli') : modelName,
     },
     {
       key: 'memory',
-      icon: <Brain size={16} />,
-      title: t('chat.welcome.capability.memory'),
-      value: hasMemory ? t('chat.welcome.capability.enabled') : t('chat.welcome.capability.disabled'),
-      tone: '#059669',
+      icon: <Brain size={12} />,
+      label: hasMemory ? t('chat.welcome.capability.memory') : t('chat.welcome.capability.memoryDisabledShort'),
     },
     {
       key: 'workspace',
-      icon: <BookOpen size={16} />,
-      title: t('chat.welcome.capability.workspace'),
-      value: workspaceRoot ? t('chat.welcome.capability.bound') : t('chat.welcome.capability.notConfigured'),
-      tone: '#d97706',
+      icon: <BookOpen size={12} />,
+      label: workspaceRoot ? t('chat.welcome.capability.workspace') : t('chat.welcome.capability.workspaceOptional'),
     },
   ];
+
+  const quickActions = questions.length > 0
+    ? questions.map((question) => ({ icon: <Sparkles size={13} />, label: question, prompt: question }))
+    : [
+      { icon: <Wrench size={13} />, label: t('chat.welcome.quickAction.readFile'), prompt: t('chat.welcome.quickAction.readFilePrompt') },
+      { icon: <Terminal size={13} />, label: t('chat.welcome.quickAction.runCommand'), prompt: t('chat.welcome.quickAction.runCommandPrompt') },
+      { icon: <Globe size={13} />, label: t('chat.welcome.quickAction.webSearch'), prompt: t('chat.welcome.quickAction.webSearchPrompt') },
+      { icon: <Sparkles size={13} />, label: t('chat.welcome.quickAction.summarize'), prompt: t('chat.welcome.quickAction.summarizePrompt') },
+    ];
 
   return (
     <Flexbox
       flex={1}
       align="center"
       justify="center"
-      gap={18}
-      style={{ padding: '24px', width: '100%' }}
+      gap={20}
+      style={{ padding: '32px 24px 18px', width: '100%' }}
     >
       <Flexbox
-        horizontal
-        gap={18}
+        align="center"
+        gap={14}
         style={{
-          maxWidth: 920,
-          width: '100%',
-          padding: 18,
+          width: 'min(420px, 100%)',
+          padding: '24px 32px 22px',
           borderRadius: 24,
-          background:
-            'radial-gradient(circle at top left, rgba(99,102,241,0.16), transparent 34%), radial-gradient(circle at bottom right, rgba(14,165,233,0.12), transparent 30%), ' + token.colorBgElevated,
+          background: token.colorBgContainer,
           border: `1px solid ${token.colorBorderSecondary}`,
-          boxShadow: '0 24px 80px rgba(15, 23, 42, 0.08)',
+          boxShadow: '0 28px 90px rgba(15, 23, 42, 0.08)',
+          textAlign: 'center',
         }}
       >
-        <Flexbox flex={1} gap={16} style={{ minWidth: 0 }}>
-          <Flexbox horizontal align="center" gap={14}>
-            <div
-              style={{
-                width: 72,
-                height: 72,
-                borderRadius: 24,
-                background: 'linear-gradient(135deg, #2563eb, #7c3aed 48%, #db2777)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 36,
-                boxShadow: '0 16px 42px rgba(79, 70, 229, 0.26)',
-              }}
-            >
-              {avatar}
-            </div>
-            <Flexbox gap={6} style={{ minWidth: 0 }}>
-              <Flexbox horizontal align="center" gap={6}>
-                <Tag style={{ margin: 0 }}>{t('chat.welcome.heroKicker')}</Tag>
-                {knowledgeCount > 0 && (
-                  <Tag style={{ margin: 0 }}>
-                    {t('chat.welcome.knowledgeCount', { count: knowledgeCount })}
-                  </Tag>
-                )}
-              </Flexbox>
-              <h2 style={{ fontSize: 28, fontWeight: 800, color: token.colorText, margin: 0, letterSpacing: -0.4 }}>
-                {title}
-              </h2>
-              <div style={{ fontSize: 14, color: token.colorTextSecondary, lineHeight: 1.7, maxWidth: 560 }}>
-                <Markdown variant="chat" fontSize={14}>
-                  {welcomeText}
-                </Markdown>
-              </div>
-            </Flexbox>
-          </Flexbox>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
-            {capabilityCards.map((item) => (
-              <CapabilityCard
-                key={item.key}
-                icon={item.icon}
-                title={item.title}
-                value={item.value}
-                tone={item.tone}
-              />
-            ))}
-          </div>
-        </Flexbox>
-
-        <Flexbox
-          gap={10}
+        <div
           style={{
-            width: 220,
-            padding: 14,
-            borderRadius: 18,
-            background: token.colorBgContainer,
-            border: `1px solid ${token.colorBorderSecondary}`,
+            width: 48,
+            height: 48,
+            borderRadius: 14,
+            background: 'linear-gradient(135deg, #6366f1, #8b5cf6 52%, #ec4899)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 26,
+            boxShadow: '0 14px 34px rgba(99, 102, 241, 0.24)',
           }}
         >
-          <Flexbox horizontal align="center" gap={8}>
-            <CheckCircle size={16} style={{ color: token.colorSuccess }} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: token.colorText }}>
-              {t('chat.welcome.runtimeTitle')}
-            </span>
-          </Flexbox>
-          <span style={{ fontSize: 12, lineHeight: 1.6, color: token.colorTextSecondary }}>
-            {t('chat.welcome.runtimeDesc')}
-          </span>
-          <Tag style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: 4, width: 'fit-content' }}>
-            <ModelIcon model={modelName} size={12} />
-            {modelName}
-          </Tag>
-          <button
-            type="button"
-            onClick={onConfigure}
+          {avatar}
+        </div>
+
+        <Flexbox align="center" gap={7} style={{ width: '100%' }}>
+          <h2 style={{ margin: 0, fontSize: 21, lineHeight: 1.25, fontWeight: 800, color: token.colorText }}>
+            {title}
+          </h2>
+          <Flexbox
+            horizontal
+            align="center"
+            justify="center"
+            gap={10}
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 8,
               width: '100%',
-              marginTop: 2,
-              padding: '8px 10px',
-              borderRadius: 12,
-              border: `1px solid ${token.colorBorderSecondary}`,
+              minHeight: 28,
+              padding: '5px 10px',
+              borderRadius: 9,
               background: token.colorFillQuaternary,
-              color: token.colorText,
-              cursor: 'pointer',
-              fontSize: 12,
-              fontWeight: 600,
+              color: token.colorTextTertiary,
+              fontSize: 11,
+              overflow: 'hidden',
             }}
           >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <UserRoundCog size={14} />
-              {t('chat.welcome.configureAgent')}
-            </span>
-            <ChevronRight size={13} style={{ color: token.colorTextTertiary }} />
-          </button>
-        </Flexbox>
-      </Flexbox>
-
-      {questions.length > 0 ? (
-        <Flexbox align="center" gap={10} style={{ maxWidth: 920, width: '100%' }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: token.colorTextDescription }}>
-            {t('chat.welcome.starterQuestions')}
-          </span>
-          <Flexbox horizontal gap={10} wrap="wrap" justify="center">
-            {questions.map((q, i) => (
-              <QuickAction
-                key={`${q}-${i}`}
-                icon={<Sparkles size={14} />}
-                label={q}
-                onClick={() => onSend(q)}
-              />
+            {statusItems.map((item, index) => (
+              <span
+                key={item.key}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  minWidth: 0,
+                  color: index === 0 && hasTools ? token.colorSuccess : token.colorTextTertiary,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {item.icon}
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+              </span>
             ))}
           </Flexbox>
+          <div style={{ color: token.colorTextSecondary, fontSize: 13, lineHeight: 1.65, maxWidth: 340 }}>
+            <Markdown variant="chat" fontSize={13}>
+              {welcomeText}
+            </Markdown>
+          </div>
+          <Tag style={{ margin: 0, borderRadius: 999, fontSize: 11 }}>
+            <ModelIcon model={modelId} size={12} />
+            {modelName}
+          </Tag>
         </Flexbox>
-      ) : (
-        <Flexbox align="center" gap={10} style={{ maxWidth: 920, width: '100%' }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: token.colorTextDescription }}>
-            {t('chat.welcome.defaultActions')}
-          </span>
-          <Flexbox horizontal gap={10} wrap="wrap" justify="center">
-            <QuickAction icon={<FileText size={14} />} label={t('chat.welcome.quickAction.readFile')} onClick={() => onSend(t('chat.welcome.quickAction.readFilePrompt'))} />
-            <QuickAction icon={<Terminal size={14} />} label={t('chat.welcome.quickAction.runCommand')} onClick={() => onSend(t('chat.welcome.quickAction.runCommandPrompt'))} />
-            <QuickAction icon={<Globe size={14} />} label={t('chat.welcome.quickAction.webSearch')} onClick={() => onSend(t('chat.welcome.quickAction.webSearchPrompt'))} />
-            <QuickAction icon={<Sparkles size={14} />} label={t('chat.welcome.quickAction.summarize')} onClick={() => onSend(t('chat.welcome.quickAction.summarizePrompt'))} />
-          </Flexbox>
-        </Flexbox>
-      )}
-    </Flexbox>
-  );
-}
-
-function CapabilityCard({
-  icon,
-  title,
-  value,
-  tone,
-}: {
-  icon: ReactNode;
-  title: string;
-  value: string;
-  tone: string;
-}) {
-  const { token } = theme.useToken();
-  return (
-    <Flexbox
-      gap={6}
-      style={{
-        padding: '10px 12px',
-        borderRadius: 14,
-        background: token.colorBgContainer,
-        border: `1px solid ${token.colorBorderSecondary}`,
-      }}
-    >
-      <Flexbox horizontal align="center" gap={7}>
-        <span style={{ display: 'flex', color: tone }}>{icon}</span>
-        <span style={{ fontSize: 12, fontWeight: 700, color: token.colorText }}>{title}</span>
       </Flexbox>
-      <span style={{ fontSize: 12, color: token.colorTextSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {value}
-      </span>
+
+      <Flexbox horizontal gap={10} wrap="wrap" justify="center" style={{ width: 'min(620px, 100%)' }}>
+        {quickActions.slice(0, 5).map((action) => (
+          <QuickAction
+            key={action.label}
+            icon={action.icon}
+            label={action.label}
+            onClick={() => onSend(action.prompt)}
+          />
+        ))}
+      </Flexbox>
     </Flexbox>
   );
 }
