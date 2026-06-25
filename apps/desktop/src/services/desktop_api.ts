@@ -4626,18 +4626,18 @@ export const api = {
     peerOpkPub?: string,
   ) =>
     invokeAppResultStub<{ ephemeral_key: string; established: boolean }>('crypto_init_session', {
-      session_id: sessionId,
-      peer_did: peerDid,
-      peer_ik_pub: peerIkPub,
-      peer_spk_pub: peerSpkPub,
-      peer_spk_sig: peerSpkSig,
-      ...(peerOpkPub != null && peerOpkPub !== '' ? { peer_opk_pub: peerOpkPub } : {}),
+      sessionId,
+      peerDid,
+      peerIkPub,
+      peerSpkPub,
+      peerSpkSig,
+      ...(peerOpkPub != null && peerOpkPub !== '' ? { peerOpkPub } : {}),
     }),
 
   cryptoEncryptMessage: (sessionId: string, peerDid: string, plaintext: string) =>
     invokeAppResultStub<{ ciphertext: string; counter: number; ephemeral_key?: string }>('crypto_encrypt_message', {
-      session_id: sessionId,
-      peer_did: peerDid,
+      sessionId,
+      peerDid,
       plaintext,
     }),
 
@@ -4649,11 +4649,11 @@ export const api = {
     ephemeralKey?: string,
   ) =>
     invokeAppResultStub<{ plaintext: string }>('crypto_decrypt_message', {
-      session_id: sessionId,
-      peer_did: peerDid,
+      sessionId,
+      peerDid,
       ciphertext,
       counter,
-      ...(ephemeralKey != null && ephemeralKey !== '' ? { ephemeral_key: ephemeralKey } : {}),
+      ...(ephemeralKey != null && ephemeralKey !== '' ? { ephemeralKey } : {}),
     }),
 
   // ── Group chat E2EE: Sender Keys ──
