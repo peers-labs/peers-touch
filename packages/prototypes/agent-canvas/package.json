@@ -1,10 +1,10 @@
 {
-  "name": "@peers-touch/prototype-desktop",
+  "name": "@peers-touch/prototype-agent-canvas",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/Shell.tsx"
+    ".": "./src/AgentCanvasPrototype.tsx"
   },
   "scripts": {
     "dev": "vite",
@@ -12,8 +12,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@peers-touch/prototype-agent-canvas": "workspace:*",
-    "@peers-touch/prototype-atelier": "workspace:*",
     "lucide-react": "^0.577.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
