@@ -4,6 +4,7 @@ import { useAgentStore } from '../store/agent';
 import { ChatPage } from '../pages/ChatPage';
 import { NotesPage } from '../pages/NotesPage';
 import { AgentProfilePage } from '../pages/AgentProfilePage';
+import { AgentResourceManagement } from '../pages/AgentResourceManagement';
 import { getModule } from '../modules/registry';
 import { getPage } from '../kernel/page';
 import { scheduleIdle } from '../kernel/boot';
@@ -129,6 +130,23 @@ function EphemeralPage({ page, router, navigation }: Pick<PageRouterProps, 'page
           onNavigateCron={() => navigation.navigateToSettings('cron')}
           onNavigateSkills={() => navigation.navigateToSettings('skills')}
           onNavigateApplets={() => navigation.navigateToSettings('applets')}
+        />
+      );
+
+    case 'agent-resources':
+      return (
+        <AgentResourceManagement
+          agentName={router.profileAgentName}
+          onBack={() => navigation.navigateTo('agent')}
+          onNavigateAgentProfile={(name) => {
+            router.setProfileAgentName(name);
+            window.history.pushState(null, '', `#/agent-profile/${name}`);
+            navigation.navigateTo('agent-profile');
+          }}
+          onStartChat={(name) => {
+            useAgentStore.getState().setSelectedAgent(name);
+            navigation.navigateTo('agent');
+          }}
         />
       );
 
