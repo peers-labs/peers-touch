@@ -13,7 +13,7 @@ import {
 import { Bot, Brain, Code2, Database, Rocket, Search, ShieldCheck, Sparkles, Wrench } from 'lucide-react';
 import { Input, Button, Tag, TextArea } from '@lobehub/ui';
 import { Flexbox } from 'react-layout-kit';
-import { api, type Agent, type AgentCreate } from '../services/desktop_api';
+import { api, type Agent, type AgentCreate, type AvailableModel } from '../services/desktop_api';
 import { useAgentStore } from '../store/agent';
 import { useTranslation } from 'react-i18next';
 
@@ -48,22 +48,49 @@ export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: Ag
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState('🤖');
+  const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
   const { token } = theme.useToken();
   const { loadAgents } = useAgentStore();
   const previewTitle = Form.useWatch('title', form);
   const previewDescription = Form.useWatch('description', form);
   const previewModel = Form.useWatch('model', form);
+  const selectedProvider = Form.useWatch('provider', form);
   const previewToolsProfile = Form.useWatch('toolsProfile', form);
+  const selectedModelConfig = availableModels.find(
+    (model) => model.id === previewModel && (!selectedProvider || model.provider_id === selectedProvider),
+  );
+  const selectedCliCommand = selectedModelConfig?.runtime_kind === 'cli' ? selectedModelConfig.cli_command || '' : '';
+  const providerOptions = Array.from(
+    new Map(
+      availableModels.map((model) => [
+        model.provider_id || model.provider_name,
+        {
+          label: model.provider_name || model.provider_id,
+          value: model.provider_id || model.provider_name,
+        },
+      ]),
+    ).values(),
+  ).filter((option) => option.value);
+  const modelOptions = availableModels
+    .filter((model) => !selectedProvider || model.provider_id === selectedProvider)
+    .map((model) => ({
+      label: model.display_name || model.id,
+      value: model.id,
+    }));
 
   useEffect(() => {
     if (open) {
+      void api.listAvailableModels().then((result) => setAvailableModels(result.models)).catch(() => setAvailableModels([]));
       if (editingAgent) {
         form.setFieldsValue({
           name: editingAgent.name,
           title: editingAgent.title,
           description: editingAgent.description,
           systemPrompt: editingAgent.systemPrompt,
+          provider: editingAgent.provider || '',
           model: editingAgent.model,
+          effort: editingAgent.effort || 'medium',
+          visibility: editingAgent.visibility || 'private',
           toolsProfile: editingAgent.toolsProfile || 'standard',
           openingMessage: editingAgent.openingMessage,
           openingQuestions: parseJsonArray(editingAgent.openingQuestions).join('\n'),
@@ -72,10 +99,7 @@ export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: Ag
         setSelectedAvatar(editingAgent.avatar || '🤖');
       } else {
         form.resetFields();
-        form.setFieldsValue({
-          toolsProfile: 'standard',
-          pinned: false,
-        });
+        void loadAgentCreationDefaults(form, setAvailableModels);
         setSelectedAvatar('🤖');
       }
     }
@@ -98,7 +122,11 @@ export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: Ag
           description: values.description,
           avatar: selectedAvatar,
           systemPrompt: values.systemPrompt,
+          provider: values.provider || '',
           model: values.model,
+          effort: values.effort || 'medium',
+          visibility: values.visibility || 'private',
+          cliCommand: selectedCliCommand,
           toolsProfile: values.toolsProfile,
           openingMessage: values.openingMessage,
           openingQuestions: JSON.stringify(questionsArray),
@@ -112,7 +140,11 @@ export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: Ag
           description: values.description || '',
           avatar: selectedAvatar,
           systemPrompt: values.systemPrompt || '',
+          provider: values.provider || '',
           model: values.model || '',
+          effort: values.effort || 'medium',
+          visibility: values.visibility || 'private',
+          cliCommand: selectedCliCommand,
           toolsProfile: values.toolsProfile || 'standard',
           openingMessage: values.openingMessage || '',
           openingQuestions: JSON.stringify(questionsArray),
@@ -389,12 +421,53 @@ export function AgentSettingsDrawer({ open, editingAgent, onClose, onSaved }: Ag
                 label: t('agent.drawer.tab.runtime'),
                 children: (
                   <Flexbox gap={14}>
+                    <Form.Item name="provider" label={t('agent.drawer.provider')}>
+                      <Select
+                        allowClear
+                        showSearch
+                        placeholder={t('agent.drawer.providerPlaceholder')}
+                        options={providerOptions}
+                        onChange={() => form.setFieldValue('model', '')}
+                        filterOption={(input, option) =>
+                          String(option?.label || '').toLowerCase().includes(input.toLowerCase())
+                        }
+                      />
+                    </Form.Item>
+
                     <Form.Item
                       name="model"
                       label={t('agent.drawer.modelOverride')}
                       extra={t('agent.drawer.modelOverrideExtra')}
                     >
-                      <Input placeholder={t('agent.drawer.modelOverridePlaceholder')} />
+                      <Select
+                        allowClear
+                        showSearch
+                        placeholder={t('agent.drawer.modelOverridePlaceholder')}
+                        options={modelOptions}
+                        filterOption={(input, option) =>
+                          String(option?.label || '').toLowerCase().includes(input.toLowerCase())
+                        }
+                      />
+                    </Form.Item>
+
+                    <Form.Item name="effort" label={t('agent.drawer.effort')}>
+                      <Select
+                        options={[
+                          { label: t('agent.drawer.effort.low'), value: 'low' },
+                          { label: t('agent.drawer.effort.medium'), value: 'medium' },
+                          { label: t('agent.drawer.effort.high'), value: 'high' },
+                        ]}
+                      />
+                    </Form.Item>
+
+                    <Form.Item name="visibility" label={t('agent.drawer.visibility')}>
+                      <Select
+                        options={[
+                          { label: t('agent.drawer.visibility.private'), value: 'private' },
+                          { label: t('agent.drawer.visibility.workspace'), value: 'workspace' },
+                          { label: t('agent.drawer.visibility.public'), value: 'public' },
+                        ]}
+                      />
                     </Form.Item>
 
                     <Form.Item name="toolsProfile" label={t('agent.drawer.toolAccess')}>
@@ -498,6 +571,41 @@ function parseJsonArray(json: string): string[] {
   } catch {
     return [];
   }
+}
+
+function settingString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function settingResultString(result: unknown): string {
+  return settingString((result as { data?: { value?: unknown }; value?: unknown })?.data?.value)
+    || settingString((result as { value?: unknown })?.value);
+}
+
+async function loadAgentCreationDefaults(
+  form: ReturnType<typeof Form.useForm>[0],
+  setAvailableModels: (models: AvailableModel[]) => void,
+) {
+  const [modelsResult, providerResult, modelResult, effortResult] = await Promise.all([
+    api.listAvailableModels().catch(() => ({ models: [] as AvailableModel[] })),
+    api.settingsGet({ key: 'settings.agent.defaultProvider' }).catch(() => ({ value: '' })),
+    api.settingsGet({ key: 'settings.agent.defaultModel' }).catch(() => ({ value: '' })),
+    api.settingsGet({ key: 'settings.agent.defaultEffort' }).catch(() => ({ value: 'medium' })),
+  ]);
+  const models = modelsResult.models;
+  const defaultProvider = settingResultString(providerResult);
+  const defaultModel = settingResultString(modelResult);
+  const fallbackModel = models.find((model) => model.id === defaultModel) || models[0];
+
+  setAvailableModels(models);
+  form.setFieldsValue({
+    provider: defaultProvider || fallbackModel?.provider_id || '',
+    model: defaultModel || fallbackModel?.id || '',
+    effort: settingResultString(effortResult) || 'medium',
+    visibility: 'private',
+    toolsProfile: 'standard',
+    pinned: false,
+  });
 }
 
 function templateQuestions(raw: string): string[] {

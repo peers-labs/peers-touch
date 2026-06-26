@@ -1,9 +1,9 @@
+use crate::application::security::redact_secret_like_values;
 use crate::contracts::{
     AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentPackageExportInput,
     AgentPackageImportInput, AgentSearchInput, AgentSelectInput, AgentUpdateInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
-use crate::application::security::redact_secret_like_values;
 use crate::infrastructure::actor_bucket::actor_bucket_id;
 use crate::infrastructure::storage::{self, StorageKind};
 use serde::{Deserialize, Serialize};
@@ -272,8 +272,31 @@ fn normalize_agent_value(mut data: Value) -> Value {
         .or_insert_with(|| json!(""));
     obj.entry("systemPrompt".to_string())
         .or_insert_with(|| json!(""));
+    obj.entry("soulMd".to_string()).or_insert_with(|| json!(""));
+    obj.entry("agentsMd".to_string())
+        .or_insert_with(|| json!(""));
     obj.entry("model".to_string()).or_insert_with(|| json!(""));
     obj.entry("provider".to_string())
+        .or_insert_with(|| json!(""));
+    obj.entry("effort".to_string())
+        .or_insert_with(|| json!("medium"));
+    obj.entry("visibility".to_string())
+        .or_insert_with(|| json!("private"));
+    obj.entry("isolationEnabled".to_string())
+        .or_insert_with(|| json!(false));
+    obj.entry("isolationMode".to_string())
+        .or_insert_with(|| json!("shared"));
+    obj.entry("isolationRetentionDays".to_string())
+        .or_insert_with(|| json!(7));
+    obj.entry("workspaceMode".to_string())
+        .or_insert_with(|| json!("agent"));
+    obj.entry("runtimeBackend".to_string())
+        .or_insert_with(|| json!("host"));
+    obj.entry("rootfsPath".to_string())
+        .or_insert_with(|| json!(""));
+    obj.entry("allowedRoots".to_string())
+        .or_insert_with(|| json!("[]"));
+    obj.entry("cliCommand".to_string())
         .or_insert_with(|| json!(""));
     obj.entry("tags".to_string()).or_insert_with(|| json!(""));
     obj.entry("toolsProfile".to_string())

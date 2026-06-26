@@ -14,15 +14,18 @@ import (
 // This is the agent domain's own provider configuration store, replacing
 // the legacy cross-domain dependency on the ai_chat_providers table.
 type AgentProvider struct {
-	ID         string          `gorm:"primaryKey;type:varchar(36)"`
-	Name       string          `gorm:"not null;type:text"`
-	KeyVaults  string          `gorm:"type:text"`
-	Config     json.RawMessage `gorm:"type:jsonb"`
-	SourceType string          `gorm:"type:varchar(20)"`
-	CheckModel string          `gorm:"type:text"`
-	Enabled    bool            `gorm:"not null;default:true"`
-	CreatedAt  time.Time       `gorm:"not null;default:now()"`
-	UpdatedAt  time.Time       `gorm:"not null;default:now()"`
+	ID          string          `gorm:"primaryKey;type:varchar(36)"`
+	Name        string          `gorm:"not null;type:text"`
+	KeyVaults   string          `gorm:"type:text"`
+	Config      json.RawMessage `gorm:"type:jsonb"`
+	SourceType  string          `gorm:"type:varchar(20)"`
+	CheckModel  string          `gorm:"type:text"`
+	RuntimeKind string          `gorm:"type:varchar(20)"`
+	CliCommand  string          `gorm:"type:text"`
+	Protocol    string          `gorm:"type:varchar(40)"`
+	Enabled     bool            `gorm:"not null;default:true"`
+	CreatedAt   time.Time       `gorm:"not null;default:now()"`
+	UpdatedAt   time.Time       `gorm:"not null;default:now()"`
 }
 
 // TableName sets the table name.
