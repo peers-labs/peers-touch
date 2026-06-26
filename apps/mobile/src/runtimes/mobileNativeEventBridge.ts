@@ -5,6 +5,7 @@ import {
 } from '@peers-touch/client-chat-core';
 
 import { dispatchSocialRuntimeExternalEvent } from '../features/social/socialRuntime';
+import { readableErrorMessage } from '../utils/errorMessage';
 
 interface NativeRuntimeEventErrorPayload {
   operation?: string;
@@ -82,7 +83,7 @@ function reportBridgeError(operation: string, error: unknown) {
     new CustomEvent('mobile-native-event-bridge:error', {
       detail: {
         operation,
-        message: error instanceof Error ? error.message : String(error),
+        message: readableErrorMessage(error),
       },
     }),
   );

@@ -23,10 +23,12 @@ export interface MessagePreview {
 export interface ConversationLocalState {
   hidden?: boolean;
   clearedAt?: number;
+  deletedMessageUlids?: Record<string, true>;
   muted?: boolean;
   sticky?: boolean;
   alertEnabled?: boolean;
   background?: ChatBackgroundId;
+  backgroundImage?: string;
 }
 
 export const CHAT_BACKGROUND_OPTIONS = ['default', 'paper', 'mint', 'dusk', 'calm', 'graphite'] as const;
@@ -72,9 +74,13 @@ export function filterClearedMessages(
   kind: 'friend' | 'group',
   ulid: string,
 ): SocialMessage[] {
-  const clearedAt = localState[conversationKey(kind, ulid)]?.clearedAt ?? 0;
-  if (!clearedAt) return messages;
+  const state = localState[conversationKey(kind, ulid)];
+  const clearedAt = state?.clearedAt ?? 0;
+  const deletedMessageUlids = state?.deletedMessageUlids ?? {};
+  const hasDeletedMessages = Object.keys(deletedMessageUlids).length > 0;
+  if (!clearedAt && !hasDeletedMessages) return messages;
   return messages.filter((message) => {
+    if (message.ulid && deletedMessageUlids[message.ulid]) return false;
     const sentMs = messageSentMs(message);
     return sentMs === 0 || sentMs >= clearedAt;
   });

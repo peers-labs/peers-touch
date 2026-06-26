@@ -18,12 +18,28 @@ const config = {
   canonicalLynxAppletDirs: [
     path.join(rootDir, 'apps/desktop/applets-dev/hello-lynx'),
   ],
+  officialAppletRoot: path.join(rootDir, 'apps/applets'),
+  externalLynxAppletRoots: [
+    path.resolve(rootDir, '../my-peers-applets/applets'),
+    ...((process.env.PEERS_TOUCH_EXTERNAL_LYNX_APPLETS ?? '')
+      .split(path.delimiter)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((item) => path.resolve(rootDir, item))),
+  ],
   outputDirs: [
     path.join(__dirname, '../../apps/desktop/applets-dist'),
     // 后续添加移动端目录
     // path.join(__dirname, '../../apps/mobile/android/app/src/main/assets/applets'),
     // path.join(__dirname, '../../apps/mobile/ios/App/Assets/applets'),
   ],
+}
+
+const legacyPermissionGroups = {
+  network: ['network.request'],
+  storage: ['storage.get', 'storage.set'],
+  system: ['system.getInfo'],
+  config: ['config.get'],
 }
 
 function writeStdout(message = '') {
@@ -117,6 +133,59 @@ function toCanonicalManifest(source, integrityFiles) {
   }
 }
 
+function normalizePermissions(source) {
+  const permissions = new Set()
+  for (const permission of source.permissions ?? []) {
+    if (typeof permission !== 'string') continue
+    if (permission.includes('.')) {
+      permissions.add(permission)
+      continue
+    }
+    for (const expanded of legacyPermissionGroups[permission] ?? []) {
+      permissions.add(expanded)
+    }
+  }
+  for (const capability of source.capabilities ?? []) {
+    if (typeof capability === 'string' && capability.includes('.')) {
+      permissions.add(capability)
+    }
+  }
+  return Array.from(permissions)
+}
+
+function toCanonicalLynxManifest(source, entry, integrityFiles) {
+  const services = [...(source.services ?? [])]
+  const permissions = normalizePermissions(source)
+  if (permissions.includes('network.request') && services.length === 0) {
+    services.push({
+      id: 'big-a-api',
+      kind: 'http',
+      binding: 'station-resolved',
+      allowedMethods: ['GET', 'POST'],
+      allowedPaths: ['/api/v1/*'],
+      streaming: true,
+    })
+  }
+  return {
+    id: source.id,
+    name: source.name,
+    version: source.version,
+    description: source.description,
+    author: source.author,
+    icon: source.icon,
+    minPlatformVersion: source.minPlatformVersion,
+    targets: ['desktop'],
+    entries: { lynx: entry },
+    load: { desktop: { type: 'lynx-web', entry } },
+    bridge: source.bridge ?? { protocol: 'peers-touch.applet.bridge', version: '1.0.0' },
+    permissions,
+    capabilities: source.capabilities ?? [],
+    services,
+    skills: source.skills ?? [],
+    integrity: { algorithm: 'sha256', files: integrityFiles },
+  }
+}
+
 function assertCanonicalManifest(manifest, source) {
   const check = validateCanonicalManifest(manifest)
   if (!check.valid) {
@@ -132,6 +201,53 @@ async function getAppletDirs() {
   return entries
     .filter(entry => entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'shared' && entry.name !== 'node_modules')
     .map(entry => path.join(config.appletsDir, entry.name))
+}
+
+async function getExternalLynxAppletDirs() {
+  const dirs = []
+  for (const root of config.externalLynxAppletRoots) {
+    let entries = []
+    try {
+      entries = await fs.readdir(root, { withFileTypes: true })
+    } catch (error) {
+      if (error.code === 'ENOENT') continue
+      throw error
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+      const lynxDir = path.join(root, entry.name, 'lynx')
+      try {
+        await fs.access(path.join(lynxDir, 'applet.json'))
+        dirs.push(lynxDir)
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error
+      }
+    }
+  }
+  return dirs
+}
+
+async function getOfficialAppletDirs() {
+  let entries = []
+  try {
+    entries = await fs.readdir(config.officialAppletRoot, { withFileTypes: true })
+  } catch (error) {
+    if (error.code === 'ENOENT') return []
+    throw error
+  }
+  const dirs = []
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+    const appletDir = path.join(config.officialAppletRoot, entry.name)
+    try {
+      await fs.access(path.join(appletDir, 'applet.manifest.json'))
+      await fs.access(path.join(appletDir, 'frontend/package.json'))
+      dirs.push(appletDir)
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error
+    }
+  }
+  return dirs
 }
 
 /**
@@ -202,24 +318,7 @@ async function buildCanonicalLynxApplet(appletDir) {
       await fs.mkdir(targetDir, { recursive: true })
       await fs.cp(distDir, targetDir, { recursive: true })
 
-      const manifest = {
-        id: appletJson.id,
-        name: appletJson.name,
-        version: appletJson.version,
-        description: appletJson.description,
-        author: appletJson.author,
-        icon: appletJson.icon,
-        minPlatformVersion: appletJson.minPlatformVersion,
-        targets: ['desktop'],
-        entries: { lynx: entry },
-        load: { desktop: { type: 'lynx-web', entry } },
-        bridge: { protocol: 'peers-touch.applet.bridge', version: '1.0.0' },
-        permissions: appletJson.permissions ?? [],
-        capabilities: appletJson.capabilities ?? [],
-        services: appletJson.services ?? [],
-        skills: appletJson.skills ?? [],
-        integrity: { algorithm: 'sha256', files: await integrityForFiles(targetDir) },
-      }
+      const manifest = toCanonicalLynxManifest(appletJson, entry, await integrityForFiles(targetDir))
       assertCanonicalManifest(manifest, `${appletName}/applet.json`)
       await fs.writeFile(path.join(targetDir, 'manifest.json'), JSON.stringify(manifest, null, 2))
       await fs.writeFile(path.join(targetDir, 'applet.json'), JSON.stringify(manifest, null, 2))
@@ -235,12 +334,55 @@ async function buildCanonicalLynxApplet(appletDir) {
   }
 }
 
+async function buildOfficialApplet(appletDir) {
+  const appletName = path.basename(appletDir)
+  writeStdout(`Building official applet: ${appletName}`)
+  const manifestPath = path.join(appletDir, 'applet.manifest.json')
+  const frontendDir = path.join(appletDir, 'frontend')
+  const distDir = path.join(frontendDir, 'dist')
+
+  try {
+    const sourceManifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'))
+    const appletId = sourceManifest.id
+    if (!appletId || typeof appletId !== 'string') {
+      throw new Error(`${appletName}/applet.manifest.json must declare string id`)
+    }
+
+    run('pnpm', ['run', 'build'], { cwd: frontendDir, stdio: 'inherit' })
+
+    for (const outputDir of config.outputDirs) {
+      const targetDir = path.join(outputDir, appletId)
+      await fs.rm(targetDir, { recursive: true, force: true })
+      await fs.mkdir(targetDir, { recursive: true })
+      await fs.cp(distDir, targetDir, { recursive: true })
+
+      const manifest = toCanonicalManifest(sourceManifest, await integrityForFiles(targetDir))
+      assertCanonicalManifest(manifest, `${appletName}/applet.manifest.json`)
+      await fs.writeFile(path.join(targetDir, 'manifest.json'), JSON.stringify(manifest, null, 2))
+      await fs.writeFile(path.join(targetDir, 'applet.json'), JSON.stringify(manifest, null, 2))
+
+      writeStdout(`Synced official applet ${appletName} to ${targetDir}`)
+    }
+
+    writeStdout(`Built official applet ${appletName} successfully`)
+    return true
+  } catch (error) {
+    writeStderr(`Failed to build official applet ${appletName}: ${error.message}`)
+    throw error
+  }
+}
+
 /**
  * 初始化输出目录
  */
 async function initOutputDirs() {
   for (const outputDir of config.outputDirs) {
     await fs.mkdir(outputDir, { recursive: true })
+    const entries = await fs.readdir(outputDir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (entry.name === '.build.lock') continue
+      await fs.rm(path.join(outputDir, entry.name), { recursive: true, force: true })
+    }
     // 创建.gitkeep文件
     await fs.writeFile(path.join(outputDir, '.gitkeep'), '')
   }
@@ -292,12 +434,26 @@ async function main() {
     // 获取所有Applet
     const appletDirs = await getAppletDirs()
     writeStdout(`Found ${appletDirs.length} applets: ${appletDirs.map(d => path.basename(d)).join(', ')}`)
+    const officialAppletDirs = await getOfficialAppletDirs()
+    if (officialAppletDirs.length > 0) {
+      writeStdout(`Found ${officialAppletDirs.length} official applets: ${officialAppletDirs.map(d => path.basename(d)).join(', ')}`)
+    }
+    const externalLynxAppletDirs = await getExternalLynxAppletDirs()
+    if (externalLynxAppletDirs.length > 0) {
+      writeStdout(`Found ${externalLynxAppletDirs.length} external Lynx applets: ${externalLynxAppletDirs.map(d => path.basename(path.dirname(d))).join(', ')}`)
+    }
 
     // 顺序构建，避免并发构建时对 workspace 依赖链接造成竞争
     for (const dir of appletDirs) {
       await buildApplet(dir)
     }
+    for (const dir of officialAppletDirs) {
+      await buildOfficialApplet(dir)
+    }
     for (const dir of config.canonicalLynxAppletDirs) {
+      await buildCanonicalLynxApplet(dir)
+    }
+    for (const dir of externalLynxAppletDirs) {
       await buildCanonicalLynxApplet(dir)
     }
     await writeIndexFiles()

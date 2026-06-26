@@ -153,7 +153,7 @@ Current status:
 
 Final behavior:
 
-- Built-in chat backgrounds are controlled by Station conversation settings.
+- Built-in chat backgrounds and user-selected local image backgrounds are controlled by Station conversation settings.
 - Supported IDs:
   - `default`
   - `paper`
@@ -162,9 +162,10 @@ Final behavior:
   - `calm`
   - `graphite`
 - Desktop and Mobile can change background for direct and group conversations.
+- Desktop supports local image selection for conversation backgrounds through the real upload/storage chain, not URL entry.
 - Changes sync cross-device through realtime invalidation.
 - Invalid or unknown IDs normalize to `default`.
-- No asset upload or arbitrary background strings are introduced in this phase.
+- Raw arbitrary background strings are not accepted; uploaded image references must be validated, persisted, and projected as typed conversation settings.
 
 Implementation ownership:
 
@@ -179,7 +180,7 @@ Implementation ownership:
 Current status:
 
 - Basic Station-backed settings and dual-client rendering exist.
-- Still required: automated tests proving cross-device sync and invalid value fallback.
+- Still required: automated tests proving cross-device sync, invalid value fallback, local image background upload/projection, and context-menu shortcut actions.
 
 ### 4.4 Encryption Upgrade
 
@@ -258,11 +259,48 @@ Tasks:
 4. Add Station API-level tests for member update permissions.
 5. Add client checks for group member action visibility.
 
+Additional tasks from the Desktop group ownership / kick-out prototype:
+
+6. Proto / Station command closure:
+   - Ensure the proto contract explicitly supports owner/admin/member role projection, remove member, mute/unmute member, promote admin, demote admin, transfer ownership, leave group, dissolve group, and group profile update.
+   - Enforce role policy in Station application services: owner can manage admins and members; admin can manage ordinary members only; members are read-only except leave/self settings.
+   - Persist membership mutation audit data needed for reconciliation and debugging.
+7. Station realtime and encryption side effects:
+   - Emit membership/profile events after kick, mute, role change, ownership transfer, leave, dissolve, invite, and join.
+   - Trigger sender-key rotation/distribution after member removal, member addition, ownership transfer, and role changes that affect management capability.
+   - Define the dissolved-group tombstone behavior so clients stop sending and hide/mark conversations consistently.
+   - Add an explicit `/app-meta/version` metadata probe so remote gates can fail fast when the Station deployment is not built from the expected commit or build label.
+8. Desktop Rust / Web API bridge:
+   - Add typed Tauri commands and `desktop_api.ts` methods for kick, mute/unmute, promote/demote admin, transfer ownership, leave, dissolve, invite/join, group profile/avatar update, and member refresh.
+   - Keep all commands Station-backed; no UI-only member mutation.
+   - Normalize Station errors into user-safe client errors such as permission denied, group dissolved, member not found, and stale role.
+9. Desktop UI implementation:
+   - Port the approved prototype into `ChatDetailPanel`: permission summary, owner/admin/member visibility, member management overlay, kick confirmation, transfer confirmation, dissolve/leave confirmation, locked member controls, local avatar picker, and local background picker.
+   - Wire group name/avatar updates to real APIs and refresh group projection after success.
+   - Use locales for all user-facing strings and remove no-op/stub actions.
+10. Mobile parity:
+   - Implement the same owner/admin/member policy and available actions in Mobile group detail.
+   - Keep Mobile visual shape consistent with the shared social UI identity while adapting the interaction surface to mobile.
+   - Confirm Mobile receives the same realtime member/profile refresh events as Desktop.
+11. Verification / E2E:
+   - Add Station permission matrix tests for owner/admin/member actions.
+   - Add Station handler tests proving create-with-initial-members projects the creator as owner and de-dupes ordinary initial members.
+   - Add client visibility tests for owner/admin/member action surfaces.
+   - Add E2E/manual acceptance script covering owner kick, admin kick ordinary member, admin cannot manage admin/owner, member read-only, ownership transfer, leave group, dissolve group, and realtime refresh on another client.
+   - Keep `tooling/acceptance/gates/chat/group_admin_e2e.py` local-current-worktree by default; remote runs must set `CHAT_GROUP_ADMIN_STATION_URL` explicitly so stale deployments are not mistaken for current evidence.
+   - Add regression for sender-key rotation after kick/transfer so removed members cannot decrypt new group messages.
+   - Keep the executable Desktop acceptance script at `docs/architecture/social-runtime/execution-plans/20260624-group-admin-desktop-e2e.md` and update it whenever the P2 flow changes.
+   - Add Desktop runtime automation or a semi-automated harness for the owner/admin/member UI flow; the current HTTP gate is necessary but not sufficient.
+   - Capture real Desktop multi-client evidence for realtime refresh and sender-key rotation/decryption behavior after kick and ownership transfer.
+
 Exit criteria:
 
 - Desktop/Mobile have the same real group admin actions.
 - Role policy is enforced by Station, not by UI only.
+- Current-worktree Station HTTP gate passes before Desktop manual E2E is reported complete.
 - Group membership events refresh both clients.
+- Remote Station gates either pass against a verified current deployment or are explicitly blocked with version/deployment evidence.
+- The approved Desktop prototype behavior is represented by real Station-backed actions, not only local UI state.
 
 ### Phase 3: Conversation Appearance Closure
 
@@ -271,12 +309,17 @@ Tasks:
 1. Add Station tests for friend and group background normalization.
 2. Add realtime invalidation tests for `ConversationSettingsChanged`.
 3. Add Desktop/Mobile projection tests if test harness exists; otherwise add documented manual E2E script.
+4. Implement/verify local image background upload for Desktop group/direct conversations through the real storage chain, with preview, persistence, cross-device projection, and failure rollback.
+5. Implement/verify conversation right-click shortcut actions (`pin`, `mute`, `delete`/clear) against real Station-backed settings or mutation APIs.
+6. Add visual alignment regression or acceptance evidence for chat header/detail header alignment, avatar/name editing, and detail panel layout.
 
 Exit criteria:
 
 - Background changes persist in Station.
 - Both clients refresh through projection.
 - Invalid background IDs cannot leak into UI.
+- Local image backgrounds are selected from disk, stored through the sanctioned upload chain, and never entered as raw URLs.
+- Conversation shortcut actions mutate real settings/state and are not UI-only toggles.
 
 ### Phase 4: Encryption Upgrade Closure
 
@@ -309,6 +352,9 @@ Tasks:
 - Fix failures.
 - Review UI for no-op/stub actions.
 - Review locales for hardcoded user-facing strings.
+- Add a one-command release gate that runs proto generation checks, Station Go tests, Station HTTP gates, Desktop checks/focused tests, Mobile checks, and Rust bridge checks where available.
+- Add repeatable performance profiling or benchmark scripts for conversation switching latency.
+- Generate a verification evidence bundle with command output, screenshots/log references, known blocked items, and residual risks.
 - Produce final delivery report.
 
 Exit criteria:
@@ -327,7 +373,7 @@ Exit criteria:
 - No manual parallel models when proto is the source of truth.
 - No generated-file source edits; change proto source then regenerate.
 - No page-owned freshness for Desktop/Mobile social runtime.
-- Do not touch `apps/mobile/flutter`.
+- Do not reintroduce Flutter / Dart as an active implementation path.
 - Do not ask the user to validate every small step; self-verify and deliver a complete report.
 
 ---

@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, toast } from '@lobehub/ui';
+import { Button, Tooltip, toast } from '@lobehub/ui';
 import { Alert, Empty, Spin, theme, Typography } from 'antd';
-import { LocateFixed, MessageCircle, X } from 'lucide-react';
+import { LocateFixed, MessageSquareReply, MessagesSquare, RotateCcw, Trash2, X } from 'lucide-react';
 import {
   CHAT_COMPOSER_CAPABILITIES_DESKTOP_THREAD,
   buildChatThreadSurface,
@@ -16,31 +20,197 @@ import {
   socialThreadKey,
 } from '../../store/socialChat';
 import { log } from '../../utils/logger';
+import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
+import { ChatDeleteConfirmOverlay } from './ChatDeleteConfirmOverlay';
+import { ChatMessageContent } from './message/ChatMessageContent';
 import {
+  isOwnMessage,
+  isRecalledMessage,
+  messageReplyToUlid,
+  messageTimestampDate,
+  messageTimestampMs,
   replyPreviewForMessage,
+  resolveChatSenderProfile,
   type ChatMessage,
 } from './message/chatMessageModel';
-import {
-  ChatMessageRow,
-  ChatMessageRowInteractionStyle,
-} from './message/ChatMessageRow';
 
 const { Text } = Typography;
 
-const disabledThreadRowActions = {
-  delete: false,
-  edit: false,
-  recall: false,
-  thread: false,
-} as const;
+/**
+ * Mirrors `application.DefaultMutationWindow` on the Station side and
+ * the same constant in ChatMessageRow. The server is the source of
+ * truth; the UI only hides the Recall button when it is guaranteed
+ * to fail.
+ */
+const FRIEND_RECALL_WINDOW_MS = 4 * 60 * 1000 + 30 * 1000;
 
-const disabledRootRowActions = {
-  ...disabledThreadRowActions,
-  reply: false,
-} as const;
+function formatThreadTime(message: ChatMessage): string {
+  return messageTimestampDate(message)?.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  }) ?? '';
+}
 
-function ignoreThreadRowAction(): void {}
+interface ThreadMessageItemProps {
+  activeConversationId: string;
+  activeKind: 'friend' | 'group';
+  currentUserDid: string | null;
+  currentUserProfile: ReturnType<typeof useSocialChatStore.getState>['currentUserProfile'];
+  groupMembers: ReturnType<typeof useSocialChatStore.getState>['groupMembers'];
+  message: ChatMessage;
+  messages: ChatMessage[];
+  onDelete?: (message: ChatMessage) => void;
+  onRecall?: (message: ChatMessage) => void;
+  onReply?: (message: ChatMessage) => void;
+  root?: boolean;
+  rootUlid: string;
+  sessions: ReturnType<typeof useSocialChatStore.getState>['sessions'];
+}
+
+function ThreadMessageItem({
+  activeConversationId,
+  activeKind,
+  currentUserDid,
+  currentUserProfile,
+  groupMembers,
+  message,
+  messages,
+  onDelete,
+  onRecall,
+  onReply,
+  root = false,
+  rootUlid,
+  sessions,
+}: ThreadMessageItemProps) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('chat');
+  const senderProfile = resolveChatSenderProfile({
+    activeKind,
+    activeConversationId,
+    currentUserDid,
+    currentUserProfile,
+    groupMembers,
+    sessions,
+    message,
+  });
+  const isOwn = isOwnMessage(message, currentUserDid);
+  const isRecalled = isRecalledMessage(message);
+  const sentMs = messageTimestampMs(message);
+  const withinWindow = sentMs > 0 && (Date.now() - sentMs) < FRIEND_RECALL_WINDOW_MS;
+  const canRecall = Boolean(onRecall) && isOwn && !isRecalled && withinWindow;
+  const canDelete = Boolean(onDelete) && !isRecalled;
+  const replyToUlid = messageReplyToUlid(message);
+  const replyPreview = replyPreviewForMessage(
+    replyToUlid && replyToUlid !== rootUlid
+      ? messages.find((item) => item.ulid === replyToUlid)
+      : null,
+    {
+      image: t('chat.social.messageArea.attachmentTypeImage'),
+      video: t('chat.social.messageArea.attachmentTypeVideo'),
+      audio: t('chat.social.messageArea.attachmentTypeAudio'),
+      file: t('chat.social.messageArea.attachmentTypeFile'),
+    },
+  );
+
+  return (
+    <Flexbox
+      horizontal
+      align="flex-start"
+      gap={10}
+      style={{
+        padding: root ? '12px 12px 13px' : '10px 0',
+        borderRadius: root ? 8 : 0,
+        background: root ? token.colorFillQuaternary : 'transparent',
+        borderBottom: root ? 'none' : `1px solid ${token.colorBorderSecondary}`,
+        position: 'relative',
+      }}
+      className="thread-comment-row"
+    >
+      <UserSquareAvatar
+        remoteUrl={senderProfile.avatar}
+        name={senderProfile.name}
+        size={root ? 30 : 28}
+        style={{ flexShrink: 0 }}
+      />
+      <Flexbox gap={5} style={{ flex: 1, minWidth: 0 }}>
+        <Flexbox horizontal align="center" justify="space-between" gap={8}>
+          <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0 }}>
+            <Text ellipsis strong style={{ fontSize: 12, maxWidth: 150 }}>
+              {isOwn ? t('chat.social.thread.you') : senderProfile.name}
+            </Text>
+            <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
+              {formatThreadTime(message)}
+            </Text>
+          </Flexbox>
+          <Flexbox horizontal align="center" gap={2} className="thread-reply-action" style={{ flexShrink: 0 }}>
+            {!root && onReply && (
+              <Tooltip title={t('chat.social.thread.replyToMessage')}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<MessageSquareReply size={13} />}
+                  aria-label={t('chat.social.thread.replyToMessage')}
+                  onClick={() => onReply(message)}
+                  style={{ width: 24, height: 24 }}
+                />
+              </Tooltip>
+            )}
+            {canRecall && (
+              <Tooltip title={t('chat.social.messageArea.actionRecall')}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<RotateCcw size={13} />}
+                  aria-label={t('chat.social.messageArea.actionRecall')}
+                  onClick={() => onRecall?.(message)}
+                  style={{ width: 24, height: 24 }}
+                />
+              </Tooltip>
+            )}
+            {canDelete && (
+              <Tooltip title={t('chat.social.messageArea.actionDelete')}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<Trash2 size={13} />}
+                  aria-label={t('chat.social.messageArea.actionDelete')}
+                  onClick={() => onDelete?.(message)}
+                  style={{ width: 24, height: 24, color: token.colorError }}
+                />
+              </Tooltip>
+            )}
+          </Flexbox>
+        </Flexbox>
+        {replyPreview && (
+          <Text
+            type="secondary"
+            ellipsis
+            style={{
+              fontSize: 11,
+              padding: '3px 6px',
+              borderLeft: `2px solid ${token.colorPrimaryBorder}`,
+              background: token.colorFillQuaternary,
+              borderRadius: 4,
+            }}
+          >
+            {replyPreview}
+          </Text>
+        )}
+        <Flexbox
+          style={{
+            color: token.colorText,
+            fontSize: root ? 13 : 12,
+            lineHeight: 1.55,
+            wordBreak: 'break-word',
+          }}
+        >
+          <ChatMessageContent message={message} isOwn={isOwn} attachmentGap={5} />
+        </Flexbox>
+      </Flexbox>
+    </Flexbox>
+  );
+}
 
 export function ChatThreadPanel() {
   const { token } = theme.useToken();
@@ -69,10 +239,15 @@ export function ChatThreadPanel() {
     sendFriendMessage,
     sendGroupMessage,
     loadGroupMembers,
+    deleteMessage,
+    recallFriendMessage,
+    recallGroupMessage,
   } = useSocialChatStore();
   const [inputValue, setInputValue] = useState('');
   const [sending, setSending] = useState(false);
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
+  const [deletingMessage, setDeletingMessage] = useState(false);
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const activeKind = activeTab === 'friend' ? 'friend' : 'group';
@@ -100,7 +275,7 @@ export function ChatThreadPanel() {
     }),
     [currentMessages, loadedThreadMessages, openThreadRootUlid],
   );
-  const { rootMessage, replies, displayMessages: threadDisplayMessages } = threadSurface;
+  const { rootMessage, replies, displayMessages } = threadSurface;
 
   useEffect(() => {
     if (activeTab === 'group' && activeUlid) {
@@ -114,6 +289,8 @@ export function ChatThreadPanel() {
     const handle = window.setTimeout(() => {
       setInputValue('');
       setReplyTarget(null);
+      setDeleteTarget(null);
+      setDeletingMessage(false);
     }, 0);
     return () => window.clearTimeout(handle);
   }, [activeUlid, openThreadRootUlid]);
@@ -178,7 +355,35 @@ export function ChatThreadPanel() {
     const rootUlid = rootMessage?.ulid || openThreadRootUlid;
     if (!rootUlid) return;
     setScrollToMessageUlid(rootUlid);
-    closeThread();
+  };
+
+  const handleRecall = async (message: ChatMessage) => {
+    if (!activeUlid) return;
+    try {
+      if (activeKind === 'friend') {
+        await recallFriendMessage(activeUlid, message.ulid);
+      } else {
+        await recallGroupMessage(activeUlid, message.ulid);
+      }
+    } catch (error) {
+      log.error('socialChat', 'thread recall failed', error);
+      toast.error(t('chat.social.messageArea.recallFailed'));
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!activeUlid || !deleteTarget) return;
+    setDeletingMessage(true);
+    try {
+      await deleteMessage(activeUlid, deleteTarget.ulid, activeKind);
+      if (replyTarget?.ulid === deleteTarget.ulid) setReplyTarget(null);
+      setDeleteTarget(null);
+    } catch (error) {
+      log.error('socialChat', 'thread deleteMessage failed', error);
+      toast.error(t('chat.social.messageArea.deleteFailed'));
+    } finally {
+      setDeletingMessage(false);
+    }
   };
 
   if (!openThreadRootUlid) return null;
@@ -198,34 +403,73 @@ export function ChatThreadPanel() {
         background: token.colorBgContainer,
         borderLeft: `1px solid ${token.colorBorderSecondary}`,
         flexShrink: 0,
+        position: 'relative',
       }}
     >
+      <style>
+        {`
+          .chat-thread-scroll {
+            scrollbar-width: thin;
+            scrollbar-color: ${token.colorFillSecondary} transparent;
+          }
+          .chat-thread-scroll::-webkit-scrollbar {
+            width: 6px;
+            height: 0;
+          }
+          .chat-thread-scroll::-webkit-scrollbar-thumb {
+            background: ${token.colorFillSecondary};
+            border-radius: 999px;
+          }
+          .chat-thread-scroll::-webkit-scrollbar-track {
+            background: transparent;
+          }
+          .thread-reply-action {
+            opacity: 0;
+            transition: opacity 0.14s ease;
+          }
+          .thread-comment-row:hover .thread-reply-action,
+          .thread-comment-row:focus-within .thread-reply-action {
+            opacity: 1;
+          }
+        `}
+      </style>
       <Flexbox
         horizontal
         align="center"
         justify="space-between"
         style={{
-          padding: '12px 16px',
+          height: 64,
+          padding: '0 18px',
           borderBottom: `1px solid ${token.colorBorderSecondary}`,
           flexShrink: 0,
         }}
       >
         <Flexbox horizontal align="center" gap={8}>
-          <MessageCircle size={16} style={{ color: token.colorPrimary }} />
-          <Text strong style={{ fontSize: 15 }}>
-            {t('chat.social.thread.title')}
-          </Text>
+          <MessagesSquare size={16} style={{ color: token.colorPrimary }} />
+          <Flexbox>
+            <Text strong style={{ fontSize: 14 }}>
+              {t('chat.social.thread.title')}
+            </Text>
+            {rootMessage && (
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                {t('chat.social.thread.replies', { count: replies.length })}
+              </Text>
+            )}
+          </Flexbox>
         </Flexbox>
         <Flexbox horizontal align="center" gap={4}>
           <Button
             type="text"
             title={t('chat.social.thread.jumpToOriginal')}
+            aria-label={t('chat.social.thread.jumpToOriginal')}
             icon={<LocateFixed size={15} />}
             onClick={handleJumpToOriginal}
             style={{ width: 28, height: 28 }}
           />
           <Button
             type="text"
+            title={t('chat.social.thread.close')}
+            aria-label={t('chat.social.thread.close')}
             icon={<X size={16} />}
             onClick={closeThread}
             style={{ width: 28, height: 28 }}
@@ -239,8 +483,12 @@ export function ChatThreadPanel() {
         </Flexbox>
       ) : (
         <>
-          <Flexbox flex={1} gap={14} style={{ overflow: 'auto', padding: 16 }}>
-            <ChatMessageRowInteractionStyle />
+          <Flexbox
+            className="chat-thread-scroll"
+            flex={1}
+            gap={12}
+            style={{ overflowY: 'auto', overflowX: 'hidden', padding: '14px 16px 12px' }}
+          >
             {loadingThread && (
               <Flexbox horizontal align="center" gap={8} style={{ color: token.colorTextSecondary }}>
                 <Spin size="small" />
@@ -257,37 +505,28 @@ export function ChatThreadPanel() {
                 description={threadLoadError}
               />
             )}
-            <Flexbox gap={8}>
-              <Text type="secondary" style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: 0 }}>
+            <Flexbox gap={7}>
+              <Text type="secondary" style={{ fontSize: 11, letterSpacing: 0 }}>
                 {t('chat.social.thread.rootMessage')}
               </Text>
-              <ChatMessageRow
-                actionVisibility={disabledRootRowActions}
+              <ThreadMessageItem
                 activeConversationId={activeUlid || ''}
                 activeKind={activeKind}
                 currentUserDid={currentUserDid}
                 currentUserProfile={currentUserProfile}
-                density="compact"
                 groupMembers={groupMembers}
-                highlighted={false}
                 message={rootMessage}
-                messages={threadDisplayMessages}
-                onDelete={ignoreThreadRowAction}
-                onEdit={ignoreThreadRowAction}
-                onOpenThread={ignoreThreadRowAction}
-                onRecall={ignoreThreadRowAction}
-                onReply={ignoreThreadRowAction}
+                messages={displayMessages}
+                onDelete={setDeleteTarget}
+                onRecall={handleRecall}
+                root
+                rootUlid={rootMessage.ulid}
                 sessions={sessions}
-                showHoverActions={false}
-                showThreadSummary={false}
-                threadReplyCount={0}
-                threadUnreadCount={0}
-                timelineGap={false}
               />
             </Flexbox>
 
-            <Flexbox gap={8}>
-              <Text type="secondary" style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: 0 }}>
+            <Flexbox gap={4}>
+              <Text type="secondary" style={{ fontSize: 11, letterSpacing: 0 }}>
                 {t('chat.social.thread.replies', { count: replies.length })}
               </Text>
               {replies.length === 0 ? (
@@ -295,39 +534,31 @@ export function ChatThreadPanel() {
                   align="center"
                   justify="center"
                   style={{
-                    padding: '18px 12px',
+                    padding: '16px 12px',
                     borderRadius: 8,
                     background: token.colorFillQuaternary,
                   }}
                 >
-                  <Text type="secondary" style={{ fontSize: 13 }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
                     {t('chat.social.thread.noReplies')}
                   </Text>
                 </Flexbox>
               ) : (
                 replies.map((reply) => (
-                  <ChatMessageRow
+                  <ThreadMessageItem
                     key={reply.ulid}
-                    actionVisibility={disabledThreadRowActions}
                     activeConversationId={activeUlid || ''}
                     activeKind={activeKind}
                     currentUserDid={currentUserDid}
                     currentUserProfile={currentUserProfile}
-                    density="compact"
                     groupMembers={groupMembers}
-                    highlighted={false}
                     message={reply}
-                    messages={threadDisplayMessages}
-                    onDelete={ignoreThreadRowAction}
-                    onEdit={ignoreThreadRowAction}
-                    onOpenThread={ignoreThreadRowAction}
-                    onRecall={ignoreThreadRowAction}
-                    onReply={() => setReplyTarget(reply)}
+                    messages={displayMessages}
+                    onDelete={setDeleteTarget}
+                    onRecall={handleRecall}
+                    onReply={setReplyTarget}
+                    rootUlid={rootMessage.ulid}
                     sessions={sessions}
-                    showThreadSummary={false}
-                    threadReplyCount={0}
-                    threadUnreadCount={0}
-                    timelineGap={false}
                   />
                 ))
               )}
@@ -337,7 +568,7 @@ export function ChatThreadPanel() {
                   type="text"
                   loading={loadingMoreReplies}
                   onClick={handleLoadMoreReplies}
-                  style={{ alignSelf: 'center', fontSize: 12 }}
+                  style={{ alignSelf: 'center', fontSize: 12, marginTop: 8 }}
                 >
                   {t('chat.social.thread.loadMoreReplies')}
                 </Button>
@@ -364,6 +595,14 @@ export function ChatThreadPanel() {
             visualSurface="desktop-thread"
           />
         </>
+      )}
+
+      {deleteTarget && (
+        <ChatDeleteConfirmOverlay
+          deleting={deletingMessage}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={handleConfirmDelete}
+        />
       )}
     </Flexbox>
   );

@@ -245,8 +245,20 @@ pub fn account_relink_pin(
 
 /// List accounts that have restorable sessions (for the login account picker).
 pub fn account_list_restorable() -> AppResult<StubPayload> {
-    let accounts = try_cmd!(auth_identity::list_restorable_accounts().map_err(internal_error));
+    let state = try_cmd!(auth_identity::read_state().map_err(internal_error));
+    let active_account_id = state.active_account_id.clone();
+    let mut accounts = state.accounts;
     session_vault::purge_raw_sessions_for_pin_accounts(&accounts);
+    accounts.sort_by(|a, b| {
+        let a_active = active_account_id.as_deref() == Some(a.id.as_str());
+        let b_active = active_account_id.as_deref() == Some(b.id.as_str());
+        b_active.cmp(&a_active).then_with(|| {
+            b.last_login_at
+                .cmp(&a.last_login_at)
+                .then_with(|| a.name.cmp(&b.name))
+                .then_with(|| a.id.cmp(&b.id))
+        })
+    });
     success_payload(
         "account_list_restorable",
         json!({
