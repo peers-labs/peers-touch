@@ -22,6 +22,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard"
 
 	_ "github.com/peers-labs/peers-touch/station/app/subserver/oss"
+	_ "github.com/peers-labs/peers-touch/station/app/subserver/agent"
 
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native"
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/registry"
