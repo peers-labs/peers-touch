@@ -1,5 +1,9 @@
 // LynxBridgeAdapter — for Lynx for Web environment inside <lynx-view>.
 // Applet code runs in a Lynx background thread (no DOM). Communicates via NativeModules.
+//
+// Event reception uses the bridge long-poll channel (events.subscribe) instead of
+// lynx.getJSModule('GlobalEventEmitter'). web-core does not implement getJSModule
+// on either thread — the native Lynx API is unavailable in the web runtime.
 
 import type { BridgeAdapter } from '../adapter.js';
 import { AppletError, AppletErrorCode } from '../errors.js';
@@ -15,10 +19,6 @@ type LynxNativeModules = {
 
 type LynxRuntime = {
   requireModule?(name: string): LynxNativeModules['bridge'] | undefined;
-  getJSModule(name: string): {
-    addListener(topic: string, handler: (payload: unknown) => void): void;
-    removeListener(topic: string, handler: (payload: unknown) => void): void;
-  };
 };
 
 type LynxGlobalScope = typeof globalThis & {
@@ -34,6 +34,7 @@ const BRIDGE_READY_POLL_MS = 10;
 
 export class LynxBridgeAdapter implements BridgeAdapter {
   readonly name = 'lynx';
+  private subscriptionActive = false;
 
   async invoke(method: string, params?: Record<string, unknown>): Promise<unknown> {
     try {
@@ -61,27 +62,43 @@ export class LynxBridgeAdapter implements BridgeAdapter {
     throw new AppletError(AppletErrorCode.MethodNotFound, 'Lynx bridge module does not expose invoke or call');
   }
 
+  /**
+   * Subscribe to host→applet events via the bridge long-poll channel.
+   *
+   * The host resolves each `events.subscribe` call when it has an event to
+   * deliver. After receiving an event the SDK immediately re-subscribes,
+   * creating a continuous event stream without relying on GlobalEventEmitter.
+   */
   onEvent(handler: (topic: string, payload: unknown) => void): () => void {
-    const runtime = lynxRuntime();
-    if (!runtime) return () => {};
-    const globalEmitter = runtime.getJSModule('GlobalEventEmitter');
-    const bridgeEventTopic = 'applet.event';
+    if (this.subscriptionActive) return () => {};
+    this.subscriptionActive = true;
 
-    const listener = (payload: unknown): void => {
-      const envelope = Array.isArray(payload) ? payload[0] : payload;
-      if (typeof envelope === 'object' && envelope !== null) {
-        const evt = envelope as { topic?: unknown; event?: unknown; payload?: unknown };
-        const topic = typeof evt.topic === 'string' ? evt.topic : evt.event;
-        if (typeof topic === 'string') {
-          handler(topic, evt.payload);
+    const poll = async (): Promise<void> => {
+      while (this.subscriptionActive) {
+        try {
+          const result = await this.callBridge({ method: 'events.subscribe', params: {} });
+          if (!this.subscriptionActive) break;
+          if (result && typeof result === 'object' && !Array.isArray(result)) {
+            const envelope = result as { topic?: unknown; event?: unknown; payload?: unknown };
+            const topic = typeof envelope.topic === 'string'
+              ? envelope.topic
+              : typeof envelope.event === 'string' ? envelope.event : undefined;
+            if (topic) {
+              handler(topic, envelope.payload);
+            }
+          }
+        } catch {
+          // Bridge not ready or session destroyed — back off then retry
+          if (!this.subscriptionActive) break;
+          await new Promise((r) => setTimeout(r, 200));
         }
       }
     };
 
-    globalEmitter.addListener(bridgeEventTopic, listener);
+    void poll();
 
     return () => {
-      globalEmitter.removeListener(bridgeEventTopic, listener);
+      this.subscriptionActive = false;
     };
   }
 

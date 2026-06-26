@@ -1,0 +1,97 @@
+{
+  "id": "peers.note",
+  "name": "Note",
+  "description": "Note official applet",
+  "author": "Peers Touch",
+  "version": "0.1.0",
+  "icon": "assets/icon.png",
+  "minPlatformVersion": "0.1.0",
+  "targets": [
+    "desktop",
+    "android",
+    "ios",
+    "web"
+  ],
+  "entries": {
+    "lynx": "main.lynx.bundle"
+  },
+  "load": {
+    "desktop": {
+      "type": "lynx-web",
+      "entry": "main.lynx.bundle"
+    },
+    "android": {
+      "type": "lynx-native",
+      "entry": "main.lynx.bundle"
+    },
+    "ios": {
+      "type": "lynx-native",
+      "entry": "main.lynx.bundle"
+    },
+    "web": {
+      "type": "lynx-web",
+      "entry": "main.lynx.bundle"
+    }
+  },
+  "bridge": {
+    "protocol": "peers-touch.applet.bridge",
+    "version": "1.0.0"
+  },
+  "permissions": [
+    "app.getContext",
+    "app.getLaunchOptions",
+    "lifecycle.reportReady",
+    "network.request",
+    "storage.get",
+    "storage.set",
+    "storage.remove",
+    "ui.showToast",
+    "ui.showLoading",
+    "ui.hideLoading",
+    "ui.showModal",
+    "navigation.navigateTo",
+    "navigation.back",
+    "events.emit",
+    "events.subscribe",
+    "events.unsubscribe",
+    "telemetry.track",
+    "telemetry.reportError"
+  ],
+  "capabilities": [],
+  "services": [
+    {
+      "id": "note",
+      "kind": "http",
+      "binding": "station-resolved",
+      "allowedMethods": [
+        "GET",
+        "POST",
+        "PATCH",
+        "DELETE"
+      ],
+      "allowedPaths": [
+        "/v1/notes",
+        "/v1/notes/*",
+        "/v1/notes:search"
+      ],
+      "publicPathPrefix": "/v1",
+      "stationPathPrefix": "/applets/note/v1",
+      "streaming": false
+    }
+  ],
+  "serviceDependencies": {
+    "note": {
+      "kind": "station-subserver",
+      "required": true
+    }
+  },
+  "skills": [],
+  "platformPermissions": [
+    "network:service:note",
+    "storage:applet",
+    "ui:feedback",
+    "navigation:applet",
+    "events:applet",
+    "telemetry:track"
+  ]
+}

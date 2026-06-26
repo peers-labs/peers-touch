@@ -23,7 +23,6 @@ import {
   EditFriendMessageResponseSchema,
   DeleteFriendMessageResponseSchema,
   SyncMessagesResponseSchema,
-  OnlineResponseSchema,
   GetPendingResponseSchema,
   GetStatsResponseSchema,
   SendFriendRequestResponseSchema,
@@ -47,6 +46,8 @@ import {
   InviteToGroupResponseSchema,
   JoinGroupResponseSchema,
   LeaveGroupResponseSchema,
+  TransferGroupOwnershipResponseSchema,
+  DissolveGroupResponseSchema,
   GetGroupMembersResponseSchema,
   RemoveMemberResponseSchema,
   UpdateMemberResponseSchema,
@@ -104,7 +105,6 @@ export type {
   GetMessagesResponse,
   SendMessageResponse,
   SyncMessagesResponse,
-  OnlineResponse,
   GetPendingResponse,
   PendingMessageInfo,
   GetStatsResponse,
@@ -126,6 +126,8 @@ export type {
   InviteToGroupResponse,
   JoinGroupResponse,
   LeaveGroupResponse,
+  TransferGroupOwnershipResponse,
+  DissolveGroupResponse,
   GetGroupMembersResponse,
   RemoveMemberResponse,
   UpdateMemberResponse,
@@ -219,6 +221,7 @@ const PROD_QUIET_COMMANDS = new Set([
   'friend_chat_sync_from_station_scoped',
   'friend_chat_list_sessions',
   'friend_chat_list_messages',
+  'chat_index_local_messages',
 ]);
 
 function isQuietCommand(command: string): boolean {
@@ -336,6 +339,25 @@ async function invokeAuthCommand<TInput>(
       response.error ?? {
         code: 'INTERNAL_ERROR',
         message: 'auth command failed',
+      },
+    );
+  }
+  return response.data;
+}
+
+/// Drive an interactive access-gate step that returns a Station decision
+/// (rather than a landed session). Shares `AuthCommandException` semantics so
+/// callers handle FORBIDDEN/INVALID_ARGUMENT/UNAUTHORIZED uniformly.
+async function invokeAccessCommand<TInput>(
+  command: string,
+  input?: TInput,
+): Promise<AccessDecisionResponse> {
+  const response = await invokeRustCommand<TInput, AccessDecisionResponse>(command, input);
+  if (!response.ok || !response.data) {
+    throw new AuthCommandException(
+      response.error ?? {
+        code: 'INTERNAL_ERROR',
+        message: 'access command failed',
       },
     );
   }
@@ -1077,6 +1099,11 @@ export interface AppletInfo {
   manifest: AppletManifest;
   status: 'installed' | 'active' | 'stopped' | 'error';
   error?: string;
+}
+
+export interface AppletImportDirectoryResult {
+  directory: string;
+  manifest: unknown;
 }
 
 export interface StatisticsRankItem {
@@ -1839,6 +1866,23 @@ export interface AuthLoginInput {
   base_url?: string;
 }
 
+/// Raw Station `AccessDecision`, passed through verbatim by the Rust layer.
+/// The frontend normalizes the wire shape (snake_case keys, string enums).
+export interface AccessDecisionResponse extends TauriStubPayload {
+  decision: unknown;
+}
+
+export interface AccessSubmitInviteInput {
+  attempt_id: string;
+  invite_code: string;
+}
+
+export interface AccessSubmitLoginInput {
+  attempt_id: string;
+  account: string;
+  password: string;
+}
+
 export interface AuthValidateTokenInput {
   token?: string;
 }
@@ -1850,6 +1894,10 @@ export interface SettingsGetInput {
 export interface SettingsSetInput {
   key: string;
   value: any;
+}
+
+export interface ChatScreenshotShortcutRegisterInput {
+  shortcut: string;
 }
 
 export interface ChatListMessagesInput {
@@ -2631,6 +2679,17 @@ export interface ChatSearchLocalResultRow {
   mime_type?: string;
 }
 
+export interface ChatIndexLocalMessageInput {
+  scope: 'friend' | 'group';
+  conversation_id: string;
+  message_id: string;
+  sender_did: string;
+  content: string;
+  reply_to_ulid?: string;
+  thread_root_ulid?: string;
+  sent_at: number;
+}
+
 export interface GroupChatSyncInput {
   group_ulid: string;
   limit?: number;
@@ -2698,6 +2757,15 @@ export const api = {
   authLogin: (input: AuthLoginInput) =>
     invokeAuthCommand<AuthLoginInput>('auth_login', input),
 
+  accessStart: () =>
+    invokeAccessCommand<void>('access_start'),
+
+  accessSubmitInviteCode: (input: AccessSubmitInviteInput) =>
+    invokeAccessCommand<AccessSubmitInviteInput>('access_submit_invite_code', input),
+
+  accessSubmitLogin: (input: AccessSubmitLoginInput) =>
+    invokeAuthCommand<AccessSubmitLoginInput>('access_submit_login', input),
+
   authLogout: () =>
     invokeAuthCommand<void>('auth_logout'),
 
@@ -2718,6 +2786,12 @@ export const api = {
 
   settingsReset: () =>
     invokeRustCommand<void, TauriStubPayload>('settings_reset'),
+
+  chatScreenshotShortcutRegister: (input: ChatScreenshotShortcutRegisterInput) =>
+    invokeRustCommand<ChatScreenshotShortcutRegisterInput, TauriStubPayload>(
+      'chat_screenshot_shortcut_register',
+      input,
+    ),
 
   chatListConversations: () =>
     invokeRustCommand<void, TauriStubPayload>('chat_list_conversations'),
@@ -3414,6 +3488,9 @@ export const api = {
 
   appletInvoke: <T = unknown>(input: AppletInvokeInput) =>
     invokeRustDataFromStatus<AppletInvokeInput, T>('applets_invoke', input),
+
+  pickAppletImportDirectory: () =>
+    invokeRustDataFromStatus<void, AppletImportDirectoryResult>('applets_pick_import_directory'),
 
   appletsProductWindowLaunchContext: () =>
     invokeRustDataFromStatus<void, AppletProductWindowLaunchContext>('applets_product_window_launch_context'),
@@ -4177,6 +4254,12 @@ export const api = {
       limit: limit ?? 30,
     }),
 
+  chatIndexLocalMessages: (messages: ChatIndexLocalMessageInput[]) =>
+    invokeRustDataFromStatus<{ messages: ChatIndexLocalMessageInput[] }, { indexed_count: number }>(
+      'chat_index_local_messages',
+      { messages },
+    ),
+
   friendChatSync: (sessionUlid: string, limit?: number, maxPages?: number) =>
     invokeRustDataFromStatus<FriendChatSyncInput, { synced_count: number; pages_fetched: number }>(
       'friend_chat_sync_from_station_scoped', { session_ulid: sessionUlid, limit, max_pages: maxPages },
@@ -4184,25 +4267,6 @@ export const api = {
 
   friendChatSyncMessages: (messagesJson: string) =>
     invokeRustProto('friend_chat_sync_messages', SyncMessagesResponseSchema, { session_ulid: '', messages_json: messagesJson }),
-
-  friendChatGoOnline: (did?: string) =>
-    invokeRustProto('friend_chat_go_online', OnlineResponseSchema, { did }),
-
-  friendChatGoOffline: (did?: string) =>
-    invokeRustProto('friend_chat_go_offline', OnlineResponseSchema, { did }),
-
-  /**
-   * Start the long-lived presence SSE supervisor for the current
-   * window's actor. Idempotent; the Rust side replaces any in-flight
-   * supervisor for the same actor. While running, station emits
-   * `presence:peer-changed` Tauri events for every online/offline flip.
-   */
-  friendChatPresenceStart: () =>
-    invokeRustDataFromStatus<void, { actor_id: string }>('friend_chat_presence_start'),
-
-  /** Cancel the presence supervisor for the current actor. */
-  friendChatPresenceStop: () =>
-    invokeRustDataFromStatus<void, { actor_id: string | null }>('friend_chat_presence_stop'),
 
   /**
    * Start the unified realtime SSE consumer for the current actor.
@@ -4442,8 +4506,13 @@ export const api = {
   groupChatGetGroup: (groupUlid: string) =>
     invokeRustProto('group_chat_get_group', GetGroupResponseSchema, { group_ulid: groupUlid }),
 
-  groupChatUpdateGroup: (groupUlid: string, name: string, description?: string) =>
-    invokeRustProto('group_chat_update_group', UpdateGroupResponseSchema, { group_ulid: groupUlid, name, description }),
+  groupChatUpdateGroup: (groupUlid: string, name?: string, description?: string, avatarCid?: string) =>
+    invokeRustProto('group_chat_update_group', UpdateGroupResponseSchema, {
+      group_ulid: groupUlid,
+      name,
+      description,
+      avatar_cid: avatarCid,
+    }),
 
   groupChatInviteToGroup: (groupUlid: string, memberDids: string[]) =>
     invokeRustProto('group_chat_invite_to_group', InviteToGroupResponseSchema, { group_ulid: groupUlid, member_dids: memberDids }),
@@ -4453,6 +4522,15 @@ export const api = {
 
   groupChatLeaveGroup: (groupUlid: string) =>
     invokeRustProto('group_chat_leave_group', LeaveGroupResponseSchema, { group_ulid: groupUlid }),
+
+  groupChatTransferOwnership: (groupUlid: string, nextOwnerDid: string) =>
+    invokeRustProto('group_chat_transfer_ownership', TransferGroupOwnershipResponseSchema, {
+      group_ulid: groupUlid,
+      next_owner_did: nextOwnerDid,
+    }),
+
+  groupChatDissolveGroup: (groupUlid: string) =>
+    invokeRustProto('group_chat_dissolve_group', DissolveGroupResponseSchema, { group_ulid: groupUlid }),
 
   groupChatGetMembers: (groupUlid: string, limit?: number, offset?: number) =>
     invokeRustProto('group_chat_get_members', GetGroupMembersResponseSchema, { group_ulid: groupUlid, limit, offset }),
@@ -4698,11 +4776,17 @@ export const api = {
   friendChatListFriendRequests: (status?: number, limit?: number, offset?: number) =>
     invokeRustProto('friend_chat_list_friend_requests', ListFriendRequestsResponseSchema, { status, limit, offset }),
 
-  friendChatBlockUser: (targetDid: string) =>
-    invokeRustProto('friend_chat_block_user', BlockUserResponseSchema, { target_did: targetDid }),
+  friendChatBlockUser: async (targetDid: string) => {
+    const response = await invokeRustProto('friend_chat_block_user', BlockUserResponseSchema, { target_did: targetDid });
+    eventBus.publish(EVENT.RELATIONSHIP_CHANGED, { targetActorId: targetDid, action: 'block' });
+    return response;
+  },
 
-  friendChatUnblockUser: (targetDid: string) =>
-    invokeRustProto('friend_chat_unblock_user', UnblockUserResponseSchema, { target_did: targetDid }),
+  friendChatUnblockUser: async (targetDid: string) => {
+    const response = await invokeRustProto('friend_chat_unblock_user', UnblockUserResponseSchema, { target_did: targetDid });
+    eventBus.publish(EVENT.RELATIONSHIP_CHANGED, { targetActorId: targetDid, action: 'unblock' });
+    return response;
+  },
 
   friendChatListBlockedUsers: (limit = 100, offset = 0) =>
     invokeRustProto('friend_chat_list_blocked_users', ListBlockedUsersResponseSchema, { limit, offset }),

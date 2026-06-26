@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/friend_chat/infrastructure"
 	notifbridge "github.com/peers-labs/peers-touch/station/app/subserver/notification"
@@ -22,13 +23,7 @@ type subServer struct {
 	service    *application.Service
 	repo       *infrastructure.GormRepo
 	mu         sync.RWMutex
-	online     map[string]int64
 	pending    map[string][]pendingMessage
-
-	// presenceMu guards `presenceSubs`. Kept separate from `mu` so an SSE
-	// fan-out cannot block the chat send / online toggle paths.
-	presenceMu   sync.RWMutex
-	presenceSubs map[string]chan PresenceEvent // sub-id → buffered channel
 }
 
 type pendingMessage struct {
@@ -37,51 +32,6 @@ type pendingMessage struct {
 	SessionULID      string
 	EncryptedPayload []byte
 	CreatedAt        int64
-}
-
-// PresenceEvent is the JSON payload streamed to clients on /friend-chat/presence/stream.
-//
-// We deliberately use a hand-rolled struct rather than reusing the broader
-// `event.Event` schema: presence is small, very frequent, and consumed by
-// only the friend-chat header. Coupling it to the global event system
-// would force every presence flip to traverse the outbox + broker which
-// is wasteful for an in-memory ephemeral signal.
-type PresenceEvent struct {
-	Did     string `json:"did"`
-	Online  bool   `json:"online"`
-	AtUnix  int64  `json:"at"`
-}
-
-// publishPresence broadcasts a presence flip to every SSE subscriber.
-// Channel sends are non-blocking — if a subscriber's buffer is full, the
-// event is dropped for that subscriber (it can re-fetch /friend-chat/sessions
-// to resync). This keeps a slow/disconnected client from stalling the
-// online/offline path.
-func (s *subServer) publishPresence(did string, online bool) {
-	evt := PresenceEvent{Did: did, Online: online, AtUnix: time.Now().Unix()}
-	s.presenceMu.RLock()
-	for _, ch := range s.presenceSubs {
-		select {
-		case ch <- evt:
-		default:
-		}
-	}
-	s.presenceMu.RUnlock()
-}
-
-func (s *subServer) addPresenceSub(id string, ch chan PresenceEvent) {
-	s.presenceMu.Lock()
-	if s.presenceSubs == nil {
-		s.presenceSubs = make(map[string]chan PresenceEvent)
-	}
-	s.presenceSubs[id] = ch
-	s.presenceMu.Unlock()
-}
-
-func (s *subServer) removePresenceSub(id string) {
-	s.presenceMu.Lock()
-	delete(s.presenceSubs, id)
-	s.presenceMu.Unlock()
 }
 
 func NewFriendChatSubServer(opts ...option.Option) server.Subserver {
@@ -106,7 +56,6 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	}
 	s.repo = repo
 	s.service = application.NewService(repo)
-	s.online = make(map[string]int64)
 	s.pending = make(map[string][]pendingMessage)
 	return nil
 }
@@ -115,12 +64,11 @@ func (s *subServer) Start(ctx context.Context, opts ...option.Option) error {
 	s.status = server.StatusRunning
 	// Wire notification bridge during Start() — notification SubServer is initialized by now.
 	s.service.SetNotifier(notifbridge.NewBridge())
-	now := time.Now().Unix()
-	s.mu.Lock()
-	for did := range s.online {
-		s.online[did] = now
-	}
-	s.mu.Unlock()
+	// Register the call-signal authorizer with the events subserver so
+	// POST /realtime/signal can enforce the friend-relationship gate
+	// without importing friend_chat (one-way dependency: friend_chat →
+	// events).
+	events.RegisterSignalAuthorizer(signalAuthorizer{service: s.service})
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
@@ -140,6 +88,7 @@ func (s *subServer) Start(ctx context.Context, opts ...option.Option) error {
 
 func (s *subServer) Stop(ctx context.Context) error {
 	_ = ctx
+	events.RegisterSignalAuthorizer(nil)
 	s.status = server.StatusStopped
 	return nil
 }
@@ -150,3 +99,15 @@ func (s *subServer) Address() server.SubserverAddress {
 	return server.SubserverAddress{Address: s.addrs}
 }
 func (s *subServer) Status() server.Status { return s.status }
+
+// signalAuthorizer adapts the friend_chat application service to the
+// events.SignalAuthorizer interface, keeping the events subserver
+// ignorant of the friend_chat domain while reusing the same
+// social-graph gate as messaging.
+type signalAuthorizer struct {
+	service *application.Service
+}
+
+func (a signalAuthorizer) CanSignal(senderActorID, recipientActorID string) (bool, error) {
+	return a.service.CanSignal(senderActorID, recipientActorID)
+}

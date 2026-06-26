@@ -4,6 +4,7 @@ import { Ban, Check, RotateCcw, Search, ShieldCheck, UserPlus, Users, X } from '
 
 import { useMobileI18n } from '../app/mobileI18n';
 import { MobileAvatar } from '../components/MobileAvatar';
+import { MobileNotice } from '../components/MobileNotice';
 import { useGroupStore } from '../features/group/groupStore';
 import { projectGroupConversations, type GroupConversation } from '../features/group/groupProjection';
 import {
@@ -33,6 +34,7 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
   const friendRequests = useSocialStore((state) => state.friendRequests);
   const loading = useSocialStore((state) => state.loading);
   const error = useSocialStore((state) => state.error);
+  const clearSocialError = useSocialStore((state) => state.clearError);
   const acceptFriendRequest = useSocialStore((state) => state.acceptFriendRequest);
   const rejectFriendRequest = useSocialStore((state) => state.rejectFriendRequest);
   const sendFriendRequest = useSocialStore((state) => state.sendFriendRequest);
@@ -54,6 +56,7 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
   const createGroup = useGroupStore((state) => state.createGroup);
   const groupLoading = useGroupStore((state) => state.loading);
   const groupError = useGroupStore((state) => state.error);
+  const clearGroupError = useGroupStore((state) => state.clearError);
   const sessions = useSocialStore((state) => state.sessions);
   const messages = useSocialStore((state) => state.messages);
   const peerOnline = useSocialStore((state) => state.peerOnline);
@@ -216,11 +219,15 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
         </button>
       </div>
 
-      {error ? <Text type="danger" className="page-error">{formatSocialError(error)}</Text> : null}
-      {groupError ? <Text type="danger" className="page-error">{formatSocialError(groupError)}</Text> : null}
+      {error ? (
+        <MobileNotice onClose={clearSocialError}>{formatSocialError(error)}</MobileNotice>
+      ) : null}
+      {groupError ? (
+        <MobileNotice onClose={clearGroupError}>{formatSocialError(groupError)}</MobileNotice>
+      ) : null}
 
       <section className="social-list-panel">
-        <Spin spinning={loading || groupLoading}>
+        <Spin spinning={(loading || groupLoading) && filteredContacts.length === 0 && filteredGroups.length === 0 && inboundRequests.length === 0 && sentRequests.length === 0}>
           <SectionTitle title={t('mobile.contacts.friendRequests')} count={inboundRequests.length} />
           {inboundRequests.length > 0 ? (
             <List
@@ -350,8 +357,10 @@ export function ContactsPage({ onOpenChat }: ContactsPageProps) {
             loading={peopleSearching}
             allowClear
           />
-          {peopleError ? <Text type="danger" className="page-error">{formatSocialError(peopleError)}</Text> : null}
-          <Spin spinning={peopleSearching}>
+          {peopleError ? (
+            <MobileNotice onClose={clearPeopleSearch}>{formatSocialError(peopleError)}</MobileNotice>
+          ) : null}
+          <Spin spinning={peopleSearching && peopleResults.length === 0}>
             <div className="people-result-list">
               {peopleResults.length > 0 ? (
                 peopleResults.map((result) => {

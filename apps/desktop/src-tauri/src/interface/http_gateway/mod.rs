@@ -717,6 +717,552 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
         },
 
         // =================================================================
+        // Moments / Human social (proto-based)
+        // =================================================================
+        "social_create_moment" => {
+            let input = match parse_args::<SocialCreateMomentInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.payload.is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "payload (CreatePostRequest bytes) is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let req = match model::social::CreatePostRequest::decode(input.payload.as_slice()) {
+                Ok(r) => r,
+                Err(e) => {
+                    return to_json(AppResult::<Vec<u8>>::fail(
+                        ErrorCode::InvalidArgument,
+                        format!("decode CreatePostRequest: {}", e),
+                        None,
+                    ));
+                }
+            };
+            let resp = match station_client::request_proto::<
+                model::social::CreatePostRequest,
+                model::social::CreatePostResponse,
+            >(
+                Method::POST,
+                "/api/v1/social/moments",
+                &token,
+                None,
+                Some(&req),
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("create moment failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_get_moment" => {
+            let input = match parse_args::<SocialGetMomentInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "id is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let path = format!("/api/v1/social/moments/{}", input.id);
+            let resp = match station_client::request_proto::<(), model::social::GetPostResponse>(
+                Method::GET,
+                &path,
+                &token,
+                None,
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("get moment failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_delete_moment" => {
+            let input = match parse_args::<SocialDeleteMomentInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "id is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let path = format!("/api/v1/social/moments/{}", input.id);
+            let resp = match station_client::request_proto::<(), model::social::DeletePostResponse>(
+                Method::DELETE,
+                &path,
+                &token,
+                None,
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("delete moment failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_get_timeline" => {
+            let input = match parse_args::<SocialGetTimelineInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let mut query: Vec<(&str, String)> = vec![("type", input.r#type)];
+            if let Some(cursor) = input.cursor.filter(|v| !v.is_empty()) {
+                query.push(("cursor", cursor));
+            }
+            if let Some(limit) = input.limit {
+                query.push(("limit", limit.to_string()));
+            }
+            if let Some(sort) = input.sort.filter(|v| !v.is_empty()) {
+                query.push(("sort", sort));
+            }
+            let resp = match station_client::request_proto::<(), model::social::GetTimelineResponse>(
+                Method::GET,
+                "/api/v1/social/timeline",
+                &token,
+                Some(&query),
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("get timeline failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_sync_moments_projection" => {
+            let input = match parse_args::<SocialSyncMomentsProjectionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let req = model::social::SyncMomentsProjectionRequest {
+                home_cursor: input.home_cursor.unwrap_or_default(),
+                public_cursor: input.public_cursor.unwrap_or_default(),
+                limit: input.limit.unwrap_or(20),
+                public_sort: input.public_sort.unwrap_or(0),
+                reason: input.reason.unwrap_or_default(),
+            };
+            let resp = match station_client::request_proto::<
+                model::social::SyncMomentsProjectionRequest,
+                model::social::SyncMomentsProjectionResponse,
+            >(
+                Method::POST,
+                "/api/v1/social/moments/sync",
+                &token,
+                None,
+                Some(&req),
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    return to_json(e.into_app_result::<Vec<u8>>("sync moments projection failed"));
+                }
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_list_by_author" => {
+            let input = match parse_args::<SocialListByAuthorInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.user_id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "user_id is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let mut query: Vec<(&str, String)> = Vec::new();
+            if let Some(cursor) = input.cursor.filter(|v| !v.is_empty()) {
+                query.push(("cursor", cursor));
+            }
+            if let Some(limit) = input.limit {
+                query.push(("limit", limit.to_string()));
+            }
+            let path = format!("/api/v1/social/users/{}/posts", input.user_id);
+            let resp = match station_client::request_proto::<(), model::social::ListPostsResponse>(
+                Method::GET,
+                &path,
+                &token,
+                Some(&query),
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("list by author failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_circle_list_mine" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let resp = match station_client::request_proto::<(), model::social::ListMyCirclesResponse>(
+                Method::GET,
+                "/api/v1/social/circles",
+                &token,
+                None,
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("list circles failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_get_my_stats" => {
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let resp = match station_client::request_proto::<
+                (),
+                model::social::GetMyMomentsStatsResponse,
+            >(
+                Method::GET,
+                "/api/v1/social/me/stats",
+                &token,
+                None,
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("get my stats failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_react" => {
+            let input = match parse_args::<SocialReactInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.post_id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "post_id is required",
+                    None,
+                ));
+            }
+            if input.kind == 0 {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "reaction kind is required (REACTION_UNSPECIFIED rejected)",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let req = model::social::ReactToPostRequest {
+                post_id: input.post_id.clone(),
+                kind: input.kind,
+            };
+            let path = format!("/api/v1/social/posts/{}/react", input.post_id);
+            let resp = match station_client::request_proto::<
+                model::social::ReactToPostRequest,
+                model::social::ReactToPostResponse,
+            >(Method::POST, &path, &token, None, Some(&req))
+            {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("react failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_unreact" => {
+            let input = match parse_args::<SocialUnreactInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.post_id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "post_id is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let req = model::social::UnreactToPostRequest {
+                post_id: input.post_id.clone(),
+                kind: input.kind,
+            };
+            let path = format!("/api/v1/social/posts/{}/unreact", input.post_id);
+            let resp = match station_client::request_proto::<
+                model::social::UnreactToPostRequest,
+                model::social::UnreactToPostResponse,
+            >(Method::POST, &path, &token, None, Some(&req))
+            {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("unreact failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_get_comments" => {
+            let input = match parse_args::<SocialGetCommentsInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.post_id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "post_id is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let mut query: Vec<(&str, String)> = Vec::new();
+            if let Some(cursor) = input.cursor.filter(|v| !v.is_empty()) {
+                query.push(("cursor", cursor));
+            }
+            if let Some(limit) = input.limit {
+                query.push(("limit", limit.to_string()));
+            }
+            let path = format!("/api/v1/social/moments/{}/comments", input.post_id);
+            let resp = match station_client::request_proto::<(), model::social::GetCommentsResponse>(
+                Method::GET,
+                &path,
+                &token,
+                Some(&query),
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("get comments failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_create_comment" => {
+            let input = match parse_args::<SocialCreateCommentInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.post_id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "post_id is required",
+                    None,
+                ));
+            }
+            if input.content.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "content is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let req = model::social::CreateCommentRequest {
+                post_id: input.post_id.clone(),
+                content: input.content,
+                reply_to_comment_id: input.reply_to_comment_id.unwrap_or_default(),
+            };
+            let path = format!("/api/v1/social/moments/{}/comments", input.post_id);
+            let resp = match station_client::request_proto::<
+                model::social::CreateCommentRequest,
+                model::social::CreateCommentResponse,
+            >(Method::POST, &path, &token, None, Some(&req))
+            {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("create comment failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_delete_comment" => {
+            let input = match parse_args::<SocialDeleteCommentInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.comment_id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "comment_id is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let path = format!("/api/v1/social/comments/{}", input.comment_id);
+            let resp = match station_client::request_proto::<(), model::social::DeleteCommentResponse>(
+                Method::DELETE,
+                &path,
+                &token,
+                None,
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    return to_json(e.into_app_result::<Vec<u8>>("delete comment failed"));
+                }
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_station_moderation_upsert" => {
+            let input = match parse_args::<SocialStationModerationUpsertInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            if input.station_domain.trim().is_empty()
+                && input
+                    .station_peer_id
+                    .as_deref()
+                    .unwrap_or_default()
+                    .trim()
+                    .is_empty()
+            {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "station_domain or station_peer_id is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let req = model::social::UpsertStationModerationPolicyRequest {
+                policy: Some(model::social::StationModerationPolicy {
+                    station_domain: input.station_domain,
+                    station_peer_id: input.station_peer_id.unwrap_or_default(),
+                    kind: input.kind.unwrap_or(1),
+                    reason: input.reason.unwrap_or_default(),
+                    ..Default::default()
+                }),
+            };
+            let resp = match station_client::request_proto::<
+                model::social::UpsertStationModerationPolicyRequest,
+                model::social::UpsertStationModerationPolicyResponse,
+            >(
+                Method::POST,
+                "/api/v1/social/moderation/stations",
+                &token,
+                None,
+                Some(&req),
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    return to_json(
+                        e.into_app_result::<Vec<u8>>("upsert station moderation failed"),
+                    );
+                }
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_station_moderation_list" => {
+            let input = match parse_args::<SocialStationModerationListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let mut query: Vec<(&str, String)> = Vec::new();
+            if let Some(kind) = input.kind {
+                query.push(("kind", kind.to_string()));
+            }
+            if let Some(cursor) = input.cursor.filter(|v| !v.is_empty()) {
+                query.push(("cursor", cursor));
+            }
+            if let Some(limit) = input.limit {
+                query.push(("limit", limit.to_string()));
+            }
+            let resp = match station_client::request_proto::<
+                (),
+                model::social::ListStationModerationPoliciesResponse,
+            >(
+                Method::GET,
+                "/api/v1/social/moderation/stations",
+                &token,
+                Some(&query),
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    return to_json(
+                        e.into_app_result::<Vec<u8>>("list station moderation policies failed"),
+                    );
+                }
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_station_moderation_delete" => {
+            let input = match parse_args::<SocialStationModerationDeleteInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let station_domain = input.station_domain.unwrap_or_default();
+            let station_peer_id = input.station_peer_id.unwrap_or_default();
+            if station_domain.trim().is_empty() && station_peer_id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "station_domain or station_peer_id is required",
+                    None,
+                ));
+            }
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let query = vec![
+                ("station_domain", station_domain),
+                ("station_peer_id", station_peer_id),
+                ("kind", input.kind.unwrap_or(1).to_string()),
+            ];
+            let resp = match station_client::request_proto::<
+                (),
+                model::social::DeleteStationModerationPolicyResponse,
+            >(
+                Method::DELETE,
+                "/api/v1/social/moderation/stations",
+                &token,
+                Some(&query),
+                None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    return to_json(
+                        e.into_app_result::<Vec<u8>>("delete station moderation failed"),
+                    );
+                }
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+
+        // =================================================================
         // OSS (state-dependent)
         // =================================================================
         "oss_upload_attachment_bytes_chat" => {
@@ -2903,54 +3449,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Some(json!({"messages": input.messages_json})),
             ) {
                 Ok(data) => to_json(to_stub("friend_chat_sync_messages", data)),
-                Err(e) => e,
-            }
-        }
-        "friend_chat_go_online" => {
-            let input = match parse_args::<FriendChatOnlineInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let body = match &input.did {
-                Some(did) => json!({"did": did}),
-                None => json!({}),
-            };
-            match station_request_json(
-                Method::POST,
-                "/friend-chat/online",
-                &token,
-                None,
-                Some(body),
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_go_online", data)),
-                Err(e) => e,
-            }
-        }
-        "friend_chat_go_offline" => {
-            let input = match parse_args::<FriendChatOnlineInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let body = match &input.did {
-                Some(did) => json!({"did": did}),
-                None => json!({}),
-            };
-            match station_request_json(
-                Method::POST,
-                "/friend-chat/offline",
-                &token,
-                None,
-                Some(body),
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_go_offline", data)),
                 Err(e) => e,
             }
         }

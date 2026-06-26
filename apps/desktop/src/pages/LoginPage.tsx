@@ -7,9 +7,18 @@ import { useOAuth2Store } from '../store/oauth2';
 import { useSessionStore } from '../store/session';
 import { api, AuthCommandException } from '../services/desktop_api';
 import type { AccountIdentity, OAuth2ProviderSummary } from '../services/desktop_api';
-import { useAccountIdentityStore } from '../store/accountIdentity';
+import {
+  accessDecisionMessage,
+  currentGate,
+  isAccessBlocked,
+  isAccessGranted,
+  isInviteCodeGate,
+  parseGateFields,
+  type AccessDecision,
+} from '../services/accessGate';
 import { UserSquareAvatar } from '../components/common/UserSquareAvatar';
 import { PlatformLogo } from '../components/common/PlatformLogo';
+import { StationNetworkIntro } from '../components/common/StationNetworkIntro';
 import { BRANDING } from '../branding';
 import type { SessionUser } from '../types/navigation';
 
@@ -20,7 +29,10 @@ type LoginTab = 'quick' | 'email';
 type AuthState = 'idle' | 'waiting' | 'success' | 'error';
 
 interface Props {
-  onComplete: () => void;
+  onComplete: () => Promise<void>;
+  onLoginWithOAuthBridge: () => Promise<void>;
+  onSwitchAccount: (accountId: string) => Promise<void>;
+  onUnlockWithPin: (accountId: string, pin: string) => Promise<void>;
   restoredUser?: SessionUser | null;
   knownAccounts?: SessionUser[];
   embedded?: boolean;
@@ -28,11 +40,28 @@ interface Props {
 
 const CARD_WIDTH = 400;
 const CARD_MIN_HEIGHT = 420;
+const LOGIN_CARD_MIN_HEIGHT = 356;
+const REAUTH_CARD_MIN_HEIGHT = 392;
 const PANEL_WIDTH = 250;
 const ARROW_SIZE = 8;
 const PANEL_GAP = 8;
 const PIN_LENGTH = 6;
 const PIN_SUBMIT_DELAY_MS = 140;
+
+const LOGIN_FORM_LAYOUT = {
+  logoSize: 72,
+  logoRadius: 18,
+  logoBottom: 14,
+  subtitleBottom: 16,
+  reauthSubtitleBottom: 10,
+  reauthAlertBottom: 14,
+  tabBottom: 16,
+};
+
+function loginCardMinHeight(loginState: LoginState, hasExpiredAccount: boolean): number {
+  if (loginState !== 'logged_out') return CARD_MIN_HEIGHT;
+  return hasExpiredAccount ? REAUTH_CARD_MIN_HEIGHT : LOGIN_CARD_MIN_HEIGHT;
+}
 
 function accountIdentityToSessionUser(account: AccountIdentity): SessionUser {
   return {
@@ -50,13 +79,19 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
-export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedded }: Props) {
+export function LoginPage({
+  onComplete,
+  onLoginWithOAuthBridge,
+  onSwitchAccount,
+  onUnlockWithPin,
+  restoredUser,
+  knownAccounts = [],
+  embedded,
+}: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('auth');
   const { providers, connections, loadAll, startAuth } = useOAuth2Store();
-  const { loginWithPassword } = useSessionStore();
-  const unlockWithPin = useAccountIdentityStore((s) => s.unlockWithPin);
-  const switchAccount = useAccountIdentityStore((s) => s.switchAccount);
+  const { accessStart, accessSubmitInviteCode, accessSubmitLogin } = useSessionStore();
 
   // restoredUser is only set when the session has real identity data (actorId + name).
   // If null, the user has no valid session — go directly to login form.
@@ -74,6 +109,16 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Interactive access-gate chain. When the Station's policy inserts an
+  // invite-code gate before login, `handleEmailLogin` pauses here: it holds
+  // the live attempt and renders the invite-code form until the code passes,
+  // then resumes into the login gate. `gateDecision` null means no chain is in
+  // flight (the legacy one-shot login path is unaffected).
+  const [gateDecision, setGateDecision] = useState<AccessDecision | null>(null);
+  const [inviteCode, setInviteCode] = useState('');
+  const [gateError, setGateError] = useState('');
+  const [gateLoading, setGateLoading] = useState(false);
 
   const [connectProvider, setConnectProvider] = useState<OAuth2ProviderSummary | null>(null);
   const [authState, setAuthState] = useState<AuthState>('idle');
@@ -205,19 +250,74 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     setLoginState('set_pin');
   }, [clearAccountSessionless]);
 
+  // Resume the chain once an attempt has cleared every pre-login gate: submit
+  // the held credentials against the login gate and land the session.
+  const finishLoginGate = useCallback(async (attemptId: string) => {
+    await accessSubmitLogin(attemptId, email.trim(), password);
+    setGateDecision(null);
+    setInviteCode('');
+    await continueAfterFreshAuth();
+  }, [accessSubmitLogin, email, password, continueAfterFreshAuth]);
+
   const handleEmailLogin = useCallback(async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!email.trim() || !password.trim()) return;
     setLoading(true);
+    setGateError('');
     try {
-      await loginWithPassword(email.trim(), password);
-      await continueAfterFreshAuth();
+      const decision = await accessStart();
+      const gate = currentGate(decision);
+      // The Station drives the chain. An invite-code gate pauses for input;
+      // anything else (login gate or open policy) proceeds straight to login.
+      if (isAccessBlocked(decision)) {
+        message.error(accessDecisionMessage(decision) || t('auth.gate.blocked.subtitle'));
+        return;
+      }
+      if (isInviteCodeGate(gate)) {
+        setGateDecision(decision);
+        setInviteCode('');
+        return;
+      }
+      await finishLoginGate(decision.attemptId);
     } catch (err: unknown) {
       message.error(errorMessage(err, t('auth.login.failed')));
     } finally {
       setLoading(false);
     }
-  }, [email, password, loginWithPassword, continueAfterFreshAuth, t]);
+  }, [email, password, accessStart, finishLoginGate, t]);
+
+  const handleSubmitInviteCode = useCallback(async () => {
+    if (!gateDecision?.attemptId || !inviteCode.trim()) return;
+    setGateLoading(true);
+    setGateError('');
+    try {
+      const decision = await accessSubmitInviteCode(gateDecision.attemptId, inviteCode.trim());
+      if (isAccessBlocked(decision)) {
+        setGateError(accessDecisionMessage(decision) || t('auth.gate.blocked.subtitle'));
+        setGateDecision(decision);
+        return;
+      }
+      if (isAccessGranted(decision) || !isInviteCodeGate(currentGate(decision))) {
+        // Invite passed: the chain has advanced to the login gate. Reuse the
+        // credentials already entered to land the session in one motion.
+        await finishLoginGate(gateDecision.attemptId);
+        return;
+      }
+      // Still on the invite gate (e.g. a multi-step schema) — keep the form up.
+      setGateDecision(decision);
+    } catch (err: unknown) {
+      setGateError(errorMessage(err, t('auth.gate.inviteCode.rejected')));
+    } finally {
+      setGateLoading(false);
+    }
+  }, [gateDecision, inviteCode, accessSubmitInviteCode, finishLoginGate, t]);
+
+  const handleCancelGate = useCallback(() => {
+    setGateDecision(null);
+    setInviteCode('');
+    setGateError('');
+    setGateLoading(false);
+  }, []);
 
   const handleOAuthConnect = useCallback((provider: OAuth2ProviderSummary) => {
     const btn = buttonRefs.current[provider.id];
@@ -263,8 +363,9 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
   const handleAuthDone = useCallback(async () => {
     setConnectProvider(null);
     setAuthState('idle');
+    await onLoginWithOAuthBridge();
     await continueAfterFreshAuth();
-  }, [continueAfterFreshAuth]);
+  }, [onLoginWithOAuthBridge, continueAfterFreshAuth]);
 
   const handleSwitchAccount = useCallback(() => {
     setConnectProvider(null);
@@ -365,7 +466,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
       // Non-PIN accounts share a single session.json, so the active token
       // might belong to a different account.
       try {
-        await switchAccount(account.accountId);
+        await onSwitchAccount(account.accountId);
         const { currentUser } = useSessionStore.getState();
         if (currentUser?.email && account.email && currentUser.email !== account.email) {
           // Restored session belongs to a different user — require fresh login
@@ -389,7 +490,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     // No saved session — go straight to the right login form for this
     // account's provider. This is the normal "stale picker entry" path.
     routeToProviderLogin(account, false);
-  }, [switchAccount, routeToProviderLogin, markAccountSessionless]);
+  }, [onSwitchAccount, routeToProviderLogin, markAccountSessionless]);
 
   // ── PIN Entry ──
 
@@ -425,8 +526,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     setPinLoading(true);
     setPinError('');
     try {
-      await unlockWithPin(selectedAccount.accountId, pin);
-      onComplete();
+      await onUnlockWithPin(selectedAccount.accountId, pin);
     } catch (err: any) {
       const details = err instanceof AuthCommandException ? err.details : undefined;
 
@@ -479,7 +579,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
     } finally {
       setPinLoading(false);
     }
-  }, [selectedAccount, pinDigits, onComplete, t, unlockWithPin, routeToProviderLogin, markAccountSessionless]);
+  }, [selectedAccount, pinDigits, t, onUnlockWithPin, routeToProviderLogin, markAccountSessionless]);
 
   // Auto-submit PIN when all digits are entered
   useEffect(() => {
@@ -684,6 +784,35 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
 
   const panelOpen = !!connectProvider && loginState === 'logged_out';
   const hasSignedInUser = hasValidRestoredUser;
+  const cardMinHeight = loginCardMinHeight(loginState, !!expiredAccount);
+  const networkIntroLabels = useMemo(() => ({
+    title: t('auth.network.title'),
+    people: {
+      alice: { name: t('auth.network.alice'), handle: t('auth.network.alice.handle'), station: t('auth.network.alice.station') },
+      bob: { name: t('auth.network.bob'), handle: t('auth.network.bob.handle'), station: t('auth.network.bob.station') },
+      carol: { name: t('auth.network.carol'), handle: t('auth.network.carol.handle'), station: t('auth.network.carol.station') },
+      dana: { name: t('auth.network.dana'), handle: t('auth.network.dana.handle'), station: t('auth.network.dana.station') },
+      evan: { name: t('auth.network.evan'), handle: t('auth.network.evan.handle'), station: t('auth.network.evan.station') },
+    },
+    relays: {
+      fern: t('auth.network.relay.fern'),
+      tide: t('auth.network.relay.tide'),
+      ridge: t('auth.network.relay.ridge'),
+      loom: t('auth.network.relay.loom'),
+    },
+    kinds: {
+      msg: t('auth.network.kind.msg'),
+      img: t('auth.network.kind.img'),
+      video: t('auth.network.kind.video'),
+      file: t('auth.network.kind.file'),
+    },
+    card: {
+      station: t('auth.network.card.station'),
+      via: t('auth.network.card.via'),
+      relay: t('auth.network.card.relay'),
+      peer: t('auth.network.card.peer'),
+    },
+  }), [t]);
 
   useEffect(() => {
     if (!panelOpen) return;
@@ -701,7 +830,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
 
   const cardStyle: React.CSSProperties = {
     width: CARD_WIDTH,
-    minHeight: CARD_MIN_HEIGHT,
+    minHeight: cardMinHeight,
     background: token.colorBgContainer,
     borderRadius: 24,
     boxShadow: token.boxShadow,
@@ -857,18 +986,18 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
               src={BRANDING.logos.desktop}
               alt={BRANDING.appName}
               style={{
-                width: 48,
-                height: 48,
-                borderRadius: 12,
-                marginBottom: 12,
+                width: LOGIN_FORM_LAYOUT.logoSize,
+                height: LOGIN_FORM_LAYOUT.logoSize,
+                borderRadius: LOGIN_FORM_LAYOUT.logoRadius,
+                marginBottom: LOGIN_FORM_LAYOUT.logoBottom,
               }}
             />
           )}
           <h2 style={{ fontSize: 20, fontWeight: 700, color: token.colorText, margin: '0 0 4px' }}>
-            {t('auth.accountPicker.title', { defaultValue: 'Choose Account' })}
+            {t('auth.accountPicker.title')}
           </h2>
           <Text type="secondary" style={{ fontSize: 13, marginBottom: 20 }}>
-            {t('auth.accountPicker.subtitle', { defaultValue: 'Select an account to continue' })}
+            {t('auth.accountPicker.subtitle')}
           </Text>
 
           <div style={{
@@ -927,9 +1056,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                       // attempting to resume. Surface that up-front so the
                       // user isn't surprised.
                       <span
-                        title={t('auth.accountPicker.signInRequired', {
-                          defaultValue: 'Sign in required',
-                        })}
+                        title={t('auth.accountPicker.signInRequired')}
                         style={{
                           fontSize: 10,
                           fontWeight: 600,
@@ -941,7 +1068,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                           flexShrink: 0,
                         }}
                       >
-                        {t('auth.accountPicker.signInBadge', { defaultValue: 'Sign in' })}
+                        {t('auth.accountPicker.signInBadge')}
                       </span>
                     )}
                     {account.hasPin && (
@@ -966,7 +1093,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
             icon={<LogIn size={14} />}
             onClick={handleNewAccountLogin}
           >
-            {t('auth.accountPicker.addAccount', { defaultValue: 'Sign in with another account' })}
+            {t('auth.accountPicker.addAccount')}
           </Button>
         </>
       );
@@ -1002,6 +1129,19 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
               radius={12}
               border={`3px solid ${token.colorBgContainer}`}
             />
+            {/* Unlock progress lives on the avatar as a translucent cover so the
+                spinner never reflows the PIN inputs below (no layout jitter). */}
+            {pinLoading && (
+              <div
+                style={{
+                  position: 'absolute', inset: 0, borderRadius: 12,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'rgba(255, 255, 255, 0.9)',
+                }}
+              >
+                <Spin size="small" />
+              </div>
+            )}
           </div>
 
           <h3 style={{ fontSize: 16, fontWeight: 600, color: token.colorText, margin: '0 0 4px' }}>
@@ -1048,10 +1188,6 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                 <Text type="danger" style={{ fontSize: 12, marginTop: 10, textAlign: 'center' }}>
                   {pinError}
                 </Text>
-              )}
-
-              {pinLoading && (
-                <Spin size="small" style={{ marginTop: 12 }} />
               )}
             </>
           )}
@@ -1282,7 +1418,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
               <>
                 <ArrowLeft size={14} style={{ color: token.colorTextTertiary }} />
                 <Text style={{ fontSize: 11, color: token.colorTextSecondary }}>
-                  {t('auth.accountPicker.back', { defaultValue: 'Accounts' })}
+                  {t('auth.accountPicker.back')}
                 </Text>
               </>
             ) : (
@@ -1304,20 +1440,29 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
             src={BRANDING.logos.desktop}
             alt={BRANDING.appName}
             style={{
-                width: 64,
-                height: 64,
-                borderRadius: 16,
-                marginBottom: 16,
-              }}
+              width: LOGIN_FORM_LAYOUT.logoSize,
+              height: LOGIN_FORM_LAYOUT.logoSize,
+              borderRadius: LOGIN_FORM_LAYOUT.logoRadius,
+              marginBottom: LOGIN_FORM_LAYOUT.logoBottom,
+            }}
           />
         )}
 
-        <h2 style={{ fontSize: 22, fontWeight: 700, color: token.colorText, margin: '0 0 6px' }}>
+        <h2 style={{ fontSize: 22, fontWeight: 700, color: token.colorText, margin: '0 0 4px' }}>
           {expiredAccount
             ? t('auth.login.welcomeBackTitle', { defaultValue: 'Welcome back' })
             : t('auth.login.title')}
         </h2>
-        <Text type="secondary" style={{ fontSize: 13, marginBottom: expiredAccount ? 12 : 24, textAlign: 'center' }}>
+        <Text
+          type="secondary"
+          style={{
+            fontSize: 13,
+            marginBottom: expiredAccount
+              ? LOGIN_FORM_LAYOUT.reauthSubtitleBottom
+              : LOGIN_FORM_LAYOUT.subtitleBottom,
+            textAlign: 'center',
+          }}
+        >
           {expiredAccount
             ? reauthReason === 'revoked'
               ? t('auth.login.expiredSubtitle', {
@@ -1338,7 +1483,12 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                 ? <AlertTriangle size={18} style={{ color: token.colorWarningText }} />
                 : <Lock size={18} style={{ color: token.colorInfoText }} />
             }
-            style={{ width: '100%', marginBottom: 18, borderRadius: 12, padding: '10px 12px' }}
+            style={{
+              width: '100%',
+              marginBottom: LOGIN_FORM_LAYOUT.reauthAlertBottom,
+              borderRadius: 12,
+              padding: '10px 12px',
+            }}
             message={
               <Text
                 strong
@@ -1380,7 +1530,7 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
             padding: 4,
             borderRadius: 10,
             display: 'flex',
-            marginBottom: 24,
+            marginBottom: LOGIN_FORM_LAYOUT.tabBottom,
             border: `1px solid ${token.colorBorderSecondary}`,
           }}
         >
@@ -1430,6 +1580,70 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
                   </Button>
                 </>
               )}
+            </Flexbox>
+          ) : gateDecision ? (
+            <Flexbox gap={10}>
+              <Alert
+                type="info"
+                showIcon
+                icon={<ShieldCheck size={18} style={{ color: token.colorInfoText }} />}
+                style={{ width: '100%', borderRadius: 12, padding: '10px 12px' }}
+                message={
+                  <Text strong style={{ fontSize: 13, color: token.colorInfoText }}>
+                    {currentGate(gateDecision)?.title || t('auth.gate.inviteCode.title')}
+                  </Text>
+                }
+                description={
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {currentGate(gateDecision)?.description || t('auth.gate.inviteCode.subtitle')}
+                  </Text>
+                }
+              />
+              <Flexbox horizontal gap={8} align="center">
+                <Input
+                  size="large"
+                  autoFocus
+                  prefix={<Lock size={16} style={{ color: token.colorTextQuaternary }} />}
+                  placeholder={
+                    parseGateFields(currentGate(gateDecision))[0]?.placeholder
+                      || parseGateFields(currentGate(gateDecision))[0]?.label
+                      || t('auth.gate.inviteCode.placeholder')
+                  }
+                  value={inviteCode}
+                  onChange={e => setInviteCode(e.target.value)}
+                  onPressEnter={handleSubmitInviteCode}
+                  style={{ borderRadius: 12, height: 44, flex: 1 }}
+                />
+                <Button
+                  type="primary"
+                  loading={gateLoading}
+                  disabled={!inviteCode.trim() || gateLoading}
+                  onClick={handleSubmitInviteCode}
+                  style={{
+                    height: 44,
+                    borderRadius: 12,
+                    fontWeight: 500,
+                    padding: '0 16px',
+                    flexShrink: 0,
+                  }}
+                  icon={!gateLoading ? <ArrowRight size={16} /> : undefined}
+                  iconPosition="end"
+                >
+                  {t('auth.gate.inviteCode.submit')}
+                </Button>
+              </Flexbox>
+              {gateError && (
+                <Text type="danger" style={{ fontSize: 12 }}>{gateError}</Text>
+              )}
+              <Button
+                type="text"
+                size="small"
+                icon={<ArrowLeft size={14} />}
+                onClick={handleCancelGate}
+                style={{ alignSelf: 'flex-start' }}
+              >
+                {t('auth.gate.inviteCode.back')}
+              </Button>
             </Flexbox>
           ) : (
             <form onSubmit={handleEmailLogin}>
@@ -1597,12 +1811,13 @@ export function LoginPage({ onComplete, restoredUser, knownAccounts = [], embedd
   if (embedded) return cardContent;
 
   return (
-    <Flexbox
-      align="center"
-      justify="center"
-      style={{ width: '100%', height: '100%', background: token.colorBgLayout }}
-    >
-      {cardContent}
-    </Flexbox>
+    <div className="login-network-shell">
+      <div className="login-network-backdrop" aria-hidden="true">
+        <StationNetworkIntro labels={networkIntroLabels} />
+      </div>
+      <div className="login-card-region">
+        {cardContent}
+      </div>
+    </div>
   );
 }

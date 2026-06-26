@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { api, AuthCommandException, type AuthSessionResponse } from '../services/desktop_api';
 import { markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
+import { normalizeDecision, type AccessDecision } from '../services/accessGate';
 
 // ── Types ──
 
@@ -34,9 +35,17 @@ interface SessionStore {
 
   loginWithPassword: (account: string, password: string) => Promise<void>;
   loginWithOAuth: (providerId: string) => Promise<void>;
+  /** Open an interactive access attempt and return the Station's first decision. */
+  accessStart: () => Promise<AccessDecision>;
+  /** Redeem an invite code against a live attempt; returns the re-evaluated decision. */
+  accessSubmitInviteCode: (attemptId: string, code: string) => Promise<AccessDecision>;
+  /** Submit the login gate for a live attempt; on grant lands the session. */
+  accessSubmitLogin: (attemptId: string, account: string, password: string) => Promise<void>;
   restoreSession: () => Promise<void>;
   logout: () => Promise<void>;
   activateAppletLaunchSession: (user: CurrentUser) => void;
+  /** Update the current actor profile projection after identity reconciliation. */
+  updateProfile: (profile: Partial<Pick<CurrentUser, 'name' | 'email' | 'avatarUrl'>>) => void;
   /** Update the remote avatar URL after upload or profile sync. */
   updateAvatar: (avatarUrl: string) => void;
 }
@@ -76,6 +85,26 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     });
   },
 
+  accessStart: async () => {
+    const resp = await api.accessStart();
+    return normalizeDecision(resp.decision);
+  },
+
+  accessSubmitInviteCode: async (attemptId, code) => {
+    const resp = await api.accessSubmitInviteCode({ attempt_id: attemptId, invite_code: code });
+    return normalizeDecision(resp.decision);
+  },
+
+  accessSubmitLogin: async (attemptId, account, password) => {
+    markLocalIdentityAction();
+    const resp = await api.accessSubmitLogin({ attempt_id: attemptId, account, password });
+    await runIdentityPipeline({
+      reason: 'login',
+      actorId: resp.actor_id ?? null,
+      loginMethod: 'password',
+    });
+  },
+
   loginWithOAuth: async (_providerId: string) => {
     markLocalIdentityAction();
     const resp = await api.ensureStationSession();
@@ -107,16 +136,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   logout: async () => {
     markLocalIdentityAction();
-    // Stop the peer-presence SSE supervisor before tearing down auth state,
-    // otherwise the Rust thread would keep retrying with a stale token in
-    // an exponential-backoff loop until process exit. Best-effort: a
-    // failure here just leaves the supervisor running, which is annoying
-    // but not user-facing.
-    try {
-      await api.friendChatPresenceStop();
-    } catch {
-      // noop
-    }
     try {
       await api.realtimeStreamStop();
     } catch {
@@ -136,6 +155,18 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   activateAppletLaunchSession: (user) => {
     set({ currentUser: user, authenticated: true, restoring: false });
+  },
+
+  updateProfile: (profile) => {
+    set((state) => {
+      if (!state.currentUser) return state;
+      return {
+        currentUser: {
+          ...state.currentUser,
+          ...profile,
+        },
+      };
+    });
   },
 
   updateAvatar: (avatarUrl: string) => {

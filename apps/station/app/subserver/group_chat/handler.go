@@ -100,6 +100,8 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("gc-invite", "/group-chat/invite", server.POST, s.handleInvite, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-join", "/group-chat/join", server.POST, s.handleJoin, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-leave", "/group-chat/leave", server.POST, s.handleLeave, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("gc-transfer-ownership", "/group-chat/ownership/transfer", server.POST, s.handleTransferOwnership, logIDWrapper, s.jwtWrapper),
+		server.NewTypedHandler("gc-dissolve", "/group-chat/dissolve", server.POST, s.handleDissolve, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-members", "/group-chat/members", server.GET, s.handleMembers, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-remove-member", "/group-chat/member/remove", server.POST, s.handleRemoveMember, logIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("gc-update-member", "/group-chat/member/update", server.PUT, s.handleUpdateMember, logIDWrapper, s.jwtWrapper),
@@ -179,7 +181,7 @@ func (s *subServer) handleList(ctx context.Context, req *chat.ListGroupsRequest)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	items := s.appService.ListGroups()
+	items := s.appService.ListGroups(subject.ID)
 	limit := int(req.Limit)
 	if limit <= 0 || limit > 100 {
 		limit = 50
@@ -263,7 +265,13 @@ func (s *subServer) handleSendMessage(ctx context.Context, req *chat.SendGroupMe
 	// `content` column stays empty (and would be rejected if a future
 	// migration removed the column entirely, per the proto's
 	// `[deprecated = true]` annotation).
-	item := s.appService.SendMessage(req.GroupUlid, subject.ID, msgType, "", req.ReplyToUlid, req.GetThreadRootUlid(), atts, req.GetEncryptedPayload())
+	item, err := s.appService.SendMessageByActor(subject.ID, req.GroupUlid, msgType, "", req.ReplyToUlid, req.GetThreadRootUlid(), atts, req.GetEncryptedPayload())
+	if err != nil {
+		if err == application_group_chat.ErrNotMember || err == application_group_chat.ErrMemberMuted {
+			return nil, server.Forbidden(err.Error())
+		}
+		return nil, server.InternalErrorWithCause("failed to send group message", err)
+	}
 	publishGroupMessageToBus(item, collectGroupMemberDIDs(s, req.GroupUlid))
 	var respEnc []byte
 	if len(item.EncryptedPayload) > 0 {
@@ -305,8 +313,11 @@ func (s *subServer) handleGetMessages(ctx context.Context, req *chat.GetGroupMes
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	items, err := s.appService.ListMessages(req.GroupUlid, req.BeforeUlid, limit+1)
+	items, err := s.appService.ListMessagesByActor(subject.ID, req.GroupUlid, req.BeforeUlid, limit+1)
 	if err != nil {
+		if err == application_group_chat.ErrNotMember {
+			return nil, server.Forbidden(err.Error())
+		}
 		return nil, server.InternalErrorWithCause("failed to list messages", err)
 	}
 	hasMore := len(items) > limit
@@ -567,6 +578,51 @@ func (s *subServer) handleLeave(ctx context.Context, req *chat.LeaveGroupRequest
 	}
 	publishGroupMembershipChange(req.GroupUlid, subject.ID, realtime.GroupMembershipChange_KIND_LEFT, others)
 	return &chat.LeaveGroupResponse{Success: true}, nil
+}
+
+func (s *subServer) handleTransferOwnership(ctx context.Context, req *chat.TransferGroupOwnershipRequest) (*chat.TransferGroupOwnershipResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.GroupUlid == "" || req.NextOwnerDid == "" {
+		return nil, server.BadRequest("group_ulid and next_owner_did are required")
+	}
+	groupItem, err := s.appService.TransferOwnershipByActor(subject.ID, req.GroupUlid, req.NextOwnerDid)
+	if err != nil {
+		if err == application_group_chat.ErrPermissionDenied || err == application_group_chat.ErrInvalidOwnerTransfer {
+			return nil, server.Forbidden(err.Error())
+		}
+		if err == application_group_chat.ErrNotMember || err == application_group_chat.ErrMemberNotFound || err == application_group_chat.ErrGroupNotFound {
+			return nil, server.NotFound(err.Error())
+		}
+		return nil, server.InternalError("transfer group ownership failed")
+	}
+	recipients := collectGroupMemberDIDs(s, req.GroupUlid)
+	publishGroupMembershipChange(req.GroupUlid, req.NextOwnerDid, realtime.GroupMembershipChange_KIND_TRANSFERRED, recipients)
+	return &chat.TransferGroupOwnershipResponse{Group: toProtoGroupFromDomain(groupItem)}, nil
+}
+
+func (s *subServer) handleDissolve(ctx context.Context, req *chat.DissolveGroupRequest) (*chat.DissolveGroupResponse, error) {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if req.GroupUlid == "" {
+		return nil, server.BadRequest("group_ulid is required")
+	}
+	recipients := collectGroupMemberDIDs(s, req.GroupUlid)
+	if err := s.appService.DissolveGroupByActor(subject.ID, req.GroupUlid); err != nil {
+		if err == application_group_chat.ErrPermissionDenied {
+			return nil, server.Forbidden(err.Error())
+		}
+		if err == application_group_chat.ErrNotMember || err == application_group_chat.ErrGroupNotFound {
+			return nil, server.NotFound(err.Error())
+		}
+		return nil, server.InternalError("dissolve group failed")
+	}
+	publishGroupMembershipChange(req.GroupUlid, subject.ID, realtime.GroupMembershipChange_KIND_DISSOLVED, recipients)
+	return &chat.DissolveGroupResponse{Success: true}, nil
 }
 
 func (s *subServer) handleMembers(ctx context.Context, req *chat.GetGroupMembersRequest) (*chat.GetGroupMembersResponse, error) {

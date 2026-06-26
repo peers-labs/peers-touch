@@ -1,3 +1,5 @@
+export { readableErrorMessage } from '../../utils/errorMessage';
+
 export interface StationSuccessEnvelope<T> {
   code?: string;
   msg?: string;
@@ -50,6 +52,7 @@ export interface FriendChatSession {
   participantBAvatar: string;
   participantAOnline: boolean;
   participantBOnline: boolean;
+  lastMessage?: FriendChatMessage;
 }
 
 export interface FriendChatMessage {

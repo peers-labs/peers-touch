@@ -8,3 +8,14 @@ peers:
           realm: peers-touch
           public-ip: 127.0.0.1
           auth-secret: peers-touch-secret
+          # STUN URLs advertised to clients via /api/v1/turn/ice-servers.
+          # Omit to fall back to the public default (stun:stun.l.google.com:19302);
+          # set your own to avoid leaking client IPs to a third-party STUN service.
+          stun-urls:
+            - stun:stun.l.google.com:19302
+          # Lifetime of the ephemeral TURN credentials handed to clients
+          # (Go duration, e.g. 24h, 1h30m). Omit to use the default (24h).
+          credential-ttl: 24h
+          # Human-readable label embedded in the short-term credential username
+          # ("<expiry>:<label>"). Omit to use the default (webrtc-user).
+          credential-username: webrtc-user

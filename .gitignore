@@ -82,6 +82,7 @@ apps/station/app/peers-touch-station
 apps/station/app/app
 apps/station/app/main
 apps/station/frame/example/**/server
+apps/station/.gomodcache/
 external
 apps/mobile/android/gradle/wrapper/gradle-wrapper.jar
 

@@ -5,7 +5,7 @@ import { log } from '../../../utils/logger';
 interface UseChatVoiceRecorderOptions {
   disabled: boolean;
   editing: boolean;
-  addFiles: (files: File[]) => void;
+  onRecorded: (file: File, durationSeconds: number) => void;
   onDenied: () => void;
   onUnsupported: () => void;
 }
@@ -13,7 +13,7 @@ interface UseChatVoiceRecorderOptions {
 export function useChatVoiceRecorder({
   disabled,
   editing,
-  addFiles,
+  onRecorded,
   onDenied,
   onUnsupported,
 }: UseChatVoiceRecorderOptions) {
@@ -22,6 +22,7 @@ export function useChatVoiceRecorder({
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<number | null>(null);
   const cancelledRef = useRef(false);
+  const recordingStartedAtRef = useRef<number | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
 
@@ -58,12 +59,19 @@ export function useChatVoiceRecorder({
       };
       recorder.onstop = () => {
         const chunks = chunksRef.current;
+        const startedAt = recordingStartedAtRef.current ?? Date.now();
         chunksRef.current = [];
+        recordingStartedAtRef.current = null;
         if (cancelledRef.current || chunks.length === 0) return;
         const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
-        addFiles([new File([blob], `voice-${Date.now()}.webm`, { type: blob.type || 'audio/webm' })]);
+        const durationSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+        onRecorded(
+          new File([blob], `voice-${Date.now()}.webm`, { type: blob.type || 'audio/webm' }),
+          durationSeconds,
+        );
       };
       setRecordingSeconds(0);
+      recordingStartedAtRef.current = Date.now();
       timerRef.current = window.setInterval(() => {
         setRecordingSeconds((seconds) => seconds + 1);
       }, 1000);
@@ -73,7 +81,7 @@ export function useChatVoiceRecorder({
       log.error('chat', 'voice recording start failed', error);
       onDenied();
     }
-  }, [addFiles, disabled, editing, onDenied, onUnsupported, recording]);
+  }, [disabled, editing, onDenied, onRecorded, onUnsupported, recording]);
 
   useEffect(() => () => {
     streamRef.current?.getTracks().forEach((track) => track.stop());

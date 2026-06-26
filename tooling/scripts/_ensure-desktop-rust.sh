@@ -277,6 +277,7 @@ ensure_desktop_rust_ready() {
     export PT_GATEWAY_PORT="$gw_port"
     export PT_PROFILE="$profile"
     export PEERS_STATION_URL="${PEERS_STATION_URL:-}"
+    export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
     pnpm tauri dev --config "$tauri_config"
   ) &
   TAURI_PID=$!

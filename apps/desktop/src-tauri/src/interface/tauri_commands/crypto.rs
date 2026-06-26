@@ -8,7 +8,7 @@ use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::application::chat_storage;
 use crate::application::session_resolver;
-use crate::contracts::{ChatSearchLocalInput, StubPayload};
+use crate::contracts::{ChatIndexLocalInput, ChatSearchLocalInput, StubPayload};
 use crate::domain::crypto::sender_keys::{
     self, GroupCiphertextWire, SenderChainState, SenderKeyDistributionPayload,
 };
@@ -87,6 +87,65 @@ pub fn chat_search_local(
         }
     };
     to_stub("chat_search_local", json!({ "results": items }))
+}
+
+#[tauri::command]
+pub fn chat_index_local_messages(
+    input: ChatIndexLocalInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let user_scope = user_scope_from_state(&state, &window);
+    let records = input
+        .messages
+        .into_iter()
+        .filter_map(|item| {
+            let scope = item.scope.trim();
+            if scope != "friend" && scope != "group" {
+                return None;
+            }
+            let conversation_id = item.conversation_id.trim();
+            let message_id = item.message_id.trim();
+            let content = item.content.trim();
+            if conversation_id.is_empty() || message_id.is_empty() || content.is_empty() {
+                return None;
+            }
+            Some(local_chat_store::LocalChatRecord {
+                scope: scope.to_string(),
+                conversation_id: conversation_id.to_string(),
+                message_id: message_id.to_string(),
+                sender_did: item.sender_did.trim().to_string(),
+                content: content.to_string(),
+                reply_to_ulid: item
+                    .reply_to_ulid
+                    .as_deref()
+                    .map(str::trim)
+                    .unwrap_or("")
+                    .to_string(),
+                thread_root_ulid: item
+                    .thread_root_ulid
+                    .as_deref()
+                    .map(str::trim)
+                    .unwrap_or("")
+                    .to_string(),
+                sent_at: item.sent_at,
+            })
+        })
+        .collect::<Vec<_>>();
+    let indexed = match chat_storage::index_plaintext_messages(user_scope.as_str(), &records) {
+        Ok(count) => count,
+        Err(reason) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Failed to index local messages: {}", reason),
+                None,
+            );
+        }
+    };
+    to_stub(
+        "chat_index_local_messages",
+        json!({ "indexed_count": indexed }),
+    )
 }
 
 #[tauri::command]

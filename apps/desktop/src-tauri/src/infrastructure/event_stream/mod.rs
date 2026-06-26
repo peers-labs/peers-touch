@@ -13,10 +13,8 @@
 //! * 30s no-frame deadline (heartbeat or business event resets it);
 //!   silent-NAT detection without depending on TCP keepalive.
 //!
-//! The module is sync/blocking to match the existing
-//! `presence_stream` supervisor pattern. Async migration is a future
-//! concern (would benefit voice/video signaling with multiple
-//! concurrent streams; not yet justified for this single connection).
+//! The module is sync/blocking because there is only one canonical
+//! realtime connection per actor. Async migration is a future concern.
 
 use std::collections::HashMap;
 use std::fs;
@@ -56,9 +54,9 @@ pub const EVENT_CONNECTION_STATE: &str = "realtime:connection-state";
 // ---------------------------------------------------------------------
 // Per-actor supervisor registry.
 //
-// Mirrors `application::presence_stream` so a logout / actor switch
-// can shut down exactly the supervisor that belongs to the departing
-// actor without touching anyone else's stream. Keyed by `actor_id`.
+// A logout / actor switch can shut down exactly the supervisor that
+// belongs to the departing actor without touching anyone else's stream.
+// Keyed by `actor_id`.
 // ---------------------------------------------------------------------
 
 fn registry() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
@@ -423,8 +421,7 @@ fn emit_state(app: &AppHandle, last: &mut Option<bool>, connected: bool, reason:
 // The runtime supervisor is integration-shaped (network + Tauri
 // AppHandle), so unit tests focus on the small pure helpers — cursor
 // path resolution and SSE line parsing edge cases. The full network
-// path is covered by the existing presence_stream model and by the
-// Station-side bus tests on the server.
+// path is covered by Station-side bus tests on the server.
 // ---------------------------------------------------------------------
 
 #[cfg(test)]

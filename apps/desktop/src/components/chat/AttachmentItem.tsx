@@ -9,16 +9,29 @@
 // resolved URL in the system browser. Image attachments render as
 // images first; filename metadata is intentionally hidden.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { theme, Typography, Tooltip } from 'antd';
-import { ExternalLink, FileAudio, FileImage, FileVideo, Globe, Lock, MessageSquare, Paperclip } from 'lucide-react';
+import {
+  ExternalLink,
+  FileAudio,
+  FileImage,
+  FileVideo,
+  Globe,
+  Lock,
+  MessageSquare,
+  Paperclip,
+  Pause,
+  Play,
+  Volume2,
+} from 'lucide-react';
 import {
   chatMediaKindForAttachment,
   formatChatAttachmentSize,
 } from '@peers-touch/client-chat-core';
 import { useDecryptedOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
+import { formatMediaDurationSeconds } from '../../utils/mediaDisplay';
 import type { FriendMessageAttachment } from '../../gen/proto/domain/chat/friend_chat_pb';
 import type { GroupMessageAttachment } from '../../gen/proto/domain/chat/group_chat_pb';
 
@@ -142,11 +155,11 @@ function attachmentTypeLabel(
 interface AttachmentDetailsProps {
   actionLabel: string;
   actionVisible: boolean;
-  filename: string;
   kind: 'image' | 'video' | 'audio' | 'file';
   isOwn: boolean;
   onOpen: () => void;
   openTitle: string;
+  primaryLabel?: string;
   sizeLabel: string;
   src: string | null;
   token: ReturnType<typeof theme.useToken>['token'];
@@ -156,11 +169,11 @@ interface AttachmentDetailsProps {
 function AttachmentDetails({
   actionLabel,
   actionVisible,
-  filename,
   kind,
   isOwn,
   onOpen,
   openTitle,
+  primaryLabel,
   sizeLabel,
   src,
   token,
@@ -203,9 +216,11 @@ function AttachmentDetails({
             </Text>
           )}
         </Flexbox>
-        <Text ellipsis style={{ fontSize: 12, fontWeight: 500, color: textColor }}>
-          {filename}
-        </Text>
+        {primaryLabel && (
+          <Text ellipsis style={{ fontSize: 12, fontWeight: 500, color: textColor }}>
+            {primaryLabel}
+          </Text>
+        )}
       </Flexbox>
       {src && (
         <Tooltip title={openTitle}>
@@ -246,8 +261,11 @@ function AttachmentDetails({
 export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
   const { t } = useTranslation('chat');
   const { token } = theme.useToken();
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [hovered, setHovered] = useState(false);
   const [previewFailed, setPreviewFailed] = useState(false);
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioDuration, setAudioDuration] = useState('');
   const src = useDecryptedOssAttachmentUrl(attachment);
   const attachmentKind = chatMediaKindForAttachment(attachment);
   const isImage = attachmentKind === 'image';
@@ -258,9 +276,12 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
   const filename = attachment.filename?.trim() || t('chat.social.messageArea.attachmentUnnamed');
   const typeLabel = attachmentTypeLabel(attachmentKind, attachment, t);
   const sizeLabel = formatChatAttachmentSize(attachment.size);
+  const audioDurationLabel = audioDuration || formatMediaDurationSeconds(Number(
+    (attachment as Attachment & { durationSeconds?: number }).durationSeconds ?? 0,
+  ));
   const actionLabel = t('chat.social.messageArea.attachmentOpen');
   const openTitle = t('chat.social.messageArea.attachmentOpenOrDownload');
-  const canPreviewImage = isImage && src && !previewFailed;
+  const canPreviewImage = Boolean(isImage && src && !previewFailed);
   const cardBackground = isOwn
     ? hovered
       ? 'rgba(255,255,255,0.22)'
@@ -274,11 +295,16 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
     setPreviewFailed(false);
   }, [attachment.cid, src]);
 
+  useEffect(() => {
+    setAudioDuration('');
+    setAudioPlaying(false);
+  }, [attachment.cid, src]);
+
   const openAttachment = () => {
     if (src) window.open(src, '_blank');
   };
 
-  const handleKeyDown = (ev: React.KeyboardEvent<HTMLDivElement>) => {
+  const handleKeyDown = (ev: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!src) return;
     if (ev.key === 'Enter' || ev.key === ' ') {
       ev.preventDefault();
@@ -286,12 +312,12 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
     }
   };
 
-  if (canPreviewImage) {
+  if (isImage) {
     return (
       <Flexbox gap={3} style={{ alignSelf: isOwn ? 'flex-end' : 'flex-start', maxWidth: '100%' }}>
         <Flexbox
-          role="button"
-          tabIndex={0}
+          role={src ? 'button' : undefined}
+          tabIndex={src ? 0 : undefined}
           onClick={openAttachment}
           onKeyDown={handleKeyDown}
           onMouseEnter={() => setHovered(true)}
@@ -303,24 +329,45 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
             borderRadius: 6,
             background: 'transparent',
             boxShadow: hovered ? token.boxShadowTertiary : 'none',
-            cursor: 'pointer',
+            cursor: src ? 'pointer' : 'default',
             transition: 'background 120ms ease, box-shadow 120ms ease',
           }}
         >
-          <img
-            src={src}
-            alt={filename}
-            style={{
-              display: 'block',
-              width: 'auto',
-              maxWidth: '100%',
-              maxHeight: 260,
-              objectFit: 'contain',
-              background: 'transparent',
-            }}
-            onError={() => setPreviewFailed(true)}
-          />
+          {canPreviewImage && src ? (
+            <img
+              src={src}
+              alt={filename}
+              style={{
+                display: 'block',
+                width: 'auto',
+                maxWidth: '100%',
+                maxHeight: 260,
+                objectFit: 'contain',
+                background: 'transparent',
+              }}
+              onError={() => setPreviewFailed(true)}
+            />
+          ) : (
+            <Flexbox
+              align="center"
+              justify="center"
+              style={{
+                width: 160,
+                height: 96,
+                borderRadius: 8,
+                background: isOwn ? 'rgba(255,255,255,0.15)' : token.colorFillTertiary,
+                color: isOwn ? '#fff' : token.colorTextSecondary,
+              }}
+            >
+              <FileImage size={22} />
+            </Flexbox>
+          )}
         </Flexbox>
+        {sizeLabel && (
+          <Text style={{ alignSelf: isOwn ? 'flex-end' : 'flex-start', fontSize: 10, color: token.colorTextQuaternary }}>
+            {sizeLabel}
+          </Text>
+        )}
         {showHint && chip && <VisibilityBadge chip={chip} />}
       </Flexbox>
     );
@@ -359,11 +406,11 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
             <AttachmentDetails
               actionLabel={actionLabel}
               actionVisible={hovered}
-              filename={filename}
               kind={attachmentKind}
               isOwn={isOwn}
               onOpen={openAttachment}
               openTitle={openTitle}
+              primaryLabel={filename}
               sizeLabel={sizeLabel}
               src={src}
               token={token}
@@ -376,39 +423,80 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
     );
   }
 
-  if (src && isAudio) {
+  if (isAudio) {
+    const toggleAudioPlayback = () => {
+      const audio = audioRef.current;
+      if (!audio || !src) return;
+      if (audio.paused) {
+        audio.play().catch(() => {
+          setAudioPlaying(false);
+        });
+      } else {
+        audio.pause();
+      }
+    };
+    const voiceBubbleBackground = isOwn
+      ? hovered
+        ? '#8DEA90'
+        : '#95EC97'
+      : hovered
+        ? token.colorFillSecondary
+        : token.colorBgContainer;
+    const voiceTextColor = isOwn ? '#111827' : token.colorText;
+    const voiceSecondaryColor = isOwn ? 'rgba(17,24,39,0.72)' : token.colorTextSecondary;
+
     return (
-      <Flexbox gap={3} style={{ maxWidth: '100%' }}>
-        <Flexbox
-          gap={8}
+      <Flexbox gap={3} style={{ alignSelf: isOwn ? 'flex-end' : 'flex-start', maxWidth: '100%' }}>
+        {src && (
+          <audio
+            ref={audioRef}
+            src={src}
+            preload="metadata"
+            onLoadedMetadata={(event) => {
+              setAudioDuration(formatMediaDurationSeconds(event.currentTarget.duration));
+            }}
+            onPlay={() => setAudioPlaying(true)}
+            onPause={() => setAudioPlaying(false)}
+            onEnded={() => setAudioPlaying(false)}
+          />
+        )}
+        <button
+          type="button"
+          disabled={!src}
+          aria-label={audioPlaying
+            ? t('chat.social.messageArea.voicePause')
+            : t('chat.social.messageArea.voicePlay')}
+          onClick={toggleAudioPlayback}
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
           style={{
-            width: 'min(300px, 100%)',
+            appearance: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            minWidth: 128,
+            width: 'min(210px, 100%)',
             maxWidth: '100%',
-            padding: '9px',
-            border: `1px solid ${cardBorder}`,
-            borderRadius: 8,
-            background: cardBackground,
+            padding: '10px 14px',
+            border: 0,
+            borderRadius: isOwn ? '10px 4px 10px 10px' : '4px 10px 10px 10px',
+            background: voiceBubbleBackground,
             boxShadow: hovered ? token.boxShadowTertiary : 'none',
+            color: voiceTextColor,
+            cursor: src ? 'pointer' : 'default',
+            opacity: src ? 1 : 0.72,
             transition: 'background 120ms ease, box-shadow 120ms ease',
           }}
         >
-          <audio src={src} controls preload="metadata" style={{ width: '100%', height: 32 }} />
-          <AttachmentDetails
-            actionLabel={actionLabel}
-            actionVisible={hovered}
-            filename={filename}
-            kind={attachmentKind}
-            isOwn={isOwn}
-            onOpen={openAttachment}
-            openTitle={openTitle}
-            sizeLabel={sizeLabel}
-            src={src}
-            token={token}
-            typeLabel={typeLabel}
-          />
-        </Flexbox>
+          <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0 }}>
+            {audioPlaying ? <Pause size={18} /> : <Play size={18} />}
+            <Text style={{ color: voiceTextColor, fontSize: 18, fontWeight: 700, lineHeight: 1 }}>
+              {audioDurationLabel || t('chat.social.messageArea.voiceDurationUnknown')}
+            </Text>
+          </Flexbox>
+          <Volume2 size={22} color={voiceSecondaryColor} />
+        </button>
         {showHint && chip && <VisibilityBadge chip={chip} />}
       </Flexbox>
     );
@@ -441,11 +529,11 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
         <AttachmentDetails
           actionLabel={actionLabel}
           actionVisible={hovered}
-          filename={filename}
           kind={attachmentKind}
           isOwn={isOwn}
           onOpen={openAttachment}
           openTitle={openTitle}
+          primaryLabel={filename}
           sizeLabel={sizeLabel}
           src={src}
           token={token}

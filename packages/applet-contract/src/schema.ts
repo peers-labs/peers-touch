@@ -121,6 +121,8 @@ export const APPLET_CONTRACT_JSON_SCHEMA = Object.freeze({
           type: 'array',
           items: { type: 'string', minLength: 1 },
         },
+        publicPathPrefix: { type: 'string', minLength: 1 },
+        stationPathPrefix: { type: 'string', minLength: 1 },
         streaming: { type: 'boolean' },
       },
     },

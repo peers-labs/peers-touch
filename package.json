@@ -45,6 +45,14 @@
     "applet:sdk-adapter-test": "pnpm --filter @peers-touch/applet-contract run build && pnpm --filter @peers-touch/applet-sdk run build && node tooling/scripts/applet-sdk-adapter-test.mjs",
     "applet:forbidden-producer-scan": "node tooling/scripts/applet-forbidden-producer-scan.mjs",
     "applet:create-generic-package": "node tooling/scripts/create-generic-complex-applet.mjs",
+    "applet:create-official": "node tooling/scripts/create-official-applet.mjs",
+    "applet:official-contract-gate": "node tooling/scripts/applet-official-contract-gate.mjs",
+    "applet:official-skill-discovery-gate": "node tooling/scripts/applet-official-skill-discovery-gate.mjs",
+    "applet:note-frontend-sdk-gate": "node tooling/scripts/applet-note-frontend-sdk-gate.mjs",
+    "applet:note-desktop-injection-gate": "pnpm applets:build && pnpm --filter @peers-touch/app-desktop run test:applet -- AppletManager.test.ts && node tooling/scripts/applet-note-desktop-injection-gate.mjs",
+    "applet:note-desktop-live-smoke": "pnpm applets:build && node tooling/scripts/applet-note-desktop-live-smoke.mjs",
+    "applet:note-real-product-gate": "node tooling/scripts/applet-note-real-product-gate.mjs",
+    "applet:note-mobile-contract-gate": "node tooling/scripts/applet-note-mobile-contract-gate.mjs",
     "prepare": "husky"
   },
   "devDependencies": {

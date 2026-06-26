@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/realtime/event.proto.
  */
 export const file_domain_realtime_event: GenFile = /*@__PURE__*/
-  fileDesc("Chtkb21haW4vcmVhbHRpbWUvZXZlbnQucHJvdG8SHXBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxIvIFCgtTdHJlYW1FdmVudBIQCghldmVudF9pZBgBIAEoCRISCgp0c191bml4X21zGAIgASgDEjYKAmhiGAogASgLMigucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuSGVhcnRiZWF0SAASQQoHbWVzc2FnZRgLIAEoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1lc3NhZ2VFbnZlbG9wZUgAEkAKB3JlY2VpcHQYDCABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlUmVjZWlwdEgAEjwKBnR5cGluZxgNIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLlR5cGluZ1N0YXRlSAASPwoIcHJlc2VuY2UYDiABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5QcmVzZW5jZUZsaXBIABI+CglzaWduYWxpbmcYDyABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5DYWxsU2lnbmFsSAASNwoGcmVzeW5jGBAgASgLMiUucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuUmVzeW5jSAASQgoIbXV0YXRpb24YESABKAsyLi5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlTXV0YXRpb25IABJXChdncm91cF9tZW1iZXJzaGlwX2NoYW5nZRgSIAEoCzI0LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkdyb3VwTWVtYmVyc2hpcENoYW5nZUgAEmMKHWNvbnZlcnNhdGlvbl9zZXR0aW5nc19jaGFuZ2VkGBMgASgLMjoucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuQ29udmVyc2F0aW9uU2V0dGluZ3NDaGFuZ2VkSABCBgoEa2luZCIjCglIZWFydGJlYXQSFgoOZmxvb3JfZXZlbnRfaWQYASABKAkilwEKD01lc3NhZ2VFbnZlbG9wZRIXCg9zZW5kZXJfYWN0b3JfaWQYASABKAkSGgoScmVjaXBpZW50X2FjdG9yX2lkGAIgASgJEhQKDHNlc3Npb25fdWxpZBgDIAEoCRIMCgR1bGlkGAQgASgJEhIKCmNpcGhlcnRleHQYBSABKAwSFwoPc2VudF90c191bml4X21zGAYgASgDIsQBCg5NZXNzYWdlUmVjZWlwdBIUCgxzZXNzaW9uX3VsaWQYASABKAkSDAoEdWxpZBgCIAEoCRJACgRraW5kGAMgASgOMjIucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuTWVzc2FnZVJlY2VpcHQuS2luZBIVCg1mcm9tX2FjdG9yX2lkGAQgASgJIjUKBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEg0KCURFTElWRVJFRBABEggKBFJFQUQQAiJKCgtUeXBpbmdTdGF0ZRIUCgxzZXNzaW9uX3VsaWQYASABKAkSFQoNZnJvbV9hY3Rvcl9pZBgCIAEoCRIOCgZ0eXBpbmcYAyABKAgiMAoMUHJlc2VuY2VGbGlwEhAKCGFjdG9yX2lkGAEgASgJEg4KBm9ubGluZRgCIAEoCCKbAgoKQ2FsbFNpZ25hbBIUCgxzZXNzaW9uX3VsaWQYASABKAkSFQoNZnJvbV9hY3Rvcl9pZBgCIAEoCRI8CgRraW5kGAMgASgOMi4ucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuQ2FsbFNpZ25hbC5LaW5kEg8KB3BheWxvYWQYBCABKAwikAEKBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEgkKBU9GRkVSEAESCgoGQU5TV0VSEAISDQoJQ0FORElEQVRFEAMSCgoGSEFOR1VQEAQSEAoMQ0FMTF9SRVFVRVNUEAUSDwoLQ0FMTF9BQ0NFUFQQBhIPCgtDQUxMX1JFSkVDVBAHEgwKCENBTExfRU5EEAgimAIKD01lc3NhZ2VNdXRhdGlvbhIUCgxzZXNzaW9uX3VsaWQYASABKAkSDAoEdWxpZBgCIAEoCRIVCg1mcm9tX2FjdG9yX2lkGAMgASgJEkEKBGtpbmQYBCABKA4yMy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlTXV0YXRpb24uS2luZBIWCg5uZXdfY2lwaGVydGV4dBgFIAEoDBITCgtuZXdfY29udGVudBgGIAEoCRIaChJtdXRhdGVkX3RzX3VuaXhfbXMYByABKAMiPgoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASCgoGUkVDQUxMEAESCAoERURJVBACEgoKBkRFTEVURRADIpYCChVHcm91cE1lbWJlcnNoaXBDaGFuZ2USEAoIZXZlbnRfaWQYASABKAkSEgoKZ3JvdXBfdWxpZBgCIAEoCRIRCglhY3Rvcl9kaWQYAyABKAkSRwoEa2luZBgEIAEoDjI5LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkdyb3VwTWVtYmVyc2hpcENoYW5nZS5LaW5kEhoKEmNoYW5nZWRfdHNfdW5peF9tcxgFIAEoAyJfCgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIOCgpLSU5EX0FEREVEEAESEAoMS0lORF9SRU1PVkVEEAISDQoJS0lORF9MRUZUEAMSEAoMS0lORF9VUERBVEVEEAQi5wEKG0NvbnZlcnNhdGlvblNldHRpbmdzQ2hhbmdlZBIWCg5jb250YWluZXJfdWxpZBgBIAEoCRJNCgRraW5kGAIgASgOMj8ucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuQ29udmVyc2F0aW9uU2V0dGluZ3NDaGFuZ2VkLktpbmQSEAoIYWN0b3JfaWQYAyABKAkSGgoSY2hhbmdlZF90c191bml4X21zGAQgASgDIjMKBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEgoKBkZSSUVORBABEgkKBUdST1VQEAIiMQoGUmVzeW5jEhcKD25ld2VzdF9ldmVudF9pZBgBIAEoCRIOCgZyZWFzb24YAiABKAlCT1pNZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvcmVhbHRpbWU7cmVhbHRpbWViBnByb3RvMw");
+  fileDesc("Chtkb21haW4vcmVhbHRpbWUvZXZlbnQucHJvdG8SHXBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxIrAGCgtTdHJlYW1FdmVudBIQCghldmVudF9pZBgBIAEoCRISCgp0c191bml4X21zGAIgASgDEjYKAmhiGAogASgLMigucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuSGVhcnRiZWF0SAASQQoHbWVzc2FnZRgLIAEoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1lc3NhZ2VFbnZlbG9wZUgAEkAKB3JlY2VpcHQYDCABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlUmVjZWlwdEgAEjwKBnR5cGluZxgNIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLlR5cGluZ1N0YXRlSAASPwoIcHJlc2VuY2UYDiABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5QcmVzZW5jZUZsaXBIABI+CglzaWduYWxpbmcYDyABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5DYWxsU2lnbmFsSAASNwoGcmVzeW5jGBAgASgLMiUucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuUmVzeW5jSAASQgoIbXV0YXRpb24YESABKAsyLi5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlTXV0YXRpb25IABJXChdncm91cF9tZW1iZXJzaGlwX2NoYW5nZRgSIAEoCzI0LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkdyb3VwTWVtYmVyc2hpcENoYW5nZUgAEmMKHWNvbnZlcnNhdGlvbl9zZXR0aW5nc19jaGFuZ2VkGBMgASgLMjoucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuQ29udmVyc2F0aW9uU2V0dGluZ3NDaGFuZ2VkSAASPAoGbW9tZW50GBQgASgLMioucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuTW9tZW50RXZlbnRIAEIGCgRraW5kIiMKCUhlYXJ0YmVhdBIWCg5mbG9vcl9ldmVudF9pZBgBIAEoCSKXAQoPTWVzc2FnZUVudmVsb3BlEhcKD3NlbmRlcl9hY3Rvcl9pZBgBIAEoCRIaChJyZWNpcGllbnRfYWN0b3JfaWQYAiABKAkSFAoMc2Vzc2lvbl91bGlkGAMgASgJEgwKBHVsaWQYBCABKAkSEgoKY2lwaGVydGV4dBgFIAEoDBIXCg9zZW50X3RzX3VuaXhfbXMYBiABKAMixAEKDk1lc3NhZ2VSZWNlaXB0EhQKDHNlc3Npb25fdWxpZBgBIAEoCRIMCgR1bGlkGAIgASgJEkAKBGtpbmQYAyABKA4yMi5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlUmVjZWlwdC5LaW5kEhUKDWZyb21fYWN0b3JfaWQYBCABKAkiNQoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASDQoJREVMSVZFUkVEEAESCAoEUkVBRBACIkoKC1R5cGluZ1N0YXRlEhQKDHNlc3Npb25fdWxpZBgBIAEoCRIVCg1mcm9tX2FjdG9yX2lkGAIgASgJEg4KBnR5cGluZxgDIAEoCCIwCgxQcmVzZW5jZUZsaXASEAoIYWN0b3JfaWQYASABKAkSDgoGb25saW5lGAIgASgIIpsCCgpDYWxsU2lnbmFsEhQKDHNlc3Npb25fdWxpZBgBIAEoCRIVCg1mcm9tX2FjdG9yX2lkGAIgASgJEjwKBGtpbmQYAyABKA4yLi5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5DYWxsU2lnbmFsLktpbmQSDwoHcGF5bG9hZBgEIAEoDCKQAQoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASCQoFT0ZGRVIQARIKCgZBTlNXRVIQAhINCglDQU5ESURBVEUQAxIKCgZIQU5HVVAQBBIQCgxDQUxMX1JFUVVFU1QQBRIPCgtDQUxMX0FDQ0VQVBAGEg8KC0NBTExfUkVKRUNUEAcSDAoIQ0FMTF9FTkQQCCKYAgoPTWVzc2FnZU11dGF0aW9uEhQKDHNlc3Npb25fdWxpZBgBIAEoCRIMCgR1bGlkGAIgASgJEhUKDWZyb21fYWN0b3JfaWQYAyABKAkSQQoEa2luZBgEIAEoDjIzLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1lc3NhZ2VNdXRhdGlvbi5LaW5kEhYKDm5ld19jaXBoZXJ0ZXh0GAUgASgMEhMKC25ld19jb250ZW50GAYgASgJEhoKEm11dGF0ZWRfdHNfdW5peF9tcxgHIAEoAyI+CgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIKCgZSRUNBTEwQARIICgRFRElUEAISCgoGREVMRVRFEAMiwQIKFUdyb3VwTWVtYmVyc2hpcENoYW5nZRIQCghldmVudF9pZBgBIAEoCRISCgpncm91cF91bGlkGAIgASgJEhEKCWFjdG9yX2RpZBgDIAEoCRJHCgRraW5kGAQgASgOMjkucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuR3JvdXBNZW1iZXJzaGlwQ2hhbmdlLktpbmQSGgoSY2hhbmdlZF90c191bml4X21zGAUgASgDIokBCgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIOCgpLSU5EX0FEREVEEAESEAoMS0lORF9SRU1PVkVEEAISDQoJS0lORF9MRUZUEAMSEAoMS0lORF9VUERBVEVEEAQSFAoQS0lORF9UUkFOU0ZFUlJFRBAFEhIKDktJTkRfRElTU09MVkVEEAYi5wEKG0NvbnZlcnNhdGlvblNldHRpbmdzQ2hhbmdlZBIWCg5jb250YWluZXJfdWxpZBgBIAEoCRJNCgRraW5kGAIgASgOMj8ucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuQ29udmVyc2F0aW9uU2V0dGluZ3NDaGFuZ2VkLktpbmQSEAoIYWN0b3JfaWQYAyABKAkSGgoSY2hhbmdlZF90c191bml4X21zGAQgASgDIjMKBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEgoKBkZSSUVORBABEgkKBUdST1VQEAIixwIKC01vbWVudEV2ZW50Ej0KBGtpbmQYASABKA4yLy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5Nb21lbnRFdmVudC5LaW5kEg8KB3Bvc3RfaWQYAiABKAkSFwoPYXV0aG9yX2FjdG9yX2lkGAMgASgJEhAKCGFjdG9yX2lkGAQgASgJEhIKCmNvbW1lbnRfaWQYBSABKAkSFQoNcmVhY3Rpb25fa2luZBgGIAEoCRIPCgdyZW1vdmVkGAcgASgIEhAKCGF1ZGllbmNlGAggASgJEhsKE29jY3VycmVkX3RzX3VuaXhfbXMYCSABKAMiUgoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASCwoHQ1JFQVRFRBABEgsKB0RFTEVURUQQAhINCglDT01NRU5URUQQAxILCgdSRUFDVEVEEAQiMQoGUmVzeW5jEhcKD25ld2VzdF9ldmVudF9pZBgBIAEoCRIOCgZyZWFzb24YAiABKAlCT1pNZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvcmVhbHRpbWU7cmVhbHRpbWViBnByb3RvMw");
 
 /**
  * StreamEvent is the single envelope every realtime frame uses.
@@ -103,6 +103,12 @@ export type StreamEvent = Message<"peers_touch.model.realtime.v1.StreamEvent"> &
      */
     value: ConversationSettingsChanged;
     case: "conversationSettingsChanged";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.realtime.v1.MomentEvent moment = 20;
+     */
+    value: MomentEvent;
+    case: "moment";
   } | { case: undefined; value?: undefined };
 };
 
@@ -524,7 +530,7 @@ export const MessageMutation_KindSchema: GenEnum<MessageMutation_Kind> = /*@__PU
 
 /**
  * GroupMembershipChange notifies subscribers that a group's roster
- * changed in real time (join, kick, or voluntary leave). Every
+ * or lifecycle changed in real time. Every
  * affected actor receives a frame on their SSE stream so clients
  * can refresh cached membership and rotate Sender Keys promptly.
  *
@@ -602,6 +608,20 @@ export enum GroupMembershipChange_Kind {
    * @generated from enum value: KIND_UPDATED = 4;
    */
   UPDATED = 4,
+
+  /**
+   * group ownership moved to actor_did
+   *
+   * @generated from enum value: KIND_TRANSFERRED = 5;
+   */
+  TRANSFERRED = 5,
+
+  /**
+   * group is dissolved by owner
+   *
+   * @generated from enum value: KIND_DISSOLVED = 6;
+   */
+  DISSOLVED = 6,
 }
 
 /**
@@ -676,6 +696,104 @@ export const ConversationSettingsChanged_KindSchema: GenEnum<ConversationSetting
   enumDesc(file_domain_realtime_event, 9, 0);
 
 /**
+ * MomentEvent notifies a viewer that a Moment they can see changed.
+ * It intentionally carries identifiers and small metadata only; clients
+ * refresh the authoritative Moment/detail projection through the social
+ * API so visibility filtering remains Station-owned.
+ *
+ * @generated from message peers_touch.model.realtime.v1.MomentEvent
+ */
+export type MomentEvent = Message<"peers_touch.model.realtime.v1.MomentEvent"> & {
+  /**
+   * @generated from field: peers_touch.model.realtime.v1.MomentEvent.Kind kind = 1;
+   */
+  kind: MomentEvent_Kind;
+
+  /**
+   * @generated from field: string post_id = 2;
+   */
+  postId: string;
+
+  /**
+   * @generated from field: string author_actor_id = 3;
+   */
+  authorActorId: string;
+
+  /**
+   * @generated from field: string actor_id = 4;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string comment_id = 5;
+   */
+  commentId: string;
+
+  /**
+   * @generated from field: string reaction_kind = 6;
+   */
+  reactionKind: string;
+
+  /**
+   * @generated from field: bool removed = 7;
+   */
+  removed: boolean;
+
+  /**
+   * @generated from field: string audience = 8;
+   */
+  audience: string;
+
+  /**
+   * @generated from field: int64 occurred_ts_unix_ms = 9;
+   */
+  occurredTsUnixMs: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.realtime.v1.MomentEvent.
+ * Use `create(MomentEventSchema)` to create a new message.
+ */
+export const MomentEventSchema: GenMessage<MomentEvent> = /*@__PURE__*/
+  messageDesc(file_domain_realtime_event, 10);
+
+/**
+ * @generated from enum peers_touch.model.realtime.v1.MomentEvent.Kind
+ */
+export enum MomentEvent_Kind {
+  /**
+   * @generated from enum value: KIND_UNSPECIFIED = 0;
+   */
+  KIND_UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: CREATED = 1;
+   */
+  CREATED = 1,
+
+  /**
+   * @generated from enum value: DELETED = 2;
+   */
+  DELETED = 2,
+
+  /**
+   * @generated from enum value: COMMENTED = 3;
+   */
+  COMMENTED = 3,
+
+  /**
+   * @generated from enum value: REACTED = 4;
+   */
+  REACTED = 4,
+}
+
+/**
+ * Describes the enum peers_touch.model.realtime.v1.MomentEvent.Kind.
+ */
+export const MomentEvent_KindSchema: GenEnum<MomentEvent_Kind> = /*@__PURE__*/
+  enumDesc(file_domain_realtime_event, 10, 0);
+
+/**
  * Resync is the server's only signal that the client's Last-Event-ID
  * cursor falls outside the in-memory ring buffer. On receiving this,
  * clients MUST perform a cold catch-up before trusting any event
@@ -705,5 +823,5 @@ export type Resync = Message<"peers_touch.model.realtime.v1.Resync"> & {
  * Use `create(ResyncSchema)` to create a new message.
  */
 export const ResyncSchema: GenMessage<Resync> = /*@__PURE__*/
-  messageDesc(file_domain_realtime_event, 10);
+  messageDesc(file_domain_realtime_event, 11);
 

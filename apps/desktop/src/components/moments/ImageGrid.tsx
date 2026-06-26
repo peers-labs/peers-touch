@@ -50,9 +50,9 @@ export function ImageGrid({ cids, images, audience, authorDid, alts }: ImageGrid
   const gridStyle: React.CSSProperties = {
     display: 'grid',
     gridTemplateColumns: `repeat(${layout.columns}, 1fr)`,
-    gap: 4,
-    marginTop: 8,
-    maxWidth: layout.singleWide ? 360 : '100%',
+    gap: 3,
+    marginTop: 10,
+    maxWidth: layout.singleWide ? 300 : 340,
   };
 
   return (

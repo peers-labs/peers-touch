@@ -15,6 +15,7 @@ import {
   pickLatestKeyExchangeBundle,
   type AccountProfile,
   type ChatAttachmentInput,
+  type ChatIndexLocalMessageInput,
   type ChatSearchLocalResultRow,
   type ChatThreadCount,
 } from '../services/desktop_api';
@@ -43,6 +44,7 @@ import {
   FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION,
 } from '../modules/identity/groupSenderKeys';
 import { log } from '../utils/logger';
+import { getDecryptCache, setDecryptCache } from './decryptCache';
 import {
   readDesktopDomainValueSync,
   writeDesktopDomainValueSync,
@@ -67,7 +69,6 @@ import {
   normalizeFriendChatSession,
   normalizeFriendRequestData,
   normalizeFriendRequests,
-  seedPresenceFromSessions,
   type FriendRequestData,
 } from './socialNormalizers';
 import { currentAuthenticatedActorId } from './session';
@@ -416,10 +417,8 @@ interface SocialChatState {
    * up (e.g. bootstrapping ICE), so the two concepts must not be
    * conflated in the UI.
    *
-   * Source of truth: Station's `/friend-chat/presence/stream` SSE
-   * (real-time push) plus the `participant_*_online` snapshot embedded
-   * in `friendChatListSessions` responses (used to seed the map on
-   * cold-start before the SSE has caught up).
+   * Source of truth: Station `StreamEvent.PresenceFlip` events carried
+   * by the unified `/events/stream`.
    */
   peerOnline: Record<string, boolean>;
   setPeerOnline: (did: string, online: boolean) => void;
@@ -763,20 +762,17 @@ function socialMessageReplyToUlid(msg: SocialMessage): string {
   return msg.replyToUlid || '';
 }
 
-function socialMessageThreadRootUlid(msg: SocialMessage): string {
-  const threadRoot = (msg as SocialMessage & { threadRootUlid?: string }).threadRootUlid || '';
-  return threadRoot || socialMessageReplyToUlid(msg);
+function socialMessageExplicitThreadRootUlid(msg: SocialMessage): string {
+  return (msg as SocialMessage & { threadRootUlid?: string }).threadRootUlid || '';
+}
+
+function socialMessageSentAtMs(msg: SocialMessage): number {
+  const timestamp = msg.sentAt ?? msg.createdAt;
+  return timestamp ? timestampDate(timestamp).getTime() : 0;
 }
 
 function isMessageInThread(msg: SocialMessage, rootUlid: string): boolean {
-  const threadRoot = (msg as SocialMessage & { threadRootUlid?: string }).threadRootUlid || '';
-  return threadRoot === rootUlid || (!threadRoot && socialMessageReplyToUlid(msg) === rootUlid);
-}
-
-function resolveThreadRootForReply(messages: SocialMessage[], replyToUlid?: string): string | undefined {
-  if (!replyToUlid) return undefined;
-  const parent = messages.find((msg) => msg.ulid === replyToUlid);
-  return parent ? socialMessageThreadRootUlid(parent) || replyToUlid : replyToUlid;
+  return socialMessageExplicitThreadRootUlid(msg) === rootUlid;
 }
 
 const THREAD_REPLY_PAGE_SIZE = 50;
@@ -890,7 +886,7 @@ function loadedMessageMetadata(message: SocialMessage | undefined): {
     ),
     messageType: numberFromUnknown(message.type),
     replyToUlid: socialMessageReplyToUlid(message) || undefined,
-    threadRootUlid: socialMessageThreadRootUlid(message) || undefined,
+    threadRootUlid: socialMessageExplicitThreadRootUlid(message) || undefined,
   };
 }
 
@@ -905,7 +901,7 @@ function searchRowReplyToUlid(row: ChatSearchLocalResultRow): string | undefined
 
 function searchRowThreadRootUlid(row: ChatSearchLocalResultRow): string | undefined {
   const record = row as unknown as Record<string, unknown>;
-  return stringFromRecord(record, 'threadRootUlid', 'thread_root_ulid') || searchRowReplyToUlid(row);
+  return stringFromRecord(record, 'threadRootUlid', 'thread_root_ulid') || undefined;
 }
 
 function searchThreadMetadata(
@@ -948,23 +944,57 @@ function saveConversationLocalState(actorDid: string | null, state: Record<strin
   }
 }
 
-async function decodeRealtimeGroupMessage(groupUlid: string, message: GroupMessage): Promise<GroupMessage> {
-  if (message.recalled || !message.encryptedPayload || message.encryptedPayload.byteLength === 0) {
+function groupEncryptedPayloadB64(message: GroupMessage): string {
+  const encryptedPayload = (message as { encryptedPayload?: Uint8Array | string }).encryptedPayload;
+  if (typeof encryptedPayload === 'string') return encryptedPayload;
+  if (encryptedPayload && encryptedPayload.byteLength > 0) return bytesToB64(encryptedPayload);
+  return '';
+}
+
+async function decodeGroupMessage(
+  groupUlid: string,
+  message: GroupMessage,
+  logLabel: string,
+): Promise<GroupMessage> {
+  const payloadB64 = groupEncryptedPayloadB64(message);
+  if (message.recalled || !payloadB64) {
     return message;
   }
+  // Cache hit — skip expensive IPC decrypt
+  const cached = getDecryptCache(message.ulid);
+  if (cached) {
+    return { ...message, content: cached.content, type: cached.type || message.type, attachments: cached.attachments } as GroupMessage;
+  }
   try {
-    const out = await decryptBytesFromGroup(groupUlid, bytesToB64(message.encryptedPayload));
+    const out = await decryptBytesFromGroup(groupUlid, payloadB64);
     const payload = decodeEncryptedChatPayloadBytes(out.bytes);
-    return payload
+    const result = payload
       ? applyDecodedChatPayload(message, payload)
       : ({ ...message, content: new TextDecoder().decode(out.bytes) } as GroupMessage);
+    // Cache successful decrypt
+    setDecryptCache(message.ulid, { content: result.content, type: result.type, attachments: result.attachments as unknown[], cachedAt: Date.now() });
+    return result;
   } catch (error) {
     if (error instanceof MissingSkdmError) {
       return { ...message, content: '[Waiting for sender key…]' } as GroupMessage;
     }
-    log.warn('socialChat', 'realtime group decrypt failed', error);
+    log.warn('socialChat', logLabel, error);
     return { ...message, content: '[Decrypt failed]' } as GroupMessage;
   }
+}
+
+async function decodeGroupMessages(
+  groupUlid: string,
+  messages: GroupMessage[],
+  logLabel: string,
+): Promise<GroupMessage[]> {
+  // Concurrent decryption — each message is independent, no need to serialize.
+  // Cache hits resolve instantly (no IPC); cache misses go to Rust in parallel.
+  return Promise.all(messages.map((message) => decodeGroupMessage(groupUlid, message, logLabel)));
+}
+
+async function decodeRealtimeGroupMessage(groupUlid: string, message: GroupMessage): Promise<GroupMessage> {
+  return decodeGroupMessage(groupUlid, message, 'realtime group decrypt failed');
 }
 
 async function decodeFriendMessage(
@@ -974,6 +1004,11 @@ async function decodeFriendMessage(
 ): Promise<FriendChatMessage> {
   if (message.recalled || !message.encryptedPayload || message.encryptedPayload.byteLength === 0 || !peerDid) {
     return message;
+  }
+  // Cache hit — skip expensive IPC decrypt
+  const cached = getDecryptCache(message.ulid);
+  if (cached) {
+    return { ...message, content: cached.content, type: cached.type || message.type, attachments: cached.attachments } as FriendChatMessage;
   }
   try {
     const envelope = decodeFriendEncryptedEnvelope(message.encryptedPayload);
@@ -987,8 +1022,11 @@ async function decodeFriendMessage(
     );
     try {
       const payload = decodeEncryptedChatPayloadBytes(b64ToBytes(decrypted.plaintext));
-      return payload ? applyDecodedChatPayload(message, payload) : { ...message, content: decrypted.plaintext };
+      const result = payload ? applyDecodedChatPayload(message, payload) : { ...message, content: decrypted.plaintext };
+      setDecryptCache(message.ulid, { content: result.content, type: result.type, attachments: (result as { attachments?: unknown[] }).attachments ?? [], cachedAt: Date.now() });
+      return result;
     } catch {
+      setDecryptCache(message.ulid, { content: decrypted.plaintext, type: message.type, attachments: [], cachedAt: Date.now() });
       return { ...message, content: decrypted.plaintext };
     }
   } catch (error) {
@@ -1002,9 +1040,48 @@ async function decodeFriendMessages(
   peerDid: string,
   messages: FriendChatMessage[],
 ): Promise<FriendChatMessage[]> {
-  const decoded: FriendChatMessage[] = [];
-  for (const message of messages) decoded.push(await decodeFriendMessage(sessionUlid, peerDid, message));
-  return decoded;
+  // Concurrent decryption — Signal ratchet state is keyed per (session, counter)
+  // so parallel decrypts within the same session are safe.
+  return Promise.all(messages.map((message) => decodeFriendMessage(sessionUlid, peerDid, message)));
+}
+
+function isIndexableChatContent(message: SocialMessage): boolean {
+  const content = message.content?.trim() ?? '';
+  if (!content || (message as SocialMessage & { recalled?: boolean }).recalled) return false;
+  if (content === '[Encrypted Message]' || content === '[Waiting for sender key…]' || content === '[Decrypt failed]') {
+    return false;
+  }
+  return true;
+}
+
+function localSearchIndexMessage(
+  scope: 'friend' | 'group',
+  conversationId: string,
+  message: SocialMessage,
+): ChatIndexLocalMessageInput | null {
+  if (!message.ulid || !conversationId || !isIndexableChatContent(message)) return null;
+  return {
+    scope,
+    conversation_id: conversationId,
+    message_id: message.ulid,
+    sender_did: message.senderDid || '',
+    content: message.content.trim(),
+    reply_to_ulid: socialMessageReplyToUlid(message) || undefined,
+    thread_root_ulid: socialMessageExplicitThreadRootUlid(message) || undefined,
+    sent_at: socialMessageSentAtMs(message),
+  };
+}
+
+async function indexLocalSearchMessages(
+  scope: 'friend' | 'group',
+  conversationId: string,
+  messages: SocialMessage[],
+): Promise<void> {
+  const rows = messages
+    .map((message) => localSearchIndexMessage(scope, conversationId, message))
+    .filter((row): row is ChatIndexLocalMessageInput => row !== null);
+  if (rows.length === 0) return;
+  await api.chatIndexLocalMessages(rows);
 }
 
 const initialSocialState: Pick<
@@ -1181,21 +1258,12 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       const list = (data?.sessions || []).map(normalizeFriendChatSession);
       const derivedDid = deriveCurrentUserDidFromSessions(list);
 
-      // Seed peerOnline from the snapshot embedded in this response.
-      // We deliberately *only seed*, never *overwrite*: an SSE flip
-      // that arrived 200ms before this list call must not be undone
-      // by the response we're parsing now (the snapshot is server-side
-      // serialized at request time, the SSE is live). Hence we only
-      // write to keys that are currently `undefined`.
-      const presenceSeed = seedPresenceFromSessions(list);
-
       set((state) => ({
         sessions: clearActiveFriendUnread(list, state.activeSessionUlid, derivedDid || state.currentUserDid),
         loading: false,
         ...(!state.currentUserDid && derivedDid
           ? { currentUserDid: derivedDid, conversationLocalState: loadConversationLocalState(derivedDid) }
           : {}),
-        peerOnline: { ...presenceSeed, ...state.peerOnline },
       }));
       const settingsEntries = await Promise.allSettled(list.map(async (session) => {
         const resp = await api.friendChatGetSettings(session.ulid);
@@ -1277,7 +1345,16 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   loadMessages: async (ulid, kind) => {
     if (!hasAuthenticatedActor()) return;
     const activeTab = kind ?? get().activeTab;
-    set({ loading: true });
+    // Fast path: if messages are already loaded for this conversation, render
+    // them immediately without blocking on network+decrypt. A background
+    // refresh still happens to pick up new messages.
+    const existing = get().messages[ulid];
+    if (existing && existing.length > 0) {
+      set({ loading: false });
+      // Background refresh — non-blocking, will merge silently when done
+    } else {
+      set({ loading: true });
+    }
     try {
       let friendPeerDid = '';
       if (activeTab === 'friend') {
@@ -1328,39 +1405,10 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
           fmsgs.filter((m) => m.type !== FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION),
         );
       } else {
-        // Group chat: every non-recalled message body lives in
-        // `encrypted_payload` (Sender Keys ciphertext). Decrypt
-        // serially per-message and replace `content` with the
-        // plaintext so the renderer (which is content-driven) keeps
-        // working. Failures fall back to a "Decrypting…" placeholder
-        // -- usually means the SKDM hasn't arrived yet, in which
-        // case the next loadMessages pass after the SKDM lands will
-        // backfill. We do NOT silently drop the row; a missing
-        // SKDM should be visible to the user, not invisible.
-        const gmsgs = msgs as GroupMessage[];
-        const decoded: GroupMessage[] = [];
-        for (const m of gmsgs) {
-          if (m.recalled || !m.encryptedPayload || m.encryptedPayload.byteLength === 0) {
-            decoded.push(m);
-            continue;
-          }
-          try {
-            const payloadB64 = bytesToB64(m.encryptedPayload);
-            const out = await decryptBytesFromGroup(ulid, payloadB64);
-            const payload = decodeEncryptedChatPayloadBytes(out.bytes);
-            decoded.push(payload
-              ? applyDecodedChatPayload(m, payload)
-              : ({ ...m, content: new TextDecoder().decode(out.bytes) } as GroupMessage));
-          } catch (err) {
-            if (err instanceof MissingSkdmError) {
-              decoded.push({ ...m, content: '[Waiting for sender key…]' } as GroupMessage);
-            } else {
-              log.warn('socialChat', 'group decrypt failed', err);
-              decoded.push({ ...m, content: '[Decrypt failed]' } as GroupMessage);
-            }
-          }
-        }
-        msgs = decoded;
+        // Group chat is stored remotely as Sender-Keys ciphertext.
+        // The same decode path feeds rendering and the local plaintext
+        // search index so UI state and search state cannot drift.
+        msgs = await decodeGroupMessages(ulid, msgs as GroupMessage[], 'group decrypt failed');
       }
       const visibleMsgs = filterClearedMessages(
         msgs as SocialMessage[],
@@ -1368,6 +1416,9 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         activeTab,
         ulid,
       );
+      indexLocalSearchMessages(activeTab, ulid, visibleMsgs).catch((error) => {
+        log.warn('socialChat', 'index loaded messages failed', error);
+      });
       set((state) => ({
         messages: { ...state.messages, [ulid]: visibleMsgs },
         messageHasMore: {
@@ -1377,7 +1428,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         loading: false,
       }));
       const rootUlids = visibleMsgs
-        .filter((msg) => !socialMessageThreadRootUlid(msg))
+        .filter((msg) => !socialMessageExplicitThreadRootUlid(msg))
         .map((msg) => msg.ulid)
         .filter(Boolean);
       if (rootUlids.length > 0) {
@@ -1428,6 +1479,8 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
           ? (session.participantADid === viewerDid ? session.participantBDid : session.participantADid)
           : '';
         pageMessages = await decodeFriendMessages(ulid, peerDid, pageMessages as FriendChatMessage[]);
+      } else {
+        pageMessages = await decodeGroupMessages(ulid, pageMessages as GroupMessage[], 'older group decrypt failed');
       }
       const older = filterClearedMessages(
         pageMessages,
@@ -1436,6 +1489,9 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         ulid,
       );
       const dedup = older.filter((msg) => !current.some((item) => item.ulid === msg.ulid));
+      indexLocalSearchMessages(activeKind, ulid, dedup).catch((error) => {
+        log.warn('socialChat', 'index older messages failed', error);
+      });
       set((state) => ({
         messages: { ...state.messages, [ulid]: [...dedup, ...(state.messages[ulid] || [])] },
         messageHasMore: {
@@ -1445,7 +1501,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         messageLoadingMore: { ...state.messageLoadingMore, [ulid]: false },
       }));
       const rootUlids = dedup
-        .filter((msg) => !socialMessageThreadRootUlid(msg))
+        .filter((msg) => !socialMessageExplicitThreadRootUlid(msg))
         .map((msg) => msg.ulid)
         .filter(Boolean);
       if (rootUlids.length > 0) {
@@ -1486,42 +1542,17 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
           : '';
         loaded = await decodeFriendMessages(ulid, peerDid, loaded as FriendChatMessage[]);
       } else if (activeKind === 'group') {
-        const decoded: GroupMessage[] = [];
-        for (const msg of loaded as GroupMessage[]) {
-          const encryptedPayload = (msg as { encryptedPayload?: Uint8Array | string }).encryptedPayload;
-          const hasCiphertext = typeof encryptedPayload === 'string'
-            ? encryptedPayload.length > 0
-            : Boolean(encryptedPayload && encryptedPayload.byteLength > 0);
-          if (msg.recalled || !hasCiphertext) {
-            decoded.push(msg);
-            continue;
-          }
-          try {
-            const payloadB64 = typeof encryptedPayload === 'string'
-              ? encryptedPayload
-              : encryptedPayload
-                ? bytesToB64(encryptedPayload)
-                : '';
-            if (!payloadB64) {
-              decoded.push(msg);
-              continue;
-            }
-            const out = await decryptBytesFromGroup(ulid, payloadB64);
-            const payload = decodeEncryptedChatPayloadBytes(out.bytes);
-            decoded.push(payload
-              ? applyDecodedChatPayload(msg, payload)
-              : ({ ...msg, content: new TextDecoder().decode(out.bytes) } as GroupMessage));
-          } catch (error) {
-            if (error instanceof MissingSkdmError) {
-              decoded.push({ ...msg, content: '[Waiting for sender key…]' } as GroupMessage);
-            } else {
-              log.warn('socialChat', 'thread group decrypt failed', error);
-              decoded.push({ ...msg, content: '[Decrypt failed]' } as GroupMessage);
-            }
-          }
-        }
-        loaded = decoded;
+        loaded = await decodeGroupMessages(ulid, loaded as GroupMessage[], 'thread group decrypt failed');
       }
+      loaded = filterClearedMessages(
+        loaded,
+        get().conversationLocalState,
+        activeKind,
+        ulid,
+      );
+      indexLocalSearchMessages(activeKind, ulid, loaded).catch((error) => {
+        log.warn('socialChat', 'index thread messages failed', error);
+      });
       const fallbackRoot = (get().messages[ulid] || []).find((msg) => msg.ulid === rootUlid);
       const baseMessages = append
         ? currentThread.length > 0
@@ -1619,8 +1650,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       let encryptedPayload: string | undefined;
       let sendContent = content;
       const clientUlid = createClientMessageUlid();
-      const threadRootUlid = explicitThreadRootUlid
-        ?? resolveThreadRootForReply(get().messages[sessionUlid] || [], replyToUlid);
+      const threadRootUlid = explicitThreadRootUlid;
 
       let sendAttachments = attachments;
       if ((content.trim() || attachments?.length) && encryptionEnabled && sessionEncrypted[sessionUlid]) {
@@ -1651,6 +1681,7 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         clientUlid,
         threadRootUlid,
       );
+      if (threadRootUlid) return;
       await get().loadMessages(sessionUlid, 'friend').catch((error) => {
         log.warn('socialChat', 'sendFriendMessage: post-send message refresh failed', error);
       });
@@ -1710,9 +1741,8 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         groupUlid,
         createEncryptedChatPayloadBytes(content, attachments ?? [], type),
       );
-      const threadRootUlid = explicitThreadRootUlid
-        ?? resolveThreadRootForReply(get().messages[groupUlid] || [], replyToUlid);
-      await api.groupChatSendMessage(
+      const threadRootUlid = explicitThreadRootUlid;
+      const sentResponse = await api.groupChatSendMessage(
         groupUlid,
         '',
         type,
@@ -1723,6 +1753,15 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         encryptedPayloadB64,
         threadRootUlid,
       );
+      if (sentResponse.message?.ulid) {
+        setDecryptCache(sentResponse.message.ulid, {
+          content,
+          type: type ?? sentResponse.message.type,
+          attachments: attachments ?? [],
+          cachedAt: Date.now(),
+        });
+      }
+      if (threadRootUlid) return;
       await get().loadMessages(groupUlid, 'group').catch((error) => {
         log.warn('socialChat', 'sendGroupMessage: post-send message refresh failed', error);
       });
@@ -1865,27 +1904,48 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
 
   deleteMessage: async (ulid, messageUlid, kind) => {
     const tab = kind ?? get().activeTab;
-    try {
-      if (tab === 'group') {
-        await api.groupChatDeleteMessage(ulid, messageUlid);
-      } else {
-        await api.friendChatDeleteMessage(ulid, messageUlid);
-      }
-      // Optimistic removal — the SSE echo will idempotently apply
-      // the same DELETE mutation through `applyMessageMutation`.
-      // We funnel through the unified path so future mutation
-      // arms (e.g. moderation undelete) only need updating in one
-      // place.
-      get().applyMessageMutation(
-        ulid,
-        messageUlid,
-        'DELETE',
-        { newContent: '', newCiphertext: new Uint8Array(), mutatedTsUnixMs: Date.now() },
+    const key = conversationKey(tab, ulid);
+    set((state) => {
+      const currentLocalState = state.conversationLocalState[key] ?? {};
+      const nextLocalState = {
+        ...state.conversationLocalState,
+        [key]: {
+          ...currentLocalState,
+          deletedMessageUlids: {
+            ...(currentLocalState.deletedMessageUlids ?? {}),
+            [messageUlid]: true as true,
+          },
+        },
+      };
+      const nextMessagesForConversation = (state.messages[ulid] ?? [])
+        .filter((message) => message.ulid !== messageUlid);
+      const nextThreadMessages = Object.fromEntries(
+        Object.entries(state.threadMessages).map(([threadKey, threadMessages]) => [
+          threadKey,
+          threadKey.startsWith(`${tab}:${ulid}:`)
+            ? threadMessages.filter((message) => message.ulid !== messageUlid)
+            : threadMessages,
+        ]),
       );
-    } catch (error) {
-      log.error('socialChat', 'deleteMessage failed', error);
-      throw error;
-    }
+      const nextPreviews = { ...state.lastPreviews };
+      if (nextMessagesForConversation.length > 0) {
+        nextPreviews[ulid] = previewFromMessage(
+          nextMessagesForConversation[nextMessagesForConversation.length - 1],
+        );
+      } else {
+        delete nextPreviews[ulid];
+      }
+      saveConversationLocalState(state.currentUserDid, nextLocalState);
+      return {
+        conversationLocalState: nextLocalState,
+        messages: {
+          ...state.messages,
+          [ulid]: nextMessagesForConversation,
+        },
+        threadMessages: nextThreadMessages,
+        lastPreviews: nextPreviews,
+      };
+    });
   },
 
   recallFriendMessage: async (sessionUlid, messageUlid) => {
@@ -2140,24 +2200,36 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     for (const s of sessions) {
       if (!s.lastMessageUlid) continue;
       tasks.push(
-        api.friendChatListMessages(s.ulid, undefined, 1).then((data) => {
+        api.friendChatListMessages(s.ulid, undefined, 20).then((data) => {
           const msgs = data?.messages;
           if (msgs && msgs.length > 0) {
             // Take last element — API may return ascending order
-            const m = msgs[msgs.length - 1] as FriendChatMessage;
-            previews[s.ulid] = { content: m.content ?? '', type: Number(m.type ?? 1), senderDid: m.senderDid ?? '' };
+            const visibleMessages = filterClearedMessages(
+              msgs as FriendChatMessage[],
+              get().conversationLocalState,
+              'friend',
+              s.ulid,
+            ).filter((message) => !socialMessageExplicitThreadRootUlid(message));
+            const m = visibleMessages[visibleMessages.length - 1] as FriendChatMessage | undefined;
+            if (m) previews[s.ulid] = { content: m.content ?? '', type: Number(m.type ?? 1), senderDid: m.senderDid ?? '' };
           }
         }).catch(() => {}),
       );
     }
     for (const g of groups) {
       tasks.push(
-        api.groupChatListMessages(g.ulid, undefined, 1).then((data) => {
+        api.groupChatListMessages(g.ulid, undefined, 20).then((data) => {
           const msgs = data?.messages;
           if (msgs && msgs.length > 0) {
             // Take last element — API may return ascending order
-            const m = msgs[msgs.length - 1] as GroupMessage;
-            previews[g.ulid] = { content: m.content ?? '', type: Number(m.type ?? 1), senderDid: m.senderDid ?? '' };
+            const visibleMessages = filterClearedMessages(
+              msgs as GroupMessage[],
+              get().conversationLocalState,
+              'group',
+              g.ulid,
+            ).filter((message) => !socialMessageExplicitThreadRootUlid(message));
+            const m = visibleMessages[visibleMessages.length - 1] as GroupMessage | undefined;
+            if (m) previews[g.ulid] = { content: m.content ?? '', type: Number(m.type ?? 1), senderDid: m.senderDid ?? '' };
           }
         }).catch(() => {}),
       );
@@ -2212,15 +2284,20 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
         kind,
         conversationUlid,
       );
+      const threadRootUlid = socialMessageExplicitThreadRootUlid(projectedMessage);
       return {
         messages: {
           ...state.messages,
           [conversationUlid]: visibleMessages,
         },
-        lastPreviews: {
-          ...state.lastPreviews,
-          [conversationUlid]: previewFromMessage(projectedMessage),
-        },
+        ...(threadRootUlid
+          ? {}
+          : {
+              lastPreviews: {
+                ...state.lastPreviews,
+                [conversationUlid]: previewFromMessage(projectedMessage),
+              },
+            }),
       };
     });
 
@@ -2249,11 +2326,14 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
 
   updateConversationLocalState: async (kind, ulid, patch) => {
     const key = conversationKey(kind, ulid);
+    const remotePatch = localStatePatchToRemote(patch);
     try {
-      if (kind === 'friend') {
-        await api.friendChatUpdateSettings(ulid, localStatePatchToRemote(patch));
-      } else {
-        await api.groupChatUpdateSettings(ulid, localStatePatchToRemote(patch));
+      if (Object.keys(remotePatch).length > 0) {
+        if (kind === 'friend') {
+          await api.friendChatUpdateSettings(ulid, remotePatch);
+        } else {
+          await api.groupChatUpdateSettings(ulid, remotePatch);
+        }
       }
     } catch (error) {
       log.error('socialChat', 'update conversation settings failed', { kind, ulid, error });
@@ -2385,8 +2465,9 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       if (state.conversationLocalState[conversationKey('friend', s.ulid)]?.hidden) continue;
       const peer = peerOfSession(s, did);
       const loadedMsgs = state.messages[s.ulid];
-      const friendPreview = loadedMsgs && loadedMsgs.length > 0
-        ? previewFromMessage(loadedMsgs[loadedMsgs.length - 1])
+      const loadedMainMsgs = loadedMsgs?.filter((message) => !socialMessageExplicitThreadRootUlid(message));
+      const friendPreview = loadedMainMsgs && loadedMainMsgs.length > 0
+        ? previewFromMessage(loadedMainMsgs[loadedMainMsgs.length - 1])
         : state.lastPreviews[s.ulid];
       out.push({
         type: 'friend',
@@ -2406,8 +2487,9 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     for (const g of state.groups) {
       if (state.conversationLocalState[conversationKey('group', g.ulid)]?.hidden) continue;
       const loadedGroupMsgs = state.messages[g.ulid];
-      const groupPreview = loadedGroupMsgs && loadedGroupMsgs.length > 0
-        ? previewFromMessage(loadedGroupMsgs[loadedGroupMsgs.length - 1])
+      const loadedMainGroupMsgs = loadedGroupMsgs?.filter((message) => !socialMessageExplicitThreadRootUlid(message));
+      const groupPreview = loadedMainGroupMsgs && loadedMainGroupMsgs.length > 0
+        ? previewFromMessage(loadedMainGroupMsgs[loadedMainGroupMsgs.length - 1])
         : state.lastPreviews[g.ulid];
       out.push({
         type: 'group',
@@ -2433,17 +2515,21 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
   },
 
   searchMessages: async (query, scope, conversationId) => {
-    if (!query.trim()) {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) {
       set({ searchResults: [], searchQuery: '' });
       return;
     }
-    set({ searchLoading: true, searchQuery: query });
+    set({ searchLoading: true, searchQuery: trimmedQuery });
     try {
-      const data = await api.chatSearchLocal(query, scope, conversationId);
+      const data = await api.chatSearchLocal(trimmedQuery, scope, conversationId);
+      if (get().searchQuery !== trimmedQuery) return;
       const rawResults = (data?.results || []).filter((row) => {
         const scope = row.scope === 'group' ? 'group' : 'friend';
         const key = conversationKey(scope, row.conversation_id);
-        const clearedAt = get().conversationLocalState[key]?.clearedAt ?? 0;
+        const localState = get().conversationLocalState[key];
+        const clearedAt = localState?.clearedAt ?? 0;
+        if (localState?.deletedMessageUlids?.[row.message_id]) return false;
         return !clearedAt || Number(row.sent_at ?? 0) >= clearedAt;
       });
       const state = get();
@@ -2486,7 +2572,9 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
       set({ searchResults: results, searchLoading: false });
     } catch (error) {
       log.error('socialChat', 'searchMessages failed', error);
-      set({ searchLoading: false });
+      if (get().searchQuery === trimmedQuery) {
+        set({ searchLoading: false });
+      }
       throw error;
     }
   },

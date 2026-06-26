@@ -1,10 +1,10 @@
 # Applet Runtime Architecture — 服务架构
 
 > **Status**: draft
-> **Version**: v1.0
-> **Created**: 2026-06-06 | **Updated**: 2026-06-06
+> **Version**: v1.1
+> **Created**: 2026-06-06 | **Updated**: 2026-06-17
 > **Owner**: Architecture Team
-> **Module**: `apps/station/app/subserver/applet_store/`, `apps/desktop/src-tauri/src/application/applets/`, `apps/mobile/**/core/applet/`
+> **Module**: `apps/applets/`, `apps/station/`, `apps/desktop/src-tauri/src/application/applets/`, `apps/mobile/**/core/applet/`
 
 ---
 
@@ -57,6 +57,7 @@ Platform Handlers
 - Host Gateway 是端侧强制执行点。
 - Platform Handler 只执行已授权调用。
 - Applet 不能直接访问 Station 内部接口。
+- Applet 不能直接持有 service upstream 或 backend base URL。
 
 ---
 
@@ -136,15 +137,19 @@ export interface CapabilityDescriptor {
 |--------|------------|-----------|------|
 | `app.getContext` | `system` | active/hidden/paused | low |
 | `lifecycle.reportReady` | none | loading | low |
-| `storage.get` | `storage` | active/hidden/paused | low |
-| `storage.set` | `storage` | active/hidden | low |
-| `storage.remove` | `storage` | active/hidden | low |
-| `network.request` | `network` | active | medium |
+| `storage.get` | `storage:applet` | active/hidden/paused | low |
+| `storage.set` | `storage:applet` | active/hidden | low |
+| `storage.remove` | `storage:applet` | active/hidden | low |
+| `network.request` | `network:service:<service>` | active | medium |
 | `config.get` | `config` | active/hidden/paused | low |
 | `system.getInfo` | `system` | active/hidden/paused | low |
-| `ui.showToast` | `ui` | active | low |
-| `ui.showModal` | `ui` | active | medium |
-| `events.subscribe` | `events` | active | medium |
+| `ui.showToast` | `ui:feedback` | active | low |
+| `ui.confirm` | `ui:feedback` | active | medium |
+| `navigation.navigateTo` | `navigation:applet` | active | low |
+| `navigation.back` | `navigation:applet` | active | low |
+| `events.emit` | `events:applet` | active | medium |
+| `events.subscribe` | `events:applet` | active | medium |
+| `telemetry.track` | `telemetry:track` | active/hidden/paused | low |
 
 High-risk 能力必须单独 ADR：camera、microphone、location、contacts、file external access、payment。
 
@@ -185,22 +190,53 @@ Manifest 权限只是上限。Host 可以继续收紧，不能放宽。
 
 ---
 
-## 7. Network Service
+## 7. Network Service Binding
 
-Applet 的 `network.request` 必须走 Host proxy：
+Applet 的 `network.request` 必须走 Host Gateway 的 service binding：
 
-- Applet 提供 URL、method、headers、body。
-- Gateway 校验 allowlist、method、header denylist、body size。
-- Host 注入 Peers-Touch session 或 Station credential。
-- Host 发起请求，返回去敏后的 status、headers、body。
+```typescript
+sdk.network.request({
+  service: 'note',
+  method: 'POST',
+  path: '/v1/notes',
+  body: input
+})
+```
+
+Gateway 执行：
+
+- 校验 applet manifest 是否声明 `services.note`。
+- 校验 permission 是否包含 `network:service:note`。
+- 校验 method、path、headers、body size。
+- 解析 `note` 当前部署目标：Station-bundled subserver 或 standalone service。
+- 注入 Peers-Touch session、account、station、applet session 等服务端上下文。
+- 发起请求，返回去敏后的 status、headers、body。
+- 记录 metadata-only audit。
 
 禁止：
 
 - Applet 直接读取 token。
 - Applet 直接访问 Station internal API。
+- Applet 直接读取或拼接 backend base URL。
 - Host 记录 Authorization、Cookie、Set-Cookie、PII body。
 
 Web Host 中，network proxy 由 BFF 或 Station endpoint 承担，不能退回 browser raw fetch 作为生产路径。
+
+仅当 manifest 明确声明 `external-service` 且策略允许时，Gateway 才能代理外部网络请求。该路径不用于官方 Note applet 的业务 API。
+
+### 7.1 Official Applet Service Deployment
+
+官方 applet service 可有两个部署目标：
+
+```text
+Station bundled:
+  Gateway -> current Station -> applet stationadapter -> applet service/application
+
+Standalone:
+  Gateway -> configured/discovered upstream -> standalone applet service -> applet service/application
+```
+
+两种部署目标必须保持同一 service name、API 语义、错误模型和授权语义。Applet 前端调用方式不随部署目标变化。
 
 ---
 

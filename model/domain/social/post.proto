@@ -325,6 +325,7 @@ message GetPostRequest {
 
 message GetPostResponse {
   Post post = 1;
+  FeedObjectExplanation explanation = 2;
 }
 
 message ListPostsRequest {
@@ -337,6 +338,7 @@ message ListPostsResponse {
   repeated Post posts = 1;
   string next_cursor = 2;
   bool has_more = 3;
+  repeated FeedObjectExplanation explanations = 4;
 }
 
 message PostFilter {
@@ -364,6 +366,151 @@ message GetTimelineResponse {
   repeated Post posts = 1;
   string next_cursor = 2;
   bool has_more = 3;
+  repeated FeedObjectExplanation explanations = 4;
+}
+
+// FeedObjectExplanation is a viewer-scoped projection, not intrinsic
+// post content. It answers the Human federated-social questions the UI
+// must make visible: where this object came from, why the viewer sees
+// it, what audience boundary applies, and whether block policy affected
+// projection.
+message FeedObjectExplanation {
+  string object_id = 1;
+  ActivitySource source = 2;
+  RelationshipReason relationship_reason = 3;
+  AudienceExplanation audience_explanation = 4;
+  BlockExplanation block_explanation = 5;
+}
+
+message ActivitySource {
+  enum Kind {
+    ACTIVITY_SOURCE_UNSPECIFIED = 0;
+    ACTIVITY_SOURCE_LOCAL = 1;
+    ACTIVITY_SOURCE_REMOTE = 2;
+    ACTIVITY_SOURCE_UNRESOLVED = 3;
+  }
+
+  Kind kind = 1;
+  string station_domain = 2;
+  string station_peer_id = 3;
+}
+
+message RelationshipReason {
+  enum Kind {
+    RELATIONSHIP_REASON_UNSPECIFIED = 0;
+    RELATIONSHIP_REASON_SELF = 1;
+    RELATIONSHIP_REASON_FOLLOWING = 2;
+    RELATIONSHIP_REASON_FOLLOWER = 3;
+    RELATIONSHIP_REASON_MUTUAL = 4;
+    RELATIONSHIP_REASON_CIRCLE = 5;
+    RELATIONSHIP_REASON_MENTIONED = 6;
+    RELATIONSHIP_REASON_PUBLIC_FEDERATED = 7;
+    RELATIONSHIP_REASON_PROFILE_VIEW = 8;
+    RELATIONSHIP_REASON_UNKNOWN = 9;
+  }
+
+  Kind kind = 1;
+  string actor_id = 2;
+  string circle_id = 3;
+  string station_domain = 4;
+}
+
+message AudienceExplanation {
+  Audience.Kind kind = 1;
+  string target_id = 2;
+  bool viewer_is_author = 3;
+  bool viewer_is_member = 4;
+  bool policy_filtered = 5;
+}
+
+message BlockExplanation {
+  enum Kind {
+    BLOCK_STATE_UNSPECIFIED = 0;
+    BLOCK_STATE_NOT_BLOCKED = 1;
+    BLOCK_STATE_VIEWER_BLOCKED_AUTHOR = 2;
+    BLOCK_STATE_AUTHOR_BLOCKED_VIEWER = 3;
+    BLOCK_STATE_STATION_BLOCKED = 4;
+  }
+
+  Kind kind = 1;
+  string actor_id = 2;
+  string station_domain = 3;
+}
+
+message StationModerationPolicy {
+  enum Kind {
+    STATION_MODERATION_POLICY_UNSPECIFIED = 0;
+    STATION_MODERATION_POLICY_BLOCK = 1;
+  }
+
+  string station_domain = 1;
+  string station_peer_id = 2;
+  Kind kind = 3;
+  string reason = 4;
+  string created_by_actor_id = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+message UpsertStationModerationPolicyRequest {
+  StationModerationPolicy policy = 1;
+}
+
+message UpsertStationModerationPolicyResponse {
+  StationModerationPolicy policy = 1;
+}
+
+message DeleteStationModerationPolicyRequest {
+  string station_domain = 1;
+  string station_peer_id = 2;
+  StationModerationPolicy.Kind kind = 3;
+}
+
+message DeleteStationModerationPolicyResponse {
+  bool success = 1;
+}
+
+message ListStationModerationPoliciesRequest {
+  StationModerationPolicy.Kind kind = 1;
+  string cursor = 2;
+  int32 limit = 3;
+}
+
+message ListStationModerationPoliciesResponse {
+  repeated StationModerationPolicy policies = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+}
+
+// MomentDelivery is the durable viewer-scoped inbox entry for HOME
+// timeline projection. PUBLIC Moments are intentionally excluded from
+// delivery rows and remain served by the public feed path.
+message MomentDelivery {
+  string id = 1;
+  string viewer_id = 2;
+  string post_id = 3;
+  string author_id = 4;
+  Audience.Kind audience_kind = 5;
+  google.protobuf.Timestamp delivered_at = 6;
+  google.protobuf.Timestamp revoked_at = 7;
+}
+
+// SyncMomentsProjectionRequest is the runtime reconcile entrypoint.
+// Cursors are optional; an empty cursor asks Station for a fresh
+// authoritative snapshot of the viewer-owned projections.
+message SyncMomentsProjectionRequest {
+  string home_cursor = 1;
+  string public_cursor = 2;
+  int32 limit = 3;
+  TimelineSort public_sort = 4;
+  string reason = 5;
+}
+
+message SyncMomentsProjectionResponse {
+  GetTimelineResponse home_timeline = 1;
+  GetTimelineResponse public_timeline = 2;
+  string sync_token = 3;
+  google.protobuf.Timestamp synced_at = 4;
 }
 
 enum TimelineType {

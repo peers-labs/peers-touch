@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Input, Modal, Space, Tooltip, message, theme } from 'antd';
-import { ImagePlus, X, RotateCcw } from 'lucide-react';
+import { Button } from '@lobehub/ui';
+import { Input, Space, Tooltip, Typography, message, theme } from 'antd';
+import { ImagePlus, LockKeyhole, RotateCcw, SendHorizontal, X } from 'lucide-react';
 import { create } from '@bufbuild/protobuf';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import {
@@ -14,10 +15,13 @@ import {
 import { EncryptedMediaDescriptorSchema } from '../../gen/proto/domain/common/common_pb';
 import { AudiencePicker } from './AudiencePicker';
 import { useMomentsStore } from '../../store/moments';
+import { useDiscoveryStore } from '../../store/discovery';
 import { api, type SocialEncryptedMediaDescriptorWire } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
+import { UserSquareAvatar } from '../common/UserSquareAvatar';
 
 const { TextArea } = Input;
+const { Text } = Typography;
 
 const TAG = 'moment-composer';
 
@@ -41,8 +45,6 @@ const TAG = 'moment-composer';
 const MAX_IMAGES_PER_POST = 9;
 
 interface MomentComposerProps {
-  open: boolean;
-  onClose: () => void;
   /** Optional initial audience override (defaults to PUBLIC). */
   initialAudience?: Audience;
   /** Optional callback after successful publish. */
@@ -95,10 +97,11 @@ function toEncryptedMediaDescriptor(wire: SocialEncryptedMediaDescriptorWire) {
   });
 }
 
-export function MomentComposer({ open, onClose, initialAudience, onPublished }: MomentComposerProps) {
+export function MomentComposer({ initialAudience, onPublished }: MomentComposerProps) {
   const { t } = useTranslation('moments');
   const { token } = theme.useToken();
 
+  const me = useDiscoveryStore((s) => s.me);
   const draft = useMomentsStore((s) => s.composerDraft);
   const setDraft = useMomentsStore((s) => s.setComposerDraft);
   const clearDraft = useMomentsStore((s) => s.clearComposerDraft);
@@ -110,13 +113,6 @@ export function MomentComposer({ open, onClose, initialAudience, onPublished }: 
   );
   const [pending, setPending] = useState<PendingImage[]>([]);
   const [submitting, setSubmitting] = useState(false);
-
-  // Reset image queue whenever the modal closes — drafts intentionally
-  // preserve text + audience (cheap, no side effects) but NOT image
-  // uploads (they consume OSS storage; resuming silently feels wrong).
-  useEffect(() => {
-    if (!open) setPending([]);
-  }, [open]);
 
   const uploadingCount = useMemo(
     () => pending.filter((p) => p.status === 'uploading').length,
@@ -130,13 +126,14 @@ export function MomentComposer({ open, onClose, initialAudience, onPublished }: 
   const canPublish =
     !!text.trim() && uploadingCount === 0 && errorCount === 0 && !submitting;
 
-  const handleClose = () => {
+  const handleClear = () => {
     if (text.trim()) {
       setDraft({ text, audience, mentions: [] });
     } else {
       clearDraft();
     }
-    onClose();
+    setText('');
+    setPending([]);
   };
 
   // Sequential upload bounds Rust-side memory (multipart parser keeps
@@ -256,7 +253,6 @@ export function MomentComposer({ open, onClose, initialAudience, onPublished }: 
       setPending([]);
       clearDraft();
       onPublished?.(id);
-      onClose();
     } catch (err) {
       message.error(String(err));
     } finally {
@@ -265,23 +261,41 @@ export function MomentComposer({ open, onClose, initialAudience, onPublished }: 
   };
 
   return (
-    <Modal
-      open={open}
-      title={t('moments.compose.title')}
-      onCancel={handleClose}
-      footer={null}
-      width={560}
-      destroyOnHidden
-    >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <TextArea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={t('moments.compose.placeholder')}
-          autoSize={{ minRows: 4, maxRows: 12 }}
-          maxLength={5000}
-          showCount
-        />
+      <div
+        id="moments-composer"
+        style={{
+          padding: 2,
+          background: token.colorBgContainer,
+        }}
+      >
+        <div style={{ display: 'flex', gap: 12 }}>
+          <UserSquareAvatar
+            remoteUrl={me?.avatar || undefined}
+            name={me?.displayName || me?.username || t('moments.author.unknown')}
+            size={42}
+            radius={12}
+          />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <TextArea
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value);
+                setDraft({ text: e.target.value, audience, mentions: [] });
+              }}
+              placeholder={t('moments.compose.placeholder')}
+              autoSize={{ minRows: 2, maxRows: 10 }}
+              maxLength={5000}
+              bordered={false}
+              style={{
+                padding: 0,
+                resize: 'none',
+                background: 'transparent',
+                fontSize: 15,
+                lineHeight: 1.7,
+              }}
+            />
+          </div>
+        </div>
 
         {pending.length > 0 && (
           <div
@@ -289,6 +303,8 @@ export function MomentComposer({ open, onClose, initialAudience, onPublished }: 
               display: 'grid',
               gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))',
               gap: 8,
+              marginTop: 14,
+              marginLeft: 54,
             }}
           >
             {pending.map((p) => (
@@ -303,8 +319,18 @@ export function MomentComposer({ open, onClose, initialAudience, onPublished }: 
           </div>
         )}
 
-        <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-          <Space size={8}>
+        <Space
+          wrap
+          style={{
+            justifyContent: 'space-between',
+            width: '100%',
+            marginTop: 12,
+            paddingTop: 10,
+            borderTop: `1px solid ${token.colorBorderSecondary}`,
+          }}
+          align="center"
+        >
+          <Space size={8} wrap>
             <Tooltip
               title={
                 slotsLeft <= 0
@@ -316,48 +342,46 @@ export function MomentComposer({ open, onClose, initialAudience, onPublished }: 
               }
             >
               <Button
-                size="small"
+                type="text"
                 icon={<ImagePlus size={14} />}
                 onClick={handlePickImages}
                 disabled={slotsLeft <= 0 || submitting}
               >
-                {t('moments.compose.attachImage')}
-                {pending.length > 0
-                  ? ` (${pending.length}/${MAX_IMAGES_PER_POST})`
-                  : ''}
+                {pending.length > 0 ? `${pending.length}/${MAX_IMAGES_PER_POST}` : null}
               </Button>
             </Tooltip>
             {uploadingCount > 0 && (
-              <span style={{ color: token.colorTextTertiary, fontSize: 12 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
                 {t('moments.compose.imageUploadingProgress', {
                   uploading: uploadingCount,
                   total: pending.length,
                 })}
-              </span>
+              </Text>
             )}
           </Space>
-          <Space size={8}>
-            <span style={{ color: token.colorTextSecondary, fontSize: 12 }}>
-              {t('moments.compose.audienceLabel')}
-            </span>
+          <Space size={8} wrap style={{ justifyContent: 'flex-end' }}>
+            <Space size={4} style={{ color: token.colorTextSecondary, fontSize: 12 }}>
+              <LockKeyhole size={13} />
+              <span>{t('moments.compose.audienceLabel')}</span>
+            </Space>
             <AudiencePicker value={audience} onChange={setAudience} disabled={submitting} />
+            {(text || pending.length > 0) && (
+              <Button onClick={handleClear} disabled={submitting} type="text">
+                {t('moments.compose.cancel')}
+              </Button>
+            )}
+            <Button
+              type="primary"
+              onClick={handlePublish}
+              loading={submitting}
+              disabled={!canPublish}
+              icon={<SendHorizontal size={14} />}
+            >
+              {t('moments.compose.publish')}
+            </Button>
           </Space>
         </Space>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <Button onClick={handleClose} disabled={submitting}>
-            {t('moments.compose.cancel')}
-          </Button>
-          <Button
-            type="primary"
-            onClick={handlePublish}
-            loading={submitting}
-            disabled={!canPublish}
-          >
-            {t('moments.compose.publish')}
-          </Button>
-        </div>
       </div>
-    </Modal>
   );
 }
 
@@ -386,7 +410,7 @@ function PendingThumb({ item, onRemove, onRetry, token }: PendingThumbProps) {
     >
       <img
         src={item.previewSrc}
-        alt="pending"
+        alt={t('moments.compose.imagePendingAlt')}
         style={{
           width: '100%',
           height: '100%',

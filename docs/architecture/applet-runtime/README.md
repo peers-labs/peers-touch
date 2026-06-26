@@ -1,10 +1,10 @@
 # Applet Runtime Architecture
 
 > **Status**: draft
-> **Version**: v1.2
-> **Created**: 2026-05-19 | **Updated**: 2026-06-06
+> **Version**: v1.3
+> **Created**: 2026-05-19 | **Updated**: 2026-06-17
 > **Owner**: Architecture Team
-> **Module**: `apps/desktop/src/applet/`, `apps/mobile/`, `packages/applet-sdk/`, `packages/applets/`
+> **Module**: `apps/applets/`, `apps/desktop/src/applet/`, `apps/mobile/`, `packages/applet-sdk/`, `packages/applet-contract/`
 
 ---
 
@@ -19,6 +19,7 @@
 - Host、Runtime、Bridge、Capability Gateway、Applet SDK 的职责边界
 - Manifest、Bundle、Bridge、权限、生命周期的统一口径
 - 参考微信小程序 SDK 后，Peers-Touch 应暴露的 SDK 能力分层
+- 官方 applet 作为独立产品单元时的目录、服务、注入、部署和验收契约
 
 本文档不定义：
 
@@ -84,13 +85,18 @@ README
 
 ## 5. AI Read Order
 
+When creating, modifying, implementing, or validating official applets under `apps/applets/`, AI agents must use the project skill [`official-applet-development`](../../../tooling/skills/official-applet-development/SKILL.md) before editing.
+
 AI 执行复杂 applet 开发任务时必须按这个顺序读：
 
 1. [README.md](./README.md)
-2. [complex-applet-acceptance.md](./complex-applet-acceptance.md)
-3. [development-runtime-readiness-report.md](./development-runtime-readiness-report.md)
-4. [execution-plans/2026-06-06-complex-applet-implementation-plan.md](./execution-plans/2026-06-06-complex-applet-implementation-plan.md)
-5. 按任务选择领域设计：
+2. [official-applet-architecture-contract.md](./official-applet-architecture-contract.md)
+3. [complex-applet-acceptance.md](./complex-applet-acceptance.md)
+4. [development-runtime-readiness-report.md](./development-runtime-readiness-report.md)
+5. 按目标选择任务级执行计划：
+   - 官方 Note applet 验证： [execution-plans/2026-06-17-note-official-applet-implementation-plan.md](./execution-plans/2026-06-17-note-official-applet-implementation-plan.md)
+   - 通用复杂 applet 能力： [execution-plans/2026-06-06-complex-applet-implementation-plan.md](./execution-plans/2026-06-06-complex-applet-implementation-plan.md)
+6. 按任务选择领域设计：
    - Contract / schema： [data-model.md](./data-model.md), [module-layout.md](./module-layout.md)
    - SDK： [sdk-architecture.md](./sdk-architecture.md)
    - Desktop / Mobile / Web runtime： [runtime-architecture.md](./runtime-architecture.md), [integration.md](./integration.md)
@@ -105,6 +111,8 @@ AI 不得只读 `execution-plans/2026-06-06-applet-runtime-formalization.md` 后
 
 | 文档 | 说明 |
 |------|------|
+| [official-applet-architecture-contract.md](./official-applet-architecture-contract.md) | 官方 applet 产品单元契约：`apps/applets`、DDD service、manifest、Host 注入、Station bundled / standalone 部署 |
+| [note-applet-validation-design.md](./note-applet-validation-design.md) | Note 作为首个官方 applet 的验证设计：前端、service、service binding、Desktop/Mobile 注入和真实 gate |
 | [complex-applet-acceptance.md](./complex-applet-acceptance.md) | 复杂 applet 验收画像：skills、agent/AI、streaming、tasks、service binding、audit 的首批硬门槛 |
 | [development-runtime-readiness-report.md](./development-runtime-readiness-report.md) | Peers-Touch 小程序开发与运行能力是否成立的 readiness gate 和 evidence 要求 |
 | [design-validation-matrix.md](./design-validation-matrix.md) | 用微信小程序成熟能力域 + Peers-Touch 特有能力逐项沙盘验证设计是否完整 |
@@ -126,6 +134,8 @@ AI 不得只读 `execution-plans/2026-06-06-applet-runtime-formalization.md` 后
 
 | 文档 | 说明 |
 |------|------|
+| [execution-plans/2026-06-17-note-official-applet-implementation-plan.md](./execution-plans/2026-06-17-note-official-applet-implementation-plan.md) | **任务级执行源**：Note 官方 applet，覆盖 `apps/applets/note`、Note service、SDK/Gateway 增强、Desktop 注入、真实证据 |
+| [execution-plans/note-official-applet-progress.md](./execution-plans/note-official-applet-progress.md) | Note 官方 applet 持久进度：记录当前 workstream、已跑命令、证据文件和下一步 |
 | [execution-plans/2026-06-06-complex-applet-implementation-plan.md](./execution-plans/2026-06-06-complex-applet-implementation-plan.md) | **任务级执行源**：C0/S1/G2/D3/T4/A5，写入范围、命令、pass/fail、AI prompt |
 | [execution-plans/2026-06-06-applet-runtime-formalization.md](./execution-plans/2026-06-06-applet-runtime-formalization.md) | 总体 phase 计划，必须服从复杂 applet 任务级计划 |
 

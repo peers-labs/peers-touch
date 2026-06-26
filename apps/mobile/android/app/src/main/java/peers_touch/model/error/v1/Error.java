@@ -165,6 +165,46 @@ public final class Error {
      */
     ERROR_CODE_DELETE_COMMENT_FAILED(30017),
     /**
+     * <code>ERROR_CODE_NOTE_ID_REQUIRED = 30101;</code>
+     */
+    ERROR_CODE_NOTE_ID_REQUIRED(30101),
+    /**
+     * <code>ERROR_CODE_NOTE_NOT_FOUND = 30102;</code>
+     */
+    ERROR_CODE_NOTE_NOT_FOUND(30102),
+    /**
+     * <code>ERROR_CODE_NOTE_EMPTY_CONTENT = 30103;</code>
+     */
+    ERROR_CODE_NOTE_EMPTY_CONTENT(30103),
+    /**
+     * <code>ERROR_CODE_CREATE_NOTE_FAILED = 30104;</code>
+     */
+    ERROR_CODE_CREATE_NOTE_FAILED(30104),
+    /**
+     * <code>ERROR_CODE_UPDATE_NOTE_FAILED = 30105;</code>
+     */
+    ERROR_CODE_UPDATE_NOTE_FAILED(30105),
+    /**
+     * <code>ERROR_CODE_DELETE_NOTE_FAILED = 30106;</code>
+     */
+    ERROR_CODE_DELETE_NOTE_FAILED(30106),
+    /**
+     * <code>ERROR_CODE_RESTORE_NOTE_FAILED = 30107;</code>
+     */
+    ERROR_CODE_RESTORE_NOTE_FAILED(30107),
+    /**
+     * <code>ERROR_CODE_SEARCH_NOTES_FAILED = 30108;</code>
+     */
+    ERROR_CODE_SEARCH_NOTES_FAILED(30108),
+    /**
+     * <code>ERROR_CODE_LIST_NOTES_FAILED = 30109;</code>
+     */
+    ERROR_CODE_LIST_NOTES_FAILED(30109),
+    /**
+     * <code>ERROR_CODE_NOTE_PERMISSION_DENIED = 30110;</code>
+     */
+    ERROR_CODE_NOTE_PERMISSION_DENIED(30110),
+    /**
      * <pre>
      * ── Federation (40000s) ───────────────────────────────────────
      * Phase E.bridge — public federation API errors. Distinct range
@@ -358,6 +398,46 @@ public final class Error {
      */
     public static final int ERROR_CODE_DELETE_COMMENT_FAILED_VALUE = 30017;
     /**
+     * <code>ERROR_CODE_NOTE_ID_REQUIRED = 30101;</code>
+     */
+    public static final int ERROR_CODE_NOTE_ID_REQUIRED_VALUE = 30101;
+    /**
+     * <code>ERROR_CODE_NOTE_NOT_FOUND = 30102;</code>
+     */
+    public static final int ERROR_CODE_NOTE_NOT_FOUND_VALUE = 30102;
+    /**
+     * <code>ERROR_CODE_NOTE_EMPTY_CONTENT = 30103;</code>
+     */
+    public static final int ERROR_CODE_NOTE_EMPTY_CONTENT_VALUE = 30103;
+    /**
+     * <code>ERROR_CODE_CREATE_NOTE_FAILED = 30104;</code>
+     */
+    public static final int ERROR_CODE_CREATE_NOTE_FAILED_VALUE = 30104;
+    /**
+     * <code>ERROR_CODE_UPDATE_NOTE_FAILED = 30105;</code>
+     */
+    public static final int ERROR_CODE_UPDATE_NOTE_FAILED_VALUE = 30105;
+    /**
+     * <code>ERROR_CODE_DELETE_NOTE_FAILED = 30106;</code>
+     */
+    public static final int ERROR_CODE_DELETE_NOTE_FAILED_VALUE = 30106;
+    /**
+     * <code>ERROR_CODE_RESTORE_NOTE_FAILED = 30107;</code>
+     */
+    public static final int ERROR_CODE_RESTORE_NOTE_FAILED_VALUE = 30107;
+    /**
+     * <code>ERROR_CODE_SEARCH_NOTES_FAILED = 30108;</code>
+     */
+    public static final int ERROR_CODE_SEARCH_NOTES_FAILED_VALUE = 30108;
+    /**
+     * <code>ERROR_CODE_LIST_NOTES_FAILED = 30109;</code>
+     */
+    public static final int ERROR_CODE_LIST_NOTES_FAILED_VALUE = 30109;
+    /**
+     * <code>ERROR_CODE_NOTE_PERMISSION_DENIED = 30110;</code>
+     */
+    public static final int ERROR_CODE_NOTE_PERMISSION_DENIED_VALUE = 30110;
+    /**
      * <pre>
      * ── Federation (40000s) ───────────────────────────────────────
      * Phase E.bridge — public federation API errors. Distinct range
@@ -459,6 +539,16 @@ public final class Error {
         case 30015: return ERROR_CODE_CREATE_COMMENT_FAILED;
         case 30016: return ERROR_CODE_GET_COMMENTS_FAILED;
         case 30017: return ERROR_CODE_DELETE_COMMENT_FAILED;
+        case 30101: return ERROR_CODE_NOTE_ID_REQUIRED;
+        case 30102: return ERROR_CODE_NOTE_NOT_FOUND;
+        case 30103: return ERROR_CODE_NOTE_EMPTY_CONTENT;
+        case 30104: return ERROR_CODE_CREATE_NOTE_FAILED;
+        case 30105: return ERROR_CODE_UPDATE_NOTE_FAILED;
+        case 30106: return ERROR_CODE_DELETE_NOTE_FAILED;
+        case 30107: return ERROR_CODE_RESTORE_NOTE_FAILED;
+        case 30108: return ERROR_CODE_SEARCH_NOTES_FAILED;
+        case 30109: return ERROR_CODE_LIST_NOTES_FAILED;
+        case 30110: return ERROR_CODE_NOTE_PERMISSION_DENIED;
         case 40001: return ERROR_CODE_FEDERATION_HANDLE_REQUIRED;
         case 40002: return ERROR_CODE_FEDERATION_INVALID_VISIBILITY;
         case 40003: return ERROR_CODE_FEDERATION_TOMBSTONED;

@@ -6,6 +6,7 @@ import {
   type AccessDecision,
   type MobileAuthSession,
 } from './authSession';
+import { readableErrorMessage } from '../../utils/errorMessage';
 
 interface AuthState {
   session: MobileAuthSession | null;
@@ -51,5 +52,5 @@ export const useAuthStore = create<AuthState>((set) => ({
 }));
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return readableErrorMessage(error);
 }

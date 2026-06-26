@@ -8,6 +8,7 @@ import {
 import type { MobileAuthSession } from '../auth/authSession';
 import type { ChatAttachmentInput } from '../social/socialApi';
 import { createSocialApiClient } from '../social/socialApi';
+import { readableErrorMessage } from '../social/socialTypes';
 import { ChatEncryptedMessagePayloadSchema, GroupMessageAttachmentSchema, type ChatEncryptedMessagePayload, type GroupMember, type GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import { EncryptedMediaDescriptorSchema } from '../../gen/proto/domain/common/common_pb';
 import { consumeGroupSkdm, decryptGroupPayloadBytes, emitGroupSkdm, encryptGroupMessagePayload, rotateGroupSenderKey } from './groupE2eeBridge';
@@ -335,8 +336,7 @@ function rotationErrorKey(groupUlid: string): string {
 }
 
 function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return String(error);
+  return readableErrorMessage(error);
 }
 
 function base64ToBytes(value: string): Uint8Array {

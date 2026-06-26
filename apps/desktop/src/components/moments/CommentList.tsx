@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Input, Space, Spin, Typography, message, theme } from 'antd';
+import { Button } from '@lobehub/ui';
+import { Input, Space, Spin, Typography, message, theme } from 'antd';
 import { Trash2 } from 'lucide-react';
 import type { Comment } from '../../gen/proto/domain/social/comment_pb';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
@@ -49,6 +50,7 @@ export function CommentList({
   const { token } = theme.useToken();
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
 
   // Reset the composer if the active post changes underfoot.
@@ -73,22 +75,24 @@ export function CommentList({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {comments.length === 0 && !loading && (
-        <Text type="secondary" style={{ fontSize: 13 }}>
-          {t('moments.comment.empty')}
-        </Text>
+        <div style={{ padding: '8px 0' }}>
+          <Text type="secondary" style={{ fontSize: 13 }}>
+            {t('moments.comment.empty')}
+          </Text>
+        </div>
       )}
 
       {comments.map((c) => {
         const isMine = !!viewerActorId && c.authorId === viewerActorId;
         const authorName = c.author?.displayName || c.author?.username || t('moments.author.unknown');
         return (
-          <div key={c.id} style={{ display: 'flex', gap: 10 }}>
+          <div key={c.id} style={{ display: 'flex', gap: 10, padding: '2px 0' }}>
             <UserSquareAvatar
               remoteUrl={c.author?.avatarUrl || undefined}
               name={authorName}
-              size={28}
+              size={26}
             />
             <div style={{ flex: 1, minWidth: 0 }}>
               <Space size={6} align="baseline">
@@ -111,6 +115,7 @@ export function CommentList({
                   size="small"
                   type="link"
                   style={{ padding: 0, fontSize: 12 }}
+                  disabled={!!deletingCommentId}
                   onClick={() => setReplyTarget(c)}
                 >
                   {t('moments.comment.reply')}
@@ -122,11 +127,17 @@ export function CommentList({
                     danger
                     style={{ padding: 0, fontSize: 12 }}
                     icon={<Trash2 size={11} />}
+                    loading={deletingCommentId === c.id}
+                    disabled={!!deletingCommentId}
                     onClick={async () => {
+                      if (deletingCommentId) return;
+                      setDeletingCommentId(c.id);
                       try {
                         await onDelete(c.id);
                       } catch (err) {
                         message.error(String(err));
+                      } finally {
+                        setDeletingCommentId(null);
                       }
                     }}
                   >
@@ -146,7 +157,7 @@ export function CommentList({
       )}
 
       {hasMore && !loading && (
-        <Button block type="link" onClick={onLoadMore}>
+        <Button block type="text" size="small" onClick={onLoadMore}>
           {t('moments.action.loadMore')}
         </Button>
       )}
@@ -154,7 +165,7 @@ export function CommentList({
       <div
         style={{
           borderTop: `1px solid ${token.colorBorderSecondary}`,
-          paddingTop: 12,
+          paddingTop: 10,
           display: 'flex',
           flexDirection: 'column',
           gap: 6,
@@ -185,6 +196,7 @@ export function CommentList({
           onChange={(e) => setText(e.target.value)}
           placeholder={t('moments.comment.placeholder')}
           autoSize={{ minRows: 1, maxRows: 4 }}
+          style={{ borderRadius: token.borderRadius }}
           onPressEnter={(e) => {
             if (!e.shiftKey) {
               e.preventDefault();

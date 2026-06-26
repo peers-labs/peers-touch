@@ -4,7 +4,7 @@
 //! part that interprets [`PresenceTrigger`]s against the running supervisor's
 //! state and runs the **reconcile pipeline**:
 //!
-//!   1. `POST /friend-chat/online`
+//!   1. `POST /presence/heartbeat`
 //!   2. `GET  /friend-chat/pending`
 //!   3. `friend_chat_sync_from_station` for every distinct session id
 //!   4. `POST /friend-chat/message/ack` to clear station's queue
@@ -240,7 +240,7 @@ impl PresenceSupervisor {
         token: &str,
         trigger: PresenceTrigger,
     ) -> ReconcileOutcome {
-        let result = match chat_storage::friend_chat_offline(token) {
+        let result = match chat_storage::presence_offline(token, trigger.as_wire()) {
             Ok(_) => {
                 tracing::info!(
                     actor = actor_id,
@@ -250,9 +250,8 @@ impl PresenceSupervisor {
                 ReconcileOutcome::ok(0, Vec::new())
             }
             Err(e) => {
-                // /offline is best-effort — station will eventually expire
-                // our heartbeat anyway. Don't error-propagate; we just log.
-                tracing::warn!(actor = actor_id, ?trigger, error = %e, "presence: /offline failed");
+                // /presence/offline is best-effort; the lease TTL is the authoritative safety net.
+                tracing::warn!(actor = actor_id, ?trigger, error = %e, "presence: /presence/offline failed");
                 ReconcileOutcome::ok(0, Vec::new())
             }
         };
@@ -286,9 +285,9 @@ impl PresenceSupervisor {
         token: &str,
         trigger: PresenceTrigger,
     ) -> ReconcileOutcome {
-        // Step 1: announce we're online so station stops queuing for us.
-        if let Err(e) = chat_storage::friend_chat_online(token) {
-            tracing::warn!(actor = actor_id, ?trigger, error = %e, "presence: /online failed");
+        // Step 1: renew the actor presence lease so station stops queuing for us.
+        if let Err(e) = chat_storage::presence_heartbeat(token, trigger.as_wire()) {
+            tracing::warn!(actor = actor_id, ?trigger, error = %e, "presence: /presence/heartbeat failed");
             return ReconcileOutcome::failed();
         }
 

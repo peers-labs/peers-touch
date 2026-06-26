@@ -17,6 +17,7 @@ export interface ChatDraftAttachment {
   name: string;
   mimeType: string;
   size: number;
+  durationSeconds?: number;
   previewUrl: string | null;
   status: ChatDraftStatus;
   attachment?: ChatAttachmentInput;
@@ -38,7 +39,15 @@ function revokePreviewUrl(item: ChatDraftAttachment): void {
   if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
 }
 
-function createDraftAttachment(file: File, fallbackName: string): ChatDraftAttachment {
+interface AddDraftFilesOptions {
+  durationSeconds?: number;
+}
+
+function createDraftAttachment(
+  file: File,
+  fallbackName: string,
+  options?: AddDraftFilesOptions,
+): ChatDraftAttachment {
   const mimeType = file.type || 'application/octet-stream';
   const mediaKind = chatMediaKindFromMimeFilename(mimeType, file.name);
   return {
@@ -47,6 +56,7 @@ function createDraftAttachment(file: File, fallbackName: string): ChatDraftAttac
     name: file.name || fallbackName,
     mimeType,
     size: file.size,
+    durationSeconds: options?.durationSeconds,
     previewUrl: mediaKind === 'image' || mediaKind === 'video'
       ? URL.createObjectURL(file)
       : null,
@@ -111,9 +121,9 @@ export function useChatAttachmentDrafts({
     }
   }, [conversationId, onUploadFailed, patchDraft]);
 
-  const addFiles = useCallback((files: File[]) => {
+  const addFiles = useCallback((files: File[], options?: AddDraftFilesOptions) => {
     if (editing || disabled || files.length === 0) return;
-    const nextItems = files.map((file) => createDraftAttachment(file, fallbackName));
+    const nextItems = files.map((file) => createDraftAttachment(file, fallbackName, options));
     setDrafts((prev) => [...prev, ...nextItems]);
     nextItems.forEach((item) => {
       uploadDraft(item).catch((error) => {

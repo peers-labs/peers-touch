@@ -24,11 +24,13 @@ pub mod peers_touch {
 
 use interface::tauri_commands::{
     account, actor, admin, agent_growth, agent_scheduler, agent_turn, agents, applets, auth,
-    channels, chat, cron, crypto, federation, friend_chat, frontend_log, group_chat, host_events,
+    channels, chat, cron, crypto, desktop_capture, federation, friend_chat, frontend_log,
+    group_chat, host_events,
     i18n, ice, key_exchange, mcp, memory, model_config, models, notebook, notification, oauth2,
     oss, presence, profile, provider, realtime, search, settings, skills, skills_market, social,
     station, system, tools, tts,
 };
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -46,12 +48,25 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(desktop_capture::global_shortcut_plugin())
         .manage(app_state)
+        .manage(desktop_capture::ChatScreenshotShortcutState::default())
         .manage(presence_supervisor)
         .setup(|app| {
             let resource_dir = app.path()
                 .resource_dir()
-                .expect("[setup] Failed to resolve resource directory");
+                .unwrap_or_else(|e| {
+                    #[cfg(debug_assertions)]
+                    {
+                        tracing::warn!(
+                            error = %e,
+                            "Resource directory unavailable in dev; falling back to src-tauri resources path"
+                        );
+                        return PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources");
+                    }
+                    #[cfg(not(debug_assertions))]
+                    panic!("[setup] Failed to resolve resource directory: {e}");
+                });
             let state = app.state::<Arc<state::AppState>>();
             if let Err(e) = state.i18n.deploy_builtin_packs(&resource_dir) {
                 tracing::error!(error = %e, "Failed to deploy built-in i18n packs");
@@ -101,6 +116,9 @@ fn main() {
             actor::actor_search_actors,
             actor::actor_get_my_profile,
             auth::auth_login,
+            auth::access_start,
+            auth::access_submit_invite_code,
+            auth::access_submit_login,
             auth::auth_logout,
             auth::auth_restore_session,
             auth::auth_validate_token,
@@ -108,6 +126,7 @@ fn main() {
             settings::settings_get,
             settings::settings_set,
             settings::settings_reset,
+            desktop_capture::chat_screenshot_shortcut_register,
             chat::chat_list_conversations,
             chat::chat_list_messages,
             chat::chat_send_message,
@@ -127,6 +146,10 @@ fn main() {
             social::social_delete_moment,
             social::social_list_by_author,
             social::social_get_timeline,
+            social::social_sync_moments_projection,
+            social::social_station_moderation_upsert,
+            social::social_station_moderation_delete,
+            social::social_station_moderation_list,
             social::social_react,
             social::social_unreact,
             social::social_get_comments,
@@ -271,6 +294,7 @@ fn main() {
             applets::applets_action,
             applets::applets_product_window_launch_context,
             applets::applets_readiness_probe_context,
+            applets::applets_pick_import_directory,
             applets::applets_create_session,
             applets::applets_invoke,
             mcp::mcp_list_servers,
@@ -376,10 +400,6 @@ fn main() {
             friend_chat::friend_chat_edit_message,
             friend_chat::friend_chat_delete_message,
             friend_chat::friend_chat_sync_messages,
-            friend_chat::friend_chat_go_online,
-            friend_chat::friend_chat_go_offline,
-            friend_chat::friend_chat_presence_start,
-            friend_chat::friend_chat_presence_stop,
             realtime::realtime_stream_start,
             realtime::realtime_stream_stop,
             realtime::realtime_signal_send,
@@ -390,6 +410,7 @@ fn main() {
             key_exchange::key_exchange_upload_bundle,
             key_exchange::key_exchange_fetch_bundle,
             crypto::chat_search_local,
+            crypto::chat_index_local_messages,
             crypto::crypto_generate_identity,
             crypto::crypto_get_fingerprint,
             crypto::crypto_ratchet_telemetry_snapshot,
@@ -436,6 +457,8 @@ fn main() {
             group_chat::group_chat_get_members,
             group_chat::group_chat_remove_member,
             group_chat::group_chat_update_member,
+            group_chat::group_chat_transfer_ownership,
+            group_chat::group_chat_dissolve_group,
             group_chat::group_chat_recall_message,
             group_chat::group_chat_edit_message,
             group_chat::group_chat_delete_message,

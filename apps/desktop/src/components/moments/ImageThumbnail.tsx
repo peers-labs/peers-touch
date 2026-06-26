@@ -72,7 +72,7 @@ export function ImageThumbnail({
           alignItems: 'center',
           justifyContent: 'center',
           background: token.colorFillSecondary,
-          borderRadius: 6,
+          borderRadius: token.borderRadiusSM,
           color: token.colorTextTertiary,
         }}
       >
@@ -95,7 +95,7 @@ export function ImageThumbnail({
           aspectRatio,
           width: '100%',
           height: '100%',
-          borderRadius: 6,
+          borderRadius: token.borderRadiusSM,
           cursor: onClick ? 'pointer' : 'default',
           display: 'block',
         }}
@@ -111,7 +111,7 @@ export function ImageThumbnail({
         objectFit: 'cover',
         aspectRatio,
         width: '100%',
-        borderRadius: 6,
+        borderRadius: token.borderRadiusSM,
       }}
       onError={() => setErr(true)}
       preview={{ mask: false }}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
@@ -13,12 +14,21 @@ import (
 )
 
 type RelationshipService struct {
-	followRepo infrastructure.FollowRepository
-	blockRepo  infrastructure.BlockGraphRepository
+	followRepo     infrastructure.FollowRepository
+	blockRepo      infrastructure.BlockGraphRepository
+	moderationRepo domain.StationModerationRepository
 }
 
-func NewRelationshipService(followRepo infrastructure.FollowRepository, blockRepo infrastructure.BlockGraphRepository) *RelationshipService {
-	return &RelationshipService{followRepo: followRepo, blockRepo: blockRepo}
+func NewRelationshipService(
+	followRepo infrastructure.FollowRepository,
+	blockRepo infrastructure.BlockGraphRepository,
+	moderationRepos ...domain.StationModerationRepository,
+) *RelationshipService {
+	var moderationRepo domain.StationModerationRepository
+	if len(moderationRepos) > 0 {
+		moderationRepo = moderationRepos[0]
+	}
+	return &RelationshipService{followRepo: followRepo, blockRepo: blockRepo, moderationRepo: moderationRepo}
 }
 
 func (s *RelationshipService) Follow(ctx context.Context, followerID uint64, targetActorID string) (*model.Relationship, error) {
@@ -34,6 +44,11 @@ func (s *RelationshipService) Follow(ctx context.Context, followerID uint64, tar
 		return nil, err
 	} else if blocked {
 		return nil, fmt.Errorf("relationship is blocked")
+	}
+	if blocked, err := actorStationModerated(ctx, s.moderationRepo, followingID); err != nil {
+		return nil, err
+	} else if blocked {
+		return nil, fmt.Errorf("target actor station is blocked")
 	}
 
 	logger.Info(ctx, "Follow", "followerID", followerID, "followingID", followingID)

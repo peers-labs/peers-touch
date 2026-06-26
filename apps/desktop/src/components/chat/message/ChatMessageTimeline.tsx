@@ -22,6 +22,7 @@ const { Text } = Typography;
 interface ChatThreadStats {
   replyCount: number;
   unreadCount: number;
+  previewMessages: ChatMessage[];
 }
 
 interface ChatMessageTimelineProps {
@@ -139,6 +140,7 @@ export function ChatMessageTimeline({
               sessions={sessions}
               threadReplyCount={threadStats.replyCount}
               threadUnreadCount={threadStats.unreadCount}
+              threadPreviewMessages={threadStats.previewMessages}
               timelineGap={item.timelineGap}
             />
           </Fragment>

@@ -1,0 +1,22 @@
+diff a/apps/desktop/src/components/chat/ChatMessageArea.tsx b/apps/desktop/src/components/chat/ChatMessageArea.tsx	(rejected hunks)
+@@ -34,10 +34,19 @@ import {
+   ChatMessageTimeline,
+   loadedThreadReplyCount,
+ } from './message/ChatMessageTimeline';
++import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
+ 
+ const { Text } = Typography;
+ 
+-function chatBackgroundCss(background: string | undefined, layoutColor: string, containerColor: string): string {
++function chatBackgroundCss(
++  background: string | undefined,
++  layoutColor: string,
++  containerColor: string,
++  imageUrl?: string,
++): string {
++  if (imageUrl) {
++    return `linear-gradient(rgba(255,255,255,0.72), rgba(255,255,255,0.72)), url("${imageUrl}") center / cover fixed`;
++  }
+   switch (background) {
+     case 'paper':
+       return 'linear-gradient(180deg, rgba(255,251,235,0.9), rgba(254,243,199,0.52))';

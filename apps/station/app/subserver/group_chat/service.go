@@ -141,8 +141,8 @@ func (s *service) CreateGroup(ownerDID, name, description string) domain.Group {
 	}
 }
 
-func (s *service) ListGroups() []domain.Group {
-	items := s.listGroups()
+func (s *service) ListGroups(actorDID string) []domain.Group {
+	items := s.listGroups(actorDID)
 	out := make([]domain.Group, 0, len(items))
 	for _, item := range items {
 		out = append(out, domain.Group{
@@ -325,6 +325,26 @@ func (s *service) UpdateMember(groupID, actorDID string, role *int32, muted *boo
 
 func (s *service) RemoveMember(groupID, actorDID string) bool {
 	return s.removeMember(groupID, actorDID)
+}
+
+func (s *service) TransferOwnership(groupID, currentOwnerDID, nextOwnerDID string) (*domain.Group, bool) {
+	item, ok := s.transferOwnership(groupID, currentOwnerDID, nextOwnerDID)
+	if !ok {
+		return nil, false
+	}
+	return &domain.Group{
+		ID:          item.ID,
+		Name:        item.Name,
+		Description: item.Description,
+		OwnerDID:    item.OwnerDID,
+		MemberCount: item.MemberCount,
+		CreatedAt:   item.CreatedAt,
+		UpdatedAt:   item.UpdatedAt,
+	}, true
+}
+
+func (s *service) DissolveGroup(groupID string) bool {
+	return s.dissolveGroup(groupID)
 }
 
 func (s *service) UpdateGroup(groupID string, name, description *string, muted *bool) (*domain.Group, bool) {
@@ -749,10 +769,14 @@ func (s *service) createGroup(ownerDID, name, description string) *group {
 	return item
 }
 
-func (s *service) listGroups() []group {
+func (s *service) listGroups(actorDID string) []group {
 	if s.db != nil {
 		var rows []groupModel
-		if err := s.db.Order("updated_at DESC").Find(&rows).Error; err == nil {
+		if err := s.db.
+			Joins("JOIN group_chat_members ON group_chat_members.group_ulid = group_chat_groups.ulid").
+			Where("group_chat_members.actor_did = ?", actorDID).
+			Order("group_chat_groups.updated_at DESC").
+			Find(&rows).Error; err == nil {
 			out := make([]group, 0, len(rows))
 			for _, row := range rows {
 				out = append(out, group{
@@ -770,8 +794,15 @@ func (s *service) listGroups() []group {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]group, 0, len(s.groups))
+	out := make([]group, 0)
 	for _, item := range s.groups {
+		members, ok := s.members[item.ID]
+		if !ok {
+			continue
+		}
+		if _, isMember := members[actorDID]; !isMember {
+			continue
+		}
 		out = append(out, *item)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -1748,8 +1779,12 @@ func (s *service) removeMember(groupID, actorDID string) bool {
 	if s.db != nil {
 		now := time.Now()
 		err := s.db.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Where("group_ulid = ? AND actor_did = ?", groupID, actorDID).Delete(&memberModel{}).Error; err != nil {
-				return err
+			result := tx.Where("group_ulid = ? AND actor_did = ?", groupID, actorDID).Delete(&memberModel{})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return gorm.ErrRecordNotFound
 			}
 			var count int64
 			if err := tx.Model(&memberModel{}).Where("group_ulid = ?", groupID).Count(&count).Error; err != nil {
@@ -1781,10 +1816,176 @@ func (s *service) removeMember(groupID, actorDID string) bool {
 	if s.members[groupID] == nil {
 		return false
 	}
+	if _, ok := s.members[groupID][actorDID]; !ok {
+		return false
+	}
 	delete(s.members[groupID], actorDID)
 	if s.groups[groupID] != nil {
 		s.groups[groupID].MemberCount = int32(len(s.members[groupID]))
 		s.groups[groupID].UpdatedAt = time.Now()
+	}
+	return true
+}
+
+func (s *service) transferOwnership(groupID, currentOwnerDID, nextOwnerDID string) (*group, bool) {
+	if s.db != nil {
+		now := time.Now()
+		err := s.db.Transaction(func(tx *gorm.DB) error {
+			var groupRow groupModel
+			if err := tx.Where("ulid = ? AND owner_did = ?", groupID, currentOwnerDID).First(&groupRow).Error; err != nil {
+				return err
+			}
+			var target memberModel
+			if err := tx.Where("group_ulid = ? AND actor_did = ?", groupID, nextOwnerDID).First(&target).Error; err != nil {
+				return err
+			}
+			if target.Role == domain.GroupRoleOwner {
+				return gorm.ErrInvalidData
+			}
+			if err := tx.Model(&groupModel{}).Where("ulid = ?", groupID).Updates(map[string]interface{}{
+				"owner_did":  nextOwnerDID,
+				"updated_at": now,
+			}).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&memberModel{}).Where("group_ulid = ? AND actor_did = ?", groupID, currentOwnerDID).Updates(map[string]interface{}{
+				"role":       domain.GroupRoleAdmin,
+				"updated_at": now,
+			}).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&memberModel{}).Where("group_ulid = ? AND actor_did = ?", groupID, nextOwnerDID).Updates(map[string]interface{}{
+				"role":        domain.GroupRoleOwner,
+				"muted":       false,
+				"muted_until": nil,
+				"updated_at":  now,
+			}).Error; err != nil {
+				return err
+			}
+			return tx.Create(&outboxModel{
+				EventID:   fmt.Sprintf("gce-%d", now.UnixNano()),
+				EventType: "group.owner.transferred",
+				TargetID:  groupID,
+				Payload:   fmt.Sprintf(`{"from_did":"%s","to_did":"%s"}`, currentOwnerDID, nextOwnerDID),
+				Status:    "pending",
+				CreatedAt: now,
+				UpdatedAt: now,
+			}).Error
+		})
+		if err != nil {
+			return nil, false
+		}
+		return s.getGroup(groupID)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item := s.groups[groupID]
+	if item == nil || item.OwnerDID != currentOwnerDID {
+		return nil, false
+	}
+	bucket := s.members[groupID]
+	if bucket == nil {
+		return nil, false
+	}
+	currentOwner := bucket[currentOwnerDID]
+	nextOwner := bucket[nextOwnerDID]
+	if currentOwner == nil || nextOwner == nil || nextOwner.Role == domain.GroupRoleOwner {
+		return nil, false
+	}
+	now := time.Now()
+	item.OwnerDID = nextOwnerDID
+	item.UpdatedAt = now
+	currentOwner.Role = domain.GroupRoleAdmin
+	nextOwner.Role = domain.GroupRoleOwner
+	nextOwner.Muted = false
+	nextOwner.MutedUntil = time.Time{}
+	copy := *item
+	return &copy, true
+}
+
+func (s *service) dissolveGroup(groupID string) bool {
+	if s.db != nil {
+		now := time.Now()
+		err := s.db.Transaction(func(tx *gorm.DB) error {
+			result := tx.Where("ulid = ?", groupID).Delete(&groupModel{})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return gorm.ErrRecordNotFound
+			}
+			var messageIDs []string
+			if err := tx.Model(&messageModel{}).Where("group_ulid = ?", groupID).Pluck("ulid", &messageIDs).Error; err != nil {
+				return err
+			}
+			if len(messageIDs) > 0 {
+				if err := tx.Where("message_ulid IN ?", messageIDs).Delete(&MessageAttachmentModel{}).Error; err != nil {
+					return err
+				}
+			}
+			for _, model := range []interface{}{
+				&messageModel{},
+				&memberModel{},
+				&groupThreadReadModel{},
+				&invitationModel{},
+				&settingModel{},
+				&offlineModel{},
+			} {
+				if err := tx.Where("group_ulid = ?", groupID).Delete(model).Error; err != nil {
+					return err
+				}
+			}
+			return tx.Create(&outboxModel{
+				EventID:   fmt.Sprintf("gce-%d", now.UnixNano()),
+				EventType: "group.dissolved",
+				TargetID:  groupID,
+				Payload:   `{}`,
+				Status:    "pending",
+				CreatedAt: now,
+				UpdatedAt: now,
+			}).Error
+		})
+		return err == nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.groups[groupID] == nil {
+		return false
+	}
+	delete(s.groups, groupID)
+	delete(s.members, groupID)
+	delete(s.messages, groupID)
+	delete(s.settings, groupID)
+	delete(s.unread, groupID)
+	for key, item := range s.messagesByID {
+		if item.GroupID == groupID {
+			delete(s.messagesByID, key)
+		}
+	}
+	for key, item := range s.invitations {
+		if item.GroupID == groupID {
+			delete(s.invitations, key)
+		}
+	}
+	for key, item := range s.threadReads {
+		if item.GroupID == groupID {
+			delete(s.threadReads, key)
+		}
+	}
+	for receiver, items := range s.offline {
+		filtered := items[:0]
+		for _, item := range items {
+			if item.GroupID != groupID {
+				filtered = append(filtered, item)
+			}
+		}
+		if len(filtered) == 0 {
+			delete(s.offline, receiver)
+		} else {
+			s.offline[receiver] = filtered
+		}
 	}
 	return true
 }

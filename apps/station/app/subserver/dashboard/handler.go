@@ -64,7 +64,9 @@ const (
 	routeAuditLogs = "/dashboard/api/audit-logs"
 
 	// Access gates
-	routeAccessPolicy = "/dashboard/api/access-gates/policy"
+	routeAccessPolicy      = "/dashboard/api/access-gates/policy"
+	routeAccessInviteCodes = "/dashboard/api/access-gates/invite-codes"
+	routeAccessInviteCode  = "/dashboard/api/access-gates/invite-codes/:id"
 
 	// System
 	routeSystemInfo       = "/dashboard/api/system/info"
@@ -174,6 +176,12 @@ func (h *dashboardHandler) handlers() []server.Handler {
 			h.handleGetAccessPolicy, auth),
 		server.NewTypedHandler("dashboard-access-policy-update", routeAccessPolicy, server.POST,
 			h.handleUpdateAccessPolicy, auth),
+		server.NewTypedHandler("dashboard-access-invite-codes-list", routeAccessInviteCodes, server.GET,
+			h.handleListInviteCodes, auth),
+		server.NewTypedHandler("dashboard-access-invite-codes-create", routeAccessInviteCodes, server.POST,
+			h.handleCreateInviteCode, auth),
+		server.NewTypedHandler("dashboard-access-invite-code-revoke", routeAccessInviteCode, server.DELETE,
+			h.handleRevokeInviteCode, auth),
 
 		// -- System --
 		server.NewTypedHandler("dashboard-system-info", routeSystemInfo, server.GET,
@@ -621,11 +629,13 @@ func (h *dashboardHandler) handleUpdateAccessPolicy(ctx context.Context, req *ga
 	}
 
 	policy, err := gate.UpdatePolicy(ctx, gate.PolicyInput{
-		Mode:             accessPolicyModeName(req.GetPolicy().GetMode()),
-		AllowedEmails:    req.GetPolicy().GetAllowedEmails(),
-		AllowedUsernames: req.GetPolicy().GetAllowedUsernames(),
-		AllowedActorIDs:  req.GetPolicy().GetAllowedActorIds(),
-		UpdatedBy:        updatedBy,
+		Mode:              accessPolicyModeName(req.GetPolicy().GetMode()),
+		AllowedEmails:     req.GetPolicy().GetAllowedEmails(),
+		AllowedUsernames:  req.GetPolicy().GetAllowedUsernames(),
+		AllowedActorIDs:   req.GetPolicy().GetAllowedActorIds(),
+		EnabledGates:      req.GetPolicy().GetEnabledGates(),
+		SelfServiceInvite: req.GetPolicy().GetSelfServiceInvite(),
+		UpdatedBy:         updatedBy,
 	})
 	if err != nil {
 		return nil, server.BadRequest(err.Error())
@@ -650,6 +660,73 @@ func accessPolicyModeName(mode gatepb.AccessPolicyMode) string {
 	default:
 		return "open"
 	}
+}
+
+func (h *dashboardHandler) handleListInviteCodes(ctx context.Context, _ *domain.EmptyRequest) (*gatepb.ListInviteCodesResponse, error) {
+	includeRevoked := queryParamInt(ctx, "include_revoked", 0) == 1
+
+	rows, err := gate.ListInviteCodes(ctx, includeRevoked)
+	if err != nil {
+		log.Errorf(ctx, "[dashboard] list invite codes error: %v", err)
+		return nil, server.InternalError("failed to list invite codes")
+	}
+
+	codes := make([]*gatepb.InviteCode, 0, len(rows))
+	for i := range rows {
+		codes = append(codes, gate.ToProtoInviteCode(&rows[i]))
+	}
+	return &gatepb.ListInviteCodesResponse{InviteCodes: codes}, nil
+}
+
+func (h *dashboardHandler) handleCreateInviteCode(ctx context.Context, req *gatepb.CreateInviteCodeRequest) (*gatepb.CreateInviteCodeResponse, error) {
+	claims := getClaims(ctx)
+	createdBy := ""
+	if claims != nil {
+		createdBy = claims.Username
+	}
+
+	input := gate.InviteCodeInput{
+		Code:      req.GetCode(),
+		Note:      req.GetNote(),
+		MaxUses:   int(req.GetMaxUses()),
+		CreatedBy: createdBy,
+	}
+	if req.GetExpiresAt() != nil {
+		expiresAt := req.GetExpiresAt().AsTime()
+		input.ExpiresAt = &expiresAt
+	}
+
+	row, err := gate.CreateInviteCode(ctx, input)
+	if err != nil {
+		return nil, server.BadRequest(err.Error())
+	}
+
+	if claims != nil {
+		h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username, "invite_code_create", "invite_code",
+			row.ID, getClientIP(ctx), getUserAgent(ctx))
+	}
+
+	return &gatepb.CreateInviteCodeResponse{InviteCode: gate.ToProtoInviteCode(row)}, nil
+}
+
+func (h *dashboardHandler) handleRevokeInviteCode(ctx context.Context, _ *domain.EmptyRequest) (*gatepb.RevokeInviteCodeResponse, error) {
+	id := pathParam(ctx, "id")
+	if id == "" {
+		return nil, server.BadRequest("invite code id is required")
+	}
+
+	row, err := gate.RevokeInviteCode(ctx, id)
+	if err != nil {
+		return nil, server.BadRequest(err.Error())
+	}
+
+	claims := getClaims(ctx)
+	if claims != nil {
+		h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username, "invite_code_revoke", "invite_code",
+			row.ID, getClientIP(ctx), getUserAgent(ctx))
+	}
+
+	return &gatepb.RevokeInviteCodeResponse{InviteCode: gate.ToProtoInviteCode(row)}, nil
 }
 
 // ===========================================================================

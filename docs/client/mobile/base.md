@@ -26,6 +26,11 @@
 
 - `native-dual-platform.md`（当前作为 Native Plugin 能力层与历史原生双端参考）
 - `lifecycle.md`（Mobile 顶层生命周期：Station selection、Station/Auth gate、runtime bootstrap、foreground/background/resume）
+- `../chat/chat-ux-contract.md`（Desktop 与 Mobile 共同遵守的 Chat / IM 产品体验契约）
+- `chat-layout-contract.md`（Mobile Chat 布局、键盘、安全区、底部输入区、触控菜单边界契约）
+- `../common/ux-design-methodology.md`（客户端 UX 问题从案例沉淀成准则、契约、invariant 的方法论）
+- `../common/form-control-ux-contract.md`（跨端表单控件与组合输入控件体验契约）
+- `form-control-layout-contract.md`（Mobile 表单控件、BottomSheet、触控、安全区边界契约）
 - `applet-container.md`
 - `sync-protocol.md`
 - `execution-plans/implementation-plan-20260403.md`
@@ -58,7 +63,7 @@ Mobile 当前已明确成立的事实：
 4. Mobile 通过 Station / Relay 风格链路获取共享业务数据。
 5. Android Kotlin / iOS Swift 用于 native plugin，不再作为主 UI 双端实现路径。
 6. Applet 方向优先验证 Tauri mobile plugin 承载 Lynx 容器。
-7. Flutter 目录仍为 deprecated，不作为当前或未来主线。
+7. Flutter 代码路径已移除，不作为当前或未来主线。
 
 ---
 
@@ -242,12 +247,10 @@ Mobile 通过 Station 提供的 API、Relay、同步与事件机制工作。
 apps/mobile/
 ├── src/          # mobile-web UI
 ├── src-tauri/    # Rust capability kernel
-├── gen/
-│   ├── android/  # Tauri generated Android project
-│   └── apple/    # Tauri generated iOS project
+│   └── gen/
+│       └── apple/ # Tauri generated iOS project
 ├── android/      # legacy/native plugin source during migration
-├── ios/          # legacy/native plugin source during migration
-└── flutter/      # deprecated, not active implementation path
+└── ios/          # legacy/native plugin source during migration
 ```
 
 ---

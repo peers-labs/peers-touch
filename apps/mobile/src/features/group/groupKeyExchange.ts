@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { MobileAuthSession } from '../auth/authSession';
 import type { SocialApiErrorContext, StationErrorEnvelope, StationSuccessEnvelope } from '../social/socialTypes';
 import { SocialApiError } from '../social/socialTypes';
+import { readableErrorMessage } from '../../utils/errorMessage';
 import type { KeyBundle } from '../../gen/proto/domain/key_exchange/key_exchange_pb';
 import { userScopeForSession } from './groupE2eeBridge';
 
@@ -169,7 +170,7 @@ async function keyExchangeRequest<T = Record<string, unknown>>(
     throw new SocialApiError({
       method: 'POST',
       path: options.path,
-      message: error instanceof Error ? error.message : String(error),
+      message: readableErrorMessage(error),
     });
   });
 

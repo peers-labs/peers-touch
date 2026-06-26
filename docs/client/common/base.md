@@ -127,6 +127,8 @@ These packages are **NOT** used in the current architecture. Do not add new code
 
 ## 📚 Related Documents
 
+- **Common UX Methodology**: [ux-design-methodology.md](./ux-design-methodology.md)
+- **Form Control UX Contract**: [form-control-ux-contract.md](./form-control-ux-contract.md)
 - **Package Details**: [packages.md](./packages.md)
 - **Desktop Usage**: [../desktop/base.md](../desktop/base.md)
 - **Mobile Usage**: [../mobile/base.md](../mobile/base.md)

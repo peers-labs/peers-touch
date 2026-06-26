@@ -61,6 +61,11 @@ export function normalizeSession(raw: Partial<FriendChatSession>): FriendChatSes
     participantBAvatar: String(raw.participantBAvatar ?? record.participant_b_avatar ?? ''),
     participantAOnline: Boolean(raw.participantAOnline ?? record.participant_a_online ?? false),
     participantBOnline: Boolean(raw.participantBOnline ?? record.participant_b_online ?? false),
+    lastMessage: raw.lastMessage
+      ? normalizeMessage(raw.lastMessage)
+      : record.last_message
+        ? normalizeMessage(record.last_message as Partial<FriendChatMessage>)
+        : undefined,
   };
 }
 
