@@ -47,11 +47,11 @@ func (h *ICEHandler) Handlers() []server.Handler {
 }
 
 func (h *ICEHandler) handleGetICEServers(w http.ResponseWriter, r *http.Request) {
-	creds := h.GenerateCredentials("webrtc-user", 24*time.Hour)
+	creds := h.GenerateCredentials(h.opts.ResolvedCredentialUsername(), h.opts.ResolvedCredentialTTL())
 
 	servers := []ICEServer{
 		{
-			URLs: []string{"stun:stun.l.google.com:19302"},
+			URLs: h.opts.ResolvedSTUNURLs(),
 		},
 		{
 			URLs:       []string{fmt.Sprintf("turn:%s:%d", h.opts.PublicIP, h.opts.Port)},

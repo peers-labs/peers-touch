@@ -186,12 +186,132 @@ type ConnKey = string; // `${myDid}::${peerDid}`
 /** Ringing state of an in-flight call on this connection. */
 export type CallStateLifecycle =
   | 'idle'
-  | 'outgoing'   // we sent CALL_REQUEST, waiting for accept/reject
-  | 'incoming'   // peer sent CALL_REQUEST, waiting for our accept/reject
-  | 'active'     // call accepted, media flowing (or about to)
-  | 'ended';     // CALL_END seen — terminal until next startCall
+  | 'outgoing'      // we sent CALL_REQUEST, waiting for accept/reject
+  | 'incoming'      // peer sent CALL_REQUEST, waiting for our accept/reject
+  | 'active'        // call accepted, media flowing (or about to)
+  | 'reconnecting'  // ICE dropped on an active call; attempting recovery
+  | 'ended';        // CALL_END seen — terminal until next startCall
 
 export type CallMediaKind = 'audio' | 'video';
+
+/** A selectable microphone or camera. `label` is the human-readable
+ *  device name (empty until the user has granted a media permission);
+ *  `deviceId` is an opaque handle used only internally — it is never
+ *  surfaced in the UI (voice-video-calls.md §10). */
+export interface CallMediaDevice {
+  deviceId: string;
+  label: string;
+}
+
+/** Available input devices, split by kind for the picker. */
+export interface CallMediaDevices {
+  audioInputs: CallMediaDevice[];
+  videoInputs: CallMediaDevice[];
+}
+
+/**
+ * Why a terminal (`ended`) call snapshot ended, so the UI can render a
+ * distinct, localized result instead of a generic "call ended". Phase 1
+ * acceptance (voice-video-calls.md §11) requires rejected / missed /
+ * canceled / permission-denied / network-failed to be visually distinct.
+ *
+ *   - `hangup`        — a participant ended an active call normally.
+ *   - `rejected`      — the callee explicitly declined.
+ *   - `no-answer`     — ringing elapsed the unanswered timeout.
+ *   - `busy`          — the callee was already in another call.
+ *   - `canceled`      — the caller canceled their own outgoing ring.
+ *   - `media-failed`  — local mic/camera permission or capture failed.
+ *   - `network-failed`— the WebRTC connection failed irrecoverably.
+ *   - `handled-elsewhere` — a sibling device of ours answered or declined
+ *                     the same ringing call, so this device silently
+ *                     stops ringing (multi-device convergence, §11).
+ */
+export type CallEndReason =
+  | 'hangup'
+  | 'rejected'
+  | 'no-answer'
+  | 'busy'
+  | 'canceled'
+  | 'media-failed'
+  | 'network-failed'
+  | 'handled-elsewhere';
+
+/** Unanswered outgoing/incoming calls auto-terminate after this many ms.
+ *  Matches the industry-common 45s ring window (voice-video-calls.md §14). */
+const RING_TIMEOUT_MS = 45_000;
+
+/** How long an active call may stay in `reconnecting` before we give up
+ *  and end it with `network-failed`. WebRTC's own ICE timers fire on the
+ *  order of seconds; 20s is a generous bound that covers a brief Wi-Fi /
+ *  cellular handover without leaving a frozen HUD forever
+ *  (voice-video-calls.md §6.5). */
+const RECONNECT_TIMEOUT_MS = 20_000;
+
+/** How often we poll `getStats()` for live call-quality metrics while a
+ *  call is active. 2s is frequent enough to reflect a degrading link
+ *  without flooding the main thread with stats traversals. */
+export const QUALITY_PROBE_INTERVAL_MS = 2_000;
+
+/** Coarse, user-facing connection-quality grade derived from packet loss
+ *  and round-trip time. Deliberately a small enum — the HUD shows a
+ *  bars-style indicator, not raw numbers, and we never surface SDP /
+ *  candidate addresses (voice-video-calls.md §10). */
+export type CallQualityLevel = 'good' | 'fair' | 'poor';
+
+/** Diagnostics for an active call, refreshed on the quality probe tick.
+ *  All fields are derived aggregate metrics — none reveal SDP, candidate
+ *  addresses, tokens, or PII (voice-video-calls.md §10, §11). */
+export interface CallQuality {
+  level: CallQualityLevel;
+  /** Smoothed round-trip time in milliseconds, if the browser reports it. */
+  rttMs?: number;
+  /** Inbound packet-loss fraction in [0, 1] over the call so far. */
+  packetLoss?: number;
+}
+
+/** LocalStorage keys for the last device the user picked. We persist the
+ *  preference so the next call reuses the same mic/camera instead of
+ *  silently reverting to the OS default. Values are opaque deviceIds and
+ *  are never rendered (voice-video-calls.md §10). */
+const PREFERRED_AUDIO_DEVICE_KEY = 'pt.call.preferredAudioDeviceId';
+const PREFERRED_VIDEO_DEVICE_KEY = 'pt.call.preferredVideoDeviceId';
+
+function readPreferredDevice(key: string): string | undefined {
+  try {
+    return window.localStorage.getItem(key) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writePreferredDevice(key: string, deviceId: string | undefined): void {
+  try {
+    if (deviceId) window.localStorage.setItem(key, deviceId);
+    else window.localStorage.removeItem(key);
+  } catch {
+    /* best-effort — a missing preference just falls back to OS default */
+  }
+}
+
+/** Build a `getUserMedia` constraint set honouring an optional preferred
+ *  device. An explicit `deviceId` is requested as `ideal` rather than
+ *  `exact` so a now-unplugged device degrades to the OS default instead
+ *  of throwing `OverconstrainedError`. */
+function buildMediaConstraints(
+  wantVideo: boolean,
+  audioDeviceId?: string,
+  videoDeviceId?: string,
+): MediaStreamConstraints {
+  const audio: MediaTrackConstraints | boolean = audioDeviceId
+    ? { deviceId: { ideal: audioDeviceId } }
+    : true;
+  const video: MediaTrackConstraints | boolean = !wantVideo
+    ? false
+    : videoDeviceId
+      ? { deviceId: { ideal: videoDeviceId } }
+      : true;
+  return { audio, video };
+}
 
 export interface CallSnapshot {
   /** Stable per-call identifier — the originator generates a ULID
@@ -214,6 +334,16 @@ export interface CallSnapshot {
   micMuted?: boolean;
   /** True after the user explicitly toggled their camera off. */
   cameraOff?: boolean;
+  /** Device id of the microphone currently captured, if a specific one
+   *  was selected (otherwise the OS default is used). Internal only —
+   *  never rendered. */
+  audioDeviceId?: string;
+  /** Device id of the camera currently captured, if a specific one was
+   *  selected. Internal only — never rendered. */
+  videoDeviceId?: string;
+  /** Populated only on the terminal `ended` snapshot so the UI can
+   *  render a distinct, localized result (declined / missed / etc.). */
+  endReason?: CallEndReason;
 }
 
 interface Conn {
@@ -242,6 +372,14 @@ interface Conn {
    *  by `RTCRtpReceiver.track.id`, so we don't double-attach
    *  remote tracks to the snapshot's `remoteStream`. */
   remoteTrackIds: Set<string>;
+  /** Pending unanswered-ring timeout handle. Armed while a call is
+   *  `outgoing` / `incoming`, cleared the moment it is answered or
+   *  terminated. `null` when no ring is in flight. */
+  ringTimer: ReturnType<typeof setTimeout> | null;
+  /** Pending reconnect-window timeout handle. Armed when an active call
+   *  drops to `reconnecting`, cleared when ICE recovers or the call ends.
+   *  `null` when the call is not reconnecting. */
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
 }
 
 class FriendChatP2pManager {
@@ -270,6 +408,103 @@ class FriendChatP2pManager {
 
   private emitCall(conn: Conn) {
     this.onCall?.(conn.myDid, conn.peerDid, { ...conn.call });
+  }
+
+  /** Arm the unanswered-ring timeout for a freshly-ringing call. If the
+   *  call is still ringing (`outgoing` / `incoming`) when the window
+   *  elapses, the caller side notifies the peer with CALL_END and both
+   *  sides tear down with a `no-answer` result. Re-arming clears any
+   *  previous timer so a renegotiation can't leak handles. */
+  private armRingTimeout(conn: Conn): void {
+    this.clearRingTimeout(conn);
+    const callId = conn.call.callId;
+    conn.ringTimer = setTimeout(() => {
+      conn.ringTimer = null;
+      // Only fire if the very same call is still ringing — accept /
+      // reject / hangup all clear the timer, but a late callback can
+      // still race a state change.
+      if (conn.call.callId !== callId) return;
+      if (conn.call.state !== 'outgoing' && conn.call.state !== 'incoming') return;
+      // The originator (outgoing side) owns the missed-call notification
+      // so the peer's ringing UI clears too; the callee just tears down
+      // its own incoming ring locally.
+      if (conn.call.state === 'outgoing') {
+        this.sendSignal(conn, 'CALL_END', JSON.stringify({ callId })).catch(() => {});
+      }
+      this.teardownCallLocal(conn, 'no-answer');
+    }, RING_TIMEOUT_MS);
+  }
+
+  /** Cancel a pending ring timeout, if any. Safe to call repeatedly. */
+  private clearRingTimeout(conn: Conn): void {
+    if (conn.ringTimer !== null) {
+      clearTimeout(conn.ringTimer);
+      conn.ringTimer = null;
+    }
+  }
+
+  /**
+   * Move an active call into `reconnecting` and attempt to recover the
+   * media path (voice-video-calls.md §6.5).
+   *
+   * We keep local tracks alive and the HUD visible, fire a single ICE
+   * restart from the offerer side (the only side that may renegotiate in
+   * our perfect-negotiation setup), and arm a bounded give-up timer. If
+   * `connectionState` returns to `connected` before the timer fires,
+   * `recoverReconnectingCall` cancels it and restores `active`; otherwise
+   * the call ends with a localized `network-failed`.
+   *
+   * Idempotent: a `disconnected` followed by `failed` (WebRTC emits both)
+   * must not stack timers or fire two restarts.
+   */
+  private enterReconnectingCall(conn: Conn): void {
+    if (conn.call.state === 'reconnecting') return;
+    conn.call = { ...conn.call, state: 'reconnecting' };
+    this.emitCall(conn);
+
+    // Only the offerer may drive renegotiation; the answerer waits for
+    // the restart OFFER to arrive over the (reliable) SSE signaling path.
+    if (conn.isOfferer) {
+      void (async () => {
+        try {
+          const offer = await conn.pc.createOffer({ iceRestart: true });
+          await conn.pc.setLocalDescription(offer);
+          await this.sendSignal(conn, 'OFFER', JSON.stringify({ sdp: offer.sdp || '' }));
+        } catch (error) {
+          log.warn('p2p', 'ICE restart offer failed', error);
+        }
+      })();
+    }
+
+    if (conn.reconnectTimer !== null) return;
+    const callId = conn.call.callId;
+    conn.reconnectTimer = setTimeout(() => {
+      conn.reconnectTimer = null;
+      // Only give up if the very same call is still reconnecting — a late
+      // recovery can race this callback.
+      if (conn.call.callId !== callId) return;
+      if (conn.call.state !== 'reconnecting') return;
+      this.sendSignal(conn, 'CALL_END', JSON.stringify({ callId })).catch(() => {});
+      this.teardownCallLocal(conn, 'network-failed');
+    }, RECONNECT_TIMEOUT_MS);
+  }
+
+  /** ICE recovered while reconnecting: cancel the give-up timer and
+   *  restore the active HUD. The `startedAt` is preserved so the call
+   *  timer keeps counting from the original answer. */
+  private recoverReconnectingCall(conn: Conn): void {
+    this.clearReconnectTimeout(conn);
+    if (conn.call.state !== 'reconnecting') return;
+    conn.call = { ...conn.call, state: 'active' };
+    this.emitCall(conn);
+  }
+
+  /** Cancel a pending reconnect give-up timeout, if any. */
+  private clearReconnectTimeout(conn: Conn): void {
+    if (conn.reconnectTimer !== null) {
+      clearTimeout(conn.reconnectTimer);
+      conn.reconnectTimer = null;
+    }
   }
 
   /** Generate a 26-char Crockford-base32 ULID without pulling in an
@@ -397,6 +632,8 @@ class FriendChatP2pManager {
       transportProbeStopped: false,
       call: { callId: '', mediaKind: 'audio', state: 'idle' },
       remoteTrackIds: new Set(),
+      ringTimer: null,
+      reconnectTimer: null,
     };
     this.conns.set(key, conn);
 
@@ -454,11 +691,37 @@ class FriendChatP2pManager {
         // (`transport: null` means "connected but path not yet known").
         conn.status = { state: 'connected', signalingSessionId, transport: null };
         this.emitStatus(myDid, peerDid, conn.status);
+        // ICE recovered: if a call was riding through a reconnect window,
+        // restore the active HUD and cancel the give-up timer
+        // (voice-video-calls.md §6.5).
+        if (conn.call.state === 'reconnecting') {
+          this.recoverReconnectingCall(conn);
+        }
+        conn.transportProbeStopped = false;
         this.startTransportProbe(myDid, peerDid, conn);
+      } else if (s === 'disconnected') {
+        // A transient ICE drop on an active call. Keep the UI and local
+        // tracks alive and attempt recovery within a bounded window
+        // before declaring failure (voice-video-calls.md §6.5). Ringing
+        // calls (no media yet) are left for the ring timeout to resolve.
+        if (conn.call.state === 'active') {
+          this.enterReconnectingCall(conn);
+        }
       } else if (s === 'failed') {
+        // ICE failed outright. Try a single ICE restart if we can still
+        // reach TURN; only give up (network-failed) when that path is
+        // exhausted. The restart re-enters `reconnecting` so the timer
+        // bounds the recovery attempt.
+        if (conn.call.state === 'active' || conn.call.state === 'reconnecting') {
+          this.enterReconnectingCall(conn);
+          return;
+        }
         conn.transportProbeStopped = true;
         conn.status = { state: 'failed', detail: 'webrtc connection failed', signalingSessionId };
         this.emitStatus(myDid, peerDid, conn.status);
+        if (conn.call.state === 'outgoing' || conn.call.state === 'incoming') {
+          this.teardownCallLocal(conn, 'network-failed');
+        }
       } else if (s === 'closed') {
         conn.transportProbeStopped = true;
         conn.status = { state: 'closed', signalingSessionId };
@@ -601,11 +864,26 @@ class FriendChatP2pManager {
       return;
     }
     if (fromActorId === conn.myDid) {
-      // Multi-device echo: Station fans out to both recipient and
-      // sender for chat-message receipts so the sender's *other*
-      // devices stay in sync, but for signaling we drop it because
-      // we already have local descriptions / candidates from the
-      // RTCPeerConnection that produced the outbound signal.
+      // Multi-device echo of our own outbound signal. Station fans out
+      // every signal to the sender's *other* devices too, but those
+      // devices cannot decrypt the payload — the sealed envelope is
+      // addressed to the peer's identity key, not ours. The envelope
+      // metadata (`kind`, `sessionUlid`) is plaintext, though, which is
+      // exactly enough to converge a multi-device ring without ever
+      // touching the ciphertext.
+      //
+      // If *this* device is ringing an incoming call and a sibling
+      // device just sent a CALL_ACCEPT or CALL_REJECT for the same
+      // session, the call has been handled elsewhere — stop ringing
+      // here so the user isn't pestered on every device
+      // (voice-video-calls.md §11 multi-device ringing resolution).
+      if (conn.call.state === 'incoming' && (kind === 'CALL_ACCEPT' || kind === 'CALL_REJECT')) {
+        this.teardownCallLocal(conn, 'handled-elsewhere');
+        return;
+      }
+      // For media signals (OFFER / ANSWER / CANDIDATE) we already hold
+      // the authoritative local descriptions from the RTCPeerConnection
+      // that produced the outbound signal, so the echo is redundant.
       return;
     }
 
@@ -711,6 +989,9 @@ class FriendChatP2pManager {
       }
       conn.call = { callId, mediaKind, state: 'incoming' };
       this.emitCall(conn);
+      // Arm the unanswered-ring timeout so an ignored incoming call
+      // clears its modal instead of ringing forever.
+      this.armRingTimeout(conn);
     } else if (kind === 'CALL_ACCEPT') {
       // Peer accepted our call. Flip to active; the WebRTC
       // renegotiation kicked off by `addTrack` (in startCall)
@@ -722,16 +1003,28 @@ class FriendChatP2pManager {
       if (conn.call.state !== 'outgoing' || (callId && callId !== conn.call.callId)) {
         return;
       }
+      this.clearRingTimeout(conn);
       conn.call = { ...conn.call, state: 'active', startedAt: Date.now() };
       this.emitCall(conn);
     } else if (kind === 'CALL_REJECT') {
       const callId = String(json?.callId || '');
       if (callId && callId !== conn.call.callId) return;
-      this.teardownCallLocal(conn, 'rejected');
+      // Map the peer's sealed reason onto our terminal result so the
+      // caller's UI can distinguish "declined" from "busy".
+      const rawReason = String(json?.reason || '');
+      const reason: CallEndReason =
+        rawReason === 'busy' ? 'busy'
+        : rawReason === 'media-failed' ? 'media-failed'
+        : 'rejected';
+      this.teardownCallLocal(conn, reason);
     } else if (kind === 'CALL_END') {
       const callId = String(json?.callId || '');
       if (callId && callId !== conn.call.callId) return;
-      this.teardownCallLocal(conn, 'ended');
+      // A remote end while still ringing is a missed call; while active
+      // or reconnecting it is a normal hangup.
+      const reason: CallEndReason =
+        conn.call.state === 'active' || conn.call.state === 'reconnecting' ? 'hangup' : 'no-answer';
+      this.teardownCallLocal(conn, reason);
     }
   }
 
@@ -782,14 +1075,15 @@ class FriendChatP2pManager {
       throw new Error('startCall: call already in progress');
     }
     const callId = this.newCallId();
-    conn.call = { callId, mediaKind, state: 'outgoing' };
+    const audioDeviceId = readPreferredDevice(PREFERRED_AUDIO_DEVICE_KEY);
+    const videoDeviceId = readPreferredDevice(PREFERRED_VIDEO_DEVICE_KEY);
+    conn.call = { callId, mediaKind, state: 'outgoing', audioDeviceId, videoDeviceId };
     this.emitCall(conn);
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: mediaKind === 'video',
-      });
+      stream = await navigator.mediaDevices.getUserMedia(
+        buildMediaConstraints(mediaKind === 'video', audioDeviceId, videoDeviceId),
+      );
     } catch (error) {
       this.teardownCallLocal(conn, 'media-failed');
       throw error;
@@ -802,6 +1096,9 @@ class FriendChatP2pManager {
     // Notify the peer. Renegotiation OFFER will follow
     // automatically through the existing onnegotiationneeded path.
     await this.sendSignal(conn, 'CALL_REQUEST', JSON.stringify({ callId, kind: mediaKind }));
+    // Arm the unanswered-ring timeout: if the callee never picks up,
+    // we cancel the outgoing ring and notify the peer (no-answer).
+    this.armRingTimeout(conn);
   }
 
   /** Accept an incoming call (`call.state === 'incoming'`). Same
@@ -811,12 +1108,16 @@ class FriendChatP2pManager {
     if (!conn) throw new Error('acceptCall: no PC');
     if (conn.call.state !== 'incoming') return;
     const { callId, mediaKind } = conn.call;
+    // The user answered — stop the unanswered-ring countdown before we
+    // pay the getUserMedia round-trip.
+    this.clearRingTimeout(conn);
+    const audioDeviceId = readPreferredDevice(PREFERRED_AUDIO_DEVICE_KEY);
+    const videoDeviceId = readPreferredDevice(PREFERRED_VIDEO_DEVICE_KEY);
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: mediaKind === 'video',
-      });
+      stream = await navigator.mediaDevices.getUserMedia(
+        buildMediaConstraints(mediaKind === 'video', audioDeviceId, videoDeviceId),
+      );
     } catch (error) {
       // Acquisition failed — politely reject so the caller doesn't
       // wait for a ring-out.
@@ -827,7 +1128,14 @@ class FriendChatP2pManager {
     for (const track of stream.getTracks()) {
       conn.pc.addTrack(track, stream);
     }
-    conn.call = { ...conn.call, localStream: stream, state: 'active', startedAt: Date.now() };
+    conn.call = {
+      ...conn.call,
+      localStream: stream,
+      state: 'active',
+      startedAt: Date.now(),
+      audioDeviceId,
+      videoDeviceId,
+    };
     this.emitCall(conn);
     await this.sendSignal(conn, 'CALL_ACCEPT', JSON.stringify({ callId }));
   }
@@ -848,8 +1156,13 @@ class FriendChatP2pManager {
     if (!conn) return;
     if (conn.call.state === 'idle' || conn.call.state === 'ended') return;
     const { callId } = conn.call;
+    // Canceling an outgoing/incoming ring is distinct from hanging up
+    // an active (or reconnecting) call, so the UI can show "Canceled"
+    // vs "Call ended".
+    const reason: CallEndReason =
+      conn.call.state === 'active' || conn.call.state === 'reconnecting' ? 'hangup' : 'canceled';
     await this.sendSignal(conn, 'CALL_END', JSON.stringify({ callId }));
-    this.teardownCallLocal(conn, 'ended');
+    this.teardownCallLocal(conn, reason);
   }
 
   /** Mute or unmute the local microphone in-place. The track stays
@@ -879,11 +1192,136 @@ class FriendChatP2pManager {
     this.emitCall(conn);
   }
 
+  /** Enumerate the available microphones and cameras for the device
+   *  picker. Labels are only populated once a media permission has been
+   *  granted (browser privacy rule), so the UI should be tolerant of
+   *  empty labels and fall back to a generic "Microphone N" / "Camera N".
+   *  Returns empty lists if the platform has no media devices API. */
+  async listMediaDevices(): Promise<CallMediaDevices> {
+    if (!navigator.mediaDevices?.enumerateDevices) {
+      return { audioInputs: [], videoInputs: [] };
+    }
+    let devices: MediaDeviceInfo[];
+    try {
+      devices = await navigator.mediaDevices.enumerateDevices();
+    } catch (error) {
+      log.warn('p2p', 'enumerateDevices failed', error);
+      return { audioInputs: [], videoInputs: [] };
+    }
+    const audioInputs: CallMediaDevice[] = [];
+    const videoInputs: CallMediaDevice[] = [];
+    for (const d of devices) {
+      if (!d.deviceId) continue;
+      if (d.kind === 'audioinput') audioInputs.push({ deviceId: d.deviceId, label: d.label });
+      else if (d.kind === 'videoinput') videoInputs.push({ deviceId: d.deviceId, label: d.label });
+    }
+    return { audioInputs, videoInputs };
+  }
+
+  /** Return the persisted device preferences so the picker can show the
+   *  current selection before any call is in flight. */
+  getPreferredDevices(): { audioDeviceId?: string; videoDeviceId?: string } {
+    return {
+      audioDeviceId: readPreferredDevice(PREFERRED_AUDIO_DEVICE_KEY),
+      videoDeviceId: readPreferredDevice(PREFERRED_VIDEO_DEVICE_KEY),
+    };
+  }
+
+  /** Switch the microphone mid-call (or just persist the preference when
+   *  no call is active). Uses `RTCRtpSender.replaceTrack` so the swap is
+   *  seamless — no renegotiation, no peer-visible interruption. Passing
+   *  `undefined` clears the preference back to the OS default. */
+  async switchAudioDevice(myDid: string, peerDid: string, deviceId: string | undefined): Promise<void> {
+    writePreferredDevice(PREFERRED_AUDIO_DEVICE_KEY, deviceId);
+    await this.replaceLocalTrack(myDid, peerDid, 'audio', deviceId);
+  }
+
+  /** Switch the camera mid-call (or persist the preference when idle).
+   *  Same seamless `replaceTrack` path as {@link switchAudioDevice}. */
+  async switchVideoDevice(myDid: string, peerDid: string, deviceId: string | undefined): Promise<void> {
+    writePreferredDevice(PREFERRED_VIDEO_DEVICE_KEY, deviceId);
+    await this.replaceLocalTrack(myDid, peerDid, 'video', deviceId);
+  }
+
+  /**
+   * Re-capture a single input from a new device and hot-swap it into the
+   * live RTCPeerConnection sender and local snapshot stream. No-op when no
+   * media is flowing (the persisted preference takes effect on next call).
+   *
+   * We capture ONLY the requested kind so we never re-prompt for the other
+   * track, then stop the old track to release the previous device. The new
+   * track inherits the current mute/camera-off state so a swap doesn't
+   * silently un-mute the user.
+   */
+  private async replaceLocalTrack(
+    myDid: string,
+    peerDid: string,
+    kind: CallMediaKind,
+    deviceId: string | undefined,
+  ): Promise<void> {
+    const conn = this.conns.get(`${myDid}::${peerDid}`);
+    if (!conn?.call.localStream) return;
+    if (conn.call.state !== 'active' && conn.call.state !== 'reconnecting') return;
+    const wantVideo = kind === 'video';
+    if (wantVideo && conn.call.mediaKind !== 'video') return;
+
+    let captured: MediaStream;
+    try {
+      captured = await navigator.mediaDevices.getUserMedia(
+        wantVideo
+          ? buildMediaConstraints(true, undefined, deviceId)
+          : { audio: deviceId ? { deviceId: { ideal: deviceId } } : true, video: false },
+      );
+    } catch (error) {
+      log.warn('p2p', 'device switch capture failed', error);
+      throw error;
+    }
+    const newTrack = wantVideo
+      ? captured.getVideoTracks()[0]
+      : captured.getAudioTracks()[0];
+    if (!newTrack) {
+      for (const t of captured.getTracks()) { try { t.stop(); } catch { /* best-effort */ } }
+      return;
+    }
+    // Preserve the existing mute / camera-off state on the fresh track.
+    newTrack.enabled = wantVideo ? !conn.call.cameraOff : !conn.call.micMuted;
+
+    const sender = conn.pc.getSenders().find((s) => s.track?.kind === newTrack.kind);
+    if (sender) {
+      try {
+        await sender.replaceTrack(newTrack);
+      } catch (error) {
+        try { newTrack.stop(); } catch { /* best-effort */ }
+        log.warn('p2p', 'replaceTrack failed', error);
+        throw error;
+      }
+    }
+    // Swap the track inside the snapshot's local stream so the self-view
+    // <video> reflects the new device, then stop the superseded track.
+    const oldTrack = wantVideo
+      ? conn.call.localStream.getVideoTracks()[0]
+      : conn.call.localStream.getAudioTracks()[0];
+    if (oldTrack) {
+      conn.call.localStream.removeTrack(oldTrack);
+      try { oldTrack.stop(); } catch { /* best-effort */ }
+    }
+    conn.call.localStream.addTrack(newTrack);
+    conn.call = {
+      ...conn.call,
+      ...(wantVideo ? { videoDeviceId: deviceId } : { audioDeviceId: deviceId }),
+    };
+    this.emitCall(conn);
+  }
+
   /** Stop the local stream and reset the call snapshot. Used by
    *  every terminal path (CALL_END/CALL_REJECT, errors, manual
    *  hangup). The PC itself stays alive so we can ring again later
-   *  without reopening the entire connection. */
-  private teardownCallLocal(conn: Conn, _reason: string): void {
+   *  without reopening the entire connection. The `reason` surfaces
+   *  on the terminal snapshot so the UI can render a distinct,
+   *  localized result (declined / missed / network failure / …). */
+  private teardownCallLocal(conn: Conn, reason: CallEndReason): void {
+    this.clearRingTimeout(conn);
+    this.clearReconnectTimeout(conn);
     if (conn.call.localStream) {
       for (const t of conn.call.localStream.getTracks()) {
         try { t.stop(); } catch { /* best-effort */ }
@@ -898,14 +1336,42 @@ class FriendChatP2pManager {
       }
     }
     conn.remoteTrackIds.clear();
-    conn.call = { callId: '', mediaKind: 'audio', state: 'ended' };
+    conn.call = { callId: '', mediaKind: 'audio', state: 'ended', endReason: reason };
     this.emitCall(conn);
+  }
+
+  /**
+   * Tear down only connections that have no in-flight call, leaving
+   * any ringing / active / reconnecting call alive.
+   *
+   * This is the conversation-switch teardown. The call projection must
+   * survive navigation between chats (a user can receive a call from
+   * peer B while reading peer C — see voice-video-calls.md §7), so the
+   * page's per-peer connection effect must NOT blow away a live call
+   * when the active conversation changes. Connections whose call is
+   * `idle` / `ended` are pure transport-readiness probes and safe to
+   * recycle; connections carrying an `outgoing` / `incoming` / `active`
+   * call are kept until that call reaches a terminal state.
+   */
+  closeIdleConnections() {
+    for (const [key, conn] of this.conns) {
+      const callState = conn.call.state;
+      if (callState === 'outgoing' || callState === 'incoming' || callState === 'active' || callState === 'reconnecting') {
+        continue;
+      }
+      conn.transportProbeStopped = true;
+      try { conn.dc?.close(); } catch { /* best-effort */ }
+      try { conn.pc.close(); } catch { /* best-effort */ }
+      this.conns.delete(key);
+    }
   }
 
   // Tear down every active connection; intended for component unmount cleanup.
   closeAll() {
     for (const conn of this.conns.values()) {
       conn.transportProbeStopped = true;
+      this.clearRingTimeout(conn);
+      this.clearReconnectTimeout(conn);
       // Stop any in-flight call media first so the camera light
       // turns off promptly even if pc.close() races.
       if (conn.call.localStream) {

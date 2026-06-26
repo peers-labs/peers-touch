@@ -45,20 +45,32 @@ PROTOC_GEN_GO=""
 if [ -n "$GOBIN" ] && [ -x "$GOBIN/protoc-gen-go" ]; then
   PROTOC_GEN_GO="--plugin=protoc-gen-go=$GOBIN/protoc-gen-go"
 fi
-MODULE_PREFIX="github.com/peers-labs/peers-touch/station/"
+STATION_MODULE_PREFIX="github.com/peers-labs/peers-touch/station/"
+APPLET_SERVICE_MODULE_PREFIX="github.com/peers-labs/peers-touch/apps/applets/"
 
 for file in $GO_PROTO_FILES; do
     GO_PACKAGE_LINE=$(grep 'option[[:space:]]\+go_package' "$file" || true)
+    GO_PROTO_OUT="$GO_OUT"
+    GO_MODULE="github.com/peers-labs/peers-touch/station"
 
     if [[ "$GO_PACKAGE_LINE" =~ \"([^\"]+)\" ]]; then
         GO_PACKAGE="${BASH_REMATCH[1]}"
         GO_PACKAGE="${GO_PACKAGE%%;*}"
 
-        if [[ "$GO_PACKAGE" == "$MODULE_PREFIX"* ]]; then
-            REL_GO_DIR="${GO_PACKAGE#$MODULE_PREFIX}"
+        if [[ "$GO_PACKAGE" == "$STATION_MODULE_PREFIX"* ]]; then
+            REL_GO_DIR="${GO_PACKAGE#$STATION_MODULE_PREFIX}"
             FILE_NAME=$(basename "$file")
             GO_FILE_NAME="${FILE_NAME%.proto}.pb.go"
             FULL_GO_PATH="$GO_OUT/$REL_GO_DIR/$GO_FILE_NAME"
+            echo "  Generating $file -> $FULL_GO_PATH"
+        elif [[ "$GO_PACKAGE" =~ ^github.com/peers-labs/peers-touch/apps/applets/([^/]+)/service(/.*)?$ ]]; then
+            APPLET_SERVICE="${BASH_REMATCH[1]}"
+            GO_MODULE="github.com/peers-labs/peers-touch/apps/applets/$APPLET_SERVICE/service"
+            GO_PROTO_OUT="$PROJECT_ROOT/apps/applets/$APPLET_SERVICE/service"
+            REL_GO_DIR="${GO_PACKAGE#$GO_MODULE/}"
+            FILE_NAME=$(basename "$file")
+            GO_FILE_NAME="${FILE_NAME%.proto}.pb.go"
+            FULL_GO_PATH="$GO_PROTO_OUT/$REL_GO_DIR/$GO_FILE_NAME"
             echo "  Generating $file -> $FULL_GO_PATH"
         else
             echo "  Generating $file (go_package: $GO_PACKAGE)"
@@ -67,7 +79,8 @@ for file in $GO_PROTO_FILES; do
         echo "  Generating $file (no go_package option)"
     fi
 
-    protoc $PROTOC_GEN_GO --go_out="$GO_OUT" --go_opt=module=github.com/peers-labs/peers-touch/station -I"$PROTO_ROOT" "$file"
+    mkdir -p "$GO_PROTO_OUT"
+    protoc $PROTOC_GEN_GO --go_out="$GO_PROTO_OUT" --go_opt=module="$GO_MODULE" -I"$PROTO_ROOT" "$file"
 done
 
 echo ""

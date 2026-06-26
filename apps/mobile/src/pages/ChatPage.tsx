@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type Keyboard
 import { Badge, Button, Empty, Input, List, Modal, Popconfirm, Spin, Switch, Tag, Typography } from 'antd';
 import { ArrowLeft, Ban, Bell, Check, CheckCheck, FolderOpen, Image, Mic, MoreHorizontal, Paperclip, Pencil, Pin, Plus, RotateCcw, Scissors, Search, Send, Smile, Trash2, Users, VolumeX, X } from 'lucide-react';
 import {
-  CHAT_COMPOSER_CAPABILITIES_MOBILE_MAIN,
+  CHAT_COMPOSER_CAPABILITIES_MOBILE_THREAD,
   buildChatConversationSurfaceItems,
   canSubmitChatComposerDraft,
   canEditChatMessage,
@@ -25,6 +25,7 @@ import { decryptClientMediaBlob, type ClientMediaEncryptionDescriptor } from '@p
 import { useMobileI18n } from '../app/mobileI18n';
 import logo from '../assets/logo.png';
 import { MobileAvatar } from '../components/MobileAvatar';
+import { MobileNotice } from '../components/MobileNotice';
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
 import type { ChatAttachmentInput } from '../features/social/socialApi';
@@ -37,6 +38,7 @@ import {
   type ChatActionState,
 } from '../features/chat/chatActionState';
 import { timestampMillis as groupTimestampMillis } from '../features/group/groupNormalizers';
+import { getMobileGroupMemberControlState } from '../features/group/groupPermissions';
 import { useGroupStore } from '../features/group/groupStore';
 import type { GroupSettings } from '../features/group/groupApi';
 import {
@@ -53,7 +55,7 @@ import {
 } from '../features/social/socialStore';
 import { timestampMillis } from '../features/social/socialNormalizers';
 import { projectConversations } from '../features/social/socialProjection';
-import { SocialApiError, type FriendChatMessage, type FriendMessageAttachment, type PeerProfile, type SocialConversation, type TypingEntry } from '../features/social/socialTypes';
+import { SocialApiError, readableErrorMessage, type FriendChatMessage, type FriendMessageAttachment, type PeerProfile, type SocialConversation, type TypingEntry } from '../features/social/socialTypes';
 import {
   CHAT_BACKGROUND_OPTIONS,
   type ChatBackgroundId,
@@ -68,8 +70,8 @@ const EMPTY_MESSAGES: FriendChatMessage[] = [];
 const EMPTY_GROUP_MESSAGES: GroupMessage[] = [];
 const EMPTY_GROUP_MEMBERS: GroupMember[] = [];
 const EMPTY_TYPING_PEERS: Record<string, TypingEntry> = {};
-const MOBILE_COMPOSER_CAPABILITIES = CHAT_COMPOSER_CAPABILITIES_MOBILE_MAIN;
-const MOBILE_CHAT_VISUAL_VARS = chatVisualCssVars(chatVisualLayoutForSurface('mobile-main')) as CSSProperties;
+const MOBILE_THREAD_COMPOSER_CAPABILITIES = CHAT_COMPOSER_CAPABILITIES_MOBILE_THREAD;
+const MOBILE_THREAD_VISUAL_VARS = chatVisualCssVars(chatVisualLayoutForSurface('mobile-thread')) as CSSProperties;
 const MOBILE_COMPOSER_EMOJIS = ['😀', '😊', '😂', '😍', '👍', '🙏', '🎉', '🔥', '❤️', '✨', '😭', '🤔'] as const;
 
 type MobileConversation =
@@ -94,7 +96,7 @@ export function ChatPage() {
   const [conversationQuery, setConversationQuery] = useState('');
   const [threadSearchQuery, setThreadSearchQuery] = useState('');
   const [threadSearchOpen, setThreadSearchOpen] = useState(false);
-  const [actionDrawerOpen, setActionDrawerOpen] = useState(false);
+  const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [composerEmojiOpen, setComposerEmojiOpen] = useState(false);
   const [composerMoreOpen, setComposerMoreOpen] = useState(false);
   const [attachmentDrafts, setAttachmentDrafts] = useState<MobileChatAttachmentDraft[]>([]);
@@ -127,6 +129,7 @@ export function ChatPage() {
   const recallMessage = useSocialStore((state) => state.recallMessage);
   const deleteMessage = useSocialStore((state) => state.deleteMessage);
   const sendTypingState = useSocialStore((state) => state.sendTypingState);
+  const clearSocialError = useSocialStore((state) => state.clearError);
   const friendConversationSettings = useSocialStore((state) => state.conversationSettings);
   const updateFriendConversationSettings = useSocialStore((state) => state.updateConversationSettings);
   const activeGroupUlid = useGroupStore((state) => state.activeGroupUlid);
@@ -143,12 +146,15 @@ export function ChatPage() {
   const leaveGroup = useGroupStore((state) => state.leaveGroup);
   const removeGroupMember = useGroupStore((state) => state.removeMember);
   const updateGroupMember = useGroupStore((state) => state.updateMember);
+  const transferGroupOwnership = useGroupStore((state) => state.transferOwnership);
+  const dissolveGroup = useGroupStore((state) => state.dissolveGroup);
   const groupEncryptionReady = useGroupStore((state) => (activeGroupUlid ? Boolean(state.encryptionReady[activeGroupUlid]) : false));
   const groupSending = useGroupStore((state) => (activeGroupUlid ? Boolean(state.sendingGroups[activeGroupUlid]) : false));
   const sendGroupMessage = useGroupStore((state) => state.sendEncryptedMessage);
   const editGroupMessage = useGroupStore((state) => state.editEncryptedMessage);
   const recallGroupMessage = useGroupStore((state) => state.recallMessage);
   const deleteGroupMessage = useGroupStore((state) => state.deleteMessage);
+  const clearGroupError = useGroupStore((state) => state.clearError);
   const composingRef = useRef(false);
   const activeConversationKeyRef = useRef('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -233,10 +239,11 @@ export function ChatPage() {
   useEffect(() => {
     setThreadSearchQuery('');
     setThreadSearchOpen(false);
-    setActionDrawerOpen(false);
+    setActionSheetOpen(false);
     setComposerEmojiOpen(false);
     setComposerMoreOpen(false);
     setEditingMessage(null);
+    setLocalActionError('');
     setAttachmentDrafts((drafts) => {
       drafts.forEach((item) => revokeObjectUrl(item.previewUrl));
       return [];
@@ -311,7 +318,7 @@ export function ChatPage() {
   };
 
   const submitMessage = async () => {
-    if (!canSubmitChatComposerDraft({ text: draft, attachmentCount: attachmentDrafts.length, capabilities: MOBILE_COMPOSER_CAPABILITIES })) return;
+    if (!canSubmitChatComposerDraft({ text: draft, attachmentCount: attachmentDrafts.length, capabilities: MOBILE_THREAD_COMPOSER_CAPABILITIES })) return;
 
     const readyAttachments = attachmentDrafts.map((item) => item.attachment);
     const messageType = chatMessageTypeForAttachments(readyAttachments) ?? 1;
@@ -322,6 +329,8 @@ export function ChatPage() {
         if (edited) {
           setEditingMessage(null);
           setDraft('');
+        } else {
+          throw new Error(t('mobile.group.composerPending'));
         }
         return;
       }
@@ -330,11 +339,16 @@ export function ChatPage() {
       if (sent) {
         setDraft('');
         clearAttachmentDrafts();
+      } else {
+        throw new Error(t('mobile.group.composerPending'));
       }
       return;
     }
 
-    if (!activeConversation || friendshipStatus[activeConversation.peerDid]?.blocked) return;
+    if (!activeConversation) return;
+    if (friendshipStatus[activeConversation.peerDid]?.blocked) {
+      throw new Error(t('mobile.chat.blockedComposer'));
+    }
     await emitTypingState(false);
 
     if (editingMessage?.kind === 'friend') {
@@ -474,10 +488,56 @@ export function ChatPage() {
     await updateGroupMember(activeGroupUlid, actorDid, input);
   };
 
+  const confirmTransferGroupOwnership = (member: GroupMember) => {
+    if (!activeGroupUlid || !member.actorDid) return;
+    const groupUlid = activeGroupUlid;
+    const profile = peerProfiles[member.actorDid];
+    const memberName = member.nickname || profile?.displayName || profile?.username || member.actorDid;
+    Modal.confirm({
+      title: t('mobile.group.transferOwnerConfirmTitle'),
+      content: t('mobile.group.transferOwnerConfirmBody', { name: memberName }),
+      okText: t('mobile.group.transferOwner'),
+      cancelText: t('common.action.cancel'),
+      okButtonProps: { danger: true },
+      onOk: () => runChatOperation(
+        () => transferGroupOwnership(groupUlid, member.actorDid),
+        'mobile.group.operationTransferOwnerFailed',
+      ),
+    });
+  };
+
   const leaveActiveGroup = async () => {
     if (!activeGroupUlid) return;
     await leaveGroup(activeGroupUlid);
     setGroupManageOpen(false);
+  };
+
+  const confirmLeaveActiveGroup = () => {
+    if (!activeGroupUlid) return;
+    Modal.confirm({
+      title: t('mobile.group.leaveGroupConfirmTitle'),
+      content: t('mobile.group.leaveGroupConfirmBody'),
+      okText: t('mobile.group.leaveGroup'),
+      cancelText: t('common.action.cancel'),
+      okButtonProps: { danger: true },
+      onOk: () => runChatOperation(leaveActiveGroup, 'mobile.group.operationLeaveFailed'),
+    });
+  };
+
+  const confirmDissolveActiveGroup = () => {
+    if (!activeGroupUlid) return;
+    const groupUlid = activeGroupUlid;
+    Modal.confirm({
+      title: t('mobile.group.dissolveGroupConfirmTitle'),
+      content: t('mobile.group.dissolveGroupConfirmBody'),
+      okText: t('mobile.group.dissolveGroup'),
+      cancelText: t('common.action.cancel'),
+      okButtonProps: { danger: true },
+      onOk: () => runChatOperation(async () => {
+        await dissolveGroup(groupUlid);
+        setGroupManageOpen(false);
+      }, 'mobile.group.operationDissolveFailed'),
+    });
   };
 
   const saveGroupProfile = async () => {
@@ -508,7 +568,7 @@ export function ChatPage() {
       okButtonProps: { danger: true },
       onOk: async () => {
         await blockUser(activeConversation.peerDid);
-        setActionDrawerOpen(false);
+        setActionSheetOpen(false);
       },
     });
   };
@@ -590,7 +650,7 @@ export function ChatPage() {
     const threadSearchResults = localThreadSearchResults(threadMessages, threadSearchQuery, isGroupThread);
 
     return (
-      <div className="page-container chat-thread-page" style={MOBILE_CHAT_VISUAL_VARS}>
+      <div className="page-container chat-thread-page" style={MOBILE_THREAD_VISUAL_VARS}>
         <header className={`page-header chat-thread-header ${threadSearchOpen ? 'searching' : ''}`}>
           <button
             className="header-action"
@@ -639,7 +699,7 @@ export function ChatPage() {
               <button
                 className="header-action"
                 type="button"
-                onClick={() => setActionDrawerOpen(true)}
+                onClick={() => setActionSheetOpen(true)}
                 aria-label={t('mobile.chat.moreActions')}
               >
                 <MoreHorizontal size={20} />
@@ -648,13 +708,13 @@ export function ChatPage() {
           )}
         </header>
 
-        <ChatActionDrawer
-          open={actionDrawerOpen}
+        <ChatActionSheet
+          open={actionSheetOpen}
           state={actionState}
-          onClose={() => setActionDrawerOpen(false)}
+          onClose={() => setActionSheetOpen(false)}
           onSearch={() => {
             setThreadSearchOpen(true);
-            setActionDrawerOpen(false);
+            setActionSheetOpen(false);
           }}
           onToggleMute={() => { void updateChatActionState(activeKey, { muted: !actionState.muted }); }}
           onToggleSticky={() => { void updateChatActionState(activeKey, { sticky: !actionState.sticky }); }}
@@ -674,14 +734,16 @@ export function ChatPage() {
           isFriendThread={Boolean(activeConversation)}
           onManageGroup={activeGroupConversation ? () => {
             setGroupManageOpen(true);
-            setActionDrawerOpen(false);
+            setActionSheetOpen(false);
           } : undefined}
           peerBlocked={activePeerBlocked}
           onBlockPeer={confirmBlockActivePeer}
           onUnblockPeer={confirmUnblockActivePeer}
         />
 
-        {localActionError ? <Text type="danger" className="page-error">{localActionError}</Text> : null}
+        {localActionError ? (
+          <MobileNotice onClose={() => setLocalActionError('')}>{localActionError}</MobileNotice>
+        ) : null}
 
         {threadSearchQuery.trim() ? (
           <section className="message-search-panel">
@@ -869,7 +931,7 @@ export function ChatPage() {
               multiple
               onChange={(event) => { void handleMobileFilesSelected(event.target.files); }}
             />
-            {MOBILE_COMPOSER_CAPABILITIES.emoji ? (
+            {MOBILE_THREAD_COMPOSER_CAPABILITIES.emoji ? (
               <button
                 type="button"
                 className={`message-composer-tool ${composerEmojiOpen ? 'active' : ''}`}
@@ -918,7 +980,7 @@ export function ChatPage() {
               className="message-send-button"
               type="primary"
               icon={<Send size={16} />}
-              disabled={!canSubmitChatComposerDraft({ text: draft, attachmentCount: attachmentDrafts.length, capabilities: MOBILE_COMPOSER_CAPABILITIES }) || groupSending || attachmentUploading}
+              disabled={!canSubmitChatComposerDraft({ text: draft, attachmentCount: attachmentDrafts.length, capabilities: MOBILE_THREAD_COMPOSER_CAPABILITIES }) || groupSending || attachmentUploading}
               loading={groupSending || attachmentUploading}
               onClick={() => void runChatOperation(submitMessage, 'mobile.chat.operationSendFailed')}
             />
@@ -979,14 +1041,16 @@ export function ChatPage() {
                     const profile = peerProfiles[member.actorDid];
                     const memberName = member.nickname || profile?.displayName || profile?.username || member.actorDid;
                     const memberRole = Number(member.role ?? GroupRole.MEMBER);
-                    const canManageTarget = canManageGroupMembers &&
-                      member.actorDid !== currentUserDid &&
-                      memberRole !== GroupRole.OWNER &&
-                      (myGroupRole === GroupRole.OWNER || memberRole < myGroupRole);
+                    const memberControls = getMobileGroupMemberControlState({
+                      canManageGroupMembers,
+                      isSelf: member.actorDid === currentUserDid,
+                      myGroupRole,
+                      targetRole: memberRole,
+                    });
                     return (
                       <List.Item
                         actions={[
-                          canManageTarget && myGroupRole === GroupRole.OWNER ? (
+                          memberControls.canPromoteOrDemote ? (
                             <Button
                               key="role"
                               size="small"
@@ -997,7 +1061,16 @@ export function ChatPage() {
                               {memberRole === GroupRole.ADMIN ? t('mobile.group.demoteAdmin') : t('mobile.group.promoteAdmin')}
                             </Button>
                           ) : null,
-                          canManageTarget ? (
+                          memberControls.canTransferOwnership ? (
+                            <Button
+                              key="transfer"
+                              size="small"
+                              onClick={() => confirmTransferGroupOwnership(member)}
+                            >
+                              {t('mobile.group.transferOwner')}
+                            </Button>
+                          ) : null,
+                          memberControls.canMute ? (
                             <Button
                               key="mute"
                               size="small"
@@ -1006,7 +1079,7 @@ export function ChatPage() {
                               {member.muted ? t('mobile.group.unmuteMember') : t('mobile.group.muteMember')}
                             </Button>
                           ) : null,
-                          canManageTarget ? (
+                          memberControls.canRemove ? (
                             <Button
                               key="remove"
                               size="small"
@@ -1057,8 +1130,8 @@ export function ChatPage() {
                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.group.noInviteCandidates')} />
               )}
 
-              <Button danger block onClick={leaveActiveGroup}>
-                {t('mobile.group.leaveGroup')}
+              <Button danger block onClick={myGroupRole === GroupRole.OWNER ? confirmDissolveActiveGroup : confirmLeaveActiveGroup}>
+                {myGroupRole === GroupRole.OWNER ? t('mobile.group.dissolveGroup') : t('mobile.group.leaveGroup')}
               </Button>
             </div>
           </Modal>
@@ -1084,12 +1157,18 @@ export function ChatPage() {
         />
       </div>
 
-      {localActionError ? <Text type="danger" className="page-error">{localActionError}</Text> : null}
-      {error ? <Text type="danger" className="page-error">{formatSocialError(error)}</Text> : null}
-      {groupError ? <Text type="danger" className="page-error">{formatSocialError(groupError)}</Text> : null}
+      {localActionError ? (
+        <MobileNotice onClose={() => setLocalActionError('')}>{localActionError}</MobileNotice>
+      ) : null}
+      {error ? (
+        <MobileNotice onClose={clearSocialError}>{formatSocialError(error)}</MobileNotice>
+      ) : null}
+      {groupError ? (
+        <MobileNotice onClose={clearGroupError}>{formatSocialError(groupError)}</MobileNotice>
+      ) : null}
 
       <section className="social-list-panel">
-        <Spin spinning={loading || groupLoading}>
+        <Spin spinning={(loading || groupLoading) && filteredConversationSurfaceItems.length === 0}>
           {filteredConversationSurfaceItems.length === 0 ? (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -1113,9 +1192,12 @@ export function ChatPage() {
                   <List.Item className="conversation-item" onClick={() => openConversation(conversation)}>
                     <List.Item.Meta
                       avatar={
-                        <Badge dot={conversation.kind === 'friend' ? conversation.conversation.peerOnline : false} color="green" offset={[-2, 28]}>
+                        <span className="conversation-avatar-frame">
                           <MobileAvatar src={conversationAvatar(conversation)}>{conversationTitle(conversation).slice(0, 1)}</MobileAvatar>
-                        </Badge>
+                          {conversation.kind === 'friend' && conversation.conversation.peerOnline ? (
+                            <span className="conversation-online-dot" aria-hidden="true" />
+                          ) : null}
+                        </span>
                       }
                       title={
                         <span className="conversation-title-row">
@@ -1157,7 +1239,7 @@ function MessageAvatar({ src, fallback }: { src: string; fallback: string }) {
   );
 }
 
-function ChatActionDrawer({
+function ChatActionSheet({
   open,
   state,
   onClose,
@@ -1194,35 +1276,38 @@ function ChatActionDrawer({
   if (!open) return null;
 
   return (
-    <div className="chat-action-drawer-shell">
-      <button className="chat-action-drawer-backdrop" type="button" aria-label={t('common.action.close')} onClick={onClose} />
-      <aside className="chat-action-drawer">
-        <div className="chat-action-drawer-header">
-          <Text strong>{t('mobile.chat.moreActions')}</Text>
+    <div className="chat-action-sheet-shell">
+      <button className="chat-action-sheet-backdrop" type="button" aria-label={t('common.action.close')} onClick={onClose} />
+      <aside className="chat-action-sheet" role="dialog" aria-modal="true" aria-labelledby="chat-action-sheet-title">
+        <div className="chat-action-sheet-handle" aria-hidden="true" />
+        <div className="chat-action-sheet-header">
+          <Text strong id="chat-action-sheet-title">{t('mobile.chat.moreActions')}</Text>
           <button className="header-action" type="button" aria-label={t('common.action.close')} onClick={onClose}>
             <X size={18} />
           </button>
         </div>
         <div className="chat-action-list">
-          <ChatActionButton icon={<Search size={18} />} title={t('mobile.chat.quickSearch')} onClick={onSearch} />
-          <ChatActionButton
-            icon={<VolumeX size={18} />}
-            title={t('mobile.chat.quickMute')}
-            active={state.muted}
-            onClick={onToggleMute}
-          />
-          <ChatActionButton
-            icon={<Pin size={18} />}
-            title={t('mobile.chat.quickSticky')}
-            active={state.sticky}
-            onClick={onToggleSticky}
-          />
-          <ChatActionButton
-            icon={<Bell size={18} />}
-            title={t('mobile.chat.quickAlert')}
-            active={state.alertEnabled}
-            onClick={onToggleAlert}
-          />
+          <div className="chat-action-group">
+            <ChatActionButton icon={<Search size={18} />} title={t('mobile.chat.quickSearch')} onClick={onSearch} />
+            <ChatActionButton
+              icon={<VolumeX size={18} />}
+              title={t('mobile.chat.quickMute')}
+              active={state.muted}
+              onClick={onToggleMute}
+            />
+            <ChatActionButton
+              icon={<Pin size={18} />}
+              title={t('mobile.chat.quickSticky')}
+              active={state.sticky}
+              onClick={onToggleSticky}
+            />
+            <ChatActionButton
+              icon={<Bell size={18} />}
+              title={t('mobile.chat.quickAlert')}
+              active={state.alertEnabled}
+              onClick={onToggleAlert}
+            />
+          </div>
           <div className="chat-background-section">
             <Text type="secondary" className="chat-background-title">{t('mobile.chat.quickBackground')}</Text>
             <div className="chat-background-grid">
@@ -1239,20 +1324,24 @@ function ChatActionDrawer({
               ))}
             </div>
           </div>
-          <ChatActionButton icon={<Trash2 size={18} />} title={t('mobile.chat.quickClearHistory')} danger onClick={onClearHistory} />
-          {state.clearedAt ? (
-            <ChatActionButton icon={<RotateCcw size={18} />} title={t('mobile.chat.quickRestoreHistory')} onClick={onRestoreHistory} />
-          ) : null}
-          {onManageGroup ? (
-            <ChatActionButton icon={<Users size={18} />} title={t('mobile.group.members')} onClick={onManageGroup} />
-          ) : null}
-          {isFriendThread ? (
-            peerBlocked ? (
-              <ChatActionButton icon={<RotateCcw size={18} />} title={t('mobile.contacts.unblock')} onClick={onUnblockPeer} />
-            ) : (
-              <ChatActionButton icon={<Ban size={18} />} title={t('mobile.contacts.block')} danger onClick={onBlockPeer} />
-            )
-          ) : null}
+          <div className="chat-action-group">
+            {state.clearedAt ? (
+              <ChatActionButton icon={<RotateCcw size={18} />} title={t('mobile.chat.quickRestoreHistory')} onClick={onRestoreHistory} />
+            ) : null}
+            {onManageGroup ? (
+              <ChatActionButton icon={<Users size={18} />} title={t('mobile.group.members')} onClick={onManageGroup} />
+            ) : null}
+          </div>
+          <div className="chat-action-group danger">
+            <ChatActionButton icon={<Trash2 size={18} />} title={t('mobile.chat.quickClearHistory')} danger onClick={onClearHistory} />
+            {isFriendThread ? (
+              peerBlocked ? (
+                <ChatActionButton icon={<RotateCcw size={18} />} title={t('mobile.contacts.unblock')} onClick={onUnblockPeer} />
+              ) : (
+                <ChatActionButton icon={<Ban size={18} />} title={t('mobile.contacts.block')} danger onClick={onBlockPeer} />
+              )
+            ) : null}
+          </div>
         </div>
       </aside>
     </div>
@@ -1431,7 +1520,8 @@ function conversationPreview(conversation: MobileConversation, t: (key: string) 
   }
 
   const lastMessage = conversation.conversation.lastMessage;
-  return lastMessage ? friendMessageDisplayText(lastMessage, t) : t('mobile.chat.noPreview');
+  if (lastMessage) return friendMessageDisplayText(lastMessage, t);
+  return conversation.conversation.session.lastMessageUlid ? t('mobile.chat.latestMessage') : t('mobile.chat.noPreview');
 }
 
 function conversationUpdatedAt(conversation: MobileConversation): number {
@@ -1685,7 +1775,7 @@ function groupPatchFromActionPatch(patch: Partial<ChatActionState>) {
 
 function formatChatOperationError(error: unknown): string {
   if (error instanceof SocialApiError) return formatSocialError(error);
-  return error instanceof Error ? error.message : String(error);
+  return readableErrorMessage(error, 'operation_failed');
 }
 
 function groupRoleLabel(role: number, t: (key: string) => string): string {

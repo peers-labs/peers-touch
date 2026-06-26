@@ -14,6 +14,7 @@ export const PAGES = {
   SYSTEM: 'system',
   LOGS: 'logs',
   TRANSPORT: 'transport',
+  ACCESS_GATES: 'access-gates',
 } as const;
 
 export type Page = typeof PAGES[keyof typeof PAGES];

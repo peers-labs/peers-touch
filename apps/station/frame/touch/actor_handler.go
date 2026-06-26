@@ -109,6 +109,18 @@ func GetActorHandlers() []ActorHandlerInfo {
 			Wrappers:  []server.Wrapper{actorWrapper},
 		},
 		{
+			RouterURL: RouterURLAccessAttemptCancel,
+			Handler:   CancelAccessAttempt,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{actorWrapper},
+		},
+		{
+			RouterURL: RouterURLAccessAttemptCancel,
+			Handler:   HandleAccessGateOptions,
+			Method:    server.OPTIONS,
+			Wrappers:  []server.Wrapper{actorWrapper},
+		},
+		{
 			RouterURL: RouterURLActorLogout,
 			Handler:   ActorLogout,
 			Method:    server.POST,
@@ -310,6 +322,8 @@ func SubmitAccessGate(c context.Context, ctx *app.RequestContext) {
 	switch req.GetType() {
 	case gatepb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN:
 		submitAccessLogin(c, ctx, &req)
+	case gatepb.AccessGateType_ACCESS_GATE_TYPE_INVITE_CODE:
+		submitAccessInviteCode(c, ctx, &req)
 	default:
 		FailedResponse(c, ctx, fmt.Errorf("unsupported access gate type: %s", req.GetType().String()))
 	}
@@ -329,7 +343,7 @@ func GetAccessDecision(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	attempt, ok := gate.GetAttempt(req.GetAttemptId())
+	attempt, ok := gate.GetAttempt(c, req.GetAttemptId())
 	if !ok {
 		FailedResponse(c, ctx, errors.New("access attempt expired or not found"))
 		return
@@ -563,6 +577,52 @@ func submitAccessLogin(c context.Context, ctx *app.RequestContext, req *gatepb.S
 		Decision:      decision,
 		LoginResponse: loginResp,
 	})
+}
+
+// submitAccessInviteCode redeems an invite code for the attempt and returns the
+// re-evaluated decision. An invalid code is reported with a single uniform
+// message so a probe cannot distinguish unknown / revoked / expired / exhausted.
+func submitAccessInviteCode(c context.Context, ctx *app.RequestContext, req *gatepb.SubmitAccessGateRequest) {
+	code := req.GetInviteCode()
+	if code == "" {
+		FailedResponse(c, ctx, errors.New("invite code gate requires a code"))
+		return
+	}
+
+	decision, err := gate.CompleteInviteCode(c, req.GetAttemptId(), code)
+	if err != nil {
+		log.Warnf(c, "Access invite code submit failed: %v", err)
+		FailedResponse(c, ctx, err)
+		return
+	}
+
+	SuccessResponse(c, ctx, "Invite code accepted", &gatepb.SubmitAccessGateResponse{Decision: decision})
+}
+
+// CancelAccessAttempt closes a live attempt so an abandoned gate flow leaves a
+// terminal record instead of lingering until expiry. It is idempotent.
+func CancelAccessAttempt(c context.Context, ctx *app.RequestContext) {
+	setAccessGateCORSHeaders(ctx)
+	if isAccessGatePreflight(ctx) {
+		writeAccessGatePreflight(ctx)
+		return
+	}
+
+	var req gatepb.CancelAccessAttemptRequest
+	if err := ctx.Bind(&req); err != nil {
+		log.Warnf(c, "Access cancel bind failed: %v", err)
+		ctx.JSON(http.StatusBadRequest, err.Error())
+		return
+	}
+
+	cancelled, err := gate.CancelAttempt(c, req.GetAttemptId())
+	if err != nil {
+		log.Warnf(c, "Access cancel failed: %v", err)
+		FailedResponse(c, ctx, err)
+		return
+	}
+
+	SuccessResponse(c, ctx, "Access attempt cancelled", &gatepb.CancelAccessAttemptResponse{Cancelled: cancelled})
 }
 
 func actorIDFromSessionResult(result *auth.SessionLoginResult) uint64 {

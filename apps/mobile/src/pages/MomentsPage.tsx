@@ -4,9 +4,11 @@ import { ImagePlus, RotateCcw, Send, Trash2 } from 'lucide-react';
 import { create } from '@bufbuild/protobuf';
 
 import { useMobileI18n } from '../app/mobileI18n';
+import { MobileNotice } from '../components/MobileNotice';
 import { useAuthStore } from '../features/auth/authStore';
 import { uploadMobileMomentImage } from '../features/social/socialApi';
 import { useSocialStore } from '../features/social/socialStore';
+import { readableErrorMessage } from '../features/social/socialTypes';
 import {
   Audience_Kind,
   AudienceSchema,
@@ -39,6 +41,7 @@ export function MomentsPage() {
   const [text, setText] = useState('');
   const [pendingImages, setPendingImages] = useState<PendingMomentImage[]>([]);
   const [publishing, setPublishing] = useState(false);
+  const [noticeError, setNoticeError] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pendingImagesRef = useRef<PendingMomentImage[]>([]);
 
@@ -73,7 +76,7 @@ export function MomentsPage() {
     } catch (error) {
       setPendingImages((current) => current.map((candidate) => (
         candidate.localId === item.localId
-          ? { ...candidate, status: 'error', error: error instanceof Error ? error.message : String(error) }
+          ? { ...candidate, status: 'error', error: readableErrorMessage(error) }
           : candidate
       )));
     }
@@ -142,6 +145,7 @@ export function MomentsPage() {
     const imageIds = images.map((image) => image.id || image.url).filter(Boolean);
 
     setPublishing(true);
+    setNoticeError('');
     try {
       await api.createMoment(images.length > 0
         ? {
@@ -161,7 +165,7 @@ export function MomentsPage() {
       setPendingImages([]);
       setText('');
     } catch (error) {
-      message.error(error instanceof Error ? error.message : String(error));
+      setNoticeError(readableErrorMessage(error));
     } finally {
       setPublishing(false);
     }
@@ -172,6 +176,10 @@ export function MomentsPage() {
       <div className="page-header">
         <div className="header-title">{t('mobile.moments.title')}</div>
       </div>
+
+      {noticeError ? (
+        <MobileNotice onClose={() => setNoticeError('')}>{noticeError}</MobileNotice>
+      ) : null}
 
       <section className="moments-composer-card">
         <Text className="moments-composer-eyebrow">{t('mobile.moments.publicAudience')}</Text>
