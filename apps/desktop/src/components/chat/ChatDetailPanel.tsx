@@ -50,10 +50,13 @@ import { SafetyVerificationPanel } from './SafetyVerificationPanel';
 import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicProfileCard';
 import { getGroupMemberControlState } from './chatGroupPermissions';
+import { presentError } from '../../services/errorPresenter';
+import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 
 const { Text } = Typography;
 
 const DETAIL_HEADER_HEIGHT = 56;
+const HISTORY_RESTORE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 type SocialMessage = FriendChatMessage | GroupMessage;
 type DetailAttachment = FriendMessageAttachment | GroupMessageAttachment;
@@ -86,6 +89,16 @@ function groupRoleLabel(role: number, t: (key: string) => string): string {
 function getMessageTimestampMs(message: SocialMessage): number {
   const ts = message.createdAt ?? message.sentAt;
   return ts ? timestampDate(ts).getTime() : 0;
+}
+
+function formatHistoryRestoreRemaining(remainingMs: number, t: (key: string, options?: Record<string, unknown>) => string): string {
+  const totalMinutes = Math.max(1, Math.ceil(remainingMs / 60000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) {
+    return t('chat.social.detail.restoreHistoryRemainingHoursMinutes', { hours, minutes });
+  }
+  return t('chat.social.detail.restoreHistoryRemainingMinutes', { minutes });
 }
 
 function getCurrentConversationAttachments(messages: SocialMessage[]): DetailAttachmentItem[] {
@@ -458,7 +471,8 @@ export function ChatDetailPanel() {
   const {
     activeTab, activeSessionUlid, activeGroupUlid,
     sessions, groups, groupMembers, messages,
-    setShowDetail, loadSessions, loadGroupMembers, loadGroups, selectSession, selectGroup,
+    setShowDetail, loadSessions, loadGroupMembers, loadGroups, loadMessages,
+    loadConversationPreviews, selectSession, selectGroup,
     conversationLocalState, updateConversationLocalState,
   } = useSocialChatStore();
   const encryptionEnabled = useSocialChatStore((s) => s.encryptionEnabled);
@@ -489,6 +503,8 @@ export function ChatDetailPanel() {
   const [editNameValue, setEditNameValue] = useState('');
   const [editingMyNickname, setEditingMyNickname] = useState(false);
   const [editMyNicknameValue, setEditMyNicknameValue] = useState('');
+  const [historyActionPending, setHistoryActionPending] = useState(false);
+  const [historyNow, setHistoryNow] = useState(Date.now());
 
   const peerDid = getFriendPeerDid(activeFriendSession, currentUserDid);
   const members: GroupMember[] = isGroup && activeUlid ? (groupMembers[activeUlid] || []) : [];
@@ -544,6 +560,15 @@ export function ChatDetailPanel() {
   const localStateKey = activeUlid ? `${activeTab}:${activeUlid}` : '';
   const activeLocalState = localStateKey ? conversationLocalState[localStateKey] : undefined;
   const activeMessages = activeUlid ? (messages[activeUlid] || []) : [];
+  const clearHistoryClearedAt = Number(activeLocalState?.clearedAt || 0);
+  const clearHistoryExpiresAt = clearHistoryClearedAt > 0
+    ? clearHistoryClearedAt + HISTORY_RESTORE_WINDOW_MS
+    : 0;
+  const canRestoreHistory = clearHistoryClearedAt > 0 && historyNow < clearHistoryExpiresAt;
+  const restoreHistoryRemainingText = canRestoreHistory
+    ? formatHistoryRestoreRemaining(clearHistoryExpiresAt - historyNow, t)
+    : '';
+  const clearHistoryExpired = clearHistoryClearedAt > 0 && !canRestoreHistory;
   const { mediaAttachments, fileAttachments } = useMemo(() => {
     const attachments = getCurrentConversationAttachments(activeMessages);
     return {
@@ -552,9 +577,38 @@ export function ChatDetailPanel() {
     };
   }, [activeMessages]);
 
+  useEffect(() => {
+    if (!clearHistoryClearedAt || historyNow >= clearHistoryExpiresAt) return undefined;
+    const timer = window.setInterval(() => setHistoryNow(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, [clearHistoryClearedAt, clearHistoryExpiresAt, historyNow]);
+
   const updateActiveLocalState = (patch: Parameters<typeof updateConversationLocalState>[2]) => {
     if (!activeUlid) return;
     void updateConversationLocalState(activeTab, activeUlid, patch).catch(() => undefined);
+  };
+
+  const applyHistoryClearedAt = async (clearedAt: number) => {
+    if (!activeUlid) return;
+    setHistoryActionPending(true);
+    try {
+      await updateConversationLocalState(activeTab, activeUlid, { clearedAt });
+      await loadMessages(activeUlid, activeTab);
+      await loadConversationPreviews();
+      setHistoryNow(Date.now());
+      toast.success(clearedAt > 0
+        ? t('chat.social.detail.clearHistorySuccess')
+        : t('chat.social.detail.restoreHistorySuccess'));
+    } catch (error) {
+      log.error('chat', 'conversation history action failed', { kind: activeTab, ulid: activeUlid, clearedAt, error });
+      presentError(error, {
+        mapper: mapChatError,
+        context: { operation: 'conversationAction' },
+      });
+      throw error;
+    } finally {
+      setHistoryActionPending(false);
+    }
   };
 
   const handleSaveGroupName = async () => {
@@ -640,11 +694,26 @@ export function ChatDetailPanel() {
   const confirmClearHistory = () => {
     Modal.confirm({
       title: t('chat.social.detail.clearHistoryConfirmTitle'),
-      content: t('chat.social.detail.clearHistoryConfirmBody'),
+      content: t('chat.social.detail.clearHistoryConfirmBody', {
+        duration: t('chat.social.detail.restoreHistoryWindowOneDay'),
+      }),
       okText: t('chat.social.detail.clearHistory'),
       cancelText: t('chat.social.messageArea.cancel'),
       okButtonProps: { danger: true },
-      onOk: () => updateActiveLocalState({ clearedAt: Date.now() }),
+      onOk: () => applyHistoryClearedAt(Date.now()),
+    });
+  };
+
+  const confirmRestoreHistory = () => {
+    if (!canRestoreHistory) return;
+    Modal.confirm({
+      title: t('chat.social.detail.restoreHistoryConfirmTitle'),
+      content: t('chat.social.detail.restoreHistoryConfirmBody', {
+        remaining: restoreHistoryRemainingText,
+      }),
+      okText: t('chat.social.detail.restoreHistory'),
+      cancelText: t('chat.social.messageArea.cancel'),
+      onOk: () => applyHistoryClearedAt(0),
     });
   };
 
@@ -1350,20 +1419,33 @@ export function ChatDetailPanel() {
             icon={<Trash2 size={14} />}
             style={{ justifyContent: 'flex-start', height: 36 }}
             block
+            loading={historyActionPending}
+            disabled={historyActionPending}
             onClick={confirmClearHistory}
           >
             {t('chat.social.detail.clearHistory')}
           </Button>
-          {activeLocalState?.clearedAt ? (
-            <Button
-              type="text"
-              icon={<RotateCcw size={14} />}
-              style={{ justifyContent: 'flex-start', height: 36 }}
-              block
-              onClick={() => updateActiveLocalState({ clearedAt: 0 })}
-            >
-              {t('chat.social.detail.restoreHistory')}
-            </Button>
+          {canRestoreHistory ? (
+            <Flexbox gap={4}>
+              <Button
+                type="text"
+                icon={<RotateCcw size={14} />}
+                style={{ justifyContent: 'flex-start', height: 36 }}
+                block
+                loading={historyActionPending}
+                disabled={historyActionPending}
+                onClick={confirmRestoreHistory}
+              >
+                {t('chat.social.detail.restoreHistory')}
+              </Button>
+              <Text type="secondary" style={{ fontSize: 12, padding: '0 11px 4px' }}>
+                {t('chat.social.detail.restoreHistoryRemaining', { remaining: restoreHistoryRemainingText })}
+              </Text>
+            </Flexbox>
+          ) : clearHistoryExpired ? (
+            <Text type="secondary" style={{ fontSize: 12, padding: '0 11px 4px' }}>
+              {t('chat.social.detail.restoreHistoryExpired')}
+            </Text>
           ) : null}
           {isGroup ? (
             <Button
