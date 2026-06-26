@@ -118,6 +118,16 @@ pub mod peer {
     pub use v1::*;
 }
 
+pub mod presence {
+    pub mod v1 {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/peers_touch.model.presence.v1.rs"
+        ));
+    }
+    pub use v1::*;
+}
+
 pub mod manage {
     pub mod v1 {
         include!(concat!(env!("OUT_DIR"), "/peers_touch.model.manage.v1.rs"));

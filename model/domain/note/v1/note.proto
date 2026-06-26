@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package peers_touch.model.note.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/apps/applets/note/service/model;model";
+
+message Note {
+  string note_id = 1;
+  string owner_id = 2;
+  string title = 3;
+  string content = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+  google.protobuf.Timestamp deleted_at = 7;
+}
+
+message ListNotesRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string order_by = 3;
+  bool include_deleted = 4;
+}
+
+message ListNotesResponse {
+  repeated Note items = 1;
+  string next_page_token = 2;
+}
+
+message GetNoteRequest {
+  string note_id = 1;
+  bool include_deleted = 2;
+}
+
+message GetNoteResponse {
+  Note item = 1;
+}
+
+message CreateNoteRequest {
+  string title = 1;
+  string content = 2;
+}
+
+message CreateNoteResponse {
+  Note item = 1;
+}
+
+message UpdateNoteRequest {
+  string note_id = 1;
+  optional string title = 2;
+  optional string content = 3;
+}
+
+message UpdateNoteResponse {
+  Note item = 1;
+}
+
+message DeleteNoteRequest {
+  string note_id = 1;
+}
+
+message DeleteNoteResponse {
+  bool deleted = 1;
+}
+
+message RestoreNoteRequest {
+  string note_id = 1;
+}
+
+message RestoreNoteResponse {
+  Note item = 1;
+}
+
+message SearchNotesRequest {
+  string query = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+  string order_by = 4;
+}
+
+message SearchNotesResponse {
+  repeated Note items = 1;
+  string next_page_token = 2;
+}
+
+service NoteService {
+  rpc ListNotes(ListNotesRequest) returns (ListNotesResponse);
+  rpc GetNote(GetNoteRequest) returns (GetNoteResponse);
+  rpc CreateNote(CreateNoteRequest) returns (CreateNoteResponse);
+  rpc UpdateNote(UpdateNoteRequest) returns (UpdateNoteResponse);
+  rpc DeleteNote(DeleteNoteRequest) returns (DeleteNoteResponse);
+  rpc RestoreNote(RestoreNoteRequest) returns (RestoreNoteResponse);
+  rpc SearchNotes(SearchNotesRequest) returns (SearchNotesResponse);
+}

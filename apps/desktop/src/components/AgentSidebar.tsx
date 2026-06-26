@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { ActionIcon, SearchBar } from '@lobehub/ui';
+import { ActionIcon, Avatar, Block, Center, SearchBar, Text } from '@lobehub/ui';
 import {
   Plus,
   Download,
@@ -504,33 +504,35 @@ function NavItem({
   token: any;
   style?: React.CSSProperties;
 }) {
-  const [hovered, setHovered] = useState(false);
-
   return (
-      <Flexbox
-        horizontal
-        align="center"
-        gap={10}
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+    <Block
+      horizontal
+      align="center"
+      clickable
+      gap={8}
+      height={36}
+      paddingInline={4}
+      variant={active ? 'filled' : 'borderless'}
+      onClick={() => onClick?.()}
       style={{
-        minHeight: 36,
-        padding: '4px 8px',
-        borderRadius: 8,
-        cursor: 'pointer',
-        fontSize: 13,
         color: active ? token.colorText : token.colorTextSecondary,
-        background: active ? token.colorFillSecondary : hovered ? token.colorFillTertiary : 'transparent',
-        transition: 'background 0.18s ease, color 0.18s ease',
+        userSelect: 'none',
         ...style,
       }}
     >
-      <span style={{ display: 'flex', color: active ? token.colorText : token.colorTextDescription }}>
-        {icon}
-      </span>
-      <span>{label}</span>
-    </Flexbox>
+      <Center flex="none" height={28} width={28}>
+        <span style={{ display: 'flex', color: active ? token.colorText : token.colorTextDescription }}>
+          {icon}
+        </span>
+      </Center>
+      <Text
+        color={active ? token.colorText : token.colorTextSecondary}
+        ellipsis={{ tooltipWhenOverflow: true }}
+        style={{ flex: 1 }}
+      >
+        {label}
+      </Text>
+    </Block>
   );
 }
 
@@ -1068,53 +1070,42 @@ function AgentPickerItem({
   ].filter(Boolean);
 
   return (
-    <Flexbox
+    <Block
       horizontal
       align="center"
+      clickable
       gap={8}
+      height={38}
+      paddingInline={4}
+      variant={isSelected ? 'filled' : 'borderless'}
       onClick={onSelect}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        position: 'relative',
         minWidth: 0,
-        height: 38,
-        padding: '4px 8px 4px 6px',
-        borderRadius: 8,
-        cursor: 'pointer',
-        background: isSelected ? token.colorFillSecondary : hovered ? token.colorFillTertiary : 'transparent',
-        transition: 'background 0.18s ease',
+        userSelect: 'none',
       }}
     >
-      <div
-        style={{
-          width: 28,
-          height: 28,
-          borderRadius: 7,
-          background: isSelected ? token.colorFill : token.colorFillSecondary,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 16,
-          flexShrink: 0,
-        }}
-      >
-        {agent.avatar || '🤖'}
-      </div>
-      <span
+      <Center flex="none" height={28} width={28}>
+        <Avatar
+          avatar={agent.avatar || '🤖'}
+          background={token.colorBgContainer}
+          emojiScaleWithBackground
+          shape="square"
+          size={22}
+        />
+      </Center>
+      <Text
+        color={isSelected ? token.colorText : token.colorTextSecondary}
+        ellipsis={{ tooltipWhenOverflow: true }}
         style={{
           flex: 1,
           minWidth: 0,
-          fontSize: 12,
           fontWeight: isSelected ? 600 : 400,
-          color: isSelected ? token.colorText : token.colorTextSecondary,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
         }}
       >
         {agent.title || agent.name}
-      </span>
+      </Text>
       {statusBadges.length > 0 && (
         <span
           title={t('agent.sidebar.status.summary', { status: statusBadges.join(' · ') })}
@@ -1252,6 +1243,6 @@ function AgentPickerItem({
           <Pin size={12} />
         </button>
       )}
-    </Flexbox>
+    </Block>
   );
 }

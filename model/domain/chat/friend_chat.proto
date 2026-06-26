@@ -23,11 +23,6 @@ message FriendChatSession {
   string participant_a_avatar = 11;
   string participant_b_display_name = 12;
   string participant_b_avatar = 13;
-  // Initial presence snapshot for each participant. Populated by the
-  // session list endpoint from the in-memory online map; clients should
-  // subscribe to /friend-chat/presence/stream (SSE) for live updates.
-  bool participant_a_online = 14;
-  bool participant_b_online = 15;
 }
 
 message FriendChatMessage {
@@ -291,15 +286,6 @@ message MessageAckResponse {
   // Empty success response
 }
 
-// Online/Offline status
-message OnlineRequest {
-  string did = 1;
-}
-
-message OnlineResponse {
-  string status = 1;
-}
-
 // Pending offline messages
 message GetPendingRequest {
   int32 limit = 1;
@@ -323,9 +309,8 @@ message GetStatsRequest {
 }
 
 message GetStatsResponse {
-  int32 online_peers = 1;
-  int64 pending_messages = 2;
-  string status = 3;
+  int64 pending_messages = 1;
+  string status = 2;
 }
 
 // ============================================================================

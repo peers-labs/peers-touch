@@ -10,6 +10,7 @@ import (
 
 type Repository interface {
 	GetSession(sessionID string) (*domain.Session, error)
+	SessionExistsForPair(actorDID, peerDID string) (bool, error)
 	GetOrCreateSession(actorDID, participantDID string) (*domain.Session, bool, error)
 	ListSessions(actorDID string, limit, offset int) ([]domain.Session, int, error)
 	AppendMessage(message domain.Message) (domain.Message, error)
@@ -104,6 +105,27 @@ func (s *Service) GetOrCreateSession(actorDID, participantDID string) (*domain.S
 
 func (s *Service) ListSessions(actorDID string, limit, offset int) ([]domain.Session, int, error) {
 	return s.repo.ListSessions(actorDID, limit, offset)
+}
+
+// CanSignal reports whether senderDID may route a WebRTC call signal
+// to recipientDID. It enforces the same social-graph gate as
+// messaging: the two actors must share a friend chat session (the
+// canonical "are friends" signal) and neither may have blocked the
+// other. This is registered with the events subserver so signaling
+// cannot be used to probe or harass non-friends.
+func (s *Service) CanSignal(senderDID, recipientDID string) (bool, error) {
+	exists, err := s.repo.SessionExistsForPair(senderDID, recipientDID)
+	if err != nil {
+		return false, err
+	}
+	if !exists {
+		return false, nil
+	}
+	blocked, err := s.repo.IsBlockedBetween(senderDID, recipientDID)
+	if err != nil {
+		return false, err
+	}
+	return !blocked, nil
 }
 
 func (s *Service) GetConversationSettingsByActor(actorDID, sessionID string) (domain.ConversationSettings, error) {

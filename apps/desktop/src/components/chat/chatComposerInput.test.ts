@@ -25,6 +25,8 @@ import {
   chatMessageRowMaxWidth,
   chatOutboxReadyToDrain,
   chatThreadReplyTargetUlid,
+  collectChatThreadPreviewMessages,
+  countHiddenEarlierChatThreadReplies,
   chatMessageTypeForAttachments,
   chatMessageTypeForMime,
   chatVisualCssVars,
@@ -111,7 +113,7 @@ describe('chat media contract helpers', () => {
 });
 
 describe('chat composer capability profiles', () => {
-  it('keeps desktop main fully enabled and thread screenshot-free', () => {
+  it('keeps desktop main and thread composer capabilities aligned', () => {
     expect(resolveChatComposerCapabilities(CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN)).toEqual({
       emoji: true,
       file: true,
@@ -121,7 +123,7 @@ describe('chat composer capability profiles', () => {
     expect(resolveChatComposerCapabilities(CHAT_COMPOSER_CAPABILITIES_DESKTOP_THREAD)).toEqual({
       emoji: true,
       file: true,
-      screenshot: false,
+      screenshot: true,
       voice: true,
     });
     expect(resolveChatComposerCapabilities(
@@ -165,6 +167,7 @@ describe('chat visual layout contract', () => {
     expect(main.ownBubbleRadius).toBe('16px 16px 6px 16px');
     expect(main.hoverActionBridgeHeight).toBeGreaterThanOrEqual(18);
     expect(main.hoverActionBridgeInsetX).toBeGreaterThanOrEqual(160);
+    expect(main.composerInputExpandedMinHeight).toBe('min(360px, 44vh)');
     expect(chatMessageRowMaxWidth(main, { own: false, groupPeer: true })).toBe('min(82%, 800px)');
 
     expect(thread.avatarSize).toBe(30);
@@ -183,6 +186,7 @@ describe('chat visual layout contract', () => {
     expect(cssVars['--chat-message-avatar-size']).toBe('38px');
     expect(cssVars['--chat-message-bubble-radius-own']).toBe('17px 17px 5px 17px');
     expect(cssVars['--chat-composer-tool-button-size']).toBe('40px');
+    expect(cssVars['--chat-composer-input-expanded-min-height']).toBe('min(280px, 42vh)');
   });
 });
 
@@ -244,7 +248,10 @@ describe('chat surface projection helpers', () => {
   });
 
   it('counts loaded thread replies by shared thread root semantics', () => {
-    expect(countChatThreadReplies(messages, 'root')).toBe(1);
+    expect(countChatThreadReplies([
+      ...messages,
+      { ulid: 'thread-1', senderDid: 'b', content: 'thread reply', threadRootUlid: 'root', sentAtMs: base + 90_000 },
+    ], 'root')).toBe(1);
   });
 });
 
@@ -292,6 +299,7 @@ describe('chat thread surface helpers', () => {
   const currentMessages: ChatMessageLike[] = [
     { ulid: 'root', senderDid: 'a', content: 'root' },
     { ulid: 'inline-reply', senderDid: 'b', content: 'inline reply', replyToUlid: 'root' },
+    { ulid: 'thread-reply', senderDid: 'b', content: 'thread reply', threadRootUlid: 'root' },
     { ulid: 'other', senderDid: 'c', content: 'other' },
   ];
 
@@ -310,7 +318,7 @@ describe('chat thread surface helpers', () => {
     expect(surface.displayMessages.map((message) => message.ulid)).toEqual(['root', 'loaded-reply']);
   });
 
-  it('falls back to timeline replies before the thread is loaded', () => {
+  it('falls back only to explicit thread replies before the thread is loaded', () => {
     const surface = buildChatThreadSurface({
       rootUlid: 'root',
       currentMessages,
@@ -318,7 +326,57 @@ describe('chat thread surface helpers', () => {
     });
 
     expect(surface.rootMessage?.ulid).toBe('root');
-    expect(surface.replies.map((message) => message.ulid)).toEqual(['inline-reply']);
+    expect(surface.replies.map((message) => message.ulid)).toEqual(['thread-reply']);
+  });
+
+  it('collects root previews from explicit thread replies in timestamp order', () => {
+    const preview = collectChatThreadPreviewMessages({
+      rootUlid: 'root',
+      currentMessages: [
+        { ulid: 'root', senderDid: 'a', content: 'root', sentAtMs: 1 },
+        { ulid: 'inline-reply', senderDid: 'b', content: 'inline reply', replyToUlid: 'root', sentAtMs: 2 },
+        { ulid: 'late-thread', senderDid: 'b', content: 'late', threadRootUlid: 'root', sentAtMs: 4 },
+      ],
+      loadedThreadMessages: [
+        { ulid: 'early-thread', senderDid: 'b', content: 'early', threadRootUlid: 'root', sentAtMs: 3 },
+      ],
+      resolveTimestampMs: (message) => Number((message as { sentAtMs?: number }).sentAtMs ?? 0),
+    });
+
+    expect(preview.map((message) => message.ulid)).toEqual(['early-thread', 'late-thread']);
+  });
+
+  it('collects the latest root preview replies and keeps them readable in timestamp order', () => {
+    const threadReplies = Array.from({ length: 12 }, (_, index) => ({
+      ulid: `thread-${index + 1}`,
+      senderDid: 'b',
+      content: `reply ${index + 1}`,
+      threadRootUlid: 'root',
+      sentAtMs: index + 1,
+    }));
+
+    const preview = collectChatThreadPreviewMessages({
+      rootUlid: 'root',
+      currentMessages: [
+        { ulid: 'root', senderDid: 'a', content: 'root', sentAtMs: 0 },
+        ...threadReplies,
+      ],
+      resolveTimestampMs: (message) => Number((message as { sentAtMs?: number }).sentAtMs ?? 0),
+    });
+
+    expect(preview.map((message) => message.ulid)).toEqual([
+      'thread-3',
+      'thread-4',
+      'thread-5',
+      'thread-6',
+      'thread-7',
+      'thread-8',
+      'thread-9',
+      'thread-10',
+      'thread-11',
+      'thread-12',
+    ]);
+    expect(countHiddenEarlierChatThreadReplies(threadReplies.length, preview.length)).toBe(2);
   });
 
   it('uses the selected reply target before falling back to the root', () => {

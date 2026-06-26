@@ -21,13 +21,18 @@ import (
 // on MomentService.GetMoment to gate the parent post lookup before
 // any comment can be created or read.
 type CommentService struct {
-	repos   *infrastructure.Repos
-	moments *MomentService
-	conv    *domain.PostConverter
+	repos     *infrastructure.Repos
+	moments   *MomentService
+	conv      *domain.PostConverter
+	publisher *MomentEventPublisher
 }
 
-func NewCommentService(repos *infrastructure.Repos, moments *MomentService) *CommentService {
-	return &CommentService{repos: repos, moments: moments, conv: domain.NewPostConverter()}
+func NewCommentService(repos *infrastructure.Repos, moments *MomentService, publishers ...*MomentEventPublisher) *CommentService {
+	var publisher *MomentEventPublisher
+	if len(publishers) > 0 {
+		publisher = publishers[0]
+	}
+	return &CommentService{repos: repos, moments: moments, conv: domain.NewPostConverter(), publisher: publisher}
 }
 
 // CreateComment validates the parent post exists + is readable + is
@@ -54,6 +59,11 @@ func (s *CommentService) CreateComment(ctx context.Context, req *model.CreateCom
 	}
 	if parent.IsDeleted {
 		return nil, fmt.Errorf("parent post %d is deleted", parentPostID)
+	}
+	if blocked, err := postAuthorStationModerated(ctx, s.repos.Moderation, parent); err != nil {
+		return nil, err
+	} else if blocked {
+		return nil, fmt.Errorf("parent post %d not found or not readable", parentPostID)
 	}
 
 	// PostClass is derived from the parent's audience — the parent we
@@ -112,6 +122,9 @@ func (s *CommentService) CreateComment(ctx context.Context, req *model.CreateCom
 	}
 
 	logger.Info(ctx, "comment.created", "post_id", parentPostID, "comment_id", d.ID, "author_id", authorID)
+	if s.publisher != nil {
+		s.publisher.PublishCommented(ctx, parentPostID, parseActorID(parent.GetAuthor().GetId()), d.ID, authorID)
+	}
 	return out, nil
 }
 
@@ -140,10 +153,11 @@ func (s *CommentService) DeleteComment(ctx context.Context, commentID, authorID 
 	return nil
 }
 
-// ListByPost returns one page of comments for a parent post. Visibility
-// is gated by the upstream parent-post check; this service trusts the
-// caller to have validated readability before invoking.
-func (s *CommentService) ListByPost(ctx context.Context, parentPostID uint64, cursor string, limit int) (*model.GetCommentsResponse, error) {
+// ListByPost returns one page of comments for a parent post. Parent post
+// readability is checked here, then each comment actor is filtered by
+// InteractionVisibility so third-party replies are only shown to common
+// connections.
+func (s *CommentService) ListByPost(ctx context.Context, parentPostID, viewerID uint64, cursor string, limit int) (*model.GetCommentsResponse, error) {
 	c, err := domain.DecodeCursor(cursor)
 	if err != nil {
 		return nil, fmt.Errorf("invalid cursor: %w", err)
@@ -151,16 +165,38 @@ func (s *CommentService) ListByPost(ctx context.Context, parentPostID uint64, cu
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	rows, err := s.repos.Comments.ListByPost(ctx, parentPostID, c, limit+1)
+
+	parent, err := s.moments.GetMoment(ctx, fmt.Sprintf("%d", parentPostID), viewerID)
+	if err != nil {
+		return nil, fmt.Errorf("lookup parent post: %w", err)
+	}
+	if parent == nil {
+		return nil, fmt.Errorf("parent post %d not found or not readable", parentPostID)
+	}
+	if blocked, err := postAuthorStationModerated(ctx, s.repos.Moderation, parent); err != nil {
+		return nil, err
+	} else if blocked {
+		return nil, fmt.Errorf("parent post %d not found or not readable", parentPostID)
+	}
+	postAuthorID := parseActorID(parent.GetAuthorId())
+	visibility, err := buildInteractionVisibility(ctx, s.repos, viewerID, postAuthorID)
+	if err != nil {
+		return nil, fmt.Errorf("build interaction visibility: %w", err)
+	}
+
+	rows, err := s.repos.Comments.ListByPost(ctx, parentPostID, c, limit*3+1)
 	if err != nil {
 		return nil, err
 	}
-	hasMore := len(rows) > limit
-	if hasMore {
-		rows = rows[:limit]
-	}
 	comments := make([]*model.Comment, 0, len(rows))
+	var lastVisible *domain.Comment
 	for _, row := range rows {
+		if !visibility.CanSeeActor(row.AuthorID) {
+			continue
+		}
+		if len(comments) >= limit {
+			break
+		}
 		out := s.conv.CommentToProto(row)
 		if a, err := actor.GetActorByID(ctx, row.AuthorID); err == nil && a != nil {
 			out.Author = &model.PostAuthor{
@@ -173,11 +209,12 @@ func (s *CommentService) ListByPost(ctx context.Context, parentPostID uint64, cu
 			}
 		}
 		comments = append(comments, out)
+		lastVisible = row
 	}
+	hasMore := len(rows) > limit*3 || len(comments) == limit
 	var nextCursor string
-	if hasMore && len(rows) > 0 {
-		last := rows[len(rows)-1]
-		nextCursor = domain.Cursor{LastID: last.ID, CreatedAt: last.CreatedAt}.Encode()
+	if hasMore && lastVisible != nil {
+		nextCursor = domain.Cursor{LastID: lastVisible.ID, CreatedAt: lastVisible.CreatedAt}.Encode()
 	}
 	return &model.GetCommentsResponse{
 		Comments:   comments,
