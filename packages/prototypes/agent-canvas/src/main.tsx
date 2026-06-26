@@ -1,9 +1,9 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { DesktopShell } from './Shell';
+import { AgentCanvasPrototype } from './AgentCanvasPrototype';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <DesktopShell initialPage="agent" />
+    <AgentCanvasPrototype />
   </StrictMode>,
 );
