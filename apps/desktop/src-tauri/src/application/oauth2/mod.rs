@@ -1,3 +1,4 @@
+use crate::application::security::redact_json_value;
 use crate::contracts::{
     OAuthAuthorizeInput, OAuthCallbackInput, OAuthIdInput, OAuthLoopbackPollInput,
     OAuthLoopbackStartInput, OAuthResourceInput, OAuthSetCredentialsInput, StubPayload,
@@ -10,7 +11,6 @@ use crate::infrastructure::session_vault;
 use crate::infrastructure::station_client;
 use crate::infrastructure::storage::{self, StorageKind};
 use crate::model::oauth::{OAuthBridgeRequest, OAuthBridgeResponse};
-use crate::application::security::redact_json_value;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
