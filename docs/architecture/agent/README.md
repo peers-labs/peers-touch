@@ -32,7 +32,11 @@
 
 | 文档 | 定位 |
 |---|---|
+| [agent-unified-architecture-roadmap.md](./agent-unified-architecture-roadmap.md) | **总路线图** — 整合入口重构 + Workspace OSS + Config 拆解 + Agent 编排的统一架构愿景 |
+| [agent-entry-architecture-rebuild.md](./agent-entry-architecture-rebuild.md) | **入口架构重构** — Station 模块化 + Desktop Runtime 拆分 + 事件总线 + DDD 分层 |
 | [agent-lobehub-blueprint.md](./agent-lobehub-blueprint.md) | **当前 Agent 重构正式设计** — 以 LobeHub 为蓝本的 UI/UX、Tool、MCP、Skill、后端能力映射与目标架构 |
+| [agent-orchestration-architecture.md](./agent-orchestration-architecture.md) | **Agent 编排架构** — Agent Core、Orchestration Engine、Workspace、Growth System 的完整架构设计 |
+| [agent-workspace-oss-architecture.md](./agent-workspace-oss-architecture.md) | **Workspace OSS + Config 拆解** — Workspace OSS 托管、config_json 结构化、SSE 事件、离线队列 |
 | [agent-self-growth-architecture.md](./agent-self-growth-architecture.md) | **peers-touch 架构设计** — 自成长生命周期、领域对象、服务拓扑、Turn 执行闭环、成长评估机制 |
 | [agent-memory-architecture.md](./agent-memory-architecture.md) | **Agent Memory 架构** — Memory 分层、存储、检索、反馈与可视化 |
 | [hermes-agent-self-improving-analysis.md](./hermes-agent-self-improving-analysis.md) | **Hermes 参考分析** — hermes-agent 的七层架构、工程实现细节，作为设计参考 |
@@ -46,6 +50,9 @@
 
 | 优先级 | 状态 | 文档 | 定位 |
 |---|---|---|---|
+| P0-P6 | active | [agent-unified-rebuild](./execution-plans/20260626-agent-unified-rebuild.md) | **统一执行计划** — 入口重构 + Workspace OSS + Config 拆解 + Agent 编排的 9 阶段路线图 |
+| P0-P5 | active | [agent-orchestration-rebuild](./execution-plans/20260626-agent-orchestration-rebuild.md) | Agent 编排重构 — Agent Core、Orchestration Engine、Memory、Workspace、Growth |
+| P1-P4 | active | [workspace-oss-config-refactor](./execution-plans/20260626-workspace-oss-config-refactor.md) | Workspace OSS 托管 + config_json 拆解 + SSE + 离线队列 |
 | P0-P4 | active | [agent-lobehub-rebuild](./execution-plans/20260616-agent-lobehub-rebuild.md) | 以 LobeHub 为蓝本的 Agent 产品与能力重构执行计划 |
 | P0 | code | [system-prompt-assembly](./execution-plans/20260411-system-prompt-assembly.md) | System Prompt 层级组装 + Context References + Prompt Caching |
 | P0 | code | [skill-filesystem-and-routing](./execution-plans/20260411-skill-filesystem-and-routing.md) | Skill 文件系统、渐进式披露、Skills Guard 安全扫描 |
