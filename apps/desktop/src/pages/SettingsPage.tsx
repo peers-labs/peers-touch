@@ -1237,6 +1237,12 @@ function SecuritySection() {
 
 // --- General Tab ---
 
+function settingResultString(result: unknown): string {
+  const value = (result as { data?: { value?: unknown }; value?: unknown })?.data?.value
+    ?? (result as { value?: unknown })?.value;
+  return typeof value === 'string' ? value : '';
+}
+
 function ChatShortcutSettingsSection() {
   const { t } = useTranslation('settings');
   const shortcut = useSettingsStore((s) => s.chatScreenshotShortcut);
