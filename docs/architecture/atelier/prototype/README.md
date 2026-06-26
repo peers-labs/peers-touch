@@ -6,22 +6,22 @@
 > **落地目标**: Applet（终态跑在 Lynx 上，运行在 peers-touch Desktop 容器内）；**原型本身只是 React + LobeUI 的 web 展示**，不绑运行时
 > **总账状态**: drafting（见 [原型总账](../../prototypes/README.md)）
 > **Owner**: Peers-Touch Agent Team
-> **Module**: `packages/prototypes/atelier/`
+> **Module**: `packages/prototypes/desktop/applets/atelier/`
 
 ---
 
 ## 原型在哪
 
-源码在 `packages/prototypes/atelier/`（统一原型工作区；独立 web 工程）。本目录只放入口说明，不复制源码（架构文档标准 §5.8）。
+源码在 `packages/prototypes/desktop/applets/atelier/`（统一原型工作区；独立 web 工程）。本目录只放入口说明，不复制源码（架构文档标准 §5.8）。
 
 这个原型只为**展示 Atelier 终态产品长什么样**，用 React + LobeUI 写成网页给人确认形态；**不碰 Lynx / applet 容器 / SDK**。终态确认后，applet 落地由 `packages/applets/atelier/` 按 Lynx 运行时另行实现。
 
-> **Atelier 本质是 applet，跑在 peers-touch Desktop 容器里**，不是独立全屏 app。容器外壳（全局 SideNav + 内容区 + applet pins）由 [desktop 容器外壳原型](../../desktop/prototype/README.md) 展示；本原型作为 workspace 包 `@peers-touch/prototype-atelier` 被 desktop 原型作为一个 applet 嵌入其内容区。本原型也可单独跑起来看 Atelier 自身界面（壳子高度自适应，`height: 100%`）。
+> **Atelier 本质是 applet，跑在 peers-touch Desktop 容器里**，不是独立全屏 app。容器外壳（全局 SideNav + 内容区 + applet pins）由 [desktop 容器外壳原型](../../desktop/prototype/README.md) 展示；本原型作为 workspace 包 `@peers-touch/prototype-desktop-atelier` 被 desktop 原型作为一个 applet 嵌入其内容区。本原型也可单独跑起来看 Atelier 自身界面（壳子高度自适应，`height: 100%`）。
 
 ## 怎么跑
 
 ```bash
-cd packages/prototypes/atelier
+cd packages/prototypes/desktop/applets/atelier
 pnpm install        # 首次，monorepo 根装也可
 pnpm dev            # Vite，浏览器打开 localhost
 ```

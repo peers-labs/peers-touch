@@ -8,6 +8,8 @@ import { PageHeader } from '../components/PageHeader';
 import LynxContainer from '../applet/LynxContainer';
 import { useAppletsStore } from '../store/applets';
 import { usePageContext } from '../kernel/usePageContext';
+import { api } from '../services/desktop_api';
+import { log } from '../utils/logger';
 import type { AppletHostDeviceRequest, AppletHostNavigationRequest, AppletHostUiRequest } from '../applet/lynx-host-element';
 import type { Page } from '../types/navigation';
 
@@ -109,6 +111,16 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
     navigation.navigateTo('applets');
   }, [appletId, navigation, unloadApplet]);
 
+  const handleAppletLoaded = useCallback((readySource: string) => {
+    api.appletsProductWindowReportRendered({ appletId, readySource }).catch((error) => {
+      log.warn('applets', 'Failed to record product-window render evidence', {
+        appletId,
+        readySource,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }, [appletId]);
+
   if (loading) {
     return (
       <Flexbox align="center" justify="center" style={{ height: '100%' }}>
@@ -165,6 +177,7 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
         <LynxContainer
           appletId={appletId}
           height="100%"
+          onLoad={handleAppletLoaded}
           onBack={handleClose}
           onNavigationRequest={handleNavigationRequest}
           onUiRequest={handleUiRequest}
