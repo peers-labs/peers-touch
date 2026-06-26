@@ -1411,8 +1411,8 @@ export function ChatInput({
 
   return (
     <>
-      {/* LobeChat-style chat input: padding around container, border-radius, subtle shadow */}
-      <Flexbox style={{ padding: '0 16px 16px' }} gap={0}>
+      {/* Agent Chat composer: centered rounded task input surface. */}
+      <Flexbox style={{ padding: 0 }} gap={0}>
         <Flexbox
           onDragEnter={(e) => {
             e.preventDefault();
@@ -1426,15 +1426,16 @@ export function ChatInput({
           style={{
             background: token.colorBgContainer,
             border: `1px solid ${draggingAttachment ? token.colorPrimaryBorder : token.colorBorderSecondary}`,
-            borderRadius: 12,
+            borderRadius: 22,
             overflow: 'hidden',
             position: 'relative',
+            boxShadow: '0 22px 70px rgba(15, 23, 42, 0.08)',
           }}
           gap={0}
         >
         {showTypoBar && <TypoBar onInsert={handleFormatInsert} />}
 
-        <Flexbox style={{ padding: '8px 12px 8px' }} gap={0}>
+        <Flexbox style={{ padding: '12px 16px 12px' }} gap={0}>
           {draggingAttachment && (
             <Flexbox align="center" justify="center" style={{ position: 'absolute', inset: 0, zIndex: 4, background: token.colorBgMask, color: token.colorTextLightSolid, fontSize: 13, fontWeight: 600 }}>
               {t('chat.input.dropHint')}

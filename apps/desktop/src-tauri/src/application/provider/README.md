@@ -30,6 +30,18 @@ Provider 配置的真源是“系统模板 + 用户覆盖文件”的合并结�
 
 该结构用于表达“用户改动”，避免把系统模板重复写成用户快照。
 
+## 3.1 CLI Provider 预设
+
+`providers.default.yaml` 支持 Direct 与 CLI 两类 Provider：
+
+- Direct Provider：默认类型，`runtime_kind` 可省略或设为 `direct`，通过 API Base URL / API Key 调用远端模型；
+- CLI Provider：`runtime_kind: cli`，并设置 `cli_command`，例如 `codex exec --skip-git-repo-check -`、`claude -p`、`trae -p`；
+- CLI Provider 仍声明一个可选择的 chat model，便于 Desktop Web 的 Provider / Model 选择器保持统一；
+- 当新建 Agent 选择 CLI Provider 时，Web 层会把 `cli_command` 写入 Agent 的 `cliCommand` 字段，执行时复用 Desktop Rust 的 Agent Workspace CLI runner。
+
+CLI Provider 不是 Docker/VM sandbox，也不是强安全边界；它只把本地 CLI 固定运行在已解析的 Agent Workspace 中。
+Rust runner 会把 SOUL.md、AGENTS.md 与用户输入拼成 prompt，并通过 stdin 写入 CLI；如果用户配置的是裸命令 `codex`、`claude` 或 `trae`，runner 会自动展开为上面的标准非交互模板。
+
 ## 4. 合并规则
 
 加载顺序固定为：
