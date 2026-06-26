@@ -765,5 +765,17 @@
   "chat.social.preview.video": "[Video]",
 
   "chat.social.subNav.chats": "Chats",
-  "chat.social.subNav.contacts": "Contacts"
+  "chat.social.subNav.contacts": "Contacts",
+  "chat.agentHeader.fallbackDescription": "Ask, create, and run tasks with this Agent.",
+  "chat.agentHeader.providerFallback": "Default runtime",
+  "chat.agentHeader.runtimeCli": "CLI runtime",
+  "chat.agentHeader.effort": "{{effort}} effort",
+  "chat.agentHeader.toolsEnabled": "Tools enabled",
+  "chat.agentHeader.openProfile": "Open Agent Profile",
+  "chat.agentHeader.refresh": "Refresh Agent runtime",
+  "chat.welcome.status.toolsEnabled": "Tools enabled",
+  "chat.welcome.status.toolsReady": "Tools ready",
+  "chat.welcome.capability.memoryDisabledShort": "Memory",
+  "chat.welcome.capability.workspaceOptional": "Workspace"
+
 }

@@ -19,9 +19,10 @@
  */
 import { useMemo, useState } from 'react';
 import { C, ROLE_COLOR } from './theme';
-import { MOCK } from './mock';
+import { MOCK, COLLAB_INPUTS } from './mock';
 import type { Block, TodoItem, TaskHost, TaskStatus, TaskContext, Artifact } from './types';
 import { UserBubble, AgentBubble, NegoRow, DecisionCard, ArtifactCard, DiffCard } from './blocks';
+import { EngineTrace } from './engineTrace';
 import { ArtifactsTray, PreviewPanel } from './preview';
 import { PLUGINS, DEFAULT_PLUGIN_ID } from './plugins';
 
@@ -40,18 +41,21 @@ type RunKind = 'model' | 'agents';
 /**
  * The peers-touch agent framework ships a generic multi-agent *collaboration
  * engine* (orchestration is a core framework capability, not something built
- * for Atelier — Atelier is just one agent that consumes it). The engine is not
- * a fixed set of N forms; the entries below are the orchestration patterns the
- * user can pick from (roundtable brainstorm, consensus-by-judge, edict-style
- * hierarchy, …) and the list is open-ended.
+ * for Atelier — Atelier is just one agent that consumes it).
+ *
+ * `batch:1` engines have a REAL pluggable EnginePolicy in this prototype
+ * (engine.ts): switching between them re-runs the shared CollaborationSession
+ * state machine over the same position pool and produces a visibly different
+ * negotiation trace. `batch:2` engines are designed but not yet policy-backed
+ * here — they are variants of the same three convergence mechanisms.
  */
-const AGENT_FLOWS: { id: string; name: string; sub: string }[] = [
-  { id: 'roundtable', name: 'Roundtable 圆桌', sub: '方案发散 / 头脑风暴 · 主持人收敛' },
-  { id: 'debate-judge', name: 'Debate Judge 辩论裁决', sub: '多方案冲突 · Judge 裁决达成共识' },
-  { id: 'expert-mesh', name: 'Expert Mesh 专家网', sub: '能力互补并行 · 聚合器合并' },
-  { id: 'swarm', name: 'Swarm 蜂群', sub: '海量同构并行 · 结果归约 + 多数' },
-  { id: 'hierarchy', name: 'Hierarchy 层级（edict）', sub: '长流程强秩序 · 上级签字下令' },
-  { id: 'expert-hierarchy', name: 'Expert Hierarchy（默认）', sub: '长流程 + 能力互补 · 终裁签字 + 无未决反对' },
+const AGENT_FLOWS: { id: string; name: string; sub: string; batch: 1 | 2 }[] = [
+  { id: 'expert-hierarchy', name: 'Expert Hierarchy（默认）', sub: '长流程 + 能力互补 · 终裁签字 + 无未决反对', batch: 1 },
+  { id: 'roundtable', name: 'Roundtable 圆桌', sub: '方案发散 / 头脑风暴 · 主持人收敛', batch: 1 },
+  { id: 'debate-judge', name: 'Debate Judge 辩论裁决', sub: '多方案冲突 · Judge 裁决达成共识', batch: 1 },
+  { id: 'expert-mesh', name: 'Expert Mesh 专家网', sub: '能力互补并行 · 聚合器合并', batch: 2 },
+  { id: 'swarm', name: 'Swarm 蜂群', sub: '海量同构并行 · 结果归约 + 多数', batch: 2 },
+  { id: 'hierarchy', name: 'Hierarchy 层级（edict）', sub: '长流程强秩序 · 上级签字下令', batch: 2 },
 ];
 
 /** The nine Agent peers collaborating in the workspace (footer cluster). */
@@ -268,7 +272,14 @@ function RunPicker({
                       style={{ display: 'flex', alignItems: 'flex-start', padding: '7px 12px', cursor: 'pointer' }}
                     >
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 13, color: picked ? C.primary : C.text }}>{f.name}</div>
+                        <div style={{ fontSize: 13, color: picked ? C.primary : C.text }}>
+                          {f.name}
+                          {f.batch === 1 ? (
+                            <span style={{ fontSize: 10, color: C.success, marginLeft: 6, border: `1px solid ${C.success}`, borderRadius: 4, padding: '0 4px' }}>可切换</span>
+                          ) : (
+                            <span style={{ fontSize: 10, color: C.textQuaternary, marginLeft: 6, border: `1px solid ${C.border}`, borderRadius: 4, padding: '0 4px' }}>第二批</span>
+                          )}
+                        </div>
                         <div style={{ fontSize: 11, color: C.textTertiary, marginTop: 1 }}>{f.sub}</div>
                       </div>
                       {picked ? <span style={{ fontSize: 12, color: C.primary, marginLeft: 6 }}>✓</span> : null}
@@ -289,8 +300,9 @@ export function AtelierPage() {
   const [draft, setDraft] = useState('');
   const [mode, setMode] = useState<'work' | 'code'>('work');
   const [runKind, setRunKind] = useState<RunKind>('agents');
-  const [flowId, setFlowId] = useState(AGENT_FLOWS[AGENT_FLOWS.length - 1].id);
+  const [flowId, setFlowId] = useState(AGENT_FLOWS[0].id);
   const [railOpen, setRailOpen] = useState(true);
+  const [railRightOpen, setRailRightOpen] = useState(true);
   const [preview, setPreview] = useState<Artifact | null>(null);
 
   const stream = state.stream[selected] ?? [];
@@ -351,7 +363,18 @@ export function AtelierPage() {
     switch (b.kind) {
       case 'user': return <UserBubble key={b.id} m={b} />;
       case 'agent': return <AgentBubble key={b.id} m={b} />;
-      case 'nego': return <NegoRow key={b.id} b={b} />;
+      case 'nego': {
+        // If this task has an engine-independent position pool AND we are in
+        // agents mode, render the LIVE engine-driven trace: switching the
+        // engine in the composer re-runs the shared session state machine and
+        // visibly reshapes the negotiation. Otherwise fall back to the static
+        // folded nego row.
+        const collab = COLLAB_INPUTS[selected];
+        if (collab && runKind === 'agents') {
+          return <EngineTrace key={b.id} input={collab} engineId={flowId} />;
+        }
+        return <NegoRow key={b.id} b={b} />;
+      }
       case 'decision': return <DecisionCard key={b.id} b={b} onChoose={choose} />;
       case 'artifact': return <ArtifactCard key={b.id} b={b} />;
       case 'diff': return <DiffCard key={b.id} b={b} />;
@@ -573,20 +596,60 @@ export function AtelierPage() {
           <PreviewPanel artifact={preview} onClose={() => setPreview(null)} />
         </div>
       ) : hasRightPanel ? (
-        <div
-          style={{ width: 272, overflow: 'auto', backgroundColor: C.bg, borderLeft: `1px solid ${C.border}`, padding: '16px 18px' }}
-        >
-          {todos && todos.length > 0 ? (
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
-                <span style={{ fontSize: 15, marginRight: 6 }}>☑</span>
-                <span style={{ fontWeight: 'bold' }}>Todo</span>
-              </div>
-              {todos.map((t) => <TodoRow key={t.id} t={t} />)}
+        railRightOpen ? (
+          <div
+            style={{ width: 272, overflow: 'auto', backgroundColor: C.bg, borderLeft: `1px solid ${C.border}`, padding: '16px 18px' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 4 }}>
+              <span
+                onClick={() => setRailRightOpen(false)}
+                title="折叠面板"
+                style={{ fontSize: 14, color: C.textQuaternary, cursor: 'pointer' }}
+              >
+                ⟩
+              </span>
             </div>
-          ) : null}
-          {ctx ? <ContextPanel ctx={ctx} /> : null}
-        </div>
+            {todos && todos.length > 0 ? (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+                  <span style={{ fontSize: 15, marginRight: 6 }}>☑</span>
+                  <span style={{ fontWeight: 'bold' }}>Todo</span>
+                </div>
+                {todos.map((t) => <TodoRow key={t.id} t={t} />)}
+              </div>
+            ) : null}
+            {ctx ? <ContextPanel ctx={ctx} /> : null}
+          </div>
+        ) : (
+          <div
+            onClick={() => setRailRightOpen(true)}
+            title="展开 Todo + Context"
+            style={{
+              width: 40,
+              backgroundColor: C.fillQuaternary,
+              borderLeft: `1px solid ${C.border}`,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              padding: '14px 0',
+              cursor: 'pointer',
+              gap: 12,
+            }}
+          >
+            <span style={{ fontSize: 14, color: C.textTertiary }}>⟨</span>
+            <span style={{ fontSize: 15 }}>☑</span>
+            <span
+              style={{
+                writingMode: 'vertical-rl',
+                fontSize: 12,
+                color: C.textTertiary,
+                letterSpacing: 1,
+              }}
+            >
+              Todo + Context
+            </span>
+          </div>
+        )
       ) : null}
     </div>
   );
