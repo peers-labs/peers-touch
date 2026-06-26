@@ -66,11 +66,13 @@ func newFixture(t *testing.T) *fixture {
 	if err := gdb.AutoMigrate(
 		&db.SocialPublicPost{},
 		&db.SocialPrivatePost{},
+		&db.SocialMomentDelivery{},
 		&db.SocialPrivateAudienceGrant{},
 		&db.SocialComment{},
 		&db.SocialReaction{},
 		&db.SocialCircle{},
 		&db.SocialCircleMember{},
+		&db.SocialStationModerationPolicy{},
 		&db.Follow{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -530,7 +532,7 @@ func TestComment_OneLevelReplyNesting(t *testing.T) {
 	var lastReplyID string
 	{
 		// Re-fetch the second comment so we have its id.
-		resp, _ := f.comments.ListByPost(ctx, postID, "", 50)
+		resp, _ := f.comments.ListByPost(ctx, postID, author, "", 50)
 		for _, c := range resp.Comments {
 			if c.ReplyToCommentId == top.Id {
 				lastReplyID = c.Id
@@ -807,7 +809,180 @@ func TestVisibilityGate_GetMomentIsNilForUnauthorisedViewer(t *testing.T) {
 	}
 }
 
+func TestDeliveryInbox_FollowersMomentLandsInFollowerHome(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	const author = uint64(100)
+	const follower = uint64(200)
+	const stranger = uint64(300)
+	seedFollow(t, f, follower, author)
+
+	post, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
+		Content:  textBody("followers only"),
+	}, author)
+	if err != nil {
+		t.Fatalf("create FOLLOWERS: %v", err)
+	}
+
+	got, err := f.timeline.GetTimeline(ctx, &model.GetTimelineRequest{
+		Type:  model.TimelineType_TIMELINE_HOME,
+		Limit: 20,
+	}, follower)
+	if err != nil {
+		t.Fatalf("follower home: %v", err)
+	}
+	if !timelineContainsPost(got, post.Id) {
+		t.Fatalf("follower HOME missing delivered post %s", post.Id)
+	}
+
+	got, err = f.timeline.GetTimeline(ctx, &model.GetTimelineRequest{
+		Type:  model.TimelineType_TIMELINE_HOME,
+		Limit: 20,
+	}, stranger)
+	if err != nil {
+		t.Fatalf("stranger home: %v", err)
+	}
+	if timelineContainsPost(got, post.Id) {
+		t.Fatalf("stranger HOME must not include delivered post %s", post.Id)
+	}
+}
+
+func TestDeliveryInbox_DeleteRevokesDeliveredMoment(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	const author = uint64(100)
+	const follower = uint64(200)
+	seedFollow(t, f, follower, author)
+
+	post, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
+		Content:  textBody("temporary"),
+	}, author)
+	if err != nil {
+		t.Fatalf("create FOLLOWERS: %v", err)
+	}
+	if err := f.moments.DeleteMoment(ctx, post.Id, author); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	got, err := f.timeline.GetTimeline(ctx, &model.GetTimelineRequest{
+		Type:  model.TimelineType_TIMELINE_HOME,
+		Limit: 20,
+	}, follower)
+	if err != nil {
+		t.Fatalf("follower home: %v", err)
+	}
+	if timelineContainsPost(got, post.Id) {
+		t.Fatalf("follower HOME must not include revoked post %s", post.Id)
+	}
+}
+
+func timelineContainsPost(resp *model.GetTimelineResponse, postID string) bool {
+	if resp == nil {
+		return false
+	}
+	for _, post := range resp.Posts {
+		if post.GetId() == postID {
+			return true
+		}
+	}
+	return false
+}
+
+func TestInteractionVisibility_FiltersThirdPartyCommentsAndReactions(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	const author = uint64(100)
+	const viewer = uint64(200)
+	const mutual = uint64(300)
+	const stranger = uint64(400)
+
+	seedFollow(t, f, viewer, mutual)
+	seedFollow(t, f, mutual, viewer)
+
+	post, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		Content:  textBody("public, private interactions"),
+	}, author)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	postID := domain.ParseID(post.Id)
+
+	if _, err := f.comments.CreateComment(ctx, &model.CreateCommentRequest{
+		PostId:  post.Id,
+		Content: "mutual can be seen",
+	}, postID, mutual); err != nil {
+		t.Fatalf("mutual comment: %v", err)
+	}
+	if _, err := f.comments.CreateComment(ctx, &model.CreateCommentRequest{
+		PostId:  post.Id,
+		Content: "stranger must be hidden",
+	}, postID, stranger); err != nil {
+		t.Fatalf("stranger comment: %v", err)
+	}
+
+	viewerComments, err := f.comments.ListByPost(ctx, postID, viewer, "", 20)
+	if err != nil {
+		t.Fatalf("viewer comments: %v", err)
+	}
+	if len(viewerComments.Comments) != 1 || viewerComments.Comments[0].Content != "mutual can be seen" {
+		t.Fatalf("viewer comments = %+v, want only mutual comment", viewerComments.Comments)
+	}
+
+	authorComments, err := f.comments.ListByPost(ctx, postID, author, "", 20)
+	if err != nil {
+		t.Fatalf("author comments: %v", err)
+	}
+	if len(authorComments.Comments) != 2 {
+		t.Fatalf("author should see all comments, got %d", len(authorComments.Comments))
+	}
+
+	if _, err := f.reactions.React(ctx, post.Id, mutual, model.ReactionKind_REACTION_LIKE); err != nil {
+		t.Fatalf("mutual react: %v", err)
+	}
+	if _, err := f.reactions.React(ctx, post.Id, stranger, model.ReactionKind_REACTION_LIKE); err != nil {
+		t.Fatalf("stranger react: %v", err)
+	}
+
+	viewerPost, err := f.moments.GetMoment(ctx, post.Id, viewer)
+	if err != nil {
+		t.Fatalf("viewer get moment: %v", err)
+	}
+	if got := reactionCount(viewerPost, model.ReactionKind_REACTION_LIKE); got != 1 {
+		t.Fatalf("viewer LIKE count = %d, want 1", got)
+	}
+
+	authorPost, err := f.moments.GetMoment(ctx, post.Id, author)
+	if err != nil {
+		t.Fatalf("author get moment: %v", err)
+	}
+	if got := reactionCount(authorPost, model.ReactionKind_REACTION_LIKE); got != 2 {
+		t.Fatalf("author LIKE count = %d, want 2", got)
+	}
+}
+
+func reactionCount(post *model.Post, kind model.ReactionKind) int64 {
+	if post == nil {
+		return 0
+	}
+	for _, summary := range post.Reactions {
+		if summary.Kind == kind {
+			return summary.Count
+		}
+	}
+	return 0
+}
+
 // TestImagePost_AttachmentsCarryCID asserts the read path returns
+// `ImageAttachment.Url == Id == cid` so a desktop client can render the
 // `ImageAttachment.Url == Id == cid` so a desktop client can render the
 // image with a single field lookup. Pre-P1-closure the converter only
 // populated `Id` and clients had to know "Id is also the URL" — that

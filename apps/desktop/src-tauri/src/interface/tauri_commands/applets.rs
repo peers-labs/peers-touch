@@ -12,6 +12,8 @@ use crate::error::ErrorCode;
 use crate::infrastructure::storage::StorageKind;
 use crate::state::AppState;
 use serde_json::json;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::State;
 use tauri::Window;
@@ -35,6 +37,41 @@ fn status_payload(command: &str, data: serde_json::Value) -> AppResult<StubPaylo
         command: command.to_string(),
         status: data.to_string(),
     })
+}
+
+fn read_applet_manifest_from_dir(directory: &Path) -> Result<serde_json::Value, AppResult<StubPayload>> {
+    for file_name in ["applet.json", "manifest.json"] {
+        let manifest_path = directory.join(file_name);
+        if !manifest_path.is_file() {
+            continue;
+        }
+        let raw = fs::read_to_string(&manifest_path).map_err(|error| {
+            AppResult::fail(
+                ErrorCode::InternalError,
+                "error.applet.importManifestReadFailed",
+                Some(json!({
+                    "path": manifest_path.to_string_lossy(),
+                    "reason": error.to_string()
+                })),
+            )
+        })?;
+        return serde_json::from_str::<serde_json::Value>(&raw).map_err(|error| {
+            AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "error.applet.importManifestInvalidJson",
+                Some(json!({
+                    "path": manifest_path.to_string_lossy(),
+                    "reason": error.to_string()
+                })),
+            )
+        });
+    }
+
+    Err(AppResult::fail(
+        ErrorCode::InvalidArgument,
+        "error.applet.importManifestMissing",
+        Some(json!({ "directory": directory.to_string_lossy() })),
+    ))
 }
 
 fn seed_product_window_e2e_provider() {
@@ -171,6 +208,35 @@ pub fn applets_readiness_probe_context(
     window: Window,
 ) -> AppResult<StubPayload> {
     applets_product_window_launch_context(state, window)
+}
+
+#[tauri::command]
+pub async fn applets_pick_import_directory() -> AppResult<StubPayload> {
+    tracing::info!("Opening applet import directory picker");
+    let picked = rfd::AsyncFileDialog::new().pick_folder().await;
+    let directory: PathBuf = match picked {
+        Some(handle) => handle.path().to_path_buf(),
+        None => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "error.applet.importDirectoryCancelled",
+                None,
+            );
+        }
+    };
+
+    let manifest = match read_applet_manifest_from_dir(&directory) {
+        Ok(manifest) => manifest,
+        Err(error) => return error,
+    };
+
+    status_payload(
+        "applets_pick_import_directory",
+        json!({
+            "directory": directory.to_string_lossy(),
+            "manifest": manifest
+        }),
+    )
 }
 
 #[tauri::command]

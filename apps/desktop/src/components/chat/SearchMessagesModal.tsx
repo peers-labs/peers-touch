@@ -31,8 +31,9 @@ const AUDIO_EXTENSIONS = new Set(['aac', 'flac', 'm4a', 'mp3', 'ogg', 'wav']);
 const VIDEO_EXTENSIONS = new Set(['avi', 'm4v', 'mov', 'mp4', 'mpeg', 'webm']);
 const STANDALONE_FILENAME_PATTERN = /^[^/\n\r]{1,160}\.[a-z0-9]{2,8}$/i;
 
-function formatSentAt(epochSec: number, t: (key: string, opts?: { count?: number }) => string): string {
-  const d = new Date(epochSec * 1000);
+function formatSentAt(epochMsOrSec: number, t: (key: string, opts?: { count?: number }) => string): string {
+  const epochMs = epochMsOrSec > 10_000_000_000 ? epochMsOrSec : epochMsOrSec * 1000;
+  const d = new Date(epochMs);
   const now = Date.now();
   const diffMs = now - d.getTime();
   const minutes = Math.floor(diffMs / 60000);
@@ -134,7 +135,6 @@ function fileKindForResult(result: SearchResult): Exclude<ResultKind, 'message' 
 function isThreadResult(result: SearchResult): boolean {
   return Boolean(
     result.threadRootUlid
-      || result.replyToUlid
       || (result.threadReplyCount ?? 0) > 0
       || result.hasLoadedThreadReplies,
   );
@@ -198,19 +198,18 @@ export function SearchMessagesModal({
   const { t } = useTranslation('chat');
   const [localQuery, setLocalQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<SearchFilter>('all');
-  const {
-    currentUserDid,
-    groupMembers,
-    searchQuery,
-    searchResults,
-    searchLoading,
-    searchMessages,
-    clearSearch,
-    selectSession,
-    selectGroup,
-    setActiveTab,
-    setScrollToMessageUlid,
-  } = useSocialChatStore();
+  const currentUserDid = useSocialChatStore((state) => state.currentUserDid);
+  const groupMembers = useSocialChatStore((state) => state.groupMembers);
+  const searchQuery = useSocialChatStore((state) => state.searchQuery);
+  const searchResults = useSocialChatStore((state) => state.searchResults);
+  const searchLoading = useSocialChatStore((state) => state.searchLoading);
+  const searchMessages = useSocialChatStore((state) => state.searchMessages);
+  const clearSearch = useSocialChatStore((state) => state.clearSearch);
+  const selectSession = useSocialChatStore((state) => state.selectSession);
+  const selectGroup = useSocialChatStore((state) => state.selectGroup);
+  const setActiveTab = useSocialChatStore((state) => state.setActiveTab);
+  const setScrollToMessageUlid = useSocialChatStore((state) => state.setScrollToMessageUlid);
+  const openThread = useSocialChatStore((state) => state.openThread);
 
   useEffect(() => {
     if (!open) return;
@@ -237,17 +236,22 @@ export function SearchMessagesModal({
 
   const handleResultClick = useCallback(
     (result: SearchResult) => {
-      setScrollToMessageUlid(result.messageId);
       if (result.scope === 'friend') {
-        selectSession(result.conversationId);
         setActiveTab('friend');
+        selectSession(result.conversationId);
       } else {
-        selectGroup(result.conversationId);
         setActiveTab('group');
+        selectGroup(result.conversationId);
+      }
+      if (result.threadRootUlid) {
+        openThread(result.threadRootUlid);
+        setScrollToMessageUlid(result.threadRootUlid);
+      } else {
+        setScrollToMessageUlid(result.messageId);
       }
       handleClose();
     },
-    [selectSession, selectGroup, setActiveTab, setScrollToMessageUlid, handleClose],
+    [selectSession, selectGroup, setActiveTab, setScrollToMessageUlid, openThread, handleClose],
   );
 
   const decoratedResults = useMemo<DecoratedSearchResult[]>(
@@ -298,16 +302,20 @@ export function SearchMessagesModal({
     [activeFilter, decoratedResults],
   );
 
-  const filterOptions: Array<{ key: SearchFilter; label: string }> = [
-    { key: 'all', label: t('chat.social.search.filter.all') },
-    { key: 'messages', label: t('chat.social.search.filter.messages') },
-    { key: 'threads', label: t('chat.social.search.filter.threads') },
-    { key: 'files', label: t('chat.social.search.filter.files') },
-  ];
+  const filterOptions = useMemo<Array<{ key: SearchFilter; label: string }>>(
+    () => [
+      { key: 'all', label: t('chat.social.search.filter.all') },
+      { key: 'messages', label: t('chat.social.search.filter.messages') },
+      { key: 'threads', label: t('chat.social.search.filter.threads') },
+      { key: 'files', label: t('chat.social.search.filter.files') },
+    ],
+    [t],
+  );
 
   const kindLabel = (kind: ResultKind): string => t(`chat.social.search.type.${kind}`);
   const scopeLabel = (r: SearchResult): string =>
     t(r.scope === 'friend' ? 'chat.social.search.scope.friend' : 'chat.social.search.scope.group');
+  const hasSearched = searchQuery.trim().length > 0;
 
   return (
     <Modal
@@ -323,21 +331,28 @@ export function SearchMessagesModal({
       width={640}
       destroyOnHidden
     >
-      <Flexbox gap={12}>
+      <Flexbox gap={12} style={{ minHeight: 492 }}>
         <Input
           allowClear
           prefix={<Search size={16} style={{ color: token.colorTextQuaternary }} />}
+          suffix={
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 18,
+                height: 18,
+              }}
+            >
+              {searchLoading ? <Spin size="small" /> : null}
+            </span>
+          }
           placeholder={t('chat.social.search.placeholder')}
           value={localQuery}
           onChange={(e) => setLocalQuery(e.target.value)}
         />
-        {searchLoading ? (
-          <Flexbox align="center" justify="center" style={{ minHeight: 200 }}>
-            <Spin />
-          </Flexbox>
-        ) : searchQuery.trim() && searchResults.length === 0 ? (
-          <Empty description={t('chat.social.search.noResults')} />
-        ) : (
+        <Flexbox gap={12} style={{ minHeight: 420 }}>
           <>
             {searchResults.length > 0 && (
               <>
@@ -453,19 +468,23 @@ export function SearchMessagesModal({
                 align="center"
                 justify="center"
                 style={{
-                  minHeight: 120,
+                  minHeight: 180,
                   color: token.colorTextQuaternary,
                   border: `1px dashed ${token.colorBorderSecondary}`,
                   borderRadius: token.borderRadius,
                 }}
               >
-                <Text type="secondary" style={{ fontSize: 13 }}>
-                  {t('chat.social.search.startTyping')}
-                </Text>
+                {hasSearched && !searchLoading ? (
+                  <Empty description={t('chat.social.search.noResults')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                ) : (
+                  <Text type="secondary" style={{ fontSize: 13 }}>
+                    {t('chat.social.search.startTyping')}
+                  </Text>
+                )}
               </Flexbox>
             )}
           </>
-        )}
+        </Flexbox>
       </Flexbox>
     </Modal>
   );

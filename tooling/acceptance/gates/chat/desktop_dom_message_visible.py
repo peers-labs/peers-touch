@@ -134,8 +134,6 @@ def install_tauri_app_result_bridge(session: Any, helpers: Any, gateway_url: str
     writeString(out, 11, raw.participant_a_avatar || raw.participantAAvatar);
     writeString(out, 12, raw.participant_b_display_name || raw.participantBDisplayName);
     writeString(out, 13, raw.participant_b_avatar || raw.participantBAvatar);
-    writeBool(out, 14, raw.participant_a_online || raw.participantAOnline);
-    writeBool(out, 15, raw.participant_b_online || raw.participantBOnline);
     return out;
   }};
   const encodeFriendMessage = (raw) => {{
