@@ -25,11 +25,11 @@
 
 | 原型文件 | 承载的 UI 区域 |
 |---------|--------------|
-| [Page.tsx](../../../../packages/prototypes/atelier/src/Page.tsx) | 左栏 / 顶栏 / 中栏壳 / composer / RunPicker / 右栏 Todo+Context |
-| [blocks.tsx](../../../../packages/prototypes/atelier/src/blocks.tsx) | 对话流 blocks：UserBubble / AgentBubble / NegoRow / DecisionCard / ArtifactCard / DiffCard |
-| [preview.tsx](../../../../packages/prototypes/atelier/src/preview.tsx) | Artifacts 托盘 + 右侧产物预览面板 |
-| [plugins.tsx](../../../../packages/prototypes/atelier/src/plugins.tsx) | 左栏任务组织 plugin（folders / flat / kanban / dag） |
-| [types.ts](../../../../packages/prototypes/atelier/src/types.ts) | 原型态轻契约（与 data-model 正式契约的对照见下表） |
+| [Page.tsx](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx) | 左栏 / 顶栏 / 中栏壳 / composer / RunPicker / 右栏 Todo+Context |
+| [blocks.tsx](../../../../packages/prototypes/desktop/applets/atelier/src/blocks.tsx) | 对话流 blocks：UserBubble / AgentBubble / NegoRow / DecisionCard / ArtifactCard / DiffCard |
+| [preview.tsx](../../../../packages/prototypes/desktop/applets/atelier/src/preview.tsx) | Artifacts 托盘 + 右侧产物预览面板 |
+| [plugins.tsx](../../../../packages/prototypes/desktop/applets/atelier/src/plugins.tsx) | 左栏任务组织 plugin（folders / flat / kanban / dag） |
+| [types.ts](../../../../packages/prototypes/desktop/applets/atelier/src/types.ts) | 原型态轻契约（与 data-model 正式契约的对照见下表） |
 
 ### 0.2 读法与符号
 
@@ -47,7 +47,7 @@
 
 ### 0.3 原型轻契约 ↔ 正式契约对照（先消歧义）
 
-原型 [types.ts](../../../../packages/prototypes/atelier/src/types.ts) 为了能跑，用了简化结构。落地时**不直接用 types.ts**，按下表映射回 data-model 正式契约：
+原型 [types.ts](../../../../packages/prototypes/desktop/applets/atelier/src/types.ts) 为了能跑，用了简化结构。落地时**不直接用 types.ts**，按下表映射回 data-model 正式契约：
 
 | 原型轻契约（types.ts） | 正式契约（data-model.md） | 落差 |
 |----------------------|--------------------------|------|
@@ -65,15 +65,15 @@
 
 | UI 元素 | 触发动作 | 底层动作 | 数据契约 | 状态转移 | 接口/Provider | 缺口 |
 |--------|---------|---------|---------|---------|--------------|------|
-| Work / Code toggle [Page.tsx#L383](../../../../packages/prototypes/atelier/src/Page.tsx#L383) | 点切换 | 切换默认 Provider 策略偏好（Work=研究/通用，Code=CodingProvider 优先）与默认 plugin | `AtelierTask.provider_strategy`（默认偏好层） | — | — | ⚠️ GAP-UI-02：原型仅视觉态；落地需定义「模式 → provider_strategy 默认值 + gate_plan 默认集」的映射表 |
-| New task [Page.tsx#L408](../../../../packages/prototypes/atelier/src/Page.tsx#L408) | 点击 | M13 多元输入 → 起草一个 Project（未契约化） | 新建 `Project{state:draft}` 🅟 原型只建 `Task` | `Project: (none)→draft` | `F-UI-01` | ⚠️ 原型直接建可对话的 Task，跳过了 draft Project；落地新任务=draft Project，首条消息才触发契约化 |
-| Skills 入口 [Page.tsx#L412](../../../../packages/prototypes/atelier/src/Page.tsx#L412) | 点击 | 复用框架 Skill 注册表，作为 Provider 能力之一供 Executor 调 | `Provider.capabilities()` | — | 框架 Skill 接入层（M9 复用） | ⚠️ GAP-UI-03：原型未接；落地走 Host Capability Gateway |
-| Automation 入口 [Page.tsx#L416](../../../../packages/prototypes/atelier/src/Page.tsx#L416) | 点击 | M12 定时（复用框架 cron）→「定时触发起一个协作会话」模板 | 框架 `domain/cron` 任务 → `CollaborationTask` 模板 | 触发时 `CollaborationSession: →proposing` | 框架 Scheduler（`F-CO-01`/`F-FD-01`） | ✅（复用框架）原型为占位 |
-| Your Task List + plugin 切换 [Page.tsx#L422](../../../../packages/prototypes/atelier/src/Page.tsx#L422) | 选 plugin | M-task-org：壳持有数据，plugin 只渲染+委派 | `TaskHost`/`TaskPlugin`（applet 内视图层，不入后端） | — | — | ✅ 已落地；kanban/dag 为占位 |
-| TaskRow + ⋯ 菜单（归档/删除/还原/彻底删除） [plugins.tsx#L25](../../../../packages/prototypes/atelier/src/plugins.tsx#L25) | 点菜单项 | 收纳生命周期迁移（与执行状态机正交） | 原型 `TaskStatus`；落地需新 `Task.archival_state` | `archival: active↔archived→deleted→(purge)` | — | ⚠️ GAP-UI-04：data-model 无收纳态字段；需补 `Task.archival_state` 且与 `TaskState` 双轨 |
-| 任务 running 圆点 [plugins.tsx#L72](../../../../packages/prototypes/atelier/src/plugins.tsx#L72) | 系统驱动 | 反映该任务最新 Run 是否 running | `Run.state==running` 的投影 | 读 `RunState` | — | ✅ 投影 |
-| 任务 ⎇ 分支标 [plugins.tsx#L71](../../../../packages/prototypes/atelier/src/plugins.tsx#L71) | 系统驱动 | 该任务绑定的 Workspace/worktree | Workspace.branch（⚠️ GAP-11 缺 schema） | — | `F-PR-05` 工作区/沙箱 | ⚠️ GAP-11：Workspace 实体未定义 |
-| peers footer（9 角色头像） [Page.tsx#L435](../../../../packages/prototypes/atelier/src/Page.tsx#L435) | 系统驱动 | M2 九角色权力结构的可视化 | `AgentRole` 枚举（⚠️ GAP-04 未定义） | — | — | ⚠️ GAP-04：data-model 缺 `AgentRole` 枚举；原型已列全 9 角色，回填即可 |
+| Work / Code toggle [Page.tsx#L383](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L383) | 点切换 | 切换默认 Provider 策略偏好（Work=研究/通用，Code=CodingProvider 优先）与默认 plugin | `AtelierTask.provider_strategy`（默认偏好层） | — | — | ⚠️ GAP-UI-02：原型仅视觉态；落地需定义「模式 → provider_strategy 默认值 + gate_plan 默认集」的映射表 |
+| New task [Page.tsx#L408](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L408) | 点击 | M13 多元输入 → 起草一个 Project（未契约化） | 新建 `Project{state:draft}` 🅟 原型只建 `Task` | `Project: (none)→draft` | `F-UI-01` | ⚠️ 原型直接建可对话的 Task，跳过了 draft Project；落地新任务=draft Project，首条消息才触发契约化 |
+| Skills 入口 [Page.tsx#L412](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L412) | 点击 | 复用框架 Skill 注册表，作为 Provider 能力之一供 Executor 调 | `Provider.capabilities()` | — | 框架 Skill 接入层（M9 复用） | ⚠️ GAP-UI-03：原型未接；落地走 Host Capability Gateway |
+| Automation 入口 [Page.tsx#L416](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L416) | 点击 | M12 定时（复用框架 cron）→「定时触发起一个协作会话」模板 | 框架 `domain/cron` 任务 → `CollaborationTask` 模板 | 触发时 `CollaborationSession: →proposing` | 框架 Scheduler（`F-CO-01`/`F-FD-01`） | ✅（复用框架）原型为占位 |
+| Your Task List + plugin 切换 [Page.tsx#L422](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L422) | 选 plugin | M-task-org：壳持有数据，plugin 只渲染+委派 | `TaskHost`/`TaskPlugin`（applet 内视图层，不入后端） | — | — | ✅ 已落地；kanban/dag 为占位 |
+| TaskRow + ⋯ 菜单（归档/删除/还原/彻底删除） [plugins.tsx#L25](../../../../packages/prototypes/desktop/applets/atelier/src/plugins.tsx#L25) | 点菜单项 | 收纳生命周期迁移（与执行状态机正交） | 原型 `TaskStatus`；落地需新 `Task.archival_state` | `archival: active↔archived→deleted→(purge)` | — | ⚠️ GAP-UI-04：data-model 无收纳态字段；需补 `Task.archival_state` 且与 `TaskState` 双轨 |
+| 任务 running 圆点 [plugins.tsx#L72](../../../../packages/prototypes/desktop/applets/atelier/src/plugins.tsx#L72) | 系统驱动 | 反映该任务最新 Run 是否 running | `Run.state==running` 的投影 | 读 `RunState` | — | ✅ 投影 |
+| 任务 ⎇ 分支标 [plugins.tsx#L71](../../../../packages/prototypes/desktop/applets/atelier/src/plugins.tsx#L71) | 系统驱动 | 该任务绑定的 Workspace/worktree | Workspace.branch（⚠️ GAP-11 缺 schema） | — | `F-PR-05` 工作区/沙箱 | ⚠️ GAP-11：Workspace 实体未定义 |
+| peers footer（9 角色头像） [Page.tsx#L435](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L435) | 系统驱动 | M2 九角色权力结构的可视化 | `AgentRole` 枚举（⚠️ GAP-04 未定义） | — | — | ⚠️ GAP-04：data-model 缺 `AgentRole` 枚举；原型已列全 9 角色，回填即可 |
 
 ---
 
@@ -81,13 +81,13 @@
 
 | UI 元素 | 触发动作 | 底层动作 | 数据契约 | 状态转移 | 接口/Provider | 缺口 |
 |--------|---------|---------|---------|---------|--------------|------|
-| 任务标题 [Page.tsx#L470](../../../../packages/prototypes/atelier/src/Page.tsx#L470) | 系统驱动 | 显示当前 Project/Task 目标 | `Project.goal` / `AtelierTask.task_contract` | — | — | ✅ |
-| 项目 chip 🗂 [Page.tsx#L471](../../../../packages/prototypes/atelier/src/Page.tsx#L471) | 系统驱动 | 所属 Project | `Project.id` | — | — | ✅ |
-| git 分支 ⎇ [Page.tsx#L474](../../../../packages/prototypes/atelier/src/Page.tsx#L474) | 系统驱动 | 绑定 Workspace | Workspace.branch | — | `F-PR-05` | ⚠️ GAP-11 |
-| 协作引擎指示（头像簇 + flow 名 + "多 Agent 协作中"） [Page.tsx#L477](../../../../packages/prototypes/atelier/src/Page.tsx#L477) | 系统驱动 | M1 当前生效的协作引擎 + 参与角色 | `CollaborationTask.engine` + `participants` | 读 `CollaborationSession.state` | — | ⚠️ GAP-05：缺 `EngineType` 枚举 |
-| 直连指示 "⚡ 直连 {model}" [Page.tsx#L504](../../../../packages/prototypes/atelier/src/Page.tsx#L504) | 系统驱动 | 直连旁路（不起协作会话） | 新「直连模式」标记 | 无 CollaborationSession | 直接 Provider/Model 调用 | ⚠️ GAP-UI-01：直连旁路未在机制层定义（见 §5.6） |
-| Open in IDE ↗ [Page.tsx#L510](../../../../packages/prototypes/atelier/src/Page.tsx#L510) | 点击 | 在宿主里打开该任务 Workspace | Workspace.uri | — | Host Gateway | ⚠️ GAP-UI-05：未接 |
-| 预算条 + $spent/$cap [Page.tsx#L511](../../../../packages/prototypes/atelier/src/Page.tsx#L511) | 系统驱动（每 Run/Round 结算后刷新） | M7 预算熔断；danger 态=触顶预警 | `Budget{spent, money_cap, token_cap…}` | 触顶 → `escalated`（多状态机，见 §5.4） | — | ✅ 机制有（`F-FD-02`）；原型只读 money 维度，落地需展示多维 |
+| 任务标题 [Page.tsx#L470](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L470) | 系统驱动 | 显示当前 Project/Task 目标 | `Project.goal` / `AtelierTask.task_contract` | — | — | ✅ |
+| 项目 chip 🗂 [Page.tsx#L471](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L471) | 系统驱动 | 所属 Project | `Project.id` | — | — | ✅ |
+| git 分支 ⎇ [Page.tsx#L474](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L474) | 系统驱动 | 绑定 Workspace | Workspace.branch | — | `F-PR-05` | ⚠️ GAP-11 |
+| 协作引擎指示（头像簇 + flow 名 + "多 Agent 协作中"） [Page.tsx#L477](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L477) | 系统驱动 | M1 当前生效的协作引擎 + 参与角色 | `CollaborationTask.engine` + `participants` | 读 `CollaborationSession.state` | — | ⚠️ GAP-05：缺 `EngineType` 枚举 |
+| 直连指示 "⚡ 直连 {model}" [Page.tsx#L504](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L504) | 系统驱动 | 直连旁路（不起协作会话） | 新「直连模式」标记 | 无 CollaborationSession | 直接 Provider/Model 调用 | ⚠️ GAP-UI-01：直连旁路未在机制层定义（见 §5.6） |
+| Open in IDE ↗ [Page.tsx#L510](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L510) | 点击 | 在宿主里打开该任务 Workspace | Workspace.uri | — | Host Gateway | ⚠️ GAP-UI-05：未接 |
+| 预算条 + $spent/$cap [Page.tsx#L511](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L511) | 系统驱动（每 Run/Round 结算后刷新） | M7 预算熔断；danger 态=触顶预警 | `Budget{spent, money_cap, token_cap…}` | 触顶 → `escalated`（多状态机，见 §5.4） | — | ✅ 机制有（`F-FD-02`）；原型只读 money 维度，落地需展示多维 |
 
 ---
 
@@ -97,18 +97,18 @@
 
 | UI 元素 | 触发动作 | 底层动作 | 数据契约 | 状态转移 | 接口/Provider | 缺口 |
 |--------|---------|---------|---------|---------|--------------|------|
-| UserBubble（含图片 chip） [blocks.tsx#L68](../../../../packages/prototypes/atelier/src/blocks.tsx#L68) | 用户发消息 | M13 输入 → 强制走「意图→契约」 | 输入事件 → `CollaborationTask.question` / `Project.goal` | 首条 → `Project: draft→(契约化中)` | `F-UI-01` | ✅ |
-| AgentBubble（轻 markdown + bullets） [blocks.tsx#L115](../../../../packages/prototypes/atelier/src/blocks.tsx#L115) | 系统驱动 | Agent 文本输出（非状态写） | Trace 事件投影 | — | — | ✅ |
-| Completed 标记 ✓ [blocks.tsx#L146](../../../../packages/prototypes/atelier/src/blocks.tsx#L146) | 系统驱动 | 任务/里程碑验收通过的对话内反映 | `AtelierTask.state==accepted` 投影 | 读 Task 状态机 `→accepted` | — | ✅ |
-| FeedbackBar（👍👎/复制/重新生成） [blocks.tsx#L102](../../../../packages/prototypes/atelier/src/blocks.tsx#L102) | 点击 | 👍👎→ M10 记忆候选信号；重新生成→新 Run | `MemoryCandidate`（弱信号）/ 新 `Run` | 重新生成 → `Run: queued`（attempt_no++） | `F-CO-02` | ⚠️ GAP-UI-06：反馈信号→记忆/重跑的链路未在机制层定义 |
-| NegoRow 折叠摘要行（👥 + summary + 收敛 Tag + 计数） [blocks.tsx#L159](../../../../packages/prototypes/atelier/src/blocks.tsx#L159) | 系统驱动 | M1/M3 一次协作会话的折叠投影 | `CollaborationSession{state, rounds}` | 读 `proposing/converging/reached/escalated` | — | ⚠️ 见下两行 |
-| NegoRow 展开：每条 voice（角色 Tag + stance Tag + 文本 + 证据） [blocks.tsx#L190](../../../../packages/prototypes/atelier/src/blocks.tsx#L190) | 点开 | M2 角色发言 + M3 反附和（证据约束） | `Round` 内发言；`Objection{by, claim, evidence_ref}` | — | — | ⚠️ GAP-04/05：角色与引擎枚举缺；`Round` 结构 data-model 未展开字段 |
-| NegoRow「无证据→降级为疑虑」标 [blocks.tsx#L206](../../../../packages/prototypes/atelier/src/blocks.tsx#L206) | 系统驱动 | M3 反附和规则的可视化 | `Objection.evidence_ref==null → 不阻断` | — | — | ✅ 机制有（design §4.1） |
-| NegoRow consensus 框 [blocks.tsx#L212](../../../../packages/prototypes/atelier/src/blocks.tsx#L212) | 系统驱动 | 收敛产物 | `Decision{outcome, produces}` | `CollaborationSession→reached` | — | ✅ |
-| DecisionCard（升级给人：问题/已花成本/回滚影响/选项/推荐） [blocks.tsx#L229](../../../../packages/prototypes/atelier/src/blocks.tsx#L229) | 系统驱动弹出 | M7 Escalation Guard 的结构化升级载荷 | `EscalationPayload`（⚠️ GAP-13 未定义） | 触发自 `→escalated` / `awaiting_human` | — | ⚠️ GAP-13：原型字段已全，data-model 缺 `EscalationPayload` 实体 |
-| DecisionCard 选项点击 [blocks.tsx#L254](../../../../packages/prototypes/atelier/src/blocks.tsx#L254) | 用户裁决 | 人工决策回写 → Core 据此改状态/解熔断/批 replan | 写回裁决 → 触发对应状态机 | `escalated→running` / `awaiting_human→accepted|rejected` | `F-UI-03` | ⚠️ GAP-UI-08：裁决回写到「哪个状态机的哪步」需按升级原因分支（见 §5.3 时序） |
-| ArtifactCard（流内产物卡） [blocks.tsx#L284](../../../../packages/prototypes/atelier/src/blocks.tsx#L284) | 系统驱动 | M8/M9 产物落账的流内引用 | `Artifact{id, type, produced_at}` + `producedBy`(run/agent 回链) | 读 `Run→succeeded` 必产 Artifact | — | ✅ |
-| DiffCard（N files changed +X -Y，可展开路径） [blocks.tsx#L309](../../../../packages/prototypes/atelier/src/blocks.tsx#L309) | 系统驱动/点开 | CodingProvider 产物 diff.patch 的摘要投影 | `Artifact{type:diff}` | — | `CodingProvider` | ✅ |
+| UserBubble（含图片 chip） [blocks.tsx#L68](../../../../packages/prototypes/desktop/applets/atelier/src/blocks.tsx#L68) | 用户发消息 | M13 输入 → 强制走「意图→契约」 | 输入事件 → `CollaborationTask.question` / `Project.goal` | 首条 → `Project: draft→(契约化中)` | `F-UI-01` | ✅ |
+| AgentBubble（轻 markdown + bullets） [blocks.tsx#L115](../../../../packages/prototypes/desktop/applets/atelier/src/blocks.tsx#L115) | 系统驱动 | Agent 文本输出（非状态写） | Trace 事件投影 | — | — | ✅ |
+| Completed 标记 ✓ [blocks.tsx#L146](../../../../packages/prototypes/desktop/applets/atelier/src/blocks.tsx#L146) | 系统驱动 | 任务/里程碑验收通过的对话内反映 | `AtelierTask.state==accepted` 投影 | 读 Task 状态机 `→accepted` | — | ✅ |
+| FeedbackBar（👍👎/复制/重新生成） [blocks.tsx#L102](../../../../packages/prototypes/desktop/applets/atelier/src/blocks.tsx#L102) | 点击 | 👍👎→ M10 记忆候选信号；重新生成→新 Run | `MemoryCandidate`（弱信号）/ 新 `Run` | 重新生成 → `Run: queued`（attempt_no++） | `F-CO-02` | ⚠️ GAP-UI-06：反馈信号→记忆/重跑的链路未在机制层定义 |
+| NegoRow 折叠摘要行（👥 + summary + 收敛 Tag + 计数） [blocks.tsx#L159](../../../../packages/prototypes/desktop/applets/atelier/src/blocks.tsx#L159) | 系统驱动 | M1/M3 一次协作会话的折叠投影 | `CollaborationSession{state, rounds}` | 读 `proposing/converging/reached/escalated` | — | ⚠️ 见下两行 |
+| NegoRow 展开：每条 voice（角色 Tag + stance Tag + 文本 + 证据） [blocks.tsx#L190](../../../../packages/prototypes/desktop/applets/atelier/src/blocks.tsx#L190) | 点开 | M2 角色发言 + M3 反附和（证据约束） | `Round` 内发言；`Objection{by, claim, evidence_ref}` | — | — | ⚠️ GAP-04/05：角色与引擎枚举缺；`Round` 结构 data-model 未展开字段 |
+| NegoRow「无证据→降级为疑虑」标 [blocks.tsx#L206](../../../../packages/prototypes/desktop/applets/atelier/src/blocks.tsx#L206) | 系统驱动 | M3 反附和规则的可视化 | `Objection.evidence_ref==null → 不阻断` | — | — | ✅ 机制有（design §4.1） |
+| NegoRow consensus 框 [blocks.tsx#L212](../../../../packages/prototypes/desktop/applets/atelier/src/blocks.tsx#L212) | 系统驱动 | 收敛产物 | `Decision{outcome, produces}` | `CollaborationSession→reached` | — | ✅ |
+| DecisionCard（升级给人：问题/已花成本/回滚影响/选项/推荐） [blocks.tsx#L229](../../../../packages/prototypes/desktop/applets/atelier/src/blocks.tsx#L229) | 系统驱动弹出 | M7 Escalation Guard 的结构化升级载荷 | `EscalationPayload`（⚠️ GAP-13 未定义） | 触发自 `→escalated` / `awaiting_human` | — | ⚠️ GAP-13：原型字段已全，data-model 缺 `EscalationPayload` 实体 |
+| DecisionCard 选项点击 [blocks.tsx#L254](../../../../packages/prototypes/desktop/applets/atelier/src/blocks.tsx#L254) | 用户裁决 | 人工决策回写 → Core 据此改状态/解熔断/批 replan | 写回裁决 → 触发对应状态机 | `escalated→running` / `awaiting_human→accepted|rejected` | `F-UI-03` | ⚠️ GAP-UI-08：裁决回写到「哪个状态机的哪步」需按升级原因分支（见 §5.3 时序） |
+| ArtifactCard（流内产物卡） [blocks.tsx#L284](../../../../packages/prototypes/desktop/applets/atelier/src/blocks.tsx#L284) | 系统驱动 | M8/M9 产物落账的流内引用 | `Artifact{id, type, produced_at}` + `producedBy`(run/agent 回链) | 读 `Run→succeeded` 必产 Artifact | — | ✅ |
+| DiffCard（N files changed +X -Y，可展开路径） [blocks.tsx#L309](../../../../packages/prototypes/desktop/applets/atelier/src/blocks.tsx#L309) | 系统驱动/点开 | CodingProvider 产物 diff.patch 的摘要投影 | `Artifact{type:diff}` | — | `CodingProvider` | ✅ |
 
 ---
 
@@ -116,18 +116,18 @@
 
 | UI 元素 | 触发动作 | 底层动作 | 数据契约 | 状态转移 | 接口/Provider | 缺口 |
 |--------|---------|---------|---------|---------|--------------|------|
-| composer 输入 + 发送 [Page.tsx#L540](../../../../packages/prototypes/atelier/src/Page.tsx#L540) | 输入并发送 | M13 输入 → 起 CollaborationTask 或直连 Run | `CollaborationTask.question` / 直连 Run input | 见 §5.1 / §5.6 | `F-UI-01` | ⚠️ 原型未做真实发送+流式 |
-| 斜杠命令 `/` [Page.tsx#L549](../../../../packages/prototypes/atelier/src/Page.tsx#L549) | 点击 | 命令面板 → Skill/Provider 能力 | `Provider.capabilities()` | — | 框架 Skill | ⚠️ GAP-UI-03 |
-| 图片/附件 `＋` [Page.tsx#L550](../../../../packages/prototypes/atelier/src/Page.tsx#L550) | 点击 | 附件入 input_snapshot | `Run.input_snapshot` | — | Host Gateway（存储） | ⚠️ 未接 |
-| RunPicker 触发器（显示当前 model 或 flow） [Page.tsx#L201](../../../../packages/prototypes/atelier/src/Page.tsx#L201) | 系统驱动 | 显示当前 runKind 的目标 | `runKind` + `model`/`flowId` | — | — | ⚠️ GAP-UI-01 |
-| RunPicker tab「⚡直接模型」选项 [Page.tsx#L248](../../../../packages/prototypes/atelier/src/Page.tsx#L248) | 选 model/CLI | 直连旁路（跳过协作会话） | 直连模式标记 + model id（CLI 也是 model 形态） | 直接 `Run` 无 Session | 单 Provider/Model（含 trae-cli/claude-code） | ⚠️ GAP-UI-01：直连旁路需机制定义；CLI 作为 model 形态需 `CodingProvider` 适配 |
-| RunPicker tab「👥Agents」选项 [Page.tsx#L262](../../../../packages/prototypes/atelier/src/Page.tsx#L262) | 选协作流 | M1 选协作引擎写入会话 | `CollaborationTask.engine`(=flowId) | `CollaborationSession→proposing` | — | ⚠️ GAP-05：`EngineType` 枚举需与 AGENT_FLOWS 6 项对齐 |
-| Artifacts 托盘卡片 [preview.tsx#L26](../../../../packages/prototypes/atelier/src/preview.tsx#L26) | 系统驱动/点开 | M14 产物集中预览入口 | `Artifact[]`(per task) | — | — | ✅ |
-| 产物预览面板：markdown 渲染 [preview.tsx#L202](../../../../packages/prototypes/atelier/src/preview.tsx#L202) | 点产物 | M14 markdown 轻渲染 | `Artifact{type, preview_hint:markdown}` | — | — | ⚠️ GAP-UI-07：需 `preview_hint` |
-| 产物预览：web `<iframe>` + 地址栏 + Console Logs [preview.tsx#L120](../../../../packages/prototypes/atelier/src/preview.tsx#L120) | 点产物 | M14 web 产物内嵌预览 | `Artifact{uri}` + `ConsoleLog[]` | — | 沙箱运行的 web 服务 | ⚠️ Console Logs 落地需 Run 真实日志流（原型为 mock） |
-| 产物预览：image / diff [preview.tsx#L208](../../../../packages/prototypes/atelier/src/preview.tsx#L208) | 点产物 | M14 图片/文件清单预览 | `Artifact{src/paths}` | — | — | ✅ |
-| 右栏 Todo 列表 [Page.tsx#L579](../../../../packages/prototypes/atelier/src/Page.tsx#L579) | 系统驱动 | 当前任务的子步骤进度 | TaskGraph 节点状态投影（⚠️ GAP-06） | 读各 Task/Run 态 | — | ⚠️ GAP-06：TaskGraph 结构未定义 |
-| 右栏 Context（token 条 + Files/Other） [Page.tsx#L90](../../../../packages/prototypes/atelier/src/Page.tsx#L90) | 系统驱动 | 上下文窗口用量 + 触达文件 | `Run.cost.tokens` / Workspace 触达文件 | — | — | ⚠️ GAP-11（文件来自 Workspace） |
+| composer 输入 + 发送 [Page.tsx#L540](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L540) | 输入并发送 | M13 输入 → 起 CollaborationTask 或直连 Run | `CollaborationTask.question` / 直连 Run input | 见 §5.1 / §5.6 | `F-UI-01` | ⚠️ 原型未做真实发送+流式 |
+| 斜杠命令 `/` [Page.tsx#L549](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L549) | 点击 | 命令面板 → Skill/Provider 能力 | `Provider.capabilities()` | — | 框架 Skill | ⚠️ GAP-UI-03 |
+| 图片/附件 `＋` [Page.tsx#L550](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L550) | 点击 | 附件入 input_snapshot | `Run.input_snapshot` | — | Host Gateway（存储） | ⚠️ 未接 |
+| RunPicker 触发器（显示当前 model 或 flow） [Page.tsx#L201](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L201) | 系统驱动 | 显示当前 runKind 的目标 | `runKind` + `model`/`flowId` | — | — | ⚠️ GAP-UI-01 |
+| RunPicker tab「⚡直接模型」选项 [Page.tsx#L248](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L248) | 选 model/CLI | 直连旁路（跳过协作会话） | 直连模式标记 + model id（CLI 也是 model 形态） | 直接 `Run` 无 Session | 单 Provider/Model（含 trae-cli/claude-code） | ⚠️ GAP-UI-01：直连旁路需机制定义；CLI 作为 model 形态需 `CodingProvider` 适配 |
+| RunPicker tab「👥Agents」选项 [Page.tsx#L262](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L262) | 选协作流 | M1 选协作引擎写入会话 | `CollaborationTask.engine`(=flowId) | `CollaborationSession→proposing` | — | ⚠️ GAP-05：`EngineType` 枚举需与 AGENT_FLOWS 6 项对齐 |
+| Artifacts 托盘卡片 [preview.tsx#L26](../../../../packages/prototypes/desktop/applets/atelier/src/preview.tsx#L26) | 系统驱动/点开 | M14 产物集中预览入口 | `Artifact[]`(per task) | — | — | ✅ |
+| 产物预览面板：markdown 渲染 [preview.tsx#L202](../../../../packages/prototypes/desktop/applets/atelier/src/preview.tsx#L202) | 点产物 | M14 markdown 轻渲染 | `Artifact{type, preview_hint:markdown}` | — | — | ⚠️ GAP-UI-07：需 `preview_hint` |
+| 产物预览：web `<iframe>` + 地址栏 + Console Logs [preview.tsx#L120](../../../../packages/prototypes/desktop/applets/atelier/src/preview.tsx#L120) | 点产物 | M14 web 产物内嵌预览 | `Artifact{uri}` + `ConsoleLog[]` | — | 沙箱运行的 web 服务 | ⚠️ Console Logs 落地需 Run 真实日志流（原型为 mock） |
+| 产物预览：image / diff [preview.tsx#L208](../../../../packages/prototypes/desktop/applets/atelier/src/preview.tsx#L208) | 点产物 | M14 图片/文件清单预览 | `Artifact{src/paths}` | — | — | ✅ |
+| 右栏 Todo 列表 [Page.tsx#L579](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L579) | 系统驱动 | 当前任务的子步骤进度 | TaskGraph 节点状态投影（⚠️ GAP-06） | 读各 Task/Run 态 | — | ⚠️ GAP-06：TaskGraph 结构未定义 |
+| 右栏 Context（token 条 + Files/Other） [Page.tsx#L90](../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L90) | 系统驱动 | 上下文窗口用量 + 触达文件 | `Run.cost.tokens` / Workspace 触达文件 | — | — | ⚠️ GAP-11（文件来自 Workspace） |
 
 ---
 
@@ -240,7 +240,7 @@ Executor 调 Provider → Run: running→succeeded（必产 Artifact）
 
 ## 7. 与其他文档的关系
 
-- **UI 一侧真源**：可运行原型 [prototype/](../prototype/)，源码 `packages/prototypes/atelier/src/`。
+- **UI 一侧真源**：可运行原型 [prototype/](../prototype/)，源码 `packages/prototypes/desktop/applets/atelier/src/`。
 - **机制真源**：[design.md](../design.md)（§3 引擎/§4 六机制/§5 Provider·Gate·Artifact·Memory）。
 - **字段真源**：[data-model.md](../data-model.md)（§1 契约/§2 状态机/§3 完成谓词）。本文档的 §3.0.3 与 §6 给出了 UI 反推的字段补全清单，应回写到 data-model 与 [feature-matrix.md](./feature-matrix.md)。
 - **模块视角**：[functional-modules.md](./functional-modules.md)（§1.3 四种面孔、各 M 的 UI 落点）。本文档是其「UI 落点」的逐元素细化。
@@ -250,7 +250,7 @@ Executor 调 Provider → Run: running→succeeded（必产 Artifact）
 
 ## Sources
 
-- UI 一侧：`packages/prototypes/atelier/src/{Page,blocks,preview,plugins,types}.tsx/.ts`
+- UI 一侧：`packages/prototypes/desktop/applets/atelier/src/{Page,blocks,preview,plugins,types}.tsx/.ts`
 - 机制一侧：[design.md](../design.md) §3–§5
 - 字段一侧：[data-model.md](../data-model.md) §1–§3
 - 缺口对齐：[feature-matrix.md](./feature-matrix.md) §3

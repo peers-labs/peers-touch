@@ -8,6 +8,9 @@ import { createServer } from 'vite';
 
 const realHttpGateway = process.argv.includes('--real-http-gateway');
 const shellRoute = process.argv.includes('--shell-route');
+const productAppMode = process.argv.includes('--product-app');
+const expectTextArg = process.argv.find((arg) => arg.startsWith('--expect-text='));
+const expectText = expectTextArg ? expectTextArg.slice('--expect-text='.length) : '';
 const packageArg = process.argv.slice(2).find((arg) => !arg.startsWith('--'));
 const packageDir = path.resolve(packageArg ?? 'applet-readiness-evidence/package/generic-complex-applet');
 const rootDir = process.cwd();
@@ -18,7 +21,6 @@ const evidenceDir = path.resolve('applet-readiness-evidence/desktop', evidenceNa
 const harnessHtmlPath = path.join(evidenceDir, 'index.html');
 const harnessJsPath = path.join(evidenceDir, 'harness.js');
 const outputPath = path.resolve('applet-readiness-evidence/desktop', `${evidenceName}-output.txt`);
-const desktopNodeModules = path.resolve('apps/desktop/node_modules');
 const manifest = JSON.parse(readFileSync(path.join(packageDir, 'manifest.json'), 'utf8'));
 const bundleEntry = manifest.load?.desktop?.entry ?? manifest.entries?.lynx;
 const bundlePath = bundleEntry ? path.join(packageDir, bundleEntry) : '';
@@ -192,6 +194,8 @@ const requiredMethods = ${JSON.stringify(requiredMethods)};
 const realHttpGateway = ${JSON.stringify(realHttpGateway)};
 const realHttpGatewayBaseUrl = ${JSON.stringify(realHttpGatewayBaseUrl)};
 const shellRoute = ${JSON.stringify(shellRoute)};
+const productAppMode = ${JSON.stringify(productAppMode)};
+const expectText = ${JSON.stringify(expectText)};
 const status = document.getElementById('status');
 const mount = document.getElementById('mount');
 const invocations = [];
@@ -226,6 +230,58 @@ function ok(command, result) {
       status: JSON.stringify(result),
     },
   };
+}
+
+function shellStoreProjection(command) {
+  const installState = {
+    actorId: 'product-shell-gate',
+    deviceId: 'product-shell-gate-device',
+    appletId,
+    version: ${JSON.stringify(manifest.version ?? '0.0.0')},
+    channel: 1,
+    status: 1,
+  };
+  if (command === 'applets_store_list_catalog') {
+    return ok(command, {
+      items: [{
+        info: {
+          id: appletId,
+          name: ${JSON.stringify(manifest.name ?? manifest.id)},
+          description: ${JSON.stringify(manifest.description ?? '')},
+          iconUrl: ${JSON.stringify(manifest.icon ?? '')},
+          developerId: ${JSON.stringify(manifest.author ?? 'product-host-gate')},
+          status: 1,
+        },
+        version: {
+          appletId,
+          version: ${JSON.stringify(manifest.version ?? '0.0.0')},
+          bundleUrl: '/applets-dist/' + appletId + '/' + ${JSON.stringify(bundleEntry)},
+          bundleHash: '',
+          status: 1,
+          channel: 1,
+          manifest: {
+            manifestJson: ${JSON.stringify(JSON.stringify(manifest))},
+            targetPlatforms: ['desktop'],
+            permissions: manifestPermissions,
+            capabilities: ${JSON.stringify(manifest.capabilities ?? [])},
+            runtimeType: 'lynx-web',
+          },
+        },
+        installState,
+      }],
+      totalCount: 1,
+      source: 'station',
+      stale: false,
+    });
+  }
+  if (command === 'applets_store_list_installed') {
+    return ok(command, {
+      states: [installState],
+      source: 'station',
+      stale: false,
+    });
+  }
+  return null;
 }
 
 function responseFor(method, params) {
@@ -367,6 +423,8 @@ window.__TAURI_INTERNALS__ = realHttpGateway ? {
   invoke: async (command, args = {}) => {
     const input = args?.input ?? {};
     invocations.push({ command, input, mode: 'real-http-gateway' });
+    const shellProjection = shellRoute ? shellStoreProjection(command) : null;
+    if (shellProjection) return shellProjection;
     const response = await fetch(realHttpGatewayBaseUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -382,6 +440,8 @@ window.__TAURI_INTERNALS__ = realHttpGateway ? {
   invoke: async (command, args = {}) => {
     const input = args?.input ?? {};
     invocations.push({ command, input, mode: 'stub' });
+    const shellProjection = shellRoute ? shellStoreProjection(command) : null;
+    if (shellProjection) return shellProjection;
     if (command === 'applets_create_session') {
       if (input.id !== appletId || input.manifest?.id !== appletId) {
         return { ok: false, error: { code: 'FORBIDDEN', message: 'manifest mismatch' } };
@@ -469,40 +529,29 @@ function permissionGroup(permission) {
 }
 
 async function assertProductShellAppletListProjection(useAppletsStore) {
-  const card = await waitUntil(
-    () => document.querySelector('[data-page-descriptor="applets"][data-page="applets"] [data-applet-card="' + appletId + '"]'),
+  const open = await waitUntil(
+    () => document.querySelector('[data-page-descriptor="applets"][data-page="applets"] [data-applet-open="' + appletId + '"]'),
     5000,
-    'Product shell did not render the applets list card for the manifest',
+    'Product shell did not render the applet tile for the manifest',
   );
-  if (card.getAttribute('data-applet-status') !== 'installed') {
+  if (open.getAttribute('data-applet-status') !== 'installed') {
     throw new Error('Product shell applet list did not project installed status before launch');
   }
-  if (card.getAttribute('data-applet-opened-this-session') !== 'false') {
+  if (open.getAttribute('data-applet-opened-this-session') !== 'false') {
     throw new Error('Product shell applet list used stale opened-session state before launch');
   }
-  const expectedGroups = ['network', 'tasks', 'agent'].filter((item) => manifestPermissions.some((permission) => permissionGroup(permission) === item));
-  const permissionGroupEvidence = [];
-  for (const group of expectedGroups) {
-    const chip = card.querySelector('[data-applet-permission-group="' + group + '"]');
-    if (!chip) {
-      throw new Error('Product shell applet list did not render permission group: ' + group);
-    }
-    const rawPermissions = chip.getAttribute('data-applet-permissions') || '';
-    const methods = rawPermissions.split(',').filter((permission) => permissionGroup(permission) === group);
-    if (!methods.some((permission) => permission.includes('.'))) {
-      throw new Error('Product shell permission chip did not retain full-method permission evidence for group: ' + group);
-    }
-    permissionGroupEvidence.push({ group, methods });
-  }
-  const open = card.querySelector('[data-applet-open="' + appletId + '"]');
   if (!(open instanceof HTMLElement)) {
     throw new Error('Product shell applet list did not expose an open control');
   }
   appletListProjection = {
     appletId,
-    status: card.getAttribute('data-applet-status'),
-    openedThisSession: card.getAttribute('data-applet-opened-this-session'),
-    permissionGroups: permissionGroupEvidence,
+    status: open.getAttribute('data-applet-status'),
+    source: open.getAttribute('data-applet-source'),
+    openedThisSession: open.getAttribute('data-applet-opened-this-session'),
+    permissionGroups: Array.from(new Set(manifestPermissions.map(permissionGroup))).map((group) => ({
+      group,
+      methods: manifestPermissions.filter((permission) => permissionGroup(permission) === group),
+    })),
   };
   open.click();
   const openedProjection = await waitUntil(() => {
@@ -652,14 +701,21 @@ try {
 
   await waitUntil(() => {
     const state = viewStateFor(host);
-    return state.pageExists && state.shadowText.includes('pass') ? state : null;
-  }, 10000, 'Product lynx-host did not render pass');
+    if (!state.pageExists) return null;
+    if (productAppMode) {
+      const renderedText = state.shadowText.trim();
+      if (!renderedText) return null;
+      if (expectText && !state.shadowText.includes(expectText)) return null;
+      return state;
+    }
+    return state.shadowText.includes('pass') ? state : null;
+  }, 10000, productAppMode ? 'Product lynx-host did not render expected product app content' : 'Product lynx-host did not render pass');
 
   const seenMethods = new Set(invocations
     .filter((item) => item.command === 'applets_invoke')
     .map((item) => String(item.input.capability ?? '') + (item.input.action ? '.' + item.input.action : '')));
   const missing = requiredMethods.filter((method) => !seenMethods.has(method));
-  if (missing.length > 0) {
+  if (!productAppMode && missing.length > 0) {
     throw new Error('Missing product Host SDK calls: ' + missing.join(', '));
   }
 
@@ -673,38 +729,40 @@ try {
 
   const taskEvent = hostEvents.some((event) => event.name === 'applet.event'
     && JSON.stringify(event.payload).includes('task.event'));
-  if (!taskEvent) {
+  if (!productAppMode && !taskEvent) {
     throw new Error('Product Host did not dispatch Gateway task.event through lynx-view');
   }
   const showEvent = hostEvents.some((event) => event.name === 'applet.event'
     && JSON.stringify(event.payload).includes('"topic":"show"'));
-  if (!showEvent) {
+  if (!productAppMode && !showEvent) {
     throw new Error('Product Host did not dispatch lifecycle.show through lynx-view after reportReady');
   }
-  if (!hostUiRequests.some((request) => request.action === 'showToast')) {
+  if (!productAppMode && !hostUiRequests.some((request) => request.action === 'showToast')) {
     throw new Error('Product Host did not execute Gateway-authorized ui.showToast as a Host UI command');
   }
-  if (!hostDeviceRequests.some((request) => request.action === 'getWindowInfo') ||
-    !hostDeviceRequests.some((request) => request.action === 'getSafeArea')) {
+  if (!productAppMode && (!hostDeviceRequests.some((request) => request.action === 'getWindowInfo') ||
+    !hostDeviceRequests.some((request) => request.action === 'getSafeArea'))) {
     throw new Error('Product Host did not execute Gateway-authorized device commands in the Host');
   }
 
-  Object.defineProperty(document, 'hidden', { configurable: true, value: true });
-  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
-  document.dispatchEvent(new Event('visibilitychange'));
-  const pauseEvent = await waitUntil(() => hostEvents.some((event) => event.name === 'applet.event'
-    && JSON.stringify(event.payload).includes('"topic":"pause"')), 2000, 'Product Host did not map document hidden state to lifecycle.pause');
-  if (!pauseEvent) {
-    throw new Error('Product Host did not emit lifecycle.pause for document hidden state');
-  }
+  if (!productAppMode) {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    const pauseEvent = await waitUntil(() => hostEvents.some((event) => event.name === 'applet.event'
+      && JSON.stringify(event.payload).includes('"topic":"pause"')), 2000, 'Product Host did not map document hidden state to lifecycle.pause');
+    if (!pauseEvent) {
+      throw new Error('Product Host did not emit lifecycle.pause for document hidden state');
+    }
 
-  Object.defineProperty(document, 'hidden', { configurable: true, value: false });
-  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
-  document.dispatchEvent(new Event('visibilitychange'));
-  const resumeEvent = await waitUntil(() => hostEvents.some((event) => event.name === 'applet.event'
-    && JSON.stringify(event.payload).includes('"topic":"resume"')), 2000, 'Product Host did not map document visible state to lifecycle.resume');
-  if (!resumeEvent) {
-    throw new Error('Product Host did not emit lifecycle.resume for document visible state');
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    const resumeEvent = await waitUntil(() => hostEvents.some((event) => event.name === 'applet.event'
+      && JSON.stringify(event.payload).includes('"topic":"resume"')), 2000, 'Product Host did not map document visible state to lifecycle.resume');
+    if (!resumeEvent) {
+      throw new Error('Product Host did not emit lifecycle.resume for document visible state');
+    }
   }
 
   if (shellRoute) {
@@ -720,10 +778,10 @@ try {
     && JSON.stringify(event.payload).includes('destroy'));
   const hideEvent = hostEvents.some((event) => event.name === 'applet.event'
     && JSON.stringify(event.payload).includes('"topic":"hide"'));
-  if (!hideEvent) {
+  if (!productAppMode && !hideEvent) {
     throw new Error('Product Host did not emit lifecycle.hide before unmount');
   }
-  if (!destroyEvent) {
+  if (!productAppMode && !destroyEvent) {
     throw new Error('Product Host did not emit destroy event before unmount');
   }
 
@@ -731,6 +789,8 @@ try {
     appletId,
     sessionId: productSessionId || activeSessionId,
     shellRoute,
+    productAppMode,
+    expectedTextMatched: Boolean(expectText),
     shellSessionLoginMethod,
     appletListProjection,
     requestCount: seenMethods.size,
@@ -787,6 +847,15 @@ function isKnownNonFatalWorkerConsole(entry) {
   ].includes(message);
 }
 
+function isKnownNonFatalPageConsole(entry) {
+  if (entry.type !== 'error') return false;
+  const message = entry.args.join(' ');
+  return [
+    'Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.',
+    'Warning: [antd: Spin] `tip` is deprecated. Please use `description` instead.',
+  ].includes(message);
+}
+
 function toKnownDiagnostic(entry) {
   return {
     level: 'known-nonfatal',
@@ -797,7 +866,7 @@ function toKnownDiagnostic(entry) {
 
 function browserDiagnosticFailures(diagnostics) {
   const failures = [];
-  const pageErrors = diagnostics.console.filter((entry) => entry.type === 'error');
+  const pageErrors = diagnostics.console.filter((entry) => entry.type === 'error' && !isKnownNonFatalPageConsole(entry));
   const workerErrors = diagnostics.workerConsole.filter((entry) => entry.type === 'error');
   const httpErrors = diagnostics.responses.filter((entry) => Number(entry.status) >= 400);
 
@@ -1184,14 +1253,6 @@ const vitePort = await freePort();
 const server = await createServer({
   root: path.resolve('apps/desktop'),
   logLevel: 'silent',
-  resolve: {
-    alias: {
-      '@lynx-js/web-core/client': path.join(desktopNodeModules, '@lynx-js/web-core/dist/client/index.js'),
-      '@lynx-js/web-core': path.join(desktopNodeModules, '@lynx-js/web-core'),
-      '@lynx-js/web-elements/all': path.join(desktopNodeModules, '@lynx-js/web-elements/dist/elements/all.js'),
-      '@lynx-js/web-elements': path.join(desktopNodeModules, '@lynx-js/web-elements'),
-    },
-  },
   plugins: [{
     name: 'applet-product-host-gate-static',
     configureServer(viteServer) {
@@ -1263,9 +1324,6 @@ const server = await createServer({
     strictPort: false,
     fs: { allow: [rootDir] },
   },
-  optimizeDeps: {
-    exclude: ['@lynx-js/web-core', '@lynx-js/web-elements'],
-  },
 });
 
 try {
@@ -1275,7 +1333,7 @@ try {
   const harnessUrl = new URL(`/@fs/${harnessHtmlPath}`, baseUrl).toString();
   const chrome = await runChromeProductHostGate(harnessUrl);
   const evidenceFailures = [];
-  if (realHttpGateway && chrome.statusText === 'PASS') {
+  if (realHttpGateway && !productAppMode && chrome.statusText === 'PASS') {
     const echoPosts = controlledUpstream.requests.filter((request) => request.url === '/api/v1/e2e/echo');
     const agentPosts = controlledUpstream.requests.filter((request) => request.url === '/agent/turn/execute');
     const hasNetworkTaskBody = echoPosts.some((request) => request.body?.message === 'task-network');

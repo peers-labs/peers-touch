@@ -25,8 +25,8 @@ type NotePageResponse = {
   nextPageToken?: string;
 };
 
-export async function listNotes(): Promise<NotePage> {
-  const response = await requestNoteService('/v1/notes', 'GET');
+export async function listNotes(options?: { includeDeleted?: boolean }): Promise<NotePage> {
+  const response = await requestNoteService('/v1/notes', 'GET', undefined, options?.includeDeleted ? { include_deleted: true } : undefined);
   return normalizePage(response.body as NotePageResponse);
 }
 
@@ -40,8 +40,18 @@ export async function createNote(title: string, content: string): Promise<Note> 
   return normalizeItem(response.body as NoteItemResponse);
 }
 
+export async function updateNote(noteId: string, patch: { title?: string; content?: string }): Promise<Note> {
+  const response = await requestNoteService(`/v1/notes/${noteId}`, 'PATCH', patch);
+  return normalizeItem(response.body as NoteItemResponse);
+}
+
 export async function deleteNote(noteId: string): Promise<void> {
   await requestNoteService(`/v1/notes/${noteId}`, 'DELETE');
+}
+
+export async function restoreNote(noteId: string): Promise<Note> {
+  const response = await requestNoteService(`/v1/notes/${noteId}:restore`, 'POST');
+  return normalizeItem(response.body as NoteItemResponse);
 }
 
 function normalizePage(response: NotePageResponse): NotePage {
