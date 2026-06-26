@@ -6,13 +6,13 @@
 > **落地目标**: Desktop 好友聊天内的一对一语音 / 视频通话（`apps/desktop`，对应 `CallSurface`）；**原型本身只是 React web 展示**，不碰真实 WebRTC / 信令 / store / tauri
 > **总账状态**: confirmed（见 [原型总账](../../prototypes/README.md)）
 > **Owner**: Peers-Touch Realtime Team
-> **Module**: `packages/prototypes/call/`
+> **Module**: `packages/prototypes/desktop/features/call/`
 
 ---
 
 ## 原型在哪
 
-源码在 `packages/prototypes/call/`（统一原型工作区；独立 web 工程）。本目录只放入口说明，不复制源码（架构文档标准 §5.8）。
+源码在 `packages/prototypes/desktop/features/call/`（统一原型工作区；独立 web 工程）。本目录只放入口说明，不复制源码（架构文档标准 §5.8）。
 
 这个原型展示 **Desktop 一对一语音 / 视频通话长什么样**：在好友聊天界面之上，演示通话从呼出、来电、接通、弱网重连到结束 / 失败的完整生命周期 UI / UX。它不接真实 WebRTC / 信令 / TURN，纯前端 + mock 驱动，只为对齐"终态产品的样子"。
 
@@ -24,7 +24,7 @@
 ## 怎么跑
 
 ```bash
-cd packages/prototypes/call
+cd packages/prototypes/desktop/features/call
 pnpm install        # 首次，monorepo 根装也可
 pnpm dev            # Vite，浏览器打开 localhost:3106
 ```

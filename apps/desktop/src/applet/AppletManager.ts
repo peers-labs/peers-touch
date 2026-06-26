@@ -133,6 +133,10 @@ class AppletManager {
     return Array.from(this.applets.values())
   }
 
+  public registerApplet(appletInfo: AppletInfo): void {
+    this.applets.set(appletInfo.id, appletInfo)
+  }
+
   /**
    * 加载Applet
    */

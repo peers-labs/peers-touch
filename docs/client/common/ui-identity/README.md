@@ -53,6 +53,7 @@ Peers Touch uses **Quiet Protocol Minimalism**:
 5. [interaction.md](./interaction.md) — state, feedback, loading, failure, and optimistic interaction rules.
 6. [accessibility.md](./accessibility.md) — focus, keyboard, contrast, hover, and reduced-motion requirements.
 7. [review-checklist.md](./review-checklist.md) — UI review checklist for humans and AI agents.
+8. [new-identity.md](./new-identity.md) — 全新的 UI Identity 总纲草案，用于解决“统一但平、约束强生成弱、模块自由度模型不清晰”的问题。
 
 ## 5. Module Contracts
 

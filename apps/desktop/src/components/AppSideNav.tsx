@@ -62,7 +62,11 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
   const { token } = theme.useToken();
   const { agents, selectedAgent, setSelectedAgent } = useAgentStore();
   const { newSession, togglePortal } = useChatStore();
-  const installedAppletIds = useAppletsStore((state) => state.installedAppletIds);
+  const installedApplets = useAppletsStore((state) => state.applets);
+  const installedAppletById = useMemo(
+    () => new Map(installedApplets.map((info) => [info.manifest.id, info.manifest])),
+    [installedApplets],
+  );
 
   const [sidebarExpand, setSidebarExpand] = useState(true);
   const [agentDrawerOpen, setAgentDrawerOpen] = useState(false);
@@ -269,8 +273,8 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
                   title={m.id === 'applets' ? t('layout.nav.applets') : m.sidebarEntry?.title || m.name}
                 />
               ))}
-            {appletPins.pinnedApplets.filter((appletId) => installedAppletIds.includes(appletId)).map((appletId) => {
-              const info = appletManager.getAppletInfo(appletId);
+            {appletPins.pinnedApplets.filter((appletId) => installedAppletById.has(appletId)).map((appletId) => {
+              const info = installedAppletById.get(appletId) ?? appletManager.getAppletInfo(appletId);
               if (!info) return null;
               return (
                 <ActionIcon

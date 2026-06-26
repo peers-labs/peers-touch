@@ -34,7 +34,7 @@ description: "原型设计规范与工作流。当用户要求创建、修改、
 |------|------|
 | 框架 | React + Vite |
 | UI 组件 | `@lobehub/ui`(LobeUI) 优先 → antd 兜底 + `react-layout-kit` + `lucide-react` + CSS |
-| 运行 | `pnpm dev`（Vite），浏览器访问 `localhost`；纯前端 |
+| 运行 | 统一使用 `make run-prototype desktop/mobile/dashboard`；`pnpm dev` / Vite 只作为 Makefile 内部实现细节 |
 | 运行时 | **不碰** Lynx / applet 容器 / SDK。web 原型可自由用 DOM、`iframe`、`localStorage` 等浏览器能力 |
 | 基础件 | **禁止重复造**——复用项目已有桌面组件体系（LobeUI / antd），不得每个需求另搭基础库 |
 
@@ -44,13 +44,32 @@ description: "原型设计规范与工作流。当用户要求创建、修改、
 
 ### 4.1 源码位置
 
-所有原型工程集中放在：
+所有原型工程集中放在 `packages/prototypes/` 下，并且物理目录必须跟随一级站点分层：
 
-```
-packages/prototypes/<id>/
+```text
+packages/prototypes/
+├── portal/
+├── desktop/
+│   ├── shell/
+│   ├── applets/<applet-id>/
+│   └── features/<feature-id>/
+├── mobile/
+│   └── <prototype-id>/
+└── dashboard/
+    └── <prototype-id>/
 ```
 
 纳入 pnpm workspace，统一工具链，基础件可跨原型复用。
+
+原型登记和 Portal 展示必须按一级站点归属组织：
+
+```text
+desktop            # Desktop App / desktop-web / applet 容器内体验
+mobile             # Mobile 端体验
+dashboard          # Station Dashboard / 管理台 / 运维台
+```
+
+注意：`atelier` 这类 applet、`call` / `social-chat` 这类局部能力原型，不是一级站点，必须挂在所属站点（例如 `desktop/applets/atelier`、`desktop/features/call`）下。
 
 ### 4.2 入口文档
 
@@ -73,7 +92,7 @@ docs/architecture/<module>/prototype/README.md
 
 ## 原型在哪
 
-`packages/prototypes/<id>/`（统一原型工作区；独立 web 工程）
+`packages/prototypes/<site>/<area>/<id>/`（统一原型工作区；独立 web 工程）
 
 ## 落地目标
 
@@ -81,9 +100,7 @@ docs/architecture/<module>/prototype/README.md
 
 ## 怎么跑
 
-cd packages/prototypes/<id>
-pnpm install
-pnpm dev          # Vite，浏览器打开 localhost
+make run-prototype desktop   # 或 mobile / dashboard
 
 ## 对应设计
 
@@ -106,7 +123,7 @@ pnpm dev          # Vite，浏览器打开 localhost
 
 ### 5.1 登记表字段
 
-| 模块 | 原型路径 | 落地目标 | 对应设计版本 | 状态 | 入口文档 |
+| 站点 | 原型 ID | 归属层级 | 原型路径 | 落地目标 | 对应设计版本 | 状态 | 入口文档 |
 
 ### 5.2 状态流转与确认门
 
@@ -127,6 +144,15 @@ drafting → pending-review → confirmed → landed
 ### 5.3 版本管理
 
 原型"当时版本快照"由 git 仓库本身承载（与当前开发分支保持一致），不堆 tag、不复制 `v1/ v2/` 目录副本。总账只记当前对应的设计版本与状态。
+
+### 5.4 Worktree / Branch 预览
+
+Prototype Portal 支持 worktree / branch 切换：
+
+- 当前 worktree 由 `make run-prototype desktop/mobile/dashboard` 自动注入分支名和 worktree 路径。
+- 其他 worktree 必须自己启动原型服务，再通过 `VITE_PROTOTYPE_WORKTREES` JSON registry 注入 Portal。
+- 跨 worktree 只能用 iframe 预览对应 URL，禁止直接 import 其他 worktree 的源码。
+- registry 的站点 key 只能是 `desktop` / `mobile` / `dashboard`。
 
 ---
 
@@ -149,14 +175,16 @@ drafting → pending-review → confirmed → landed
 
 当你帮用户创建或修改原型时，完成后检查：
 
-- [ ] 源码在 `packages/prototypes/<id>/`
-- [ ] `pnpm dev` 能跑，浏览器能打开
+- [ ] 源码在 `packages/prototypes/<site>/<area>/<id>/`，物理目录没有把 applet / feature 放成一级站点
+- [ ] `make run-prototype desktop/mobile/dashboard` 能跑，浏览器能打开
 - [ ] `docs/architecture/<module>/prototype/README.md` 已创建/更新
 - [ ] `docs/architecture/prototypes/README.md` 总账已登记
 - [ ] 原型区域能对回设计文档编号
 - [ ] 使用 LobeUI / antd / lucide-react，未引入额外基础组件库
 - [ ] 未碰 Lynx / applet SDK / 非 web 运行时
 - [ ] mock 数据驱动，未依赖后端接口
+- [ ] 原型登记在正确一级站点下（`desktop` / `mobile` / `dashboard`），没有把 applet 或局部能力登记成一级模块
+- [ ] 跨 worktree / branch 预览使用 registry + iframe，没有直接引用其他 worktree 源码
 
 ---
 

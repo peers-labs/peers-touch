@@ -132,7 +132,20 @@ function main() {
   }
 
   const pageSource = readFileSync(path.resolve('apps/applets/note/frontend/src/presentation/pages/NoteAppletPage.tsx'), 'utf8');
-  for (const requiredKey of ['note.title', 'note.action.createSample', 'note.action.searchSample', 'note.action.delete']) {
+  const requiredPageKeys = [
+    'note.title',
+    'note.action.create',
+    'note.action.search',
+    'note.action.edit',
+    'note.action.saveChanges',
+    'note.action.restore',
+    'note.action.delete',
+    'note.editor.createTitle',
+    'note.editor.editTitle',
+    'note.editor.draftLoaded',
+    'note.section.deleted',
+  ];
+  for (const requiredKey of requiredPageKeys) {
     if (!pageSource.includes(`t('${requiredKey}')`) && !pageSource.includes(`t("${requiredKey}")`)) {
       errors.push(`NoteAppletPage must render locale key ${requiredKey}`);
     }

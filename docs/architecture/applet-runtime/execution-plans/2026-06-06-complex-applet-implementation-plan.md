@@ -1,9 +1,13 @@
 # Complex Applet Implementation Plan
 
-> **Status**: draft
+> **Status**: superseded
 > **Date**: 2026-06-06
 > **Owner**: Architecture Team
 > **Scope**: Task-level plan for reaching `L3 COMPLEX_DESKTOP_READY`
+> **Superseded by**: [`2026-06-23-applet-capability-completion-plan.md`](./2026-06-23-applet-capability-completion-plan.md)
+
+> This document is archived as historical context. Do not use it as the active
+> execution source for new applet capability work.
 
 ---
 
@@ -484,4 +488,3 @@ Forbidden:
 - No Host-private API exposed to applet.
 - No raw token/base URL/provider key/system log/audit writer exposed.
 ```
-

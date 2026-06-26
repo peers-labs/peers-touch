@@ -17,6 +17,7 @@ import path from 'node:path';
 
 const rootDir = process.cwd();
 const skipBuild = process.argv.includes('--skip-build');
+const productAppMode = process.argv.includes('--product-app');
 const packageArg = process.argv.slice(2).find((arg) => !arg.startsWith('--'));
 const usesDefaultFixture = !packageArg;
 const packageDir = path.resolve(packageArg ?? 'applet-readiness-evidence/package/generic-complex-applet');
@@ -162,7 +163,52 @@ function writeSse(res) {
   res.write(': product-window-certification\n\n');
 }
 
-function startControlledUpstream() {
+function productAppletInstallState(manifest) {
+  return {
+    actorId: 'applet-product-window-e2e-actor',
+    deviceId: 'desktop-default',
+    appletId: manifest.id,
+    version: manifest.version ?? '0.0.0',
+    channel: 1,
+    status: 1,
+  };
+}
+
+function productAppletCatalog(manifest) {
+  const installState = productAppletInstallState(manifest);
+  const entry = manifest.load?.desktop?.entry ?? manifest.entries?.lynx ?? 'main.lynx.bundle';
+  return {
+    items: [{
+      info: {
+        id: manifest.id,
+        name: manifest.name ?? manifest.id,
+        description: manifest.description ?? '',
+        iconUrl: manifest.icon ?? '',
+        developerId: manifest.author ?? 'product-window-gate',
+        status: 1,
+      },
+      version: {
+        appletId: manifest.id,
+        version: manifest.version ?? '0.0.0',
+        bundleUrl: `/applets-dist/${manifest.id}/${entry}`,
+        bundleHash: '',
+        status: 1,
+        channel: 1,
+        manifest: {
+          manifestJson: JSON.stringify(manifest),
+          targetPlatforms: ['desktop'],
+          permissions: manifest.permissions ?? [],
+          capabilities: manifest.capabilities ?? [],
+          runtimeType: 'lynx-web',
+        },
+      },
+      installState,
+    }],
+    totalCount: 1,
+  };
+}
+
+function startControlledUpstream(manifest) {
   const requests = [];
   const server = createServer(async (req, res) => {
     requests.push({ method: req.method, url: req.url });
@@ -210,6 +256,14 @@ function startControlledUpstream() {
       writeProto(res, peersResponseProto(actorProfileProto()));
       return;
     }
+    if (parsed.pathname === '/api/v1/applets/catalog') {
+      writeJson(res, 200, productAppletCatalog(manifest));
+      return;
+    }
+    if (parsed.pathname === '/api/v1/applets/installed') {
+      writeJson(res, 200, { states: [productAppletInstallState(manifest)] });
+      return;
+    }
     if (req.url === '/api/v1/e2e') {
       res.writeHead(200, { 'content-type': 'application/json', 'x-applet-e2e': 'product-window-network' });
       res.end(JSON.stringify({ message: 'product-window-network-ok' }));
@@ -254,6 +308,9 @@ function startControlledUpstream() {
 
 function stagePackage(manifest) {
   const targetDir = path.join(sourceAppletRoot, manifest.id);
+  const distTargetDir = path.join(distAppletRoot, manifest.id);
+  const packageSourceDir = path.resolve(packageDir);
+  const targetIsPackageSource = packageSourceDir === path.resolve(targetDir);
   const backupRoot = path.resolve('.local/applet-product-window-gate', `backup-${process.pid}-${Date.now()}`);
   const backupDir = path.join(backupRoot, manifest.id);
   const distBackupDir = path.join(backupRoot, 'dist-applets-dist');
@@ -270,8 +327,9 @@ function stagePackage(manifest) {
     cpSync(distAppletRoot, distBackupDir, { recursive: true, dereference: true, preserveTimestamps: true });
   }
 
+  const stagedSourceDir = targetIsPackageSource && hadTarget ? backupDir : packageSourceDir;
   rmSync(targetDir, { recursive: true, force: true });
-  cpSync(packageDir, targetDir, {
+  cpSync(stagedSourceDir, targetDir, {
     recursive: true,
     dereference: true,
     filter: (source) => !source.split(path.sep).includes('node_modules'),
@@ -287,6 +345,25 @@ function stagePackage(manifest) {
     manifest,
   ];
   writeFileSync(sourceIndexPath, `${JSON.stringify(index, null, 2)}\n`);
+  if (hadDistAppletRoot) {
+    rmSync(distTargetDir, { recursive: true, force: true });
+    cpSync(stagedSourceDir, distTargetDir, {
+      recursive: true,
+      dereference: true,
+      filter: (source) => !source.split(path.sep).includes('node_modules'),
+    });
+    const distIndexPath = path.join(distAppletRoot, 'index.json');
+    const distIndex = existsSync(distIndexPath)
+      ? readJson(distIndexPath)
+      : { version: 1, generatedAt: new Date(0).toISOString(), applets: [] };
+    distIndex.version = 1;
+    distIndex.generatedAt = new Date().toISOString();
+    distIndex.applets = [
+      ...(Array.isArray(distIndex.applets) ? distIndex.applets.filter((item) => item.id !== manifest.id) : []),
+      manifest,
+    ];
+    writeFileSync(distIndexPath, `${JSON.stringify(distIndex, null, 2)}\n`);
+  }
 
   return () => {
     if (originalIndex === null) {
@@ -372,7 +449,9 @@ try {
   assert.equal(typeof manifest.id, 'string', 'certification package manifest.id must be a string');
   assert.ok(manifest.id.trim(), 'certification package manifest.id must be non-empty');
   assert.equal(manifest.load?.desktop?.type, 'lynx-web', 'certification package must declare Desktop lynx-web load config');
-  assert.ok(manifest.permissions?.includes('telemetry.track'), 'certification package must be able to write readiness telemetry');
+  if (!productAppMode) {
+    assert.ok(manifest.permissions?.includes('telemetry.track'), 'certification package must be able to write readiness telemetry');
+  }
   const appShellSource = readFileSync(appShellSourcePath, 'utf8');
   assert.ok(!appShellSource.includes('AppletReadinessProbeView'), 'packaged product-window gate must not depend on AppletReadinessProbeView');
   assert.ok(
@@ -385,9 +464,19 @@ try {
   mkdirSync(isolatedStorageRoot, { recursive: true });
 
   if (!skipBuild) {
-    restore = stagePackage(manifest);
     run('pnpm', ['--filter', '@peers-touch/app-desktop', 'run', 'build']);
-    run('pnpm', ['--filter', '@peers-touch/app-desktop', 'run', 'tauri:build'], {
+    restore = stagePackage(manifest);
+    run('pnpm', [
+      '--filter',
+      '@peers-touch/app-desktop',
+      'exec',
+      'tauri',
+      'build',
+      '--bundles',
+      'app',
+      '--config',
+      JSON.stringify({ build: { beforeBuildCommand: 'true' } }),
+    ], {
       env: { CI: 'false', CARGO_TARGET_DIR: isolatedCargoTargetDir },
     });
     restore();
@@ -399,13 +488,14 @@ try {
   const executablePath = findMacExecutable(appPath);
   assert.ok(executablePath, 'macOS .app executable is missing');
 
-  controlledUpstream = await startControlledUpstream();
+  controlledUpstream = await startControlledUpstream(manifest);
   child = spawn(executablePath, [], {
     cwd: rootDir,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
       PEERS_APPLET_PRODUCT_WINDOW_E2E: '1',
+      PEERS_APPLET_PRODUCT_WINDOW_E2E_PRODUCT_APP: productAppMode ? '1' : '0',
       PEERS_APPLET_PRODUCT_WINDOW_E2E_APPLET_ID: manifest.id,
       PEERS_APPLET_PRODUCT_WINDOW_E2E_EVIDENCE: windowEvidencePath,
       PEERS_APPLET_PRODUCT_WINDOW_E2E_PROVIDER_BASE_URL: controlledUpstream.baseUrl,
@@ -436,15 +526,29 @@ try {
     'Gateway evidence did not report product-window certification launch mode',
   );
   assert.equal(evidence?.productShell, true, 'Gateway evidence did not report productShell=true');
-  assert.equal(
-    evidence?.event,
-    'applet.readiness.flow.completed',
-    'Gateway readiness telemetry evidence did not report the completion event',
-  );
+  if (productAppMode) {
+    assert.equal(
+      evidence?.event,
+      'applet.product.rendered',
+      'Gateway product evidence did not report applet.product.rendered',
+    );
+    assert.ok(
+      typeof evidence?.readySource === 'string' && evidence.readySource.length > 0,
+      'Gateway product evidence did not report readySource',
+    );
+  } else {
+    assert.equal(
+      evidence?.event,
+      'applet.readiness.flow.completed',
+      'Gateway readiness telemetry evidence did not report the completion event',
+    );
+  }
 
   const hitUrls = new Set(controlledUpstream.requests.map((request) => request.url));
-  for (const requiredUrl of requiredUpstreamUrls) {
-    assert.ok(hitUrls.has(requiredUrl), `controlled upstream did not receive ${requiredUrl}`);
+  if (!productAppMode) {
+    for (const requiredUrl of requiredUpstreamUrls) {
+      assert.ok(hitUrls.has(requiredUrl), `controlled upstream did not receive ${requiredUrl}`);
+    }
   }
 
   const output = [
@@ -455,6 +559,7 @@ try {
     `Controlled upstream: ${controlledUpstream.baseUrl}`,
     `Isolated storage root: ${isolatedStorageRoot}`,
     `Isolated profile: ${isolatedProfile}`,
+    `Product app mode: ${productAppMode ? 'enabled' : 'disabled'}`,
     `Required upstream URLs: ${JSON.stringify(requiredUpstreamUrls)}`,
     `Product shell evidence: ${JSON.stringify(evidence)}`,
     `Controlled upstream requests: ${JSON.stringify(controlledUpstream.requests)}`,

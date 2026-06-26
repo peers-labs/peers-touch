@@ -197,7 +197,6 @@ describe('api friend crypto bridge', () => {
     })
   })
 })
-
 describe('api group sender-key bridge', () => {
   beforeEach(() => {
     vi.mocked(invoke).mockResolvedValue({

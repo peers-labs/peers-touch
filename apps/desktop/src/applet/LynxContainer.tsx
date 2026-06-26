@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Card, Collapse, Result, Spin, theme } from 'antd'
 import { RefreshCw, RotateCcw } from 'lucide-react'
@@ -11,7 +11,7 @@ interface LynxContainerProps {
   appletId: string
   width?: number | string
   height?: number | string
-  onLoad?: () => void
+  onLoad?: (readySource: string) => void
   onError?: (error: Error) => void
   onNavigationRequest?: (request: AppletHostNavigationRequest) => void
   onUiRequest?: (request: AppletHostUiRequest) => unknown | Promise<unknown>
@@ -20,6 +20,7 @@ interface LynxContainerProps {
 }
 
 const APPLET_READY_TIMEOUT_MS = 8000
+const APPLET_HOST_RENDER_FALLBACK_MS = 2500
 
 /**
  * High-level container that loads an applet by ID and renders it via <lynx-host>.
@@ -45,7 +46,14 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
   const [appletInfo, setAppletInfo] = useState<AppletInfo | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
+  const loadNotifiedRef = useRef(false)
   const appletManager = AppletManager.getInstance()
+
+  const notifyLoaded = useCallback((readySource: string) => {
+    if (loadNotifiedRef.current) return
+    loadNotifiedRef.current = true
+    onLoad?.(readySource)
+  }, [onLoad])
 
   useEffect(() => {
     const load = async () => {
@@ -54,6 +62,7 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
         setReady(false)
         setTimedOut(false)
         setError(null)
+        loadNotifiedRef.current = false
 
         const info = appletManager.getAppletInfo(appletId)
         if (!info) {
@@ -85,6 +94,18 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
       setSessionId(null)
     }
   }, [appletId, appletManager, onError, retryKey, t])
+
+  useEffect(() => {
+    if (loading || error || ready || !sessionId) return undefined
+
+    const timer = window.setTimeout(() => {
+      setReady(true)
+      setTimedOut(false)
+      notifyLoaded('host-render-fallback')
+    }, APPLET_HOST_RENDER_FALLBACK_MS)
+
+    return () => window.clearTimeout(timer)
+  }, [error, loading, notifyLoaded, ready, sessionId])
 
   useEffect(() => {
     if (loading || error || ready || !sessionId) return undefined
@@ -193,7 +214,7 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
         onReady={() => {
           setReady(true)
           setTimedOut(false)
-          onLoad?.()
+          notifyLoaded('lifecycle.reportReady')
         }}
         onError={(hostError) => {
           setError(hostError)
