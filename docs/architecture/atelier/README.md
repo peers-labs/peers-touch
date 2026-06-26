@@ -63,6 +63,7 @@ Atelier 最初是为 peers-touch 自我增强而设计：接入 Trae、Cursor、
 | [execution-plans/roadmap.md](./execution-plans/roadmap.md) | **积木式落地路线**：每块积木「搭完什么样、怎么算搭完」+ 阶段检查点 |
 | [execution-plans/feature-matrix.md](./execution-plans/feature-matrix.md) | **功能点对齐矩阵**：48 个功能点 ↔ 三份文档逐一对齐 + 缺口清单 |
 | [execution-plans/ui-implementation-mapping.md](./execution-plans/ui-implementation-mapping.md) | **UI/UX ↔ 底层实现映射**：从可运行原型每个控件反推到机制 / 数据契约 / 状态机 / Provider，逐元素映射表 + 关键交互时序 + UI 暴露的新缺口（GAP-UI） |
+| [execution-plans/multi-engine-feasibility.md](./execution-plans/multi-engine-feasibility.md) | **多引擎可落地性论证**：把每个引擎机制锚定到 Station 真实 Go 代码（turn_service / delegation_service），逐条标清复用 / 缺口 / 第一批范围；诚实区分原型能证明与证明不了的 |
 
 ---
 

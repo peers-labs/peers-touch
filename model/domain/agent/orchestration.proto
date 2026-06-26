@@ -1,0 +1,264 @@
+syntax = "proto3";
+
+package peers_touch.model.agent.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
+
+enum CollaborationEngineType {
+  COLLABORATION_ENGINE_TYPE_UNSPECIFIED = 0;
+  COLLABORATION_ENGINE_TYPE_EXPERT_HIERARCHY = 1;
+  COLLABORATION_ENGINE_TYPE_ROUNDTABLE = 2;
+  COLLABORATION_ENGINE_TYPE_DEBATE_JUDGE = 3;
+  COLLABORATION_ENGINE_TYPE_SWARM = 4;
+  COLLABORATION_ENGINE_TYPE_HIERARCHY = 5;
+  COLLABORATION_ENGINE_TYPE_EXPERT_MESH = 6;
+}
+
+enum CollaborationTaskStatus {
+  COLLABORATION_TASK_STATUS_UNSPECIFIED = 0;
+  COLLABORATION_TASK_STATUS_PENDING = 1;
+  COLLABORATION_TASK_STATUS_RUNNING = 2;
+  COLLABORATION_TASK_STATUS_COMPLETED = 3;
+  COLLABORATION_TASK_STATUS_FAILED = 4;
+  COLLABORATION_TASK_STATUS_PAUSED = 5;
+  COLLABORATION_TASK_STATUS_CANCELLED = 6;
+}
+
+enum TaskNodeStatus {
+  TASK_NODE_STATUS_UNSPECIFIED = 0;
+  TASK_NODE_STATUS_PENDING = 1;
+  TASK_NODE_STATUS_RUNNING = 2;
+  TASK_NODE_STATUS_COMPLETED = 3;
+  TASK_NODE_STATUS_FAILED = 4;
+  TASK_NODE_STATUS_SKIPPED = 5;
+}
+
+enum VoteType {
+  VOTE_TYPE_UNSPECIFIED = 0;
+  VOTE_TYPE_AGREE = 1;
+  VOTE_TYPE_DISAGREE = 2;
+  VOTE_TYPE_ABSTAIN = 3;
+}
+
+enum AcceptanceLevel {
+  ACCEPTANCE_LEVEL_UNSPECIFIED = 0;
+  ACCEPTANCE_LEVEL_L0 = 1;
+  ACCEPTANCE_LEVEL_L1 = 2;
+  ACCEPTANCE_LEVEL_L2 = 3;
+}
+
+enum AcceptanceVerdict {
+  ACCEPTANCE_VERDICT_UNSPECIFIED = 0;
+  ACCEPTANCE_VERDICT_ACCEPTED = 1;
+  ACCEPTANCE_VERDICT_REJECTED = 2;
+  ACCEPTANCE_VERDICT_PENDING = 3;
+}
+
+enum CircuitBreakerState {
+  CIRCUIT_BREAKER_STATE_UNSPECIFIED = 0;
+  CIRCUIT_BREAKER_STATE_CLOSED = 1;
+  CIRCUIT_BREAKER_STATE_OPEN = 2;
+  CIRCUIT_BREAKER_STATE_HALF_OPEN = 3;
+}
+
+message CollaborationTask {
+  string task_id = 1;
+  string title = 2;
+  string description = 3;
+  CollaborationEngineType engine_type = 4;
+  CollaborationTaskStatus status = 5;
+  string goal_owner_id = 6;
+  string workspace_id = 7;
+  double budget_tokens = 8;
+  double budget_money = 9;
+  int64 budget_time_ms = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp started_at = 12;
+  google.protobuf.Timestamp ended_at = 13;
+  map<string, string> meta = 14;
+}
+
+message TaskNode {
+  string node_id = 1;
+  string task_id = 2;
+  string parent_node_id = 3;
+  string agent_id = 4;
+  string role = 5;
+  string description = 6;
+  TaskNodeStatus status = 7;
+  repeated string prerequisite_node_ids = 8;
+  string result_summary = 9;
+  google.protobuf.Timestamp started_at = 10;
+  google.protobuf.Timestamp ended_at = 11;
+}
+
+message Vote {
+  string vote_id = 1;
+  string task_id = 2;
+  string node_id = 3;
+  string voter_id = 4;
+  VoteType vote_type = 5;
+  string evidence_ref = 6;
+  string comment = 7;
+  google.protobuf.Timestamp voted_at = 8;
+}
+
+message EvidenceRef {
+  string evidence_id = 1;
+  string type = 2;
+  string uri = 3;
+  string summary = 4;
+}
+
+message AcceptanceCriteria {
+  string criteria_id = 1;
+  string task_id = 2;
+  AcceptanceLevel level = 3;
+  string predicate = 4;
+  string expected_value = 5;
+}
+
+message AcceptanceVerdictResult {
+  string verdict_id = 1;
+  string task_id = 2;
+  AcceptanceLevel level = 3;
+  AcceptanceVerdict verdict = 4;
+  string evidence_ref = 5;
+  string judge_id = 6;
+  google.protobuf.Timestamp decided_at = 7;
+}
+
+message Budget {
+  string budget_id = 1;
+  string task_id = 2;
+  double allocated_tokens = 3;
+  double used_tokens = 4;
+  double allocated_money = 5;
+  double used_money = 6;
+  int64 allocated_time_ms = 7;
+  int64 used_time_ms = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+message CircuitBreakerStatus {
+  string circuit_id = 1;
+  CircuitBreakerState state = 2;
+  int32 failure_count = 3;
+  int32 consecutive_failures = 4;
+  google.protobuf.Timestamp last_failure_at = 5;
+  google.protobuf.Timestamp last_reset_at = 6;
+}
+
+message CreateCollaborationTaskRequest {
+  string title = 1;
+  string description = 2;
+  CollaborationEngineType engine_type = 3;
+  string goal_owner_id = 4;
+  optional string workspace_id = 5;
+  double budget_tokens = 6;
+  double budget_money = 7;
+  int64 budget_time_ms = 8;
+  map<string, string> meta = 9;
+}
+
+message CreateCollaborationTaskResponse {
+  CollaborationTask task = 1;
+}
+
+message GetCollaborationTaskRequest {
+  string task_id = 1;
+}
+
+message GetCollaborationTaskResponse {
+  CollaborationTask task = 1;
+  repeated TaskNode nodes = 2;
+}
+
+message ListCollaborationTasksRequest {
+  string owner_id = 1;
+  CollaborationTaskStatus status = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+
+message ListCollaborationTasksResponse {
+  repeated CollaborationTask tasks = 1;
+  int32 total = 2;
+}
+
+message UpdateCollaborationTaskRequest {
+  string task_id = 1;
+  optional string title = 2;
+  optional string description = 3;
+  optional CollaborationTaskStatus status = 4;
+  map<string, string> meta = 5;
+}
+
+message UpdateCollaborationTaskResponse {
+  CollaborationTask task = 1;
+}
+
+message DeleteCollaborationTaskRequest {
+  string task_id = 1;
+}
+
+message DeleteCollaborationTaskResponse {
+  bool success = 1;
+}
+
+message SubmitVoteRequest {
+  string task_id = 1;
+  string node_id = 2;
+  VoteType vote_type = 3;
+  optional string evidence_ref = 4;
+  optional string comment = 5;
+}
+
+message SubmitVoteResponse {
+  Vote vote = 1;
+}
+
+message ListVotesRequest {
+  string task_id = 1;
+  optional string node_id = 2;
+}
+
+message ListVotesResponse {
+  repeated Vote votes = 1;
+}
+
+message GetAcceptanceVerdictRequest {
+  string task_id = 1;
+}
+
+message GetAcceptanceVerdictResponse {
+  AcceptanceVerdictResult verdict = 1;
+}
+
+message SubmitAcceptanceVerdictRequest {
+  string task_id = 1;
+  AcceptanceVerdict verdict = 2;
+  string evidence_ref = 3;
+}
+
+message SubmitAcceptanceVerdictResponse {
+  AcceptanceVerdictResult verdict = 1;
+}
+
+message GetBudgetRequest {
+  string task_id = 1;
+}
+
+message GetBudgetResponse {
+  Budget budget = 1;
+}
+
+message ResumeTaskRequest {
+  string task_id = 1;
+}
+
+message ResumeTaskResponse {
+  CollaborationTask task = 1;
+}
