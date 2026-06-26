@@ -6,6 +6,15 @@ import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
 
+enum MemoryLayer {
+  MEMORY_LAYER_UNSPECIFIED = 0;
+  MEMORY_LAYER_IDENTITY = 1;
+  MEMORY_LAYER_PREFERENCE = 2;
+  MEMORY_LAYER_CONTEXT = 3;
+  MEMORY_LAYER_EXPERIENCE = 4;
+  MEMORY_LAYER_ACTIVITY = 5;
+}
+
 message MemoryItem {
   string memory_id = 1;
   string agent_id = 2;
@@ -14,7 +23,7 @@ message MemoryItem {
   string source_turn_id = 5;
   google.protobuf.Timestamp created_at = 6;
   google.protobuf.Timestamp updated_at = 7;
-  string layer = 8;
+  MemoryLayer layer = 8;
   string session_id = 9;
   string source = 10;
   string summary = 11;
@@ -39,7 +48,7 @@ message MemorySnapshot {
 message ListMemoriesRequest {
   string agent_id = 1;
   string target = 2;
-  string layer = 3;
+  MemoryLayer layer = 3;
   int32 page = 4;
   int32 page_size = 5;
   string order_by = 6;
@@ -68,7 +77,7 @@ message WriteMemoryRequest {
   string content = 4;
   string old_content = 5;
   string source_turn_id = 6;
-  string layer = 7;
+  MemoryLayer layer = 7;
   string session_id = 8;
   string summary = 9;
 }
@@ -98,7 +107,7 @@ message ScoredMemory {
 
 message SearchMemoriesRequest {
   string query = 1;
-  repeated string layers = 2;
+  repeated MemoryLayer layers = 2;
   int32 limit = 3;
   string agent_id = 4;
   string since = 5;
@@ -141,7 +150,7 @@ message MemoryEvent {
   string memory_id = 3;
   string session_id = 4;
   string agent_id = 5;
-  string layer = 6;
+  MemoryLayer layer = 6;
   string detail_json = 7;
   int64 latency_ms = 8;
   google.protobuf.Timestamp timestamp = 9;
