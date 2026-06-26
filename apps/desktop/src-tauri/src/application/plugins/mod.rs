@@ -1,6 +1,6 @@
+use crate::application::security::{is_secret_like_key, redact_json_value};
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
-use crate::application::security::{is_secret_like_key, redact_json_value};
 use crate::infrastructure::storage::{self, StorageKind};
 use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
@@ -343,7 +343,9 @@ fn execute_http_plugin_runtime(
         .map_err(|error| format!("plugin HTTP connector request failed: {error}"))?;
     let status = response.status().as_u16();
     if !response.status().is_success() {
-        return Err(format!("plugin HTTP connector returned non-success status: {status}"));
+        return Err(format!(
+            "plugin HTTP connector returned non-success status: {status}"
+        ));
     }
     let content_type = response
         .headers()
@@ -377,7 +379,10 @@ fn validate_connector_url(raw: &str) -> Result<Url, String> {
         "https" => {}
         "http" if is_loopback_url(&url) => {}
         "http" => {
-            return Err("HTTP plugin runtime only allows http for loopback development endpoints".to_string())
+            return Err(
+                "HTTP plugin runtime only allows http for loopback development endpoints"
+                    .to_string(),
+            )
         }
         _ => return Err("HTTP plugin runtime URL must use https".to_string()),
     }
@@ -385,7 +390,9 @@ fn validate_connector_url(raw: &str) -> Result<Url, String> {
         return Err("HTTP plugin runtime URL must not embed credentials".to_string());
     }
     if is_private_or_metadata_ip(&url) && !is_loopback_url(&url) {
-        return Err("HTTP plugin runtime must not target private network or metadata IPs".to_string());
+        return Err(
+            "HTTP plugin runtime must not target private network or metadata IPs".to_string(),
+        );
     }
     Ok(url)
 }
@@ -395,7 +402,8 @@ fn validate_connector_headers(headers: Option<&HashMap<String, String>>) -> Resu
         return Ok(());
     };
     for (key, value) in headers {
-        if key.contains('\n') || key.contains('\r') || value.contains('\n') || value.contains('\r') {
+        if key.contains('\n') || key.contains('\r') || value.contains('\n') || value.contains('\r')
+        {
             return Err("HTTP plugin runtime headers must not contain newlines".to_string());
         }
         if is_secret_like_key(key) {

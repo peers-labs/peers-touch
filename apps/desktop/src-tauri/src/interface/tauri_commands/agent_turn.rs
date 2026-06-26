@@ -2,7 +2,7 @@ use crate::application::agent_turn as application_agent_turn;
 use crate::application::session_resolver;
 use crate::contracts::{
     AgentExecuteTurnInput, AgentLocalToolRequestInput, AgentToolApprovalDecisionInput,
-    AgentTurnStreamCancelInput, StubPayload,
+    AgentTurnStreamCancelInput, AgentTurnTraceGetInput, AgentTurnTraceListInput, StubPayload,
 };
 use crate::error::AppResult;
 use crate::error::ErrorCode;
@@ -70,6 +70,32 @@ pub fn agent_execute_turn_stream(
 #[tauri::command]
 pub fn agent_cancel_turn_stream(input: AgentTurnStreamCancelInput) -> AppResult<StubPayload> {
     application_agent_turn::cancel_agent_turn_stream(&input.stream_id)
+}
+
+#[tauri::command]
+pub fn agent_turn_trace_list(
+    input: AgentTurnTraceListInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_turn::agent_turn_trace_list(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_turn_trace_get(
+    input: AgentTurnTraceGetInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_turn::agent_turn_trace_get(input, &token)
 }
 
 #[tauri::command]

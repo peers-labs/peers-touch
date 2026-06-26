@@ -73,6 +73,7 @@ type TurnConfig struct {
 	MaxRetries         int
 	Provider           string
 	Model              string
+	Effort             string // reasoning effort: "low" | "medium" | "high"
 	FallbackModel      string // Alternate model for billing/model_not_found fallback recovery.
 	WorkspaceRoot      string
 	KnowledgeResources []domain.KnowledgeResource
@@ -686,6 +687,7 @@ func (s *TurnService) providerCallWithRetry(
 			SystemPrompt: systemPrompt,
 			Messages:     messages,
 			ProviderType: config.Provider,
+			Effort:       config.Effort,
 			DeltaSink: func(deltaCtx context.Context, delta ProviderDelta) {
 				s.emitTurnEvent(deltaCtx, config, turnID, TurnEvent{
 					Type:  delta.Type,
@@ -1105,6 +1107,7 @@ func (s *TurnService) executeDelegation(
 			MaxRetries:        config.MaxRetries,
 			Provider:          config.Provider,
 			Model:             config.Model,
+			Effort:            config.Effort,
 			FallbackModel:     config.FallbackModel,
 			WorkspaceRoot:     config.WorkspaceRoot,
 			RotationStrategy:  config.RotationStrategy,
@@ -1334,6 +1337,109 @@ func (s *TurnService) loadMessages(ctx context.Context, conversationID string) (
 // Helper: saveTurnTrace
 // ---------------------------------------------------------------------------
 
+func (s *TurnService) ListTurnTraces(ctx context.Context, options domain.TurnTraceListOptions) ([]domain.TurnTraceEntry, int64, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	if strings.TrimSpace(options.AgentID) == "" {
+		return nil, 0, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
+			"agent_id is required", nil)
+	}
+
+	page := options.Page
+	if page <= 0 {
+		page = 1
+	}
+	pageSize := options.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	query := db.WithContext(ctx).
+		Model(&persistence.TurnTrace{}).
+		Joins("JOIN agent_turns ON agent_turns.id = agent_turn_traces.turn_id").
+		Where("agent_turns.agent_id = ?", options.AgentID)
+	if strings.TrimSpace(options.ConversationID) != "" {
+		query = query.Where("agent_turns.conversation_id = ?", options.ConversationID)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		logger.Errorf(ctx, "failed to count turn traces: agent_id=%s err=%v", options.AgentID, err)
+		return nil, 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to count turn traces", err)
+	}
+
+	var records []persistence.TurnTrace
+	if err := query.
+		Preload("Turn").
+		Order("agent_turns.started_at DESC").
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&records).Error; err != nil {
+		logger.Errorf(ctx, "failed to list turn traces: agent_id=%s err=%v", options.AgentID, err)
+		return nil, 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to list turn traces", err)
+	}
+
+	entries := make([]domain.TurnTraceEntry, 0, len(records))
+	for i := range records {
+		entry, err := persistenceTurnTraceToDomain(&records[i])
+		if err != nil {
+			logger.Errorf(ctx, "failed to decode turn trace: trace_id=%s err=%v", records[i].ID, err)
+			return nil, 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+				"failed to decode turn trace", err)
+		}
+		entries = append(entries, entry)
+	}
+
+	return entries, total, nil
+}
+
+func (s *TurnService) GetTurnTrace(ctx context.Context, traceID, turnID string) (*domain.TurnTraceEntry, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	traceID = strings.TrimSpace(traceID)
+	turnID = strings.TrimSpace(turnID)
+	if traceID == "" && turnID == "" {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
+			"trace_id or turn_id is required", nil)
+	}
+
+	query := db.WithContext(ctx).Preload("Turn")
+	if traceID != "" {
+		query = query.Where("id = ?", traceID)
+	}
+	if turnID != "" {
+		query = query.Where("turn_id = ?", turnID)
+	}
+
+	var record persistence.TurnTrace
+	if err := query.First(&record).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound,
+				"turn trace not found", err)
+		}
+		logger.Errorf(ctx, "failed to get turn trace: trace_id=%s turn_id=%s err=%v", traceID, turnID, err)
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to get turn trace", err)
+	}
+
+	entry, err := persistenceTurnTraceToDomain(&record)
+	if err != nil {
+		logger.Errorf(ctx, "failed to decode turn trace: trace_id=%s err=%v", record.ID, err)
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to decode turn trace", err)
+	}
+	return &entry, nil
+}
+
 func (s *TurnService) saveTurnTrace(ctx context.Context, trace *domain.TurnTrace) error {
 	db, err := s.getDB(ctx)
 	if err != nil {
@@ -1381,6 +1487,70 @@ func (s *TurnService) saveTurnTrace(ctx context.Context, trace *domain.TurnTrace
 	}
 
 	return nil
+}
+
+func persistenceTurnTraceToDomain(record *persistence.TurnTrace) (domain.TurnTraceEntry, error) {
+	trace := domain.TurnTrace{
+		TraceID:              record.ID,
+		TurnID:               record.TurnID,
+		ReviewTriggered:      record.ReviewTriggered,
+		CompressionTriggered: record.CompressionTriggered,
+	}
+	if record.SystemPromptHash != nil {
+		trace.SystemPromptHash = *record.SystemPromptHash
+	}
+	if record.MemorySnapshotHash != nil {
+		trace.MemorySnapshotHash = *record.MemorySnapshotHash
+	}
+	if record.SkillIndexHash != nil {
+		trace.SkillIndexHash = *record.SkillIndexHash
+	}
+	if record.CompressionBefore != nil {
+		trace.CompressionBefore = *record.CompressionBefore
+	}
+	if record.CompressionAfter != nil {
+		trace.CompressionAfter = *record.CompressionAfter
+	}
+	if err := json.Unmarshal(record.SkillsLoaded, &trace.SkillsLoaded); err != nil && len(record.SkillsLoaded) > 0 {
+		return domain.TurnTraceEntry{}, err
+	}
+	if err := json.Unmarshal(record.ToolCalls, &trace.ToolCalls); err != nil && len(record.ToolCalls) > 0 {
+		return domain.TurnTraceEntry{}, err
+	}
+	if err := json.Unmarshal(record.ProviderCalls, &trace.ProviderCalls); err != nil && len(record.ProviderCalls) > 0 {
+		return domain.TurnTraceEntry{}, err
+	}
+	if err := json.Unmarshal(record.ErrorsClassified, &trace.ErrorClassified); err != nil && len(record.ErrorsClassified) > 0 {
+		return domain.TurnTraceEntry{}, err
+	}
+	if err := json.Unmarshal(record.DelegationResults, &trace.DelegationResults); err != nil && len(record.DelegationResults) > 0 {
+		return domain.TurnTraceEntry{}, err
+	}
+	if err := json.Unmarshal(record.KnowledgeChunks, &trace.KnowledgeChunks); err != nil && len(record.KnowledgeChunks) > 0 {
+		return domain.TurnTraceEntry{}, err
+	}
+
+	return domain.TurnTraceEntry{
+		Turn: domain.Turn{
+			TurnID:         record.Turn.ID,
+			ConversationID: record.Turn.ConversationID,
+			AgentID:        record.Turn.AgentID,
+			UserInput:      stringValue(record.Turn.UserInput),
+			FinalResponse:  stringValue(record.Turn.FinalResponse),
+			ToolIterations: record.Turn.ToolIterations,
+			Status:         domain.TurnStatus(record.Turn.Status),
+			StartedAt:      record.Turn.StartedAt,
+			EndedAt:        record.Turn.EndedAt,
+		},
+		Trace: trace,
+	}, nil
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 // ---------------------------------------------------------------------------

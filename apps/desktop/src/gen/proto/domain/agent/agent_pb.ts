@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/agent/agent.proto.
  */
 export const file_domain_agent_agent: GenFile = /*@__PURE__*/
-  fileDesc("Chhkb21haW4vYWdlbnQvYWdlbnQucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxIp0CCgRUdXJuEg8KB3R1cm5faWQYASABKAkSFwoPY29udmVyc2F0aW9uX2lkGAIgASgJEhAKCGFnZW50X2lkGAMgASgJEhIKCnVzZXJfaW5wdXQYBCABKAkSFgoOZmluYWxfcmVzcG9uc2UYBSABKAkSFwoPdG9vbF9pdGVyYXRpb25zGAYgASgFEjYKBnN0YXR1cxgHIAEoDjImLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlR1cm5TdGF0dXMSLgoKc3RhcnRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLAoIZW5kZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIlsKDlRvb2xDYWxsUmVjb3JkEhEKCXRvb2xfbmFtZRgBIAEoCRIRCglhcmd1bWVudHMYAiABKAkSDgoGcmVzdWx0GAMgASgJEhMKC2R1cmF0aW9uX21zGAQgASgDIqABChJQcm92aWRlckNhbGxSZWNvcmQSEAoIcHJvdmlkZXIYASABKAkSDQoFbW9kZWwYAiABKAkSFAoMaW5wdXRfdG9rZW5zGAMgASgFEhUKDW91dHB1dF90b2tlbnMYBCABKAUSEgoKbGF0ZW5jeV9tcxgFIAEoAxIRCgljYWNoZV9oaXQYBiABKAgSFQoNY3JlZGVudGlhbF9pZBgHIAEoCSLqBAoJVHVyblRyYWNlEhAKCHRyYWNlX2lkGAEgASgJEg8KB3R1cm5faWQYAiABKAkSGgoSc3lzdGVtX3Byb21wdF9oYXNoGAMgASgJEhwKFG1lbW9yeV9zbmFwc2hvdF9oYXNoGAQgASgJEhgKEHNraWxsX2luZGV4X2hhc2gYBSABKAkSFQoNc2tpbGxzX2xvYWRlZBgGIAMoCRI+Cgp0b29sX2NhbGxzGAcgAygLMioucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuVG9vbENhbGxSZWNvcmQSRgoOcHJvdmlkZXJfY2FsbHMYCCADKAsyLi5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Qcm92aWRlckNhbGxSZWNvcmQSGAoQcmV2aWV3X3RyaWdnZXJlZBgJIAEoCBJLChFlcnJvcnNfY2xhc3NpZmllZBgKIAMoCzIwLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkNsYXNzaWZpZWRFcnJvckV2ZW50EkcKEWNvbXByZXNzaW9uX2V2ZW50GAsgASgLMiwucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQ29tcHJlc3Npb25FdmVudBJIChJkZWxlZ2F0aW9uX3Jlc3VsdHMYDCADKAsyLC5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5EZWxlZ2F0aW9uUmVzdWx0Ek0KEGtub3dsZWRnZV9jaHVua3MYDSADKAsyMy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Lbm93bGVkZ2VDaHVua1JlZmVyZW5jZSLNAgoUQ2xhc3NpZmllZEVycm9yRXZlbnQSOgoGcmVhc29uGAEgASgOMioucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRmFpbG92ZXJSZWFzb24SEQoJcmV0cnlhYmxlGAIgASgIEhcKD3Nob3VsZF9jb21wcmVzcxgDIAEoCBIgChhzaG91bGRfcm90YXRlX2NyZWRlbnRpYWwYBCABKAgSFwoPc2hvdWxkX2ZhbGxiYWNrGAUgASgIEhAKCHByb3ZpZGVyGAYgASgJEg0KBW1vZGVsGAcgASgJEhMKC2h0dHBfc3RhdHVzGAggASgFEhIKCmVycm9yX2NvZGUYCSABKAkSFQoNZXJyb3JfbWVzc2FnZRgKIAEoCRIxCg1jbGFzc2lmaWVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJvChBDb21wcmVzc2lvbkV2ZW50EhEKCXRyaWdnZXJlZBgBIAEoCBIVCg10b2tlbnNfYmVmb3JlGAIgASgFEhQKDHRva2Vuc19hZnRlchgDIAEoBRIbChNuZXdfY29udmVyc2F0aW9uX2lkGAQgASgJIrkCChBEZWxlZ2F0aW9uUmVzdWx0Eg8KB3Rhc2tfaWQYASABKAkSFgoOcGFyZW50X3R1cm5faWQYAiABKAkSGAoQdGFza19kZXNjcmlwdGlvbhgDIAEoCRIVCg1jaGlsZF90b29sc2V0GAQgAygJEjwKBnN0YXR1cxgFIAEoDjIsLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkRlbGVnYXRpb25TdGF0dXMSFgoOcmVzdWx0X3N1bW1hcnkYBiABKAkSFwoPdG9vbF9pdGVyYXRpb25zGAcgASgFEi4KCnN0YXJ0ZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGVuZGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKeAwoMQ29udmVyc2F0aW9uEhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRIQCghhZ2VudF9pZBgCIAEoCRIPCgd1c2VyX2lkGAMgASgJEg0KBXRpdGxlGAQgASgJEhMKC2Rlc2NyaXB0aW9uGAUgASgJEhMKC3Byb3ZpZGVyX2lkGAYgASgJEhIKCm1vZGVsX25hbWUYByABKAkSDgoGc3RhdHVzGAggASgJEhEKCXBhcmVudF9pZBgJIAEoCRITCgtjb25maWdfanNvbhgKIAEoCRJACgRtZXRhGAsgAygLMjIucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQ29udmVyc2F0aW9uLk1ldGFFbnRyeRIuCgpjcmVhdGVkX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GA0gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBorCglNZXRhRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASKsAwoRS25vd2xlZGdlUmVzb3VyY2USEwoLcmVzb3VyY2VfaWQYASABKAkSEAoIYWdlbnRfaWQYAiABKAkSPwoEdHlwZRgDIAEoDjIxLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLktub3dsZWRnZVJlc291cmNlVHlwZRINCgV0aXRsZRgEIAEoCRIOCgZzb3VyY2UYBSABKAkSQwoGcG9saWN5GAYgASgOMjMucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuS25vd2xlZGdlUmVzb3VyY2VQb2xpY3kSQwoGc3RhdHVzGAcgASgOMjMucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuS25vd2xlZGdlUmVzb3VyY2VTdGF0dXMSFwoPbGFzdF9pbmRleGVkX2F0GAggASgJEg0KBWVycm9yGAkgASgJEi4KCmNyZWF0ZWRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIqUBChdLbm93bGVkZ2VDaHVua1JlZmVyZW5jZRIQCghjaHVua19pZBgBIAEoCRITCgtyZXNvdXJjZV9pZBgCIAEoCRIWCg5yZXNvdXJjZV90aXRsZRgDIAEoCRIOCgZzb3VyY2UYBCABKAkSEwoLY2h1bmtfaW5kZXgYBSABKAUSDQoFc2NvcmUYBiABKAESFwoPY29udGVudF9wcmV2aWV3GAcgASgJIuQCCgxBZ2VudE1lc3NhZ2USEgoKbWVzc2FnZV9pZBgBIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAiABKAkSDwoHdHVybl9pZBgDIAEoCRISCgptb2RlbF9uYW1lGAQgASgJEjUKBHJvbGUYBSABKA4yJy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5NZXNzYWdlUm9sZRIPCgdjb250ZW50GAYgASgJEhYKDnJlYXNvbmluZ19qc29uGAcgASgJEhcKD3Rvb2xfY2FsbHNfanNvbhgIIAEoCRIVCg1tZXRhZGF0YV9qc29uGAkgASgJEhIKCmVycm9yX2pzb24YCiABKAkSLgoKY3JlYXRlZF9hdBgLIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgMIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAihwQKEkV4ZWN1dGVUdXJuUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkSEAoIYWdlbnRfaWQYAiABKAkSEgoKdXNlcl9pbnB1dBgDIAEoCRIOCgZzdHJlYW0YBCABKAgSEgoFbW9kZWwYBSABKAlIAIgBARIVCghwcm92aWRlchgGIAEoCUgBiAEBEhUKCGlkZW50aXR5GAcgASgJSAKIAQESIAoTYWdlbnRfY29uZmlnX3Byb21wdBgIIAEoCUgDiAEBEhUKCHBsYXRmb3JtGAkgASgJSASIAQESGwoOd29ya3NwYWNlX3Jvb3QYCiABKAlIBYgBARIgChNjb250ZXh0X3dpbmRvd19zaXplGAsgASgFSAaIAQESGAoLbWF4X3JldHJpZXMYDCABKAVIB4gBARJKChNrbm93bGVkZ2VfcmVzb3VyY2VzGA0gAygLMi0ucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuS25vd2xlZGdlUmVzb3VyY2VCCAoGX21vZGVsQgsKCV9wcm92aWRlckILCglfaWRlbnRpdHlCFgoUX2FnZW50X2NvbmZpZ19wcm9tcHRCCwoJX3BsYXRmb3JtQhEKD193b3Jrc3BhY2Vfcm9vdEIWChRfY29udGV4dF93aW5kb3dfc2l6ZUIOCgxfbWF4X3JldHJpZXMivwEKE0V4ZWN1dGVUdXJuUmVzcG9uc2USLgoEdHVybhgBIAEoCzIgLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlR1cm4SNAoFdHJhY2UYAiABKAsyJS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UdXJuVHJhY2USQgoQcmVzcG9uc2VfbWVzc2FnZRgDIAEoCzIoLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50TWVzc2FnZSJsChVTY2hlZHVsZXJTdGFydFJlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkSHwoXcmV2aWV3X2ludGVydmFsX21pbnV0ZXMYAiABKAUSIAoYZG9nZm9vZF9pbnRlcnZhbF9taW51dGVzGAMgASgFIjUKFlNjaGVkdWxlclN0YXJ0UmVzcG9uc2USCgoCb2sYASABKAgSDwoHbWVzc2FnZRgCIAEoCSIWChRTY2hlZHVsZXJTdG9wUmVxdWVzdCI0ChVTY2hlZHVsZXJTdG9wUmVzcG9uc2USCgoCb2sYASABKAgSDwoHbWVzc2FnZRgCIAEoCSIYChZTY2hlZHVsZXJTdGF0dXNSZXF1ZXN0IpQBChdTY2hlZHVsZXJTdGF0dXNSZXNwb25zZRIPCgdydW5uaW5nGAEgASgIEhAKCGFnZW50X2lkGAIgASgJEh8KF3Jldmlld19pbnRlcnZhbF9taW51dGVzGAMgASgFEiAKGGRvZ2Zvb2RfaW50ZXJ2YWxfbWludXRlcxgEIAEoBRITCgthY3RpdmVfam9icxgFIAEoBSJSChZTY2hlZHVsZXJBZGRKb2JSZXF1ZXN0EgwKBGtpbmQYASABKAkSEAoIYWdlbnRfaWQYAiABKAkSGAoQaW50ZXJ2YWxfbWludXRlcxgDIAEoBSIlChdTY2hlZHVsZXJBZGRKb2JSZXNwb25zZRIKCgJvaxgBIAEoCCIsChhHZXRHcm93dGhTbmFwc2hvdFJlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkiwAMKGUdldEdyb3d0aFNuYXBzaG90UmVzcG9uc2USEAoIYWdlbnRfaWQYASABKAkSFgoOdG90YWxfbWVtb3JpZXMYAiABKAUSFAoMdG90YWxfc2tpbGxzGAMgASgFEhUKDXRvdGFsX3Jldmlld3MYBCABKAUSEwoLdG90YWxfdHVybnMYBSABKAMSGQoRcG9zaXRpdmVfZmVlZGJhY2sYBiABKAUSGQoRbmVnYXRpdmVfZmVlZGJhY2sYByABKAUSFgoOZmVlZGJhY2tfcmF0aW8YCCABKAESEgoKZXJyb3JfcmF0ZRgJIAEoARISCgpyZXRyeV9yYXRlGAogASgBEhsKE3Jldmlld19zdWNjZXNzX3JhdGUYCyABKAESGgoSbWVtb3J5X2dyb3d0aF9yYXRlGAwgASgBEhkKEXNraWxsX2dyb3d0aF9yYXRlGA0gASgBEhUKDXF1YWxpdHlfdHJlbmQYDiABKAkSFAoMZ3Jvd3RoX3Njb3JlGA8gASgBEhYKDmdyb3d0aF92ZXJkaWN0GBAgASgJEhQKDHdpbmRvd19zdGFydBgRIAEoCRISCgp3aW5kb3dfZW5kGBIgASgJIoUBChVSZWNvcmRGZWVkYmFja1JlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkSDwoHdHVybl9pZBgCIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAyABKAkSDgoGc2lnbmFsGAQgASgJEhQKB2NvbW1lbnQYBSABKAlIAIgBAUIKCghfY29tbWVudCIkChZSZWNvcmRGZWVkYmFja1Jlc3BvbnNlEgoKAmlkGAEgASgJKpIBCgpUdXJuU3RhdHVzEhsKF1RVUk5fU1RBVFVTX1VOU1BFQ0lGSUVEEAASFwoTVFVSTl9TVEFUVVNfUlVOTklORxABEhkKFVRVUk5fU1RBVFVTX0NPTVBMRVRFRBACEhYKElRVUk5fU1RBVFVTX0ZBSUxFRBADEhsKF1RVUk5fU1RBVFVTX0lOVEVSUlVQVEVEEAQqiwQKDkZhaWxvdmVyUmVhc29uEh8KG0ZBSUxPVkVSX1JFQVNPTl9VTlNQRUNJRklFRBAAEhgKFEZBSUxPVkVSX1JFQVNPTl9BVVRIEAESIgoeRkFJTE9WRVJfUkVBU09OX0FVVEhfUEVSTUFORU5UEAISGwoXRkFJTE9WRVJfUkVBU09OX0JJTExJTkcQAxIeChpGQUlMT1ZFUl9SRUFTT05fUkFURV9MSU1JVBAEEh4KGkZBSUxPVkVSX1JFQVNPTl9PVkVSTE9BREVEEAUSIAocRkFJTE9WRVJfUkVBU09OX1NFUlZFUl9FUlJPUhAGEhsKF0ZBSUxPVkVSX1JFQVNPTl9USU1FT1VUEAcSJAogRkFJTE9WRVJfUkVBU09OX0NPTlRFWFRfT1ZFUkZMT1cQCBIlCiFGQUlMT1ZFUl9SRUFTT05fUEFZTE9BRF9UT09fTEFSR0UQCRIjCh9GQUlMT1ZFUl9SRUFTT05fTU9ERUxfTk9UX0ZPVU5EEAoSIAocRkFJTE9WRVJfUkVBU09OX0ZPUk1BVF9FUlJPUhALEiYKIkZBSUxPVkVSX1JFQVNPTl9USElOS0lOR19TSUdOQVRVUkUQDBIlCiFGQUlMT1ZFUl9SRUFTT05fTE9OR19DT05URVhUX1RJRVIQDRIbChdGQUlMT1ZFUl9SRUFTT05fVU5LTk9XThAOKpMBChBEZWxlZ2F0aW9uU3RhdHVzEiEKHURFTEVHQVRJT05fU1RBVFVTX1VOU1BFQ0lGSUVEEAASHwobREVMRUdBVElPTl9TVEFUVVNfQ09NUExFVEVEEAESHAoYREVMRUdBVElPTl9TVEFUVVNfRkFJTEVEEAISHQoZREVMRUdBVElPTl9TVEFUVVNfVElNRU9VVBADKp0CChVLbm93bGVkZ2VSZXNvdXJjZVR5cGUSJwojS05PV0xFREdFX1JFU09VUkNFX1RZUEVfVU5TUEVDSUZJRUQQABIkCiBLTk9XTEVER0VfUkVTT1VSQ0VfVFlQRV9ET0NVTUVOVBABEiIKHktOT1dMRURHRV9SRVNPVVJDRV9UWVBFX0ZPTERFUhACEiMKH0tOT1dMRURHRV9SRVNPVVJDRV9UWVBFX1BST0pFQ1QQAxIfChtLTk9XTEVER0VfUkVTT1VSQ0VfVFlQRV9VUkwQBBIkCiBLTk9XTEVER0VfUkVTT1VSQ0VfVFlQRV9OT1RFQk9PSxAFEiUKIUtOT1dMRURHRV9SRVNPVVJDRV9UWVBFX1dPUktTUEFDRRAGKtwBChdLbm93bGVkZ2VSZXNvdXJjZVBvbGljeRIpCiVLTk9XTEVER0VfUkVTT1VSQ0VfUE9MSUNZX1VOU1BFQ0lGSUVEEAASJAogS05PV0xFREdFX1JFU09VUkNFX1BPTElDWV9NQU5VQUwQARIiCh5LTk9XTEVER0VfUkVTT1VSQ0VfUE9MSUNZX0FVVE8QAhIkCiBLTk9XTEVER0VfUkVTT1VSQ0VfUE9MSUNZX0FMV0FZUxADEiYKIktOT1dMRURHRV9SRVNPVVJDRV9QT0xJQ1lfRElTQUJMRUQQBCriAQoXS25vd2xlZGdlUmVzb3VyY2VTdGF0dXMSKQolS05PV0xFREdFX1JFU09VUkNFX1NUQVRVU19VTlNQRUNJRklFRBAAEiMKH0tOT1dMRURHRV9SRVNPVVJDRV9TVEFUVVNfQk9VTkQQARIrCidLTk9XTEVER0VfUkVTT1VSQ0VfU1RBVFVTX1BFTkRJTkdfSU5ERVgQAhIlCiFLTk9XTEVER0VfUkVTT1VSQ0VfU1RBVFVTX0lOREVYRUQQAxIjCh9LTk9XTEVER0VfUkVTT1VSQ0VfU1RBVFVTX0VSUk9SEAQqjgEKC01lc3NhZ2VSb2xlEhwKGE1FU1NBR0VfUk9MRV9VTlNQRUNJRklFRBAAEhcKE01FU1NBR0VfUk9MRV9TWVNURU0QARIVChFNRVNTQUdFX1JPTEVfVVNFUhACEhoKFk1FU1NBR0VfUk9MRV9BU1NJU1RBTlQQAxIVChFNRVNTQUdFX1JPTEVfVE9PTBAEQktaSWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2FwcC9zdWJzZXJ2ZXIvYWdlbnQvbW9kZWw7bW9kZWxiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("Chhkb21haW4vYWdlbnQvYWdlbnQucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxIp0CCgRUdXJuEg8KB3R1cm5faWQYASABKAkSFwoPY29udmVyc2F0aW9uX2lkGAIgASgJEhAKCGFnZW50X2lkGAMgASgJEhIKCnVzZXJfaW5wdXQYBCABKAkSFgoOZmluYWxfcmVzcG9uc2UYBSABKAkSFwoPdG9vbF9pdGVyYXRpb25zGAYgASgFEjYKBnN0YXR1cxgHIAEoDjImLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlR1cm5TdGF0dXMSLgoKc3RhcnRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLAoIZW5kZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIlsKDlRvb2xDYWxsUmVjb3JkEhEKCXRvb2xfbmFtZRgBIAEoCRIRCglhcmd1bWVudHMYAiABKAkSDgoGcmVzdWx0GAMgASgJEhMKC2R1cmF0aW9uX21zGAQgASgDIqABChJQcm92aWRlckNhbGxSZWNvcmQSEAoIcHJvdmlkZXIYASABKAkSDQoFbW9kZWwYAiABKAkSFAoMaW5wdXRfdG9rZW5zGAMgASgFEhUKDW91dHB1dF90b2tlbnMYBCABKAUSEgoKbGF0ZW5jeV9tcxgFIAEoAxIRCgljYWNoZV9oaXQYBiABKAgSFQoNY3JlZGVudGlhbF9pZBgHIAEoCSLqBAoJVHVyblRyYWNlEhAKCHRyYWNlX2lkGAEgASgJEg8KB3R1cm5faWQYAiABKAkSGgoSc3lzdGVtX3Byb21wdF9oYXNoGAMgASgJEhwKFG1lbW9yeV9zbmFwc2hvdF9oYXNoGAQgASgJEhgKEHNraWxsX2luZGV4X2hhc2gYBSABKAkSFQoNc2tpbGxzX2xvYWRlZBgGIAMoCRI+Cgp0b29sX2NhbGxzGAcgAygLMioucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuVG9vbENhbGxSZWNvcmQSRgoOcHJvdmlkZXJfY2FsbHMYCCADKAsyLi5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Qcm92aWRlckNhbGxSZWNvcmQSGAoQcmV2aWV3X3RyaWdnZXJlZBgJIAEoCBJLChFlcnJvcnNfY2xhc3NpZmllZBgKIAMoCzIwLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkNsYXNzaWZpZWRFcnJvckV2ZW50EkcKEWNvbXByZXNzaW9uX2V2ZW50GAsgASgLMiwucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQ29tcHJlc3Npb25FdmVudBJIChJkZWxlZ2F0aW9uX3Jlc3VsdHMYDCADKAsyLC5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5EZWxlZ2F0aW9uUmVzdWx0Ek0KEGtub3dsZWRnZV9jaHVua3MYDSADKAsyMy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Lbm93bGVkZ2VDaHVua1JlZmVyZW5jZSLNAgoUQ2xhc3NpZmllZEVycm9yRXZlbnQSOgoGcmVhc29uGAEgASgOMioucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRmFpbG92ZXJSZWFzb24SEQoJcmV0cnlhYmxlGAIgASgIEhcKD3Nob3VsZF9jb21wcmVzcxgDIAEoCBIgChhzaG91bGRfcm90YXRlX2NyZWRlbnRpYWwYBCABKAgSFwoPc2hvdWxkX2ZhbGxiYWNrGAUgASgIEhAKCHByb3ZpZGVyGAYgASgJEg0KBW1vZGVsGAcgASgJEhMKC2h0dHBfc3RhdHVzGAggASgFEhIKCmVycm9yX2NvZGUYCSABKAkSFQoNZXJyb3JfbWVzc2FnZRgKIAEoCRIxCg1jbGFzc2lmaWVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJvChBDb21wcmVzc2lvbkV2ZW50EhEKCXRyaWdnZXJlZBgBIAEoCBIVCg10b2tlbnNfYmVmb3JlGAIgASgFEhQKDHRva2Vuc19hZnRlchgDIAEoBRIbChNuZXdfY29udmVyc2F0aW9uX2lkGAQgASgJIrkCChBEZWxlZ2F0aW9uUmVzdWx0Eg8KB3Rhc2tfaWQYASABKAkSFgoOcGFyZW50X3R1cm5faWQYAiABKAkSGAoQdGFza19kZXNjcmlwdGlvbhgDIAEoCRIVCg1jaGlsZF90b29sc2V0GAQgAygJEjwKBnN0YXR1cxgFIAEoDjIsLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkRlbGVnYXRpb25TdGF0dXMSFgoOcmVzdWx0X3N1bW1hcnkYBiABKAkSFwoPdG9vbF9pdGVyYXRpb25zGAcgASgFEi4KCnN0YXJ0ZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGVuZGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKeAwoMQ29udmVyc2F0aW9uEhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRIQCghhZ2VudF9pZBgCIAEoCRIPCgd1c2VyX2lkGAMgASgJEg0KBXRpdGxlGAQgASgJEhMKC2Rlc2NyaXB0aW9uGAUgASgJEhMKC3Byb3ZpZGVyX2lkGAYgASgJEhIKCm1vZGVsX25hbWUYByABKAkSDgoGc3RhdHVzGAggASgJEhEKCXBhcmVudF9pZBgJIAEoCRITCgtjb25maWdfanNvbhgKIAEoCRJACgRtZXRhGAsgAygLMjIucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQ29udmVyc2F0aW9uLk1ldGFFbnRyeRIuCgpjcmVhdGVkX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GA0gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBorCglNZXRhRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASLSAgoFQWdlbnQSEAoIYWdlbnRfaWQYASABKAkSDAoEbmFtZRgCIAEoCRINCgV0aXRsZRgDIAEoCRITCgtkZXNjcmlwdGlvbhgEIAEoCRITCgtwcm92aWRlcl9pZBgFIAEoCRISCgptb2RlbF9uYW1lGAYgASgJEg4KBmVmZm9ydBgHIAEoCRI/Cgp2aXNpYmlsaXR5GAggASgOMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRWaXNpYmlsaXR5EhYKDm93bmVyX2FjdG9yX2lkGAkgASgJEhMKC2NvbmZpZ19qc29uGAogASgJEi4KCmNyZWF0ZWRfYXQYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYDCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wInUKEUxpc3RBZ2VudHNSZXF1ZXN0Ej8KCnZpc2liaWxpdHkYASABKA4yKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudFZpc2liaWxpdHkSDAoEcGFnZRgCIAEoBRIRCglwYWdlX3NpemUYAyABKAUiVgoSTGlzdEFnZW50c1Jlc3BvbnNlEjEKBmFnZW50cxgBIAMoCzIhLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50Eg0KBXRvdGFsGAIgASgFIiMKD0dldEFnZW50UmVxdWVzdBIQCghhZ2VudF9pZBgBIAEoCSJEChBHZXRBZ2VudFJlc3BvbnNlEjAKBWFnZW50GAEgASgLMiEucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnQi1QEKEkNyZWF0ZUFnZW50UmVxdWVzdBIMCgRuYW1lGAEgASgJEg0KBXRpdGxlGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEhMKC3Byb3ZpZGVyX2lkGAQgASgJEhIKCm1vZGVsX25hbWUYBSABKAkSDgoGZWZmb3J0GAYgASgJEj8KCnZpc2liaWxpdHkYByABKA4yKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudFZpc2liaWxpdHkSEwoLY29uZmlnX2pzb24YCCABKAkiRwoTQ3JlYXRlQWdlbnRSZXNwb25zZRIwCgVhZ2VudBgBIAEoCzIhLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50IucBChJVcGRhdGVBZ2VudFJlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkSDAoEbmFtZRgCIAEoCRINCgV0aXRsZRgDIAEoCRITCgtkZXNjcmlwdGlvbhgEIAEoCRITCgtwcm92aWRlcl9pZBgFIAEoCRISCgptb2RlbF9uYW1lGAYgASgJEg4KBmVmZm9ydBgHIAEoCRI/Cgp2aXNpYmlsaXR5GAggASgOMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRWaXNpYmlsaXR5EhMKC2NvbmZpZ19qc29uGAkgASgJIkcKE1VwZGF0ZUFnZW50UmVzcG9uc2USMAoFYWdlbnQYASABKAsyIS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudCImChJEZWxldGVBZ2VudFJlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkiJgoTRGVsZXRlQWdlbnRSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIIqwDChFLbm93bGVkZ2VSZXNvdXJjZRITCgtyZXNvdXJjZV9pZBgBIAEoCRIQCghhZ2VudF9pZBgCIAEoCRI/CgR0eXBlGAMgASgOMjEucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuS25vd2xlZGdlUmVzb3VyY2VUeXBlEg0KBXRpdGxlGAQgASgJEg4KBnNvdXJjZRgFIAEoCRJDCgZwb2xpY3kYBiABKA4yMy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Lbm93bGVkZ2VSZXNvdXJjZVBvbGljeRJDCgZzdGF0dXMYByABKA4yMy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Lbm93bGVkZ2VSZXNvdXJjZVN0YXR1cxIXCg9sYXN0X2luZGV4ZWRfYXQYCCABKAkSDQoFZXJyb3IYCSABKAkSLgoKY3JlYXRlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgLIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAipQEKF0tub3dsZWRnZUNodW5rUmVmZXJlbmNlEhAKCGNodW5rX2lkGAEgASgJEhMKC3Jlc291cmNlX2lkGAIgASgJEhYKDnJlc291cmNlX3RpdGxlGAMgASgJEg4KBnNvdXJjZRgEIAEoCRITCgtjaHVua19pbmRleBgFIAEoBRINCgVzY29yZRgGIAEoARIXCg9jb250ZW50X3ByZXZpZXcYByABKAki5AIKDEFnZW50TWVzc2FnZRISCgptZXNzYWdlX2lkGAEgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgCIAEoCRIPCgd0dXJuX2lkGAMgASgJEhIKCm1vZGVsX25hbWUYBCABKAkSNQoEcm9sZRgFIAEoDjInLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLk1lc3NhZ2VSb2xlEg8KB2NvbnRlbnQYBiABKAkSFgoOcmVhc29uaW5nX2pzb24YByABKAkSFwoPdG9vbF9jYWxsc19qc29uGAggASgJEhUKDW1ldGFkYXRhX2pzb24YCSABKAkSEgoKZXJyb3JfanNvbhgKIAEoCRIuCgpjcmVhdGVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKnBAoSRXhlY3V0ZVR1cm5SZXF1ZXN0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRIQCghhZ2VudF9pZBgCIAEoCRISCgp1c2VyX2lucHV0GAMgASgJEg4KBnN0cmVhbRgEIAEoCBISCgVtb2RlbBgFIAEoCUgAiAEBEhUKCHByb3ZpZGVyGAYgASgJSAGIAQESFQoIaWRlbnRpdHkYByABKAlIAogBARIgChNhZ2VudF9jb25maWdfcHJvbXB0GAggASgJSAOIAQESFQoIcGxhdGZvcm0YCSABKAlIBIgBARIbCg53b3Jrc3BhY2Vfcm9vdBgKIAEoCUgFiAEBEiAKE2NvbnRleHRfd2luZG93X3NpemUYCyABKAVIBogBARIYCgttYXhfcmV0cmllcxgMIAEoBUgHiAEBEkoKE2tub3dsZWRnZV9yZXNvdXJjZXMYDSADKAsyLS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Lbm93bGVkZ2VSZXNvdXJjZRITCgZlZmZvcnQYDiABKAlICIgBAUIICgZfbW9kZWxCCwoJX3Byb3ZpZGVyQgsKCV9pZGVudGl0eUIWChRfYWdlbnRfY29uZmlnX3Byb21wdEILCglfcGxhdGZvcm1CEQoPX3dvcmtzcGFjZV9yb290QhYKFF9jb250ZXh0X3dpbmRvd19zaXplQg4KDF9tYXhfcmV0cmllc0IJCgdfZWZmb3J0Ir8BChNFeGVjdXRlVHVyblJlc3BvbnNlEi4KBHR1cm4YASABKAsyIC5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UdXJuEjQKBXRyYWNlGAIgASgLMiUucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuVHVyblRyYWNlEkIKEHJlc3BvbnNlX21lc3NhZ2UYAyABKAsyKC5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudE1lc3NhZ2UidgoOVHVyblRyYWNlRW50cnkSLgoEdHVybhgBIAEoCzIgLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlR1cm4SNAoFdHJhY2UYAiABKAsyJS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UdXJuVHJhY2UiYwoVTGlzdFR1cm5UcmFjZXNSZXF1ZXN0EhAKCGFnZW50X2lkGAEgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgCIAEoCRIMCgRwYWdlGAMgASgFEhEKCXBhZ2Vfc2l6ZRgEIAEoBSJkChZMaXN0VHVyblRyYWNlc1Jlc3BvbnNlEjsKB2VudHJpZXMYASADKAsyKi5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UdXJuVHJhY2VFbnRyeRINCgV0b3RhbBgCIAEoBSI4ChNHZXRUdXJuVHJhY2VSZXF1ZXN0EhAKCHRyYWNlX2lkGAEgASgJEg8KB3R1cm5faWQYAiABKAkiUQoUR2V0VHVyblRyYWNlUmVzcG9uc2USOQoFZW50cnkYASABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UdXJuVHJhY2VFbnRyeSJsChVTY2hlZHVsZXJTdGFydFJlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkSHwoXcmV2aWV3X2ludGVydmFsX21pbnV0ZXMYAiABKAUSIAoYZG9nZm9vZF9pbnRlcnZhbF9taW51dGVzGAMgASgFIjUKFlNjaGVkdWxlclN0YXJ0UmVzcG9uc2USCgoCb2sYASABKAgSDwoHbWVzc2FnZRgCIAEoCSIWChRTY2hlZHVsZXJTdG9wUmVxdWVzdCI0ChVTY2hlZHVsZXJTdG9wUmVzcG9uc2USCgoCb2sYASABKAgSDwoHbWVzc2FnZRgCIAEoCSIYChZTY2hlZHVsZXJTdGF0dXNSZXF1ZXN0IpQBChdTY2hlZHVsZXJTdGF0dXNSZXNwb25zZRIPCgdydW5uaW5nGAEgASgIEhAKCGFnZW50X2lkGAIgASgJEh8KF3Jldmlld19pbnRlcnZhbF9taW51dGVzGAMgASgFEiAKGGRvZ2Zvb2RfaW50ZXJ2YWxfbWludXRlcxgEIAEoBRITCgthY3RpdmVfam9icxgFIAEoBSJSChZTY2hlZHVsZXJBZGRKb2JSZXF1ZXN0EgwKBGtpbmQYASABKAkSEAoIYWdlbnRfaWQYAiABKAkSGAoQaW50ZXJ2YWxfbWludXRlcxgDIAEoBSIlChdTY2hlZHVsZXJBZGRKb2JSZXNwb25zZRIKCgJvaxgBIAEoCCIsChhHZXRHcm93dGhTbmFwc2hvdFJlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkiwAMKGUdldEdyb3d0aFNuYXBzaG90UmVzcG9uc2USEAoIYWdlbnRfaWQYASABKAkSFgoOdG90YWxfbWVtb3JpZXMYAiABKAUSFAoMdG90YWxfc2tpbGxzGAMgASgFEhUKDXRvdGFsX3Jldmlld3MYBCABKAUSEwoLdG90YWxfdHVybnMYBSABKAMSGQoRcG9zaXRpdmVfZmVlZGJhY2sYBiABKAUSGQoRbmVnYXRpdmVfZmVlZGJhY2sYByABKAUSFgoOZmVlZGJhY2tfcmF0aW8YCCABKAESEgoKZXJyb3JfcmF0ZRgJIAEoARISCgpyZXRyeV9yYXRlGAogASgBEhsKE3Jldmlld19zdWNjZXNzX3JhdGUYCyABKAESGgoSbWVtb3J5X2dyb3d0aF9yYXRlGAwgASgBEhkKEXNraWxsX2dyb3d0aF9yYXRlGA0gASgBEhUKDXF1YWxpdHlfdHJlbmQYDiABKAkSFAoMZ3Jvd3RoX3Njb3JlGA8gASgBEhYKDmdyb3d0aF92ZXJkaWN0GBAgASgJEhQKDHdpbmRvd19zdGFydBgRIAEoCRISCgp3aW5kb3dfZW5kGBIgASgJIoUBChVSZWNvcmRGZWVkYmFja1JlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkSDwoHdHVybl9pZBgCIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAyABKAkSDgoGc2lnbmFsGAQgASgJEhQKB2NvbW1lbnQYBSABKAlIAIgBAUIKCghfY29tbWVudCIkChZSZWNvcmRGZWVkYmFja1Jlc3BvbnNlEgoKAmlkGAEgASgJKpIBCgpUdXJuU3RhdHVzEhsKF1RVUk5fU1RBVFVTX1VOU1BFQ0lGSUVEEAASFwoTVFVSTl9TVEFUVVNfUlVOTklORxABEhkKFVRVUk5fU1RBVFVTX0NPTVBMRVRFRBACEhYKElRVUk5fU1RBVFVTX0ZBSUxFRBADEhsKF1RVUk5fU1RBVFVTX0lOVEVSUlVQVEVEEAQqiwQKDkZhaWxvdmVyUmVhc29uEh8KG0ZBSUxPVkVSX1JFQVNPTl9VTlNQRUNJRklFRBAAEhgKFEZBSUxPVkVSX1JFQVNPTl9BVVRIEAESIgoeRkFJTE9WRVJfUkVBU09OX0FVVEhfUEVSTUFORU5UEAISGwoXRkFJTE9WRVJfUkVBU09OX0JJTExJTkcQAxIeChpGQUlMT1ZFUl9SRUFTT05fUkFURV9MSU1JVBAEEh4KGkZBSUxPVkVSX1JFQVNPTl9PVkVSTE9BREVEEAUSIAocRkFJTE9WRVJfUkVBU09OX1NFUlZFUl9FUlJPUhAGEhsKF0ZBSUxPVkVSX1JFQVNPTl9USU1FT1VUEAcSJAogRkFJTE9WRVJfUkVBU09OX0NPTlRFWFRfT1ZFUkZMT1cQCBIlCiFGQUlMT1ZFUl9SRUFTT05fUEFZTE9BRF9UT09fTEFSR0UQCRIjCh9GQUlMT1ZFUl9SRUFTT05fTU9ERUxfTk9UX0ZPVU5EEAoSIAocRkFJTE9WRVJfUkVBU09OX0ZPUk1BVF9FUlJPUhALEiYKIkZBSUxPVkVSX1JFQVNPTl9USElOS0lOR19TSUdOQVRVUkUQDBIlCiFGQUlMT1ZFUl9SRUFTT05fTE9OR19DT05URVhUX1RJRVIQDRIbChdGQUlMT1ZFUl9SRUFTT05fVU5LTk9XThAOKpMBChBEZWxlZ2F0aW9uU3RhdHVzEiEKHURFTEVHQVRJT05fU1RBVFVTX1VOU1BFQ0lGSUVEEAASHwobREVMRUdBVElPTl9TVEFUVVNfQ09NUExFVEVEEAESHAoYREVMRUdBVElPTl9TVEFUVVNfRkFJTEVEEAISHQoZREVMRUdBVElPTl9TVEFUVVNfVElNRU9VVBADKnEKD0FnZW50VmlzaWJpbGl0eRIgChxBR0VOVF9WSVNJQklMSVRZX1VOU1BFQ0lGSUVEEAASHAoYQUdFTlRfVklTSUJJTElUWV9QUklWQVRFEAESHgoaQUdFTlRfVklTSUJJTElUWV9XT1JLU1BBQ0UQAiqdAgoVS25vd2xlZGdlUmVzb3VyY2VUeXBlEicKI0tOT1dMRURHRV9SRVNPVVJDRV9UWVBFX1VOU1BFQ0lGSUVEEAASJAogS05PV0xFREdFX1JFU09VUkNFX1RZUEVfRE9DVU1FTlQQARIiCh5LTk9XTEVER0VfUkVTT1VSQ0VfVFlQRV9GT0xERVIQAhIjCh9LTk9XTEVER0VfUkVTT1VSQ0VfVFlQRV9QUk9KRUNUEAMSHwobS05PV0xFREdFX1JFU09VUkNFX1RZUEVfVVJMEAQSJAogS05PV0xFREdFX1JFU09VUkNFX1RZUEVfTk9URUJPT0sQBRIlCiFLTk9XTEVER0VfUkVTT1VSQ0VfVFlQRV9XT1JLU1BBQ0UQBircAQoXS25vd2xlZGdlUmVzb3VyY2VQb2xpY3kSKQolS05PV0xFREdFX1JFU09VUkNFX1BPTElDWV9VTlNQRUNJRklFRBAAEiQKIEtOT1dMRURHRV9SRVNPVVJDRV9QT0xJQ1lfTUFOVUFMEAESIgoeS05PV0xFREdFX1JFU09VUkNFX1BPTElDWV9BVVRPEAISJAogS05PV0xFREdFX1JFU09VUkNFX1BPTElDWV9BTFdBWVMQAxImCiJLTk9XTEVER0VfUkVTT1VSQ0VfUE9MSUNZX0RJU0FCTEVEEAQq4gEKF0tub3dsZWRnZVJlc291cmNlU3RhdHVzEikKJUtOT1dMRURHRV9SRVNPVVJDRV9TVEFUVVNfVU5TUEVDSUZJRUQQABIjCh9LTk9XTEVER0VfUkVTT1VSQ0VfU1RBVFVTX0JPVU5EEAESKwonS05PV0xFREdFX1JFU09VUkNFX1NUQVRVU19QRU5ESU5HX0lOREVYEAISJQohS05PV0xFREdFX1JFU09VUkNFX1NUQVRVU19JTkRFWEVEEAMSIwofS05PV0xFREdFX1JFU09VUkNFX1NUQVRVU19FUlJPUhAEKo4BCgtNZXNzYWdlUm9sZRIcChhNRVNTQUdFX1JPTEVfVU5TUEVDSUZJRUQQABIXChNNRVNTQUdFX1JPTEVfU1lTVEVNEAESFQoRTUVTU0FHRV9ST0xFX1VTRVIQAhIaChZNRVNTQUdFX1JPTEVfQVNTSVNUQU5UEAMSFQoRTUVTU0FHRV9ST0xFX1RPT0wQBEJLWklnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9hcHAvc3Vic2VydmVyL2FnZW50L21vZGVsO21vZGVsYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers_touch.model.agent.v1.Turn
@@ -461,6 +461,338 @@ export const ConversationSchema: GenMessage<Conversation> = /*@__PURE__*/
   messageDesc(file_domain_agent_agent, 7);
 
 /**
+ * @generated from message peers_touch.model.agent.v1.Agent
+ */
+export type Agent = Message<"peers_touch.model.agent.v1.Agent"> & {
+  /**
+   * @generated from field: string agent_id = 1;
+   */
+  agentId: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string title = 3;
+   */
+  title: string;
+
+  /**
+   * @generated from field: string description = 4;
+   */
+  description: string;
+
+  /**
+   * @generated from field: string provider_id = 5;
+   */
+  providerId: string;
+
+  /**
+   * @generated from field: string model_name = 6;
+   */
+  modelName: string;
+
+  /**
+   * @generated from field: string effort = 7;
+   */
+  effort: string;
+
+  /**
+   * @generated from field: peers_touch.model.agent.v1.AgentVisibility visibility = 8;
+   */
+  visibility: AgentVisibility;
+
+  /**
+   * @generated from field: string owner_actor_id = 9;
+   */
+  ownerActorId: string;
+
+  /**
+   * @generated from field: string config_json = 10;
+   */
+  configJson: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 11;
+   */
+  createdAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp updated_at = 12;
+   */
+  updatedAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.Agent.
+ * Use `create(AgentSchema)` to create a new message.
+ */
+export const AgentSchema: GenMessage<Agent> = /*@__PURE__*/
+  messageDesc(file_domain_agent_agent, 8);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.ListAgentsRequest
+ */
+export type ListAgentsRequest = Message<"peers_touch.model.agent.v1.ListAgentsRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.agent.v1.AgentVisibility visibility = 1;
+   */
+  visibility: AgentVisibility;
+
+  /**
+   * @generated from field: int32 page = 2;
+   */
+  page: number;
+
+  /**
+   * @generated from field: int32 page_size = 3;
+   */
+  pageSize: number;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.ListAgentsRequest.
+ * Use `create(ListAgentsRequestSchema)` to create a new message.
+ */
+export const ListAgentsRequestSchema: GenMessage<ListAgentsRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_agent, 9);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.ListAgentsResponse
+ */
+export type ListAgentsResponse = Message<"peers_touch.model.agent.v1.ListAgentsResponse"> & {
+  /**
+   * @generated from field: repeated peers_touch.model.agent.v1.Agent agents = 1;
+   */
+  agents: Agent[];
+
+  /**
+   * @generated from field: int32 total = 2;
+   */
+  total: number;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.ListAgentsResponse.
+ * Use `create(ListAgentsResponseSchema)` to create a new message.
+ */
+export const ListAgentsResponseSchema: GenMessage<ListAgentsResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_agent, 10);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.GetAgentRequest
+ */
+export type GetAgentRequest = Message<"peers_touch.model.agent.v1.GetAgentRequest"> & {
+  /**
+   * @generated from field: string agent_id = 1;
+   */
+  agentId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.GetAgentRequest.
+ * Use `create(GetAgentRequestSchema)` to create a new message.
+ */
+export const GetAgentRequestSchema: GenMessage<GetAgentRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_agent, 11);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.GetAgentResponse
+ */
+export type GetAgentResponse = Message<"peers_touch.model.agent.v1.GetAgentResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.agent.v1.Agent agent = 1;
+   */
+  agent?: Agent | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.GetAgentResponse.
+ * Use `create(GetAgentResponseSchema)` to create a new message.
+ */
+export const GetAgentResponseSchema: GenMessage<GetAgentResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_agent, 12);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.CreateAgentRequest
+ */
+export type CreateAgentRequest = Message<"peers_touch.model.agent.v1.CreateAgentRequest"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string title = 2;
+   */
+  title: string;
+
+  /**
+   * @generated from field: string description = 3;
+   */
+  description: string;
+
+  /**
+   * @generated from field: string provider_id = 4;
+   */
+  providerId: string;
+
+  /**
+   * @generated from field: string model_name = 5;
+   */
+  modelName: string;
+
+  /**
+   * @generated from field: string effort = 6;
+   */
+  effort: string;
+
+  /**
+   * @generated from field: peers_touch.model.agent.v1.AgentVisibility visibility = 7;
+   */
+  visibility: AgentVisibility;
+
+  /**
+   * @generated from field: string config_json = 8;
+   */
+  configJson: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.CreateAgentRequest.
+ * Use `create(CreateAgentRequestSchema)` to create a new message.
+ */
+export const CreateAgentRequestSchema: GenMessage<CreateAgentRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_agent, 13);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.CreateAgentResponse
+ */
+export type CreateAgentResponse = Message<"peers_touch.model.agent.v1.CreateAgentResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.agent.v1.Agent agent = 1;
+   */
+  agent?: Agent | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.CreateAgentResponse.
+ * Use `create(CreateAgentResponseSchema)` to create a new message.
+ */
+export const CreateAgentResponseSchema: GenMessage<CreateAgentResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_agent, 14);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.UpdateAgentRequest
+ */
+export type UpdateAgentRequest = Message<"peers_touch.model.agent.v1.UpdateAgentRequest"> & {
+  /**
+   * @generated from field: string agent_id = 1;
+   */
+  agentId: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string title = 3;
+   */
+  title: string;
+
+  /**
+   * @generated from field: string description = 4;
+   */
+  description: string;
+
+  /**
+   * @generated from field: string provider_id = 5;
+   */
+  providerId: string;
+
+  /**
+   * @generated from field: string model_name = 6;
+   */
+  modelName: string;
+
+  /**
+   * @generated from field: string effort = 7;
+   */
+  effort: string;
+
+  /**
+   * @generated from field: peers_touch.model.agent.v1.AgentVisibility visibility = 8;
+   */
+  visibility: AgentVisibility;
+
+  /**
+   * @generated from field: string config_json = 9;
+   */
+  configJson: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.UpdateAgentRequest.
+ * Use `create(UpdateAgentRequestSchema)` to create a new message.
+ */
+export const UpdateAgentRequestSchema: GenMessage<UpdateAgentRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_agent, 15);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.UpdateAgentResponse
+ */
+export type UpdateAgentResponse = Message<"peers_touch.model.agent.v1.UpdateAgentResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.agent.v1.Agent agent = 1;
+   */
+  agent?: Agent | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.UpdateAgentResponse.
+ * Use `create(UpdateAgentResponseSchema)` to create a new message.
+ */
+export const UpdateAgentResponseSchema: GenMessage<UpdateAgentResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_agent, 16);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.DeleteAgentRequest
+ */
+export type DeleteAgentRequest = Message<"peers_touch.model.agent.v1.DeleteAgentRequest"> & {
+  /**
+   * @generated from field: string agent_id = 1;
+   */
+  agentId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.DeleteAgentRequest.
+ * Use `create(DeleteAgentRequestSchema)` to create a new message.
+ */
+export const DeleteAgentRequestSchema: GenMessage<DeleteAgentRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_agent, 17);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.DeleteAgentResponse
+ */
+export type DeleteAgentResponse = Message<"peers_touch.model.agent.v1.DeleteAgentResponse"> & {
+  /**
+   * @generated from field: bool success = 1;
+   */
+  success: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.DeleteAgentResponse.
+ * Use `create(DeleteAgentResponseSchema)` to create a new message.
+ */
+export const DeleteAgentResponseSchema: GenMessage<DeleteAgentResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_agent, 18);
+
+/**
  * @generated from message peers_touch.model.agent.v1.KnowledgeResource
  */
 export type KnowledgeResource = Message<"peers_touch.model.agent.v1.KnowledgeResource"> & {
@@ -525,7 +857,7 @@ export type KnowledgeResource = Message<"peers_touch.model.agent.v1.KnowledgeRes
  * Use `create(KnowledgeResourceSchema)` to create a new message.
  */
 export const KnowledgeResourceSchema: GenMessage<KnowledgeResource> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent, 8);
+  messageDesc(file_domain_agent_agent, 19);
 
 /**
  * @generated from message peers_touch.model.agent.v1.KnowledgeChunkReference
@@ -572,7 +904,7 @@ export type KnowledgeChunkReference = Message<"peers_touch.model.agent.v1.Knowle
  * Use `create(KnowledgeChunkReferenceSchema)` to create a new message.
  */
 export const KnowledgeChunkReferenceSchema: GenMessage<KnowledgeChunkReference> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent, 9);
+  messageDesc(file_domain_agent_agent, 20);
 
 /**
  * @generated from message peers_touch.model.agent.v1.AgentMessage
@@ -644,7 +976,7 @@ export type AgentMessage = Message<"peers_touch.model.agent.v1.AgentMessage"> & 
  * Use `create(AgentMessageSchema)` to create a new message.
  */
 export const AgentMessageSchema: GenMessage<AgentMessage> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent, 10);
+  messageDesc(file_domain_agent_agent, 21);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ExecuteTurnRequest
@@ -716,6 +1048,14 @@ export type ExecuteTurnRequest = Message<"peers_touch.model.agent.v1.ExecuteTurn
    * @generated from field: repeated peers_touch.model.agent.v1.KnowledgeResource knowledge_resources = 13;
    */
   knowledgeResources: KnowledgeResource[];
+
+  /**
+   * Reasoning effort level: "low" | "medium" | "high".
+   * Passed through to LLM providers as reasoning_effort where supported.
+   *
+   * @generated from field: optional string effort = 14;
+   */
+  effort?: string | undefined;
 };
 
 /**
@@ -723,7 +1063,7 @@ export type ExecuteTurnRequest = Message<"peers_touch.model.agent.v1.ExecuteTurn
  * Use `create(ExecuteTurnRequestSchema)` to create a new message.
  */
 export const ExecuteTurnRequestSchema: GenMessage<ExecuteTurnRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent, 11);
+  messageDesc(file_domain_agent_agent, 22);
 
 /**
  * @generated from message peers_touch.model.agent.v1.ExecuteTurnResponse
@@ -750,7 +1090,122 @@ export type ExecuteTurnResponse = Message<"peers_touch.model.agent.v1.ExecuteTur
  * Use `create(ExecuteTurnResponseSchema)` to create a new message.
  */
 export const ExecuteTurnResponseSchema: GenMessage<ExecuteTurnResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent, 12);
+  messageDesc(file_domain_agent_agent, 23);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.TurnTraceEntry
+ */
+export type TurnTraceEntry = Message<"peers_touch.model.agent.v1.TurnTraceEntry"> & {
+  /**
+   * @generated from field: peers_touch.model.agent.v1.Turn turn = 1;
+   */
+  turn?: Turn | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.agent.v1.TurnTrace trace = 2;
+   */
+  trace?: TurnTrace | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.TurnTraceEntry.
+ * Use `create(TurnTraceEntrySchema)` to create a new message.
+ */
+export const TurnTraceEntrySchema: GenMessage<TurnTraceEntry> = /*@__PURE__*/
+  messageDesc(file_domain_agent_agent, 24);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.ListTurnTracesRequest
+ */
+export type ListTurnTracesRequest = Message<"peers_touch.model.agent.v1.ListTurnTracesRequest"> & {
+  /**
+   * @generated from field: string agent_id = 1;
+   */
+  agentId: string;
+
+  /**
+   * @generated from field: string conversation_id = 2;
+   */
+  conversationId: string;
+
+  /**
+   * @generated from field: int32 page = 3;
+   */
+  page: number;
+
+  /**
+   * @generated from field: int32 page_size = 4;
+   */
+  pageSize: number;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.ListTurnTracesRequest.
+ * Use `create(ListTurnTracesRequestSchema)` to create a new message.
+ */
+export const ListTurnTracesRequestSchema: GenMessage<ListTurnTracesRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_agent, 25);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.ListTurnTracesResponse
+ */
+export type ListTurnTracesResponse = Message<"peers_touch.model.agent.v1.ListTurnTracesResponse"> & {
+  /**
+   * @generated from field: repeated peers_touch.model.agent.v1.TurnTraceEntry entries = 1;
+   */
+  entries: TurnTraceEntry[];
+
+  /**
+   * @generated from field: int32 total = 2;
+   */
+  total: number;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.ListTurnTracesResponse.
+ * Use `create(ListTurnTracesResponseSchema)` to create a new message.
+ */
+export const ListTurnTracesResponseSchema: GenMessage<ListTurnTracesResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_agent, 26);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.GetTurnTraceRequest
+ */
+export type GetTurnTraceRequest = Message<"peers_touch.model.agent.v1.GetTurnTraceRequest"> & {
+  /**
+   * @generated from field: string trace_id = 1;
+   */
+  traceId: string;
+
+  /**
+   * @generated from field: string turn_id = 2;
+   */
+  turnId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.GetTurnTraceRequest.
+ * Use `create(GetTurnTraceRequestSchema)` to create a new message.
+ */
+export const GetTurnTraceRequestSchema: GenMessage<GetTurnTraceRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_agent, 27);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.GetTurnTraceResponse
+ */
+export type GetTurnTraceResponse = Message<"peers_touch.model.agent.v1.GetTurnTraceResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.agent.v1.TurnTraceEntry entry = 1;
+   */
+  entry?: TurnTraceEntry | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.GetTurnTraceResponse.
+ * Use `create(GetTurnTraceResponseSchema)` to create a new message.
+ */
+export const GetTurnTraceResponseSchema: GenMessage<GetTurnTraceResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_agent, 28);
 
 /**
  * @generated from message peers_touch.model.agent.v1.SchedulerStartRequest
@@ -777,7 +1232,7 @@ export type SchedulerStartRequest = Message<"peers_touch.model.agent.v1.Schedule
  * Use `create(SchedulerStartRequestSchema)` to create a new message.
  */
 export const SchedulerStartRequestSchema: GenMessage<SchedulerStartRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent, 13);
+  messageDesc(file_domain_agent_agent, 29);
 
 /**
  * @generated from message peers_touch.model.agent.v1.SchedulerStartResponse
@@ -799,7 +1254,7 @@ export type SchedulerStartResponse = Message<"peers_touch.model.agent.v1.Schedul
  * Use `create(SchedulerStartResponseSchema)` to create a new message.
  */
 export const SchedulerStartResponseSchema: GenMessage<SchedulerStartResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent, 14);
+  messageDesc(file_domain_agent_agent, 30);
 
 /**
  * @generated from message peers_touch.model.agent.v1.SchedulerStopRequest
@@ -812,7 +1267,7 @@ export type SchedulerStopRequest = Message<"peers_touch.model.agent.v1.Scheduler
  * Use `create(SchedulerStopRequestSchema)` to create a new message.
  */
 export const SchedulerStopRequestSchema: GenMessage<SchedulerStopRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent, 15);
+  messageDesc(file_domain_agent_agent, 31);
 
 /**
  * @generated from message peers_touch.model.agent.v1.SchedulerStopResponse
@@ -834,7 +1289,7 @@ export type SchedulerStopResponse = Message<"peers_touch.model.agent.v1.Schedule
  * Use `create(SchedulerStopResponseSchema)` to create a new message.
  */
 export const SchedulerStopResponseSchema: GenMessage<SchedulerStopResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent, 16);
+  messageDesc(file_domain_agent_agent, 32);
 
 /**
  * @generated from message peers_touch.model.agent.v1.SchedulerStatusRequest
@@ -847,7 +1302,7 @@ export type SchedulerStatusRequest = Message<"peers_touch.model.agent.v1.Schedul
  * Use `create(SchedulerStatusRequestSchema)` to create a new message.
  */
 export const SchedulerStatusRequestSchema: GenMessage<SchedulerStatusRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent, 17);
+  messageDesc(file_domain_agent_agent, 33);
 
 /**
  * @generated from message peers_touch.model.agent.v1.SchedulerStatusResponse
@@ -884,7 +1339,7 @@ export type SchedulerStatusResponse = Message<"peers_touch.model.agent.v1.Schedu
  * Use `create(SchedulerStatusResponseSchema)` to create a new message.
  */
 export const SchedulerStatusResponseSchema: GenMessage<SchedulerStatusResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent, 18);
+  messageDesc(file_domain_agent_agent, 34);
 
 /**
  * @generated from message peers_touch.model.agent.v1.SchedulerAddJobRequest
@@ -911,7 +1366,7 @@ export type SchedulerAddJobRequest = Message<"peers_touch.model.agent.v1.Schedul
  * Use `create(SchedulerAddJobRequestSchema)` to create a new message.
  */
 export const SchedulerAddJobRequestSchema: GenMessage<SchedulerAddJobRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent, 19);
+  messageDesc(file_domain_agent_agent, 35);
 
 /**
  * @generated from message peers_touch.model.agent.v1.SchedulerAddJobResponse
@@ -928,7 +1383,7 @@ export type SchedulerAddJobResponse = Message<"peers_touch.model.agent.v1.Schedu
  * Use `create(SchedulerAddJobResponseSchema)` to create a new message.
  */
 export const SchedulerAddJobResponseSchema: GenMessage<SchedulerAddJobResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent, 20);
+  messageDesc(file_domain_agent_agent, 36);
 
 /**
  * @generated from message peers_touch.model.agent.v1.GetGrowthSnapshotRequest
@@ -945,7 +1400,7 @@ export type GetGrowthSnapshotRequest = Message<"peers_touch.model.agent.v1.GetGr
  * Use `create(GetGrowthSnapshotRequestSchema)` to create a new message.
  */
 export const GetGrowthSnapshotRequestSchema: GenMessage<GetGrowthSnapshotRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent, 21);
+  messageDesc(file_domain_agent_agent, 37);
 
 /**
  * @generated from message peers_touch.model.agent.v1.GetGrowthSnapshotResponse
@@ -1047,7 +1502,7 @@ export type GetGrowthSnapshotResponse = Message<"peers_touch.model.agent.v1.GetG
  * Use `create(GetGrowthSnapshotResponseSchema)` to create a new message.
  */
 export const GetGrowthSnapshotResponseSchema: GenMessage<GetGrowthSnapshotResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent, 22);
+  messageDesc(file_domain_agent_agent, 38);
 
 /**
  * @generated from message peers_touch.model.agent.v1.RecordFeedbackRequest
@@ -1084,7 +1539,7 @@ export type RecordFeedbackRequest = Message<"peers_touch.model.agent.v1.RecordFe
  * Use `create(RecordFeedbackRequestSchema)` to create a new message.
  */
 export const RecordFeedbackRequestSchema: GenMessage<RecordFeedbackRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent, 23);
+  messageDesc(file_domain_agent_agent, 39);
 
 /**
  * @generated from message peers_touch.model.agent.v1.RecordFeedbackResponse
@@ -1101,7 +1556,7 @@ export type RecordFeedbackResponse = Message<"peers_touch.model.agent.v1.RecordF
  * Use `create(RecordFeedbackResponseSchema)` to create a new message.
  */
 export const RecordFeedbackResponseSchema: GenMessage<RecordFeedbackResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent, 24);
+  messageDesc(file_domain_agent_agent, 40);
 
 /**
  * @generated from enum peers_touch.model.agent.v1.TurnStatus
@@ -1257,6 +1712,32 @@ export const DelegationStatusSchema: GenEnum<DelegationStatus> = /*@__PURE__*/
   enumDesc(file_domain_agent_agent, 2);
 
 /**
+ * @generated from enum peers_touch.model.agent.v1.AgentVisibility
+ */
+export enum AgentVisibility {
+  /**
+   * @generated from enum value: AGENT_VISIBILITY_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: AGENT_VISIBILITY_PRIVATE = 1;
+   */
+  PRIVATE = 1,
+
+  /**
+   * @generated from enum value: AGENT_VISIBILITY_WORKSPACE = 2;
+   */
+  WORKSPACE = 2,
+}
+
+/**
+ * Describes the enum peers_touch.model.agent.v1.AgentVisibility.
+ */
+export const AgentVisibilitySchema: GenEnum<AgentVisibility> = /*@__PURE__*/
+  enumDesc(file_domain_agent_agent, 3);
+
+/**
  * @generated from enum peers_touch.model.agent.v1.KnowledgeResourceType
  */
 export enum KnowledgeResourceType {
@@ -1300,7 +1781,7 @@ export enum KnowledgeResourceType {
  * Describes the enum peers_touch.model.agent.v1.KnowledgeResourceType.
  */
 export const KnowledgeResourceTypeSchema: GenEnum<KnowledgeResourceType> = /*@__PURE__*/
-  enumDesc(file_domain_agent_agent, 3);
+  enumDesc(file_domain_agent_agent, 4);
 
 /**
  * @generated from enum peers_touch.model.agent.v1.KnowledgeResourcePolicy
@@ -1336,7 +1817,7 @@ export enum KnowledgeResourcePolicy {
  * Describes the enum peers_touch.model.agent.v1.KnowledgeResourcePolicy.
  */
 export const KnowledgeResourcePolicySchema: GenEnum<KnowledgeResourcePolicy> = /*@__PURE__*/
-  enumDesc(file_domain_agent_agent, 4);
+  enumDesc(file_domain_agent_agent, 5);
 
 /**
  * @generated from enum peers_touch.model.agent.v1.KnowledgeResourceStatus
@@ -1372,7 +1853,7 @@ export enum KnowledgeResourceStatus {
  * Describes the enum peers_touch.model.agent.v1.KnowledgeResourceStatus.
  */
 export const KnowledgeResourceStatusSchema: GenEnum<KnowledgeResourceStatus> = /*@__PURE__*/
-  enumDesc(file_domain_agent_agent, 5);
+  enumDesc(file_domain_agent_agent, 6);
 
 /**
  * @generated from enum peers_touch.model.agent.v1.MessageRole
@@ -1408,5 +1889,5 @@ export enum MessageRole {
  * Describes the enum peers_touch.model.agent.v1.MessageRole.
  */
 export const MessageRoleSchema: GenEnum<MessageRole> = /*@__PURE__*/
-  enumDesc(file_domain_agent_agent, 6);
+  enumDesc(file_domain_agent_agent, 7);
 
