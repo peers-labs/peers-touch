@@ -21,6 +21,7 @@ import {
 } from '../../gen/proto/domain/social/post_pb';
 import {
   SocialApiError,
+  readableErrorMessage,
   type ActorSearchResult,
   type FederationResolveView,
   type FriendChatMessage,
@@ -215,7 +216,7 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
       throw new SocialApiError({
         method: options.method,
         path: options.path,
-        message: error instanceof Error ? error.message : String(error),
+        message: readableErrorMessage(error),
       });
     }
 
@@ -246,7 +247,7 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
       throw new SocialApiError({
         method: 'POST',
         path: '/api/v1/social/moments',
-        message: error instanceof Error ? error.message : String(error),
+        message: readableErrorMessage(error),
       });
     }
 
@@ -618,7 +619,7 @@ async function uploadMobileEncryptedAttachment(
     throw new SocialApiError({
       method: 'POST',
       path: '/sub-oss/upload',
-      message: error instanceof Error ? error.message : String(error),
+      message: readableErrorMessage(error),
     });
   }
 
@@ -695,7 +696,7 @@ function buildApiError(method: HttpMethod, path: string, status: number, payload
     path,
     status,
     code: envelope?.code ? String(envelope.code) : undefined,
-    message: String(message),
+    message: readableErrorMessage(message),
   });
 }
 

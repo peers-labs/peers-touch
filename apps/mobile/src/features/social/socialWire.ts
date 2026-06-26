@@ -189,13 +189,15 @@ function mutationKindFromEnum(value: number): MessageMutationKind | null {
   return null;
 }
 
-export type GroupMembershipKind = 'ADDED' | 'REMOVED' | 'LEFT' | 'UPDATED';
+export type GroupMembershipKind = 'ADDED' | 'REMOVED' | 'LEFT' | 'UPDATED' | 'TRANSFERRED' | 'DISSOLVED';
 
 function groupMembershipKindFromEnum(value: number): GroupMembershipKind | null {
   if (value === GroupMembershipChange_Kind.ADDED) return 'ADDED';
   if (value === GroupMembershipChange_Kind.REMOVED) return 'REMOVED';
   if (value === GroupMembershipChange_Kind.LEFT) return 'LEFT';
   if (value === GroupMembershipChange_Kind.UPDATED) return 'UPDATED';
+  if (value === GroupMembershipChange_Kind.TRANSFERRED) return 'TRANSFERRED';
+  if (value === GroupMembershipChange_Kind.DISSOLVED) return 'DISSOLVED';
   return null;
 }
 

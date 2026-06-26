@@ -13,6 +13,7 @@ interface LynxHostProps {
   url: string
   style?: React.CSSProperties
   onLoad?: () => void
+  onReady?: () => void
   onError?: (error: Error) => void
   onNavigationRequest?: (request: AppletHostNavigationRequest) => void
   onUiRequest?: (request: AppletHostUiRequest) => unknown | Promise<unknown>
@@ -29,6 +30,7 @@ const LynxHost: React.FC<LynxHostProps> = ({
   url,
   style,
   onLoad,
+  onReady,
   onError,
   onNavigationRequest,
   onUiRequest,
@@ -49,6 +51,7 @@ const LynxHost: React.FC<LynxHostProps> = ({
     host.setAttribute('url', url)
 
     const handleLoad = () => onLoad?.()
+    const handleReady = () => onReady?.()
     const handleError = (event: Event) => {
       const detail = (event as CustomEvent<{ message?: string }>).detail
       onError?.(new Error(detail?.message || t('applet.runtime.hostLoadFailed', { id: appletId })))
@@ -67,6 +70,7 @@ const LynxHost: React.FC<LynxHostProps> = ({
     }
 
     host.addEventListener('load', handleLoad)
+    host.addEventListener('ready', handleReady)
     host.addEventListener('error', handleError)
     host.addEventListener('applet-navigation', handleNavigation)
     host.addEventListener('applet-ui', handleUi)
@@ -82,12 +86,13 @@ const LynxHost: React.FC<LynxHostProps> = ({
         host.deviceHandler = undefined
       }
       host.removeEventListener('load', handleLoad)
+      host.removeEventListener('ready', handleReady)
       host.removeEventListener('error', handleError)
       host.removeEventListener('applet-navigation', handleNavigation)
       host.removeEventListener('applet-ui', handleUi)
       host.removeEventListener('applet-device', handleDevice)
     }
-  }, [appletId, sessionId, url, onLoad, onError, onNavigationRequest, onUiRequest, onDeviceRequest, t])
+  }, [appletId, sessionId, url, onLoad, onReady, onError, onNavigationRequest, onUiRequest, onDeviceRequest, t])
 
   return createElement('lynx-host', { ref: hostRef, style })
 }

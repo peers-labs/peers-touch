@@ -25,19 +25,39 @@
 		09635B86FCB666DB3DD032BD /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		0C7A99727446DB80E9D7AAE6 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		0D33199FDB1DA6A3792D12B0 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
+		13848CF5F59D3550D4AE901E /* secure_storage.rs */ = {isa = PBXFileReference; path = secure_storage.rs; sourceTree = "<group>"; };
+		1FC4566D0D386FCE7AC5A895 /* key_exchange.rs */ = {isa = PBXFileReference; path = key_exchange.rs; sourceTree = "<group>"; };
+		2287B9F6129ADD2838142182 /* native_events.rs */ = {isa = PBXFileReference; path = native_events.rs; sourceTree = "<group>"; };
+		2C576C99835CF2CB406CA528 /* identity_keys.rs */ = {isa = PBXFileReference; path = identity_keys.rs; sourceTree = "<group>"; };
 		2DB9AE4068D0698CC760EFDC /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
 		3C540A86E73FCDB945F2093F /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
+		52048DFA90D99724C42B5072 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
+		6A68997998F475E8E416DE2F /* error.rs */ = {isa = PBXFileReference; path = error.rs; sourceTree = "<group>"; };
 		6ED31A5330DFBD1C78DD98DD /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
+		796FF0B61F80B9A0966519A9 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
+		7D1459024683FA5ABB4BF6BB /* sender_key_store.rs */ = {isa = PBXFileReference; path = sender_key_store.rs; sourceTree = "<group>"; };
+		8812B4A526D63A6D3F5F7FE3 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
+		8D611FC669090C86820F00AF /* signaling_envelope.rs */ = {isa = PBXFileReference; path = signaling_envelope.rs; sourceTree = "<group>"; };
 		942974224E23162B2BB1BF54 /* peers-touch-mobile_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "peers-touch-mobile_iOS.entitlements"; sourceTree = "<group>"; };
+		9D88BF08E8AD1E4262DA0219 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
+		A17A9297DBC2437ECA875E8B /* native_events.rs */ = {isa = PBXFileReference; path = native_events.rs; sourceTree = "<group>"; };
 		A3AB9134448CE6FBFD60A512 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		A5BECDF3FD4E40CA94A186BB /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
 		A7ADF58E73E445DEA2320422 /* main.rs */ = {isa = PBXFileReference; path = main.rs; sourceTree = "<group>"; };
 		A7DC514F4BCF0258D54EE039 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
+		AF30D6BF10BB3E3DEC13A9D9 /* sender_keys.rs */ = {isa = PBXFileReference; path = sender_keys.rs; sourceTree = "<group>"; };
+		AF97FE1EB8405258297DE5BC /* ios.rs */ = {isa = PBXFileReference; path = ios.rs; sourceTree = "<group>"; };
 		B7D32EC622950496A52F1C5E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		BBF682509308BA6096B91686 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		C3F930950622A1CCC6635395 /* health.rs */ = {isa = PBXFileReference; path = health.rs; sourceTree = "<group>"; };
 		CE234B18D084EF92890D4E37 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		D45C73FF898F83E9E33B4A4B /* group_crypto.rs */ = {isa = PBXFileReference; path = group_crypto.rs; sourceTree = "<group>"; };
+		D538826EF6274B718D5766E9 /* station.rs */ = {isa = PBXFileReference; path = station.rs; sourceTree = "<group>"; };
 		DCCB047FBDBF38D6BA837B63 /* peers-touch-mobile_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "peers-touch-mobile_iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		DDAD56ECF90CC7A8FBB94E19 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+		E02D1C72A6068309F389EA31 /* ios_keychain.rs */ = {isa = PBXFileReference; path = ios_keychain.rs; sourceTree = "<group>"; };
+		E250DB63B1B4C5F800FBD1F5 /* unsupported.rs */ = {isa = PBXFileReference; path = unsupported.rs; sourceTree = "<group>"; };
+		E4FC84D7CDC2E2BEDB46A5AE /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		E65F528A9E12625A00FDD20B /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		EE8B009CF540C29ED3D8142D /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -61,6 +81,18 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		015BCDDBB1A8640CF62589BC /* crypto */ = {
+			isa = PBXGroup;
+			children = (
+				2C576C99835CF2CB406CA528 /* identity_keys.rs */,
+				8812B4A526D63A6D3F5F7FE3 /* mod.rs */,
+				7D1459024683FA5ABB4BF6BB /* sender_key_store.rs */,
+				AF30D6BF10BB3E3DEC13A9D9 /* sender_keys.rs */,
+				8D611FC669090C86820F00AF /* signaling_envelope.rs */,
+			);
+			path = crypto;
+			sourceTree = "<group>";
+		};
 		202BB413F2408596583C6B44 /* bindings */ = {
 			isa = PBXGroup;
 			children = (
@@ -69,11 +101,35 @@
 			path = bindings;
 			sourceTree = "<group>";
 		};
+		61643B3615C1C5A768EF70E1 /* platform */ = {
+			isa = PBXGroup;
+			children = (
+				AF97FE1EB8405258297DE5BC /* ios.rs */,
+				E4FC84D7CDC2E2BEDB46A5AE /* mod.rs */,
+				2287B9F6129ADD2838142182 /* native_events.rs */,
+				EBFC9747D1AD0AF3A587167F /* secure_storage */,
+			);
+			path = platform;
+			sourceTree = "<group>";
+		};
+		63ED60AED15D63800986EC32 /* domain */ = {
+			isa = PBXGroup;
+			children = (
+				9D88BF08E8AD1E4262DA0219 /* mod.rs */,
+				015BCDDBB1A8640CF62589BC /* crypto */,
+			);
+			path = domain;
+			sourceTree = "<group>";
+		};
 		7500649CCFAFE5FF684851FB /* src */ = {
 			isa = PBXGroup;
 			children = (
+				6A68997998F475E8E416DE2F /* error.rs */,
 				EE8B009CF540C29ED3D8142D /* lib.rs */,
 				A7ADF58E73E445DEA2320422 /* main.rs */,
+				89D7CDA8F299EA0B33BAD8E1 /* commands */,
+				63ED60AED15D63800986EC32 /* domain */,
+				61643B3615C1C5A768EF70E1 /* platform */,
 			);
 			name = src;
 			path = ../../src;
@@ -85,6 +141,20 @@
 				9E0DF0BF8AC7D80544E1467D /* peers-touch-mobile */,
 			);
 			path = Sources;
+			sourceTree = "<group>";
+		};
+		89D7CDA8F299EA0B33BAD8E1 /* commands */ = {
+			isa = PBXGroup;
+			children = (
+				D45C73FF898F83E9E33B4A4B /* group_crypto.rs */,
+				C3F930950622A1CCC6635395 /* health.rs */,
+				1FC4566D0D386FCE7AC5A895 /* key_exchange.rs */,
+				796FF0B61F80B9A0966519A9 /* mod.rs */,
+				A17A9297DBC2437ECA875E8B /* native_events.rs */,
+				13848CF5F59D3550D4AE901E /* secure_storage.rs */,
+				D538826EF6274B718D5766E9 /* station.rs */,
+			);
+			path = commands;
 			sourceTree = "<group>";
 		};
 		9E0DF0BF8AC7D80544E1467D /* peers-touch-mobile */ = {
@@ -102,7 +172,6 @@
 				6ED31A5330DFBD1C78DD98DD /* assets */,
 				CE234B18D084EF92890D4E37 /* Assets.xcassets */,
 				09635B86FCB666DB3DD032BD /* LaunchScreen.storyboard */,
-				F77B98B6AF6A4B1CD7D88FD4 /* Externals */,
 				F0A9CE6F08E7C5188D9D3386 /* peers-touch-mobile_iOS */,
 				87871EBFDC018B1FEDFA53E1 /* Sources */,
 				7500649CCFAFE5FF684851FB /* src */,
@@ -119,6 +188,16 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		EBFC9747D1AD0AF3A587167F /* secure_storage */ = {
+			isa = PBXGroup;
+			children = (
+				E02D1C72A6068309F389EA31 /* ios_keychain.rs */,
+				52048DFA90D99724C42B5072 /* mod.rs */,
+				E250DB63B1B4C5F800FBD1F5 /* unsupported.rs */,
+			);
+			path = secure_storage;
+			sourceTree = "<group>";
+		};
 		F0A9CE6F08E7C5188D9D3386 /* peers-touch-mobile_iOS */ = {
 			isa = PBXGroup;
 			children = (
@@ -126,13 +205,6 @@
 				942974224E23162B2BB1BF54 /* peers-touch-mobile_iOS.entitlements */,
 			);
 			path = "peers-touch-mobile_iOS";
-			sourceTree = "<group>";
-		};
-		F77B98B6AF6A4B1CD7D88FD4 /* Externals */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = Externals;
 			sourceTree = "<group>";
 		};
 		FC36612060B612CDF6F0B05E /* Frameworks */ = {
@@ -320,8 +392,9 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "peers-touch-mobile_iOS/peers-touch-mobile_iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = D82S6W6WUC;
+				DEVELOPMENT_TEAM = "$(APPLE_DEVELOPMENT_TEAM)";
 				ENABLE_BITCODE = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -332,11 +405,11 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64-sim/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
-				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.peers.touch.mobile;
-				PRODUCT_NAME = "Peers Touch Mobile";
+				PRODUCT_NAME = Peers;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -350,8 +423,9 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "peers-touch-mobile_iOS/peers-touch-mobile_iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = D82S6W6WUC;
+				DEVELOPMENT_TEAM = "$(APPLE_DEVELOPMENT_TEAM)";
 				ENABLE_BITCODE = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -362,11 +436,11 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64-sim/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
-				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.peers.touch.mobile;
-				PRODUCT_NAME = "Peers Touch Mobile";
+				PRODUCT_NAME = Peers;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};

@@ -1,4 +1,5 @@
 import { type ComponentType, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Modal } from 'antd';
 import { useAppLifecycle } from './hooks/useAppLifecycle';
 import { OnboardingView } from './views/OnboardingView';
@@ -39,6 +40,7 @@ const APP_VIEWS: Record<AppState, ComponentType<ViewProps>> = {
 function App() {
   const lifecycle = useAppLifecycle();
   const View = APP_VIEWS[lifecycle.state];
+  const { t } = useTranslation('common');
 
   // Install app-level bridge listeners once at app boot. Supervisor
   // lifetimes still follow usePresence's authenticated actor edges.
@@ -61,14 +63,14 @@ function App() {
   // they will start appearing in the `runtime:idle` log line without any
   // change here.
   useEffect(() => {
-    if (lifecycle.state !== 'ready') return;
+    if (!lifecycle.authenticated) return;
     const session = useSessionStore.getState();
     const actorId = session.authenticated ? session.currentUser?.actorId ?? null : null;
     if (!actorId) return;
     return scheduleIdle(() => {
       void installIdleRuntimes(actorId, CRITICAL_SESSION_RUNTIMES);
     });
-  }, [lifecycle.state]);
+  }, [lifecycle.authenticated]);
 
   usePresence();
 
@@ -87,21 +89,18 @@ function App() {
   // so a future revocation can show the notification again.
   const sessionEndedRef = useRef(false);
   useEffect(() => {
-    if (lifecycle.state === 'ready') {
+    if (lifecycle.authenticated) {
       sessionEndedRef.current = false;
     }
-  }, [lifecycle.state]);
+  }, [lifecycle.authenticated]);
 
-  // Single session-revoked handler: trigger logout + show user notification.
-  // State transition is automatic — logout() sets authenticated=false,
-  // which the derived AppState in useAppLifecycle picks up.
+  // Session-revoked UI notification. Identity state transition is owned by
+  // identityRuntime; App only decides whether to notify the visible user.
   useEffect(() => {
     return onSessionRevoked((payload) => {
       const { authenticated } = useSessionStore.getState();
-      // Only handle revocation when there is an active session.
-      if (!authenticated) return;
-
-      useSessionStore.getState().logout().catch(() => {});
+      const sessionVisible = authenticated || lifecycle.authenticated;
+      if (!sessionVisible) return;
 
       // Show notification only once per revocation cycle.
       if (sessionEndedRef.current) return;
@@ -109,14 +108,16 @@ function App() {
 
       const reason = payload?.reason || 'unknown';
       Modal.warning({
-        title: reason === 'expired' ? 'Session Expired' : 'Session Ended',
+        title: reason === 'expired'
+          ? t('desktop.auth.sessionExpiredTitle')
+          : t('desktop.auth.sessionEndedTitle'),
         content: reason === 'expired'
-          ? 'Your session has expired. Please log in again.'
-          : 'Your session has been terminated. Please log in again.',
-        okText: 'OK',
+          ? t('desktop.auth.sessionExpiredBody')
+          : t('desktop.auth.sessionEndedBody'),
+        okText: t('common.action.confirm'),
       });
     });
-  }, []);
+  }, [lifecycle.authenticated, t]);
 
   return <View lifecycle={lifecycle} />;
 }

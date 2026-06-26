@@ -2,7 +2,19 @@ import { create } from 'zustand';
 import { api, type AccountIdentity, type Agent } from '../services/desktop_api';
 import { toolService, type ToolInfo } from '../services/tool-service';
 import { log } from '../utils/logger';
+import {
+  DEFAULT_CHAT_SCREENSHOT_SHORTCUT,
+  normalizeChatScreenshotShortcut,
+} from '../utils/chatScreenshotShortcut';
 import { beginMutation, endMutation, toStoreError, type RevalidationState } from './revalidation';
+
+const CHAT_SCREENSHOT_SHORTCUT_SETTING_KEY = 'settings.chat.screenshotShortcut';
+
+function registerChatScreenshotShortcut(shortcut: string): void {
+  api.chatScreenshotShortcutRegister({ shortcut }).catch((error) => {
+    log.warn('settings', 'Failed to register chat screenshot shortcut', error);
+  });
+}
 
 interface SettingsState extends RevalidationState {
   agents: Agent[];
@@ -15,10 +27,13 @@ interface SettingsState extends RevalidationState {
    * "Settings" never triggers an `accountGetActive` round-trip.
    */
   activeAccount: AccountIdentity | null;
+  chatScreenshotShortcut: string;
 
+  loadChatPreferences: () => Promise<void>;
   loadAgents: () => Promise<void>;
   loadTools: () => Promise<void>;
   refreshActiveAccount: () => Promise<void>;
+  setChatScreenshotShortcut: (shortcut: string) => void;
   setCurrentAgent: (name: string) => void;
   setDefaultAgent: (id: string) => Promise<void>;
   updateAgent: (name: string, data: Partial<Agent>) => Promise<void>;
@@ -29,10 +44,26 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   tools: [],
   currentAgent: 'assistant',
   activeAccount: null,
+  chatScreenshotShortcut: DEFAULT_CHAT_SCREENSHOT_SHORTCUT,
   loading: false,
   error: null,
   lastLoadedAt: null,
   pendingMutations: {},
+
+  loadChatPreferences: async () => {
+    try {
+      const rustResult = await api.settingsGet({ key: CHAT_SCREENSHOT_SHORTCUT_SETTING_KEY });
+      const value = rustResult.ok
+        ? (rustResult.data as { value?: unknown } | undefined)?.value
+        : undefined;
+      const shortcut = normalizeChatScreenshotShortcut(value);
+      set({ chatScreenshotShortcut: shortcut });
+      registerChatScreenshotShortcut(shortcut);
+    } catch (e) {
+      log.warn('settings', 'Failed to load chat preferences', e);
+      registerChatScreenshotShortcut(DEFAULT_CHAT_SCREENSHOT_SHORTCUT);
+    }
+  },
 
   loadAgents: async () => {
     set({ loading: true, error: null });
@@ -120,6 +151,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     } finally {
       set((state) => ({ pendingMutations: endMutation(state.pendingMutations, mutationKey) }));
     }
+  },
+
+  setChatScreenshotShortcut: (shortcut: string) => {
+    const normalized = normalizeChatScreenshotShortcut(shortcut);
+    set({ chatScreenshotShortcut: normalized });
+    api.settingsSet({ key: CHAT_SCREENSHOT_SHORTCUT_SETTING_KEY, value: normalized }).catch((error) => {
+      const message = toStoreError(error);
+      log.warn('settings', 'Failed to persist chat screenshot shortcut', { error: message });
+      set({ error: message });
+    });
+    registerChatScreenshotShortcut(normalized);
   },
 
   updateAgent: async (name: string, data: Partial<Agent>) => {

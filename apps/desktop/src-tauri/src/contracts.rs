@@ -36,6 +36,37 @@ pub struct AuthValidateTokenInput {
     pub token: Option<String>,
 }
 
+// --- Access gate (interactive chain) contracts ---
+//
+// The Station owns the access policy and emits an ordered gate chain. The
+// desktop client drives the chain interactively: it starts an attempt, then
+// submits the gate the Station marks `action_required` (invite code first,
+// then login credentials). `AccessDecisionPayload.decision` carries the raw
+// Station decision JSON unchanged so the TS layer can normalize the
+// snake_case / string-enum wire shape with the same logic mobile uses.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccessSubmitInviteInput {
+    pub attempt_id: String,
+    pub invite_code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccessSubmitLoginInput {
+    pub attempt_id: String,
+    pub account: String,
+    pub password: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccessDecisionPayload {
+    pub command: String,
+    pub status: String,
+    /// Raw Station `AccessDecision` JSON. Passed through verbatim so the
+    /// frontend normalizes the wire shape (snake_case keys, string enums).
+    pub decision: serde_json::Value,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SettingsGetInput {
     pub key: String,
@@ -367,6 +398,25 @@ pub struct ChatSearchLocalInput {
     pub scope: String,
     pub conversation_id: Option<String>,
     pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ChatIndexLocalInput {
+    pub messages: Vec<ChatIndexLocalMessageInput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ChatIndexLocalMessageInput {
+    pub scope: String,
+    pub conversation_id: String,
+    pub message_id: String,
+    pub sender_did: String,
+    pub content: String,
+    pub reply_to_ulid: Option<String>,
+    pub thread_root_ulid: Option<String>,
+    pub sent_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -877,6 +927,10 @@ pub struct AppletGatewayService {
     pub allowed_methods: Vec<String>,
     #[serde(rename = "allowedPaths")]
     pub allowed_paths: Vec<String>,
+    #[serde(rename = "publicPathPrefix")]
+    pub public_path_prefix: Option<String>,
+    #[serde(rename = "stationPathPrefix")]
+    pub station_path_prefix: Option<String>,
     #[serde(default)]
     pub streaming: bool,
 }
@@ -1204,11 +1258,6 @@ pub struct FriendChatSyncMessagesInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatOnlineInput {
-    pub did: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendChatPendingInput {
     pub limit: Option<u32>,
 }
@@ -1228,8 +1277,9 @@ pub struct GroupUlidInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupUpdateInput {
     pub group_ulid: String,
-    pub name: String,
+    pub name: Option<String>,
     pub description: Option<String>,
+    pub avatar_cid: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1242,6 +1292,12 @@ pub struct GroupInviteInput {
 pub struct GroupRemoveMemberInput {
     pub group_ulid: String,
     pub member_did: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupTransferOwnershipInput {
+    pub group_ulid: String,
+    pub next_owner_did: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1482,6 +1538,51 @@ pub struct SocialGetTimelineInput {
     /// PUBLIC timeline honours `hot`; HOME / USER stay on recency.
     #[serde(default)]
     pub sort: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialSyncMomentsProjectionInput {
+    #[serde(default)]
+    pub home_cursor: Option<String>,
+    #[serde(default)]
+    pub public_cursor: Option<String>,
+    #[serde(default)]
+    pub limit: Option<i32>,
+    #[serde(default)]
+    pub public_sort: Option<i32>,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialStationModerationUpsertInput {
+    pub station_domain: String,
+    #[serde(default)]
+    pub station_peer_id: Option<String>,
+    #[serde(default)]
+    pub kind: Option<i32>,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialStationModerationDeleteInput {
+    #[serde(default)]
+    pub station_domain: Option<String>,
+    #[serde(default)]
+    pub station_peer_id: Option<String>,
+    #[serde(default)]
+    pub kind: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialStationModerationListInput {
+    #[serde(default)]
+    pub kind: Option<i32>,
+    #[serde(default)]
+    pub cursor: Option<String>,
+    #[serde(default)]
+    pub limit: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

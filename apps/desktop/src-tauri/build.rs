@@ -35,6 +35,7 @@ fn compile_protos() {
         "domain/error/error.proto",
         "domain/events/events.proto",
         "domain/peer/peer.proto",
+        "domain/presence/presence.proto",
         "domain/oss/oss.proto",
         "domain/oauth/oauth.proto",
         "domain/manage/health.proto",
