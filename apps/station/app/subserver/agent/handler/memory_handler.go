@@ -29,6 +29,36 @@ func NewMemoryHandlers(memoryService *service.MemoryService) *MemoryHandlers {
 	return &MemoryHandlers{memoryService: memoryService}
 }
 
+var domainToModelMemoryLayer = map[domain.MemoryLayer]model.MemoryLayer{
+	domain.MemoryLayerIdentity:   model.MemoryLayer_MEMORY_LAYER_IDENTITY,
+	domain.MemoryLayerPreference: model.MemoryLayer_MEMORY_LAYER_PREFERENCE,
+	domain.MemoryLayerContext:    model.MemoryLayer_MEMORY_LAYER_CONTEXT,
+	domain.MemoryLayerExperience: model.MemoryLayer_MEMORY_LAYER_EXPERIENCE,
+	domain.MemoryLayerActivity:   model.MemoryLayer_MEMORY_LAYER_ACTIVITY,
+}
+
+var modelToDomainMemoryLayer = map[model.MemoryLayer]domain.MemoryLayer{
+	model.MemoryLayer_MEMORY_LAYER_IDENTITY:   domain.MemoryLayerIdentity,
+	model.MemoryLayer_MEMORY_LAYER_PREFERENCE: domain.MemoryLayerPreference,
+	model.MemoryLayer_MEMORY_LAYER_CONTEXT:    domain.MemoryLayerContext,
+	model.MemoryLayer_MEMORY_LAYER_EXPERIENCE: domain.MemoryLayerExperience,
+	model.MemoryLayer_MEMORY_LAYER_ACTIVITY:   domain.MemoryLayerActivity,
+}
+
+func domainMemoryLayerToModel(layer domain.MemoryLayer) model.MemoryLayer {
+	if m, ok := domainToModelMemoryLayer[layer]; ok {
+		return m
+	}
+	return model.MemoryLayer_MEMORY_LAYER_UNSPECIFIED
+}
+
+func modelMemoryLayerToDomain(layer model.MemoryLayer) domain.MemoryLayer {
+	if d, ok := modelToDomainMemoryLayer[layer]; ok {
+		return d
+	}
+	return ""
+}
+
 // HandleListMemories retrieves all memory entries for a given agent and target.
 func (h *MemoryHandlers) HandleListMemories(ctx context.Context, req *model.ListMemoriesRequest) (*model.ListMemoriesResponse, error) {
 	since, until, err := resolveMemoryTimeRange(req.GetSince(), req.GetUntil(), req.GetPeriod())
@@ -116,8 +146,10 @@ func (h *MemoryHandlers) HandleSearchMemories(ctx context.Context, req *model.Se
 	}
 	layers := make([]domain.MemoryLayer, 0, len(req.GetLayers()))
 	for _, layer := range req.GetLayers() {
-		if strings.TrimSpace(layer) != "" {
-			layers = append(layers, domain.MemoryLayer(layer))
+		if layer != model.MemoryLayer_MEMORY_LAYER_UNSPECIFIED {
+			if d := modelMemoryLayerToDomain(layer); d != "" {
+				layers = append(layers, d)
+			}
 		}
 	}
 	results, err := h.memoryService.Search(ctx, domain.MemorySearchOptions{
@@ -260,7 +292,7 @@ func memoryItemToProto(item *domain.MemoryItem) *model.MemoryItem {
 		Target:       item.Target,
 		Content:      item.Content,
 		SourceTurnId: item.SourceTurnID,
-		Layer:        string(item.Layer),
+		Layer:        domainMemoryLayerToModel(item.Layer),
 		SessionId:    item.SessionID,
 		Source:       item.Source,
 		Summary:      item.Summary,
@@ -369,7 +401,7 @@ func memoryEventToProto(event *domain.MemoryEvent) *model.MemoryEvent {
 		MemoryId:   event.MemoryID,
 		SessionId:  event.SessionID,
 		AgentId:    event.AgentID,
-		Layer:      string(event.Layer),
+		Layer:      domainMemoryLayerToModel(event.Layer),
 		DetailJson: event.Detail,
 		LatencyMs:  event.LatencyMs,
 	}

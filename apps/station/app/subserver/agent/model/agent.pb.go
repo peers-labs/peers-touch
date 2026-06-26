@@ -1349,6 +1349,7 @@ type Agent struct {
 	Visibility    AgentVisibility        `protobuf:"varint,8,opt,name=visibility,proto3,enum=peers_touch.model.agent.v1.AgentVisibility" json:"visibility,omitempty"`
 	OwnerActorId  string                 `protobuf:"bytes,9,opt,name=owner_actor_id,json=ownerActorId,proto3" json:"owner_actor_id,omitempty"`
 	ConfigJson    string                 `protobuf:"bytes,10,opt,name=config_json,json=configJson,proto3" json:"config_json,omitempty"`
+	WorkspaceId   *string                `protobuf:"bytes,13,opt,name=workspace_id,json=workspaceId,proto3,oneof" json:"workspace_id,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1451,6 +1452,13 @@ func (x *Agent) GetOwnerActorId() string {
 func (x *Agent) GetConfigJson() string {
 	if x != nil {
 		return x.ConfigJson
+	}
+	return ""
+}
+
+func (x *Agent) GetWorkspaceId() string {
+	if x != nil && x.WorkspaceId != nil {
+		return *x.WorkspaceId
 	}
 	return ""
 }
@@ -3741,7 +3749,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"updated_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x1a7\n" +
 	"\tMetaEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd0\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x89\x04\n" +
 	"\x05Agent\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
@@ -3758,11 +3766,13 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x0eowner_actor_id\x18\t \x01(\tR\fownerActorId\x12\x1f\n" +
 	"\vconfig_json\x18\n" +
 	" \x01(\tR\n" +
-	"configJson\x129\n" +
+	"configJson\x12&\n" +
+	"\fworkspace_id\x18\r \x01(\tH\x00R\vworkspaceId\x88\x01\x01\x129\n" +
 	"\n" +
 	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x91\x01\n" +
+	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAtB\x0f\n" +
+	"\r_workspace_id\"\x91\x01\n" +
 	"\x11ListAgentsRequest\x12K\n" +
 	"\n" +
 	"visibility\x18\x01 \x01(\x0e2+.peers_touch.model.agent.v1.AgentVisibilityR\n" +
@@ -4149,6 +4159,7 @@ func file_domain_agent_agent_proto_init() {
 	if File_domain_agent_agent_proto != nil {
 		return
 	}
+	file_domain_agent_agent_proto_msgTypes[8].OneofWrappers = []any{}
 	file_domain_agent_agent_proto_msgTypes[22].OneofWrappers = []any{}
 	file_domain_agent_agent_proto_msgTypes[39].OneofWrappers = []any{}
 	type x struct{}
