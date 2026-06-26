@@ -763,5 +763,17 @@
   "chat.social.preview.video": "[视频]",
 
   "chat.social.subNav.chats": "聊天",
-  "chat.social.subNav.contacts": "通讯录"
+  "chat.social.subNav.contacts": "通讯录",
+  "chat.agentHeader.fallbackDescription": "用这个智能体提问、创作和执行任务。",
+  "chat.agentHeader.providerFallback": "默认运行时",
+  "chat.agentHeader.runtimeCli": "CLI 运行时",
+  "chat.agentHeader.effort": "{{effort}} 推理",
+  "chat.agentHeader.toolsEnabled": "工具已启用",
+  "chat.agentHeader.openProfile": "打开智能体档案",
+  "chat.agentHeader.refresh": "刷新智能体运行时",
+  "chat.welcome.status.toolsEnabled": "工具已启用",
+  "chat.welcome.status.toolsReady": "工具就绪",
+  "chat.welcome.capability.memoryDisabledShort": "记忆",
+  "chat.welcome.capability.workspaceOptional": "工作区"
+
 }
