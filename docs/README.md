@@ -192,7 +192,7 @@
 - Human 联邦社交活动层：`architecture/federated-social-activity/README.md`
 - Agent LobeHub 蓝本重构：`architecture/agent/agent-lobehub-blueprint.md`
 - Atelier 个人 Agent 工作台 × Peers Agent Collaboration：`architecture/atelier/README.md`（文档集，入口 `README.md`）
-- 原型总账（统一登记 + 确认门）：`architecture/prototypes/README.md`
+- 原型统一入口（Prototype Portal + 统一登记 + 确认门）：`architecture/prototypes/README.md`
 
 ### 4.2 平台层真源
 

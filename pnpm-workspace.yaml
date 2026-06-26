@@ -14,3 +14,5 @@ packages:
   - packages/applet-contract
   - packages/applets/*
   - packages/prototypes/*
+  - packages/prototypes/*/*
+  - packages/prototypes/*/*/*
