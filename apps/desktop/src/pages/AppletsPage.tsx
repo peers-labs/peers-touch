@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { toast } from '@lobehub/ui';
-import { Typography, Spin, Empty, Button, theme } from 'antd';
+import { Typography, Spin, Empty, Button, Alert, theme } from 'antd';
 import {
   Bot,
   ChartCandlestick,
@@ -37,7 +37,10 @@ const OFFICIAL_IDENTITY: Record<string, { icon: React.ReactNode; label: string }
   'big-a': { icon: <ChartCandlestick size={31} strokeWidth={2.1} />, label: 'A' },
 };
 
-function errorMessage(error: unknown, fallback: string): string {
+function errorMessage(error: unknown, fallback: string, t?: (key: string) => string): string {
+  if (error instanceof Error && error.message.startsWith('error.applet.') && t) {
+    return t(error.message);
+  }
   return error instanceof Error ? error.message : fallback;
 }
 
@@ -86,6 +89,7 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
   const applets = useAppletsStore((state) => state.applets);
   const catalogApplets = useAppletsStore((state) => state.catalogApplets);
   const loading = useAppletsStore((state) => state.loading);
+  const stationUnavailable = useAppletsStore((state) => state.stationUnavailable);
   const loadApplet = useAppletsStore((state) => state.loadApplet);
   const installApplet = useAppletsStore((state) => state.installApplet);
   const importAppletDirectory = useAppletsStore((state) => state.importAppletDirectory);
@@ -102,7 +106,7 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
       await loadApplet(id);
       onNavigate?.(`applet:${id}`);
     } catch (error) {
-      toast.error(errorMessage(error, t('applet.toast.failedToActivate')));
+      toast.error(errorMessage(error, t('applet.toast.failedToActivate'), t));
     }
   }, [loadApplet, onNavigate, t]);
 
@@ -164,6 +168,15 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
             {t('applet.page.importDirectory')}
           </Button>
         </Flexbox>
+
+        {stationUnavailable && (
+          <Alert
+            type="warning"
+            showIcon
+            message={t('applet.page.stationUnavailableTitle')}
+            description={t('applet.page.stationUnavailableDescription')}
+          />
+        )}
 
         {applets.length === 0 && catalogApplets.length === 0 ? (
           <Flexbox
@@ -278,6 +291,7 @@ function AppletIconTile({
   const [iconAssetFailed, setIconAssetFailed] = useState(false);
   const identity = appletIdentity(info);
   const isActive = info.status === 'active';
+  const isRevoked = info.status === 'revoked';
   const shouldUseAsset = Boolean(identity.assetUrl && !iconAssetFailed);
 
   return (
@@ -285,14 +299,17 @@ function AppletIconTile({
       type="button"
       data-applet-open={info.manifest.id}
       data-applet-status={info.status}
+      data-applet-source={info.source}
       data-applet-opened-this-session={info.lastOpenedAt ? 'true' : 'false'}
       onClick={onOpen}
+      disabled={isRevoked}
       style={{
         border: 0,
         background: 'transparent',
         borderRadius: 24,
         padding: '10px 6px',
-        cursor: 'pointer',
+        cursor: isRevoked ? 'not-allowed' : 'pointer',
+        opacity: isRevoked ? 0.56 : 1,
         minWidth: 0,
         outline: 'none',
         transition: 'transform 160ms ease, background 160ms ease',
@@ -300,17 +317,17 @@ function AppletIconTile({
       aria-label={`${actionLabel} ${info.manifest.name}`}
       onMouseEnter={(event) => {
         event.currentTarget.style.background = token.colorFillQuaternary;
-        event.currentTarget.style.transform = 'translateY(-2px)';
+        if (!isRevoked) event.currentTarget.style.transform = 'translateY(-2px)';
       }}
       onMouseLeave={(event) => {
         event.currentTarget.style.background = 'transparent';
         event.currentTarget.style.transform = 'translateY(0)';
       }}
       onMouseDown={(event) => {
-        event.currentTarget.style.transform = 'translateY(0) scale(0.98)';
+        if (!isRevoked) event.currentTarget.style.transform = 'translateY(0) scale(0.98)';
       }}
       onMouseUp={(event) => {
-        event.currentTarget.style.transform = 'translateY(-2px) scale(1)';
+        if (!isRevoked) event.currentTarget.style.transform = 'translateY(-2px) scale(1)';
       }}
       onFocus={(event) => {
         event.currentTarget.style.background = token.colorFillQuaternary;
