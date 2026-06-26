@@ -150,6 +150,7 @@ message Agent {
   AgentVisibility visibility = 8;
   string owner_actor_id = 9;
   string config_json = 10;
+  optional string workspace_id = 13;
   google.protobuf.Timestamp created_at = 11;
   google.protobuf.Timestamp updated_at = 12;
 }

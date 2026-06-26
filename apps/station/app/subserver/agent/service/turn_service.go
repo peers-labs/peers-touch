@@ -125,6 +125,7 @@ type TurnService struct {
 	growthMetrics    *GrowthMetricsService
 	nudgeState       *domain.NudgeState
 	localToolBroker  *LocalToolBroker
+	eventBus         domain.EventBus
 }
 
 func NewTurnService(
@@ -157,6 +158,29 @@ func NewTurnService(
 		nudgeState:       domain.NewNudgeState(),
 		localToolBroker:  NewLocalToolBroker(),
 	}
+}
+
+func (s *TurnService) SetEventBus(eventBus domain.EventBus) {
+	s.eventBus = eventBus
+}
+
+func (s *TurnService) publishDomainEvent(ctx context.Context, agentID, turnID, eventType string, payload interface{}) {
+	if s.eventBus == nil {
+		return
+	}
+
+	event := domain.DomainEvent{
+		EventID:   generateID("evt"),
+		EventType: eventType,
+		ActorID:   agentID,
+		Payload:   payload,
+		Metadata: map[string]string{
+			"agent_id": agentID,
+			"turn_id":  turnID,
+		},
+	}
+
+	_ = s.eventBus.Publish(ctx, event)
 }
 
 func (s *TurnService) SubmitLocalToolResult(result LocalToolResult) error {
@@ -223,6 +247,10 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	s.emitTurnEvent(ctx, config, turnID, TurnEvent{
 		Type:  "progress",
 		Stage: "turn_started",
+	})
+	s.publishDomainEvent(ctx, config.AgentID, turnID, string(domain.EventTypeAgentTurnStarted), map[string]interface{}{
+		"turn_id":          turnID,
+		"conversation_id":  config.ConversationID,
 	})
 
 	// MemoryProvider hook: on_turn_start — notify external backend of new turn.
@@ -422,6 +450,11 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		Type:      "progress",
 		Stage:     "turn_completed",
 		Iteration: toolIterations,
+	})
+	s.publishDomainEvent(ctx, config.AgentID, turnID, string(domain.EventTypeAgentTurnCompleted), map[string]interface{}{
+		"turn_id":          turnID,
+		"conversation_id":  config.ConversationID,
+		"iterations":       toolIterations,
 	})
 
 	if s.growthMetrics != nil {
@@ -1610,6 +1643,11 @@ func (s *TurnService) failTurn(ctx context.Context, agentID, turnID, reason stri
 	}
 
 	logger.Warnf(ctx, "turn failed: turn_id=%s reason=%s", turnID, reason)
+
+	s.publishDomainEvent(ctx, agentID, turnID, string(domain.EventTypeAgentTurnFailed), map[string]interface{}{
+		"turn_id": turnID,
+		"reason":  reason,
+	})
 
 	if s.growthMetrics != nil {
 		s.growthMetrics.RecordEvent(ctx, agentID, EventTurnFailed, CategoryTurn, turnID, reason, "failure")
