@@ -38,6 +38,7 @@
 | 模块 | 原型路径 | 落地目标 | 对应设计版本 | 状态 | 入口文档 |
 |------|---------|---------|------------|------|---------|
 | desktop | `packages/prototypes/desktop/` | Desktop 容器外壳（apps/desktop）；原型为 React web 展示 | runtime/desktop-runtime-architecture | drafting | [prototype/README.md](../desktop/prototype/README.md) |
+| agent-canvas | `packages/prototypes/agent-canvas/` | Agent 页内编排入口（由 `packages/prototypes/desktop/` 的 Agent 页图标打开）；原型为 React web 展示 | agent/agent-canvas-orchestration | drafting | [agent-canvas-orchestration.md](../agent/agent-canvas-orchestration.md) |
 | atelier | `packages/prototypes/atelier/` | Applet（Lynx），运行在 Desktop 容器内；原型为 React+LobeUI web 展示 | functional-modules §1 | drafting | [prototype/README.md](../atelier/prototype/README.md) |
 | realtime | `packages/prototypes/call/` | Desktop 好友聊天通话（apps/desktop，CallSurface）；原型为 React web 展示 | realtime/voice-video-calls | confirmed | [prototype/README.md](../realtime/prototype/README.md) |
 
