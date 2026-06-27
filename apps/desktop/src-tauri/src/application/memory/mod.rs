@@ -41,13 +41,35 @@ fn memory_content_json(content: &str) -> Value {
     serde_json::from_str(content).unwrap_or_else(|_| json!({ "text": content }))
 }
 
+fn memory_layer_to_str(layer: i32) -> &'static str {
+    match layer {
+        1 => "identity",
+        2 => "preference",
+        3 => "context",
+        4 => "experience",
+        5 => "activity",
+        _ => "preference",
+    }
+}
+
+fn str_to_memory_layer(s: &str) -> i32 {
+    match s {
+        "identity" => 1,
+        "preference" => 2,
+        "context" => 3,
+        "experience" => 4,
+        "activity" => 5,
+        _ => 0,
+    }
+}
+
 fn memory_item_json(item: &agent::MemoryItem) -> Value {
     json!({
         "id": item.memory_id,
         "memory_id": item.memory_id,
         "agent_id": item.agent_id,
         "target": item.target,
-        "layer": if item.layer.is_empty() { "preference" } else { item.layer.as_str() },
+        "layer": memory_layer_to_str(item.layer),
         "session_id": item.session_id,
         "source": if item.source.is_empty() { "turn" } else { item.source.as_str() },
         "content": memory_content_json(&item.content),
@@ -96,7 +118,7 @@ pub fn memory_list(input: MemoryListInput, token: &str) -> AppResult<StubPayload
     let req = agent::ListMemoriesRequest {
         agent_id: value_string(&params, "agent_id"),
         target: value_string(&params, "target"),
-        layer: value_string(&params, "layer"),
+        layer: str_to_memory_layer(&value_string(&params, "layer")),
         page: value_i32(&params, "page"),
         page_size: value_i32(&params, "page_size"),
         order_by: value_string(&params, "order_by"),
@@ -172,7 +194,7 @@ pub fn memory_search(input: MemorySearchInput, token: &str) -> AppResult<StubPay
     }
     let req = agent::SearchMemoriesRequest {
         query: input.query,
-        layers: input.layers.unwrap_or_default(),
+        layers: input.layers.unwrap_or_default().into_iter().map(|s| str_to_memory_layer(&s)).collect(),
         limit: input.limit.unwrap_or(10) as i32,
         agent_id: input.agent_id.unwrap_or_default(),
         since: input.since.unwrap_or_default(),
@@ -400,7 +422,7 @@ fn value_to_memory_item(value: &Value) -> agent::MemoryItem {
         source_turn_id: value_string(value, "source_turn_id"),
         created_at: None,
         updated_at: None,
-        layer: value_string(value, "layer"),
+        layer: str_to_memory_layer(&value_string(value, "layer")),
         session_id: value_string(value, "session_id"),
         source: value_string(value, "source"),
         summary: value_string(value, "summary"),
