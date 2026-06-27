@@ -94,6 +94,11 @@ peers:
           enable: true
           default: false
           dsn: ${PEERS_DB_DSN}
+        - name: agent
+          driver: postgres
+          enable: true
+          default: false
+          dsn: ${PEERS_DB_DSN}
 EOF
   OVERLAYS="${OVERLAYS}, store.docker.yml"
 fi
