@@ -50,9 +50,14 @@ function agentTitle(agent: AgentRecord): string {
 }
 
 async function postAgentApi<T>(path: string, body: Record<string, unknown> = {}): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const e2eToken = import.meta.env.DEV ? window.sessionStorage.getItem('pt.agent.e2e.token') : null;
+  if (e2eToken) {
+    headers.Authorization = `Bearer ${e2eToken}`;
+  }
   const res = await fetch(`/sub-agent${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     credentials: 'include',
     body: JSON.stringify(body),
   });
