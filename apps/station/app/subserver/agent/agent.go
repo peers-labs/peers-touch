@@ -28,6 +28,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
@@ -91,6 +92,8 @@ func (s *agentSubServer) Address() server.SubserverAddress {
 func (s *agentSubServer) Handlers() []server.Handler {
 	logIDWrapper := serverwrapper.LogID()
 	jwtWrapper := s.jwtWrapper
+	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
+	hertzJWTWrapper := hertzadapter.RequireJWT(provider)
 	eventBus := agentevent.NewMemoryEventBus()
 
 	// Phase 7: Growth Metrics — must be created early since MemoryService,
@@ -247,7 +250,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-offline-queue-sync", "/offline-queue/sync", server.POST, offlineQueueHandlers.HandleSync, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-offline-queue-resolve", "/offline-queue/resolve", server.POST, offlineQueueHandlers.HandleResolveConflict, logIDWrapper, jwtWrapper),
 
-		server.NewHTTPHandler("agent-events-stream", "/events/stream", server.GET, eventStreamHandlers.HandleSubscribe, logIDWrapper, jwtWrapper),
+		server.NewHertzHandler("agent-events-stream", "/events/stream", server.GET, eventStreamHandlers.HandleSubscribeHertz, hertzJWTWrapper),
 
 		server.NewTypedHandler("agent-skill-list", "/agent/skill/list", server.POST, skillHandlers.HandleListSkills, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-skill-get", "/agent/skill/get", server.GET, skillHandlers.HandleGetSkill, logIDWrapper, jwtWrapper),
