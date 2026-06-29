@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { toast } from '@lobehub/ui';
@@ -29,7 +29,7 @@ const IDENTITY_PALETTES = [
   { background: 'linear-gradient(145deg, #9333ea, #f472b6)', shadow: 'rgba(217, 70, 239, 0.22)' },
 ] as const;
 
-const OFFICIAL_IDENTITY: Record<string, { icon: React.ReactNode; label: string }> = {
+const OFFICIAL_IDENTITY: Record<string, { icon: ReactNode; label: string }> = {
   'peers.note': { icon: <NotebookPen size={31} strokeWidth={2.1} />, label: 'N' },
   'remote-cli': { icon: <TerminalSquare size={31} strokeWidth={2.1} />, label: 'CLI' },
   'web-search': { icon: <Search size={31} strokeWidth={2.1} />, label: 'S' },
@@ -91,14 +91,21 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
   const loading = useAppletsStore((state) => state.loading);
   const stationUnavailable = useAppletsStore((state) => state.stationUnavailable);
   const loadApplet = useAppletsStore((state) => state.loadApplet);
-  const installApplet = useAppletsStore((state) => state.installApplet);
   const importAppletDirectory = useAppletsStore((state) => state.importAppletDirectory);
   const recentApplets = useMemo(
     () => applets
       .filter((info) => info.lastOpenedAt || info.status === 'active')
       .sort((left, right) => (right.lastOpenedAt ?? 0) - (left.lastOpenedAt ?? 0))
-      .slice(0, 8),
+      .slice(0, 4),
     [applets],
+  );
+  const recentAppletIds = useMemo(
+    () => new Set(recentApplets.map((info) => info.manifest.id)),
+    [recentApplets],
+  );
+  const launcherApplets = useMemo(
+    () => applets.filter((info) => !recentAppletIds.has(info.manifest.id)),
+    [applets, recentAppletIds],
   );
 
   const handleOpen = useCallback(async (id: string) => {
@@ -109,15 +116,6 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
       toast.error(errorMessage(error, t('applet.toast.failedToActivate'), t));
     }
   }, [loadApplet, onNavigate, t]);
-
-  const handleInstall = useCallback(async (id: string) => {
-    try {
-      await installApplet(id);
-      toast.success(t('applet.toast.installed'));
-    } catch (error) {
-      toast.error(errorMessage(error, t('applet.toast.installFailed')));
-    }
-  }, [installApplet, t]);
 
   const handleImport = useCallback(async () => {
     try {
@@ -130,22 +128,28 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
 
   if (loading) {
     return (
-      <Flexbox align="center" justify="center" style={{ height: '100%' }}>
+      <Flexbox
+        align="center"
+        justify="center"
+        style={{
+          height: '100%',
+          background: token.colorBgLayout,
+        }}
+      >
         <Spin size="large" />
       </Flexbox>
     );
   }
+
+  const hasInstalledApplets = applets.length > 0;
+  const hasCatalogApplets = catalogApplets.length > 0;
 
   return (
     <Flexbox
       style={{
         height: '100%',
         overflow: 'auto',
-        background: `
-          radial-gradient(circle at 18% 8%, ${token.colorPrimaryBg} 0, transparent 32%),
-          radial-gradient(circle at 86% 18%, ${token.colorInfoBg} 0, transparent 28%),
-          linear-gradient(180deg, ${token.colorBgLayout}, ${token.colorBgContainer})
-        `,
+        background: token.colorBgLayout,
       }}
     >
       <PageHeader
@@ -154,17 +158,37 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
         icon={<Sparkles size={20} />}
       />
 
-      <Flexbox gap={28} style={{ padding: '32px 56px 56px', maxWidth: 1120, width: '100%', margin: '0 auto' }}>
-        <Flexbox horizontal align="flex-start" justify="space-between" gap={24}>
-          <Flexbox gap={8} style={{ maxWidth: 620 }}>
-            <Text strong style={{ fontSize: 28, lineHeight: '34px', letterSpacing: -0.6 }}>
+      <Flexbox gap={32} style={{ padding: '32px 56px 56px', maxWidth: 1080, width: '100%', margin: '0 auto' }}>
+        <Flexbox
+          horizontal
+          align="flex-end"
+          justify="space-between"
+          gap={24}
+          style={{
+            borderBottom: `1px solid ${token.colorBorderSecondary}`,
+            paddingBottom: 28,
+          }}
+        >
+          <Flexbox gap={10} style={{ maxWidth: 640 }}>
+            <Text
+              type="secondary"
+              style={{
+                fontSize: 12,
+                lineHeight: '16px',
+                letterSpacing: 1.6,
+                textTransform: 'uppercase',
+              }}
+            >
+              {t('applet.page.launcherEyebrow')}
+            </Text>
+            <Text strong style={{ fontSize: 34, lineHeight: '40px', letterSpacing: -1 }}>
               {t('applet.page.launcherTitle')}
             </Text>
             <Text type="secondary" style={{ fontSize: 14, lineHeight: '22px' }}>
               {t('applet.page.launcherDescription')}
             </Text>
           </Flexbox>
-          <Button type="primary" icon={<Download size={16} />} onClick={handleImport}>
+          <Button icon={<Download size={15} />} onClick={handleImport}>
             {t('applet.page.importDirectory')}
           </Button>
         </Flexbox>
@@ -173,23 +197,13 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
           <Alert
             type="warning"
             showIcon
-            message={t('applet.page.stationUnavailableTitle')}
+            title={t('applet.page.stationUnavailableTitle')}
             description={t('applet.page.stationUnavailableDescription')}
           />
         )}
 
-        {applets.length === 0 && catalogApplets.length === 0 ? (
-          <Flexbox
-            align="center"
-            justify="center"
-            style={{
-              minHeight: 360,
-              borderRadius: 24,
-              background: token.colorBgContainer,
-            }}
-          >
-            <Empty description={t('applet.page.empty')} />
-          </Flexbox>
+        {!hasInstalledApplets && !hasCatalogApplets ? (
+          <LauncherEmptyState onImport={handleImport} />
         ) : (
           <>
             {recentApplets.length > 0 && (
@@ -200,21 +214,27 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
                 actionLabel={t('applet.card.open')}
               />
             )}
-            {applets.length > 0 && (
+            {(launcherApplets.length > 0 || recentApplets.length === 0) && (
               <AppletSection
                 title={t('applet.page.mine')}
-                applets={applets}
+                description={t('applet.page.mineDescription')}
+                applets={launcherApplets}
                 onOpen={handleOpen}
                 actionLabel={t('applet.card.open')}
+                emptyDescription={hasInstalledApplets ? undefined : t('applet.page.empty')}
               />
             )}
-            <AppletSection
-              title={t('applet.page.box')}
-              applets={catalogApplets}
-              onOpen={handleInstall}
-              actionLabel={t('applet.card.install')}
-              emptyDescription={t('applet.page.boxEmpty')}
-            />
+            {hasCatalogApplets && (
+              <AppletSection
+                title={t('applet.page.box')}
+                description={t('applet.page.boxDescription')}
+                applets={catalogApplets}
+                onOpen={handleOpen}
+                actionLabel={t('applet.card.addAndOpen')}
+                emptyDescription={t('applet.page.boxEmpty')}
+                variant="available"
+              />
+            )}
           </>
         )}
       </Flexbox>
@@ -224,35 +244,49 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
 
 function AppletSection({
   title,
+  description,
   applets,
   onOpen,
   actionLabel,
   emptyDescription,
+  variant = 'installed',
 }: {
   title: string;
+  description?: string;
   applets: RuntimeAppletInfo[];
   onOpen: (id: string) => void;
   actionLabel: string;
   emptyDescription?: string;
+  variant?: 'installed' | 'available';
 }) {
   const { token } = theme.useToken();
 
   return (
     <Flexbox
-      gap={20}
+      gap={18}
       style={{
-        borderRadius: 30,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        background: token.colorBgContainer,
-        padding: '22px 26px 26px',
-        boxShadow: token.boxShadowSecondary,
+        paddingTop: 2,
       }}
     >
-      <Flexbox horizontal align="center" justify="space-between">
+      <Flexbox gap={4}>
         <Text strong style={{ fontSize: 15, letterSpacing: -0.2 }}>{title}</Text>
+        {description && (
+          <Text type="secondary" style={{ fontSize: 13, lineHeight: '20px' }}>
+            {description}
+          </Text>
+        )}
       </Flexbox>
       {applets.length === 0 ? (
-        <Flexbox align="center" justify="center" style={{ minHeight: 168 }}>
+        <Flexbox
+          align="center"
+          justify="center"
+          style={{
+            minHeight: 168,
+            borderRadius: 24,
+            border: `1px dashed ${token.colorBorder}`,
+            background: token.colorBgContainer,
+          }}
+        >
           <Empty image={<PackageOpen size={36} />} description={emptyDescription} />
         </Flexbox>
       ) : (
@@ -260,7 +294,7 @@ function AppletSection({
           style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fill, minmax(104px, 1fr))',
-            gap: '24px 18px',
+            gap: '26px 20px',
           }}
         >
           {applets.map((info) => (
@@ -269,6 +303,7 @@ function AppletSection({
               info={info}
               onOpen={() => onOpen(info.manifest.id)}
               actionLabel={actionLabel}
+              variant={variant}
             />
           ))}
         </div>
@@ -281,10 +316,12 @@ function AppletIconTile({
   info,
   onOpen,
   actionLabel,
+  variant,
 }: {
   info: RuntimeAppletInfo;
   onOpen: () => void;
   actionLabel: string;
+  variant: 'installed' | 'available';
 }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('applet');
@@ -293,6 +330,7 @@ function AppletIconTile({
   const isActive = info.status === 'active';
   const isRevoked = info.status === 'revoked';
   const shouldUseAsset = Boolean(identity.assetUrl && !iconAssetFailed);
+  const isAvailable = variant === 'available';
 
   return (
     <button
@@ -307,7 +345,7 @@ function AppletIconTile({
         border: 0,
         background: 'transparent',
         borderRadius: 24,
-        padding: '10px 6px',
+        padding: '8px 6px 10px',
         cursor: isRevoked ? 'not-allowed' : 'pointer',
         opacity: isRevoked ? 0.56 : 1,
         minWidth: 0,
@@ -342,19 +380,22 @@ function AppletIconTile({
       <Flexbox align="center" gap={10} style={{ minWidth: 0 }}>
         <div
           style={{
-            width: 70,
-            height: 70,
-            borderRadius: 22,
+            width: 76,
+            height: 76,
+            borderRadius: 24,
             background: shouldUseAsset ? token.colorBgElevated : identity.background,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             boxShadow: isActive
               ? `0 18px 34px ${identity.shadow}, 0 0 0 2px ${token.colorSuccessBorder}`
-              : `0 16px 32px ${identity.shadow}`,
+              : isAvailable
+                ? `0 10px 24px ${token.colorFillSecondary}`
+                : `0 16px 32px ${identity.shadow}`,
             position: 'relative',
             overflow: 'hidden',
             color: '#fff',
+            filter: isAvailable ? 'saturate(0.82)' : undefined,
           }}
         >
           {shouldUseAsset ? (
@@ -418,7 +459,57 @@ function AppletIconTile({
         >
           {info.manifest.name}
         </Text>
+        {isAvailable && (
+          <Text type="secondary" style={{ fontSize: 12, lineHeight: '16px' }}>
+            {actionLabel}
+          </Text>
+        )}
       </Flexbox>
     </button>
+  );
+}
+
+function LauncherEmptyState({ onImport }: { onImport: () => void }) {
+  const { t } = useTranslation('applet');
+  const { token } = theme.useToken();
+
+  return (
+    <Flexbox
+      align="center"
+      justify="center"
+      gap={18}
+      style={{
+        minHeight: 360,
+        borderRadius: 28,
+        border: `1px dashed ${token.colorBorder}`,
+        background: token.colorBgContainer,
+      }}
+    >
+      <div
+        style={{
+          width: 76,
+          height: 76,
+          borderRadius: 24,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: token.colorTextSecondary,
+          background: token.colorFillQuaternary,
+        }}
+      >
+        <PackageOpen size={34} />
+      </div>
+      <Flexbox align="center" gap={6} style={{ maxWidth: 360, textAlign: 'center' }}>
+        <Text strong style={{ fontSize: 18, letterSpacing: -0.3 }}>
+          {t('applet.page.emptyTitle')}
+        </Text>
+        <Text type="secondary" style={{ fontSize: 14, lineHeight: '22px' }}>
+          {t('applet.page.empty')}
+        </Text>
+      </Flexbox>
+      <Button icon={<Download size={15} />} onClick={onImport}>
+        {t('applet.page.importDirectory')}
+      </Button>
+    </Flexbox>
   );
 }
