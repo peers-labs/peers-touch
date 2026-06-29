@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -26,9 +28,14 @@ func (h *EventStreamHandlers) HandleSubscribe(ctx context.Context, req server.Re
 	var input struct {
 		AgentID string `json:"agent_id"`
 	}
-	if err := json.Unmarshal(req.Body(), &input); err != nil {
-		_, _ = resp.Write([]byte("event: error\ndata: {\"error\": \"invalid request\"}\n\n"))
-		return nil
+	body := req.Body()
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &input); err != nil {
+			_, _ = resp.Write([]byte("event: error\ndata: {\"error\": \"invalid request\"}\n\n"))
+			return nil
+		}
+	} else {
+		input.AgentID = queryValue(req.Path(), "agent_id")
 	}
 
 	if input.AgentID == "" {
@@ -55,4 +62,16 @@ func (h *EventStreamHandlers) HandleSubscribe(ctx context.Context, req server.Re
 			return nil
 		}
 	}
+}
+
+func queryValue(path, key string) string {
+	idx := strings.Index(path, "?")
+	if idx == -1 {
+		return ""
+	}
+	values, err := url.ParseQuery(path[idx+1:])
+	if err != nil {
+		return ""
+	}
+	return values.Get(key)
 }
