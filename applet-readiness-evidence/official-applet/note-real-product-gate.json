@@ -7,6 +7,6 @@
   "stationMountPath": "/applets/note/v1",
   "desktopPublicPath": "/v1",
   "command": "cargo test --bin peers-touch-desktop note_gateway_reaches_station_bundled_note_service -- --nocapture",
-  "startedAt": "2026-06-24T01:55:46.153Z",
-  "completedAt": "2026-06-24T01:56:34.815Z"
+  "startedAt": "2026-06-25T10:55:26.195Z",
+  "completedAt": "2026-06-25T10:56:09.052Z"
 }
