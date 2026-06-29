@@ -174,6 +174,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 
 	handlers := []server.Handler{
 		server.NewTypedHandler("agent-list", "/agent/list", server.POST, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-list-get", "/agent/list", server.GET, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-get", "/agent/get", server.POST, agentHandlers.HandleGetAgent, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-create", "/agent/create", server.POST, agentHandlers.HandleCreateAgent, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-update", "/agent/update", server.POST, agentHandlers.HandleUpdateAgent, logIDWrapper, jwtWrapper),
@@ -202,10 +203,12 @@ func (s *agentSubServer) Handlers() []server.Handler {
 
 		// Compatibility aliases for the Agent resource management surface.
 		server.NewTypedHandler("agent-memory-list-compat", "/memory/list", server.POST, memoryHandlers.HandleListMemories, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-memory-list-compat-get", "/memory/list", server.GET, memoryHandlers.HandleListMemories, logIDWrapper, jwtWrapper),
 
 		server.NewTypedHandler("agent-workspace-create", "/workspace/create", server.POST, workspaceHandlers.HandleCreateWorkspace, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-workspace-get", "/workspace/get", server.POST, workspaceHandlers.HandleGetWorkspace, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-workspace-list", "/workspace/list", server.POST, workspaceHandlers.HandleListWorkspaces, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-workspace-list-get", "/workspace/list", server.GET, workspaceHandlers.HandleListWorkspaces, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-workspace-update", "/workspace/update", server.POST, workspaceHandlers.HandleUpdateWorkspace, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-workspace-delete", "/workspace/delete", server.POST, workspaceHandlers.HandleDeleteWorkspace, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-workspace-files", "/workspace/files", server.POST, workspaceHandlers.HandleListFiles, logIDWrapper, jwtWrapper),
@@ -214,6 +217,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-workspace-delete-files", "/workspace/delete-files", server.POST, workspaceHandlers.HandleDeleteFiles, logIDWrapper, jwtWrapper),
 
 		server.NewTypedHandler("agent-config-list", "/config/list", server.POST, configHandlers.HandleGetChatConfig, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-config-list-get", "/config/list", server.GET, configHandlers.HandleGetChatConfig, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-config-chat-get", "/config/chat/get", server.POST, configHandlers.HandleGetChatConfig, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-config-chat-update", "/config/chat/update", server.POST, configHandlers.HandleUpdateChatConfig, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-config-model-get", "/config/model/get", server.POST, configHandlers.HandleGetModelParams, logIDWrapper, jwtWrapper),
@@ -237,6 +241,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 
 		server.NewTypedHandler("agent-offline-queue-enqueue", "/offline-queue/enqueue", server.POST, offlineQueueHandlers.HandleEnqueue, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-offline-queue-list", "/offline-queue/list", server.POST, offlineQueueHandlers.HandleListPending, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-offline-queue-list-get", "/offline-queue/list", server.GET, offlineQueueHandlers.HandleListPending, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-offline-queue-get", "/offline-queue/get", server.POST, offlineQueueHandlers.HandleGetOperation, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-offline-queue-ack", "/offline-queue/ack", server.POST, offlineQueueHandlers.HandleAckOperation, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-offline-queue-sync", "/offline-queue/sync", server.POST, offlineQueueHandlers.HandleSync, logIDWrapper, jwtWrapper),
