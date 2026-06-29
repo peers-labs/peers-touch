@@ -1307,12 +1307,6 @@ function ChatShortcutSettingsSection() {
   );
 }
 
-function settingResultString(result: unknown): string {
-  const value = (result as { data?: { value?: unknown }; value?: unknown })?.data?.value
-    ?? (result as { value?: unknown })?.value;
-  return typeof value === 'string' ? value : '';
-}
-
 function GeneralTab() {
   // Agents are bootstrapped + reconciled by `runtimes/settingsRuntime.ts`;
   // the page reads them synchronously from the store. No mount-time
