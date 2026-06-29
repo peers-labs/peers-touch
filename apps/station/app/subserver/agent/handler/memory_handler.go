@@ -69,7 +69,7 @@ func (h *MemoryHandlers) HandleListMemories(ctx context.Context, req *model.List
 	items, total, err := h.memoryService.ListWithOptions(ctx, domain.MemoryListOptions{
 		AgentID:  req.GetAgentId(),
 		Target:   req.GetTarget(),
-		Layer:    domain.MemoryLayer(req.GetLayer()),
+		Layer:    modelMemoryLayerToDomain(req.GetLayer()),
 		Page:     int(req.GetPage()),
 		PageSize: int(req.GetPageSize()),
 		OrderBy:  req.GetOrderBy(),
