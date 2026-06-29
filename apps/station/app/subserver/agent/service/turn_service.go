@@ -249,8 +249,8 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		Stage: "turn_started",
 	})
 	s.publishDomainEvent(ctx, config.AgentID, turnID, string(domain.EventTypeAgentTurnStarted), map[string]interface{}{
-		"turn_id":          turnID,
-		"conversation_id":  config.ConversationID,
+		"turn_id":         turnID,
+		"conversation_id": config.ConversationID,
 	})
 
 	// MemoryProvider hook: on_turn_start — notify external backend of new turn.
@@ -452,9 +452,9 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		Iteration: toolIterations,
 	})
 	s.publishDomainEvent(ctx, config.AgentID, turnID, string(domain.EventTypeAgentTurnCompleted), map[string]interface{}{
-		"turn_id":          turnID,
-		"conversation_id":  config.ConversationID,
-		"iterations":       toolIterations,
+		"turn_id":         turnID,
+		"conversation_id": config.ConversationID,
+		"iterations":      toolIterations,
 	})
 
 	if s.growthMetrics != nil {
@@ -1673,7 +1673,8 @@ func (s *TurnService) getDB(ctx context.Context) (*gorm.DB, error) {
 // Uses crypto/rand to avoid collisions under concurrent requests.
 // Fix 2026-04-11: replaced time.UnixNano-based IDs which collide under concurrent requests.
 func generateID(prefix string) string {
-	b := make([]byte, 16)
+	// Keep IDs within the varchar(36) columns used by agent persistence models.
+	b := make([]byte, 12)
 	_, _ = rand.Read(b)
 	return fmt.Sprintf("%s_%x", prefix, b)
 }
