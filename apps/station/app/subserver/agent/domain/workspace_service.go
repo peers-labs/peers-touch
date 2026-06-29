@@ -13,40 +13,40 @@ import (
 )
 
 type Workspace struct {
-	ID             string
-	AgentID        string
-	Name           string
-	Type           string
-	StorageBackend string
-	OSSBucket      string
-	OSSPrefix      string
-	TotalBytes     int64
-	FileCount      int32
-	LastSyncedAt   *time.Time
+	ID               string
+	AgentID          string
+	Name             string
+	Type             string
+	StorageBackend   string
+	OSSBucket        string
+	OSSPrefix        string
+	TotalBytes       int64
+	FileCount        int32
+	LastSyncedAt     *time.Time
 	LastSyncedDevice string
-	Meta           map[string]string
+	Meta             map[string]string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+type WorkspaceFile struct {
+	ID             string
+	WorkspaceID    string
+	Path           string
+	Size           int64
+	SHA256         string
+	MimeType       string
+	LastModifiedAt *time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
 
-type WorkspaceFile struct {
-	ID            string
-	WorkspaceID   string
-	Path          string
-	Size          int64
-	SHA256        string
-	MimeType      string
-	LastModifiedAt *time.Time
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-}
-
 type WorkspaceChange struct {
-	Path      string
+	Path       string
 	ChangeType string
-	Size      int64
-	SHA256    string
-	MimeType  string
+	Size       int64
+	SHA256     string
+	MimeType   string
 }
 
 type WorkspaceService interface {
@@ -62,7 +62,7 @@ type WorkspaceService interface {
 }
 
 type workspaceService struct {
-	db  *gorm.DB
+	db *gorm.DB
 }
 
 func NewWorkspaceService(db *gorm.DB) WorkspaceService {
@@ -151,15 +151,12 @@ func (s *workspaceService) UpdateWorkspace(ctx context.Context, id string, name 
 }
 
 func (s *workspaceService) DeleteWorkspace(ctx context.Context, id string) error {
-	if err := s.db.Delete(&persistence.AgentWorkspace{}, id).Error; err != nil {
-		return err
-	}
-
-	if err := s.db.Where("workspace_id = ?", id).Delete(&persistence.AgentWorkspaceFile{}).Error; err != nil {
-		return err
-	}
-
-	return nil
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("workspace_id = ?", id).Delete(&persistence.AgentWorkspaceFile{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", id).Delete(&persistence.AgentWorkspace{}).Error
+	})
 }
 
 func (s *workspaceService) ListFiles(ctx context.Context, workspaceID string, since string, page, pageSize int) ([]*WorkspaceFile, int, string, error) {
@@ -212,11 +209,11 @@ func (s *workspaceService) GetFileDiff(ctx context.Context, workspaceID string, 
 
 	for _, f := range files {
 		changes = append(changes, WorkspaceChange{
-			Path:      f.Path,
+			Path:       f.Path,
 			ChangeType: "modified",
-			Size:      f.Size,
-			SHA256:    f.SHA256,
-			MimeType:  f.MimeType,
+			Size:       f.Size,
+			SHA256:     f.SHA256,
+			MimeType:   f.MimeType,
 		})
 	}
 
@@ -281,33 +278,33 @@ func (s *workspaceService) toDomainWorkspace(w *persistence.AgentWorkspace) *Wor
 	}
 
 	return &Workspace{
-		ID:             w.ID,
-		AgentID:        w.AgentID,
-		Name:           w.Name,
-		Type:           w.Type,
-		StorageBackend: w.StorageBackend,
-		OSSBucket:      w.OSSBucket,
-		OSSPrefix:      w.OSSPrefix,
-		TotalBytes:     w.TotalBytes,
-		FileCount:      w.FileCount,
-		LastSyncedAt:   w.LastSyncedAt,
+		ID:               w.ID,
+		AgentID:          w.AgentID,
+		Name:             w.Name,
+		Type:             w.Type,
+		StorageBackend:   w.StorageBackend,
+		OSSBucket:        w.OSSBucket,
+		OSSPrefix:        w.OSSPrefix,
+		TotalBytes:       w.TotalBytes,
+		FileCount:        w.FileCount,
+		LastSyncedAt:     w.LastSyncedAt,
 		LastSyncedDevice: w.LastSyncedDevice,
-		Meta:           meta,
-		CreatedAt:      w.CreatedAt,
-		UpdatedAt:      w.UpdatedAt,
+		Meta:             meta,
+		CreatedAt:        w.CreatedAt,
+		UpdatedAt:        w.UpdatedAt,
 	}
 }
 
 func (s *workspaceService) toDomainWorkspaceFile(f *persistence.AgentWorkspaceFile) *WorkspaceFile {
 	return &WorkspaceFile{
-		ID:            f.ID,
-		WorkspaceID:   f.WorkspaceID,
-		Path:          f.Path,
-		Size:          f.Size,
-		SHA256:        f.SHA256,
-		MimeType:      f.MimeType,
+		ID:             f.ID,
+		WorkspaceID:    f.WorkspaceID,
+		Path:           f.Path,
+		Size:           f.Size,
+		SHA256:         f.SHA256,
+		MimeType:       f.MimeType,
 		LastModifiedAt: f.LastModifiedAt,
-		CreatedAt:     f.CreatedAt,
-		UpdatedAt:     f.UpdatedAt,
+		CreatedAt:      f.CreatedAt,
+		UpdatedAt:      f.UpdatedAt,
 	}
 }

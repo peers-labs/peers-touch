@@ -7,6 +7,10 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/network"
+	"github.com/cloudwego/hertz/pkg/protocol"
+	"github.com/cloudwego/hertz/pkg/protocol/http1/resp"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
@@ -17,6 +21,56 @@ type EventStreamHandlers struct {
 
 func NewEventStreamHandlers(eventStreamService *service.EventStreamService) *EventStreamHandlers {
 	return &EventStreamHandlers{eventStreamService: eventStreamService}
+}
+
+func newAgentSSEWriter(response *protocol.Response, writer network.Writer) network.ExtWriter {
+	return resp.NewChunkedBodyWriter(response, writer)
+}
+
+func (h *EventStreamHandlers) HandleSubscribeHertz(ctx context.Context, c *app.RequestContext) {
+	agentID := string(c.Query("agent_id"))
+	if agentID == "" {
+		c.JSON(400, map[string]string{"error": "agent_id is required"})
+		return
+	}
+
+	c.Response.Header.Set("Content-Type", "text/event-stream")
+	c.Response.Header.Set("Cache-Control", "no-cache")
+	c.Response.Header.Set("Connection", "keep-alive")
+	c.Response.Header.Set("X-Accel-Buffering", "no")
+	c.Response.Header.Set("Transfer-Encoding", "chunked")
+	c.SetStatusCode(200)
+	c.Response.HijackWriter(newAgentSSEWriter(&c.Response, c.GetWriter()))
+
+	stream := h.eventStreamService.Subscribe(ctx, agentID)
+	defer stream.Close()
+
+	if _, err := c.Write([]byte("event: connected\ndata: {\"status\": \"connected\"}\n\n")); err != nil {
+		return
+	}
+	if err := c.Flush(); err != nil {
+		return
+	}
+
+	for {
+		select {
+		case event, ok := <-stream.Events():
+			if !ok {
+				return
+			}
+			data := service.SerializeEvent(event)
+			if _, err := c.Write([]byte(fmt.Sprintf("event: %s\ndata: %s\n\n", event.EventType, string(data)))); err != nil {
+				return
+			}
+			if err := c.Flush(); err != nil {
+				return
+			}
+		case <-ctx.Done():
+			return
+		case <-stream.Done():
+			return
+		}
+	}
 }
 
 func (h *EventStreamHandlers) HandleSubscribe(ctx context.Context, req server.Request, resp server.Response) error {
