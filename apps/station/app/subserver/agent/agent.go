@@ -21,6 +21,7 @@ package agent
 
 import (
 	"context"
+	"strings"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/handler"
 	agentevent "github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/event"
@@ -171,7 +172,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 
 	growthHandlers := handler.NewGrowthHandlers(growthMetricsSvc, memorySvc, skillSvc, diagnosticSvc)
 
-	return []server.Handler{
+	handlers := []server.Handler{
 		server.NewTypedHandler("agent-list", "/agent/list", server.POST, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-get", "/agent/get", server.POST, agentHandlers.HandleGetAgent, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-create", "/agent/create", server.POST, agentHandlers.HandleCreateAgent, logIDWrapper, jwtWrapper),
@@ -241,7 +242,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-offline-queue-sync", "/offline-queue/sync", server.POST, offlineQueueHandlers.HandleSync, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-offline-queue-resolve", "/offline-queue/resolve", server.POST, offlineQueueHandlers.HandleResolveConflict, logIDWrapper, jwtWrapper),
 
-		server.NewHTTPHandler("agent-events-stream", "/agent/events/stream", server.GET, eventStreamHandlers.HandleSubscribe, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-events-stream", "/events/stream", server.GET, eventStreamHandlers.HandleSubscribe, logIDWrapper, jwtWrapper),
 
 		server.NewTypedHandler("agent-skill-list", "/agent/skill/list", server.POST, skillHandlers.HandleListSkills, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-skill-get", "/agent/skill/get", server.GET, skillHandlers.HandleGetSkill, logIDWrapper, jwtWrapper),
@@ -273,6 +274,26 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-scheduler-status", "/agent/scheduler/status", server.GET, schedulerHandlers.HandleStatus, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-scheduler-add-job", "/agent/scheduler/add-job", server.POST, schedulerHandlers.HandleAddJob, logIDWrapper, jwtWrapper),
 	}
+	return prefixHandlers(s.opts.Path, handlers)
+}
+
+func prefixHandlers(base string, handlers []server.Handler) []server.Handler {
+	base = strings.TrimRight(base, "/")
+	if base == "" {
+		return handlers
+	}
+	out := make([]server.Handler, 0, len(handlers))
+	for _, h := range handlers {
+		out = append(out, server.NewHandler(
+			h.Name(),
+			base+h.Path(),
+			h.Method(),
+			h.Type(),
+			h.Handler(),
+			h.Wrappers()...,
+		))
+	}
+	return out
 }
 
 func memoryServiceOptionsFromConfig() []service.MemoryServiceOption {
