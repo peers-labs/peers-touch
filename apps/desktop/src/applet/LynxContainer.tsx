@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Card, Collapse, Result, Spin, theme } from 'antd'
+import { Button, Collapse, Spin, Typography, theme } from 'antd'
 import { RefreshCw, RotateCcw } from 'lucide-react'
 import AppletManager from './AppletManager'
 import LynxHost from './LynxHost'
@@ -21,6 +21,7 @@ interface LynxContainerProps {
 
 const APPLET_READY_TIMEOUT_MS = 8000
 const APPLET_HOST_RENDER_FALLBACK_MS = 2500
+const { Text } = Typography
 
 /**
  * High-level container that loads an applet by ID and renders it via <lynx-host>.
@@ -123,9 +124,20 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
 
   if (loading) {
     return (
-      <Card style={{ width, height, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Spin size="large" tip={t('applet.runtime.loading')} />
-      </Card>
+      <div
+        style={{
+          width,
+          height,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          border: `1px solid ${token.colorBorderSecondary}`,
+          borderRadius: 18,
+          background: token.colorBgContainer,
+        }}
+      >
+        <Spin size="large" description={t('applet.runtime.loading')} />
+      </div>
     )
   }
 
@@ -197,7 +209,7 @@ const LynxContainer: React.FC<LynxContainerProps> = ({
             background: token.colorBgContainer,
           }}
         >
-          <Spin size="large" tip={t('applet.runtime.loading')} />
+          <Spin size="large" description={t('applet.runtime.loading')} />
         </div>
       )}
       <LynxHost
@@ -246,37 +258,71 @@ function AppletDisplayFallback({
   onBack?: () => void
 }) {
   const { t } = useTranslation('applet')
+  const { token } = theme.useToken()
 
   return (
-    <Card
+    <div
       style={{
         width,
         height,
+        minHeight: 360,
         borderRadius: 18,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
+        border: `1px solid ${token.colorBorderSecondary}`,
+        background: token.colorBgContainer,
+        padding: 32,
       }}
-      styles={{ body: { width: '100%' } }}
     >
-      <Result
-        status="warning"
-        title={title}
-        subTitle={description}
-        extra={[
-          <Button key="retry" type="primary" icon={<RefreshCw size={14} />} onClick={onRetry}>
+      <div
+        style={{
+          width: '100%',
+          maxWidth: 520,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 18,
+          textAlign: 'center',
+        }}
+      >
+        <div
+          style={{
+            width: 62,
+            height: 62,
+            borderRadius: 22,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: token.colorWarning,
+            background: token.colorWarningBg,
+            border: `1px solid ${token.colorWarningBorder}`,
+          }}
+        >
+          <RefreshCw size={26} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <Text strong style={{ fontSize: 20, lineHeight: '26px', letterSpacing: -0.4 }}>
+            {title}
+          </Text>
+          <Text type="secondary" style={{ fontSize: 14, lineHeight: '22px' }}>
+            {description}
+          </Text>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+          <Button type="primary" icon={<RefreshCw size={14} />} onClick={onRetry}>
             {t('applet.runtime.retry')}
-          </Button>,
-          onBack ? (
-            <Button key="back" icon={<RotateCcw size={14} />} onClick={onBack}>
+          </Button>
+          {onBack && (
+            <Button icon={<RotateCcw size={14} />} onClick={onBack}>
               {t('applet.runtime.backToHome')}
             </Button>
-          ) : null,
-        ].filter(Boolean)}
-      >
+          )}
+        </div>
         {detail && (
           <Collapse
             ghost
+            style={{ width: '100%', textAlign: 'left' }}
             items={[{
               key: 'detail',
               label: t('applet.runtime.errorDetail'),
@@ -284,8 +330,8 @@ function AppletDisplayFallback({
             }]}
           />
         )}
-      </Result>
-    </Card>
+      </div>
+    </div>
   )
 }
 
