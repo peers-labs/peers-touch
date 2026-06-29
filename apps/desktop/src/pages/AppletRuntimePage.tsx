@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Blocks, Pin, PinOff, X } from 'lucide-react';
@@ -25,8 +25,17 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
   const { token } = theme.useToken();
   const [navigationTitle, setNavigationTitle] = useState<string | null>(null);
   const loading = useAppletsStore((state) => state.loading);
+  const applets = useAppletsStore((state) => state.applets);
+  const catalogApplets = useAppletsStore((state) => state.catalogApplets);
+  const refresh = useAppletsStore((state) => state.refresh);
+  const loadApplet = useAppletsStore((state) => state.loadApplet);
   const unloadApplet = useAppletsStore((state) => state.unloadApplet);
-  const applet = useAppletsStore((state) => state.applets.find((item) => item.manifest.id === appletId)?.manifest);
+  const runtimeApplet = useMemo(
+    () => [...applets, ...catalogApplets].find((item) => item.manifest.id === appletId),
+    [applets, catalogApplets, appletId],
+  );
+  const applet = runtimeApplet?.manifest;
+  const appletStatus = runtimeApplet?.status;
   const allDiagnostics = useAppletsStore((state) => state.diagnostics);
   const diagnostics = useMemo(
     () => allDiagnostics
@@ -121,6 +130,25 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
     });
   }, [appletId]);
 
+  useEffect(() => {
+    void refresh();
+  }, [appletId, refresh]);
+
+  useEffect(() => {
+    if (loading || !runtimeApplet || appletStatus === 'active' || appletStatus === 'revoked') return undefined;
+    let cancelled = false;
+    loadApplet(appletId).catch((error) => {
+      if (cancelled) return;
+      log.warn('applets', 'Failed to prepare applet runtime route', {
+        appletId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [appletId, appletStatus, loadApplet, loading, runtimeApplet]);
+
   if (loading) {
     return (
       <Flexbox align="center" justify="center" style={{ height: '100%' }}>
@@ -133,7 +161,7 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
     return (
       <Flexbox style={{ height: '100%' }}>
         <PageHeader title={t('applet.runtime.title')} icon={<Blocks size={20} />} />
-        <Flexbox align="center" justify="center" style={{ flex: 1 }}>
+        <Flexbox align="center" justify="center" style={{ flex: 1, background: token.colorBgLayout }}>
           <Empty
             description={[
               t('applet.runtime.notFound', { id: appletId }),
