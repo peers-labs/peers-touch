@@ -31,8 +31,11 @@ const TAB_KEYS = ['Knowledge', 'Memory', 'Skills', 'Tools', 'MCP', 'Workspace'] 
 
 const API_TARGETS = [
   { key: 'agents', name: 'Agents', path: '/agent/list', body: { page: 1, page_size: 20 } },
+  { key: 'knowledge', name: 'Knowledge', path: '/config/knowledge/list', needsAgent: true },
   { key: 'memory', name: 'Memory', path: '/memory/list', needsAgent: true },
-  { key: 'skills', name: 'Skills', path: '/agent/skill/list', needsAgent: true },
+  { key: 'skills', name: 'Skills', path: '/config/skill/list', needsAgent: true },
+  { key: 'tools', name: 'Tools', path: '/config/tool/get', needsAgent: true },
+  { key: 'mcp', name: 'MCP', path: '/config/mcp/list', needsAgent: true },
   { key: 'workspace', name: 'Workspace', path: '/workspace/list', needsAgent: true },
   { key: 'config', name: 'Config', path: '/config/list', needsAgent: true },
   { key: 'offline', name: 'Offline Queue', path: '/offline-queue/list', needsAgent: true },
@@ -151,8 +154,7 @@ export function AgentResourceManagement({
           version: '1.0',
           memories: [{
             agent_id: agentID(selectedAgent),
-            target: 'self',
-            layer: 'MEMORY_LAYER_ACTIVITY',
+            target: 'memory',
             content: memoryDraft,
             source: 'e2e',
           }],
@@ -238,7 +240,7 @@ export function AgentResourceManagement({
                 size="small"
                 pagination={false}
                 columns={columns}
-                dataSource={rows.filter((row) => key === 'Knowledge' ? row.key === 'config' : row.name.toLowerCase().includes(key.toLowerCase()) || row.key === key.toLowerCase())}
+                dataSource={rows.filter((row) => row.key === key.toLowerCase())}
               />
             ),
           }))}
