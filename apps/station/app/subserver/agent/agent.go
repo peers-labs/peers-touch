@@ -242,7 +242,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-offline-queue-resolve", "/offline-queue/resolve", server.POST, offlineQueueHandlers.HandleResolveConflict, logIDWrapper, jwtWrapper),
 
 		server.NewHTTPHandler("agent-events-stream", "/events/stream", server.GET, eventStreamHandlers.HandleSubscribe, logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("agent-events-stream-post", "/events/stream", server.POST, eventStreamHandlers.HandleSubscribe, logIDWrapper, jwtWrapper),
 
 		server.NewTypedHandler("agent-skill-list", "/agent/skill/list", server.POST, skillHandlers.HandleListSkills, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-skill-get", "/agent/skill/get", server.GET, skillHandlers.HandleGetSkill, logIDWrapper, jwtWrapper),
