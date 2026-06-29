@@ -161,6 +161,8 @@ func (s *agentSubServer) Handlers() []server.Handler {
 
 	// Scheduler — autonomous learning: periodic SILENT reviews + dogfood runs.
 	schedulerSvc := service.NewSchedulerService(reviewSvc, dogfoodSvc, memorySvc, growthMetricsSvc)
+	orchestrationSvc := service.NewOrchestrationService(agentSvc, turnSvc, toolRegistrySvc)
+	orchestrationSvc.SetEventBus(eventBus)
 
 	agentHandlers := handler.NewAgentHandlers(agentSvc, eventBus)
 	turnHandlers := handler.NewTurnHandlers(turnSvc, toolRegistrySvc)
@@ -172,6 +174,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	skillHandlers := handler.NewSkillHandlers(skillSvc)
 	dogfoodHandlers := handler.NewDogfoodHandlers(dogfoodSvc)
 	schedulerHandlers := handler.NewSchedulerHandlers(schedulerSvc)
+	orchestrationHandlers := handler.NewOrchestrationHandlers(orchestrationSvc)
 
 	growthHandlers := handler.NewGrowthHandlers(growthMetricsSvc, memorySvc, skillSvc, diagnosticSvc)
 
@@ -188,6 +191,12 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("agent-turn-local-tool-result", "/agent/turn/local-tool-result", server.POST, turnHandlers.HandleLocalToolResult, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-trace-list", "/agent/turn/trace/list", server.POST, turnHandlers.HandleListTurnTraces, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-trace-get", "/agent/turn/trace/get", server.POST, turnHandlers.HandleGetTurnTrace, logIDWrapper, jwtWrapper),
+
+		server.NewTypedHandler("agent-collaboration-create", "/agent/collaboration/create", server.POST, orchestrationHandlers.HandleCreateCollaborationTask, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-collaboration-get", "/agent/collaboration/get", server.POST, orchestrationHandlers.HandleGetCollaborationTask, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-collaboration-list", "/agent/collaboration/list", server.POST, orchestrationHandlers.HandleListCollaborationTasks, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-collaboration-cancel", "/agent/collaboration/cancel", server.POST, orchestrationHandlers.HandleCancelCollaborationTask, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-events-subscribe", "/agent/events/subscribe", server.POST, eventStreamHandlers.HandleSubscribe, logIDWrapper, jwtWrapper),
 
 		// POST: protobuf body carries ListMemoriesRequest (GET + empty body leaves agent_id unset).
 		server.NewTypedHandler("agent-memory-list", "/agent/memory/list", server.POST, memoryHandlers.HandleListMemories, logIDWrapper, jwtWrapper),
