@@ -38,6 +38,30 @@ description: "原型设计规范与工作流。当用户要求创建、修改、
 | 运行时 | **不碰** Lynx / applet 容器 / SDK。web 原型可自由用 DOM、`iframe`、`localStorage` 等浏览器能力 |
 | 基础件 | **禁止重复造**——复用项目已有桌面组件体系（LobeUI / antd），不得每个需求另搭基础库 |
 
+### 3.1 客户端 UI Identity 硬门槛
+
+当原型属于客户端 UI（`desktop` / `mobile` / applet 容器内体验）时，**在画界面、写 CSS、改 icon/文字/边框/阴影/圆角/布局之前，必须先读取 UI Identity**。不得只凭截图、外部产品、个人审美或组件库默认值确定视觉风格。
+
+必读顺序：
+
+1. `docs/client/common/ui-identity/README.md`
+2. `docs/client/common/ui-identity/foundations.md`
+3. `docs/client/common/ui-identity/tokens.md`
+4. `docs/client/common/ui-identity/layout.md`
+5. `docs/client/common/ui-identity/components.md`
+6. 最近的模块 UI Identity：`docs/client/common/ui-identity/modules/<module>/`（没有则明确说明“当前无模块 UI ID，复用 shared UI ID”）
+7. 最近的平台/模块合同，例如 Desktop Applet Launcher 必读 `docs/client/desktop/applet-launcher-ux-contract.md`
+8. 若截图或评审暴露可复用 UX 问题，按 `docs/knowledge/playbooks/ux-case-to-contract.md` 检查是否需要补合同，而不是在原型里私自定风格。
+
+执行纪律：
+
+- **UI ID 高于参考图**：用户给的截图只能作为信息结构、交互关系、密度或排序参考；不能覆盖 Peers Touch UI Identity。
+- **Quiet Protocol Minimalism** 是默认风格基线：低噪声、清晰边界、克制 accent、少装饰、少重阴影、少仿系统 UI。
+- **Token role 先于 raw CSS**：颜色、边框、阴影、圆角、间距、字体必须能解释成 `surface.*` / `text.*` / `action.*` / `border.*` / `radius.*` / `type.*` 等角色；不得随手写“看起来像”的 raw value。
+- **组件库默认值不等于 UI ID**：LobeUI / antd 必须被归一到 Peers Touch 的 token 和组件角色；不能混用多个库的默认视觉。
+- **边界先于样式**：先声明 page canvas、content rail、action rail、floating layer、recovery layer，再决定搜索框、菜单、弹窗、tile 的视觉。
+- **模块合同优先**：若存在模块 UI ID 或平台 UX contract，原型必须实现其信息层级和禁用模式；若没有，必须在 README 的“已知差异 / 待补”里写明。
+
 ---
 
 ## 4. 目录与文件约定
@@ -180,6 +204,12 @@ Prototype Portal 支持 worktree / branch 切换：
 - [ ] `docs/architecture/<module>/prototype/README.md` 已创建/更新
 - [ ] `docs/architecture/prototypes/README.md` 总账已登记
 - [ ] 原型区域能对回设计文档编号
+- [ ] 客户端 UI 原型已读取 `docs/client/common/ui-identity/README.md` 及 foundations / tokens / layout / components
+- [ ] 已读取最近的模块 UI ID；若不存在，已在原型 README 标注“当前无模块 UI ID，复用 shared UI ID”
+- [ ] Desktop Applet Launcher 类原型已读取 `docs/client/desktop/applet-launcher-ux-contract.md`
+- [ ] 参考图只被用作结构/交互参考，没有覆盖 Peers Touch UI Identity
+- [ ] 颜色、字体、边框、圆角、阴影、间距能对回 UI Identity token roles，未用任意 raw CSS 私定风格
+- [ ] 已声明页面的 content rail、action rail、floating layer、recovery layer，未用装饰性边框/阴影弥补边界不清
 - [ ] 使用 LobeUI / antd / lucide-react，未引入额外基础组件库
 - [ ] 未碰 Lynx / applet SDK / 非 web 运行时
 - [ ] mock 数据驱动，未依赖后端接口
@@ -193,3 +223,8 @@ Prototype Portal 支持 worktree / branch 切换：
 - 完整规范：`docs/global/architecture-document-standard.md` §5.8
 - 原型总账：`docs/architecture/prototypes/README.md`
 - 桌面组件栈参考：`docs/global/coding-guide/desktop/page-component.md`
+- 客户端 UI Identity：`docs/client/common/ui-identity/README.md`
+- UI Identity tokens：`docs/client/common/ui-identity/tokens.md`
+- UI Identity layout：`docs/client/common/ui-identity/layout.md`
+- UI Identity components：`docs/client/common/ui-identity/components.md`
+- Desktop Applet Launcher 合同：`docs/client/desktop/applet-launcher-ux-contract.md`
