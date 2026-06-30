@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { ActionIcon, DraggablePanel, Tag, Input } from '@lobehub/ui';
+import { ActionIcon, DraggablePanel, Tag } from '@lobehub/ui';
 import { ModelIcon } from '@lobehub/icons';
-import { theme, Empty } from 'antd';
+import { theme } from 'antd';
 import type { MessageArtifact } from '../store/chat';
 import { useChatStore } from '../store/chat';
 import { useAgentStore } from '../store/agent';
@@ -12,46 +12,33 @@ import { MessageBubble } from '../components/MessageBubble';
 import { ChatInput } from '../components/ChatInput';
 import { LazyMarkdown as Markdown } from '../components/LazyMarkdown';
 import { useUserAvatar } from '../components/UserProfilePopover';
+import { AgentIconTile } from '../components/agent/AgentIconTile';
 import {
   FileText,
   Terminal,
   Globe,
   Sparkles,
-  FilePen,
-  Maximize2,
-  Trash2,
-  BookOpen,
-  Plus,
   Wrench,
   Brain,
   ChevronRight,
   PanelRightClose,
-  ArrowLeft,
-  Save,
   Copy,
   Download,
   Code2,
   Braces,
   Workflow,
   UserRoundCog,
-  Share2,
-  RefreshCw,
 } from 'lucide-react';
-import { parseAgentChatConfig, api } from '../services/desktop_api';
+import { parseAgentChatConfig } from '../services/desktop_api';
 import type { Agent } from '../services/desktop_api';
 
-export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkills, onNavigateAgentProfile, onNavigatePages }: {
-  onNavigateSettings?: () => void;
-  onNavigateApplets?: () => void;
-  onNavigateSkills?: () => void;
+export function ChatPage({ onNavigateAgentProfile }: {
   onNavigateAgentProfile?: (agentName: string) => void;
-  onNavigatePages?: (docId?: string) => void;
 }) {
   const {
     selectedModel,
     availableModels,
     defaultModel,
-    enabledAppletIds,
     selectedAgent,
     agents,
   } = useAgentStore();
@@ -60,74 +47,23 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
     currentSessionKey,
     selectSession,
     sendMessage,
-    showPortal,
-    togglePortal,
-    portalDocuments,
-    portalLoading,
-    deleteDocument,
-    createDocument,
     isStreaming,
   } = useChatStore();
   const bottomRef = useRef<HTMLDivElement>(null);
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const userAvatar = useUserAvatar();
-  const [portalView, setPortalView] = useState<'list' | 'editor'>('list');
-  const [editingDoc, setEditingDoc] = useState<import('../services/desktop_api').NotebookDocument | null>(null);
-  const [editTitle, setEditTitle] = useState('');
-  const [editContent, setEditContent] = useState('');
   const [activeArtifact, setActiveArtifact] = useState<MessageArtifact | null>(null);
 
   const currentModelId = selectedModel || defaultModel;
   const currentModel = availableModels.find((m) => m.id === currentModelId);
-  const isWebSearchEnabled = enabledAppletIds.includes('web-search');
-
-  const handleOpenDocument = useCallback(async (doc: import('../services/desktop_api').NotebookDocument) => {
-    try {
-      const fullDoc = await api.getDocument(doc.id);
-      setEditingDoc(fullDoc);
-      setEditTitle(fullDoc.title || '');
-      setEditContent(fullDoc.content || '');
-      setPortalView('editor');
-    } catch {
-      setEditingDoc(doc);
-      setEditTitle(doc.title || '');
-      setEditContent(doc.content || '');
-      setPortalView('editor');
-    }
-  }, []);
-
-  const handleSaveDocument = useCallback(async () => {
-    if (!editingDoc) return;
-    try {
-      await api.updateDocument(editingDoc.id, editTitle, editContent);
-      loadDocuments();
-    } catch { /* best effort */ }
-  }, [editingDoc, editTitle, editContent]);
-
-  const handleBackToList = useCallback(() => {
-    if (editingDoc) handleSaveDocument();
-    setPortalView('list');
-    setEditingDoc(null);
-  }, [editingDoc, handleSaveDocument]);
-
-  const handleUseDocumentInChat = useCallback((doc: import('../services/desktop_api').NotebookDocument, title: string, content: string) => {
-    const prompt = t('chat.editor.useDocumentPrompt', {
-      title: title || doc.title || t('chat.notebook.untitled'),
-      content: content || t('chat.editor.noContent'),
-    });
-    sendMessage(prompt);
-  }, [sendMessage, t]);
-
-  const loadDocuments = useChatStore((s) => s.loadDocuments);
-
   const currentAgent = useMemo(
     () =>
       agents.find((a) => a.name === selectedAgent) || {
         name: selectedAgent || 'assistant',
         title: 'Peers Touch',
         description: t('chat.welcome.defaultDescription'),
-        avatar: '🤖',
+        avatar: '',
         openingMessage: '',
         openingQuestions: '[]',
         chatConfig: '',
@@ -161,17 +97,13 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
         style={{
           minWidth: 0,
           overflow: 'hidden',
-          background: `radial-gradient(circle at top right, ${token.colorInfoBg} 0, transparent 32%), ${token.colorBgLayout}`,
+          background: token.colorBgContainer,
         }}
       >
         <AgentChatHeader
           agent={currentAgent as AgentChatAgentView}
-          chatConfig={agentChatConfig}
           modelName={currentModel?.display_name || currentModelId}
           modelId={currentModelId}
-          webSearchEnabled={isWebSearchEnabled}
-          notebookOpen={showPortal}
-          onOpenNotebook={togglePortal}
           onOpenProfile={() => onNavigateAgentProfile?.(currentAgent.name)}
         />
 
@@ -199,13 +131,7 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
             ) : (
               <>
                 {messages.map((msg) => (
-                  <MessageBubble
-                    key={msg.id}
-                    message={msg}
-                    userAvatar={userAvatar}
-                    agentAvatar={currentAgent?.avatar}
-                    onOpenArtifact={setActiveArtifact}
-                  />
+                  <MessageBubble key={msg.id} message={msg} userAvatar={userAvatar} onOpenArtifact={setActiveArtifact} />
                 ))}
                 <div ref={bottomRef} />
               </>
@@ -213,51 +139,13 @@ export function ChatPage({ onNavigateSettings, onNavigateApplets, onNavigateSkil
           </Flexbox>
         </Flexbox>
 
-        <Flexbox align="center" style={{ flexShrink: 0, padding: '0 28px 22px' }}>
-          <div style={{ width: 'min(780px, 100%)' }}>
-            <ChatInput
-              onNavigateSettings={onNavigateSettings}
-              onNavigateApplets={onNavigateApplets}
-              onNavigateSkills={onNavigateSkills}
-            />
+        <Flexbox align="center" style={{ flexShrink: 0, padding: '0 0 48px' }}>
+          <div style={{ width: 'min(1068px, calc(100% - 48px))' }}>
+            <ChatInput />
           </div>
         </Flexbox>
       </Flexbox>
 
-      {/* Portal / Notebook panel */}
-      <DraggablePanel
-        placement="right"
-        defaultSize={{ width: 360 }}
-        minWidth={300}
-        maxWidth={520}
-        expand={showPortal}
-        onExpandChange={(expand) => { if (!expand) togglePortal(); }}
-        style={{ display: 'flex', flexDirection: 'column' }}
-      >
-        {portalView === 'editor' && editingDoc ? (
-          <DocumentEditor
-            doc={editingDoc}
-            title={editTitle}
-            content={editContent}
-            onTitleChange={setEditTitle}
-            onContentChange={setEditContent}
-            onSave={handleSaveDocument}
-            onBack={handleBackToList}
-            onClose={togglePortal}
-            onOpenFullPage={(docId) => onNavigatePages?.(docId)}
-            onUseInChat={handleUseDocumentInChat}
-          />
-        ) : (
-          <NotebookPanel
-            documents={portalDocuments}
-            loading={portalLoading}
-            onDelete={deleteDocument}
-            onCreate={createDocument}
-            onClose={togglePortal}
-            onOpenDocument={handleOpenDocument}
-          />
-        )}
-      </DraggablePanel>
 
       <DraggablePanel
         placement="right"
@@ -471,7 +359,6 @@ type AgentChatAgentView = {
   model?: string;
   effort?: string;
   cliCommand?: string;
-  toolsProfile?: string;
 };
 
 type AgentChatConfigView = {
@@ -486,21 +373,13 @@ type AgentChatConfigView = {
 
 function AgentChatHeader({
   agent,
-  chatConfig,
   modelName,
   modelId,
-  webSearchEnabled,
-  notebookOpen,
-  onOpenNotebook,
   onOpenProfile,
 }: {
   agent: AgentChatAgentView;
-  chatConfig: AgentChatConfigView;
   modelName: string;
   modelId: string;
-  webSearchEnabled: boolean;
-  notebookOpen: boolean;
-  onOpenNotebook: () => void;
   onOpenProfile?: () => void;
 }) {
   const { token } = theme.useToken();
@@ -509,61 +388,38 @@ function AgentChatHeader({
   const description = agent.description?.trim() || t('chat.agentHeader.fallbackDescription');
   const providerLabel = agent.provider?.trim() || t('chat.agentHeader.providerFallback');
   const runtimeLabel = agent.cliCommand?.trim() ? t('chat.agentHeader.runtimeCli') : providerLabel;
-  const effort = agent.effort?.trim();
-  const hasTools = Boolean(agent.toolsProfile && agent.toolsProfile !== 'none') || (chatConfig.tools?.length ?? 0) > 0 || (chatConfig.skills?.length ?? 0) > 0 || (chatConfig.mcpServers?.length ?? 0) > 0;
-
   return (
-    <Flexbox style={{ flexShrink: 0, padding: '16px 28px 0' }}>
+    <Flexbox style={{ flexShrink: 0 }}>
       <Flexbox
         horizontal
         align="center"
         justify="space-between"
-        gap={16}
+        gap={12}
         style={{
-          width: '100%',
-          minHeight: 64,
-          padding: '14px 16px',
+          width: 'calc(100% - 36px)',
+          minHeight: 78,
+          margin: '16px 18px 0',
+          padding: '0 18px',
           borderRadius: 18,
           background: token.colorBgContainer,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          boxShadow: '0 18px 60px rgba(15, 23, 42, 0.07)',
+          boxShadow: '0 12px 35px rgba(15, 23, 42, 0.06)',
         }}
       >
-        <Flexbox horizontal align="center" gap={13} style={{ minWidth: 0 }}>
-          <div
-            style={{
-              width: 42,
-              height: 42,
-              borderRadius: 13,
-              background: 'linear-gradient(135deg, #6366f1, #8b5cf6 52%, #ec4899)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 23,
-              boxShadow: '0 12px 30px rgba(99, 102, 241, 0.22)',
-              flexShrink: 0,
-            }}
-          >
-            {agent.avatar || '🤖'}
-          </div>
+        <Flexbox horizontal align="center" gap={10} style={{ minWidth: 0 }}>
+          <AgentIconTile agent={agent} size={38} />
 
           <Flexbox gap={4} style={{ minWidth: 0 }}>
-            <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0 }}>
+            <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0, flexWrap: 'wrap' }}>
               <strong style={{ fontSize: 16, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {title}
               </strong>
-              <Tag style={{ margin: 0, borderRadius: 999, fontSize: 11 }}>
+              <Tag style={{ margin: 0, borderRadius: 999, fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 <ModelIcon model={modelId} size={12} />
                 {modelName}
               </Tag>
               <Tag style={{ margin: 0, borderRadius: 999, fontSize: 11 }}>
                 {runtimeLabel}
               </Tag>
-              {effort && (
-                <Tag style={{ margin: 0, borderRadius: 999, fontSize: 11 }}>
-                  {t('chat.agentHeader.effort', { effort })}
-                </Tag>
-              )}
             </Flexbox>
             <span style={{ color: token.colorTextSecondary, fontSize: 12, lineHeight: 1.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {description}
@@ -571,21 +427,8 @@ function AgentChatHeader({
           </Flexbox>
         </Flexbox>
 
-        <Flexbox horizontal align="center" gap={6} style={{ flexShrink: 0 }}>
-          {hasTools && (
-            <Tag color="success" style={{ margin: 0, borderRadius: 999, fontSize: 11 }}>
-              {t('chat.agentHeader.toolsEnabled')}
-            </Tag>
-          )}
-          {webSearchEnabled && (
-            <Tag color="blue" style={{ margin: 0, borderRadius: 999, fontSize: 11 }}>
-              {t('chat.header.webSearch')}
-            </Tag>
-          )}
+        <Flexbox horizontal align="center" gap={4} style={{ flexShrink: 0 }}>
           <ActionIcon icon={UserRoundCog} size="small" title={t('chat.agentHeader.openProfile')} onClick={onOpenProfile} />
-          <ActionIcon icon={FilePen} size="small" active={notebookOpen} title={t('chat.header.notebook')} onClick={onOpenNotebook} />
-          <ActionIcon icon={Share2} size="small" title={t('chat.header.share')} onClick={() => {}} />
-          <ActionIcon icon={RefreshCw} size="small" title={t('chat.agentHeader.refresh')} onClick={() => {}} />
         </Flexbox>
       </Flexbox>
     </Flexbox>
@@ -609,12 +452,10 @@ function WelcomeScreen({
   const { t } = useTranslation('chat');
 
   const title = agent.title || agent.name;
-  const avatar = agent.avatar || '🤖';
   const questions = parseOpeningQuestions(agent.openingQuestions);
   const welcomeText = agent.openingMessage?.trim() || agent.description?.trim() || t('chat.welcome.fallbackText');
-  const workspaceRoot = chatConfig.workspace?.root || chatConfig.workspaceRoot || '';
   const hasMemory = Boolean(chatConfig.memory?.enabled);
-  const hasTools = Boolean(agent.toolsProfile && agent.toolsProfile !== 'none') || (chatConfig.tools?.length ?? 0) > 0 || (chatConfig.skills?.length ?? 0) > 0 || (chatConfig.mcpServers?.length ?? 0) > 0;
+  const hasTools = (chatConfig.tools?.length ?? 0) > 0 || (chatConfig.skills?.length ?? 0) > 0 || (chatConfig.mcpServers?.length ?? 0) > 0;
   const statusItems = [
     {
       key: 'tools',
@@ -631,11 +472,6 @@ function WelcomeScreen({
       icon: <Brain size={12} />,
       label: hasMemory ? t('chat.welcome.capability.memory') : t('chat.welcome.capability.memoryDisabledShort'),
     },
-    {
-      key: 'workspace',
-      icon: <BookOpen size={12} />,
-      label: workspaceRoot ? t('chat.welcome.capability.workspace') : t('chat.welcome.capability.workspaceOptional'),
-    },
   ];
 
   const quickActions = questions.length > 0
@@ -648,44 +484,24 @@ function WelcomeScreen({
     ];
 
   return (
-    <Flexbox
-      flex={1}
-      align="center"
-      justify="center"
-      gap={20}
-      style={{ padding: '32px 24px 18px', width: '100%' }}
-    >
+    <Flexbox flex={1} align="center" justify="center" gap={18} style={{ padding: '28px 24px 18px', width: '100%' }}>
       <Flexbox
         align="center"
         gap={14}
         style={{
-          width: 'min(420px, 100%)',
-          padding: '24px 32px 22px',
-          borderRadius: 24,
+          width: 'min(430px, 100%)',
+          padding: 28,
+          borderRadius: 18,
           background: token.colorBgContainer,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          boxShadow: '0 28px 90px rgba(15, 23, 42, 0.08)',
+          border: 'none',
+          boxShadow: '0 24px 70px rgba(15, 23, 42, 0.08)',
           textAlign: 'center',
         }}
       >
-        <div
-          style={{
-            width: 48,
-            height: 48,
-            borderRadius: 14,
-            background: 'linear-gradient(135deg, #6366f1, #8b5cf6 52%, #ec4899)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 26,
-            boxShadow: '0 14px 34px rgba(99, 102, 241, 0.24)',
-          }}
-        >
-          {avatar}
-        </div>
+        <AgentIconTile agent={agent} size={48} />
 
         <Flexbox align="center" gap={7} style={{ width: '100%' }}>
-          <h2 style={{ margin: 0, fontSize: 21, lineHeight: 1.25, fontWeight: 800, color: token.colorText }}>
+          <h2 style={{ margin: 0, fontSize: 18, lineHeight: 1.25, fontWeight: 900, color: token.colorText }}>
             {title}
           </h2>
           <Flexbox
@@ -763,353 +579,25 @@ function QuickAction({
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 6,
-        padding: '8px 16px',
-        borderRadius: 20,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        background: token.colorBgContainer,
+        gap: 5,
+        padding: 0,
+        border: 0,
+        background: 'transparent',
         color: token.colorText,
         cursor: 'pointer',
-        fontSize: 13,
+        fontSize: 12,
+        fontWeight: 650,
         transition: 'all 0.2s',
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = token.colorPrimary;
         e.currentTarget.style.color = token.colorPrimary;
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = token.colorBorderSecondary;
         e.currentTarget.style.color = token.colorText;
       }}
     >
       {icon}
       {label}
     </button>
-  );
-}
-
-function NotebookPanel({
-  documents,
-  loading,
-  onDelete,
-  onCreate,
-  onClose,
-  onOpenDocument,
-}: {
-  documents: import('../services/desktop_api').NotebookDocument[];
-  loading: boolean;
-  onDelete: (id: string) => void;
-  onCreate: (title: string, content: string) => void;
-  onClose: () => void;
-  onOpenDocument: (doc: import('../services/desktop_api').NotebookDocument) => void;
-}) {
-  const { token } = theme.useToken();
-  const { t } = useTranslation('chat');
-  const [creating, setCreating] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const titleRef = useRef<HTMLInputElement>(null);
-
-  const handleCreate = useCallback(() => {
-    const title = newTitle.trim();
-    if (!title) return;
-    onCreate(title, '');
-    setNewTitle('');
-    setCreating(false);
-  }, [newTitle, onCreate]);
-
-  useEffect(() => {
-    if (creating) titleRef.current?.focus();
-  }, [creating]);
-
-  return (
-    <Flexbox flex={1} style={{ height: '100%' }}>
-      <Flexbox
-        horizontal
-        align="center"
-        justify="space-between"
-        style={{
-          padding: '12px 16px',
-          borderBottom: `1px solid ${token.colorBorderSecondary}`,
-          flexShrink: 0,
-        }}
-      >
-        <Flexbox horizontal align="center" gap={8}>
-          <BookOpen size={16} style={{ color: token.colorTextSecondary }} />
-          <span style={{ fontSize: 14, fontWeight: 600 }}>{t('chat.notebook.title')}</span>
-        </Flexbox>
-        <Flexbox horizontal align="center" gap={2}>
-          <ActionIcon
-            icon={Plus}
-            size="small"
-            title={t('chat.notebook.newPage')}
-            onClick={() => setCreating(true)}
-          />
-          <ActionIcon
-            icon={PanelRightClose}
-            size="small"
-            title={t('chat.notebook.close')}
-            onClick={onClose}
-          />
-        </Flexbox>
-      </Flexbox>
-
-      {creating && (
-        <Flexbox
-          horizontal
-          gap={8}
-          style={{ padding: '8px 12px', borderBottom: `1px solid ${token.colorBorderSecondary}` }}
-        >
-          <input
-            ref={titleRef}
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') setCreating(false); }}
-            placeholder={t('chat.notebook.pageTitle.placeholder')}
-            style={{
-              flex: 1,
-              border: `1px solid ${token.colorBorder}`,
-              borderRadius: 6,
-              padding: '4px 8px',
-              fontSize: 13,
-              outline: 'none',
-              background: token.colorBgContainer,
-              color: token.colorText,
-            }}
-          />
-        </Flexbox>
-      )}
-
-      <Flexbox flex={1} style={{ overflow: 'auto', padding: 8 }}>
-        {loading ? (
-          <Flexbox align="center" justify="center" flex={1} style={{ padding: 24 }}>
-            <span style={{ color: token.colorTextDescription, fontSize: 13 }}>{t('chat.notebook.loading')}</span>
-          </Flexbox>
-        ) : documents.length === 0 ? (
-          <Flexbox align="center" justify="center" flex={1} gap={8} style={{ padding: 24 }}>
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={
-                <span style={{ color: token.colorTextDescription, fontSize: 13 }}>
-                  {t('chat.notebook.empty')}
-                </span>
-              }
-            />
-          </Flexbox>
-        ) : (
-          documents.map((doc) => (
-            <DocumentItem key={doc.id} doc={doc} onDelete={onDelete} onClick={() => onOpenDocument(doc)} />
-          ))
-        )}
-      </Flexbox>
-    </Flexbox>
-  );
-}
-
-function DocumentItem({
-  doc,
-  onDelete,
-  onClick,
-}: {
-  doc: import('../services/desktop_api').NotebookDocument;
-  onDelete: (id: string) => void;
-  onClick: () => void;
-}) {
-  const { token } = theme.useToken();
-  const { t } = useTranslation('chat');
-  const [hovered, setHovered] = useState(false);
-
-  return (
-    <Flexbox
-      horizontal
-      align="center"
-      gap={8}
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        padding: '8px 12px',
-        borderRadius: 8,
-        cursor: 'pointer',
-        background: hovered ? token.colorFillTertiary : 'transparent',
-        transition: 'background 0.15s',
-      }}
-    >
-      <FileText size={16} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />
-      <Flexbox flex={1} style={{ minWidth: 0 }}>
-        <span style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {doc.title || t('chat.notebook.untitled')}
-        </span>
-        <span style={{ fontSize: 11, color: token.colorTextDescription }}>
-          {new Date(doc.updated_at).toLocaleDateString()}
-        </span>
-      </Flexbox>
-      {hovered && (
-        <ActionIcon
-          icon={Trash2}
-          size={{ blockSize: 24, size: 14 }}
-          title={t('chat.notebook.delete')}
-          onClick={(e) => { e.stopPropagation(); onDelete(doc.id); }}
-          style={{ color: token.colorTextTertiary }}
-        />
-      )}
-    </Flexbox>
-  );
-}
-
-function DocumentEditor({
-  doc,
-  title,
-  content,
-  onTitleChange,
-  onContentChange,
-  onSave,
-  onBack,
-  onClose,
-  onOpenFullPage,
-  onUseInChat,
-}: {
-  doc: import('../services/desktop_api').NotebookDocument;
-  title: string;
-  content: string;
-  onTitleChange: (t: string) => void;
-  onContentChange: (c: string) => void;
-  onSave: () => void;
-  onBack: () => void;
-  onClose: () => void;
-  onOpenFullPage?: (docId: string) => void;
-  onUseInChat?: (doc: import('../services/desktop_api').NotebookDocument, title: string, content: string) => void;
-}) {
-  const { token } = theme.useToken();
-  const { t } = useTranslation('chat');
-  const [preview, setPreview] = useState(false);
-
-  return (
-    <Flexbox flex={1} style={{ height: '100%' }}>
-      <Flexbox
-        horizontal
-        align="center"
-        justify="space-between"
-        style={{
-          padding: '8px 12px',
-          borderBottom: `1px solid ${token.colorBorderSecondary}`,
-          flexShrink: 0,
-        }}
-      >
-        <Flexbox horizontal align="center" gap={4}>
-          <ActionIcon
-            icon={ArrowLeft}
-            size="small"
-            title={t('chat.editor.back')}
-            onClick={onBack}
-          />
-          <span style={{ fontSize: 13, fontWeight: 600, color: token.colorText }}>{t('chat.editor.document')}</span>
-        </Flexbox>
-        <Flexbox horizontal align="center" gap={2}>
-          <ActionIcon
-            icon={Save}
-            size="small"
-            title={t('chat.editor.save')}
-            onClick={onSave}
-          />
-          {onUseInChat && (
-            <ActionIcon
-              icon={FileText}
-              size="small"
-              title={t('chat.editor.useInChat')}
-              onClick={() => onUseInChat(doc, title, content)}
-            />
-          )}
-          {onOpenFullPage && (
-            <ActionIcon
-              icon={Maximize2}
-              size="small"
-              title={t('chat.editor.openFullPage')}
-              onClick={() => onOpenFullPage(doc.id)}
-            />
-          )}
-          <ActionIcon
-            icon={PanelRightClose}
-            size="small"
-            title={t('chat.editor.close')}
-            onClick={onClose}
-          />
-        </Flexbox>
-      </Flexbox>
-
-      {/* Title */}
-      <div style={{ padding: '12px 16px 0' }}>
-        <Input
-          value={title}
-          onChange={(e) => onTitleChange(e.target.value)}
-          placeholder={t('chat.editor.titlePlaceholder')}
-          variant="borderless"
-          style={{ fontSize: 18, fontWeight: 600, padding: 0 }}
-          onBlur={onSave}
-        />
-      </div>
-
-      {/* Tabs: Edit / Preview */}
-      <Flexbox horizontal gap={0} style={{ padding: '8px 16px 0', borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
-        <button
-          onClick={() => setPreview(false)}
-          style={{
-            padding: '4px 12px',
-            border: 'none',
-            background: 'transparent',
-            fontSize: 12,
-            fontWeight: 500,
-            cursor: 'pointer',
-            color: !preview ? token.colorPrimary : token.colorTextSecondary,
-            borderBottom: !preview ? `2px solid ${token.colorPrimary}` : '2px solid transparent',
-          }}
-        >
-          {t('chat.editor.tab.edit')}
-        </button>
-        <button
-          onClick={() => setPreview(true)}
-          style={{
-            padding: '4px 12px',
-            border: 'none',
-            background: 'transparent',
-            fontSize: 12,
-            fontWeight: 500,
-            cursor: 'pointer',
-            color: preview ? token.colorPrimary : token.colorTextSecondary,
-            borderBottom: preview ? `2px solid ${token.colorPrimary}` : '2px solid transparent',
-          }}
-        >
-          {t('chat.editor.tab.preview')}
-        </button>
-      </Flexbox>
-
-      {/* Content */}
-      <Flexbox flex={1} style={{ overflow: 'auto', padding: 16, minHeight: 0 }}>
-        {preview ? (
-          <Markdown variant="chat" fontSize={14}>
-            {content || t('chat.editor.noContent')}
-          </Markdown>
-        ) : (
-          <textarea
-            value={content}
-            onChange={(e) => onContentChange(e.target.value)}
-            onBlur={onSave}
-            placeholder={t('chat.editor.contentPlaceholder')}
-            style={{
-              width: '100%',
-              height: '100%',
-              minHeight: 200,
-              resize: 'none',
-              border: 'none',
-              outline: 'none',
-              fontFamily: 'monospace',
-              fontSize: 13,
-              lineHeight: 1.6,
-              background: 'transparent',
-              color: token.colorText,
-            }}
-          />
-        )}
-      </Flexbox>
-    </Flexbox>
   );
 }

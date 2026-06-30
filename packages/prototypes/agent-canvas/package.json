@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/AgentCanvasPrototype.tsx"
+    ".": "./src/AgentCanvasPage.tsx",
+    "./prototype": "./src/AgentCanvasPrototype.tsx"
   },
   "scripts": {
     "dev": "vite",

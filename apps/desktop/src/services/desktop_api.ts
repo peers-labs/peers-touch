@@ -80,6 +80,12 @@ import type {
   GetTurnTraceResponse,
   ListTurnTracesResponse,
 } from '../gen/proto/domain/agent/agent_pb';
+import type {
+  CollaborationTask,
+  GetCollaborationTaskResponse,
+  ListCollaborationTasksResponse,
+  ListTaskEventsResponse,
+} from '../gen/proto/domain/agent/orchestration_pb';
 export {
   FederationVisibility,
   FederationVisibilityRequestSchema,
@@ -759,14 +765,6 @@ export interface Message {
   tool_calls?: string;
 }
 
-export interface AgentParams {
-  temperature?: number;
-  top_p?: number;
-  frequency_penalty?: number;
-  presence_penalty?: number;
-  max_tokens?: number;
-}
-
 export interface AgentMemoryConfig {
   enabled?: boolean;
   effort?: 'low' | 'medium' | 'high';
@@ -781,16 +779,6 @@ export interface AgentWorkspaceConfig {
 export interface AgentProviderFallbackConfig {
   enabled?: boolean;
   maxRetries?: number;
-}
-
-export interface AgentVoiceConfig {
-  ttsProvider?: 'browser' | 'edge' | 'openai';
-  ttsVoice?: string;
-  ttsSpeed?: number;
-  ttsAutoRead?: boolean;
-  sttProvider?: 'browser' | 'openai';
-  sttLanguage?: string;
-  sttAutoStop?: boolean;
 }
 
 export type AgentKnowledgeResourceType = 'document' | 'folder' | 'project' | 'url' | 'notebook' | 'workspace';
@@ -825,7 +813,6 @@ export interface AgentChatConfig {
   memory?: AgentMemoryConfig;
   providerFallback?: AgentProviderFallbackConfig;
   workspace?: AgentWorkspaceConfig;
-  voice?: AgentVoiceConfig;
   mcpServers?: string[];
   tools?: string[];
   skills?: string[];
@@ -854,16 +841,12 @@ export interface Agent {
   allowedRoots: string;
   cliCommand: string;
   tags: string;
-  toolsProfile: string;
-  toolsAllow: string;
-  toolsDeny: string;
   pinned: boolean;
   favorite: boolean;
   sortOrder: number;
   openingMessage: string;
   openingQuestions: string;
   chatConfig: string;
-  params: string;
   knowledgeResources: string;
   isDefault: boolean;
   createdAt: string;
@@ -892,16 +875,12 @@ export interface AgentCreate {
   allowedRoots?: string;
   cliCommand?: string;
   tags?: string;
-  toolsProfile?: string;
-  toolsAllow?: string;
-  toolsDeny?: string;
   pinned?: boolean;
   favorite?: boolean;
   sortOrder?: number;
   openingMessage?: string;
   openingQuestions?: string;
   chatConfig?: string;
-  params?: string;
   knowledgeResources?: string;
 }
 
@@ -936,7 +915,6 @@ export interface AgentPackage {
   providerPreset: {
     provider: string;
     model: string;
-    params: AgentParams;
   };
   bindings: {
     mcpServers: string[];
@@ -961,14 +939,54 @@ export interface AgentListResult {
   defaultAgent?: string;
 }
 
+export interface AgentCollaborationCreateInput {
+  title: string;
+  description: string;
+  engine_type: number;
+  agent_ids: string[];
+  workspace_id?: string;
+  budget_tokens?: number;
+  budget_money?: number;
+  budget_time_ms?: number;
+}
+
+export interface AgentCollaborationGetInput {
+  task_id: string;
+}
+
+export interface AgentCollaborationListInput {
+  status?: number;
+  page?: number;
+  page_size?: number;
+}
+
+export interface AgentCollaborationListEventsInput {
+  task_id: string;
+  after_event_seq?: number;
+  page_size?: number;
+}
+
+export interface AgentCollaborationSubscribeInput {
+  stream_id?: string;
+  agent_id: string;
+  task_id?: string;
+  after_event_seq?: number;
+}
+
+export interface AgentCollaborationCancelTaskInput {
+  task_id: string;
+}
+
+export interface AgentCollaborationStreamPayload {
+  streamId: string;
+  agentId: string;
+  event: string;
+  data: Record<string, any>;
+}
+
 export function parseAgentChatConfig(agent: Agent): AgentChatConfig {
   if (!agent.chatConfig) return {};
   try { return JSON.parse(agent.chatConfig); } catch { return {}; }
-}
-
-export function parseAgentParams(agent: Agent): AgentParams {
-  if (!agent.params) return {};
-  try { return JSON.parse(agent.params); } catch { return {}; }
 }
 
 function normalizeKnowledgeResource(raw: unknown): AgentKnowledgeResource | null {
@@ -3372,6 +3390,48 @@ export const api = {
       },
     ),
 
+  createAgentCollaborationTask: (input: AgentCollaborationCreateInput) =>
+    invokeRustDataFromStatus<AgentCollaborationCreateInput, { task?: CollaborationTask }>(
+      'agent_collaboration_create',
+      input,
+    ),
+
+  getAgentCollaborationTask: (taskId: string) =>
+    invokeRustDataFromStatus<AgentCollaborationGetInput, GetCollaborationTaskResponse>(
+      'agent_collaboration_get',
+      { task_id: taskId },
+    ),
+
+  listAgentCollaborationTasks: (input?: AgentCollaborationListInput) =>
+    invokeRustDataFromStatus<AgentCollaborationListInput, ListCollaborationTasksResponse>(
+      'agent_collaboration_list',
+      input || {},
+    ),
+
+  listAgentCollaborationEvents: (input: AgentCollaborationListEventsInput) =>
+    invokeRustDataFromStatus<AgentCollaborationListEventsInput, ListTaskEventsResponse>(
+      'agent_collaboration_list_events',
+      input,
+    ),
+
+  startAgentCollaborationStream: (input: AgentCollaborationSubscribeInput) =>
+    invokeRustDataFromStatus<AgentCollaborationSubscribeInput, { stream_id: string }>(
+      'agent_collaboration_subscribe',
+      input,
+    ),
+
+  cancelAgentCollaborationStream: (streamId: string) =>
+    invokeRustDataFromStatus<{ stream_id: string }, { stream_id: string }>(
+      'agent_collaboration_cancel_stream',
+      { stream_id: streamId },
+    ),
+
+  cancelAgentCollaborationTask: (taskId: string) =>
+    invokeRustDataFromStatus<AgentCollaborationCancelTaskInput, { task?: CollaborationTask }>(
+      'agent_collaboration_cancel_task',
+      { task_id: taskId },
+    ),
+
   listTools: () =>
     invokeRustDataFromStatus<void, { tools: ToolInfo[] }>('tools_list').then((r) => r.tools),
 
@@ -3882,6 +3942,12 @@ export const api = {
   resolveAgentLocalToolRequest: (input: AgentLocalToolRequestInput) =>
     invokeRustDataFromStatus<AgentLocalToolRequestInput, AgentLocalToolResultEvent>(
       'agent_resolve_local_tool_request',
+      input,
+    ),
+
+  executeAgentTurnOnce: (input: AgentExecuteTurnInput) =>
+    invokeRustDataFromStatus<AgentExecuteTurnInput, Record<string, unknown>>(
+      'agent_execute_turn',
       input,
     ),
 
@@ -5332,6 +5398,39 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
   };
 }
 
+function isHttpGatewayMode() {
+  return typeof window !== 'undefined' && Boolean((window as any).__PT_GATEWAY_BASE__);
+}
+
+function recordField(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function stringField(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function extractAgentTurnText(result: Record<string, unknown> | undefined): string {
+  if (!result) return '';
+  const responseMessage = recordField(result.response_message || result.responseMessage);
+  const turn = recordField(result.turn);
+  const trace = recordField(result.trace);
+  return String(
+    stringField(responseMessage.content) ||
+    stringField(result.content) ||
+    stringField(result.text) ||
+    stringField(result.final_response) ||
+    stringField(result.finalResponse) ||
+    stringField(turn.final_response) ||
+    stringField(turn.finalResponse) ||
+    stringField(trace.final_response) ||
+    stringField(trace.finalResponse) ||
+    '',
+  );
+}
+
 export function streamChat(
   message: string,
   sessionKey: string,
@@ -5426,6 +5525,32 @@ export function streamAgentTurn(
 ): AbortController {
   const controller = new AbortController();
   log.info('api', 'streamAgentTurn started', { conversationId: input.conversation_id, agentId: input.agent_id });
+  if (isHttpGatewayMode()) {
+    (async () => {
+      try {
+        const result = await api.executeAgentTurnOnce(input);
+        if (controller.signal.aborted) return;
+        const content = extractAgentTurnText(result);
+        if (content) {
+          onEvent({ event: 'text', data: { content } });
+        }
+        const trace = recordField(result?.trace);
+        const turn = recordField(result?.turn);
+        onEvent({
+          event: 'done',
+          data: {
+            model: stringField(trace.model) || stringField(turn.model) || input.model || '',
+          },
+        });
+        onDone();
+      } catch (err: unknown) {
+        if (!controller.signal.aborted) {
+          onError(err instanceof Error ? err : new Error(String(err)));
+        }
+      }
+    })();
+    return controller;
+  }
   (async () => {
     let unlisten: (() => void) | undefined;
     try {
@@ -5490,6 +5615,63 @@ export function streamAgentTurn(
       controller.signal.addEventListener('abort', () => {
         api.cancelAgentTurnStream(streamId).catch((error) => {
           log.warn('api', 'streamAgentTurn cancel failed', { error: String(error) });
+        });
+        unlisten?.();
+      }, { once: true });
+    } catch (err: unknown) {
+      unlisten?.();
+      onError(err instanceof Error ? err : new Error(String(err)));
+    }
+  })();
+  return controller;
+}
+
+export function streamAgentCollaborationEvents(
+  agentId: string,
+  onEvent: (payload: AgentCollaborationStreamPayload) => void,
+  onError: (err: Error) => void,
+  options: { taskId?: string; afterEventSeq?: number } = {},
+): AbortController {
+  const controller = new AbortController();
+  (async () => {
+    let unlisten: (() => void) | undefined;
+    try {
+      const { listen } = await import('@tauri-apps/api/event');
+      const streamId = `agent-collaboration-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      unlisten = await listen<AgentCollaborationStreamPayload>('agent:collaboration-event', (tauriEvent) => {
+        const payload = tauriEvent.payload;
+        if (payload.streamId !== streamId) return;
+        if (controller.signal.aborted) {
+          unlisten?.();
+          return;
+        }
+        if (payload.event === 'error') {
+          onError(new Error(String(payload.data?.error || 'agent.canvas.streamFailed')));
+          return;
+        }
+        onEvent(payload);
+      });
+
+      const result = await api.startAgentCollaborationStream({
+        stream_id: streamId,
+        agent_id: agentId,
+        task_id: options.taskId,
+        after_event_seq: options.afterEventSeq ?? 0,
+      });
+      if (result?.stream_id !== streamId) {
+        unlisten();
+        throw new Error('agent.canvas.streamIdMismatch');
+      }
+      if (controller.signal.aborted) {
+        api.cancelAgentCollaborationStream(streamId).catch((error) => {
+          log.warn('api', 'streamAgentCollaborationEvents cancel failed', { error: String(error) });
+        });
+        unlisten();
+        return;
+      }
+      controller.signal.addEventListener('abort', () => {
+        api.cancelAgentCollaborationStream(streamId).catch((error) => {
+          log.warn('api', 'streamAgentCollaborationEvents cancel failed', { error: String(error) });
         });
         unlisten?.();
       }, { once: true });

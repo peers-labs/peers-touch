@@ -1,9 +1,9 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AgentCanvasPrototype } from './AgentCanvasPrototype';
+import { AgentCanvasPage } from './AgentCanvasPage';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AgentCanvasPrototype />
+    <AgentCanvasPage />
   </StrictMode>,
 );

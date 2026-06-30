@@ -3,9 +3,7 @@ import {
   type Agent,
   type AgentPackage,
   type AgentChatConfig,
-  type AgentParams,
   parseAgentChatConfig,
-  parseAgentParams,
   type GrowthSnapshot,
   type MemoryItem,
   type SkillItem,
@@ -15,7 +13,7 @@ import {
   streamAgentTurn,
 } from './desktop_api';
 
-export type { Agent, AgentPackage, AgentChatConfig, AgentParams, GrowthSnapshot, AgentExecuteTurnInput };
+export type { Agent, AgentPackage, AgentChatConfig, GrowthSnapshot, AgentExecuteTurnInput };
 
 export class AgentService {
   async list(): Promise<Agent[]> {
@@ -54,11 +52,8 @@ export class AgentService {
     return api.searchAgents(query);
   }
 
-  parseConfig(agent: Agent): { chatConfig: AgentChatConfig; params: AgentParams } {
-    return {
-      chatConfig: parseAgentChatConfig(agent),
-      params: parseAgentParams(agent),
-    };
+  parseConfig(agent: Agent): { chatConfig: AgentChatConfig } {
+    return { chatConfig: parseAgentChatConfig(agent) };
   }
 
   async getGrowthSnapshot(agentId: string): Promise<GrowthSnapshot> {

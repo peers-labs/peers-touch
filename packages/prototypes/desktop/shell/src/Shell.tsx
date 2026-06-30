@@ -40,9 +40,9 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { AtelierPage } from '@peers-touch/prototype-desktop-atelier';
-import { AgentCanvasPrototype } from '@peers-touch/prototype-agent-canvas';
-import { AgentAdmin } from './AgentAdmin';
+import { AgentCanvasPage } from '@peers-touch/prototype-agent-canvas';
 import { AgentChatPage } from './AgentChatPage';
+import { AgentProfilePage } from './AgentProfilePage';
 import { SettingsPage } from './Settings';
 import { T } from './theme';
 
@@ -640,9 +640,9 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
       />
     );
   } else if (page === 'agent-profile') {
-    body = <AgentAdmin onOpenOrchestration={() => navigate('agent-orchestration')} />;
+    body = <AgentProfilePage onOpenOrchestration={() => navigate('agent-orchestration')} />;
   } else if (page === 'agent-orchestration') {
-    body = <AgentCanvasPrototype embedded onBack={() => navigate('agent')} />;
+    body = <AgentCanvasPage embedded onBack={() => navigate('agent')} />;
   } else if (page === 'settings') {
     body = <SettingsPage />;
   } else {

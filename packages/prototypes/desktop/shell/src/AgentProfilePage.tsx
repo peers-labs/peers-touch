@@ -1,8 +1,12 @@
 /**
- * peers-touch Desktop — Agent management / edit surface (prototype).
+ * peers-touch Desktop — Agent Profile page prototype.
  *
- * Rebuilt to a single-Agent configuration page,
- * not a thin profile form. Mirrors the LobeHub blueprint
+ * This file is the prototype source for the production AgentProfilePage. It is
+ * intentionally page-level, not an "Admin" aggregate: the Chat, Canvas, and
+ * Profile surfaces each have their own one-to-one prototype file.
+ *
+ * Rebuilt to a single-Agent configuration page, not a thin profile form.
+ * Mirrors the LobeHub blueprint
  * (docs/architecture/agent/agent-lobehub-blueprint.md P3-1: Agent Profile split
  * into understandable tabs; §7.1 Desktop Web owns Agent Profile/Settings).
  *
@@ -36,10 +40,10 @@ import {
   Plus,
   Pin,
   Sparkles,
+  BarChart3,
   Upload,
   Send,
   Image as ImageIcon,
-  Mic,
   Pencil,
   Trash2,
   ChevronDown,
@@ -171,8 +175,8 @@ interface Tool {
 interface Agent {
   id: string;
   name: string;
-  /** emoji / monogram for the avatar tile */
-  glyph: string;
+  /** lucide icon for the Agent tile */
+  icon: LucideIcon;
   pinned: boolean;
   status: 'enabled' | 'draft';
   /** A2A self-description: used to route the right agent */
@@ -207,7 +211,7 @@ const INITIAL_AGENTS: Agent[] = [
   {
     id: 'a-research',
     name: '科研助理',
-    glyph: '🔬',
+    icon: Search,
     pinned: true,
     status: 'enabled',
     description: '帮你检索文献、梳理论证脉络、整理实验记录与综述提纲。',
@@ -226,7 +230,7 @@ const INITIAL_AGENTS: Agent[] = [
   {
     id: 'a-writing',
     name: '写作伙伴',
-    glyph: '✍️',
+    icon: FileText,
     pinned: false,
     status: 'enabled',
     description: '协助起草、润色与改写，把零散素材整理成结构清晰的文稿。',
@@ -262,7 +266,7 @@ const INITIAL_AGENTS: Agent[] = [
   {
     id: 'a-data',
     name: '数据分析师',
-    glyph: '📊',
+    icon: BarChart3,
     pinned: false,
     status: 'draft',
     description: '协助清洗数据、跑统计与可视化，给出可解释的分析结论。',
@@ -697,7 +701,9 @@ function AgentBuilder({ onClose }: { onClose: () => void }) {
       <div style={{ flex: 1, overflow: 'auto', padding: '8px 14px' }}>
         {messages.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '24px 4px' }}>
-            <div style={{ fontSize: 30, marginBottom: 8 }}>🏗️</div>
+            <div style={{ width: 42, height: 42, borderRadius: 14, margin: '0 auto 10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', backgroundColor: T.primaryWash, color: T.primary }}>
+              <Wrench size={22} />
+            </div>
             <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 6 }}>Agent Builder</div>
             <div style={{ fontSize: 12, color: T.textTertiary, lineHeight: '18px', marginBottom: 16 }}>
               说出你的用例——写作、编码或数据分析都行。你定目标与标准，我来拆成可协作、可运行的 Agent。
@@ -741,7 +747,6 @@ function AgentBuilder({ onClose }: { onClose: () => void }) {
             <button style={builderPlainToolButtonStyle} title="Add image"><ImageIcon size={16} /></button>
             <div style={{ flex: 1 }} />
             <button style={builderModelButtonStyle}>composer-2-fast <ChevronDown size={13} /></button>
-            <button style={builderPlainToolButtonStyle} title="Voice input"><Mic size={16} /></button>
             <button style={builderSendButtonStyle} title="Send" onClick={() => send(input)}><Send size={16} /></button>
           </div>
         </div>
@@ -833,7 +838,7 @@ const builderSendButtonStyle: React.CSSProperties = {
 
 // ── shell ────────────────────────────────────────────────────────────────────
 
-export function AgentAdmin({ onOpenOrchestration }: { onOpenOrchestration?: () => void }) {
+export function AgentProfilePage({ onOpenOrchestration }: { onOpenOrchestration?: () => void }) {
   const [agents, setAgents] = useState<Agent[]>(INITIAL_AGENTS);
   const [selectedId, setSelectedId] = useState(INITIAL_AGENTS[1].id);
   const [mode, setMode] = useState<Mode>('configure');
@@ -853,7 +858,7 @@ export function AgentAdmin({ onOpenOrchestration }: { onOpenOrchestration?: () =
     const fresh: Agent = {
       id,
       name: '新建 Agent',
-      glyph: '🤖',
+      icon: Bot,
       pinned: false,
       status: 'draft',
       description: '',
@@ -947,9 +952,7 @@ export function AgentAdmin({ onOpenOrchestration }: { onOpenOrchestration?: () =
                   }}
                   style={{ width: 40, height: 48, border: 0, borderRadius: 12, backgroundColor: a.id === selectedId ? T.primaryWash : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                 >
-                  <span style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0, background: `linear-gradient(135deg, ${T.primary}, #9a8df0)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>
-                    {a.glyph}
-                  </span>
+                  <AgentIcon icon={a.icon} size={30} iconSize={15} active={a.id === selectedId} />
                 </button>
               ))}
               <CollapsedRosterGroup />
@@ -963,9 +966,7 @@ export function AgentAdmin({ onOpenOrchestration }: { onOpenOrchestration?: () =
                   }}
                   style={{ width: 40, height: 48, border: 0, borderRadius: 12, backgroundColor: a.id === selectedId ? T.primaryWash : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                 >
-                  <span style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0, background: `linear-gradient(135deg, ${T.primary}, #9a8df0)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>
-                    {a.glyph}
-                  </span>
+                  <AgentIcon icon={a.icon} size={30} iconSize={15} active={a.id === selectedId} />
                 </button>
               ))}
             </div>
@@ -989,9 +990,7 @@ export function AgentAdmin({ onOpenOrchestration }: { onOpenOrchestration?: () =
 
             {/* identity row: avatar + A2A description (with inline AI icon) */}
             <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
-              <div style={{ width: 64, height: 64, borderRadius: 16, flexShrink: 0, background: `linear-gradient(135deg, ${T.primary}, #9a8df0)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30 }}>
-                {selected.glyph}
-              </div>
+              <AgentIcon icon={selected.icon} size={64} iconSize={28} active />
               <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
                 <textarea
                   value={selected.description}
@@ -1110,6 +1109,26 @@ function RosterGroup({ label }: { label: string }) {
   return <div style={{ height: 18, lineHeight: '18px', fontSize: 11, fontWeight: 700, color: T.textTertiary, margin: '12px 0 6px', padding: '0 8px' }}>{label}</div>;
 }
 
+function AgentIcon({ icon: Icon, size, iconSize, active = false }: { icon: LucideIcon; size: number; iconSize: number; active?: boolean }) {
+  return (
+    <span
+      style={{
+        width: size,
+        height: size,
+        borderRadius: Math.max(8, Math.round(size * 0.25)),
+        flexShrink: 0,
+        backgroundColor: active ? T.primaryWash : T.navBg,
+        color: active ? T.primary : T.textSecondary,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Icon size={iconSize} />
+    </span>
+  );
+}
+
 function CollapsedRosterGroup() {
   return (
     <div style={{ width: 40, height: 18, margin: '12px auto 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1124,9 +1143,7 @@ function RosterItem({ agent, active, onClick }: { agent: Agent; active: boolean;
       onClick={onClick}
       style={{ height: 48, display: 'flex', alignItems: 'center', gap: 10, padding: '0 10px', borderRadius: 9, cursor: 'pointer', backgroundColor: active ? T.primaryWash : 'transparent', boxSizing: 'border-box' }}
     >
-      <span style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, background: `linear-gradient(135deg, ${T.primary}, #9a8df0)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17 }}>
-        {agent.glyph}
-      </span>
+      <AgentIcon icon={agent.icon} size={32} iconSize={16} active={active} />
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: active ? T.primary : T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agent.name}</span>

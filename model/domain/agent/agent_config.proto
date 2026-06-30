@@ -6,32 +6,6 @@ import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
 
-message AgentChatConfig {
-  string agent_id = 1;
-  int32 history_count = 2;
-  bool enable_history_count = 3;
-  bool enable_auto_create_topic = 4;
-  int32 auto_create_topic_threshold = 5;
-  bool enable_max_tokens = 6;
-  bool enable_streaming = 7;
-  bool enable_context_compression = 8;
-  string compression_model_id = 9;
-  int32 context_window_size = 10;
-  string search_mode = 11;
-  bool use_model_builtin_search = 12;
-  google.protobuf.Timestamp updated_at = 13;
-}
-
-message AgentModelParams {
-  string agent_id = 1;
-  double temperature = 2;
-  double top_p = 3;
-  double frequency_penalty = 4;
-  double presence_penalty = 5;
-  int32 max_tokens = 6;
-  google.protobuf.Timestamp updated_at = 7;
-}
-
 message AgentKnowledgeBinding {
   string id = 1;
   string agent_id = 2;
@@ -60,36 +34,6 @@ message AgentMcpBinding {
   google.protobuf.Timestamp updated_at = 6;
 }
 
-message AgentVoiceConfig {
-  string agent_id = 1;
-  string tts_provider = 2;
-  string tts_voice = 3;
-  double tts_speed = 4;
-  bool tts_auto_read = 5;
-  string stt_provider = 6;
-  string stt_language = 7;
-  bool stt_auto_stop = 8;
-  google.protobuf.Timestamp updated_at = 9;
-}
-
-message AgentToolProfile {
-  string agent_id = 1;
-  string profile = 2;
-  string allow = 3;
-  string deny = 4;
-  google.protobuf.Timestamp updated_at = 5;
-}
-
-message GetAgentChatConfigRequest { string agent_id = 1; }
-message GetAgentChatConfigResponse { AgentChatConfig config = 1; }
-message UpdateAgentChatConfigRequest { AgentChatConfig config = 1; }
-message UpdateAgentChatConfigResponse { AgentChatConfig config = 1; }
-
-message GetAgentModelParamsRequest { string agent_id = 1; }
-message GetAgentModelParamsResponse { AgentModelParams params = 1; }
-message UpdateAgentModelParamsRequest { AgentModelParams params = 1; }
-message UpdateAgentModelParamsResponse { AgentModelParams params = 1; }
-
 message ListAgentKnowledgeBindingsRequest { string agent_id = 1; }
 message ListAgentKnowledgeBindingsResponse { repeated AgentKnowledgeBinding bindings = 1; }
 message CreateAgentKnowledgeBindingRequest { AgentKnowledgeBinding binding = 1; }
@@ -117,12 +61,3 @@ message UpdateAgentMcpBindingResponse { AgentMcpBinding binding = 1; }
 message DeleteAgentMcpBindingRequest { string id = 1; }
 message DeleteAgentMcpBindingResponse { bool success = 1; }
 
-message GetAgentVoiceConfigRequest { string agent_id = 1; }
-message GetAgentVoiceConfigResponse { AgentVoiceConfig config = 1; }
-message UpdateAgentVoiceConfigRequest { AgentVoiceConfig config = 1; }
-message UpdateAgentVoiceConfigResponse { AgentVoiceConfig config = 1; }
-
-message GetAgentToolProfileRequest { string agent_id = 1; }
-message GetAgentToolProfileResponse { AgentToolProfile profile = 1; }
-message UpdateAgentToolProfileRequest { AgentToolProfile profile = 1; }
-message UpdateAgentToolProfileResponse { AgentToolProfile profile = 1; }

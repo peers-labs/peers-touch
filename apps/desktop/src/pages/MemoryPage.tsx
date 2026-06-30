@@ -38,6 +38,7 @@ import {
   type MemoryEvent,
 } from '../services/desktop_api';
 import { useAgentStore } from '../store/agent';
+import { AgentIconTile } from '../components/agent/AgentIconTile';
 
 const { Text } = Typography;
 
@@ -405,7 +406,7 @@ function BrowseTab({ onDelete }: { onDelete: () => void }) {
             value: a.name,
             label: (
               <Flexbox horizontal align="center" gap={6}>
-                <span>{a.avatar || '🤖'}</span>
+                <AgentIconTile agent={a} size={18} subtle />
                 <span>{a.title || a.name}</span>
               </Flexbox>
             ),
@@ -556,7 +557,12 @@ function SearchTab() {
             style={{ minWidth: 150 }}
             options={agents.map((a: Agent) => ({
             value: a.name,
-            label: `${a.avatar || '🤖'} ${a.title || a.name}`,
+            label: (
+              <Flexbox horizontal align="center" gap={6}>
+                <AgentIconTile agent={a} size={18} subtle />
+                <span>{a.title || a.name}</span>
+              </Flexbox>
+            ),
           }))}
         />
         <Select
@@ -729,7 +735,12 @@ function EventsTab() {
             size="small"
             options={agents.map((a: Agent) => ({
               value: a.name,
-              label: `${a.avatar || '🤖'} ${a.title || a.name}`,
+              label: (
+              <Flexbox horizontal align="center" gap={6}>
+                <AgentIconTile agent={a} size={18} subtle />
+                <span>{a.title || a.name}</span>
+              </Flexbox>
+            ),
             }))}
           />
           <Select
