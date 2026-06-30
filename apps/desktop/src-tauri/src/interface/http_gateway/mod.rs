@@ -25,12 +25,14 @@ use crate::application::account as app_account;
 use crate::application::admin as app_admin;
 use crate::application::agent_turn as app_agent_turn;
 use crate::application::agents as app_agents;
+use crate::application::applet_store as app_applet_store;
 use crate::application::applets as app_applets;
 use crate::application::auth::service as app_auth;
 use crate::application::channels as app_channels;
 use crate::application::chat as app_chat;
 use crate::application::chat_storage;
 use crate::application::cron as app_cron;
+use crate::application::federation as app_federation;
 use crate::application::key_exchange::{device_install, wire};
 use crate::application::mcp as app_mcp;
 use crate::application::memory as app_memory;
@@ -566,6 +568,17 @@ fn http_gateway_applet_context(state: &AppState) -> Option<crate::domain::applet
         actor_id: g.actor_id.clone(),
         token: g.token.clone().unwrap_or_default(),
     })
+}
+
+/// Resolve the application data directory for applet-store cache/materialize
+/// operations, falling back to the current directory when unconfigured.
+fn http_gateway_data_dir(state: &AppState) -> std::path::PathBuf {
+    state
+        .storage
+        .dirs
+        .get(&crate::infrastructure::storage::StorageKind::Data)
+        .cloned()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
 }
 
 // -------------------------------------------------------------------------
@@ -1345,6 +1358,24 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 Err(e) => return e,
             };
             to_json(app_auth::auth_login(input, state))
+        }
+        // Interactive access-gate login chain (Email Login path). These mirror
+        // the one-shot `auth_login` but drive the Station's pre-login gate
+        // chain (invite-code, etc.) before landing a session.
+        "access_start" => to_json(app_auth::access_start()),
+        "access_submit_invite_code" => {
+            let input = match parse_args::<AccessSubmitInviteInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_auth::access_submit_invite_code(input))
+        }
+        "access_submit_login" => {
+            let input = match parse_args::<AccessSubmitLoginInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_auth::access_submit_login(input, state))
         }
         "auth_logout" => to_json(app_auth::auth_logout(state)),
         "auth_restore_session" => to_json(app_auth::auth_restore_session(state)),
@@ -2513,6 +2544,128 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                         .unwrap_or_else(|| std::path::PathBuf::from("."));
                     to_json(app_applets::applets_invoke(ctx, input, &data_dir))
                 }
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+
+        // =================================================================
+        // Federation (public readiness probe)
+        // =================================================================
+        "federation_health" => match app_federation::health() {
+            Ok(view) => to_json(AppResult::success(app_federation::encode_health(&view))),
+            Err(e) => to_json(e.into_app_result::<Vec<u8>>("federation_health failed")),
+        },
+
+        // =================================================================
+        // Applet store (catalog/install — state-dependent)
+        // =================================================================
+        "applets_store_list_catalog" => {
+            let input = match parse_args::<AppletStoreListCatalogInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_applet_context(state) {
+                Some(ctx) => {
+                    let data_dir = http_gateway_data_dir(state);
+                    to_json(app_applet_store::list_catalog(ctx, input, &data_dir))
+                }
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "applets_store_list_installed" => {
+            let input = match parse_args::<AppletStoreListInstalledInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_applet_context(state) {
+                Some(ctx) => {
+                    let data_dir = http_gateway_data_dir(state);
+                    to_json(app_applet_store::list_installed(ctx, input, &data_dir))
+                }
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "applets_store_install" => {
+            let input = match parse_args::<AppletStoreInstallInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_applet_context(state) {
+                Some(ctx) => to_json(app_applet_store::install(ctx, input)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "applets_store_uninstall" => {
+            let input = match parse_args::<AppletStoreUninstallInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_applet_context(state) {
+                Some(ctx) => to_json(app_applet_store::uninstall(ctx, input)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "applets_store_get_version" => {
+            let input = match parse_args::<AppletStoreGetVersionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_applet_context(state) {
+                Some(ctx) => {
+                    let data_dir = http_gateway_data_dir(state);
+                    to_json(app_applet_store::get_version(ctx, input, &data_dir))
+                }
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "applets_store_materialize_bundle" => {
+            let input = match parse_args::<AppletStoreMaterializeBundleInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_applet_context(state) {
+                Some(ctx) => {
+                    let data_dir = http_gateway_data_dir(state);
+                    to_json(app_applet_store::materialize_bundle(ctx, input, &data_dir))
+                }
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "applets_store_upload_audit" => {
+            let input = match parse_args::<AppletStoreUploadAuditInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_applet_context(state) {
+                Some(ctx) => to_json(app_applet_store::upload_audit(ctx, input.device_id)),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
