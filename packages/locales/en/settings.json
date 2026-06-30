@@ -112,6 +112,12 @@
   "settings.general.screenshotShortcutRecording": "Press a new shortcut…",
   "settings.general.screenshotShortcutReset": "Reset",
   "settings.general.chatShortcutSaved": "Chat shortcut saved",
+  "settings.general.agentDefaultsTitle": "New Agent default model",
+  "settings.general.agentDefaultsDescription": "New Agents inherit the Provider, model, and effort. Each Agent can override them after creation.",
+  "settings.general.defaultProvider": "Default Provider",
+  "settings.general.defaultModel": "Default model",
+  "settings.general.defaultEffort": "Default effort",
+  "settings.general.agentDefaultsSaved": "New Agent defaults saved",
   "settings.general.agentsTitle": "Agents",
   "settings.general.noAgents": "No agents configured. The default assistant agent will be used.",
 

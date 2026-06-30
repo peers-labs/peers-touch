@@ -4,7 +4,7 @@
 > **Version**: v0.1
 > **Created**: 2026-06-22 | **Updated**: 2026-06-22
 > **Owner**: Peers-Touch Agent Team
-> **关联原型**: `packages/prototypes/atelier`（`src/engine.ts` / `src/engineTrace.tsx`）、`packages/prototypes/desktop`（`src/AgentAdmin.tsx` 引擎编排页）
+> **关联原型**: `packages/prototypes/atelier`（`src/engine.ts` / `src/engineTrace.tsx`）、`packages/prototypes/agent-canvas`（`src/AgentCanvasPage.tsx` 引擎编排页）
 > **上游设计**: [design.md](../design.md) §3-4、[data-model.md](../data-model.md) §1.4 / §2.5、[functional-modules.md](./functional-modules.md) §7
 
 ---

@@ -2,11 +2,13 @@ import { useMemo, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Dropdown, Input } from '@lobehub/ui';
-import { Badge, Empty, Spin, theme, Typography } from 'antd';
+import { Badge, Empty, theme, Typography } from 'antd';
 import { BellOff, Pin, Search, Plus, UserPlus, Users, UsersRound, Volume2, VolumeX, CheckCheck, EyeOff, Trash2 } from 'lucide-react';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { useSocialChatStore } from '../../store/socialChat';
 import type { UnifiedConversation } from '../../store/socialChat';
+import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
+import { presentError } from '../../services/errorPresenter';
 import { CreateGroupModal } from './CreateGroupModal';
 import { FindPeopleModal } from './FindPeopleModal';
 
@@ -42,7 +44,6 @@ export function ChatSessionList() {
     activeTab,
     activeSessionUlid,
     activeGroupUlid,
-    loading,
     conversationLocalState,
     setActiveTab,
     selectSession,
@@ -135,28 +136,57 @@ export function ChatSessionList() {
           danger: true,
         },
       ],
-      onClick: ({ key }: { key: string }) => {
+      onClick: async ({ key }: { key: string }) => {
         switch (key) {
           case 'pin':
-            updateConversationLocalState(c.type, c.ulid, { sticky: !isPinned });
+            try {
+              await updateConversationLocalState(c.type, c.ulid, { sticky: !isPinned });
+            } catch (error) {
+              presentError(error, {
+                mapper: mapChatError,
+                context: { operation: 'conversationAction' },
+              });
+            }
             break;
           case 'mute':
-            updateConversationLocalState(c.type, c.ulid, { muted: !isMuted });
+            try {
+              await updateConversationLocalState(c.type, c.ulid, { muted: !isMuted });
+            } catch (error) {
+              presentError(error, {
+                mapper: mapChatError,
+                context: { operation: 'conversationAction' },
+              });
+            }
             break;
           case 'markRead':
             // Mark-read clears unread badge; for friend chats this acks messages.
-            updateConversationLocalState(c.type, c.ulid, { clearedAt: 0 });
-            break;
-          case 'hide':
-            hideConversation(c.type, c.ulid, true);
-            break;
-          case 'delete':
-            if (c.type === 'group') {
-              deleteGroupContact(c.ulid);
-            } else {
-              deleteFriendContact(c.ulid);
+            try {
+              await updateConversationLocalState(c.type, c.ulid, { clearedAt: 0 });
+            } catch (error) {
+              presentError(error, {
+                mapper: mapChatError,
+                context: { operation: 'conversationAction' },
+              });
             }
             break;
+          case 'hide':
+            await hideConversation(c.type, c.ulid, true);
+            break;
+          case 'delete': {
+            try {
+              if (c.type === 'group') {
+                await deleteGroupContact(c.ulid);
+              } else {
+                await deleteFriendContact(c.ulid);
+              }
+            } catch (error) {
+              presentError(error, {
+                mapper: mapChatError,
+                context: { operation: 'delete' },
+              });
+            }
+            break;
+          }
         }
       },
     };
@@ -211,11 +241,7 @@ export function ChatSessionList() {
         </Flexbox>
 
         <Flexbox flex={1} style={{ overflow: 'auto', padding: '8px 8px' }} gap={2}>
-          {loading && filteredItems.length === 0 ? (
-            <Flexbox align="center" justify="center" flex={1}>
-              <Spin size="small" />
-            </Flexbox>
-          ) : filteredItems.length === 0 ? (
+          {filteredItems.length === 0 ? (
             <Flexbox align="center" justify="center" flex={1}>
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
