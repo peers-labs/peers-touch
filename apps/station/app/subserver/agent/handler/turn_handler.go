@@ -23,8 +23,9 @@ import (
 )
 
 type TurnHandlers struct {
-	turnService  *service.TurnService
-	toolRegistry *service.ToolRegistryService
+	turnService     *service.TurnService
+	toolRegistry    *service.ToolRegistryService
+	chatTaskService *service.ChatTaskService
 }
 
 type localToolResultRequest struct {
@@ -34,8 +35,30 @@ type localToolResultRequest struct {
 	IsError bool   `json:"is_error"`
 }
 
-func NewTurnHandlers(turnService *service.TurnService, toolRegistry *service.ToolRegistryService) *TurnHandlers {
-	return &TurnHandlers{turnService: turnService, toolRegistry: toolRegistry}
+func NewTurnHandlers(turnService *service.TurnService, toolRegistry *service.ToolRegistryService, chatTaskService *service.ChatTaskService) *TurnHandlers {
+	return &TurnHandlers{turnService: turnService, toolRegistry: toolRegistry, chatTaskService: chatTaskService}
+}
+
+// beginChatTaskStep ensures the Station-owned Chat root task for the conversation
+// and opens an execution step for the incoming user message. It returns the
+// task/step ids so the caller can bind them to the turn and close them out.
+func (h *TurnHandlers) beginChatTaskStep(ctx context.Context, req *model.ExecuteTurnRequest) (taskID, stepID string) {
+	if h.chatTaskService == nil {
+		return "", ""
+	}
+	actorID := subjectActorID(ctx)
+	if actorID == "" {
+		return "", ""
+	}
+	taskID, err := h.chatTaskService.EnsureChatTask(ctx, actorID, req.GetAgentId(), req.GetConversationId(), req.GetUserInput())
+	if err != nil {
+		return "", ""
+	}
+	stepID, err = h.chatTaskService.BeginChatStep(ctx, taskID, req.GetAgentId(), req.GetUserInput())
+	if err != nil {
+		return taskID, ""
+	}
+	return taskID, stepID
 }
 
 func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.ExecuteTurnRequest) (*model.ExecuteTurnResponse, error) {
@@ -45,13 +68,28 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 	}
 
 	config := h.turnConfigFromRequest(req, nil)
+	taskID, stepID := h.beginChatTaskStep(ctx, req)
+	config.TaskID = taskID
+	config.StepID = stepID
+
 	turn, err := h.turnService.ExecuteTurn(ctx, config, req.GetUserInput())
 	if err != nil {
+		if h.chatTaskService != nil && stepID != "" {
+			_ = h.chatTaskService.FailChatStep(ctx, taskID, stepID, err.Error())
+		}
 		return nil, toHandlerError(err)
+	}
+	if h.chatTaskService != nil && stepID != "" {
+		turnID := ""
+		if turn != nil {
+			turnID = turn.TurnID
+		}
+		_ = h.chatTaskService.FinishChatStep(ctx, taskID, stepID, turnID, "")
 	}
 
 	return &model.ExecuteTurnResponse{
-		Turn: domainTurnToProto(turn),
+		Turn:   domainTurnToProto(turn),
+		TaskId: taskID,
 	}, nil
 }
 
@@ -115,10 +153,24 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 		case <-eventCtx.Done():
 		}
 	})
+	taskID, stepID := h.beginChatTaskStep(ctx, &input)
+	config.TaskID = taskID
+	config.StepID = stepID
 
 	go func() {
 		turn, err := h.turnService.ExecuteTurn(ctx, config, input.GetUserInput())
-		done <- turnStreamResult{turn: domainTurnToProto(turn), err: err}
+		if h.chatTaskService != nil && stepID != "" {
+			if err != nil {
+				_ = h.chatTaskService.FailChatStep(ctx, taskID, stepID, err.Error())
+			} else {
+				turnID := ""
+				if turn != nil {
+					turnID = turn.TurnID
+				}
+				_ = h.chatTaskService.FinishChatStep(ctx, taskID, stepID, turnID, "")
+			}
+		}
+		done <- turnStreamResult{turn: domainTurnToProto(turn), taskID: taskID, err: err}
 		close(events)
 	}()
 
@@ -139,8 +191,9 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 				return nil
 			}
 			_ = writeTurnStreamEvent(resp, "done", map[string]any{
-				"type": "done",
-				"turn": result.turn,
+				"type":    "done",
+				"turn":    result.turn,
+				"task_id": result.taskID,
 			})
 			return nil
 		case <-ctx.Done():
@@ -179,8 +232,9 @@ func (h *TurnHandlers) HandleLocalToolResult(ctx context.Context, req server.Req
 }
 
 type turnStreamResult struct {
-	turn *model.Turn
-	err  error
+	turn   *model.Turn
+	taskID string
+	err    error
 }
 
 func (h *TurnHandlers) turnConfigFromRequest(req *model.ExecuteTurnRequest, sink service.TurnEventSink) *service.TurnConfig {

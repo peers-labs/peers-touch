@@ -15,22 +15,6 @@ func NewAgentConfigHandlers(configService *service.AgentConfigService) *AgentCon
 	return &AgentConfigHandlers{configService: configService}
 }
 
-func (h *AgentConfigHandlers) HandleGetChatConfig(ctx context.Context, req *model.GetAgentChatConfigRequest) (*model.GetAgentChatConfigResponse, error) {
-	return h.configService.GetChatConfig(ctx, req)
-}
-
-func (h *AgentConfigHandlers) HandleUpdateChatConfig(ctx context.Context, req *model.UpdateAgentChatConfigRequest) (*model.UpdateAgentChatConfigResponse, error) {
-	return h.configService.UpdateChatConfig(ctx, req)
-}
-
-func (h *AgentConfigHandlers) HandleGetModelParams(ctx context.Context, req *model.GetAgentModelParamsRequest) (*model.GetAgentModelParamsResponse, error) {
-	return h.configService.GetModelParams(ctx, req)
-}
-
-func (h *AgentConfigHandlers) HandleUpdateModelParams(ctx context.Context, req *model.UpdateAgentModelParamsRequest) (*model.UpdateAgentModelParamsResponse, error) {
-	return h.configService.UpdateModelParams(ctx, req)
-}
-
 func (h *AgentConfigHandlers) HandleListKnowledgeBindings(ctx context.Context, req *model.ListAgentKnowledgeBindingsRequest) (*model.ListAgentKnowledgeBindingsResponse, error) {
 	return h.configService.ListKnowledgeBindings(ctx, req)
 }
@@ -77,20 +61,4 @@ func (h *AgentConfigHandlers) HandleUpdateMcpBinding(ctx context.Context, req *m
 
 func (h *AgentConfigHandlers) HandleDeleteMcpBinding(ctx context.Context, req *model.DeleteAgentMcpBindingRequest) (*model.DeleteAgentMcpBindingResponse, error) {
 	return h.configService.DeleteMcpBinding(ctx, req)
-}
-
-func (h *AgentConfigHandlers) HandleGetVoiceConfig(ctx context.Context, req *model.GetAgentVoiceConfigRequest) (*model.GetAgentVoiceConfigResponse, error) {
-	return h.configService.GetVoiceConfig(ctx, req)
-}
-
-func (h *AgentConfigHandlers) HandleUpdateVoiceConfig(ctx context.Context, req *model.UpdateAgentVoiceConfigRequest) (*model.UpdateAgentVoiceConfigResponse, error) {
-	return h.configService.UpdateVoiceConfig(ctx, req)
-}
-
-func (h *AgentConfigHandlers) HandleGetToolProfile(ctx context.Context, req *model.GetAgentToolProfileRequest) (*model.GetAgentToolProfileResponse, error) {
-	return h.configService.GetToolProfile(ctx, req)
-}
-
-func (h *AgentConfigHandlers) HandleUpdateToolProfile(ctx context.Context, req *model.UpdateAgentToolProfileRequest) (*model.UpdateAgentToolProfileResponse, error) {
-	return h.configService.UpdateToolProfile(ctx, req)
 }

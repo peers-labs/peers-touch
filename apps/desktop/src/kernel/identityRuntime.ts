@@ -47,12 +47,10 @@ export function persistLastActivePage(page: string): void {
 }
 
 function restoreLastActivePage(): void {
+  if (window.location.hash) return;
   const page = readDesktopPreferenceSync<string>(LAST_ACTIVE_PAGE_KEY);
   if (!page) return;
-  const targetHash = `#/${page}`;
-  if (window.location.hash !== targetHash) {
-    window.history.replaceState(null, '', targetHash);
-  }
+  window.history.replaceState(null, '', `#/${page}`);
 }
 
 function readRendererBootReason(): IdentityBootReason {
