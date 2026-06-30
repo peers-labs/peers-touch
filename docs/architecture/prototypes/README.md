@@ -54,6 +54,7 @@
 |------|---------|----------|---------|---------|------------|------|---------|
 | desktop | `desktop-shell` | Desktop 一级站点外壳 | `packages/prototypes/desktop/shell/` | Desktop 容器外壳（apps/desktop）；原型为 React web 展示 | runtime/desktop-runtime-architecture | drafting | [prototype/README.md](../desktop/prototype/README.md) |
 | desktop | `atelier` | Desktop 内的 applet 原型，不是一级模块 | `packages/prototypes/desktop/applets/atelier/` | Applet（Lynx），运行在 Desktop 容器内；原型为 React+LobeUI web 展示 | atelier/functional-modules §1 | drafting | [prototype/README.md](../atelier/prototype/README.md) |
+| desktop | `applet-lifecycle` | Desktop Applet Box 极简 launcher 原型，不是一级模块 | `packages/prototypes/desktop/features/applet-lifecycle/` | Desktop Applet Box 安装包导入、展示、打开、运行、通知、退出、卸载；原型为 React web 展示 | applet-runtime/official-applet-architecture-contract + applet-launcher-ux-contract | landed | [prototype/README.md](../applet-runtime/prototype/README.md) |
 | desktop | `call` | Desktop Chat/通话能力原型，不是一级模块 | `packages/prototypes/desktop/features/call/` | Desktop 好友聊天通话（apps/desktop，CallSurface）；原型为 React web 展示 | voice-video-calls | confirmed | [prototype/README.md](../realtime/prototype/README.md)（历史路径，归属 desktop） |
 | desktop | `social-chat` | Desktop Chat 能力原型，不是一级模块 | `packages/prototypes/desktop/features/social-chat/` | Desktop 社交聊天体验；原型为 React web 展示 | social-runtime | drafting | — |
 | mobile | `mobile-chat` | Mobile 一级站点会话体验基准 | `packages/prototypes/mobile/chat/` | Mobile Chat / 跨设备会话体验；原型为 React web 展示 | client/mobile + client/chat | drafting | [base.md](../../client/mobile/base.md) |
