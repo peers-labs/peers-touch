@@ -140,7 +140,7 @@ export function ChatPage({ onNavigateAgentProfile }: {
         </Flexbox>
 
         <Flexbox align="center" style={{ flexShrink: 0, padding: '0 0 48px' }}>
-          <div style={{ width: 'min(1068px, calc(100% - 48px))' }}>
+          <div style={{ width: 'min(1068px, calc(100% - 160px))' }}>
             <ChatInput />
           </div>
         </Flexbox>
