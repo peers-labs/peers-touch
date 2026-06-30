@@ -10,6 +10,7 @@ include tooling/make/proto.mk
 include tooling/make/qa.mk
 include tooling/make/review.mk
 include tooling/make/acceptance.mk
+include tooling/make/prototypes.mk
 include tooling/make/docker.mk
 include tooling/make/deploy.mk
 include tooling/make/setup.mk
@@ -66,6 +67,7 @@ help:
 	@echo "  make acceptance-run            Run planned acceptance gates"
 	@echo "  make acceptance-run-ci         Run planned ci-structure and ci-cheap gates"
 	@echo "  make acceptance-report         Render latest acceptance report"
+	@echo "  make run-prototype desktop|mobile|dashboard  Start prototype portal/site"
 	@echo ""
 	@echo "More:"
 	@echo "  make help-docker               Docker deployment commands"
