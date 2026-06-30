@@ -55,6 +55,35 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 	}, nil
 }
 
+func (h *TurnHandlers) HandleListTurnTraces(ctx context.Context, req *model.ListTurnTracesRequest) (*model.ListTurnTracesResponse, error) {
+	entries, total, err := h.turnService.ListTurnTraces(ctx, domain.TurnTraceListOptions{
+		AgentID:        req.GetAgentId(),
+		ConversationID: req.GetConversationId(),
+		Page:           int(req.GetPage()),
+		PageSize:       int(req.GetPageSize()),
+	})
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+
+	resp := &model.ListTurnTracesResponse{
+		Entries: make([]*model.TurnTraceEntry, 0, len(entries)),
+		Total:   int32(total),
+	}
+	for i := range entries {
+		resp.Entries = append(resp.Entries, domainTurnTraceEntryToProto(&entries[i]))
+	}
+	return resp, nil
+}
+
+func (h *TurnHandlers) HandleGetTurnTrace(ctx context.Context, req *model.GetTurnTraceRequest) (*model.GetTurnTraceResponse, error) {
+	entry, err := h.turnService.GetTurnTrace(ctx, req.GetTraceId(), req.GetTurnId())
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.GetTurnTraceResponse{Entry: domainTurnTraceEntryToProto(entry)}, nil
+}
+
 func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.Request, resp server.Response) error {
 	resp.SetHeader("Content-Type", "text/event-stream")
 	resp.SetHeader("Cache-Control", "no-cache")
@@ -176,6 +205,7 @@ func (h *TurnHandlers) turnConfigFromRequest(req *model.ExecuteTurnRequest, sink
 		MaxRetries:         maxRetries,
 		Provider:           req.GetProvider(),
 		Model:              req.GetModel(),
+		Effort:             req.GetEffort(),
 		WorkspaceRoot:      req.GetWorkspaceRoot(),
 		KnowledgeResources: knowledgeResourcesFromRequest(req),
 		EventSink:          sink,
@@ -283,5 +313,175 @@ func domainTurnStatusToProto(s domain.TurnStatus) model.TurnStatus {
 		return model.TurnStatus_TURN_STATUS_INTERRUPTED
 	default:
 		return model.TurnStatus_TURN_STATUS_UNSPECIFIED
+	}
+}
+
+func domainTurnTraceEntryToProto(entry *domain.TurnTraceEntry) *model.TurnTraceEntry {
+	if entry == nil {
+		return nil
+	}
+	return &model.TurnTraceEntry{
+		Turn:  domainTurnToProto(&entry.Turn),
+		Trace: domainTurnTraceToProto(&entry.Trace),
+	}
+}
+
+func domainTurnTraceToProto(trace *domain.TurnTrace) *model.TurnTrace {
+	if trace == nil {
+		return nil
+	}
+	out := &model.TurnTrace{
+		TraceId:            trace.TraceID,
+		TurnId:             trace.TurnID,
+		SystemPromptHash:   trace.SystemPromptHash,
+		MemorySnapshotHash: trace.MemorySnapshotHash,
+		SkillIndexHash:     trace.SkillIndexHash,
+		SkillsLoaded:       append([]string(nil), trace.SkillsLoaded...),
+		ToolCalls:          make([]*model.ToolCallRecord, 0, len(trace.ToolCalls)),
+		ProviderCalls:      make([]*model.ProviderCallRecord, 0, len(trace.ProviderCalls)),
+		ReviewTriggered:    trace.ReviewTriggered,
+		ErrorsClassified:   make([]*model.ClassifiedErrorEvent, 0, len(trace.ErrorClassified)),
+		DelegationResults:  make([]*model.DelegationResult, 0, len(trace.DelegationResults)),
+		KnowledgeChunks:    make([]*model.KnowledgeChunkReference, 0, len(trace.KnowledgeChunks)),
+	}
+	for i := range trace.ToolCalls {
+		out.ToolCalls = append(out.ToolCalls, domainToolCallRecordToProto(&trace.ToolCalls[i]))
+	}
+	for i := range trace.ProviderCalls {
+		out.ProviderCalls = append(out.ProviderCalls, domainProviderCallRecordToProto(&trace.ProviderCalls[i]))
+	}
+	for i := range trace.ErrorClassified {
+		out.ErrorsClassified = append(out.ErrorsClassified, domainClassifiedErrorToProto(&trace.ErrorClassified[i]))
+	}
+	if trace.CompressionTriggered {
+		out.CompressionEvent = &model.CompressionEvent{
+			Triggered:    true,
+			TokensBefore: int32(trace.CompressionBefore),
+			TokensAfter:  int32(trace.CompressionAfter),
+		}
+	}
+	for i := range trace.DelegationResults {
+		out.DelegationResults = append(out.DelegationResults, domainDelegationResultToProto(&trace.DelegationResults[i]))
+	}
+	for i := range trace.KnowledgeChunks {
+		out.KnowledgeChunks = append(out.KnowledgeChunks, domainKnowledgeChunkReferenceToProto(&trace.KnowledgeChunks[i]))
+	}
+	return out
+}
+
+func domainToolCallRecordToProto(record *domain.ToolCallRecord) *model.ToolCallRecord {
+	return &model.ToolCallRecord{
+		ToolName:   record.ToolName,
+		Arguments:  record.Arguments,
+		Result:     record.Result,
+		DurationMs: record.Duration.Milliseconds(),
+	}
+}
+
+func domainProviderCallRecordToProto(record *domain.ProviderCallRecord) *model.ProviderCallRecord {
+	return &model.ProviderCallRecord{
+		Provider:     record.Provider,
+		Model:        record.Model,
+		InputTokens:  int32(record.InputTokens),
+		OutputTokens: int32(record.OutputTokens),
+		LatencyMs:    record.Latency.Milliseconds(),
+		CacheHit:     record.CacheHit,
+		CredentialId: record.CredentialID,
+	}
+}
+
+func domainClassifiedErrorToProto(event *domain.ClassifiedError) *model.ClassifiedErrorEvent {
+	out := &model.ClassifiedErrorEvent{
+		Reason:                 domainFailoverReasonToProto(event.Reason),
+		Retryable:              event.Retryable,
+		ShouldCompress:         event.ShouldCompress,
+		ShouldRotateCredential: event.ShouldRotateCredential,
+		ShouldFallback:         event.ShouldFallback,
+		Provider:               event.Provider,
+		Model:                  event.Model,
+		HttpStatus:             int32(event.HTTPStatus),
+		ErrorCode:              event.ErrorCode,
+		ErrorMessage:           event.ErrorMessage,
+	}
+	if !event.ClassifiedAt.IsZero() {
+		out.ClassifiedAt = timestamppb.New(event.ClassifiedAt)
+	}
+	return out
+}
+
+func domainFailoverReasonToProto(reason domain.FailoverReason) model.FailoverReason {
+	switch reason {
+	case domain.FailoverReasonAuth:
+		return model.FailoverReason_FAILOVER_REASON_AUTH
+	case domain.FailoverReasonAuthPermanent:
+		return model.FailoverReason_FAILOVER_REASON_AUTH_PERMANENT
+	case domain.FailoverReasonBilling:
+		return model.FailoverReason_FAILOVER_REASON_BILLING
+	case domain.FailoverReasonRateLimit:
+		return model.FailoverReason_FAILOVER_REASON_RATE_LIMIT
+	case domain.FailoverReasonOverloaded:
+		return model.FailoverReason_FAILOVER_REASON_OVERLOADED
+	case domain.FailoverReasonServerError:
+		return model.FailoverReason_FAILOVER_REASON_SERVER_ERROR
+	case domain.FailoverReasonTimeout:
+		return model.FailoverReason_FAILOVER_REASON_TIMEOUT
+	case domain.FailoverReasonContextOverflow:
+		return model.FailoverReason_FAILOVER_REASON_CONTEXT_OVERFLOW
+	case domain.FailoverReasonPayloadTooLarge:
+		return model.FailoverReason_FAILOVER_REASON_PAYLOAD_TOO_LARGE
+	case domain.FailoverReasonModelNotFound:
+		return model.FailoverReason_FAILOVER_REASON_MODEL_NOT_FOUND
+	case domain.FailoverReasonFormatError:
+		return model.FailoverReason_FAILOVER_REASON_FORMAT_ERROR
+	case domain.FailoverReasonThinkingSignature:
+		return model.FailoverReason_FAILOVER_REASON_THINKING_SIGNATURE
+	case domain.FailoverReasonLongContextTier:
+		return model.FailoverReason_FAILOVER_REASON_LONG_CONTEXT_TIER
+	default:
+		return model.FailoverReason_FAILOVER_REASON_UNKNOWN
+	}
+}
+
+func domainDelegationResultToProto(result *domain.DelegationResult) *model.DelegationResult {
+	out := &model.DelegationResult{
+		TaskId:          result.TaskID,
+		ParentTurnId:    result.ParentTurnID,
+		TaskDescription: result.TaskDescription,
+		ChildToolset:    append([]string(nil), result.ChildToolset...),
+		Status:          domainDelegationStatusToProto(result.Status),
+		ResultSummary:   result.ResultSummary,
+		ToolIterations:  int32(result.ToolIterations),
+	}
+	if !result.StartedAt.IsZero() {
+		out.StartedAt = timestamppb.New(result.StartedAt)
+	}
+	if result.EndedAt != nil && !result.EndedAt.IsZero() {
+		out.EndedAt = timestamppb.New(*result.EndedAt)
+	}
+	return out
+}
+
+func domainDelegationStatusToProto(status domain.DelegationStatus) model.DelegationStatus {
+	switch status {
+	case domain.DelegationStatusCompleted:
+		return model.DelegationStatus_DELEGATION_STATUS_COMPLETED
+	case domain.DelegationStatusFailed:
+		return model.DelegationStatus_DELEGATION_STATUS_FAILED
+	case domain.DelegationStatusTimeout:
+		return model.DelegationStatus_DELEGATION_STATUS_TIMEOUT
+	default:
+		return model.DelegationStatus_DELEGATION_STATUS_UNSPECIFIED
+	}
+}
+
+func domainKnowledgeChunkReferenceToProto(chunk *domain.KnowledgeChunkReference) *model.KnowledgeChunkReference {
+	return &model.KnowledgeChunkReference{
+		ChunkId:        chunk.ChunkID,
+		ResourceId:     chunk.ResourceID,
+		ResourceTitle:  chunk.ResourceTitle,
+		Source:         chunk.Source,
+		ChunkIndex:     int32(chunk.ChunkIndex),
+		Score:          chunk.Score,
+		ContentPreview: chunk.ContentPreview,
 	}
 }

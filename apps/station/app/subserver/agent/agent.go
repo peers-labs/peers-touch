@@ -97,6 +97,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	growthMetricsSvc.SetDiagnosticService(diagnosticSvc)
 
 	// Phase 2 services.
+	agentSvc := service.NewAgentService()
 	memorySvc := service.NewMemoryService(growthMetricsSvc, memoryServiceOptionsFromConfig()...)
 	skillsGuardSvc := service.NewSkillsGuardService()
 	skillSvc := service.NewSkillService(skillsGuardSvc, growthMetricsSvc)
@@ -150,6 +151,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	// Scheduler — autonomous learning: periodic SILENT reviews + dogfood runs.
 	schedulerSvc := service.NewSchedulerService(reviewSvc, dogfoodSvc, memorySvc, growthMetricsSvc)
 
+	agentHandlers := handler.NewAgentHandlers(agentSvc)
 	turnHandlers := handler.NewTurnHandlers(turnSvc, toolRegistrySvc)
 	memoryHandlers := handler.NewMemoryHandlers(memorySvc)
 	skillHandlers := handler.NewSkillHandlers(skillSvc)
@@ -159,9 +161,17 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	growthHandlers := handler.NewGrowthHandlers(growthMetricsSvc, memorySvc, skillSvc, diagnosticSvc)
 
 	return []server.Handler{
+		server.NewTypedHandler("agent-list", "/agent/list", server.POST, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-get", "/agent/get", server.POST, agentHandlers.HandleGetAgent, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-create", "/agent/create", server.POST, agentHandlers.HandleCreateAgent, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-update", "/agent/update", server.POST, agentHandlers.HandleUpdateAgent, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-delete", "/agent/delete", server.POST, agentHandlers.HandleDeleteAgent, logIDWrapper, jwtWrapper),
+
 		server.NewTypedHandler("agent-turn-execute", "/agent/turn/execute", server.POST, turnHandlers.HandleExecuteTurn, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-turn-stream", "/agent/turn/stream", server.POST, turnHandlers.HandleExecuteTurnStream, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-turn-local-tool-result", "/agent/turn/local-tool-result", server.POST, turnHandlers.HandleLocalToolResult, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-turn-trace-list", "/agent/turn/trace/list", server.POST, turnHandlers.HandleListTurnTraces, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-turn-trace-get", "/agent/turn/trace/get", server.POST, turnHandlers.HandleGetTurnTrace, logIDWrapper, jwtWrapper),
 
 		// POST: protobuf body carries ListMemoriesRequest (GET + empty body leaves agent_id unset).
 		server.NewTypedHandler("agent-memory-list", "/agent/memory/list", server.POST, memoryHandlers.HandleListMemories, logIDWrapper, jwtWrapper),
