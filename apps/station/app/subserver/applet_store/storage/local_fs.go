@@ -1,9 +1,11 @@
 package storage
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type LocalStorage struct {
@@ -18,18 +20,39 @@ func NewLocalStorage(basePath string) *LocalStorage {
 }
 
 func (s *LocalStorage) SaveFile(file io.Reader, filename string) (string, error) {
-	destPath := filepath.Join(s.BasePath, filename)
+	relativePath, err := cleanRelativePath(filename)
+	if err != nil {
+		return "", err
+	}
+	destPath := filepath.Join(s.BasePath, relativePath)
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		return "", err
+	}
 	out, err := os.Create(destPath)
 	if err != nil {
 		return "", err
 	}
 	defer out.Close()
 
-	_, err = io.Copy(out, file)
-	if err != nil {
+	if _, err = io.Copy(out, file); err != nil {
 		return "", err
 	}
 
-	// Return relative path or absolute path depending on how we serve files
-	return filename, nil
+	return relativePath, nil
+}
+
+func (s *LocalStorage) ResolvePath(filename string) (string, error) {
+	relativePath, err := cleanRelativePath(filename)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(s.BasePath, relativePath), nil
+}
+
+func cleanRelativePath(filename string) (string, error) {
+	cleaned := filepath.Clean(filename)
+	if cleaned == "." || filepath.IsAbs(cleaned) || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) || cleaned == ".." {
+		return "", fmt.Errorf("invalid storage path: %s", filename)
+	}
+	return cleaned, nil
 }

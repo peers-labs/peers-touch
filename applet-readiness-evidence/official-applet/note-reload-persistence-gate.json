@@ -1,0 +1,23 @@
+{
+  "status": "PASS",
+  "evidenceClass": "REAL_PRODUCT_PATH",
+  "appletId": "peers.note",
+  "service": "note",
+  "productPath": "Station-bundled Note service HTTP mapping -> SQLite/GORM persistence",
+  "command": "pnpm applet:note-reload-persistence-gate",
+  "noteId": "01KVVNDRA532FFWP6D584S7XRC",
+  "marker": "reload-1782266126646",
+  "checks": [
+    "create response includes persisted note",
+    "created note survives list reload",
+    "edit response includes updated note",
+    "updated note survives list reload",
+    "updated note is discoverable through search reload",
+    "deleted note is absent from normal list reload",
+    "deleted note is present with include_deleted reload",
+    "restore response returns active note",
+    "restored note survives list reload"
+  ],
+  "startedAt": "2026-06-24T01:55:24.687Z",
+  "completedAt": "2026-06-24T01:55:26.670Z"
+}

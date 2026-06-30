@@ -4,7 +4,6 @@
   "chat.header.share": "Share",
   "chat.header.more": "More",
   "chat.header.fullWidth": "Full Width",
-
   "chat.welcome.defaultTitle": "Peers Touch",
   "chat.welcome.defaultDescription": "Your default personal AI assistant.",
   "chat.welcome.fallbackText": "Ask, create, or start a task.",
@@ -27,7 +26,6 @@
   "chat.welcome.capability.disabled": "Disabled",
   "chat.welcome.capability.bound": "Bound",
   "chat.welcome.capability.notConfigured": "Not configured",
-
   "chat.welcome.quickAction.readFile": "Read File",
   "chat.welcome.quickAction.readFilePrompt": "Help me read and analyze a file.",
   "chat.welcome.quickAction.runCommand": "Run Command",
@@ -36,7 +34,6 @@
   "chat.welcome.quickAction.webSearchPrompt": "Search the web for the latest news.",
   "chat.welcome.quickAction.summarize": "Summarize",
   "chat.welcome.quickAction.summarizePrompt": "Help me summarize some content.",
-
   "chat.notebook.title": "Notebook",
   "chat.notebook.newPage": "New page",
   "chat.notebook.close": "Close",
@@ -45,7 +42,6 @@
   "chat.notebook.empty": "No pages yet. The agent can save documents here during conversation, or you can create pages manually.",
   "chat.notebook.untitled": "Untitled",
   "chat.notebook.delete": "Delete",
-
   "chat.editor.back": "Back",
   "chat.editor.document": "Document",
   "chat.editor.save": "Save",
@@ -58,7 +54,6 @@
   "chat.editor.tab.preview": "Preview",
   "chat.editor.noContent": "*No content yet*",
   "chat.editor.contentPlaceholder": "Write your notes here... (Markdown supported)",
-
   "chat.share.title": "Share Conversation",
   "chat.share.tab.text": "Text",
   "chat.share.tab.link": "Link",
@@ -78,16 +73,14 @@
   "chat.share.toast.createFailed": "Failed to create share link",
   "chat.share.toast.revokeFailed": "Failed to revoke link",
   "chat.share.defaultTitle": "Conversation",
-
-  "chat.input.placeholder": "Ask, create, or start a task... Enter to send, Shift+Enter for a line break",
+  "chat.input.placeholder": "Ask anything...",
   "chat.input.send": "Send",
   "chat.input.stop": "Stop",
-
+  "chat.runtime.unavailable": "The selected runtime is not ready. Check model credentials and try again.",
   "chat.input.webSearch": "Web Search",
   "chat.input.memoryOn": "Memory (on)",
   "chat.input.memoryOff": "Memory (off)",
   "chat.input.uploadFile": "Upload File",
-  "chat.input.voiceInput": "Voice input",
   "chat.input.voiceRecording": "Recording... {{seconds}}s (click to stop)",
   "chat.input.toolsAndSkills": "Tools & Skills",
   "chat.input.showFormatting": "Show formatting",
@@ -117,29 +110,16 @@
   "chat.input.command.tool": "Tool command",
   "chat.input.command.toolDesc": "Ask the Agent to plan or call an available tool.",
   "chat.input.reference.message": "{{role}} message",
-
   "chat.input.voice.unsupported": "Speech recognition is not supported in this browser. Try Chrome or Edge.",
   "chat.input.voice.providerUnsupported": "This Agent's speech-to-text provider is not available in the current Desktop runtime.",
   "chat.input.voice.micDenied": "Microphone access denied. Please allow microphone access in browser settings.",
-
   "chat.search.off": "Off",
   "chat.search.offDesc": "Disable web access.",
   "chat.search.auto": "Auto",
   "chat.search.autoDesc": "Search the web automatically when needed.",
   "chat.search.useModelSearch": "Use model built-in web search",
-
-  "chat.model.contextLength": "Context Length",
-  "chat.model.config": "Model Config",
-  "chat.model.temperature": "Temperature",
-  "chat.model.topP": "Top P",
-  "chat.model.frequencyPenalty": "Frequency Penalty",
-  "chat.model.presencePenalty": "Presence Penalty",
-  "chat.model.contextCompression": "Context Compression",
-  "chat.model.tokensUnit": "{{count}} tokens",
-
   "chat.history.limitMessages": "Limit History Messages",
   "chat.history.messageCount": "Message count",
-
   "chat.memory.disableTitle": "Disable Memory Tool",
   "chat.memory.disableDesc": "AI will not search, create, or update memories in this conversation.",
   "chat.memory.enableTitle": "Enable Memory Tool",
@@ -149,7 +129,6 @@
   "chat.memory.low": "Low",
   "chat.memory.medium": "Medium",
   "chat.memory.high": "High",
-
   "chat.token.contextUsage": "Context Usage",
   "chat.token.systemPrompt": "System Prompt",
   "chat.token.chatMessages": "Chat Messages",
@@ -157,7 +136,6 @@
   "chat.token.totalUsed": "Total Used",
   "chat.token.overloaded": "Overloaded",
   "chat.token.remaining": "Remaining",
-
   "chat.skills.title": "Skills",
   "chat.skills.settings": "Skill Settings",
   "chat.skills.searchPlaceholder": "Search skills by name, keywords, or content...",
@@ -172,7 +150,6 @@
   "chat.skills.noContent": "No content.",
   "chat.skills.loadFailed": "Failed to load skill content.",
   "chat.skills.loading": "Loading...",
-
   "chat.typoBar.bold": "Bold",
   "chat.typoBar.italic": "Italic",
   "chat.typoBar.underline": "Underline",
@@ -183,7 +160,6 @@
   "chat.typoBar.blockquote": "Blockquote",
   "chat.typoBar.inlineCode": "Inline code",
   "chat.typoBar.codeBlock": "Code block",
-
   "chat.message.justNow": "just now",
   "chat.message.minutesAgo": "{{count}} minute ago",
   "chat.message.minutesAgo_plural": "{{count}} minutes ago",
@@ -191,9 +167,8 @@
   "chat.message.hoursAgo_plural": "{{count}} hours ago",
   "chat.message.daysAgo": "{{count}} day ago",
   "chat.message.daysAgo_plural": "{{count}} days ago",
-  "chat.message.collapsed": "[Message collapsed — click to expand]",
+  "chat.message.collapsed": "Message collapsed — click to expand",
   "chat.message.imageTag": "(image)",
-
   "chat.message.action.copy": "Copy",
   "chat.message.action.edit": "Edit",
   "chat.message.action.delete": "Delete",
@@ -210,21 +185,15 @@
   "chat.message.action.stopReading": "Stop reading",
   "chat.message.action.cancel": "Cancel",
   "chat.message.action.save": "Save",
-  "chat.message.voice.unsupported": "Voice output is not supported in this browser.",
-  "chat.message.voice.failed": "Voice output failed.",
-
   "chat.message.toast.copied": "Copied",
   "chat.message.toast.codeExported": "Code block exported",
   "chat.message.toast.savedToNotebook": "Saved to notebook",
   "chat.message.toast.artifactCopied": "Artifact copied",
   "chat.message.toast.artifactExported": "Artifact exported",
-
   "chat.message.code.export": "Export code",
   "chat.message.code.plainText": "plain text",
   "chat.message.code.run": "Run safely",
   "chat.message.code.runPrompt": "Run this {{language}} code only if the configured local tool policy allows it. Explain the plan first, request any required approval, then execute through the safe local tool path.\n\n```{{language}}\n{{code}}\n```",
-  "chat.message.collapsed": "Message collapsed — click to expand",
-
   "chat.message.artifact.title": "Artifacts",
   "chat.message.artifact.count": "{{count}} item",
   "chat.message.artifact.count_plural": "{{count}} items",
@@ -237,20 +206,17 @@
   "chat.message.artifact.kind.document": "Document",
   "chat.message.artifact.kind.diagram": "Diagram",
   "chat.message.artifact.kind.structured": "Structured data",
-
   "chat.artifact.panel.title": "Artifact",
   "chat.artifact.panel.source": "Generated by message {{id}}",
   "chat.artifact.panel.copy": "Copy",
   "chat.artifact.panel.export": "Export",
   "chat.artifact.panel.sourceAction": "Jump to source",
   "chat.artifact.panel.close": "Close",
-
   "chat.message.audit.regenerate": "Regenerated",
   "chat.message.audit.retry": "Retried",
   "chat.message.audit.branch": "Branched",
   "chat.message.audit.replacement": "Replacement",
   "chat.message.audit.replaced": "Replaced",
-
   "chat.message.thinking.title": "Thinking",
   "chat.message.thinking.usingTools": "Using {{count}} tool…",
   "chat.message.thinking.usingTools_plural": "Using {{count}} tools…",
@@ -261,9 +227,9 @@
   "chat.message.thinking.toolCount": "{{count}} tool",
   "chat.message.thinking.toolCount_plural": "{{count}} tools",
   "chat.message.thinking.lines": "{{count}} lines",
-
   "chat.message.diagnostics.title": "Turn diagnostics",
-  "chat.message.diagnostics.failedTitle": "Failed turn diagnostics",
+  "chat.message.diagnostics.failedTitle": "Could not complete",
+  "chat.message.errorTitle": "Could not complete",
   "chat.message.diagnostics.duration": "{{seconds}}s",
   "chat.message.diagnostics.error": "Error",
   "chat.message.diagnostics.thinking": "Thinking trace",
@@ -281,7 +247,6 @@
   "chat.message.diagnostics.disabled": "Disabled",
   "chat.message.diagnostics.none": "None",
   "chat.message.diagnostics.unknown": "Unknown",
-
   "chat.message.toolCall.arguments": "Arguments",
   "chat.message.toolCall.result": "Result",
   "chat.message.toolCall.server": "Server",
@@ -303,7 +268,6 @@
   "chat.message.toolCall.showAll": "Show all ({{count}} chars)",
   "chat.message.toolCall.using": "Using {{count}} tool…",
   "chat.message.toolCall.used": "Used {{count}} tool",
-
   "chat.message.delegation.title": "Child agent tasks",
   "chat.message.delegation.summary": "{{count}} task",
   "chat.message.delegation.tools": "Tools: {{tools}}",
@@ -312,10 +276,8 @@
   "chat.message.delegation.status.failed": "Failed",
   "chat.message.delegation.status.timeout": "Timed out",
   "chat.message.delegation.status.unknown": "Unknown",
-
   "chat.message.edit.cancel": "Cancel",
   "chat.message.edit.save": "Save",
-
   "chat.card.status.ok": "Success",
   "chat.card.status.error": "Error",
   "chat.card.status.info": "Info",
@@ -324,18 +286,15 @@
   "chat.card.type.channelSent": "Delivered",
   "chat.card.type.system": "System",
   "chat.card.viewDetails": "View details",
-
   "chat.composer.placeholder": "Type a message...",
   "chat.composer.send": "Send",
   "chat.composer.stop": "Stop",
-
   "chat.session.searchPlaceholder": "Search sessions...",
   "chat.session.newSession": "New session",
   "chat.session.noMatch": "No matching sessions",
   "chat.session.empty": "No sessions yet. Start a new chat!",
   "chat.session.messageCount": "{{count}} messages",
   "chat.session.delete": "Delete",
-
   "chat.social.detail.title": "Details",
   "chat.social.detail.members": "Members ({{count}})",
   "chat.social.detail.membersLabel": "members",
@@ -455,9 +414,18 @@
   "chat.social.detail.clearHistory": "Clear history",
   "chat.social.detail.clearHistoryDesc": "Clear visible history without deleting peer messages.",
   "chat.social.detail.clearHistoryConfirmTitle": "Clear visible history?",
-  "chat.social.detail.clearHistoryConfirmBody": "This hides visible history before this point on all of your devices. Peer messages are not deleted.",
+  "chat.social.detail.clearHistoryConfirmBody": "This hides visible history before this point on all of your devices. Peer messages are not deleted. You can restore within {{duration}}; after that the restore entry is hidden automatically.",
+  "chat.social.detail.clearHistorySuccess": "History cleared",
   "chat.social.detail.restoreHistory": "Restore history",
-  "chat.social.detail.restoreHistoryDesc": "Show locally hidden messages again.",
+  "chat.social.detail.restoreHistoryConfirmTitle": "Restore history?",
+  "chat.social.detail.restoreHistoryConfirmBody": "Hidden history in this conversation will be shown again. Restore window remaining: {{remaining}}.",
+  "chat.social.detail.restoreHistoryDesc": "History can be restored within 24 hours after clearing. The restore entry is hidden after expiry.",
+  "chat.social.detail.restoreHistoryExpired": "History is cleared and the restore window has ended.",
+  "chat.social.detail.restoreHistoryRemaining": "{{remaining}} remaining to restore",
+  "chat.social.detail.restoreHistoryRemainingHoursMinutes": "{{hours}}h {{minutes}}m",
+  "chat.social.detail.restoreHistoryRemainingMinutes": "{{minutes}}m",
+  "chat.social.detail.restoreHistorySuccess": "History restored",
+  "chat.social.detail.restoreHistoryWindowOneDay": "24 hours",
   "chat.social.detail.settings": "Settings",
   "chat.social.detail.edit": "Edit",
   "chat.social.detail.myGroupNickname": "My group nickname",
@@ -475,14 +443,12 @@
   "chat.social.detail.stateSticky": "Sticky",
   "chat.social.detail.stateMuted": "Muted",
   "chat.social.detail.membersLoading": "Members will appear here once loaded.",
-
   "chat.social.background.default": "Default",
   "chat.social.background.paper": "Paper",
   "chat.social.background.mint": "Mint",
   "chat.social.background.dusk": "Dusk",
   "chat.social.background.calm": "Calm Blue",
   "chat.social.background.graphite": "Graphite",
-
   "chat.social.encryption.enabled": "End-to-end encrypted",
   "chat.social.encryption.title": "Encryption",
   "chat.social.encryption.fingerprint": "Your security fingerprint",
@@ -495,7 +461,6 @@
   "chat.social.encryption.upgradeOk": "Upgrade now",
   "chat.social.encryption.upgradeBlocked": "Available after M2 release",
   "chat.social.encryption.upgradeStubFired": "Upgrade stub fired (no-op until M2)",
-
   "chat.social.verify.title": "Identity verification",
   "chat.social.verify.description": "Read these numbers aloud, or scan the QR codes in person. Numbers and QR will match if no one is intercepting.",
   "chat.social.verify.safetyNumberLabel": "Safety number",
@@ -512,7 +477,6 @@
   "chat.social.verify.show": "Verify identity",
   "chat.social.verify.hide": "Hide",
   "chat.social.verify.qrPeerLabel": "Show this to your contact",
-
   "chat.social.call.startAudio": "Voice call",
   "chat.social.call.startVideo": "Video call",
   "chat.social.call.unsupported": "Voice / video calls are only available in 1-on-1 chats with an active connection.",
@@ -547,7 +511,6 @@
   "chat.social.call.resultBusy": "Recipient is in another call",
   "chat.social.call.resultMediaFailed": "Could not access microphone or camera",
   "chat.social.call.resultNetworkFailed": "Network connection failed, call ended",
-
   "chat.social.messageArea.selectConversation": "Select a conversation to start chatting",
   "chat.social.messageArea.noMessages": "No messages yet",
   "chat.social.messageArea.typing": "Typing…",
@@ -589,7 +552,6 @@
   "chat.social.messageArea.send": "Send",
   "chat.social.presence.online": "Online",
   "chat.social.presence.offline": "Offline",
-
   "chat.social.composer.attachmentFallbackName": "Attachment",
   "chat.social.composer.cancelRecord": "Cancel",
   "chat.social.composer.dropHint": "Drop files to attach",
@@ -617,7 +579,6 @@
   "chat.social.composer.voiceDenied": "Microphone access was denied",
   "chat.social.composer.voiceSendFailed": "Failed to send voice message",
   "chat.social.composer.voiceUnsupported": "Voice recording is not available in this environment",
-
   "chat.social.thread.title": "Thread",
   "chat.social.thread.close": "Close thread",
   "chat.social.thread.open": "Open thread",
@@ -644,7 +605,6 @@
   "chat.social.thread.removeAttachment": "Remove attachment",
   "chat.social.thread.attachmentUploadFailed": "Failed to upload attachment",
   "chat.social.thread.groupAttachmentsUnsupported": "Group thread attachments are disabled until group attachment metadata is encrypted.",
-
   "chat.social.sessionList.searchPlaceholder": "Search...",
   "chat.social.sessionList.friends": "Friends",
   "chat.social.sessionList.groups": "Groups",
@@ -657,7 +617,6 @@
   "chat.social.sessionList.unnamedGroup": "Unnamed Group",
   "chat.social.sessionList.message": "Message",
   "chat.social.sessionList.yesterday": "Yesterday",
-
   "chat.social.contextMenu.pin": "Pin to top",
   "chat.social.contextMenu.unpin": "Unpin",
   "chat.social.contextMenu.mute": "Mute",
@@ -665,7 +624,6 @@
   "chat.social.contextMenu.markRead": "Mark as read",
   "chat.social.contextMenu.hide": "Hide conversation",
   "chat.social.contextMenu.delete": "Delete",
-
   "chat.social.createGroup.title": "Start Group Chat",
   "chat.social.createGroup.searchContacts": "Search contacts...",
   "chat.social.createGroup.noContacts": "No contacts found",
@@ -674,7 +632,6 @@
   "chat.social.createGroup.defaultName": "Group ({{count}})",
   "chat.social.createGroup.success": "Group created",
   "chat.social.createGroup.failed": "Failed to create group. Please try again.",
-
   "chat.social.findPeople.title": "Find People",
   "chat.social.findPeople.searchPlaceholder": "Search by username...",
   "chat.social.findPeople.search": "Search",
@@ -695,7 +652,6 @@
   "chat.social.findPeople.tagVerified": "Verified",
   "chat.social.findPeople.tagFromCache": "Cached",
   "chat.social.findPeople.tagLocal": "Local",
-
   "chat.social.contacts.newFriends": "New Friends",
   "chat.social.contacts.newFriendsCount": "New Friends ({{count}})",
   "chat.social.contacts.savedGroups": "Saved Groups",
@@ -721,7 +677,6 @@
   "chat.social.contacts.groupId": "Group ID: {{id}}",
   "chat.social.contacts.unknownId": "Unknown ID",
   "chat.social.contacts.sendMessage": "Message",
-
   "chat.social.search.title": "Search Messages",
   "chat.social.search.placeholder": "Search in messages...",
   "chat.social.search.noResults": "No messages found",
@@ -743,18 +698,15 @@
   "chat.social.search.type.image": "Image",
   "chat.social.search.type.audio": "Audio",
   "chat.social.search.type.video": "Video",
-
   "chat.social.time.justNow": "Just now",
   "chat.social.time.minutesAgo": "{{count}} min ago",
   "chat.social.time.oneHourAgo": "1 hour ago",
   "chat.social.time.hoursAgo": "{{count}}h ago",
   "chat.social.time.yesterday": "Yesterday",
-
   "chat.social.preview.image": "[Image]",
   "chat.social.preview.file": "[File]",
   "chat.social.preview.audio": "[Audio]",
   "chat.social.preview.video": "[Video]",
-
   "chat.social.subNav.chats": "Chats",
   "chat.social.subNav.contacts": "Contacts",
   "chat.agentHeader.fallbackDescription": "Ask, create, and run tasks with this Agent.",
@@ -767,6 +719,7 @@
   "chat.welcome.status.toolsEnabled": "Tools enabled",
   "chat.welcome.status.toolsReady": "Tools ready",
   "chat.welcome.capability.memoryDisabledShort": "Memory",
-  "chat.welcome.capability.workspaceOptional": "Workspace"
-
+  "chat.welcome.capability.workspaceOptional": "Workspace",
+  "chat.model.select": "Select model",
+  "chat.input.slashCommand": "Slash command"
 }

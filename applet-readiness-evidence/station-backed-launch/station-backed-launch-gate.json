@@ -1,0 +1,159 @@
+{
+  "status": "PASS",
+  "results": [
+    {
+      "appletId": "big-a",
+      "version": "0.1.0",
+      "assetCount": 1,
+      "entry": "main.lynx.bundle",
+      "label": "third-party",
+      "publish": {
+        "applet_id": "big-a",
+        "version_id": "big-a-0.1.0",
+        "is_new_applet": true,
+        "version": {
+          "id": "big-a-0.1.0",
+          "applet_id": "big-a",
+          "version": "0.1.0",
+          "bundle_url": "/api/v1/applets/bundle?path=big-a/0.1.0/main.lynx.bundle",
+          "bundle_hash": "sha256:ff528e3a8a9affe919745631365982e5b19a66c042182ebd9cec65c0effc6960",
+          "bundle_size": 100438,
+          "created_at": 1782272170,
+          "status": 2,
+          "channel": 3,
+          "manifest": {
+            "manifest_json": "{\n  \"id\": \"big-a\",\n  \"name\": \"Big A 多维力量分析\",\n  \"version\": \"0.1.0\",\n  \"description\": \"A-股多维力量画像分析\",\n  \"author\": \"Peers Touch\",\n  \"targets\": [\n    \"desktop\"\n  ],\n  \"entries\": {\n    \"lynx\": \"main.lynx.bundle\"\n  },\n  \"load\": {\n    \"desktop\": {\n      \"type\": \"lynx-web\",\n      \"entry\": \"main.lynx.bundle\"\n    }\n  },\n  \"bridge\": {\n    \"protocol\": \"peers-touch.applet.bridge\",\n    \"version\": \"1.0.0\"\n  },\n  \"permissions\": [\n    \"network.request\",\n    \"config.get\",\n    \"system.getInfo\"\n  ],\n  \"capabilities\": [\n    \"network.request\",\n    \"config.get\",\n    \"system.getInfo\"\n  ],\n  \"services\": [\n    {\n      \"id\": \"big-a-api\",\n      \"kind\": \"http\",\n      \"binding\": \"station-resolved\",\n      \"allowedMethods\": [\n        \"GET\",\n        \"POST\"\n      ],\n      \"allowedPaths\": [\n        \"/api/v1/*\"\n      ],\n      \"streaming\": true\n    }\n  ],\n  \"skills\": [],\n  \"integrity\": {\n    \"algorithm\": \"sha256\",\n    \"files\": {\n      \"main.lynx.bundle\": \"sha256:ff528e3a8a9affe919745631365982e5b19a66c042182ebd9cec65c0effc6960\"\n    }\n  }\n}",
+            "target_platforms": [
+              "desktop"
+            ],
+            "permissions": [
+              "network.request",
+              "config.get",
+              "system.getInfo"
+            ],
+            "capabilities": [
+              "network.request",
+              "config.get",
+              "system.getInfo"
+            ],
+            "integrity": {
+              "main.lynx.bundle": "sha256:ff528e3a8a9affe919745631365982e5b19a66c042182ebd9cec65c0effc6960"
+            },
+            "bridge_protocol": "peers-touch.applet.bridge",
+            "runtime_type": "lynx-web"
+          },
+          "bundle": {
+            "bundle_uri": "big-a/0.1.0/main.lynx.bundle",
+            "bundle_sha256": "sha256:ff528e3a8a9affe919745631365982e5b19a66c042182ebd9cec65c0effc6960",
+            "bundle_size_bytes": 100438,
+            "assets": [
+              {
+                "path": "main.lynx.bundle",
+                "sha256": "sha256:ff528e3a8a9affe919745631365982e5b19a66c042182ebd9cec65c0effc6960",
+                "size_bytes": 100438,
+                "content_type": "application/javascript"
+              }
+            ],
+            "storage_backend": "local"
+          }
+        }
+      },
+      "install": {
+        "state": {
+          "actor_id": "third-party-actor",
+          "device_id": "desktop-gate",
+          "applet_id": "big-a",
+          "version": "0.1.0",
+          "channel": 3,
+          "status": 1,
+          "installed_at": 1782272171,
+          "updated_at": 1782272171
+        }
+      }
+    },
+    {
+      "appletId": "peers.note",
+      "version": "0.1.0",
+      "assetCount": 1,
+      "entry": "main.lynx.bundle",
+      "label": "internal",
+      "publish": {
+        "applet_id": "peers.note",
+        "version_id": "peers.note-0.1.0",
+        "is_new_applet": true,
+        "version": {
+          "id": "peers.note-0.1.0",
+          "applet_id": "peers.note",
+          "version": "0.1.0",
+          "bundle_url": "/api/v1/applets/bundle?path=peers.note/0.1.0/main.lynx.bundle",
+          "bundle_hash": "sha256:bdb6a956099507087e9e35bc09e4c569e579ea50dd9a2439469e7699d326842b",
+          "bundle_size": 150824,
+          "min_sdk_version": "0.1.0",
+          "created_at": 1782272171,
+          "status": 2,
+          "channel": 3,
+          "manifest": {
+            "manifest_json": "{\n  \"id\": \"peers.note\",\n  \"name\": \"Note\",\n  \"version\": \"0.1.0\",\n  \"description\": \"Note official applet\",\n  \"author\": \"Peers Touch\",\n  \"icon\": \"assets/icon.png\",\n  \"minPlatformVersion\": \"0.1.0\",\n  \"targets\": [\n    \"desktop\",\n    \"android\",\n    \"ios\",\n    \"web\"\n  ],\n  \"entries\": {\n    \"lynx\": \"main.lynx.bundle\"\n  },\n  \"load\": {\n    \"desktop\": {\n      \"type\": \"lynx-web\",\n      \"entry\": \"main.lynx.bundle\"\n    },\n    \"android\": {\n      \"type\": \"lynx-native\",\n      \"entry\": \"main.lynx.bundle\"\n    },\n    \"ios\": {\n      \"type\": \"lynx-native\",\n      \"entry\": \"main.lynx.bundle\"\n    },\n    \"web\": {\n      \"type\": \"lynx-web\",\n      \"entry\": \"main.lynx.bundle\"\n    }\n  },\n  \"bridge\": {\n    \"protocol\": \"peers-touch.applet.bridge\",\n    \"version\": \"1.0.0\"\n  },\n  \"permissions\": [\n    \"app.getContext\",\n    \"app.getLaunchOptions\",\n    \"lifecycle.reportReady\",\n    \"network.request\",\n    \"storage.get\",\n    \"storage.set\",\n    \"storage.remove\",\n    \"ui.showToast\",\n    \"ui.showLoading\",\n    \"ui.hideLoading\",\n    \"ui.showModal\",\n    \"navigation.navigateTo\",\n    \"navigation.back\",\n    \"events.emit\",\n    \"events.subscribe\",\n    \"events.unsubscribe\",\n    \"telemetry.track\",\n    \"telemetry.reportError\"\n  ],\n  \"capabilities\": [],\n  \"services\": [\n    {\n      \"id\": \"note\",\n      \"kind\": \"http\",\n      \"binding\": \"station-resolved\",\n      \"allowedMethods\": [\n        \"GET\",\n        \"POST\",\n        \"PATCH\",\n        \"DELETE\"\n      ],\n      \"allowedPaths\": [\n        \"/v1/notes\",\n        \"/v1/notes/*\",\n        \"/v1/notes:search\"\n      ],\n      \"publicPathPrefix\": \"/v1\",\n      \"stationPathPrefix\": \"/applets/note/v1\",\n      \"streaming\": false\n    }\n  ],\n  \"skills\": [],\n  \"integrity\": {\n    \"algorithm\": \"sha256\",\n    \"files\": {\n      \"main.lynx.bundle\": \"sha256:bdb6a956099507087e9e35bc09e4c569e579ea50dd9a2439469e7699d326842b\"\n    }\n  }\n}",
+            "target_platforms": [
+              "desktop",
+              "android",
+              "ios",
+              "web"
+            ],
+            "permissions": [
+              "app.getContext",
+              "app.getLaunchOptions",
+              "lifecycle.reportReady",
+              "network.request",
+              "storage.get",
+              "storage.set",
+              "storage.remove",
+              "ui.showToast",
+              "ui.showLoading",
+              "ui.hideLoading",
+              "ui.showModal",
+              "navigation.navigateTo",
+              "navigation.back",
+              "events.emit",
+              "events.subscribe",
+              "events.unsubscribe",
+              "telemetry.track",
+              "telemetry.reportError"
+            ],
+            "integrity": {
+              "main.lynx.bundle": "sha256:bdb6a956099507087e9e35bc09e4c569e579ea50dd9a2439469e7699d326842b"
+            },
+            "bridge_protocol": "peers-touch.applet.bridge",
+            "runtime_type": "lynx-web"
+          },
+          "bundle": {
+            "bundle_uri": "peers.note/0.1.0/main.lynx.bundle",
+            "bundle_sha256": "sha256:bdb6a956099507087e9e35bc09e4c569e579ea50dd9a2439469e7699d326842b",
+            "bundle_size_bytes": 150824,
+            "assets": [
+              {
+                "path": "main.lynx.bundle",
+                "sha256": "sha256:bdb6a956099507087e9e35bc09e4c569e579ea50dd9a2439469e7699d326842b",
+                "size_bytes": 150824,
+                "content_type": "application/javascript"
+              }
+            ],
+            "storage_backend": "local"
+          }
+        }
+      },
+      "install": {
+        "state": {
+          "actor_id": "internal-actor",
+          "device_id": "desktop-gate",
+          "applet_id": "peers.note",
+          "version": "0.1.0",
+          "channel": 3,
+          "status": 1,
+          "installed_at": 1782272171,
+          "updated_at": 1782272171
+        }
+      }
+    }
+  ]
+}

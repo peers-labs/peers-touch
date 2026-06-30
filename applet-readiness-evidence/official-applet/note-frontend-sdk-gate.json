@@ -7,6 +7,7 @@
     "apps/applets/note/frontend/src/application/useNoteController.ts",
     "apps/applets/note/frontend/src/domain/note.ts",
     "apps/applets/note/frontend/src/index.tsx",
+    "apps/applets/note/frontend/src/infrastructure/capability/draftRepository.ts",
     "apps/applets/note/frontend/src/infrastructure/capability/serviceClient.ts",
     "apps/applets/note/frontend/src/infrastructure/i18n/messages.ts",
     "apps/applets/note/frontend/src/presentation/pages/NoteAppletPage.tsx"
