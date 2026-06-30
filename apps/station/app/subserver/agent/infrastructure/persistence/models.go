@@ -6,6 +6,7 @@ package persistence
 // 2026-04-11 — Added SuspectedItem and DiagnosticReport for growth diagnostic.
 func AllModels() []interface{} {
 	return []interface{}{
+		&Agent{},
 		&Conversation{},
 		&AgentMessage{},
 		&Memory{},

@@ -150,6 +150,9 @@ pub struct ProviderUpdateInput {
     pub enabled: bool,
     pub key_vaults: Option<String>,
     pub config_json: Option<String>,
+    pub runtime_kind: Option<String>,
+    pub cli_command: Option<String>,
+    pub protocol: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -166,6 +169,9 @@ pub struct ProviderCreateInput {
     pub logo: String,
     pub key_vaults: String,
     pub config_json: String,
+    pub runtime_kind: Option<String>,
+    pub cli_command: Option<String>,
+    pub protocol: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
