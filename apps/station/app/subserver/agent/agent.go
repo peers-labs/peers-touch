@@ -21,11 +21,14 @@ package agent
 
 import (
 	"context"
+	"strings"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/handler"
+	agentevent "github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
@@ -89,6 +92,9 @@ func (s *agentSubServer) Address() server.SubserverAddress {
 func (s *agentSubServer) Handlers() []server.Handler {
 	logIDWrapper := serverwrapper.LogID()
 	jwtWrapper := s.jwtWrapper
+	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
+	hertzJWTWrapper := hertzadapter.RequireJWT(provider)
+	eventBus := agentevent.NewMemoryEventBus()
 
 	// Phase 7: Growth Metrics — must be created early since MemoryService,
 	// SkillService, ReviewService, and TurnService depend on it for event recording.
@@ -99,6 +105,10 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	// Phase 2 services.
 	agentSvc := service.NewAgentService()
 	memorySvc := service.NewMemoryService(growthMetricsSvc, memoryServiceOptionsFromConfig()...)
+	workspaceSvc := service.NewWorkspaceService()
+	configSvc := service.NewAgentConfigService()
+	offlineQueueSvc := service.NewOfflineQueueService()
+	eventStreamSvc := service.NewEventStreamService(eventBus)
 	skillsGuardSvc := service.NewSkillsGuardService()
 	skillSvc := service.NewSkillService(skillsGuardSvc, growthMetricsSvc)
 	errorClassifierSvc := service.NewErrorClassifierService()
@@ -144,24 +154,39 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		reviewSvc,
 		growthMetricsSvc,
 	)
+	turnSvc.SetEventBus(eventBus)
 
 	// Dogfood self-verification service.
 	dogfoodSvc := service.NewDogfoodService(memorySvc, skillSvc, growthMetricsSvc)
 
 	// Scheduler — autonomous learning: periodic SILENT reviews + dogfood runs.
 	schedulerSvc := service.NewSchedulerService(reviewSvc, dogfoodSvc, memorySvc, growthMetricsSvc)
+	orchestrationSvc := service.NewOrchestrationService(agentSvc, turnSvc, toolRegistrySvc)
+	orchestrationSvc.SetEventBus(eventBus)
+	orchestrationSvc.StartTaskRecovery(context.Background())
 
-	agentHandlers := handler.NewAgentHandlers(agentSvc)
-	turnHandlers := handler.NewTurnHandlers(turnSvc, toolRegistrySvc)
+	// Chat root task: Station owns the Chat surface as a long-lived task so a
+	// turn outlives the client connection. Reclaim interrupted steps on boot.
+	chatTaskSvc := service.NewChatTaskService(eventBus)
+	chatTaskSvc.RecoverRunningChatTasks(context.Background())
+
+	agentHandlers := handler.NewAgentHandlers(agentSvc, eventBus)
+	turnHandlers := handler.NewTurnHandlers(turnSvc, toolRegistrySvc, chatTaskSvc)
 	memoryHandlers := handler.NewMemoryHandlers(memorySvc)
+	workspaceHandlers := handler.NewWorkspaceHandlers(workspaceSvc)
+	configHandlers := handler.NewAgentConfigHandlers(configSvc)
+	offlineQueueHandlers := handler.NewOfflineQueueHandlers(offlineQueueSvc)
+	eventStreamHandlers := handler.NewEventStreamHandlers(eventStreamSvc)
 	skillHandlers := handler.NewSkillHandlers(skillSvc)
 	dogfoodHandlers := handler.NewDogfoodHandlers(dogfoodSvc)
 	schedulerHandlers := handler.NewSchedulerHandlers(schedulerSvc)
+	orchestrationHandlers := handler.NewOrchestrationHandlers(orchestrationSvc)
 
 	growthHandlers := handler.NewGrowthHandlers(growthMetricsSvc, memorySvc, skillSvc, diagnosticSvc)
 
-	return []server.Handler{
+	handlers := []server.Handler{
 		server.NewTypedHandler("agent-list", "/agent/list", server.POST, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-list-get", "/agent/list", server.GET, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-get", "/agent/get", server.POST, agentHandlers.HandleGetAgent, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-create", "/agent/create", server.POST, agentHandlers.HandleCreateAgent, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-update", "/agent/update", server.POST, agentHandlers.HandleUpdateAgent, logIDWrapper, jwtWrapper),
@@ -172,6 +197,13 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("agent-turn-local-tool-result", "/agent/turn/local-tool-result", server.POST, turnHandlers.HandleLocalToolResult, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-trace-list", "/agent/turn/trace/list", server.POST, turnHandlers.HandleListTurnTraces, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-trace-get", "/agent/turn/trace/get", server.POST, turnHandlers.HandleGetTurnTrace, logIDWrapper, jwtWrapper),
+
+		server.NewTypedHandler("agent-collaboration-create", "/agent/collaboration/create", server.POST, orchestrationHandlers.HandleCreateCollaborationTask, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-collaboration-get", "/agent/collaboration/get", server.POST, orchestrationHandlers.HandleGetCollaborationTask, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-collaboration-list", "/agent/collaboration/list", server.POST, orchestrationHandlers.HandleListCollaborationTasks, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-collaboration-events-list", "/agent/collaboration/events/list", server.POST, orchestrationHandlers.HandleListTaskEvents, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-collaboration-cancel", "/agent/collaboration/cancel", server.POST, orchestrationHandlers.HandleCancelCollaborationTask, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-events-subscribe", "/agent/events/subscribe", server.POST, eventStreamHandlers.HandleSubscribe, logIDWrapper, jwtWrapper),
 
 		// POST: protobuf body carries ListMemoriesRequest (GET + empty body leaves agent_id unset).
 		server.NewTypedHandler("agent-memory-list", "/agent/memory/list", server.POST, memoryHandlers.HandleListMemories, logIDWrapper, jwtWrapper),
@@ -187,6 +219,44 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-memory-reembed", "/agent/memory/reembed", server.POST, memoryHandlers.HandleReEmbed, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-memory-feedback", "/agent/memory/feedback", server.POST, memoryHandlers.HandleFeedback, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-memory-snapshot", "/agent/memory/snapshot", server.GET, memoryHandlers.HandleGetSnapshot, logIDWrapper, jwtWrapper),
+
+		// Compatibility aliases for the Agent resource management surface.
+		server.NewTypedHandler("agent-memory-list-compat", "/memory/list", server.POST, memoryHandlers.HandleListMemories, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-memory-list-compat-get", "/memory/list", server.GET, memoryHandlers.HandleListMemories, logIDWrapper, jwtWrapper),
+
+		server.NewTypedHandler("agent-workspace-create", "/workspace/create", server.POST, workspaceHandlers.HandleCreateWorkspace, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-workspace-get", "/workspace/get", server.POST, workspaceHandlers.HandleGetWorkspace, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-workspace-list", "/workspace/list", server.POST, workspaceHandlers.HandleListWorkspaces, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-workspace-list-get", "/workspace/list", server.GET, workspaceHandlers.HandleListWorkspaces, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-workspace-update", "/workspace/update", server.POST, workspaceHandlers.HandleUpdateWorkspace, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-workspace-delete", "/workspace/delete", server.POST, workspaceHandlers.HandleDeleteWorkspace, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-workspace-files", "/workspace/files", server.POST, workspaceHandlers.HandleListFiles, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-workspace-diff", "/workspace/diff", server.POST, workspaceHandlers.HandleGetFileDiff, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-workspace-commit", "/workspace/commit", server.POST, workspaceHandlers.HandleCommitChanges, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-workspace-delete-files", "/workspace/delete-files", server.POST, workspaceHandlers.HandleDeleteFiles, logIDWrapper, jwtWrapper),
+
+		server.NewTypedHandler("agent-config-knowledge-list", "/config/knowledge/list", server.POST, configHandlers.HandleListKnowledgeBindings, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-config-knowledge-create", "/config/knowledge/create", server.POST, configHandlers.HandleCreateKnowledgeBinding, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-config-knowledge-update", "/config/knowledge/update", server.POST, configHandlers.HandleUpdateKnowledgeBinding, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-config-knowledge-delete", "/config/knowledge/delete", server.POST, configHandlers.HandleDeleteKnowledgeBinding, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-config-skill-list", "/config/skill/list", server.POST, configHandlers.HandleListSkillBindings, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-config-skill-create", "/config/skill/create", server.POST, configHandlers.HandleCreateSkillBinding, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-config-skill-update", "/config/skill/update", server.POST, configHandlers.HandleUpdateSkillBinding, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-config-skill-delete", "/config/skill/delete", server.POST, configHandlers.HandleDeleteSkillBinding, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-config-mcp-list", "/config/mcp/list", server.POST, configHandlers.HandleListMcpBindings, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-config-mcp-create", "/config/mcp/create", server.POST, configHandlers.HandleCreateMcpBinding, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-config-mcp-update", "/config/mcp/update", server.POST, configHandlers.HandleUpdateMcpBinding, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-config-mcp-delete", "/config/mcp/delete", server.POST, configHandlers.HandleDeleteMcpBinding, logIDWrapper, jwtWrapper),
+
+		server.NewTypedHandler("agent-offline-queue-enqueue", "/offline-queue/enqueue", server.POST, offlineQueueHandlers.HandleEnqueue, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-offline-queue-list", "/offline-queue/list", server.POST, offlineQueueHandlers.HandleListPending, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-offline-queue-list-get", "/offline-queue/list", server.GET, offlineQueueHandlers.HandleListPending, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-offline-queue-get", "/offline-queue/get", server.POST, offlineQueueHandlers.HandleGetOperation, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-offline-queue-ack", "/offline-queue/ack", server.POST, offlineQueueHandlers.HandleAckOperation, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-offline-queue-sync", "/offline-queue/sync", server.POST, offlineQueueHandlers.HandleSync, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-offline-queue-resolve", "/offline-queue/resolve", server.POST, offlineQueueHandlers.HandleResolveConflict, logIDWrapper, jwtWrapper),
+
+		server.NewHertzHandler("agent-events-stream", "/events/stream", server.GET, eventStreamHandlers.HandleSubscribeHertz, hertzJWTWrapper),
 
 		server.NewTypedHandler("agent-skill-list", "/agent/skill/list", server.POST, skillHandlers.HandleListSkills, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-skill-get", "/agent/skill/get", server.GET, skillHandlers.HandleGetSkill, logIDWrapper, jwtWrapper),
@@ -218,6 +288,26 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-scheduler-status", "/agent/scheduler/status", server.GET, schedulerHandlers.HandleStatus, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-scheduler-add-job", "/agent/scheduler/add-job", server.POST, schedulerHandlers.HandleAddJob, logIDWrapper, jwtWrapper),
 	}
+	return prefixHandlers(s.opts.Path, handlers)
+}
+
+func prefixHandlers(base string, handlers []server.Handler) []server.Handler {
+	base = strings.TrimRight(base, "/")
+	if base == "" {
+		return handlers
+	}
+	out := make([]server.Handler, 0, len(handlers))
+	for _, h := range handlers {
+		out = append(out, server.NewHandler(
+			h.Name(),
+			base+h.Path(),
+			h.Method(),
+			h.Type(),
+			h.Handler(),
+			h.Wrappers()...,
+		))
+	}
+	return out
 }
 
 func memoryServiceOptionsFromConfig() []service.MemoryServiceOption {
