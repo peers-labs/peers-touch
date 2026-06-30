@@ -1,8 +1,12 @@
 /**
- * peers-touch Desktop — Agent management / edit surface (prototype).
+ * peers-touch Desktop — Agent Profile page prototype.
  *
- * Rebuilt to a single-Agent configuration page,
- * not a thin profile form. Mirrors the LobeHub blueprint
+ * This file is the prototype source for the production AgentProfilePage. It is
+ * intentionally page-level, not an "Admin" aggregate: the Chat, Canvas, and
+ * Profile surfaces each have their own one-to-one prototype file.
+ *
+ * Rebuilt to a single-Agent configuration page, not a thin profile form.
+ * Mirrors the LobeHub blueprint
  * (docs/architecture/agent/agent-lobehub-blueprint.md P3-1: Agent Profile split
  * into understandable tabs; §7.1 Desktop Web owns Agent Profile/Settings).
  *
@@ -36,8 +40,10 @@ import {
   Plus,
   Pin,
   Sparkles,
+  BarChart3,
   Upload,
-  Play,
+  Send,
+  Image as ImageIcon,
   Pencil,
   Trash2,
   ChevronDown,
@@ -54,6 +60,8 @@ import {
   Brain,
   Radio,
   Copy,
+  Workflow,
+  Search,
   type LucideIcon,
 } from 'lucide-react';
 import { T } from './theme';
@@ -167,8 +175,8 @@ interface Tool {
 interface Agent {
   id: string;
   name: string;
-  /** emoji / monogram for the avatar tile */
-  glyph: string;
+  /** lucide icon for the Agent tile */
+  icon: LucideIcon;
   pinned: boolean;
   status: 'enabled' | 'draft';
   /** A2A self-description: used to route the right agent */
@@ -203,7 +211,7 @@ const INITIAL_AGENTS: Agent[] = [
   {
     id: 'a-research',
     name: '科研助理',
-    glyph: '🔬',
+    icon: Search,
     pinned: true,
     status: 'enabled',
     description: '帮你检索文献、梳理论证脉络、整理实验记录与综述提纲。',
@@ -222,7 +230,7 @@ const INITIAL_AGENTS: Agent[] = [
   {
     id: 'a-writing',
     name: '写作伙伴',
-    glyph: '✍️',
+    icon: FileText,
     pinned: false,
     status: 'enabled',
     description: '协助起草、润色与改写，把零散素材整理成结构清晰的文稿。',
@@ -239,18 +247,26 @@ const INITIAL_AGENTS: Agent[] = [
     skills: [
       { id: 's-summ', name: 'meeting-digest', kind: 'prompt', source: 'github://peers/skills/meeting-digest', enabled: true, desc: '把会议纪要压缩成可跟踪的行动项。' },
       { id: 's-trans', name: 'translate-pro', kind: 'prompt', source: 'github://peers/skills/translate-pro', enabled: true, desc: '保留术语与语气的高质量翻译。' },
+      { id: 's-outline', name: 'outline-builder', kind: 'prompt', source: 'github://peers/skills/outline-builder', enabled: true, desc: '把零散素材整理成可展开的文章结构。' },
+      { id: 's-tone', name: 'tone-keeper', kind: 'prompt', source: 'github://peers/skills/tone-keeper', enabled: true, desc: '保持作者原有语气与表达习惯。' },
+      { id: 's-cite', name: 'citation-cleaner', kind: 'script', source: 'github://peers/skills/citation-cleaner', enabled: false, desc: '清理引用格式并标注缺失来源。' },
+      { id: 's-brief', name: 'brief-to-draft', kind: 'prompt', source: 'github://peers/skills/brief-to-draft', enabled: true, desc: '把 brief 转成可评审的一版草稿。' },
     ],
     tools: [
       { id: 't-read', name: 'read_file', origin: 'builtin', enabled: true },
       { id: 't-fs', name: 'filesystem', origin: 'mcp:stdio · integrated_browser', enabled: true },
       { id: 't-web', name: 'web_search', origin: 'mcp:http', enabled: true },
       { id: 't-shell', name: 'run_shell', origin: 'builtin', enabled: false },
+      { id: 't-grep', name: 'search_code', origin: 'builtin', enabled: true },
+      { id: 't-drive', name: 'lark_drive', origin: 'mcp:http · lark', enabled: false },
+      { id: 't-doc', name: 'lark_doc', origin: 'mcp:http · lark', enabled: true },
+      { id: 't-preview', name: 'open_preview', origin: 'builtin', enabled: true },
     ],
   },
   {
     id: 'a-data',
     name: '数据分析师',
-    glyph: '📊',
+    icon: BarChart3,
     pinned: false,
     status: 'draft',
     description: '协助清洗数据、跑统计与可视化，给出可解释的分析结论。',
@@ -373,37 +389,23 @@ const ACTIVITY_TABS: { id: ActivityTab; label: string; icon: LucideIcon }[] = [
 
 function SoulTab({ agent, onPatch }: { agent: Agent; onPatch: (p: Partial<Agent>) => void }) {
   return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
-        <span style={{ flex: 1, fontSize: 12, color: T.textTertiary }}>
-          两段内容分别同步到 AGENTS.md / SOUL.md，并在新会话中注入（系统提示装配）。
-        </span>
-        <span style={{ fontSize: 12, color: T.textTertiary }}>改动自动保存</span>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <div>
+    <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: T.textSecondary, marginBottom: 6 }}>AGENTS.md</div>
           <textarea
             value={agent.agentsMd}
             onChange={(e) => onPatch({ agentsMd: e.target.value })}
-            rows={10}
-            style={{ ...inputStyle, ...monoStyle, resize: 'vertical' }}
+            style={{ ...inputStyle, ...monoStyle, flex: 1, minHeight: 360, resize: 'none' }}
           />
-          <div style={{ fontSize: 11, color: T.textTertiary, marginTop: 6 }}>
-            对应会话工作区的 AGENTS.md：持久指令、范围、工作流、护栏。
-          </div>
         </div>
-        <div>
+        <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: T.textSecondary, marginBottom: 6 }}>SOUL.md</div>
           <textarea
             value={agent.soul}
             onChange={(e) => onPatch({ soul: e.target.value })}
-            rows={10}
-            style={{ ...inputStyle, ...monoStyle, resize: 'vertical' }}
+            style={{ ...inputStyle, ...monoStyle, flex: 1, minHeight: 360, resize: 'none' }}
           />
-          <div style={{ fontSize: 11, color: T.textTertiary, marginTop: 6 }}>
-            对应 SOUL.md：身份、语气、风格与长期偏好。
-          </div>
         </div>
       </div>
     </div>
@@ -436,89 +438,126 @@ function CapabilitiesTab({ agent, onPatch }: { agent: Agent; onPatch: (p: Partia
   };
 
   return (
-    <div>
-      {/* — Skills: reusable capability packages (prompt / script / MCP) — */}
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>Skills</div>
-          <div style={{ fontSize: 12, color: T.textTertiary, marginTop: 2 }}>
-            可复用能力包（Prompt / 脚本 / MCP）。导入并绑定到该 Agent，不含能力市场。
+    <div style={{ height: '100%', minHeight: 0, display: 'grid', gridTemplateRows: '1fr 1fr', gap: 16 }}>
+      <section style={capabilityBlockStyle}>
+        <div style={capabilityBlockHeaderStyle}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Skill Packages</div>
+            <div style={{ fontSize: 12, color: T.textTertiary, marginTop: 2 }}>以包的形式绑定到 Agent，包数量多时在本块内滚动。</div>
           </div>
+          <button
+            onClick={() => setImporting((v) => !v)}
+            style={{ height: 34, border: 0, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 12px', borderRadius: 9, backgroundColor: T.primary, color: T.white, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+          >
+            <Upload size={15} /> 导入 Skill
+          </button>
         </div>
-        <div
-          onClick={() => setImporting((v) => !v)}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, backgroundColor: T.primary, color: T.white, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-        >
-          <Upload size={15} /> 导入 Skill
-        </div>
-      </div>
 
-      {importing ? (
-        <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: 14, marginBottom: 14, backgroundColor: T.fillQuaternary }}>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-            {(['prompt', 'script'] as SkillKind[]).map((k) => (
-              <div
-                key={k}
-                onClick={() => setImp((s) => ({ ...s, kind: k }))}
-                style={{ padding: '5px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1px solid ${imp.kind === k ? KIND_COLOR[k] : T.border}`, color: imp.kind === k ? KIND_COLOR[k] : T.textSecondary, backgroundColor: T.bg }}
-              >
-                {SKILL_KIND_LABEL[k]}
-              </div>
-            ))}
-          </div>
-          <input value={imp.name} onChange={(e) => setImp((s) => ({ ...s, name: e.target.value }))} placeholder="技能名（必填）" style={{ ...inputStyle, marginBottom: 8 }} />
-          <input value={imp.source} onChange={(e) => setImp((s) => ({ ...s, source: e.target.value }))} placeholder="来源（URL / 路径 / MCP server，可留空自动生成）" style={{ ...inputStyle, marginBottom: 12 }} />
-          <div style={{ display: 'flex', gap: 8 }}>
-            <div onClick={doImport} style={{ padding: '6px 14px', borderRadius: 8, backgroundColor: T.primary, color: T.white, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>导入</div>
-            <div onClick={() => setImporting(false)} style={{ padding: '6px 14px', borderRadius: 8, border: `1px solid ${T.border}`, color: T.textSecondary, fontSize: 13, cursor: 'pointer' }}>取消</div>
-          </div>
-        </div>
-      ) : null}
-
-      {agent.skills.length === 0 ? (
-        <div style={{ padding: '28px 0', textAlign: 'center', color: T.textQuaternary, fontSize: 13 }}>还没有技能，点右上角「导入 Skill」。</div>
-      ) : (
-        <div style={{ display: 'grid', gap: 10 }}>
-          {agent.skills.map((s) => (
-            <div key={s.id} style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Pill text={SKILL_KIND_LABEL[s.kind]} color={KIND_COLOR[s.kind]} />
-              <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: T.text }}>{s.name}</span>
-                <span style={{ display: 'block', fontSize: 11, color: T.textTertiary }}>{s.source} · {s.desc}</span>
-              </span>
-              <Toggle on={s.enabled} onClick={() => patchSkill(s.id, { enabled: !s.enabled })} />
-              <Trash2 size={15} color={T.textTertiary} style={{ cursor: 'pointer' }} onClick={() => removeSkill(s.id)} />
+        {importing ? (
+          <div style={{ border: `1px solid ${T.border}`, borderRadius: 12, padding: 12, marginBottom: 10, backgroundColor: T.fillQuaternary }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              {(['prompt', 'script'] as SkillKind[]).map((k) => (
+                <div
+                  key={k}
+                  onClick={() => setImp((s) => ({ ...s, kind: k }))}
+                  style={{ padding: '5px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1px solid ${imp.kind === k ? KIND_COLOR[k] : T.border}`, color: imp.kind === k ? KIND_COLOR[k] : T.textSecondary, backgroundColor: T.bg }}
+                >
+                  {SKILL_KIND_LABEL[k]}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
-
-      {/* — Tools: atomic tool / MCP-server toggles the Agent may call — */}
-      <div style={{ marginTop: 26, marginBottom: 12 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>Tools</div>
-        <div style={{ fontSize: 12, color: T.textTertiary, marginTop: 2 }}>
-          该 Agent 可调用的原子工具 / MCP server 开关。每次调用都经过策略检查与审计（架构蓝本 §6.5）。
-        </div>
-      </div>
-      {agent.tools.length === 0 ? (
-        <div style={{ padding: '28px 0', textAlign: 'center', color: T.textQuaternary, fontSize: 13 }}>暂无工具绑定。</div>
-      ) : (
-        <div style={{ display: 'grid', gap: 8 }}>
-          {agent.tools.map((tl) => (
-            <div key={tl.id} style={{ border: `1px solid ${T.border}`, borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Wrench size={15} color={T.textTertiary} />
-              <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ display: 'block', color: T.text, ...monoStyle, fontSize: 13, fontWeight: 700 }}>{tl.name}</span>
-                <span style={{ display: 'block', fontSize: 11, color: T.textTertiary }}>{tl.origin}</span>
-              </span>
-              <Toggle on={tl.enabled} onClick={() => patchTool(tl.id, { enabled: !tl.enabled })} />
+            <input value={imp.name} onChange={(e) => setImp((s) => ({ ...s, name: e.target.value }))} placeholder="技能包名（必填）" style={{ ...inputStyle, marginBottom: 8 }} />
+            <input value={imp.source} onChange={(e) => setImp((s) => ({ ...s, source: e.target.value }))} placeholder="包来源（URL / 路径，可留空自动生成）" style={{ ...inputStyle, marginBottom: 12 }} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div onClick={doImport} style={{ padding: '6px 14px', borderRadius: 8, backgroundColor: T.primary, color: T.white, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>导入</div>
+              <div onClick={() => setImporting(false)} style={{ padding: '6px 14px', borderRadius: 8, border: `1px solid ${T.border}`, color: T.textSecondary, fontSize: 13, cursor: 'pointer' }}>取消</div>
             </div>
-          ))}
+          </div>
+        ) : null}
+
+        <div style={capabilityScrollStyle}>
+          {agent.skills.length === 0 ? (
+            <div style={{ padding: '28px 0', textAlign: 'center', color: T.textQuaternary, fontSize: 13 }}>还没有技能包。</div>
+          ) : (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {agent.skills.map((s) => (
+                <div key={s.id} style={{ border: `1px solid ${T.border}`, borderRadius: 14, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, backgroundColor: T.bg }}>
+                  <div style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: T.primaryWash, color: T.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800 }}>
+                    {s.kind === 'prompt' ? '#' : '</>'}
+                  </div>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 750, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
+                      <Pill text={SKILL_KIND_LABEL[s.kind]} color={KIND_COLOR[s.kind]} soft />
+                    </span>
+                    <span style={{ display: 'block', fontSize: 11, color: T.textTertiary, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.source}</span>
+                    <span style={{ display: 'block', fontSize: 12, color: T.textSecondary, marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.desc}</span>
+                  </span>
+                  <Toggle on={s.enabled} onClick={() => patchSkill(s.id, { enabled: !s.enabled })} />
+                  <Trash2 size={15} color={T.textTertiary} style={{ cursor: 'pointer' }} onClick={() => removeSkill(s.id)} />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      </section>
+
+      <section style={capabilityBlockStyle}>
+        <div style={capabilityBlockHeaderStyle}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Tools</div>
+            <div style={{ fontSize: 12, color: T.textTertiary, marginTop: 2 }}>原子工具 / MCP server 开关，数量多时在本块内滚动。</div>
+          </div>
+        </div>
+
+        <div style={capabilityScrollStyle}>
+          {agent.tools.length === 0 ? (
+            <div style={{ padding: '28px 0', textAlign: 'center', color: T.textQuaternary, fontSize: 13 }}>暂无工具绑定。</div>
+          ) : (
+            <div style={{ display: 'grid', gap: 8 }}>
+              {agent.tools.map((tl) => (
+                <div key={tl.id} style={{ border: `1px solid ${T.border}`, borderRadius: 12, padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10, backgroundColor: T.bg }}>
+                  <Wrench size={15} color={T.textTertiary} />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', color: T.text, ...monoStyle, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tl.name}</span>
+                    <span style={{ display: 'block', fontSize: 11, color: T.textTertiary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tl.origin}</span>
+                  </span>
+                  <Toggle on={tl.enabled} onClick={() => patchTool(tl.id, { enabled: !tl.enabled })} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
     </div>
   );
 }
+
+const capabilityBlockStyle: React.CSSProperties = {
+  minHeight: 0,
+  border: `1px solid ${T.border}`,
+  borderRadius: 16,
+  padding: 14,
+  backgroundColor: '#fff',
+  boxSizing: 'border-box',
+  display: 'flex',
+  flexDirection: 'column',
+};
+
+const capabilityBlockHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 12,
+  marginBottom: 12,
+  flexShrink: 0,
+};
+
+const capabilityScrollStyle: React.CSSProperties = {
+  flex: 1,
+  minHeight: 0,
+  overflow: 'auto',
+  paddingRight: 2,
+};
 
 function WorkspaceTab({ agent, onPatch }: { agent: Agent; onPatch: (p: Partial<Agent>) => void }) {
   const [advanced, setAdvanced] = useState(false);
@@ -653,17 +692,18 @@ function AgentBuilder({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div style={{ width: 320, flexShrink: 0, height: '100%', borderLeft: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', backgroundColor: T.navBg }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', backgroundColor: T.navBg, boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 14px 10px' }}>
         <Sparkles size={16} color={T.primary} />
         <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>Agent Builder</span>
-        <PanelRightClose size={16} color={T.textTertiary} style={{ cursor: 'pointer' }} onClick={onClose} />
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '8px 14px' }}>
         {messages.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '24px 4px' }}>
-            <div style={{ fontSize: 30, marginBottom: 8 }}>🏗️</div>
+            <div style={{ width: 42, height: 42, borderRadius: 14, margin: '0 auto 10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', backgroundColor: T.primaryWash, color: T.primary }}>
+              <Wrench size={22} />
+            </div>
             <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 6 }}>Agent Builder</div>
             <div style={{ fontSize: 12, color: T.textTertiary, lineHeight: '18px', marginBottom: 16 }}>
               说出你的用例——写作、编码或数据分析都行。你定目标与标准，我来拆成可协作、可运行的 Agent。
@@ -687,31 +727,124 @@ function AgentBuilder({ onClose }: { onClose: () => void }) {
         )}
       </div>
 
-      <div style={{ padding: 12, borderTop: `1px solid ${T.border}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, border: `1px solid ${T.border}`, borderRadius: 10, padding: '6px 8px 6px 12px', backgroundColor: T.bg }}>
-          <input
+      <div style={{ padding: '0 14px 24px' }}>
+        <div style={builderComposerStyle}>
+          <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') send(input); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                send(input);
+              }
+            }}
             placeholder="Ask, create, or start a task…"
-            style={{ flex: 1, border: 'none', outline: 'none', fontSize: 13, backgroundColor: 'transparent', color: T.text }}
+            rows={2}
+            style={builderComposerInputStyle}
           />
-          <Play size={16} color={T.primary} style={{ cursor: 'pointer' }} onClick={() => send(input)} />
+          <div style={builderComposerToolbarStyle}>
+            <button style={builderPlainToolButtonStyle} title="Slash commands"><SlashCommandIcon /></button>
+            <button style={builderPlainToolButtonStyle} title="Add image"><ImageIcon size={16} /></button>
+            <div style={{ flex: 1 }} />
+            <button style={builderModelButtonStyle}>composer-2-fast <ChevronDown size={13} /></button>
+            <button style={builderSendButtonStyle} title="Send" onClick={() => send(input)}><Send size={16} /></button>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
+function SlashCommandIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 17 17" fill="none" aria-hidden="true">
+      <rect x="2.25" y="2.25" width="12.5" height="12.5" rx="2.25" stroke="currentColor" strokeWidth="2" />
+      <path d="M9.9 5.2L7.1 11.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+const builderComposerStyle: React.CSSProperties = {
+  minHeight: 118,
+  border: '1px solid #d9d9d9',
+  borderRadius: 22,
+  padding: '16px 18px 14px',
+  backgroundColor: '#fff',
+  boxShadow: '0 14px 48px rgba(0,0,0,0.08)',
+  boxSizing: 'border-box',
+};
+
+const builderComposerInputStyle: React.CSSProperties = {
+  width: '100%',
+  minHeight: 54,
+  resize: 'none',
+  border: 'none',
+  outline: 'none',
+  color: T.text,
+  fontSize: 15,
+  lineHeight: 1.5,
+  fontFamily: 'inherit',
+  backgroundColor: 'transparent',
+  boxSizing: 'border-box',
+};
+
+const builderComposerToolbarStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+};
+
+const builderPlainToolButtonStyle: React.CSSProperties = {
+  width: 34,
+  height: 34,
+  border: 0,
+  borderRadius: 10,
+  backgroundColor: 'transparent',
+  color: T.text,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+  padding: 0,
+};
+
+const builderModelButtonStyle: React.CSSProperties = {
+  height: 34,
+  border: 0,
+  borderRadius: 10,
+  backgroundColor: 'transparent',
+  color: T.text,
+  padding: '0 8px',
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 5,
+  fontSize: 13,
+  fontWeight: 650,
+  cursor: 'pointer',
+};
+
+const builderSendButtonStyle: React.CSSProperties = {
+  width: 36,
+  height: 36,
+  border: 0,
+  borderRadius: 13,
+  backgroundColor: '#ded8ff',
+  color: '#7467d8',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+};
+
 // ── shell ────────────────────────────────────────────────────────────────────
 
-export function AgentAdmin() {
+export function AgentProfilePage({ onOpenOrchestration }: { onOpenOrchestration?: () => void }) {
   const [agents, setAgents] = useState<Agent[]>(INITIAL_AGENTS);
   const [selectedId, setSelectedId] = useState(INITIAL_AGENTS[1].id);
   const [mode, setMode] = useState<Mode>('configure');
   const [configTab, setConfigTab] = useState<ConfigTab>('soul');
   const [activityTab, setActivityTab] = useState<ActivityTab>('tasks');
-  const [builderOpen, setBuilderOpen] = useState(true);
+  const [builderOpen, setBuilderOpen] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(true);
   const [aiBusy, setAiBusy] = useState(false);
 
@@ -725,7 +858,7 @@ export function AgentAdmin() {
     const fresh: Agent = {
       id,
       name: '新建 Agent',
-      glyph: '🤖',
+      icon: Bot,
       pinned: false,
       status: 'draft',
       description: '',
@@ -767,36 +900,87 @@ export function AgentAdmin() {
   return (
     <div style={{ height: '100%', display: 'flex', backgroundColor: T.bg, color: T.text, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       {/* ── roster ── */}
-      {rosterOpen ? (
-        <div style={{ width: 264, flexShrink: 0, borderRight: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', backgroundColor: T.navBg }}>
-          <div style={{ display: 'flex', alignItems: 'center', padding: '16px 16px 10px' }}>
-            <Bot size={18} color={T.primary} />
-            <span style={{ fontSize: 15, fontWeight: 700, marginLeft: 8, flex: 1 }}>My Agents</span>
-            <Plus size={17} color={T.textSecondary} style={{ cursor: 'pointer', marginRight: 10 }} onClick={createAgent} />
-            <PanelLeftClose size={16} color={T.textTertiary} style={{ cursor: 'pointer' }} onClick={() => setRosterOpen(false)} />
-          </div>
-          <div style={{ flex: 1, overflow: 'auto', padding: '0 8px 12px' }}>
-            {pinned.length > 0 ? <RosterGroup label="Pinned" /> : null}
-            {pinned.map((a) => (
-              <RosterItem key={a.id} agent={a} active={a.id === selectedId} onClick={() => setSelectedId(a.id)} />
-            ))}
-            <RosterGroup label="All Agents" />
-            {others.map((a) => (
-              <RosterItem key={a.id} agent={a} active={a.id === selectedId} onClick={() => setSelectedId(a.id)} />
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div style={{ width: 48, flexShrink: 0, borderRight: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '16px 0', backgroundColor: T.navBg }}>
-          <PanelLeftOpen size={18} color={T.textSecondary} style={{ cursor: 'pointer' }} onClick={() => setRosterOpen(true)} />
-          <Plus size={18} color={T.textSecondary} style={{ cursor: 'pointer' }} onClick={createAgent} />
-        </div>
-      )}
+      <div style={{ width: rosterOpen ? 264 : 48, flexShrink: 0, borderRight: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', alignItems: 'stretch', padding: rosterOpen ? '14px 12px 58px' : '14px 0 58px', backgroundColor: T.navBg, boxSizing: 'border-box', position: 'relative', overflow: 'hidden' }}>
+        {rosterOpen ? (
+          <>
+            <div style={{ height: 40, display: 'flex', alignItems: 'center', marginBottom: 10 }}>
+              <Bot size={18} color={T.primary} />
+              <span style={{ fontSize: 15, fontWeight: 700, marginLeft: 8, flex: 1 }}>My Agents</span>
+              {onOpenOrchestration ? (
+                <Workflow
+                  title="打开 Agent 编排"
+                  size={17}
+                  color={T.textSecondary}
+                  style={{ cursor: 'pointer', marginRight: 10 }}
+                  onClick={onOpenOrchestration}
+                />
+              ) : null}
+              <Plus size={17} color={T.textSecondary} style={{ cursor: 'pointer', marginRight: 10 }} onClick={createAgent} />
+            </div>
+            <div style={{ height: 40, border: `1px solid ${T.border}`, borderRadius: 8, display: 'flex', alignItems: 'center', gap: 7, padding: '0 9px', color: T.textQuaternary, backgroundColor: T.bg, fontSize: 12 }}>
+              <Search size={14} />
+              <span>Search agents...</span>
+            </div>
+            <div style={{ flex: 1, overflow: 'auto', padding: '0 0 12px' }}>
+              {pinned.length > 0 ? <RosterGroup label="Pinned" /> : null}
+              {pinned.map((a) => (
+                <RosterItem key={a.id} agent={a} active={a.id === selectedId} onClick={() => setSelectedId(a.id)} />
+              ))}
+              <RosterGroup label="All Agents" />
+              {others.map((a) => (
+                <RosterItem key={a.id} agent={a} active={a.id === selectedId} onClick={() => setSelectedId(a.id)} />
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <button title="新建 Agent" onClick={createAgent} style={{ width: 40, height: 40, border: 0, borderRadius: 12, backgroundColor: 'transparent', color: T.textSecondary, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', margin: '0 auto 10px' }}>
+              <Plus size={16} />
+            </button>
+            <button title="搜索 Agent" onClick={() => setRosterOpen(true)} style={{ width: 40, height: 40, border: 0, borderRadius: 12, backgroundColor: 'transparent', color: T.textSecondary, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', margin: '0 auto 2px' }}>
+              <Search size={16} />
+            </button>
+            <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0, width: '100%' }}>
+              <CollapsedRosterGroup />
+              {pinned.map((a) => (
+                <button
+                  key={a.id}
+                  title={a.name}
+                  onClick={() => {
+                    setSelectedId(a.id);
+                    setRosterOpen(true);
+                  }}
+                  style={{ width: 40, height: 48, border: 0, borderRadius: 12, backgroundColor: a.id === selectedId ? T.primaryWash : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                >
+                  <AgentIcon icon={a.icon} size={30} iconSize={15} active={a.id === selectedId} />
+                </button>
+              ))}
+              <CollapsedRosterGroup />
+              {others.map((a) => (
+                <button
+                  key={a.id}
+                  title={a.name}
+                  onClick={() => {
+                    setSelectedId(a.id);
+                    setRosterOpen(true);
+                  }}
+                  style={{ width: 40, height: 48, border: 0, borderRadius: 12, backgroundColor: a.id === selectedId ? T.primaryWash : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                >
+                  <AgentIcon icon={a.icon} size={30} iconSize={15} active={a.id === selectedId} />
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        <button title={rosterOpen ? '折叠 Agent 列表' : '展开 Agent 列表'} onClick={() => setRosterOpen((open) => !open)} style={{ width: 34, height: 34, borderRadius: 999, border: 0, backgroundColor: 'transparent', color: T.textSecondary, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: 'none', flexShrink: 0, position: 'absolute', left: 7, bottom: 14 }}>
+          {rosterOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+        </button>
+      </div>
 
       {/* ── editor ── */}
       {selected ? (
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
-          <div style={{ flex: 1, padding: '24px 32px 32px', maxWidth: 980, width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
+        <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ flex: 1, minHeight: 0, padding: '24px 32px 32px', maxWidth: 980, width: '100%', margin: '0 auto', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
             {/* name */}
             <input
               value={selected.name}
@@ -806,9 +990,7 @@ export function AgentAdmin() {
 
             {/* identity row: avatar + A2A description (with inline AI icon) */}
             <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
-              <div style={{ width: 64, height: 64, borderRadius: 16, flexShrink: 0, background: `linear-gradient(135deg, ${T.primary}, #9a8df0)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30 }}>
-                {selected.glyph}
-              </div>
+              <AgentIcon icon={selected.icon} size={64} iconSize={28} active />
               <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
                 <textarea
                   value={selected.description}
@@ -880,14 +1062,15 @@ export function AgentAdmin() {
                   })}
             </div>
 
-            {mode === 'configure' ? (
-              <>
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: mode === 'configure' && (configTab === 'soul' || configTab === 'capabilities') ? 'hidden' : 'auto' }}>
+              {mode === 'configure' ? (
+                <>
                 {configTab === 'soul' ? <SoulTab agent={selected} onPatch={patch} /> : null}
                 {configTab === 'capabilities' ? <CapabilitiesTab agent={selected} onPatch={patch} /> : null}
                 {configTab === 'workspace' ? <WorkspaceTab agent={selected} onPatch={patch} /> : null}
-              </>
-            ) : (
-              <>
+                </>
+              ) : (
+                <>
                 {activityTab === 'tasks' ? (
                   <ActivityPlaceholder label="Tasks" hint="该 Agent 正在运行与历史的协作任务。任务由协作 runtime 编排执行，这里只做投影展示。（原型未细化）" />
                 ) : null}
@@ -897,37 +1080,70 @@ export function AgentAdmin() {
                 {activityTab === 'events' ? (
                   <ActivityPlaceholder label="Agent Events" hint="工具调用、审批、错误、重试、回退等运行时事件的 trace / audit 投影（架构蓝本 §6.5）。（原型未细化）" />
                 ) : null}
-              </>
-            )}
+                </>
+              )}
+            </div>
           </div>
         </div>
       ) : null}
 
       {/* ── agent builder ── */}
-      {builderOpen ? (
-        <AgentBuilder onClose={() => setBuilderOpen(false)} />
-      ) : (
-        <div style={{ width: 40, flexShrink: 0, borderLeft: `1px solid ${T.border}`, backgroundColor: T.navBg, display: 'flex', justifyContent: 'center', paddingTop: 14 }}>
-          <PanelRightOpen size={18} color={T.textTertiary} style={{ cursor: 'pointer' }} onClick={() => setBuilderOpen(true)} />
-        </div>
-      )}
+      <div style={{ width: builderOpen ? 320 : 40, flexShrink: 0, borderLeft: `1px solid ${T.border}`, backgroundColor: T.navBg, position: 'relative', boxSizing: 'border-box', overflow: 'hidden' }}>
+        {builderOpen ? <AgentBuilder onClose={() => setBuilderOpen(false)} /> : null}
+        {!builderOpen ? (
+          <div style={{ position: 'absolute', inset: '58px 0 58px', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+            <span style={{ writingMode: 'vertical-rl', textOrientation: 'mixed', color: T.textSecondary, fontSize: 12, fontWeight: 700, letterSpacing: 0.4 }}>
+              Agent Builder
+            </span>
+          </div>
+        ) : null}
+        <button title={builderOpen ? '折叠 Agent Builder' : '展开 Agent Builder'} onClick={() => setBuilderOpen((open) => !open)} style={{ width: 34, height: 34, borderRadius: 999, border: 0, backgroundColor: 'transparent', color: T.textSecondary, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: 'none', position: 'absolute', right: 3, top: 17 }}>
+          {builderOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+        </button>
+      </div>
     </div>
   );
 }
 
 function RosterGroup({ label }: { label: string }) {
-  return <div style={{ fontSize: 11, fontWeight: 700, color: T.textTertiary, padding: '10px 8px 6px' }}>{label}</div>;
+  return <div style={{ height: 18, lineHeight: '18px', fontSize: 11, fontWeight: 700, color: T.textTertiary, margin: '12px 0 6px', padding: '0 8px' }}>{label}</div>;
+}
+
+function AgentIcon({ icon: Icon, size, iconSize, active = false }: { icon: LucideIcon; size: number; iconSize: number; active?: boolean }) {
+  return (
+    <span
+      style={{
+        width: size,
+        height: size,
+        borderRadius: Math.max(8, Math.round(size * 0.25)),
+        flexShrink: 0,
+        backgroundColor: active ? T.primaryWash : T.navBg,
+        color: active ? T.primary : T.textSecondary,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Icon size={iconSize} />
+    </span>
+  );
+}
+
+function CollapsedRosterGroup() {
+  return (
+    <div style={{ width: 40, height: 18, margin: '12px auto 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <span style={{ width: 18, height: 1, backgroundColor: T.border }} />
+    </div>
+  );
 }
 
 function RosterItem({ agent, active, onClick }: { agent: Agent; active: boolean; onClick: () => void }) {
   return (
     <div
       onClick={onClick}
-      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 10px', borderRadius: 9, marginBottom: 4, cursor: 'pointer', backgroundColor: active ? T.primaryWash : 'transparent' }}
+      style={{ height: 48, display: 'flex', alignItems: 'center', gap: 10, padding: '0 10px', borderRadius: 9, cursor: 'pointer', backgroundColor: active ? T.primaryWash : 'transparent', boxSizing: 'border-box' }}
     >
-      <span style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, background: `linear-gradient(135deg, ${T.primary}, #9a8df0)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17 }}>
-        {agent.glyph}
-      </span>
+      <AgentIcon icon={agent.icon} size={32} iconSize={16} active={active} />
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: active ? T.primary : T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agent.name}</span>

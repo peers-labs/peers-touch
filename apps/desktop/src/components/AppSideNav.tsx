@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActionIcon, DraggablePanel, SideNav } from '@lobehub/ui';
+import { ActionIcon, SideNav } from '@lobehub/ui';
 import { Input, Modal, theme } from 'antd';
 import {
   Bot,
@@ -11,12 +11,9 @@ import {
   Blocks,
   Keyboard,
   NotebookTabs,
-  PanelRightOpen,
   Plus,
   UserRoundCog,
 } from 'lucide-react';
-import { AgentSidebar } from './AgentSidebar';
-import { AgentSettingsDrawer } from './AgentSettingsDrawer';
 import { NotificationBell } from './NotificationBell';
 import { UserProfilePopover, useUserAvatar } from './UserProfilePopover';
 import { UserSquareAvatar } from './common/UserSquareAvatar';
@@ -24,8 +21,8 @@ import AppletManager from '../applet/AppletManager';
 import { getModulesWithSidebar } from '../modules/registry';
 import { useAgentStore } from '../store/agent';
 import { useChatStore } from '../store/chat';
+import { openAgentChatSession } from '../utils/openAgentChatSession';
 import { useAppletsStore } from '../store/applets';
-import type { Agent } from '../services/desktop_api';
 import type { Page, Navigation, AppletPins, HashRouter } from '../types/navigation';
 
 interface AppSideNavProps {
@@ -55,69 +52,66 @@ function shortcut(keys: string): string {
   return keys.replace('Mod', mod).replace('Shift', '⇧');
 }
 
-export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavProps) {
+export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
   const userAvatar = useUserAvatar();
   const appletManager = AppletManager.getInstance();
   const { t } = useTranslation('layout');
   const { token } = theme.useToken();
-  const { agents, selectedAgent, setSelectedAgent } = useAgentStore();
-  const { newSession, togglePortal } = useChatStore();
+  const { agents, selectedAgent, getAgentSurface, setAgentSurface } = useAgentStore();
+  const { newSession } = useChatStore();
   const installedApplets = useAppletsStore((state) => state.applets);
   const installedAppletById = useMemo(
     () => new Map(installedApplets.map((info) => [info.manifest.id, info.manifest])),
     [installedApplets],
   );
 
-  const [sidebarExpand, setSidebarExpand] = useState(true);
-  const [agentDrawerOpen, setAgentDrawerOpen] = useState(false);
-  const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
 
-  const handleCreateAgent = useCallback(() => {
-    setEditingAgent(null);
-    setAgentDrawerOpen(true);
-  }, []);
 
-  const handleEditAgent = useCallback((agent: Agent) => {
-    setEditingAgent(agent);
-    setAgentDrawerOpen(true);
-  }, []);
-
-  const navigateAgentProfile = useCallback((name: string) => {
-    router.setProfileAgentName(name);
-    window.history.pushState(null, '', `#/agent-profile/${name}`);
-    router.setPage('agent-profile');
-  }, [router]);
-
-  const handleAgentSaved = useCallback((agent: Agent) => {
-    setAgentDrawerOpen(false);
-    setEditingAgent(null);
-    setSelectedAgent(agent.name);
-    navigateAgentProfile(agent.name);
-  }, [navigateAgentProfile, setSelectedAgent]);
+  const navigateAgentSurface = useCallback((agentName: string) => {
+    navigation.navigateToAgentSurface(agentName, getAgentSurface(agentName));
+  }, [getAgentSurface, navigation]);
 
   const navigateAgentChat = useCallback(() => {
+    if (selectedAgent) {
+      navigateAgentSurface(selectedAgent);
+      return;
+    }
     navigation.navigateTo('agent');
-  }, [navigation]);
+  }, [navigateAgentSurface, navigation, selectedAgent]);
 
   const handleNewChat = useCallback(() => {
+    const agent = agents.find((item) => item.name === selectedAgent);
+    if (agent) {
+      void openAgentChatSession(agent, {
+        forceNew: true,
+        draftTitle: t('agent.sidebar.newTopic', { ns: 'agent' }),
+        reason: 'global-new-chat',
+      });
+      navigation.navigateTo('agent');
+      return;
+    }
+    if (selectedAgent) setAgentSurface(selectedAgent, 'chat');
     newSession();
-    navigateAgentChat();
-  }, [navigateAgentChat, newSession]);
+    navigation.navigateTo('agent');
+  }, [agents, navigation, newSession, selectedAgent, setAgentSurface, t]);
 
-  const handleTogglePortal = useCallback(() => {
-    navigateAgentChat();
-    togglePortal();
-  }, [navigateAgentChat, togglePortal]);
 
   const handleNextAgent = useCallback(() => {
     if (agents.length === 0) return;
     const currentIndex = Math.max(0, agents.findIndex((agent) => agent.name === selectedAgent));
     const nextAgent = agents[(currentIndex + 1) % agents.length];
-    setSelectedAgent(nextAgent.name);
-    navigateAgentChat();
-  }, [agents, navigateAgentChat, selectedAgent, setSelectedAgent]);
+    if (getAgentSurface(nextAgent.name) === 'chat') {
+      void openAgentChatSession(nextAgent, {
+        draftTitle: t('agent.sidebar.newTopic', { ns: 'agent' }),
+        reason: 'next-agent',
+      });
+      navigation.navigateTo('agent');
+      return;
+    }
+    navigateAgentSurface(nextAgent.name);
+  }, [agents, getAgentSurface, navigateAgentSurface, navigation, selectedAgent, t]);
 
   const commandItems = useMemo<CommandPaletteItem[]>(() => [
     {
@@ -145,14 +139,6 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
       run: handleNextAgent,
     },
     {
-      id: 'toggle-portal',
-      label: t('layout.command.togglePortal'),
-      description: t('layout.command.togglePortalDesc'),
-      shortcut: shortcut('Mod .'),
-      icon: <PanelRightOpen size={16} />,
-      run: handleTogglePortal,
-    },
-    {
       id: 'notes',
       label: t('layout.command.notes'),
       description: t('layout.command.notesDesc'),
@@ -168,7 +154,7 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
       icon: <Settings size={16} />,
       run: () => navigation.navigateTo('settings'),
     },
-  ], [handleNewChat, handleNextAgent, handleTogglePortal, navigation, t]);
+  ], [handleNewChat, handleNextAgent, navigation, t]);
 
   const filteredCommands = useMemo(() => {
     const query = commandQuery.trim().toLowerCase();
@@ -209,9 +195,6 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
       } else if (key === 'j') {
         event.preventDefault();
         handleNextAgent();
-      } else if (key === '.') {
-        event.preventDefault();
-        handleTogglePortal();
       } else if (key === ',') {
         event.preventDefault();
         navigation.navigateTo('settings');
@@ -219,7 +202,7 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleNewChat, handleNextAgent, handleTogglePortal, navigation]);
+  }, [handleNewChat, handleNextAgent, navigation]);
 
   return (
     <>
@@ -250,8 +233,8 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
             <ActionIcon
               icon={Bot}
               size="large"
-              active={page === 'agent'}
-              onClick={() => navigation.navigateTo('agent')}
+              active={page === 'agent' || page === 'agent-profile' || page === 'agent-orchestration'}
+              onClick={navigateAgentChat}
               title={t('layout.nav.agent')}
             />
             <ActionIcon
@@ -308,42 +291,6 @@ export function AppSideNav({ page, router, navigation, appletPins }: AppSideNavP
             />
           </>
         }
-      />
-
-      {(page === 'agent' || page === 'agent-profile') && (
-        <DraggablePanel
-          placement="left"
-          defaultSize={{ width: 260 }}
-          minWidth={220}
-          maxWidth={400}
-          expand={sidebarExpand}
-          onExpandChange={setSidebarExpand}
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          <AgentSidebar
-            onCreateAgent={handleCreateAgent}
-            onEditAgent={handleEditAgent}
-            onNavigateProfile={navigateAgentProfile}
-            onNavigateChat={() => router.setPage('agent')}
-            onNavigateMarketplace={() => navigation.navigateToSettings('skills')}
-            onAgentChanged={(name) => {
-              if (page === 'agent-profile') {
-                router.setProfileAgentName(name);
-                window.history.pushState(null, '', `#/agent-profile/${name}`);
-              }
-            }}
-          />
-        </DraggablePanel>
-      )}
-
-      <AgentSettingsDrawer
-        open={agentDrawerOpen}
-        editingAgent={editingAgent}
-        onClose={() => { setAgentDrawerOpen(false); setEditingAgent(null); }}
-        onSaved={handleAgentSaved}
       />
 
       <Modal

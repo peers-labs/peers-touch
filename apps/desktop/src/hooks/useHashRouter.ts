@@ -19,7 +19,7 @@ function parsePageFromHash(): Page {
 function parseAgentNameFromHash(): string {
   const hash = window.location.hash.slice(1) || '';
   const match = hash.match(/^\/agent-profile\/(.+)$/);
-  return match?.[1] || 'assistant';
+  return match?.[1] ? decodeURIComponent(match[1]) : 'assistant';
 }
 
 function parseDocIdFromHash(): string | undefined {
@@ -36,6 +36,13 @@ export function useHashRouter(): HashRouter {
     setPageRaw(p);
     window.history.pushState(null, '', `#/${p}`);
     persistLastActivePage(p);
+  }, []);
+
+  const setProfilePage = useCallback((agentName: string) => {
+    setProfileAgentName(agentName);
+    setPageRaw('agent-profile');
+    window.history.pushState(null, '', `#/agent-profile/${encodeURIComponent(agentName)}`);
+    persistLastActivePage('agent-profile');
   }, []);
 
   const resetToDefaultPage = useCallback(() => {
@@ -57,6 +64,7 @@ export function useHashRouter(): HashRouter {
   return {
     page,
     setPage,
+    setProfilePage,
     resetToDefaultPage,
     profileAgentName,
     setProfileAgentName,

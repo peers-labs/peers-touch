@@ -13,7 +13,8 @@ var agentOptions struct {
 			Server struct {
 				Subserver struct {
 					Agent struct {
-						Enabled bool `pconf:"enabled"`
+						Enabled bool   `pconf:"enabled"`
+						Path    string `pconf:"path"`
 						Memory  struct {
 							Embedding struct {
 								ProviderID string `pconf:"provider_id"`
@@ -34,6 +35,7 @@ func (p *agentPlugin) Name() string { return "agent" }
 
 func (p *agentPlugin) Options() []option.Option {
 	return []option.Option{
+		WithPath(agentOptions.Peers.Node.Server.Subserver.Agent.Path),
 		WithDBName("agent"),
 	}
 }

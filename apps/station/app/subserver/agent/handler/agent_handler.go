@@ -2,6 +2,8 @@ package handler
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
@@ -12,10 +14,11 @@ import (
 
 type AgentHandlers struct {
 	agentService *service.AgentService
+	eventBus     domain.EventBus
 }
 
-func NewAgentHandlers(agentService *service.AgentService) *AgentHandlers {
-	return &AgentHandlers{agentService: agentService}
+func NewAgentHandlers(agentService *service.AgentService, eventBus domain.EventBus) *AgentHandlers {
+	return &AgentHandlers{agentService: agentService, eventBus: eventBus}
 }
 
 func (h *AgentHandlers) HandleListAgents(ctx context.Context, req *model.ListAgentsRequest) (*model.ListAgentsResponse, error) {
@@ -61,6 +64,7 @@ func (h *AgentHandlers) HandleCreateAgent(ctx context.Context, req *model.Create
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
+	h.publishAgentEvent(ctx, domain.EventTypeAgentCreated, agent)
 	return &model.CreateAgentResponse{Agent: domainAgentToProto(agent)}, nil
 }
 
@@ -80,6 +84,7 @@ func (h *AgentHandlers) HandleUpdateAgent(ctx context.Context, req *model.Update
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
+	h.publishAgentEvent(ctx, domain.EventTypeAgentUpdated, agent)
 	return &model.UpdateAgentResponse{Agent: domainAgentToProto(agent)}, nil
 }
 
@@ -87,7 +92,24 @@ func (h *AgentHandlers) HandleDeleteAgent(ctx context.Context, req *model.Delete
 	if err := h.agentService.DeleteAgent(ctx, subjectActorID(ctx), req.GetAgentId()); err != nil {
 		return nil, toHandlerError(err)
 	}
+	h.publishAgentEvent(ctx, domain.EventTypeAgentDeleted, &domain.Agent{AgentID: req.GetAgentId(), OwnerActorID: subjectActorID(ctx)})
 	return &model.DeleteAgentResponse{Success: true}, nil
+}
+
+func (h *AgentHandlers) publishAgentEvent(ctx context.Context, eventType domain.EventType, agent *domain.Agent) {
+	if h.eventBus == nil || agent == nil {
+		return
+	}
+	_ = h.eventBus.Publish(ctx, domain.DomainEvent{
+		EventID:    fmt.Sprintf("evt-%d", time.Now().UnixNano()),
+		EventType:  string(eventType),
+		OccurredAt: time.Now(),
+		ActorID:    agent.OwnerActorID,
+		Payload:    domainAgentToProto(agent),
+		Metadata: map[string]string{
+			"agent_id": agent.AgentID,
+		},
+	})
 }
 
 func subjectActorID(ctx context.Context) string {

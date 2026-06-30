@@ -298,11 +298,7 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
 /// Land a granted login: extract the token + actor identity, persist the
 /// session, download the avatar, and return the rich auth payload. Shared by
 /// the one-shot `auth_login` and the interactive `access_submit_login`.
-fn finish_login(
-    data: Value,
-    state: &AppState,
-    command: &str,
-) -> AppResult<AuthSessionPayload> {
+fn finish_login(data: Value, state: &AppState, command: &str) -> AppResult<AuthSessionPayload> {
     let tokens = value_field(&data, "tokens", "tokens")
         .cloned()
         .unwrap_or(Value::Null);

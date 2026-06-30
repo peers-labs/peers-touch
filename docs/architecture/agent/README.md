@@ -1,8 +1,8 @@
 # Agent 架构
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-04-11 | **Updated**: 2026-06-16
+> **Version**: v1.2
+> **Created**: 2026-04-11 | **Updated**: 2026-06-25
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `apps/station/app/subserver/agent/`, `apps/desktop/src-tauri/src/application/agent_turn/`, `apps/desktop/src-tauri/src/application/mcp/`
 
@@ -32,6 +32,7 @@
 
 | 文档 | 定位 |
 |---|---|
+| [agent-canvas-orchestration.md](./agent-canvas-orchestration.md) | **当前 Agent 编排正式设计** — 以 Agent Canvas 为入口、GoalKeeper 为目标锚点、EngineMatcher/RunPlan/AutonomyController 为运行内核的多 Agent 编排架构 |
 | [agent-lobehub-blueprint.md](./agent-lobehub-blueprint.md) | **当前 Agent 重构正式设计** — 以 LobeHub 为蓝本的 UI/UX、Tool、MCP、Skill、后端能力映射与目标架构 |
 | [agent-self-growth-architecture.md](./agent-self-growth-architecture.md) | **peers-touch 架构设计** — 自成长生命周期、领域对象、服务拓扑、Turn 执行闭环、成长评估机制 |
 | [agent-memory-architecture.md](./agent-memory-architecture.md) | **Agent Memory 架构** — Memory 分层、存储、检索、反馈与可视化 |
@@ -63,6 +64,10 @@
 
 ## 5. 核心结论
 
+- Agent 编排 = **Agent Canvas 入口 + GoalKeeper 目标守卫 + EngineMatcher 工作引擎匹配 + RunPlan 可执行计划 + AutonomyController 自治推进 + Scheduler 调度 + Reducer 结果收口**。
+- 编排入口必须保留现有 Agent 页能力：用户把已有 Agent 拖入 Canvas，输入协作目标，系统自动匹配工作引擎并运行。
+- 编排内核必须避免“每一步都问继续”：阶段通过退出条件后自动推进，只有需求冲突、高风险副作用、缺失关键上下文、预算/重试超限才升级给用户。
+- GoalKeeper 是编排内核一等模块：负责 GoalContract、non-goals、acceptance coverage、drift detection 和 final coverage check。
 - Agent 自成长 = **知识获取 + 知识存储 + 知识应用 + 知识评估 + 知识修正** 的闭环。
 - 成长可度量：Growth Score 基于 turn outcome 的行为度量（成功率、反馈比例、skill 效果、memory 信任健康度），不是 CRUD 计数器。
 - 成长可归因：TurnTrace 记录每次 turn 实际使用的 memory snapshot 和 skills，反馈精准归因到具体知识资产。

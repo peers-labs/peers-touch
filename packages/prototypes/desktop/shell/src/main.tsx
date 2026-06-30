@@ -1,9 +1,9 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { WelcomeLoginPrototype } from './WelcomeLoginPrototype';
+import { DesktopShell } from './Shell';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <WelcomeLoginPrototype />
+    <DesktopShell initialPage="agent" />
   </StrictMode>,
 );

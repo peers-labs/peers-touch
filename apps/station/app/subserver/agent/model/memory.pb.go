@@ -22,6 +22,64 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type MemoryLayer int32
+
+const (
+	MemoryLayer_MEMORY_LAYER_UNSPECIFIED MemoryLayer = 0
+	MemoryLayer_MEMORY_LAYER_IDENTITY    MemoryLayer = 1
+	MemoryLayer_MEMORY_LAYER_PREFERENCE  MemoryLayer = 2
+	MemoryLayer_MEMORY_LAYER_CONTEXT     MemoryLayer = 3
+	MemoryLayer_MEMORY_LAYER_EXPERIENCE  MemoryLayer = 4
+	MemoryLayer_MEMORY_LAYER_ACTIVITY    MemoryLayer = 5
+)
+
+// Enum value maps for MemoryLayer.
+var (
+	MemoryLayer_name = map[int32]string{
+		0: "MEMORY_LAYER_UNSPECIFIED",
+		1: "MEMORY_LAYER_IDENTITY",
+		2: "MEMORY_LAYER_PREFERENCE",
+		3: "MEMORY_LAYER_CONTEXT",
+		4: "MEMORY_LAYER_EXPERIENCE",
+		5: "MEMORY_LAYER_ACTIVITY",
+	}
+	MemoryLayer_value = map[string]int32{
+		"MEMORY_LAYER_UNSPECIFIED": 0,
+		"MEMORY_LAYER_IDENTITY":    1,
+		"MEMORY_LAYER_PREFERENCE":  2,
+		"MEMORY_LAYER_CONTEXT":     3,
+		"MEMORY_LAYER_EXPERIENCE":  4,
+		"MEMORY_LAYER_ACTIVITY":    5,
+	}
+)
+
+func (x MemoryLayer) Enum() *MemoryLayer {
+	p := new(MemoryLayer)
+	*p = x
+	return p
+}
+
+func (x MemoryLayer) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MemoryLayer) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_agent_memory_proto_enumTypes[0].Descriptor()
+}
+
+func (MemoryLayer) Type() protoreflect.EnumType {
+	return &file_domain_agent_memory_proto_enumTypes[0]
+}
+
+func (x MemoryLayer) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use MemoryLayer.Descriptor instead.
+func (MemoryLayer) EnumDescriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{0}
+}
+
 type MemoryItem struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	MemoryId       string                 `protobuf:"bytes,1,opt,name=memory_id,json=memoryId,proto3" json:"memory_id,omitempty"`
@@ -31,7 +89,7 @@ type MemoryItem struct {
 	SourceTurnId   string                 `protobuf:"bytes,5,opt,name=source_turn_id,json=sourceTurnId,proto3" json:"source_turn_id,omitempty"`
 	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt      *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	Layer          string                 `protobuf:"bytes,8,opt,name=layer,proto3" json:"layer,omitempty"`
+	Layer          MemoryLayer            `protobuf:"varint,8,opt,name=layer,proto3,enum=peers_touch.model.agent.v1.MemoryLayer" json:"layer,omitempty"`
 	SessionId      string                 `protobuf:"bytes,9,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Source         string                 `protobuf:"bytes,10,opt,name=source,proto3" json:"source,omitempty"`
 	Summary        string                 `protobuf:"bytes,11,opt,name=summary,proto3" json:"summary,omitempty"`
@@ -125,11 +183,11 @@ func (x *MemoryItem) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
-func (x *MemoryItem) GetLayer() string {
+func (x *MemoryItem) GetLayer() MemoryLayer {
 	if x != nil {
 		return x.Layer
 	}
-	return ""
+	return MemoryLayer_MEMORY_LAYER_UNSPECIFIED
 }
 
 func (x *MemoryItem) GetSessionId() string {
@@ -290,7 +348,7 @@ type ListMemoriesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	Target        string                 `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
-	Layer         string                 `protobuf:"bytes,3,opt,name=layer,proto3" json:"layer,omitempty"`
+	Layer         MemoryLayer            `protobuf:"varint,3,opt,name=layer,proto3,enum=peers_touch.model.agent.v1.MemoryLayer" json:"layer,omitempty"`
 	Page          int32                  `protobuf:"varint,4,opt,name=page,proto3" json:"page,omitempty"`
 	PageSize      int32                  `protobuf:"varint,5,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	OrderBy       string                 `protobuf:"bytes,6,opt,name=order_by,json=orderBy,proto3" json:"order_by,omitempty"`
@@ -345,11 +403,11 @@ func (x *ListMemoriesRequest) GetTarget() string {
 	return ""
 }
 
-func (x *ListMemoriesRequest) GetLayer() string {
+func (x *ListMemoriesRequest) GetLayer() MemoryLayer {
 	if x != nil {
 		return x.Layer
 	}
-	return ""
+	return MemoryLayer_MEMORY_LAYER_UNSPECIFIED
 }
 
 func (x *ListMemoriesRequest) GetPage() int32 {
@@ -542,7 +600,7 @@ type WriteMemoryRequest struct {
 	Content       string                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
 	OldContent    string                 `protobuf:"bytes,5,opt,name=old_content,json=oldContent,proto3" json:"old_content,omitempty"`
 	SourceTurnId  string                 `protobuf:"bytes,6,opt,name=source_turn_id,json=sourceTurnId,proto3" json:"source_turn_id,omitempty"`
-	Layer         string                 `protobuf:"bytes,7,opt,name=layer,proto3" json:"layer,omitempty"`
+	Layer         MemoryLayer            `protobuf:"varint,7,opt,name=layer,proto3,enum=peers_touch.model.agent.v1.MemoryLayer" json:"layer,omitempty"`
 	SessionId     string                 `protobuf:"bytes,8,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Summary       string                 `protobuf:"bytes,9,opt,name=summary,proto3" json:"summary,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -621,11 +679,11 @@ func (x *WriteMemoryRequest) GetSourceTurnId() string {
 	return ""
 }
 
-func (x *WriteMemoryRequest) GetLayer() string {
+func (x *WriteMemoryRequest) GetLayer() MemoryLayer {
 	if x != nil {
 		return x.Layer
 	}
-	return ""
+	return MemoryLayer_MEMORY_LAYER_UNSPECIFIED
 }
 
 func (x *WriteMemoryRequest) GetSessionId() string {
@@ -865,7 +923,7 @@ func (x *ScoredMemory) GetExplain() *MemoryScoreExplain {
 type SearchMemoriesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Query         string                 `protobuf:"bytes,1,opt,name=query,proto3" json:"query,omitempty"`
-	Layers        []string               `protobuf:"bytes,2,rep,name=layers,proto3" json:"layers,omitempty"`
+	Layers        []MemoryLayer          `protobuf:"varint,2,rep,packed,name=layers,proto3,enum=peers_touch.model.agent.v1.MemoryLayer" json:"layers,omitempty"`
 	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	AgentId       string                 `protobuf:"bytes,4,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	Since         string                 `protobuf:"bytes,5,opt,name=since,proto3" json:"since,omitempty"`
@@ -913,7 +971,7 @@ func (x *SearchMemoriesRequest) GetQuery() string {
 	return ""
 }
 
-func (x *SearchMemoriesRequest) GetLayers() []string {
+func (x *SearchMemoriesRequest) GetLayers() []MemoryLayer {
 	if x != nil {
 		return x.Layers
 	}
@@ -1265,7 +1323,7 @@ type MemoryEvent struct {
 	MemoryId      string                 `protobuf:"bytes,3,opt,name=memory_id,json=memoryId,proto3" json:"memory_id,omitempty"`
 	SessionId     string                 `protobuf:"bytes,4,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	AgentId       string                 `protobuf:"bytes,5,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	Layer         string                 `protobuf:"bytes,6,opt,name=layer,proto3" json:"layer,omitempty"`
+	Layer         MemoryLayer            `protobuf:"varint,6,opt,name=layer,proto3,enum=peers_touch.model.agent.v1.MemoryLayer" json:"layer,omitempty"`
 	DetailJson    string                 `protobuf:"bytes,7,opt,name=detail_json,json=detailJson,proto3" json:"detail_json,omitempty"`
 	LatencyMs     int64                  `protobuf:"varint,8,opt,name=latency_ms,json=latencyMs,proto3" json:"latency_ms,omitempty"`
 	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
@@ -1338,11 +1396,11 @@ func (x *MemoryEvent) GetAgentId() string {
 	return ""
 }
 
-func (x *MemoryEvent) GetLayer() string {
+func (x *MemoryEvent) GetLayer() MemoryLayer {
 	if x != nil {
 		return x.Layer
 	}
-	return ""
+	return MemoryLayer_MEMORY_LAYER_UNSPECIFIED
 }
 
 func (x *MemoryEvent) GetDetailJson() string {
@@ -2242,7 +2300,7 @@ var File_domain_agent_memory_proto protoreflect.FileDescriptor
 
 const file_domain_agent_memory_proto_rawDesc = "" +
 	"\n" +
-	"\x19domain/agent/memory.proto\x12\x1apeers_touch.model.agent.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x88\x05\n" +
+	"\x19domain/agent/memory.proto\x12\x1apeers_touch.model.agent.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb1\x05\n" +
 	"\n" +
 	"MemoryItem\x12\x1b\n" +
 	"\tmemory_id\x18\x01 \x01(\tR\bmemoryId\x12\x19\n" +
@@ -2253,8 +2311,8 @@ const file_domain_agent_memory_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x14\n" +
-	"\x05layer\x18\b \x01(\tR\x05layer\x12\x1d\n" +
+	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12=\n" +
+	"\x05layer\x18\b \x01(\x0e2'.peers_touch.model.agent.v1.MemoryLayerR\x05layer\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\t \x01(\tR\tsessionId\x12\x16\n" +
 	"\x06source\x18\n" +
@@ -2275,11 +2333,11 @@ const file_domain_agent_memory_proto_rawDesc = "" +
 	"\vcaptured_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"capturedAt\x12'\n" +
 	"\x0fpersona_content\x18\x05 \x01(\tR\x0epersonaContent\x12M\n" +
-	"\x0erelevant_items\x18\x06 \x03(\v2&.peers_touch.model.agent.v1.MemoryItemR\rrelevantItems\"\xee\x01\n" +
+	"\x0erelevant_items\x18\x06 \x03(\v2&.peers_touch.model.agent.v1.MemoryItemR\rrelevantItems\"\x97\x02\n" +
 	"\x13ListMemoriesRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x16\n" +
-	"\x06target\x18\x02 \x01(\tR\x06target\x12\x14\n" +
-	"\x05layer\x18\x03 \x01(\tR\x05layer\x12\x12\n" +
+	"\x06target\x18\x02 \x01(\tR\x06target\x12=\n" +
+	"\x05layer\x18\x03 \x01(\x0e2'.peers_touch.model.agent.v1.MemoryLayerR\x05layer\x12\x12\n" +
 	"\x04page\x18\x04 \x01(\x05R\x04page\x12\x1b\n" +
 	"\tpage_size\x18\x05 \x01(\x05R\bpageSize\x12\x19\n" +
 	"\border_by\x18\x06 \x01(\tR\aorderBy\x12\x14\n" +
@@ -2292,7 +2350,7 @@ const file_domain_agent_memory_proto_rawDesc = "" +
 	"\x18GetMemorySnapshotRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\"c\n" +
 	"\x19GetMemorySnapshotResponse\x12F\n" +
-	"\bsnapshot\x18\x01 \x01(\v2*.peers_touch.model.agent.v1.MemorySnapshotR\bsnapshot\"\x8f\x02\n" +
+	"\bsnapshot\x18\x01 \x01(\v2*.peers_touch.model.agent.v1.MemorySnapshotR\bsnapshot\"\xb8\x02\n" +
 	"\x12WriteMemoryRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\tR\x06target\x12\x16\n" +
@@ -2300,8 +2358,8 @@ const file_domain_agent_memory_proto_rawDesc = "" +
 	"\acontent\x18\x04 \x01(\tR\acontent\x12\x1f\n" +
 	"\vold_content\x18\x05 \x01(\tR\n" +
 	"oldContent\x12$\n" +
-	"\x0esource_turn_id\x18\x06 \x01(\tR\fsourceTurnId\x12\x14\n" +
-	"\x05layer\x18\a \x01(\tR\x05layer\x12\x1d\n" +
+	"\x0esource_turn_id\x18\x06 \x01(\tR\fsourceTurnId\x12=\n" +
+	"\x05layer\x18\a \x01(\x0e2'.peers_touch.model.agent.v1.MemoryLayerR\x05layer\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\b \x01(\tR\tsessionId\x12\x18\n" +
 	"\asummary\x18\t \x01(\tR\asummary\"\x85\x01\n" +
@@ -2323,10 +2381,10 @@ const file_domain_agent_memory_proto_rawDesc = "" +
 	"\fScoredMemory\x12>\n" +
 	"\x06memory\x18\x01 \x01(\v2&.peers_touch.model.agent.v1.MemoryItemR\x06memory\x12\x14\n" +
 	"\x05score\x18\x02 \x01(\x01R\x05score\x12H\n" +
-	"\aexplain\x18\x03 \x01(\v2..peers_touch.model.agent.v1.MemoryScoreExplainR\aexplain\"\xd2\x01\n" +
+	"\aexplain\x18\x03 \x01(\v2..peers_touch.model.agent.v1.MemoryScoreExplainR\aexplain\"\xfb\x01\n" +
 	"\x15SearchMemoriesRequest\x12\x14\n" +
-	"\x05query\x18\x01 \x01(\tR\x05query\x12\x16\n" +
-	"\x06layers\x18\x02 \x03(\tR\x06layers\x12\x14\n" +
+	"\x05query\x18\x01 \x01(\tR\x05query\x12?\n" +
+	"\x06layers\x18\x02 \x03(\x0e2'.peers_touch.model.agent.v1.MemoryLayerR\x06layers\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x19\n" +
 	"\bagent_id\x18\x04 \x01(\tR\aagentId\x12\x14\n" +
 	"\x05since\x18\x05 \x01(\tR\x05since\x12\x14\n" +
@@ -2352,15 +2410,15 @@ const file_domain_agent_memory_proto_rawDesc = "" +
 	"\rstorage_bytes\x18\x03 \x01(\x03R\fstorageBytes\x1a:\n" +
 	"\fByLayerEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\"\x98\x02\n" +
+	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\"\xc1\x02\n" +
 	"\vMemoryEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x1b\n" +
 	"\tmemory_id\x18\x03 \x01(\tR\bmemoryId\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x04 \x01(\tR\tsessionId\x12\x19\n" +
-	"\bagent_id\x18\x05 \x01(\tR\aagentId\x12\x14\n" +
-	"\x05layer\x18\x06 \x01(\tR\x05layer\x12\x1f\n" +
+	"\bagent_id\x18\x05 \x01(\tR\aagentId\x12=\n" +
+	"\x05layer\x18\x06 \x01(\x0e2'.peers_touch.model.agent.v1.MemoryLayerR\x05layer\x12\x1f\n" +
 	"\vdetail_json\x18\a \x01(\tR\n" +
 	"detailJson\x12\x1d\n" +
 	"\n" +
@@ -2422,7 +2480,14 @@ const file_domain_agent_memory_proto_rawDesc = "" +
 	"\tmemory_id\x18\x01 \x01(\tR\bmemoryId\x12\x1f\n" +
 	"\vtrust_score\x18\x02 \x01(\x01R\n" +
 	"trustScore\x12\x18\n" +
-	"\ahelpful\x18\x03 \x01(\bR\ahelpfulBKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
+	"\ahelpful\x18\x03 \x01(\bR\ahelpful*\xb5\x01\n" +
+	"\vMemoryLayer\x12\x1c\n" +
+	"\x18MEMORY_LAYER_UNSPECIFIED\x10\x00\x12\x19\n" +
+	"\x15MEMORY_LAYER_IDENTITY\x10\x01\x12\x1b\n" +
+	"\x17MEMORY_LAYER_PREFERENCE\x10\x02\x12\x18\n" +
+	"\x14MEMORY_LAYER_CONTEXT\x10\x03\x12\x1b\n" +
+	"\x17MEMORY_LAYER_EXPERIENCE\x10\x04\x12\x19\n" +
+	"\x15MEMORY_LAYER_ACTIVITY\x10\x05BKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
 
 var (
 	file_domain_agent_memory_proto_rawDescOnce sync.Once
@@ -2436,71 +2501,78 @@ func file_domain_agent_memory_proto_rawDescGZIP() []byte {
 	return file_domain_agent_memory_proto_rawDescData
 }
 
+var file_domain_agent_memory_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_domain_agent_memory_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
 var file_domain_agent_memory_proto_goTypes = []any{
-	(*MemoryItem)(nil),                // 0: peers_touch.model.agent.v1.MemoryItem
-	(*MemorySnapshot)(nil),            // 1: peers_touch.model.agent.v1.MemorySnapshot
-	(*ListMemoriesRequest)(nil),       // 2: peers_touch.model.agent.v1.ListMemoriesRequest
-	(*ListMemoriesResponse)(nil),      // 3: peers_touch.model.agent.v1.ListMemoriesResponse
-	(*GetMemorySnapshotRequest)(nil),  // 4: peers_touch.model.agent.v1.GetMemorySnapshotRequest
-	(*GetMemorySnapshotResponse)(nil), // 5: peers_touch.model.agent.v1.GetMemorySnapshotResponse
-	(*WriteMemoryRequest)(nil),        // 6: peers_touch.model.agent.v1.WriteMemoryRequest
-	(*WriteMemoryResponse)(nil),       // 7: peers_touch.model.agent.v1.WriteMemoryResponse
-	(*MemoryScoreExplain)(nil),        // 8: peers_touch.model.agent.v1.MemoryScoreExplain
-	(*ScoredMemory)(nil),              // 9: peers_touch.model.agent.v1.ScoredMemory
-	(*SearchMemoriesRequest)(nil),     // 10: peers_touch.model.agent.v1.SearchMemoriesRequest
-	(*SearchMemoriesResponse)(nil),    // 11: peers_touch.model.agent.v1.SearchMemoriesResponse
-	(*MemoryPersona)(nil),             // 12: peers_touch.model.agent.v1.MemoryPersona
-	(*GetMemoryPersonaRequest)(nil),   // 13: peers_touch.model.agent.v1.GetMemoryPersonaRequest
-	(*GetMemoryPersonaResponse)(nil),  // 14: peers_touch.model.agent.v1.GetMemoryPersonaResponse
-	(*GetMemoryStatsRequest)(nil),     // 15: peers_touch.model.agent.v1.GetMemoryStatsRequest
-	(*GetMemoryStatsResponse)(nil),    // 16: peers_touch.model.agent.v1.GetMemoryStatsResponse
-	(*MemoryEvent)(nil),               // 17: peers_touch.model.agent.v1.MemoryEvent
-	(*ListMemoryEventsRequest)(nil),   // 18: peers_touch.model.agent.v1.ListMemoryEventsRequest
-	(*ListMemoryEventsResponse)(nil),  // 19: peers_touch.model.agent.v1.ListMemoryEventsResponse
-	(*DeleteMemoryRequest)(nil),       // 20: peers_touch.model.agent.v1.DeleteMemoryRequest
-	(*DeleteMemoryResponse)(nil),      // 21: peers_touch.model.agent.v1.DeleteMemoryResponse
-	(*GetMemoryRequest)(nil),          // 22: peers_touch.model.agent.v1.GetMemoryRequest
-	(*GetMemoryResponse)(nil),         // 23: peers_touch.model.agent.v1.GetMemoryResponse
-	(*ExportMemoriesRequest)(nil),     // 24: peers_touch.model.agent.v1.ExportMemoriesRequest
-	(*ExportMemoriesResponse)(nil),    // 25: peers_touch.model.agent.v1.ExportMemoriesResponse
-	(*ImportMemoriesRequest)(nil),     // 26: peers_touch.model.agent.v1.ImportMemoriesRequest
-	(*ImportMemoriesResponse)(nil),    // 27: peers_touch.model.agent.v1.ImportMemoriesResponse
-	(*EmbeddingStatusRequest)(nil),    // 28: peers_touch.model.agent.v1.EmbeddingStatusRequest
-	(*EmbeddingStatusResponse)(nil),   // 29: peers_touch.model.agent.v1.EmbeddingStatusResponse
-	(*ReEmbedRequest)(nil),            // 30: peers_touch.model.agent.v1.ReEmbedRequest
-	(*ReEmbedResponse)(nil),           // 31: peers_touch.model.agent.v1.ReEmbedResponse
-	(*MemoryFeedbackRequest)(nil),     // 32: peers_touch.model.agent.v1.MemoryFeedbackRequest
-	(*MemoryFeedbackResponse)(nil),    // 33: peers_touch.model.agent.v1.MemoryFeedbackResponse
-	nil,                               // 34: peers_touch.model.agent.v1.GetMemoryStatsResponse.ByLayerEntry
-	(*timestamppb.Timestamp)(nil),     // 35: google.protobuf.Timestamp
+	(MemoryLayer)(0),                  // 0: peers_touch.model.agent.v1.MemoryLayer
+	(*MemoryItem)(nil),                // 1: peers_touch.model.agent.v1.MemoryItem
+	(*MemorySnapshot)(nil),            // 2: peers_touch.model.agent.v1.MemorySnapshot
+	(*ListMemoriesRequest)(nil),       // 3: peers_touch.model.agent.v1.ListMemoriesRequest
+	(*ListMemoriesResponse)(nil),      // 4: peers_touch.model.agent.v1.ListMemoriesResponse
+	(*GetMemorySnapshotRequest)(nil),  // 5: peers_touch.model.agent.v1.GetMemorySnapshotRequest
+	(*GetMemorySnapshotResponse)(nil), // 6: peers_touch.model.agent.v1.GetMemorySnapshotResponse
+	(*WriteMemoryRequest)(nil),        // 7: peers_touch.model.agent.v1.WriteMemoryRequest
+	(*WriteMemoryResponse)(nil),       // 8: peers_touch.model.agent.v1.WriteMemoryResponse
+	(*MemoryScoreExplain)(nil),        // 9: peers_touch.model.agent.v1.MemoryScoreExplain
+	(*ScoredMemory)(nil),              // 10: peers_touch.model.agent.v1.ScoredMemory
+	(*SearchMemoriesRequest)(nil),     // 11: peers_touch.model.agent.v1.SearchMemoriesRequest
+	(*SearchMemoriesResponse)(nil),    // 12: peers_touch.model.agent.v1.SearchMemoriesResponse
+	(*MemoryPersona)(nil),             // 13: peers_touch.model.agent.v1.MemoryPersona
+	(*GetMemoryPersonaRequest)(nil),   // 14: peers_touch.model.agent.v1.GetMemoryPersonaRequest
+	(*GetMemoryPersonaResponse)(nil),  // 15: peers_touch.model.agent.v1.GetMemoryPersonaResponse
+	(*GetMemoryStatsRequest)(nil),     // 16: peers_touch.model.agent.v1.GetMemoryStatsRequest
+	(*GetMemoryStatsResponse)(nil),    // 17: peers_touch.model.agent.v1.GetMemoryStatsResponse
+	(*MemoryEvent)(nil),               // 18: peers_touch.model.agent.v1.MemoryEvent
+	(*ListMemoryEventsRequest)(nil),   // 19: peers_touch.model.agent.v1.ListMemoryEventsRequest
+	(*ListMemoryEventsResponse)(nil),  // 20: peers_touch.model.agent.v1.ListMemoryEventsResponse
+	(*DeleteMemoryRequest)(nil),       // 21: peers_touch.model.agent.v1.DeleteMemoryRequest
+	(*DeleteMemoryResponse)(nil),      // 22: peers_touch.model.agent.v1.DeleteMemoryResponse
+	(*GetMemoryRequest)(nil),          // 23: peers_touch.model.agent.v1.GetMemoryRequest
+	(*GetMemoryResponse)(nil),         // 24: peers_touch.model.agent.v1.GetMemoryResponse
+	(*ExportMemoriesRequest)(nil),     // 25: peers_touch.model.agent.v1.ExportMemoriesRequest
+	(*ExportMemoriesResponse)(nil),    // 26: peers_touch.model.agent.v1.ExportMemoriesResponse
+	(*ImportMemoriesRequest)(nil),     // 27: peers_touch.model.agent.v1.ImportMemoriesRequest
+	(*ImportMemoriesResponse)(nil),    // 28: peers_touch.model.agent.v1.ImportMemoriesResponse
+	(*EmbeddingStatusRequest)(nil),    // 29: peers_touch.model.agent.v1.EmbeddingStatusRequest
+	(*EmbeddingStatusResponse)(nil),   // 30: peers_touch.model.agent.v1.EmbeddingStatusResponse
+	(*ReEmbedRequest)(nil),            // 31: peers_touch.model.agent.v1.ReEmbedRequest
+	(*ReEmbedResponse)(nil),           // 32: peers_touch.model.agent.v1.ReEmbedResponse
+	(*MemoryFeedbackRequest)(nil),     // 33: peers_touch.model.agent.v1.MemoryFeedbackRequest
+	(*MemoryFeedbackResponse)(nil),    // 34: peers_touch.model.agent.v1.MemoryFeedbackResponse
+	nil,                               // 35: peers_touch.model.agent.v1.GetMemoryStatsResponse.ByLayerEntry
+	(*timestamppb.Timestamp)(nil),     // 36: google.protobuf.Timestamp
 }
 var file_domain_agent_memory_proto_depIdxs = []int32{
-	35, // 0: peers_touch.model.agent.v1.MemoryItem.created_at:type_name -> google.protobuf.Timestamp
-	35, // 1: peers_touch.model.agent.v1.MemoryItem.updated_at:type_name -> google.protobuf.Timestamp
-	35, // 2: peers_touch.model.agent.v1.MemoryItem.last_accessed_at:type_name -> google.protobuf.Timestamp
-	35, // 3: peers_touch.model.agent.v1.MemorySnapshot.captured_at:type_name -> google.protobuf.Timestamp
-	0,  // 4: peers_touch.model.agent.v1.MemorySnapshot.relevant_items:type_name -> peers_touch.model.agent.v1.MemoryItem
-	0,  // 5: peers_touch.model.agent.v1.ListMemoriesResponse.items:type_name -> peers_touch.model.agent.v1.MemoryItem
-	1,  // 6: peers_touch.model.agent.v1.GetMemorySnapshotResponse.snapshot:type_name -> peers_touch.model.agent.v1.MemorySnapshot
-	0,  // 7: peers_touch.model.agent.v1.WriteMemoryResponse.item:type_name -> peers_touch.model.agent.v1.MemoryItem
-	0,  // 8: peers_touch.model.agent.v1.ScoredMemory.memory:type_name -> peers_touch.model.agent.v1.MemoryItem
-	8,  // 9: peers_touch.model.agent.v1.ScoredMemory.explain:type_name -> peers_touch.model.agent.v1.MemoryScoreExplain
-	9,  // 10: peers_touch.model.agent.v1.SearchMemoriesResponse.results:type_name -> peers_touch.model.agent.v1.ScoredMemory
-	35, // 11: peers_touch.model.agent.v1.MemoryPersona.updated_at:type_name -> google.protobuf.Timestamp
-	12, // 12: peers_touch.model.agent.v1.GetMemoryPersonaResponse.persona:type_name -> peers_touch.model.agent.v1.MemoryPersona
-	34, // 13: peers_touch.model.agent.v1.GetMemoryStatsResponse.by_layer:type_name -> peers_touch.model.agent.v1.GetMemoryStatsResponse.ByLayerEntry
-	35, // 14: peers_touch.model.agent.v1.MemoryEvent.timestamp:type_name -> google.protobuf.Timestamp
-	17, // 15: peers_touch.model.agent.v1.ListMemoryEventsResponse.events:type_name -> peers_touch.model.agent.v1.MemoryEvent
-	0,  // 16: peers_touch.model.agent.v1.GetMemoryResponse.item:type_name -> peers_touch.model.agent.v1.MemoryItem
-	0,  // 17: peers_touch.model.agent.v1.ExportMemoriesResponse.memories:type_name -> peers_touch.model.agent.v1.MemoryItem
-	12, // 18: peers_touch.model.agent.v1.ExportMemoriesResponse.persona:type_name -> peers_touch.model.agent.v1.MemoryPersona
-	25, // 19: peers_touch.model.agent.v1.ImportMemoriesRequest.data:type_name -> peers_touch.model.agent.v1.ExportMemoriesResponse
-	20, // [20:20] is the sub-list for method output_type
-	20, // [20:20] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	36, // 0: peers_touch.model.agent.v1.MemoryItem.created_at:type_name -> google.protobuf.Timestamp
+	36, // 1: peers_touch.model.agent.v1.MemoryItem.updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 2: peers_touch.model.agent.v1.MemoryItem.layer:type_name -> peers_touch.model.agent.v1.MemoryLayer
+	36, // 3: peers_touch.model.agent.v1.MemoryItem.last_accessed_at:type_name -> google.protobuf.Timestamp
+	36, // 4: peers_touch.model.agent.v1.MemorySnapshot.captured_at:type_name -> google.protobuf.Timestamp
+	1,  // 5: peers_touch.model.agent.v1.MemorySnapshot.relevant_items:type_name -> peers_touch.model.agent.v1.MemoryItem
+	0,  // 6: peers_touch.model.agent.v1.ListMemoriesRequest.layer:type_name -> peers_touch.model.agent.v1.MemoryLayer
+	1,  // 7: peers_touch.model.agent.v1.ListMemoriesResponse.items:type_name -> peers_touch.model.agent.v1.MemoryItem
+	2,  // 8: peers_touch.model.agent.v1.GetMemorySnapshotResponse.snapshot:type_name -> peers_touch.model.agent.v1.MemorySnapshot
+	0,  // 9: peers_touch.model.agent.v1.WriteMemoryRequest.layer:type_name -> peers_touch.model.agent.v1.MemoryLayer
+	1,  // 10: peers_touch.model.agent.v1.WriteMemoryResponse.item:type_name -> peers_touch.model.agent.v1.MemoryItem
+	1,  // 11: peers_touch.model.agent.v1.ScoredMemory.memory:type_name -> peers_touch.model.agent.v1.MemoryItem
+	9,  // 12: peers_touch.model.agent.v1.ScoredMemory.explain:type_name -> peers_touch.model.agent.v1.MemoryScoreExplain
+	0,  // 13: peers_touch.model.agent.v1.SearchMemoriesRequest.layers:type_name -> peers_touch.model.agent.v1.MemoryLayer
+	10, // 14: peers_touch.model.agent.v1.SearchMemoriesResponse.results:type_name -> peers_touch.model.agent.v1.ScoredMemory
+	36, // 15: peers_touch.model.agent.v1.MemoryPersona.updated_at:type_name -> google.protobuf.Timestamp
+	13, // 16: peers_touch.model.agent.v1.GetMemoryPersonaResponse.persona:type_name -> peers_touch.model.agent.v1.MemoryPersona
+	35, // 17: peers_touch.model.agent.v1.GetMemoryStatsResponse.by_layer:type_name -> peers_touch.model.agent.v1.GetMemoryStatsResponse.ByLayerEntry
+	0,  // 18: peers_touch.model.agent.v1.MemoryEvent.layer:type_name -> peers_touch.model.agent.v1.MemoryLayer
+	36, // 19: peers_touch.model.agent.v1.MemoryEvent.timestamp:type_name -> google.protobuf.Timestamp
+	18, // 20: peers_touch.model.agent.v1.ListMemoryEventsResponse.events:type_name -> peers_touch.model.agent.v1.MemoryEvent
+	1,  // 21: peers_touch.model.agent.v1.GetMemoryResponse.item:type_name -> peers_touch.model.agent.v1.MemoryItem
+	1,  // 22: peers_touch.model.agent.v1.ExportMemoriesResponse.memories:type_name -> peers_touch.model.agent.v1.MemoryItem
+	13, // 23: peers_touch.model.agent.v1.ExportMemoriesResponse.persona:type_name -> peers_touch.model.agent.v1.MemoryPersona
+	26, // 24: peers_touch.model.agent.v1.ImportMemoriesRequest.data:type_name -> peers_touch.model.agent.v1.ExportMemoriesResponse
+	25, // [25:25] is the sub-list for method output_type
+	25, // [25:25] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_memory_proto_init() }
@@ -2513,13 +2585,14 @@ func file_domain_agent_memory_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_agent_memory_proto_rawDesc), len(file_domain_agent_memory_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   35,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_domain_agent_memory_proto_goTypes,
 		DependencyIndexes: file_domain_agent_memory_proto_depIdxs,
+		EnumInfos:         file_domain_agent_memory_proto_enumTypes,
 		MessageInfos:      file_domain_agent_memory_proto_msgTypes,
 	}.Build()
 	File_domain_agent_memory_proto = out.File
