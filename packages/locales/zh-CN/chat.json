@@ -717,5 +717,7 @@
   "chat.welcome.status.toolsEnabled": "工具已启用",
   "chat.welcome.status.toolsReady": "工具就绪",
   "chat.welcome.capability.memoryDisabledShort": "记忆",
-  "chat.welcome.capability.workspaceOptional": "工作区"
+  "chat.welcome.capability.workspaceOptional": "工作区",
+  "chat.model.select": "选择模型",
+  "chat.input.slashCommand": "斜杠命令"
 }
