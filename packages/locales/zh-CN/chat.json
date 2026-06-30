@@ -4,7 +4,6 @@
   "chat.header.share": "分享",
   "chat.header.more": "更多",
   "chat.header.fullWidth": "全宽显示",
-
   "chat.welcome.defaultTitle": "Peers Touch",
   "chat.welcome.defaultDescription": "你的默认私人 AI 助手。",
   "chat.welcome.fallbackText": "提问、创作或开始一项任务。",
@@ -27,7 +26,6 @@
   "chat.welcome.capability.disabled": "已关闭",
   "chat.welcome.capability.bound": "已绑定",
   "chat.welcome.capability.notConfigured": "未配置",
-
   "chat.welcome.quickAction.readFile": "读取文件",
   "chat.welcome.quickAction.readFilePrompt": "帮我读取并分析一个文件。",
   "chat.welcome.quickAction.runCommand": "执行命令",
@@ -36,7 +34,6 @@
   "chat.welcome.quickAction.webSearchPrompt": "搜索网上最新的新闻。",
   "chat.welcome.quickAction.summarize": "内容总结",
   "chat.welcome.quickAction.summarizePrompt": "帮我总结一些内容。",
-
   "chat.notebook.title": "笔记本",
   "chat.notebook.newPage": "新建页面",
   "chat.notebook.close": "关闭",
@@ -45,7 +42,6 @@
   "chat.notebook.empty": "暂无页面。助手可以在对话中将文档保存到这里，你也可以手动创建页面。",
   "chat.notebook.untitled": "无标题",
   "chat.notebook.delete": "删除",
-
   "chat.editor.back": "返回",
   "chat.editor.document": "文档",
   "chat.editor.save": "保存",
@@ -58,7 +54,6 @@
   "chat.editor.tab.preview": "预览",
   "chat.editor.noContent": "*暂无内容*",
   "chat.editor.contentPlaceholder": "在这里编写笔记... (支持 Markdown)",
-
   "chat.share.title": "分享对话",
   "chat.share.tab.text": "文本",
   "chat.share.tab.link": "链接",
@@ -78,16 +73,14 @@
   "chat.share.toast.createFailed": "创建分享链接失败",
   "chat.share.toast.revokeFailed": "撤销链接失败",
   "chat.share.defaultTitle": "对话",
-
-  "chat.input.placeholder": "提问、创作或开始任务... Enter 发送，Shift+Enter 换行",
+  "chat.input.placeholder": "问我任何事...",
   "chat.input.send": "发送",
   "chat.input.stop": "停止",
-
+  "chat.runtime.unavailable": "当前运行时未就绪，请检查模型凭据后重试。",
   "chat.input.webSearch": "网页搜索",
   "chat.input.memoryOn": "记忆（已开启）",
   "chat.input.memoryOff": "记忆（已关闭）",
   "chat.input.uploadFile": "上传文件",
-  "chat.input.voiceInput": "语音输入",
   "chat.input.voiceRecording": "录音中... {{seconds}}秒（点击停止）",
   "chat.input.toolsAndSkills": "工具与技能",
   "chat.input.showFormatting": "显示格式栏",
@@ -117,29 +110,16 @@
   "chat.input.command.tool": "工具命令",
   "chat.input.command.toolDesc": "要求智能体规划或调用可用工具。",
   "chat.input.reference.message": "{{role}} 消息",
-
   "chat.input.voice.unsupported": "当前浏览器不支持语音识别，请使用 Chrome 或 Edge。",
   "chat.input.voice.providerUnsupported": "当前 Desktop 运行时尚不可用该 Agent 配置的语音识别 Provider。",
   "chat.input.voice.micDenied": "麦克风权限被拒绝，请在浏览器设置中允许麦克风访问。",
-
   "chat.search.off": "关闭",
   "chat.search.offDesc": "禁用网页访问。",
   "chat.search.auto": "自动",
   "chat.search.autoDesc": "在需要时自动搜索网页。",
   "chat.search.useModelSearch": "使用模型内置网页搜索",
-
-  "chat.model.contextLength": "上下文长度",
-  "chat.model.config": "模型配置",
-  "chat.model.temperature": "温度",
-  "chat.model.topP": "Top P",
-  "chat.model.frequencyPenalty": "频率惩罚",
-  "chat.model.presencePenalty": "存在惩罚",
-  "chat.model.contextCompression": "上下文压缩",
-  "chat.model.tokensUnit": "{{count}} 个 token",
-
   "chat.history.limitMessages": "限制历史消息",
   "chat.history.messageCount": "消息条数",
-
   "chat.memory.disableTitle": "禁用记忆工具",
   "chat.memory.disableDesc": "AI 不会在此对话中搜索、创建或更新记忆。",
   "chat.memory.enableTitle": "启用记忆工具",
@@ -149,7 +129,6 @@
   "chat.memory.low": "低",
   "chat.memory.medium": "中",
   "chat.memory.high": "高",
-
   "chat.token.contextUsage": "上下文用量",
   "chat.token.systemPrompt": "系统提示词",
   "chat.token.chatMessages": "聊天消息",
@@ -157,7 +136,6 @@
   "chat.token.totalUsed": "已使用",
   "chat.token.overloaded": "已超载",
   "chat.token.remaining": "剩余",
-
   "chat.skills.title": "技能",
   "chat.skills.settings": "技能设置",
   "chat.skills.searchPlaceholder": "按名称、关键词或内容搜索技能...",
@@ -172,7 +150,6 @@
   "chat.skills.noContent": "暂无内容。",
   "chat.skills.loadFailed": "加载技能内容失败。",
   "chat.skills.loading": "加载中...",
-
   "chat.typoBar.bold": "加粗",
   "chat.typoBar.italic": "斜体",
   "chat.typoBar.underline": "下划线",
@@ -183,7 +160,6 @@
   "chat.typoBar.blockquote": "引用",
   "chat.typoBar.inlineCode": "行内代码",
   "chat.typoBar.codeBlock": "代码块",
-
   "chat.message.justNow": "刚刚",
   "chat.message.minutesAgo": "{{count}} 分钟前",
   "chat.message.minutesAgo_plural": "{{count}} 分钟前",
@@ -191,9 +167,8 @@
   "chat.message.hoursAgo_plural": "{{count}} 小时前",
   "chat.message.daysAgo": "{{count}} 天前",
   "chat.message.daysAgo_plural": "{{count}} 天前",
-  "chat.message.collapsed": "[消息已折叠 — 点击展开]",
+  "chat.message.collapsed": "消息已折叠，点击展开",
   "chat.message.imageTag": "（图片）",
-
   "chat.message.action.copy": "复制",
   "chat.message.action.edit": "编辑",
   "chat.message.action.delete": "删除",
@@ -210,21 +185,15 @@
   "chat.message.action.stopReading": "停止朗读",
   "chat.message.action.cancel": "取消",
   "chat.message.action.save": "保存",
-  "chat.message.voice.unsupported": "当前浏览器不支持语音输出。",
-  "chat.message.voice.failed": "语音输出失败。",
-
   "chat.message.toast.copied": "已复制",
   "chat.message.toast.codeExported": "代码块已导出",
   "chat.message.toast.savedToNotebook": "已保存到笔记本",
   "chat.message.toast.artifactCopied": "产物已复制",
   "chat.message.toast.artifactExported": "产物已导出",
-
   "chat.message.code.export": "导出代码",
   "chat.message.code.plainText": "纯文本",
   "chat.message.code.run": "安全运行",
   "chat.message.code.runPrompt": "仅在已配置的本地工具策略允许时运行这段 {{language}} 代码。请先说明计划，请求任何必要审批，然后通过安全本地工具路径执行。\n\n```{{language}}\n{{code}}\n```",
-  "chat.message.collapsed": "消息已折叠，点击展开",
-
   "chat.message.artifact.title": "产物",
   "chat.message.artifact.count": "{{count}} 项",
   "chat.message.artifact.count_plural": "{{count}} 项",
@@ -237,20 +206,17 @@
   "chat.message.artifact.kind.document": "文档",
   "chat.message.artifact.kind.diagram": "图表",
   "chat.message.artifact.kind.structured": "结构化数据",
-
   "chat.artifact.panel.title": "产物",
   "chat.artifact.panel.source": "由消息 {{id}} 生成",
   "chat.artifact.panel.copy": "复制",
   "chat.artifact.panel.export": "导出",
   "chat.artifact.panel.sourceAction": "跳转到来源",
   "chat.artifact.panel.close": "关闭",
-
   "chat.message.audit.regenerate": "已重新生成",
   "chat.message.audit.retry": "已重试",
   "chat.message.audit.branch": "已分支",
   "chat.message.audit.replacement": "替换回复",
   "chat.message.audit.replaced": "已被替换",
-
   "chat.message.thinking.title": "思考",
   "chat.message.thinking.usingTools": "正在使用 {{count}} 个工具…",
   "chat.message.thinking.usingTools_plural": "正在使用 {{count}} 个工具…",
@@ -261,9 +227,9 @@
   "chat.message.thinking.toolCount": "{{count}} 个工具",
   "chat.message.thinking.toolCount_plural": "{{count}} 个工具",
   "chat.message.thinking.lines": "{{count}} 行",
-
   "chat.message.diagnostics.title": "回合诊断",
-  "chat.message.diagnostics.failedTitle": "失败回合诊断",
+  "chat.message.diagnostics.failedTitle": "未完成",
+  "chat.message.errorTitle": "未完成",
   "chat.message.diagnostics.duration": "{{seconds}} 秒",
   "chat.message.diagnostics.error": "错误",
   "chat.message.diagnostics.thinking": "思考轨迹",
@@ -281,7 +247,6 @@
   "chat.message.diagnostics.disabled": "已禁用",
   "chat.message.diagnostics.none": "无",
   "chat.message.diagnostics.unknown": "未知",
-
   "chat.message.toolCall.arguments": "参数",
   "chat.message.toolCall.result": "结果",
   "chat.message.toolCall.server": "服务器",
@@ -303,7 +268,6 @@
   "chat.message.toolCall.showAll": "显示全部（{{count}} 字符）",
   "chat.message.toolCall.using": "正在使用 {{count}} 个工具…",
   "chat.message.toolCall.used": "已使用 {{count}} 个工具",
-
   "chat.message.delegation.title": "子 Agent 任务",
   "chat.message.delegation.summary": "{{count}} 个任务",
   "chat.message.delegation.tools": "工具：{{tools}}",
@@ -312,10 +276,8 @@
   "chat.message.delegation.status.failed": "失败",
   "chat.message.delegation.status.timeout": "超时",
   "chat.message.delegation.status.unknown": "未知",
-
   "chat.message.edit.cancel": "取消",
   "chat.message.edit.save": "保存",
-
   "chat.card.status.ok": "成功",
   "chat.card.status.error": "错误",
   "chat.card.status.info": "信息",
@@ -324,18 +286,15 @@
   "chat.card.type.channelSent": "已送达",
   "chat.card.type.system": "系统",
   "chat.card.viewDetails": "查看详情",
-
   "chat.composer.placeholder": "输入消息...",
   "chat.composer.send": "发送",
   "chat.composer.stop": "停止",
-
   "chat.session.searchPlaceholder": "搜索会话...",
   "chat.session.newSession": "新建会话",
   "chat.session.noMatch": "没有匹配的会话",
   "chat.session.empty": "暂无会话，开始新的聊天吧！",
   "chat.session.messageCount": "{{count}} 条消息",
   "chat.session.delete": "删除",
-
   "chat.social.detail.title": "详情",
   "chat.social.detail.members": "成员（{{count}}）",
   "chat.social.detail.membersLabel": "成员",
@@ -455,9 +414,18 @@
   "chat.social.detail.clearHistory": "清空历史",
   "chat.social.detail.clearHistoryDesc": "清空当前会话的可见历史，不删除对端消息。",
   "chat.social.detail.clearHistoryConfirmTitle": "清空可见历史？",
-  "chat.social.detail.clearHistoryConfirmBody": "这会在你的所有设备上隐藏该时间点之前的可见历史，不会删除对端消息。",
+  "chat.social.detail.clearHistoryConfirmBody": "这会在你的所有设备上隐藏该时间点之前的可见历史，不会删除对端消息。{{duration}} 内可以恢复，之后恢复入口会自动隐藏。",
+  "chat.social.detail.clearHistorySuccess": "历史已清空",
   "chat.social.detail.restoreHistory": "恢复历史",
-  "chat.social.detail.restoreHistoryDesc": "重新显示本机隐藏的消息。",
+  "chat.social.detail.restoreHistoryConfirmTitle": "恢复历史？",
+  "chat.social.detail.restoreHistoryConfirmBody": "将重新显示本会话已隐藏的历史消息。当前还剩 {{remaining}} 可恢复。",
+  "chat.social.detail.restoreHistoryDesc": "清空后 24 小时内可以恢复，过期后恢复入口会自动隐藏。",
+  "chat.social.detail.restoreHistoryExpired": "历史已清空，恢复窗口已结束。",
+  "chat.social.detail.restoreHistoryRemaining": "剩余 {{remaining}} 可恢复",
+  "chat.social.detail.restoreHistoryRemainingHoursMinutes": "{{hours}}小时{{minutes}}分钟",
+  "chat.social.detail.restoreHistoryRemainingMinutes": "{{minutes}}分钟",
+  "chat.social.detail.restoreHistorySuccess": "历史已恢复",
+  "chat.social.detail.restoreHistoryWindowOneDay": "24 小时",
   "chat.social.detail.settings": "设置",
   "chat.social.detail.edit": "编辑",
   "chat.social.detail.myGroupNickname": "我的群昵称",
@@ -475,14 +443,12 @@
   "chat.social.detail.stateSticky": "置顶",
   "chat.social.detail.stateMuted": "静音",
   "chat.social.detail.membersLoading": "成员加载后会显示在这里。",
-
   "chat.social.background.default": "默认",
   "chat.social.background.paper": "纸感",
   "chat.social.background.mint": "薄荷",
   "chat.social.background.dusk": "暮色",
   "chat.social.background.calm": "晴蓝",
   "chat.social.background.graphite": "石墨",
-
   "chat.social.encryption.enabled": "端到端加密",
   "chat.social.encryption.title": "加密",
   "chat.social.encryption.fingerprint": "你的安全指纹",
@@ -495,7 +461,6 @@
   "chat.social.encryption.upgradeOk": "立即升级",
   "chat.social.encryption.upgradeBlocked": "M2 版本上线后开放",
   "chat.social.encryption.upgradeStubFired": "升级桩已触发（M2 前不生效）",
-
   "chat.social.verify.title": "身份验证",
   "chat.social.verify.description": "请与对方当面核对下列数字或扫描二维码；若无人窃听，两边的数字与二维码完全一致。",
   "chat.social.verify.safetyNumberLabel": "安全号",
@@ -512,7 +477,6 @@
   "chat.social.verify.show": "验证身份",
   "chat.social.verify.hide": "收起",
   "chat.social.verify.qrPeerLabel": "请展示给对方扫描",
-
   "chat.social.call.startAudio": "语音通话",
   "chat.social.call.startVideo": "视频通话",
   "chat.social.call.unsupported": "通话仅支持已建立连接的一对一聊天。",
@@ -547,7 +511,6 @@
   "chat.social.call.resultBusy": "对方正在通话中",
   "chat.social.call.resultMediaFailed": "无法访问麦克风或摄像头",
   "chat.social.call.resultNetworkFailed": "网络连接失败，通话已结束",
-
   "chat.social.messageArea.selectConversation": "选择一个对话开始聊天",
   "chat.social.messageArea.noMessages": "暂无消息",
   "chat.social.messageArea.typing": "正在输入…",
@@ -589,7 +552,6 @@
   "chat.social.messageArea.send": "发送",
   "chat.social.presence.online": "在线",
   "chat.social.presence.offline": "离线",
-
   "chat.social.composer.attachmentFallbackName": "附件",
   "chat.social.composer.cancelRecord": "取消",
   "chat.social.composer.dropHint": "松开发送到附件栏",
@@ -617,7 +579,6 @@
   "chat.social.composer.voiceDenied": "麦克风访问被拒绝",
   "chat.social.composer.voiceSendFailed": "语音发送失败",
   "chat.social.composer.voiceUnsupported": "当前环境不支持录音",
-
   "chat.social.thread.title": "话题",
   "chat.social.thread.close": "关闭话题",
   "chat.social.thread.open": "打开话题",
@@ -642,7 +603,6 @@
   "chat.social.thread.removeAttachment": "移除附件",
   "chat.social.thread.attachmentUploadFailed": "附件上传失败",
   "chat.social.thread.groupAttachmentsUnsupported": "群组话题附件暂不可用，需先支持加密附件元数据。",
-
   "chat.social.sessionList.searchPlaceholder": "搜索...",
   "chat.social.sessionList.friends": "好友",
   "chat.social.sessionList.groups": "群组",
@@ -655,7 +615,6 @@
   "chat.social.sessionList.unnamedGroup": "未命名群组",
   "chat.social.sessionList.message": "消息",
   "chat.social.sessionList.yesterday": "昨天",
-
   "chat.social.contextMenu.pin": "置顶",
   "chat.social.contextMenu.unpin": "取消置顶",
   "chat.social.contextMenu.mute": "消息免打扰",
@@ -663,7 +622,6 @@
   "chat.social.contextMenu.markRead": "标为已读",
   "chat.social.contextMenu.hide": "不显示该聊天",
   "chat.social.contextMenu.delete": "删除",
-
   "chat.social.createGroup.title": "发起群聊",
   "chat.social.createGroup.searchContacts": "搜索联系人...",
   "chat.social.createGroup.noContacts": "未找到联系人",
@@ -672,7 +630,6 @@
   "chat.social.createGroup.defaultName": "群聊（{{count}}人）",
   "chat.social.createGroup.success": "群聊已创建",
   "chat.social.createGroup.failed": "创建群聊失败，请重试",
-
   "chat.social.findPeople.title": "查找用户",
   "chat.social.findPeople.searchPlaceholder": "按用户名搜索...",
   "chat.social.findPeople.search": "搜索",
@@ -693,7 +650,6 @@
   "chat.social.findPeople.tagVerified": "已验证",
   "chat.social.findPeople.tagFromCache": "缓存",
   "chat.social.findPeople.tagLocal": "本站",
-
   "chat.social.contacts.newFriends": "新的朋友",
   "chat.social.contacts.newFriendsCount": "新的朋友 ({{count}})",
   "chat.social.contacts.savedGroups": "保存的群聊",
@@ -719,7 +675,6 @@
   "chat.social.contacts.groupId": "群组 ID：{{id}}",
   "chat.social.contacts.unknownId": "未知 ID",
   "chat.social.contacts.sendMessage": "发消息",
-
   "chat.social.search.title": "搜索消息",
   "chat.social.search.placeholder": "搜索消息内容...",
   "chat.social.search.noResults": "未找到相关消息",
@@ -741,18 +696,15 @@
   "chat.social.search.type.image": "图片",
   "chat.social.search.type.audio": "语音",
   "chat.social.search.type.video": "视频",
-
   "chat.social.time.justNow": "刚刚",
   "chat.social.time.minutesAgo": "{{count}}分钟前",
   "chat.social.time.oneHourAgo": "1小时前",
   "chat.social.time.hoursAgo": "{{count}}小时前",
   "chat.social.time.yesterday": "昨天",
-
   "chat.social.preview.image": "[图片]",
   "chat.social.preview.file": "[文件]",
   "chat.social.preview.audio": "[语音]",
   "chat.social.preview.video": "[视频]",
-
   "chat.social.subNav.chats": "聊天",
   "chat.social.subNav.contacts": "通讯录",
   "chat.agentHeader.fallbackDescription": "用这个智能体提问、创作和执行任务。",
@@ -765,6 +717,7 @@
   "chat.welcome.status.toolsEnabled": "工具已启用",
   "chat.welcome.status.toolsReady": "工具就绪",
   "chat.welcome.capability.memoryDisabledShort": "记忆",
-  "chat.welcome.capability.workspaceOptional": "工作区"
-
+  "chat.welcome.capability.workspaceOptional": "工作区",
+  "chat.model.select": "选择模型",
+  "chat.input.slashCommand": "斜杠命令"
 }

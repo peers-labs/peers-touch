@@ -787,7 +787,6 @@ export function NotesPage({ onNavigateChat, initialDocId }: NotesPageProps) {
           scope="note_copilot"
           welcomeTitle={t('notes.copilot.title')}
           welcomeDescription={t('notes.copilot.description')}
-          welcomeAvatar="🤖"
           suggestQuestions={[
             t('notes.copilot.suggest.summarize'),
             t('notes.copilot.suggest.improve'),

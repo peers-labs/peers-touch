@@ -40,7 +40,9 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { AtelierPage } from '@peers-touch/prototype-desktop-atelier';
-import { AgentAdmin } from './AgentAdmin';
+import { AgentCanvasPage } from '@peers-touch/prototype-agent-canvas';
+import { AgentChatPage } from './AgentChatPage';
+import { AgentProfilePage } from './AgentProfilePage';
 import { SettingsPage } from './Settings';
 import { T } from './theme';
 
@@ -112,6 +114,7 @@ const COMMANDS: { id: string; label: string; desc: string; shortcut: string; tar
   { id: 'search', label: '搜索', desc: '全局搜索', shortcut: '⌘K', target: 'search' },
   { id: 'chat', label: '聊天', desc: '打开聊天', shortcut: '⌘⇧C', target: 'chat' },
   { id: 'agent', label: 'Agent', desc: '打开 Agent', shortcut: '⌘J', target: 'agent' },
+  { id: 'agent-orchestration', label: 'Agent 编排', desc: '从 Agent 页进入编排画板', shortcut: '⌘⇧J', target: 'agent-orchestration' },
   { id: 'applets', label: 'Applets', desc: '打开 Applets 中心', shortcut: '⌘⇧E', target: 'applets' },
   { id: 'atelier', label: '打开 Atelier', desc: '进入 Atelier applet', shortcut: '⌘⇧A', target: 'applet:atelier' },
   { id: 'notes', label: 'Notes', desc: '打开笔记', shortcut: '⌘⇧N', target: 'notes' },
@@ -209,7 +212,7 @@ function SideNav({
             key={n.id}
             icon={n.icon}
             title={n.title}
-            active={page === n.id}
+            active={page === n.id || (n.id === 'agent' && page === 'agent-orchestration')}
             onClick={() => onNavigate(n.id)}
           />
         ))}
@@ -619,9 +622,9 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
     ? APPLETS.find((a) => `applet:${a.id}` === page)
     : undefined;
 
-  // Resolve the content body: applet surface > injected kernel page > thin
-  // placeholder. Injected pages let a sibling prototype (e.g. call) mount its
-  // own block into a real kernel page without re-building the chrome.
+  // Resolve the content body: applet surface > injected kernel page > built-in
+  // prototype page > thin placeholder. Injected pages let a sibling prototype
+  // mount its own block into a real kernel page without re-building the chrome.
   let body: React.ReactNode;
   if (applet) {
     body = applet.render();
@@ -630,7 +633,16 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   } else if (page === 'applets') {
     body = <AppletsCenter onOpen={(id) => navigate(`applet:${id}`)} />;
   } else if (page === 'agent') {
-    body = <AgentAdmin />;
+    body = (
+      <AgentChatPage
+        onOpenOrchestration={() => navigate('agent-orchestration')}
+        onOpenProfile={() => navigate('agent-profile')}
+      />
+    );
+  } else if (page === 'agent-profile') {
+    body = <AgentProfilePage onOpenOrchestration={() => navigate('agent-orchestration')} />;
+  } else if (page === 'agent-orchestration') {
+    body = <AgentCanvasPage embedded onBack={() => navigate('agent')} />;
   } else if (page === 'settings') {
     body = <SettingsPage />;
   } else {

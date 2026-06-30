@@ -53,6 +53,7 @@
 | 站点 | 原型 ID | 归属层级 | 原型路径 | 落地目标 | 对应设计版本 | 状态 | 入口文档 |
 |------|---------|----------|---------|---------|------------|------|---------|
 | desktop | `desktop-shell` | Desktop 一级站点外壳 | `packages/prototypes/desktop/shell/` | Desktop 容器外壳（apps/desktop）；原型为 React web 展示 | runtime/desktop-runtime-architecture | drafting | [prototype/README.md](../desktop/prototype/README.md) |
+| desktop | `agent-canvas` | Desktop Agent 页内编排入口 | `packages/prototypes/agent-canvas/` | Agent 页内编排入口（由 `packages/prototypes/desktop/shell/` 的 Agent 页图标打开）；原型为 React web 展示 | agent/agent-canvas-orchestration | drafting | [agent-canvas-orchestration.md](../agent/agent-canvas-orchestration.md) |
 | desktop | `atelier` | Desktop 内的 applet 原型，不是一级模块 | `packages/prototypes/desktop/applets/atelier/` | Applet（Lynx），运行在 Desktop 容器内；原型为 React+LobeUI web 展示 | atelier/functional-modules §1 | drafting | [prototype/README.md](../atelier/prototype/README.md) |
 | desktop | `applet-lifecycle` | Desktop Applet Box 极简 launcher 原型，不是一级模块 | `packages/prototypes/desktop/features/applet-lifecycle/` | Desktop Applet Box 安装包导入、展示、打开、运行、通知、退出、卸载；原型为 React web 展示 | applet-runtime/official-applet-architecture-contract + applet-launcher-ux-contract | landed | [prototype/README.md](../applet-runtime/prototype/README.md) |
 | desktop | `call` | Desktop Chat/通话能力原型，不是一级模块 | `packages/prototypes/desktop/features/call/` | Desktop 好友聊天通话（apps/desktop，CallSurface）；原型为 React web 展示 | voice-video-calls | confirmed | [prototype/README.md](../realtime/prototype/README.md)（历史路径，归属 desktop） |
