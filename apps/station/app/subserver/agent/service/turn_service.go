@@ -80,6 +80,11 @@ type TurnConfig struct {
 	RotationStrategy   domain.RotationStrategy
 	Depth              int // Current delegation depth (0 = top-level).
 	EventSink          TurnEventSink
+	// TaskID/StepID bind this turn to a Station-owned task step. When TaskID is
+	// set, turn lifecycle events are written to the durable outbox (replayable
+	// source of truth) in addition to the realtime event bus.
+	TaskID string
+	StepID string
 }
 
 type TurnEventSink func(ctx context.Context, event TurnEvent)
@@ -125,6 +130,8 @@ type TurnService struct {
 	growthMetrics    *GrowthMetricsService
 	nudgeState       *domain.NudgeState
 	localToolBroker  *LocalToolBroker
+	eventBus         domain.EventBus
+	eventWriter      *TaskEventWriter
 }
 
 func NewTurnService(
@@ -157,6 +164,42 @@ func NewTurnService(
 		nudgeState:       domain.NewNudgeState(),
 		localToolBroker:  NewLocalToolBroker(),
 	}
+}
+
+func (s *TurnService) SetEventBus(eventBus domain.EventBus) {
+	s.eventBus = eventBus
+	s.eventWriter = NewTaskEventWriter(eventBus)
+}
+
+func (s *TurnService) publishDomainEvent(ctx context.Context, agentID, turnID, taskID, stepID, eventType string, payload interface{}) {
+	if s.eventBus == nil {
+		return
+	}
+
+	// When the turn belongs to a Station-owned task, route the event through the
+	// durable outbox so it can be replayed by cursor; otherwise publish realtime
+	// only (legacy single-turn callers without a task).
+	if strings.TrimSpace(taskID) != "" {
+		writer := s.eventWriter
+		if writer == nil {
+			writer = NewTaskEventWriter(s.eventBus)
+		}
+		writer.Publish(ctx, agentID, eventType, payload, taskID, stepID, turnID, map[string]string{"turn_id": turnID})
+		return
+	}
+
+	event := domain.DomainEvent{
+		EventID:   generateID("evt"),
+		EventType: eventType,
+		ActorID:   agentID,
+		Payload:   payload,
+		Metadata: map[string]string{
+			"agent_id": agentID,
+			"turn_id":  turnID,
+		},
+	}
+
+	_ = s.eventBus.Publish(ctx, event)
 }
 
 func (s *TurnService) SubmitLocalToolResult(result LocalToolResult) error {
@@ -224,6 +267,10 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		Type:  "progress",
 		Stage: "turn_started",
 	})
+	s.publishDomainEvent(ctx, config.AgentID, turnID, config.TaskID, config.StepID, string(domain.EventTypeAgentTurnStarted), map[string]interface{}{
+		"turn_id":         turnID,
+		"conversation_id": config.ConversationID,
+	})
 
 	// MemoryProvider hook: on_turn_start — notify external backend of new turn.
 	if mp := s.memoryProvider(); mp != nil {
@@ -232,7 +279,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 
 	// Step 2 — Persist user message.
 	if err := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleUser), userInput); err != nil {
-		_ = s.failTurn(ctx, config.AgentID, turnID, "failed to persist user message")
+		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to persist user message")
 		return nil, err
 	}
 
@@ -262,7 +309,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		config.KnowledgeResources,
 	)
 	if err != nil {
-		_ = s.failTurn(ctx, config.AgentID, turnID, "prompt assembly failed")
+		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "prompt assembly failed")
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"prompt assembly failed", err)
 	}
@@ -288,7 +335,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	// Step 5 — Load conversation messages.
 	messages, err := s.loadMessages(ctx, config.ConversationID)
 	if err != nil {
-		_ = s.failTurn(ctx, config.AgentID, turnID, "failed to load conversation messages")
+		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to load conversation messages")
 		return nil, err
 	}
 
@@ -326,7 +373,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		ctx, config, turnID, trace, assemblyResult.SystemPrompt, messages,
 	)
 	if err != nil {
-		_ = s.failTurn(ctx, config.AgentID, turnID, fmt.Sprintf("provider call failed after retries: %v", err))
+		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, fmt.Sprintf("provider call failed after retries: %v", err))
 		s.emitTurnEvent(ctx, config, turnID, TurnEvent{
 			Type:  "error",
 			Error: err.Error(),
@@ -347,7 +394,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		ctx, config, turnID, trace, assemblyResult.SystemPrompt, messages, &assistantResponse,
 	)
 	if err != nil {
-		_ = s.failTurn(ctx, config.AgentID, turnID, fmt.Sprintf("tool call processing failed: %v", err))
+		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, fmt.Sprintf("tool call processing failed: %v", err))
 		s.emitTurnEvent(ctx, config, turnID, TurnEvent{
 			Type:  "error",
 			Error: err.Error(),
@@ -384,7 +431,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 
 	// Step 10 — Persist assistant message and update turn status.
 	if err := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleAssistant), assistantResponse); err != nil {
-		_ = s.failTurn(ctx, config.AgentID, turnID, "failed to persist assistant message")
+		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to persist assistant message")
 		return nil, err
 	}
 
@@ -422,6 +469,11 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		Type:      "progress",
 		Stage:     "turn_completed",
 		Iteration: toolIterations,
+	})
+	s.publishDomainEvent(ctx, config.AgentID, turnID, config.TaskID, config.StepID, string(domain.EventTypeAgentTurnCompleted), map[string]interface{}{
+		"turn_id":         turnID,
+		"conversation_id": config.ConversationID,
+		"iterations":      toolIterations,
 	})
 
 	if s.growthMetrics != nil {
@@ -473,7 +525,7 @@ func (s *TurnService) runCompression(
 	compResult, compErr := s.compression.Compress(ctx, messages, config.ContextWindowSize)
 	if compErr != nil {
 		logger.Errorf(ctx, "compression failed: turn_id=%s err=%v", turnID, compErr)
-		_ = s.failTurn(ctx, config.AgentID, turnID, "context compression failed")
+		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "context compression failed")
 		return nil, errcode.New(errcode.AgentCompressionFailed, http.StatusInternalServerError,
 			"context compression failed", compErr)
 	}
@@ -1587,7 +1639,7 @@ func (s *TurnService) completeTurn(ctx context.Context, turnID, finalResponse st
 // Helper: failTurn
 // ---------------------------------------------------------------------------
 
-func (s *TurnService) failTurn(ctx context.Context, agentID, turnID, reason string) error {
+func (s *TurnService) failTurn(ctx context.Context, agentID, turnID, taskID, stepID, reason string) error {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return err
@@ -1610,6 +1662,11 @@ func (s *TurnService) failTurn(ctx context.Context, agentID, turnID, reason stri
 	}
 
 	logger.Warnf(ctx, "turn failed: turn_id=%s reason=%s", turnID, reason)
+
+	s.publishDomainEvent(ctx, agentID, turnID, taskID, stepID, string(domain.EventTypeAgentTurnFailed), map[string]interface{}{
+		"turn_id": turnID,
+		"reason":  reason,
+	})
 
 	if s.growthMetrics != nil {
 		s.growthMetrics.RecordEvent(ctx, agentID, EventTurnFailed, CategoryTurn, turnID, reason, "failure")
@@ -1635,7 +1692,8 @@ func (s *TurnService) getDB(ctx context.Context) (*gorm.DB, error) {
 // Uses crypto/rand to avoid collisions under concurrent requests.
 // Fix 2026-04-11: replaced time.UnixNano-based IDs which collide under concurrent requests.
 func generateID(prefix string) string {
-	b := make([]byte, 16)
+	// Keep IDs within the varchar(36) columns used by agent persistence models.
+	b := make([]byte, 12)
 	_, _ = rand.Read(b)
 	return fmt.Sprintf("%s_%x", prefix, b)
 }
