@@ -97,6 +97,7 @@ make run-prototype dashboard
 | all | `portal` | `packages/prototypes/portal/` | 统一 Prototype Portal，按 `desktop` / `mobile` / `dashboard` 切换站点 |
 | desktop | `desktop-shell` | `packages/prototypes/desktop/shell/` | Desktop 容器外壳原型 |
 | desktop | `atelier` | `packages/prototypes/desktop/applets/atelier/` | Desktop 内的 applet 原型 |
+| desktop | `applet-lifecycle` | `packages/prototypes/desktop/features/applet-lifecycle/` | Applet Box 极简 launcher 与安装包导入生命周期原型 |
 | desktop | `call` | `packages/prototypes/desktop/features/call/` | Desktop Chat/通话能力原型 |
 | desktop | `social-chat` | `packages/prototypes/desktop/features/social-chat/` | Desktop Chat 能力原型 |
 | mobile | `mobile-chat` | `packages/prototypes/mobile/chat/` | Mobile Chat / 跨设备会话体验基准原型 |
