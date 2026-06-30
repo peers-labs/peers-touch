@@ -13,19 +13,39 @@ type AppletHandler struct {
 	pathBase string
 	service  *service.StoreService
 	handlers *AppletHandlers
+	// authWrapper guards actor-scoped routes (catalog/installed/install/
+	// uninstall/version/audit). It is nil for unauthenticated contexts such
+	// as the CLI test harness, in which case those routes carry only the
+	// LogID wrapper.
+	authWrapper server.Wrapper
 }
 
-func NewAppletHandler(pathBase string, svc *service.StoreService) *AppletHandler {
-	return &AppletHandler{
+// NewAppletHandler builds the HTTP handler set. The optional authWrapper, when
+// provided, is applied to actor-scoped routes so unauthenticated callers cannot
+// read or mutate per-actor install state.
+func NewAppletHandler(pathBase string, svc *service.StoreService, authWrapper ...server.Wrapper) *AppletHandler {
+	h := &AppletHandler{
 		pathBase: pathBase,
 		service:  svc,
 		handlers: NewAppletHandlers(svc),
 	}
+	if len(authWrapper) > 0 {
+		h.authWrapper = authWrapper[0]
+	}
+	return h
 }
 
 func (h *AppletHandler) Handlers() []server.Handler {
 	base := h.pathBase
 	logIDWrapper := serverwrapper.LogID()
+
+	// publicWrappers cover open/admin/CLI routes; actorWrappers additionally
+	// enforce authentication when an auth wrapper was supplied.
+	publicWrappers := []server.Wrapper{logIDWrapper}
+	actorWrappers := publicWrappers
+	if h.authWrapper != nil {
+		actorWrappers = []server.Wrapper{logIDWrapper, h.authWrapper}
+	}
 
 	return []server.Handler{
 		server.NewTypedHandler(
@@ -33,27 +53,27 @@ func (h *AppletHandler) Handlers() []server.Handler {
 			base,
 			server.GET,
 			h.handlers.HandleListApplets,
-			logIDWrapper,
+			publicWrappers...,
 		),
 		server.NewTypedHandler(
 			"get-applet",
 			base+"/details",
 			server.GET,
 			h.handlers.HandleGetAppletDetails,
-			logIDWrapper,
+			publicWrappers...,
 		),
-		server.NewHTTPHandler("publish-applet", base+"/publish", server.POST, server.HTTPHandlerFunc(h.handlePublish), logIDWrapper),
-		server.NewHTTPHandler("get-bundle", base+"/bundle", server.GET, server.HTTPHandlerFunc(h.handleGetBundle), logIDWrapper),
-		server.NewTypedHandler("publish-applet-version", base+"/publish/typed", server.POST, h.handlers.HandlePublishAppletVersion, logIDWrapper),
-		server.NewTypedHandler("list-applet-catalog", base+"/catalog", server.GET, h.handlers.HandleListAppletCatalog, logIDWrapper),
-		server.NewTypedHandler("get-applet-version", base+"/version", server.GET, h.handlers.HandleGetAppletVersion, logIDWrapper),
-		server.NewTypedHandler("install-applet", base+"/install", server.POST, h.handlers.HandleInstallApplet, logIDWrapper),
-		server.NewTypedHandler("uninstall-applet", base+"/uninstall", server.POST, h.handlers.HandleUninstallApplet, logIDWrapper),
-		server.NewTypedHandler("list-installed-applets", base+"/installed", server.GET, h.handlers.HandleListInstalledApplets, logIDWrapper),
-		server.NewTypedHandler("revoke-applet-version", base+"/revoke", server.POST, h.handlers.HandleRevokeAppletVersion, logIDWrapper),
-		server.NewTypedHandler("rollback-applet-channel", base+"/rollback", server.POST, h.handlers.HandleRollbackAppletChannel, logIDWrapper),
-		server.NewTypedHandler("ingest-applet-audit", base+"/audit/ingest", server.POST, h.handlers.HandleIngestAppletAudit, logIDWrapper),
-		server.NewTypedHandler("query-applet-audit", base+"/audit/query", server.GET, h.handlers.HandleQueryAppletAudit, logIDWrapper),
+		server.NewHTTPHandler("publish-applet", base+"/publish", server.POST, server.HTTPHandlerFunc(h.handlePublish), publicWrappers...),
+		server.NewHTTPHandler("get-bundle", base+"/bundle", server.GET, server.HTTPHandlerFunc(h.handleGetBundle), publicWrappers...),
+		server.NewTypedHandler("publish-applet-version", base+"/publish/typed", server.POST, h.handlers.HandlePublishAppletVersion, publicWrappers...),
+		server.NewTypedHandler("list-applet-catalog", base+"/catalog", server.GET, h.handlers.HandleListAppletCatalog, actorWrappers...),
+		server.NewTypedHandler("get-applet-version", base+"/version", server.GET, h.handlers.HandleGetAppletVersion, actorWrappers...),
+		server.NewTypedHandler("install-applet", base+"/install", server.POST, h.handlers.HandleInstallApplet, actorWrappers...),
+		server.NewTypedHandler("uninstall-applet", base+"/uninstall", server.POST, h.handlers.HandleUninstallApplet, actorWrappers...),
+		server.NewTypedHandler("list-installed-applets", base+"/installed", server.GET, h.handlers.HandleListInstalledApplets, actorWrappers...),
+		server.NewTypedHandler("revoke-applet-version", base+"/revoke", server.POST, h.handlers.HandleRevokeAppletVersion, publicWrappers...),
+		server.NewTypedHandler("rollback-applet-channel", base+"/rollback", server.POST, h.handlers.HandleRollbackAppletChannel, publicWrappers...),
+		server.NewTypedHandler("ingest-applet-audit", base+"/audit/ingest", server.POST, h.handlers.HandleIngestAppletAudit, actorWrappers...),
+		server.NewTypedHandler("query-applet-audit", base+"/audit/query", server.GET, h.handlers.HandleQueryAppletAudit, publicWrappers...),
 	}
 }
 
