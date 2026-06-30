@@ -1,40 +1,41 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { toast } from '@lobehub/ui';
-import { Typography, Spin, Empty, Button, Alert, theme } from 'antd';
+import { Typography, Spin, Alert, theme } from 'antd';
 import {
   Bot,
   ChartCandlestick,
-  Download,
+  FileInput,
   NotebookPen,
   PackageOpen,
+  Plus,
   Search,
-  Sparkles,
   TerminalSquare,
 } from 'lucide-react';
-import { PageHeader } from '../components/PageHeader';
 import { useAppletsStore, type RuntimeAppletInfo } from '../store/applets';
 
 const { Text } = Typography;
 
-const IDENTITY_PALETTES = [
-  { background: 'linear-gradient(145deg, #0f766e, #14b8a6)', shadow: 'rgba(20, 184, 166, 0.26)' },
-  { background: 'linear-gradient(145deg, #1d4ed8, #60a5fa)', shadow: 'rgba(59, 130, 246, 0.26)' },
-  { background: 'linear-gradient(145deg, #7c3aed, #c084fc)', shadow: 'rgba(168, 85, 247, 0.26)' },
-  { background: 'linear-gradient(145deg, #be123c, #fb7185)', shadow: 'rgba(244, 63, 94, 0.24)' },
-  { background: 'linear-gradient(145deg, #b45309, #fbbf24)', shadow: 'rgba(245, 158, 11, 0.24)' },
-  { background: 'linear-gradient(145deg, #047857, #86efac)', shadow: 'rgba(34, 197, 94, 0.22)' },
-  { background: 'linear-gradient(145deg, #334155, #94a3b8)', shadow: 'rgba(100, 116, 139, 0.22)' },
-  { background: 'linear-gradient(145deg, #9333ea, #f472b6)', shadow: 'rgba(217, 70, 239, 0.22)' },
+// Identity tints stay low-saturation per Quiet Protocol Minimalism: a soft
+// surface tint plus a readable foreground, never a high-saturation gradient.
+const IDENTITY_TINTS = [
+  { background: '#eef2ff', foreground: '#4f46e5' },
+  { background: '#edf7ff', foreground: '#2563eb' },
+  { background: '#f5f0ff', foreground: '#7c3aed' },
+  { background: '#edf7f2', foreground: '#0f766e' },
+  { background: '#fff3ed', foreground: '#c2410c' },
+  { background: '#eef0f3', foreground: '#1f2937' },
+  { background: '#f1f3f5', foreground: '#64748b' },
+  { background: '#eef8f6', foreground: '#0f766e' },
 ] as const;
 
-const OFFICIAL_IDENTITY: Record<string, { icon: ReactNode; label: string }> = {
-  'peers.note': { icon: <NotebookPen size={31} strokeWidth={2.1} />, label: 'N' },
-  'remote-cli': { icon: <TerminalSquare size={31} strokeWidth={2.1} />, label: 'CLI' },
-  'web-search': { icon: <Search size={31} strokeWidth={2.1} />, label: 'S' },
-  'agent-pilot': { icon: <Bot size={31} strokeWidth={2.1} />, label: 'AI' },
-  'big-a': { icon: <ChartCandlestick size={31} strokeWidth={2.1} />, label: 'A' },
+const OFFICIAL_IDENTITY: Record<string, { icon: ReactNode }> = {
+  'peers.note': { icon: <NotebookPen size={30} strokeWidth={2} /> },
+  'remote-cli': { icon: <TerminalSquare size={30} strokeWidth={2} /> },
+  'web-search': { icon: <Search size={30} strokeWidth={2} /> },
+  'agent-pilot': { icon: <Bot size={30} strokeWidth={2} /> },
+  'big-a': { icon: <ChartCandlestick size={30} strokeWidth={2} /> },
 };
 
 function errorMessage(error: unknown, fallback: string, t?: (key: string) => string): string {
@@ -73,12 +74,12 @@ function resolveIconAsset(info: RuntimeAppletInfo): string | undefined {
 
 function appletIdentity(info: RuntimeAppletInfo) {
   const id = info.manifest.id;
-  const palette = IDENTITY_PALETTES[stableHash(id) % IDENTITY_PALETTES.length];
+  const tint = IDENTITY_TINTS[stableHash(id) % IDENTITY_TINTS.length];
   const official = OFFICIAL_IDENTITY[id];
   return {
-    ...palette,
+    ...tint,
     icon: official?.icon,
-    label: official?.label || identityLabel(info.manifest.name, id),
+    label: identityLabel(info.manifest.name, id),
     assetUrl: resolveIconAsset(info),
   };
 }
@@ -87,25 +88,28 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
   const { t } = useTranslation('applet');
   const { token } = theme.useToken();
   const applets = useAppletsStore((state) => state.applets);
-  const catalogApplets = useAppletsStore((state) => state.catalogApplets);
   const loading = useAppletsStore((state) => state.loading);
   const stationUnavailable = useAppletsStore((state) => state.stationUnavailable);
   const loadApplet = useAppletsStore((state) => state.loadApplet);
   const importAppletDirectory = useAppletsStore((state) => state.importAppletDirectory);
-  const recentApplets = useMemo(
+
+  const [query, setQuery] = useState('');
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
+  const [runningExpanded, setRunningExpanded] = useState(false);
+  const importMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const visibleApplets = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return applets
+      .filter((info) => (normalized ? info.manifest.name.toLowerCase().includes(normalized) : true))
+      .sort((left, right) => (right.lastOpenedAt ?? -1) - (left.lastOpenedAt ?? -1));
+  }, [applets, query]);
+
+  const runningApplets = useMemo(
     () => applets
-      .filter((info) => info.lastOpenedAt || info.status === 'active')
-      .sort((left, right) => (right.lastOpenedAt ?? 0) - (left.lastOpenedAt ?? 0))
-      .slice(0, 4),
+      .filter((info) => info.status === 'active')
+      .sort((left, right) => (right.lastOpenedAt ?? -1) - (left.lastOpenedAt ?? -1)),
     [applets],
-  );
-  const recentAppletIds = useMemo(
-    () => new Set(recentApplets.map((info) => info.manifest.id)),
-    [recentApplets],
-  );
-  const launcherApplets = useMemo(
-    () => applets.filter((info) => !recentAppletIds.has(info.manifest.id)),
-    [applets, recentAppletIds],
   );
 
   const handleOpen = useCallback(async (id: string) => {
@@ -118,211 +122,213 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
   }, [loadApplet, onNavigate, t]);
 
   const handleImport = useCallback(async () => {
+    setImportMenuOpen(false);
     try {
       await importAppletDirectory();
       toast.success(t('applet.toast.imported'));
     } catch (error) {
-      toast.error(errorMessage(error, t('applet.toast.importFailed')));
+      toast.error(errorMessage(error, t('applet.toast.importFailed'), t));
     }
   }, [importAppletDirectory, t]);
 
+  useEffect(() => {
+    if (!importMenuOpen) return undefined;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!importMenuRef.current?.contains(event.target as Node)) {
+        setImportMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [importMenuOpen]);
+
   if (loading) {
     return (
-      <Flexbox
-        align="center"
-        justify="center"
-        style={{
-          height: '100%',
-          background: token.colorBgLayout,
-        }}
-      >
+      <Flexbox align="center" justify="center" style={{ height: '100%', background: token.colorBgLayout }}>
         <Spin size="large" />
       </Flexbox>
     );
   }
 
-  const hasInstalledApplets = applets.length > 0;
-  const hasCatalogApplets = catalogApplets.length > 0;
+  const hasApplets = applets.length > 0;
 
   return (
     <Flexbox
       style={{
+        position: 'relative',
         height: '100%',
-        overflow: 'auto',
-        background: token.colorBgLayout,
+        overflow: 'hidden',
+        padding: '22px 26px 24px',
+        background: `linear-gradient(180deg, ${token.colorBgContainer}db, ${token.colorBgContainer}a3), ${token.colorBgLayout}`,
       }}
     >
-      <PageHeader
-        title={t('applet.page.title')}
-        subtitle={t('applet.page.subtitle')}
-        icon={<Sparkles size={20} />}
-      />
-
-      <Flexbox gap={32} style={{ padding: '32px 56px 56px', maxWidth: 1080, width: '100%', margin: '0 auto' }}>
-        <Flexbox
-          horizontal
-          align="flex-end"
-          justify="space-between"
-          gap={24}
+      <Flexbox
+        horizontal
+        align="center"
+        justify="space-between"
+        gap={10}
+        style={{ paddingBottom: 10, flexShrink: 0 }}
+      >
+        <label
           style={{
-            borderBottom: `1px solid ${token.colorBorderSecondary}`,
-            paddingBottom: 28,
+            height: 36,
+            width: 'min(320px, calc(100% - 56px))',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '0 10px',
+            borderRadius: token.borderRadius,
+            border: `1px solid ${token.colorBorderSecondary}`,
+            background: token.colorBgContainer,
+            color: token.colorTextTertiary,
           }}
         >
-          <Flexbox gap={10} style={{ maxWidth: 640 }}>
-            <Text
-              type="secondary"
+          <Search size={16} />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t('applet.page.searchPlaceholder')}
+            style={{
+              width: '100%',
+              border: 0,
+              outline: 'none',
+              background: 'transparent',
+              color: token.colorText,
+              fontSize: 13,
+            }}
+          />
+        </label>
+
+        <div ref={importMenuRef} style={{ position: 'relative' }}>
+          <button
+            type="button"
+            aria-label={t('applet.page.importAction')}
+            onClick={() => setImportMenuOpen((open) => !open)}
+            style={{
+              width: 40,
+              height: 40,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: 0,
+              borderRadius: token.borderRadius,
+              background: importMenuOpen ? token.colorFillTertiary : 'transparent',
+              color: importMenuOpen ? token.colorText : token.colorTextSecondary,
+              cursor: 'pointer',
+              transition: 'background 160ms ease, color 160ms ease',
+            }}
+            onMouseEnter={(event) => {
+              event.currentTarget.style.background = token.colorFillTertiary;
+              event.currentTarget.style.color = token.colorText;
+            }}
+            onMouseLeave={(event) => {
+              if (importMenuOpen) return;
+              event.currentTarget.style.background = 'transparent';
+              event.currentTarget.style.color = token.colorTextSecondary;
+            }}
+          >
+            <Plus size={18} />
+          </button>
+          {importMenuOpen && (
+            <div
+              role="menu"
               style={{
-                fontSize: 12,
-                lineHeight: '16px',
-                letterSpacing: 1.6,
-                textTransform: 'uppercase',
+                position: 'absolute',
+                top: 46,
+                right: 0,
+                zIndex: 30,
+                minWidth: 160,
+                padding: 6,
+                borderRadius: token.borderRadiusLG,
+                border: `1px solid ${token.colorBorderSecondary}`,
+                background: token.colorBgElevated,
+                boxShadow: token.boxShadowSecondary,
               }}
             >
-              {t('applet.page.launcherEyebrow')}
-            </Text>
-            <Text strong style={{ fontSize: 34, lineHeight: '40px', letterSpacing: -1 }}>
-              {t('applet.page.launcherTitle')}
-            </Text>
-            <Text type="secondary" style={{ fontSize: 14, lineHeight: '22px' }}>
-              {t('applet.page.launcherDescription')}
-            </Text>
-          </Flexbox>
-          <Button icon={<Download size={15} />} onClick={handleImport}>
-            {t('applet.page.importDirectory')}
-          </Button>
-        </Flexbox>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={handleImport}
+                style={{
+                  width: '100%',
+                  height: 34,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '0 10px',
+                  border: 0,
+                  borderRadius: token.borderRadius,
+                  background: 'transparent',
+                  color: token.colorText,
+                  textAlign: 'left',
+                  fontSize: 13,
+                  cursor: 'pointer',
+                }}
+                onMouseEnter={(event) => {
+                  event.currentTarget.style.background = token.colorFillTertiary;
+                }}
+                onMouseLeave={(event) => {
+                  event.currentTarget.style.background = 'transparent';
+                }}
+              >
+                <FileInput size={15} />
+                {t('applet.page.importPackage')}
+              </button>
+            </div>
+          )}
+        </div>
+      </Flexbox>
 
-        {stationUnavailable && (
+      {stationUnavailable && (
+        <div style={{ padding: '0 0 4px', flexShrink: 0 }}>
           <Alert
             type="warning"
             showIcon
-            title={t('applet.page.stationUnavailableTitle')}
+            message={t('applet.page.stationUnavailableTitle')}
             description={t('applet.page.stationUnavailableDescription')}
           />
-        )}
+        </div>
+      )}
 
-        {!hasInstalledApplets && !hasCatalogApplets ? (
-          <LauncherEmptyState onImport={handleImport} />
-        ) : (
-          <>
-            {recentApplets.length > 0 && (
-              <AppletSection
-                title={t('applet.page.recent')}
-                applets={recentApplets}
-                onOpen={handleOpen}
-                actionLabel={t('applet.card.open')}
-              />
-            )}
-            {(launcherApplets.length > 0 || recentApplets.length === 0) && (
-              <AppletSection
-                title={t('applet.page.mine')}
-                description={t('applet.page.mineDescription')}
-                applets={launcherApplets}
-                onOpen={handleOpen}
-                actionLabel={t('applet.card.open')}
-                emptyDescription={hasInstalledApplets ? undefined : t('applet.page.empty')}
-              />
-            )}
-            {hasCatalogApplets && (
-              <AppletSection
-                title={t('applet.page.box')}
-                description={t('applet.page.boxDescription')}
-                applets={catalogApplets}
-                onOpen={handleOpen}
-                actionLabel={t('applet.card.addAndOpen')}
-                emptyDescription={t('applet.page.boxEmpty')}
-                variant="available"
-              />
-            )}
-          </>
-        )}
-      </Flexbox>
-    </Flexbox>
-  );
-}
-
-function AppletSection({
-  title,
-  description,
-  applets,
-  onOpen,
-  actionLabel,
-  emptyDescription,
-  variant = 'installed',
-}: {
-  title: string;
-  description?: string;
-  applets: RuntimeAppletInfo[];
-  onOpen: (id: string) => void;
-  actionLabel: string;
-  emptyDescription?: string;
-  variant?: 'installed' | 'available';
-}) {
-  const { token } = theme.useToken();
-
-  return (
-    <Flexbox
-      gap={18}
-      style={{
-        paddingTop: 2,
-      }}
-    >
-      <Flexbox gap={4}>
-        <Text strong style={{ fontSize: 15, letterSpacing: -0.2 }}>{title}</Text>
-        {description && (
-          <Text type="secondary" style={{ fontSize: 13, lineHeight: '20px' }}>
-            {description}
-          </Text>
-        )}
-      </Flexbox>
-      {applets.length === 0 ? (
-        <Flexbox
-          align="center"
-          justify="center"
+      {hasApplets ? (
+        <section
+          aria-label={t('applet.page.mine')}
           style={{
-            minHeight: 168,
-            borderRadius: 24,
-            border: `1px dashed ${token.colorBorder}`,
-            background: token.colorBgContainer,
-          }}
-        >
-          <Empty image={<PackageOpen size={36} />} description={emptyDescription} />
-        </Flexbox>
-      ) : (
-        <div
-          style={{
+            flex: '0 0 auto',
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(104px, 1fr))',
-            gap: '26px 20px',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))',
+            alignContent: 'start',
+            gap: '22px 34px',
+            maxHeight: 196,
+            padding: '24px 28px 0',
+            overflow: 'auto',
           }}
         >
-          {applets.map((info) => (
+          {visibleApplets.map((info) => (
             <AppletIconTile
               key={info.manifest.id}
               info={info}
-              onOpen={() => onOpen(info.manifest.id)}
-              actionLabel={actionLabel}
-              variant={variant}
+              onOpen={() => handleOpen(info.manifest.id)}
             />
           ))}
-        </div>
+        </section>
+      ) : (
+        <LauncherEmptyState onImport={handleImport} />
+      )}
+
+      {runningApplets.length > 0 && (
+        <RunningSwitcher
+          applets={runningApplets}
+          expanded={runningExpanded}
+          onToggle={() => setRunningExpanded((expanded) => !expanded)}
+          onOpen={handleOpen}
+        />
       )}
     </Flexbox>
   );
 }
 
-function AppletIconTile({
-  info,
-  onOpen,
-  actionLabel,
-  variant,
-}: {
-  info: RuntimeAppletInfo;
-  onOpen: () => void;
-  actionLabel: string;
-  variant: 'installed' | 'available';
-}) {
+function AppletIconTile({ info, onOpen }: { info: RuntimeAppletInfo; onOpen: () => void }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('applet');
   const [iconAssetFailed, setIconAssetFailed] = useState(false);
@@ -330,72 +336,254 @@ function AppletIconTile({
   const isActive = info.status === 'active';
   const isRevoked = info.status === 'revoked';
   const shouldUseAsset = Boolean(identity.assetUrl && !iconAssetFailed);
-  const isAvailable = variant === 'available';
 
   return (
     <button
       type="button"
       data-applet-open={info.manifest.id}
       data-applet-status={info.status}
-      data-applet-source={info.source}
-      data-applet-opened-this-session={info.lastOpenedAt ? 'true' : 'false'}
       onClick={onOpen}
       disabled={isRevoked}
+      aria-label={`${t('applet.card.open')} ${info.manifest.name}`}
       style={{
-        border: 0,
-        background: 'transparent',
-        borderRadius: 24,
+        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 9,
         padding: '8px 6px 10px',
+        border: 0,
+        borderRadius: token.borderRadiusLG,
+        background: 'transparent',
         cursor: isRevoked ? 'not-allowed' : 'pointer',
         opacity: isRevoked ? 0.56 : 1,
-        minWidth: 0,
-        outline: 'none',
-        transition: 'transform 160ms ease, background 160ms ease',
+        transition: 'background 160ms ease',
       }}
-      aria-label={`${actionLabel} ${info.manifest.name}`}
       onMouseEnter={(event) => {
-        event.currentTarget.style.background = token.colorFillQuaternary;
-        if (!isRevoked) event.currentTarget.style.transform = 'translateY(-2px)';
+        if (!isRevoked) event.currentTarget.style.background = token.colorFillQuaternary;
       }}
       onMouseLeave={(event) => {
         event.currentTarget.style.background = 'transparent';
-        event.currentTarget.style.transform = 'translateY(0)';
-      }}
-      onMouseDown={(event) => {
-        if (!isRevoked) event.currentTarget.style.transform = 'translateY(0) scale(0.98)';
-      }}
-      onMouseUp={(event) => {
-        if (!isRevoked) event.currentTarget.style.transform = 'translateY(-2px) scale(1)';
-      }}
-      onFocus={(event) => {
-        event.currentTarget.style.background = token.colorFillQuaternary;
-        event.currentTarget.style.boxShadow = `0 0 0 3px ${token.colorPrimaryBg}`;
-      }}
-      onBlur={(event) => {
-        event.currentTarget.style.background = 'transparent';
-        event.currentTarget.style.boxShadow = 'none';
-        event.currentTarget.style.transform = 'translateY(0)';
       }}
     >
-      <Flexbox align="center" gap={10} style={{ minWidth: 0 }}>
-        <div
+      <div
+        style={{
+          position: 'relative',
+          width: 82,
+          height: 82,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: 24,
+          background: shouldUseAsset ? token.colorBgContainer : identity.background,
+          color: identity.foreground,
+          boxShadow: `inset 0 0 0 1px ${token.colorBorderSecondary}`,
+          overflow: 'hidden',
+        }}
+      >
+        {shouldUseAsset ? (
+          <img
+            src={identity.assetUrl}
+            alt=""
+            draggable={false}
+            onError={() => setIconAssetFailed(true)}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          />
+        ) : identity.icon ? (
+          identity.icon
+        ) : (
+          <Text style={{ color: identity.foreground, fontSize: 26, fontWeight: 600, lineHeight: 1 }}>
+            {identity.label}
+          </Text>
+        )}
+        {isActive && (
+          <span
+            aria-label={t('applet.card.runningThisSession')}
+            style={{
+              position: 'absolute',
+              right: 6,
+              top: 6,
+              width: 9,
+              height: 9,
+              borderRadius: '50%',
+              background: token.colorSuccess,
+              border: `2px solid ${token.colorBgContainer}`,
+            }}
+          />
+        )}
+      </div>
+      <Text
+        style={{
+          maxWidth: 100,
+          fontSize: 14,
+          lineHeight: '18px',
+          textAlign: 'center',
+          color: token.colorText,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          width: '100%',
+        }}
+      >
+        {info.manifest.name}
+      </Text>
+    </button>
+  );
+}
+
+function RunningSwitcher({
+  applets,
+  expanded,
+  onToggle,
+  onOpen,
+}: {
+  applets: RuntimeAppletInfo[];
+  expanded: boolean;
+  onToggle: () => void;
+  onOpen: (id: string) => void;
+}) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('applet');
+  const total = applets.length;
+
+  return (
+    <section
+      aria-label={t('applet.page.running')}
+      style={{
+        position: 'relative',
+        zIndex: 12,
+        flex: 1,
+        minHeight: 'clamp(220px, 38vh, 360px)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+        gap: 10,
+        padding: '12px 26px clamp(34px, 6vh, 64px)',
+      }}
+    >
+      <div
+        style={{
+          position: 'relative',
+          width: expanded ? 'min(100%, 840px)' : 'min(100%, 920px)',
+          height: expanded ? 'min(100%, 318px)' : 'clamp(160px, 26vh, 230px)',
+          marginBottom: expanded ? 10 : 4,
+          transition: 'height 200ms ease',
+        }}
+      >
+        {applets.map((info, index) => (
+          <RunningCard
+            key={info.manifest.id}
+            info={info}
+            index={index}
+            total={total}
+            expanded={expanded}
+            onOpen={() => onOpen(info.manifest.id)}
+          />
+        ))}
+      </div>
+      <button
+        type="button"
+        aria-label={t('applet.page.runningToggle')}
+        onClick={onToggle}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 12,
+          minWidth: 96,
+          height: 24,
+          border: 0,
+          borderRadius: 999,
+          background: 'transparent',
+          cursor: 'pointer',
+        }}
+      >
+        {applets.map((info) => (
+          <span
+            key={info.manifest.id}
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: token.colorTextQuaternary,
+            }}
+          />
+        ))}
+      </button>
+    </section>
+  );
+}
+
+function RunningCard({
+  info,
+  index,
+  total,
+  expanded,
+  onOpen,
+}: {
+  info: RuntimeAppletInfo;
+  index: number;
+  total: number;
+  expanded: boolean;
+  onOpen: () => void;
+}) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation('applet');
+  const [iconAssetFailed, setIconAssetFailed] = useState(false);
+  const identity = appletIdentity(info);
+  const shouldUseAsset = Boolean(identity.assetUrl && !iconAssetFailed);
+
+  const offset = index - (total - 1) / 2;
+  const compactWidth = total <= 1 ? 246 : total === 2 ? 226 : total === 3 ? 204 : total === 4 ? 188 : Math.max(154, 700 / total);
+  const cardWidth = expanded ? 292 : compactWidth;
+  const cardHeight = expanded ? 250 : Math.round(compactWidth * 0.62);
+  const compactSpacing = compactWidth * (total <= 3 ? 0.58 : 0.48);
+  const expandedSpacing = Math.min(190, Math.max(132, 680 / total));
+  const spacing = expanded ? expandedSpacing : compactSpacing;
+  const scale = 1 - Math.abs(offset) * (expanded ? 0.04 : 0.035);
+  const zIndex = total * 10 - Math.round(Math.abs(offset) * 10);
+
+  return (
+    <article
+      onClick={onOpen}
+      style={
+        {
+          position: 'absolute',
+          left: '50%',
+          bottom: '50%',
+          width: cardWidth,
+          height: cardHeight,
+          display: 'flex',
+          flexDirection: 'column',
+          padding: expanded ? 12 : 9,
+          borderRadius: 18,
+          border: `1px solid ${token.colorBorderSecondary}`,
+          background: token.colorBgElevated,
+          boxShadow: expanded ? token.boxShadowSecondary : token.boxShadowTertiary,
+          cursor: 'pointer',
+          zIndex,
+          transform: `translateX(calc(-50% + ${offset * spacing}px)) translateY(50%) scale(${scale})`,
+          transformOrigin: 'center center',
+          transition: 'transform 200ms ease, height 200ms ease',
+          overflow: 'hidden',
+        } as CSSProperties
+      }
+    >
+      <Flexbox horizontal align="center" gap={expanded ? 9 : 8} style={{ minWidth: 0, marginBottom: expanded ? 10 : 8 }}>
+        <span
           style={{
-            width: 76,
-            height: 76,
-            borderRadius: 24,
-            background: shouldUseAsset ? token.colorBgElevated : identity.background,
-            display: 'flex',
+            width: expanded ? 34 : 28,
+            height: expanded ? 34 : 28,
+            flexShrink: 0,
+            display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: isActive
-              ? `0 18px 34px ${identity.shadow}, 0 0 0 2px ${token.colorSuccessBorder}`
-              : isAvailable
-                ? `0 10px 24px ${token.colorFillSecondary}`
-                : `0 16px 32px ${identity.shadow}`,
-            position: 'relative',
+            borderRadius: expanded ? 11 : 9,
+            background: shouldUseAsset ? token.colorBgLayout : identity.background,
+            color: identity.foreground,
+            boxShadow: `inset 0 0 0 1px ${token.colorBorderSecondary}`,
             overflow: 'hidden',
-            color: '#fff',
-            filter: isAvailable ? 'saturate(0.82)' : undefined,
           }}
         >
           {shouldUseAsset ? (
@@ -404,68 +592,155 @@ function AppletIconTile({
               alt=""
               draggable={false}
               onError={() => setIconAssetFailed(true)}
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                display: 'block',
-              }}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
             />
           ) : identity.icon ? (
             identity.icon
           ) : (
-            <Text
-              style={{
-                color: '#fff',
-                fontSize: identity.label.length > 1 ? 22 : 28,
-                fontWeight: 700,
-                letterSpacing: -0.8,
-                lineHeight: 1,
-              }}
-            >
+            <Text style={{ color: identity.foreground, fontSize: 14, fontWeight: 600, lineHeight: 1 }}>
               {identity.label}
             </Text>
           )}
-          {isActive && (
-            <span
-              aria-label={t('applet.card.runningThisSession')}
-              style={{
-                position: 'absolute',
-                right: 6,
-                top: 6,
-                width: 10,
-                height: 10,
-                borderRadius: '50%',
-                background: token.colorSuccess,
-                border: `2px solid ${token.colorBgElevated}`,
-              }}
-            />
-          )}
-        </div>
-        <Text
+        </span>
+        <Flexbox style={{ minWidth: 0, flex: 1 }}>
+          <Text
+            strong
+            style={{
+              fontSize: 14,
+              lineHeight: '18px',
+              color: token.colorText,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {info.manifest.name}
+          </Text>
+          <Text type="secondary" style={{ fontSize: expanded ? 12 : 11, lineHeight: '16px' }}>
+            {t('applet.page.running')}
+          </Text>
+        </Flexbox>
+      </Flexbox>
+      <AppletSnapshot info={info} compact={!expanded} />
+    </article>
+  );
+}
+
+function AppletSnapshot({ info, compact }: { info: RuntimeAppletInfo; compact: boolean }) {
+  const { token } = theme.useToken();
+  const [iconAssetFailed, setIconAssetFailed] = useState(false);
+  const identity = appletIdentity(info);
+  const shouldUseAsset = Boolean(identity.assetUrl && !iconAssetFailed);
+
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        flex: 1,
+        minHeight: compact ? 92 : 0,
+        display: 'grid',
+        gridTemplateColumns: compact ? '30px 1fr' : '42px 1fr',
+        gap: compact ? 8 : 10,
+        padding: compact ? 8 : 10,
+        borderRadius: compact ? 12 : 18,
+        background: token.colorFillQuaternary,
+        overflow: 'hidden',
+      }}
+    >
+      <Flexbox gap={compact ? 6 : 8}>
+        {[0, 1, 2].map((item) => (
+          <span
+            key={item}
+            style={{
+              height: compact ? 18 : 28,
+              borderRadius: compact ? 7 : 9,
+              background: token.colorFillSecondary,
+            }}
+          />
+        ))}
+      </Flexbox>
+      <Flexbox gap={compact ? 7 : 10} style={{ minWidth: 0 }}>
+        <Flexbox horizontal align="center" justify="space-between" gap={8}>
+          <Text
+            type="secondary"
+            style={{
+              fontSize: compact ? 10 : 12,
+              fontWeight: 650,
+              lineHeight: '16px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {info.manifest.name}
+          </Text>
+        </Flexbox>
+        <Flexbox
+          horizontal
+          align="center"
+          gap={compact ? 7 : 10}
           style={{
-            width: '100%',
-            maxWidth: 96,
-            fontSize: 13,
-            lineHeight: '18px',
-            textAlign: 'center',
-            color: token.colorText,
-            minHeight: 36,
-            display: '-webkit-box',
-            WebkitBoxOrient: 'vertical',
-            WebkitLineClamp: 2,
-            overflow: 'hidden',
+            minHeight: compact ? 34 : 54,
+            padding: compact ? 5 : 8,
+            borderRadius: compact ? 10 : 15,
+            background: token.colorBgContainer,
           }}
         >
-          {info.manifest.name}
-        </Text>
-        {isAvailable && (
-          <Text type="secondary" style={{ fontSize: 12, lineHeight: '16px' }}>
-            {actionLabel}
-          </Text>
-        )}
+          <span
+            style={{
+              width: compact ? 24 : 38,
+              height: compact ? 24 : 38,
+              flexShrink: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: compact ? 8 : 12,
+              color: identity.foreground,
+              background: shouldUseAsset ? token.colorBgLayout : identity.background,
+              boxShadow: `inset 0 0 0 1px ${token.colorBorderSecondary}`,
+              overflow: 'hidden',
+            }}
+          >
+            {shouldUseAsset ? (
+              <img
+                src={identity.assetUrl}
+                alt=""
+                draggable={false}
+                onError={() => setIconAssetFailed(true)}
+                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              />
+            ) : identity.icon ? (
+              identity.icon
+            ) : (
+              <Text style={{ color: identity.foreground, fontSize: compact ? 10 : 14, fontWeight: 600, lineHeight: 1 }}>
+                {identity.label}
+              </Text>
+            )}
+          </span>
+          <span
+            style={{
+              flex: 1,
+              height: compact ? 16 : 26,
+              borderRadius: 999,
+              background: `linear-gradient(90deg, ${token.colorFillSecondary}, ${token.colorFillTertiary})`,
+            }}
+          />
+        </Flexbox>
+        <Flexbox gap={compact ? 5 : 7}>
+          {[100, 76, 52].map((width) => (
+            <span
+              key={width}
+              style={{
+                width: `${width}%`,
+                height: compact ? 6 : 9,
+                borderRadius: 999,
+                background: token.colorFillSecondary,
+              }}
+            />
+          ))}
+        </Flexbox>
       </Flexbox>
-    </button>
+    </div>
   );
 }
 
@@ -477,39 +752,51 @@ function LauncherEmptyState({ onImport }: { onImport: () => void }) {
     <Flexbox
       align="center"
       justify="center"
-      gap={18}
-      style={{
-        minHeight: 360,
-        borderRadius: 28,
-        border: `1px dashed ${token.colorBorder}`,
-        background: token.colorBgContainer,
-      }}
+      gap={16}
+      style={{ flex: '1 1 auto', padding: 24 }}
     >
       <div
         style={{
-          width: 76,
-          height: 76,
-          borderRadius: 24,
+          width: 72,
+          height: 72,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          borderRadius: 22,
           color: token.colorTextSecondary,
           background: token.colorFillQuaternary,
         }}
       >
-        <PackageOpen size={34} />
+        <PackageOpen size={32} />
       </div>
       <Flexbox align="center" gap={6} style={{ maxWidth: 360, textAlign: 'center' }}>
-        <Text strong style={{ fontSize: 18, letterSpacing: -0.3 }}>
+        <Text strong style={{ fontSize: 17 }}>
           {t('applet.page.emptyTitle')}
         </Text>
         <Text type="secondary" style={{ fontSize: 14, lineHeight: '22px' }}>
           {t('applet.page.empty')}
         </Text>
       </Flexbox>
-      <Button icon={<Download size={15} />} onClick={onImport}>
-        {t('applet.page.importDirectory')}
-      </Button>
+      <button
+        type="button"
+        onClick={onImport}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+          height: 36,
+          padding: '0 16px',
+          border: `1px solid ${token.colorBorderSecondary}`,
+          borderRadius: token.borderRadius,
+          background: token.colorBgContainer,
+          color: token.colorText,
+          fontSize: 13,
+          cursor: 'pointer',
+        }}
+      >
+        <FileInput size={15} />
+        {t('applet.page.importPackage')}
+      </button>
     </Flexbox>
   );
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 
 	appmeta "github.com/peers-labs/peers-touch/station/app/subserver/app_meta"
+	appletstore "github.com/peers-labs/peers-touch/station/app/subserver/applet_store"
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	friendchat "github.com/peers-labs/peers-touch/station/app/subserver/friend_chat"
 	groupchat "github.com/peers-labs/peers-touch/station/app/subserver/group_chat"
@@ -54,6 +55,7 @@ func main() {
 		server.WithSubServer("social", social.NewSocialSubServer),
 		server.WithSubServer("notification", notifsubserver.NewNotificationSubServer),
 		server.WithSubServer("official_applet_note", officialapplets.NewNoteSubServer),
+		server.WithSubServer("applet_store", appletstore.NewAppletStoreSubServer),
 		server.WithSubServer("dashboard", dashboard.NewDashboardSubServer),
 	)
 	if err != nil {
