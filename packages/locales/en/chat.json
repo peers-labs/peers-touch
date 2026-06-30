@@ -719,5 +719,7 @@
   "chat.welcome.status.toolsEnabled": "Tools enabled",
   "chat.welcome.status.toolsReady": "Tools ready",
   "chat.welcome.capability.memoryDisabledShort": "Memory",
-  "chat.welcome.capability.workspaceOptional": "Workspace"
+  "chat.welcome.capability.workspaceOptional": "Workspace",
+  "chat.model.select": "Select model",
+  "chat.input.slashCommand": "Slash command"
 }
