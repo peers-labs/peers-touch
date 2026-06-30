@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Tooltip } from '@lobehub/ui';
+import { Button, Tooltip, toast } from '@lobehub/ui';
 import { Empty, Spin, theme, Typography } from 'antd';
 import {
   Inbox, Phone, Video, MoreHorizontal,
@@ -20,7 +20,8 @@ import { SearchMessagesModal } from './SearchMessagesModal';
 import { friendChatP2p } from '../../modules/p2p/friendChatP2p';
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
-import { toast } from '@lobehub/ui';
+import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
+import { presentError, type PresentedError } from '../../services/errorPresenter';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
 import type { FriendChatMessage } from '../../gen/proto/domain/chat/friend_chat_pb';
 import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
@@ -35,6 +36,7 @@ import {
   loadedThreadReplyCount,
 } from './message/ChatMessageTimeline';
 import { ChatDeleteConfirmOverlay } from './ChatDeleteConfirmOverlay';
+import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
 import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 
 const { Text } = Typography;
@@ -68,7 +70,7 @@ export function ChatMessageArea() {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const {
-    activeTab, activeSessionUlid, activeGroupUlid, messages, loading,
+    activeTab, activeSessionUlid, activeGroupUlid, messages,
     sessions, groups, loadMessages, loadOlderMessages, sendFriendMessage, sendGroupMessage, toggleDetail,
     deleteMessage, recallFriendMessage, editFriendMessage,
     recallGroupMessage, editGroupMessage, openThread,
@@ -100,6 +102,7 @@ export function ChatMessageArea() {
   const [editingUlid, setEditingUlid] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FriendChatMessage | GroupMessage | null>(null);
   const [deletingMessage, setDeletingMessage] = useState(false);
+  const [composerError, setComposerError] = useState<PresentedError | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prependRestoreRef = useRef<{ previousHeight: number } | null>(null);
@@ -198,6 +201,7 @@ export function ChatMessageArea() {
     setReplyToUlid(null);
     setDeleteTarget(null);
     setDeletingMessage(false);
+    setComposerError(null);
   }, [activeUlid]);
 
   useEffect(() => {
@@ -375,6 +379,7 @@ export function ChatMessageArea() {
     setInputValue('');
     setReplyToUlid(null);
     setEditingUlid(null);
+    setComposerError(null);
     setSending(true);
     // Sending implies "stopped composing" — flip the bubble for the
     // peer immediately rather than waiting on the 4s idle timer.
@@ -422,6 +427,16 @@ export function ChatMessageArea() {
           draft.attachments.length > 0 ? draft.attachments : undefined,
         );
       }
+    } catch (err) {
+      log.error('chat', 'composer send failed', err);
+      setInputValue(content);
+      setReplyToUlid(replyRef ?? null);
+      const presentedError = presentError(err, {
+        mode: 'toast',
+        mapper: mapChatError,
+        context: { operation: 'send' },
+      });
+      if (!presentedError.recoverable) setComposerError(presentedError);
     } finally {
       setSending(false);
     }
@@ -666,11 +681,7 @@ export function ChatMessageArea() {
             <Spin size="small" />
           </Flexbox>
         )}
-        {loading && mainTimelineMessages.length === 0 ? (
-          <Flexbox align="center" justify="center" flex={1}>
-            <Spin />
-          </Flexbox>
-        ) : mainTimelineMessages.length === 0 ? (
+        {mainTimelineMessages.length === 0 ? (
           <Flexbox align="center" justify="center" flex={1}>
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.messageArea.noMessages')} />
           </Flexbox>
@@ -705,6 +716,12 @@ export function ChatMessageArea() {
         )}
         <div ref={bottomRef} />
       </Flexbox>
+
+      {composerError && (
+        <Flexbox style={{ padding: '0 16px 12px', background: conversationSurfaceBackground }}>
+          <PresentedErrorAlert error={composerError} onClose={() => setComposerError(null)} />
+        </Flexbox>
+      )}
 
       <ChatComposer
         activeConversationId={activeUlid}

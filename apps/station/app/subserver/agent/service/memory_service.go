@@ -835,10 +835,10 @@ func (s *MemoryService) ListWithOptions(ctx context.Context, opts domain.MemoryL
 		pageSize = 100
 	}
 	page := opts.Page
-	if page < 0 {
-		page = 0
+	if page <= 1 {
+		page = 1
 	}
-	offset := page * pageSize
+	offset := (page - 1) * pageSize
 
 	var rows []persistence.Memory
 	if err := applyMemoryFilters(db.Model(&persistence.Memory{}), opts).
