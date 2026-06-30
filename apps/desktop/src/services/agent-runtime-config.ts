@@ -12,6 +12,16 @@ export interface AgentRuntimeConfig {
   contextWindowSize?: number;
   maxRetries?: number;
   knowledgeResources?: AgentExecuteTurnKnowledgeResource[];
+  identity?: string;
+  agentConfigPrompt?: string;
+  effort?: string;
+  provider?: string;
+  model?: string;
+  cliCommand?: string;
+  workspaceMode?: string;
+  runtimeBackend?: string;
+  rootfsPath?: string;
+  allowedRoots?: string[];
 }
 
 export function buildAgentRuntimeConfig(agent?: Agent): AgentRuntimeConfig {
@@ -33,7 +43,30 @@ export function buildAgentRuntimeConfig(agent?: Agent): AgentRuntimeConfig {
     contextWindowSize,
     maxRetries,
     knowledgeResources,
+    identity: agent.soulMd?.trim() || undefined,
+    agentConfigPrompt: agent.agentsMd?.trim() || undefined,
+    effort: agent.effort?.trim() || undefined,
+    provider: agent.provider?.trim() || undefined,
+    model: agent.model?.trim() || undefined,
+    cliCommand: agent.cliCommand?.trim() || undefined,
+    workspaceMode: agent.workspaceMode?.trim() || undefined,
+    runtimeBackend: agent.runtimeBackend?.trim() || undefined,
+    rootfsPath: agent.rootfsPath?.trim() || undefined,
+    allowedRoots: parseAllowedRoots(agent.allowedRoots),
   };
+}
+
+function parseAllowedRoots(value?: string): string[] | undefined {
+  if (!value?.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => String(item).trim()).filter(Boolean);
+    }
+  } catch {
+    return value.split('\n').map((item) => item.trim()).filter(Boolean);
+  }
+  return undefined;
 }
 
 function toTurnKnowledgeResource(

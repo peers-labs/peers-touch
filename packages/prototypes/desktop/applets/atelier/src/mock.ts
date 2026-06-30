@@ -8,6 +8,27 @@
  * each finished reply carrying a Completed marker + feedback bar.
  */
 import type { AtelierState } from './types';
+import type { CollaborationInput } from './engine';
+
+/**
+ * Shared, engine-INDEPENDENT position pool for a task's negotiation. The same
+ * pool is fed to whichever EnginePolicy the user picks; each engine arranges
+ * these positions into a different round structure (see engine.ts). This is
+ * what makes "switch engine → visibly different negotiation" real instead of
+ * cosmetic: the raw material is fixed, only the orchestration changes.
+ */
+export const COLLAB_INPUTS: Record<string, CollaborationInput> = {
+  't-data': {
+    goal: '为平台选定并接入稳定的行情 DataProvider，统一到 Provider 接口',
+    authority: 'GoalOwner',
+    positions: [
+      { role: 'Planner', stance: 'proposal', text: '建议 vendor-A：延迟最低、文档完整、改造成本小。', evidenceRef: 'bench/latency.csv' },
+      { role: 'Executor', stance: 'proposal', text: '可先用 vendor-C：免费额度大，能快速跑通端到端。', evidenceRef: 'vendor-C/free-tier.md' },
+      { role: 'Risk', stance: 'objection', text: '反对裸接 vendor-A：限频 50 req/s 且无官方降级 SLA，高峰会被拖垮。', evidenceRef: 'vendor-A/ratelimit.md' },
+      { role: 'Architect', stance: 'counter', text: '折中：选 vendor-A，但适配层加本地缓存 + 退避，规避限频。', evidenceRef: 'rfc/adapter-cache.md' },
+    ],
+  },
+};
 
 export const MOCK: AtelierState = {
   budgetSpent: 2.1,

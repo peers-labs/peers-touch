@@ -231,12 +231,22 @@ export interface GroupSkdmInstalledPayload {
   senderKeyId: number;
 }
 
+export interface AgentTurnStreamEventPayload {
+  streamId: string;
+  conversationId: string;
+  agentId: string;
+  event: string;
+  data: Record<string, string>;
+  timestampMs: number;
+}
+
 export interface EventPayloadMap {
   [EVENT.AUTH_IDENTITY_CHANGED]: void;
   [EVENT.AUTH_SESSION_REVOKED]: SessionRevokedPayload;
   [EVENT.OAUTH_CONNECTIONS_CHANGED]: void;
   [EVENT.NAVIGATION_REQUESTED]: ParsedDeepLink | { resource: 'settings'; id?: string };
   [EVENT.AGENT_BUILDER_STREAM_ENDED]: void;
+  [EVENT.AGENT_TURN_STREAM_EVENT]: AgentTurnStreamEventPayload;
   [EVENT.GLOBAL_CONTEXT_UPDATED]: { slice: string; timestamp_ms: number };
   [EVENT.GLOBAL_CONTEXT_PIPELINE_STARTED]: { name: string; timestamp_ms: number };
   [EVENT.GLOBAL_CONTEXT_PIPELINE_FINISHED]: { name: string; timestamp_ms: number };

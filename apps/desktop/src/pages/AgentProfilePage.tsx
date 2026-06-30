@@ -10,6 +10,7 @@ import {
   Input,
   message as antMessage,
   Select,
+  InputNumber,
 } from 'antd';
 import { Tag, Button } from '@lobehub/ui';
 import {
@@ -23,8 +24,6 @@ import {
   Wrench,
   Eye,
   Sparkles,
-  Network,
-  BookOpen,
   Users,
   Activity,
   Database,
@@ -34,7 +33,13 @@ import {
 } from 'lucide-react';
 import { useAgentStore } from '../store/agent';
 import { buildAgentTurnDiagnosticsExport } from '../diagnostics/agentTurnDiagnostics';
-import { useChatStore } from '../store/chat';
+import {
+  extractMessageArtifacts,
+  useChatStore,
+  type ChatMessage,
+  type DelegationTaskInfo,
+  type ToolCallInfo,
+} from '../store/chat';
 import {
   api,
   executeAgentTurn,
@@ -42,6 +47,8 @@ import {
   type AgentKnowledgeResource,
   type AgentKnowledgeResourcePolicy,
   type AgentKnowledgeResourceType,
+  type AgentWorkspaceInfo,
+  type AgentWorkspaceCleanScope,
   parseAgentKnowledgeResources,
   parseAgentChatConfig,
   parseAgentParams,
@@ -49,8 +56,14 @@ import {
 import { ModelSelect } from '../components/ModelSelect';
 import { AgentSettingsModal } from '../components/AgentSettingsModal';
 import { BuilderPanel } from '../components/BuilderPanel';
-import { SkillAppletTagBar } from '../components/SkillAppletSelector';
+import { useSkillStore } from '../store/skill';
 import { EVENT, eventBus } from '../kernel/events';
+import type { AgentTurnStreamEventPayload } from '../kernel/events/types';
+import {
+  DelegationStatus,
+  TurnStatus,
+  type TurnTraceEntry,
+} from '../gen/proto/domain/agent/agent_pb';
 
 interface AgentProfilePageProps {
   agentName: string;
@@ -271,11 +284,10 @@ type ProfileTab =
   | 'prompt'
   | 'model'
   | 'runtime'
-  | 'tools'
-  | 'mcp'
-  | 'skills'
+  | 'capabilities'
   | 'memory'
   | 'knowledge'
+  | 'activity'
   | 'collaboration'
   | 'diagnostics';
 
@@ -284,11 +296,10 @@ const TAB_KEYS: { key: ProfileTab; labelKey: string; icon: ReactNode }[] = [
   { key: 'prompt', labelKey: 'agent.profile.tab.prompt', icon: null },
   { key: 'model', labelKey: 'agent.profile.tab.model', icon: <Cpu size={13} /> },
   { key: 'runtime', labelKey: 'agent.profile.tab.runtime', icon: <Zap size={13} /> },
-  { key: 'tools', labelKey: 'agent.profile.tab.tools', icon: <Wrench size={13} /> },
-  { key: 'mcp', labelKey: 'agent.profile.tab.mcp', icon: <Network size={13} /> },
-  { key: 'skills', labelKey: 'agent.profile.tab.skills', icon: <BookOpen size={13} /> },
+  { key: 'capabilities', labelKey: 'agent.profile.tab.capabilities', icon: <Wrench size={13} /> },
   { key: 'memory', labelKey: 'agent.profile.tab.memory', icon: <Brain size={13} /> },
   { key: 'knowledge', labelKey: 'agent.profile.tab.knowledge', icon: <Database size={13} /> },
+  { key: 'activity', labelKey: 'agent.profile.tab.activity', icon: <Activity size={13} /> },
   { key: 'collaboration', labelKey: 'agent.profile.tab.collaboration', icon: <Users size={13} /> },
   { key: 'diagnostics', labelKey: 'agent.profile.tab.diagnostics', icon: <Activity size={13} /> },
 ];
@@ -545,6 +556,11 @@ function parseStringList(raw?: string): string[] {
   return [];
 }
 
+function normalizeStringList(values?: string[]): string[] {
+  if (!Array.isArray(values)) return [];
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
 const PROMPT_VARIABLES = ['agent', 'user', 'date', 'workspace', 'model'];
 
 function extractPromptVariables(prompt: string): string[] {
@@ -567,6 +583,18 @@ function formatContextWindow(value?: number): string {
   if (value >= 1000000) return `${(value / 1000000).toFixed(value % 1000000 === 0 ? 0 : 1)}M`;
   if (value >= 1000) return `${Math.round(value / 1000)}K`;
   return String(value);
+}
+
+function formatBytes(bytes?: number): string {
+  if (!bytes || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(value < 10 && unitIndex > 0 ? 1 : 0)} ${units[unitIndex]}`;
 }
 
 function CapabilityBadge({
@@ -595,6 +623,440 @@ function CapabilityBadge({
     >
       {icon}
       <span>{label}</span>
+    </Flexbox>
+  );
+}
+
+type AgentActivityStatus = 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled' | 'unknown';
+type AgentActivityEventKind = 'turn' | 'tool' | 'approval' | 'delegation' | 'knowledge' | 'artifact' | 'error';
+
+interface AgentActivityTaskProjection {
+  id: string;
+  title: string;
+  status: AgentActivityStatus;
+  source: 'turn' | 'delegation' | 'trace';
+  startedAt: number;
+  endedAt?: number;
+  toolCount: number;
+  eventCount: number;
+}
+
+interface AgentActivityEventProjection {
+  id: string;
+  kind: AgentActivityEventKind;
+  status: AgentActivityStatus;
+  detail: string;
+  timestamp: number;
+}
+
+function truncateActivityText(value: string, fallback: string, maxLength = 96): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (!normalized) return fallback;
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
+}
+
+function statusFromToolCall(toolCall: ToolCallInfo): AgentActivityStatus {
+  if (toolCall.status === 'approval_required') return 'waiting';
+  if (toolCall.status === 'error') return 'failed';
+  if (toolCall.status === 'cancelled') return 'cancelled';
+  if (toolCall.pending || toolCall.status === 'approved' || toolCall.status === 'pending') return 'running';
+  if (toolCall.status === 'success') return 'completed';
+  if (toolCall.status === 'denied') return 'failed';
+  return 'unknown';
+}
+
+function statusFromDelegation(delegation: DelegationTaskInfo): AgentActivityStatus {
+  if (delegation.status === 'completed') return 'completed';
+  if (delegation.status === 'failed' || delegation.status === 'timeout') return 'failed';
+  return 'unknown';
+}
+
+function statusFromTurnStatus(status?: TurnStatus): AgentActivityStatus {
+  if (status === TurnStatus.RUNNING) return 'running';
+  if (status === TurnStatus.COMPLETED) return 'completed';
+  if (status === TurnStatus.FAILED) return 'failed';
+  if (status === TurnStatus.INTERRUPTED) return 'cancelled';
+  return 'unknown';
+}
+
+function statusFromPersistedDelegation(status?: DelegationStatus): AgentActivityStatus {
+  if (status === DelegationStatus.COMPLETED) return 'completed';
+  if (status === DelegationStatus.FAILED || status === DelegationStatus.TIMEOUT) return 'failed';
+  return 'unknown';
+}
+
+function protoTimestampToMs(timestamp?: { seconds: bigint; nanos: number }): number | undefined {
+  if (!timestamp) return undefined;
+  return Number(timestamp.seconds) * 1000 + Math.floor(timestamp.nanos / 1000000);
+}
+
+function statusFromAssistantMessage(message: ChatMessage): AgentActivityStatus {
+  const toolCalls = message.toolCalls || [];
+  if (message.error) return 'failed';
+  if (toolCalls.some((toolCall) => statusFromToolCall(toolCall) === 'waiting')) return 'waiting';
+  if (message.loading || toolCalls.some((toolCall) => statusFromToolCall(toolCall) === 'running')) return 'running';
+  if (toolCalls.some((toolCall) => statusFromToolCall(toolCall) === 'failed')) return 'failed';
+  return 'completed';
+}
+
+function buildAgentActivityProjections(messages: ChatMessage[], fallbackTitle: string): {
+  tasks: AgentActivityTaskProjection[];
+  events: AgentActivityEventProjection[];
+} {
+  const tasks: AgentActivityTaskProjection[] = [];
+  const events: AgentActivityEventProjection[] = [];
+  let latestUser: ChatMessage | undefined;
+
+  for (const message of messages) {
+    if (message.role === 'user') {
+      latestUser = message;
+      events.push({
+        id: `${message.id}:turn-started`,
+        kind: 'turn',
+        status: 'running',
+        detail: truncateActivityText(message.content, fallbackTitle),
+        timestamp: message.timestamp,
+      });
+      continue;
+    }
+
+    if (message.role !== 'assistant') continue;
+
+    const toolCalls = message.toolCalls || [];
+    const delegations = [
+      ...(message.delegationResults || []),
+      ...toolCalls.flatMap((toolCall) => toolCall.delegationResults || []),
+    ];
+    const knowledgeChunks = message.knowledgeChunks || [];
+    const artifacts = extractMessageArtifacts(message);
+    const status = statusFromAssistantMessage(message);
+    const eventCount = toolCalls.length + delegations.length + knowledgeChunks.length + artifacts.length + (message.error ? 1 : 0);
+
+    tasks.push({
+      id: message.id,
+      title: truncateActivityText(latestUser?.content || message.content, fallbackTitle),
+      status,
+      source: 'turn',
+      startedAt: latestUser?.timestamp || message.timestamp,
+      endedAt: message.loading ? undefined : message.lastEventAt || message.timestamp,
+      toolCount: toolCalls.length,
+      eventCount: Math.max(eventCount, 1),
+    });
+
+    if (message.error) {
+      events.push({
+        id: `${message.id}:error`,
+        kind: 'error',
+        status: 'failed',
+        detail: message.error,
+        timestamp: message.lastEventAt || message.timestamp,
+      });
+    }
+
+    for (const toolCall of toolCalls) {
+      const toolStatus = statusFromToolCall(toolCall);
+      events.push({
+        id: `${message.id}:tool:${toolCall.id}`,
+        kind: toolCall.status === 'approval_required' || toolCall.approvalId ? 'approval' : 'tool',
+        status: toolStatus,
+        detail: toolCall.serverName ? `${toolCall.serverName} / ${toolCall.name}` : toolCall.name,
+        timestamp: message.lastEventAt || message.timestamp,
+      });
+    }
+
+    for (const delegation of delegations) {
+      tasks.push({
+        id: delegation.taskId,
+        title: truncateActivityText(delegation.taskDescription, fallbackTitle),
+        status: statusFromDelegation(delegation),
+        source: 'delegation',
+        startedAt: delegation.startedAt ? Date.parse(delegation.startedAt) : message.timestamp,
+        endedAt: delegation.endedAt ? Date.parse(delegation.endedAt) : undefined,
+        toolCount: delegation.childToolset.length,
+        eventCount: delegation.toolIterations,
+      });
+      events.push({
+        id: `${message.id}:delegation:${delegation.taskId}`,
+        kind: 'delegation',
+        status: statusFromDelegation(delegation),
+        detail: delegation.resultSummary || delegation.taskDescription,
+        timestamp: delegation.endedAt ? Date.parse(delegation.endedAt) : message.lastEventAt || message.timestamp,
+      });
+    }
+
+    if (knowledgeChunks.length > 0) {
+      events.push({
+        id: `${message.id}:knowledge`,
+        kind: 'knowledge',
+        status: 'completed',
+        detail: knowledgeChunks.map((chunk) => chunk.resourceTitle || chunk.resourceId).join(', '),
+        timestamp: message.lastEventAt || message.timestamp,
+      });
+    }
+
+    if (artifacts.length > 0) {
+      events.push({
+        id: `${message.id}:artifact`,
+        kind: 'artifact',
+        status: 'completed',
+        detail: artifacts.map((artifact) => artifact.title).join(', '),
+        timestamp: message.lastEventAt || message.timestamp,
+      });
+    }
+  }
+
+  return {
+    tasks: tasks.sort((left, right) => right.startedAt - left.startedAt),
+    events: events.sort((left, right) => right.timestamp - left.timestamp),
+  };
+}
+
+function buildPersistedAgentActivityProjections(entries: TurnTraceEntry[], fallbackTitle: string): {
+  tasks: AgentActivityTaskProjection[];
+  events: AgentActivityEventProjection[];
+} {
+  const tasks: AgentActivityTaskProjection[] = [];
+  const events: AgentActivityEventProjection[] = [];
+
+  for (const entry of entries) {
+    const turn = entry.turn;
+    const trace = entry.trace;
+    if (!turn || !trace) continue;
+    const startedAt = protoTimestampToMs(turn.startedAt) || Date.now();
+    const endedAt = protoTimestampToMs(turn.endedAt);
+    const status = statusFromTurnStatus(turn.status);
+    const taskTitle = truncateActivityText(turn.userInput || turn.finalResponse, fallbackTitle);
+    const eventCount =
+      trace.toolCalls.length +
+      trace.providerCalls.length +
+      trace.errorsClassified.length +
+      trace.delegationResults.length +
+      trace.knowledgeChunks.length +
+      (trace.reviewTriggered ? 1 : 0) +
+      (trace.compressionEvent?.triggered ? 1 : 0);
+
+    tasks.push({
+      id: trace.traceId || turn.turnId,
+      title: taskTitle,
+      status,
+      source: 'trace',
+      startedAt,
+      endedAt,
+      toolCount: trace.toolCalls.length,
+      eventCount: Math.max(eventCount, 1),
+    });
+    events.push({
+      id: `${trace.traceId || turn.turnId}:turn`,
+      kind: 'turn',
+      status,
+      detail: taskTitle,
+      timestamp: startedAt,
+    });
+
+    trace.toolCalls.forEach((toolCall, index) => {
+      events.push({
+        id: `${trace.traceId || turn.turnId}:tool:${index}`,
+        kind: 'tool',
+        status: 'completed',
+        detail: toolCall.toolName || fallbackTitle,
+        timestamp: endedAt || startedAt,
+      });
+    });
+    trace.providerCalls.forEach((providerCall, index) => {
+      const detail = [providerCall.provider, providerCall.model].filter(Boolean).join(' / ');
+      events.push({
+        id: `${trace.traceId || turn.turnId}:provider:${index}`,
+        kind: 'tool',
+        status: 'completed',
+        detail: detail || fallbackTitle,
+        timestamp: endedAt || startedAt,
+      });
+    });
+    trace.errorsClassified.forEach((errorEvent, index) => {
+      events.push({
+        id: `${trace.traceId || turn.turnId}:error:${index}`,
+        kind: 'error',
+        status: 'failed',
+        detail: errorEvent.errorMessage || errorEvent.errorCode || fallbackTitle,
+        timestamp: protoTimestampToMs(errorEvent.classifiedAt) || endedAt || startedAt,
+      });
+    });
+    trace.delegationResults.forEach((delegation) => {
+      const delegationStatus = statusFromPersistedDelegation(delegation.status);
+      const delegationStartedAt = protoTimestampToMs(delegation.startedAt) || startedAt;
+      const delegationEndedAt = protoTimestampToMs(delegation.endedAt);
+      tasks.push({
+        id: delegation.taskId,
+        title: truncateActivityText(delegation.taskDescription, fallbackTitle),
+        status: delegationStatus,
+        source: 'delegation',
+        startedAt: delegationStartedAt,
+        endedAt: delegationEndedAt,
+        toolCount: delegation.childToolset.length,
+        eventCount: delegation.toolIterations,
+      });
+      events.push({
+        id: `${trace.traceId || turn.turnId}:delegation:${delegation.taskId}`,
+        kind: 'delegation',
+        status: delegationStatus,
+        detail: delegation.resultSummary || delegation.taskDescription || fallbackTitle,
+        timestamp: delegationEndedAt || delegationStartedAt,
+      });
+    });
+    if (trace.knowledgeChunks.length > 0) {
+      events.push({
+        id: `${trace.traceId || turn.turnId}:knowledge`,
+        kind: 'knowledge',
+        status: 'completed',
+        detail: trace.knowledgeChunks.map((chunk) => chunk.resourceTitle || chunk.resourceId).filter(Boolean).join(', ') || fallbackTitle,
+        timestamp: endedAt || startedAt,
+      });
+    }
+  }
+
+  return {
+    tasks: tasks.sort((left, right) => right.startedAt - left.startedAt),
+    events: events.sort((left, right) => right.timestamp - left.timestamp),
+  };
+}
+
+function ActivityStatusTag({ status }: { status: AgentActivityStatus }) {
+  const { t } = useTranslation('agent');
+  const colorByStatus: Record<AgentActivityStatus, string> = {
+    running: 'processing',
+    waiting: 'warning',
+    completed: 'success',
+    failed: 'error',
+    cancelled: 'default',
+    unknown: 'default',
+  };
+  return <Tag color={colorByStatus[status]}>{t(`agent.profile.activity.status.${status}`)}</Tag>;
+}
+
+function formatActivityTime(timestamp?: number): string {
+  if (!timestamp || Number.isNaN(timestamp)) return '';
+  return new Date(timestamp).toLocaleString();
+}
+
+const ACTIVITY_TRACE_REFRESH_EVENTS = new Set([
+  'progress',
+  'tool_call',
+  'tool_result',
+  'tool_approval_required',
+  'tool_approval_decision',
+  'local_tool_request',
+  'error',
+  'done',
+]);
+
+function AgentActivityPanel({
+  tasks,
+  events,
+  isCurrentAgentSession,
+  currentSessionTitle,
+  traceLoading,
+  traceLoadError,
+  persistedTraceCount,
+}: {
+  tasks: AgentActivityTaskProjection[];
+  events: AgentActivityEventProjection[];
+  isCurrentAgentSession: boolean;
+  currentSessionTitle: string;
+  traceLoading: boolean;
+  traceLoadError: string;
+  persistedTraceCount: number;
+}) {
+  const { t } = useTranslation('agent');
+  const { token } = theme.useToken();
+
+  return (
+    <Flexbox gap={12} style={{ overflow: 'auto' }}>
+      <ProfileCard
+        title={t('agent.profile.activity.persistentTrace')}
+        description={t('agent.profile.activity.persistentTraceDesc')}
+      >
+        <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
+          <Tag color={persistedTraceCount > 0 ? 'success' : 'default'}>
+            {t('agent.profile.activity.traceCount', { count: persistedTraceCount })}
+          </Tag>
+          {traceLoading && <Tag color="processing">{t('agent.profile.activity.traceLoading')}</Tag>}
+          {traceLoadError && <Tag color="error">{traceLoadError}</Tag>}
+          {!isCurrentAgentSession && (
+            <Tag color="warning">
+              {t('agent.profile.activity.sessionMismatch', {
+                session: currentSessionTitle || t('agent.profile.empty'),
+              })}
+            </Tag>
+          )}
+        </Flexbox>
+      </ProfileCard>
+      <ProfileCard title={t('agent.profile.activity.tasks')} description={t('agent.profile.activity.tasksDesc')}>
+        {tasks.length === 0 ? (
+          <Empty description={t('agent.profile.activity.noTasks')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        ) : (
+          <Flexbox gap={8}>
+            {tasks.map((task) => (
+              <Flexbox
+                key={`${task.source}:${task.id}`}
+                gap={6}
+                style={{
+                  padding: 10,
+                  borderRadius: 10,
+                  border: `1px solid ${token.colorBorderSecondary}`,
+                  background: token.colorBgContainer,
+                }}
+              >
+                <Flexbox horizontal align="center" justify="space-between" gap={8}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: token.colorText }}>{task.title}</span>
+                  <ActivityStatusTag status={task.status} />
+                </Flexbox>
+                <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap' }}>
+                  <Tag>{t(`agent.profile.activity.source.${task.source}`)}</Tag>
+                  <Tag>{t('agent.profile.activity.toolCount', { count: task.toolCount })}</Tag>
+                  <Tag>{t('agent.profile.activity.eventCount', { count: task.eventCount })}</Tag>
+                </Flexbox>
+                <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
+                  {formatActivityTime(task.startedAt)}
+                  {task.endedAt ? ` · ${formatActivityTime(task.endedAt)}` : ''}
+                </span>
+              </Flexbox>
+            ))}
+          </Flexbox>
+        )}
+      </ProfileCard>
+      <ProfileCard title={t('agent.profile.activity.events')} description={t('agent.profile.activity.eventsDesc')}>
+        {events.length === 0 ? (
+          <Empty description={t('agent.profile.activity.noEvents')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        ) : (
+          <Flexbox gap={8}>
+            {events.map((event) => (
+              <Flexbox
+                key={event.id}
+                gap={4}
+                style={{
+                  padding: 10,
+                  borderRadius: 10,
+                  border: `1px solid ${token.colorBorderSecondary}`,
+                  background: token.colorFillQuaternary,
+                }}
+              >
+                <Flexbox horizontal align="center" justify="space-between" gap={8}>
+                  <Flexbox horizontal align="center" gap={6}>
+                    <Tag>{t(`agent.profile.activity.event.${event.kind}`)}</Tag>
+                    <ActivityStatusTag status={event.status} />
+                  </Flexbox>
+                  <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
+                    {formatActivityTime(event.timestamp)}
+                  </span>
+                </Flexbox>
+                <span style={{ fontSize: 12, color: token.colorTextSecondary, wordBreak: 'break-word' }}>
+                  {truncateActivityText(event.detail, t('agent.profile.empty'), 180)}
+                </span>
+              </Flexbox>
+            ))}
+          </Flexbox>
+        )}
+      </ProfileCard>
     </Flexbox>
   );
 }
@@ -647,6 +1109,19 @@ function RuntimeCapabilityBadge({
 
 const KNOWLEDGE_RESOURCE_TYPES: AgentKnowledgeResourceType[] = ['document', 'folder', 'project', 'url', 'notebook', 'workspace'];
 const KNOWLEDGE_RESOURCE_POLICIES: AgentKnowledgeResourcePolicy[] = ['manual', 'auto', 'always', 'disabled'];
+
+function parseAllowedRootsForDisplay(value?: string): string {
+  if (!value?.trim()) return '';
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => String(item).trim()).filter(Boolean).join('\n');
+    }
+  } catch {
+    return value;
+  }
+  return '';
+}
 
 function createKnowledgeResourceId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -794,6 +1269,42 @@ function buildMetadataPrompt(agent: Agent, intent: string, currentTags: string[]
   ].join('\n');
 }
 
+function parseDescriptionDraft(content: string, fallback: string): string {
+  try {
+    const parsed = JSON.parse(extractJsonObject(content)) as { description?: unknown };
+    if (typeof parsed.description === 'string' && parsed.description.trim()) {
+      return parsed.description.trim();
+    }
+  } catch {
+    const trimmed = content.trim();
+    if (trimmed) return trimmed.replace(/^["']|["']$/g, '').trim();
+  }
+  return fallback;
+}
+
+function buildDescriptionRewritePrompt(agent: Agent, intent: string): string {
+  return [
+    'Rewrite only the description for this AI agent profile.',
+    'Return only a valid JSON object: {"description":"..."}',
+    'Rules: keep the description concise, product-facing, specific about user value, and do not change name, title, tags, prompt, or opening messages.',
+    '',
+    `Rewrite intent: ${intent}`,
+    '',
+    'Current agent:',
+    JSON.stringify(
+      {
+        name: agent.name,
+        title: agent.title || agent.name,
+        description: agent.description || '',
+        tags: parseStringList(agent.tags),
+        systemPrompt: agent.systemPrompt || '',
+      },
+      null,
+      2,
+    ),
+  ].join('\n');
+}
+
 export function AgentProfilePage({
   agentName,
   onBack,
@@ -809,6 +1320,10 @@ export function AgentProfilePage({
   const [agent, setAgent] = useState<Agent | null>(null);
   const [systemPrompt, setSystemPrompt] = useState('');
   const [promptDirty, setPromptDirty] = useState(false);
+  const [soulMd, setSoulMd] = useState('');
+  const [soulMdDirty, setSoulMdDirty] = useState(false);
+  const [agentsMd, setAgentsMd] = useState('');
+  const [agentsMdDirty, setAgentsMdDirty] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showBuilder, setShowBuilder] = useState(true);
   const [activeTab, setActiveTab] = useState<ProfileTab>('overview');
@@ -817,17 +1332,64 @@ export function AgentProfilePage({
   const [metadataGenerating, setMetadataGenerating] = useState(false);
   const [metadataApplying, setMetadataApplying] = useState(false);
   const [metadataError, setMetadataError] = useState('');
+  const [descriptionIntent, setDescriptionIntent] = useState('');
+  const [descriptionDraft, setDescriptionDraft] = useState('');
+  const [descriptionGenerating, setDescriptionGenerating] = useState(false);
+  const [descriptionApplying, setDescriptionApplying] = useState(false);
+  const [descriptionError, setDescriptionError] = useState('');
   const [knowledgeType, setKnowledgeType] = useState<AgentKnowledgeResourceType>('document');
   const [knowledgePolicy, setKnowledgePolicy] = useState<AgentKnowledgeResourcePolicy>('manual');
   const [knowledgeTitle, setKnowledgeTitle] = useState('');
   const [knowledgeSource, setKnowledgeSource] = useState('');
   const [exportingAgentPackage, setExportingAgentPackage] = useState(false);
+  const [skillImportAddress, setSkillImportAddress] = useState('');
+  const [skillImporting, setSkillImporting] = useState(false);
+  const [workspaceInfo, setWorkspaceInfo] = useState<AgentWorkspaceInfo | null>(null);
+  const [workspaceInfoLoading, setWorkspaceInfoLoading] = useState(false);
+  const [workspaceCleaning, setWorkspaceCleaning] = useState<string | null>(null);
+  const [persistedActivityProjection, setPersistedActivityProjection] = useState<{
+    tasks: AgentActivityTaskProjection[];
+    events: AgentActivityEventProjection[];
+  }>({ tasks: [], events: [] });
+  const [activityTraceLoading, setActivityTraceLoading] = useState(false);
+  const [activityTraceLoadError, setActivityTraceLoadError] = useState('');
+  const [persistedTraceCount, setPersistedTraceCount] = useState(0);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const { skills, builtins, loadSkills } = useSkillStore();
+  const activityMessages = useChatStore((state) => state.messages);
+  const activityCurrentSessionKey = useChatStore((state) => state.currentSessionKey);
+  const activitySessions = useChatStore((state) => state.sessions);
+  const skillOptions = useMemo(
+    () => [
+      ...builtins.map((skill) => ({
+        value: skill.identifier,
+        label: `${skill.name} · ${t('agent.profile.skills.builtin')}`,
+      })),
+      ...skills.map((skill) => ({
+        value: skill.id,
+        label: skill.metaTitle || skill.name,
+      })),
+    ],
+    [builtins, skills, t],
+  );
+  const skillLabelByValue = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const skill of builtins) {
+      labels.set(skill.identifier, skill.name);
+    }
+    for (const skill of skills) {
+      const label = skill.metaTitle || skill.name;
+      labels.set(skill.id, label);
+      labels.set(skill.identifier, label);
+    }
+    return labels;
+  }, [builtins, skills]);
 
   useEffect(() => {
     loadAgents();
     loadModels();
-  }, [loadAgents, loadModels]);
+    loadSkills();
+  }, [loadAgents, loadModels, loadSkills]);
 
   // Refresh agent data when Agent Builder modifies the agent
   useEffect(() => {
@@ -841,6 +1403,10 @@ export function AgentProfilePage({
       setAgent(found);
       setSystemPrompt(found.systemPrompt || '');
       setPromptDirty(false);
+      setSoulMd(found.soulMd || '');
+      setSoulMdDirty(false);
+      setAgentsMd(found.agentsMd || '');
+      setAgentsMdDirty(false);
     }
   }, [agents, agentName]);
 
@@ -887,6 +1453,225 @@ export function AgentProfilePage({
     }
   }, [promptDirty, systemPrompt, savePrompt]);
 
+  const saveSoulMd = useCallback(
+    async (value: string) => {
+      if (!agent) return;
+      try {
+        await api.updateAgent(agent.id, { soulMd: value });
+        setSoulMdDirty(false);
+        loadAgents();
+      } catch (err: any) {
+        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      }
+    },
+    [agent, loadAgents, t],
+  );
+
+  const handleSoulMdChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const value = e.target.value;
+      setSoulMd(value);
+      setSoulMdDirty(true);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => saveSoulMd(value), 1500);
+    },
+    [saveSoulMd],
+  );
+
+  const handleSoulMdBlur = useCallback(() => {
+    if (soulMdDirty) {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveSoulMd(soulMd);
+    }
+  }, [soulMdDirty, soulMd, saveSoulMd]);
+
+  const saveAgentsMd = useCallback(
+    async (value: string) => {
+      if (!agent) return;
+      try {
+        await api.updateAgent(agent.id, { agentsMd: value });
+        setAgentsMdDirty(false);
+        loadAgents();
+      } catch (err: any) {
+        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      }
+    },
+    [agent, loadAgents, t],
+  );
+
+  const handleAgentsMdChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const value = e.target.value;
+      setAgentsMd(value);
+      setAgentsMdDirty(true);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => saveAgentsMd(value), 1500);
+    },
+    [saveAgentsMd],
+  );
+
+  const handleAgentsMdBlur = useCallback(() => {
+    if (agentsMdDirty) {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveAgentsMd(agentsMd);
+    }
+  }, [agentsMdDirty, agentsMd, saveAgentsMd]);
+
+  const handleEffortChange = useCallback(
+    async (value: string) => {
+      if (!agent) return;
+      try {
+        await api.updateAgent(agent.id, { effort: value });
+        loadAgents();
+      } catch (err: any) {
+        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      }
+    },
+    [agent, loadAgents, t],
+  );
+
+  const handleCliCommandBlur = useCallback(
+    async (event: React.FocusEvent<HTMLInputElement>) => {
+      if (!agent) return;
+      const value = event.target.value.trim();
+      if (value === (agent.cliCommand || '').trim()) return;
+      try {
+        await api.updateAgent(agent.id, { cliCommand: value });
+        loadAgents();
+      } catch (err: any) {
+        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      }
+    },
+    [agent, loadAgents, t],
+  );
+
+  const handleVisibilityChange = useCallback(
+    async (value: string) => {
+      if (!agent) return;
+      try {
+        await api.updateAgent(agent.id, { visibility: value });
+        loadAgents();
+      } catch (err: any) {
+        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      }
+    },
+    [agent, loadAgents, t],
+  );
+
+  const handleIsolationRetentionDaysChange = useCallback(
+    async (value: number | null) => {
+      if (!agent) return;
+      try {
+        await api.updateAgent(agent.id, { isolationRetentionDays: value ?? 7 });
+        loadAgents();
+      } catch (err: any) {
+        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      }
+    },
+    [agent, loadAgents, t],
+  );
+
+  const handleWorkspaceModeChange = useCallback(
+    async (value: string) => {
+      if (!agent) return;
+      try {
+        await api.updateAgent(agent.id, { workspaceMode: value });
+        loadAgents();
+      } catch (err: any) {
+        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      }
+    },
+    [agent, loadAgents, t],
+  );
+
+  const handleRuntimeBackendChange = useCallback(
+    async (value: string) => {
+      if (!agent) return;
+      try {
+        await api.updateAgent(agent.id, { runtimeBackend: value });
+        loadAgents();
+      } catch (err: any) {
+        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      }
+    },
+    [agent, loadAgents, t],
+  );
+
+  const handleRootfsPathBlur = useCallback(
+    async (event: React.FocusEvent<HTMLInputElement>) => {
+      if (!agent) return;
+      const value = event.target.value.trim();
+      if (value === (agent.rootfsPath || '').trim()) return;
+      try {
+        await api.updateAgent(agent.id, { rootfsPath: value });
+        loadAgents();
+      } catch (err: any) {
+        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      }
+    },
+    [agent, loadAgents, t],
+  );
+
+  const handleAllowedRootsBlur = useCallback(
+    async (event: React.FocusEvent<HTMLTextAreaElement>) => {
+      if (!agent) return;
+      const roots = event.target.value
+        .split('\n')
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const value = JSON.stringify(roots);
+      if (value === (agent.allowedRoots || '[]')) return;
+      try {
+        await api.updateAgent(agent.id, { allowedRoots: value });
+        loadAgents();
+      } catch (err: any) {
+        antMessage.error(err.message || t('agent.profile.failedToSave'));
+      }
+    },
+    [agent, loadAgents, t],
+  );
+
+  const refreshWorkspaceInfo = useCallback(async () => {
+    if (!agent) return;
+    setWorkspaceInfoLoading(true);
+    try {
+      const info = await api.getAgentWorkspaceInfo(agent.id);
+      setWorkspaceInfo(info);
+    } catch (err: any) {
+      setWorkspaceInfo(null);
+      antMessage.error(err.message || t('agent.profile.workspace.failedToLoad'));
+    } finally {
+      setWorkspaceInfoLoading(false);
+    }
+  }, [agent, t]);
+
+  const handleCleanWorkspace = useCallback(
+    async (scope: AgentWorkspaceCleanScope) => {
+      if (!agent) return;
+      setWorkspaceCleaning(scope);
+      try {
+        const retentionDays =
+          scope === 'tasks' ? Number(agent.isolationRetentionDays ?? 7) : undefined;
+        const result = await api.cleanAgentWorkspace(agent.id, scope, retentionDays);
+        antMessage.success(
+          t('agent.profile.workspace.cleaned', { size: formatBytes(result.freed_bytes) }),
+        );
+        refreshWorkspaceInfo();
+      } catch (err: any) {
+        antMessage.error(err.message || t('agent.profile.workspace.failedToClean'));
+      } finally {
+        setWorkspaceCleaning(null);
+      }
+    },
+    [agent, refreshWorkspaceInfo, t],
+  );
+
+  useEffect(() => {
+    if (activeTab === 'runtime' && agent) {
+      refreshWorkspaceInfo();
+    }
+  }, [activeTab, agent, refreshWorkspaceInfo]);
+
   const handleModelChange = useCallback(
     async (modelId: string) => {
       if (!agent) return;
@@ -905,6 +1690,27 @@ export function AgentProfilePage({
       }
     },
     [agent, availableModels, loadAgents],
+  );
+
+  const handleProviderChange = useCallback(
+    async (providerId: string) => {
+      if (!agent) return;
+      const currentModel = availableModels.find((item) => item.id === agent.model);
+      const shouldClearModel = !!currentModel && currentModel.provider_id !== providerId;
+      try {
+        await api.updateAgent(agent.id, {
+          provider: providerId || '',
+          model: shouldClearModel ? '' : agent.model,
+        });
+        if (shouldClearModel) {
+          await api.deleteModelConfig(`agent:${agent.name}`);
+        }
+        loadAgents();
+      } catch (err: any) {
+        antMessage.error(err.message || t('agent.profile.failedToUpdateModel'));
+      }
+    },
+    [agent, availableModels, loadAgents, t],
   );
 
   const handleAvatarChange = useCallback(
@@ -928,6 +1734,66 @@ export function AgentProfilePage({
     },
     [loadAgents],
   );
+
+  const handleBoundSkillsChange = useCallback(
+    async (values: string[]) => {
+      if (!agent) return;
+      const config = parseAgentChatConfig(agent);
+      try {
+        const updated = await api.updateAgent(agent.id, {
+          chatConfig: JSON.stringify({
+            ...config,
+            skills: normalizeStringList(values),
+          }),
+        });
+        setAgent(updated);
+        await loadAgents();
+        antMessage.success(t('agent.profile.skills.boundUpdated'));
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
+        antMessage.error(message);
+      }
+    },
+    [agent, loadAgents, t],
+  );
+
+  const handleImportSkillToAgent = useCallback(async () => {
+    if (!agent) return;
+    const address = skillImportAddress.trim();
+    if (!address) {
+      antMessage.warning(t('agent.profile.skills.importAddressRequired'));
+      return;
+    }
+
+    setSkillImporting(true);
+    try {
+      const result = await api.importSkillFromAddress(address);
+      const importedIds = normalizeStringList(result.imported.map((skill) => skill.id));
+      await loadSkills();
+
+      if (importedIds.length === 0) {
+        antMessage.warning(t('agent.profile.skills.importNoSkills'));
+        return;
+      }
+
+      const config = parseAgentChatConfig(agent);
+      const updated = await api.updateAgent(agent.id, {
+        chatConfig: JSON.stringify({
+          ...config,
+          skills: normalizeStringList([...(config.skills || []), ...importedIds]),
+        }),
+      });
+      setAgent(updated);
+      setSkillImportAddress('');
+      await loadAgents();
+      antMessage.success(t('agent.profile.skills.importedAndBound', { count: importedIds.length }));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t('agent.profile.skills.importFailed');
+      antMessage.error(message);
+    } finally {
+      setSkillImporting(false);
+    }
+  }, [agent, skillImportAddress, loadSkills, loadAgents, t]);
 
   const handleGenerateMetadata = useCallback(async () => {
     if (!agent) return;
@@ -1001,6 +1867,64 @@ export function AgentProfilePage({
       setMetadataApplying(false);
     }
   }, [agent, metadataDraft, loadAgents, t]);
+
+  const handleGenerateDescriptionDraft = useCallback(async () => {
+    if (!agent) return;
+    const intent = descriptionIntent.trim();
+    if (!intent) {
+      antMessage.warning(t('agent.descriptionRewrite.intentRequired'));
+      return;
+    }
+
+    setDescriptionGenerating(true);
+    setDescriptionError('');
+    setDescriptionDraft('');
+
+    const prompt = buildDescriptionRewritePrompt(agent, intent);
+    const sessionKey = `agent_description:${agent.id}`;
+    let content = '';
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        executeAgentTurn(
+          prompt,
+          sessionKey,
+          'agent-builder',
+          (event) => {
+            if (event.event === 'text') content += event.data?.content || '';
+          },
+          () => resolve(),
+          (error) => reject(error),
+        );
+      });
+      setDescriptionDraft(parseDescriptionDraft(content, agent.description || ''));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setDescriptionError(message || t('agent.descriptionRewrite.parseFailed'));
+    } finally {
+      setDescriptionGenerating(false);
+    }
+  }, [agent, descriptionIntent, t]);
+
+  const handleApplyDescriptionDraft = useCallback(async () => {
+    if (!agent || !descriptionDraft.trim()) return;
+    setDescriptionApplying(true);
+    try {
+      const updated = await api.updateAgent(agent.id, {
+        description: descriptionDraft.trim(),
+      });
+      setAgent(updated);
+      setDescriptionDraft('');
+      setDescriptionIntent('');
+      await loadAgents();
+      antMessage.success(t('agent.descriptionRewrite.applied'));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
+      antMessage.error(message);
+    } finally {
+      setDescriptionApplying(false);
+    }
+  }, [agent, descriptionDraft, loadAgents, t]);
 
   const handleSaveKnowledgeResources = useCallback(async (resources: AgentKnowledgeResource[]) => {
     if (!agent) return;
@@ -1094,6 +2018,58 @@ export function AgentProfilePage({
     antMessage.success(t('agent.profile.diagnostics.exported'));
   }, [agent, t]);
 
+  const loadActivityTraces = useCallback(async (ignore?: () => boolean) => {
+    if (!agent) return;
+    setActivityTraceLoading(true);
+    setActivityTraceLoadError('');
+    try {
+      const response = await api.listAgentTurnTraces(agent.id, { pageSize: 20 });
+      if (ignore?.()) return;
+      setPersistedTraceCount(response.total);
+      setPersistedActivityProjection(buildPersistedAgentActivityProjections(
+        response.entries || [],
+        t('agent.profile.activity.defaultTaskTitle'),
+      ));
+    } catch (error: unknown) {
+      if (ignore?.()) return;
+      const message = error instanceof Error ? error.message : t('agent.profile.activity.traceLoadFailed');
+      setPersistedTraceCount(0);
+      setPersistedActivityProjection({ tasks: [], events: [] });
+      setActivityTraceLoadError(message);
+    } finally {
+      if (!ignore?.()) setActivityTraceLoading(false);
+    }
+  }, [agent, t]);
+
+  useEffect(() => {
+    if (!agent || activeTab !== 'activity') return;
+    let ignore = false;
+    loadActivityTraces(() => ignore);
+    return () => {
+      ignore = true;
+    };
+  }, [activeTab, agent, loadActivityTraces]);
+
+  useEffect(() => {
+    if (!agent || activeTab !== 'activity') return;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = eventBus.subscribe(
+      EVENT.AGENT_TURN_STREAM_EVENT,
+      (payload: AgentTurnStreamEventPayload) => {
+        if (payload.agentId !== agent.id && payload.agentId !== agent.name) return;
+        if (!ACTIVITY_TRACE_REFRESH_EVENTS.has(payload.event)) return;
+        if (refreshTimer) clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(() => {
+          loadActivityTraces();
+        }, payload.event === 'done' || payload.event === 'error' ? 0 : 500);
+      },
+    );
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      unsubscribe();
+    };
+  }, [activeTab, agent, loadActivityTraces]);
+
   if (!agent) {
     return (
       <Flexbox align="center" justify="center" style={{ height: '100%' }}>
@@ -1113,10 +2089,41 @@ export function AgentProfilePage({
   const mcpServers = chatConfig.mcpServers || [];
   const boundTools = chatConfig.tools || [];
   const boundSkills = chatConfig.skills || [];
+  const boundSkillLabels = boundSkills.map((skill) => skillLabelByValue.get(skill) || skill);
   const knowledgeResources = parseAgentKnowledgeResources(agent);
   const openingQuestions = parseStringList(agent.openingQuestions);
   const agentTags = parseStringList(agent.tags);
+  const activityCurrentSession = activitySessions.find((session) => session.key === activityCurrentSessionKey);
+  const isCurrentAgentActivitySession =
+    activityCurrentSession?.agent_name === agent.name || activityCurrentSession?.agent_name === agent.id;
+  const localActivityProjection = buildAgentActivityProjections(
+    isCurrentAgentActivitySession ? activityMessages : [],
+    t('agent.profile.activity.defaultTaskTitle'),
+  );
+  const activityProjection = {
+    tasks: [...persistedActivityProjection.tasks, ...localActivityProjection.tasks]
+      .sort((left, right) => right.startedAt - left.startedAt),
+    events: [...persistedActivityProjection.events, ...localActivityProjection.events]
+      .sort((left, right) => right.timestamp - left.timestamp),
+  };
   const selectedModel = availableModels.find((model) => model.id === agent.model);
+  const selectedProviderId = agent.provider || selectedModel?.provider_id || '';
+  const providerOptions = Array.from(
+    new Map(
+      availableModels
+        .filter((model) => model.enabled)
+        .map((model) => [
+          model.provider_id || model.provider_name,
+          {
+            value: model.provider_id || model.provider_name,
+            label: model.provider_name || model.provider_id,
+          },
+        ]),
+    ).values(),
+  ).filter((option) => option.value);
+  const routingModels = selectedProviderId
+    ? availableModels.filter((model) => model.provider_id === selectedProviderId)
+    : availableModels;
   const modelContextWindow = formatContextWindow(selectedModel?.context_window);
   const promptVariables = extractPromptVariables(systemPrompt);
   const invalidPromptVariables = promptVariables.filter((item) => !PROMPT_VARIABLES.includes(item));
@@ -1190,7 +2197,7 @@ export function AgentProfilePage({
         count: boundTools.length + mcpServers.length + boundSkills.length,
       }),
       ready: boundTools.length + mcpServers.length + boundSkills.length > 0 || agent.toolsProfile !== 'minimal',
-      targetTab: 'tools',
+      targetTab: 'capabilities',
     },
     {
       key: 'knowledge',
@@ -1273,7 +2280,7 @@ export function AgentProfilePage({
         knowledge: knowledgeResources.length,
       }),
       ready: hasLocalToolBindings,
-      targetTab: 'tools' as ProfileTab,
+      targetTab: 'capabilities' as ProfileTab,
     },
     {
       label: t('agent.builder.context.focus'),
@@ -1434,15 +2441,66 @@ export function AgentProfilePage({
                 )}
               </Flexbox>
 
-              <div style={{ marginBottom: 12 }}>
-                <SkillAppletTagBar
-                  onNavigateSkills={onNavigateSkills}
-                  onNavigateApplets={onNavigateApplets}
-                />
-              </div>
+              <Flexbox horizontal align="center" gap={6} style={{ marginBottom: 12, flexWrap: 'wrap' }}>
+                <Tag color={boundSkills.length > 0 ? 'purple' : 'default'} style={{ margin: 0 }}>
+                  {t('agent.profile.capabilities.skillsCount', { count: boundSkills.length })}
+                </Tag>
+                {boundSkillLabels.slice(0, 4).map((skill) => (
+                  <Tag key={skill} style={{ margin: 0 }}>{skill}</Tag>
+                ))}
+                {boundSkillLabels.length > 4 && (
+                  <Tag style={{ margin: 0 }}>{t('agent.profile.skills.more', { count: boundSkillLabels.length - 4 })}</Tag>
+                )}
+                <Button size="small" onClick={() => setActiveTab('capabilities')}>
+                  {t('agent.profile.skills.configure')}
+                </Button>
+              </Flexbox>
             </div>
 
             <Divider style={{ margin: '8px 0 0' }} />
+
+            <Flexbox
+              horizontal
+              align="center"
+              gap={8}
+              style={{
+                flexShrink: 0,
+                padding: '10px 0 2px',
+                flexWrap: 'wrap',
+              }}
+            >
+              <Select
+                value={selectedProviderId || undefined}
+                onChange={handleProviderChange}
+                placeholder={t('agent.profile.routing.providerPlaceholder')}
+                allowClear
+                showSearch
+                options={providerOptions}
+                style={{ minWidth: 190, flex: '0 1 220px' }}
+                filterOption={(input, option) =>
+                  String(option?.label || '').toLowerCase().includes(input.toLowerCase())
+                }
+              />
+              <ModelSelect
+                models={routingModels}
+                value={agent.model || undefined}
+                onChange={handleModelChange}
+                placeholder={t('agent.profile.routing.modelPlaceholder')}
+                size="middle"
+                style={{ minWidth: 240, flex: '1 1 300px' }}
+              />
+              <Select
+                value={agent.effort || 'medium'}
+                onChange={handleEffortChange}
+                placeholder={t('agent.profile.routing.effortPlaceholder')}
+                style={{ minWidth: 180, flex: '0 1 220px' }}
+                options={[
+                  { value: 'low', label: t('agent.profile.effort.low') },
+                  { value: 'medium', label: t('agent.profile.effort.medium') },
+                  { value: 'high', label: t('agent.profile.effort.high') },
+                ]}
+              />
+            </Flexbox>
 
             {/* ── Tab bar (no font-weight change to prevent wobble) ── */}
             <div style={{ display: 'flex', gap: 0, flexShrink: 0 }}>
@@ -1582,9 +2640,54 @@ export function AgentProfilePage({
                     action={<Button size="small" onClick={() => setSettingsOpen(true)}>{t('agent.profile.editSettings')}</Button>}
                   >
                     <InfoRow label={t('agent.profile.field.name')} value={agent.name} />
+                    <InfoRow label={t('agent.profile.field.description')} value={agent.description || t('agent.profile.empty')} />
                     <InfoRow label={t('agent.profile.field.tags')} value={<PillList values={agentTags} emptyText={t('agent.profile.empty')} />} />
                     <InfoRow label={t('agent.profile.field.pinned')} value={agent.pinned ? t('agent.profile.enabled') : t('agent.profile.disabled')} />
                     <InfoRow label={t('agent.profile.field.favorite')} value={agent.favorite ? t('agent.profile.enabled') : t('agent.profile.disabled')} />
+                    <Flexbox gap={8} style={{ marginTop: 10 }}>
+                      <Flexbox horizontal align="center" justify="space-between" gap={8}>
+                        <span style={{ fontSize: 12, color: token.colorTextSecondary }}>
+                          {t('agent.descriptionRewrite.title')}
+                        </span>
+                        <Button
+                          size="small"
+                          icon={<Sparkles size={13} />}
+                          loading={descriptionGenerating}
+                          onClick={handleGenerateDescriptionDraft}
+                        >
+                          {t('agent.descriptionRewrite.generate')}
+                        </Button>
+                      </Flexbox>
+                      <Input.TextArea
+                        value={descriptionIntent}
+                        onChange={(event) => setDescriptionIntent(event.target.value)}
+                        placeholder={t('agent.descriptionRewrite.intentPlaceholder')}
+                        autoSize={{ minRows: 2, maxRows: 4 }}
+                      />
+                      {descriptionError && (
+                        <span style={{ fontSize: 12, color: token.colorError }}>
+                          {t('agent.descriptionRewrite.failed', { error: descriptionError })}
+                        </span>
+                      )}
+                      {descriptionDraft && (
+                        <Flexbox gap={8}>
+                          <InfoRow label={t('agent.descriptionRewrite.preview')} value={descriptionDraft} />
+                          <Flexbox horizontal justify="flex-end" gap={8}>
+                            <Button size="small" onClick={() => setDescriptionDraft('')}>
+                              {t('agent.metadata.discard')}
+                            </Button>
+                            <Button
+                              size="small"
+                              type="primary"
+                              loading={descriptionApplying}
+                              onClick={handleApplyDescriptionDraft}
+                            >
+                              {t('agent.descriptionRewrite.apply')}
+                            </Button>
+                          </Flexbox>
+                        </Flexbox>
+                      )}
+                    </Flexbox>
                   </ProfileCard>
                   <ProfileCard title={t('agent.profile.section.routing')} description={t('agent.profile.section.routingDesc')}>
                     <InfoRow label={t('agent.profile.field.provider')} value={agent.provider || selectedModel?.provider_id || t('agent.profile.defaultValue')} />
@@ -1595,59 +2698,80 @@ export function AgentProfilePage({
               )}
 
               {activeTab === 'prompt' && (
-                <Flexbox flex={1} gap={6} style={{ minHeight: 0 }}>
-                  <textarea
-                    value={systemPrompt}
-                    onChange={handlePromptChange}
-                    onBlur={handlePromptBlur}
-                    placeholder={t('agent.profile.promptPlaceholder')}
-                    style={{
-                      flex: 1,
-                      width: '100%',
-                      minHeight: 200,
-                      padding: '12px 16px',
-                      borderRadius: 8,
-                      border: `1px solid ${token.colorBorderSecondary}`,
-                      background: token.colorBgContainer,
-                      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-                      fontSize: 13,
-                      lineHeight: 1.7,
-                      resize: 'none',
-                      outline: 'none',
-                      color: token.colorText,
-                    }}
-                    onFocus={(e) => {
-                      (e.target as HTMLElement).style.borderColor = token.colorPrimary;
-                    }}
-                    onBlurCapture={(e) => {
-                      (e.target as HTMLElement).style.borderColor =
-                        token.colorBorderSecondary;
-                    }}
-                  />
-                  <Flexbox horizontal align="center" justify="space-between" gap={12} style={{ flexShrink: 0 }}>
-                    <span style={{ fontSize: 12, color: token.colorTextDescription }}>
-                      {t('agent.profile.promptHelp')}
-                    </span>
-                    <Tag color={invalidPromptVariables.length > 0 ? 'red' : 'blue'}>
-                      {t('agent.profile.promptTokenEstimate', { count: estimatePromptTokens(systemPrompt) })}
-                    </Tag>
-                  </Flexbox>
-                  <Flexbox horizontal gap={8} style={{ flexShrink: 0, flexWrap: 'wrap' }}>
-                    <Tag color={invalidPromptVariables.length > 0 ? 'red' : 'green'}>
-                      {invalidPromptVariables.length > 0
-                        ? t('agent.profile.promptInvalidVariablesInline', { variables: invalidPromptVariables.join(', ') })
-                        : t('agent.profile.promptVariablesValid')}
-                    </Tag>
-                    {PROMPT_VARIABLES.map((variable) => (
-                      <Tag key={variable}>{`{{${variable}}}`}</Tag>
-                    ))}
-                  </Flexbox>
+                <Flexbox flex={1} gap={10} style={{ minHeight: 0, overflow: 'auto' }}>
+                  <ProfileCard
+                    title={t('agent.profile.section.soulMd')}
+                    description={t('agent.profile.section.soulMdDesc')}
+                  >
+                    <textarea
+                      value={soulMd}
+                      onChange={handleSoulMdChange}
+                      onBlur={handleSoulMdBlur}
+                      placeholder={t('agent.profile.soulMdPlaceholder')}
+                      style={{
+                        width: '100%',
+                        minHeight: 160,
+                        padding: '12px 16px',
+                        borderRadius: 8,
+                        border: `1px solid ${token.colorBorderSecondary}`,
+                        background: token.colorBgContainer,
+                        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                        fontSize: 13,
+                        lineHeight: 1.7,
+                        resize: 'vertical',
+                        outline: 'none',
+                        color: token.colorText,
+                      }}
+                      onFocus={(e) => {
+                        (e.target as HTMLElement).style.borderColor = token.colorPrimary;
+                      }}
+                      onBlurCapture={(e) => {
+                        (e.target as HTMLElement).style.borderColor = token.colorBorderSecondary;
+                      }}
+                    />
+                  </ProfileCard>
+                  <ProfileCard
+                    title={t('agent.profile.section.agentsMd')}
+                    description={t('agent.profile.section.agentsMdDesc')}
+                  >
+                    <textarea
+                      value={agentsMd}
+                      onChange={handleAgentsMdChange}
+                      onBlur={handleAgentsMdBlur}
+                      placeholder={t('agent.profile.agentsMdPlaceholder')}
+                      style={{
+                        width: '100%',
+                        minHeight: 220,
+                        padding: '12px 16px',
+                        borderRadius: 8,
+                        border: `1px solid ${token.colorBorderSecondary}`,
+                        background: token.colorBgContainer,
+                        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                        fontSize: 13,
+                        lineHeight: 1.7,
+                        resize: 'vertical',
+                        outline: 'none',
+                        color: token.colorText,
+                      }}
+                      onFocus={(e) => {
+                        (e.target as HTMLElement).style.borderColor = token.colorPrimary;
+                      }}
+                      onBlurCapture={(e) => {
+                        (e.target as HTMLElement).style.borderColor = token.colorBorderSecondary;
+                      }}
+                    />
+                    <Flexbox horizontal gap={8} style={{ marginTop: 8, flexWrap: 'wrap' }}>
+                      {PROMPT_VARIABLES.map((variable) => (
+                        <Tag key={variable}>{`{{${variable}}}`}</Tag>
+                      ))}
+                    </Flexbox>
+                  </ProfileCard>
                   <ProfileCard title={t('agent.profile.promptPreview')} description={t('agent.profile.promptPreviewDesc')}>
                     <pre
                       style={{
                         margin: 0,
                         whiteSpace: 'pre-wrap',
-                        maxHeight: 140,
+                        maxHeight: 180,
                         overflow: 'auto',
                         fontSize: 12,
                         lineHeight: 1.6,
@@ -1657,20 +2781,73 @@ export function AgentProfilePage({
                       {promptPreview || t('agent.profile.empty')}
                     </pre>
                   </ProfileCard>
+                  <details style={{ marginTop: 4 }}>
+                    <summary style={{ cursor: 'pointer', fontSize: 12, color: token.colorTextTertiary, padding: '4px 0' }}>
+                      {t('agent.profile.section.systemPromptLegacy')}
+                    </summary>
+                    <div style={{ paddingTop: 8 }}>
+                      <textarea
+                        value={systemPrompt}
+                        onChange={handlePromptChange}
+                        onBlur={handlePromptBlur}
+                        placeholder={t('agent.profile.promptPlaceholder')}
+                        style={{
+                          width: '100%',
+                          minHeight: 120,
+                          padding: '10px 12px',
+                          borderRadius: 8,
+                          border: `1px solid ${token.colorBorderSecondary}`,
+                          background: token.colorBgContainer,
+                          fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                          fontSize: 12,
+                          lineHeight: 1.6,
+                          resize: 'vertical',
+                          outline: 'none',
+                          color: token.colorText,
+                        }}
+                        onFocus={(e) => {
+                          (e.target as HTMLElement).style.borderColor = token.colorPrimary;
+                        }}
+                        onBlurCapture={(e) => {
+                          (e.target as HTMLElement).style.borderColor = token.colorBorderSecondary;
+                        }}
+                      />
+                      <Flexbox horizontal align="center" justify="space-between" gap={12} style={{ marginTop: 6 }}>
+                        <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
+                          {t('agent.profile.promptHelp')}
+                        </span>
+                        <Tag color={invalidPromptVariables.length > 0 ? 'red' : 'blue'}>
+                          {t('agent.profile.promptTokenEstimate', { count: estimatePromptTokens(systemPrompt) })}
+                        </Tag>
+                      </Flexbox>
+                      <Flexbox horizontal gap={8} style={{ marginTop: 6, flexWrap: 'wrap' }}>
+                        <Tag color={invalidPromptVariables.length > 0 ? 'red' : 'green'}>
+                          {invalidPromptVariables.length > 0
+                            ? t('agent.profile.promptInvalidVariablesInline', { variables: invalidPromptVariables.join(', ') })
+                            : t('agent.profile.promptVariablesValid')}
+                        </Tag>
+                      </Flexbox>
+                    </div>
+                  </details>
                 </Flexbox>
               )}
 
               {activeTab === 'model' && (
                 <Flexbox gap={12} style={{ overflow: 'auto' }}>
                   <ProfileCard title={t('agent.profile.section.model')} description={t('agent.profile.section.modelDesc')}>
-                    <ModelSelect
-                      models={availableModels}
-                      value={agent.model || undefined}
-                      onChange={handleModelChange}
-                      placeholder={t('agent.profile.defaultModel')}
-                      size="middle"
-                      style={{ minWidth: 260 }}
-                    />
+                    <InfoRow label={t('agent.profile.field.provider')} value={selectedModel?.provider_name || selectedProviderId || t('agent.profile.defaultValue')} />
+                    <InfoRow label={t('agent.profile.field.model')} value={selectedModel?.display_name || agent.model || t('agent.profile.defaultValue')} />
+                    <InfoRow label={t('agent.profile.field.effort')} value={t(`agent.profile.effort.${agent.effort || 'medium'}`)} />
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ fontSize: 12, color: token.colorTextSecondary, marginBottom: 6 }}>
+                        {t('agent.profile.field.cliCommand')}
+                      </div>
+                      <Input
+                        defaultValue={agent.cliCommand || ''}
+                        onBlur={handleCliCommandBlur}
+                        placeholder={t('agent.profile.cliCommandPlaceholder')}
+                      />
+                    </div>
                     <InfoRow label={t('agent.profile.field.temperature')} value={params.temperature ?? t('agent.profile.defaultValue')} />
                     <InfoRow label={t('agent.profile.field.topP')} value={params.top_p ?? t('agent.profile.defaultValue')} />
                     <InfoRow label={t('agent.profile.field.maxTokens')} value={params.max_tokens ?? t('agent.profile.defaultValue')} />
@@ -1727,6 +2904,163 @@ export function AgentProfilePage({
 
               {activeTab === 'runtime' && (
                 <Flexbox gap={12} style={{ overflow: 'auto' }}>
+                  <ProfileCard title={t('agent.profile.section.visibility')} description={t('agent.profile.section.visibilityDesc')}>
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 12, color: token.colorTextSecondary, marginBottom: 6 }}>
+                        {t('agent.profile.field.visibility')}
+                      </div>
+                      <Select
+                        value={agent.visibility || 'private'}
+                        onChange={handleVisibilityChange}
+                        style={{ minWidth: 220 }}
+                        options={[
+                          { value: 'private', label: t('agent.profile.visibility.private') },
+                          { value: 'workspace', label: t('agent.profile.visibility.workspace') },
+                        ]}
+                      />
+                    </div>
+                  </ProfileCard>
+                  <ProfileCard title={t('agent.profile.section.agentWorkspace')} description={t('agent.profile.section.agentWorkspaceDesc')}>
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 12, color: token.colorTextSecondary, marginBottom: 6 }}>
+                        {t('agent.profile.field.workspaceMode')}
+                      </div>
+                      <Select
+                        value={agent.workspaceMode || 'agent'}
+                        onChange={handleWorkspaceModeChange}
+                        style={{ minWidth: 240 }}
+                        options={[
+                          { value: 'agent', label: t('agent.profile.workspaceMode.agent') },
+                          { value: 'task', label: t('agent.profile.workspaceMode.task') },
+                        ]}
+                      />
+                    </div>
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 12, color: token.colorTextSecondary, marginBottom: 6 }}>
+                        {t('agent.profile.field.workspaceRetentionDays')}
+                      </div>
+                      <InputNumber
+                        min={1}
+                        max={90}
+                        value={agent.isolationRetentionDays ?? 7}
+                        onChange={handleIsolationRetentionDaysChange}
+                        style={{ minWidth: 160 }}
+                      />
+                    </div>
+                    <Divider style={{ margin: '8px 0' }} />
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 12, color: token.colorTextSecondary, marginBottom: 4 }}>
+                        {t('agent.profile.workspace.usage')}
+                      </div>
+                      {workspaceInfoLoading ? (
+                        <div style={{ color: token.colorTextSecondary, fontSize: 13 }}>
+                          {t('agent.profile.workspace.loading')}
+                        </div>
+                      ) : workspaceInfo ? (
+                        <Flexbox gap={4}>
+                          <InfoRow
+                            label={t('agent.profile.workspace.totalSize')}
+                            value={formatBytes(workspaceInfo.total_bytes)}
+                          />
+                          <InfoRow
+                            label={t('agent.profile.workspace.taskCount')}
+                            value={String(workspaceInfo.task_count)}
+                          />
+                          <InfoRow
+                            label={t('agent.profile.workspace.path')}
+                            value={workspaceInfo.workspace_root}
+                          />
+                        </Flexbox>
+                      ) : (
+                        <div style={{ color: token.colorTextSecondary, fontSize: 13 }}>
+                          {t('agent.profile.workspace.notAvailable')}
+                        </div>
+                      )}
+                    </div>
+                    <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap', marginTop: 8 }}>
+                      <Button
+                        size="small"
+                        loading={workspaceCleaning === 'tasks'}
+                        onClick={() => handleCleanWorkspace('tasks')}
+                      >
+                        {t('agent.profile.workspace.cleanTasks')}
+                      </Button>
+                      <Button
+                        size="small"
+                        loading={workspaceCleaning === 'artifacts'}
+                        onClick={() => handleCleanWorkspace('artifacts')}
+                      >
+                        {t('agent.profile.workspace.cleanArtifacts')}
+                      </Button>
+                      <Button
+                        size="small"
+                        loading={workspaceCleaning === 'logs'}
+                        onClick={() => handleCleanWorkspace('logs')}
+                      >
+                        {t('agent.profile.workspace.cleanLogs')}
+                      </Button>
+                      <Button
+                        size="small"
+                        type="primary"
+                        danger
+                        loading={workspaceCleaning === 'all_workspace'}
+                        onClick={() => handleCleanWorkspace('all_workspace')}
+                      >
+                        {t('agent.profile.workspace.cleanAll')}
+                      </Button>
+                    </Flexbox>
+                  </ProfileCard>
+                  <ProfileCard title={t('agent.profile.section.accessBoundary')} description={t('agent.profile.section.accessBoundaryDesc')}>
+                    <InfoRow label={t('agent.profile.field.agentWorkspace')} value={t('agent.profile.accessBoundary.agentWorkspaceAllowed')} />
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: 12, color: token.colorTextSecondary, marginBottom: 6 }}>
+                        {t('agent.profile.field.allowedRoots')}
+                      </div>
+                      <Input.TextArea
+                        defaultValue={parseAllowedRootsForDisplay(agent.allowedRoots)}
+                        onBlur={handleAllowedRootsBlur}
+                        placeholder={t('agent.profile.allowedRootsPlaceholder')}
+                        autoSize={{ minRows: 3, maxRows: 6 }}
+                      />
+                    </div>
+                  </ProfileCard>
+                  <ProfileCard title={t('agent.profile.section.executionEnvironment')} description={t('agent.profile.section.executionEnvironmentDesc')}>
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 12, color: token.colorTextSecondary, marginBottom: 6 }}>
+                        {t('agent.profile.field.runtimeBackend')}
+                      </div>
+                      <Select
+                        value={agent.runtimeBackend || 'host'}
+                        onChange={handleRuntimeBackendChange}
+                        style={{ minWidth: 240 }}
+                        options={[
+                          { value: 'host', label: t('agent.profile.runtimeBackend.host') },
+                          { value: 'proot', label: t('agent.profile.runtimeBackend.proot') },
+                        ]}
+                      />
+                    </div>
+                    {agent.runtimeBackend === 'proot' && (
+                      <div style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: 12, color: token.colorTextSecondary, marginBottom: 6 }}>
+                          {t('agent.profile.field.rootfsPath')}
+                        </div>
+                        <Input
+                          defaultValue={agent.rootfsPath || ''}
+                          onBlur={handleRootfsPathBlur}
+                          placeholder={t('agent.profile.rootfsPathPlaceholder')}
+                        />
+                      </div>
+                    )}
+                    <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap' }}>
+                      <Tag color="blue">{t('agent.profile.workspaceBadge.lightweight')}</Tag>
+                      <Tag color="green">{t('agent.profile.workspaceBadge.pathGuard')}</Tag>
+                      {agent.runtimeBackend === 'proot' ? (
+                        <Tag color="purple">{t('agent.profile.workspaceBadge.proot')}</Tag>
+                      ) : (
+                        <Tag color="gold">{t('agent.profile.workspaceBadge.trustedHost')}</Tag>
+                      )}
+                    </Flexbox>
+                  </ProfileCard>
                   <ProfileCard title={t('agent.profile.section.runtime')} description={t('agent.profile.section.runtimeDesc')}>
                     <InfoRow label={t('agent.profile.field.streaming')} value={chatConfig.enableStreaming === false ? t('agent.profile.disabled') : t('agent.profile.enabled')} />
                     <InfoRow label={t('agent.profile.field.historyCount')} value={chatConfig.enableHistoryCount ? chatConfig.historyCount ?? t('agent.profile.defaultValue') : t('agent.profile.disabled')} />
@@ -1744,30 +3078,69 @@ export function AgentProfilePage({
                 </Flexbox>
               )}
 
-              {activeTab === 'tools' && (
+              {activeTab === 'capabilities' && (
                 <Flexbox gap={12} style={{ overflow: 'auto' }}>
+                  <ProfileCard title={t('agent.profile.section.capabilities')} description={t('agent.profile.section.capabilitiesDesc')} action={<Button size="small" onClick={() => setSettingsOpen(true)}>{t('agent.profile.editSettings')}</Button>}>
+                    <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
+                      <Tag color={boundTools.length > 0 ? 'green' : 'default'}>{t('agent.profile.capabilities.toolsCount', { count: boundTools.length })}</Tag>
+                      <Tag color={mcpServers.length > 0 ? 'blue' : 'default'}>{t('agent.profile.capabilities.mcpCount', { count: mcpServers.length })}</Tag>
+                      <Tag color={boundSkills.length > 0 ? 'purple' : 'default'}>{t('agent.profile.capabilities.skillsCount', { count: boundSkills.length })}</Tag>
+                    </Flexbox>
+                  </ProfileCard>
                   <ProfileCard title={t('agent.profile.section.tools')} description={t('agent.profile.section.toolsDesc')} action={<Button size="small" onClick={() => setSettingsOpen(true)}>{t('agent.profile.editSettings')}</Button>}>
                     <InfoRow label={t('agent.profile.field.toolsProfile')} value={agent.toolsProfile || t('agent.profile.defaultValue')} />
                     <InfoRow label={t('agent.profile.field.allowedTools')} value={<PillList values={boundTools} emptyText={t('agent.profile.empty')} />} />
                     <InfoRow label={t('agent.profile.field.toolsAllow')} value={agent.toolsAllow || t('agent.profile.empty')} />
                     <InfoRow label={t('agent.profile.field.toolsDeny')} value={agent.toolsDeny || t('agent.profile.empty')} />
                   </ProfileCard>
-                </Flexbox>
-              )}
-
-              {activeTab === 'mcp' && (
-                <Flexbox gap={12} style={{ overflow: 'auto' }}>
-                  <ProfileCard title={t('agent.profile.section.mcp')} description={t('agent.profile.section.mcpDesc')}>
+                  <ProfileCard title={t('agent.profile.section.mcp')} description={t('agent.profile.section.mcpDesc')} action={<Button size="small" onClick={() => setSettingsOpen(true)}>{t('agent.profile.editSettings')}</Button>}>
                     <PillList values={mcpServers} emptyText={t('agent.profile.mcpEmpty')} />
                   </ProfileCard>
-                </Flexbox>
-              )}
-
-              {activeTab === 'skills' && (
-                <Flexbox gap={12} style={{ overflow: 'auto' }}>
-                  <ProfileCard title={t('agent.profile.section.skills')} description={t('agent.profile.section.skillsDesc')}>
-                    <SkillAppletTagBar onNavigateSkills={onNavigateSkills} onNavigateApplets={onNavigateApplets} />
-                    <InfoRow label={t('agent.profile.field.boundSkills')} value={<PillList values={boundSkills} emptyText={t('agent.profile.empty')} />} />
+                  <ProfileCard
+                    title={t('agent.profile.section.skills')}
+                    description={t('agent.profile.section.skillsDesc')}
+                    action={
+                      <Flexbox horizontal gap={6}>
+                        <Button size="small" onClick={onNavigateSkills}>
+                          {t('agent.profile.skills.manage')}
+                        </Button>
+                        <Button size="small" onClick={onNavigateApplets}>
+                          {t('agent.profile.skills.manageApplets')}
+                        </Button>
+                      </Flexbox>
+                    }
+                  >
+                    <Flexbox gap={10}>
+                      <Select
+                        mode="multiple"
+                        value={boundSkills}
+                        onChange={handleBoundSkillsChange}
+                        options={skillOptions}
+                        placeholder={t('agent.profile.skills.bindPlaceholder')}
+                        optionFilterProp="label"
+                        style={{ width: '100%' }}
+                      />
+                      <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
+                        <Input
+                          value={skillImportAddress}
+                          onChange={(event) => setSkillImportAddress(event.target.value)}
+                          onPressEnter={handleImportSkillToAgent}
+                          placeholder={t('agent.profile.skills.inlineImportPlaceholder')}
+                          style={{ minWidth: 260, flex: 1 }}
+                        />
+                        <Button
+                          icon={<Download size={13} />}
+                          loading={skillImporting}
+                          onClick={handleImportSkillToAgent}
+                        >
+                          {t('agent.profile.skills.import')}
+                        </Button>
+                      </Flexbox>
+                      <InfoRow
+                        label={t('agent.profile.field.boundSkills')}
+                        value={<PillList values={boundSkillLabels} emptyText={t('agent.profile.empty')} />}
+                      />
+                    </Flexbox>
                   </ProfileCard>
                 </Flexbox>
               )}
@@ -1823,6 +3196,18 @@ export function AgentProfilePage({
                     <KnowledgeResourceList resources={knowledgeResources} onRemove={handleRemoveKnowledgeResource} />
                   </ProfileCard>
                 </Flexbox>
+              )}
+
+              {activeTab === 'activity' && (
+                <AgentActivityPanel
+                  tasks={activityProjection.tasks}
+                  events={activityProjection.events}
+                  isCurrentAgentSession={isCurrentAgentActivitySession}
+                  currentSessionTitle={activityCurrentSession?.title || activityCurrentSession?.key || ''}
+                  traceLoading={activityTraceLoading}
+                  traceLoadError={activityTraceLoadError}
+                  persistedTraceCount={persistedTraceCount}
+                />
               )}
 
               {activeTab === 'collaboration' && (
