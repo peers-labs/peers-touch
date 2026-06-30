@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Cloud,
   Image as ImageIcon,
+  ImagePlus,
   MoreHorizontal,
   Network,
   PanelLeftClose,
@@ -14,6 +15,7 @@ import {
   Send,
   Settings2,
   Share2,
+  Slash,
   Sparkles,
   UserRound,
   Workflow,
@@ -288,12 +290,18 @@ export function AgentChatPage({
           <textarea
             style={styles.composerInput}
             placeholder="Ask anything..."
-            rows={2}
+            rows={1}
           />
           <div style={styles.composerToolbar}>
-            <div style={{ flex: 1 }} />
-            <button style={styles.modelButton}>Doubao Pro</button>
-            <button style={styles.sendButton} title="Send"><Send size={28} /></button>
+            <button style={styles.circleToolButton} title="Slash command"><Slash size={16} /></button>
+            <button style={styles.circleToolButton} title="Upload File"><ImagePlus size={18} /></button>
+            <div style={styles.composerModelSlot}>
+              <button style={styles.modelButton}>
+                Doubao Pro
+                <ChevronDown size={14} />
+              </button>
+            </div>
+            <button style={styles.sendButton} title="Send"><Send size={16} /></button>
           </div>
         </section>
       </main>
@@ -703,14 +711,16 @@ const styles: Record<string, React.CSSProperties> = {
   },
   composer: {
     width: 'min(1068px, calc(100% - 160px))',
-    minHeight: 256,
     margin: '0 auto 48px',
-    borderRadius: 40,
+    borderRadius: 24,
     background: '#fff',
     border: '1px solid #d9d9d9',
-    boxShadow: '0 18px 64px rgba(15,23,42,0.06)',
-    padding: '34px 36px 28px',
+    boxShadow: '0 8px 32px rgba(15,23,42,0.06)',
+    padding: '12px 14px 10px',
     boxSizing: 'border-box',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
   },
   composerPlaceholder: {
     color: T.textTertiary,
@@ -719,47 +729,55 @@ const styles: Record<string, React.CSSProperties> = {
   },
   composerInput: {
     width: '100%',
-    minHeight: 112,
+    minHeight: 28,
+    maxHeight: 200,
     border: 0,
     outline: 'none',
     resize: 'none',
     color: T.text,
-    fontSize: 28,
-    lineHeight: 1.35,
+    fontSize: 15,
+    lineHeight: 1.5,
     fontFamily: 'inherit',
     background: 'transparent',
     boxSizing: 'border-box',
+    padding: '2px 4px',
   },
   composerToolbar: {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
   },
-  plainToolButton: {
+  composerModelSlot: {
+    flex: 1,
+    display: 'flex',
+    justifyContent: 'center',
+  },
+  circleToolButton: {
     width: 34,
     height: 34,
     border: 0,
-    borderRadius: 10,
-    background: 'transparent',
-    color: '#1f1f1f',
+    borderRadius: '50%',
+    background: T.fillTertiary,
+    color: T.textSecondary,
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
     cursor: 'pointer',
   },
   modelButton: {
-    minHeight: 58,
+    height: 34,
     border: 0,
     borderRadius: 999,
     background: T.fillQuaternary,
-    color: T.textTertiary,
-    padding: '0 24px',
+    color: T.textSecondary,
+    padding: '0 12px',
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
     fontSize: 13,
-    fontWeight: 650,
+    fontWeight: 600,
     cursor: 'pointer',
+    maxWidth: 260,
   },
   modelSelect: {
     height: 30,
@@ -771,14 +789,16 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
   },
   sendButton: {
-    width: 58,
-    height: 58,
+    width: 34,
+    height: 34,
     border: 0,
-    borderRadius: 22,
-    background: T.fillQuaternary,
-    color: T.textQuaternary,
+    borderRadius: '50%',
+    background: T.primary,
+    color: '#fff',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    cursor: 'pointer',
+    flexShrink: 0,
   },
 };
