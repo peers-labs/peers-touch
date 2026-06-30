@@ -135,7 +135,7 @@ pub fn agent_memory_list(input: AgentMemoryListInput, token: &str) -> AppResult<
     let req = model::agent::ListMemoriesRequest {
         agent_id: input.agent_id,
         target: String::new(),
-        layer: String::new(),
+        layer: 0,
         page: 0,
         page_size: 100,
         order_by: "created_at".to_string(),

@@ -1,8 +1,8 @@
 # Applet Runtime Architecture
 
 > **Status**: draft
-> **Version**: v1.3
-> **Created**: 2026-05-19 | **Updated**: 2026-06-17
+> **Version**: v1.4
+> **Created**: 2026-05-19 | **Updated**: 2026-06-23
 > **Owner**: Architecture Team
 > **Module**: `apps/applets/`, `apps/desktop/src/applet/`, `apps/mobile/`, `packages/applet-sdk/`, `packages/applet-contract/`
 
@@ -75,7 +75,7 @@
 README
   → complex-applet-acceptance
   → development-runtime-readiness-report
-  → complex implementation plan
+  → applet capability completion plan
   → sdk/runtime/service/data/module/integration design
   → decisions
   → study / assessment documents
@@ -93,9 +93,8 @@ AI 执行复杂 applet 开发任务时必须按这个顺序读：
 2. [official-applet-architecture-contract.md](./official-applet-architecture-contract.md)
 3. [complex-applet-acceptance.md](./complex-applet-acceptance.md)
 4. [development-runtime-readiness-report.md](./development-runtime-readiness-report.md)
-5. 按目标选择任务级执行计划：
-   - 官方 Note applet 验证： [execution-plans/2026-06-17-note-official-applet-implementation-plan.md](./execution-plans/2026-06-17-note-official-applet-implementation-plan.md)
-   - 通用复杂 applet 能力： [execution-plans/2026-06-06-complex-applet-implementation-plan.md](./execution-plans/2026-06-06-complex-applet-implementation-plan.md)
+5. 读取当前唯一任务级执行计划：
+   - Applet 能力完成计划： [execution-plans/2026-06-23-applet-capability-completion-plan.md](./execution-plans/2026-06-23-applet-capability-completion-plan.md)
 6. 按任务选择领域设计：
    - Contract / schema： [data-model.md](./data-model.md), [module-layout.md](./module-layout.md)
    - SDK： [sdk-architecture.md](./sdk-architecture.md)
@@ -134,10 +133,12 @@ AI 不得只读 `execution-plans/2026-06-06-applet-runtime-formalization.md` 后
 
 | 文档 | 说明 |
 |------|------|
-| [execution-plans/2026-06-17-note-official-applet-implementation-plan.md](./execution-plans/2026-06-17-note-official-applet-implementation-plan.md) | **任务级执行源**：Note 官方 applet，覆盖 `apps/applets/note`、Note service、SDK/Gateway 增强、Desktop 注入、真实证据 |
-| [execution-plans/note-official-applet-progress.md](./execution-plans/note-official-applet-progress.md) | Note 官方 applet 持久进度：记录当前 workstream、已跑命令、证据文件和下一步 |
-| [execution-plans/2026-06-06-complex-applet-implementation-plan.md](./execution-plans/2026-06-06-complex-applet-implementation-plan.md) | **任务级执行源**：C0/S1/G2/D3/T4/A5，写入范围、命令、pass/fail、AI prompt |
-| [execution-plans/2026-06-06-applet-runtime-formalization.md](./execution-plans/2026-06-06-applet-runtime-formalization.md) | 总体 phase 计划，必须服从复杂 applet 任务级计划 |
+| [execution-plans/2026-06-23-applet-capability-completion-plan.md](./execution-plans/2026-06-23-applet-capability-completion-plan.md) | **当前唯一任务级执行源**：完成 Applet 能力，覆盖 Note 产品化、Station Store、Applet Box、Gateway hardening、第三方认证、Web/Mobile parity、release audit |
+| [execution-plans/note-official-applet-progress.md](./execution-plans/note-official-applet-progress.md) | 历史进度输入：记录 Note 官方 applet 已完成证据和遗留缺口，后续执行必须映射到新完成计划 |
+| [execution-plans/complex-applet-progress.md](./execution-plans/complex-applet-progress.md) | 历史进度输入：记录 complex applet candidate 证据和 release blocker，后续执行必须映射到新完成计划 |
+| [execution-plans/2026-06-17-note-official-applet-implementation-plan.md](./execution-plans/2026-06-17-note-official-applet-implementation-plan.md) | **归档 / superseded**：Note 官方 applet 旧任务计划，被 2026-06-23 完成计划取代 |
+| [execution-plans/2026-06-06-complex-applet-implementation-plan.md](./execution-plans/2026-06-06-complex-applet-implementation-plan.md) | **归档 / superseded**：complex applet 旧任务计划，被 2026-06-23 完成计划取代 |
+| [execution-plans/2026-06-06-applet-runtime-formalization.md](./execution-plans/2026-06-06-applet-runtime-formalization.md) | **归档 / superseded**：总体 phase 旧计划，被 2026-06-23 完成计划取代 |
 
 ### 6.4 参考与历史评估
 
