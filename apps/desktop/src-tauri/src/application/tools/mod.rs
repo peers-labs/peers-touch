@@ -203,15 +203,16 @@ pub fn execute_builtin_local_tool(
     tool_name: &str,
     arguments: Value,
     workspace_root: Option<&str>,
+    allowed_roots: Option<&[String]>,
     call_id: Option<&str>,
 ) -> Result<Value, String> {
     let started = std::time::Instant::now();
     let output = match tool_name {
-        "local_file_read" => execute_file_read(&arguments, workspace_root),
-        "local_workspace_list" => execute_workspace_list(&arguments, workspace_root),
+        "local_file_read" => execute_file_read(&arguments, workspace_root, allowed_roots),
+        "local_workspace_list" => execute_workspace_list(&arguments, workspace_root, allowed_roots),
         "local_clipboard_read" => execute_clipboard_read(),
         "local_clipboard_write" => execute_clipboard_write(&arguments),
-        "local_shell_safe" => execute_shell_safe(&arguments, workspace_root),
+        "local_shell_safe" => execute_shell_safe(&arguments, workspace_root, allowed_roots),
         "oauth_connector_call" => return oauth2::execute_oauth_connector_tool(&arguments, call_id),
         other => Err(format!("unsupported builtin local tool: {other}")),
     }?;
@@ -232,14 +233,18 @@ pub fn execute_builtin_local_tool(
     }))
 }
 
-fn execute_file_read(arguments: &Value, workspace_root: Option<&str>) -> Result<Value, String> {
+fn execute_file_read(
+    arguments: &Value,
+    workspace_root: Option<&str>,
+    allowed_roots: Option<&[String]>,
+) -> Result<Value, String> {
     let path = required_string(arguments, "path")?;
     let max_bytes = arguments
         .get("max_bytes")
         .and_then(Value::as_u64)
         .unwrap_or(64 * 1024)
         .min(200_000) as usize;
-    let resolved = resolve_workspace_path(workspace_root, &path)?;
+    let resolved = resolve_guarded_path(workspace_root, allowed_roots, &path)?;
     if !resolved.is_file() {
         return Err(format!("path is not a file: {}", resolved.display()));
     }
@@ -258,6 +263,7 @@ fn execute_file_read(arguments: &Value, workspace_root: Option<&str>) -> Result<
 fn execute_workspace_list(
     arguments: &Value,
     workspace_root: Option<&str>,
+    allowed_roots: Option<&[String]>,
 ) -> Result<Value, String> {
     let path = optional_string(arguments, "path").unwrap_or_else(|| ".".to_string());
     let limit = arguments
@@ -265,7 +271,7 @@ fn execute_workspace_list(
         .and_then(Value::as_u64)
         .unwrap_or(100)
         .min(200) as usize;
-    let resolved = resolve_workspace_path(workspace_root, &path)?;
+    let resolved = resolve_guarded_path(workspace_root, allowed_roots, &path)?;
     if !resolved.is_dir() {
         return Err(format!("path is not a directory: {}", resolved.display()));
     }
@@ -312,11 +318,15 @@ fn execute_clipboard_write(arguments: &Value) -> Result<Value, String> {
     Ok(json!({ "written": true, "bytes": text.len() }))
 }
 
-fn execute_shell_safe(arguments: &Value, workspace_root: Option<&str>) -> Result<Value, String> {
+fn execute_shell_safe(
+    arguments: &Value,
+    workspace_root: Option<&str>,
+    allowed_roots: Option<&[String]>,
+) -> Result<Value, String> {
     let operation = required_string(arguments, "operation")?;
     match operation.as_str() {
         "pwd" => Ok(json!({ "workspace": workspace_base(workspace_root)?.display().to_string() })),
-        "list_dir" => execute_workspace_list(arguments, workspace_root),
+        "list_dir" => execute_workspace_list(arguments, workspace_root, allowed_roots),
         other => Err(format!("unsupported safe shell operation: {other}")),
     }
 }
@@ -334,7 +344,11 @@ fn optional_string(arguments: &Value, key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-fn resolve_workspace_path(workspace_root: Option<&str>, path: &str) -> Result<PathBuf, String> {
+fn resolve_guarded_path(
+    workspace_root: Option<&str>,
+    allowed_roots: Option<&[String]>,
+    path: &str,
+) -> Result<PathBuf, String> {
     let base = workspace_base(workspace_root)?;
     let candidate = Path::new(path);
     let joined = if candidate.is_absolute() {
@@ -345,10 +359,30 @@ fn resolve_workspace_path(workspace_root: Option<&str>, path: &str) -> Result<Pa
     let normalized = joined
         .canonicalize()
         .map_err(|error| format!("failed to resolve path: {error}"))?;
-    if !normalized.starts_with(&base) {
-        return Err("path is outside the approved workspace".to_string());
+    let allowed = approved_roots(&base, allowed_roots)?;
+    if !allowed.iter().any(|root| normalized.starts_with(root)) {
+        return Err("path is outside the approved Agent access roots".to_string());
     }
     Ok(normalized)
+}
+
+fn approved_roots(base: &Path, allowed_roots: Option<&[String]>) -> Result<Vec<PathBuf>, String> {
+    let mut roots = vec![base.to_path_buf()];
+    if let Some(extra_roots) = allowed_roots {
+        for raw in extra_roots {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let root = Path::new(trimmed)
+                .canonicalize()
+                .map_err(|error| format!("failed to resolve allowed root '{trimmed}': {error}"))?;
+            roots.push(root);
+        }
+    }
+    roots.sort();
+    roots.dedup();
+    Ok(roots)
 }
 
 fn workspace_base(workspace_root: Option<&str>) -> Result<PathBuf, String> {
@@ -464,6 +498,7 @@ mod tests {
             "local_file_read",
             json!({"path": "allowed.txt"}),
             Some(base.to_str().expect("temp path should be utf8")),
+            None,
             Some("call_1"),
         )
         .expect("workspace file should be readable");
@@ -485,14 +520,43 @@ mod tests {
             "local_file_read",
             json!({"path": outside.display().to_string()}),
             Some(base.to_str().expect("temp path should be utf8")),
+            None,
             Some("call_2"),
         );
         assert!(denied
             .expect_err("outside file must be denied")
-            .contains("outside the approved workspace"));
+            .contains("outside the approved Agent access roots"));
 
         let _ = fs::remove_file(outside);
         let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn local_file_read_allows_configured_extra_root() {
+        let base = unique_temp_dir("agent-tools-workspace");
+        let extra = unique_temp_dir("agent-tools-extra");
+        fs::create_dir_all(&base).expect("temp workspace should be created");
+        fs::create_dir_all(&extra).expect("extra root should be created");
+        fs::write(extra.join("shared.txt"), "shared").expect("extra file should be written");
+
+        let result = execute_builtin_local_tool(
+            "local_file_read",
+            json!({"path": extra.join("shared.txt").display().to_string()}),
+            Some(base.to_str().expect("temp path should be utf8")),
+            Some(&[extra.to_string_lossy().to_string()]),
+            Some("call_3"),
+        )
+        .expect("configured extra root should be readable");
+        assert_eq!(
+            result
+                .get("output")
+                .and_then(|output| output.get("content"))
+                .and_then(Value::as_str),
+            Some("shared")
+        );
+
+        let _ = fs::remove_dir_all(base);
+        let _ = fs::remove_dir_all(extra);
     }
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
