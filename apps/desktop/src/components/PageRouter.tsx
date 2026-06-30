@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useChatStore } from '../store/chat';
 import { useAgentStore } from '../store/agent';
-import { ChatPage } from '../pages/ChatPage';
+import { AgentChatPage } from '../pages/AgentChatPage';
 import { NotesPage } from '../pages/NotesPage';
+import { AgentCanvasPage } from '../pages/AgentCanvasPage';
 import { AgentProfilePage } from '../pages/AgentProfilePage';
-import { AgentResourceManagement } from '../pages/AgentResourceManagement';
 import { getModule } from '../modules/registry';
 import { getPage } from '../kernel/page';
+import { openAgentChatSession } from '../utils/openAgentChatSession';
 import { scheduleIdle } from '../kernel/boot';
 import type { Page, Navigation, AppletPins, HashRouter } from '../types/navigation';
 
@@ -74,24 +75,14 @@ export function PageRouter({ page, router, navigation }: PageRouterProps) {
 
   return (
     <>
-      {/* Keep-alive: ChatPage (AI agent) — preserves conversation context */}
+      {/* Keep-alive: AgentChatPage — preserves conversation context */}
       {(mounted.has('agent') || page === 'agent') && (
         <div style={{ display: page === 'agent' ? 'contents' : 'none' }}>
-          <ChatPage
-            onNavigateSettings={() => navigation.navigateToSettings('providers')}
-            onNavigateApplets={() => navigation.navigateToSettings('applets')}
-            onNavigateSkills={() => navigation.navigateToSettings('skills')}
+          <AgentChatPage
             onNavigateAgentProfile={(agentName) => {
-              router.setProfileAgentName(agentName);
-              window.history.pushState(null, '', `#/agent-profile/${agentName}`);
-              navigation.navigateTo('agent-profile');
+              navigation.navigateToAgentSurface(agentName, 'profile');
             }}
-            onNavigatePages={(docId) => {
-              if (docId) {
-                window.history.pushState(null, '', `#/notes/${docId}`);
-              }
-              navigation.navigateTo('notes');
-            }}
+            onNavigateAgentCanvas={() => navigation.navigateTo('agent-orchestration')}
           />
         </div>
       )}
@@ -124,31 +115,22 @@ function EphemeralPage({ page, router, navigation }: Pick<PageRouterProps, 'page
           agentName={router.profileAgentName}
           onBack={() => navigation.navigateTo('agent')}
           onStartChat={(name) => {
-            useAgentStore.getState().setSelectedAgent(name);
+            const agent = useAgentStore.getState().agents.find((item) => item.name === name);
+            if (agent) void openAgentChatSession(agent, { reason: 'profile-start-chat' });
             navigation.navigateTo('agent');
           }}
-          onNavigateCron={() => navigation.navigateToSettings('cron')}
-          onNavigateSkills={() => navigation.navigateToSettings('skills')}
-          onNavigateApplets={() => navigation.navigateToSettings('applets')}
+          onOpenOrchestration={() => navigation.navigateTo('agent-orchestration')}
         />
       );
 
-    case 'agent-resources':
+    case 'agent-orchestration': {
       return (
-        <AgentResourceManagement
-          agentName={router.profileAgentName}
+        <AgentCanvasPage
           onBack={() => navigation.navigateTo('agent')}
-          onNavigateAgentProfile={(name) => {
-            router.setProfileAgentName(name);
-            window.history.pushState(null, '', `#/agent-profile/${name}`);
-            navigation.navigateTo('agent-profile');
-          }}
-          onStartChat={(name) => {
-            useAgentStore.getState().setSelectedAgent(name);
-            navigation.navigateTo('agent');
-          }}
+          onCreateAgent={(agentName) => navigation.navigateToAgentSurface(agentName, 'profile')}
         />
       );
+    }
 
     default: {
       const mod = getModule(page);

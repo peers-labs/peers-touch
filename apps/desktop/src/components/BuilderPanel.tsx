@@ -1,14 +1,13 @@
 import { useState, useCallback, useRef, useEffect, useMemo, useLayoutEffect } from 'react';
 import { Flexbox, Center } from 'react-layout-kit';
-import { ActionIcon, Avatar, DraggablePanel } from '@lobehub/ui';
+import { ActionIcon, DraggablePanel } from '@lobehub/ui';
 import { ModelIcon } from '@lobehub/icons';
 import { theme, Select, Popover } from 'antd';
 import {
   PanelRightClose,
+  PanelRightOpen,
   Send,
   Square,
-  Globe,
-  GlobeOff,
   ChevronDown,
 } from 'lucide-react';
 import { useChatStore, type ChatMessage } from '../store/chat';
@@ -18,13 +17,14 @@ import { ModelProviderSelect } from './ModelProviderSelect';
 import { executeAgentTurn, type Agent, type Session } from '../services/desktop_api';
 import { EVENT, eventBus } from '../kernel/events';
 import { useTranslation } from 'react-i18next';
+import { AgentIconTile } from './agent/AgentIconTile';
 
 export interface BuilderPanelProps {
   agentName: string;
   scope: string;
   welcomeTitle: string;
   welcomeDescription: string;
-  welcomeAvatar: string;
+  welcomeAvatar?: string;
   suggestQuestions?: string[];
   contextSummary?: Array<{ label: string; value: string; ready?: boolean; targetTab?: string }>;
   onContextItemClick?: (targetTab: string) => void;
@@ -77,7 +77,7 @@ function AgentSelector({
       variant="borderless"
       labelRender={() => (
         <Flexbox horizontal align="center" gap={4}>
-          <span style={{ fontSize: 14, lineHeight: 1 }}>{selected?.avatar || '🤖'}</span>
+          <AgentIconTile agent={selected} size={20} subtle />
           <span style={{ fontSize: 12, fontWeight: 500, color: token.colorText }}>
             {selected?.title || selected?.name || selectedAgentName}
           </span>
@@ -87,7 +87,7 @@ function AgentSelector({
         value: a.name,
         label: (
           <Flexbox horizontal align="center" gap={6}>
-            <span style={{ fontSize: 16 }}>{a.avatar || '🤖'}</span>
+            <AgentIconTile agent={a} size={22} subtle />
             <span style={{ fontSize: 13 }}>{a.title || a.name}</span>
           </Flexbox>
         ),
@@ -101,7 +101,6 @@ export function BuilderPanel({
   scope,
   welcomeTitle,
   welcomeDescription,
-  welcomeAvatar,
   suggestQuestions,
   contextSummary,
   onContextItemClick,
@@ -113,7 +112,6 @@ export function BuilderPanel({
   maxWidth = 560,
   showAgentSelector = false,
   showTopicSelector = false,
-  onDocumentUpdated,
   disabled = false,
   disabledMessage,
 }: BuilderPanelProps) {
@@ -141,7 +139,6 @@ export function BuilderPanel({
   }, [expand]);
 
   const [currentAgent, setCurrentAgent] = useState(agentName);
-  const [searchEnabled, setSearchEnabled] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
   const [sessionKey, setSessionKey] = useState('');
   const isComposingRef = useRef(false);
@@ -151,6 +148,7 @@ export function BuilderPanel({
     defaultModel,
     selectedModel,
     selectedProviderId,
+    availableModels,
     setSelectedModel,
   } = useAgentStore();
   const {
@@ -158,6 +156,10 @@ export function BuilderPanel({
   } = useChatStore();
 
   const currentModelId = selectedModel || defaultModel;
+  const currentModelLabel = useMemo(() => {
+    const model = availableModels.find((item) => item.id === currentModelId);
+    return model?.display_name || currentModelId || t('agent.builder.context.model');
+  }, [availableModels, currentModelId, t]);
 
   const scopedSessionKey = useMemo(() => {
     return sessionKey || `${scope}:${currentAgent}`;
@@ -211,7 +213,7 @@ export function BuilderPanel({
       (err) => {
         if (err.name !== 'AbortError') {
           setMessages((prev) =>
-            prev.map((m) => (m.id === assistantId ? { ...m, content: `Error: ${err.message}`, loading: false } : m)),
+            prev.map((m) => (m.id === assistantId ? { ...m, content: t('agent.builder.error', { error: err.message }), loading: false } : m)),
           );
         }
         setLoading(false);
@@ -222,7 +224,7 @@ export function BuilderPanel({
       selectedProviderId || undefined,
     );
     abortRef.current = controller;
-  }, [input, loading, scopedSessionKey, currentAgent, contextPayload, selectedModel, defaultModel, searchEnabled, onDocumentUpdated]);
+  }, [input, loading, disabled, scopedSessionKey, currentAgent, contextPayload, selectedModel, defaultModel, selectedProviderId]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -236,6 +238,53 @@ export function BuilderPanel({
   const handleSuggestClick = useCallback((q: string) => {
     setInput(q);
   }, []);
+
+  if (!expand) {
+    return (
+      <aside
+        style={{
+          width: 40,
+          height: '100%',
+          flexShrink: 0,
+          borderLeft: `1px solid ${token.colorBorderSecondary}`,
+          background: token.colorBgContainer,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-start',
+          flexDirection: 'column',
+          position: 'relative',
+          paddingTop: 17,
+          boxSizing: 'border-box',
+        }}
+      >
+        <ActionIcon
+          icon={PanelRightOpen}
+          size="small"
+          title={t('agent.builder.expand')}
+          onClick={() => onExpandChange(true)}
+          style={{ border: 0, boxShadow: 'none' }}
+        />
+        <span
+          style={{
+            position: 'absolute',
+            inset: '58px 0 58px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            writingMode: 'vertical-rl',
+            textOrientation: 'mixed',
+            color: token.colorTextSecondary,
+            fontSize: 12,
+            fontWeight: 700,
+            letterSpacing: 0.4,
+            pointerEvents: 'none',
+          }}
+        >
+          {welcomeTitle}
+        </span>
+      </aside>
+    );
+  }
 
   return (
     <DraggablePanel
@@ -253,7 +302,7 @@ export function BuilderPanel({
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          background: token.colorBgLayout,
+          background: token.colorBgContainer,
         }}
       >
         {/* Header */}
@@ -262,7 +311,7 @@ export function BuilderPanel({
           align="center"
           justify="space-between"
           style={{
-            padding: '0 12px',
+            padding: '0 14px',
             borderBottom: showTopicSelector ? 'none' : `1px solid ${token.colorBorderSecondary}`,
             background: token.colorBgContainer,
             flexShrink: 0,
@@ -274,8 +323,8 @@ export function BuilderPanel({
             <AgentSelector agents={agents} selectedAgentName={currentAgent} onSelect={setCurrentAgent} />
           ) : (
             <Flexbox horizontal align="center" gap={6}>
-              <span style={{ fontSize: 16 }}>{welcomeAvatar}</span>
-              <span style={{ fontSize: 13, fontWeight: 500, color: token.colorText }}>{welcomeTitle}</span>
+              <AgentIconTile agent={{ name: welcomeTitle, description: welcomeDescription }} size={24} subtle />
+              <span style={{ fontSize: 14, fontWeight: 700, color: token.colorText }}>{welcomeTitle}</span>
             </Flexbox>
           )}
           <ActionIcon icon={PanelRightClose} size="small" onClick={() => onExpandChange(false)} />
@@ -308,7 +357,7 @@ export function BuilderPanel({
                 setMessages([]);
               }}
               options={[
-                { value: `${scope}:${currentAgent}`, label: `💬 ${t('agent.builder.defaultTopic')}` },
+                { value: `${scope}:${currentAgent}`, label: t('agent.builder.defaultTopic') },
                 ...topicOptions.map((s: Session) => ({
                   value: s.key,
                   label: `# ${s.title || s.key}`,
@@ -323,21 +372,15 @@ export function BuilderPanel({
         )}
 
         {/* Messages */}
-        <div style={{ flex: 1, overflow: 'auto', minHeight: 0, width: '100%', padding: '0 16px 24px' }}>
+        <div style={{ flex: 1, overflow: 'auto', minHeight: 0, width: '100%', padding: '0 14px 24px' }}>
           {messages.length === 0 ? (
-            <Center style={{ height: '100%', padding: 24 }}>
-              <Flexbox align="center" gap={12}>
-                <Avatar
-                  avatar={welcomeAvatar}
-                  size={48}
-                  shape="square"
-                  background="linear-gradient(135deg, #667eea, #764ba2)"
-                  style={{ opacity: 0.5 }}
-                />
-                <span style={{ fontSize: 14, fontWeight: 500, color: token.colorText }}>
+            <Center style={{ height: '100%', padding: '24px 4px' }}>
+              <Flexbox align="center" gap={12} style={{ width: '100%' }}>
+                <AgentIconTile agent={{ name: welcomeTitle, description: welcomeDescription }} size={54} />
+                <span style={{ fontSize: 15, fontWeight: 750, color: token.colorText }}>
                   {welcomeTitle}
                 </span>
-                <span style={{ fontSize: 13, color: token.colorTextDescription, textAlign: 'center', maxWidth: 280 }}>
+                <span style={{ fontSize: 12, color: token.colorTextDescription, textAlign: 'center', maxWidth: 300, lineHeight: 1.6 }}>
                   {welcomeDescription}
                 </span>
                 {contextSummary && contextSummary.length > 0 && (
@@ -357,7 +400,7 @@ export function BuilderPanel({
                               : undefined
                           }
                           style={{
-                            padding: '7px 10px',
+                            padding: '8px 10px',
                             borderRadius: 10,
                             border: `1px solid ${token.colorBorderSecondary}`,
                             background: item.ready ? token.colorSuccessBg : token.colorWarningBg,
@@ -391,8 +434,8 @@ export function BuilderPanel({
                         key={q}
                         onClick={() => handleSuggestClick(q)}
                         style={{
-                          padding: '8px 12px',
-                          borderRadius: 8,
+                          padding: '9px 12px',
+                          borderRadius: 10,
                           border: `1px solid ${token.colorBorderSecondary}`,
                           background: token.colorBgContainer,
                           fontSize: 13,
@@ -421,13 +464,14 @@ export function BuilderPanel({
         </div>
 
         {/* Input area */}
-        <Flexbox style={{ padding: '0 16px 16px', flexShrink: 0 }}>
+        <Flexbox style={{ padding: '0 14px 24px', flexShrink: 0 }}>
           <Flexbox
             style={{
               background: token.colorBgContainer,
               border: `1px solid ${token.colorBorderSecondary}`,
-              borderRadius: 12,
+              borderRadius: 22,
               overflow: 'hidden',
+              boxShadow: '0 14px 48px rgba(15, 23, 42, 0.08)',
             }}
           >
             <textarea
@@ -450,20 +494,20 @@ export function BuilderPanel({
                 resize: 'none',
                 border: 'none',
                 borderRadius: 0,
-                padding: '10px 12px 4px',
-                fontSize: 14,
+                padding: '16px 18px 8px',
+                fontSize: 15,
                 lineHeight: 1.6,
                 outline: 'none',
                 fontFamily: 'inherit',
                 background: 'transparent',
                 color: token.colorText,
-                minHeight: 64,
+                minHeight: 70,
                 maxHeight: 160,
                 overflow: 'auto',
               }}
             />
-            <Flexbox horizontal align="center" justify="space-between" style={{ padding: '4px 8px 8px' }}>
-              <Flexbox horizontal align="center" gap={2}>
+            <Flexbox horizontal align="center" justify="space-between" style={{ padding: '0 12px 12px' }}>
+              <Flexbox horizontal align="center" gap={2} style={{ minWidth: 0 }}>
                 <Popover
                   open={modelOpen}
                   onOpenChange={setModelOpen}
@@ -481,44 +525,36 @@ export function BuilderPanel({
                   }
                   styles={{ content: { padding: 0, minWidth: 280, maxWidth: 360 } }}
                 >
-                  <div
+                  <button
+                    type="button"
+                    title={currentModelLabel}
                     style={{
-                      display: 'flex',
+                      display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: 4,
-                      height: 32,
+                      gap: 6,
+                      maxWidth: 170,
+                      height: 34,
                       padding: '0 8px',
-                      borderRadius: 8,
+                      border: 0,
+                      borderRadius: 10,
                       cursor: 'pointer',
-                      background: token.colorFillTertiary,
+                      background: 'transparent',
+                      color: token.colorText,
+                      fontSize: 13,
+                      fontWeight: 650,
                       transition: 'background 0.15s',
                     }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = token.colorFillSecondary; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = token.colorFillTertiary; }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = token.colorFillQuaternary; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
                   >
-                    <ModelIcon model={currentModelId} size={18} />
-                    <ChevronDown size={12} style={{ color: token.colorTextSecondary }} />
-                  </div>
+                    <ModelIcon model={currentModelId} size={16} />
+                    <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {currentModelLabel}
+                    </span>
+                    <ChevronDown size={13} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />
+                  </button>
                 </Popover>
-                <div
-                  onClick={() => setSearchEnabled(!searchEnabled)}
-                  title={searchEnabled ? t('agent.builder.webSearchOn') : t('agent.builder.webSearchOff')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: 32,
-                    height: 32,
-                    borderRadius: 8,
-                    cursor: 'pointer',
-                    background: searchEnabled ? token.colorPrimaryBg : 'transparent',
-                    color: searchEnabled ? token.colorPrimary : token.colorTextSecondary,
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  {searchEnabled ? <Globe size={16} /> : <GlobeOff size={16} />}
-                </div>
               </Flexbox>
               <Flexbox horizontal align="center" gap={4}>
                 {loading ? (
