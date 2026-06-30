@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Typography, Modal, Form, theme, Divider, Avatar } from 'antd';
-import { Input, Button, TextArea, InputPassword, toast } from '@lobehub/ui';
+import { Input, Button, TextArea, InputPassword, Tag, toast } from '@lobehub/ui';
 import { Search, Plus, Brain } from 'lucide-react';
 import { useProviderStore } from '../../store/provider';
 import { ProviderIcon } from './ProviderIcon';
@@ -56,8 +56,16 @@ export function ProviderMenu() {
         ) : (
           <ProviderIcon providerId={p.id} providerName={p.name} size={28} />
         )}
-        <Flexbox flex={1} style={{ minWidth: 0 }}>
+        <Flexbox flex={1} gap={4} style={{ minWidth: 0 }}>
           <Text strong ellipsis style={{ fontSize: 14 }}>{p.name}</Text>
+          <Flexbox horizontal gap={4} style={{ flexWrap: 'wrap' }}>
+            <Tag
+              color={p.runtime_kind === 'cli' ? 'purple' : 'blue'}
+              style={{ margin: 0, fontSize: 10, lineHeight: '16px', paddingInline: 6 }}
+            >
+              {t(`provider.runtime.${p.runtime_kind}`)}
+            </Tag>
+          </Flexbox>
         </Flexbox>
         <div
           style={{
