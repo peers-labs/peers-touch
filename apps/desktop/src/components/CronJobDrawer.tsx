@@ -19,6 +19,7 @@ import { ModelSelect } from './ModelSelect';
 import type { ModelRef } from '../services/desktop_api';
 import { api, type CronJob, type CronJobCreate, type Agent, type Channel, type AvailableModel, type ChatTarget } from '../services/desktop_api';
 import { useTranslation } from 'react-i18next';
+import { AgentIconTile } from './agent/AgentIconTile';
 
 const { Text } = Typography;
 
@@ -560,7 +561,7 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
                 options={agents.map((a) => ({
                   label: (
                     <Flexbox horizontal align="center" gap={8}>
-                      <span style={{ fontSize: 16 }}>{a.avatar || '🤖'}</span>
+                      <AgentIconTile agent={a} size={20} subtle />
                       <span>{a.title || a.name}{a.isDefault ? ` ${t('cron.drawer.field.defaultSuffix')}` : ''}</span>
                     </Flexbox>
                   ),

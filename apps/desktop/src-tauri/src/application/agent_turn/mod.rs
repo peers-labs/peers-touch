@@ -163,8 +163,13 @@ pub fn agent_execute_turn(mut input: AgentExecuteTurnInput, token: &str) -> AppR
         "knowledge_resources": input.knowledge_resources.unwrap_or_default(),
     });
 
-    match station_client::request_json(Method::POST, "/agent/turn/execute", token, None, Some(body))
-    {
+    match station_client::request_json(
+        Method::POST,
+        "/sub-agent/agent/turn/execute",
+        token,
+        None,
+        Some(body),
+    ) {
         Ok(result) => {
             tracing::info!(command = "agent_execute_turn", "Turn execution succeeded");
             let status =
@@ -198,7 +203,7 @@ pub fn agent_turn_trace_list(
 
     match station_client::request_json(
         Method::POST,
-        "/agent/turn/trace/list",
+        "/sub-agent/agent/turn/trace/list",
         token,
         None,
         Some(body),
@@ -228,7 +233,7 @@ pub fn agent_turn_trace_get(input: AgentTurnTraceGetInput, token: &str) -> AppRe
 
     match station_client::request_json(
         Method::POST,
-        "/agent/turn/trace/get",
+        "/sub-agent/agent/turn/trace/get",
         token,
         None,
         Some(body),
@@ -772,7 +777,7 @@ fn stream_station_turn(
     let url = format!(
         "{}{}",
         station_client::station_base_url(),
-        "/agent/turn/stream"
+        "/sub-agent/agent/turn/stream"
     );
     let client = Client::builder()
         .build()
@@ -1012,7 +1017,7 @@ fn submit_local_tool_result(
     let url = format!(
         "{}{}",
         station_client::station_base_url(),
-        "/agent/turn/local-tool-result"
+        "/sub-agent/agent/turn/local-tool-result"
     );
     let auth = format!("Bearer {}", token.trim());
     let response = client
