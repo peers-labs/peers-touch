@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from 'fs/promises'
+import { constants as fsConstants } from 'fs'
 import { createHash } from 'crypto'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -275,9 +276,15 @@ async function getExternalLynxAppletDirs() {
       const lynxDir = path.join(normalizedRoot, entry.name, 'lynx')
       try {
         await fs.access(path.join(lynxDir, 'applet.json'))
+        await fs.access(lynxDir, fsConstants.W_OK)
         dirs.push(lynxDir)
       } catch (error) {
-        if (error.code !== 'ENOENT') throw error
+        if (error.code === 'ENOENT') continue
+        if (error.code === 'EACCES' || error.code === 'EPERM') {
+          writeStderr(`Skip external Lynx applet without write access: ${lynxDir}`)
+          continue
+        }
+        throw error
       }
     }
   }
