@@ -1,10 +1,12 @@
 pub mod account;
 pub mod admin;
 pub mod agent_growth;
+pub mod agent_orchestration;
 pub mod agent_scheduler;
 pub mod agent_turn;
 pub mod agent_workspace;
 pub mod agents;
+pub mod applet_store;
 pub mod applets;
 pub mod auth;
 pub mod channels;

@@ -80,6 +80,12 @@ import type {
   GetTurnTraceResponse,
   ListTurnTracesResponse,
 } from '../gen/proto/domain/agent/agent_pb';
+import type {
+  CollaborationTask,
+  GetCollaborationTaskResponse,
+  ListCollaborationTasksResponse,
+  ListTaskEventsResponse,
+} from '../gen/proto/domain/agent/orchestration_pb';
 export {
   FederationVisibility,
   FederationVisibilityRequestSchema,
@@ -224,6 +230,15 @@ const PROD_QUIET_COMMANDS = new Set([
   'chat_index_local_messages',
 ]);
 
+const APPLET_AUDIT_FLUSH_COMMANDS = new Set([
+  'applets_create_session',
+  'applets_invoke',
+  'applets_action',
+]);
+const APPLET_AUDIT_FLUSH_DELAY_MS = 1_000;
+let appletAuditFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let appletAuditFlushInFlight = false;
+
 function isQuietCommand(command: string): boolean {
   if (ALWAYS_QUIET_COMMANDS.has(command)) return true;
   if (PROD_QUIET_COMMANDS.has(command)) {
@@ -235,6 +250,34 @@ function isQuietCommand(command: string): boolean {
     return !isDev || userOverride;
   }
   return false;
+}
+
+function scheduleAppletAuditFlush(command: string): void {
+  if (!APPLET_AUDIT_FLUSH_COMMANDS.has(command) || appletAuditFlushTimer) return;
+  appletAuditFlushTimer = setTimeout(() => {
+    appletAuditFlushTimer = null;
+    void flushAppletAuditRecords();
+  }, APPLET_AUDIT_FLUSH_DELAY_MS);
+}
+
+async function flushAppletAuditRecords(): Promise<void> {
+  if (appletAuditFlushInFlight) {
+    scheduleAppletAuditFlush('applets_invoke');
+    return;
+  }
+  appletAuditFlushInFlight = true;
+  try {
+    await invokeRustCommand<Record<string, unknown>, TauriStubPayload>(
+      'applets_store_upload_audit',
+      {},
+    );
+  } catch (error) {
+    log.warn('api', 'applet audit auto flush failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    appletAuditFlushInFlight = false;
+  }
 }
 
 function publishSessionRevoked(payload: SessionRevokedPayload) {
@@ -302,6 +345,7 @@ async function invokeRustCommand<TInput, TData>(
     } else if (!quiet) {
       log.info('api', `← ${command} OK (${elapsed}ms)`);
     }
+    scheduleAppletAuditFlush(command);
     return result;
   } catch (error) {
     const elapsed = Date.now() - start;
@@ -721,14 +765,6 @@ export interface Message {
   tool_calls?: string;
 }
 
-export interface AgentParams {
-  temperature?: number;
-  top_p?: number;
-  frequency_penalty?: number;
-  presence_penalty?: number;
-  max_tokens?: number;
-}
-
 export interface AgentMemoryConfig {
   enabled?: boolean;
   effort?: 'low' | 'medium' | 'high';
@@ -743,16 +779,6 @@ export interface AgentWorkspaceConfig {
 export interface AgentProviderFallbackConfig {
   enabled?: boolean;
   maxRetries?: number;
-}
-
-export interface AgentVoiceConfig {
-  ttsProvider?: 'browser' | 'edge' | 'openai';
-  ttsVoice?: string;
-  ttsSpeed?: number;
-  ttsAutoRead?: boolean;
-  sttProvider?: 'browser' | 'openai';
-  sttLanguage?: string;
-  sttAutoStop?: boolean;
 }
 
 export type AgentKnowledgeResourceType = 'document' | 'folder' | 'project' | 'url' | 'notebook' | 'workspace';
@@ -787,7 +813,6 @@ export interface AgentChatConfig {
   memory?: AgentMemoryConfig;
   providerFallback?: AgentProviderFallbackConfig;
   workspace?: AgentWorkspaceConfig;
-  voice?: AgentVoiceConfig;
   mcpServers?: string[];
   tools?: string[];
   skills?: string[];
@@ -816,16 +841,12 @@ export interface Agent {
   allowedRoots: string;
   cliCommand: string;
   tags: string;
-  toolsProfile: string;
-  toolsAllow: string;
-  toolsDeny: string;
   pinned: boolean;
   favorite: boolean;
   sortOrder: number;
   openingMessage: string;
   openingQuestions: string;
   chatConfig: string;
-  params: string;
   knowledgeResources: string;
   isDefault: boolean;
   createdAt: string;
@@ -854,16 +875,12 @@ export interface AgentCreate {
   allowedRoots?: string;
   cliCommand?: string;
   tags?: string;
-  toolsProfile?: string;
-  toolsAllow?: string;
-  toolsDeny?: string;
   pinned?: boolean;
   favorite?: boolean;
   sortOrder?: number;
   openingMessage?: string;
   openingQuestions?: string;
   chatConfig?: string;
-  params?: string;
   knowledgeResources?: string;
 }
 
@@ -898,7 +915,6 @@ export interface AgentPackage {
   providerPreset: {
     provider: string;
     model: string;
-    params: AgentParams;
   };
   bindings: {
     mcpServers: string[];
@@ -923,14 +939,54 @@ export interface AgentListResult {
   defaultAgent?: string;
 }
 
+export interface AgentCollaborationCreateInput {
+  title: string;
+  description: string;
+  engine_type: number;
+  agent_ids: string[];
+  workspace_id?: string;
+  budget_tokens?: number;
+  budget_money?: number;
+  budget_time_ms?: number;
+}
+
+export interface AgentCollaborationGetInput {
+  task_id: string;
+}
+
+export interface AgentCollaborationListInput {
+  status?: number;
+  page?: number;
+  page_size?: number;
+}
+
+export interface AgentCollaborationListEventsInput {
+  task_id: string;
+  after_event_seq?: number;
+  page_size?: number;
+}
+
+export interface AgentCollaborationSubscribeInput {
+  stream_id?: string;
+  agent_id: string;
+  task_id?: string;
+  after_event_seq?: number;
+}
+
+export interface AgentCollaborationCancelTaskInput {
+  task_id: string;
+}
+
+export interface AgentCollaborationStreamPayload {
+  streamId: string;
+  agentId: string;
+  event: string;
+  data: Record<string, any>;
+}
+
 export function parseAgentChatConfig(agent: Agent): AgentChatConfig {
   if (!agent.chatConfig) return {};
   try { return JSON.parse(agent.chatConfig); } catch { return {}; }
-}
-
-export function parseAgentParams(agent: Agent): AgentParams {
-  if (!agent.params) return {};
-  try { return JSON.parse(agent.params); } catch { return {}; }
 }
 
 function normalizeKnowledgeResource(raw: unknown): AgentKnowledgeResource | null {
@@ -1104,6 +1160,125 @@ export interface AppletInfo {
 export interface AppletImportDirectoryResult {
   directory: string;
   manifest: unknown;
+}
+
+export type AppletStoreSource = 'station' | 'cache';
+
+export interface AppletStoreInfo {
+  id?: string;
+  name?: string;
+  description?: string;
+  iconUrl?: string;
+  icon_url?: string;
+  developerId?: string;
+  developer_id?: string;
+  status?: number | string;
+}
+
+export interface AppletStoreVersion {
+  appletId?: string;
+  applet_id?: string;
+  version?: string;
+  bundleUrl?: string;
+  bundle_url?: string;
+  bundleHash?: string;
+  bundle_hash?: string;
+  status?: number | string;
+  channel?: number | string;
+  manifest?: AppletStoreManifestSnapshot;
+  bundle?: AppletStoreBundleStorage;
+}
+
+export interface AppletStoreManifestSnapshot {
+  manifestJson?: string;
+  manifest_json?: string;
+  targetPlatforms?: string[];
+  target_platforms?: string[];
+  permissions?: string[];
+  capabilities?: string[];
+  integrity?: Record<string, string>;
+  bridgeProtocol?: string;
+  bridge_protocol?: string;
+  runtimeType?: string;
+  runtime_type?: string;
+}
+
+export interface AppletStoreBundleStorage {
+  bundleUri?: string;
+  bundle_uri?: string;
+  bundleSha256?: string;
+  bundle_sha256?: string;
+  bundleSizeBytes?: number | string;
+  bundle_size_bytes?: number | string;
+  assets?: Array<{ path: string; sha256: string; sizeBytes?: number | string; size_bytes?: number | string; contentType?: string; content_type?: string }>;
+}
+
+export interface AppletStoreInstallState {
+  actorId?: string;
+  actor_id?: string;
+  deviceId?: string;
+  device_id?: string;
+  appletId?: string;
+  applet_id?: string;
+  version?: string;
+  channel?: number | string;
+  status?: number | string;
+  statusReason?: string;
+  status_reason?: string;
+}
+
+export interface AppletStoreCatalogItem {
+  info?: AppletStoreInfo;
+  version?: AppletStoreVersion;
+  installState?: AppletStoreInstallState;
+  install_state?: AppletStoreInstallState;
+}
+
+export interface AppletStoreCatalogResponse {
+  items?: AppletStoreCatalogItem[];
+  totalCount?: number;
+  total_count?: number;
+  source?: AppletStoreSource;
+  stale?: boolean;
+  stationUnavailable?: boolean;
+  stationError?: string;
+}
+
+export interface AppletStoreInstalledResponse {
+  states?: AppletStoreInstallState[];
+  source?: AppletStoreSource;
+  stale?: boolean;
+  stationUnavailable?: boolean;
+  stationError?: string;
+}
+
+export interface AppletStoreInstallResponse {
+  state?: AppletStoreInstallState;
+  source?: AppletStoreSource;
+}
+
+export interface AppletStoreGetVersionResponse {
+  version?: AppletStoreVersion;
+  policy?: unknown;
+  source?: AppletStoreSource;
+  stale?: boolean;
+}
+
+export interface AppletStoreUploadAuditResponse {
+  acceptedCount?: number;
+  accepted_count?: number;
+  rejectedAuditIds?: string[];
+  rejected_audit_ids?: string[];
+  source?: AppletStoreSource | 'local';
+}
+
+export interface AppletStoreMaterializeBundleResponse {
+  directory: string;
+  entry: string;
+  filePath?: string;
+  sha256: string;
+  assets?: Array<{ path: string; filePath?: string; sha256: string }>;
+  source?: AppletStoreSource;
 }
 
 export interface StatisticsRankItem {
@@ -2505,6 +2680,11 @@ export interface AppletProductWindowLaunchContext {
   mode?: 'product-shell';
 }
 
+export interface AppletProductWindowRenderedInput {
+  appletId: string;
+  readySource?: 'lifecycle.reportReady' | 'host-render-fallback' | string;
+}
+
 export interface SkillImportAddressInput {
   agent_id?: string;
   address: string;
@@ -3210,6 +3390,48 @@ export const api = {
       },
     ),
 
+  createAgentCollaborationTask: (input: AgentCollaborationCreateInput) =>
+    invokeRustDataFromStatus<AgentCollaborationCreateInput, { task?: CollaborationTask }>(
+      'agent_collaboration_create',
+      input,
+    ),
+
+  getAgentCollaborationTask: (taskId: string) =>
+    invokeRustDataFromStatus<AgentCollaborationGetInput, GetCollaborationTaskResponse>(
+      'agent_collaboration_get',
+      { task_id: taskId },
+    ),
+
+  listAgentCollaborationTasks: (input?: AgentCollaborationListInput) =>
+    invokeRustDataFromStatus<AgentCollaborationListInput, ListCollaborationTasksResponse>(
+      'agent_collaboration_list',
+      input || {},
+    ),
+
+  listAgentCollaborationEvents: (input: AgentCollaborationListEventsInput) =>
+    invokeRustDataFromStatus<AgentCollaborationListEventsInput, ListTaskEventsResponse>(
+      'agent_collaboration_list_events',
+      input,
+    ),
+
+  startAgentCollaborationStream: (input: AgentCollaborationSubscribeInput) =>
+    invokeRustDataFromStatus<AgentCollaborationSubscribeInput, { stream_id: string }>(
+      'agent_collaboration_subscribe',
+      input,
+    ),
+
+  cancelAgentCollaborationStream: (streamId: string) =>
+    invokeRustDataFromStatus<{ stream_id: string }, { stream_id: string }>(
+      'agent_collaboration_cancel_stream',
+      { stream_id: streamId },
+    ),
+
+  cancelAgentCollaborationTask: (taskId: string) =>
+    invokeRustDataFromStatus<AgentCollaborationCancelTaskInput, { task?: CollaborationTask }>(
+      'agent_collaboration_cancel_task',
+      { task_id: taskId },
+    ),
+
   listTools: () =>
     invokeRustDataFromStatus<void, { tools: ToolInfo[] }>('tools_list').then((r) => r.tools),
 
@@ -3465,6 +3687,55 @@ export const api = {
   getApplet: (id: string) =>
     invokeRustDataFromStatus<AppletIdInput, AppletInfo>('applets_get', { id }),
 
+  appletStoreListCatalog: () =>
+    invokeRustDataFromStatus<Record<string, unknown>, AppletStoreCatalogResponse>(
+      'applets_store_list_catalog',
+      { targetPlatform: 'desktop', channel: 'stable', limit: 100, offset: 0 },
+    ),
+
+  appletStoreListInstalled: () =>
+    invokeRustDataFromStatus<Record<string, unknown>, AppletStoreInstalledResponse>(
+      'applets_store_list_installed',
+      { includeDisabled: true },
+    ),
+
+  appletStoreInstall: (appletId: string, channel = 'stable') =>
+    invokeRustDataFromStatus<Record<string, unknown>, AppletStoreInstallResponse>(
+      'applets_store_install',
+      { appletId, channel },
+    ),
+
+  appletStoreUninstall: (appletId: string) =>
+    invokeRustDataFromStatus<Record<string, unknown>, AppletStoreInstallResponse>(
+      'applets_store_uninstall',
+      { appletId },
+    ),
+
+  appletStoreGetVersion: (appletId: string, channel = 'stable') =>
+    invokeRustDataFromStatus<Record<string, unknown>, AppletStoreGetVersionResponse>(
+      'applets_store_get_version',
+      { appletId, channel },
+    ),
+
+  appletStoreMaterializeBundle: (input: {
+    appletId: string;
+    version?: string;
+    bundleUrl: string;
+    bundleSha256?: string;
+    entry: string;
+    assets?: Array<{ path: string; sha256: string }>;
+  }) =>
+    invokeRustDataFromStatus<Record<string, unknown>, AppletStoreMaterializeBundleResponse>(
+      'applets_store_materialize_bundle',
+      input,
+    ),
+
+  appletStoreUploadAudit: () =>
+    invokeRustDataFromStatus<Record<string, unknown>, AppletStoreUploadAuditResponse>(
+      'applets_store_upload_audit',
+      {},
+    ),
+
   activateApplet: (id: string) =>
     invokeRustDataFromStatus<AppletIdInput, { ok: boolean }>('applets_activate', { id }),
 
@@ -3497,6 +3768,12 @@ export const api = {
 
   appletsReadinessProbeContext: () =>
     invokeRustDataFromStatus<void, AppletProductWindowLaunchContext>('applets_readiness_probe_context'),
+
+  appletsProductWindowReportRendered: (input: AppletProductWindowRenderedInput) =>
+    invokeRustDataFromStatus<AppletProductWindowRenderedInput, { recorded: boolean; path?: string; reason?: string }>(
+      'applets_product_window_report_rendered',
+      input,
+    ),
 
   // ── Skills API ──
 
@@ -3665,6 +3942,12 @@ export const api = {
   resolveAgentLocalToolRequest: (input: AgentLocalToolRequestInput) =>
     invokeRustDataFromStatus<AgentLocalToolRequestInput, AgentLocalToolResultEvent>(
       'agent_resolve_local_tool_request',
+      input,
+    ),
+
+  executeAgentTurnOnce: (input: AgentExecuteTurnInput) =>
+    invokeRustDataFromStatus<AgentExecuteTurnInput, Record<string, unknown>>(
+      'agent_execute_turn',
       input,
     ),
 
@@ -4626,18 +4909,18 @@ export const api = {
     peerOpkPub?: string,
   ) =>
     invokeAppResultStub<{ ephemeral_key: string; established: boolean }>('crypto_init_session', {
-      session_id: sessionId,
-      peer_did: peerDid,
-      peer_ik_pub: peerIkPub,
-      peer_spk_pub: peerSpkPub,
-      peer_spk_sig: peerSpkSig,
-      ...(peerOpkPub != null && peerOpkPub !== '' ? { peer_opk_pub: peerOpkPub } : {}),
+      sessionId,
+      peerDid,
+      peerIkPub,
+      peerSpkPub,
+      peerSpkSig,
+      ...(peerOpkPub != null && peerOpkPub !== '' ? { peerOpkPub } : {}),
     }),
 
   cryptoEncryptMessage: (sessionId: string, peerDid: string, plaintext: string) =>
     invokeAppResultStub<{ ciphertext: string; counter: number; ephemeral_key?: string }>('crypto_encrypt_message', {
-      session_id: sessionId,
-      peer_did: peerDid,
+      sessionId,
+      peerDid,
       plaintext,
     }),
 
@@ -4649,11 +4932,11 @@ export const api = {
     ephemeralKey?: string,
   ) =>
     invokeAppResultStub<{ plaintext: string }>('crypto_decrypt_message', {
-      session_id: sessionId,
-      peer_did: peerDid,
+      sessionId,
+      peerDid,
       ciphertext,
       counter,
-      ...(ephemeralKey != null && ephemeralKey !== '' ? { ephemeral_key: ephemeralKey } : {}),
+      ...(ephemeralKey != null && ephemeralKey !== '' ? { ephemeralKey } : {}),
     }),
 
   // ── Group chat E2EE: Sender Keys ──
@@ -4688,7 +4971,7 @@ export const api = {
       sender_did: string;
       sender_key_id: number;
       skdm_b64: string;
-    }>('crypto_group_sk_emit_skdm', { group_ulid: groupUlid }),
+    }>('crypto_group_sk_emit_skdm', { groupUlid }),
 
   cryptoGroupSkConsumeSkdm: (claimedSenderDid: string, skdmB64: string) =>
     invokeAppResultStub<{
@@ -4696,8 +4979,8 @@ export const api = {
       sender_did: string;
       sender_key_id: number;
     }>('crypto_group_sk_consume_skdm', {
-      claimed_sender_did: claimedSenderDid,
-      skdm_b64: skdmB64,
+      claimedSenderDid,
+      skdmB64,
     }),
 
   // Force-rotate the local sender chain for `groupUlid`. After this
@@ -4710,7 +4993,7 @@ export const api = {
       group_ulid: string;
       sender_did: string;
       sender_key_id: number;
-    }>('crypto_group_sk_rotate', { group_ulid: groupUlid }),
+    }>('crypto_group_sk_rotate', { groupUlid }),
 
   cryptoGroupEncrypt: (groupUlid: string, plaintextB64: string) =>
     invokeAppResultStub<{
@@ -4718,8 +5001,8 @@ export const api = {
       sender_key_id: number;
       counter: number;
     }>('crypto_group_encrypt', {
-      group_ulid: groupUlid,
-      plaintext_b64: plaintextB64,
+      groupUlid,
+      plaintextB64,
     }),
 
   cryptoGroupDecrypt: (groupUlid: string, encryptedPayloadB64: string) =>
@@ -4729,8 +5012,8 @@ export const api = {
       sender_key_id: number;
       counter: number;
     }>('crypto_group_decrypt', {
-      group_ulid: groupUlid,
-      encrypted_payload_b64: encryptedPayloadB64,
+      groupUlid,
+      encryptedPayloadB64,
     }),
 
   keyExchangeUploadBundle: (bundle: CryptoKeyBundlePayload) =>
@@ -5115,6 +5398,39 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
   };
 }
 
+function isHttpGatewayMode() {
+  return typeof window !== 'undefined' && Boolean((window as any).__PT_GATEWAY_BASE__);
+}
+
+function recordField(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function stringField(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function extractAgentTurnText(result: Record<string, unknown> | undefined): string {
+  if (!result) return '';
+  const responseMessage = recordField(result.response_message || result.responseMessage);
+  const turn = recordField(result.turn);
+  const trace = recordField(result.trace);
+  return String(
+    stringField(responseMessage.content) ||
+    stringField(result.content) ||
+    stringField(result.text) ||
+    stringField(result.final_response) ||
+    stringField(result.finalResponse) ||
+    stringField(turn.final_response) ||
+    stringField(turn.finalResponse) ||
+    stringField(trace.final_response) ||
+    stringField(trace.finalResponse) ||
+    '',
+  );
+}
+
 export function streamChat(
   message: string,
   sessionKey: string,
@@ -5209,6 +5525,32 @@ export function streamAgentTurn(
 ): AbortController {
   const controller = new AbortController();
   log.info('api', 'streamAgentTurn started', { conversationId: input.conversation_id, agentId: input.agent_id });
+  if (isHttpGatewayMode()) {
+    (async () => {
+      try {
+        const result = await api.executeAgentTurnOnce(input);
+        if (controller.signal.aborted) return;
+        const content = extractAgentTurnText(result);
+        if (content) {
+          onEvent({ event: 'text', data: { content } });
+        }
+        const trace = recordField(result?.trace);
+        const turn = recordField(result?.turn);
+        onEvent({
+          event: 'done',
+          data: {
+            model: stringField(trace.model) || stringField(turn.model) || input.model || '',
+          },
+        });
+        onDone();
+      } catch (err: unknown) {
+        if (!controller.signal.aborted) {
+          onError(err instanceof Error ? err : new Error(String(err)));
+        }
+      }
+    })();
+    return controller;
+  }
   (async () => {
     let unlisten: (() => void) | undefined;
     try {
@@ -5273,6 +5615,63 @@ export function streamAgentTurn(
       controller.signal.addEventListener('abort', () => {
         api.cancelAgentTurnStream(streamId).catch((error) => {
           log.warn('api', 'streamAgentTurn cancel failed', { error: String(error) });
+        });
+        unlisten?.();
+      }, { once: true });
+    } catch (err: unknown) {
+      unlisten?.();
+      onError(err instanceof Error ? err : new Error(String(err)));
+    }
+  })();
+  return controller;
+}
+
+export function streamAgentCollaborationEvents(
+  agentId: string,
+  onEvent: (payload: AgentCollaborationStreamPayload) => void,
+  onError: (err: Error) => void,
+  options: { taskId?: string; afterEventSeq?: number } = {},
+): AbortController {
+  const controller = new AbortController();
+  (async () => {
+    let unlisten: (() => void) | undefined;
+    try {
+      const { listen } = await import('@tauri-apps/api/event');
+      const streamId = `agent-collaboration-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      unlisten = await listen<AgentCollaborationStreamPayload>('agent:collaboration-event', (tauriEvent) => {
+        const payload = tauriEvent.payload;
+        if (payload.streamId !== streamId) return;
+        if (controller.signal.aborted) {
+          unlisten?.();
+          return;
+        }
+        if (payload.event === 'error') {
+          onError(new Error(String(payload.data?.error || 'agent.canvas.streamFailed')));
+          return;
+        }
+        onEvent(payload);
+      });
+
+      const result = await api.startAgentCollaborationStream({
+        stream_id: streamId,
+        agent_id: agentId,
+        task_id: options.taskId,
+        after_event_seq: options.afterEventSeq ?? 0,
+      });
+      if (result?.stream_id !== streamId) {
+        unlisten();
+        throw new Error('agent.canvas.streamIdMismatch');
+      }
+      if (controller.signal.aborted) {
+        api.cancelAgentCollaborationStream(streamId).catch((error) => {
+          log.warn('api', 'streamAgentCollaborationEvents cancel failed', { error: String(error) });
+        });
+        unlisten();
+        return;
+      }
+      controller.signal.addEventListener('abort', () => {
+        api.cancelAgentCollaborationStream(streamId).catch((error) => {
+          log.warn('api', 'streamAgentCollaborationEvents cancel failed', { error: String(error) });
         });
         unlisten?.();
       }, { once: true });

@@ -1126,14 +1126,10 @@ pub fn presence_offline(token: &str, reason: &str) -> StationResult<Value> {
     let req = model::presence::PresenceOfflineRequest {
         reason: reason.to_string(),
     };
-    let resp =
-        station_client::request_proto::<model::presence::PresenceOfflineRequest, model::presence::PresenceUpdateResponse>(
-            Method::POST,
-            "/presence/offline",
-            token,
-            None,
-            Some(&req),
-        )?;
+    let resp = station_client::request_proto::<
+        model::presence::PresenceOfflineRequest,
+        model::presence::PresenceUpdateResponse,
+    >(Method::POST, "/presence/offline", token, None, Some(&req))?;
     Ok(presence_update_response_to_value(&resp))
 }
 
