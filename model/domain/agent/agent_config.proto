@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package peers_touch.model.agent.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
+
+message AgentKnowledgeBinding {
+  string id = 1;
+  string agent_id = 2;
+  string resource_id = 3;
+  string policy = 4;
+  bool enabled = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+message AgentSkillBinding {
+  string id = 1;
+  string agent_id = 2;
+  string skill_id = 3;
+  bool enabled = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+message AgentMcpBinding {
+  string id = 1;
+  string agent_id = 2;
+  string server_name = 3;
+  bool enabled = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+message ListAgentKnowledgeBindingsRequest { string agent_id = 1; }
+message ListAgentKnowledgeBindingsResponse { repeated AgentKnowledgeBinding bindings = 1; }
+message CreateAgentKnowledgeBindingRequest { AgentKnowledgeBinding binding = 1; }
+message CreateAgentKnowledgeBindingResponse { AgentKnowledgeBinding binding = 1; }
+message UpdateAgentKnowledgeBindingRequest { AgentKnowledgeBinding binding = 1; }
+message UpdateAgentKnowledgeBindingResponse { AgentKnowledgeBinding binding = 1; }
+message DeleteAgentKnowledgeBindingRequest { string id = 1; }
+message DeleteAgentKnowledgeBindingResponse { bool success = 1; }
+
+message ListAgentSkillBindingsRequest { string agent_id = 1; }
+message ListAgentSkillBindingsResponse { repeated AgentSkillBinding bindings = 1; }
+message CreateAgentSkillBindingRequest { AgentSkillBinding binding = 1; }
+message CreateAgentSkillBindingResponse { AgentSkillBinding binding = 1; }
+message UpdateAgentSkillBindingRequest { AgentSkillBinding binding = 1; }
+message UpdateAgentSkillBindingResponse { AgentSkillBinding binding = 1; }
+message DeleteAgentSkillBindingRequest { string id = 1; }
+message DeleteAgentSkillBindingResponse { bool success = 1; }
+
+message ListAgentMcpBindingsRequest { string agent_id = 1; }
+message ListAgentMcpBindingsResponse { repeated AgentMcpBinding bindings = 1; }
+message CreateAgentMcpBindingRequest { AgentMcpBinding binding = 1; }
+message CreateAgentMcpBindingResponse { AgentMcpBinding binding = 1; }
+message UpdateAgentMcpBindingRequest { AgentMcpBinding binding = 1; }
+message UpdateAgentMcpBindingResponse { AgentMcpBinding binding = 1; }
+message DeleteAgentMcpBindingRequest { string id = 1; }
+message DeleteAgentMcpBindingResponse { bool success = 1; }
+

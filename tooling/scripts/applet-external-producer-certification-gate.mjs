@@ -8,7 +8,12 @@ const evidenceRoot = path.resolve('applet-readiness-evidence');
 const evidenceDir = path.join(evidenceRoot, 'external-producer');
 const outputPath = path.join(evidenceDir, 'certification-output.txt');
 const allowRepoPackage = process.argv.includes('--allow-repo-package');
+const productAppMode = process.argv.includes('--product-app');
+const expectTextArg = process.argv.find((arg) => arg.startsWith('--expect-text='));
 const packageArg = process.argv.slice(2).find((arg) => !arg.startsWith('--'));
+const productGateArgs = productAppMode
+  ? ['--product-app', expectTextArg].filter(Boolean)
+  : [];
 
 mkdirSync(evidenceDir, { recursive: true });
 
@@ -82,11 +87,11 @@ if (!manifest.load?.desktop || manifest.load.desktop.type !== 'lynx-web') {
 
 const steps = [
   ['Validate canonical package', 'pnpm', ['applet:validate', packageDir]],
-  ['Desktop Lynx runtime gate', 'pnpm', ['applet:desktop-runtime-gate', packageDir]],
-  ['Desktop product Host gate', 'pnpm', ['applet:desktop-product-host-gate', packageDir]],
-  ['Desktop product Host real Gateway gate', 'pnpm', ['applet:desktop-product-host-real-gateway-gate', packageDir]],
-  ['Desktop product shell real Gateway gate', 'pnpm', ['applet:desktop-product-shell-real-gateway-gate', packageDir]],
-  ['Packaged product-window gate', 'node', ['tooling/scripts/applet-desktop-product-window-gate.mjs', packageDir]],
+  ['Desktop Lynx runtime gate', 'pnpm', ['applet:desktop-runtime-gate', packageDir, ...productGateArgs]],
+  ['Desktop product Host gate', 'pnpm', ['applet:desktop-product-host-gate', packageDir, ...productGateArgs]],
+  ['Desktop product Host real Gateway gate', 'pnpm', ['applet:desktop-product-host-real-gateway-gate', packageDir, ...productGateArgs]],
+  ['Desktop product shell real Gateway gate', 'pnpm', ['applet:desktop-product-shell-real-gateway-gate', packageDir, ...productGateArgs]],
+  ['Packaged product-window gate', 'node', ['tooling/scripts/applet-desktop-product-window-gate.mjs', packageDir, ...productGateArgs]],
   ['Desktop live E2E gate', 'pnpm', ['applet:desktop-e2e', packageDir]],
 ];
 
@@ -102,6 +107,8 @@ const output = [
   failed ? 'FAIL external producer applet certification' : 'PASS external producer applet certification',
   `Package: ${packageDir}`,
   `Manifest id: ${manifest.id}`,
+  `Product app mode: ${productAppMode ? 'enabled' : 'disabled'}`,
+  expectTextArg ? `Expected product text: ${expectTextArg.slice('--expect-text='.length)}` : '',
   `Independent package path: ${allowRepoPackage ? 'NOT ENFORCED (--allow-repo-package)' : 'enforced outside repository'}`,
   ...results.flatMap((result) => [
     '',

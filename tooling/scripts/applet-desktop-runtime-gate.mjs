@@ -6,12 +6,15 @@ import path from 'node:path';
 import { createServer } from 'vite';
 
 const packageDir = path.resolve(process.argv[2] ?? 'applet-readiness-evidence/package/generic-complex-applet');
+const productAppMode = process.argv.includes('--product-app');
+const expectTextArg = process.argv.find((arg) => arg.startsWith('--expect-text='));
+const expectText = expectTextArg ? expectTextArg.slice('--expect-text='.length) : '';
 const rootDir = process.cwd();
+const harnessDir = path.resolve('apps/desktop/.local/applet-runtime-gate');
 const evidenceDir = path.resolve('applet-readiness-evidence/desktop/runtime-gate');
-const harnessHtmlPath = path.join(evidenceDir, 'index.html');
-const harnessJsPath = path.join(evidenceDir, 'harness.js');
+const harnessHtmlPath = path.join(harnessDir, 'index.html');
+const harnessJsPath = path.join(harnessDir, 'harness.js');
 const outputPath = path.resolve('applet-readiness-evidence/desktop/runtime-gate-output.txt');
-const desktopNodeModules = path.resolve('apps/desktop/node_modules');
 const manifest = JSON.parse(readFileSync(path.join(packageDir, 'manifest.json'), 'utf8'));
 const bundleEntry = manifest.load?.desktop?.entry ?? manifest.entries?.lynx;
 const bundlePath = bundleEntry ? path.join(packageDir, bundleEntry) : '';
@@ -24,6 +27,7 @@ if (!bundleEntry || !bundlePath) {
 readFileSync(bundlePath);
 
 mkdirSync(evidenceDir, { recursive: true });
+mkdirSync(harnessDir, { recursive: true });
 
 const bundleUrlPath = `/applets-dist/${manifest.id}/${bundleEntry}`;
 const requiredMethods = [
@@ -75,6 +79,8 @@ writeFileSync(harnessJsPath, `const protocol = 'peers-touch.applet.bridge';
 const appletId = ${JSON.stringify(manifest.id)};
 const sessionId = 'desktop-runtime-gate-session';
 const requiredMethods = ${JSON.stringify(requiredMethods)};
+const productAppMode = ${JSON.stringify(productAppMode)};
+const expectText = ${JSON.stringify(expectText)};
 const status = document.getElementById('status');
 const requests = [];
 const hostEvents = [];
@@ -303,6 +309,19 @@ setTimeout(() => {
       };
     })(),
   };
+  if (productAppMode) {
+    const renderedText = viewState.shadowText.trim();
+    if (!viewState.pageExists || renderedText.length === 0) {
+      setStatus('FAIL', { missing: ['lynx.ui.render'], requests, viewState, productAppMode });
+      return;
+    }
+    if (expectText && !viewState.shadowText.includes(expectText)) {
+      setStatus('FAIL', { missing: ['lynx.ui.expectedText'], expectText, requests, viewState, productAppMode });
+      return;
+    }
+    setStatus('PASS', { requests, hostEvents, viewState, productAppMode, expectedTextMatched: Boolean(expectText) });
+    return;
+  }
   if (missing.length > 0) {
     setStatus('FAIL', { missing, requests, viewState });
     return;
@@ -587,14 +606,6 @@ const vitePort = await freePort();
 const server = await createServer({
   root: path.resolve('apps/desktop'),
   logLevel: 'silent',
-  resolve: {
-    alias: {
-      '@lynx-js/web-core/client': path.join(desktopNodeModules, '@lynx-js/web-core/dist/client/index.js'),
-      '@lynx-js/web-core': path.join(desktopNodeModules, '@lynx-js/web-core'),
-      '@lynx-js/web-elements/all': path.join(desktopNodeModules, '@lynx-js/web-elements/dist/elements/all.js'),
-      '@lynx-js/web-elements': path.join(desktopNodeModules, '@lynx-js/web-elements'),
-    },
-  },
   plugins: [{
     name: 'applet-runtime-gate-wasm',
     configureServer(viteServer) {
@@ -655,9 +666,6 @@ const server = await createServer({
     port: vitePort,
     strictPort: false,
     fs: { allow: [rootDir] },
-  },
-  optimizeDeps: {
-    exclude: ['@lynx-js/web-core', '@lynx-js/web-elements'],
   },
 });
 

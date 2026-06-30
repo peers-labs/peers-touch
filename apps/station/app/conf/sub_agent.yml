@@ -1,0 +1,8 @@
+peers:
+  node:
+    server:
+      subserver:
+        agent:
+          enabled: true
+          path: /sub-agent
+          rds-name: agent

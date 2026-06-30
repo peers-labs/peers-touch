@@ -269,7 +269,7 @@ Atelier 的灵魂**不是**「又一个任务调度客户端」，而是 **多 A
 ## 8. 与其他文档的关系
 
 - 本文档讲「产品形态 + 有哪些功能模块 + 主轴 + 哪些复用框架」；
-- **可跑可点的原型**（用自有前端框架 ReactLynx/applet-sdk 把 §1 的三栏+四种面孔做出来，替代靠线框/嘴对齐）见 [prototype/README.md](../prototype/README.md)，源码在 `packages/prototypes/atelier/`；
+- **可跑可点的原型**（用自有前端框架 ReactLynx/applet-sdk 把 §1 的三栏+四种面孔做出来，替代靠线框/嘴对齐）见 [prototype/README.md](../prototype/README.md)，源码在 `packages/prototypes/desktop/applets/atelier/`；
 - **Atelier 作为 applet 的运行时契约**（UI/SDK/Gateway/Manifest/生命周期）见 [applet-runtime](../../applet-runtime/README.md)；
 - 协作引擎/角色/机制设计原理见 [design.md](../design.md)（§3–§4）；
 - 用户端到端体验串联见 [user-view.md](./user-view.md)（U1–U7 流程）；

@@ -30,14 +30,24 @@ apps/applets/note/
 - Proto source stays under `model/domain/note/`.
 - Desktop, Mobile, and Web Hosts load built artifacts instead of importing product source.
 
+## Frontend Product State
+
+The current frontend is a ReactLynx applet that lists, creates with user input,
+searches with user input, selects, edits, soft-deletes, restores notes, and keeps
+local editor drafts through SDK storage. Typed failure states have first-pass UI
+classification. Reload persistence is covered by
+`pnpm applet:note-reload-persistence-gate`.
+
 ## Frontend Verification
 
-The current frontend minimum UI is a ReactLynx applet that lists, creates, searches, selects, and deletes notes through the SDK service binding.
+Use these commands after frontend changes:
 
 ```bash
 pnpm --filter @peers-touch/note-official-applet check
 pnpm --filter @peers-touch/note-official-applet build
 pnpm applet:note-frontend-sdk-gate
+pnpm applet:note-forbidden-scan
+pnpm applet:note-reload-persistence-gate
 ```
 
 `pnpm applet:note-frontend-sdk-gate` proves the frontend does not use raw backend URLs, Tauri/Desktop/Mobile/Station private imports, or direct Bridge access, and that formal Note data calls are centralized through `sdk.network.request({ service: "note" })`.

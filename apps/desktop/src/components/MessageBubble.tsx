@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { ActionIcon, Avatar, Tag, Dropdown, TextArea, toast } from '@lobehub/ui';
+import { ActionIcon, Tag, Dropdown, TextArea, toast } from '@lobehub/ui';
 import { ModelIcon } from '@lobehub/icons';
 import type { MenuProps } from '@lobehub/ui';
 import { theme } from 'antd';
@@ -13,7 +13,6 @@ import {
   RotateCcw,
   Edit,
   Trash2,
-  Share2,
   ListRestart,
   GitBranch,
   ChevronsDownUp,
@@ -23,10 +22,7 @@ import {
   ChevronDown,
   CheckCircle2,
   XCircle,
-  Volume2,
-  VolumeX,
   AlertTriangle,
-  BookOpen,
   FileText,
   Brain,
   Cpu,
@@ -42,10 +38,11 @@ import {
 import type { ChatMessage, DelegationTaskInfo, MessageArtifact, ToolCallInfo } from '../store/chat';
 import { extractMessageArtifacts, useChatStore } from '../store/chat';
 import { useAgentStore } from '../store/agent';
-import { api, parseAgentChatConfig } from '../services/desktop_api';
+import { parseAgentChatConfig } from '../services/desktop_api';
 import { LazyMarkdown as Markdown } from './LazyMarkdown';
 import { UserSquareAvatar } from './common/UserSquareAvatar';
 import MessageCard, { type CardData } from './MessageCard';
+import { AgentIconTile } from './agent/AgentIconTile';
 import { parseDeepLink } from '../utils/deeplink';
 import { EVENT, eventBus } from '../kernel/events';
 import { useTranslation } from 'react-i18next';
@@ -53,7 +50,6 @@ import { useTranslation } from 'react-i18next';
 interface Props {
   message: ChatMessage;
   userAvatar?: { url?: string; name: string };
-  agentAvatar?: string;
   onOpenArtifact?: (artifact: MessageArtifact) => void;
 }
 
@@ -629,7 +625,7 @@ function DiagnosticsBlock({
       >
         {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         {message.error ? <AlertTriangle size={13} /> : <Activity size={13} />}
-        <span>{message.error ? t('chat.message.diagnostics.failedTitle') : t('chat.message.diagnostics.title')}</span>
+        <span>{message.error ? t('chat.message.errorTitle', { defaultValue: 'Could not complete' }) : t('chat.message.diagnostics.title')}</span>
         {message.processDuration != null && (
           <Tag bordered={false} style={{ marginLeft: 'auto', fontSize: 11 }}>
             {t('chat.message.diagnostics.duration', { seconds: message.processDuration })}
@@ -713,7 +709,7 @@ function DiagnosticsBlock({
   );
 }
 
-export function MessageBubble({ message, userAvatar, agentAvatar, onOpenArtifact }: Props) {
+export function MessageBubble({ message, userAvatar, onOpenArtifact }: Props) {
   const isUser = message.role === 'user';
   const isTool = message.role === 'tool';
   const { token } = theme.useToken();
@@ -723,9 +719,7 @@ export function MessageBubble({ message, userAvatar, agentAvatar, onOpenArtifact
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [collapsed, setCollapsed] = useState(false);
-  const [speaking, setSpeaking] = useState(false);
   const editRef = useRef<any>(null);
-  const autoReadMessageRef = useRef('');
 
   const {
     branchFromMessage,
@@ -734,7 +728,6 @@ export function MessageBubble({ message, userAvatar, agentAvatar, onOpenArtifact
     editMessage,
     regenerateMessage,
     retryMessage,
-    saveMessageToNotebook,
     sendMessage,
   } = useChatStore();
   const { agents, availableModels, selectedAgent } = useAgentStore();
@@ -743,69 +736,6 @@ export function MessageBubble({ message, userAvatar, agentAvatar, onOpenArtifact
   const messageModel = message.model ? availableModels.find((model) => model.id === message.model) : undefined;
   const providerName = messageModel?.provider_name || messageModel?.provider_id || activeAgent?.provider || '';
   const artifacts = useMemo(() => extractMessageArtifacts(message), [message]);
-  const voiceConfig = activeChatConfig.voice || {};
-
-  const speakWithBrowser = useCallback((content: string) => {
-    if (!window.speechSynthesis) {
-      toast.warning(t('chat.message.voice.unsupported'));
-      return;
-    }
-    const utterance = new SpeechSynthesisUtterance(content);
-    const voiceName = voiceConfig.ttsVoice?.trim();
-    if (voiceName) {
-      const voice = window.speechSynthesis.getVoices().find((item) => item.voiceURI === voiceName || item.name === voiceName);
-      if (voice) utterance.voice = voice;
-    }
-    utterance.rate = voiceConfig.ttsSpeed ?? 1;
-    utterance.onend = () => setSpeaking(false);
-    utterance.onerror = () => setSpeaking(false);
-    setSpeaking(true);
-    window.speechSynthesis.speak(utterance);
-  }, [t, voiceConfig.ttsSpeed, voiceConfig.ttsVoice]);
-
-  const speakWithProvider = useCallback(async (content: string) => {
-    try {
-      setSpeaking(true);
-      const result = await api.tts(content, voiceConfig.ttsVoice, voiceConfig.ttsSpeed);
-      const audio = new Audio(result.url);
-      audio.onended = () => setSpeaking(false);
-      audio.onerror = () => setSpeaking(false);
-      await audio.play();
-    } catch {
-      setSpeaking(false);
-      toast.error(t('chat.message.voice.failed'));
-    }
-  }, [t, voiceConfig.ttsSpeed, voiceConfig.ttsVoice]);
-
-  const readAloud = useCallback((content: string) => {
-    if (!content.trim()) return;
-    if ((voiceConfig.ttsProvider ?? 'browser') === 'browser') {
-      speakWithBrowser(content);
-      return;
-    }
-    void speakWithProvider(content);
-  }, [speakWithBrowser, speakWithProvider, voiceConfig.ttsProvider]);
-
-  const handleReadAloud = useCallback(() => {
-    if (speaking) {
-      window.speechSynthesis.cancel();
-      setSpeaking(false);
-      return;
-    }
-    readAloud(message.content);
-  }, [readAloud, speaking, message.content]);
-
-  useEffect(() => {
-    return () => { window.speechSynthesis.cancel(); };
-  }, []);
-
-  useEffect(() => {
-    if (!voiceConfig.ttsAutoRead || message.role !== 'assistant' || message.loading || !message.content.trim()) return;
-    if (autoReadMessageRef.current === message.id) return;
-    autoReadMessageRef.current = message.id;
-    readAloud(message.content);
-  }, [message.content, message.id, message.loading, message.role, readAloud, voiceConfig.ttsAutoRead]);
-
   useEffect(() => {
     if (editing && editRef.current) {
       editRef.current.focus({ cursor: 'end' });
@@ -868,10 +798,6 @@ export function MessageBubble({ message, userAvatar, agentAvatar, onOpenArtifact
     setEditing(false);
   }, []);
 
-  const handleSaveToNotebook = useCallback(() => {
-    saveMessageToNotebook(message);
-    toast.success(t('chat.message.toast.savedToNotebook'));
-  }, [saveMessageToNotebook, message, t]);
 
   const handleExportCodeBlock = useCallback((content: string, language: string) => {
     downloadCodeBlock(content, language);
@@ -895,8 +821,6 @@ export function MessageBubble({ message, userAvatar, agentAvatar, onOpenArtifact
       onClick: () => setCollapsed(!collapsed),
     },
     { type: 'divider' },
-    { key: 'save-notebook', icon: <BookOpen size={14} />, label: t('chat.message.action.saveToNotebook'), onClick: handleSaveToNotebook },
-    { key: 'share', icon: <Share2 size={14} />, label: t('chat.message.action.share') },
     { key: 'branch', icon: <GitBranch size={14} />, label: t('chat.message.action.branch'), onClick: handleBranch },
     { type: 'divider' },
     ...(message.error ? [{ key: 'retry', icon: <RotateCcw size={14} />, label: t('chat.message.action.retry'), onClick: handleRetry }] : []),
@@ -908,7 +832,6 @@ export function MessageBubble({ message, userAvatar, agentAvatar, onOpenArtifact
   const userMoreMenu: MenuProps['items'] = [
     { key: 'edit', icon: <Edit size={14} />, label: t('chat.message.action.edit'), onClick: handleStartEdit },
     { key: 'copy', icon: <Copy size={14} />, label: t('chat.message.action.copy'), onClick: handleCopy },
-    { key: 'save-notebook', icon: <BookOpen size={14} />, label: t('chat.message.action.saveToNotebook'), onClick: handleSaveToNotebook },
     { key: 'branch', icon: <GitBranch size={14} />, label: t('chat.message.action.branch'), onClick: handleBranch },
     { type: 'divider' },
     ...(message.error ? [{ key: 'retry', icon: <RotateCcw size={14} />, label: t('chat.message.action.retry'), onClick: handleRetry }] : []),
@@ -942,13 +865,7 @@ export function MessageBubble({ message, userAvatar, agentAvatar, onOpenArtifact
         style={{ position: 'relative', paddingBlock: 8, paddingInlineEnd: 36 }}
       >
         <Flexbox direction="horizontal" align="center" gap={8}>
-          <Avatar
-            avatar={agentAvatar || '🤖'}
-            size={32}
-            shape="square"
-            background="linear-gradient(135deg, #667eea, #764ba2)"
-            style={{ flexShrink: 0 }}
-          />
+          <AgentIconTile size={32} />
           <span
             style={{
               fontSize: 12,
@@ -1045,13 +962,7 @@ export function MessageBubble({ message, userAvatar, agentAvatar, onOpenArtifact
         {isUser ? (
           <UserSquareAvatar remoteUrl={userAvatar?.url} name={userAvatar?.name} size={32} radius={8} />
         ) : (
-          <Avatar
-            avatar={agentAvatar || '🤖'}
-            size={32}
-            shape="square"
-            background="linear-gradient(135deg, #667eea, #764ba2)"
-            style={{ flexShrink: 0 }}
-          />
+          <AgentIconTile size={32} />
         )}
         <span
           style={{
@@ -1207,21 +1118,6 @@ export function MessageBubble({ message, userAvatar, agentAvatar, onOpenArtifact
             </div>
           ) : message.content ? (
             <>
-              {!isUser && (() => {
-                const audioMatch = message.content.match(/\/api\/uploads\/[^\s]+\.(mp3|ogg|wav|webm)/);
-                if (!audioMatch) return null;
-                return (
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '8px 12px', marginBottom: 8,
-                    borderRadius: 8, background: token.colorFillQuaternary,
-                    border: `1px solid ${token.colorBorderSecondary}`,
-                  }}>
-                    <Volume2 size={16} style={{ color: token.colorPrimary, flexShrink: 0 }} />
-                    <audio controls style={{ flex: 1, height: 32 }} src={audioMatch[0]} />
-                  </div>
-                );
-              })()}
               <div className="selectable">
                 <Markdown
                   variant="chat"
@@ -1297,13 +1193,6 @@ export function MessageBubble({ message, userAvatar, agentAvatar, onOpenArtifact
             transition: 'opacity 0.2s',
           }}
         >
-          {!isUser && (
-            <MiniButton
-              icon={speaking ? <VolumeX size={14} /> : <Volume2 size={14} />}
-              title={speaking ? t('chat.message.action.stopReading') : t('chat.message.action.readAloud')}
-              onClick={handleReadAloud}
-            />
-          )}
           {message.error && (
             <MiniButton icon={<RotateCcw size={14} />} title={t('chat.message.action.retry')} onClick={handleRetry} />
           )}

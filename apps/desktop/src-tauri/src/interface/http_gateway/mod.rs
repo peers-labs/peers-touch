@@ -12,6 +12,7 @@ use std::io::Read as _;
 use std::sync::Arc;
 
 use serde_json::{json, Value};
+use tauri::AppHandle;
 
 use crate::contracts::*;
 use crate::error::{AppResult, ErrorCode};
@@ -23,6 +24,7 @@ use crate::state::AppState;
 // -------------------------------------------------------------------------
 use crate::application::account as app_account;
 use crate::application::admin as app_admin;
+use crate::application::agent_orchestration as app_agent_orchestration;
 use crate::application::agent_turn as app_agent_turn;
 use crate::application::agents as app_agents;
 use crate::application::applets as app_applets;
@@ -76,7 +78,7 @@ fn resolve_bind_addr() -> String {
 /// The server listens on the port specified by PT_GATEWAY_PORT env var
 /// (default 3030) and dispatches incoming POST requests to the same
 /// application-layer functions used by tauri_commands.
-pub fn start(state: Arc<AppState>) {
+pub fn start(state: Arc<AppState>, app_handle: AppHandle) {
     std::thread::Builder::new()
         .name("http-gateway".into())
         .spawn(move || {
@@ -105,8 +107,9 @@ pub fn start(state: Arc<AppState>) {
                 };
 
                 let state = Arc::clone(&state);
+                let app_handle = app_handle.clone();
                 pool.execute(move || {
-                    handle_request(request, &state);
+                    handle_request(request, &state, &app_handle);
                 });
             }
         })
@@ -117,7 +120,7 @@ pub fn start(state: Arc<AppState>) {
 // Request handling
 // -------------------------------------------------------------------------
 
-fn handle_request(mut request: tiny_http::Request, state: &AppState) {
+fn handle_request(mut request: tiny_http::Request, state: &AppState, app_handle: &AppHandle) {
     // CORS preflight
     if *request.method() == tiny_http::Method::Options {
         let response = tiny_http::Response::empty(200)
@@ -208,7 +211,7 @@ fn handle_request(mut request: tiny_http::Request, state: &AppState) {
         None => raw_args,
     };
 
-    let result = dispatch(cmd, args, state);
+    let result = dispatch(cmd, args, state, app_handle);
 
     let response_body = result.to_string();
     let response = tiny_http::Response::from_string(response_body)
@@ -550,6 +553,10 @@ fn http_gateway_bearer_token(state: &AppState) -> Option<String> {
         .filter(|t| !t.trim().is_empty())
 }
 
+fn unauthorized_error() -> AppResult<StubPayload> {
+    AppResult::fail(ErrorCode::Unauthorized, "authentication required", None)
+}
+
 fn http_gateway_admin_context(state: &AppState) -> Option<crate::domain::admin::AccessContext> {
     let g = state.session.lock().ok()?;
     let token = g.token.clone().filter(|t| !t.trim().is_empty())?;
@@ -653,7 +660,7 @@ fn filter_incremental_messages(
 ///
 /// This function mirrors the full invoke_handler list from main.rs,
 /// calling the same application-layer functions that tauri_commands use.
-fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
+fn dispatch(cmd: &str, args: Value, state: &AppState, app_handle: &AppHandle) -> Value {
     match cmd {
         // =================================================================
         // Meta
@@ -1346,6 +1353,21 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             };
             to_json(app_auth::auth_login(input, state))
         }
+        "access_start" => to_json(app_auth::access_start()),
+        "access_submit_invite_code" => {
+            let input = match parse_args::<AccessSubmitInviteInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_auth::access_submit_invite_code(input))
+        }
+        "access_submit_login" => {
+            let input = match parse_args::<AccessSubmitLoginInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_auth::access_submit_login(input, state))
+        }
         "auth_logout" => to_json(app_auth::auth_logout(state)),
         "auth_restore_session" => to_json(app_auth::auth_restore_session(state)),
         "auth_validate_token" => {
@@ -1919,12 +1941,151 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             };
             to_json(app_agents::agents_list_sessions("", input))
         }
+        "agent_execute_turn" => {
+            let input = match parse_args::<AgentExecuteTurnInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_execute_turn(input, &token))
+        }
+        "agent_execute_turn_stream" => {
+            let input = match parse_args::<AgentExecuteTurnInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let stream_id = input
+                .stream_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("agent-turn-{}", Ulid::new()));
+            let cancel_flag = app_agent_turn::register_agent_turn_stream(&stream_id);
+            let stream_id_for_task = stream_id.clone();
+            let app_for_task = app_handle.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                app_agent_turn::agent_execute_turn_stream(
+                    app_for_task,
+                    stream_id_for_task.clone(),
+                    input,
+                    token,
+                    cancel_flag,
+                );
+                app_agent_turn::unregister_agent_turn_stream(&stream_id_for_task);
+            });
+            to_json(AppResult::success(StubPayload {
+                command: "agent_execute_turn_stream".to_string(),
+                status: json!({ "stream_id": stream_id }).to_string(),
+            }))
+        }
+        "agent_cancel_turn_stream" => {
+            let input = match parse_args::<AgentTurnStreamCancelInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_agent_turn::cancel_agent_turn_stream(&input.stream_id))
+        }
+        "agent_turn_trace_list" => {
+            let input = match parse_args::<AgentTurnTraceListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_turn_trace_list(input, &token))
+        }
+        "agent_turn_trace_get" => {
+            let input = match parse_args::<AgentTurnTraceGetInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_turn_trace_get(input, &token))
+        }
         "agent_resolve_local_tool_request" => {
             let input = match parse_args::<AgentLocalToolRequestInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
             to_json(app_agent_turn::agent_resolve_local_tool_request(input))
+        }
+        "agent_collaboration_create" => {
+            let input = match parse_args::<AgentCollaborationCreateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_orchestration::agent_collaboration_create(
+                input, &token, "",
+            ))
+        }
+        "agent_collaboration_get" => {
+            let input = match parse_args::<AgentCollaborationGetInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_orchestration::agent_collaboration_get(
+                input, &token,
+            ))
+        }
+        "agent_collaboration_list" => {
+            let input = match parse_args::<AgentCollaborationListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_orchestration::agent_collaboration_list(
+                input, &token,
+            ))
+        }
+        "agent_collaboration_list_events" => {
+            let input = match parse_args::<AgentCollaborationListEventsInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_orchestration::agent_collaboration_list_events(
+                input, &token,
+            ))
+        }
+        "agent_collaboration_cancel_task" => {
+            let input = match parse_args::<AgentCollaborationCancelTaskInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_orchestration::agent_collaboration_cancel_task(
+                input, &token,
+            ))
         }
 
         // =================================================================

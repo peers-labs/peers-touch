@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useChatStore } from '../store/chat';
+import { useAgentStore } from '../store/agent';
 import { EVENT, eventBus } from '../kernel/events';
+import { openAgentChatSession } from '../utils/openAgentChatSession';
 import type { ParsedDeepLink } from '../utils/deeplink';
 import type { HashRouter, Navigation, SettingsNavState, Page } from '../types/navigation';
 
@@ -9,7 +11,26 @@ export function useNavigation(router: HashRouter): Navigation {
 
   const navigateTo = useCallback((page: Page) => {
     router.setPage(page);
-  }, [router.setPage]);
+  }, [router.setPage, router.setProfilePage]);
+
+  const navigateToAgentSurface = useCallback((agentName: string, surface: 'chat' | 'profile') => {
+    const agentStore = useAgentStore.getState();
+    const agent = agentStore.agents.find((item) => item.name === agentName);
+    if (surface === 'profile') {
+      agentStore.setSelectedAgent(agentName);
+      agentStore.setAgentSurface(agentName, 'profile');
+      router.setProfilePage(agentName);
+      return;
+    }
+
+    if (agent) {
+      void openAgentChatSession(agent, { reason: 'navigate-agent-chat' });
+    } else {
+      agentStore.setSelectedAgent(agentName);
+      agentStore.setAgentSurface(agentName, 'chat');
+    }
+    router.setPage('agent');
+  }, [router.setPage, router.setProfilePage]);
 
   const navigateToSettings = useCallback((tab: string, highlightId?: string) => {
     setSettingsNav({ tab, highlightId });
@@ -24,6 +45,9 @@ export function useNavigation(router: HashRouter): Navigation {
         useChatStore.getState().selectSession(sessionKey);
       }
       router.setPage('agent');
+    } else if (url.startsWith('/agent-profile/')) {
+      const agentName = decodeURIComponent(url.split('/agent-profile/')[1] || '');
+      if (agentName) router.setProfilePage(agentName);
     } else if (url.startsWith('/notes/') || url.startsWith('/pages/')) {
       const docId = url.split(/\/(?:notes|pages)\//)[1];
       if (docId) {
@@ -68,5 +92,5 @@ export function useNavigation(router: HashRouter): Navigation {
     });
   }, [router.setPage]);
 
-  return { settingsNav, navigateTo, navigateToSettings, handleSearchNavigate };
+  return { settingsNav, navigateTo, navigateToAgentSurface, navigateToSettings, handleSearchNavigate };
 }

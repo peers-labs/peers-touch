@@ -112,6 +112,12 @@
   "settings.general.screenshotShortcutRecording": "按下新的快捷键…",
   "settings.general.screenshotShortcutReset": "重置",
   "settings.general.chatShortcutSaved": "聊天快捷键已保存",
+  "settings.general.agentDefaultsTitle": "新建智能体默认模型",
+  "settings.general.agentDefaultsDescription": "新建 Agent 时自动继承 Provider、模型和推理深度，创建后可在 Agent 编辑页覆盖。",
+  "settings.general.defaultProvider": "默认 Provider",
+  "settings.general.defaultModel": "默认模型",
+  "settings.general.defaultEffort": "默认推理深度",
+  "settings.general.agentDefaultsSaved": "新建智能体默认配置已保存",
   "settings.general.agentsTitle": "智能体",
   "settings.general.noAgents": "尚未配置任何智能体，将使用默认助手。",
 

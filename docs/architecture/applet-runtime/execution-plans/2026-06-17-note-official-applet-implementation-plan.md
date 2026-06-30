@@ -1,9 +1,13 @@
 # Note Official Applet Implementation Plan
 
-> **Status**: draft
+> **Status**: superseded
 > **Date**: 2026-06-17
 > **Owner**: Architecture Team
 > **Scope**: Task-level plan for implementing Note as the first official applet under `apps/applets/note`
+> **Superseded by**: [`2026-06-23-applet-capability-completion-plan.md`](./2026-06-23-applet-capability-completion-plan.md)
+
+> This document is archived as historical context. Do not use it as the active
+> execution source for new applet capability work.
 
 ---
 

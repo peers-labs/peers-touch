@@ -74,16 +74,24 @@
 
   "error.chat.completionFailed": "对话生成失败",
   "error.chat.conversationNotFound": "对话未找到",
+  "error.chat.conversationActionFailed": "会话操作失败",
+  "error.chat.conversationUnavailable": "该会话不可用，请刷新后重试",
+  "error.chat.deleteFailed": "删除会话失败",
+  "error.chat.editFailed": "编辑消息失败",
   "error.chat.getCursorFailed": "获取游标失败",
   "error.chat.getKeyVersionFailed": "获取密钥版本失败",
   "error.chat.groupRequired": "需要群组 ID",
+  "error.chat.localCryptoStoreUnavailable": "本地加密聊天存储不可用，请重启应用或重建本地聊天数据后再试",
   "error.chat.localSearchFailed": "本地搜索失败",
   "error.chat.messageNotFound": "消息未找到",
   "error.chat.nextVersionPositive": "版本号必须为正数",
+  "error.chat.permissionDenied": "你没有权限执行此操作，可能已不在该群",
   "error.chat.queryRequired": "需要搜索关键词",
   "error.chat.rotateKeyFailed": "密钥轮换失败",
   "error.chat.scopeAndCursorRequired": "需要范围和游标",
   "error.chat.scopeRequired": "需要指定范围",
+  "error.chat.sendFailed": "消息发送失败",
+  "error.chat.senderKeySyncing": "群聊加密密钥还在同步，请稍后重试",
   "error.chat.setCursorFailed": "设置游标失败",
 
   "error.command.notImplemented": "命令未实现",
@@ -129,6 +137,8 @@
   "error.profile.updateFailed": "更新个人资料失败",
   "error.profile.uploadFailed": "文件上传失败",
   "error.profile.uploadRolledBack": "上传操作已回滚",
+
+  "error.presentation.title": "操作失败",
 
   "error.provider.baseUrlRequired": "需要 API 地址",
   "error.provider.disabled": "提供商已被禁用",

@@ -185,13 +185,14 @@
 - 双端社交/聊天产品闭环执行计划：`architecture/social-runtime/execution-plans/20260604-social-chat-product-closure.md`
 - Applet / 小程序运行时架构：`architecture/applet-runtime/README.md`
 - A2A 协议集成：`architecture/agent/a2a/`（文档集，入口 `README.md`）
+- Agent Canvas 编排架构：`architecture/agent/agent-canvas-orchestration.md`
 - Federation 虚拟网络与治理账本：`architecture/federation/README.md`
 - 质量保证闭环：`architecture/quality-framework/README.md`
 - 产品验收框架：`architecture/acceptance-framework/README.md`
 - Human 联邦社交活动层：`architecture/federated-social-activity/README.md`
 - Agent LobeHub 蓝本重构：`architecture/agent/agent-lobehub-blueprint.md`
 - Atelier 个人 Agent 工作台 × Peers Agent Collaboration：`architecture/atelier/README.md`（文档集，入口 `README.md`）
-- 原型总账（统一登记 + 确认门）：`architecture/prototypes/README.md`
+- 原型统一入口（Prototype Portal + 统一登记 + 确认门）：`architecture/prototypes/README.md`
 
 ### 4.2 平台层真源
 

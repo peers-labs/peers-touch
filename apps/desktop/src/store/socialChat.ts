@@ -1348,13 +1348,10 @@ export const useSocialChatStore = create<SocialChatState>((set, get) => ({
     // Fast path: if messages are already loaded for this conversation, render
     // them immediately without blocking on network+decrypt. A background
     // refresh still happens to pick up new messages.
-    const existing = get().messages[ulid];
-    if (existing && existing.length > 0) {
-      set({ loading: false });
-      // Background refresh — non-blocking, will merge silently when done
-    } else {
-      set({ loading: true });
-    }
+    // Conversation switches must be cache-first and non-blocking. Empty
+    // conversations should show the empty state while the refresh reconciles
+    // in the background, not a visible spinner on every tab click.
+    set({ loading: false });
     try {
       let friendPeerDid = '';
       if (activeTab === 'friend') {
