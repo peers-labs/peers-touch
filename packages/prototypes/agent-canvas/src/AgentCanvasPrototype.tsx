@@ -15,6 +15,8 @@ import {
   Layers3,
   MessageSquareText,
   MousePointer2,
+  PanelLeftClose,
+  PanelLeftOpen,
   Play,
   Plus,
   RotateCcw,
@@ -53,17 +55,17 @@ interface EngineMatch {
 }
 
 const T = {
-  bg: '#f6f3ff',
+  bg: '#f7f7f8',
   panel: 'rgba(255,255,255,0.92)',
   panelStrong: '#ffffff',
-  line: '#e7e0fb',
-  lineStrong: '#d6c9ff',
+  line: '#ececf0',
+  lineStrong: '#d8d8e0',
   text: '#1f1b33',
   secondary: '#6a6381',
   tertiary: '#9a92ad',
   purple: '#7156f6',
   purpleDark: '#4d38be',
-  purpleSoft: '#efeaff',
+  purpleSoft: '#f3f3f5',
   green: '#19b27b',
   greenSoft: '#e8fff5',
   orange: '#f59e0b',
@@ -222,6 +224,7 @@ function AgentCanvasPrototype({ onBack, embedded = false }: { onBack?: () => voi
   const [activeStep, setActiveStep] = useState(0);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [activeAgentId, setActiveAgentId] = useState<string | null>(AGENTS[0]?.id ?? null);
+  const [libraryOpen, setLibraryOpen] = useState(true);
 
   const engineMatch = useMemo(() => {
     if (!nodes.length || !prompt.trim()) return null;
@@ -326,7 +329,7 @@ function AgentCanvasPrototype({ onBack, embedded = false }: { onBack?: () => voi
         <header style={styles.header}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
             {onBack && (
-              <button style={styles.backButton} onClick={onBack}>
+              <button style={styles.backButton} onClick={onBack} title="返回" aria-label="返回">
                 <ArrowLeft size={16} />
               </button>
             )}
@@ -342,50 +345,91 @@ function AgentCanvasPrototype({ onBack, embedded = false }: { onBack?: () => voi
           </div>
         </header>
 
-        <section style={styles.workspace}>
-          <aside style={styles.leftPanel}>
-            <div style={styles.panelHeader}>
-              <div>
-                <div style={styles.panelTitle}>已有 Agent</div>
-                <div style={styles.panelHint}>点击看详情，详情卡片里加入画板</div>
-              </div>
-              <button style={styles.iconButton} title="新建 Agent">
-                <Plus size={16} />
-              </button>
-            </div>
+        <section style={{ ...styles.workspace, gridTemplateColumns: `${libraryOpen ? '250px' : '56px'} minmax(520px, 1fr) 320px` }}>
+          <aside style={{ ...styles.leftPanel, padding: libraryOpen ? 14 : '12px 0', alignItems: libraryOpen ? 'stretch' : 'center' }}>
+            {libraryOpen ? (
+              <>
+                <div style={styles.panelHeader}>
+                  <div>
+                    <div style={styles.panelTitle}>已有 Agent</div>
+                    <div style={styles.panelHint}>点击看详情，详情卡片里加入画板</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button style={styles.iconButton} title="新建 Agent">
+                      <Plus size={16} />
+                    </button>
+                    <button style={styles.iconButton} title="折叠 Agent Library" onClick={() => setLibraryOpen(false)}>
+                      <PanelLeftClose size={16} />
+                    </button>
+                  </div>
+                </div>
 
-            <div style={styles.searchBox}>
-              <Search size={15} />
-              搜索 Agent / 能力
-            </div>
+                <div style={styles.searchBox}>
+                  <Search size={15} />
+                  搜索 Agent / 能力
+                </div>
 
-            <div style={styles.agentList}>
-              {AGENTS.map((agent) => (
-                <AgentCard
-                  key={agent.id}
-                  agent={agent}
-                  selected={nodes.some((node) => node.id === agent.id)}
-                  active={activeAgentId === agent.id}
-                  onInspect={() => {
-                    setActiveAgentId(agent.id);
-                    setSelectedNodeId(null);
-                  }}
-                />
-              ))}
-            </div>
+                <div style={styles.agentList}>
+                  {AGENTS.map((agent) => (
+                    <AgentCard
+                      key={agent.id}
+                      agent={agent}
+                      selected={nodes.some((node) => node.id === agent.id)}
+                      active={activeAgentId === agent.id}
+                      onInspect={() => {
+                        setActiveAgentId(agent.id);
+                        setSelectedNodeId(null);
+                      }}
+                    />
+                  ))}
+                </div>
 
-            <div style={styles.templateBox}>
-              <div style={styles.panelTitle}>快速模板</div>
-              {TEMPLATES.map((template) => (
-                <button key={template.id} style={styles.templateButton} onClick={() => applyTemplate(template.id)}>
-                  <span>
-                    <b>{template.name}</b>
-                    <small>{template.desc}</small>
-                  </span>
-                  <ChevronRight size={15} />
+                <div style={styles.templateBox}>
+                  <div style={styles.panelTitle}>快速模板</div>
+                  {TEMPLATES.map((template) => (
+                    <button key={template.id} style={styles.templateButton} onClick={() => applyTemplate(template.id)}>
+                      <span>
+                        <b>{template.name}</b>
+                        <small>{template.desc}</small>
+                      </span>
+                      <ChevronRight size={15} />
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <button style={styles.iconButton} title="展开 Agent Library" onClick={() => setLibraryOpen(true)}>
+                  <PanelLeftOpen size={16} />
                 </button>
-              ))}
-            </div>
+                <div style={{ width: 28, height: 1, background: T.line }} />
+                <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {AGENTS.map((agent) => {
+                    const Icon = agent.icon;
+                    const selected = nodes.some((node) => node.id === agent.id);
+                    const active = activeAgentId === agent.id;
+                    return (
+                      <button
+                        key={agent.id}
+                        title={agent.name}
+                        onClick={() => {
+                          setActiveAgentId(agent.id);
+                          setSelectedNodeId(null);
+                        }}
+                        style={{
+                          ...styles.collapsedAgentButton,
+                          borderColor: 'transparent',
+                          background: active ? T.purpleSoft : selected ? T.greenSoft : 'transparent',
+                          color: active ? T.purple : T.secondary,
+                        }}
+                      >
+                        <Icon size={17} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </aside>
 
           <section style={styles.canvasColumn}>
@@ -394,9 +438,8 @@ function AgentCanvasPrototype({ onBack, embedded = false }: { onBack?: () => voi
                 <div style={styles.panelTitle}>协作画板</div>
                 <div style={styles.panelHint}>Canvas 是入口，真正的编排由 GoalKeeper + RunPlan 在后台完成。</div>
               </div>
-              <button style={styles.secondaryButton} onClick={resetCanvas}>
+              <button style={styles.iconButton} onClick={resetCanvas} title="清空" aria-label="清空">
                 <RotateCcw size={15} />
-                清空
               </button>
             </div>
 
@@ -870,7 +913,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    boxShadow: '0 18px 45px rgba(76, 55, 148, 0.08)',
+    boxShadow: '0 18px 45px rgba(15, 23, 42, 0.06)',
   },
   eyebrow: {
     color: T.purple,
@@ -980,6 +1023,17 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     position: 'relative',
   },
+  collapsedAgentButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    border: '1px solid transparent',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    flexShrink: 0,
+  },
   agentAvatar: {
     width: 34,
     height: 34,
@@ -1010,7 +1064,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 14,
     padding: 12,
     background: '#fff',
-    boxShadow: '0 18px 42px rgba(76, 55, 148, 0.16)',
+    boxShadow: '0 18px 42px rgba(15, 23, 42, 0.08)',
     pointerEvents: 'none',
   },
   tooltipTitle: {
@@ -1075,7 +1129,7 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     minHeight: 320,
     background:
-      'radial-gradient(circle at 1px 1px, rgba(113,86,246,0.14) 1px, transparent 0), rgba(255,255,255,0.58)',
+      'radial-gradient(circle at 1px 1px, rgba(15,23,42,0.06) 1px, transparent 0), rgba(255,255,255,0.72)',
     backgroundSize: '22px 22px',
     border: `1px dashed ${T.lineStrong}`,
     borderRadius: 26,
@@ -1105,7 +1159,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: `1px solid ${T.line}`,
     borderRadius: 16,
     padding: 10,
-    boxShadow: '0 12px 26px rgba(76, 55, 148, 0.07)',
+    boxShadow: '0 12px 26px rgba(15, 23, 42, 0.06)',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
@@ -1163,7 +1217,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 14,
     padding: 12,
     background: '#fff',
-    boxShadow: '0 18px 42px rgba(76, 55, 148, 0.16)',
+    boxShadow: '0 18px 42px rgba(15, 23, 42, 0.08)',
     pointerEvents: 'none',
   },
   statusPill: {
