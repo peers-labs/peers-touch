@@ -91,6 +91,12 @@ func TestCollaborationSynthesisPromptUsesNodeResults(t *testing.T) {
 			Status:        int32(model.TaskNodeStatus_TASK_NODE_STATUS_FAILED),
 			ResultSummary: "Payment regression risk needs mitigation.",
 		},
+		{
+			AgentID:       "agent-product",
+			Role:          collaborationRoleSynthesizer,
+			Status:        int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING),
+			ResultSummary: "This pending synthesis result must not be included.",
+		},
 	}
 
 	prompt := collaborationSynthesisPrompt(task, nodes)
@@ -108,5 +114,27 @@ func TestCollaborationSynthesisPromptUsesNodeResults(t *testing.T) {
 		if !strings.Contains(prompt, value) {
 			t.Fatalf("expected synthesis prompt to contain %q, got:\n%s", value, prompt)
 		}
+	}
+	if strings.Contains(prompt, "This pending synthesis result must not be included.") {
+		t.Fatalf("expected synthesis prompt to exclude synthesis node output, got:\n%s", prompt)
+	}
+}
+
+func TestSelectSynthesizerAgentID(t *testing.T) {
+	if got := selectSynthesizerAgentID(map[string]string{"judge_agent_id": " agent-judge "}, []string{"agent-lead"}); got != "agent-judge" {
+		t.Fatalf("expected explicit judge agent, got %q", got)
+	}
+	if got := selectSynthesizerAgentID(map[string]string{}, []string{"agent-lead", "agent-risk"}); got != "agent-lead" {
+		t.Fatalf("expected first agent fallback, got %q", got)
+	}
+}
+
+func TestSynthesisNodeDetection(t *testing.T) {
+	nodes := []persistence.CollaborationTaskNode{
+		{AgentID: "agent-lead", Role: "lead", Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED)},
+		{AgentID: "agent-judge", Role: collaborationRoleSynthesizer, Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING)},
+	}
+	if got := synthesisNode(nodes); got == nil || got.AgentID != "agent-judge" {
+		t.Fatalf("expected pending synthesis node, got %#v", got)
 	}
 }

@@ -34,6 +34,7 @@ interface CanvasNode {
   id: string;
   agent: Agent;
   status: CanvasRunState;
+  role?: string;
   turnId?: string;
   resultSummary?: string;
 }
@@ -261,7 +262,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
     if (!canRun) return;
     const runSeq = runSeqRef.current + 1;
     runSeqRef.current = runSeq;
-    const agentById = new Map(nodes.map((node) => [node.agent.id, node.agent]));
+    const agentById = new Map([...agents, ...nodes.map((node) => node.agent)].map((agent) => [agent.id, agent]));
     streamControllersRef.current.forEach((controller) => controller.abort());
     streamControllersRef.current = [];
     const startTaskStreams = (nextTaskId: string) => {
@@ -282,20 +283,24 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
           if (eventTaskId) setTaskId(eventTaskId);
           if (event.event === 'agent.collaboration.node.running') {
             setNodes((current) => current.map((currentNode) => {
-              if (currentNode.agent.id !== event.agentId) return currentNode;
+              const payloadNodeId = String(payload.node_id || '');
+              if (payloadNodeId ? currentNode.id !== payloadNodeId : currentNode.agent.id !== event.agentId) return currentNode;
               return {
                 ...currentNode,
                 id: String(payload.node_id || currentNode.id),
+                role: typeof payload.role === 'string' ? payload.role : currentNode.role,
                 status: 'running',
               };
             }));
           }
           if (event.event === 'agent.collaboration.node.completed' || event.event === 'agent.collaboration.node.failed') {
             setNodes((current) => current.map((currentNode) => {
-              if (currentNode.agent.id !== event.agentId) return currentNode;
+              const payloadNodeId = String(payload.node_id || '');
+              if (payloadNodeId ? currentNode.id !== payloadNodeId : currentNode.agent.id !== event.agentId) return currentNode;
               return {
                 ...currentNode,
                 id: String(payload.node_id || currentNode.id),
+                role: typeof payload.role === 'string' ? payload.role : currentNode.role,
                 status: event.event === 'agent.collaboration.node.failed' ? 'failed' : 'completed',
                 turnId: typeof payload.turn_id === 'string' ? payload.turn_id : currentNode.turnId,
                 resultSummary: typeof payload.result_summary === 'string' ? payload.result_summary : currentNode.resultSummary,
@@ -350,15 +355,18 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
           setRunError(formatCanvasResultSummary(failureSummary, t) || t('agent.canvas.failed'));
         }
         setNodes((current) => {
-          const byNodeAgent = new Map(detail.nodes.map((node) => [fieldString(node, 'agentId', 'agent_id'), node]));
-          return current.map((node, index) => {
-            const persisted = byNodeAgent.get(node.agent.id) || detail.nodes[index];
+          const currentByNodeId = new Map(current.map((node) => [node.id, node]));
+          return detail.nodes.map((persisted, index) => {
+            const nodeId = fieldString(persisted, 'nodeId', 'node_id');
+            const agentId = fieldString(persisted, 'agentId', 'agent_id');
+            const existing = currentByNodeId.get(nodeId) || current[index];
+            const agent = agentById.get(agentId) || existing?.agent || current[0]?.agent;
             return {
-              ...node,
-              id: fieldString(persisted, 'nodeId', 'node_id') || node.id,
-              agent: agentById.get(node.agent.id) || node.agent,
-              status: persisted ? nodeStatusToRunState(persisted.status) : node.status,
-              turnId: fieldString(persisted, 'turnId', 'turn_id') || node.turnId,
+              id: nodeId || existing?.id || `${agentId || 'node'}:${index}`,
+              agent,
+              role: fieldString(persisted, 'role'),
+              status: nodeStatusToRunState(persisted.status),
+              turnId: fieldString(persisted, 'turnId', 'turn_id') || existing?.turnId,
               resultSummary: fieldString(persisted, 'resultSummary', 'result_summary'),
             };
           });
@@ -383,7 +391,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
       setRunError(error instanceof Error ? error.message : String(error));
       setNodes((current) => current.map((node) => ({ ...node, status: 'failed' })));
     });
-  }, [canRun, nodes, prompt, t]);
+  }, [agents, canRun, nodes, prompt, t]);
 
   const resetCanvas = useCallback(() => {
     runSeqRef.current += 1;
@@ -717,7 +725,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
                             <AgentIconTile agent={node.agent} size={38} selected={selected} />
                             <Flexbox style={{ minWidth: 0 }}>
                               <span style={{ fontSize: 11, fontWeight: 700, color: token.colorTextTertiary }}>
-                                Agent {index + 1}
+                                {node.role === 'synthesizer' ? t('agent.canvas.synthesizer') : t('agent.canvas.agentIndex', { index: index + 1 })}
                               </span>
                               <span style={{ fontSize: 14, fontWeight: 800, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {node.agent.title || node.agent.name}
