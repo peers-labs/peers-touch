@@ -4,24 +4,20 @@ import {
   CheckCircle2,
   ChevronDown,
   Cloud,
-  Image as ImageIcon,
-  ImagePlus,
   MoreHorizontal,
   Network,
-  PanelLeftClose,
-  PanelLeftOpen,
   Plus,
   Search,
-  Send,
   Settings2,
   Share2,
-  Slash,
   Sparkles,
   UserRound,
   Workflow,
   type LucideIcon,
 } from 'lucide-react';
 import { T } from './theme';
+import { PanelToggleButton } from '../../shared/PanelToggleButton';
+import { PromptComposer } from '../../shared/PromptComposer';
 
 interface AgentSummary {
   id: string;
@@ -193,13 +189,12 @@ export function AgentChatPage({
             </div>
           </>
         )}
-        <button
+        <div
           style={styles.collapseButton}
           title={agentListOpen ? '折叠 Agent 列表' : '展开 Agent 列表'}
-          onClick={() => setAgentListOpen((open) => !open)}
         >
-          {agentListOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-        </button>
+          <PanelToggleButton side="left" open={agentListOpen} onClick={() => setAgentListOpen((open) => !open)} />
+        </div>
       </aside>
 
       <aside style={styles.topicList}>
@@ -286,24 +281,9 @@ export function AgentChatPage({
           </div>
         </section>
 
-        <section style={styles.composer}>
-          <textarea
-            style={styles.composerInput}
-            placeholder="Ask anything..."
-            rows={1}
-          />
-          <div style={styles.composerToolbar}>
-            <button style={styles.circleToolButton} title="Slash command"><Slash size={16} /></button>
-            <button style={styles.circleToolButton} title="Upload File"><ImagePlus size={18} /></button>
-            <div style={styles.composerModelSlot}>
-              <button style={styles.modelButton}>
-                Doubao Pro
-                <ChevronDown size={14} />
-              </button>
-            </div>
-            <button style={styles.sendButton} title="Send"><Send size={16} /></button>
-          </div>
-        </section>
+        <div style={{ margin: '0 0 48px' }}>
+          <PromptComposer modelLabel="GPT-5.5" />
+        </div>
       </main>
     </div>
   );
@@ -354,15 +334,6 @@ function AgentIcon({ agent, size }: { agent: AgentSummary; size: number }) {
     >
       <Icon size={Math.max(14, Math.round(size * 0.48))} />
     </span>
-  );
-}
-
-function SlashCommandIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 17 17" fill="none" aria-hidden="true">
-      <rect x="2.25" y="2.25" width="12.5" height="12.5" rx="2.25" stroke="currentColor" strokeWidth="2" />
-      <path d="M9.9 5.2L7.1 11.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
   );
 }
 
@@ -708,97 +679,5 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontWeight: 650,
     cursor: 'pointer',
-  },
-  composer: {
-    width: 'min(1068px, calc(100% - 160px))',
-    margin: '0 auto 48px',
-    borderRadius: 24,
-    background: '#fff',
-    border: '1px solid #d9d9d9',
-    boxShadow: '0 8px 32px rgba(15,23,42,0.06)',
-    padding: '12px 14px 10px',
-    boxSizing: 'border-box',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 10,
-  },
-  composerPlaceholder: {
-    color: T.textTertiary,
-    fontSize: 12,
-    marginBottom: 24,
-  },
-  composerInput: {
-    width: '100%',
-    minHeight: 28,
-    maxHeight: 200,
-    border: 0,
-    outline: 'none',
-    resize: 'none',
-    color: T.text,
-    fontSize: 15,
-    lineHeight: 1.5,
-    fontFamily: 'inherit',
-    background: 'transparent',
-    boxSizing: 'border-box',
-    padding: '2px 4px',
-  },
-  composerToolbar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-  },
-  composerModelSlot: {
-    flex: 1,
-    display: 'flex',
-    justifyContent: 'center',
-  },
-  circleToolButton: {
-    width: 34,
-    height: 34,
-    border: 0,
-    borderRadius: '50%',
-    background: T.fillTertiary,
-    color: T.textSecondary,
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-  },
-  modelButton: {
-    height: 34,
-    border: 0,
-    borderRadius: 999,
-    background: T.fillQuaternary,
-    color: T.textSecondary,
-    padding: '0 12px',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
-    fontSize: 13,
-    fontWeight: 600,
-    cursor: 'pointer',
-    maxWidth: 260,
-  },
-  modelSelect: {
-    height: 30,
-    border: `1px solid ${T.border}`,
-    borderRadius: 8,
-    background: '#fff',
-    color: T.text,
-    padding: '0 10px',
-    fontSize: 12,
-  },
-  sendButton: {
-    width: 34,
-    height: 34,
-    border: 0,
-    borderRadius: '50%',
-    background: T.primary,
-    color: '#fff',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    flexShrink: 0,
   },
 };
