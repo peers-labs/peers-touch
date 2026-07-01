@@ -1,0 +1,44 @@
+{
+  "id": "applet-desktop-lifecycle-smoothness",
+  "status": "active",
+  "product_area": "applet",
+  "owners": [
+    "apps/desktop/src/kernel/PageHost.tsx",
+    "apps/desktop/src/kernel/pageRuntimeLease.ts",
+    "apps/desktop/src/kernel/runtime.ts",
+    "apps/desktop/src/pages/AppletRuntimePage.tsx",
+    "apps/desktop/src/pages/AppletsPage.tsx",
+    "apps/desktop/src/applet/useProductWindowLifecycleE2E.ts",
+    "apps/desktop/src/runtimes/appletsRuntime.ts",
+    "apps/desktop/src/store/applets.ts",
+    "tooling/scripts/applet-desktop-lifecycle-smoothness-gate.mjs"
+  ],
+  "truth_sources": [
+    "docs/client/desktop/runtime-projections.md",
+    "docs/client/common/ui-identity/frontend-component-tree-registry.md",
+    "Desktop PageHost page runtime lease dispatch",
+    "Desktop applets runtime/store projection"
+  ],
+  "visible_surfaces": [
+    {"type": "desktop", "route": "#/applets"},
+    {"type": "desktop", "route": "#/applet:<id>"}
+  ],
+  "required_gates": [
+    "applet-desktop-lifecycle-smoothness"
+  ],
+  "acceptance": {
+    "runtime": [
+      "switching from applet A to applet B acquires B without releasing hidden LRU applet A",
+      "explicit close releases only the closed applet after navigation has moved back to launcher",
+      "LRU eviction remains the release path for a previous hidden applet"
+    ],
+    "visible": [
+      "launcher refresh or wakeup with existing applets must not show fullscreen loading",
+      "close-to-launcher must prioritize the route/visible frame before runtime release work",
+      "`make desktop` development app shell must show two installed applet launch targets and complete A-to-B-to-close-to-wakeup lifecycle evidence before this feature is claimed production-ready"
+    ]
+  },
+  "negative": [
+    "single applet smoke tests must not be reported as A-to-B switching coverage"
+  ]
+}
