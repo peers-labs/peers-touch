@@ -8,6 +8,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestCollaborationEngineExecutionMode(t *testing.T) {
@@ -168,6 +170,154 @@ func TestAgentExecutorKindDetectsDesktopCliRuntime(t *testing.T) {
 				t.Fatalf("expected executor kind %v, got %v", tt.want, got)
 			}
 		})
+	}
+}
+
+func TestClaimNodeLeaseTxFencesActiveExecutorLease(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:claim_node_lease?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	for _, statement := range []string{
+		`CREATE TABLE agent_collaboration_tasks (
+			id text PRIMARY KEY,
+			title text NOT NULL,
+			description text,
+			engine_type integer NOT NULL,
+			status integer NOT NULL,
+			goal_owner_id text NOT NULL,
+			workspace_id text,
+			budget_tokens real NOT NULL DEFAULT 0,
+			budget_money real NOT NULL DEFAULT 0,
+			budget_time_ms integer NOT NULL DEFAULT 0,
+			meta_json text,
+			created_at datetime NOT NULL,
+			started_at datetime NOT NULL,
+			ended_at datetime NOT NULL
+		)`,
+		`CREATE TABLE agent_collaboration_task_nodes (
+			id text PRIMARY KEY,
+			task_id text NOT NULL,
+			parent_node_id text,
+			agent_id text NOT NULL,
+			role text,
+			description text,
+			status integer NOT NULL,
+			prerequisite_node_ids text,
+			result_summary text,
+			started_at datetime NOT NULL,
+			ended_at datetime NOT NULL
+		)`,
+		`CREATE TABLE agent_executor_leases (
+			lease_id text PRIMARY KEY,
+			task_id text NOT NULL,
+			step_id text,
+			executor_id text NOT NULL,
+			executor_kind integer NOT NULL,
+			status text NOT NULL,
+			acquired_at datetime NOT NULL,
+			heartbeat_at datetime NOT NULL,
+			expires_at datetime NOT NULL
+		)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("create test table: %v", err)
+		}
+	}
+
+	now := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	task := persistence.CollaborationTask{
+		ID:          "task-lease",
+		GoalOwnerID: "actor-1",
+		Title:       "Lease claim",
+		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		CreatedAt:   now,
+		StartedAt:   now,
+		EndedAt:     now,
+	}
+	node := persistence.CollaborationTaskNode{
+		ID:        "node-lease",
+		TaskID:    task.ID,
+		AgentID:   "agent-1",
+		Role:      "lead",
+		Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+		StartedAt: now,
+		EndedAt:   now,
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+
+	service := &OrchestrationService{}
+	var first persistence.ExecutorLease
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		lease, ok, err := service.claimNodeLeaseTx(tx, &task, &node, "executor-a", time.Minute, now)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			t.Fatal("expected first executor to claim lease")
+		}
+		first = lease
+		return nil
+	}); err != nil {
+		t.Fatalf("first claim: %v", err)
+	}
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		_, ok, err := service.claimNodeLeaseTx(tx, &task, &node, "executor-b", time.Minute, now.Add(time.Second))
+		if err != nil {
+			return err
+		}
+		if ok {
+			t.Fatal("expected second executor to be fenced by active lease")
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("second claim: %v", err)
+	}
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		lease, ok, err := service.claimNodeLeaseTx(tx, &task, &node, "executor-a", 2*time.Minute, now.Add(2*time.Second))
+		if err != nil {
+			return err
+		}
+		if !ok {
+			t.Fatal("expected original executor to renew active lease")
+		}
+		if lease.LeaseID != first.LeaseID {
+			t.Fatalf("expected renewal of %q, got %q", first.LeaseID, lease.LeaseID)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("renew claim: %v", err)
+	}
+
+	if err := db.Model(&persistence.ExecutorLease{}).
+		Where("lease_id = ?", first.LeaseID).
+		Updates(map[string]interface{}{
+			"expires_at": now.Add(-time.Second),
+		}).Error; err != nil {
+		t.Fatalf("expire lease: %v", err)
+	}
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		lease, ok, err := service.claimNodeLeaseTx(tx, &task, &node, "executor-b", time.Minute, now.Add(3*time.Second))
+		if err != nil {
+			return err
+		}
+		if !ok {
+			t.Fatal("expected new executor to claim after previous lease expired")
+		}
+		if lease.ExecutorID != "executor-b" || lease.LeaseID == first.LeaseID {
+			t.Fatalf("expected a new executor-b lease, got %#v", lease)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("claim after expiry: %v", err)
 	}
 }
 
