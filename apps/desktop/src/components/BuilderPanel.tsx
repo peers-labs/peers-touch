@@ -9,6 +9,8 @@ import {
   Send,
   Square,
   ChevronDown,
+  PencilLine,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { useChatStore, type ChatMessage } from '../store/chat';
 import { useAgentStore } from '../store/agent';
@@ -468,10 +470,10 @@ export function BuilderPanel({
           <Flexbox
             style={{
               background: token.colorBgContainer,
-              border: `1px solid ${token.colorBorderSecondary}`,
-              borderRadius: 22,
+              border: `1px solid ${token.colorBorder}`,
+              borderRadius: 24,
               overflow: 'hidden',
-              boxShadow: '0 14px 48px rgba(15, 23, 42, 0.08)',
+              boxShadow: '0 18px 60px rgba(15, 23, 42, 0.07)',
             }}
           >
             <textarea
@@ -488,26 +490,58 @@ export function BuilderPanel({
               }}
               disabled={disabled}
               placeholder={disabled ? (disabledMessage || t('agent.builder.disabled')) : t('agent.builder.placeholder')}
-              rows={3}
+              rows={4}
               style={{
                 width: '100%',
                 resize: 'none',
                 border: 'none',
                 borderRadius: 0,
-                padding: '16px 18px 8px',
+                padding: '20px 22px 12px',
                 fontSize: 15,
                 lineHeight: 1.6,
                 outline: 'none',
                 fontFamily: 'inherit',
                 background: 'transparent',
                 color: token.colorText,
-                minHeight: 70,
+                minHeight: 116,
                 maxHeight: 160,
                 overflow: 'auto',
               }}
             />
-            <Flexbox horizontal align="center" justify="space-between" style={{ padding: '0 12px 12px' }}>
-              <Flexbox horizontal align="center" gap={2} style={{ minWidth: 0 }}>
+            <Flexbox horizontal align="center" justify="space-between" gap={10} style={{ padding: '0 14px 14px' }}>
+              <Flexbox horizontal align="center" gap={8} style={{ flexShrink: 0 }}>
+                <ActionIcon
+                  icon={PencilLine}
+                  size="large"
+                  disabled
+                  title={t('agent.builder.composeModeActive')}
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 19,
+                    border: `1px solid ${token.colorBorderSecondary}`,
+                    background: token.colorBgContainer,
+                    color: token.colorTextSecondary,
+                    cursor: 'default',
+                  }}
+                />
+                <ActionIcon
+                  icon={ImageIcon}
+                  size="large"
+                  disabled
+                  title={t('agent.builder.attachImageUnavailable')}
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 19,
+                    border: `1px solid ${token.colorBorderSecondary}`,
+                    background: token.colorBgContainer,
+                    color: token.colorTextSecondary,
+                    cursor: 'not-allowed',
+                  }}
+                />
+              </Flexbox>
+              <Flexbox horizontal align="center" justify="center" gap={2} style={{ minWidth: 0, flex: 1 }}>
                 <Popover
                   open={modelOpen}
                   onOpenChange={setModelOpen}
@@ -533,20 +567,20 @@ export function BuilderPanel({
                       alignItems: 'center',
                       justifyContent: 'center',
                       gap: 6,
-                      maxWidth: 170,
-                      height: 34,
-                      padding: '0 8px',
+                      maxWidth: '100%',
+                      height: 38,
+                      padding: '0 14px',
                       border: 0,
-                      borderRadius: 10,
+                      borderRadius: 19,
                       cursor: 'pointer',
-                      background: 'transparent',
+                      background: token.colorFillQuaternary,
                       color: token.colorText,
                       fontSize: 13,
                       fontWeight: 650,
                       transition: 'background 0.15s',
                     }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = token.colorFillQuaternary; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = token.colorFillSecondary; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = token.colorFillQuaternary; }}
                   >
                     <ModelIcon model={currentModelId} size={16} />
                     <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -556,26 +590,34 @@ export function BuilderPanel({
                   </button>
                 </Popover>
               </Flexbox>
-              <Flexbox horizontal align="center" gap={4}>
+              <Flexbox horizontal align="center" gap={4} style={{ flexShrink: 0 }}>
                 {loading ? (
                   <ActionIcon
                     icon={Square}
-                    size="small"
+                    size="large"
                     onClick={handleStop}
                     title={t('common.action.stop', { ns: 'common' })}
-                    style={{ background: token.colorError, color: '#fff', borderRadius: 10 }}
+                    style={{
+                      width: 42,
+                      height: 42,
+                      background: token.colorError,
+                      color: '#fff',
+                      borderRadius: 21,
+                    }}
                   />
                 ) : (
                   <ActionIcon
                     icon={Send}
-                    size="small"
+                    size="large"
                     onClick={handleSend}
                     disabled={!input.trim()}
                     title={t('common.action.send', { ns: 'common' })}
                     style={{
+                      width: 42,
+                      height: 42,
                       background: input.trim() ? token.colorPrimary : token.colorFillSecondary,
                       color: input.trim() ? '#fff' : token.colorTextQuaternary,
-                      borderRadius: 10,
+                      borderRadius: 21,
                     }}
                   />
                 )}

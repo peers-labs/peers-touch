@@ -1,13 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useChatStore } from '../store/chat';
-import { useAgentStore } from '../store/agent';
 import { AgentChatPage } from '../pages/AgentChatPage';
 import { NotesPage } from '../pages/NotesPage';
 import { AgentCanvasPage } from '../pages/AgentCanvasPage';
 import { AgentProfilePage } from '../pages/AgentProfilePage';
 import { getModule } from '../modules/registry';
 import { getPage } from '../kernel/page';
-import { openAgentChatSession } from '../utils/openAgentChatSession';
 import { scheduleIdle } from '../kernel/boot';
 import type { Page, Navigation, AppletPins, HashRouter } from '../types/navigation';
 
@@ -113,12 +111,7 @@ function EphemeralPage({ page, router, navigation }: Pick<PageRouterProps, 'page
       return (
         <AgentProfilePage
           agentName={router.profileAgentName}
-          onBack={() => navigation.navigateTo('agent')}
-          onStartChat={(name) => {
-            const agent = useAgentStore.getState().agents.find((item) => item.name === name);
-            if (agent) void openAgentChatSession(agent, { reason: 'profile-start-chat' });
-            navigation.navigateTo('agent');
-          }}
+          onBack={() => navigation.navigateToAgentSurface(router.profileAgentName, 'chat')}
           onOpenOrchestration={() => navigation.navigateTo('agent-orchestration')}
         />
       );
