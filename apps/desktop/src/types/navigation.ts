@@ -57,6 +57,7 @@ export interface AppLifecycle {
 export interface HashRouter {
   page: Page;
   setPage: (page: Page) => void;
+  setProfilePage: (agentName: string) => void;
   resetToDefaultPage: () => void;
   profileAgentName: string;
   setProfileAgentName: (name: string) => void;
@@ -66,6 +67,7 @@ export interface HashRouter {
 export interface Navigation {
   settingsNav: SettingsNavState;
   navigateTo: (page: Page) => void;
+  navigateToAgentSurface: (agentName: string, surface: 'chat' | 'profile') => void;
   navigateToSettings: (tab: string, highlightId?: string) => void;
   handleSearchNavigate: (url: string) => void;
 }

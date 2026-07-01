@@ -2,10 +2,9 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { EmojiPicker } from '@lobehub/ui';
+import { SearchBar } from '@lobehub/ui';
 import {
   theme,
-  Divider,
   Empty,
   Input,
   message as antMessage,
@@ -15,23 +14,23 @@ import {
 import { Tag, Button } from '@lobehub/ui';
 import {
   Settings2,
+  MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
   Play,
+  Bot,
   Brain,
-  Zap,
-  Plus,
   FolderOpen,
   Cpu,
   Wrench,
-  Eye,
   Sparkles,
   Activity,
-  Database,
-  Trash2,
-  Download,
-  ShieldCheck,
+  Clock3,
+  Search,
+  Plus,
+  Workflow,
 } from 'lucide-react';
 import { useAgentStore } from '../store/agent';
-import { buildAgentTurnDiagnosticsExport } from '../diagnostics/agentTurnDiagnostics';
 import {
   extractMessageArtifacts,
   useChatStore,
@@ -43,18 +42,12 @@ import {
   api,
   executeAgentTurn,
   type Agent,
-  type AgentKnowledgeResource,
-  type AgentKnowledgeResourcePolicy,
-  type AgentKnowledgeResourceType,
-  type AgentWorkspaceInfo,
-  type AgentWorkspaceCleanScope,
-  parseAgentKnowledgeResources,
   parseAgentChatConfig,
-  parseAgentParams,
 } from '../services/desktop_api';
 import { ModelSelect } from '../components/ModelSelect';
 import { AgentSettingsModal } from '../components/AgentSettingsModal';
 import { BuilderPanel } from '../components/BuilderPanel';
+import { AgentIconTile } from '../components/agent/AgentIconTile';
 import { useSkillStore } from '../store/skill';
 import { EVENT, eventBus } from '../kernel/events';
 import type { AgentTurnStreamEventPayload } from '../kernel/events/types';
@@ -68,75 +61,9 @@ interface AgentProfilePageProps {
   agentName: string;
   onBack?: () => void;
   onStartChat: (agentName: string) => void;
-  onNavigateCron?: () => void;
-  onNavigateSkills?: () => void;
-  onNavigateApplets?: () => void;
+  onOpenOrchestration?: () => void;
 }
 
-// ── Tab: Scheduled Tasks ─────────────────────────────────────────────
-
-function CronTab({ agentName, onNavigateCron }: { agentName: string; onNavigateCron?: () => void }) {
-  const { t } = useTranslation('agent');
-  const { token } = theme.useToken();
-  const [jobs, setJobs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    api.listCronJobs()
-      .then((all) =>
-        setJobs(all.filter((j: any) => j.agentName === agentName || j.agent_name === agentName)),
-      )
-      .catch(() => setJobs([]))
-      .finally(() => setLoading(false));
-  }, [agentName]);
-
-  if (loading) return null;
-
-  return (
-    <Flexbox style={{ flex: 1, padding: 2 }}>
-      <Flexbox horizontal justify="flex-end" style={{ flexShrink: 0, paddingBottom: 8 }}>
-        <Button size="small" icon={<Plus size={14} />} onClick={onNavigateCron}>
-          {t('agent.cron.addTask')}
-        </Button>
-      </Flexbox>
-      <Flexbox style={{ flex: 1, overflow: 'auto' }}>
-        {jobs.length === 0 ? (
-          <span style={{ fontSize: 13, color: token.colorTextDescription, padding: '16px 0' }}>
-            {t('agent.cron.noTasks')}
-          </span>
-        ) : (
-          <Flexbox gap={6}>
-            {jobs.map((job: any) => (
-              <Flexbox
-                key={job.id}
-                horizontal
-                align="center"
-                gap={8}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: 8,
-                  border: `1px solid ${token.colorBorderSecondary}`,
-                  background: token.colorBgContainer,
-                }}
-              >
-                <Zap
-                  size={14}
-                  style={{ color: job.enabled ? token.colorSuccess : token.colorTextQuaternary }}
-                />
-                <span style={{ flex: 1, fontSize: 13, color: token.colorText }}>{job.name}</span>
-                <Tag>{job.scheduleKind || job.schedule_kind || 'cron'}</Tag>
-                <Tag color={job.enabled ? 'green' : 'default'}>
-                  {job.enabled ? t('agent.cron.active') : t('agent.cron.paused')}
-                </Tag>
-              </Flexbox>
-            ))}
-          </Flexbox>
-        )}
-      </Flexbox>
-    </Flexbox>
-  );
-}
 
 // ── Tab: Memories ────────────────────────────────────────────────────
 
@@ -278,265 +205,158 @@ function MemoryTab({ agentName, agentId }: { agentName: string; agentId: string 
 
 // ── Main Agent Profile Page ─────────────────────────────────────────
 
-type ProfileTab =
-  | 'overview'
-  | 'prompt'
-  | 'model'
-  | 'runtime'
-  | 'capabilities'
-  | 'memory'
-  | 'knowledge'
-  | 'activity'
-  | 'collaboration'
-  | 'diagnostics';
+type ProfileTab = 'soul' | 'capabilities' | 'workspace' | 'tasks' | 'memories' | 'events';
 
 const TAB_KEYS: { key: ProfileTab; labelKey: string; icon: ReactNode }[] = [
-  { key: 'prompt', labelKey: 'agent.profile.tab.prompt', icon: null },
+  { key: 'soul', labelKey: 'agent.profile.tab.prompt', icon: null },
   { key: 'capabilities', labelKey: 'agent.profile.tab.capabilities', icon: <Wrench size={13} /> },
-  { key: 'runtime', labelKey: 'agent.profile.tab.runtime', icon: <FolderOpen size={13} /> },
+  { key: 'workspace', labelKey: 'agent.profile.tab.runtime', icon: <FolderOpen size={13} /> },
 ];
 
 const ACTIVITY_TAB_KEYS: { key: ProfileTab; labelKey: string; icon: ReactNode }[] = [
-  { key: 'activity', labelKey: 'agent.profile.tab.activity', icon: <Activity size={13} /> },
-  { key: 'memory', labelKey: 'agent.profile.tab.memory', icon: <Brain size={13} /> },
-  { key: 'diagnostics', labelKey: 'agent.profile.tab.diagnostics', icon: <Activity size={13} /> },
+  { key: 'tasks', labelKey: 'agent.profile.tab.activity', icon: <Clock3 size={13} /> },
+  { key: 'memories', labelKey: 'agent.profile.tab.memory', icon: <Brain size={13} /> },
+  { key: 'events', labelKey: 'agent.profile.tab.diagnostics', icon: <Activity size={13} /> },
 ];
 
-interface WorkbenchSignal {
-  key: string;
-  icon: ReactNode;
-  label: string;
-  value: string;
-  ready: boolean;
-  targetTab: ProfileTab;
-}
-
-interface WorkbenchStep {
-  key: string;
-  label: string;
-  description: string;
-  complete: boolean;
-  targetTab: ProfileTab;
-}
 
 function AgentWorkbenchHero({
   agent,
-  modelLabel,
-  workspaceRoot,
-  signals,
-  steps,
-  activeTab,
-  onSelectTab,
   onStartChat,
   onOpenSettings,
-  onAvatarChange,
   onTitleBlur,
   onDescriptionBlur,
   onRewriteDescription,
   descriptionGenerating,
 }: {
   agent: Agent;
-  modelLabel: string;
-  workspaceRoot?: string;
-  signals: WorkbenchSignal[];
-  steps: WorkbenchStep[];
-  activeTab: ProfileTab;
-  onSelectTab: (tab: ProfileTab) => void;
   onStartChat: () => void;
   onOpenSettings: () => void;
-  onAvatarChange: (emoji: string) => void;
-  onTitleBlur: (event: React.FocusEvent<HTMLInputElement>) => void;
-  onDescriptionBlur: (event: React.FocusEvent<HTMLTextAreaElement>) => void;
+  onTitleBlur: (value: string) => void;
+  onDescriptionBlur: (value: string) => void;
   onRewriteDescription: () => void;
   descriptionGenerating: boolean;
 }) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
-  const completedSteps = steps.filter((step) => step.complete).length;
-  const progress = Math.round((completedSteps / Math.max(steps.length, 1)) * 100);
+  const [title, setTitle] = useState(agent.title || agent.name);
+  const [description, setDescription] = useState(agent.description || '');
+  const titleRef = useRef(title);
+  const descriptionRef = useRef(description);
+
+  useEffect(() => {
+    const nextTitle = agent.title || agent.name;
+    const nextDescription = agent.description || '';
+    titleRef.current = nextTitle;
+    descriptionRef.current = nextDescription;
+    setTitle(nextTitle);
+    setDescription(nextDescription);
+  }, [agent.id, agent.name, agent.title, agent.description]);
 
   return (
     <Flexbox
-      gap={16}
+      gap={12}
       style={{
-        padding: 16,
-        borderRadius: 16,
+        paddingTop: 18,
+        flexShrink: 0,
         color: token.colorText,
-        background: token.colorBgContainer,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        boxShadow: '0 14px 44px rgba(15, 23, 42, 0.06)',
       }}
     >
-      <Flexbox horizontal align="flex-start" justify="space-between" gap={16}>
-        <Flexbox horizontal align="center" gap={14} style={{ minWidth: 0 }}>
-          <EmojiPicker
-            value={agent.avatar || '🤖'}
-            size={68}
-            shape="square"
-            background={agent.backgroundColor || 'linear-gradient(135deg, #667eea, #764ba2)'}
-            onChange={onAvatarChange}
+      <Flexbox horizontal align="center" justify="space-between" gap={16} style={{ minWidth: 0 }}>
+        <input
+          value={title}
+          onChange={(event) => {
+            titleRef.current = event.target.value;
+            setTitle(event.target.value);
+          }}
+          onInput={(event) => {
+            titleRef.current = event.currentTarget.value;
+          }}
+          onBlur={(event) => onTitleBlur(titleRef.current || event.currentTarget.value)}
+          placeholder={t('agent.profile.identityTitlePlaceholder')}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            border: 0,
+            outline: 'none',
+            background: 'transparent',
+            color: token.colorText,
+            fontSize: 24,
+            fontWeight: 800,
+            lineHeight: 1.15,
+            letterSpacing: -0.3,
+            padding: 0,
+          }}
+        />
+        <Flexbox horizontal gap={8} style={{ flexShrink: 0 }}>
+          <Button
+            icon={<Settings2 size={14} />}
+            onClick={onOpenSettings}
+            title={t('agent.profile.editSettings')}
+            aria-label={t('agent.profile.editSettings')}
+            style={{ width: 32, height: 32, padding: 0 }}
           />
-          <Flexbox gap={6} style={{ minWidth: 0 }}>
-            <Flexbox horizontal align="center" gap={8} style={{ flexWrap: 'wrap' }}>
-              <Tag style={{ margin: 0 }}>
-                {t('agent.profile.workbench.badge')}
-              </Tag>
-              {agent.isDefault && (
-                <Tag style={{ margin: 0 }}>
-                  {t('agent.profile.builtIn')}
-                </Tag>
-              )}
-              <span style={{ fontSize: 12, color: token.colorTextTertiary }}>
-                {t('agent.profile.workbench.progress', { done: completedSteps, total: steps.length, progress })}
-              </span>
-            </Flexbox>
-            <input
-              defaultValue={agent.title || agent.name}
-              onBlur={onTitleBlur}
-              placeholder={t('agent.profile.identityTitlePlaceholder')}
-              style={{
-                width: '100%',
-                border: 0,
-                outline: 'none',
-                background: 'transparent',
-                color: token.colorText,
-                fontSize: 24,
-                fontWeight: 800,
-                lineHeight: 1.16,
-                letterSpacing: -0.3,
-                padding: 0,
-              }}
-            />
-            <div style={{ position: 'relative', maxWidth: 720 }}>
-              <textarea
-                defaultValue={agent.description || ''}
-                onBlur={onDescriptionBlur}
-                rows={2}
-                placeholder={t('agent.profile.identityDescriptionPlaceholder')}
-                style={{
-                  width: '100%',
-                  minHeight: 58,
-                  resize: 'vertical',
-                  border: `1px solid ${token.colorBorderSecondary}`,
-                  borderRadius: 12,
-                  outline: 'none',
-                  background: token.colorBgContainer,
-                  color: token.colorTextSecondary,
-                  fontFamily: 'inherit',
-                  fontSize: 13,
-                  lineHeight: 1.6,
-                  padding: '8px 38px 8px 10px',
-                }}
-              />
-              <button
-                type="button"
-                title={t('agent.descriptionRewrite.generate')}
-                onClick={onRewriteDescription}
-                disabled={descriptionGenerating}
-                style={{
-                  position: 'absolute',
-                  right: 8,
-                  bottom: 10,
-                  width: 26,
-                  height: 26,
-                  border: 0,
-                  borderRadius: 8,
-                  background: token.colorPrimaryBg,
-                  color: descriptionGenerating ? token.colorTextQuaternary : token.colorPrimary,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: descriptionGenerating ? 'not-allowed' : 'pointer',
-                }}
-              >
-                <Sparkles size={14} />
-              </button>
-            </div>
-          </Flexbox>
-        </Flexbox>
-
-        <Flexbox horizontal gap={8} style={{ flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <Button icon={<Settings2 size={14} />} onClick={onOpenSettings}>
-            {t('agent.profile.editSettings')}
-          </Button>
-          <Button type="primary" icon={<Play size={14} />} onClick={onStartChat}>
+          <Button icon={<Play size={14} />} onClick={onStartChat}>
             {t('agent.profile.startConversation')}
           </Button>
         </Flexbox>
       </Flexbox>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
-        {signals.map((signal) => (
-          <button
-            key={signal.key}
-            type="button"
-            onClick={() => onSelectTab(signal.targetTab)}
+      <Flexbox horizontal align="flex-start" gap={14} style={{ minWidth: 0 }}>
+        <AgentIconTile agent={agent} size={64} />
+        <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+          <textarea
+            value={description}
+            onChange={(event) => {
+              descriptionRef.current = event.target.value;
+              setDescription(event.target.value);
+            }}
+            onInput={(event) => {
+              descriptionRef.current = event.currentTarget.value;
+            }}
+            onBlur={(event) => onDescriptionBlur(descriptionRef.current || event.currentTarget.value)}
+            rows={3}
+            placeholder={t('agent.profile.identityDescriptionPlaceholder')}
             style={{
-              minHeight: 72,
-              padding: 10,
+              width: '100%',
+              minHeight: 64,
+              maxHeight: 108,
+              resize: 'vertical',
+              border: `1px solid ${token.colorBorderSecondary}`,
               borderRadius: 12,
-              border: `1px solid ${activeTab === signal.targetTab ? token.colorPrimaryBorder : token.colorBorderSecondary}`,
-              background: activeTab === signal.targetTab ? token.colorPrimaryBg : token.colorFillQuaternary,
-              color: token.colorText,
-              cursor: 'pointer',
-              textAlign: 'left',
+              outline: 'none',
+              background: token.colorBgContainer,
+              color: token.colorTextSecondary,
+              fontFamily: 'inherit',
+              fontSize: 13,
+              lineHeight: 1.45,
+              padding: '9px 38px 9px 10px',
+              boxSizing: 'border-box',
+            }}
+          />
+          <button
+            type="button"
+            title={t('agent.descriptionRewrite.generate')}
+            onClick={onRewriteDescription}
+            disabled={descriptionGenerating}
+            style={{
+              position: 'absolute',
+              right: 8,
+              bottom: 10,
+              width: 26,
+              height: 26,
+              border: 0,
+              borderRadius: 8,
+              background: token.colorPrimaryBg,
+              color: descriptionGenerating ? token.colorTextQuaternary : token.colorPrimary,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: descriptionGenerating ? 'not-allowed' : 'pointer',
             }}
           >
-            <Flexbox gap={8}>
-              <Flexbox horizontal align="center" justify="space-between" gap={8}>
-                <span style={{ display: 'inline-flex', color: signal.ready ? token.colorSuccess : token.colorWarning }}>
-                  {signal.icon}
-                </span>
-                <Tag color={signal.ready ? 'green' : 'gold'} style={{ margin: 0 }}>
-                  {signal.ready ? t('agent.profile.workbench.ready') : t('agent.profile.workbench.needsSetup')}
-                </Tag>
-              </Flexbox>
-              <span style={{ fontSize: 12, color: token.colorTextTertiary }}>{signal.label}</span>
-              <span style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {signal.value}
-              </span>
-            </Flexbox>
+            <Sparkles size={14} />
           </button>
-        ))}
-      </div>
-
-      <Flexbox gap={8}>
-        <Flexbox horizontal align="center" justify="space-between" gap={10}>
-          <span style={{ fontSize: 13, fontWeight: 700 }}>{t('agent.profile.workbench.nextActions')}</span>
-          <span style={{ fontSize: 12, color: token.colorTextSecondary }}>
-            {t('agent.profile.workbench.modelAndWorkspace', {
-              model: modelLabel,
-              workspace: workspaceRoot || t('agent.profile.workspaceNotSet'),
-            })}
-          </span>
-        </Flexbox>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
-          {steps.map((step) => (
-            <button
-              key={step.key}
-              type="button"
-              onClick={() => onSelectTab(step.targetTab)}
-              style={{
-                padding: 10,
-                borderRadius: 12,
-                border: `1px solid ${step.complete ? token.colorSuccessBorder : token.colorBorderSecondary}`,
-                background: step.complete ? token.colorSuccessBg : token.colorFillQuaternary,
-                color: token.colorText,
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-            >
-              <Flexbox gap={6}>
-                <Flexbox horizontal align="center" gap={7}>
-                  <ShieldCheck size={14} style={{ color: step.complete ? token.colorSuccess : token.colorWarning }} />
-                  <span style={{ fontSize: 12, fontWeight: 700 }}>{step.label}</span>
-                </Flexbox>
-                <span style={{ fontSize: 11, lineHeight: 1.45, color: token.colorTextTertiary }}>
-                  {step.description}
-                </span>
-              </Flexbox>
-            </button>
-          ))}
         </div>
       </Flexbox>
     </Flexbox>
@@ -567,7 +387,7 @@ function ProfileCard({
     >
       <Flexbox horizontal align="flex-start" justify="space-between" gap={12}>
         <Flexbox gap={2}>
-          <span style={{ fontSize: 14, fontWeight: 600, color: token.colorText }}>{title}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: token.colorText }}>{title}</span>
           {description && (
             <span style={{ fontSize: 12, color: token.colorTextDescription }}>{description}</span>
           )}
@@ -591,104 +411,17 @@ function InfoRow({ label, value }: { label: string; value?: ReactNode }) {
   );
 }
 
-function PillList({ values, emptyText }: { values?: string[]; emptyText: string }) {
-  const { token } = theme.useToken();
-  if (!values || values.length === 0) {
-    return <span style={{ fontSize: 12, color: token.colorTextDescription }}>{emptyText}</span>;
-  }
-  return (
-    <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap' }}>
-      {values.map((value) => (
-        <Tag key={value}>{value}</Tag>
-      ))}
-    </Flexbox>
-  );
-}
 
-function parseStringList(raw?: string): string[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed.filter((item): item is string => typeof item === 'string');
-  } catch {
-    return raw
-      .split(/[,\n]/)
-      .map((item) => item.trim())
-      .filter(Boolean);
-  }
-  return [];
-}
 
 function normalizeStringList(values?: string[]): string[] {
   if (!Array.isArray(values)) return [];
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
-const PROMPT_VARIABLES = ['agent', 'user', 'date', 'workspace', 'model'];
 
-function extractPromptVariables(prompt: string): string[] {
-  const matches = prompt.matchAll(/\{\{\s*([a-zA-Z][a-zA-Z0-9_]*)\s*\}\}/g);
-  return Array.from(new Set(Array.from(matches, (match) => match[1])));
-}
 
-function estimatePromptTokens(prompt: string): number {
-  return Math.ceil(prompt.trim().length / 4);
-}
 
-function buildPromptPreview(prompt: string, values: Record<string, string>): string {
-  return prompt.replace(/\{\{\s*([a-zA-Z][a-zA-Z0-9_]*)\s*\}\}/g, (_, key: string) => {
-    return values[key] ?? `{{${key}}}`;
-  });
-}
 
-function formatContextWindow(value?: number): string {
-  if (!value || value <= 0) return '';
-  if (value >= 1000000) return `${(value / 1000000).toFixed(value % 1000000 === 0 ? 0 : 1)}M`;
-  if (value >= 1000) return `${Math.round(value / 1000)}K`;
-  return String(value);
-}
-
-function formatBytes(bytes?: number): string {
-  if (!bytes || bytes <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let value = bytes;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  return `${value.toFixed(value < 10 && unitIndex > 0 ? 1 : 0)} ${units[unitIndex]}`;
-}
-
-function CapabilityBadge({
-  icon,
-  label,
-  enabled,
-}: {
-  icon: ReactNode;
-  label: string;
-  enabled: boolean;
-}) {
-  const { token } = theme.useToken();
-  return (
-    <Flexbox
-      horizontal
-      align="center"
-      gap={6}
-      style={{
-        padding: '6px 8px',
-        borderRadius: 8,
-        border: `1px solid ${enabled ? token.colorSuccessBorder : token.colorBorderSecondary}`,
-        background: enabled ? token.colorSuccessBg : token.colorFillQuaternary,
-        color: enabled ? token.colorSuccessText : token.colorTextDescription,
-        fontSize: 12,
-      }}
-    >
-      {icon}
-      <span>{label}</span>
-    </Flexbox>
-  );
-}
 
 type AgentActivityStatus = 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled' | 'unknown';
 type AgentActivityEventKind = 'turn' | 'tool' | 'approval' | 'delegation' | 'knowledge' | 'artifact' | 'error';
@@ -1124,54 +857,6 @@ function AgentActivityPanel({
   );
 }
 
-type RuntimeCapabilityState = 'native' | 'partial' | 'unavailable';
-
-function RuntimeCapabilityBadge({
-  label,
-  state,
-  detail,
-}: {
-  label: string;
-  state: RuntimeCapabilityState;
-  detail: string;
-}) {
-  const { token } = theme.useToken();
-  const { t } = useTranslation('agent');
-  const color = state === 'native' ? 'success' : state === 'partial' ? 'warning' : 'default';
-  const borderColor = state === 'native'
-    ? token.colorSuccessBorder
-    : state === 'partial'
-      ? token.colorWarningBorder
-      : token.colorBorderSecondary;
-  const background = state === 'native'
-    ? token.colorSuccessBg
-    : state === 'partial'
-      ? token.colorWarningBg
-      : token.colorFillQuaternary;
-
-  return (
-    <Flexbox
-      gap={4}
-      style={{
-        padding: '8px 10px',
-        borderRadius: 8,
-        border: `1px solid ${borderColor}`,
-        background,
-        minWidth: 190,
-        flex: 1,
-      }}
-    >
-      <Flexbox horizontal align="center" justify="space-between" gap={8}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: token.colorText }}>{label}</span>
-        <Tag color={color} style={{ margin: 0 }}>{t(`agent.profile.degradation.${state}`)}</Tag>
-      </Flexbox>
-      <span style={{ fontSize: 11, color: token.colorTextSecondary }}>{detail}</span>
-    </Flexbox>
-  );
-}
-
-const KNOWLEDGE_RESOURCE_TYPES: AgentKnowledgeResourceType[] = ['document', 'folder', 'project', 'url', 'notebook', 'workspace'];
-const KNOWLEDGE_RESOURCE_POLICIES: AgentKnowledgeResourcePolicy[] = ['manual', 'auto', 'always', 'disabled'];
 
 function parseAllowedRootsForDisplay(value?: string): string {
   if (!value?.trim()) return '';
@@ -1186,230 +871,32 @@ function parseAllowedRootsForDisplay(value?: string): string {
   return '';
 }
 
-function createKnowledgeResourceId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID();
-  }
-  return `knowledge-${Date.now()}`;
-}
 
-function KnowledgeResourceList({
-  resources,
-  onRemove,
-}: {
-  resources: AgentKnowledgeResource[];
-  onRemove: (resourceId: string) => void;
-}) {
-  const { token } = theme.useToken();
-  const { t } = useTranslation('agent');
-
-  if (resources.length === 0) {
-    return <Empty description={t('agent.profile.knowledge.empty')} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
-  }
-
-  return (
-    <Flexbox gap={8}>
-      {resources.map((resource) => (
-        <Flexbox
-          key={resource.id}
-          gap={6}
-          style={{
-            padding: 10,
-            borderRadius: 10,
-            border: `1px solid ${token.colorBorderSecondary}`,
-            background: token.colorFillQuaternary,
-          }}
-        >
-          <Flexbox horizontal align="flex-start" justify="space-between" gap={10}>
-            <Flexbox gap={4} style={{ minWidth: 0 }}>
-              <Flexbox horizontal align="center" gap={6}>
-                <Tag>{t(`agent.profile.knowledge.type.${resource.type}`)}</Tag>
-                <Tag>{t(`agent.profile.knowledge.policy.${resource.policy}`)}</Tag>
-                <Tag color={resource.status === 'error' ? 'error' : resource.status === 'indexed' ? 'success' : 'processing'}>
-                  {t(`agent.profile.knowledge.status.${resource.status}`)}
-                </Tag>
-              </Flexbox>
-              <span style={{ fontSize: 13, fontWeight: 600, color: token.colorText }}>{resource.title}</span>
-              <span style={{ fontSize: 12, color: token.colorTextSecondary, wordBreak: 'break-all' }}>{resource.source}</span>
-              <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
-                {t('agent.profile.knowledge.lastIndexedAt')}: {resource.lastIndexedAt || t('agent.profile.knowledge.notIndexed')}
-              </span>
-              {resource.error && (
-                <span style={{ fontSize: 11, color: token.colorErrorText }}>{resource.error}</span>
-              )}
-            </Flexbox>
-            <Button
-              size="small"
-              icon={<Trash2 size={13} />}
-              onClick={() => onRemove(resource.id)}
-            >
-              {t('agent.profile.knowledge.remove')}
-            </Button>
-          </Flexbox>
-        </Flexbox>
-      ))}
-    </Flexbox>
-  );
-}
-
-interface AgentMetadataDraft {
-  title: string;
-  description: string;
-  tags: string[];
-  openingMessage: string;
-  openingQuestions: string[];
-  systemPrompt: string;
-}
-
-function sanitizeDraftList(values?: unknown): string[] {
-  if (!Array.isArray(values)) return [];
-  return Array.from(
-    new Set(
-      values
-        .filter((item): item is string => typeof item === 'string')
-        .map((item) => item.trim())
-        .filter(Boolean),
-    ),
-  ).slice(0, 6);
-}
-
-function extractJsonObject(content: string): string {
-  const fenced = content.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced?.[1]) return fenced[1].trim();
-
-  const start = content.indexOf('{');
-  const end = content.lastIndexOf('}');
-  if (start >= 0 && end > start) return content.slice(start, end + 1);
-  return content;
-}
-
-function parseMetadataDraft(content: string, fallback: AgentMetadataDraft): AgentMetadataDraft {
-  const parsed = JSON.parse(extractJsonObject(content)) as Partial<Record<keyof AgentMetadataDraft, unknown>>;
-  return {
-    title: typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : fallback.title,
-    description:
-      typeof parsed.description === 'string' && parsed.description.trim()
-        ? parsed.description.trim()
-        : fallback.description,
-    tags: sanitizeDraftList(parsed.tags).length > 0 ? sanitizeDraftList(parsed.tags) : fallback.tags,
-    openingMessage:
-      typeof parsed.openingMessage === 'string' && parsed.openingMessage.trim()
-        ? parsed.openingMessage.trim()
-        : fallback.openingMessage,
-    openingQuestions:
-      sanitizeDraftList(parsed.openingQuestions).length > 0
-        ? sanitizeDraftList(parsed.openingQuestions)
-        : fallback.openingQuestions,
-    systemPrompt:
-      typeof parsed.systemPrompt === 'string' && parsed.systemPrompt.trim()
-        ? parsed.systemPrompt.trim()
-        : fallback.systemPrompt,
-  };
-}
-
-function buildMetadataPrompt(agent: Agent, intent: string, currentTags: string[], currentQuestions: string[]): string {
-  return [
-    'You are helping refine an AI agent profile. Return only a valid JSON object with these fields:',
-    'title, description, tags, openingMessage, openingQuestions, systemPrompt.',
-    'Rules: title should be concise; description should explain user value; tags and openingQuestions are string arrays; systemPrompt must be actionable and specific.',
-    '',
-    `User intent: ${intent}`,
-    '',
-    'Current agent:',
-    JSON.stringify(
-      {
-        name: agent.name,
-        title: agent.title,
-        description: agent.description,
-        tags: currentTags,
-        openingMessage: agent.openingMessage,
-        openingQuestions: currentQuestions,
-        systemPrompt: agent.systemPrompt,
-      },
-      null,
-      2,
-    ),
-  ].join('\n');
-}
-
-function parseDescriptionDraft(content: string, fallback: string): string {
-  try {
-    const parsed = JSON.parse(extractJsonObject(content)) as { description?: unknown };
-    if (typeof parsed.description === 'string' && parsed.description.trim()) {
-      return parsed.description.trim();
-    }
-  } catch {
-    const trimmed = content.trim();
-    if (trimmed) return trimmed.replace(/^["']|["']$/g, '').trim();
-  }
-  return fallback;
-}
-
-function buildDescriptionRewritePrompt(agent: Agent, intent: string): string {
-  return [
-    'Rewrite only the description for this AI agent profile.',
-    'Return only a valid JSON object: {"description":"..."}',
-    'Rules: keep the description concise, product-facing, specific about user value, and do not change name, title, tags, prompt, or opening messages.',
-    '',
-    `Rewrite intent: ${intent}`,
-    '',
-    'Current agent:',
-    JSON.stringify(
-      {
-        name: agent.name,
-        title: agent.title || agent.name,
-        description: agent.description || '',
-        tags: parseStringList(agent.tags),
-        systemPrompt: agent.systemPrompt || '',
-      },
-      null,
-      2,
-    ),
-  ].join('\n');
-}
 
 export function AgentProfilePage({
   agentName,
   onBack,
   onStartChat,
-  onNavigateCron,
-  onNavigateSkills,
-  onNavigateApplets,
+  onOpenOrchestration,
 }: AgentProfilePageProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
-  const { agents, availableModels, loadAgents, loadModels } = useAgentStore();
+  const { agents, availableModels, loadAgents, loadModels, setAgentSurface, agentRosterOpen, setAgentRosterOpen } = useAgentStore();
 
+  const [profileAgentName, setProfileAgentName] = useState(agentName);
+  const agentListOpen = agentRosterOpen;
+  const setAgentListOpen = setAgentRosterOpen;
+  const [agentSearch, setAgentSearch] = useState('');
   const [agent, setAgent] = useState<Agent | null>(null);
-  const [systemPrompt, setSystemPrompt] = useState('');
-  const [promptDirty, setPromptDirty] = useState(false);
   const [soulMd, setSoulMd] = useState('');
   const [soulMdDirty, setSoulMdDirty] = useState(false);
   const [agentsMd, setAgentsMd] = useState('');
   const [agentsMdDirty, setAgentsMdDirty] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [showBuilder, setShowBuilder] = useState(true);
-  const [activeTab, setActiveTab] = useState<ProfileTab>('prompt');
-  const [metadataIntent, setMetadataIntent] = useState('');
-  const [metadataDraft, setMetadataDraft] = useState<AgentMetadataDraft | null>(null);
-  const [metadataGenerating, setMetadataGenerating] = useState(false);
-  const [metadataApplying, setMetadataApplying] = useState(false);
-  const [metadataError, setMetadataError] = useState('');
-  const [descriptionIntent, setDescriptionIntent] = useState('');
-  const [descriptionDraft, setDescriptionDraft] = useState('');
+  const [showBuilder, setShowBuilder] = useState(false);
+  const [activeTab, setActiveTab] = useState<ProfileTab>('soul');
   const [descriptionGenerating, setDescriptionGenerating] = useState(false);
-  const [descriptionApplying, setDescriptionApplying] = useState(false);
-  const [descriptionError, setDescriptionError] = useState('');
-  const [knowledgeType, setKnowledgeType] = useState<AgentKnowledgeResourceType>('document');
-  const [knowledgePolicy, setKnowledgePolicy] = useState<AgentKnowledgeResourcePolicy>('manual');
-  const [knowledgeTitle, setKnowledgeTitle] = useState('');
-  const [knowledgeSource, setKnowledgeSource] = useState('');
-  const [exportingAgentPackage, setExportingAgentPackage] = useState(false);
-  const [skillImportAddress, setSkillImportAddress] = useState('');
-  const [skillImporting, setSkillImporting] = useState(false);
-  const [workspaceInfo, setWorkspaceInfo] = useState<AgentWorkspaceInfo | null>(null);
-  const [workspaceInfoLoading, setWorkspaceInfoLoading] = useState(false);
-  const [workspaceCleaning, setWorkspaceCleaning] = useState<string | null>(null);
+  const [allowedRootsText, setAllowedRootsText] = useState('');
   const [persistedActivityProjection, setPersistedActivityProjection] = useState<{
     tasks: AgentActivityTaskProjection[];
     events: AgentActivityEventProjection[];
@@ -1417,7 +904,8 @@ export function AgentProfilePage({
   const [activityTraceLoading, setActivityTraceLoading] = useState(false);
   const [activityTraceLoadError, setActivityTraceLoadError] = useState('');
   const [persistedTraceCount, setPersistedTraceCount] = useState(0);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const soulSaveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const agentsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const { skills, builtins, loadSkills } = useSkillStore();
   const activityMessages = useChatStore((state) => state.messages);
   const activityCurrentSessionKey = useChatStore((state) => state.currentSessionKey);
@@ -1435,6 +923,24 @@ export function AgentProfilePage({
     ],
     [builtins, skills, t],
   );
+  const filteredProfileAgents = useMemo(() => {
+    const query = agentSearch.trim().toLowerCase();
+    if (!query) return agents;
+    return agents.filter((item) =>
+      [item.title, item.name, item.description].some((value) => value.toLowerCase().includes(query)),
+    );
+  }, [agentSearch, agents]);
+  const pinnedProfileAgents = filteredProfileAgents.filter((item) => item.pinned);
+  const otherProfileAgents = filteredProfileAgents.filter((item) => !item.pinned);
+  const collapsedPinnedAgents = agents.filter((item) => item.pinned);
+  const collapsedOtherAgents = agents.filter((item) => !item.pinned);
+
+  const handleSelectProfileAgent = useCallback((nextAgent: Agent) => {
+    setAgentSurface(nextAgent.name, 'profile');
+    setProfileAgentName(nextAgent.name);
+    window.history.pushState(null, '', `#/agent-profile/${encodeURIComponent(nextAgent.name)}`);
+  }, [setAgentSurface]);
+
   const skillLabelByValue = useMemo(() => {
     const labels = new Map<string, string>();
     for (const skill of builtins) {
@@ -1461,60 +967,30 @@ export function AgentProfilePage({
   }, [loadAgents]);
 
   useEffect(() => {
-    const found = agents.find((a) => a.name === agentName);
+    setAgentSurface(agentName, 'profile');
+    setProfileAgentName(agentName);
+  }, [agentName, setAgentSurface]);
+
+  useEffect(() => {
+    const found = agents.find((a) => a.name === profileAgentName) || agents[0];
     if (found) {
       setAgent(found);
-      setSystemPrompt(found.systemPrompt || '');
-      setPromptDirty(false);
       setSoulMd(found.soulMd || '');
       setSoulMdDirty(false);
       setAgentsMd(found.agentsMd || '');
       setAgentsMdDirty(false);
+      setAllowedRootsText(parseAllowedRootsForDisplay(found.allowedRoots));
     }
-  }, [agents, agentName]);
+  }, [agents, profileAgentName]);
 
   useEffect(() => {
     return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (soulSaveTimerRef.current) clearTimeout(soulSaveTimerRef.current);
+      if (agentsSaveTimerRef.current) clearTimeout(agentsSaveTimerRef.current);
     };
   }, []);
 
-  const savePrompt = useCallback(
-    async (value: string) => {
-      if (!agent) return;
-      const invalidVariables = extractPromptVariables(value).filter((item) => !PROMPT_VARIABLES.includes(item));
-      if (invalidVariables.length > 0) {
-        antMessage.error(t('agent.profile.promptInvalidVariables', { variables: invalidVariables.join(', ') }));
-        return;
-      }
-      try {
-        await api.updateAgent(agent.id, { systemPrompt: value });
-        setPromptDirty(false);
-        loadAgents();
-      } catch (err: any) {
-        antMessage.error(err.message || t('agent.profile.failedToSave'));
-      }
-    },
-    [agent, loadAgents, t],
-  );
 
-  const handlePromptChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const value = e.target.value;
-      setSystemPrompt(value);
-      setPromptDirty(true);
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => savePrompt(value), 1500);
-    },
-    [savePrompt],
-  );
-
-  const handlePromptBlur = useCallback(() => {
-    if (promptDirty) {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      savePrompt(systemPrompt);
-    }
-  }, [promptDirty, systemPrompt, savePrompt]);
 
   const saveSoulMd = useCallback(
     async (value: string) => {
@@ -1535,15 +1011,15 @@ export function AgentProfilePage({
       const value = e.target.value;
       setSoulMd(value);
       setSoulMdDirty(true);
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => saveSoulMd(value), 1500);
+      if (soulSaveTimerRef.current) clearTimeout(soulSaveTimerRef.current);
+      soulSaveTimerRef.current = setTimeout(() => saveSoulMd(value), 1500);
     },
     [saveSoulMd],
   );
 
   const handleSoulMdBlur = useCallback(() => {
     if (soulMdDirty) {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (soulSaveTimerRef.current) clearTimeout(soulSaveTimerRef.current);
       saveSoulMd(soulMd);
     }
   }, [soulMdDirty, soulMd, saveSoulMd]);
@@ -1567,15 +1043,15 @@ export function AgentProfilePage({
       const value = e.target.value;
       setAgentsMd(value);
       setAgentsMdDirty(true);
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => saveAgentsMd(value), 1500);
+      if (agentsSaveTimerRef.current) clearTimeout(agentsSaveTimerRef.current);
+      agentsSaveTimerRef.current = setTimeout(() => saveAgentsMd(value), 1500);
     },
     [saveAgentsMd],
   );
 
   const handleAgentsMdBlur = useCallback(() => {
     if (agentsMdDirty) {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (agentsSaveTimerRef.current) clearTimeout(agentsSaveTimerRef.current);
       saveAgentsMd(agentsMd);
     }
   }, [agentsMdDirty, agentsMd, saveAgentsMd]);
@@ -1593,33 +1069,7 @@ export function AgentProfilePage({
     [agent, loadAgents, t],
   );
 
-  const handleCliCommandBlur = useCallback(
-    async (event: React.FocusEvent<HTMLInputElement>) => {
-      if (!agent) return;
-      const value = event.target.value.trim();
-      if (value === (agent.cliCommand || '').trim()) return;
-      try {
-        await api.updateAgent(agent.id, { cliCommand: value });
-        loadAgents();
-      } catch (err: any) {
-        antMessage.error(err.message || t('agent.profile.failedToSave'));
-      }
-    },
-    [agent, loadAgents, t],
-  );
 
-  const handleVisibilityChange = useCallback(
-    async (value: string) => {
-      if (!agent) return;
-      try {
-        await api.updateAgent(agent.id, { visibility: value });
-        loadAgents();
-      } catch (err: any) {
-        antMessage.error(err.message || t('agent.profile.failedToSave'));
-      }
-    },
-    [agent, loadAgents, t],
-  );
 
   const handleIsolationRetentionDaysChange = useCallback(
     async (value: number | null) => {
@@ -1647,38 +1097,14 @@ export function AgentProfilePage({
     [agent, loadAgents, t],
   );
 
-  const handleRuntimeBackendChange = useCallback(
-    async (value: string) => {
-      if (!agent) return;
-      try {
-        await api.updateAgent(agent.id, { runtimeBackend: value });
-        loadAgents();
-      } catch (err: any) {
-        antMessage.error(err.message || t('agent.profile.failedToSave'));
-      }
-    },
-    [agent, loadAgents, t],
-  );
 
-  const handleRootfsPathBlur = useCallback(
-    async (event: React.FocusEvent<HTMLInputElement>) => {
-      if (!agent) return;
-      const value = event.target.value.trim();
-      if (value === (agent.rootfsPath || '').trim()) return;
-      try {
-        await api.updateAgent(agent.id, { rootfsPath: value });
-        loadAgents();
-      } catch (err: any) {
-        antMessage.error(err.message || t('agent.profile.failedToSave'));
-      }
-    },
-    [agent, loadAgents, t],
-  );
+
+
 
   const handleAllowedRootsBlur = useCallback(
-    async (event: React.FocusEvent<HTMLTextAreaElement>) => {
+    async () => {
       if (!agent) return;
-      const roots = event.target.value
+      const roots = allowedRootsText
         .split('\n')
         .map((item) => item.trim())
         .filter(Boolean);
@@ -1694,46 +1120,7 @@ export function AgentProfilePage({
     [agent, loadAgents, t],
   );
 
-  const refreshWorkspaceInfo = useCallback(async () => {
-    if (!agent) return;
-    setWorkspaceInfoLoading(true);
-    try {
-      const info = await api.getAgentWorkspaceInfo(agent.id);
-      setWorkspaceInfo(info);
-    } catch (err: any) {
-      setWorkspaceInfo(null);
-      antMessage.error(err.message || t('agent.profile.workspace.failedToLoad'));
-    } finally {
-      setWorkspaceInfoLoading(false);
-    }
-  }, [agent, t]);
 
-  const handleCleanWorkspace = useCallback(
-    async (scope: AgentWorkspaceCleanScope) => {
-      if (!agent) return;
-      setWorkspaceCleaning(scope);
-      try {
-        const retentionDays =
-          scope === 'tasks' ? Number(agent.isolationRetentionDays ?? 7) : undefined;
-        const result = await api.cleanAgentWorkspace(agent.id, scope, retentionDays);
-        antMessage.success(
-          t('agent.profile.workspace.cleaned', { size: formatBytes(result.freed_bytes) }),
-        );
-        refreshWorkspaceInfo();
-      } catch (err: any) {
-        antMessage.error(err.message || t('agent.profile.workspace.failedToClean'));
-      } finally {
-        setWorkspaceCleaning(null);
-      }
-    },
-    [agent, refreshWorkspaceInfo, t],
-  );
-
-  useEffect(() => {
-    if (activeTab === 'runtime' && agent) {
-      refreshWorkspaceInfo();
-    }
-  }, [activeTab, agent, refreshWorkspaceInfo]);
 
   const handleModelChange = useCallback(
     async (modelId: string) => {
@@ -1776,23 +1163,10 @@ export function AgentProfilePage({
     [agent, availableModels, loadAgents, t],
   );
 
-  const handleAvatarChange = useCallback(
-    async (emoji: string) => {
-      if (!agent) return;
-      try {
-        await api.updateAgent(agent.id, { avatar: emoji });
-        loadAgents();
-      } catch (err: any) {
-        antMessage.error(err.message || t('agent.profile.failedToUpdateAvatar'));
-      }
-    },
-    [agent, loadAgents],
-  );
-
   const handleTitleBlur = useCallback(
-    async (event: React.FocusEvent<HTMLInputElement>) => {
+    async (rawValue: string) => {
       if (!agent) return;
-      const value = event.target.value.trim();
+      const value = rawValue.trim();
       if (!value || value === (agent.title || agent.name)) return;
       try {
         const updated = await api.updateAgent(agent.id, { title: value });
@@ -1807,9 +1181,9 @@ export function AgentProfilePage({
   );
 
   const handleDescriptionBlur = useCallback(
-    async (event: React.FocusEvent<HTMLTextAreaElement>) => {
+    async (rawValue: string) => {
       if (!agent) return;
-      const value = event.target.value.trim();
+      const value = rawValue.trim();
       if (value === (agent.description || '').trim()) return;
       try {
         const updated = await api.updateAgent(agent.id, { description: value });
@@ -1831,6 +1205,35 @@ export function AgentProfilePage({
     },
     [loadAgents],
   );
+
+  const handleCreateAgent = useCallback(async () => {
+    const suffix = Date.now().toString(36);
+    try {
+      const created = await api.createAgent({
+        name: `agent-${suffix}`,
+        title: t('agent.profile.identityTitlePlaceholder'),
+        description: '',
+        avatar: '',
+        soulMd: '# SOUL.md\n\n## Identity\n',
+        agentsMd: '# AGENTS.md\n\n## Workflow\n',
+        effort: 'medium',
+        visibility: 'private',
+        workspaceMode: 'agent',
+      });
+      setAgentSurface(created.name, 'profile');
+      setProfileAgentName(created.name);
+      setAgent(created);
+      setSoulMd(created.soulMd || '');
+      setSoulMdDirty(false);
+      setAgentsMd(created.agentsMd || '');
+      setAgentsMdDirty(false);
+      window.history.pushState(null, '', `#/agent-profile/${encodeURIComponent(created.name)}`);
+      await loadAgents();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
+      antMessage.error(message);
+    }
+  }, [loadAgents, setAgentSurface, t]);
 
   const handleBoundSkillsChange = useCallback(
     async (values: string[]) => {
@@ -1854,164 +1257,25 @@ export function AgentProfilePage({
     [agent, loadAgents, t],
   );
 
-  const handleImportSkillToAgent = useCallback(async () => {
-    if (!agent) return;
-    const address = skillImportAddress.trim();
-    if (!address) {
-      antMessage.warning(t('agent.profile.skills.importAddressRequired'));
-      return;
-    }
 
-    setSkillImporting(true);
-    try {
-      const result = await api.importSkillFromAddress(address);
-      const importedIds = normalizeStringList(result.imported.map((skill) => skill.id));
-      await loadSkills();
 
-      if (importedIds.length === 0) {
-        antMessage.warning(t('agent.profile.skills.importNoSkills'));
-        return;
-      }
 
-      const config = parseAgentChatConfig(agent);
-      const updated = await api.updateAgent(agent.id, {
-        chatConfig: JSON.stringify({
-          ...config,
-          skills: normalizeStringList([...(config.skills || []), ...importedIds]),
-        }),
-      });
-      setAgent(updated);
-      setSkillImportAddress('');
-      await loadAgents();
-      antMessage.success(t('agent.profile.skills.importedAndBound', { count: importedIds.length }));
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : t('agent.profile.skills.importFailed');
-      antMessage.error(message);
-    } finally {
-      setSkillImporting(false);
-    }
-  }, [agent, skillImportAddress, loadSkills, loadAgents, t]);
 
-  const handleGenerateMetadata = useCallback(async () => {
-    if (!agent) return;
-    const intent = metadataIntent.trim();
-    if (!intent) {
-      antMessage.warning(t('agent.metadata.intentRequired'));
-      return;
-    }
 
-    setMetadataGenerating(true);
-    setMetadataError('');
-    setMetadataDraft(null);
 
-    const fallback: AgentMetadataDraft = {
-      title: agent.title || agent.name,
-      description: agent.description || '',
-      tags: parseStringList(agent.tags),
-      openingMessage: agent.openingMessage || '',
-      openingQuestions: parseStringList(agent.openingQuestions),
-      systemPrompt: agent.systemPrompt || '',
-    };
 
-    const sessionKey = `agent_metadata:${agent.id}`;
-    const prompt = buildMetadataPrompt(agent, intent, fallback.tags, fallback.openingQuestions);
-    let content = '';
-
-    try {
-      await new Promise<void>((resolve, reject) => {
-        executeAgentTurn(
-          prompt,
-          sessionKey,
-          'agent-builder',
-          (event) => {
-            if (event.event === 'text') content += event.data?.content || '';
-          },
-          () => resolve(),
-          (error) => reject(error),
-        );
-      });
-      setMetadataDraft(parseMetadataDraft(content, fallback));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setMetadataError(message || t('agent.metadata.parseFailed'));
-    } finally {
-      setMetadataGenerating(false);
-    }
-  }, [agent, metadataIntent, t]);
-
-  const handleApplyMetadataDraft = useCallback(async () => {
-    if (!agent || !metadataDraft) return;
-    setMetadataApplying(true);
-    try {
-      const updated = await api.updateAgent(agent.id, {
-        title: metadataDraft.title,
-        description: metadataDraft.description,
-        tags: JSON.stringify(metadataDraft.tags),
-        openingMessage: metadataDraft.openingMessage,
-        openingQuestions: JSON.stringify(metadataDraft.openingQuestions),
-        systemPrompt: metadataDraft.systemPrompt,
-      });
-      setAgent(updated);
-      setSystemPrompt(updated.systemPrompt || '');
-      setMetadataDraft(null);
-      setMetadataIntent('');
-      await loadAgents();
-      antMessage.success(t('agent.metadata.applied'));
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
-      antMessage.error(message);
-    } finally {
-      setMetadataApplying(false);
-    }
-  }, [agent, metadataDraft, loadAgents, t]);
-
-  const handleGenerateDescriptionDraft = useCallback(async () => {
-    if (!agent) return;
-    const intent = descriptionIntent.trim();
-    if (!intent) {
-      antMessage.warning(t('agent.descriptionRewrite.intentRequired'));
-      return;
-    }
-
-    setDescriptionGenerating(true);
-    setDescriptionError('');
-    setDescriptionDraft('');
-
-    const prompt = buildDescriptionRewritePrompt(agent, intent);
-    const sessionKey = `agent_description:${agent.id}`;
-    let content = '';
-
-    try {
-      await new Promise<void>((resolve, reject) => {
-        executeAgentTurn(
-          prompt,
-          sessionKey,
-          'agent-builder',
-          (event) => {
-            if (event.event === 'text') content += event.data?.content || '';
-          },
-          () => resolve(),
-          (error) => reject(error),
-        );
-      });
-      setDescriptionDraft(parseDescriptionDraft(content, agent.description || ''));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setDescriptionError(message || t('agent.descriptionRewrite.parseFailed'));
-    } finally {
-      setDescriptionGenerating(false);
-    }
-  }, [agent, descriptionIntent, t]);
 
   const handleInlineRewriteDescription = useCallback(async () => {
     if (!agent) return;
     const intent = agent.description?.trim() || agent.title || agent.name;
     setDescriptionGenerating(true);
-    setDescriptionError('');
-    setDescriptionDraft('');
-
-    const prompt = buildDescriptionRewritePrompt(agent, intent);
     const sessionKey = `agent_description:${agent.id}`;
+    const prompt = [
+      'Rewrite this Agent description for A2A routing.',
+      'Return one concise sentence only. Do not include markdown or quotes.',
+      `Agent name: ${agent.title || agent.name}`,
+      `Current description: ${intent}`,
+    ].join('\n');
     let content = '';
 
     try {
@@ -2027,131 +1291,29 @@ export function AgentProfilePage({
           (error) => reject(error),
         );
       });
-      const updatedDescription = parseDescriptionDraft(content, agent.description || '');
+      const updatedDescription = content.replace(/^```[a-z]*|```$/g, '').replace(/^description\s*[:：]/i, '').trim();
+      if (!updatedDescription) throw new Error(t('agent.descriptionRewrite.parseFailed'));
       const updated = await api.updateAgent(agent.id, { description: updatedDescription });
       setAgent(updated);
       await loadAgents();
       antMessage.success(t('agent.descriptionRewrite.applied'));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setDescriptionError(message || t('agent.descriptionRewrite.parseFailed'));
       antMessage.error(message || t('agent.descriptionRewrite.parseFailed'));
     } finally {
       setDescriptionGenerating(false);
     }
   }, [agent, loadAgents, t]);
 
-  const handleApplyDescriptionDraft = useCallback(async () => {
-    if (!agent || !descriptionDraft.trim()) return;
-    setDescriptionApplying(true);
-    try {
-      const updated = await api.updateAgent(agent.id, {
-        description: descriptionDraft.trim(),
-      });
-      setAgent(updated);
-      setDescriptionDraft('');
-      setDescriptionIntent('');
-      await loadAgents();
-      antMessage.success(t('agent.descriptionRewrite.applied'));
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
-      antMessage.error(message);
-    } finally {
-      setDescriptionApplying(false);
-    }
-  }, [agent, descriptionDraft, loadAgents, t]);
 
-  const handleSaveKnowledgeResources = useCallback(async (resources: AgentKnowledgeResource[]) => {
-    if (!agent) return;
-    const updated = await api.updateAgent(agent.id, {
-      knowledgeResources: JSON.stringify(resources),
-    });
-    setAgent(updated);
-    await loadAgents();
-  }, [agent, loadAgents]);
 
-  const handleAddKnowledgeResource = useCallback(async () => {
-    if (!agent) return;
-    const source = knowledgeSource.trim();
-    if (!source) {
-      antMessage.warning(t('agent.profile.knowledge.sourceRequired'));
-      return;
-    }
-    const now = new Date().toISOString();
-    const resources = parseAgentKnowledgeResources(agent);
-    const next: AgentKnowledgeResource = {
-      id: createKnowledgeResourceId(),
-      type: knowledgeType,
-      title: knowledgeTitle.trim() || source,
-      source,
-      policy: knowledgePolicy,
-      status: 'bound',
-      lastIndexedAt: '',
-      createdAt: now,
-      updatedAt: now,
-    };
-    try {
-      await handleSaveKnowledgeResources([...resources, next]);
-      setKnowledgeTitle('');
-      setKnowledgeSource('');
-      antMessage.success(t('agent.profile.knowledge.added'));
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
-      antMessage.error(message);
-    }
-  }, [agent, handleSaveKnowledgeResources, knowledgePolicy, knowledgeSource, knowledgeTitle, knowledgeType, t]);
 
-  const handleRemoveKnowledgeResource = useCallback(async (resourceId: string) => {
-    if (!agent) return;
-    const resources = parseAgentKnowledgeResources(agent).filter((resource) => resource.id !== resourceId);
-    try {
-      await handleSaveKnowledgeResources(resources);
-      antMessage.success(t('agent.profile.knowledge.removed'));
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
-      antMessage.error(message);
-    }
-  }, [agent, handleSaveKnowledgeResources, t]);
 
-  const handleExportAgentPackage = useCallback(async (includeLocalPaths: boolean) => {
-    if (!agent) return;
-    setExportingAgentPackage(true);
-    try {
-      const pkg = await api.exportAgentPackage(agent.id, { includeLocalPaths });
-      const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `${agent.name || agent.id}.agent.json`;
-      anchor.click();
-      URL.revokeObjectURL(url);
-      antMessage.success(t('agent.profile.sharing.exported'));
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : t('agent.profile.sharing.exportFailed');
-      antMessage.error(message);
-    } finally {
-      setExportingAgentPackage(false);
-    }
-  }, [agent, t]);
 
-  const handleExportTurnDiagnostics = useCallback(() => {
-    if (!agent) return;
-    const chatState = useChatStore.getState();
-    const diagnostic = buildAgentTurnDiagnosticsExport({
-      sessionKey: chatState.currentSessionKey,
-      messages: chatState.messages,
-      agent,
-      selectedModel: agent.model,
-    });
-    const blob = new Blob([JSON.stringify(diagnostic, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${agent.name || agent.id}.turn-diagnostics.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    antMessage.success(t('agent.profile.diagnostics.exported'));
-  }, [agent, t]);
+
+
+
+
 
   const loadActivityTraces = useCallback(async (ignore?: () => boolean) => {
     if (!agent) return;
@@ -2165,9 +1327,9 @@ export function AgentProfilePage({
         response.entries || [],
         t('agent.profile.activity.defaultTaskTitle'),
       ));
-    } catch (error: unknown) {
+    } catch {
       if (ignore?.()) return;
-      const message = error instanceof Error ? error.message : t('agent.profile.activity.traceLoadFailed');
+      const message = t('agent.profile.activity.traceLoadFailed');
       setPersistedTraceCount(0);
       setPersistedActivityProjection({ tasks: [], events: [] });
       setActivityTraceLoadError(message);
@@ -2177,7 +1339,7 @@ export function AgentProfilePage({
   }, [agent, t]);
 
   useEffect(() => {
-    if (!agent || activeTab !== 'activity') return;
+    if (!agent || !['tasks', 'events'].includes(activeTab)) return;
     let ignore = false;
     loadActivityTraces(() => ignore);
     return () => {
@@ -2186,7 +1348,7 @@ export function AgentProfilePage({
   }, [activeTab, agent, loadActivityTraces]);
 
   useEffect(() => {
-    if (!agent || activeTab !== 'activity') return;
+    if (!agent || !['tasks', 'events'].includes(activeTab)) return;
     let refreshTimer: ReturnType<typeof setTimeout> | undefined;
     const unsubscribe = eventBus.subscribe(
       EVENT.AGENT_TURN_STREAM_EVENT,
@@ -2219,15 +1381,11 @@ export function AgentProfilePage({
   }
 
   const chatConfig = parseAgentChatConfig(agent);
-  const params = parseAgentParams(agent);
   const workspaceRoot = chatConfig.workspace?.root?.trim();
   const mcpServers = chatConfig.mcpServers || [];
   const boundTools = chatConfig.tools || [];
   const boundSkills = chatConfig.skills || [];
   const boundSkillLabels = boundSkills.map((skill) => skillLabelByValue.get(skill) || skill);
-  const knowledgeResources = parseAgentKnowledgeResources(agent);
-  const openingQuestions = parseStringList(agent.openingQuestions);
-  const agentTags = parseStringList(agent.tags);
   const activityCurrentSession = activitySessions.find((session) => session.key === activityCurrentSessionKey);
   const isCurrentAgentActivitySession =
     activityCurrentSession?.agent_name === agent.name || activityCurrentSession?.agent_name === agent.id;
@@ -2259,152 +1417,15 @@ export function AgentProfilePage({
   const routingModels = selectedProviderId
     ? availableModels.filter((model) => model.provider_id === selectedProviderId)
     : availableModels;
-  const modelContextWindow = formatContextWindow(selectedModel?.context_window);
-  const promptVariables = extractPromptVariables(systemPrompt);
-  const invalidPromptVariables = promptVariables.filter((item) => !PROMPT_VARIABLES.includes(item));
-  const promptPreview = buildPromptPreview(systemPrompt, {
-    agent: agent.title || agent.name,
-    user: t('agent.profile.promptPreview.user'),
-    date: new Date().toISOString().slice(0, 10),
-    workspace: workspaceRoot || t('agent.profile.workspaceNotSet'),
-    model: agent.model || t('agent.profile.defaultModel'),
-  });
-  const hasLocalToolBindings = boundTools.length > 0 || mcpServers.length > 0 || boundSkills.length > 0;
-  const runtimeCapabilities: Array<{ key: string; label: string; state: RuntimeCapabilityState; detail: string }> = [
-    {
-      key: 'chat',
-      label: t('agent.profile.degradation.chat'),
-      state: selectedModel?.enabled === false || !selectedModel ? 'unavailable' : (selectedModel.type || 'chat') === 'chat' ? 'native' : 'partial',
-      detail: selectedModel
-        ? t('agent.profile.degradation.chatDetail', { type: selectedModel.type || 'chat' })
-        : t('agent.profile.degradation.modelMissing'),
-    },
-    {
-      key: 'tools',
-      label: t('agent.profile.degradation.tools'),
-      state: selectedModel?.function_call ? 'native' : hasLocalToolBindings ? 'partial' : 'unavailable',
-      detail: selectedModel?.function_call
-        ? t('agent.profile.degradation.toolsNative')
-        : hasLocalToolBindings
-          ? t('agent.profile.degradation.toolsPartial')
-          : t('agent.profile.degradation.toolsUnavailable'),
-    },
-    {
-      key: 'vision',
-      label: t('agent.profile.degradation.vision'),
-      state: selectedModel?.vision ? 'native' : 'unavailable',
-      detail: selectedModel?.vision ? t('agent.profile.degradation.visionNative') : t('agent.profile.degradation.visionUnavailable'),
-    },
-    {
-      key: 'search',
-      label: t('agent.profile.degradation.search'),
-      state: selectedModel?.search ? 'native' : chatConfig.searchMode && chatConfig.searchMode !== 'off' ? 'partial' : 'unavailable',
-      detail: selectedModel?.search
-        ? t('agent.profile.degradation.searchNative')
-        : chatConfig.searchMode && chatConfig.searchMode !== 'off'
-          ? t('agent.profile.degradation.searchPartial')
-          : t('agent.profile.degradation.searchUnavailable'),
-    },
-    {
-      key: 'voice',
-      label: t('agent.profile.degradation.voice'),
-      state: chatConfig.voice?.ttsProvider || chatConfig.voice?.sttProvider ? 'partial' : 'unavailable',
-      detail: chatConfig.voice?.ttsProvider || chatConfig.voice?.sttProvider
-        ? t('agent.profile.degradation.voicePartial')
-        : t('agent.profile.degradation.voiceUnavailable'),
-    },
-  ];
   const modelLabel = selectedModel?.display_name || agent.model || t('agent.profile.defaultModel');
-  const workbenchSignals: WorkbenchSignal[] = [
-    {
-      key: 'model',
-      icon: <Cpu size={16} />,
-      label: t('agent.profile.workbench.signal.model'),
-      value: modelLabel,
-      ready: Boolean(agent.model || selectedModel),
-      targetTab: 'runtime',
-    },
-    {
-      key: 'tools',
-      icon: <Wrench size={16} />,
-      label: t('agent.profile.workbench.signal.tools'),
-      value: t('agent.profile.workbench.countSummary', {
-        count: boundTools.length + mcpServers.length + boundSkills.length,
-      }),
-      ready: boundTools.length + mcpServers.length + boundSkills.length > 0 || agent.toolsProfile !== 'minimal',
-      targetTab: 'capabilities',
-    },
-    {
-      key: 'knowledge',
-      icon: <Database size={16} />,
-      label: t('agent.profile.workbench.signal.knowledge'),
-      value: t('agent.profile.knowledge.count', { count: knowledgeResources.length }),
-      ready: knowledgeResources.length > 0 || Boolean(workspaceRoot),
-      targetTab: 'runtime',
-    },
-    {
-      key: 'diagnostics',
-      icon: <Activity size={16} />,
-      label: t('agent.profile.workbench.signal.diagnostics'),
-      value: t('agent.profile.workbench.diagnosticsValue'),
-      ready: true,
-      targetTab: 'diagnostics',
-    },
-  ];
-  const workbenchSteps: WorkbenchStep[] = [
-    {
-      key: 'identity',
-      label: t('agent.profile.workbench.step.identity'),
-      description: t('agent.profile.workbench.step.identityDesc'),
-      complete: Boolean(agent.title && agent.description && systemPrompt.trim()),
-      targetTab: 'prompt',
-    },
-    {
-      key: 'runtime',
-      label: t('agent.profile.workbench.step.runtime'),
-      description: t('agent.profile.workbench.step.runtimeDesc'),
-      complete: Boolean(agent.model || selectedModel),
-      targetTab: 'runtime',
-    },
-    {
-      key: 'context',
-      label: t('agent.profile.workbench.step.context'),
-      description: t('agent.profile.workbench.step.contextDesc'),
-      complete: Boolean(workspaceRoot || knowledgeResources.length > 0 || chatConfig.memory?.enabled),
-      targetTab: 'runtime',
-    },
-    {
-      key: 'launch',
-      label: t('agent.profile.workbench.step.launch'),
-      description: t('agent.profile.workbench.step.launchDesc'),
-      complete: openingQuestions.length > 0 || Boolean(agent.openingMessage),
-      targetTab: 'capabilities',
-    },
-  ];
-  const completedWorkbenchSteps = workbenchSteps.filter((step) => step.complete).length;
-  const workbenchProgress = Math.round(
-    (completedWorkbenchSteps / Math.max(workbenchSteps.length, 1)) * 100,
-  );
-  const activeTabLabel = t(
-    TAB_KEYS.find((tab) => tab.key === activeTab)?.labelKey || 'agent.profile.tab.overview',
-  );
-  const firstIncompleteStep = workbenchSteps.find((step) => !step.complete);
+  const hasLocalToolBindings = boundTools.length > 0 || mcpServers.length > 0 || boundSkills.length > 0;
+  const activeTabLabel = t(TAB_KEYS.find((tab) => tab.key === activeTab)?.labelKey || ACTIVITY_TAB_KEYS.find((tab) => tab.key === activeTab)?.labelKey || 'agent.profile.tab.prompt');
   const builderContextSummary = [
     {
       label: t('agent.builder.context.model'),
       value: modelLabel,
       ready: Boolean(agent.model || selectedModel),
-      targetTab: 'runtime' as ProfileTab,
-    },
-    {
-      label: t('agent.builder.context.checklist'),
-      value: t('agent.profile.workbench.progress', {
-        done: completedWorkbenchSteps,
-        total: workbenchSteps.length,
-        progress: workbenchProgress,
-      }),
-      ready: completedWorkbenchSteps === workbenchSteps.length,
-      targetTab: (firstIncompleteStep?.targetTab || 'prompt') as ProfileTab,
+      targetTab: 'workspace' as ProfileTab,
     },
     {
       label: t('agent.builder.context.capabilities'),
@@ -2412,7 +1433,7 @@ export function AgentProfilePage({
         tools: boundTools.length,
         skills: boundSkills.length,
         mcp: mcpServers.length,
-        knowledge: knowledgeResources.length,
+        knowledge: 0,
       }),
       ready: hasLocalToolBindings,
       targetTab: 'capabilities' as ProfileTab,
@@ -2430,47 +1451,16 @@ export function AgentProfilePage({
       name: agent.name,
       title: agent.title || agent.name,
       description: agent.description || '',
-      tags: agentTags,
-      is_default: agent.isDefault,
-      system_prompt_configured: Boolean(systemPrompt.trim()),
-      opening_message_configured: Boolean(agent.openingMessage),
-      opening_questions_count: openingQuestions.length,
+      system_prompt_configured: Boolean((agent.systemPrompt || '').trim()),
     },
     workbench: {
       active_tab: activeTab,
       active_tab_label: activeTabLabel,
-      progress: {
-        completed: completedWorkbenchSteps,
-        total: workbenchSteps.length,
-        percent: workbenchProgress,
-      },
-      signals: workbenchSignals.map(({ key, label, value, ready, targetTab }) => ({
-        key,
-        label,
-        value,
-        ready,
-        target_tab: targetTab,
-      })),
-      checklist: workbenchSteps.map(({ key, label, description, complete, targetTab }) => ({
-        key,
-        label,
-        description,
-        complete,
-        target_tab: targetTab,
-      })),
     },
     runtime: {
       model_id: agent.model || '',
       model_label: modelLabel,
       model_type: selectedModel?.type || '',
-      context_window: selectedModel?.context_window || null,
-      params,
-      capabilities: runtimeCapabilities.map(({ key, label, state, detail }) => ({
-        key,
-        label,
-        state,
-        detail,
-      })),
     },
     context: {
       workspace_root_configured: Boolean(workspaceRoot),
@@ -2479,33 +1469,308 @@ export function AgentProfilePage({
       search_mode: chatConfig.searchMode || '',
     },
     bindings: {
-      tools_profile: agent.toolsProfile || '',
       tools: boundTools,
       mcp_servers: mcpServers,
       skills: boundSkills,
-      knowledge_resources: knowledgeResources.map((resource) => ({
-        id: resource.id,
-        type: resource.type,
-        title: resource.title,
-        policy: resource.policy,
-        status: resource.status,
-      })),
     },
   };
   const activeMode = ACTIVITY_TAB_KEYS.some((tab) => tab.key === activeTab) ? 'activity' : 'configure';
   const visibleTabs = activeMode === 'activity' ? ACTIVITY_TAB_KEYS : TAB_KEYS;
 
   return (
-    <Flexbox horizontal style={{ height: '100%', width: '100%', overflow: 'hidden' }}>
-      {/* ── Left: Profile Editor ── */}
-      <Flexbox flex={1} style={{ minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+    <Flexbox horizontal style={{ height: '100%', width: '100%', minWidth: 0, overflow: 'auto' }}>
+      <aside
+        style={{
+          width: agentListOpen ? 230 : 48,
+          height: '100%',
+          borderRight: `1px solid ${token.colorBorderSecondary}`,
+          background: token.colorBgContainer,
+          flexShrink: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          position: 'relative',
+          padding: agentListOpen ? '14px 10px 58px' : '14px 0 58px',
+          boxSizing: 'border-box',
+          overflow: 'hidden',
+        }}
+      >
+        {agentListOpen ? (
+          <>
+            <Flexbox horizontal align="center" style={{ height: 36, marginBottom: 8 }}>
+              <Bot size={18} color={token.colorPrimary} />
+              <span style={{ flex: 1, marginLeft: 8, fontSize: 15, fontWeight: 800, color: token.colorText }}>
+                {t('agent.chat.myAgents')}
+              </span>
+              {onOpenOrchestration && (
+                <button
+                  type="button"
+                  onClick={onOpenOrchestration}
+                  title={t('agent.chat.openCanvas')}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    marginRight: 4,
+                    border: 0,
+                    borderRadius: 8,
+                    background: 'transparent',
+                    color: token.colorTextSecondary,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Workflow size={17} />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleCreateAgent}
+                title={t('agent.sidebar.createAgent')}
+                style={{
+                  width: 28,
+                  height: 28,
+                  border: 0,
+                  borderRadius: 8,
+                  background: 'transparent',
+                  color: token.colorTextSecondary,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                }}
+              >
+                <Plus size={17} />
+              </button>
+            </Flexbox>
+            <div style={{ marginBottom: 12 }}>
+              <SearchBar
+                value={agentSearch}
+                onChange={(event) => setAgentSearch(event.target.value)}
+                placeholder={t('agent.sidebar.searchAgents')}
+                spotlight={false}
+                size="small"
+                style={{ height: 36 }}
+              />
+            </div>
+            <Flexbox flex={1} gap={2} style={{ minHeight: 0, overflow: 'auto', padding: '0 0 10px' }}>
+              {pinnedProfileAgents.length > 0 && (
+                <div style={{ padding: '8px 8px 4px', color: token.colorTextTertiary, fontSize: 11, fontWeight: 800 }}>
+                  {t('agent.chat.pinned')}
+                </div>
+              )}
+              {pinnedProfileAgents.map((item) => {
+                const active = agent?.name === item.name;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleSelectProfileAgent(item)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      minHeight: 48,
+                      width: '100%',
+                      padding: '6px 8px',
+                      borderRadius: 10,
+                      border: 0,
+                      background: active ? token.colorFillSecondary : 'transparent',
+                      color: token.colorText,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <AgentIconTile agent={item} size={32} selected={active} />
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block', fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {item.title || item.name}
+                      </span>
+                      <span style={{ display: 'block', fontSize: 11, color: token.colorTextTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {item.description || t('agent.canvas.agentFallback')}
+                      </span>
+                    </span>
+                    <MoreHorizontal size={14} color={token.colorTextTertiary} />
+                  </button>
+                );
+              })}
+              <div style={{ padding: '8px 8px 4px', color: token.colorTextTertiary, fontSize: 11, fontWeight: 800 }}>
+                {t('agent.chat.allAgents')}
+              </div>
+              {otherProfileAgents.map((item) => {
+                const active = agent?.name === item.name;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleSelectProfileAgent(item)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      minHeight: 48,
+                      width: '100%',
+                      padding: '6px 8px',
+                      borderRadius: 10,
+                      border: 0,
+                      background: active ? token.colorFillSecondary : 'transparent',
+                      color: token.colorText,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <AgentIconTile agent={item} size={32} selected={active} />
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block', fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {item.title || item.name}
+                      </span>
+                      <span style={{ display: 'block', fontSize: 11, color: token.colorTextTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {item.description || t('agent.canvas.agentFallback')}
+                      </span>
+                    </span>
+                    <MoreHorizontal size={14} color={token.colorTextTertiary} />
+                  </button>
+                );
+              })}
+              {filteredProfileAgents.length === 0 && (
+                <Empty description={t('agent.sidebar.noMatchingAgents')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              )}
+            </Flexbox>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={handleCreateAgent}
+              title={t('agent.sidebar.createAgent')}
+              style={{
+                width: 40,
+                height: 40,
+                margin: '0 auto 10px',
+                border: 0,
+                borderRadius: 12,
+                background: 'transparent',
+                color: token.colorTextSecondary,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              <Plus size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setAgentListOpen(true)}
+              title={t('agent.sidebar.searchAgents')}
+              style={{
+                width: 40,
+                height: 40,
+                margin: '0 auto 2px',
+                border: 0,
+                borderRadius: 12,
+                background: 'transparent',
+                color: token.colorTextSecondary,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              <Search size={18} />
+            </button>
+            <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+              {collapsedPinnedAgents.length > 0 && <div style={{ width: 28, height: 1, margin: '18px 0 12px', background: token.colorBorderSecondary }} />}
+              {collapsedPinnedAgents.map((item) => {
+                const active = agent?.name === item.name;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      handleSelectProfileAgent(item);
+                    }}
+                    title={item.title || item.name}
+                    style={{
+                      width: 40,
+                      height: 48,
+                      borderRadius: 12,
+                      border: 0,
+                      background: active ? token.colorFillSecondary : 'transparent',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <AgentIconTile agent={item} size={30} selected={active} />
+                  </button>
+                );
+              })}
+              {collapsedOtherAgents.length > 0 && <div style={{ width: 28, height: 1, margin: '18px 0 12px', background: token.colorBorderSecondary }} />}
+              {collapsedOtherAgents.map((item) => {
+                const active = agent?.name === item.name;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      handleSelectProfileAgent(item);
+                    }}
+                    title={item.title || item.name}
+                    style={{
+                      width: 40,
+                      height: 48,
+                      borderRadius: 12,
+                      border: 0,
+                      background: active ? token.colorFillSecondary : 'transparent',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <AgentIconTile agent={item} size={30} selected={active} />
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+        <button
+          type="button"
+          onClick={() => setAgentListOpen(!agentListOpen)}
+          title={t(agentListOpen ? 'agent.sidebar.collapseAgents' : 'agent.sidebar.expandAgents')}
+          style={{
+            position: 'absolute',
+            left: 7,
+            bottom: 14,
+            width: 34,
+            height: 34,
+            borderRadius: 999,
+            border: 0,
+            background: 'transparent',
+            boxShadow: 'none',
+            color: token.colorTextSecondary,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+          }}
+        >
+          {agentListOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+        </button>
+      </aside>
+
+      {/* ── Center: Profile Editor ── */}
+      <Flexbox flex={1} style={{ minWidth: 680, minHeight: 0, overflow: 'hidden' }}>
         <div
           style={{
             display: 'flex',
             flexDirection: 'column',
             flex: 1,
             minHeight: 0,
-            padding: '0 40px',
+            padding: '0 32px 32px',
             overflow: 'hidden',
           }}
         >
@@ -2515,175 +1780,107 @@ export function AgentProfilePage({
               flexDirection: 'column',
               flex: 1,
               minHeight: 0,
-              maxWidth: 1040,
+              maxWidth: 980,
               margin: '0 auto',
               width: '100%',
             }}
           >
             {/* ── Workbench Hero ── */}
-            <div style={{ flexShrink: 0, paddingTop: 24 }}>
+            <div style={{ flexShrink: 0 }}>
               <AgentWorkbenchHero
+                key={agent.id}
                 agent={agent}
-                modelLabel={modelLabel}
-                workspaceRoot={workspaceRoot}
-                signals={workbenchSignals}
-                steps={workbenchSteps}
-                activeTab={activeTab}
-                onSelectTab={setActiveTab}
                 onStartChat={() => onStartChat(agent.name)}
                 onOpenSettings={() => setSettingsOpen(true)}
-                onAvatarChange={handleAvatarChange}
                 onTitleBlur={handleTitleBlur}
                 onDescriptionBlur={handleDescriptionBlur}
                 onRewriteDescription={handleInlineRewriteDescription}
                 descriptionGenerating={descriptionGenerating}
               />
-
-              <Flexbox
-                horizontal
-                align="center"
-                gap={8}
-                style={{
-                  marginTop: 12,
-                  marginBottom: 12,
-                  padding: '8px 10px',
-                  borderRadius: 12,
-                  border: `1px solid ${token.colorBorderSecondary}`,
-                  background: token.colorFillQuaternary,
-                }}
-              >
-                <FolderOpen size={14} style={{ color: token.colorTextSecondary }} />
-                <span style={{ fontSize: 12, color: token.colorTextSecondary }}>
-                  {t('agent.profile.workspace')}
-                </span>
-                {workspaceRoot ? (
-                  <>
-                    <span
-                      style={{
-                        flex: 1,
-                        minWidth: 0,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        fontSize: 12,
-                        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-                        color: token.colorText,
-                      }}
-                      title={workspaceRoot}
-                    >
-                      {workspaceRoot}
-                    </span>
-                    <Tag color="green">{t('agent.profile.workspacePolicy.workspaceOnly')}</Tag>
-                  </>
-                ) : (
-                  <span style={{ flex: 1, fontSize: 12, color: token.colorTextDescription }}>
-                    {t('agent.profile.workspaceNotSet')}
-                  </span>
-                )}
-              </Flexbox>
-
-              <Flexbox horizontal align="center" gap={6} style={{ marginBottom: 12, flexWrap: 'wrap' }}>
-                <Tag color={boundSkills.length > 0 ? 'purple' : 'default'} style={{ margin: 0 }}>
-                  {t('agent.profile.capabilities.skillsCount', { count: boundSkills.length })}
-                </Tag>
-                {boundSkillLabels.slice(0, 4).map((skill) => (
-                  <Tag key={skill} style={{ margin: 0 }}>{skill}</Tag>
-                ))}
-                {boundSkillLabels.length > 4 && (
-                  <Tag style={{ margin: 0 }}>{t('agent.profile.skills.more', { count: boundSkillLabels.length - 4 })}</Tag>
-                )}
-                <Button size="small" onClick={() => setActiveTab('capabilities')}>
-                  {t('agent.profile.skills.configure')}
-                </Button>
-              </Flexbox>
             </div>
 
-            <Divider style={{ margin: '8px 0 0' }} />
-
-            <Flexbox
-              gap={10}
+            <div
               style={{
                 flexShrink: 0,
-                marginTop: 10,
+                marginTop: 16,
+                marginBottom: 18,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                flexWrap: 'wrap',
                 padding: 14,
-                borderRadius: 14,
+                borderRadius: 12,
                 border: `1px solid ${token.colorBorderSecondary}`,
                 background: token.colorBgContainer,
               }}
             >
-              <Flexbox horizontal align="center" justify="space-between" gap={12}>
-                <Flexbox gap={2}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: token.colorText }}>
-                    {t('agent.profile.composition.title')}
-                  </span>
-                  <span style={{ fontSize: 12, color: token.colorTextTertiary }}>
-                    {t('agent.profile.composition.description')}
-                  </span>
-                </Flexbox>
-                <Tag style={{ margin: 0 }}>{modelLabel}</Tag>
-              </Flexbox>
-              <Flexbox horizontal align="center" gap={10} style={{ flexWrap: 'wrap' }}>
-                <Select
-                  value={selectedProviderId || undefined}
-                  onChange={handleProviderChange}
-                  placeholder={t('agent.profile.routing.providerPlaceholder')}
-                  allowClear
-                  showSearch
-                  options={providerOptions}
-                  style={{ minWidth: 190, flex: '0 1 220px' }}
-                  filterOption={(input, option) =>
-                    String(option?.label || '').toLowerCase().includes(input.toLowerCase())
-                  }
-                />
-                <span style={{ color: token.colorTextQuaternary, fontSize: 13 }}>→</span>
+              <Select
+                value={selectedProviderId || undefined}
+                onChange={handleProviderChange}
+                placeholder={t('agent.profile.routing.providerPlaceholder')}
+                allowClear
+                showSearch
+                options={providerOptions}
+                style={{ width: 190 }}
+                filterOption={(input, option) =>
+                  String(option?.label || '').toLowerCase().includes(input.toLowerCase())
+                }
+              />
+              <span style={{ color: token.colorTextQuaternary, fontSize: 13 }}>→</span>
+              <div style={{ flex: '1 1 220px', minWidth: 180 }}>
                 <ModelSelect
                   models={routingModels}
                   value={agent.model || undefined}
                   onChange={handleModelChange}
                   placeholder={t('agent.profile.routing.modelPlaceholder')}
                   size="middle"
-                  style={{ minWidth: 240, flex: '1 1 300px' }}
+                  style={{ width: '100%', minWidth: 0 }}
                 />
-                <span style={{ color: token.colorTextQuaternary, fontSize: 13 }}>·</span>
-                <Select
-                  value={agent.effort || 'medium'}
-                  onChange={handleEffortChange}
-                  placeholder={t('agent.profile.routing.effortPlaceholder')}
-                  style={{ minWidth: 150, flex: '0 1 180px' }}
-                  options={[
-                    { value: 'low', label: t('agent.profile.effort.low') },
-                    { value: 'medium', label: t('agent.profile.effort.medium') },
-                    { value: 'high', label: t('agent.profile.effort.high') },
-                  ]}
-                />
-              </Flexbox>
-            </Flexbox>
+              </div>
+              <span style={{ color: token.colorTextQuaternary, fontSize: 13 }}>·</span>
+              <Select
+                value={agent.effort || 'medium'}
+                onChange={handleEffortChange}
+                placeholder={t('agent.profile.routing.effortPlaceholder')}
+                style={{ width: 120 }}
+                options={[
+                  { value: 'low', label: t('agent.profile.effort.low') },
+                  { value: 'medium', label: t('agent.profile.effort.medium') },
+                  { value: 'high', label: t('agent.profile.effort.high') },
+                ]}
+              />
+            </div>
 
             {/* ── Prototype-aligned mode switch: Configure vs Activity ── */}
             <Flexbox
               horizontal
               align="center"
-              gap={6}
+              gap={2}
               style={{
+                alignSelf: 'flex-start',
                 flexShrink: 0,
-                padding: '8px 0 0',
+                padding: 3,
+                marginBottom: 18,
+                borderRadius: 10,
+                background: token.colorFillQuaternary,
               }}
             >
               {([
-                { key: 'configure', label: t('agent.profile.mode.configure'), target: 'prompt' as ProfileTab },
-                { key: 'activity', label: t('agent.profile.mode.activity'), target: 'activity' as ProfileTab },
+                { key: 'configure', label: t('agent.profile.mode.configure'), target: 'soul' as ProfileTab },
+                { key: 'activity', label: t('agent.profile.mode.activity'), target: 'tasks' as ProfileTab },
               ] as const).map((mode) => (
                 <button
                   key={mode.key}
                   type="button"
                   onClick={() => setActiveTab(mode.target)}
                   style={{
-                    height: 32,
-                    padding: '0 14px',
-                    borderRadius: 10,
-                    border: `1px solid ${activeMode === mode.key ? token.colorPrimaryBorder : token.colorBorderSecondary}`,
-                    background: activeMode === mode.key ? token.colorPrimaryBg : token.colorBgContainer,
-                    color: activeMode === mode.key ? token.colorPrimaryText : token.colorTextSecondary,
+                    height: 30,
+                    padding: '0 18px',
+                    borderRadius: 8,
+                    border: 0,
+                    background: activeMode === mode.key ? token.colorBgContainer : 'transparent',
+                    color: activeMode === mode.key ? token.colorText : token.colorTextTertiary,
+                    boxShadow: activeMode === mode.key ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
                     fontSize: 13,
                     fontWeight: 600,
                     cursor: 'pointer',
@@ -2695,7 +1892,7 @@ export function AgentProfilePage({
             </Flexbox>
 
             {/* ── Tab bar (no font-weight change to prevent wobble) ── */}
-            <div style={{ display: 'flex', gap: 0, flexShrink: 0 }}>
+            <div style={{ display: 'flex', gap: 4, flexShrink: 0, borderBottom: `1px solid ${token.colorBorderSecondary}`, marginBottom: 18, flexWrap: 'wrap' }}>
               {visibleTabs.map((tab) => (
                 <div
                   key={tab.key}
@@ -2704,20 +1901,24 @@ export function AgentProfilePage({
                     display: 'flex',
                     alignItems: 'center',
                     gap: 4,
-                    padding: '10px 16px',
+                    padding: '8px 12px',
                     cursor: 'pointer',
-                    fontSize: 14,
-                    fontWeight: 500,
+                    fontSize: 13,
+                    fontWeight: 600,
                     color:
-                      activeTab === tab.key ? token.colorText : token.colorTextSecondary,
+                      activeTab === tab.key ? token.colorPrimary : token.colorTextSecondary,
                     borderBottom: `2px solid ${
                       activeTab === tab.key ? token.colorPrimary : 'transparent'
                     }`,
                     transition: 'color 0.2s, border-color 0.2s',
                   }}
                 >
-                  {tab.icon}
-                  {t(tab.labelKey)}
+                  <span style={{ width: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {tab.icon}
+                  </span>
+                  <span style={{ lineHeight: '18px' }}>
+                    {t(tab.labelKey)}
+                  </span>
                 </div>
               ))}
             </div>
@@ -2729,173 +1930,16 @@ export function AgentProfilePage({
                 display: 'flex',
                 flexDirection: 'column',
                 minHeight: 0,
-                paddingTop: 8,
+                paddingTop: 0,
                 paddingBottom: 16,
-                overflow: 'hidden',
+                overflow: 'auto',
               }}
             >
-              {activeTab === 'overview' && (
-                <Flexbox gap={12} style={{ overflow: 'auto' }}>
-                  <ProfileCard
-                    title={t('agent.metadata.title')}
-                    description={t('agent.metadata.description')}
-                    action={
-                      <Button
-                        size="small"
-                        icon={<Sparkles size={14} />}
-                        loading={metadataGenerating}
-                        onClick={handleGenerateMetadata}
-                      >
-                        {t('agent.metadata.generate')}
-                      </Button>
-                    }
-                  >
-                    <Flexbox gap={8}>
-                      <textarea
-                        value={metadataIntent}
-                        onChange={(event) => setMetadataIntent(event.target.value)}
-                        placeholder={t('agent.metadata.intentPlaceholder')}
-                        rows={3}
-                        style={{
-                          width: '100%',
-                          resize: 'vertical',
-                          minHeight: 72,
-                          padding: '10px 12px',
-                          borderRadius: 8,
-                          border: `1px solid ${token.colorBorderSecondary}`,
-                          background: token.colorBgContainer,
-                          color: token.colorText,
-                          outline: 'none',
-                          fontFamily: 'inherit',
-                          fontSize: 13,
-                          lineHeight: 1.6,
-                        }}
-                      />
-                      <span style={{ fontSize: 12, color: token.colorTextDescription }}>
-                        {t('agent.metadata.previewRule')}
-                      </span>
-                      {metadataError && (
-                        <span style={{ fontSize: 12, color: token.colorError }}>
-                          {t('agent.metadata.failed', { error: metadataError })}
-                        </span>
-                      )}
-                      {metadataDraft && (
-                        <Flexbox gap={8}>
-                          <InfoRow label={t('agent.metadata.previewTitle')} value={metadataDraft.title} />
-                          <InfoRow label={t('agent.metadata.previewDescription')} value={metadataDraft.description} />
-                          <InfoRow label={t('agent.metadata.previewTags')} value={<PillList values={metadataDraft.tags} emptyText={t('agent.profile.empty')} />} />
-                          <InfoRow label={t('agent.metadata.previewOpeningMessage')} value={metadataDraft.openingMessage} />
-                          <InfoRow label={t('agent.metadata.previewOpeningQuestions')} value={<PillList values={metadataDraft.openingQuestions} emptyText={t('agent.profile.empty')} />} />
-                          <Flexbox gap={4}>
-                            <span style={{ fontSize: 12, color: token.colorTextSecondary }}>
-                              {t('agent.metadata.previewPrompt')}
-                            </span>
-                            <pre
-                              style={{
-                                margin: 0,
-                                maxHeight: 160,
-                                overflow: 'auto',
-                                whiteSpace: 'pre-wrap',
-                                wordBreak: 'break-word',
-                                padding: 10,
-                                borderRadius: 8,
-                                border: `1px solid ${token.colorBorderSecondary}`,
-                                background: token.colorFillQuaternary,
-                                fontSize: 12,
-                                lineHeight: 1.6,
-                                color: token.colorTextSecondary,
-                              }}
-                            >
-                              {metadataDraft.systemPrompt}
-                            </pre>
-                          </Flexbox>
-                          <Flexbox horizontal justify="flex-end" gap={8}>
-                            <Button size="small" onClick={() => setMetadataDraft(null)}>
-                              {t('agent.metadata.discard')}
-                            </Button>
-                            <Button
-                              size="small"
-                              type="primary"
-                              loading={metadataApplying}
-                              onClick={handleApplyMetadataDraft}
-                            >
-                              {t('agent.metadata.apply')}
-                            </Button>
-                          </Flexbox>
-                        </Flexbox>
-                      )}
-                    </Flexbox>
-                  </ProfileCard>
-                  <ProfileCard
-                    title={t('agent.profile.section.identity')}
-                    description={t('agent.profile.section.identityDesc')}
-                    action={<Button size="small" onClick={() => setSettingsOpen(true)}>{t('agent.profile.editSettings')}</Button>}
-                  >
-                    <InfoRow label={t('agent.profile.field.name')} value={agent.name} />
-                    <InfoRow label={t('agent.profile.field.description')} value={agent.description || t('agent.profile.empty')} />
-                    <InfoRow label={t('agent.profile.field.tags')} value={<PillList values={agentTags} emptyText={t('agent.profile.empty')} />} />
-                    <InfoRow label={t('agent.profile.field.pinned')} value={agent.pinned ? t('agent.profile.enabled') : t('agent.profile.disabled')} />
-                    <InfoRow label={t('agent.profile.field.favorite')} value={agent.favorite ? t('agent.profile.enabled') : t('agent.profile.disabled')} />
-                    <Flexbox gap={8} style={{ marginTop: 10 }}>
-                      <Flexbox horizontal align="center" justify="space-between" gap={8}>
-                        <span style={{ fontSize: 12, color: token.colorTextSecondary }}>
-                          {t('agent.descriptionRewrite.title')}
-                        </span>
-                        <Button
-                          size="small"
-                          icon={<Sparkles size={13} />}
-                          loading={descriptionGenerating}
-                          onClick={handleGenerateDescriptionDraft}
-                        >
-                          {t('agent.descriptionRewrite.generate')}
-                        </Button>
-                      </Flexbox>
-                      <Input.TextArea
-                        value={descriptionIntent}
-                        onChange={(event) => setDescriptionIntent(event.target.value)}
-                        placeholder={t('agent.descriptionRewrite.intentPlaceholder')}
-                        autoSize={{ minRows: 2, maxRows: 4 }}
-                      />
-                      {descriptionError && (
-                        <span style={{ fontSize: 12, color: token.colorError }}>
-                          {t('agent.descriptionRewrite.failed', { error: descriptionError })}
-                        </span>
-                      )}
-                      {descriptionDraft && (
-                        <Flexbox gap={8}>
-                          <InfoRow label={t('agent.descriptionRewrite.preview')} value={descriptionDraft} />
-                          <Flexbox horizontal justify="flex-end" gap={8}>
-                            <Button size="small" onClick={() => setDescriptionDraft('')}>
-                              {t('agent.metadata.discard')}
-                            </Button>
-                            <Button
-                              size="small"
-                              type="primary"
-                              loading={descriptionApplying}
-                              onClick={handleApplyDescriptionDraft}
-                            >
-                              {t('agent.descriptionRewrite.apply')}
-                            </Button>
-                          </Flexbox>
-                        </Flexbox>
-                      )}
-                    </Flexbox>
-                  </ProfileCard>
-                  <ProfileCard title={t('agent.profile.section.routing')} description={t('agent.profile.section.routingDesc')}>
-                    <InfoRow label={t('agent.profile.field.provider')} value={agent.provider || selectedModel?.provider_id || t('agent.profile.defaultValue')} />
-                    <InfoRow label={t('agent.profile.field.model')} value={agent.model || t('agent.profile.defaultValue')} />
-                    <InfoRow label={t('agent.profile.field.workspace')} value={workspaceRoot || t('agent.profile.workspaceNotSet')} />
-                  </ProfileCard>
-                </Flexbox>
-              )}
 
-              {activeTab === 'prompt' && (
+              {activeTab === 'soul' && (
                 <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'grid', gap: 12 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, minHeight: 0 }}>
-                    <ProfileCard
-                      title={t('agent.profile.section.soulMd')}
-                      description={t('agent.profile.section.soulMdDesc')}
-                    >
+                    <ProfileCard title={t('agent.profile.section.soulMd')}>
                       <textarea
                         value={soulMd}
                         onChange={handleSoulMdChange}
@@ -2923,10 +1967,7 @@ export function AgentProfilePage({
                         }}
                       />
                     </ProfileCard>
-                    <ProfileCard
-                      title={t('agent.profile.section.agentsMd')}
-                      description={t('agent.profile.section.agentsMdDesc')}
-                    >
+                    <ProfileCard title={t('agent.profile.section.agentsMd')}>
                       <textarea
                         value={agentsMd}
                         onChange={handleAgentsMdChange}
@@ -2953,191 +1994,39 @@ export function AgentProfilePage({
                           (e.target as HTMLElement).style.borderColor = token.colorBorderSecondary;
                         }}
                       />
-                      <Flexbox horizontal gap={8} style={{ marginTop: 8, flexWrap: 'wrap' }}>
-                        {PROMPT_VARIABLES.map((variable) => (
-                          <Tag key={variable}>{`{{${variable}}}`}</Tag>
-                        ))}
-                      </Flexbox>
                     </ProfileCard>
                   </div>
-                  <ProfileCard title={t('agent.profile.promptPreview')} description={t('agent.profile.promptPreviewDesc')}>
-                    <pre
-                      style={{
-                        margin: 0,
-                        whiteSpace: 'pre-wrap',
-                        maxHeight: 180,
-                        overflow: 'auto',
-                        fontSize: 12,
-                        lineHeight: 1.6,
-                        color: token.colorTextSecondary,
-                      }}
-                    >
-                      {promptPreview || t('agent.profile.empty')}
-                    </pre>
-                  </ProfileCard>
-                  <details style={{ marginTop: 4 }}>
-                    <summary style={{ cursor: 'pointer', fontSize: 12, color: token.colorTextTertiary, padding: '4px 0' }}>
-                      {t('agent.profile.section.systemPromptLegacy')}
-                    </summary>
-                    <div style={{ paddingTop: 8 }}>
-                      <textarea
-                        value={systemPrompt}
-                        onChange={handlePromptChange}
-                        onBlur={handlePromptBlur}
-                        placeholder={t('agent.profile.promptPlaceholder')}
-                        style={{
-                          width: '100%',
-                          minHeight: 120,
-                          padding: '10px 12px',
-                          borderRadius: 8,
-                          border: `1px solid ${token.colorBorderSecondary}`,
-                          background: token.colorBgContainer,
-                          fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-                          fontSize: 12,
-                          lineHeight: 1.6,
-                          resize: 'vertical',
-                          outline: 'none',
-                          color: token.colorText,
-                        }}
-                        onFocus={(e) => {
-                          (e.target as HTMLElement).style.borderColor = token.colorPrimary;
-                        }}
-                        onBlurCapture={(e) => {
-                          (e.target as HTMLElement).style.borderColor = token.colorBorderSecondary;
-                        }}
-                      />
-                      <Flexbox horizontal align="center" justify="space-between" gap={12} style={{ marginTop: 6 }}>
-                        <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
-                          {t('agent.profile.promptHelp')}
-                        </span>
-                        <Tag color={invalidPromptVariables.length > 0 ? 'red' : 'blue'}>
-                          {t('agent.profile.promptTokenEstimate', { count: estimatePromptTokens(systemPrompt) })}
-                        </Tag>
-                      </Flexbox>
-                      <Flexbox horizontal gap={8} style={{ marginTop: 6, flexWrap: 'wrap' }}>
-                        <Tag color={invalidPromptVariables.length > 0 ? 'red' : 'green'}>
-                          {invalidPromptVariables.length > 0
-                            ? t('agent.profile.promptInvalidVariablesInline', { variables: invalidPromptVariables.join(', ') })
-                            : t('agent.profile.promptVariablesValid')}
-                        </Tag>
-                      </Flexbox>
-                    </div>
-                  </details>
                 </div>
               )}
 
-              {activeTab === 'model' && (
-                <Flexbox gap={12} style={{ overflow: 'auto' }}>
-                  <ProfileCard title={t('agent.profile.section.model')} description={t('agent.profile.section.modelDesc')}>
-                    <InfoRow label={t('agent.profile.field.provider')} value={selectedModel?.provider_name || selectedProviderId || t('agent.profile.defaultValue')} />
-                    <InfoRow label={t('agent.profile.field.model')} value={selectedModel?.display_name || agent.model || t('agent.profile.defaultValue')} />
-                    <InfoRow label={t('agent.profile.field.effort')} value={t(`agent.profile.effort.${agent.effort || 'medium'}`)} />
-                    <div style={{ marginTop: 12 }}>
-                      <div style={{ fontSize: 12, color: token.colorTextSecondary, marginBottom: 6 }}>
-                        {t('agent.profile.field.cliCommand')}
-                      </div>
-                      <Input
-                        defaultValue={agent.cliCommand || ''}
-                        onBlur={handleCliCommandBlur}
-                        placeholder={t('agent.profile.cliCommandPlaceholder')}
-                      />
-                    </div>
-                    <InfoRow label={t('agent.profile.field.temperature')} value={params.temperature ?? t('agent.profile.defaultValue')} />
-                    <InfoRow label={t('agent.profile.field.topP')} value={params.top_p ?? t('agent.profile.defaultValue')} />
-                    <InfoRow label={t('agent.profile.field.maxTokens')} value={params.max_tokens ?? t('agent.profile.defaultValue')} />
-                  </ProfileCard>
-                  <ProfileCard title={t('agent.profile.section.modelCapabilities')} description={t('agent.profile.section.modelCapabilitiesDesc')}>
-                    <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
-                      <CapabilityBadge
-                        icon={<Wrench size={13} />}
-                        label={t('agent.profile.capability.tools')}
-                        enabled={!!selectedModel?.function_call}
-                      />
-                      <CapabilityBadge
-                        icon={<Eye size={13} />}
-                        label={t('agent.profile.capability.vision')}
-                        enabled={!!selectedModel?.vision}
-                      />
-                      <CapabilityBadge
-                        icon={<Sparkles size={13} />}
-                        label={t('agent.profile.capability.reasoning')}
-                        enabled={!!selectedModel?.reasoning}
-                      />
-                      <CapabilityBadge
-                        icon={<Zap size={13} />}
-                        label={t('agent.profile.capability.streaming')}
-                        enabled={selectedModel?.enabled !== false && (selectedModel?.type || 'chat') === 'chat'}
-                      />
-                      <CapabilityBadge
-                        icon={<Activity size={13} />}
-                        label={t('agent.profile.capability.context', { size: modelContextWindow || t('agent.profile.unknown') })}
-                        enabled={!!modelContextWindow}
-                      />
-                    </Flexbox>
-                    <InfoRow label={t('agent.profile.field.provider')} value={selectedModel?.provider_name || selectedModel?.provider_id || agent.provider || t('agent.profile.defaultValue')} />
-                    <InfoRow label={t('agent.profile.field.modelType')} value={selectedModel?.type || t('agent.profile.defaultValue')} />
-                  </ProfileCard>
-                  <ProfileCard title={t('agent.profile.section.runtimeCompatibility')} description={t('agent.profile.section.runtimeCompatibilityDesc')}>
-                    <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
-                      {runtimeCapabilities.map((capability) => (
-                        <RuntimeCapabilityBadge
-                          key={capability.key}
-                          label={capability.label}
-                          state={capability.state}
-                          detail={capability.detail}
-                        />
-                      ))}
-                    </Flexbox>
-                    <InfoRow
-                      label={t('agent.profile.field.protocol')}
-                      value={selectedModel?.protocol_override || selectedModel?.provider_id || t('agent.profile.defaultValue')}
-                    />
-                  </ProfileCard>
-                </Flexbox>
-              )}
 
-              {activeTab === 'runtime' && (
+              {activeTab === 'workspace' && (
                 <div
                   style={{
                     overflow: 'auto',
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
                     gap: 12,
                     alignContent: 'start',
                   }}
                 >
-                  <ProfileCard title={t('agent.profile.section.visibility')} description={t('agent.profile.section.visibilityDesc')}>
-                    <div style={{ marginBottom: 8 }}>
-                      <div style={{ fontSize: 12, color: token.colorTextSecondary, marginBottom: 6 }}>
-                        {t('agent.profile.field.visibility')}
-                      </div>
-                      <Select
-                        value={agent.visibility || 'private'}
-                        onChange={handleVisibilityChange}
-                        style={{ minWidth: 220 }}
-                        options={[
-                          { value: 'private', label: t('agent.profile.visibility.private') },
-                          { value: 'workspace', label: t('agent.profile.visibility.workspace') },
-                        ]}
-                      />
-                    </div>
-                  </ProfileCard>
                   <ProfileCard title={t('agent.profile.section.agentWorkspace')} description={t('agent.profile.section.agentWorkspaceDesc')}>
-                    <div style={{ marginBottom: 8 }}>
+                    <InfoRow label={t('agent.profile.field.workspaceRoot')} value={workspaceRoot || t('agent.profile.workspaceNotSet')} />
+                    <div style={{ marginTop: 10 }}>
                       <div style={{ fontSize: 12, color: token.colorTextSecondary, marginBottom: 6 }}>
                         {t('agent.profile.field.workspaceMode')}
                       </div>
                       <Select
                         value={agent.workspaceMode || 'agent'}
                         onChange={handleWorkspaceModeChange}
-                        style={{ minWidth: 240 }}
+                        style={{ minWidth: 180 }}
                         options={[
                           { value: 'agent', label: t('agent.profile.workspaceMode.agent') },
                           { value: 'task', label: t('agent.profile.workspaceMode.task') },
                         ]}
                       />
                     </div>
-                    <div style={{ marginBottom: 12 }}>
+                    <div style={{ marginTop: 12 }}>
                       <div style={{ fontSize: 12, color: token.colorTextSecondary, marginBottom: 6 }}>
                         {t('agent.profile.field.workspaceRetentionDays')}
                       </div>
@@ -3146,264 +2035,145 @@ export function AgentProfilePage({
                         max={90}
                         value={agent.isolationRetentionDays ?? 7}
                         onChange={handleIsolationRetentionDaysChange}
-                        style={{ minWidth: 160 }}
+                        style={{ minWidth: 140 }}
                       />
                     </div>
-                    <Divider style={{ margin: '8px 0' }} />
-                    <div style={{ marginBottom: 8 }}>
-                      <div style={{ fontSize: 12, color: token.colorTextSecondary, marginBottom: 4 }}>
-                        {t('agent.profile.workspace.usage')}
-                      </div>
-                      {workspaceInfoLoading ? (
-                        <div style={{ color: token.colorTextSecondary, fontSize: 13 }}>
-                          {t('agent.profile.workspace.loading')}
-                        </div>
-                      ) : workspaceInfo ? (
-                        <Flexbox gap={4}>
-                          <InfoRow
-                            label={t('agent.profile.workspace.totalSize')}
-                            value={formatBytes(workspaceInfo.total_bytes)}
-                          />
-                          <InfoRow
-                            label={t('agent.profile.workspace.taskCount')}
-                            value={String(workspaceInfo.task_count)}
-                          />
-                          <InfoRow
-                            label={t('agent.profile.workspace.path')}
-                            value={workspaceInfo.workspace_root}
-                          />
-                        </Flexbox>
-                      ) : (
-                        <div style={{ color: token.colorTextSecondary, fontSize: 13 }}>
-                          {t('agent.profile.workspace.notAvailable')}
-                        </div>
-                      )}
-                    </div>
-                    <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap', marginTop: 8 }}>
-                      <Button
-                        size="small"
-                        loading={workspaceCleaning === 'tasks'}
-                        onClick={() => handleCleanWorkspace('tasks')}
-                      >
-                        {t('agent.profile.workspace.cleanTasks')}
-                      </Button>
-                      <Button
-                        size="small"
-                        loading={workspaceCleaning === 'artifacts'}
-                        onClick={() => handleCleanWorkspace('artifacts')}
-                      >
-                        {t('agent.profile.workspace.cleanArtifacts')}
-                      </Button>
-                      <Button
-                        size="small"
-                        loading={workspaceCleaning === 'logs'}
-                        onClick={() => handleCleanWorkspace('logs')}
-                      >
-                        {t('agent.profile.workspace.cleanLogs')}
-                      </Button>
-                      <Button
-                        size="small"
-                        type="primary"
-                        danger
-                        loading={workspaceCleaning === 'all_workspace'}
-                        onClick={() => handleCleanWorkspace('all_workspace')}
-                      >
-                        {t('agent.profile.workspace.cleanAll')}
-                      </Button>
-                    </Flexbox>
                   </ProfileCard>
                   <ProfileCard title={t('agent.profile.section.accessBoundary')} description={t('agent.profile.section.accessBoundaryDesc')}>
                     <InfoRow label={t('agent.profile.field.agentWorkspace')} value={t('agent.profile.accessBoundary.agentWorkspaceAllowed')} />
-                    <div style={{ marginTop: 8 }}>
+                    <div style={{ marginTop: 10 }}>
                       <div style={{ fontSize: 12, color: token.colorTextSecondary, marginBottom: 6 }}>
                         {t('agent.profile.field.allowedRoots')}
                       </div>
                       <Input.TextArea
-                        defaultValue={parseAllowedRootsForDisplay(agent.allowedRoots)}
+                        value={allowedRootsText}
+                        onChange={(event) => setAllowedRootsText(event.target.value)}
                         onBlur={handleAllowedRootsBlur}
                         placeholder={t('agent.profile.allowedRootsPlaceholder')}
-                        autoSize={{ minRows: 3, maxRows: 6 }}
+                        autoSize={{ minRows: 2, maxRows: 4 }}
                       />
                     </div>
-                  </ProfileCard>
-                  <ProfileCard title={t('agent.profile.section.executionEnvironment')} description={t('agent.profile.section.executionEnvironmentDesc')}>
-                    <div style={{ marginBottom: 8 }}>
-                      <div style={{ fontSize: 12, color: token.colorTextSecondary, marginBottom: 6 }}>
-                        {t('agent.profile.field.runtimeBackend')}
-                      </div>
-                      <Select
-                        value={agent.runtimeBackend || 'host'}
-                        onChange={handleRuntimeBackendChange}
-                        style={{ minWidth: 240 }}
-                        options={[
-                          { value: 'host', label: t('agent.profile.runtimeBackend.host') },
-                          { value: 'proot', label: t('agent.profile.runtimeBackend.proot') },
-                        ]}
-                      />
-                    </div>
-                    {agent.runtimeBackend === 'proot' && (
-                      <div style={{ marginBottom: 8 }}>
-                        <div style={{ fontSize: 12, color: token.colorTextSecondary, marginBottom: 6 }}>
-                          {t('agent.profile.field.rootfsPath')}
-                        </div>
-                        <Input
-                          defaultValue={agent.rootfsPath || ''}
-                          onBlur={handleRootfsPathBlur}
-                          placeholder={t('agent.profile.rootfsPathPlaceholder')}
-                        />
-                      </div>
-                    )}
-                    <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap' }}>
-                      <Tag color="blue">{t('agent.profile.workspaceBadge.lightweight')}</Tag>
-                      <Tag color="green">{t('agent.profile.workspaceBadge.pathGuard')}</Tag>
-                      {agent.runtimeBackend === 'proot' ? (
-                        <Tag color="purple">{t('agent.profile.workspaceBadge.proot')}</Tag>
-                      ) : (
-                        <Tag color="gold">{t('agent.profile.workspaceBadge.trustedHost')}</Tag>
-                      )}
-                    </Flexbox>
-                  </ProfileCard>
-                  <ProfileCard title={t('agent.profile.section.runtime')} description={t('agent.profile.section.runtimeDesc')}>
-                    <InfoRow label={t('agent.profile.field.streaming')} value={chatConfig.enableStreaming === false ? t('agent.profile.disabled') : t('agent.profile.enabled')} />
-                    <InfoRow label={t('agent.profile.field.historyCount')} value={chatConfig.enableHistoryCount ? chatConfig.historyCount ?? t('agent.profile.defaultValue') : t('agent.profile.disabled')} />
-                    <InfoRow label={t('agent.profile.field.contextCompression')} value={chatConfig.enableContextCompression ? t('agent.profile.enabled') : t('agent.profile.disabled')} />
-                    <InfoRow label={t('agent.profile.field.contextWindow')} value={chatConfig.contextWindowSize ? t('agent.profile.tokens', { count: chatConfig.contextWindowSize }) : t('agent.profile.defaultValue')} />
-                    <InfoRow label={t('agent.profile.field.searchMode')} value={chatConfig.searchMode || t('agent.profile.disabled')} />
-                    <InfoRow label={t('agent.profile.field.memoryPolicy')} value={chatConfig.memory?.enabled ? t('agent.profile.memorySummary', { effort: chatConfig.memory.effort || t('agent.profile.defaultValue') }) : t('agent.profile.disabled')} />
-                    <InfoRow label={t('agent.profile.field.providerFallback')} value={chatConfig.providerFallback?.enabled === false ? t('agent.profile.disabled') : t('agent.profile.providerFallbackSummary', { retries: chatConfig.providerFallback?.maxRetries ?? 3 })} />
-                    <InfoRow label={t('agent.profile.field.toolPolicy')} value={agent.toolsProfile || t('agent.profile.defaultValue')} />
-                  </ProfileCard>
-                  <ProfileCard title={t('agent.profile.section.workspace')} description={t('agent.profile.section.workspaceDesc')}>
-                    <InfoRow label={t('agent.profile.field.workspaceRoot')} value={workspaceRoot || t('agent.profile.workspaceNotSet')} />
-                    <InfoRow label={t('agent.profile.field.workspacePolicy')} value={workspaceRoot ? t('agent.profile.workspacePolicy.workspaceOnly') : t('agent.profile.disabled')} />
                   </ProfileCard>
                 </div>
               )}
 
               {activeTab === 'capabilities' && (
-                <div style={{ overflow: 'auto', display: 'grid', gap: 12 }}>
-                  <ProfileCard title={t('agent.profile.section.capabilities')} description={t('agent.profile.section.capabilitiesDesc')} action={<Button size="small" onClick={() => setSettingsOpen(true)}>{t('agent.profile.editSettings')}</Button>}>
-                    <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
-                      <Tag color={boundTools.length > 0 ? 'green' : 'default'}>{t('agent.profile.capabilities.toolsCount', { count: boundTools.length })}</Tag>
-                      <Tag color={mcpServers.length > 0 ? 'blue' : 'default'}>{t('agent.profile.capabilities.mcpCount', { count: mcpServers.length })}</Tag>
-                      <Tag color={boundSkills.length > 0 ? 'purple' : 'default'}>{t('agent.profile.capabilities.skillsCount', { count: boundSkills.length })}</Tag>
+                <div
+                  style={{
+                    overflow: 'auto',
+                    display: 'grid',
+                    gridTemplateRows: '1fr 1fr',
+                    gap: 12,
+                    minHeight: 0,
+                  }}
+                >
+                  <ProfileCard
+                    title={t('agent.profile.section.skillPackages')}
+                    description={t('agent.profile.section.skillPackagesDesc')}
+                  >
+                    <Flexbox gap={8} style={{ minHeight: 0 }}>
+                      <Select
+                        mode="multiple"
+                        value={boundSkills}
+                        onChange={handleBoundSkillsChange}
+                        options={skillOptions}
+                        placeholder={t('agent.profile.skills.bindPlaceholder')}
+                        optionFilterProp="label"
+                        style={{ width: '100%' }}
+                      />
+                      {boundSkillLabels.length === 0 ? (
+                        <Empty description={t('agent.profile.empty')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                      ) : (
+                        <Flexbox gap={6} style={{ overflow: 'auto', paddingRight: 2 }}>
+                          {boundSkillLabels.map((skill) => (
+                            <Flexbox
+                              key={skill}
+                              horizontal
+                              align="center"
+                              gap={10}
+                              style={{
+                                minHeight: 40,
+                                padding: '7px 10px',
+                                borderRadius: 12,
+                                border: `1px solid ${token.colorBorderSecondary}`,
+                                background: token.colorBgContainer,
+                              }}
+                            >
+                              <span style={{ width: 26, height: 26, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: token.colorPrimaryBg, color: token.colorPrimary, fontWeight: 800 }}>#</span>
+                              <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{skill}</span>
+                              <Tag style={{ margin: 0 }}>{t('agent.profile.enabled')}</Tag>
+                            </Flexbox>
+                          ))}
+                        </Flexbox>
+                      )}
                     </Flexbox>
                   </ProfileCard>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12 }}>
-                    <ProfileCard
-                      title={t('agent.profile.section.skills')}
-                      description={t('agent.profile.section.skillsDesc')}
-                      action={
-                        <Flexbox horizontal gap={6}>
-                          <Button size="small" onClick={onNavigateSkills}>
-                            {t('agent.profile.skills.manage')}
-                          </Button>
-                          <Button size="small" onClick={onNavigateApplets}>
-                            {t('agent.profile.skills.manageApplets')}
-                          </Button>
+
+                  <ProfileCard
+                    title={t('agent.profile.section.toolsAndMcp')}
+                    description={t('agent.profile.section.toolsAndMcpDesc')}
+                    action={(
+                      <Button
+                        size="small"
+                        icon={<Settings2 size={14} />}
+                        onClick={() => setSettingsOpen(true)}
+                        title={t('agent.profile.editSettings')}
+                        aria-label={t('agent.profile.editSettings')}
+                        style={{ width: 32, height: 32, padding: 0 }}
+                      />
+                    )}
+                  >
+                    <Flexbox gap={6} style={{ minHeight: 0, overflow: 'auto' }}>
+                      {boundTools.length === 0 && mcpServers.length === 0 ? (
+                        <Empty description={t('agent.profile.mcpEmpty')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                      ) : null}
+                      {boundTools.map((tool) => (
+                        <Flexbox
+                          key={`tool-${tool}`}
+                          horizontal
+                          align="center"
+                          gap={10}
+                          style={{
+                            minHeight: 38,
+                            padding: '7px 10px',
+                            borderRadius: 12,
+                            border: `1px solid ${token.colorBorderSecondary}`,
+                            background: token.colorBgContainer,
+                          }}
+                        >
+                          <Wrench size={15} color={token.colorTextTertiary} />
+                          <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tool}</span>
+                          <Tag style={{ margin: 0 }}>{t('agent.profile.tag.tool')}</Tag>
                         </Flexbox>
-                      }
-                    >
-                      <Flexbox gap={10}>
-                        <Select
-                          mode="multiple"
-                          value={boundSkills}
-                          onChange={handleBoundSkillsChange}
-                          options={skillOptions}
-                          placeholder={t('agent.profile.skills.bindPlaceholder')}
-                          optionFilterProp="label"
-                          style={{ width: '100%' }}
-                        />
-                        <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
-                          <Input
-                            value={skillImportAddress}
-                            onChange={(event) => setSkillImportAddress(event.target.value)}
-                            onPressEnter={handleImportSkillToAgent}
-                            placeholder={t('agent.profile.skills.inlineImportPlaceholder')}
-                            style={{ minWidth: 220, flex: 1 }}
-                          />
-                          <Button
-                            icon={<Download size={13} />}
-                            loading={skillImporting}
-                            onClick={handleImportSkillToAgent}
-                          >
-                            {t('agent.profile.skills.import')}
-                          </Button>
+                      ))}
+                      {mcpServers.map((server) => (
+                        <Flexbox
+                          key={`mcp-${server}`}
+                          horizontal
+                          align="center"
+                          gap={10}
+                          style={{
+                            minHeight: 38,
+                            padding: '7px 10px',
+                            borderRadius: 12,
+                            border: `1px solid ${token.colorBorderSecondary}`,
+                            background: token.colorBgContainer,
+                          }}
+                        >
+                          <Cpu size={15} color={token.colorTextTertiary} />
+                          <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{server}</span>
+                          <Tag style={{ margin: 0 }}>{t('agent.profile.tag.mcp')}</Tag>
                         </Flexbox>
-                        <InfoRow
-                          label={t('agent.profile.field.boundSkills')}
-                          value={<PillList values={boundSkillLabels} emptyText={t('agent.profile.empty')} />}
-                        />
-                      </Flexbox>
-                    </ProfileCard>
-                    <ProfileCard title={t('agent.profile.section.tools')} description={t('agent.profile.section.toolsDesc')} action={<Button size="small" onClick={() => setSettingsOpen(true)}>{t('agent.profile.editSettings')}</Button>}>
-                      <Flexbox gap={10}>
-                        <InfoRow label={t('agent.profile.field.toolsProfile')} value={agent.toolsProfile || t('agent.profile.defaultValue')} />
-                        <InfoRow label={t('agent.profile.field.allowedTools')} value={<PillList values={boundTools} emptyText={t('agent.profile.empty')} />} />
-                        <InfoRow label={t('agent.profile.field.toolsAllow')} value={agent.toolsAllow || t('agent.profile.empty')} />
-                        <InfoRow label={t('agent.profile.field.toolsDeny')} value={agent.toolsDeny || t('agent.profile.empty')} />
-                        <Divider style={{ margin: '2px 0' }} />
-                        <InfoRow label={t('agent.profile.section.mcp')} value={<PillList values={mcpServers} emptyText={t('agent.profile.mcpEmpty')} />} />
-                      </Flexbox>
-                    </ProfileCard>
-                  </div>
+                      ))}
+                    </Flexbox>
+                  </ProfileCard>
                 </div>
               )}
 
-              {activeTab === 'memory' && <MemoryTab agentName={agent.name} agentId={agent.id} />}
+              {activeTab === 'memories' && <MemoryTab agentName={agent.name} agentId={agent.id} />}
 
-              {activeTab === 'knowledge' && (
-                <Flexbox gap={12} style={{ overflow: 'auto' }}>
-                  <ProfileCard title={t('agent.profile.section.knowledge')} description={t('agent.profile.section.knowledgeDesc')}>
-                    <InfoRow label={t('agent.profile.field.workspaceRoot')} value={workspaceRoot || t('agent.profile.workspaceNotSet')} />
-                    <InfoRow label={t('agent.profile.field.memoryEnabled')} value={chatConfig.memory?.enabled ? t('agent.profile.enabled') : t('agent.profile.disabled')} />
-                    <InfoRow label={t('agent.profile.field.knowledgeResources')} value={t('agent.profile.knowledge.count', { count: knowledgeResources.length })} />
-                  </ProfileCard>
-                  <ProfileCard title={t('agent.profile.knowledge.bindTitle')} description={t('agent.profile.knowledge.bindDesc')}>
-                    <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
-                      <Select<AgentKnowledgeResourceType>
-                        value={knowledgeType}
-                        onChange={setKnowledgeType}
-                        style={{ minWidth: 140 }}
-                        options={KNOWLEDGE_RESOURCE_TYPES.map((type) => ({
-                          value: type,
-                          label: t(`agent.profile.knowledge.type.${type}`),
-                        }))}
-                      />
-                      <Select<AgentKnowledgeResourcePolicy>
-                        value={knowledgePolicy}
-                        onChange={setKnowledgePolicy}
-                        style={{ minWidth: 140 }}
-                        options={KNOWLEDGE_RESOURCE_POLICIES.map((policy) => ({
-                          value: policy,
-                          label: t(`agent.profile.knowledge.policy.${policy}`),
-                        }))}
-                      />
-                    </Flexbox>
-                    <Input
-                      value={knowledgeTitle}
-                      onChange={(event) => setKnowledgeTitle(event.target.value)}
-                      placeholder={t('agent.profile.knowledge.titlePlaceholder')}
-                    />
-                    <Input
-                      value={knowledgeSource}
-                      onChange={(event) => setKnowledgeSource(event.target.value)}
-                      placeholder={t('agent.profile.knowledge.sourcePlaceholder')}
-                      onPressEnter={handleAddKnowledgeResource}
-                    />
-                    <Flexbox horizontal justify="flex-end">
-                      <Button icon={<Plus size={13} />} onClick={handleAddKnowledgeResource}>
-                        {t('agent.profile.knowledge.add')}
-                      </Button>
-                    </Flexbox>
-                  </ProfileCard>
-                  <ProfileCard title={t('agent.profile.knowledge.boundTitle')} description={t('agent.profile.knowledge.boundDesc')}>
-                    <KnowledgeResourceList resources={knowledgeResources} onRemove={handleRemoveKnowledgeResource} />
-                  </ProfileCard>
-                </Flexbox>
-              )}
 
-              {activeTab === 'activity' && (
+              {activeTab === 'tasks' && (
                 <AgentActivityPanel
                   tasks={activityProjection.tasks}
                   events={activityProjection.events}
@@ -3415,53 +2185,32 @@ export function AgentProfilePage({
                 />
               )}
 
-              {activeTab === 'collaboration' && (
-                <Flexbox gap={12} style={{ overflow: 'auto' }}>
-                  <ProfileCard title={t('agent.profile.sharing.title')} description={t('agent.profile.sharing.desc')}>
-                    <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
-                      <Button
-                        icon={<ShieldCheck size={13} />}
-                        loading={exportingAgentPackage}
-                        onClick={() => handleExportAgentPackage(false)}
+
+              {activeTab === 'events' && (
+                <Flexbox gap={8} style={{ overflow: 'auto' }}>
+                  {activityProjection.events.length === 0 ? (
+                    <Empty description={t('agent.profile.activity.noEvents')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                  ) : (
+                    activityProjection.events.map((event) => (
+                      <div
+                        key={event.id}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 12,
+                          border: `1px solid ${token.colorBorderSecondary}`,
+                          background: token.colorBgContainer,
+                        }}
                       >
-                        {t('agent.profile.sharing.exportShareSafe')}
-                      </Button>
-                      <Button
-                        icon={<Download size={13} />}
-                        loading={exportingAgentPackage}
-                        onClick={() => handleExportAgentPackage(true)}
-                      >
-                        {t('agent.profile.sharing.exportWithLocalPaths')}
-                      </Button>
-                    </Flexbox>
-                    <InfoRow label={t('agent.profile.sharing.policy')} value={t('agent.profile.sharing.policyDesc')} />
-                  </ProfileCard>
-                  <ProfileCard title={t('agent.profile.section.opening')} description={t('agent.profile.section.openingDesc')}>
-                    <InfoRow label={t('agent.profile.field.openingMessage')} value={agent.openingMessage || t('agent.profile.empty')} />
-                    <InfoRow label={t('agent.profile.field.openingQuestions')} value={<PillList values={openingQuestions} emptyText={t('agent.profile.empty')} />} />
-                  </ProfileCard>
-                  <CronTab agentName={agent.name} onNavigateCron={onNavigateCron} />
+                        <Flexbox horizontal align="center" justify="space-between" gap={10}>
+                          <span style={{ fontSize: 13, color: token.colorText }}>{event.detail}</span>
+                          <Tag style={{ margin: 0 }}>{event.kind}</Tag>
+                        </Flexbox>
+                      </div>
+                    ))
+                  )}
                 </Flexbox>
               )}
 
-              {activeTab === 'diagnostics' && (
-                <Flexbox gap={12} style={{ overflow: 'auto' }}>
-                  <ProfileCard title={t('agent.profile.section.diagnostics')} description={t('agent.profile.section.diagnosticsDesc')}>
-                    <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
-                      <Button
-                        icon={<Download size={13} />}
-                        onClick={handleExportTurnDiagnostics}
-                      >
-                        {t('agent.profile.diagnostics.exportTurnTrace')}
-                      </Button>
-                    </Flexbox>
-                    <InfoRow label={t('agent.profile.field.agentId')} value={agent.id} />
-                    <InfoRow label={t('agent.profile.field.createdAt')} value={agent.createdAt || t('agent.profile.empty')} />
-                    <InfoRow label={t('agent.profile.field.updatedAt')} value={agent.updatedAt || t('agent.profile.empty')} />
-                    <InfoRow label={t('agent.profile.field.bindings')} value={t('agent.profile.bindingSummary', { tools: boundTools.length, skills: boundSkills.length, mcp: mcpServers.length, knowledge: knowledgeResources.length })} />
-                  </ProfileCard>
-                </Flexbox>
-              )}
             </div>
           </div>
         </div>
@@ -3473,20 +2222,23 @@ export function AgentProfilePage({
         scope="agent_builder"
         welcomeTitle={t('agent.builder.title')}
         welcomeDescription={t('agent.builder.description')}
-        welcomeAvatar="🏗️"
         suggestQuestions={[
+          t('agent.builder.suggest.optimizeDescription'),
           t('agent.builder.suggest.customerSupport'),
           t('agent.builder.suggest.codeReview'),
           t('agent.builder.suggest.researchAnalyst'),
         ]}
         contextSummary={builderContextSummary}
-        onContextItemClick={(targetTab) => setActiveTab(targetTab as ProfileTab)}
+        onContextItemClick={(targetTab) => {
+          const nextTab = targetTab as ProfileTab;
+          if ([...TAB_KEYS, ...ACTIVITY_TAB_KEYS].some((tab) => tab.key === nextTab)) setActiveTab(nextTab);
+        }}
         contextPayload={builderContextPayload}
         expand={showBuilder}
         onExpandChange={setShowBuilder}
-        defaultWidth={400}
+        defaultWidth={320}
         minWidth={320}
-        maxWidth={560}
+        maxWidth={480}
       />
 
       {/* Advanced Settings Modal */}

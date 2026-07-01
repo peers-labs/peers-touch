@@ -12,6 +12,7 @@ use std::io::Read as _;
 use std::sync::Arc;
 
 use serde_json::{json, Value};
+use tauri::AppHandle;
 
 use crate::contracts::*;
 use crate::error::{AppResult, ErrorCode};
@@ -26,12 +27,14 @@ use crate::application::admin as app_admin;
 use crate::application::agent_orchestration as app_agent_orchestration;
 use crate::application::agent_turn as app_agent_turn;
 use crate::application::agents as app_agents;
+use crate::application::applet_store as app_applet_store;
 use crate::application::applets as app_applets;
 use crate::application::auth::service as app_auth;
 use crate::application::channels as app_channels;
 use crate::application::chat as app_chat;
 use crate::application::chat_storage;
 use crate::application::cron as app_cron;
+use crate::application::federation as app_federation;
 use crate::application::key_exchange::{device_install, wire};
 use crate::application::mcp as app_mcp;
 use crate::application::memory as app_memory;
@@ -77,7 +80,7 @@ fn resolve_bind_addr() -> String {
 /// The server listens on the port specified by PT_GATEWAY_PORT env var
 /// (default 3030) and dispatches incoming POST requests to the same
 /// application-layer functions used by tauri_commands.
-pub fn start(state: Arc<AppState>) {
+pub fn start(state: Arc<AppState>, app_handle: AppHandle) {
     std::thread::Builder::new()
         .name("http-gateway".into())
         .spawn(move || {
@@ -106,8 +109,9 @@ pub fn start(state: Arc<AppState>) {
                 };
 
                 let state = Arc::clone(&state);
+                let app_handle = app_handle.clone();
                 pool.execute(move || {
-                    handle_request(request, &state);
+                    handle_request(request, &state, &app_handle);
                 });
             }
         })
@@ -118,7 +122,7 @@ pub fn start(state: Arc<AppState>) {
 // Request handling
 // -------------------------------------------------------------------------
 
-fn handle_request(mut request: tiny_http::Request, state: &AppState) {
+fn handle_request(mut request: tiny_http::Request, state: &AppState, app_handle: &AppHandle) {
     // CORS preflight
     if *request.method() == tiny_http::Method::Options {
         let response = tiny_http::Response::empty(200)
@@ -209,7 +213,7 @@ fn handle_request(mut request: tiny_http::Request, state: &AppState) {
         None => raw_args,
     };
 
-    let result = dispatch(cmd, args, state);
+    let result = dispatch(cmd, args, state, app_handle);
 
     let response_body = result.to_string();
     let response = tiny_http::Response::from_string(response_body)
@@ -573,6 +577,17 @@ fn http_gateway_applet_context(state: &AppState) -> Option<crate::domain::applet
     })
 }
 
+/// Resolve the application data directory for applet-store cache/materialize
+/// operations, falling back to the current directory when unconfigured.
+fn http_gateway_data_dir(state: &AppState) -> std::path::PathBuf {
+    state
+        .storage
+        .dirs
+        .get(&crate::infrastructure::storage::StorageKind::Data)
+        .cloned()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+}
+
 // -------------------------------------------------------------------------
 // Station HTTP helpers — delegates to station_client infrastructure
 // -------------------------------------------------------------------------
@@ -658,7 +673,7 @@ fn filter_incremental_messages(
 ///
 /// This function mirrors the full invoke_handler list from main.rs,
 /// calling the same application-layer functions that tauri_commands use.
-fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
+fn dispatch(cmd: &str, args: Value, state: &AppState, app_handle: &AppHandle) -> Value {
     match cmd {
         // =================================================================
         // Meta
@@ -1351,6 +1366,24 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             };
             to_json(app_auth::auth_login(input, state))
         }
+        // Interactive access-gate login chain (Email Login path). These mirror
+        // the one-shot `auth_login` but drive the Station's pre-login gate
+        // chain (invite-code, etc.) before landing a session.
+        "access_start" => to_json(app_auth::access_start()),
+        "access_submit_invite_code" => {
+            let input = match parse_args::<AccessSubmitInviteInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_auth::access_submit_invite_code(input))
+        }
+        "access_submit_login" => {
+            let input = match parse_args::<AccessSubmitLoginInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_auth::access_submit_login(input, state))
+        }
         "auth_logout" => to_json(app_auth::auth_logout(state)),
         "auth_restore_session" => to_json(app_auth::auth_restore_session(state)),
         "auth_validate_token" => {
@@ -1924,6 +1957,80 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
             };
             to_json(app_agents::agents_list_sessions("", input))
         }
+        "agent_execute_turn" => {
+            let input = match parse_args::<AgentExecuteTurnInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_execute_turn(input, &token))
+        }
+        "agent_execute_turn_stream" => {
+            let input = match parse_args::<AgentExecuteTurnInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let stream_id = input
+                .stream_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("agent-turn-{}", Ulid::new()));
+            let cancel_flag = app_agent_turn::register_agent_turn_stream(&stream_id);
+            let stream_id_for_task = stream_id.clone();
+            let app_for_task = app_handle.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                app_agent_turn::agent_execute_turn_stream(
+                    app_for_task,
+                    stream_id_for_task.clone(),
+                    input,
+                    token,
+                    cancel_flag,
+                );
+                app_agent_turn::unregister_agent_turn_stream(&stream_id_for_task);
+            });
+            to_json(AppResult::success(StubPayload {
+                command: "agent_execute_turn_stream".to_string(),
+                status: json!({ "stream_id": stream_id }).to_string(),
+            }))
+        }
+        "agent_cancel_turn_stream" => {
+            let input = match parse_args::<AgentTurnStreamCancelInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_agent_turn::cancel_agent_turn_stream(&input.stream_id))
+        }
+        "agent_turn_trace_list" => {
+            let input = match parse_args::<AgentTurnTraceListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_turn_trace_list(input, &token))
+        }
+        "agent_turn_trace_get" => {
+            let input = match parse_args::<AgentTurnTraceGetInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_turn_trace_get(input, &token))
+        }
         "agent_resolve_local_tool_request" => {
             let input = match parse_args::<AgentLocalToolRequestInput>(args) {
                 Ok(v) => v,
@@ -1941,7 +2048,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_agent_orchestration::agent_collaboration_create(
-                input, &token,
+                input, &token, "",
             ))
         }
         "agent_collaboration_get" => {
@@ -1967,6 +2074,19 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_agent_orchestration::agent_collaboration_list(
+                input, &token,
+            ))
+        }
+        "agent_collaboration_list_events" => {
+            let input = match parse_args::<AgentCollaborationListEventsInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_orchestration::agent_collaboration_list_events(
                 input, &token,
             ))
         }
@@ -2570,6 +2690,128 @@ fn dispatch(cmd: &str, args: Value, state: &AppState) -> Value {
                         .unwrap_or_else(|| std::path::PathBuf::from("."));
                     to_json(app_applets::applets_invoke(ctx, input, &data_dir))
                 }
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+
+        // =================================================================
+        // Federation (public readiness probe)
+        // =================================================================
+        "federation_health" => match app_federation::health() {
+            Ok(view) => to_json(AppResult::success(app_federation::encode_health(&view))),
+            Err(e) => to_json(e.into_app_result::<Vec<u8>>("federation_health failed")),
+        },
+
+        // =================================================================
+        // Applet store (catalog/install — state-dependent)
+        // =================================================================
+        "applets_store_list_catalog" => {
+            let input = match parse_args::<AppletStoreListCatalogInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_applet_context(state) {
+                Some(ctx) => {
+                    let data_dir = http_gateway_data_dir(state);
+                    to_json(app_applet_store::list_catalog(ctx, input, &data_dir))
+                }
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "applets_store_list_installed" => {
+            let input = match parse_args::<AppletStoreListInstalledInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_applet_context(state) {
+                Some(ctx) => {
+                    let data_dir = http_gateway_data_dir(state);
+                    to_json(app_applet_store::list_installed(ctx, input, &data_dir))
+                }
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "applets_store_install" => {
+            let input = match parse_args::<AppletStoreInstallInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_applet_context(state) {
+                Some(ctx) => to_json(app_applet_store::install(ctx, input)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "applets_store_uninstall" => {
+            let input = match parse_args::<AppletStoreUninstallInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_applet_context(state) {
+                Some(ctx) => to_json(app_applet_store::uninstall(ctx, input)),
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "applets_store_get_version" => {
+            let input = match parse_args::<AppletStoreGetVersionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_applet_context(state) {
+                Some(ctx) => {
+                    let data_dir = http_gateway_data_dir(state);
+                    to_json(app_applet_store::get_version(ctx, input, &data_dir))
+                }
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "applets_store_materialize_bundle" => {
+            let input = match parse_args::<AppletStoreMaterializeBundleInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_applet_context(state) {
+                Some(ctx) => {
+                    let data_dir = http_gateway_data_dir(state);
+                    to_json(app_applet_store::materialize_bundle(ctx, input, &data_dir))
+                }
+                None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "applets_store_upload_audit" => {
+            let input = match parse_args::<AppletStoreUploadAuditInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match http_gateway_applet_context(state) {
+                Some(ctx) => to_json(app_applet_store::upload_audit(ctx, input.device_id)),
                 None => to_json(AppResult::<StubPayload>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",

@@ -8,6 +8,7 @@ import { useChatStore } from '../store/chat';
 import { useAgentStore } from '../store/agent';
 import type { Agent, Session } from '../services/desktop_api';
 import { api } from '../services/desktop_api';
+import { AgentIconTile } from './agent/AgentIconTile';
 
 interface AgentListProps {
   onCreateAgent: () => void;
@@ -218,24 +219,7 @@ function AgentItem({
           transition: 'background 0.2s',
         }}
       >
-        {/* Avatar */}
-        <div
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: 10,
-            background: isSelected
-              ? 'linear-gradient(135deg, #667eea, #764ba2)'
-              : token.colorFillSecondary,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 18,
-            flexShrink: 0,
-          }}
-        >
-          {agent.avatar || '🤖'}
-        </div>
+        <AgentIconTile agent={agent} size={36} selected={isSelected} />
 
         {/* Name + Description */}
         <Flexbox flex={1} style={{ minWidth: 0 }}>

@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Cloud,
   Image as ImageIcon,
+  ImagePlus,
   MoreHorizontal,
   Network,
   PanelLeftClose,
@@ -14,17 +15,18 @@ import {
   Send,
   Settings2,
   Share2,
+  Slash,
   Sparkles,
   UserRound,
-  Mic,
   Workflow,
+  type LucideIcon,
 } from 'lucide-react';
 import { T } from './theme';
 
 interface AgentSummary {
   id: string;
   name: string;
-  glyph: string;
+  icon: LucideIcon;
   desc: string;
   pinned?: boolean;
   active?: boolean;
@@ -40,7 +42,7 @@ const AGENTS: AgentSummary[] = [
   {
     id: 'devops',
     name: 'DevOps Agent',
-    glyph: '🛡️',
+    icon: Network,
     desc: 'GDPA 智能助手，支持服务治理、监控查询、代码分析、环境管理等研发全流程。',
     pinned: true,
     active: true,
@@ -48,37 +50,37 @@ const AGENTS: AgentSummary[] = [
   {
     id: 'automation',
     name: 'AI UI Automation',
-    glyph: 'A',
+    icon: Sparkles,
     desc: 'AI UI automation agent for the workspace.',
   },
   {
     id: 'terminal',
     name: 'Terminal',
-    glyph: '▰',
+    icon: Settings2,
     desc: 'Terminal 终端助手，帮助你在本地执行命令。',
   },
   {
     id: 'mcp',
     name: 'MCP-Tester',
-    glyph: 'M',
+    icon: Cloud,
     desc: '测试 MCP Server 是否可用。',
   },
   {
     id: 'oncall',
     name: 'Oncall Master',
-    glyph: '🛡️',
+    icon: Network,
     desc: 'Oncall 知识管理与智能助手。',
   },
   {
     id: 'ui-test',
     name: 'UI test',
-    glyph: 'U',
+    icon: UserRound,
     desc: 'UI test agent for mobile and Tiktok LIVE.',
   },
   {
     id: 'codex',
     name: 'UI test codex',
-    glyph: 'U',
+    icon: Bot,
     desc: 'TikTok LIVE mobile UI test engineer.',
   },
 ];
@@ -168,7 +170,7 @@ export function AgentChatPage({
                     setAgentListOpen(true);
                   }}
                 >
-                  <Avatar agent={agent} size={30} />
+                  <AgentIcon agent={agent} size={30} />
                 </button>
               ))}
               <CollapsedRosterGroup />
@@ -185,7 +187,7 @@ export function AgentChatPage({
                     setAgentListOpen(true);
                   }}
                 >
-                  <Avatar agent={agent} size={30} />
+                  <AgentIcon agent={agent} size={30} />
                 </button>
               ))}
             </div>
@@ -202,7 +204,7 @@ export function AgentChatPage({
 
       <aside style={styles.topicList}>
         <div style={styles.agentCard}>
-          <Avatar agent={selectedAgent} size={44} />
+          <AgentIcon agent={selectedAgent} size={44} />
           <div style={{ minWidth: 0 }}>
             <div style={styles.cardName}>{selectedAgent.name}</div>
             <div style={styles.cardDesc}>{selectedAgent.desc}</div>
@@ -245,7 +247,7 @@ export function AgentChatPage({
 
       <main style={styles.chat}>
         <header style={styles.chatHeader}>
-          <Avatar agent={selectedAgent} size={40} />
+          <AgentIcon agent={selectedAgent} size={40} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={styles.chatName}>
               {selectedAgent.name}
@@ -261,7 +263,7 @@ export function AgentChatPage({
 
         <section style={styles.emptyChat}>
           <div style={styles.welcomeCard}>
-            <Avatar agent={selectedAgent} size={48} />
+            <AgentIcon agent={selectedAgent} size={48} />
             <div style={styles.welcomeTitle}>{selectedAgent.name}</div>
             <div style={styles.capabilityBar}>
               <span><CheckCircle2 size={13} /> Tools enabled</span>
@@ -288,14 +290,17 @@ export function AgentChatPage({
           <textarea
             style={styles.composerInput}
             placeholder="Ask anything..."
-            rows={2}
+            rows={1}
           />
           <div style={styles.composerToolbar}>
-            <button style={styles.plainToolButton} title="Slash commands"><SlashCommandIcon /></button>
-            <button style={styles.plainToolButton} title="Add image"><ImageIcon size={16} /></button>
-            <div style={{ flex: 1 }} />
-            <button style={styles.modelButton}>composer-2-fast <ChevronDown size={13} /></button>
-            <button style={styles.plainToolButton} title="Voice input"><Mic size={16} /></button>
+            <button style={styles.circleToolButton} title="Slash command"><Slash size={16} /></button>
+            <button style={styles.circleToolButton} title="Upload File"><ImagePlus size={18} /></button>
+            <div style={styles.composerModelSlot}>
+              <button style={styles.modelButton}>
+                Doubao Pro
+                <ChevronDown size={14} />
+              </button>
+            </div>
             <button style={styles.sendButton} title="Send"><Send size={16} /></button>
           </div>
         </section>
@@ -319,7 +324,7 @@ function CollapsedRosterGroup() {
 function AgentRow({ agent, active, onClick }: { agent: AgentSummary; active: boolean; onClick: () => void }) {
   return (
     <button style={{ ...styles.agentRow, background: active ? '#eef4ff' : 'transparent' }} onClick={onClick}>
-      <Avatar agent={agent} size={30} />
+      <AgentIcon agent={agent} size={30} />
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={styles.rowName}>{agent.name}{agent.pinned ? ' ★' : ''}</span>
         <span style={styles.rowDesc}>{agent.desc}</span>
@@ -329,24 +334,25 @@ function AgentRow({ agent, active, onClick }: { agent: AgentSummary; active: boo
   );
 }
 
-function Avatar({ agent, size }: { agent: AgentSummary; size: number }) {
+function AgentIcon({ agent, size }: { agent: AgentSummary; size: number }) {
+  const Icon = agent.icon;
   return (
     <span
       style={{
         width: size,
         height: size,
         borderRadius: Math.max(8, size / 4),
-        background: agent.id === 'devops' ? 'linear-gradient(135deg, #7058ef, #8d7cff)' : '#b7d8ff',
+        background: agent.active ? T.primaryWash : T.navBg,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         flexShrink: 0,
         fontSize: size > 36 ? 20 : 13,
-        color: '#111',
+        color: agent.active ? T.primary : T.textSecondary,
         overflow: 'hidden',
       }}
     >
-      {agent.glyph}
+      <Icon size={Math.max(14, Math.round(size * 0.48))} />
     </span>
   );
 }
@@ -544,7 +550,7 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 12,
   },
   cardName: {
-    fontSize: 13,
+    fontSize: 24,
     fontWeight: 850,
   },
   cardDesc: {
@@ -704,15 +710,17 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   composer: {
-    width: 'min(790px, calc(100% - 80px))',
-    minHeight: 118,
-    margin: '0 auto 24px',
-    borderRadius: 22,
+    width: 'min(1068px, calc(100% - 160px))',
+    margin: '0 auto 48px',
+    borderRadius: 24,
     background: '#fff',
     border: '1px solid #d9d9d9',
-    boxShadow: '0 14px 48px rgba(0,0,0,0.08)',
-    padding: '16px 18px 14px',
+    boxShadow: '0 8px 32px rgba(15,23,42,0.06)',
+    padding: '12px 14px 10px',
     boxSizing: 'border-box',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
   },
   composerPlaceholder: {
     color: T.textTertiary,
@@ -721,7 +729,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   composerInput: {
     width: '100%',
-    minHeight: 54,
+    minHeight: 28,
+    maxHeight: 200,
     border: 0,
     outline: 'none',
     resize: 'none',
@@ -731,19 +740,25 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'inherit',
     background: 'transparent',
     boxSizing: 'border-box',
+    padding: '2px 4px',
   },
   composerToolbar: {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
   },
-  plainToolButton: {
+  composerModelSlot: {
+    flex: 1,
+    display: 'flex',
+    justifyContent: 'center',
+  },
+  circleToolButton: {
     width: 34,
     height: 34,
     border: 0,
-    borderRadius: 10,
-    background: 'transparent',
-    color: '#1f1f1f',
+    borderRadius: '50%',
+    background: T.fillTertiary,
+    color: T.textSecondary,
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -752,16 +767,17 @@ const styles: Record<string, React.CSSProperties> = {
   modelButton: {
     height: 34,
     border: 0,
-    borderRadius: 10,
-    background: 'transparent',
-    color: T.text,
-    padding: '0 8px',
+    borderRadius: 999,
+    background: T.fillQuaternary,
+    color: T.textSecondary,
+    padding: '0 12px',
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
     fontSize: 13,
-    fontWeight: 650,
+    fontWeight: 600,
     cursor: 'pointer',
+    maxWidth: 260,
   },
   modelSelect: {
     height: 30,
@@ -773,14 +789,16 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
   },
   sendButton: {
-    width: 36,
-    height: 36,
+    width: 34,
+    height: 34,
     border: 0,
-    borderRadius: 13,
-    background: '#ded8ff',
-    color: '#7467d8',
+    borderRadius: '50%',
+    background: T.primary,
+    color: '#fff',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    cursor: 'pointer',
+    flexShrink: 0,
   },
 };

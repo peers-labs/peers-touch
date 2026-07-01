@@ -40,9 +40,6 @@ fn main() {
 
     let app_state = Arc::new(ctx.app_state);
 
-    #[cfg(debug_assertions)]
-    interface::http_gateway::start(Arc::clone(&app_state));
-
     let presence_supervisor = Arc::new(application::presence::PresenceSupervisor::new());
 
     tauri::Builder::default()
@@ -67,6 +64,8 @@ fn main() {
                     panic!("[setup] Failed to resolve resource directory: {e}");
                 });
             let state = app.state::<Arc<state::AppState>>();
+            #[cfg(debug_assertions)]
+            interface::http_gateway::start(Arc::clone(state.inner()), app.handle().clone());
             if let Err(e) = state.i18n.deploy_builtin_packs(&resource_dir) {
                 tracing::error!(error = %e, "Failed to deploy built-in i18n packs");
             }
@@ -224,6 +223,7 @@ fn main() {
             agent_orchestration::agent_collaboration_create,
             agent_orchestration::agent_collaboration_get,
             agent_orchestration::agent_collaboration_list,
+            agent_orchestration::agent_collaboration_list_events,
             agent_orchestration::agent_collaboration_subscribe,
             agent_orchestration::agent_collaboration_cancel_stream,
             agent_orchestration::agent_collaboration_cancel_task,

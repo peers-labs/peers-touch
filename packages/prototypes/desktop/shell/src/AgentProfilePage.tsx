@@ -18,7 +18,7 @@
  *                      the guidance, no separate tip block)
  *       · compose row — Provider → Model · effort
  *                       (a provider may be a direct LLM endpoint or a reused
- *                        CLI Agent — Cursor / Codex / Claude Code / Trae — that still
+ *                        CLI Agent — Codex / Claude Code / Trae — that still
  *                        drives a selected model, P5-3)
  *       · Configure / Activity modes
  *           Configure: SOUL/AGENTS · Capabilities (Skills + Tools) · Workspace
@@ -40,10 +40,10 @@ import {
   Plus,
   Pin,
   Sparkles,
+  BarChart3,
   Upload,
   Send,
   Image as ImageIcon,
-  Mic,
   Pencil,
   Trash2,
   ChevronDown,
@@ -60,9 +60,6 @@ import {
   Brain,
   Radio,
   Copy,
-  Terminal,
-  ShieldCheck,
-  AlertTriangle,
   Workflow,
   Search,
   type LucideIcon,
@@ -78,7 +75,7 @@ import { T } from './theme';
  *
  * A provider is either a direct LLM endpoint (OpenAI-compatible / Anthropic /
  * Ollama) or a CLI-wrapped heterogeneous Agent we reuse from the ecosystem
- * (Cursor / Codex / Claude Code / Trae, per P5-3). Either way you still pick the LLM the
+ * (Codex / Claude Code / Trae, per P5-3). Either way you still pick the LLM the
  * provider drives — the CLI is just another way to reach a model.
  */
 interface ModelOption {
@@ -91,12 +88,6 @@ interface Provider {
   name: string;
   /** cli-wrapped heterogeneous agent reused as a provider (P5-3) */
   cli?: boolean;
-  adapter?: 'cursor' | 'codex' | 'claude' | 'trae';
-  command?: string;
-  health?: 'ready' | 'needs-login' | 'needs-adapter';
-  executionOwner?: string;
-  syncPolicy?: string;
-  riskNote?: string;
   models: ModelOption[];
 }
 
@@ -130,60 +121,30 @@ const PROVIDERS: Provider[] = [
     ],
   },
   {
-    id: 'cursor-cli',
-    name: 'Cursor CLI',
-    cli: true,
-    adapter: 'cursor',
-    command: 'cursor-agent -p',
-    health: 'needs-adapter',
-    executionOwner: 'Desktop Rust · local workspace',
-    syncPolicy: 'Station 只保存 provider 配置，不执行本地 CLI',
-    riskNote: '命令模板待适配；上线前需要校验 Cursor 的非交互输入/退出码协议。',
-    models: [
-      { id: 'cursor-agent', name: 'Cursor Agent' },
-      { id: 'cursor-agent-fast', name: 'Cursor Agent Fast' },
-    ],
-  },
-  {
-    id: 'codex-cli',
+    id: 'codex',
     name: 'Codex CLI',
     cli: true,
-    adapter: 'codex',
-    command: 'codex exec --skip-git-repo-check -',
-    health: 'needs-login',
-    executionOwner: 'Desktop Rust · local workspace',
-    syncPolicy: 'Station 只同步配置；turn 执行留在本机',
-    riskNote: '依赖本机 codex 登录态与 PATH，失败时返回结构化 CLI error。',
     models: [
-      { id: 'codex-cli', name: 'Codex CLI' },
+      { id: 'gpt-5.4', name: 'gpt-5.4' },
+      { id: 'gpt-5.4-mini', name: 'gpt-5.4-mini' },
     ],
   },
   {
-    id: 'claude-cli',
+    id: 'claude-code',
     name: 'Claude Code CLI',
     cli: true,
-    adapter: 'claude',
-    command: 'claude -p',
-    health: 'needs-login',
-    executionOwner: 'Desktop Rust · local workspace',
-    syncPolicy: 'Station 拒绝 runtime_kind=cli 的服务端执行',
-    riskNote: '依赖 Claude Code 本地授权；stdout 映射为 Agent 回复。',
     models: [
-      { id: 'claude-cli', name: 'Claude Code CLI' },
+      { id: 'claude-sonnet', name: 'claude-sonnet' },
+      { id: 'claude-haiku', name: 'claude-haiku' },
     ],
   },
   {
-    id: 'trae-cli',
+    id: 'trae',
     name: 'Trae CLI',
     cli: true,
-    adapter: 'trae',
-    command: 'trae -p',
-    health: 'needs-login',
-    executionOwner: 'Desktop Rust · local workspace',
-    syncPolicy: 'Station 只用于配置与任务真源，不承载本地命令执行',
-    riskNote: '依赖本机 Trae CLI 非交互模式；取消时需要 kill child process。',
     models: [
-      { id: 'trae-cli', name: 'Trae CLI' },
+      { id: 'gpt-5.4', name: 'gpt-5.4' },
+      { id: 'claude-sonnet', name: 'claude-sonnet' },
     ],
   },
 ];
@@ -214,8 +175,8 @@ interface Tool {
 interface Agent {
   id: string;
   name: string;
-  /** emoji / monogram for the avatar tile */
-  glyph: string;
+  /** lucide icon for the Agent tile */
+  icon: LucideIcon;
   pinned: boolean;
   status: 'enabled' | 'draft';
   /** A2A self-description: used to route the right agent */
@@ -250,7 +211,7 @@ const INITIAL_AGENTS: Agent[] = [
   {
     id: 'a-research',
     name: '科研助理',
-    glyph: '🔬',
+    icon: Search,
     pinned: true,
     status: 'enabled',
     description: '帮你检索文献、梳理论证脉络、整理实验记录与综述提纲。',
@@ -269,7 +230,7 @@ const INITIAL_AGENTS: Agent[] = [
   {
     id: 'a-writing',
     name: '写作伙伴',
-    glyph: '✍️',
+    icon: FileText,
     pinned: false,
     status: 'enabled',
     description: '协助起草、润色与改写，把零散素材整理成结构清晰的文稿。',
@@ -305,12 +266,12 @@ const INITIAL_AGENTS: Agent[] = [
   {
     id: 'a-data',
     name: '数据分析师',
-    glyph: '📊',
+    icon: BarChart3,
     pinned: false,
     status: 'draft',
     description: '协助清洗数据、跑统计与可视化，给出可解释的分析结论。',
-    providerId: 'cursor-cli',
-    model: 'cursor-agent',
+    providerId: 'codex',
+    model: 'gpt-5.4',
     effort: 'High',
     workspacePath: '/home/me/.peers-touch/workspace/data',
     isolation: true,
@@ -681,7 +642,7 @@ function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
 //
 // Primary axis = Provider → Model (P3-3): the Agent persona is paired with a
 // provider/model. A provider may be a direct LLM endpoint or a CLI-wrapped
-// heterogeneous Agent we reuse (Cursor / Codex / Claude Code / Trae, P5-3) — in both
+// heterogeneous Agent we reuse (Codex / Claude Code / Trae, P5-3) — in both
 // cases you still pick the LLM it drives.
 
 function ComposeRow({ agent, onPatch }: { agent: Agent; onPatch: (p: Partial<Agent>) => void }) {
@@ -693,113 +654,15 @@ function ComposeRow({ agent, onPatch }: { agent: Agent; onPatch: (p: Partial<Age
   };
 
   return (
-    <div style={{ border: `1px solid ${T.border}`, borderRadius: 16, padding: 14, marginBottom: 18, backgroundColor: T.bg }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 750, color: T.text }}>Provider Runtime</div>
-          <div style={{ fontSize: 11, color: T.textTertiary, marginTop: 2 }}>
-            Direct model endpoint 或本地 CLI Agent，都在这里作为 Agent 的 brain provider 选择。
-          </div>
-        </div>
-        <Pill text={provider.cli ? 'CLI Provider' : 'Direct Provider'} color={provider.cli ? T.primary : '#1677ff'} soft />
-      </div>
+    <div style={{ border: `1px solid ${T.border}`, borderRadius: 12, padding: 14, marginBottom: 18 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <Select value={provider.id} onChange={onProvider} options={PROVIDERS.map((p) => ({ id: p.id, label: p.name }))} width={190} />
         <Select value={agent.model} onChange={(v) => onPatch({ model: v })} options={provider.models.map((m) => ({ id: m.id, label: m.name }))} width={180} />
         <Select value={agent.effort} onChange={(v) => onPatch({ effort: v })} options={EFFORTS.map((e) => ({ id: e, label: e }))} width={110} />
+        {provider.cli ? (
+          <span style={{ fontSize: 11, color: T.textTertiary }}>复用业界 CLI Agent 充当 provider，仍由其驱动上面选定的模型</span>
+        ) : null}
       </div>
-      {provider.cli ? <CliProviderPanel provider={provider} /> : <DirectProviderPanel provider={provider} />}
-    </div>
-  );
-}
-
-function DirectProviderPanel({ provider }: { provider: Provider }) {
-  return (
-    <div style={{ marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: T.fillQuaternary, display: 'flex', alignItems: 'center', gap: 10 }}>
-      <CloudIcon />
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{provider.name} 由 Station / ProviderService 调用</div>
-        <div style={{ fontSize: 11, color: T.textTertiary, marginTop: 2 }}>
-          API Key、Base URL、模型发现和 fallback 走普通 provider 配置链路。
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CliProviderPanel({ provider }: { provider: Provider }) {
-  const health = provider.health ?? 'needs-login';
-  const healthMeta: Record<NonNullable<Provider['health']>, { label: string; color: string; icon: LucideIcon }> = {
-    ready: { label: 'Ready', color: '#52c41a', icon: ShieldCheck },
-    'needs-login': { label: 'Needs local login', color: '#faad14', icon: AlertTriangle },
-    'needs-adapter': { label: 'Adapter pending', color: '#fa541c', icon: AlertTriangle },
-  };
-  const HealthIcon = healthMeta[health].icon;
-
-  return (
-    <div style={{ marginTop: 12, border: `1px solid ${T.borderSoft}`, borderRadius: 14, overflow: 'hidden', backgroundColor: '#fcfcfd' }}>
-      <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: `1px solid ${T.borderSoft}` }}>
-        <div style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: T.primaryWash, color: T.primary, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Terminal size={17} />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, fontWeight: 760, color: T.text }}>{provider.name} · 本地 CLI Adapter</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: healthMeta[health].color }}>
-              <HealthIcon size={12} />
-              {healthMeta[health].label}
-            </span>
-          </div>
-          <div style={{ fontSize: 11, color: T.textTertiary, marginTop: 3 }}>
-            复用业界 Agent CLI 作为 provider；Agent persona / skills / workspace 仍由 Peers Touch 组装。
-          </div>
-        </div>
-      </div>
-
-      <div style={{ padding: 14, display: 'grid', gridTemplateColumns: '1.15fr .85fr', gap: 12 }}>
-        <InfoTile label="Command Template" value={provider.command || 'custom command'} mono />
-        <InfoTile label="Execution Owner" value={provider.executionOwner || 'Desktop Rust'} />
-        <InfoTile label="Station Boundary" value={provider.syncPolicy || 'Station does not execute local CLI'} />
-        <InfoTile label="Risk / Readiness" value={provider.riskNote || '需要本机 CLI、PATH 与登录态检查。'} warning />
-      </div>
-
-      <div style={{ padding: '0 14px 14px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {['PATH 检查', '登录态检查', 'stdin prompt', 'workspace cwd', 'cancel kill'].map((item, index) => (
-          <span
-            key={item}
-            style={{
-              fontSize: 11,
-              padding: '4px 8px',
-              borderRadius: 999,
-              color: index < 3 && health !== 'needs-adapter' ? T.primary : T.textTertiary,
-              backgroundColor: index < 3 && health !== 'needs-adapter' ? T.primaryWash : T.fillQuaternary,
-            }}
-          >
-            {item}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function InfoTile({ label, value, mono, warning }: { label: string; value: string; mono?: boolean; warning?: boolean }) {
-  return (
-    <div style={{ padding: 10, borderRadius: 10, backgroundColor: warning ? '#fff7e6' : T.bg, border: `1px solid ${warning ? '#ffd591' : T.borderSoft}` }}>
-      <div style={{ fontSize: 10, fontWeight: 750, letterSpacing: '.04em', textTransform: 'uppercase', color: warning ? '#d46b08' : T.textTertiary, marginBottom: 5 }}>
-        {label}
-      </div>
-      <div style={{ ...(mono ? monoStyle : {}), fontSize: mono ? 12 : 11, color: T.textSecondary, lineHeight: '17px' }}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function CloudIcon() {
-  return (
-    <div style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: '#e6f4ff', color: '#1677ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      <Radio size={16} />
     </div>
   );
 }
@@ -838,7 +701,9 @@ function AgentBuilder({ onClose }: { onClose: () => void }) {
       <div style={{ flex: 1, overflow: 'auto', padding: '8px 14px' }}>
         {messages.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '24px 4px' }}>
-            <div style={{ fontSize: 30, marginBottom: 8 }}>🏗️</div>
+            <div style={{ width: 42, height: 42, borderRadius: 14, margin: '0 auto 10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', backgroundColor: T.primaryWash, color: T.primary }}>
+              <Wrench size={22} />
+            </div>
             <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 6 }}>Agent Builder</div>
             <div style={{ fontSize: 12, color: T.textTertiary, lineHeight: '18px', marginBottom: 16 }}>
               说出你的用例——写作、编码或数据分析都行。你定目标与标准，我来拆成可协作、可运行的 Agent。
@@ -882,7 +747,6 @@ function AgentBuilder({ onClose }: { onClose: () => void }) {
             <button style={builderPlainToolButtonStyle} title="Add image"><ImageIcon size={16} /></button>
             <div style={{ flex: 1 }} />
             <button style={builderModelButtonStyle}>composer-2-fast <ChevronDown size={13} /></button>
-            <button style={builderPlainToolButtonStyle} title="Voice input"><Mic size={16} /></button>
             <button style={builderSendButtonStyle} title="Send" onClick={() => send(input)}><Send size={16} /></button>
           </div>
         </div>
@@ -976,7 +840,7 @@ const builderSendButtonStyle: React.CSSProperties = {
 
 export function AgentProfilePage({ onOpenOrchestration }: { onOpenOrchestration?: () => void }) {
   const [agents, setAgents] = useState<Agent[]>(INITIAL_AGENTS);
-  const [selectedId, setSelectedId] = useState('a-data');
+  const [selectedId, setSelectedId] = useState(INITIAL_AGENTS[1].id);
   const [mode, setMode] = useState<Mode>('configure');
   const [configTab, setConfigTab] = useState<ConfigTab>('soul');
   const [activityTab, setActivityTab] = useState<ActivityTab>('tasks');
@@ -994,7 +858,7 @@ export function AgentProfilePage({ onOpenOrchestration }: { onOpenOrchestration?
     const fresh: Agent = {
       id,
       name: '新建 Agent',
-      glyph: '🤖',
+      icon: Bot,
       pinned: false,
       status: 'draft',
       description: '',
@@ -1043,13 +907,13 @@ export function AgentProfilePage({ onOpenOrchestration }: { onOpenOrchestration?
               <Bot size={18} color={T.primary} />
               <span style={{ fontSize: 15, fontWeight: 700, marginLeft: 8, flex: 1 }}>My Agents</span>
               {onOpenOrchestration ? (
-                <button
+                <Workflow
                   title="打开 Agent 编排"
+                  size={17}
+                  color={T.textSecondary}
+                  style={{ cursor: 'pointer', marginRight: 10 }}
                   onClick={onOpenOrchestration}
-                  style={{ border: 0, padding: 0, marginRight: 10, background: 'transparent', color: T.textSecondary, cursor: 'pointer', display: 'inline-flex' }}
-                >
-                  <Workflow size={17} />
-                </button>
+                />
               ) : null}
               <Plus size={17} color={T.textSecondary} style={{ cursor: 'pointer', marginRight: 10 }} onClick={createAgent} />
             </div>
@@ -1088,9 +952,7 @@ export function AgentProfilePage({ onOpenOrchestration }: { onOpenOrchestration?
                   }}
                   style={{ width: 40, height: 48, border: 0, borderRadius: 12, backgroundColor: a.id === selectedId ? T.primaryWash : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                 >
-                  <span style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0, background: `linear-gradient(135deg, ${T.primary}, #9a8df0)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>
-                    {a.glyph}
-                  </span>
+                  <AgentIcon icon={a.icon} size={30} iconSize={15} active={a.id === selectedId} />
                 </button>
               ))}
               <CollapsedRosterGroup />
@@ -1104,9 +966,7 @@ export function AgentProfilePage({ onOpenOrchestration }: { onOpenOrchestration?
                   }}
                   style={{ width: 40, height: 48, border: 0, borderRadius: 12, backgroundColor: a.id === selectedId ? T.primaryWash : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                 >
-                  <span style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0, background: `linear-gradient(135deg, ${T.primary}, #9a8df0)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>
-                    {a.glyph}
-                  </span>
+                  <AgentIcon icon={a.icon} size={30} iconSize={15} active={a.id === selectedId} />
                 </button>
               ))}
             </div>
@@ -1130,9 +990,7 @@ export function AgentProfilePage({ onOpenOrchestration }: { onOpenOrchestration?
 
             {/* identity row: avatar + A2A description (with inline AI icon) */}
             <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
-              <div style={{ width: 64, height: 64, borderRadius: 16, flexShrink: 0, background: `linear-gradient(135deg, ${T.primary}, #9a8df0)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30 }}>
-                {selected.glyph}
-              </div>
+              <AgentIcon icon={selected.icon} size={64} iconSize={28} active />
               <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
                 <textarea
                   value={selected.description}
@@ -1251,6 +1109,26 @@ function RosterGroup({ label }: { label: string }) {
   return <div style={{ height: 18, lineHeight: '18px', fontSize: 11, fontWeight: 700, color: T.textTertiary, margin: '12px 0 6px', padding: '0 8px' }}>{label}</div>;
 }
 
+function AgentIcon({ icon: Icon, size, iconSize, active = false }: { icon: LucideIcon; size: number; iconSize: number; active?: boolean }) {
+  return (
+    <span
+      style={{
+        width: size,
+        height: size,
+        borderRadius: Math.max(8, Math.round(size * 0.25)),
+        flexShrink: 0,
+        backgroundColor: active ? T.primaryWash : T.navBg,
+        color: active ? T.primary : T.textSecondary,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Icon size={iconSize} />
+    </span>
+  );
+}
+
 function CollapsedRosterGroup() {
   return (
     <div style={{ width: 40, height: 18, margin: '12px auto 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1265,9 +1143,7 @@ function RosterItem({ agent, active, onClick }: { agent: Agent; active: boolean;
       onClick={onClick}
       style={{ height: 48, display: 'flex', alignItems: 'center', gap: 10, padding: '0 10px', borderRadius: 9, cursor: 'pointer', backgroundColor: active ? T.primaryWash : 'transparent', boxSizing: 'border-box' }}
     >
-      <span style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, background: `linear-gradient(135deg, ${T.primary}, #9a8df0)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17 }}>
-        {agent.glyph}
-      </span>
+      <AgentIcon icon={agent.icon} size={32} iconSize={16} active={active} />
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: active ? T.primary : T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agent.name}</span>

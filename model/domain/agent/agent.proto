@@ -309,6 +309,9 @@ message ExecuteTurnResponse {
   Turn turn = 1;
   TurnTrace trace = 2;
   AgentMessage response_message = 3;
+  // task_id is the Station-owned Chat root task that hosts this turn so the
+  // client can subscribe to the durable event outbox by cursor.
+  string task_id = 4;
 }
 
 message TurnTraceEntry {

@@ -2557,8 +2557,11 @@ type ExecuteTurnResponse struct {
 	Turn            *Turn                  `protobuf:"bytes,1,opt,name=turn,proto3" json:"turn,omitempty"`
 	Trace           *TurnTrace             `protobuf:"bytes,2,opt,name=trace,proto3" json:"trace,omitempty"`
 	ResponseMessage *AgentMessage          `protobuf:"bytes,3,opt,name=response_message,json=responseMessage,proto3" json:"response_message,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// task_id is the Station-owned Chat root task that hosts this turn so the
+	// client can subscribe to the durable event outbox by cursor.
+	TaskId        string `protobuf:"bytes,4,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ExecuteTurnResponse) Reset() {
@@ -2610,6 +2613,13 @@ func (x *ExecuteTurnResponse) GetResponseMessage() *AgentMessage {
 		return x.ResponseMessage
 	}
 	return nil
+}
+
+func (x *ExecuteTurnResponse) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
 }
 
 type TurnTraceEntry struct {
@@ -3884,11 +3894,12 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x0f_workspace_rootB\x16\n" +
 	"\x14_context_window_sizeB\x0e\n" +
 	"\f_max_retriesB\t\n" +
-	"\a_effort\"\xdd\x01\n" +
+	"\a_effort\"\xf6\x01\n" +
 	"\x13ExecuteTurnResponse\x124\n" +
 	"\x04turn\x18\x01 \x01(\v2 .peers_touch.model.agent.v1.TurnR\x04turn\x12;\n" +
 	"\x05trace\x18\x02 \x01(\v2%.peers_touch.model.agent.v1.TurnTraceR\x05trace\x12S\n" +
-	"\x10response_message\x18\x03 \x01(\v2(.peers_touch.model.agent.v1.AgentMessageR\x0fresponseMessage\"\x83\x01\n" +
+	"\x10response_message\x18\x03 \x01(\v2(.peers_touch.model.agent.v1.AgentMessageR\x0fresponseMessage\x12\x17\n" +
+	"\atask_id\x18\x04 \x01(\tR\x06taskId\"\x83\x01\n" +
 	"\x0eTurnTraceEntry\x124\n" +
 	"\x04turn\x18\x01 \x01(\v2 .peers_touch.model.agent.v1.TurnR\x04turn\x12;\n" +
 	"\x05trace\x18\x02 \x01(\v2%.peers_touch.model.agent.v1.TurnTraceR\x05trace\"\x8c\x01\n" +

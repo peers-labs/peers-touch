@@ -41,7 +41,7 @@ const manifest: AppletInfo = {
     algorithm: 'sha256',
     files: {},
   },
-  path: '/applets-dist/product-shell-applet',
+  path: '/tmp/peers-touch-test/product-shell-applet',
 };
 
 describe('applets runtime store', () => {
@@ -56,7 +56,8 @@ describe('applets runtime store', () => {
 
     const { useAppletsStore } = await import('./applets');
     useAppletsStore.setState({
-      applets: [],
+      applets: [{ manifest, status: 'installed', source: 'bundled-official' }],
+      catalogApplets: [],
       diagnostics: [],
       lastOpenedAtById: {},
       loading: true,

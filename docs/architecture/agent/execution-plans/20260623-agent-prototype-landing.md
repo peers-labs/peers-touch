@@ -182,6 +182,71 @@ D-1~D-9 / E-1~E-4 / F-1~F-2 (Desktop Web UI)
 
 ---
 
+## 7.1 Station-owned Task/Turn Lifecycle 合同
+
+用户验收反馈明确：Agent Turn 不能由 Desktop 请求或 Tauri stream 拥有生命周期。最终架构合同如下：
+
+1. Station 是 Agent Task / Turn / Node / Event 的唯一生命周期 owner。客户端只负责 create、subscribe、reconcile、cancel intent 与 executor result 回传。
+2. Chat 的一次用户消息必须落成 Station task 或 root turn；Canvas 的一次 Run 必须落成 Station collaboration task。两者共享 queued/running/completed/failed/cancelled/blocked 等状态语义。
+3. Create 接口只能完成鉴权、入库和返回 `task_id` / `turn_id`，不得把长任务绑定在 HTTP request 生命周期里。执行由 Station scheduler/worker/queue 托管。
+4. Desktop/mobile/web 断开、刷新或崩溃后，任务仍应保留在 Station；客户端重连后通过 list/get + event cursor 恢复 projection。
+5. Event stream 必须从内存实时事件演进为持久化 outbox/event log，支持 `task_id` 过滤、断线 replay、last-event-id/cursor。
+6. CLI / MCP / plugin / builtin tool 不能默认绑定 Desktop 宿主。Station 只创建 tool request 并按 executor capability 路由到 Station-hosted、workspace sandbox、remote connector、desktop device 或 mobile device executor；审批、tool request、tool result 必须绑定 `task_id` / `node_id` / `turn_id` / `call_id`。
+7. 同一个大任务可以混合多个 executor。Station 需要把 task 拆成 DAG/plan steps，每个 step 独立声明 `required_capabilities`、`eligible_executors`、输入/输出 artifacts、依赖关系和恢复策略；不同 step 可分别落到 Station、sandbox、Desktop、mobile 或 remote connector。
+8. 多端协作必须通过 Station artifacts/events 交接，不能通过端到端临时内存交接。每个 executor 只领取自己有能力执行的 step，结果回写 Station 后触发后续 step。
+9. 不具备 executor capability 的端（例如 mobile 没有本地 shell）仍可运行 Station-hosted / sandbox / remote connector 任务；只有明确需要 device capability 的步骤才进入 `blocked/awaiting_executor`、转移到可用设备或降级。
+10. `desktop-web` 下的 non-stream fallback 只允许作为开发验证兼容层，不能成为业务生命周期 owner。
+
+
+行业对标结论：
+
+开源相似项目对标：
+
+1. **OpenHands / OpenDevin**（最高相似度）：开源 AI software developer agent，具备前端、后端、EventStream Runtime、Docker sandbox、workspace、terminal/browser/Jupyter/app 等产品面。它的 Runtime 采用 backend ↔ sandbox container client-server 模式，backend 发送 action，runtime client 执行并返回 observation；这与我们的 Station + executor fabric + workspace/sandbox 很接近。需要借鉴：sandbox 隔离、action/observation、runtime image 管理、workspace/terminal/browser 产品面。不能照搬：README 明确开源版本主要面向单用户本地工作站，不适合多租户共享实例；我们的 Station 必须支持多端、多租户、任务恢复。参考：https://github.com/All-Hands-AI/OpenHands、https://docs.all-hands.dev/modules/usage/architecture/runtime。
+2. **Dify**（产品/Workflow 相似）：开源 LLM app platform，具备可视化 workflow/chatflow、节点、变量、LLM、知识检索、代码执行、HTTP request、tools、run history 等。需要借鉴：节点类型体系、Chatflow vs Workflow 分层、变量在节点间传递、工作流可视化与运行历史。不能照搬：它更偏 LLM app/低代码平台，不是多端 executor fabric，也不直接解决 Desktop/mobile 设备能力协同。参考：https://github.com/langgenius/dify、https://docs.dify.ai/guides/workflow、https://docs.dify.ai/guides/workflow/key-concepts、https://docs.dify.ai/guides/workflow/node。
+3. **LangGraph**（运行时模式相似）：开源 long-running stateful agent orchestration，核心是 graph、durable execution、checkpoint、human-in-the-loop、memory。需要借鉴：step/checkpoint/replay、thread 级 state、interrupt/resume。不能照搬：它是库/框架优先，我们需要产品级 Station 服务和多端 projection。参考：https://github.com/langchain-ai/langgraph、https://docs.langchain.com/oss/python/langgraph/durable-execution、https://docs.langchain.com/oss/python/langgraph/persistence。
+4. **Microsoft AutoGen**（多 Agent 协作参考）：开源 multi-agent conversation framework，强调多 Agent 对话、工具、Docker code execution。需要借鉴：agent as roles、群组/路由/协作模式、代码执行默认隔离。不能照搬：它主要是编程框架/Studio，不是我们的 Station 托管任务系统。参考：https://github.com/microsoft/autogen。
+
+这些开源项目只能作为对标样本，不能替代我们的架构推导。采用标准必须回到我们的约束：Station 托管、多端恢复、executor capability、workspace OSS、event outbox、artifact 交接、proto-first。
+
+代码级对标后的实现准则：
+
+1. **OpenHands 对我们最有用的是分层，不是恢复语义**：采用 control-plane/runtime-plane 思路。Station 负责用户、权限、Task/Turn/Event/Artifact 索引和调度；Executor/Sandbox 只负责领取 step、执行 action、回传 observation/result。不要照搬 OpenHands 对 RUNNING 会话标 ERROR 的恢复方式，我们要能按 checkpoint/step 幂等续跑。
+2. **OpenHands EventLog 模型要升级为 Station Outbox**：OpenHands 的 EventLog + WebSocket replay 比纯内存 SSE 好，但文件 EventLog/内存 PubSub/token delta 不持久化不适合作为最终形态。我们需要 DB-backed `task_events/outbox`，所有 UI projection 从 `event_seq` replay。
+3. **Dify 对我们最有用的是运行历史与 Layer**：采用 `TaskRun + NodeRun/TurnRun` 双层历史，持久化、观测、额度、变量、暂停恢复作为 runtime layer/plugin，而不是散落在节点代码。不要照搬进程内 queue、subscribe-gated start、fire-and-forget 落库。
+4. **Dify 变量池要强类型化**：可借鉴 `sys/env/conversation/node` 命名空间和 selector，但每个 step/node 必须声明 input/output schema，避免字符串映射和隐式兼容逻辑。
+5. **LangGraph 对我们最有用的是恢复锚点**：采用 `Checkpoint + PendingWrites + versions_seen` 思想。Checkpoint 存可恢复快照，PendingWrites/Outbox 存已完成但未折叠进快照的输出，versions/offset 决定哪些 step 需要推进。不要照搬 Python exception interrupt 或“节点重跑即可恢复”。
+6. **Executor 协作必须以 artifact/event 交接**：多 executor DAG 的每个 step 只通过 Station artifact ledger 和 event outbox 交接，不通过端到端内存、浏览器连接、runtime 私有 URL 或客户端 session 传递关键状态。
+7. **Chat 与 Canvas 必须收敛为同一套 Task Kernel**：Chat root task 是特殊的一节点/少节点 DAG，Canvas 是显式多节点 DAG。UI 可以不同，底层 TaskRun/TurnRun/StepRun/Event/Artifact 不能分裂。
+
+据此新增的 Station Task Kernel 最小模型：
+
+- `TaskRun`：任务生命周期 owner，含 owner、surface(chat/canvas/api)、status、current_checkpoint_id、created_at/updated_at。
+- `ExecutionStep` / `StepRun`：DAG 节点或 Chat root turn step，含 dependencies、required_capabilities、eligible_executors、status、attempt、input_version、output_version。
+- `TurnRun`：Agent loop/LLM/tool/handoff 的一次执行回合，可挂到 StepRun。
+- `TaskEvent` / `OutboxEvent`：唯一可 replay 的事件源，含 monotonic `event_seq`、task_id、step_id、turn_id、type、payload、cursor。
+- `Artifact`：跨 executor 交接物，含 producer、schema、storage_uri/content_hash、visibility、retention。
+- `Checkpoint`：可恢复快照，含 task state、step versions、versions_seen、pending_writes cursor。
+- `ExecutorLease`：executor 领取 step 的租约和心跳，支持 desktop/mobile/station/sandbox/remote connector。
+- `InterruptRequest`：human/device/permission 等阻塞点，显式 resume/cancel，不依赖调用栈。
+
+1. **LangGraph**：把 durable execution 定义为在关键点保存进度，支持中断后恢复；persistence 分为 checkpointer（thread 级 graph state）和 store（跨 thread 长期记忆）。我们的 Station task/event/checkpoint 需要对齐这个恢复模型。参考：https://docs.langchain.com/oss/python/langgraph/durable-execution 与 https://docs.langchain.com/oss/python/langgraph/persistence。
+2. **Temporal**：Workflow Execution 是持久化运行实例，Event History 是 source of truth；Worker 领取 task queue 中的工作，外部调用放在 Activity，重放时不重复执行 Activity。我们的 Task/Turn/Event/Executor fabric 应采用同类原则：Station event history/outbox 是真源，executor result 落库后重放不重做。参考：https://docs.temporal.io/workflows 与 https://docs.temporal.io/workers。
+3. **OpenAI Agents SDK**：提供 Agent loop、tools、handoffs、sessions、tracing、sandbox agents；sandbox agents 强调 persistent workspace、文件/命令/artifact、snapshot/session_state 恢复。我们的 Workspace OSS、sandbox executor、Agent handoff/DAG 要对齐这些产品形态。参考：https://openai.github.io/openai-agents-python/、https://openai.github.io/openai-agents-python/sandbox_agents/、https://openai.github.io/openai-agents-python/multi_agent/。
+4. **MCP / tool protocol 方向**：工具协议解决模型与外部工具/资源的标准连接，但不等于任务生命周期。我们的设计应把 MCP 作为 executor capability / tool connector，生命周期仍由 Station Task/Turn 托管。
+
+
+当前落地顺序：
+
+1. **Canvas collaboration task 去请求绑定**：Station create 持久化后立即返回，后台执行节点；启动时恢复 running task。
+2. **Canvas projection 兜底**：前端保留 SSE，同时通过 Station get 轮询恢复，避免依赖 live event。
+3. **Chat 迁移到 Station task/root turn**：`sendMessage` 以 task/turn id 为主键，stream 仅作为 projection 加速。
+4. **Event outbox/replay**：补持久化事件表与 cursor，SSE 从内存事件升级为可恢复订阅。
+5. **Executor fabric 归位**：Desktop/mobile/Station/sandbox/remote connector 执行统一挂到 Station tool request/result，不再让任一客户端拥有 turn。
+6. **Multi-executor DAG**：大任务拆分为多 step、多 executor 协作，所有交接通过 Station artifacts/events 完成。
+
+---
+
 ## 8. 关联文档
 
 - 上游蓝图：[Agent LobeHub Blueprint](../agent-lobehub-blueprint.md)
@@ -300,7 +365,7 @@ UI 文案从“会话隔离”改为“Agent 工作空间 / 访问范围 / 执�
 
 | 项目 | 状态 | 实际处理 |
 |------|------|----------|
-| Default command templates | **完成** | `providers.default.yaml` 中 Codex/Claude/TRAE CLI 预设改为标准非交互命令：`codex exec --skip-git-repo-check -`、`claude -p`、`trae -p`。 |
+| Default command templates | **完成** | `providers.default.yaml` 中 Codex/Claude/TRAE CLI 预设改为标准非交互命令：`codex exec --skip-git-repo-check -`、`claude -p`、`traecli exec --skip-git-repo-check -`。 |
 | Runner adapter normalization | **完成** | `normalize_cli_command` 只在命令为裸 `codex` / `claude` / `trae` 时自动展开；用户写完整命令时原样执行。 |
 | Runtime metadata | **完成** | CLI runner 注入 `PEERS_TOUCH_CLI_ADAPTER`，便于 CLI 子进程识别当前 adapter 类型。 |
 | Provider docs | **完成** | Provider README 补充 CLI Provider 标准命令模板、stdin prompt 注入和裸命令兼容语义。 |
@@ -420,3 +485,65 @@ UI 文案从“会话隔离”改为“Agent 工作空间 / 访问范围 / 执�
 3. Station visibility：创建 private Agent 后非 owner 不可见；创建 workspace Agent 后认证用户可读/list；非 owner update/delete 返回 forbidden。
 4. CLI Provider boundary：Station ProviderService 收到 CLI runtime provider 时拒绝执行；Desktop Rust CLI runner 仍是本地 CLI provider 的唯一执行路径。
 5. 验证命令：以上 6 条命令均通过；当前遗留 warning 不阻断验收，属于既有构建告警。
+
+---
+
+## 10. Chat Root Task 架构落地（chat-root-task，2026-06-30）
+
+### 10.1 设计目标与现状缺口
+
+落地顺序第 3 步「Chat 迁移到 Station task/root turn」。用户验收口径：Desktop/Mobile/Web 断开或崩溃后，Chat 任务仍由 Station 托管、可通过 task event/outbox 恢复投影，不依赖 desktop-web fallback。要求架构级方案、面向长期价值，不做临时补丁。
+
+代码审计确认的缺口：
+
+1. `TurnService.publishDomainEvent` 只发内存 `eventBus`，**不写 `agent_task_events` outbox**；chat turn 事件不可 replay。
+2. `TurnConfig` / `ExecuteTurnRequest` **无 task_id**；chat turn 不绑定任何 Station task。
+3. proto `orchestration.proto` 的 `TaskRun` / `ExecutionStep` / `ExecutorLease` / `TaskCheckpoint` **已生成 Go model 但未落地 persistence/service**（仅 `TaskEvent` outbox 已落地）。
+4. chat turn 在 HTTP/SSE 请求 goroutine 内执行，请求结束即失去 owner；Station 重启无 chat 任务恢复路径。
+5. `EventStreamService.ReplayTaskEvents` 仅按 `CollaborationTask.goal_owner_id` 校验归属，chat TaskRun 无法走 replay 鉴权。
+
+### 10.2 核心模型决策
+
+- **复用已生成 proto，不再 regen**：`TaskRun` / `ExecutionStep` / `ExecutorLease` / `TaskCheckpoint` 已在 `orchestration.pb.go`，本轮只新增 GORM persistence + Station service。
+- **Chat = surface=CHAT 的 root task**：一个 chat conversation 对应且仅对应一个 `TaskRun`（root task）。`conversation_id <-> task_id` 通过 `TaskRun.meta["conversation_id"]` 绑定并 find-or-create。
+- **一次用户消息 = 一个 ExecutionStep + 一个 TurnRun**：复用已有 `agent_turns` 作为 TurnRun，`ExecutionStep.turn_id` 指向该 turn；step 的 `attempt` 表达重试代次。
+- **Canvas 不变**：Canvas turn 仍属 `CollaborationTask`，不再造 root task；两套表并存于同一 outbox，replay 按 task_id 隔离。
+
+新增 persistence 表（GORM，加入 `AllModels()` AutoMigrate）：
+
+| 表名 | proto | 关键列 |
+|------|-------|--------|
+| `agent_task_runs` | `TaskRun` | task_id, surface, status, owner_actor_id, root_turn_id, current_checkpoint_id, meta_json(含 conversation_id/agent_id), timestamps |
+| `agent_execution_steps` | `ExecutionStep` | step_id, task_id, agent_id, status, turn_id, attempt, eligible_executors, result_summary, timestamps |
+| `agent_executor_leases` | `ExecutorLease` | lease_id, task_id, step_id, executor_id, executor_kind, status, acquired_at, heartbeat_at, expires_at |
+| `agent_task_checkpoints` | `TaskCheckpoint` | checkpoint_id, task_id, event_seq, state_json, created_at |
+
+### 10.3 恢复契约（架构级，长期）
+
+对标 Temporal（Event History 是 source of truth、Activity 重放不重做）与 LangGraph（Checkpoint + PendingWrites + versions_seen），定义 chat task 恢复契约：
+
+1. **Lease fencing**：step 仅在持有有效 `ExecutorLease`（`executor_id` = Station worker 实例 id，`expires_at = now + ttl`）时执行；执行中周期 heartbeat 续租。
+2. **Step-boundary 幂等**：LLM turn 执行中**非幂等**，不在中途重放半成品 turn。恢复在 step 边界判定：
+   - turn 已落 assistant message + `completeTurn` -> step 实际已完成 -> reconcile 为 completed，补发 outbox completed 事件 + checkpoint。
+   - turn 仍 running 但 lease 过期 -> 标记 step/turn 为 `interrupted/failed` 终态，补发 outbox 事件；后续由用户新消息或显式 resume 创建**新 attempt 的 step/turn**，绝不重跑被打断的 turn（避免重复扣费/重复回复）。
+3. **Outbox 是唯一 replay 源**：所有 chat task 事件（task_created / step_started / turn_event / step_completed / step_failed / task_status_changed）以 monotonic `event_seq` 落 `agent_task_events`；UI projection 一律按 `event_seq` cursor replay 再接实时。
+4. **Checkpoint 是恢复锚点**：每个 step 完成写一条 `agent_task_checkpoints`（`event_seq` = 该 step 最后事件序号），`TaskRun.current_checkpoint_id` 指向最新 checkpoint，恢复时据此判定已折叠进度。
+5. **Create 不绑 HTTP 生命周期**：HandleExecuteTurn(Stream) 只做鉴权、find-or-create task、begin step、返回；执行由 Station 后台托管，stream 仅作 projection 加速。
+
+### 10.4 落地步骤（本轮）
+
+1. persistence：新增 `task_run.go` / `execution_step.go` / `executor_lease.go` / `task_checkpoint.go`，注册 `AllModels()`。
+2. 抽出共享 `TaskEventWriter`（outbox append + monotonic seq），供 OrchestrationService 与 chat task 复用，去重 `appendTaskEvent`。
+3. 新增 `ChatTaskService`：`EnsureChatTask` / `BeginChatStep` / `FinishChatStep` / `FailChatStep` / `RecoverRunningChatTasks`，内含 lease 获取/续租/释放、checkpoint、outbox。
+4. `TurnService`：`TurnConfig` 加 `TaskID`；`publishDomainEvent` 在 `TaskID` 非空时同时写 outbox（带 task_id/turn_id/event_seq）。
+5. handler：`HandleExecuteTurn` / `HandleExecuteTurnStream` 解析 actor -> `EnsureChatTask` -> `BeginChatStep` -> 注入 `TaskID` 到 TurnConfig -> done/err 时 `FinishChatStep` / `FailChatStep`。
+6. `EventStreamService.ReplayTaskEvents`：归属校验同时支持 `TaskRun.owner_actor_id` 与 `CollaborationTask.goal_owner_id`。
+7. `agent.go` 启动注册 `ChatTaskService` 并 `RecoverRunningChatTasks`。
+8. 前端：`chat.ts` 在 stream done 后按返回的 `task_id` 走 Canvas 同款 cursor replay 订阅（已有 `streamAgentCollaborationEvents` 能力），不再依赖 desktop-web fallback 作为生命周期 owner。
+
+### 10.5 验证
+
+- `cd apps/station && gofmt -l . && go test ./app/subserver/agent/...`
+- `cd apps/desktop/src-tauri && cargo check`
+- `cd apps/desktop && pnpm run check`
+- e2e：`make station` + `make desktop-web`，Chat 发消息后中断 Station/刷新页面，重连可见 task 终态并可继续；不再出现重复回复或重复扣费。
