@@ -203,6 +203,52 @@ func TestCollaborationSynthesisPromptUsesNodeResults(t *testing.T) {
 	}
 }
 
+func TestGoalKeeperVerdictAcceptsCompletedSynthesis(t *testing.T) {
+	task := &persistence.CollaborationTask{ID: "task-accepted"}
+	nodes := []persistence.CollaborationTaskNode{
+		{ID: "node-a", AgentID: "agent-a", Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED), ResultSummary: "Done."},
+		{ID: "node-b", AgentID: "agent-b", Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED), ResultSummary: "Also done."},
+		{ID: "node-s", AgentID: "agent-judge", Role: collaborationRoleSynthesizer, Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED), ResultSummary: "Final."},
+	}
+
+	verdict := evaluateGoalKeeperVerdict(task, nodes, "Final answer.", false)
+	if verdict.Verdict != model.AcceptanceVerdict_ACCEPTANCE_VERDICT_ACCEPTED {
+		t.Fatalf("expected accepted verdict, got %v reason=%s", verdict.Verdict, verdict.Reason)
+	}
+	if verdict.JudgeID != "agent-judge" {
+		t.Fatalf("expected synthesis judge id, got %q", verdict.JudgeID)
+	}
+	meta := goalKeeperVerdictMeta(verdict)
+	if meta["acceptance_verdict"] != "accepted" || meta["acceptance_completed_nodes"] != "2" || meta["acceptance_total_nodes"] != "2" {
+		t.Fatalf("unexpected verdict meta: %#v", meta)
+	}
+}
+
+func TestGoalKeeperVerdictRejectsFailedOrMissingSummary(t *testing.T) {
+	task := &persistence.CollaborationTask{ID: "task-rejected"}
+	nodes := []persistence.CollaborationTaskNode{
+		{ID: "node-a", AgentID: "agent-a", Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED), ResultSummary: "Done."},
+		{ID: "node-b", AgentID: "agent-b", Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_FAILED), ResultSummary: "Failed."},
+		{ID: "node-s", AgentID: "agent-judge", Role: collaborationRoleSynthesizer, Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_FAILED), ResultSummary: "No final."},
+	}
+
+	verdict := evaluateGoalKeeperVerdict(task, nodes, "Final answer.", true)
+	if verdict.Verdict != model.AcceptanceVerdict_ACCEPTANCE_VERDICT_REJECTED {
+		t.Fatalf("expected rejected verdict for failed nodes, got %v", verdict.Verdict)
+	}
+	if !strings.Contains(verdict.Reason, "failed=1") {
+		t.Fatalf("expected failure count in reason, got %q", verdict.Reason)
+	}
+
+	verdict = evaluateGoalKeeperVerdict(task, nodes[:1], "", false)
+	if verdict.Verdict != model.AcceptanceVerdict_ACCEPTANCE_VERDICT_REJECTED {
+		t.Fatalf("expected rejected verdict for missing final summary, got %v", verdict.Verdict)
+	}
+	if !strings.Contains(verdict.Reason, "missing") {
+		t.Fatalf("expected missing summary reason, got %q", verdict.Reason)
+	}
+}
+
 func TestSelectSynthesizerAgentID(t *testing.T) {
 	if got := selectSynthesizerAgentID(map[string]string{"judge_agent_id": " agent-judge "}, []string{"agent-lead"}); got != "agent-judge" {
 		t.Fatalf("expected explicit judge agent, got %q", got)

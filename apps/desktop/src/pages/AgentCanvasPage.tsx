@@ -95,6 +95,14 @@ function formatBudgetFailure(task: unknown, t: (key: string, options?: Record<st
   return t('agent.canvas.timeBudgetExceeded', { elapsed, budget });
 }
 
+function formatAcceptanceVerdict(verdict: string, t: (key: string) => string) {
+  const normalized = verdict.trim().toLowerCase();
+  if (normalized === 'accepted') return t('agent.canvas.acceptanceAccepted');
+  if (normalized === 'rejected') return t('agent.canvas.acceptanceRejected');
+  if (normalized === 'pending') return t('agent.canvas.acceptancePending');
+  return t('agent.canvas.acceptanceUnknown');
+}
+
 function fieldString(value: unknown, ...keys: string[]) {
   if (!value || typeof value !== 'object') return '';
   const record = value as Record<string, unknown>;
@@ -125,6 +133,8 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
   const [budgetTimeMs, setBudgetTimeMs] = useState(0);
   const [taskId, setTaskId] = useState('');
   const [finalSummary, setFinalSummary] = useState('');
+  const [acceptanceVerdict, setAcceptanceVerdict] = useState('');
+  const [acceptanceReason, setAcceptanceReason] = useState('');
   const [runError, setRunError] = useState('');
   const [agentSearch, setAgentSearch] = useState('');
   const [libraryOpen, setLibraryOpen] = useState(true);
@@ -224,9 +234,11 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
         title: t('agent.canvas.resultQualityCheck'),
         tone: 'green' as const,
         lines: [
+          t('agent.canvas.resultAcceptanceVerdict', { verdict: formatAcceptanceVerdict(acceptanceVerdict, t) }),
           t('agent.canvas.resultCoverageNodes', { completed: completedNodes.length, total: nodes.length }),
           t('agent.canvas.resultCoverageTask', { taskId: taskId || t('agent.canvas.none') }),
           t('agent.canvas.resultCoverageTrace', { traced: nodes.filter((node) => node.turnId).length, total: nodes.length }),
+          acceptanceReason || t('agent.canvas.resultAcceptancePending'),
         ],
       },
       {
@@ -241,7 +253,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
           ],
       },
     ];
-  }, [completedNodes.length, engineLabel, failedNodes, finalSummary, nodes, prompt, runState, t, taskId]);
+  }, [acceptanceReason, acceptanceVerdict, completedNodes.length, engineLabel, failedNodes, finalSummary, nodes, prompt, runState, t, taskId]);
 
   const fillExamplePrompt = useCallback(() => {
     if (isRunning) return;
@@ -381,6 +393,10 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
         const taskStatus = detail.task?.status;
         const summary = taskMetaString(detail.task, 'final_summary');
         if (summary) setFinalSummary(summary);
+        const verdict = taskMetaString(detail.task, 'acceptance_verdict');
+        const reason = taskMetaString(detail.task, 'acceptance_reason');
+        if (verdict) setAcceptanceVerdict(verdict);
+        if (reason) setAcceptanceReason(reason);
         const nextRunState = taskStatusToRunState(taskStatus);
         setRunState(nextRunState);
         if (nextRunState === 'failed') {
@@ -438,6 +454,8 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
     setBudgetTimeMs(0);
     setTaskId('');
     setFinalSummary('');
+    setAcceptanceVerdict('');
+    setAcceptanceReason('');
     setRunError('');
     setRunState('idle');
   }, []);
