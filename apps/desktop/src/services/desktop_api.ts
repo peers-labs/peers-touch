@@ -84,6 +84,7 @@ import type {
   CollaborationTask,
   GetCollaborationTaskResponse,
   ListCollaborationTasksResponse,
+  ListTaskEventsResponse,
 } from '../gen/proto/domain/agent/orchestration_pb';
 export {
   FederationVisibility,
@@ -764,14 +765,6 @@ export interface Message {
   tool_calls?: string;
 }
 
-export interface AgentParams {
-  temperature?: number;
-  top_p?: number;
-  frequency_penalty?: number;
-  presence_penalty?: number;
-  max_tokens?: number;
-}
-
 export interface AgentMemoryConfig {
   enabled?: boolean;
   effort?: 'low' | 'medium' | 'high';
@@ -786,16 +779,6 @@ export interface AgentWorkspaceConfig {
 export interface AgentProviderFallbackConfig {
   enabled?: boolean;
   maxRetries?: number;
-}
-
-export interface AgentVoiceConfig {
-  ttsProvider?: 'browser' | 'edge' | 'openai';
-  ttsVoice?: string;
-  ttsSpeed?: number;
-  ttsAutoRead?: boolean;
-  sttProvider?: 'browser' | 'openai';
-  sttLanguage?: string;
-  sttAutoStop?: boolean;
 }
 
 export type AgentKnowledgeResourceType = 'document' | 'folder' | 'project' | 'url' | 'notebook' | 'workspace';
@@ -830,7 +813,6 @@ export interface AgentChatConfig {
   memory?: AgentMemoryConfig;
   providerFallback?: AgentProviderFallbackConfig;
   workspace?: AgentWorkspaceConfig;
-  voice?: AgentVoiceConfig;
   mcpServers?: string[];
   tools?: string[];
   skills?: string[];
@@ -859,16 +841,12 @@ export interface Agent {
   allowedRoots: string;
   cliCommand: string;
   tags: string;
-  toolsProfile: string;
-  toolsAllow: string;
-  toolsDeny: string;
   pinned: boolean;
   favorite: boolean;
   sortOrder: number;
   openingMessage: string;
   openingQuestions: string;
   chatConfig: string;
-  params: string;
   knowledgeResources: string;
   isDefault: boolean;
   createdAt: string;
@@ -897,16 +875,12 @@ export interface AgentCreate {
   allowedRoots?: string;
   cliCommand?: string;
   tags?: string;
-  toolsProfile?: string;
-  toolsAllow?: string;
-  toolsDeny?: string;
   pinned?: boolean;
   favorite?: boolean;
   sortOrder?: number;
   openingMessage?: string;
   openingQuestions?: string;
   chatConfig?: string;
-  params?: string;
   knowledgeResources?: string;
 }
 
@@ -941,7 +915,6 @@ export interface AgentPackage {
   providerPreset: {
     provider: string;
     model: string;
-    params: AgentParams;
   };
   bindings: {
     mcpServers: string[];
@@ -987,9 +960,17 @@ export interface AgentCollaborationListInput {
   page_size?: number;
 }
 
+export interface AgentCollaborationListEventsInput {
+  task_id: string;
+  after_event_seq?: number;
+  page_size?: number;
+}
+
 export interface AgentCollaborationSubscribeInput {
   stream_id?: string;
   agent_id: string;
+  task_id?: string;
+  after_event_seq?: number;
 }
 
 export interface AgentCollaborationCancelTaskInput {
@@ -1006,11 +987,6 @@ export interface AgentCollaborationStreamPayload {
 export function parseAgentChatConfig(agent: Agent): AgentChatConfig {
   if (!agent.chatConfig) return {};
   try { return JSON.parse(agent.chatConfig); } catch { return {}; }
-}
-
-export function parseAgentParams(agent: Agent): AgentParams {
-  if (!agent.params) return {};
-  try { return JSON.parse(agent.params); } catch { return {}; }
 }
 
 function normalizeKnowledgeResource(raw: unknown): AgentKnowledgeResource | null {
@@ -1104,9 +1080,6 @@ export interface ProviderListItem {
   builtin: boolean;
   has_api_key: boolean;
   runtime_kind: 'cli' | 'direct';
-  cli_command?: string;
-  show_api_key?: boolean;
-  show_checker?: boolean;
 }
 
 export interface ModelItem {
@@ -1129,6 +1102,8 @@ export interface ProviderDetail extends ProviderListItem {
   api_key: string;
   base_url: string;
   default_base_url: string;
+  cli_command?: string;
+  show_api_key?: boolean;
   show_checker: boolean;
   check_model?: string;
   models: ModelItem[];
@@ -3435,6 +3410,12 @@ export const api = {
       input || {},
     ),
 
+  listAgentCollaborationEvents: (input: AgentCollaborationListEventsInput) =>
+    invokeRustDataFromStatus<AgentCollaborationListEventsInput, ListTaskEventsResponse>(
+      'agent_collaboration_list_events',
+      input,
+    ),
+
   startAgentCollaborationStream: (input: AgentCollaborationSubscribeInput) =>
     invokeRustDataFromStatus<AgentCollaborationSubscribeInput, { stream_id: string }>(
       'agent_collaboration_subscribe',
@@ -3963,6 +3944,12 @@ export const api = {
   resolveAgentLocalToolRequest: (input: AgentLocalToolRequestInput) =>
     invokeRustDataFromStatus<AgentLocalToolRequestInput, AgentLocalToolResultEvent>(
       'agent_resolve_local_tool_request',
+      input,
+    ),
+
+  executeAgentTurnOnce: (input: AgentExecuteTurnInput) =>
+    invokeRustDataFromStatus<AgentExecuteTurnInput, Record<string, unknown>>(
+      'agent_execute_turn',
       input,
     ),
 
@@ -5351,8 +5338,7 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
   const cfg = parseJSONSafe(item.config_json);
   const keyVaults = parseJSONSafe(item.key_vaults);
   const runtimeKind = String(cfg.runtime_kind || cfg.runtimeKind || cfg.runtime || '').trim().toLowerCase();
-  const cliCommand = String(cfg.cli_command || cfg.cliCommand || '').trim();
-  const hasCliCommand = Boolean(cliCommand);
+  const hasCliCommand = Boolean(String(cfg.cli_command || cfg.cliCommand || '').trim());
   return {
     id: item.id,
     name: item.name || '',
@@ -5362,9 +5348,6 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
     builtin: Boolean(item.builtin),
     has_api_key: Boolean(keyVaults.api_key || keyVaults.key || ''),
     runtime_kind: runtimeKind === 'cli' || hasCliCommand ? 'cli' : 'direct',
-    cli_command: cliCommand || undefined,
-    show_api_key: Boolean(item.show_api_key ?? true),
-    show_checker: Boolean(item.show_checker ?? true),
   };
 }
 
@@ -5403,7 +5386,9 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
     api_key: keyVaults.api_key || '',
     base_url: cfg.base_url || '',
     default_base_url: cfg.default_base_url || cfg.base_url || '',
-    show_checker: Boolean(item.show_checker ?? true),
+    cli_command: cfg.cli_command || cfg.cliCommand || '',
+    show_api_key: cfg.show_api_key ?? cfg.showApiKey,
+    show_checker: true,
     check_model: checkModel,
     models: models.length > 0
       ? models
@@ -5415,6 +5400,39 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
         context_window: 0,
       }],
   };
+}
+
+function isHttpGatewayMode() {
+  return typeof window !== 'undefined' && Boolean((window as any).__PT_GATEWAY_BASE__);
+}
+
+function recordField(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function stringField(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function extractAgentTurnText(result: Record<string, unknown> | undefined): string {
+  if (!result) return '';
+  const responseMessage = recordField(result.response_message || result.responseMessage);
+  const turn = recordField(result.turn);
+  const trace = recordField(result.trace);
+  return String(
+    stringField(responseMessage.content) ||
+    stringField(result.content) ||
+    stringField(result.text) ||
+    stringField(result.final_response) ||
+    stringField(result.finalResponse) ||
+    stringField(turn.final_response) ||
+    stringField(turn.finalResponse) ||
+    stringField(trace.final_response) ||
+    stringField(trace.finalResponse) ||
+    '',
+  );
 }
 
 export function streamChat(
@@ -5511,6 +5529,32 @@ export function streamAgentTurn(
 ): AbortController {
   const controller = new AbortController();
   log.info('api', 'streamAgentTurn started', { conversationId: input.conversation_id, agentId: input.agent_id });
+  if (isHttpGatewayMode()) {
+    (async () => {
+      try {
+        const result = await api.executeAgentTurnOnce(input);
+        if (controller.signal.aborted) return;
+        const content = extractAgentTurnText(result);
+        if (content) {
+          onEvent({ event: 'text', data: { content } });
+        }
+        const trace = recordField(result?.trace);
+        const turn = recordField(result?.turn);
+        onEvent({
+          event: 'done',
+          data: {
+            model: stringField(trace.model) || stringField(turn.model) || input.model || '',
+          },
+        });
+        onDone();
+      } catch (err: unknown) {
+        if (!controller.signal.aborted) {
+          onError(err instanceof Error ? err : new Error(String(err)));
+        }
+      }
+    })();
+    return controller;
+  }
   (async () => {
     let unlisten: (() => void) | undefined;
     try {
@@ -5590,6 +5634,7 @@ export function streamAgentCollaborationEvents(
   agentId: string,
   onEvent: (payload: AgentCollaborationStreamPayload) => void,
   onError: (err: Error) => void,
+  options: { taskId?: string; afterEventSeq?: number } = {},
 ): AbortController {
   const controller = new AbortController();
   (async () => {
@@ -5611,7 +5656,12 @@ export function streamAgentCollaborationEvents(
         onEvent(payload);
       });
 
-      const result = await api.startAgentCollaborationStream({ stream_id: streamId, agent_id: agentId });
+      const result = await api.startAgentCollaborationStream({
+        stream_id: streamId,
+        agent_id: agentId,
+        task_id: options.taskId,
+        after_event_seq: options.afterEventSeq ?? 0,
+      });
       if (result?.stream_id !== streamId) {
         unlisten();
         throw new Error('agent.canvas.streamIdMismatch');

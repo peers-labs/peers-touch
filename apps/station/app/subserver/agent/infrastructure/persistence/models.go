@@ -5,6 +5,7 @@ package persistence
 // 2026-04-11 — Added GrowthEvent and UserFeedback for Growth Dashboard.
 // 2026-04-11 — Added SuspectedItem and DiagnosticReport for growth diagnostic.
 // 2026-06-26 — Added AgentOfflineOp for offline operation queue.
+// 2026-06-30 — Added TaskRun/ExecutionStep/ExecutorLease/TaskCheckpoint for chat root task.
 func AllModels() []interface{} {
 	return []interface{}{
 		&Agent{},
@@ -26,15 +27,16 @@ func AllModels() []interface{} {
 		&DiagnosticReport{},
 		&AgentWorkspace{},
 		&AgentWorkspaceFile{},
-		&AgentChatConfig{},
-		&AgentModelParams{},
 		&AgentKnowledgeBinding{},
 		&AgentSkillBinding{},
 		&AgentMcpBinding{},
-		&AgentVoiceConfig{},
-		&AgentToolProfile{},
 		&AgentOfflineOp{},
 		&CollaborationTask{},
 		&CollaborationTaskNode{},
+		&TaskEvent{},
+		&TaskRun{},
+		&ExecutionStep{},
+		&ExecutorLease{},
+		&TaskCheckpoint{},
 	}
 }

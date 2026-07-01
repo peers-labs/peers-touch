@@ -7,6 +7,7 @@ import { AgentCanvasPage } from '../pages/AgentCanvasPage';
 import { AgentProfilePage } from '../pages/AgentProfilePage';
 import { getModule } from '../modules/registry';
 import { getPage } from '../kernel/page';
+import { openAgentChatSession } from '../utils/openAgentChatSession';
 import { scheduleIdle } from '../kernel/boot';
 import type { Page, Navigation, AppletPins, HashRouter } from '../types/navigation';
 
@@ -78,21 +79,10 @@ export function PageRouter({ page, router, navigation }: PageRouterProps) {
       {(mounted.has('agent') || page === 'agent') && (
         <div style={{ display: page === 'agent' ? 'contents' : 'none' }}>
           <AgentChatPage
-            onNavigateSettings={() => navigation.navigateToSettings('providers')}
-            onNavigateApplets={() => navigation.navigateToSettings('applets')}
-            onNavigateSkills={() => navigation.navigateToSettings('skills')}
             onNavigateAgentProfile={(agentName) => {
-              router.setProfileAgentName(agentName);
-              window.history.pushState(null, '', `#/agent-profile/${agentName}`);
-              navigation.navigateTo('agent-profile');
+              navigation.navigateToAgentSurface(agentName, 'profile');
             }}
             onNavigateAgentCanvas={() => navigation.navigateTo('agent-orchestration')}
-            onNavigatePages={(docId) => {
-              if (docId) {
-                window.history.pushState(null, '', `#/notes/${docId}`);
-              }
-              navigation.navigateTo('notes');
-            }}
           />
         </div>
       )}
@@ -125,17 +115,21 @@ function EphemeralPage({ page, router, navigation }: Pick<PageRouterProps, 'page
           agentName={router.profileAgentName}
           onBack={() => navigation.navigateTo('agent')}
           onStartChat={(name) => {
-            useAgentStore.getState().setSelectedAgent(name);
+            const agent = useAgentStore.getState().agents.find((item) => item.name === name);
+            if (agent) void openAgentChatSession(agent, { reason: 'profile-start-chat' });
             navigation.navigateTo('agent');
           }}
-          onNavigateCron={() => navigation.navigateToSettings('cron')}
-          onNavigateSkills={() => navigation.navigateToSettings('skills')}
-          onNavigateApplets={() => navigation.navigateToSettings('applets')}
+          onOpenOrchestration={() => navigation.navigateTo('agent-orchestration')}
         />
       );
 
     case 'agent-orchestration': {
-      return <AgentCanvasPage onBack={() => navigation.navigateTo('agent')} />;
+      return (
+        <AgentCanvasPage
+          onBack={() => navigation.navigateTo('agent')}
+          onCreateAgent={(agentName) => navigation.navigateToAgentSurface(agentName, 'profile')}
+        />
+      );
     }
 
     default: {

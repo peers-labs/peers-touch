@@ -311,7 +311,7 @@ const VISIBILITY: { id: Visibility; label: string; icon: LucideIcon; hint: strin
 interface AgentRow {
   id: string;
   name: string;
-  glyph: string;
+  icon: LucideIcon;
   providerId: string;
   model: string;
   enabled: boolean;
@@ -319,9 +319,9 @@ interface AgentRow {
 }
 
 const INITIAL_AGENTS: AgentRow[] = [
-  { id: 'ag-1', name: '科研助理', glyph: '🔬', providerId: 'anthropic', model: 'claude-sonnet', enabled: true, visibility: 'workspace' },
-  { id: 'ag-2', name: '写作伙伴', glyph: '✍️', providerId: 'openai', model: 'gpt-5.4', enabled: true, visibility: 'private' },
-  { id: 'ag-3', name: '数据分析师', glyph: '📊', providerId: 'openai', model: 'gpt-5.4-mini', enabled: false, visibility: 'private' },
+  { id: 'ag-1', name: '科研助理', icon: Bot, providerId: 'anthropic', model: 'claude-sonnet', enabled: true, visibility: 'workspace' },
+  { id: 'ag-2', name: '写作伙伴', icon: ScrollText, providerId: 'openai', model: 'gpt-5.4', enabled: true, visibility: 'private' },
+  { id: 'ag-3', name: '数据分析师', icon: Activity, providerId: 'openai', model: 'gpt-5.4-mini', enabled: false, visibility: 'private' },
 ];
 
 function VisibilityPicker({ value, onChange }: { value: Visibility; onChange: (v: Visibility) => void }) {
@@ -390,6 +390,7 @@ function AgentSection({ providers }: { providers: Provider[] }) {
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           {agents.map((a, i) => {
             const ap = providers.find((p) => p.id === a.providerId);
+            const Icon = a.icon;
             return (
               <div
                 key={a.id}
@@ -402,8 +403,8 @@ function AgentSection({ providers }: { providers: Provider[] }) {
                   opacity: a.enabled ? 1 : 0.55,
                 }}
               >
-                <div style={{ width: 36, height: 36, borderRadius: 9, background: T.fillQuaternary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
-                  {a.glyph}
+                <div style={{ width: 36, height: 36, borderRadius: 9, background: T.fillQuaternary, color: T.textSecondary, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Icon size={18} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{a.name}</div>

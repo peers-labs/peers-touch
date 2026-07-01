@@ -6,12 +6,12 @@ import {
   type AvailableModel,
   type Agent,
   type AgentChatConfig,
-  type AgentParams,
   type AppletInfo,
   parseAgentChatConfig,
-  parseAgentParams,
 } from '../services/desktop_api';
 import { beginMutation, endMutation, toStoreError, type RevalidationState } from './revalidation';
+
+type AgentSurface = 'chat' | 'profile';
 
 interface AgentState extends RevalidationState {
   selectedModel: string;
@@ -23,17 +23,21 @@ interface AgentState extends RevalidationState {
   agents: Agent[];
   applets: AppletInfo[];
   enabledAppletIds: string[];
+  agentSurfaces: Record<string, AgentSurface>;
+  agentRosterOpen: boolean;
 
   setSelectedModel: (model: string, providerId?: string) => void;
   setSelectedAgent: (agent: string) => void;
+  setAgentSurface: (agent: string, surface: AgentSurface) => void;
+  getAgentSurface: (agent: string) => AgentSurface;
+  setAgentRosterOpen: (open: boolean) => void;
   setDefaultAgent: (agentId: string) => Promise<void>;
   loadModels: () => Promise<void>;
   loadAgents: () => Promise<void>;
   loadApplets: () => Promise<void>;
   toggleApplet: (id: string) => Promise<void>;
-  updateAgentConfig: (agentName: string, updates: { chatConfig?: Partial<AgentChatConfig>; params?: Partial<AgentParams> }) => Promise<void>;
+  updateAgentConfig: (agentName: string, updates: { chatConfig?: Partial<AgentChatConfig> }) => Promise<void>;
   getCurrentAgentChatConfig: () => AgentChatConfig;
-  getCurrentAgentParams: () => AgentParams;
 }
 
 export const useAgentStore = create<AgentState>((set, get) => ({
@@ -46,6 +50,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   agents: [],
   applets: [],
   enabledAppletIds: [],
+  agentSurfaces: {},
+  agentRosterOpen: true,
   loading: false,
   error: null,
   lastLoadedAt: null,
@@ -60,6 +66,22 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     void api.setSelectedAgent(agent).catch((error) => {
       log.error('agent', 'Failed to persist selected agent', { agent, error: toStoreError(error) });
     });
+  },
+
+  setAgentSurface: (agent: string, surface: AgentSurface) => {
+    if (!agent) return;
+    set((state) => ({
+      agentSurfaces: {
+        ...state.agentSurfaces,
+        [agent]: surface,
+      },
+    }));
+  },
+
+  getAgentSurface: (agent: string) => get().agentSurfaces[agent] || 'chat',
+
+  setAgentRosterOpen: (open: boolean) => {
+    set({ agentRosterOpen: open });
   },
 
   setDefaultAgent: async (agentId: string) => {
@@ -223,7 +245,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
   },
 
-  updateAgentConfig: async (agentName: string, updates: { chatConfig?: Partial<AgentChatConfig>; params?: Partial<AgentParams> }) => {
+  updateAgentConfig: async (agentName: string, updates: { chatConfig?: Partial<AgentChatConfig> }) => {
     const { agents } = get();
     const agent = agents.find((a) => a.name === agentName);
     if (!agent) return;
@@ -235,12 +257,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       const merged = { ...existing, ...updates.chatConfig };
       payload.chatConfig = JSON.stringify(merged);
     }
-    if (updates.params) {
-      const existing = parseAgentParams(agent);
-      const merged = { ...existing, ...updates.params };
-      payload.params = JSON.stringify(merged);
-    }
-
     const previousAgents = agents;
     const optimisticAgent = { ...agent, ...payload };
     const mutationKey = `agent:${agent.id}`;
@@ -271,12 +287,5 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const agent = agents.find((a) => a.name === selectedAgent);
     if (!agent) return {};
     return parseAgentChatConfig(agent);
-  },
-
-  getCurrentAgentParams: () => {
-    const { agents, selectedAgent } = get();
-    const agent = agents.find((a) => a.name === selectedAgent);
-    if (!agent) return {};
-    return parseAgentParams(agent);
   },
 }));
