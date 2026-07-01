@@ -73,3 +73,40 @@ func TestCollaborationNodePromptIncludesPriorResults(t *testing.T) {
 		}
 	}
 }
+
+func TestCollaborationSynthesisPromptUsesNodeResults(t *testing.T) {
+	task := &persistence.CollaborationTask{
+		Description: "Decide the launch plan.",
+	}
+	nodes := []persistence.CollaborationTaskNode{
+		{
+			AgentID:       "agent-product",
+			Role:          "lead",
+			Status:        int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED),
+			ResultSummary: "Launch behind a feature flag.",
+		},
+		{
+			AgentID:       "agent-risk",
+			Role:          "collaborator",
+			Status:        int32(model.TaskNodeStatus_TASK_NODE_STATUS_FAILED),
+			ResultSummary: "Payment regression risk needs mitigation.",
+		},
+	}
+
+	prompt := collaborationSynthesisPrompt(task, nodes)
+	required := []string{
+		"Decide the launch plan.",
+		"Agent node results:",
+		"agent-product",
+		"Launch behind a feature flag.",
+		"agent-risk",
+		"Payment regression risk needs mitigation.",
+		"final answer",
+		"risks or disagreements",
+	}
+	for _, value := range required {
+		if !strings.Contains(prompt, value) {
+			t.Fatalf("expected synthesis prompt to contain %q, got:\n%s", value, prompt)
+		}
+	}
+}
