@@ -5,8 +5,8 @@
   "service": "note",
   "productPath": "Station-bundled Note service HTTP mapping -> SQLite/GORM persistence",
   "command": "pnpm applet:note-reload-persistence-gate",
-  "noteId": "01KVVNDRA532FFWP6D584S7XRC",
-  "marker": "reload-1782266126646",
+  "noteId": "01KWESETK1HX3TA38NEW4CVQ4X",
+  "marker": "reload-1782907890257",
   "checks": [
     "create response includes persisted note",
     "created note survives list reload",
@@ -18,6 +18,6 @@
     "restore response returns active note",
     "restored note survives list reload"
   ],
-  "startedAt": "2026-06-24T01:55:24.687Z",
-  "completedAt": "2026-06-24T01:55:26.670Z"
+  "startedAt": "2026-07-01T12:11:29.682Z",
+  "completedAt": "2026-07-01T12:11:30.282Z"
 }

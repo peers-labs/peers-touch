@@ -29,6 +29,7 @@ import {
   type AccountIdentity,
   type AppletProductWindowLaunchContext,
 } from '../services/desktop_api';
+import { setAppletProductWindowLaunchContext } from '../applet/productWindowE2E';
 
 const WARM_RESUME_KEY = 'pt.auth.lastActiveAt';
 const LAST_ACTIVE_PAGE_KEY = 'pt.nav.lastActivePage';
@@ -118,6 +119,7 @@ function appletLaunchContextToSessionUser(context: AppletProductWindowLaunchCont
 function activateAppletProductWindowLaunch(context: AppletProductWindowLaunchContext): boolean {
   if (!context.enabled || !context.appletId || !context.actorId) return false;
 
+  setAppletProductWindowLaunchContext(context);
   const loginMethod = context.loginMethod || 'product-window-certification';
   useSessionStore.getState().activateAppletLaunchSession({
     actorId: context.actorId,
@@ -127,7 +129,9 @@ function activateAppletProductWindowLaunch(context: AppletProductWindowLaunchCon
     loginProvider: loginMethod,
   });
 
-  const targetHash = `#/applet:${context.appletId}`;
+  const targetHash = context.mode === 'lifecycle-smoothness' && context.startPage === 'applets'
+    ? '#/applets'
+    : `#/applet:${context.appletId}`;
   if (window.location.hash !== targetHash) {
     window.history.replaceState(null, '', targetHash);
   }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { startTransition, useCallback, useEffect, useState } from 'react';
 import { getModule } from '../modules/registry';
 import { onWindowPopState } from '../kernel/events';
 import { persistLastActivePage } from './useAppLifecycle';
@@ -33,31 +33,39 @@ export function useHashRouter(): HashRouter {
   const [profileAgentName, setProfileAgentName] = useState(parseAgentNameFromHash);
 
   const setPage = useCallback((p: Page) => {
-    setPageRaw(p);
+    startTransition(() => {
+      setPageRaw(p);
+    });
     window.history.pushState(null, '', `#/${p}`);
     persistLastActivePage(p);
   }, []);
 
   const setProfilePage = useCallback((agentName: string) => {
-    setProfileAgentName(agentName);
-    setPageRaw('agent-profile');
+    startTransition(() => {
+      setProfileAgentName(agentName);
+      setPageRaw('agent-profile');
+    });
     window.history.pushState(null, '', `#/agent-profile/${encodeURIComponent(agentName)}`);
     persistLastActivePage('agent-profile');
   }, []);
 
   const resetToDefaultPage = useCallback(() => {
-    setPageRaw(DEFAULT_READY_PAGE);
+    startTransition(() => {
+      setPageRaw(DEFAULT_READY_PAGE);
+    });
     window.history.replaceState(null, '', `#/${DEFAULT_READY_PAGE}`);
   }, []);
 
   useEffect(() => {
     return onWindowPopState(() => {
       const p = parsePageFromHash();
-      setPageRaw(p);
+      startTransition(() => {
+        setPageRaw(p);
+        if (p === 'agent-profile') {
+          setProfileAgentName(parseAgentNameFromHash());
+        }
+      });
       persistLastActivePage(p);
-      if (p === 'agent-profile') {
-        setProfileAgentName(parseAgentNameFromHash());
-      }
     });
   }, []);
 
