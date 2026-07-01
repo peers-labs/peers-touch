@@ -321,6 +321,63 @@ func TestClaimNodeLeaseTxFencesActiveExecutorLease(t *testing.T) {
 	}
 }
 
+func TestCollaborationNodePolicyUsesSpecificityOrder(t *testing.T) {
+	task := &persistence.CollaborationTask{
+		MetaJSON: `{
+			"node_policy.default.retry_max": "1",
+			"node_policy.default.timeout_ms": "1000",
+			"node_policy.default.failure_policy": "continue",
+			"node_policy.role.lead.retry_max": "2",
+			"node_policy.agent.agent-1.timeout_ms": "2000",
+			"node_policy.node.node-1.retry_max": "3",
+			"node_policy.node.node-1.failure_policy": "skip_dependents"
+		}`,
+	}
+	node := &persistence.CollaborationTaskNode{
+		ID:      "node-1",
+		AgentID: "agent-1",
+		Role:    "lead",
+	}
+
+	policy := collaborationNodePolicyFor(task, node)
+	if policy.RetryMax != 3 {
+		t.Fatalf("expected node retry override, got %d", policy.RetryMax)
+	}
+	if policy.Timeout != 2*time.Second {
+		t.Fatalf("expected agent timeout override, got %s", policy.Timeout)
+	}
+	if policy.FailurePolicy != "skip_dependents" {
+		t.Fatalf("expected node failure policy override, got %q", policy.FailurePolicy)
+	}
+}
+
+func TestCollaborationNodePolicyFallsBackToDefaults(t *testing.T) {
+	task := &persistence.CollaborationTask{
+		MetaJSON: `{
+			"node_policy.default.retry_max": "bad",
+			"node_policy.default.timeout_ms": "0",
+			"node_policy.default.failure_policy": "unknown",
+			"node_policy.role.reviewer.retry_max": "2"
+		}`,
+	}
+	node := &persistence.CollaborationTaskNode{
+		ID:      "node-2",
+		AgentID: "agent-2",
+		Role:    "reviewer",
+	}
+
+	policy := collaborationNodePolicyFor(task, node)
+	if policy.RetryMax != 2 {
+		t.Fatalf("expected role retry policy, got %d", policy.RetryMax)
+	}
+	if policy.Timeout != 0 {
+		t.Fatalf("expected invalid timeout to fall back to zero, got %s", policy.Timeout)
+	}
+	if policy.FailurePolicy != "continue" {
+		t.Fatalf("expected invalid failure policy to fall back to continue, got %q", policy.FailurePolicy)
+	}
+}
+
 func TestCollaborationNodePromptIncludesPriorResults(t *testing.T) {
 	task := &persistence.CollaborationTask{
 		Description: "Ship the orchestration kernel.",

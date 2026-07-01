@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -671,10 +672,17 @@ type collaborationNodeContext struct {
 }
 
 type collaborationNodeRunResult struct {
-	Summary   string
-	Failed    bool
-	Cancelled bool
-	Deferred  bool
+	Summary       string
+	Failed        bool
+	Cancelled     bool
+	Deferred      bool
+	FailurePolicy string
+}
+
+type collaborationNodeExecutionPolicy struct {
+	RetryMax      int
+	Timeout       time.Duration
+	FailurePolicy string
 }
 
 type goalKeeperVerdict struct {
@@ -765,7 +773,7 @@ func (s *OrchestrationService) executeTaskNodesSequential(
 			s.publishTaskFinished(ctx, taskRecordToProto(task), nodeRecordsToProto(nodes), domain.EventTypeCollaborationTaskFailed)
 			return task, nodes
 		}
-		result := s.runCollaborationNode(ctx, db, actorID, task, node, priorResults)
+		result := s.runCollaborationNodeWithPolicy(ctx, db, actorID, task, node, priorResults)
 		if result.Deferred {
 			return task, nodes
 		}
@@ -776,6 +784,10 @@ func (s *OrchestrationService) executeTaskNodesSequential(
 		}
 		if result.Failed {
 			hasFailure = true
+			if result.FailurePolicy == "fail_task" || result.FailurePolicy == "skip_dependents" {
+				s.skipPendingNodesWithSummary(ctx, db, nodes[index+1:], "Node skipped by failure policy.")
+				return s.finishExecutedTask(ctx, db, actorID, task, nodes, hasFailure)
+			}
 		}
 		if strings.TrimSpace(result.Summary) != "" {
 			priorResults = append(priorResults, collaborationNodeContext{
@@ -806,6 +818,7 @@ func (s *OrchestrationService) executeTaskNodesParallel(
 	hasFailure := false
 	cancelled := false
 	deferred := false
+	failurePolicy := ""
 	for {
 		if s.isTaskCancelled(ctx, db, task) {
 			cancelled = true
@@ -837,10 +850,13 @@ func (s *OrchestrationService) executeTaskNodesParallel(
 			go func(node *persistence.CollaborationTaskNode, priorResults []collaborationNodeContext) {
 				defer wg.Done()
 				taskCopy := *task
-				result := s.runCollaborationNode(ctx, db, actorID, &taskCopy, node, priorResults)
+				result := s.runCollaborationNodeWithPolicy(ctx, db, actorID, &taskCopy, node, priorResults)
 				mu.Lock()
 				if result.Failed {
 					hasFailure = true
+					if result.FailurePolicy == "fail_task" || result.FailurePolicy == "skip_dependents" {
+						failurePolicy = result.FailurePolicy
+					}
 				}
 				if result.Cancelled {
 					cancelled = true
@@ -854,6 +870,10 @@ func (s *OrchestrationService) executeTaskNodesParallel(
 		wg.Wait()
 
 		if cancelled || deferred {
+			break
+		}
+		if failurePolicy == "fail_task" || failurePolicy == "skip_dependents" {
+			s.skipPendingNodesWithSummary(ctx, db, nodes, "Node skipped by failure policy.")
 			break
 		}
 	}
@@ -871,6 +891,41 @@ func (s *OrchestrationService) executeTaskNodesParallel(
 		return task, nodes
 	}
 	return s.finishExecutedTask(ctx, db, actorID, task, nodes, hasFailure)
+}
+
+func (s *OrchestrationService) runCollaborationNodeWithPolicy(
+	ctx context.Context,
+	db *gorm.DB,
+	actorID string,
+	task *persistence.CollaborationTask,
+	node *persistence.CollaborationTaskNode,
+	priorResults []collaborationNodeContext,
+) collaborationNodeRunResult {
+	policy := collaborationNodePolicyFor(task, node)
+	attempts := policy.RetryMax + 1
+	if attempts < 1 {
+		attempts = 1
+	}
+	var result collaborationNodeRunResult
+	for attempt := 0; attempt < attempts; attempt++ {
+		runCtx := ctx
+		cancel := func() {}
+		if policy.Timeout > 0 {
+			runCtx, cancel = context.WithTimeout(ctx, policy.Timeout)
+		}
+		result = s.runCollaborationNode(runCtx, db, actorID, task, node, priorResults)
+		cancel()
+		if !result.Failed || result.Cancelled || result.Deferred || attempt == attempts-1 {
+			result.FailurePolicy = policy.FailurePolicy
+			return result
+		}
+		s.updateTaskMeta(ctx, db, task, map[string]string{
+			"node_policy.last_failed_node_id":    node.ID,
+			"node_policy.last_failure_reason":    result.Summary,
+			"node_policy.retry_count." + node.ID: strconv.Itoa(attempt + 1),
+		})
+	}
+	return result
 }
 
 func (s *OrchestrationService) runCollaborationNode(
@@ -932,6 +987,50 @@ func (s *OrchestrationService) runCollaborationNode(
 	s.updateNode(ctx, db, node, model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED, summary)
 	s.publishNodeEvent(ctx, task, node, domain.EventTypeCollaborationNodeCompleted, turn.TurnID, summary)
 	return collaborationNodeRunResult{Summary: summary}
+}
+
+func collaborationNodePolicyFor(task *persistence.CollaborationTask, node *persistence.CollaborationTaskNode) collaborationNodeExecutionPolicy {
+	policy := collaborationNodeExecutionPolicy{FailurePolicy: "continue"}
+	if task == nil || node == nil || strings.TrimSpace(task.MetaJSON) == "" {
+		return policy
+	}
+	meta := map[string]string{}
+	if err := json.Unmarshal([]byte(task.MetaJSON), &meta); err != nil {
+		return policy
+	}
+	if value, ok := nodePolicyMetaValue(meta, node, "retry_max"); ok {
+		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
+			policy.RetryMax = parsed
+		}
+	}
+	if value, ok := nodePolicyMetaValue(meta, node, "timeout_ms"); ok {
+		if parsed, err := strconv.ParseInt(value, 10, 64); err == nil && parsed > 0 {
+			policy.Timeout = time.Duration(parsed) * time.Millisecond
+		}
+	}
+	if value, ok := nodePolicyMetaValue(meta, node, "failure_policy"); ok {
+		switch strings.TrimSpace(value) {
+		case "continue", "fail_task", "skip_dependents":
+			policy.FailurePolicy = strings.TrimSpace(value)
+		}
+	}
+	return policy
+}
+
+func nodePolicyMetaValue(meta map[string]string, node *persistence.CollaborationTaskNode, key string) (string, bool) {
+	prefixes := []string{
+		"node_policy.node." + node.ID + ".",
+		"node_policy.agent." + node.AgentID + ".",
+		"node_policy.role." + node.Role + ".",
+		"node_policy.default.",
+	}
+	for _, prefix := range prefixes {
+		value, ok := meta[prefix+key]
+		if ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value), true
+		}
+	}
+	return "", false
 }
 
 func (s *OrchestrationService) claimNodeLeaseTx(
