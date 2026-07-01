@@ -1014,11 +1014,7 @@ pub fn group_chat_dissolve_group(
         Err(error) => return error,
     };
     if input.group_ulid.trim().is_empty() {
-        return AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "group_ulid is required",
-            None,
-        );
+        return AppResult::fail(ErrorCode::InvalidArgument, "group_ulid is required", None);
     }
     let req = model::chat::DissolveGroupRequest {
         group_ulid: input.group_ulid,
@@ -1350,10 +1346,7 @@ pub fn group_chat_ack_offline_messages(
 
 /// Get group-chat statistics (unread counts, member counts, etc.).
 #[tauri::command]
-pub fn group_chat_get_stats(
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Vec<u8>> {
+pub fn group_chat_get_stats(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<Vec<u8>> {
     let token = match token_from_state_proto(&state, &window) {
         Ok(token) => token,
         Err(error) => return error,

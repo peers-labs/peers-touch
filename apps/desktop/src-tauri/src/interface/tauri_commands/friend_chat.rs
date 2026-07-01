@@ -5,11 +5,11 @@ use crate::contracts::{
     ChatScopeCursorSetInput, FriendChatAcceptFriendRequestInput, FriendChatAckInput,
     FriendChatBlockUserInput, FriendChatCreateSessionInput, FriendChatDeleteInput,
     FriendChatEditInput, FriendChatListBlockedUsersInput, FriendChatListFriendRequestsInput,
-    FriendChatListInput, FriendChatListMessagesInput, FriendChatPendingInput, FriendChatRecallInput,
-    FriendChatRejectFriendRequestInput, FriendChatSendFriendRequestInput, FriendChatSendInput,
-    FriendChatSyncInput, FriendChatSyncMessagesInput, FriendChatThreadCountsInput,
-    FriendChatThreadInput, FriendChatThreadReadInput, FriendConversationSettingsInput,
-    FriendConversationSettingsUpdateInput, StubPayload,
+    FriendChatListInput, FriendChatListMessagesInput, FriendChatPendingInput,
+    FriendChatRecallInput, FriendChatRejectFriendRequestInput, FriendChatSendFriendRequestInput,
+    FriendChatSendInput, FriendChatSyncInput, FriendChatSyncMessagesInput,
+    FriendChatThreadCountsInput, FriendChatThreadInput, FriendChatThreadReadInput,
+    FriendConversationSettingsInput, FriendConversationSettingsUpdateInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
