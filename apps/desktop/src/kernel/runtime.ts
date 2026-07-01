@@ -14,6 +14,8 @@
 import { log } from '../utils/logger';
 
 export type RuntimeScope = 'app' | 'session';
+export type RuntimePageAcquireReason = 'activate' | 'prewarm';
+export type RuntimePageReleaseReason = 'explicit-close' | 'evict' | 'unmount';
 
 export interface RuntimeDescriptor {
   /** Stable identifier (e.g. "social", "search", "settings"). */
@@ -38,6 +40,10 @@ export interface RuntimeDescriptor {
   bootstrap(actorId: string | null): Promise<void>;
   /** Optional periodic / event-driven projection refresh. */
   reconcile?(reason: string): Promise<void>;
+  /** Optional page-scoped runtime resource acquisition. Idempotent. */
+  acquirePage?(pageId: string, reason: RuntimePageAcquireReason): void | Promise<void>;
+  /** Optional page-scoped runtime resource release. Idempotent. */
+  releasePage?(pageId: string, reason: RuntimePageReleaseReason): void | Promise<void>;
 }
 
 interface RuntimeRecord {
@@ -135,6 +141,32 @@ export async function reconcileRuntime(id: string, reason: string): Promise<void
   } catch (err) {
     log.warn('runtime', `${id}:reconcile failed`, err);
   }
+}
+
+export function acquireRuntimePage(id: string, pageId: string, reason: RuntimePageAcquireReason): void {
+  const rec = records.get(id);
+  if (!rec || !rec.installed || !rec.desc.acquirePage) return;
+  const t0 = nowMs();
+  Promise.resolve(rec.desc.acquirePage(pageId, reason))
+    .then(() => {
+      log.info('runtime', `${id}:page-acquire`, { pageId, reason, ms: Math.round(nowMs() - t0) });
+    })
+    .catch((err) => {
+      log.warn('runtime', `${id}:page-acquire failed`, { pageId, reason, err });
+    });
+}
+
+export function releaseRuntimePage(id: string, pageId: string, reason: RuntimePageReleaseReason): void {
+  const rec = records.get(id);
+  if (!rec || !rec.installed || !rec.desc.releasePage) return;
+  const t0 = nowMs();
+  Promise.resolve(rec.desc.releasePage(pageId, reason))
+    .then(() => {
+      log.info('runtime', `${id}:page-release`, { pageId, reason, ms: Math.round(nowMs() - t0) });
+    })
+    .catch((err) => {
+      log.warn('runtime', `${id}:page-release failed`, { pageId, reason, err });
+    });
 }
 
 /**

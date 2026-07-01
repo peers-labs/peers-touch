@@ -1,4 +1,5 @@
 {
+  "note.badge.officialApplet": "PEERS TOUCH APPLET",
   "note.action.clearSearch": "Clear search",
   "note.action.cancelEdit": "Cancel edit",
   "note.action.create": "Create",
@@ -12,6 +13,8 @@
   "note.action.search": "Search",
   "note.detail.identifier": "Note ID",
   "note.detail.deletedAt": "Deleted at",
+  "note.detail.serviceBacked": "Synced through the Note service",
+  "note.detail.updatedAt": "Updated",
   "note.editor.contentLabel": "Content",
   "note.editor.contentPlaceholder": "Write note content",
   "note.editor.createDetail": "Create a note with user-entered content",
@@ -33,6 +36,8 @@
   "note.error.permissionDenied": "You do not have permission to perform this note action",
   "note.error.searchQueryRequired": "Enter a search query",
   "note.error.timeout": "The note service timed out. Try again.",
+  "note.list.items": "notes",
+  "note.preview.empty": "Empty note",
   "note.search.placeholder": "Search notes",
   "note.section.notes": "Notes",
   "note.section.deleted": "Deleted notes",

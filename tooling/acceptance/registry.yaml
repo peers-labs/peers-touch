@@ -103,6 +103,31 @@
       "require": ["desktop-check", "federation-desktop-gateway-smoke"]
     },
     {
+      "id": "desktop-applet-lifecycle",
+      "features": ["applet-desktop-lifecycle-smoothness"],
+      "when": {
+        "paths": [
+          "apps/desktop/src/kernel/PageHost.tsx",
+          "apps/desktop/src/kernel/pageRuntimeLease.ts",
+          "apps/desktop/src/kernel/runtime.ts",
+          "apps/desktop/src/pages/AppletRuntimePage.tsx",
+          "apps/desktop/src/pages/AppletRuntimePage.descriptor.tsx",
+          "apps/desktop/src/pages/AppletsPage.tsx",
+          "apps/desktop/src/runtimes/appletsRuntime.ts",
+          "apps/desktop/src/store/applets.ts",
+          "apps/desktop/src/applet/LynxContainer.tsx",
+          "apps/desktop/src/applet/productWindowE2E.ts",
+          "apps/desktop/src/applet/useProductWindowLifecycleE2E.ts",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/applets.rs",
+          "tooling/scripts/applet-desktop-product-window-gate.mjs"
+        ]
+      },
+      "require": [
+        "desktop-check",
+        "applet-desktop-lifecycle-smoothness"
+      ]
+    },
+    {
       "id": "acceptance-framework",
       "features": ["acceptance-framework"],
       "when": {
