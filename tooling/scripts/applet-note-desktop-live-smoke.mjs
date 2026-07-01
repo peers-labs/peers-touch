@@ -54,6 +54,7 @@ const mount = document.getElementById('mount');
 const invocations = [];
 const hostEvents = [];
 const networkRequests = [];
+const storage = new Map();
 let activeSessionId = '';
 let mountedHost = null;
 
@@ -80,6 +81,14 @@ function responseFor(method, params) {
       return {};
     case 'lifecycle.reportReady':
     case 'telemetry.track':
+      return { ok: true };
+    case 'storage.get':
+      return { value: storage.has(params?.key) ? storage.get(params.key) : null };
+    case 'storage.set':
+      storage.set(params?.key, params?.value ?? null);
+      return { ok: true };
+    case 'storage.remove':
+      storage.delete(params?.key);
       return { ok: true };
     case 'network.request': {
       networkRequests.push(params ?? {});

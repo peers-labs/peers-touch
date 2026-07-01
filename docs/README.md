@@ -198,6 +198,8 @@
 
 - 客户端 UX 方法论：`client/common/ux-design-methodology.md`
 - 客户端 UI Identity：`client/common/ui-identity/README.md`
+- 客户端前端组件树 / Alive 标准：`client/common/ui-identity/frontend-component-tree.md`
+- 客户端前端组件树 Alive 登记表：`client/common/ui-identity/frontend-component-tree-registry.md`
 - 表单控件 UX 契约：`client/common/form-control-ux-contract.md`
 - Desktop 平台总纲：`client/desktop/base.md`
 - Desktop 登录态状态机：`client/desktop/identity-lifecycle.md`
