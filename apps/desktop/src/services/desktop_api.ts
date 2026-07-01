@@ -944,6 +944,7 @@ export interface AgentCollaborationCreateInput {
   description: string;
   engine_type: number;
   agent_ids: string[];
+  judge_agent_id?: string;
   workspace_id?: string;
   budget_tokens?: number;
   budget_money?: number;
@@ -1102,6 +1103,8 @@ export interface ProviderDetail extends ProviderListItem {
   api_key: string;
   base_url: string;
   default_base_url: string;
+  cli_command?: string;
+  show_api_key?: boolean;
   show_checker: boolean;
   check_model?: string;
   models: ModelItem[];
@@ -2677,12 +2680,18 @@ export interface AppletProductWindowLaunchContext {
   name?: string;
   email?: string;
   loginMethod?: string;
-  mode?: 'product-shell';
+  mode?: 'product-shell' | 'lifecycle-smoothness';
+  secondaryAppletId?: string;
+  startPage?: string;
 }
 
 export interface AppletProductWindowRenderedInput {
   appletId: string;
   readySource?: 'lifecycle.reportReady' | 'host-render-fallback' | string;
+}
+
+export interface AppletProductWindowLifecycleInput {
+  evidence: Record<string, unknown>;
 }
 
 export interface SkillImportAddressInput {
@@ -3772,6 +3781,12 @@ export const api = {
   appletsProductWindowReportRendered: (input: AppletProductWindowRenderedInput) =>
     invokeRustDataFromStatus<AppletProductWindowRenderedInput, { recorded: boolean; path?: string; reason?: string }>(
       'applets_product_window_report_rendered',
+      input,
+    ),
+
+  appletsProductWindowReportLifecycle: (input: AppletProductWindowLifecycleInput) =>
+    invokeRustDataFromStatus<AppletProductWindowLifecycleInput, { recorded: boolean; path?: string; reason?: string }>(
+      'applets_product_window_report_lifecycle',
       input,
     ),
 
@@ -5384,6 +5399,8 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
     api_key: keyVaults.api_key || '',
     base_url: cfg.base_url || '',
     default_base_url: cfg.default_base_url || cfg.base_url || '',
+    cli_command: cfg.cli_command || cfg.cliCommand || '',
+    show_api_key: cfg.show_api_key ?? cfg.showApiKey,
     show_checker: true,
     check_model: checkModel,
     models: models.length > 0
