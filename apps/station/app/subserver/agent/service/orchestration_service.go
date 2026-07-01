@@ -323,6 +323,89 @@ func (s *OrchestrationService) CancelCollaborationTask(ctx context.Context, acto
 	return taskRecordToProto(&task), nodeRecordsToProto(nodes), nil
 }
 
+func (s *OrchestrationService) SubmitCollaborationNodeResult(ctx context.Context, actorID string, req *model.UpdateCollaborationTaskRequest) (*model.CollaborationTask, []*model.TaskNode, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	actorID = strings.TrimSpace(actorID)
+	taskID := strings.TrimSpace(req.GetTaskId())
+	meta := req.GetMeta()
+	nodeID := strings.TrimSpace(meta["node_id"])
+	resultSummary := strings.TrimSpace(meta["result_summary"])
+	turnID := strings.TrimSpace(meta["turn_id"])
+	resultStatus := strings.ToLower(strings.TrimSpace(meta["status"]))
+	if actorID == "" || taskID == "" || nodeID == "" {
+		return nil, nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "actor_id, task_id and meta.node_id are required", nil)
+	}
+	if resultSummary == "" {
+		resultSummary = "Desktop executor completed without a final response."
+	}
+	nodeStatus := model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED
+	eventType := domain.EventTypeCollaborationNodeCompleted
+	switch resultStatus {
+	case "", "completed":
+	case "failed", "error":
+		nodeStatus = model.TaskNodeStatus_TASK_NODE_STATUS_FAILED
+		eventType = domain.EventTypeCollaborationNodeFailed
+	default:
+		return nil, nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "meta.status must be completed or failed", nil)
+	}
+
+	var task persistence.CollaborationTask
+	var node persistence.CollaborationTaskNode
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("id = ? AND goal_owner_id = ?", taskID, actorID).First(&task).Error; err != nil {
+			return err
+		}
+		if task.Status != int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING) {
+			return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "collaboration task is not running", nil)
+		}
+		if err := tx.Where("id = ? AND task_id = ?", nodeID, task.ID).First(&node).Error; err != nil {
+			return err
+		}
+		if node.Status != int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING) {
+			return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "collaboration node is not running", nil)
+		}
+		agent, err := s.agentService.GetAgent(ctx, actorID, node.AgentID)
+		if err != nil {
+			return err
+		}
+		if agentExecutorKind(agent) != model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE {
+			return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "collaboration node is not owned by a desktop executor", nil)
+		}
+		now := time.Now()
+		node.Status = int32(nodeStatus)
+		node.ResultSummary = resultSummary
+		node.EndedAt = now
+		updates := map[string]interface{}{
+			"status":         node.Status,
+			"result_summary": node.ResultSummary,
+			"ended_at":       now,
+		}
+		return tx.Model(&persistence.CollaborationTaskNode{}).Where("id = ?", node.ID).Updates(updates).Error
+	}); err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "collaboration task or node not found", err)
+		}
+		return nil, nil, err
+	}
+
+	s.updateTaskMeta(ctx, db, &task, map[string]string{
+		"desktop_executor_state": "submitted_node_result",
+		"desktop_executor_node":  node.ID,
+		"desktop_executor_agent": node.AgentID,
+	})
+	s.publishNodeEvent(ctx, &task, &node, eventType, turnID, resultSummary)
+
+	var nodes []persistence.CollaborationTaskNode
+	if err := db.WithContext(ctx).Where("task_id = ?", task.ID).Order("started_at ASC").Find(&nodes).Error; err != nil {
+		return nil, nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to list collaboration task nodes", err)
+	}
+	s.startTaskExecution(actorID, task, nodes, "desktop-node-result")
+	return taskRecordToProto(&task), nodeRecordsToProto(nodes), nil
+}
+
 func (s *OrchestrationService) getDB(ctx context.Context) (*gorm.DB, error) {
 	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
 	if err != nil {
@@ -360,6 +443,7 @@ type collaborationNodeRunResult struct {
 	Summary   string
 	Failed    bool
 	Cancelled bool
+	Deferred  bool
 }
 
 type goalKeeperVerdict struct {
@@ -451,6 +535,9 @@ func (s *OrchestrationService) executeTaskNodesSequential(
 			return task, nodes
 		}
 		result := s.runCollaborationNode(ctx, db, actorID, task, node, priorResults)
+		if result.Deferred {
+			return task, nodes
+		}
 		if result.Cancelled {
 			s.skipPendingNodes(ctx, db, task, nodes[index+1:])
 			s.publishTaskFinished(ctx, taskRecordToProto(task), nodeRecordsToProto(nodes), domain.EventTypeCollaborationTaskCancelled)
@@ -487,6 +574,7 @@ func (s *OrchestrationService) executeTaskNodesParallel(
 
 	hasFailure := false
 	cancelled := false
+	deferred := false
 	for {
 		if s.isTaskCancelled(ctx, db, task) {
 			cancelled = true
@@ -499,6 +587,9 @@ func (s *OrchestrationService) executeTaskNodesParallel(
 
 		readyNodes := readyCollaborationNodes(nodes)
 		if len(readyNodes) == 0 {
+			if hasRunningCollaborationNodes(nodes) {
+				return task, nodes
+			}
 			if hasPendingCollaborationNodes(nodes) {
 				hasFailure = true
 				s.skipBlockedNodes(ctx, db, nodes)
@@ -523,16 +614,22 @@ func (s *OrchestrationService) executeTaskNodesParallel(
 				if result.Cancelled {
 					cancelled = true
 				}
+				if result.Deferred {
+					deferred = true
+				}
 				mu.Unlock()
 			}(node, priorResults)
 		}
 		wg.Wait()
 
-		if cancelled {
+		if cancelled || deferred {
 			break
 		}
 	}
 
+	if deferred {
+		return task, nodes
+	}
 	if cancelled || s.isTaskCancelled(ctx, db, task) {
 		s.skipPendingNodes(ctx, db, task, nodes)
 		s.publishTaskFinished(ctx, taskRecordToProto(task), nodeRecordsToProto(nodes), domain.EventTypeCollaborationTaskCancelled)
@@ -568,10 +665,14 @@ func (s *OrchestrationService) runCollaborationNode(
 		return collaborationNodeRunResult{Summary: summary, Failed: true}
 	}
 	if agentExecutorKind(agent) == model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE {
-		summary := desktopExecutorRequiredSummary(agent)
-		s.updateNode(ctx, db, node, model.TaskNodeStatus_TASK_NODE_STATUS_FAILED, summary)
-		s.publishNodeEvent(ctx, task, node, domain.EventTypeCollaborationNodeFailed, "", summary)
-		return collaborationNodeRunResult{Summary: summary, Failed: true}
+		summary := desktopExecutorAwaitingSummary(agent)
+		s.updateNode(ctx, db, node, model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING, summary)
+		s.updateTaskMeta(ctx, db, task, map[string]string{
+			"desktop_executor_state": "awaiting_node_result",
+			"desktop_executor_node":  node.ID,
+			"desktop_executor_agent": node.AgentID,
+		})
+		return collaborationNodeRunResult{Summary: summary, Deferred: true}
 	}
 
 	if err := s.ensureNodeConversation(ctx, db, actorID, task, node, agent); err != nil {
@@ -610,6 +711,9 @@ func (s *OrchestrationService) finishExecutedTask(
 	nodes []persistence.CollaborationTaskNode,
 	hasFailure bool,
 ) (*persistence.CollaborationTask, []persistence.CollaborationTaskNode) {
+	if hasRunningCollaborationNodes(nodes) {
+		return task, nodes
+	}
 	if s.isTaskCancelled(ctx, db, task) {
 		s.publishTaskFinished(ctx, taskRecordToProto(task), nodeRecordsToProto(nodes), domain.EventTypeCollaborationTaskCancelled)
 		return task, nodes
@@ -880,6 +984,15 @@ func readyCollaborationNodes(nodes []persistence.CollaborationTaskNode) []int {
 func hasPendingCollaborationNodes(nodes []persistence.CollaborationTaskNode) bool {
 	for index := range nodes {
 		if !isSynthesisNode(&nodes[index]) && nodes[index].Status == int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasRunningCollaborationNodes(nodes []persistence.CollaborationTaskNode) bool {
+	for index := range nodes {
+		if !isSynthesisNode(&nodes[index]) && nodes[index].Status == int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING) {
 			return true
 		}
 	}
@@ -1164,6 +1277,17 @@ func desktopExecutorRequiredSummary(agent *domain.Agent) string {
 		agentID = "unknown"
 	}
 	return fmt.Sprintf("Desktop device executor required for CLI agent %s; Station hosted orchestration cannot run local CLI commands yet.", agentID)
+}
+
+func desktopExecutorAwaitingSummary(agent *domain.Agent) string {
+	agentID := ""
+	if agent != nil {
+		agentID = strings.TrimSpace(agent.AgentID)
+	}
+	if agentID == "" {
+		agentID = "unknown"
+	}
+	return fmt.Sprintf("Awaiting desktop device executor result for CLI agent %s.", agentID)
 }
 
 func firstConfigString(config map[string]interface{}, keys ...string) string {

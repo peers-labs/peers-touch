@@ -1211,6 +1211,15 @@ pub struct AgentCollaborationCancelTaskInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentCollaborationSubmitNodeResultInput {
+    pub task_id: String,
+    pub node_id: String,
+    pub result_summary: String,
+    pub status: Option<String>,
+    pub turn_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentLocalToolRequestInput {
     pub source: String,
     pub server_name: Option<String>,

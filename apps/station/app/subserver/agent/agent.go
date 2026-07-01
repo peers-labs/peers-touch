@@ -203,6 +203,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-collaboration-list", "/agent/collaboration/list", server.POST, orchestrationHandlers.HandleListCollaborationTasks, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-collaboration-events-list", "/agent/collaboration/events/list", server.POST, orchestrationHandlers.HandleListTaskEvents, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-collaboration-cancel", "/agent/collaboration/cancel", server.POST, orchestrationHandlers.HandleCancelCollaborationTask, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-collaboration-node-submit-result", "/agent/collaboration/node/submit-result", server.POST, orchestrationHandlers.HandleSubmitCollaborationNodeResult, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-events-subscribe", "/agent/events/subscribe", server.POST, eventStreamHandlers.HandleSubscribe, logIDWrapper, jwtWrapper),
 
 		// POST: protobuf body carries ListMemoriesRequest (GET + empty body leaves agent_id unset).
