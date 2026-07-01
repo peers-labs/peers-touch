@@ -944,6 +944,7 @@ export interface AgentCollaborationCreateInput {
   description: string;
   engine_type: number;
   agent_ids: string[];
+  judge_agent_id?: string;
   workspace_id?: string;
   budget_tokens?: number;
   budget_money?: number;
