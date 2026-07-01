@@ -3,6 +3,7 @@ package service
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
@@ -136,5 +137,23 @@ func TestSynthesisNodeDetection(t *testing.T) {
 	}
 	if got := synthesisNode(nodes); got == nil || got.AgentID != "agent-judge" {
 		t.Fatalf("expected pending synthesis node, got %#v", got)
+	}
+}
+
+func TestTaskTimeBudgetExceeded(t *testing.T) {
+	startedAt := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	task := &persistence.CollaborationTask{
+		StartedAt:    startedAt,
+		BudgetTimeMs: 1000,
+	}
+
+	if taskTimeBudgetExceeded(task, startedAt.Add(999*time.Millisecond)) {
+		t.Fatal("expected budget to remain open before the limit")
+	}
+	if !taskTimeBudgetExceeded(task, startedAt.Add(time.Second)) {
+		t.Fatal("expected budget to be exceeded at the limit")
+	}
+	if got := taskElapsedMs(task, startedAt.Add(1500*time.Millisecond)); got != 1500 {
+		t.Fatalf("expected elapsed 1500ms, got %d", got)
 	}
 }

@@ -411,6 +411,10 @@ func (s *OrchestrationService) executeTaskNodesSequential(
 			s.publishTaskFinished(ctx, taskRecordToProto(task), nodeRecordsToProto(nodes), domain.EventTypeCollaborationTaskCancelled)
 			return task, nodes
 		}
+		if s.failTaskIfTimeBudgetExceeded(ctx, db, task, nodes[index:]) {
+			s.publishTaskFinished(ctx, taskRecordToProto(task), nodeRecordsToProto(nodes), domain.EventTypeCollaborationTaskFailed)
+			return task, nodes
+		}
 		result := s.runCollaborationNode(ctx, db, actorID, task, node, priorResults)
 		if result.Cancelled {
 			s.skipPendingNodes(ctx, db, task, nodes[index+1:])
@@ -485,6 +489,10 @@ func (s *OrchestrationService) executeTaskNodesParallel(
 		s.publishTaskFinished(ctx, taskRecordToProto(task), nodeRecordsToProto(nodes), domain.EventTypeCollaborationTaskCancelled)
 		return task, nodes
 	}
+	if s.failTaskIfTimeBudgetExceeded(ctx, db, task, nodes) {
+		s.publishTaskFinished(ctx, taskRecordToProto(task), nodeRecordsToProto(nodes), domain.EventTypeCollaborationTaskFailed)
+		return task, nodes
+	}
 	return s.finishExecutedTask(ctx, db, actorID, task, nodes, hasFailure)
 }
 
@@ -549,6 +557,10 @@ func (s *OrchestrationService) finishExecutedTask(
 ) (*persistence.CollaborationTask, []persistence.CollaborationTaskNode) {
 	if s.isTaskCancelled(ctx, db, task) {
 		s.publishTaskFinished(ctx, taskRecordToProto(task), nodeRecordsToProto(nodes), domain.EventTypeCollaborationTaskCancelled)
+		return task, nodes
+	}
+	if s.failTaskIfTimeBudgetExceeded(ctx, db, task, nodes) {
+		s.publishTaskFinished(ctx, taskRecordToProto(task), nodeRecordsToProto(nodes), domain.EventTypeCollaborationTaskFailed)
 		return task, nodes
 	}
 	if summary, turnID, failed := s.synthesizeTaskResult(ctx, db, actorID, task, nodes); strings.TrimSpace(summary) != "" {
@@ -721,14 +733,53 @@ func (s *OrchestrationService) isTaskCancelled(ctx context.Context, db *gorm.DB,
 	return true
 }
 
+func (s *OrchestrationService) failTaskIfTimeBudgetExceeded(ctx context.Context, db *gorm.DB, task *persistence.CollaborationTask, nodes []persistence.CollaborationTaskNode) bool {
+	if !taskTimeBudgetExceeded(task, time.Now()) {
+		return false
+	}
+	summary := taskTimeBudgetExceededSummary(task)
+	s.skipPendingNodesWithSummary(ctx, db, nodes, summary)
+	s.updateTaskMeta(ctx, db, task, map[string]string{
+		"circuit_breaker_state": "open",
+		"failure_reason":        "time_budget_exceeded",
+		"budget_time_ms":        fmt.Sprintf("%d", task.BudgetTimeMs),
+		"budget_elapsed_ms":     fmt.Sprintf("%d", taskElapsedMs(task, time.Now())),
+	})
+	s.updateTaskStatus(ctx, db, task, model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_FAILED)
+	return true
+}
+
 func (s *OrchestrationService) skipPendingNodes(ctx context.Context, db *gorm.DB, task *persistence.CollaborationTask, nodes []persistence.CollaborationTaskNode) {
+	_ = task
+	s.skipPendingNodesWithSummary(ctx, db, nodes, "Task cancelled.")
+}
+
+func (s *OrchestrationService) skipPendingNodesWithSummary(ctx context.Context, db *gorm.DB, nodes []persistence.CollaborationTaskNode, summary string) {
 	for index := range nodes {
 		node := &nodes[index]
 		if node.Status == int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED) || node.Status == int32(model.TaskNodeStatus_TASK_NODE_STATUS_FAILED) {
 			continue
 		}
-		s.updateNode(ctx, db, node, model.TaskNodeStatus_TASK_NODE_STATUS_SKIPPED, "Task cancelled.")
+		s.updateNode(ctx, db, node, model.TaskNodeStatus_TASK_NODE_STATUS_SKIPPED, summary)
 	}
+}
+
+func taskTimeBudgetExceeded(task *persistence.CollaborationTask, now time.Time) bool {
+	return task != nil && task.BudgetTimeMs > 0 && taskElapsedMs(task, now) >= task.BudgetTimeMs
+}
+
+func taskElapsedMs(task *persistence.CollaborationTask, now time.Time) int64 {
+	if task == nil || task.StartedAt.IsZero() {
+		return 0
+	}
+	if now.Before(task.StartedAt) {
+		return 0
+	}
+	return now.Sub(task.StartedAt).Milliseconds()
+}
+
+func taskTimeBudgetExceededSummary(task *persistence.CollaborationTask) string {
+	return fmt.Sprintf("Time budget exceeded after %dms (budget %dms).", taskElapsedMs(task, time.Now()), task.BudgetTimeMs)
 }
 
 func (s *OrchestrationService) updateNode(ctx context.Context, db *gorm.DB, node *persistence.CollaborationTaskNode, status model.TaskNodeStatus, resultSummary string) {

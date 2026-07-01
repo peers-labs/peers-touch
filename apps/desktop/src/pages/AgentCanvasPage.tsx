@@ -88,6 +88,13 @@ function formatCanvasResultSummary(summary: string | undefined, t: (key: string)
   return summary;
 }
 
+function formatBudgetFailure(task: unknown, t: (key: string, options?: Record<string, unknown>) => string) {
+  if (taskMetaString(task, 'failure_reason') !== 'time_budget_exceeded') return '';
+  const elapsed = taskMetaString(task, 'budget_elapsed_ms') || '?';
+  const budget = taskMetaString(task, 'budget_time_ms') || '?';
+  return t('agent.canvas.timeBudgetExceeded', { elapsed, budget });
+}
+
 function fieldString(value: unknown, ...keys: string[]) {
   if (!value || typeof value !== 'object') return '';
   const record = value as Record<string, unknown>;
@@ -115,6 +122,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
   const [runState, setRunState] = useState<CanvasRunState>('idle');
   const [selectedNodeId, setSelectedNodeId] = useState('');
   const [judgeAgentId, setJudgeAgentId] = useState('');
+  const [budgetTimeMs, setBudgetTimeMs] = useState(0);
   const [taskId, setTaskId] = useState('');
   const [finalSummary, setFinalSummary] = useState('');
   const [runError, setRunError] = useState('');
@@ -152,6 +160,12 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
         value: node.agent.id,
       }));
   }, [nodes]);
+  const budgetOptions = useMemo(() => [
+    { label: t('agent.canvas.budgetUnlimited'), value: 0 },
+    { label: t('agent.canvas.budgetOneMinute'), value: 60_000 },
+    { label: t('agent.canvas.budgetFiveMinutes'), value: 300_000 },
+    { label: t('agent.canvas.budgetFifteenMinutes'), value: 900_000 },
+  ], [t]);
   const visibleAgents = useMemo(() => {
     const query = agentSearch.trim().toLowerCase();
     if (!query) return agents;
@@ -354,6 +368,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
       engine_type: inferEngineType(prompt),
       agent_ids: nodes.map((node) => node.agent.id),
       judge_agent_id: runJudgeAgentId,
+      budget_time_ms: budgetTimeMs,
     }).then(async (created) => {
       const createdTaskId = fieldString(created.task, 'taskId', 'task_id');
       if (!createdTaskId) throw new Error(t('agent.canvas.errorNoTask'));
@@ -371,7 +386,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
         if (nextRunState === 'failed') {
           const failedNode = detail.nodes.find((node) => nodeStatusToRunState(node.status) === 'failed');
           const failureSummary = fieldString(failedNode, 'resultSummary', 'result_summary');
-          setRunError(formatCanvasResultSummary(failureSummary, t) || t('agent.canvas.failed'));
+          setRunError(formatBudgetFailure(detail.task, t) || formatCanvasResultSummary(failureSummary, t) || t('agent.canvas.failed'));
         }
         setNodes((current) => {
           const currentByNodeId = new Map(current.map((node) => [node.id, node]));
@@ -410,7 +425,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
       setRunError(error instanceof Error ? error.message : String(error));
       setNodes((current) => current.map((node) => ({ ...node, status: 'failed' })));
     });
-  }, [agents, canRun, nodes, prompt, selectedJudgeAgentId, t]);
+  }, [agents, budgetTimeMs, canRun, nodes, prompt, selectedJudgeAgentId, t]);
 
   const resetCanvas = useCallback(() => {
     runSeqRef.current += 1;
@@ -420,6 +435,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
     setPrompt('');
     setSelectedNodeId('');
     setJudgeAgentId('');
+    setBudgetTimeMs(0);
     setTaskId('');
     setFinalSummary('');
     setRunError('');
@@ -831,6 +847,22 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
                 <InfoRow icon={<Layers3 size={14} />} label={t('agent.canvas.matchedEngine')} value={engineLabel} />
                 <InfoRow icon={<Bot size={14} />} label={t('agent.canvas.nodeCount')} value={String(nodes.length)} />
                 <InfoRow icon={<CircleStop size={14} />} label={t('agent.canvas.runState')} value={t(`agent.canvas.status.${runState}`)} />
+              </Flexbox>
+              <Flexbox gap={6} style={{ marginTop: 12 }}>
+                <span style={{ fontSize: 12, fontWeight: 750, color: token.colorTextSecondary }}>
+                  {t('agent.canvas.timeBudget')}
+                </span>
+                <Select
+                  size="small"
+                  value={budgetTimeMs}
+                  disabled={isRunning}
+                  options={budgetOptions}
+                  onChange={(value) => setBudgetTimeMs(value)}
+                  style={{ width: '100%' }}
+                />
+                <span style={{ fontSize: 11, lineHeight: 1.45, color: token.colorTextTertiary }}>
+                  {t('agent.canvas.timeBudgetHint')}
+                </span>
               </Flexbox>
               <Flexbox gap={6} style={{ marginTop: 12 }}>
                 <span style={{ fontSize: 12, fontWeight: 750, color: token.colorTextSecondary }}>
