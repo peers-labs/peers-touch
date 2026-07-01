@@ -39,6 +39,14 @@ func (h *OrchestrationHandlers) HandleListCollaborationTasks(ctx context.Context
 	return &model.ListCollaborationTasksResponse{Tasks: tasks, Total: int32(total)}, nil
 }
 
+func (h *OrchestrationHandlers) HandleListTaskEvents(ctx context.Context, req *model.ListTaskEventsRequest) (*model.ListTaskEventsResponse, error) {
+	events, nextSeq, err := h.orchestrationService.ListTaskEvents(ctx, subjectActorID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.ListTaskEventsResponse{Events: events, NextEventSeq: nextSeq}, nil
+}
+
 func (h *OrchestrationHandlers) HandleCancelCollaborationTask(ctx context.Context, req *model.UpdateCollaborationTaskRequest) (*model.UpdateCollaborationTaskResponse, error) {
 	task, _, err := h.orchestrationService.CancelCollaborationTask(ctx, subjectActorID(ctx), req.GetTaskId())
 	if err != nil {

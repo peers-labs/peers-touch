@@ -3,25 +3,25 @@ import { useTranslation } from 'react-i18next';
 import { theme } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import type { ComponentProps } from 'react';
-import { ActionIcon, Avatar, SearchBar } from '@lobehub/ui';
+import { ActionIcon, SearchBar } from '@lobehub/ui';
 import { MoreHorizontal, PanelLeftClose, PanelLeftOpen, Plus, Search, Workflow } from 'lucide-react';
-import { AgentSettingsDrawer } from '../components/AgentSettingsDrawer';
 import { AgentSidebar } from '../components/AgentSidebar';
-import type { Agent } from '../services/desktop_api';
+import { AgentIconTile } from '../components/agent/AgentIconTile';
+import { api, type Agent } from '../services/desktop_api';
 import { useAgentStore } from '../store/agent';
+import { openAgentChatSession } from '../utils/openAgentChatSession';
 import { ChatPage } from './ChatPage';
 
 type AgentChatPageProps = ComponentProps<typeof ChatPage> & {
-  onNavigateAgentCanvas?: () => void;
+  onNavigateAgentCanvas: () => void;
 };
 
 export function AgentChatPage(props: AgentChatPageProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
-  const { agents, selectedAgent, setSelectedAgent } = useAgentStore();
-  const [agentDrawerOpen, setAgentDrawerOpen] = useState(false);
-  const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
-  const [agentListOpen, setAgentListOpen] = useState(true);
+  const { agents, selectedAgent, setSelectedAgent, setAgentSurface, getAgentSurface, agentRosterOpen, setAgentRosterOpen } = useAgentStore();
+  const agentListOpen = agentRosterOpen;
+  const setAgentListOpen = setAgentRosterOpen;
   const [agentSearch, setAgentSearch] = useState('');
 
   const filteredAgents = useMemo(() => {
@@ -35,25 +35,36 @@ export function AgentChatPage(props: AgentChatPageProps) {
   const otherAgents = filteredAgents.filter((agent) => !agent.pinned);
 
   const handleSelectAgent = useCallback((agent: Agent) => {
-    setSelectedAgent(agent.name);
-  }, [setSelectedAgent]);
+    if (getAgentSurface(agent.name) === 'profile') {
+      props.onNavigateAgentProfile?.(agent.name);
+      return;
+    }
 
-  const handleCreateAgent = useCallback(() => {
-    setEditingAgent(null);
-    setAgentDrawerOpen(true);
-  }, []);
+    void openAgentChatSession(agent, { reason: 'chat-roster-switch', draftTitle: t('agent.sidebar.newTopic') });
+  }, [getAgentSurface, props.onNavigateAgentProfile, t]);
+
+  const handleCreateAgent = useCallback(async () => {
+    const suffix = Date.now().toString(36);
+    const created = await api.createAgent({
+      name: `agent-${suffix}`,
+      title: t('agent.profile.identityTitlePlaceholder'),
+      description: '',
+      avatar: '',
+      soulMd: '# SOUL.md\n\n## Identity\n',
+      agentsMd: '# AGENTS.md\n\n## Workflow\n',
+      effort: 'medium',
+      visibility: 'private',
+      workspaceMode: 'agent',
+    });
+    setAgentSurface(created.name, 'profile');
+    setSelectedAgent(created.name);
+    props.onNavigateAgentProfile?.(created.name);
+  }, [props, setAgentSurface, setSelectedAgent, t]);
 
   const handleEditAgent = useCallback((agent: Agent) => {
-    setEditingAgent(agent);
-    setAgentDrawerOpen(true);
-  }, []);
-
-  const handleAgentSaved = useCallback((agent: Agent) => {
-    setAgentDrawerOpen(false);
-    setEditingAgent(null);
-    setSelectedAgent(agent.name);
+    setAgentSurface(agent.name, 'profile');
     props.onNavigateAgentProfile?.(agent.name);
-  }, [props, setSelectedAgent]);
+  }, [props, setAgentSurface]);
 
   return (
     <Flexbox
@@ -61,13 +72,14 @@ export function AgentChatPage(props: AgentChatPageProps) {
       height="100%"
       style={{
         minWidth: 0,
-        overflow: 'hidden',
+        overflow: 'auto',
         background: token.colorBgLayout,
       }}
     >
       <aside
         style={{
           width: agentListOpen ? 230 : 48,
+          flexShrink: 0,
           height: '100%',
           borderRight: `1px solid ${token.colorBorderSecondary}`,
           background: token.colorBgContainer,
@@ -134,7 +146,6 @@ export function AgentChatPage(props: AgentChatPageProps) {
                 token={token}
                 onClick={() => {
                   handleSelectAgent(agent);
-                  setAgentListOpen(true);
                 }}
               />
             ))}
@@ -142,7 +153,7 @@ export function AgentChatPage(props: AgentChatPageProps) {
         )}
         <button
           type="button"
-          onClick={() => setAgentListOpen((open) => !open)}
+          onClick={() => setAgentListOpen(!agentListOpen)}
           title={t(agentListOpen ? 'agent.sidebar.collapseAgents' : 'agent.sidebar.expandAgents')}
           style={{
             position: 'absolute',
@@ -163,7 +174,7 @@ export function AgentChatPage(props: AgentChatPageProps) {
 
       <aside
         style={{
-          width: 284,
+          width: 260,
           minWidth: 260,
           height: '100%',
           borderRight: `1px solid ${token.colorBorderSecondary}`,
@@ -177,23 +188,13 @@ export function AgentChatPage(props: AgentChatPageProps) {
           onEditAgent={handleEditAgent}
           onNavigateProfile={props.onNavigateAgentProfile}
           onNavigateChat={() => undefined}
-          onNavigateMarketplace={props.onNavigateSkills}
         />
       </aside>
 
-      <Flexbox flex={1} height="100%" style={{ minWidth: 0, overflow: 'hidden' }}>
+      <Flexbox flex={1} height="100%" style={{ minWidth: 520, overflow: 'hidden' }}>
         <ChatPage {...props} />
       </Flexbox>
 
-      <AgentSettingsDrawer
-        open={agentDrawerOpen}
-        editingAgent={editingAgent}
-        onClose={() => {
-          setAgentDrawerOpen(false);
-          setEditingAgent(null);
-        }}
-        onSaved={handleAgentSaved}
-      />
     </Flexbox>
   );
 }
@@ -235,7 +236,7 @@ function AgentRosterItem({
           cursor: 'pointer',
         }}
       >
-        <Avatar avatar={agent.avatar || '🤖'} shape="square" size={30} />
+        <AgentIconTile agent={agent} size={30} selected={active} />
       </button>
     );
   }
@@ -257,7 +258,7 @@ function AgentRosterItem({
         textAlign: 'left',
       }}
     >
-      <Avatar avatar={agent.avatar || '🤖'} shape="square" size={30} />
+      <AgentIconTile agent={agent} size={30} selected={active} />
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: 'block', fontSize: 13, fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {agent.title || agent.name}{agent.pinned ? ' ★' : ''}
