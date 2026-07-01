@@ -1102,6 +1102,8 @@ export interface ProviderDetail extends ProviderListItem {
   api_key: string;
   base_url: string;
   default_base_url: string;
+  cli_command?: string;
+  show_api_key?: boolean;
   show_checker: boolean;
   check_model?: string;
   models: ModelItem[];
@@ -5384,6 +5386,8 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
     api_key: keyVaults.api_key || '',
     base_url: cfg.base_url || '',
     default_base_url: cfg.default_base_url || cfg.base_url || '',
+    cli_command: cfg.cli_command || cfg.cliCommand || '',
+    show_api_key: cfg.show_api_key ?? cfg.showApiKey,
     show_checker: true,
     check_model: checkModel,
     models: models.length > 0

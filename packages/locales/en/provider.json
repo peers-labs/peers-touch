@@ -19,6 +19,8 @@
   "provider.detail.apiProxyUrl": "API Proxy URL",
   "provider.detail.apiProxyUrlDesc": "Must include http(s)://",
   "provider.detail.apiProxyUrlPlaceholder": "https://your-proxy-url.com/v1",
+  "provider.detail.cliCommand": "CLI Command",
+  "provider.detail.cliCommandDesc": "Runs locally in the Agent workspace through Desktop Rust. Station stores configuration only and never executes local CLI commands.",
   "provider.detail.connectivityCheck": "Connectivity Check",
   "provider.detail.connectivityCheckDesc": "Test if the API Key and proxy URL are correctly filled",
   "provider.detail.enterModelId": "Enter or select model ID",

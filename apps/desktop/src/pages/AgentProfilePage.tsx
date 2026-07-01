@@ -14,10 +14,10 @@ import {
 import { Tag, Button } from '@lobehub/ui';
 import {
   Settings2,
+  ArrowLeft,
   MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
-  Play,
   Bot,
   Brain,
   FolderOpen,
@@ -50,6 +50,7 @@ import { BuilderPanel } from '../components/BuilderPanel';
 import { AgentIconTile } from '../components/agent/AgentIconTile';
 import { useSkillStore } from '../store/skill';
 import { EVENT, eventBus } from '../kernel/events';
+import { openAgentChatSession } from '../utils/openAgentChatSession';
 import type { AgentTurnStreamEventPayload } from '../kernel/events/types';
 import {
   DelegationStatus,
@@ -60,7 +61,6 @@ import {
 interface AgentProfilePageProps {
   agentName: string;
   onBack?: () => void;
-  onStartChat: (agentName: string) => void;
   onOpenOrchestration?: () => void;
 }
 
@@ -222,7 +222,7 @@ const ACTIVITY_TAB_KEYS: { key: ProfileTab; labelKey: string; icon: ReactNode }[
 
 function AgentWorkbenchHero({
   agent,
-  onStartChat,
+  onBack,
   onOpenSettings,
   onTitleBlur,
   onDescriptionBlur,
@@ -230,7 +230,7 @@ function AgentWorkbenchHero({
   descriptionGenerating,
 }: {
   agent: Agent;
-  onStartChat: () => void;
+  onBack?: () => void;
   onOpenSettings: () => void;
   onTitleBlur: (value: string) => void;
   onDescriptionBlur: (value: string) => void;
@@ -296,8 +296,8 @@ function AgentWorkbenchHero({
             aria-label={t('agent.profile.editSettings')}
             style={{ width: 32, height: 32, padding: 0 }}
           />
-          <Button icon={<Play size={14} />} onClick={onStartChat}>
-            {t('agent.profile.startConversation')}
+          <Button icon={<ArrowLeft size={14} />} onClick={onBack}>
+            {t('agent.profile.backToAgent')}
           </Button>
         </Flexbox>
       </Flexbox>
@@ -876,12 +876,11 @@ function parseAllowedRootsForDisplay(value?: string): string {
 export function AgentProfilePage({
   agentName,
   onBack,
-  onStartChat,
   onOpenOrchestration,
 }: AgentProfilePageProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
-  const { agents, availableModels, loadAgents, loadModels, setAgentSurface, agentRosterOpen, setAgentRosterOpen } = useAgentStore();
+  const { agents, availableModels, loadAgents, loadModels, setSelectedAgent, setAgentSurface, agentRosterOpen, setAgentRosterOpen } = useAgentStore();
 
   const [profileAgentName, setProfileAgentName] = useState(agentName);
   const agentListOpen = agentRosterOpen;
@@ -936,10 +935,13 @@ export function AgentProfilePage({
   const collapsedOtherAgents = agents.filter((item) => !item.pinned);
 
   const handleSelectProfileAgent = useCallback((nextAgent: Agent) => {
-    setAgentSurface(nextAgent.name, 'profile');
-    setProfileAgentName(nextAgent.name);
-    window.history.pushState(null, '', `#/agent-profile/${encodeURIComponent(nextAgent.name)}`);
-  }, [setAgentSurface]);
+    setSelectedAgent(nextAgent.name);
+    void openAgentChatSession(nextAgent, {
+      reason: 'profile-roster-switch',
+      draftTitle: t('agent.sidebar.newTopic'),
+    });
+    onBack?.();
+  }, [onBack, setSelectedAgent, t]);
 
   const skillLabelByValue = useMemo(() => {
     const labels = new Map<string, string>();
@@ -967,9 +969,8 @@ export function AgentProfilePage({
   }, [loadAgents]);
 
   useEffect(() => {
-    setAgentSurface(agentName, 'profile');
     setProfileAgentName(agentName);
-  }, [agentName, setAgentSurface]);
+  }, [agentName]);
 
   useEffect(() => {
     const found = agents.find((a) => a.name === profileAgentName) || agents[0];
@@ -1790,7 +1791,7 @@ export function AgentProfilePage({
               <AgentWorkbenchHero
                 key={agent.id}
                 agent={agent}
-                onStartChat={() => onStartChat(agent.name)}
+                onBack={onBack}
                 onOpenSettings={() => setSettingsOpen(true)}
                 onTitleBlur={handleTitleBlur}
                 onDescriptionBlur={handleDescriptionBlur}
@@ -1804,14 +1805,15 @@ export function AgentProfilePage({
                 flexShrink: 0,
                 marginTop: 16,
                 marginBottom: 18,
-                display: 'flex',
+                display: 'grid',
+                gridTemplateColumns: 'minmax(130px, 190px) auto minmax(160px, 1fr) auto minmax(96px, 120px)',
                 alignItems: 'center',
                 gap: 10,
-                flexWrap: 'wrap',
                 padding: 14,
                 borderRadius: 12,
                 border: `1px solid ${token.colorBorderSecondary}`,
                 background: token.colorBgContainer,
+                minWidth: 0,
               }}
             >
               <Select
@@ -1821,13 +1823,13 @@ export function AgentProfilePage({
                 allowClear
                 showSearch
                 options={providerOptions}
-                style={{ width: 190 }}
+                style={{ width: '100%' }}
                 filterOption={(input, option) =>
                   String(option?.label || '').toLowerCase().includes(input.toLowerCase())
                 }
               />
               <span style={{ color: token.colorTextQuaternary, fontSize: 13 }}>→</span>
-              <div style={{ flex: '1 1 220px', minWidth: 180 }}>
+              <div style={{ minWidth: 0 }}>
                 <ModelSelect
                   models={routingModels}
                   value={agent.model || undefined}
@@ -1842,7 +1844,7 @@ export function AgentProfilePage({
                 value={agent.effort || 'medium'}
                 onChange={handleEffortChange}
                 placeholder={t('agent.profile.routing.effortPlaceholder')}
-                style={{ width: 120 }}
+                style={{ width: '100%' }}
                 options={[
                   { value: 'low', label: t('agent.profile.effort.low') },
                   { value: 'medium', label: t('agent.profile.effort.medium') },

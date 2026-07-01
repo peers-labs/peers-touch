@@ -97,6 +97,14 @@ function fieldString(value: unknown, ...keys: string[]) {
   return '';
 }
 
+function taskMetaString(task: unknown, key: string) {
+  if (!task || typeof task !== 'object') return '';
+  const meta = (task as Record<string, unknown>).meta;
+  if (!meta || typeof meta !== 'object') return '';
+  const value = (meta as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
@@ -106,6 +114,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
   const [runState, setRunState] = useState<CanvasRunState>('idle');
   const [selectedNodeId, setSelectedNodeId] = useState('');
   const [taskId, setTaskId] = useState('');
+  const [finalSummary, setFinalSummary] = useState('');
   const [runError, setRunError] = useState('');
   const [agentSearch, setAgentSearch] = useState('');
   const [libraryOpen, setLibraryOpen] = useState(true);
@@ -170,7 +179,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
         title: t('agent.canvas.resultFinal'),
         tone: 'purple' as const,
         lines: [
-          prompt.trim() || t('agent.canvas.resultNoPrompt'),
+          finalSummary || prompt.trim() || t('agent.canvas.resultNoPrompt'),
           t('agent.canvas.resultEngine', { engine: engineLabel }),
           t('agent.canvas.resultState', { state: t(`agent.canvas.status.${runState}`) }),
         ],
@@ -201,7 +210,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
           ],
       },
     ];
-  }, [completedNodes.length, engineLabel, failedNodes, nodes, prompt, runState, t, taskId]);
+  }, [completedNodes.length, engineLabel, failedNodes, finalSummary, nodes, prompt, runState, t, taskId]);
 
   const fillExamplePrompt = useCallback(() => {
     if (isRunning) return;
@@ -331,6 +340,8 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
 
       const applyTaskDetail = (detail: Awaited<ReturnType<typeof api.getAgentCollaborationTask>>) => {
         const taskStatus = detail.task?.status;
+        const summary = taskMetaString(detail.task, 'final_summary');
+        if (summary) setFinalSummary(summary);
         const nextRunState = taskStatusToRunState(taskStatus);
         setRunState(nextRunState);
         if (nextRunState === 'failed') {
@@ -382,6 +393,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
     setPrompt('');
     setSelectedNodeId('');
     setTaskId('');
+    setFinalSummary('');
     setRunError('');
     setRunState('idle');
   }, []);
