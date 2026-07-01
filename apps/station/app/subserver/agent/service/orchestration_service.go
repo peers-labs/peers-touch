@@ -732,6 +732,9 @@ func (s *OrchestrationService) finishExecutedTask(
 	} else if failed {
 		hasFailure = true
 	}
+	if hasRunningCollaborationNodes(nodes) {
+		return task, nodes
+	}
 	verdict := evaluateGoalKeeperVerdict(task, nodes, finalSummary, hasFailure)
 	s.updateTaskMeta(ctx, db, task, goalKeeperVerdictMeta(verdict))
 	if verdict.Verdict == model.AcceptanceVerdict_ACCEPTANCE_VERDICT_REJECTED {
@@ -757,6 +760,9 @@ func (s *OrchestrationService) synthesizeTaskResult(
 ) (string, string, bool) {
 	if s.turnService == nil || s.agentService == nil || task == nil {
 		return "", "", false
+	}
+	if completedSynthNode := completedSynthesisNode(nodes); completedSynthNode != nil {
+		return strings.TrimSpace(completedSynthNode.ResultSummary), "", false
 	}
 	synthNode := synthesisNode(nodes)
 	if synthNode == nil {
@@ -784,11 +790,15 @@ func (s *OrchestrationService) synthesizeTaskResult(
 		return "", "", false
 	}
 	if agentExecutorKind(agent) == model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE {
-		summary := desktopExecutorRequiredSummary(agent)
+		summary := desktopExecutorAwaitingSummary(agent)
 		if isSynthesisNode(synthNode) {
-			s.updateNode(ctx, db, synthNode, model.TaskNodeStatus_TASK_NODE_STATUS_FAILED, summary)
-			s.publishNodeEvent(ctx, task, synthNode, domain.EventTypeCollaborationNodeFailed, "", summary)
-			return "", "", true
+			s.updateNode(ctx, db, synthNode, model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING, summary)
+			s.updateTaskMeta(ctx, db, task, map[string]string{
+				"desktop_executor_state": "awaiting_synthesis_result",
+				"desktop_executor_node":  synthNode.ID,
+				"desktop_executor_agent": synthNode.AgentID,
+			})
+			return "", "", false
 		}
 		return "", "", false
 	}
@@ -842,6 +852,15 @@ func firstCompletedNode(nodes []persistence.CollaborationTaskNode) *persistence.
 func synthesisNode(nodes []persistence.CollaborationTaskNode) *persistence.CollaborationTaskNode {
 	for index := range nodes {
 		if isSynthesisNode(&nodes[index]) && nodes[index].Status == int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING) {
+			return &nodes[index]
+		}
+	}
+	return nil
+}
+
+func completedSynthesisNode(nodes []persistence.CollaborationTaskNode) *persistence.CollaborationTaskNode {
+	for index := range nodes {
+		if isSynthesisNode(&nodes[index]) && nodes[index].Status == int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED) && strings.TrimSpace(nodes[index].ResultSummary) != "" {
 			return &nodes[index]
 		}
 	}
@@ -992,7 +1011,7 @@ func hasPendingCollaborationNodes(nodes []persistence.CollaborationTaskNode) boo
 
 func hasRunningCollaborationNodes(nodes []persistence.CollaborationTaskNode) bool {
 	for index := range nodes {
-		if !isSynthesisNode(&nodes[index]) && nodes[index].Status == int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING) {
+		if nodes[index].Status == int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING) {
 			return true
 		}
 	}
