@@ -1217,6 +1217,32 @@ pub struct AgentCollaborationSubmitNodeResultInput {
     pub result_summary: String,
     pub status: Option<String>,
     pub turn_id: Option<String>,
+    pub lease_id: Option<String>,
+    pub executor_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentCollaborationClaimExecutorInput {
+    pub executor_id: String,
+    pub lease_ttl_ms: Option<i64>,
+    pub task_id: Option<String>,
+    pub agent_id: Option<String>,
+    pub node_id: Option<String>,
+    pub capabilities: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentCollaborationHeartbeatLeaseInput {
+    pub lease_id: String,
+    pub executor_id: String,
+    pub lease_ttl_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentCollaborationReleaseLeaseInput {
+    pub lease_id: String,
+    pub executor_id: String,
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
