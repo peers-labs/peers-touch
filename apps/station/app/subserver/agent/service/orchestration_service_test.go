@@ -117,6 +117,23 @@ func TestReadyCollaborationNodesRespectsPrerequisites(t *testing.T) {
 	}
 }
 
+func TestRunningCollaborationNodesAreDeferred(t *testing.T) {
+	nodes := []persistence.CollaborationTaskNode{
+		{ID: "node-a", AgentID: "agent-a", Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING)},
+		{ID: "node-s", AgentID: "agent-j", Role: collaborationRoleSynthesizer, Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_PENDING), PrerequisiteNodeIDs: "node-a"},
+	}
+
+	if ready := readyCollaborationNodes(nodes); len(ready) != 0 {
+		t.Fatalf("expected no ready nodes while a prerequisite is still running, got %#v", ready)
+	}
+	if !hasRunningCollaborationNodes(nodes) {
+		t.Fatal("expected running collaboration node to defer task finishing")
+	}
+	if hasPendingCollaborationNodes(nodes) {
+		t.Fatal("expected synthesis-only pending node not to count as a runnable pending collaboration node")
+	}
+}
+
 func TestAgentExecutorKindDetectsDesktopCliRuntime(t *testing.T) {
 	tests := []struct {
 		name   string

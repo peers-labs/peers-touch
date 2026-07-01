@@ -54,3 +54,11 @@ func (h *OrchestrationHandlers) HandleCancelCollaborationTask(ctx context.Contex
 	}
 	return &model.UpdateCollaborationTaskResponse{Task: task}, nil
 }
+
+func (h *OrchestrationHandlers) HandleSubmitCollaborationNodeResult(ctx context.Context, req *model.UpdateCollaborationTaskRequest) (*model.UpdateCollaborationTaskResponse, error) {
+	task, _, err := h.orchestrationService.SubmitCollaborationNodeResult(ctx, subjectActorID(ctx), req)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.UpdateCollaborationTaskResponse{Task: task}, nil
+}
