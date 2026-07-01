@@ -10,8 +10,13 @@ import { log } from '../utils/logger';
 export type RuntimeAppletStatus = 'available' | 'installed' | 'active' | 'revoked' | 'disabled' | 'update-available';
 export type RuntimeAppletSource = 'station' | 'local-dev' | 'bundled-official';
 
-const DEFAULT_INSTALLED_APPLET_IDS = ['peers.note'];
+const PRODUCTION_DEFAULT_INSTALLED_APPLET_IDS = ['peers.note'];
+const DEV_LIFECYCLE_DEFAULT_INSTALLED_APPLET_IDS = ['hello-lynx'];
+const DEFAULT_INSTALLED_APPLET_IDS = import.meta.env.DEV
+  ? [...PRODUCTION_DEFAULT_INSTALLED_APPLET_IDS, ...DEV_LIFECYCLE_DEFAULT_INSTALLED_APPLET_IDS]
+  : PRODUCTION_DEFAULT_INSTALLED_APPLET_IDS;
 const LOCAL_DEV_INSTALLED_APPLETS_KEY = 'pt.applets.localDevInstalledIds';
+const loadAppletInFlight = new Map<string, Promise<void>>();
 
 export interface RuntimeAppletInfo {
   manifest: AppletInfo;
@@ -33,6 +38,8 @@ interface AppletsState {
   stationError?: string;
   diagnostics: AppletDiagnostic[];
   lastOpenedAtById: Record<string, number>;
+  runtimeErrorDetailById: Record<string, string>;
+  runtimeErrorKeyById: Record<string, string>;
   loading: boolean;
   refresh: () => Promise<void>;
   importAppletDirectory: () => Promise<void>;
@@ -209,16 +216,47 @@ function mergeRuntimeApplets(stationApplets: RuntimeAppletInfo[], localApplets: 
     byId.set(item.manifest.id, item);
   }
   for (const item of localApplets) {
-    if (!byId.has(item.manifest.id)) {
+    const stationItem = byId.get(item.manifest.id);
+    if (!stationItem) {
       byId.set(item.manifest.id, item);
       continue;
     }
-    const stationItem = byId.get(item.manifest.id);
-    if (stationItem && stationItem.manifest.path.length === 0) {
+    if (item.status !== 'available' || item.source === 'bundled-official') {
+      byId.set(item.manifest.id, { ...stationItem, ...item });
+      continue;
+    }
+    if (stationItem.manifest.path.length === 0) {
       byId.set(item.manifest.id, { ...stationItem, manifest: item.manifest });
     }
   }
   return Array.from(byId.values());
+}
+
+function markAppletActive(items: RuntimeAppletInfo[], appletId: string, openedAt: number): RuntimeAppletInfo[] {
+  return items.map((item) => (
+    item.manifest.id === appletId
+      ? { ...item, status: 'active', lastOpenedAt: openedAt }
+      : item
+  ));
+}
+
+function runtimeErrorDetail(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const details = error as Error & {
+    code?: unknown;
+    details?: unknown;
+  };
+  const parts = [
+    `name=${error.name}`,
+    `message=${error.message}`,
+  ];
+  if (typeof details.code === 'string') {
+    parts.push(`code=${details.code}`);
+  }
+  if (details.details != null) {
+    parts.push(`details=${JSON.stringify(details.details)}`);
+  }
+  return parts.join(' | ');
 }
 
 export const useAppletsStore = create<AppletsState>((set, get) => ({
@@ -228,6 +266,8 @@ export const useAppletsStore = create<AppletsState>((set, get) => ({
   stationUnavailable: false,
   diagnostics: [],
   lastOpenedAtById: {},
+  runtimeErrorDetailById: {},
+  runtimeErrorKeyById: {},
   loading: true,
 
   refresh: async () => {
@@ -295,53 +335,100 @@ export const useAppletsStore = create<AppletsState>((set, get) => ({
   },
 
   loadApplet: async (id) => {
-    const target = [...get().applets, ...get().catalogApplets].find((info) => info.manifest.id === id);
-    if (target?.status === 'revoked') {
-      throw new Error('error.applet.revoked');
-    }
-    if (!target || target.status === 'available') {
-      await get().installApplet(id);
-    }
-    const refreshedTarget = [...get().applets, ...get().catalogApplets].find((info) => info.manifest.id === id) ?? target;
-    if (refreshedTarget?.source === 'station' && !refreshedTarget.manifest.path) {
-      const entry = refreshedTarget.manifest.load.desktop?.entry;
-      if (!entry || !refreshedTarget.stationBundleUrl) {
-        throw new Error('error.applet.stationBundleUnavailable');
-      }
-      const materialized = await api.appletStoreMaterializeBundle({
-        appletId: id,
-        version: refreshedTarget.manifest.version,
-        bundleUrl: refreshedTarget.stationBundleUrl,
-        bundleSha256: refreshedTarget.stationBundleSha256,
-        entry,
-        assets: refreshedTarget.stationAssets,
+    const existing = loadAppletInFlight.get(id);
+    if (existing) return existing;
+
+    const operation = (async () => {
+      set((state) => {
+        if (!state.runtimeErrorKeyById[id]) return state;
+        const runtimeErrorDetailById = { ...state.runtimeErrorDetailById };
+        const runtimeErrorKeyById = { ...state.runtimeErrorKeyById };
+        delete runtimeErrorDetailById[id];
+        delete runtimeErrorKeyById[id];
+        return { ...state, runtimeErrorDetailById, runtimeErrorKeyById };
       });
-      const materializedManifest = {
-        ...refreshedTarget.manifest,
-        path: convertFileSrc(materialized.directory),
-      };
-      AppletManager.getInstance().registerApplet(materializedManifest);
+      let target = [...get().applets, ...get().catalogApplets].find((info) => info.manifest.id === id);
+      if (!target) {
+        await get().refresh();
+        target = [...get().applets, ...get().catalogApplets].find((info) => info.manifest.id === id);
+      }
+      if (target?.status === 'revoked') {
+        throw new Error('error.applet.revoked');
+      }
+      if (!target || target.status === 'available') {
+        await get().installApplet(id);
+      }
+      const refreshedTarget = [...get().applets, ...get().catalogApplets].find((info) => info.manifest.id === id) ?? target;
+      if (refreshedTarget?.source === 'station' && !refreshedTarget.manifest.path) {
+        const entry = refreshedTarget.manifest.load.desktop?.entry;
+        if (!entry || !refreshedTarget.stationBundleUrl) {
+          throw new Error('error.applet.stationBundleUnavailable');
+        }
+        const materialized = await api.appletStoreMaterializeBundle({
+          appletId: id,
+          version: refreshedTarget.manifest.version,
+          bundleUrl: refreshedTarget.stationBundleUrl,
+          bundleSha256: refreshedTarget.stationBundleSha256,
+          entry,
+          assets: refreshedTarget.stationAssets,
+        });
+        const materializedManifest = {
+          ...refreshedTarget.manifest,
+          path: convertFileSrc(materialized.directory),
+        };
+        AppletManager.getInstance().registerApplet(materializedManifest);
+        set((state) => ({
+          applets: state.applets.map((item) => (
+            item.manifest.id === id ? { ...item, manifest: materializedManifest } : item
+          )),
+          catalogApplets: state.catalogApplets.map((item) => (
+            item.manifest.id === id ? { ...item, manifest: materializedManifest } : item
+          )),
+        }));
+      }
+      await AppletManager.getInstance().loadApplet(id);
+      const openedAt = Date.now();
       set((state) => ({
-        applets: state.applets.map((item) => (
-          item.manifest.id === id ? { ...item, manifest: materializedManifest } : item
-        )),
-        catalogApplets: state.catalogApplets.map((item) => (
-          item.manifest.id === id ? { ...item, manifest: materializedManifest } : item
-        )),
+        applets: markAppletActive(state.applets, id, openedAt),
+        catalogApplets: markAppletActive(state.catalogApplets, id, openedAt),
+        lastOpenedAtById: {
+          ...state.lastOpenedAtById,
+          [id]: openedAt,
+        },
       }));
+    })().catch((error) => {
+      const detail = runtimeErrorDetail(error);
+      set((state) => ({
+        runtimeErrorDetailById: {
+          ...state.runtimeErrorDetailById,
+          [id]: detail,
+        },
+        runtimeErrorKeyById: {
+          ...state.runtimeErrorKeyById,
+          [id]: 'applet.runtime.loadFailed',
+        },
+      }));
+      throw error;
+    });
+
+    loadAppletInFlight.set(id, operation);
+    try {
+      await operation;
+    } finally {
+      loadAppletInFlight.delete(id);
     }
-    await AppletManager.getInstance().loadApplet(id);
-    set((state) => ({
-      lastOpenedAtById: {
-        ...state.lastOpenedAtById,
-        [id]: Date.now(),
-      },
-    }));
-    await get().refresh();
   },
 
   unloadApplet: async (id) => {
     await AppletManager.getInstance().unloadApplet(id);
+    set((state) => {
+      if (!state.runtimeErrorKeyById[id]) return state;
+      const runtimeErrorDetailById = { ...state.runtimeErrorDetailById };
+      const runtimeErrorKeyById = { ...state.runtimeErrorKeyById };
+      delete runtimeErrorDetailById[id];
+      delete runtimeErrorKeyById[id];
+      return { ...state, runtimeErrorDetailById, runtimeErrorKeyById };
+    });
     await get().refresh();
   },
 }));

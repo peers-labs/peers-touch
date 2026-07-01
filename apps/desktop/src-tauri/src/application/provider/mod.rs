@@ -4,6 +4,8 @@ use crate::contracts::{
 use crate::error::{AppResult, ErrorCode};
 use serde_json::json;
 use state::{find_seeded_provider, persist_provider_store, with_provider_store, ProviderRecord};
+use std::env;
+use std::path::Path;
 
 pub(crate) mod remote;
 pub(crate) mod state;
@@ -72,6 +74,9 @@ pub fn provider_update(scope: Option<&str>, input: ProviderUpdateInput) -> AppRe
     if id.is_empty() {
         return invalid_argument("id is required");
     }
+    let runtime_kind = input.runtime_kind;
+    let cli_command = input.cli_command;
+    let protocol = input.protocol;
     match with_provider_store(scope, |store| {
         let Some(provider) = store
             .providers
@@ -84,9 +89,12 @@ pub fn provider_update(scope: Option<&str>, input: ProviderUpdateInput) -> AppRe
         if let Some(key_vaults) = input.key_vaults {
             provider.key_vaults = key_vaults;
         }
-        if let Some(config_json) = input.config_json {
-            provider.config_json = config_json;
-        }
+        let config_json = input
+            .config_json
+            .map(|patch| merge_provider_config_json(provider.config_json.clone(), patch))
+            .unwrap_or_else(|| provider.config_json.clone());
+        provider.config_json =
+            merge_provider_runtime_config(config_json, runtime_kind, cli_command, protocol);
         Some(provider.to_json())
     }) {
         Ok(Some(provider)) => {
@@ -125,6 +133,14 @@ pub fn provider_check(scope: Option<&str>, input: ProviderCheckInput) -> AppResu
             json!({ "ok": false, "error": "provider not found" }),
         );
     };
+    let effective_config = input
+        .config_json
+        .as_deref()
+        .unwrap_or(&provider.config_json);
+    if provider_is_cli(effective_config) {
+        let command_line = parse_config_field(effective_config, "cli_command").unwrap_or_default();
+        return check_cli_provider(id, &command_line);
+    }
     let api_key = input
         .key_vaults
         .as_deref()
@@ -141,7 +157,7 @@ pub fn provider_check(scope: Option<&str>, input: ProviderCheckInput) -> AppResu
         .config_json
         .as_deref()
         .and_then(|raw| parse_config_field(raw, "base_url"))
-        .or_else(|| parse_config_field(&provider.config_json, "base_url"))
+        .or_else(|| parse_config_field(effective_config, "base_url"))
         .unwrap_or_default();
     if base_url.trim().is_empty() {
         return success_payload(
@@ -172,7 +188,7 @@ pub fn provider_check(scope: Option<&str>, input: ProviderCheckInput) -> AppResu
         .config_json
         .as_deref()
         .and_then(|raw| parse_config_field(raw, "protocol"))
-        .or_else(|| parse_config_field(&provider.config_json, "protocol"));
+        .or_else(|| parse_config_field(effective_config, "protocol"));
     match remote::probe_provider(&base_url, &api_key, &model, protocol.as_deref()) {
         Ok(result) => success_payload(
             "provider_check",
@@ -190,16 +206,23 @@ pub fn provider_create(scope: Option<&str>, input: ProviderCreateInput) -> AppRe
     if name.is_empty() {
         return invalid_argument("name is required");
     }
+    let name = name.to_string();
     let provider = match with_provider_store(scope, |store| {
         let id = format!("provider-{}", store.providers.len() + 1);
+        let config_json = merge_provider_runtime_config(
+            input.config_json,
+            input.runtime_kind,
+            input.cli_command,
+            input.protocol,
+        );
         let provider = ProviderRecord {
             id,
-            name: name.to_string(),
+            name: name.clone(),
             description: input.description,
             logo: input.logo,
             enabled: true,
             key_vaults: input.key_vaults,
-            config_json: input.config_json,
+            config_json,
             check_model: "default".to_string(),
             models: vec![],
             builtin: false,
@@ -310,6 +333,98 @@ fn parse_config_field(raw: &str, key: &str) -> Option<String> {
         })
 }
 
+fn merge_provider_runtime_config(
+    raw: String,
+    runtime_kind: Option<String>,
+    cli_command: Option<String>,
+    protocol: Option<String>,
+) -> String {
+    let mut value = serde_json::from_str::<serde_json::Value>(&raw)
+        .ok()
+        .filter(serde_json::Value::is_object)
+        .unwrap_or_else(|| json!({}));
+    if let Some(runtime_kind) = runtime_kind.map(|value| value.trim().to_string()) {
+        if !runtime_kind.is_empty() {
+            value["runtime_kind"] = serde_json::Value::String(runtime_kind);
+        }
+    }
+    if let Some(cli_command) = cli_command.map(|value| value.trim().to_string()) {
+        if !cli_command.is_empty() {
+            value["cli_command"] = serde_json::Value::String(cli_command);
+        }
+    }
+    if let Some(protocol) = protocol.map(|value| value.trim().to_string()) {
+        if !protocol.is_empty() {
+            value["protocol"] = serde_json::Value::String(protocol);
+        }
+    }
+    value.to_string()
+}
+
+fn merge_provider_config_json(base: String, patch: String) -> String {
+    let mut base_value = serde_json::from_str::<serde_json::Value>(&base)
+        .ok()
+        .filter(serde_json::Value::is_object)
+        .unwrap_or_else(|| json!({}));
+    let patch_value = serde_json::from_str::<serde_json::Value>(&patch)
+        .ok()
+        .filter(serde_json::Value::is_object)
+        .unwrap_or_else(|| json!({}));
+    if let (Some(base_map), Some(patch_map)) = (base_value.as_object_mut(), patch_value.as_object())
+    {
+        for (key, value) in patch_map {
+            base_map.insert(key.clone(), value.clone());
+        }
+    }
+    base_value.to_string()
+}
+
+fn provider_is_cli(config_json: &str) -> bool {
+    parse_config_field(config_json, "runtime_kind")
+        .map(|value| value.eq_ignore_ascii_case("cli"))
+        .unwrap_or(false)
+        || parse_config_field(config_json, "protocol")
+            .map(|value| value.eq_ignore_ascii_case("cli"))
+            .unwrap_or(false)
+}
+
+fn check_cli_provider(id: &str, command_line: &str) -> AppResult<StubPayload> {
+    let Some(program) = command_line.split_whitespace().next() else {
+        return success_payload(
+            "provider_check",
+            json!({ "ok": false, "error": "cli_command is required" }),
+        );
+    };
+    if command_available(program) {
+        return success_payload(
+            "provider_check",
+            json!({
+                "ok": true,
+                "message": format!("provider {id} CLI command available: {program}")
+            }),
+        );
+    }
+    success_payload(
+        "provider_check",
+        json!({ "ok": false, "error": format!("CLI command not found in PATH: {program}") }),
+    )
+}
+
+fn command_available(program: &str) -> bool {
+    let path = Path::new(program);
+    if path.components().count() > 1 {
+        return path.is_file();
+    }
+    env::var_os("PATH")
+        .map(|paths| {
+            env::split_paths(&paths).any(|dir| {
+                let candidate = dir.join(program);
+                candidate.is_file()
+            })
+        })
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -354,6 +469,104 @@ mod tests {
         let status = parse_status(&payload);
         assert_eq!(status["ok"], false);
         assert_eq!(status["error"], "api_key is required");
+    }
+
+    #[test]
+    fn provider_create_should_merge_cli_runtime_fields() {
+        let result = provider_create(
+            Some("test-create-cli-provider"),
+            ProviderCreateInput {
+                name: "Custom CLI".to_string(),
+                description: "custom cli provider".to_string(),
+                logo: "".to_string(),
+                key_vaults: "{}".to_string(),
+                config_json: "{}".to_string(),
+                runtime_kind: Some("cli".to_string()),
+                cli_command: Some("cursor-agent --print --output-format text --trust".to_string()),
+                protocol: Some("cli".to_string()),
+            },
+        );
+        assert!(result.ok);
+        let payload = result.data.expect("payload should exist");
+        let status = parse_status(&payload);
+        let config: serde_json::Value =
+            serde_json::from_str(status["provider"]["config_json"].as_str().unwrap())
+                .expect("config should be json");
+        assert_eq!(config["runtime_kind"], "cli");
+        assert_eq!(config["protocol"], "cli");
+        assert_eq!(
+            config["cli_command"],
+            "cursor-agent --print --output-format text --trust"
+        );
+    }
+
+    #[test]
+    fn provider_check_should_validate_cli_command_availability() {
+        let result = provider_check(
+            None,
+            ProviderCheckInput {
+                id: "cursor-cli".to_string(),
+                key_vaults: None,
+                config_json: Some(
+                    "{\"runtime_kind\":\"cli\",\"cli_command\":\"definitely-missing-agent-cli\"}"
+                        .to_string(),
+                ),
+            },
+        );
+        assert!(result.ok);
+        let payload = result.data.expect("payload should exist");
+        let status = parse_status(&payload);
+        assert_eq!(status["ok"], false);
+        assert_eq!(
+            status["error"],
+            "CLI command not found in PATH: definitely-missing-agent-cli"
+        );
+    }
+
+    #[test]
+    fn provider_update_should_preserve_cli_runtime_config() {
+        let scope = Some("test-update-cli-provider");
+        let create_result = provider_create(
+            scope,
+            ProviderCreateInput {
+                name: "Toggle CLI".to_string(),
+                description: "custom cli provider".to_string(),
+                logo: "".to_string(),
+                key_vaults: "{}".to_string(),
+                config_json: "{\"runtime_kind\":\"cli\",\"cli_command\":\"traecli exec --skip-git-repo-check -\",\"protocol\":\"cli\"}".to_string(),
+                runtime_kind: None,
+                cli_command: None,
+                protocol: None,
+            },
+        );
+        assert!(create_result.ok);
+        let payload = create_result.data.expect("payload should exist");
+        let status = parse_status(&payload);
+        let provider_id = status["provider"]["id"].as_str().unwrap().to_string();
+
+        let update_result = provider_update(
+            scope,
+            ProviderUpdateInput {
+                id: provider_id,
+                enabled: false,
+                key_vaults: Some("{}".to_string()),
+                config_json: Some("{\"base_url\":\"\"}".to_string()),
+                runtime_kind: None,
+                cli_command: None,
+                protocol: None,
+            },
+        );
+        assert!(update_result.ok);
+        let payload = update_result.data.expect("payload should exist");
+        let status = parse_status(&payload);
+        let config: serde_json::Value =
+            serde_json::from_str(status["provider"]["config_json"].as_str().unwrap())
+                .expect("config should be json");
+        assert_eq!(config["runtime_kind"], "cli");
+        assert_eq!(
+            config["cli_command"],
+            "traecli exec --skip-git-repo-check -"
+        );
     }
 
     #[test]

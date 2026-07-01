@@ -52,8 +52,10 @@ Peers Touch uses **Quiet Protocol Minimalism**:
 4. [components.md](./components.md) — shared component anatomy and style constraints.
 5. [interaction.md](./interaction.md) — state, feedback, loading, failure, and optimistic interaction rules.
 6. [accessibility.md](./accessibility.md) — focus, keyboard, contrast, hover, and reduced-motion requirements.
-7. [review-checklist.md](./review-checklist.md) — UI review checklist for humans and AI agents.
-8. [new-identity.md](./new-identity.md) — 全新的 UI Identity 总纲草案，用于解决“统一但平、约束强生成弱、模块自由度模型不清晰”的问题。
+7. [frontend-component-tree.md](./frontend-component-tree.md) — Frontend component tree, alive policy, render boundary, and jank-prevention standard.
+8. [frontend-component-tree-registry.md](./frontend-component-tree-registry.md) — Alive / non-alive / lazy / LRU registry for primary modules, settings, applets, and large content surfaces.
+9. [review-checklist.md](./review-checklist.md) — UI review checklist for humans and AI agents.
+10. [new-identity.md](./new-identity.md) — 全新的 UI Identity 总纲草案，用于解决“统一但平、约束强生成弱、模块自由度模型不清晰”的问题。
 
 ## 5. Module Contracts
 
@@ -90,6 +92,7 @@ Patterns are reusable surface contracts across modules:
 - Do not define raw visual values in page code when a token or shared component rule exists.
 - Do not make user-facing UI text outside the i18n system.
 - Do not hide trust, audience, station, or privacy state when it changes what the user can safely do.
+- Do not change a page, tab, provider editor, applet runtime, overlay, or large list lifetime without checking [frontend-component-tree.md](./frontend-component-tree.md) and updating [frontend-component-tree-registry.md](./frontend-component-tree-registry.md) when needed.
 
 ## 8. AI Agent Checklist
 
@@ -98,7 +101,9 @@ Before editing client UI:
 - [ ] Read this file.
 - [ ] Read the closest module contract under `modules/`.
 - [ ] Read the closest shared pattern under `patterns/`.
+- [ ] Read `frontend-component-tree.md` and check whether the surface has a row in `frontend-component-tree-registry.md`.
 - [ ] Identify the page's content bounds, action bounds, and trust-state bounds.
+- [ ] Identify the surface's alive category, runtime/store owner, and hidden-render risk.
 - [ ] Confirm LobeUI-first implementation or document why antd is required.
 - [ ] Validate normal, loading, disabled, empty, error, overflow, and narrow-window states.
 - [ ] If a screenshot reveals a reusable issue, follow `docs/knowledge/playbooks/ux-case-to-contract.md`.

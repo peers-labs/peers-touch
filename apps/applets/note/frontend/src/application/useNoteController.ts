@@ -55,14 +55,21 @@ function createEmptyEditor(resetKey = 0): NoteEditorState {
   };
 }
 
-function createEditorFromDraft(mode: NoteEditorMode, targetNoteId: string, resetKey: number, draft?: { title: string; content: string } | null): NoteEditorState {
+function createEditorFromDraft(
+  mode: NoteEditorMode,
+  targetNoteId: string,
+  resetKey: number,
+  draft?: { title: string; content: string } | null,
+  fallback?: { title: string; content: string },
+): NoteEditorState {
+  const hasDraft = Boolean(draft && (draft.title.trim() || draft.content.trim()));
   return {
     mode,
     targetNoteId,
-    title: draft?.title ?? '',
-    content: draft?.content ?? '',
+    title: hasDraft ? draft?.title ?? '' : fallback?.title ?? '',
+    content: hasDraft ? draft?.content ?? '' : fallback?.content ?? '',
     resetKey,
-    draftLoaded: Boolean(draft && (draft.title.trim() || draft.content.trim())),
+    draftLoaded: hasDraft,
   };
 }
 
@@ -216,7 +223,7 @@ export function useNoteController(): NoteController {
       setState((current) => ({
         ...current,
         error: '',
-        editor: createEditorFromDraft('edit', selectedNote.noteId, current.editor.resetKey + 1, draft),
+        editor: createEditorFromDraft('edit', selectedNote.noteId, current.editor.resetKey + 1, draft, selectedNote),
       }));
     } catch (error) {
       setError(error);
@@ -228,6 +235,11 @@ export function useNoteController(): NoteController {
   }, []);
 
   const saveEditor = useCallback(async () => {
+    // Guard against double submit: a second tap while the first save is
+    // in flight would create/update the note twice.
+    if (state.loading) {
+      return;
+    }
     const title = state.editor.title.trim();
     const content = state.editor.content.trim();
     if (state.editor.mode === 'create' && title === '' && content === '') {
@@ -267,7 +279,7 @@ export function useNoteController(): NoteController {
     } catch (error) {
       setError(error);
     }
-  }, [clearActiveDraft, setError, setErrorKey, state.editor, state.notes]);
+  }, [clearActiveDraft, setError, setErrorKey, state.editor, state.loading, state.notes]);
 
   const deleteSelected = useCallback(async () => {
     if (!state.selectedNoteId) {

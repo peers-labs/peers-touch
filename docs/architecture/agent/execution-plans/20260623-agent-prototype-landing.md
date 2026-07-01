@@ -365,7 +365,7 @@ UI 文案从“会话隔离”改为“Agent 工作空间 / 访问范围 / 执�
 
 | 项目 | 状态 | 实际处理 |
 |------|------|----------|
-| Default command templates | **完成** | `providers.default.yaml` 中 Codex/Claude/TRAE CLI 预设改为标准非交互命令：`codex exec --skip-git-repo-check -`、`claude -p`、`trae -p`。 |
+| Default command templates | **完成** | `providers.default.yaml` 中 Codex/Claude/TRAE CLI 预设改为标准非交互命令：`codex exec --skip-git-repo-check -`、`claude -p`、`traecli exec --skip-git-repo-check -`。 |
 | Runner adapter normalization | **完成** | `normalize_cli_command` 只在命令为裸 `codex` / `claude` / `trae` 时自动展开；用户写完整命令时原样执行。 |
 | Runtime metadata | **完成** | CLI runner 注入 `PEERS_TOUCH_CLI_ADAPTER`，便于 CLI 子进程识别当前 adapter 类型。 |
 | Provider docs | **完成** | Provider README 补充 CLI Provider 标准命令模板、stdin prompt 注入和裸命令兼容语义。 |
@@ -547,4 +547,3 @@ UI 文案从“会话隔离”改为“Agent 工作空间 / 访问范围 / 执�
 - `cd apps/desktop/src-tauri && cargo check`
 - `cd apps/desktop && pnpm run check`
 - e2e：`make station` + `make desktop-web`，Chat 发消息后中断 Station/刷新页面，重连可见 task 终态并可继续；不再出现重复回复或重复扣费。
-

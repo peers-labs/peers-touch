@@ -1166,6 +1166,7 @@ pub struct AgentCollaborationCreateInput {
     pub description: String,
     pub engine_type: i32,
     pub agent_ids: Vec<String>,
+    pub judge_agent_id: Option<String>,
     pub workspace_id: Option<String>,
     pub budget_tokens: Option<f64>,
     pub budget_money: Option<f64>,
