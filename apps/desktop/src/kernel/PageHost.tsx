@@ -16,7 +16,7 @@
 // the BootPipeline + RuntimeRegistry; this component only orchestrates
 // DOM presence and visibility.
 
-import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 
 import { scheduleIdle, markPhaseEnd, markPhaseStart } from './boot';
 import {
@@ -27,6 +27,7 @@ import {
   type PageDescriptor,
   type PageResolution,
 } from './page';
+import { acquirePageRuntimeLease, releasePageRuntimeLease } from './pageRuntimeLease';
 import { log } from '../utils/logger';
 
 interface PageHostProps {
@@ -48,11 +49,26 @@ function pickInitialMounted(activePage: string): Set<string> {
 export function PageHost({ page, fallback }: PageHostProps): ReactElement {
   const activeResolution = resolvePage(page);
   const activeDescriptor = activeResolution?.descriptor;
+  const activePageId = activeResolution?.pageId;
   const activePageKey = activeResolution?.pageKey;
   const isRegistered = Boolean(activeResolution);
 
   const [mounted, setMounted] = useState<Set<string>>(() => pickInitialMounted(page));
-  const idleRanRef = useRef(false);
+  const idlePrewarmStartedRef = useRef(false);
+  const activePageIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const previousPageId = activePageIdRef.current;
+    if (previousPageId && previousPageId !== (activePageId ?? null)) {
+      const previous = resolvePage(previousPageId);
+      if (previous?.descriptor.keepAlive === 'none') {
+        releasePageRuntimeLease(previousPageId, 'unmount');
+      }
+    }
+    activePageIdRef.current = activePageId ?? null;
+    if (!activePageId) return;
+    acquirePageRuntimeLease(activePageId, 'activate');
+  }, [activePageId]);
 
   // Ensure the active registered page is mounted (deferred via rAF so
   // the state update lands on the next frame instead of the same frame
@@ -72,27 +88,45 @@ export function PageHost({ page, fallback }: PageHostProps): ReactElement {
     return () => window.cancelAnimationFrame(handle);
   }, [activePageKey, mounted]);
 
-  // After first paint, pre-warm `idle` pages during a single idle window.
+  // After first paint, pre-warm `idle` pages one per idle slot. Mounting
+  // several heavy primary tabs in the same callback creates a visible main
+  // thread burst and makes tab clicks feel sticky.
   useEffect(() => {
-    if (idleRanRef.current) return;
-    idleRanRef.current = true;
-    return scheduleIdle(() => {
+    let cancelled = false;
+    let cancelIdle: (() => void) | undefined;
+    const mountedPages: string[] = [];
+    const mountNext = (remaining: string[]) => {
+      if (cancelled) return;
+      const [nextPage, ...rest] = remaining;
+      if (!nextPage) {
+        markPhaseEnd('pages:prewarm', { pages: mountedPages });
+        return;
+      }
+      cancelIdle = scheduleIdle(() => {
+        if (cancelled) return;
+        mountedPages.push(nextPage);
+        acquirePageRuntimeLease(nextPage, 'prewarm');
+        setMounted((prev) => {
+          if (prev.has(nextPage)) return prev;
+          const next = new Set(prev);
+          next.add(nextPage);
+          return next;
+        });
+        mountNext(rest);
+      }, 2500);
+    };
+    cancelIdle = scheduleIdle(() => {
+      if (idlePrewarmStartedRef.current) return;
+      idlePrewarmStartedRef.current = true;
       const idlePages = listIdlePreloadPages().map((p) => p.id);
       if (idlePages.length === 0) return;
       markPhaseStart('pages:prewarm');
-      setMounted((prev) => {
-        let changed = false;
-        const next = new Set(prev);
-        for (const id of idlePages) {
-          if (!next.has(id)) {
-            next.add(id);
-            changed = true;
-          }
-        }
-        return changed ? next : prev;
-      });
-      markPhaseEnd('pages:prewarm', { pages: idlePages });
+      mountNext(idlePages);
     });
+    return () => {
+      cancelled = true;
+      cancelIdle?.();
+    };
   }, []);
 
   // Eviction for `lru:N` pages — if a page declares an LRU cap, drop the
@@ -109,6 +143,11 @@ export function PageHost({ page, fallback }: PageHostProps): ReactElement {
       if (recent.length > cap) {
         const toDrop = recent.slice(cap);
         if (toDrop.length > 0) {
+          for (const dropId of toDrop) {
+            if (dropId !== activePageKey) {
+              releasePageRuntimeLease(dropId, 'evict');
+            }
+          }
           setMounted((prev) => {
             let changed = false;
             const next = new Set(prev);
@@ -140,24 +179,45 @@ export function PageHost({ page, fallback }: PageHostProps): ReactElement {
   return (
     <>
       {registeredOrder.map((desc) =>
-        desc.match ? null : renderRegisteredPage(desc, desc.id, desc.id, page, mounted),
+        desc.match ? null : (
+          <RegisteredPageFrame
+            key={desc.id}
+            desc={desc}
+            pageId={desc.id}
+            pageKey={desc.id}
+            isActive={desc.id === page}
+            mounted={mounted.has(desc.id)}
+          />
+        ),
       )}
       {dynamicPages.map((resolved) =>
-        renderRegisteredPage(resolved.descriptor, resolved.pageId, resolved.pageKey, page, mounted),
+        <RegisteredPageFrame
+          key={resolved.pageKey}
+          desc={resolved.descriptor}
+          pageId={resolved.pageId}
+          pageKey={resolved.pageKey}
+          isActive={resolved.pageKey === page}
+          mounted={mounted.has(resolved.pageKey)}
+        />,
       )}
       {!isRegistered && fallback}
     </>
   );
 }
 
-function renderRegisteredPage(
-  desc: PageDescriptor,
-  pageId: string,
-  pageKey: string,
-  activePage: string,
-  mounted: Set<string>,
-): ReactElement | null {
-  const isActive = pageKey === activePage;
+const RegisteredPageFrame = memo(function RegisteredPageFrame({
+  desc,
+  pageId,
+  pageKey,
+  isActive,
+  mounted,
+}: {
+  desc: PageDescriptor;
+  pageId: string;
+  pageKey: string;
+  isActive: boolean;
+  mounted: boolean;
+}): ReactElement | null {
   if (desc.keepAlive === 'none') {
     if (!isActive) return null;
     return (
@@ -166,7 +226,7 @@ function renderRegisteredPage(
       </div>
     );
   }
-  if (!mounted.has(pageKey) && !isActive) return null;
+  if (!mounted && !isActive) return null;
   return (
     <div
       key={pageKey}
@@ -177,7 +237,7 @@ function renderRegisteredPage(
       {renderFactory(desc, pageId)}
     </div>
   );
-}
+});
 
 function renderFactory(desc: PageDescriptor, pageId: string): ReactElement | null {
   try {

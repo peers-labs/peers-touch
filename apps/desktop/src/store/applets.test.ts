@@ -9,10 +9,20 @@ const manager = vi.hoisted(() => ({
   unloadApplet: vi.fn<(id: string) => Promise<void>>(),
 }));
 
+const desktopApi = vi.hoisted(() => ({
+  appletStoreInstall: vi.fn<() => Promise<unknown>>(),
+  appletStoreListCatalog: vi.fn<() => Promise<{ items: unknown[]; stationUnavailable?: boolean; stationError?: string }>>(),
+  appletStoreListInstalled: vi.fn<() => Promise<{ states: unknown[]; stationUnavailable?: boolean; stationError?: string }>>(),
+}));
+
 vi.mock('../applet/AppletManager', () => ({
   default: {
     getInstance: () => manager,
   },
+}));
+
+vi.mock('../services/desktop_api', () => ({
+  api: desktopApi,
 }));
 
 const manifest: AppletInfo = {
@@ -53,6 +63,9 @@ describe('applets runtime store', () => {
     manager.getDiagnostics.mockReturnValue([]);
     manager.loadApplet.mockResolvedValue(manifest);
     manager.unloadApplet.mockResolvedValue();
+    desktopApi.appletStoreInstall.mockResolvedValue({});
+    desktopApi.appletStoreListCatalog.mockResolvedValue({ items: [] });
+    desktopApi.appletStoreListInstalled.mockResolvedValue({ states: [] });
 
     const { useAppletsStore } = await import('./applets');
     useAppletsStore.setState({
@@ -78,6 +91,45 @@ describe('applets runtime store', () => {
         manifest,
         status: 'active',
         lastOpenedAt: 12345,
+      }),
+    ]);
+  });
+
+  it('keeps installed local runtime applets out of Station install flow when catalog ids overlap', async () => {
+    desktopApi.appletStoreListCatalog.mockResolvedValue({
+      items: [{
+        info: {
+          id: manifest.id,
+          name: manifest.name,
+        },
+        version: {
+          appletId: manifest.id,
+          version: manifest.version,
+          manifestJson: JSON.stringify({ ...manifest, path: '' }),
+        },
+        installState: {
+          appletId: manifest.id,
+          status: 0,
+        },
+      }],
+    });
+    const { useAppletsStore } = await import('./applets');
+    useAppletsStore.setState({
+      applets: [],
+      catalogApplets: [],
+      localDevInstalledAppletIds: [manifest.id],
+      loading: true,
+    });
+
+    await useAppletsStore.getState().loadApplet(manifest.id);
+
+    expect(desktopApi.appletStoreInstall).not.toHaveBeenCalled();
+    expect(manager.loadApplet).toHaveBeenCalledWith(manifest.id);
+    expect(useAppletsStore.getState().applets).toEqual([
+      expect.objectContaining({
+        manifest,
+        source: 'local-dev',
+        status: 'active',
       }),
     ]);
   });

@@ -6,7 +6,9 @@ import { Empty, Modal, Spin, message, theme } from 'antd';
 import { Button, Tag } from '@lobehub/ui';
 import { PageHeader } from '../components/PageHeader';
 import LynxContainer from '../applet/LynxContainer';
+import { LynxDebugPanel, createLynxDebugEvent, type LynxDebugEvent } from '../applet/LynxDebugPanel';
 import { useAppletsStore } from '../store/applets';
+import { requestPageRuntimeRelease } from '../kernel/pageRuntimeLease';
 import { usePageContext } from '../kernel/usePageContext';
 import { api } from '../services/desktop_api';
 import { log } from '../utils/logger';
@@ -23,13 +25,14 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
   const { t } = useTranslation('applet');
   const { navigation } = usePageContext();
   const { token } = theme.useToken();
+  const pageId = `applet:${appletId}`;
   const [navigationTitle, setNavigationTitle] = useState<string | null>(null);
+  const [debugEvents, setDebugEvents] = useState<LynxDebugEvent[]>([]);
   const loading = useAppletsStore((state) => state.loading);
   const applets = useAppletsStore((state) => state.applets);
   const catalogApplets = useAppletsStore((state) => state.catalogApplets);
-  const refresh = useAppletsStore((state) => state.refresh);
-  const loadApplet = useAppletsStore((state) => state.loadApplet);
-  const unloadApplet = useAppletsStore((state) => state.unloadApplet);
+  const runtimeErrorDetail = useAppletsStore((state) => state.runtimeErrorDetailById[appletId]);
+  const runtimeErrorKey = useAppletsStore((state) => state.runtimeErrorKeyById[appletId]);
   const runtimeApplet = useMemo(
     () => [...applets, ...catalogApplets].find((item) => item.manifest.id === appletId),
     [applets, catalogApplets, appletId],
@@ -43,15 +46,57 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
       .flatMap((diag) => diag.issues),
     [allDiagnostics, appletId],
   );
+
+  const handleClose = useCallback(() => {
+    navigation.navigateTo('applets');
+    requestPageRuntimeRelease(pageId, 'explicit-close');
+  }, [navigation, pageId]);
+
+  const appendDebugEvent = useCallback((event: LynxDebugEvent) => {
+    if (!import.meta.env.DEV) return;
+    setDebugEvents((current) => [...current.slice(-119), event]);
+  }, []);
+
+  const recordDebugStage = useCallback((
+    stage: string,
+    options?: {
+      data?: Record<string, unknown>;
+      level?: LynxDebugEvent['level'];
+      sessionId?: string;
+    },
+  ) => {
+    appendDebugEvent(createLynxDebugEvent(appletId, stage, options));
+  }, [appletId, appendDebugEvent]);
+
+  useEffect(() => {
+    setDebugEvents([createLynxDebugEvent(appletId, 'runtime.page.open', {
+      data: { pageId },
+    })]);
+  }, [appletId, pageId]);
+
+  useEffect(() => {
+    recordDebugStage('runtime.status', {
+      data: {
+        loading,
+        runtimeErrorDetail,
+        runtimeErrorKey,
+        status: appletStatus ?? 'missing',
+        diagnostics,
+      },
+      level: runtimeErrorKey ? 'error' : showStatusWarning(appletStatus, loading) ? 'warn' : 'info',
+    });
+  }, [appletStatus, diagnostics, loading, recordDebugStage, runtimeErrorDetail, runtimeErrorKey]);
+
   const handleNavigationRequest = useCallback((request: AppletHostNavigationRequest) => {
     const { action, params } = request;
+    recordDebugStage('host.navigation.request', { data: { action }, level: 'debug' });
     if (action === 'openApplet') {
       const targetAppletId = stringParam(params, 'appletId') || stringParam(params, 'id');
       if (targetAppletId) navigation.navigateTo(`applet:${targetAppletId}`);
       return;
     }
     if (action === 'closeApplet') {
-      navigation.navigateTo('applets');
+      handleClose();
       return;
     }
     if (action === 'navigateTo' || action === 'navigate_to' || action === 'redirectTo' || action === 'redirect_to') {
@@ -66,10 +111,11 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
         navigation.navigateTo('applets');
       }
     }
-  }, [navigation]);
+  }, [handleClose, navigation, recordDebugStage]);
 
   const handleUiRequest = useCallback((request: AppletHostUiRequest): unknown | Promise<unknown> => {
     const { action, params } = request;
+    recordDebugStage('host.ui.request', { data: { action }, level: 'debug' });
     const loadingKey = `applet:${appletId}:loading`;
     if (action === 'setNavigationBar' || action === 'set_navigation_bar') {
       const title = stringParam(params, 'title');
@@ -103,9 +149,10 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
       return showAppletActionSheet(params, t);
     }
     return { ok: false, reason: 'unsupported' };
-  }, [appletId, t]);
+  }, [appletId, recordDebugStage, t]);
 
   const handleDeviceRequest = useCallback((request: AppletHostDeviceRequest): unknown => {
+    recordDebugStage('host.device.request', { data: { action: request.action }, level: 'debug' });
     if (request.action === 'getWindowInfo' || request.action === 'get_window_info') {
       return currentWindowInfo();
     }
@@ -113,14 +160,10 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
       return currentSafeArea();
     }
     return { ok: false, reason: 'unsupported' };
-  }, []);
-
-  const handleClose = useCallback(() => {
-    void unloadApplet(appletId);
-    navigation.navigateTo('applets');
-  }, [appletId, navigation, unloadApplet]);
+  }, [recordDebugStage]);
 
   const handleAppletLoaded = useCallback((readySource: string) => {
+    recordDebugStage('product.rendered.report', { data: { readySource } });
     api.appletsProductWindowReportRendered({ appletId, readySource }).catch((error) => {
       log.warn('applets', 'Failed to record product-window render evidence', {
         appletId,
@@ -128,28 +171,9 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
         error: error instanceof Error ? error.message : String(error),
       });
     });
-  }, [appletId]);
+  }, [appletId, recordDebugStage]);
 
-  useEffect(() => {
-    void refresh();
-  }, [appletId, refresh]);
-
-  useEffect(() => {
-    if (loading || !runtimeApplet || appletStatus === 'active' || appletStatus === 'revoked') return undefined;
-    let cancelled = false;
-    loadApplet(appletId).catch((error) => {
-      if (cancelled) return;
-      log.warn('applets', 'Failed to prepare applet runtime route', {
-        appletId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [appletId, appletStatus, loadApplet, loading, runtimeApplet]);
-
-  if (loading) {
+  if (loading && !runtimeApplet) {
     return (
       <Flexbox align="center" justify="center" style={{ height: '100%' }}>
         <Spin size="large" />
@@ -159,7 +183,7 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
 
   if (!applet) {
     return (
-      <Flexbox style={{ height: '100%' }}>
+      <Flexbox style={{ height: '100%', position: 'relative' }}>
         <PageHeader title={t('applet.runtime.title')} icon={<Blocks size={20} />} />
         <Flexbox align="center" justify="center" style={{ flex: 1, background: token.colorBgLayout }}>
           <Empty
@@ -169,12 +193,27 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
             ].join('\n')}
           />
         </Flexbox>
+        <LynxDebugPanel appletId={appletId} events={debugEvents} onClear={() => setDebugEvents([])} />
       </Flexbox>
     );
   }
 
+  if (appletStatus === 'revoked') {
+    return (
+      <Flexbox style={{ height: '100%', position: 'relative' }}>
+        <PageHeader title={t('applet.runtime.title')} icon={<Blocks size={20} />} />
+        <Flexbox align="center" justify="center" style={{ flex: 1, background: token.colorBgLayout }}>
+          <Empty description={t('applet.runtime.loadFailed')} />
+        </Flexbox>
+        <LynxDebugPanel appletId={appletId} events={debugEvents} onClear={() => setDebugEvents([])} />
+      </Flexbox>
+    );
+  }
+
+  const showPreparing = Boolean(runtimeApplet && appletStatus !== 'active');
+
   return (
-    <Flexbox style={{ height: '100%' }}>
+    <Flexbox data-applet-runtime={appletId} style={{ height: '100%', position: 'relative' }}>
       <PageHeader
         title={navigationTitle || applet?.name || appletId}
         subtitle={applet?.description || ''}
@@ -201,19 +240,36 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
           </Flexbox>
         )}
       />
-      <Flexbox style={{ flex: 1, padding: 16, background: token.colorBgLayout }}>
-        <LynxContainer
-          appletId={appletId}
-          height="100%"
-          onLoad={handleAppletLoaded}
-          onBack={handleClose}
-          onNavigationRequest={handleNavigationRequest}
-          onUiRequest={handleUiRequest}
-          onDeviceRequest={handleDeviceRequest}
-        />
+      <Flexbox style={{ flex: 1, minHeight: 0, padding: 16, background: token.colorBgLayout }}>
+        {runtimeErrorKey ? (
+          <Flexbox align="center" justify="center" style={{ height: '100%' }}>
+            <Empty description={t(runtimeErrorKey)} />
+          </Flexbox>
+        ) : showPreparing ? (
+          <Flexbox align="center" gap={12} justify="center" style={{ height: '100%' }}>
+            <Spin size="large" />
+            <span style={{ color: token.colorTextSecondary }}>{t('applet.runtime.preparing')}</span>
+          </Flexbox>
+        ) : (
+          <LynxContainer
+            appletId={appletId}
+            height="100%"
+            onLoad={handleAppletLoaded}
+            onDebugEvent={appendDebugEvent}
+            onBack={handleClose}
+            onNavigationRequest={handleNavigationRequest}
+            onUiRequest={handleUiRequest}
+            onDeviceRequest={handleDeviceRequest}
+          />
+        )}
       </Flexbox>
+      <LynxDebugPanel appletId={appletId} events={debugEvents} onClear={() => setDebugEvents([])} />
     </Flexbox>
   );
+}
+
+function showStatusWarning(status: string | undefined, loading: boolean): boolean {
+  return loading || status !== 'active';
 }
 
 function stringParam(params: Record<string, unknown>, key: string): string | undefined {
