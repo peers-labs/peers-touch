@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
@@ -28,6 +29,7 @@ import (
 // per-task sequence and mirrors them onto the realtime event bus.
 type TaskEventWriter struct {
 	eventBus domain.EventBus
+	mu       sync.Mutex
 }
 
 // NewTaskEventWriter builds a writer bound to the given (optional) event bus.
@@ -46,6 +48,9 @@ func (w *TaskEventWriter) getDB(ctx context.Context) (*gorm.DB, error) {
 // Append writes a single task event into the outbox inside a transaction,
 // assigning event_seq = max(event_seq)+1 for the task.
 func (w *TaskEventWriter) Append(ctx context.Context, eventID, taskID, stepID, turnID, eventType string, payload interface{}) (*persistence.TaskEvent, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	db, err := w.getDB(ctx)
 	if err != nil {
 		return nil, err

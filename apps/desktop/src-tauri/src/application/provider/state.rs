@@ -435,7 +435,17 @@ mod tests {
     #[test]
     fn seeded_store_should_include_extended_provider_presets() {
         let seeded = ProviderStore::seeded();
-        let required = ["openrouter", "mistral", "groq", "together", "cohere"];
+        let required = [
+            "openrouter",
+            "mistral",
+            "groq",
+            "together",
+            "cohere",
+            "codex-cli",
+            "cursor-cli",
+            "claude-cli",
+            "trae-cli",
+        ];
         for provider_id in required {
             let exists = seeded
                 .providers
@@ -443,6 +453,35 @@ mod tests {
                 .any(|provider| provider.id == provider_id);
             assert!(exists);
         }
+    }
+
+    #[test]
+    fn seeded_cli_provider_should_carry_runtime_metadata() {
+        let seeded = ProviderStore::seeded();
+        let cursor = seeded
+            .providers
+            .iter()
+            .find(|provider| provider.id == "cursor-cli")
+            .expect("cursor cli provider should exist");
+        let cursor_config: serde_json::Value =
+            serde_json::from_str(&cursor.config_json).expect("config should be json");
+        assert_eq!(cursor_config["runtime_kind"], "cli");
+        assert_eq!(
+            cursor_config["cli_command"],
+            "cursor-agent --print --output-format text --trust"
+        );
+
+        let trae = seeded
+            .providers
+            .iter()
+            .find(|provider| provider.id == "trae-cli")
+            .expect("trae cli provider should exist");
+        let trae_config: serde_json::Value =
+            serde_json::from_str(&trae.config_json).expect("config should be json");
+        assert_eq!(
+            trae_config["cli_command"],
+            "traecli exec --skip-git-repo-check -"
+        );
     }
 
     #[test]
