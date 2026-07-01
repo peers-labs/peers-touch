@@ -1,0 +1,772 @@
+:root {
+  --applet-surface-canvas: #f5f5f5;
+  --applet-surface-base: rgba(255, 255, 255, 0.92);
+  --applet-surface-raised: rgba(255, 255, 255, 0.96);
+  --applet-surface-subtle: #f7f7f8;
+  --applet-surface-control: #f4f4f5;
+  --applet-surface-control-hover: #e5e7eb;
+  --applet-surface-action-hover: #f5f5f5;
+  --applet-surface-canvas-wash: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.64));
+  --applet-text-primary: #111827;
+  --applet-text-body: #303030;
+  --applet-text-secondary: #6b7280;
+  --applet-text-muted: #8a8f98;
+  --applet-text-inverse: #fff;
+  --applet-action-primary: #111827;
+  --applet-action-disabled: #ececec;
+  --applet-status-success: #0f766e;
+  --applet-status-warning: #b45309;
+  --applet-border-hairline: rgba(17, 24, 39, 0.08);
+  --applet-border-dashed: rgba(17, 24, 39, 0.18);
+  --applet-border-selected: color-mix(in srgb, var(--applet-text-secondary) 18%, transparent);
+  --applet-overlay-backdrop: rgba(245, 245, 245, 0.48);
+  --applet-shadow-soft: 0 4px 14px rgba(17, 24, 39, 0.05);
+  --applet-shadow-float: 0 12px 34px rgba(17, 24, 39, 0.1);
+  --applet-shadow-identity: inset 0 0 0 1px rgba(17, 24, 39, 0.05);
+  --applet-radius-control: 12px;
+  --applet-radius-compact: 8px;
+  --applet-radius-surface: 18px;
+  --applet-radius-large: 28px;
+  --applet-radius-icon: 24px;
+  --applet-status-running: #22c55e;
+  --applet-status-notice: #ef4444;
+  --applet-identity-note-bg: #eef2ff;
+  --applet-identity-note-fg: #4f46e5;
+  --applet-identity-atelier-bg: #f5f0ff;
+  --applet-identity-atelier-fg: #7c3aed;
+  --applet-identity-terminal-bg: #eef0f3;
+  --applet-identity-terminal-fg: #1f2937;
+  --applet-identity-files-bg: #edf7ff;
+  --applet-identity-files-fg: #2563eb;
+  --applet-identity-tools-bg: #edf7f2;
+  --applet-identity-tools-fg: #0f766e;
+  --applet-identity-sdk-bg: #fff3ed;
+  --applet-identity-sdk-fg: #c2410c;
+  --applet-identity-imported-bg: #f1f3f5;
+  --applet-identity-imported-fg: #64748b;
+  --applet-identity-package-bg: #eef8f6;
+  --applet-identity-package-fg: #0f766e;
+  --applet-snapshot-hero-bar: linear-gradient(90deg, var(--applet-surface-control-hover), var(--applet-surface-control));
+  color: var(--applet-text-body);
+  background: var(--applet-surface-canvas);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button {
+  font: inherit;
+}
+
+.launcher-page {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 22px 26px 24px;
+  overflow: hidden;
+  background:
+    var(--applet-surface-canvas-wash),
+    var(--applet-surface-canvas);
+}
+
+.launcher-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 10px;
+}
+
+.import-menu-wrap {
+  display: flex;
+  align-items: center;
+}
+
+.search-field {
+  height: 36px;
+  width: min(320px, calc(100% - 50px));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--applet-border-hairline);
+  border-radius: var(--applet-radius-compact);
+  color: var(--applet-text-muted);
+  background: var(--applet-surface-base);
+}
+
+.search-field:focus-within {
+  border-color: var(--applet-border-dashed);
+  background: var(--applet-surface-raised);
+}
+
+.search-field input {
+  width: 100%;
+  border: 0;
+  outline: none;
+  color: var(--applet-text-body);
+  background: transparent;
+  font-size: 13px;
+}
+
+.search-field input::placeholder {
+  color: var(--applet-text-muted);
+}
+
+.import-button {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--applet-radius-compact);
+  color: var(--applet-text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.import-button:hover,
+.import-button:focus-visible {
+  color: var(--applet-text-primary);
+  background: var(--applet-surface-action-hover);
+  outline: none;
+}
+
+.import-menu-wrap {
+  position: relative;
+}
+
+.import-menu {
+  position: absolute;
+  top: 44px;
+  right: 0;
+  z-index: 20;
+  min-width: 156px;
+  padding: 6px;
+  border: 1px solid var(--applet-border-hairline);
+  border-radius: var(--applet-radius-control);
+  background: var(--applet-surface-raised);
+  box-shadow: var(--applet-shadow-float);
+}
+
+.import-menu button {
+  width: 100%;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--applet-radius-control);
+  color: var(--applet-text-body);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.import-menu button:hover {
+  background: var(--applet-surface-control);
+}
+
+.launcher-grid {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  align-content: start;
+  gap: 22px 34px;
+  max-height: 196px;
+  padding: 24px 28px 0;
+  overflow: auto;
+}
+
+.applet-icon {
+  position: relative;
+  min-width: 102px;
+  height: 132px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  border: 0;
+  background: transparent;
+  color: var(--applet-text-body);
+  cursor: pointer;
+}
+
+.icon-tile {
+  width: 82px;
+  height: 82px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--applet-radius-icon);
+  color: var(--identity-fg);
+  background: var(--identity-bg);
+  box-shadow: var(--applet-shadow-identity);
+}
+
+.identity-note {
+  --identity-bg: var(--applet-identity-note-bg);
+  --identity-fg: var(--applet-identity-note-fg);
+}
+
+.identity-atelier {
+  --identity-bg: var(--applet-identity-atelier-bg);
+  --identity-fg: var(--applet-identity-atelier-fg);
+}
+
+.identity-terminal {
+  --identity-bg: var(--applet-identity-terminal-bg);
+  --identity-fg: var(--applet-identity-terminal-fg);
+}
+
+.identity-files {
+  --identity-bg: var(--applet-identity-files-bg);
+  --identity-fg: var(--applet-identity-files-fg);
+}
+
+.identity-tools {
+  --identity-bg: var(--applet-identity-tools-bg);
+  --identity-fg: var(--applet-identity-tools-fg);
+}
+
+.identity-sdk {
+  --identity-bg: var(--applet-identity-sdk-bg);
+  --identity-fg: var(--applet-identity-sdk-fg);
+}
+
+.identity-imported {
+  --identity-bg: var(--applet-identity-imported-bg);
+  --identity-fg: var(--applet-identity-imported-fg);
+}
+
+.identity-package {
+  --identity-bg: var(--applet-identity-package-bg);
+  --identity-fg: var(--applet-identity-package-fg);
+}
+
+.applet-icon span:last-child {
+  max-width: 104px;
+  overflow: hidden;
+  color: var(--applet-text-body);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.applet-icon.selected .icon-tile {
+  outline: 1px solid var(--applet-border-selected);
+  outline-offset: 4px;
+}
+
+.running-dot {
+  position: absolute;
+  right: 12px;
+  bottom: 43px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--applet-surface-canvas);
+  border-radius: 50%;
+  background: var(--applet-status-running);
+}
+
+.icon-tile em {
+  position: absolute;
+  top: -6px;
+  right: 4px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border: 2px solid var(--applet-surface-canvas);
+  border-radius: 999px;
+  color: var(--applet-text-inverse);
+  background: var(--applet-status-notice);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.running-switcher {
+  position: relative;
+  z-index: 12;
+  flex: 1;
+  min-height: clamp(220px, 38vh, 360px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 12px 26px clamp(34px, 6vh, 64px);
+  pointer-events: auto;
+}
+
+.running-stage {
+  position: relative;
+  width: min(100%, 840px);
+  height: min(100%, 318px);
+  margin-bottom: 10px;
+  pointer-events: auto;
+}
+
+.running-switcher:not(.expanded) .running-stage {
+  width: min(100%, 920px);
+  height: clamp(160px, 26vh, 230px);
+  margin-bottom: 4px;
+}
+
+.running-preview {
+  position: absolute;
+  bottom: 50%;
+  left: 50%;
+  z-index: var(--z);
+  width: var(--card-w, 292px);
+  height: var(--card-h, 250px);
+  overflow: hidden;
+  padding: 12px;
+  border: 1px solid var(--applet-border-hairline);
+  border-radius: var(--applet-radius-surface);
+  background: var(--applet-surface-raised);
+  box-shadow: var(--applet-shadow-soft);
+  cursor: pointer;
+  transform: translateX(calc(-50% + var(--x))) translateY(50%) scale(var(--scale));
+  transform-origin: center center;
+}
+
+.running-switcher:not(.expanded) .running-preview {
+  padding: 9px;
+}
+
+.running-preview header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 10px;
+}
+
+.running-switcher:not(.expanded) .running-preview header {
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.running-preview-icon {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  color: var(--identity-fg);
+  background: var(--identity-bg);
+  box-shadow: var(--applet-shadow-identity);
+}
+
+.running-switcher:not(.expanded) .running-preview-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+}
+
+.running-preview header div {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.running-preview strong {
+  overflow: hidden;
+  color: var(--applet-text-primary);
+  font-size: 14px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.running-switcher:not(.expanded) .running-preview strong {
+  font-size: 12px;
+}
+
+.running-preview small {
+  color: var(--applet-text-muted);
+  font-size: 12px;
+}
+
+.running-switcher:not(.expanded) .running-preview small {
+  font-size: 11px;
+}
+
+.running-preview header button {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  color: var(--applet-text-secondary);
+  background: var(--applet-surface-control);
+  cursor: pointer;
+}
+
+.running-switcher:not(.expanded) .running-preview header button {
+  display: none;
+}
+
+.applet-snapshot {
+  height: 182px;
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: 10px;
+  padding: 10px;
+  border-radius: var(--applet-radius-surface);
+  background: var(--applet-surface-subtle);
+}
+
+.running-switcher:not(.expanded) .applet-snapshot {
+  height: calc(var(--card-h, 168px) - 56px);
+  min-height: 92px;
+  grid-template-columns: 30px 1fr;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 12px;
+}
+
+.snapshot-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.running-switcher:not(.expanded) .snapshot-rail {
+  gap: 6px;
+}
+
+.snapshot-rail span {
+  height: 28px;
+  border-radius: 9px;
+  background: var(--applet-surface-control-hover);
+}
+
+.running-switcher:not(.expanded) .snapshot-rail span {
+  height: 18px;
+  border-radius: 7px;
+}
+
+.snapshot-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.running-switcher:not(.expanded) .snapshot-main {
+  gap: 7px;
+}
+
+.snapshot-topline,
+.snapshot-notice,
+.snapshot-hero {
+  display: flex;
+  align-items: center;
+}
+
+.snapshot-topline {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.snapshot-title {
+  color: var(--applet-text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.running-switcher:not(.expanded) .snapshot-title {
+  font-size: 10px;
+}
+
+.running-switcher:not(.expanded) .snapshot-notice {
+  display: none;
+}
+
+.snapshot-notice {
+  gap: 3px;
+  color: var(--applet-text-secondary);
+  font-size: 11px;
+}
+
+.snapshot-hero {
+  gap: 10px;
+  min-height: 54px;
+  padding: 8px;
+  border-radius: 15px;
+  background: var(--applet-surface-base);
+}
+
+.running-switcher:not(.expanded) .snapshot-hero {
+  min-height: 34px;
+  gap: 7px;
+  padding: 5px;
+  border-radius: 10px;
+}
+
+.snapshot-hero span {
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  color: var(--identity-fg);
+  background: var(--identity-bg);
+  box-shadow: var(--applet-shadow-identity);
+}
+
+.running-switcher:not(.expanded) .snapshot-hero span {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+}
+
+.snapshot-hero i {
+  flex: 1;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--applet-snapshot-hero-bar);
+}
+
+.running-switcher:not(.expanded) .snapshot-hero i {
+  height: 16px;
+}
+
+.snapshot-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.running-switcher:not(.expanded) .snapshot-lines {
+  gap: 5px;
+}
+
+.snapshot-lines span {
+  height: 9px;
+  border-radius: 999px;
+  background: var(--applet-surface-control-hover);
+}
+
+.running-switcher:not(.expanded) .snapshot-lines span {
+  height: 6px;
+}
+
+.snapshot-lines span:nth-child(2) {
+  width: 76%;
+}
+
+.snapshot-lines span:nth-child(3) {
+  width: 52%;
+}
+
+.running-dots {
+  min-width: 96px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 13px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.running-dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--applet-text-muted);
+}
+
+.running-switcher.expanded .running-dots span {
+  background: var(--applet-text-secondary);
+}
+
+.empty-state {
+  align-self: center;
+  justify-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--applet-text-muted);
+}
+
+.empty-state button {
+  height: 34px;
+  padding: 0 13px;
+  border: 1px solid var(--applet-border-hairline);
+  border-radius: var(--applet-radius-control);
+  color: var(--applet-text-body);
+  background: var(--applet-surface-base);
+  cursor: pointer;
+}
+
+.import-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--applet-overlay-backdrop);
+  backdrop-filter: blur(10px);
+}
+
+.import-dialog {
+  width: min(420px, calc(100% - 48px));
+  padding: 16px;
+  border: 1px solid var(--applet-border-hairline);
+  border-radius: var(--applet-radius-large);
+  background: var(--applet-surface-raised);
+  box-shadow: var(--applet-shadow-float);
+}
+
+.import-dialog header,
+.import-dialog footer,
+.bundle-check {
+  display: flex;
+  align-items: center;
+}
+
+.import-dialog header {
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.import-dialog header div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.import-dialog header strong {
+  color: var(--applet-text-primary);
+  font-size: 17px;
+}
+
+.import-dialog header span,
+.directory-picker small,
+.bundle-check span {
+  color: var(--applet-text-muted);
+  font-size: 12px;
+}
+
+.import-dialog header button {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  color: var(--applet-text-secondary);
+  background: var(--applet-surface-control);
+  cursor: pointer;
+}
+
+.directory-picker {
+  position: relative;
+  min-height: 132px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-bottom: 12px;
+  border: 1px dashed var(--applet-border-dashed);
+  border-radius: var(--applet-radius-surface);
+  color: var(--applet-text-body);
+  background: var(--applet-surface-subtle);
+  cursor: pointer;
+}
+
+.directory-picker input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.bundle-check {
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 38px;
+  padding: 0 12px;
+  margin-top: 8px;
+  border-radius: var(--applet-radius-control);
+  background: var(--applet-surface-subtle);
+}
+
+.bundle-check strong {
+  overflow: hidden;
+  color: var(--applet-text-body);
+  font-size: 13px;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bundle-check.ok strong {
+  color: var(--applet-status-success);
+}
+
+.bundle-check.missing strong {
+  color: var(--applet-status-warning);
+}
+
+.import-dialog footer {
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.plain-button,
+.confirm-button {
+  height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--applet-radius-control);
+  cursor: pointer;
+}
+
+.plain-button {
+  color: var(--applet-text-secondary);
+  background: var(--applet-surface-control);
+}
+
+.confirm-button {
+  color: var(--applet-text-inverse);
+  background: var(--applet-action-primary);
+}
+
+.confirm-button:disabled {
+  color: var(--applet-text-muted);
+  background: var(--applet-action-disabled);
+  cursor: not-allowed;
+}
+
+@media (max-width: 860px) {
+  .launcher-page {
+    padding: 20px;
+  }
+
+  .launcher-grid {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 18px;
+    padding-inline: 4px;
+  }
+}

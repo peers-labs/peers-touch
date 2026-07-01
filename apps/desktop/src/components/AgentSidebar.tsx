@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { ActionIcon, Avatar, Block, Center, SearchBar, Text } from '@lobehub/ui';
+import { ActionIcon, Block, Center, SearchBar, Text } from '@lobehub/ui';
 import {
   Plus,
   Download,
@@ -31,6 +31,8 @@ import { useAgentStore } from '../store/agent';
 import { useAgentTopicStore, type AgentTopic } from '../store/agentTopics';
 import { useAgentSearchStore, type AgentMessageSearchResult } from '../store/agentSearch';
 import { api, type Agent, parseAgentChatConfig } from '../services/desktop_api';
+import { AgentIconTile } from './agent/AgentIconTile';
+import { openAgentChatSession } from '../utils/openAgentChatSession';
 
 interface AgentSidebarProps {
   onEditAgent: (agent: Agent) => void;
@@ -102,7 +104,6 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     agents,
     loadAgents,
     selectedAgent,
-    setSelectedAgent,
     defaultAgent,
     setDefaultAgent,
   } = useAgentStore();
@@ -162,6 +163,12 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
   }, [loadAgentTopics]);
 
   useEffect(() => {
+    setShowSearch(false);
+    setTopicSearch('');
+    resetSearch();
+  }, [currentAgent?.id, resetSearch]);
+
+  useEffect(() => {
     if (!showSearch || topicSearch.trim().length < 2) {
       resetSearch();
       return;
@@ -172,26 +179,22 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     return () => window.clearTimeout(timer);
   }, [agentTopics, resetSearch, searchAgentMessages, showSearch, topicSearch]);
 
+  const switchSeqRef = useRef(0);
+
   const handleSwitchAgent = useCallback(
     (agent: Agent) => {
-      setSelectedAgent(agent.name);
+      const seq = switchSeqRef.current + 1;
+      switchSeqRef.current = seq;
       onAgentChanged?.(agent.name);
 
-      loadTopicsForAgent(agent.id, 'switch-agent')
-        .then((topics) => {
-          if (topics.length > 0) {
-            selectSession(topics[0].key, topics[0]);
-          } else {
-            const key = `agent:${agent.name}:${Date.now()}`;
-            selectSession(key);
-          }
-        })
+      openAgentChatSession(agent, { reason: 'switch-agent' })
         .catch(() => {
-          const key = `agent:${agent.name}:${Date.now()}`;
-          selectSession(key);
+          if (switchSeqRef.current !== seq) return;
+          const topic = createDraftTopic(agent.id, agent.name, t('agent.sidebar.newTopic'));
+          void selectSession(topic.key, topic);
         });
     },
-    [setSelectedAgent, selectSession, loadTopicsForAgent, onAgentChanged],
+    [createDraftTopic, onAgentChanged, selectSession, t],
   );
 
   const handleNewTopic = useCallback(() => {
@@ -224,24 +227,24 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       const pkg = JSON.parse(text);
       const imported = await api.importAgentPackage(pkg);
       await loadAgents();
-      setSelectedAgent(imported.name);
+      void openAgentChatSession(imported, { reason: 'import-agent-package' });
       toast.success(t('agent.sidebar.toast.agentImported', { name: imported.title || imported.name }));
     } catch (e: any) {
       toast.error(e.message || t('agent.sidebar.toast.agentImportFailed'));
     }
-  }, [loadAgents, setSelectedAgent, t]);
+  }, [loadAgents, t]);
 
   const handleCloneAgent = useCallback(async () => {
     if (!currentAgent) return;
     try {
       const cloned = await api.duplicateAgent(currentAgent.id, `${currentAgent.name} copy`);
       await loadAgents();
-      setSelectedAgent(cloned.name);
+      void openAgentChatSession(cloned, { reason: 'clone-agent' });
       toast.success(t('agent.sidebar.toast.agentCloned', { name: cloned.title || cloned.name }));
     } catch (e: any) {
       toast.error(e.message || t('agent.sidebar.toast.agentCloneFailed'));
     }
-  }, [currentAgent, loadAgents, setSelectedAgent, t]);
+  }, [currentAgent, loadAgents, t]);
 
   const handleSetDefaultAgent = useCallback(async (agent: Agent) => {
     try {
@@ -274,10 +277,20 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
 
   const handleDeleteTopic = useCallback(
     async (sessionKey: string) => {
+      const wasCurrent = currentSessionKey === sessionKey;
+      const nextTopic = agentTopics.find((topic) => topic.key !== sessionKey);
       await deleteTopic(sessionKey);
+      if (wasCurrent) {
+        if (nextTopic) {
+          await selectSession(nextTopic.key, nextTopic);
+        } else if (currentAgent) {
+          const topic = createDraftTopic(currentAgent.id, currentAgent.name, t('agent.sidebar.newTopic'));
+          await selectSession(topic.key, topic);
+        }
+      }
       loadAgentTopics();
     },
-    [deleteTopic, loadAgentTopics],
+    [agentTopics, createDraftTopic, currentAgent, currentSessionKey, deleteTopic, loadAgentTopics, selectSession, t],
   );
 
   const handleSelectTopic = useCallback(
@@ -343,7 +356,7 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       />
 
       {/* Nav Actions */}
-      <Flexbox style={{ padding: '8px', flexShrink: 0, borderBottom: `1px solid ${token.colorBorderSecondary}` }} gap={2}>
+      <Flexbox style={{ padding: hideAgentPicker ? '0 14px 8px' : '8px', flexShrink: 0, borderBottom: hideAgentPicker ? 'none' : `1px solid ${token.colorBorderSecondary}` }} gap={2}>
         <NavItem
           icon={<MessageSquarePlus size={16} />}
           label={t('agent.sidebar.startNewTopic')}
@@ -362,11 +375,12 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
           onClick={() => setShowSearch(!showSearch)}
           active={showSearch}
           token={token}
+          style={hideAgentPicker ? { height: 30, paddingInline: 0 } : undefined}
         />
       </Flexbox>
 
       {showSearch && (
-        <div style={{ padding: '0 12px 8px' }}>
+        <div style={{ padding: hideAgentPicker ? '0 14px 8px' : '0 12px 8px' }}>
           <SearchBar
             placeholder={t('agent.sidebar.searchTopics')}
             value={topicSearch}
@@ -378,13 +392,13 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       )}
 
       {/* Topic Section */}
-      <Flexbox flex={1} style={{ overflow: 'auto', padding: '8px' }}>
+      <Flexbox flex={1} style={{ overflow: 'auto', padding: hideAgentPicker ? '8px 14px 16px' : '8px' }}>
         {/* Section header */}
         <Flexbox
           horizontal
           align="center"
           justify="space-between"
-          style={{ padding: '0 8px 6px' }}
+          style={{ padding: hideAgentPicker ? '0 0 6px' : '0 8px 6px' }}
         >
           <span style={{ fontSize: 12, fontWeight: 600, color: token.colorTextSecondary }}>
             {t('agent.sidebar.topic')} {totalTopics > 0 ? totalTopics : ''}
@@ -417,7 +431,7 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
         ) : (
           topicGroups.map((group) => (
             <TopicGroup
-              key={group.key}
+              key={`${currentAgent?.id || 'agent'}:${group.key}`}
               label={group.label}
               topics={group.items}
               currentSessionKey={currentSessionKey}
@@ -460,15 +474,16 @@ function AgentContextCard({
       align="center"
       gap={10}
       style={{
-        margin: 10,
-        padding: 10,
-        borderRadius: 14,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        background: token.colorFillQuaternary,
+        margin: '16px 14px 12px',
+        padding: 14,
+        borderRadius: 22,
+        border: 'none',
+        background: token.colorBgContainer,
+        boxShadow: '0 14px 40px rgba(15, 23, 42, 0.08)',
         flexShrink: 0,
       }}
     >
-      <Avatar avatar={agent.avatar || '🤖'} shape="square" size={44} />
+      <AgentIconTile agent={agent} size={44} />
       <Flexbox flex={1} style={{ minWidth: 0 }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {agent.title || agent.name}
@@ -1117,7 +1132,7 @@ function AgentPickerItem({
   const chatConfig = parseAgentChatConfig(agent);
   const statusBadges = [
     chatConfig.memory?.enabled ? t('agent.sidebar.status.memory') : '',
-    agent.toolsProfile && agent.toolsProfile !== 'none' ? t('agent.sidebar.status.tools') : '',
+    (chatConfig.tools?.length ?? 0) > 0 || (chatConfig.skills?.length ?? 0) > 0 || (chatConfig.mcpServers?.length ?? 0) > 0 ? t('agent.sidebar.status.tools') : '',
     chatConfig.workspace?.root ? t('agent.sidebar.status.workspace') : '',
   ].filter(Boolean);
 
@@ -1139,13 +1154,7 @@ function AgentPickerItem({
       }}
     >
       <Center flex="none" height={28} width={28}>
-        <Avatar
-          avatar={agent.avatar || '🤖'}
-          background={token.colorBgContainer}
-          emojiScaleWithBackground
-          shape="square"
-          size={22}
-        />
+        <AgentIconTile agent={agent} size={22} selected={isSelected} subtle />
       </Center>
       <Text
         color={isSelected ? token.colorText : token.colorTextSecondary}
