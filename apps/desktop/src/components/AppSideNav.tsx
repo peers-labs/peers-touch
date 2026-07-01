@@ -57,7 +57,7 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
   const appletManager = AppletManager.getInstance();
   const { t } = useTranslation('layout');
   const { token } = theme.useToken();
-  const { agents, selectedAgent, getAgentSurface, setAgentSurface } = useAgentStore();
+  const { agents, selectedAgent, setAgentSurface } = useAgentStore();
   const { newSession } = useChatStore();
   const installedApplets = useAppletsStore((state) => state.applets);
   const installedAppletById = useMemo(
@@ -68,18 +68,22 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
 
-
-  const navigateAgentSurface = useCallback((agentName: string) => {
-    navigation.navigateToAgentSurface(agentName, getAgentSurface(agentName));
-  }, [getAgentSurface, navigation]);
-
   const navigateAgentChat = useCallback(() => {
     if (selectedAgent) {
-      navigateAgentSurface(selectedAgent);
+      const agent = agents.find((item) => item.name === selectedAgent);
+      if (agent) {
+        void openAgentChatSession(agent, {
+          draftTitle: t('agent.sidebar.newTopic', { ns: 'agent' }),
+          reason: 'global-agent-entry',
+        });
+      } else {
+        setAgentSurface(selectedAgent, 'chat');
+      }
+      navigation.navigateTo('agent');
       return;
     }
     navigation.navigateTo('agent');
-  }, [navigateAgentSurface, navigation, selectedAgent]);
+  }, [agents, navigation, selectedAgent, setAgentSurface, t]);
 
   const handleNewChat = useCallback(() => {
     const agent = agents.find((item) => item.name === selectedAgent);
@@ -102,16 +106,12 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
     if (agents.length === 0) return;
     const currentIndex = Math.max(0, agents.findIndex((agent) => agent.name === selectedAgent));
     const nextAgent = agents[(currentIndex + 1) % agents.length];
-    if (getAgentSurface(nextAgent.name) === 'chat') {
-      void openAgentChatSession(nextAgent, {
-        draftTitle: t('agent.sidebar.newTopic', { ns: 'agent' }),
-        reason: 'next-agent',
-      });
-      navigation.navigateTo('agent');
-      return;
-    }
-    navigateAgentSurface(nextAgent.name);
-  }, [agents, getAgentSurface, navigateAgentSurface, navigation, selectedAgent, t]);
+    void openAgentChatSession(nextAgent, {
+      draftTitle: t('agent.sidebar.newTopic', { ns: 'agent' }),
+      reason: 'next-agent',
+    });
+    navigation.navigateTo('agent');
+  }, [agents, navigation, selectedAgent, t]);
 
   const commandItems = useMemo<CommandPaletteItem[]>(() => [
     {
