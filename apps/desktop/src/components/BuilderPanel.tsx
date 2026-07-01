@@ -253,7 +253,7 @@ export function BuilderPanel({
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          background: token.colorBgLayout,
+          background: token.colorBgContainer,
         }}
       >
         {/* Header */}
@@ -262,7 +262,7 @@ export function BuilderPanel({
           align="center"
           justify="space-between"
           style={{
-            padding: '0 12px',
+            padding: '0 14px',
             borderBottom: showTopicSelector ? 'none' : `1px solid ${token.colorBorderSecondary}`,
             background: token.colorBgContainer,
             flexShrink: 0,
@@ -274,8 +274,8 @@ export function BuilderPanel({
             <AgentSelector agents={agents} selectedAgentName={currentAgent} onSelect={setCurrentAgent} />
           ) : (
             <Flexbox horizontal align="center" gap={6}>
-              <span style={{ fontSize: 16 }}>{welcomeAvatar}</span>
-              <span style={{ fontSize: 13, fontWeight: 500, color: token.colorText }}>{welcomeTitle}</span>
+              <span style={{ fontSize: 18 }}>{welcomeAvatar}</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: token.colorText }}>{welcomeTitle}</span>
             </Flexbox>
           )}
           <ActionIcon icon={PanelRightClose} size="small" onClick={() => onExpandChange(false)} />
@@ -323,21 +323,20 @@ export function BuilderPanel({
         )}
 
         {/* Messages */}
-        <div style={{ flex: 1, overflow: 'auto', minHeight: 0, width: '100%', padding: '0 16px 24px' }}>
+        <div style={{ flex: 1, overflow: 'auto', minHeight: 0, width: '100%', padding: '0 14px 24px' }}>
           {messages.length === 0 ? (
-            <Center style={{ height: '100%', padding: 24 }}>
-              <Flexbox align="center" gap={12}>
+            <Center style={{ height: '100%', padding: '24px 4px' }}>
+              <Flexbox align="center" gap={12} style={{ width: '100%' }}>
                 <Avatar
                   avatar={welcomeAvatar}
-                  size={48}
+                  size={54}
                   shape="square"
                   background="linear-gradient(135deg, #667eea, #764ba2)"
-                  style={{ opacity: 0.5 }}
                 />
-                <span style={{ fontSize: 14, fontWeight: 500, color: token.colorText }}>
+                <span style={{ fontSize: 15, fontWeight: 750, color: token.colorText }}>
                   {welcomeTitle}
                 </span>
-                <span style={{ fontSize: 13, color: token.colorTextDescription, textAlign: 'center', maxWidth: 280 }}>
+                <span style={{ fontSize: 12, color: token.colorTextDescription, textAlign: 'center', maxWidth: 300, lineHeight: 1.6 }}>
                   {welcomeDescription}
                 </span>
                 {contextSummary && contextSummary.length > 0 && (
@@ -357,7 +356,7 @@ export function BuilderPanel({
                               : undefined
                           }
                           style={{
-                            padding: '7px 10px',
+                            padding: '8px 10px',
                             borderRadius: 10,
                             border: `1px solid ${token.colorBorderSecondary}`,
                             background: item.ready ? token.colorSuccessBg : token.colorWarningBg,
@@ -391,8 +390,8 @@ export function BuilderPanel({
                         key={q}
                         onClick={() => handleSuggestClick(q)}
                         style={{
-                          padding: '8px 12px',
-                          borderRadius: 8,
+                          padding: '9px 12px',
+                          borderRadius: 10,
                           border: `1px solid ${token.colorBorderSecondary}`,
                           background: token.colorBgContainer,
                           fontSize: 13,
@@ -421,13 +420,14 @@ export function BuilderPanel({
         </div>
 
         {/* Input area */}
-        <Flexbox style={{ padding: '0 16px 16px', flexShrink: 0 }}>
+        <Flexbox style={{ padding: '0 14px 24px', flexShrink: 0 }}>
           <Flexbox
             style={{
               background: token.colorBgContainer,
               border: `1px solid ${token.colorBorderSecondary}`,
-              borderRadius: 12,
+              borderRadius: 22,
               overflow: 'hidden',
+              boxShadow: '0 14px 48px rgba(15, 23, 42, 0.08)',
             }}
           >
             <textarea
@@ -450,19 +450,19 @@ export function BuilderPanel({
                 resize: 'none',
                 border: 'none',
                 borderRadius: 0,
-                padding: '10px 12px 4px',
-                fontSize: 14,
+                padding: '16px 18px 8px',
+                fontSize: 15,
                 lineHeight: 1.6,
                 outline: 'none',
                 fontFamily: 'inherit',
                 background: 'transparent',
                 color: token.colorText,
-                minHeight: 64,
+                minHeight: 70,
                 maxHeight: 160,
                 overflow: 'auto',
               }}
             />
-            <Flexbox horizontal align="center" justify="space-between" style={{ padding: '4px 8px 8px' }}>
+            <Flexbox horizontal align="center" justify="space-between" style={{ padding: '0 12px 12px' }}>
               <Flexbox horizontal align="center" gap={2}>
                 <Popover
                   open={modelOpen}

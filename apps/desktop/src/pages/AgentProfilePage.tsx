@@ -24,7 +24,6 @@ import {
   Wrench,
   Eye,
   Sparkles,
-  Users,
   Activity,
   Database,
   Trash2,
@@ -292,15 +291,14 @@ type ProfileTab =
   | 'diagnostics';
 
 const TAB_KEYS: { key: ProfileTab; labelKey: string; icon: ReactNode }[] = [
-  { key: 'overview', labelKey: 'agent.profile.tab.overview', icon: <Settings2 size={13} /> },
   { key: 'prompt', labelKey: 'agent.profile.tab.prompt', icon: null },
-  { key: 'model', labelKey: 'agent.profile.tab.model', icon: <Cpu size={13} /> },
-  { key: 'runtime', labelKey: 'agent.profile.tab.runtime', icon: <Zap size={13} /> },
   { key: 'capabilities', labelKey: 'agent.profile.tab.capabilities', icon: <Wrench size={13} /> },
-  { key: 'memory', labelKey: 'agent.profile.tab.memory', icon: <Brain size={13} /> },
-  { key: 'knowledge', labelKey: 'agent.profile.tab.knowledge', icon: <Database size={13} /> },
+  { key: 'runtime', labelKey: 'agent.profile.tab.runtime', icon: <FolderOpen size={13} /> },
+];
+
+const ACTIVITY_TAB_KEYS: { key: ProfileTab; labelKey: string; icon: ReactNode }[] = [
   { key: 'activity', labelKey: 'agent.profile.tab.activity', icon: <Activity size={13} /> },
-  { key: 'collaboration', labelKey: 'agent.profile.tab.collaboration', icon: <Users size={13} /> },
+  { key: 'memory', labelKey: 'agent.profile.tab.memory', icon: <Brain size={13} /> },
   { key: 'diagnostics', labelKey: 'agent.profile.tab.diagnostics', icon: <Activity size={13} /> },
 ];
 
@@ -332,6 +330,10 @@ function AgentWorkbenchHero({
   onStartChat,
   onOpenSettings,
   onAvatarChange,
+  onTitleBlur,
+  onDescriptionBlur,
+  onRewriteDescription,
+  descriptionGenerating,
 }: {
   agent: Agent;
   modelLabel: string;
@@ -343,8 +345,13 @@ function AgentWorkbenchHero({
   onStartChat: () => void;
   onOpenSettings: () => void;
   onAvatarChange: (emoji: string) => void;
+  onTitleBlur: (event: React.FocusEvent<HTMLInputElement>) => void;
+  onDescriptionBlur: (event: React.FocusEvent<HTMLTextAreaElement>) => void;
+  onRewriteDescription: () => void;
+  descriptionGenerating: boolean;
 }) {
   const { t } = useTranslation('agent');
+  const { token } = theme.useToken();
   const completedSteps = steps.filter((step) => step.complete).length;
   const progress = Math.round((completedSteps / Math.max(steps.length, 1)) * 100);
 
@@ -352,12 +359,12 @@ function AgentWorkbenchHero({
     <Flexbox
       gap={16}
       style={{
-        padding: 18,
-        borderRadius: 24,
-        color: '#fff',
-        background:
-          'radial-gradient(circle at top left, rgba(255,255,255,0.26), transparent 30%), linear-gradient(135deg, #0f172a 0%, #1d4ed8 48%, #7c3aed 100%)',
-        boxShadow: '0 26px 80px rgba(15, 23, 42, 0.22)',
+        padding: 16,
+        borderRadius: 16,
+        color: token.colorText,
+        background: token.colorBgContainer,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        boxShadow: '0 14px 44px rgba(15, 23, 42, 0.06)',
       }}
     >
       <Flexbox horizontal align="flex-start" justify="space-between" gap={16}>
@@ -371,24 +378,80 @@ function AgentWorkbenchHero({
           />
           <Flexbox gap={6} style={{ minWidth: 0 }}>
             <Flexbox horizontal align="center" gap={8} style={{ flexWrap: 'wrap' }}>
-              <Tag style={{ margin: 0, color: '#fff', borderColor: 'rgba(255,255,255,0.34)', background: 'rgba(255,255,255,0.15)' }}>
+              <Tag style={{ margin: 0 }}>
                 {t('agent.profile.workbench.badge')}
               </Tag>
               {agent.isDefault && (
-                <Tag style={{ margin: 0, color: '#fff', borderColor: 'rgba(255,255,255,0.34)', background: 'rgba(255,255,255,0.15)' }}>
+                <Tag style={{ margin: 0 }}>
                   {t('agent.profile.builtIn')}
                 </Tag>
               )}
-              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.72)' }}>
+              <span style={{ fontSize: 12, color: token.colorTextTertiary }}>
                 {t('agent.profile.workbench.progress', { done: completedSteps, total: steps.length, progress })}
               </span>
             </Flexbox>
-            <span style={{ fontSize: 30, fontWeight: 800, lineHeight: 1.1, letterSpacing: -0.5 }}>
-              {agent.title || agent.name}
-            </span>
-            <span style={{ maxWidth: 640, fontSize: 13, lineHeight: 1.6, color: 'rgba(255,255,255,0.76)' }}>
-              {agent.description || t('agent.profile.workbench.descriptionFallback')}
-            </span>
+            <input
+              defaultValue={agent.title || agent.name}
+              onBlur={onTitleBlur}
+              placeholder={t('agent.profile.identityTitlePlaceholder')}
+              style={{
+                width: '100%',
+                border: 0,
+                outline: 'none',
+                background: 'transparent',
+                color: token.colorText,
+                fontSize: 24,
+                fontWeight: 800,
+                lineHeight: 1.16,
+                letterSpacing: -0.3,
+                padding: 0,
+              }}
+            />
+            <div style={{ position: 'relative', maxWidth: 720 }}>
+              <textarea
+                defaultValue={agent.description || ''}
+                onBlur={onDescriptionBlur}
+                rows={2}
+                placeholder={t('agent.profile.identityDescriptionPlaceholder')}
+                style={{
+                  width: '100%',
+                  minHeight: 58,
+                  resize: 'vertical',
+                  border: `1px solid ${token.colorBorderSecondary}`,
+                  borderRadius: 12,
+                  outline: 'none',
+                  background: token.colorBgContainer,
+                  color: token.colorTextSecondary,
+                  fontFamily: 'inherit',
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                  padding: '8px 38px 8px 10px',
+                }}
+              />
+              <button
+                type="button"
+                title={t('agent.descriptionRewrite.generate')}
+                onClick={onRewriteDescription}
+                disabled={descriptionGenerating}
+                style={{
+                  position: 'absolute',
+                  right: 8,
+                  bottom: 10,
+                  width: 26,
+                  height: 26,
+                  border: 0,
+                  borderRadius: 8,
+                  background: token.colorPrimaryBg,
+                  color: descriptionGenerating ? token.colorTextQuaternary : token.colorPrimary,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: descriptionGenerating ? 'not-allowed' : 'pointer',
+                }}
+              >
+                <Sparkles size={14} />
+              </button>
+            </div>
           </Flexbox>
         </Flexbox>
 
@@ -402,33 +465,33 @@ function AgentWorkbenchHero({
         </Flexbox>
       </Flexbox>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
         {signals.map((signal) => (
           <button
             key={signal.key}
             type="button"
             onClick={() => onSelectTab(signal.targetTab)}
             style={{
-              minHeight: 86,
-              padding: 12,
-              borderRadius: 16,
-              border: `1px solid ${activeTab === signal.targetTab ? 'rgba(255,255,255,0.62)' : 'rgba(255,255,255,0.18)'}`,
-              background: activeTab === signal.targetTab ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.11)',
-              color: '#fff',
+              minHeight: 72,
+              padding: 10,
+              borderRadius: 12,
+              border: `1px solid ${activeTab === signal.targetTab ? token.colorPrimaryBorder : token.colorBorderSecondary}`,
+              background: activeTab === signal.targetTab ? token.colorPrimaryBg : token.colorFillQuaternary,
+              color: token.colorText,
               cursor: 'pointer',
               textAlign: 'left',
             }}
           >
             <Flexbox gap={8}>
               <Flexbox horizontal align="center" justify="space-between" gap={8}>
-                <span style={{ display: 'inline-flex', color: signal.ready ? '#bbf7d0' : '#fde68a' }}>
+                <span style={{ display: 'inline-flex', color: signal.ready ? token.colorSuccess : token.colorWarning }}>
                   {signal.icon}
                 </span>
-                <Tag style={{ margin: 0, color: '#fff', borderColor: 'rgba(255,255,255,0.28)', background: 'rgba(255,255,255,0.13)' }}>
+                <Tag color={signal.ready ? 'green' : 'gold'} style={{ margin: 0 }}>
                   {signal.ready ? t('agent.profile.workbench.ready') : t('agent.profile.workbench.needsSetup')}
                 </Tag>
               </Flexbox>
-              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.66)' }}>{signal.label}</span>
+              <span style={{ fontSize: 12, color: token.colorTextTertiary }}>{signal.label}</span>
               <span style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {signal.value}
               </span>
@@ -440,7 +503,7 @@ function AgentWorkbenchHero({
       <Flexbox gap={8}>
         <Flexbox horizontal align="center" justify="space-between" gap={10}>
           <span style={{ fontSize: 13, fontWeight: 700 }}>{t('agent.profile.workbench.nextActions')}</span>
-          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.68)' }}>
+          <span style={{ fontSize: 12, color: token.colorTextSecondary }}>
             {t('agent.profile.workbench.modelAndWorkspace', {
               model: modelLabel,
               workspace: workspaceRoot || t('agent.profile.workspaceNotSet'),
@@ -455,20 +518,20 @@ function AgentWorkbenchHero({
               onClick={() => onSelectTab(step.targetTab)}
               style={{
                 padding: 10,
-                borderRadius: 14,
-                border: `1px solid ${step.complete ? 'rgba(187,247,208,0.5)' : 'rgba(255,255,255,0.18)'}`,
-                background: step.complete ? 'rgba(22,163,74,0.18)' : 'rgba(255,255,255,0.09)',
-                color: '#fff',
+                borderRadius: 12,
+                border: `1px solid ${step.complete ? token.colorSuccessBorder : token.colorBorderSecondary}`,
+                background: step.complete ? token.colorSuccessBg : token.colorFillQuaternary,
+                color: token.colorText,
                 cursor: 'pointer',
                 textAlign: 'left',
               }}
             >
               <Flexbox gap={6}>
                 <Flexbox horizontal align="center" gap={7}>
-                  <ShieldCheck size={14} style={{ color: step.complete ? '#bbf7d0' : '#fde68a' }} />
+                  <ShieldCheck size={14} style={{ color: step.complete ? token.colorSuccess : token.colorWarning }} />
                   <span style={{ fontSize: 12, fontWeight: 700 }}>{step.label}</span>
                 </Flexbox>
-                <span style={{ fontSize: 11, lineHeight: 1.45, color: 'rgba(255,255,255,0.66)' }}>
+                <span style={{ fontSize: 11, lineHeight: 1.45, color: token.colorTextTertiary }}>
                   {step.description}
                 </span>
               </Flexbox>
@@ -1326,7 +1389,7 @@ export function AgentProfilePage({
   const [agentsMdDirty, setAgentsMdDirty] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showBuilder, setShowBuilder] = useState(true);
-  const [activeTab, setActiveTab] = useState<ProfileTab>('overview');
+  const [activeTab, setActiveTab] = useState<ProfileTab>('prompt');
   const [metadataIntent, setMetadataIntent] = useState('');
   const [metadataDraft, setMetadataDraft] = useState<AgentMetadataDraft | null>(null);
   const [metadataGenerating, setMetadataGenerating] = useState(false);
@@ -1726,6 +1789,40 @@ export function AgentProfilePage({
     [agent, loadAgents],
   );
 
+  const handleTitleBlur = useCallback(
+    async (event: React.FocusEvent<HTMLInputElement>) => {
+      if (!agent) return;
+      const value = event.target.value.trim();
+      if (!value || value === (agent.title || agent.name)) return;
+      try {
+        const updated = await api.updateAgent(agent.id, { title: value });
+        setAgent(updated);
+        await loadAgents();
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
+        antMessage.error(message);
+      }
+    },
+    [agent, loadAgents, t],
+  );
+
+  const handleDescriptionBlur = useCallback(
+    async (event: React.FocusEvent<HTMLTextAreaElement>) => {
+      if (!agent) return;
+      const value = event.target.value.trim();
+      if (value === (agent.description || '').trim()) return;
+      try {
+        const updated = await api.updateAgent(agent.id, { description: value });
+        setAgent(updated);
+        await loadAgents();
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
+        antMessage.error(message);
+      }
+    },
+    [agent, loadAgents, t],
+  );
+
   const handleSettingsSaved = useCallback(
     (updated: Agent) => {
       setAgent(updated);
@@ -1905,6 +2002,44 @@ export function AgentProfilePage({
       setDescriptionGenerating(false);
     }
   }, [agent, descriptionIntent, t]);
+
+  const handleInlineRewriteDescription = useCallback(async () => {
+    if (!agent) return;
+    const intent = agent.description?.trim() || agent.title || agent.name;
+    setDescriptionGenerating(true);
+    setDescriptionError('');
+    setDescriptionDraft('');
+
+    const prompt = buildDescriptionRewritePrompt(agent, intent);
+    const sessionKey = `agent_description:${agent.id}`;
+    let content = '';
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        executeAgentTurn(
+          prompt,
+          sessionKey,
+          'agent-builder',
+          (event) => {
+            if (event.event === 'text') content += event.data?.content || '';
+          },
+          () => resolve(),
+          (error) => reject(error),
+        );
+      });
+      const updatedDescription = parseDescriptionDraft(content, agent.description || '');
+      const updated = await api.updateAgent(agent.id, { description: updatedDescription });
+      setAgent(updated);
+      await loadAgents();
+      antMessage.success(t('agent.descriptionRewrite.applied'));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setDescriptionError(message || t('agent.descriptionRewrite.parseFailed'));
+      antMessage.error(message || t('agent.descriptionRewrite.parseFailed'));
+    } finally {
+      setDescriptionGenerating(false);
+    }
+  }, [agent, loadAgents, t]);
 
   const handleApplyDescriptionDraft = useCallback(async () => {
     if (!agent || !descriptionDraft.trim()) return;
@@ -2187,7 +2322,7 @@ export function AgentProfilePage({
       label: t('agent.profile.workbench.signal.model'),
       value: modelLabel,
       ready: Boolean(agent.model || selectedModel),
-      targetTab: 'model',
+      targetTab: 'runtime',
     },
     {
       key: 'tools',
@@ -2205,7 +2340,7 @@ export function AgentProfilePage({
       label: t('agent.profile.workbench.signal.knowledge'),
       value: t('agent.profile.knowledge.count', { count: knowledgeResources.length }),
       ready: knowledgeResources.length > 0 || Boolean(workspaceRoot),
-      targetTab: 'knowledge',
+      targetTab: 'runtime',
     },
     {
       key: 'diagnostics',
@@ -2222,28 +2357,28 @@ export function AgentProfilePage({
       label: t('agent.profile.workbench.step.identity'),
       description: t('agent.profile.workbench.step.identityDesc'),
       complete: Boolean(agent.title && agent.description && systemPrompt.trim()),
-      targetTab: 'overview',
+      targetTab: 'prompt',
     },
     {
       key: 'runtime',
       label: t('agent.profile.workbench.step.runtime'),
       description: t('agent.profile.workbench.step.runtimeDesc'),
       complete: Boolean(agent.model || selectedModel),
-      targetTab: 'model',
+      targetTab: 'runtime',
     },
     {
       key: 'context',
       label: t('agent.profile.workbench.step.context'),
       description: t('agent.profile.workbench.step.contextDesc'),
       complete: Boolean(workspaceRoot || knowledgeResources.length > 0 || chatConfig.memory?.enabled),
-      targetTab: 'knowledge',
+      targetTab: 'runtime',
     },
     {
       key: 'launch',
       label: t('agent.profile.workbench.step.launch'),
       description: t('agent.profile.workbench.step.launchDesc'),
       complete: openingQuestions.length > 0 || Boolean(agent.openingMessage),
-      targetTab: 'collaboration',
+      targetTab: 'capabilities',
     },
   ];
   const completedWorkbenchSteps = workbenchSteps.filter((step) => step.complete).length;
@@ -2259,7 +2394,7 @@ export function AgentProfilePage({
       label: t('agent.builder.context.model'),
       value: modelLabel,
       ready: Boolean(agent.model || selectedModel),
-      targetTab: 'model' as ProfileTab,
+      targetTab: 'runtime' as ProfileTab,
     },
     {
       label: t('agent.builder.context.checklist'),
@@ -2269,7 +2404,7 @@ export function AgentProfilePage({
         progress: workbenchProgress,
       }),
       ready: completedWorkbenchSteps === workbenchSteps.length,
-      targetTab: (firstIncompleteStep?.targetTab || 'overview') as ProfileTab,
+      targetTab: (firstIncompleteStep?.targetTab || 'prompt') as ProfileTab,
     },
     {
       label: t('agent.builder.context.capabilities'),
@@ -2357,6 +2492,8 @@ export function AgentProfilePage({
       })),
     },
   };
+  const activeMode = ACTIVITY_TAB_KEYS.some((tab) => tab.key === activeTab) ? 'activity' : 'configure';
+  const visibleTabs = activeMode === 'activity' ? ACTIVITY_TAB_KEYS : TAB_KEYS;
 
   return (
     <Flexbox horizontal style={{ height: '100%', width: '100%', overflow: 'hidden' }}>
@@ -2384,7 +2521,7 @@ export function AgentProfilePage({
             }}
           >
             {/* ── Workbench Hero ── */}
-            <div style={{ flexShrink: 0, paddingTop: 24, overflow: 'auto', maxHeight: '58%' }}>
+            <div style={{ flexShrink: 0, paddingTop: 24 }}>
               <AgentWorkbenchHero
                 agent={agent}
                 modelLabel={modelLabel}
@@ -2396,6 +2533,10 @@ export function AgentProfilePage({
                 onStartChat={() => onStartChat(agent.name)}
                 onOpenSettings={() => setSettingsOpen(true)}
                 onAvatarChange={handleAvatarChange}
+                onTitleBlur={handleTitleBlur}
+                onDescriptionBlur={handleDescriptionBlur}
+                onRewriteDescription={handleInlineRewriteDescription}
+                descriptionGenerating={descriptionGenerating}
               />
 
               <Flexbox
@@ -2460,51 +2601,102 @@ export function AgentProfilePage({
             <Divider style={{ margin: '8px 0 0' }} />
 
             <Flexbox
-              horizontal
-              align="center"
-              gap={8}
+              gap={10}
               style={{
                 flexShrink: 0,
-                padding: '10px 0 2px',
-                flexWrap: 'wrap',
+                marginTop: 10,
+                padding: 14,
+                borderRadius: 14,
+                border: `1px solid ${token.colorBorderSecondary}`,
+                background: token.colorBgContainer,
               }}
             >
-              <Select
-                value={selectedProviderId || undefined}
-                onChange={handleProviderChange}
-                placeholder={t('agent.profile.routing.providerPlaceholder')}
-                allowClear
-                showSearch
-                options={providerOptions}
-                style={{ minWidth: 190, flex: '0 1 220px' }}
-                filterOption={(input, option) =>
-                  String(option?.label || '').toLowerCase().includes(input.toLowerCase())
-                }
-              />
-              <ModelSelect
-                models={routingModels}
-                value={agent.model || undefined}
-                onChange={handleModelChange}
-                placeholder={t('agent.profile.routing.modelPlaceholder')}
-                size="middle"
-                style={{ minWidth: 240, flex: '1 1 300px' }}
-              />
-              <Select
-                value={agent.effort || 'medium'}
-                onChange={handleEffortChange}
-                placeholder={t('agent.profile.routing.effortPlaceholder')}
-                style={{ minWidth: 180, flex: '0 1 220px' }}
-                options={[
-                  { value: 'low', label: t('agent.profile.effort.low') },
-                  { value: 'medium', label: t('agent.profile.effort.medium') },
-                  { value: 'high', label: t('agent.profile.effort.high') },
-                ]}
-              />
+              <Flexbox horizontal align="center" justify="space-between" gap={12}>
+                <Flexbox gap={2}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: token.colorText }}>
+                    {t('agent.profile.composition.title')}
+                  </span>
+                  <span style={{ fontSize: 12, color: token.colorTextTertiary }}>
+                    {t('agent.profile.composition.description')}
+                  </span>
+                </Flexbox>
+                <Tag style={{ margin: 0 }}>{modelLabel}</Tag>
+              </Flexbox>
+              <Flexbox horizontal align="center" gap={10} style={{ flexWrap: 'wrap' }}>
+                <Select
+                  value={selectedProviderId || undefined}
+                  onChange={handleProviderChange}
+                  placeholder={t('agent.profile.routing.providerPlaceholder')}
+                  allowClear
+                  showSearch
+                  options={providerOptions}
+                  style={{ minWidth: 190, flex: '0 1 220px' }}
+                  filterOption={(input, option) =>
+                    String(option?.label || '').toLowerCase().includes(input.toLowerCase())
+                  }
+                />
+                <span style={{ color: token.colorTextQuaternary, fontSize: 13 }}>→</span>
+                <ModelSelect
+                  models={routingModels}
+                  value={agent.model || undefined}
+                  onChange={handleModelChange}
+                  placeholder={t('agent.profile.routing.modelPlaceholder')}
+                  size="middle"
+                  style={{ minWidth: 240, flex: '1 1 300px' }}
+                />
+                <span style={{ color: token.colorTextQuaternary, fontSize: 13 }}>·</span>
+                <Select
+                  value={agent.effort || 'medium'}
+                  onChange={handleEffortChange}
+                  placeholder={t('agent.profile.routing.effortPlaceholder')}
+                  style={{ minWidth: 150, flex: '0 1 180px' }}
+                  options={[
+                    { value: 'low', label: t('agent.profile.effort.low') },
+                    { value: 'medium', label: t('agent.profile.effort.medium') },
+                    { value: 'high', label: t('agent.profile.effort.high') },
+                  ]}
+                />
+              </Flexbox>
+            </Flexbox>
+
+            {/* ── Prototype-aligned mode switch: Configure vs Activity ── */}
+            <Flexbox
+              horizontal
+              align="center"
+              gap={6}
+              style={{
+                flexShrink: 0,
+                padding: '8px 0 0',
+              }}
+            >
+              {([
+                { key: 'configure', label: t('agent.profile.mode.configure'), target: 'prompt' as ProfileTab },
+                { key: 'activity', label: t('agent.profile.mode.activity'), target: 'activity' as ProfileTab },
+              ] as const).map((mode) => (
+                <button
+                  key={mode.key}
+                  type="button"
+                  onClick={() => setActiveTab(mode.target)}
+                  style={{
+                    height: 32,
+                    padding: '0 14px',
+                    borderRadius: 10,
+                    border: `1px solid ${activeMode === mode.key ? token.colorPrimaryBorder : token.colorBorderSecondary}`,
+                    background: activeMode === mode.key ? token.colorPrimaryBg : token.colorBgContainer,
+                    color: activeMode === mode.key ? token.colorPrimaryText : token.colorTextSecondary,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {mode.label}
+                </button>
+              ))}
             </Flexbox>
 
             {/* ── Tab bar (no font-weight change to prevent wobble) ── */}
             <div style={{ display: 'flex', gap: 0, flexShrink: 0 }}>
-              {TAB_KEYS.map((tab) => (
+              {visibleTabs.map((tab) => (
                 <div
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
@@ -2698,74 +2890,76 @@ export function AgentProfilePage({
               )}
 
               {activeTab === 'prompt' && (
-                <Flexbox flex={1} gap={10} style={{ minHeight: 0, overflow: 'auto' }}>
-                  <ProfileCard
-                    title={t('agent.profile.section.soulMd')}
-                    description={t('agent.profile.section.soulMdDesc')}
-                  >
-                    <textarea
-                      value={soulMd}
-                      onChange={handleSoulMdChange}
-                      onBlur={handleSoulMdBlur}
-                      placeholder={t('agent.profile.soulMdPlaceholder')}
-                      style={{
-                        width: '100%',
-                        minHeight: 160,
-                        padding: '12px 16px',
-                        borderRadius: 8,
-                        border: `1px solid ${token.colorBorderSecondary}`,
-                        background: token.colorBgContainer,
-                        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-                        fontSize: 13,
-                        lineHeight: 1.7,
-                        resize: 'vertical',
-                        outline: 'none',
-                        color: token.colorText,
-                      }}
-                      onFocus={(e) => {
-                        (e.target as HTMLElement).style.borderColor = token.colorPrimary;
-                      }}
-                      onBlurCapture={(e) => {
-                        (e.target as HTMLElement).style.borderColor = token.colorBorderSecondary;
-                      }}
-                    />
-                  </ProfileCard>
-                  <ProfileCard
-                    title={t('agent.profile.section.agentsMd')}
-                    description={t('agent.profile.section.agentsMdDesc')}
-                  >
-                    <textarea
-                      value={agentsMd}
-                      onChange={handleAgentsMdChange}
-                      onBlur={handleAgentsMdBlur}
-                      placeholder={t('agent.profile.agentsMdPlaceholder')}
-                      style={{
-                        width: '100%',
-                        minHeight: 220,
-                        padding: '12px 16px',
-                        borderRadius: 8,
-                        border: `1px solid ${token.colorBorderSecondary}`,
-                        background: token.colorBgContainer,
-                        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-                        fontSize: 13,
-                        lineHeight: 1.7,
-                        resize: 'vertical',
-                        outline: 'none',
-                        color: token.colorText,
-                      }}
-                      onFocus={(e) => {
-                        (e.target as HTMLElement).style.borderColor = token.colorPrimary;
-                      }}
-                      onBlurCapture={(e) => {
-                        (e.target as HTMLElement).style.borderColor = token.colorBorderSecondary;
-                      }}
-                    />
-                    <Flexbox horizontal gap={8} style={{ marginTop: 8, flexWrap: 'wrap' }}>
-                      {PROMPT_VARIABLES.map((variable) => (
-                        <Tag key={variable}>{`{{${variable}}}`}</Tag>
-                      ))}
-                    </Flexbox>
-                  </ProfileCard>
+                <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'grid', gap: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, minHeight: 0 }}>
+                    <ProfileCard
+                      title={t('agent.profile.section.soulMd')}
+                      description={t('agent.profile.section.soulMdDesc')}
+                    >
+                      <textarea
+                        value={soulMd}
+                        onChange={handleSoulMdChange}
+                        onBlur={handleSoulMdBlur}
+                        placeholder={t('agent.profile.soulMdPlaceholder')}
+                        style={{
+                          width: '100%',
+                          minHeight: 280,
+                          padding: '12px 16px',
+                          borderRadius: 8,
+                          border: `1px solid ${token.colorBorderSecondary}`,
+                          background: token.colorBgContainer,
+                          fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                          fontSize: 13,
+                          lineHeight: 1.7,
+                          resize: 'vertical',
+                          outline: 'none',
+                          color: token.colorText,
+                        }}
+                        onFocus={(e) => {
+                          (e.target as HTMLElement).style.borderColor = token.colorPrimary;
+                        }}
+                        onBlurCapture={(e) => {
+                          (e.target as HTMLElement).style.borderColor = token.colorBorderSecondary;
+                        }}
+                      />
+                    </ProfileCard>
+                    <ProfileCard
+                      title={t('agent.profile.section.agentsMd')}
+                      description={t('agent.profile.section.agentsMdDesc')}
+                    >
+                      <textarea
+                        value={agentsMd}
+                        onChange={handleAgentsMdChange}
+                        onBlur={handleAgentsMdBlur}
+                        placeholder={t('agent.profile.agentsMdPlaceholder')}
+                        style={{
+                          width: '100%',
+                          minHeight: 280,
+                          padding: '12px 16px',
+                          borderRadius: 8,
+                          border: `1px solid ${token.colorBorderSecondary}`,
+                          background: token.colorBgContainer,
+                          fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                          fontSize: 13,
+                          lineHeight: 1.7,
+                          resize: 'vertical',
+                          outline: 'none',
+                          color: token.colorText,
+                        }}
+                        onFocus={(e) => {
+                          (e.target as HTMLElement).style.borderColor = token.colorPrimary;
+                        }}
+                        onBlurCapture={(e) => {
+                          (e.target as HTMLElement).style.borderColor = token.colorBorderSecondary;
+                        }}
+                      />
+                      <Flexbox horizontal gap={8} style={{ marginTop: 8, flexWrap: 'wrap' }}>
+                        {PROMPT_VARIABLES.map((variable) => (
+                          <Tag key={variable}>{`{{${variable}}}`}</Tag>
+                        ))}
+                      </Flexbox>
+                    </ProfileCard>
+                  </div>
                   <ProfileCard title={t('agent.profile.promptPreview')} description={t('agent.profile.promptPreviewDesc')}>
                     <pre
                       style={{
@@ -2829,7 +3023,7 @@ export function AgentProfilePage({
                       </Flexbox>
                     </div>
                   </details>
-                </Flexbox>
+                </div>
               )}
 
               {activeTab === 'model' && (
@@ -2903,7 +3097,15 @@ export function AgentProfilePage({
               )}
 
               {activeTab === 'runtime' && (
-                <Flexbox gap={12} style={{ overflow: 'auto' }}>
+                <div
+                  style={{
+                    overflow: 'auto',
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                    gap: 12,
+                    alignContent: 'start',
+                  }}
+                >
                   <ProfileCard title={t('agent.profile.section.visibility')} description={t('agent.profile.section.visibilityDesc')}>
                     <div style={{ marginBottom: 8 }}>
                       <div style={{ fontSize: 12, color: token.colorTextSecondary, marginBottom: 6 }}>
@@ -3075,11 +3277,11 @@ export function AgentProfilePage({
                     <InfoRow label={t('agent.profile.field.workspaceRoot')} value={workspaceRoot || t('agent.profile.workspaceNotSet')} />
                     <InfoRow label={t('agent.profile.field.workspacePolicy')} value={workspaceRoot ? t('agent.profile.workspacePolicy.workspaceOnly') : t('agent.profile.disabled')} />
                   </ProfileCard>
-                </Flexbox>
+                </div>
               )}
 
               {activeTab === 'capabilities' && (
-                <Flexbox gap={12} style={{ overflow: 'auto' }}>
+                <div style={{ overflow: 'auto', display: 'grid', gap: 12 }}>
                   <ProfileCard title={t('agent.profile.section.capabilities')} description={t('agent.profile.section.capabilitiesDesc')} action={<Button size="small" onClick={() => setSettingsOpen(true)}>{t('agent.profile.editSettings')}</Button>}>
                     <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
                       <Tag color={boundTools.length > 0 ? 'green' : 'default'}>{t('agent.profile.capabilities.toolsCount', { count: boundTools.length })}</Tag>
@@ -3087,62 +3289,65 @@ export function AgentProfilePage({
                       <Tag color={boundSkills.length > 0 ? 'purple' : 'default'}>{t('agent.profile.capabilities.skillsCount', { count: boundSkills.length })}</Tag>
                     </Flexbox>
                   </ProfileCard>
-                  <ProfileCard title={t('agent.profile.section.tools')} description={t('agent.profile.section.toolsDesc')} action={<Button size="small" onClick={() => setSettingsOpen(true)}>{t('agent.profile.editSettings')}</Button>}>
-                    <InfoRow label={t('agent.profile.field.toolsProfile')} value={agent.toolsProfile || t('agent.profile.defaultValue')} />
-                    <InfoRow label={t('agent.profile.field.allowedTools')} value={<PillList values={boundTools} emptyText={t('agent.profile.empty')} />} />
-                    <InfoRow label={t('agent.profile.field.toolsAllow')} value={agent.toolsAllow || t('agent.profile.empty')} />
-                    <InfoRow label={t('agent.profile.field.toolsDeny')} value={agent.toolsDeny || t('agent.profile.empty')} />
-                  </ProfileCard>
-                  <ProfileCard title={t('agent.profile.section.mcp')} description={t('agent.profile.section.mcpDesc')} action={<Button size="small" onClick={() => setSettingsOpen(true)}>{t('agent.profile.editSettings')}</Button>}>
-                    <PillList values={mcpServers} emptyText={t('agent.profile.mcpEmpty')} />
-                  </ProfileCard>
-                  <ProfileCard
-                    title={t('agent.profile.section.skills')}
-                    description={t('agent.profile.section.skillsDesc')}
-                    action={
-                      <Flexbox horizontal gap={6}>
-                        <Button size="small" onClick={onNavigateSkills}>
-                          {t('agent.profile.skills.manage')}
-                        </Button>
-                        <Button size="small" onClick={onNavigateApplets}>
-                          {t('agent.profile.skills.manageApplets')}
-                        </Button>
-                      </Flexbox>
-                    }
-                  >
-                    <Flexbox gap={10}>
-                      <Select
-                        mode="multiple"
-                        value={boundSkills}
-                        onChange={handleBoundSkillsChange}
-                        options={skillOptions}
-                        placeholder={t('agent.profile.skills.bindPlaceholder')}
-                        optionFilterProp="label"
-                        style={{ width: '100%' }}
-                      />
-                      <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
-                        <Input
-                          value={skillImportAddress}
-                          onChange={(event) => setSkillImportAddress(event.target.value)}
-                          onPressEnter={handleImportSkillToAgent}
-                          placeholder={t('agent.profile.skills.inlineImportPlaceholder')}
-                          style={{ minWidth: 260, flex: 1 }}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12 }}>
+                    <ProfileCard
+                      title={t('agent.profile.section.skills')}
+                      description={t('agent.profile.section.skillsDesc')}
+                      action={
+                        <Flexbox horizontal gap={6}>
+                          <Button size="small" onClick={onNavigateSkills}>
+                            {t('agent.profile.skills.manage')}
+                          </Button>
+                          <Button size="small" onClick={onNavigateApplets}>
+                            {t('agent.profile.skills.manageApplets')}
+                          </Button>
+                        </Flexbox>
+                      }
+                    >
+                      <Flexbox gap={10}>
+                        <Select
+                          mode="multiple"
+                          value={boundSkills}
+                          onChange={handleBoundSkillsChange}
+                          options={skillOptions}
+                          placeholder={t('agent.profile.skills.bindPlaceholder')}
+                          optionFilterProp="label"
+                          style={{ width: '100%' }}
                         />
-                        <Button
-                          icon={<Download size={13} />}
-                          loading={skillImporting}
-                          onClick={handleImportSkillToAgent}
-                        >
-                          {t('agent.profile.skills.import')}
-                        </Button>
+                        <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
+                          <Input
+                            value={skillImportAddress}
+                            onChange={(event) => setSkillImportAddress(event.target.value)}
+                            onPressEnter={handleImportSkillToAgent}
+                            placeholder={t('agent.profile.skills.inlineImportPlaceholder')}
+                            style={{ minWidth: 220, flex: 1 }}
+                          />
+                          <Button
+                            icon={<Download size={13} />}
+                            loading={skillImporting}
+                            onClick={handleImportSkillToAgent}
+                          >
+                            {t('agent.profile.skills.import')}
+                          </Button>
+                        </Flexbox>
+                        <InfoRow
+                          label={t('agent.profile.field.boundSkills')}
+                          value={<PillList values={boundSkillLabels} emptyText={t('agent.profile.empty')} />}
+                        />
                       </Flexbox>
-                      <InfoRow
-                        label={t('agent.profile.field.boundSkills')}
-                        value={<PillList values={boundSkillLabels} emptyText={t('agent.profile.empty')} />}
-                      />
-                    </Flexbox>
-                  </ProfileCard>
-                </Flexbox>
+                    </ProfileCard>
+                    <ProfileCard title={t('agent.profile.section.tools')} description={t('agent.profile.section.toolsDesc')} action={<Button size="small" onClick={() => setSettingsOpen(true)}>{t('agent.profile.editSettings')}</Button>}>
+                      <Flexbox gap={10}>
+                        <InfoRow label={t('agent.profile.field.toolsProfile')} value={agent.toolsProfile || t('agent.profile.defaultValue')} />
+                        <InfoRow label={t('agent.profile.field.allowedTools')} value={<PillList values={boundTools} emptyText={t('agent.profile.empty')} />} />
+                        <InfoRow label={t('agent.profile.field.toolsAllow')} value={agent.toolsAllow || t('agent.profile.empty')} />
+                        <InfoRow label={t('agent.profile.field.toolsDeny')} value={agent.toolsDeny || t('agent.profile.empty')} />
+                        <Divider style={{ margin: '2px 0' }} />
+                        <InfoRow label={t('agent.profile.section.mcp')} value={<PillList values={mcpServers} emptyText={t('agent.profile.mcpEmpty')} />} />
+                      </Flexbox>
+                    </ProfileCard>
+                  </div>
+                </div>
               )}
 
               {activeTab === 'memory' && <MemoryTab agentName={agent.name} agentId={agent.id} />}
