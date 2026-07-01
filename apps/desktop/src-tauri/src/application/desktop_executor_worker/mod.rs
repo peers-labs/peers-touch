@@ -272,12 +272,23 @@ fn submit_worker_result(
 }
 
 fn local_agent_json(actor_id: &str, agent_id: &str) -> Result<Value, String> {
-    payload_json(app_agents::agents_get(
+    let result = payload_json(app_agents::agents_get(
         actor_id,
         AgentIdInput {
             id: agent_id.to_string(),
         },
-    ))
+    ));
+    match result {
+        Ok(value) => Ok(value),
+        Err(error) if !actor_id.trim().is_empty() => payload_json(app_agents::agents_get(
+            "",
+            AgentIdInput {
+                id: agent_id.to_string(),
+            },
+        ))
+        .map_err(|_| error),
+        Err(error) => Err(error),
+    }
 }
 
 fn payload_json(result: AppResult<StubPayload>) -> Result<Value, String> {
