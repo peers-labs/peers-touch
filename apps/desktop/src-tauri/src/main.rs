@@ -66,6 +66,7 @@ fn main() {
             let state = app.state::<Arc<state::AppState>>();
             #[cfg(debug_assertions)]
             interface::http_gateway::start(Arc::clone(state.inner()), app.handle().clone());
+            application::desktop_executor_worker::start(Arc::clone(state.inner()));
             if let Err(e) = state.i18n.deploy_builtin_packs(&resource_dir) {
                 tracing::error!(error = %e, "Failed to deploy built-in i18n packs");
             }
@@ -227,6 +228,10 @@ fn main() {
             agent_orchestration::agent_collaboration_subscribe,
             agent_orchestration::agent_collaboration_cancel_stream,
             agent_orchestration::agent_collaboration_cancel_task,
+            agent_orchestration::agent_collaboration_submit_node_result,
+            agent_orchestration::agent_collaboration_claim_executor_task,
+            agent_orchestration::agent_collaboration_heartbeat_executor_lease,
+            agent_orchestration::agent_collaboration_release_executor_lease,
             agents::agent_workspace_info,
             agents::agent_workspace_clean,
             tools::tools_list,
