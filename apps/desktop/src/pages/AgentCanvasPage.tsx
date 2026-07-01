@@ -170,6 +170,33 @@ function extractDesktopExecutorTurnId(result: Record<string, unknown> | undefine
   );
 }
 
+function desktopExecutorPrompt(
+  persisted: unknown,
+  detail: { nodes: unknown[] },
+  fallbackPrompt: string,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) {
+  const role = fieldString(persisted, 'role').toLowerCase();
+  if (role !== 'synthesizer') return fallbackPrompt.trim();
+  const description = fieldString(persisted, 'description') || t('agent.canvas.synthesizer');
+  const outputs = detail.nodes
+    .filter((node) => fieldString(node, 'role').toLowerCase() !== 'synthesizer')
+    .map((node, index) => {
+      const summary = fieldString(node, 'resultSummary', 'result_summary') || t('agent.canvas.resultRuntimeUnavailable');
+      const agentId = fieldString(node, 'agentId', 'agent_id') || t('agent.canvas.agentIndex', { index: index + 1 });
+      return `${index + 1}. ${agentId}: ${summary}`;
+    });
+  return [
+    description,
+    '',
+    'Task:',
+    fallbackPrompt.trim(),
+    '',
+    'Node outputs:',
+    outputs.join('\n') || t('agent.canvas.resultNoNodes'),
+  ].join('\n');
+}
+
 export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
@@ -486,7 +513,6 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
         detail.nodes.forEach((persisted, index) => {
           const nodeId = fieldString(persisted, 'nodeId', 'node_id');
           if (!nodeId || nodeStatusToRunState(persisted.status) !== 'running') return;
-          if (fieldString(persisted, 'role').toLowerCase() === 'synthesizer') return;
           if (desktopExecutorInFlightRef.current.has(nodeId)) return;
 
           const submitCachedResult = async (cached: DesktopExecutorNodeResult) => {
@@ -538,7 +564,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
               const result = await api.executeAgentTurnOnce({
                 conversation_id: `${createdTaskId}:${nodeId}`,
                 agent_id: agent.id,
-                user_input: prompt.trim(),
+                user_input: desktopExecutorPrompt(persisted, detail, prompt, t),
                 provider: agent.provider,
                 model: agent.model,
                 cli_command: cliCommand,
