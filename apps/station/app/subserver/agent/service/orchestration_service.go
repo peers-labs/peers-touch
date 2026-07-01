@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
@@ -23,6 +24,8 @@ type OrchestrationService struct {
 	turnService  *TurnService
 	toolRegistry *ToolRegistryService
 	eventBus     domain.EventBus
+	eventWriter  *TaskEventWriter
+	recoveryOnce sync.Once
 }
 
 func NewOrchestrationService(agentService *AgentService, turnService *TurnService, toolRegistry *ToolRegistryService) *OrchestrationService {
@@ -35,6 +38,7 @@ func NewOrchestrationService(agentService *AgentService, turnService *TurnServic
 
 func (s *OrchestrationService) SetEventBus(eventBus domain.EventBus) {
 	s.eventBus = eventBus
+	s.eventWriter = NewTaskEventWriter(eventBus)
 }
 
 func (s *OrchestrationService) CreateCollaborationTask(
@@ -108,9 +112,9 @@ func (s *OrchestrationService) CreateCollaborationTask(
 
 	nodes := nodeRecordsToProto(nodeRecords)
 	s.publishTaskCreated(ctx, taskRecordToProto(&taskRecord), nodes)
-	finalTask, finalNodes := s.executeTaskNodes(ctx, actorID, &taskRecord, nodeRecords)
+	s.startTaskExecution(actorID, taskRecord, nodeRecords, "create")
 
-	return taskRecordToProto(finalTask), nodeRecordsToProto(finalNodes), nil
+	return taskRecordToProto(&taskRecord), nodes, nil
 }
 
 func (s *OrchestrationService) GetCollaborationTask(ctx context.Context, actorID, taskID string) (*model.CollaborationTask, []*model.TaskNode, error) {
@@ -169,6 +173,92 @@ func (s *OrchestrationService) ListCollaborationTasks(
 		tasks = append(tasks, taskRecordToProto(&records[i]))
 	}
 	return tasks, total, nil
+}
+
+func (s *OrchestrationService) ListTaskEvents(ctx context.Context, actorID string, req *model.ListTaskEventsRequest) ([]*model.TaskEvent, int64, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	actorID = strings.TrimSpace(actorID)
+	taskID := strings.TrimSpace(req.GetTaskId())
+	if actorID == "" || taskID == "" {
+		return nil, 0, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "actor_id and task_id are required", nil)
+	}
+	var task persistence.CollaborationTask
+	err = db.WithContext(ctx).Where("id = ? AND goal_owner_id = ?", taskID, actorID).First(&task).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, 0, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "collaboration task not found", err)
+	}
+	if err != nil {
+		return nil, 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to get collaboration task", err)
+	}
+	limit := int(req.GetPageSize())
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	var records []persistence.TaskEvent
+	if err := db.WithContext(ctx).
+		Where("task_id = ? AND event_seq > ?", taskID, req.GetAfterEventSeq()).
+		Order("event_seq ASC").
+		Limit(limit).
+		Find(&records).Error; err != nil {
+		return nil, 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to list task events", err)
+	}
+	events := make([]*model.TaskEvent, 0, len(records))
+	nextSeq := req.GetAfterEventSeq()
+	for i := range records {
+		events = append(events, taskEventRecordToProto(&records[i]))
+		if records[i].EventSeq > nextSeq {
+			nextSeq = records[i].EventSeq
+		}
+	}
+	return events, nextSeq, nil
+}
+
+func (s *OrchestrationService) StartTaskRecovery(ctx context.Context) {
+	s.recoveryOnce.Do(func() {
+		go s.recoverRunningTasks(context.Background())
+	})
+}
+
+func (s *OrchestrationService) recoverRunningTasks(ctx context.Context) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		logger.Errorf(ctx, "failed to open db for collaboration recovery: err=%v", err)
+		return
+	}
+	var tasks []persistence.CollaborationTask
+	if err := db.WithContext(ctx).
+		Where("status = ?", int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING)).
+		Order("created_at ASC").
+		Find(&tasks).Error; err != nil {
+		logger.Errorf(ctx, "failed to list running collaboration tasks for recovery: err=%v", err)
+		return
+	}
+	for i := range tasks {
+		task := tasks[i]
+		var nodes []persistence.CollaborationTaskNode
+		if err := db.WithContext(ctx).Where("task_id = ?", task.ID).Order("started_at ASC").Find(&nodes).Error; err != nil {
+			logger.Errorf(ctx, "failed to list nodes for collaboration recovery: task_id=%s err=%v", task.ID, err)
+			continue
+		}
+		s.startTaskExecution(task.GoalOwnerID, task, nodes, "recovery")
+	}
+}
+
+func (s *OrchestrationService) startTaskExecution(actorID string, task persistence.CollaborationTask, nodes []persistence.CollaborationTaskNode, reason string) {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return
+	}
+	taskCopy := task
+	nodeCopies := append([]persistence.CollaborationTaskNode(nil), nodes...)
+	go func() {
+		ctx := context.Background()
+		logger.Infof(ctx, "starting collaboration task execution: task_id=%s actor_id=%s reason=%s", taskCopy.ID, actorID, reason)
+		s.executeTaskNodes(ctx, actorID, &taskCopy, nodeCopies)
+	}()
 }
 
 func (s *OrchestrationService) CancelCollaborationTask(ctx context.Context, actorID, taskID string) (*model.CollaborationTask, []*model.TaskNode, error) {
@@ -254,12 +344,20 @@ func (s *OrchestrationService) executeTaskNodes(
 
 	hasFailure := false
 	for index := range nodes {
+		node := &nodes[index]
+		switch node.Status {
+		case int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED),
+			int32(model.TaskNodeStatus_TASK_NODE_STATUS_SKIPPED):
+			continue
+		case int32(model.TaskNodeStatus_TASK_NODE_STATUS_FAILED):
+			hasFailure = true
+			continue
+		}
 		if s.isTaskCancelled(ctx, db, task) {
 			s.skipPendingNodes(ctx, db, task, nodes[index:])
 			s.publishTaskFinished(ctx, taskRecordToProto(task), nodeRecordsToProto(nodes), domain.EventTypeCollaborationTaskCancelled)
 			return task, nodes
 		}
-		node := &nodes[index]
 		s.updateNode(ctx, db, node, model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING, "")
 		s.publishNodeEvent(ctx, task, node, domain.EventTypeCollaborationNodeRunning, "", "")
 
@@ -476,7 +574,7 @@ func collaborationNodePrompt(task *persistence.CollaborationTask, node *persiste
 }
 
 func (s *OrchestrationService) publishTaskCreated(ctx context.Context, task *model.CollaborationTask, nodes []*model.TaskNode) {
-	if s.eventBus == nil || task == nil {
+	if task == nil {
 		return
 	}
 	for _, node := range nodes {
@@ -485,6 +583,7 @@ func (s *OrchestrationService) publishTaskCreated(ctx context.Context, task *mod
 		}
 		s.publishEvent(ctx, node.GetAgentId(), string(domain.EventTypeCollaborationTaskCreated), map[string]interface{}{
 			"task_id":     task.GetTaskId(),
+			"agent_id":    node.GetAgentId(),
 			"title":       task.GetTitle(),
 			"description": task.GetDescription(),
 			"engine_type": int32(task.GetEngineType()),
@@ -494,7 +593,7 @@ func (s *OrchestrationService) publishTaskCreated(ctx context.Context, task *mod
 }
 
 func (s *OrchestrationService) publishTaskFinished(ctx context.Context, task *model.CollaborationTask, nodes []*model.TaskNode, eventType domain.EventType) {
-	if s.eventBus == nil || task == nil {
+	if task == nil {
 		return
 	}
 	for _, node := range nodes {
@@ -503,6 +602,7 @@ func (s *OrchestrationService) publishTaskFinished(ctx context.Context, task *mo
 		}
 		s.publishEvent(ctx, node.GetAgentId(), string(eventType), map[string]interface{}{
 			"task_id":     task.GetTaskId(),
+			"agent_id":    node.GetAgentId(),
 			"title":       task.GetTitle(),
 			"engine_type": int32(task.GetEngineType()),
 			"status":      int32(task.GetStatus()),
@@ -511,7 +611,7 @@ func (s *OrchestrationService) publishTaskFinished(ctx context.Context, task *mo
 }
 
 func (s *OrchestrationService) publishNodeEvent(ctx context.Context, task *persistence.CollaborationTask, node *persistence.CollaborationTaskNode, eventType domain.EventType, turnID, resultSummary string) {
-	if s.eventBus == nil || task == nil || node == nil {
+	if task == nil || node == nil {
 		return
 	}
 	payload := map[string]interface{}{
@@ -531,23 +631,50 @@ func (s *OrchestrationService) publishNodeEvent(ctx context.Context, task *persi
 }
 
 func (s *OrchestrationService) publishEvent(ctx context.Context, agentID, eventType string, payload interface{}, taskID, nodeID string) {
-	if s.eventBus == nil {
-		return
+	writer := s.eventWriter
+	if writer == nil {
+		writer = NewTaskEventWriter(s.eventBus)
 	}
-	metadata := map[string]string{
-		"agent_id": agentID,
-		"task_id":  taskID,
-	}
+	var extraMeta map[string]string
 	if strings.TrimSpace(nodeID) != "" {
-		metadata["node_id"] = nodeID
+		extraMeta = map[string]string{"node_id": nodeID}
 	}
-	_ = s.eventBus.Publish(ctx, domain.DomainEvent{
-		EventID:   generateID("evt"),
-		EventType: eventType,
-		ActorID:   agentID,
-		Payload:   payload,
-		Metadata:  metadata,
-	})
+	writer.Publish(ctx, agentID, eventType, payload, taskID, nodeID, "", extraMeta)
+}
+
+func taskEventRecordToProto(record *persistence.TaskEvent) *model.TaskEvent {
+	if record == nil {
+		return nil
+	}
+	return &model.TaskEvent{
+		EventId:     record.ID,
+		TaskId:      record.TaskID,
+		StepId:      record.StepID,
+		TurnId:      record.TurnID,
+		EventSeq:    record.EventSeq,
+		Type:        model.TaskEventType(record.EventType),
+		PayloadJson: record.Payload,
+		CreatedAt:   timestamppb.New(record.CreatedAt),
+	}
+}
+
+func taskEventTypeForDomainEvent(eventType string) model.TaskEventType {
+	switch domain.EventType(eventType) {
+	case domain.EventTypeCollaborationTaskCreated:
+		return model.TaskEventType_TASK_EVENT_TYPE_TASK_CREATED
+	case domain.EventTypeCollaborationTaskCompleted, domain.EventTypeCollaborationTaskFailed, domain.EventTypeCollaborationTaskCancelled:
+		return model.TaskEventType_TASK_EVENT_TYPE_TASK_STATUS_CHANGED
+	case domain.EventTypeCollaborationNodeRunning:
+		return model.TaskEventType_TASK_EVENT_TYPE_STEP_STARTED
+	case domain.EventTypeCollaborationNodeCompleted:
+		return model.TaskEventType_TASK_EVENT_TYPE_STEP_COMPLETED
+	case domain.EventTypeCollaborationNodeFailed:
+		return model.TaskEventType_TASK_EVENT_TYPE_STEP_FAILED
+	case domain.EventTypeAgentTurnStarted, domain.EventTypeAgentTurnCompleted, domain.EventTypeAgentTurnFailed:
+		return model.TaskEventType_TASK_EVENT_TYPE_TURN_EVENT
+	default:
+		return model.TaskEventType_TASK_EVENT_TYPE_UNSPECIFIED
+	}
 }
 
 func normalizeEngineType(engine model.CollaborationEngineType) model.CollaborationEngineType {
