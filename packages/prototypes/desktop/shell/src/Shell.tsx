@@ -650,14 +650,14 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   }
 
   return (
-    <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', backgroundColor: T.bg }}>
+    <div style={{ width: '100%', height: '100%', minHeight: 0, overflow: 'hidden', display: 'flex', backgroundColor: T.bg }}>
       <SideNav
         page={page}
         onNavigate={navigate}
         onOpenPalette={() => setPaletteOpen(true)}
         paletteOpen={paletteOpen}
       />
-      <div style={{ flex: 1, minWidth: 0, position: 'relative', overflow: 'hidden' }}>
+      <div style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
         {body}
       </div>
       <CommandPalette
