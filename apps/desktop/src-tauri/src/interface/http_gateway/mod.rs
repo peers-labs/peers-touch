@@ -5570,8 +5570,7 @@ mod tests {
     use crate::infrastructure::storage::{StorageKind, StorageLayout};
     use std::collections::HashMap;
     use std::path::PathBuf;
-    use std::sync::Arc;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_layout(name: &str) -> StorageLayout {
         let stamp = SystemTime::now()
@@ -5780,7 +5779,7 @@ mod tests {
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(60_000);
-        start_with_runtime(Arc::new(state), GatewayRuntime::headless());
-        std::thread::sleep(Duration::from_millis(hold_ms));
+        let _ = (state, hold_ms);
+        panic!("manual HTTP gateway server test requires a live Tauri AppHandle");
     }
 }
