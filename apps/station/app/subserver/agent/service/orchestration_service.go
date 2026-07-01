@@ -17,6 +17,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type OrchestrationService struct {
@@ -941,8 +942,20 @@ func (s *OrchestrationService) claimNodeLeaseTx(
 	ttl time.Duration,
 	now time.Time,
 ) (persistence.ExecutorLease, bool, error) {
+	var lockedNode persistence.CollaborationTaskNode
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND task_id = ?", node.ID, task.ID).
+		First(&lockedNode).Error; err != nil {
+		return persistence.ExecutorLease{}, false, err
+	}
+	if lockedNode.Status != int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING) {
+		return persistence.ExecutorLease{}, false, nil
+	}
+	*node = lockedNode
+
 	var activeLeases []persistence.ExecutorLease
-	if err := tx.Where("task_id = ? AND step_id = ? AND status = ?", task.ID, node.ID, executorLeaseStatusActive).
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("task_id = ? AND step_id = ? AND status = ?", task.ID, node.ID, executorLeaseStatusActive).
 		Order("acquired_at ASC").
 		Find(&activeLeases).Error; err != nil {
 		return persistence.ExecutorLease{}, false, err
