@@ -1520,7 +1520,6 @@ mod tests {
     #[test]
     fn agent_execute_turn_runs_real_traecli_when_opted_in() {
         if std::env::var("PEERS_TOUCH_CLI_E2E").as_deref() != Ok("1") {
-            eprintln!("skipping real traecli E2E: set PEERS_TOUCH_CLI_E2E=1 to enable");
             return;
         }
 
